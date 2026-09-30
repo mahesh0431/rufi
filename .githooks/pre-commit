@@ -1,0 +1,4 @@
+#!/bin/sh
+# Block commits that contain secrets (keys, tokens). Health data is kept out by the fictional-data rule.
+# Runs gitleaks through mise so the pinned version is used; fails (blocks the commit) if it can't run.
+exec mise exec -- gitleaks git --pre-commit --staged --redact --no-banner
