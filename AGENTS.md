@@ -32,3 +32,4 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 
 - `mise install && pnpm install`: pinned Node, pnpm and gitleaks; turns on the git hooks.
 - `pnpm check`: format, lint, types, tests and unused-code check. Green before every pull request.
+- `pnpm rufi signin | status | signout`: Sign in with ChatGPT from the terminal. Needs `RUFI_HOME` set to a fictional data folder; tokens go to the macOS Keychain, never to files or logs.
