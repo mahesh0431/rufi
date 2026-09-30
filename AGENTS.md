@@ -13,6 +13,11 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 - Every external call has a deadline. Errors keep their `cause`. No empty `catch`.
 - A change to behaviour, commands or settings updates its docs in the same pull request.
 
+## Data model
+
+- Person‑owned rows carry `person_id`; references between them use composite `(person_id, id)` foreign keys, so the database rejects cross‑person links. File bytes are shared and carry no person.
+- Store values as printed and dates at the precision known; never overwrite printed fields.
+
 ## Data and privacy
 
 - **Fictional data only** in code, fixtures, tests and screenshots. Never commit real health data, tokens or keys.
