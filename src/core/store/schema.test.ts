@@ -103,6 +103,19 @@ describe("schema", () => {
       }).toThrow("FOREIGN KEY constraint failed");
     });
 
+    it("rejects a typed-in result for a person who doesn't exist", () => {
+      const typed = {
+        id: "res-typed",
+        test_name: "Weight",
+        value_text: "61 kg",
+        entered_at: now,
+      };
+      insert("results", { ...typed, person_id: "amma" });
+      expect(() => {
+        insert("results", { ...typed, id: "res-x", person_id: "nobody" });
+      }).toThrow("FOREIGN KEY constraint failed");
+    });
+
     it("rejects an amendment that replaces another person's result", () => {
       insert("results", {
         id: "res-nanna",
