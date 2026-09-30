@@ -57,23 +57,21 @@ export interface OpenAI extends z.infer<typeof Discovery> {
 
 /** Fetches OpenAI's sign-in configuration and checks every endpoint is on the issuer's own origin. */
 export async function discover(deps: ChatGptDeps): Promise<OpenAI> {
+  const response = await request(
+    deps,
+    `${deps.issuer}/.well-known/openid-configuration`,
+    {},
+  );
   let doc: z.infer<typeof Discovery>;
   try {
-    const response = await fetch(
-      `${deps.issuer}/.well-known/openid-configuration`,
-      {
-        signal: AbortSignal.timeout(DEADLINE_MS),
-      },
-    );
-    if (!response.ok) throw new Error(`HTTP ${String(response.status)}`);
-    doc = Discovery.parse(await response.json());
+    if (response.status !== 200)
+      throw new Error(`HTTP ${String(response.status)}`);
+    doc = Discovery.parse(JSON.parse(response.text));
   } catch (error) {
     throw new ChatGptError(
       "discovery",
-      "Couldn't reach ChatGPT sign-in. Try again.",
-      {
-        cause: error,
-      },
+      "Couldn't read ChatGPT's sign-in configuration. Try again.",
+      { cause: error },
     );
   }
   const origin = new URL(deps.issuer).origin;
@@ -100,35 +98,45 @@ export interface FormResponse {
   body: Record<string, unknown> | undefined;
 }
 
-/** POSTs a form with a deadline; network errors and 5xx get up to three tries. */
+/** POSTs a form; see `request` for deadlines and retries. */
 export async function postForm(
   deps: ChatGptDeps,
   url: string,
   form: Record<string, string>,
 ): Promise<FormResponse> {
+  const response = await request(deps, url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      accept: "application/json",
+    },
+    body: new URLSearchParams(form),
+  });
+  return { status: response.status, body: parseObject(response.text) };
+}
+
+/** Fetches with a deadline; network errors and 5xx get up to three tries. */
+async function request(
+  deps: ChatGptDeps,
+  url: string,
+  init: RequestInit,
+): Promise<{ status: number; text: string }> {
   for (let attempt = 1; ; attempt++) {
     try {
       const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "content-type": "application/x-www-form-urlencoded",
-          accept: "application/json",
-        },
-        body: new URLSearchParams(form),
+        ...init,
         signal: AbortSignal.timeout(DEADLINE_MS),
       });
       const text = await response.text();
       if (response.status < 500 || attempt === TRIES) {
-        return { status: response.status, body: parseObject(text) };
+        return { status: response.status, text };
       }
     } catch (error) {
       if (attempt === TRIES) {
         throw new ChatGptError(
           "temporary",
           "Couldn't reach ChatGPT. Try again shortly.",
-          {
-            cause: error,
-          },
+          { cause: error },
         );
       }
     }

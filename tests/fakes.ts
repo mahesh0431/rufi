@@ -68,6 +68,7 @@ export async function fakeOpenAI() {
     /** Queued replies for /token, used before normal behaviour. */
     tokenReplies: [] as { status: number; body?: unknown }[],
     revokeStatuses: [] as number[],
+    discoveryStatuses: [] as number[],
     authorize: [] as URLSearchParams[],
     token: [] as URLSearchParams[],
     revoke: [] as URLSearchParams[],
@@ -85,10 +86,11 @@ export async function fakeOpenAI() {
       ),
   };
 
-  async function idToken(clientId: string, nonce: string): Promise<string> {
+  /** A signed id_token; renewals pass no nonce. */
+  async function idToken(clientId: string, nonce?: string): Promise<string> {
     const t = fake.tamper;
     const claims: Record<string, unknown> = { email: fake.email };
-    if (!t.omitNonce) claims["nonce"] = t.nonce ?? nonce;
+    if (nonce !== undefined && !t.omitNonce) claims["nonce"] = t.nonce ?? nonce;
     let jwt = new SignJWT(claims)
       .setProtectedHeader({ alg: "RS256", kid: "k1" })
       .setIssuer(t.issuer ?? fake.issuer)
@@ -127,6 +129,8 @@ export async function fakeOpenAI() {
   async function handle(request: IncomingMessage): Promise<Reply> {
     const url = new URL(request.url ?? "/", fake.issuer);
     if (url.pathname === "/.well-known/openid-configuration") {
+      const status = fake.discoveryStatuses.shift() ?? 200;
+      if (status !== 200) return reply(status);
       return reply(200, {
         issuer: fake.issuer,
         authorization_endpoint: `${fake.issuer}/authorize`,
@@ -198,7 +202,8 @@ export async function fakeOpenAI() {
           return reply(400, { error: "invalid_grant" });
         }
         refreshTokens.delete(old);
-        return reply(200, tokens(form.get("client_id") ?? ""));
+        const clientId = form.get("client_id") ?? "";
+        return reply(200, tokens(clientId, await idToken(clientId)));
       }
       return reply(400, { error: "unsupported_grant_type" });
     }

@@ -60,7 +60,11 @@ export async function saveRegistration(
   }
 }
 
-/** The tokens for this registration, or undefined (also when they belong to another client id). */
+/**
+ * The tokens for this registration, or undefined. Tokens for another client id
+ * or subject don't count: the registration is written after the tokens, so a
+ * failed write leaves them unused.
+ */
 export async function readCredentials(
   deps: ChatGptDeps,
   registration: Registration,
@@ -79,7 +83,11 @@ export async function readCredentials(
   }
   if (stored === undefined) return undefined;
   const parsed = Credentials.safeParse(parseJson(stored));
-  if (!parsed.success || parsed.data.clientId !== registration.clientId)
+  if (
+    !parsed.success ||
+    parsed.data.clientId !== registration.clientId ||
+    parsed.data.subject !== registration.subject
+  )
     return undefined;
   return parsed.data;
 }

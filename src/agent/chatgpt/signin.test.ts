@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -34,7 +34,7 @@ afterEach(() => openai.close());
 
 const options = (overrides: Partial<SignInOptions> = {}): SignInOptions => ({
   showLink: (link) => shown.push(link),
-  openBrowser: (link) => openai.browser(link),
+  openBrowser: (link) => void openai.browser(link),
   ...overrides,
 });
 
@@ -260,10 +260,7 @@ describe("recovery", () => {
 
   it("gives up after the wait, closes the listener, and a later attempt works", async () => {
     await expect(
-      signIn(
-        deps,
-        options({ openBrowser: () => Promise.resolve(), waitMs: 50 }),
-      ),
+      signIn(deps, options({ openBrowser: () => undefined, waitMs: 50 })),
     ).rejects.toThrow("in time");
     await expect(fetch(redirectFrom(shown[0]))).rejects.toThrow();
     await expect(signIn(deps, options())).resolves.toMatchObject({
@@ -272,18 +269,24 @@ describe("recovery", () => {
   });
 
   it("ignores other paths and methods on the listener", async () => {
-    const result = signIn(
-      deps,
-      options({
-        openBrowser: async (link) => {
-          const back = new URL(redirectFrom(link));
-          expect((await fetch(new URL("/favicon.ico", back))).status).toBe(404);
-          expect((await fetch(back, { method: "POST" })).status).toBe(405);
-          await openai.browser(link);
-        },
-      }),
-    );
+    const result = signIn(deps, options({ openBrowser: () => undefined }));
+    await until(() => shown.length > 0);
+    const back = new URL(redirectFrom(shown[0]));
+    expect((await fetch(new URL("/favicon.ico", back))).status).toBe(404);
+    expect((await fetch(back, { method: "POST" })).status).toBe(405);
+    await openai.browser(shown[0] ?? "");
     await expect(result).resolves.toMatchObject({ planUse: true });
+  });
+
+  it("doesn't count tokens saved before a failed registration write", async () => {
+    await signIn(deps, options());
+    const first = await registration();
+    // Stands in for a failed final write: tokens saved, account not recorded.
+    await writeFile(
+      join(deps.home, "chatgpt.json"),
+      JSON.stringify({ hostId: first["hostId"], clientId: first["clientId"] }),
+    );
+    expect((await status(deps)).signedIn).toBe(false);
   });
 
   it("reports a Keychain failure and doesn't claim to be signed in", async () => {
@@ -296,7 +299,7 @@ describe("recovery", () => {
   it("lets only one sign-in run at a time", async () => {
     const waiting = signIn(
       deps,
-      options({ openBrowser: () => Promise.resolve(), waitMs: 500 }),
+      options({ openBrowser: () => undefined, waitMs: 500 }),
     );
     await new Promise((resolve) => setTimeout(resolve, 100));
     await expect(signIn(deps, options())).rejects.toThrow(
@@ -315,6 +318,10 @@ describe("RUFI_HOME", () => {
     expect(rufiHome({ RUFI_HOME: "/tmp/rufi-x" })).toBe("/tmp/rufi-x");
   });
 });
+
+async function until(ready: () => boolean): Promise<void> {
+  while (!ready()) await new Promise((resolve) => setTimeout(resolve, 5));
+}
 
 function redirectFrom(link: string | undefined): string {
   return new URL(link ?? "").searchParams.get("redirect_uri") ?? "";

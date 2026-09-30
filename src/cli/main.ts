@@ -40,7 +40,9 @@ async function main(args: readonly string[]): Promise<void> {
           );
           console.log("Waiting for you to approve (up to 5 minutes)...");
         },
-        openBrowser: (link) => (open ? openBrowser(link) : Promise.resolve()),
+        openBrowser: (link) => {
+          if (open) openBrowser(link);
+        },
       });
       console.log(`Signed in as ${result.email ?? "your ChatGPT account"}.`);
       if (!result.planUse) {
@@ -91,12 +93,9 @@ async function main(args: readonly string[]): Promise<void> {
 }
 
 /** Opens the default browser; if that fails, the link is already on screen. */
-function openBrowser(link: string): Promise<void> {
-  return new Promise((done) => {
-    execFile("open", [link], (error) => {
-      if (error) console.log("Couldn't open the browser. Use the link above.");
-      done();
-    });
+function openBrowser(link: string): void {
+  execFile("open", [link], { timeout: 10_000 }, (error) => {
+    if (error) console.log("Couldn't open the browser. Use the link above.");
   });
 }
 

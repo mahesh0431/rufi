@@ -117,17 +117,25 @@ async function accessTokenLocked(deps: ChatGptDeps): Promise<string> {
       "ChatGPT returned an unusable renewal. Run: pnpm rufi signin",
     );
   }
-  const idToken = tokens.idToken
+  // A new id_token replaces the saved one only if it verifies; one for
+  // another account ends the sign-in (the old refresh token is spent).
+  const identity = tokens.idToken
     ? await verifyIdToken(
         openai,
         tokens.idToken,
         credentials.clientId,
         undefined,
-      ).then(
-        () => tokens.idToken ?? credentials.idToken,
-        () => credentials.idToken,
-      )
-    : credentials.idToken;
+      ).catch(() => undefined)
+    : undefined;
+  if (identity && identity.subject !== credentials.subject) {
+    await clearCredentials(deps, registration.hostId);
+    throw new ChatGptError(
+      "sign_in_again",
+      "ChatGPT renewed the sign-in for a different account. Run: pnpm rufi signin",
+    );
+  }
+  const idToken =
+    identity && tokens.idToken ? tokens.idToken : credentials.idToken;
   const renewed: Credentials = {
     ...credentials,
     scopes: tokens.scopes ?? credentials.scopes,

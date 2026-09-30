@@ -28,8 +28,11 @@ const FIVE_MINUTES = 5 * 60_000;
 export interface SignInOptions {
   /** Called with the link to show the person; it never carries a token. */
   showLink: (link: string) => void;
-  /** Opens the browser; gets the link plus the id_token_hint when there is one. */
-  openBrowser: (link: string) => Promise<void>;
+  /**
+   * Starts the browser with the link plus the id_token_hint when there is one.
+   * Not awaited: sign-in waits only for the callback.
+   */
+  openBrowser: (link: string) => void;
   waitMs?: number;
 }
 
@@ -83,9 +86,7 @@ async function signInLocked(
       query.set("prompt", "consent");
     options.showLink(`${openai.authorization_endpoint}?${query.toString()}`);
     if (previous) query.set("id_token_hint", previous.idToken);
-    await options.openBrowser(
-      `${openai.authorization_endpoint}?${query.toString()}`,
-    );
+    options.openBrowser(`${openai.authorization_endpoint}?${query.toString()}`);
 
     const returned = await callback.result;
     const code = returned.get("code");

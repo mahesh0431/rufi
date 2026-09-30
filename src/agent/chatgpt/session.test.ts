@@ -24,7 +24,7 @@ beforeEach(async () => {
   };
   await signIn(deps, {
     showLink: () => undefined,
-    openBrowser: (link) => openai.browser(link),
+    openBrowser: (link) => void openai.browser(link),
   });
   hostId = (
     JSON.parse(await readFile(join(deps.home, "chatgpt.json"), "utf8")) as {
@@ -59,11 +59,27 @@ describe("access token", () => {
       resource: "https://api.openai.com/v1",
     });
     expect(token).not.toBe(before.accessToken);
+    expect(stored().accessToken).toBe(token);
+    expect(stored().refreshToken).not.toBe(before.refreshToken);
+    expect(stored().idToken).not.toBe(before.idToken);
+  });
+
+  it("keeps the saved id_token when the renewed one doesn't verify", async () => {
+    nearExpiry();
+    const before = stored();
+    openai.tamper = { untrustedKey: true };
+    const token = await accessToken(deps);
     expect(stored()).toMatchObject({
       accessToken: token,
       idToken: before.idToken,
     });
-    expect(stored().refreshToken).not.toBe(before.refreshToken);
+  });
+
+  it("ends the sign-in when a renewal names a different account", async () => {
+    nearExpiry();
+    openai.subject = "someone-else";
+    await expect(accessToken(deps)).rejects.toThrow("different account");
+    expect(secrets.values.size).toBe(0);
   });
 
   it("renews once when two callers ask at the same time", async () => {
@@ -177,7 +193,7 @@ describe("sign-out", () => {
     });
     await signIn(deps, {
       showLink: () => undefined,
-      openBrowser: (link) => openai.browser(link),
+      openBrowser: (link) => void openai.browser(link),
     });
     const q = openai.authorize.at(-1);
     expect(q?.get("client_id")).toBe("oaiapp_test");
@@ -191,6 +207,14 @@ describe("sign-out", () => {
       revoked: false,
     });
     expect(secrets.values.size).toBe(0);
+  });
+
+  it("retries a brief outage of the sign-in configuration", async () => {
+    openai.discoveryStatuses.push(503);
+    await expect(signOut(deps)).resolves.toEqual({
+      wasSignedIn: true,
+      revoked: true,
+    });
   });
 
   it("reports a Keychain failure instead of claiming success", async () => {
