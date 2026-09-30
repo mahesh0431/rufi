@@ -1,0 +1,27 @@
+# Health data and runtime homes never enter git. Runtime homes live outside
+# the checkout; these are fallbacks.
+/data/
+/.data*/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+codex-home/
+.rufi*/
+
+# Secrets and local settings
+.env
+.env.*
+*.local.*
+.claude/settings.local.json
+
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+/tmp/
+
+# macOS
+.DS_Store
