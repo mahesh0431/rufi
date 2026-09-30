@@ -60,6 +60,7 @@ CREATE TABLE results (
   unit TEXT,                   -- as printed
   reference_range TEXT,        -- as printed
   flag_text TEXT,              -- 'High' / 'Low' only as printed; Rufi adds none
+  context_text TEXT,           -- method or context as printed, e.g. 'Calculated', 'Fasting'
   measured_at TEXT,            -- when the sample was taken (precision date or time)
   entered_at TEXT NOT NULL,    -- when it entered Rufi
   replaces_id TEXT,            -- an amended result points at the one it replaces

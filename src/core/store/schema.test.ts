@@ -146,8 +146,8 @@ describe("schema", () => {
     });
   });
 
-  it("keeps a result exactly as printed", () => {
-    insert("results", {
+  describe("results keep what was printed", () => {
+    const crp = {
       id: "res-crp",
       person_id: "amma",
       report_id: "rep-amma",
@@ -158,20 +158,65 @@ describe("schema", () => {
       unit: "mg/L",
       reference_range: "0 - 5",
       flag_text: null,
+      context_text: "High sensitivity",
       measured_at: "2026-09-12",
       entered_at: now,
+      replaces_id: null,
+      group_label: null,
+    };
+
+    it("reads back every printed field unchanged", () => {
+      insert("results", crp);
+      expect(
+        db.prepare("SELECT * FROM results WHERE id = 'res-crp'").get(),
+      ).toEqual(crp);
     });
-    const row = db.prepare("SELECT * FROM results WHERE id = 'res-crp'").get();
-    expect(row).toMatchObject({
-      test_name: "C-Reactive Protein",
-      value_text: "<5",
-      comparator: "<",
-      value_number: 5,
-      unit: "mg/L",
-      reference_range: "0 - 5",
-      flag_text: null,
-      measured_at: "2026-09-12",
-      entered_at: now,
+
+    it("links an amendment to the result it replaces, keeping both as printed", () => {
+      const original = {
+        ...crp,
+        id: "res-ldl",
+        test_name: "LDL Cholesterol",
+        value_text: "162",
+        comparator: null,
+        value_number: 162,
+        unit: "mg/dL",
+        reference_range: "<130",
+        flag_text: "High",
+        context_text: "Calculated",
+        measured_at: "2026-09",
+        group_label: "LDL",
+      };
+      const amended = {
+        ...original,
+        id: "res-ldl-2",
+        test_name: "LDL-C (direct)",
+        value_text: "148",
+        value_number: 148,
+        context_text: "Direct",
+        replaces_id: "res-ldl",
+      };
+      insert("results", original);
+      insert("results", amended);
+      const rows = db
+        .prepare("SELECT * FROM results WHERE group_label = 'LDL' ORDER BY id")
+        .all();
+      expect(rows).toEqual([original, amended]);
+    });
+
+    it("keeps dates at the precision they were known", () => {
+      for (const [id, measured] of [
+        ["res-y", "2025"],
+        ["res-m", "2025-11"],
+        ["res-d", "2025-11-03"],
+      ] as const) {
+        insert("results", { ...crp, id, measured_at: measured });
+      }
+      const dates = db
+        .prepare("SELECT measured_at FROM results ORDER BY id")
+        .all()
+        .map((row) => row.measured_at);
+      expect(dates).toEqual(["2025-11-03", "2025-11", "2025"]);
     });
   });
 });
