@@ -15,9 +15,19 @@ export default defineConfig(
       },
     },
     rules: {
-      // An empty catch hides failures; errors must be handled or rethrown with a cause.
+      // A catch must handle the error or rethrow it with its cause; never swallow it.
       "no-empty": ["error", { allowEmptyCatch: false }],
-      "preserve-caught-error": "error",
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CatchClause > BlockStatement[body.length=0]",
+          message:
+            "Handle the error or rethrow it with { cause }; a comment is not handling.",
+        },
+      ],
+      "preserve-caught-error": ["error", { requireCatchParameter: true }],
+      // Every case of a union is handled; a new case can't fall through silently.
+      "@typescript-eslint/switch-exhaustiveness-check": "error",
     },
   },
   prettier,
