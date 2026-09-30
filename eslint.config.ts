@@ -4,7 +4,7 @@ import { defineConfig } from "eslint/config";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-  { ignores: ["node_modules/", "dist/", "coverage/"] },
+  { ignores: ["node_modules/", "dist/"] },
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   {
@@ -16,7 +16,6 @@ export default defineConfig(
     },
     rules: {
       // A catch must handle the error or rethrow it with its cause; never swallow it.
-      "no-empty": ["error", { allowEmptyCatch: false }],
       "no-restricted-syntax": [
         "error",
         {
