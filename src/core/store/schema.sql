@@ -10,15 +10,7 @@
 
 CREATE TABLE people (
   id TEXT PRIMARY KEY,
-  display_name TEXT NOT NULL,
-  names_on_documents TEXT NOT NULL DEFAULT '[]', -- JSON array, e.g. ["S. Kumar"]
-  country TEXT,          -- ISO 3166-1 alpha-2, for the emergency number
-  time_zone TEXT,        -- IANA, e.g. 'Asia/Kolkata'
-  language TEXT,         -- BCP 47, e.g. 'hi-IN'
-  birth_date TEXT,       -- precision date
-  sex_for_ranges TEXT,   -- as the person chooses, for reference ranges
-  colour TEXT,
-  is_self INTEGER NOT NULL DEFAULT 0
+  display_name TEXT NOT NULL
 ) STRICT;
 
 -- Deduplicated original bytes, shared across people.
