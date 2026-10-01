@@ -115,7 +115,6 @@ describe("starting Codex", () => {
       'wire_api = "responses"',
       "requires_openai_auth = false",
       "supports_websockets = false",
-      'web_search = "live"',
       'model_reasoning_effort = "low"',
       "daemon_auto_start = false",
     ]) {
@@ -158,8 +157,8 @@ describe("starting Codex", () => {
     );
     expect((await pids()).filter(isRunning)).toEqual([]);
     await expect(
-      start({ config: { web_search: "cached" } }).open(),
-    ).rejects.toThrow("web_search is cached");
+      start({ config: { model_reasoning_effort: "high" } }).open(),
+    ).rejects.toThrow("model_reasoning_effort is high");
   });
 
   it.each(["initialize", "config/read", "thread/start"])(
@@ -285,6 +284,46 @@ describe("Stop", () => {
     });
   });
 
+  it("ends the commands an interrupted turn left running, and keeps Codex", async () => {
+    const agent = start({ turn: "command" });
+    const thread = await agent.open();
+    const turn = agent.turn(thread, "Run something long", () => undefined);
+    await until(async () => (await entries()).some((entry) => entry.child));
+    const programs = (await entries()).find((entry) => entry.child);
+    await agent.stop();
+    await expect(turn).resolves.toEqual({
+      status: "interrupted",
+      reason: "Stopped.",
+    });
+    expect(await sent("thread/backgroundTerminals/clean")).toEqual([
+      { threadId: "thread-1" },
+    ]);
+    await sleep(100);
+    expect(
+      [programs?.command, programs?.child].filter(
+        (pid) => pid !== undefined && isRunning(pid),
+      ),
+    ).toEqual([]);
+    expect((await pids()).filter(isRunning)).toHaveLength(1);
+  });
+
+  it("ends Codex when it can't clean up after an interrupt", async () => {
+    const agent = start({
+      turn: "command",
+      hang: ["thread/backgroundTerminals/clean"],
+    });
+    const thread = await agent.open();
+    const turn = agent.turn(thread, "Run something long", () => undefined);
+    await until(async () => (await entries()).some((entry) => entry.child));
+    const programs = (await entries()).find((entry) => entry.child);
+    await agent.stop();
+    await turn;
+    const all = [...(await pids()), programs?.command, programs?.child];
+    expect(all.filter((pid) => pid !== undefined && isRunning(pid))).toEqual(
+      [],
+    );
+  });
+
   it("ends Codex and the programs it started when the interrupt is ignored", async () => {
     const agent = start({ turn: "command", ignoreInterrupt: true });
     const thread = await agent.open();
@@ -295,6 +334,25 @@ describe("Stop", () => {
     await expect(turn).resolves.toEqual({
       status: "interrupted",
       reason: "Codex didn't stop when asked, so Rufi ended it.",
+    });
+    const all = [...(await pids()), programs?.command, programs?.child];
+    expect(all.filter((pid) => pid !== undefined && isRunning(pid))).toEqual(
+      [],
+    );
+  });
+});
+
+describe("closing", () => {
+  it("ends a running turn at once, with Codex and its programs", async () => {
+    const agent = start({ turn: "command", ignoreInterrupt: true });
+    const thread = await agent.open();
+    const turn = agent.turn(thread, "Run something long", () => undefined);
+    await until(async () => (await entries()).some((entry) => entry.child));
+    const programs = (await entries()).find((entry) => entry.child);
+    await agent.close();
+    await expect(turn).resolves.toEqual({
+      status: "interrupted",
+      reason: "Rufi closed Codex.",
     });
     const all = [...(await pids()), programs?.command, programs?.child];
     expect(all.filter((pid) => pid !== undefined && isRunning(pid))).toEqual(

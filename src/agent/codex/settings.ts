@@ -23,8 +23,6 @@ supports_websockets = false`;
 
 /** Rufi's choices on top of Codex's defaults, each with its reason. */
 const SETTINGS = {
-  /** PLAN.md §3.1: answers can use current information from the web. */
-  web_search: "live",
   /** PLAN.md §3.1: low effort for chat, for faster replies. */
   model_reasoning_effort: "low",
   features: {
@@ -46,7 +44,6 @@ function configToml(userHome: string | undefined): string {
   // Top-level keys first: in TOML, a key after [features] belongs to it.
   return `# Written by Rufi on every start from src/agent/codex/settings.ts.
 model_provider = "openai_chatgpt_plan"
-web_search = "${SETTINGS.web_search}"
 model_reasoning_effort = "${SETTINGS.model_reasoning_effort}"
 
 [features]
@@ -108,9 +105,6 @@ export async function checkSettings(
   const problems: string[] = [];
   if (config.model_provider !== "openai_chatgpt_plan") {
     problems.push(`model_provider is ${String(config.model_provider)}`);
-  }
-  if (config.web_search !== SETTINGS.web_search) {
-    problems.push(`web_search is ${String(config.web_search)}`);
   }
   if (config.model_reasoning_effort !== SETTINGS.model_reasoning_effort) {
     problems.push(

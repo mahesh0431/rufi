@@ -212,7 +212,10 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     }
   }
 
-  /** Interrupts the turn; if Codex doesn't stop in time, ends Codex instead. */
+  /**
+   * Interrupts the turn, then ends the commands it left running (Codex keeps
+   * them by design). If Codex doesn't do both in time, Rufi ends Codex itself.
+   */
   async function stopTurn(running: Running): Promise<void> {
     const app = server;
     if (app?.running() && running.turnId !== undefined) {
@@ -226,7 +229,14 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           running.ended.promise.then(() => true),
           sleep(deadlines.interruptEndMs).then(() => false),
         ]);
-        if (stopped) return;
+        if (stopped) {
+          await app.rpc.request(
+            "thread/backgroundTerminals/clean",
+            { threadId: running.threadId },
+            deadlines.interruptAckMs,
+          );
+          return;
+        }
       } catch (error) {
         log(`interrupt failed: ${(error as Error).message}`);
       }
@@ -301,7 +311,12 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       if (current) await stopTurn(current);
     },
 
-    close: shutDown,
+    close: async () => {
+      if (current) {
+        end(current, { status: "interrupted", reason: "Rufi closed Codex." });
+      }
+      await shutDown();
+    },
   };
 }
 

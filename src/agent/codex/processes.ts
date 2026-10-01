@@ -27,9 +27,15 @@ export async function killTree(
   );
   const pids = tree.map((row) => row.pid);
   signal(groups, pids, "SIGTERM");
-  const deadline = Date.now() + graceMs;
-  while (pids.some(isRunning) && Date.now() < deadline) await sleep(50);
+  await waitUntilGone(pids, graceMs);
   signal(groups, pids, "SIGKILL");
+  // KILL can't be refused, but the process still takes a moment to go.
+  await waitUntilGone(pids, 1_000);
+}
+
+async function waitUntilGone(pids: readonly number[], ms: number) {
+  const deadline = Date.now() + ms;
+  while (pids.some(isRunning) && Date.now() < deadline) await sleep(20);
 }
 
 /** `rootPid` and every process below it (empty if it has already ended). */

@@ -19,6 +19,7 @@ export interface Scenario {
   ask?: { method: string; params: unknown }[];
   /** Codex ignores turn/interrupt. */
   ignoreInterrupt?: boolean;
+  /** Like Codex, an interrupt leaves the turn's commands running. */
 }
 
 const scenario = JSON.parse(process.env["FAKE_CODEX"] ?? "{}") as Scenario;
@@ -49,6 +50,7 @@ const askRufi = (method: string, params: unknown) =>
 let threads = 0;
 let turns = 0;
 let running: { threadId: string; turnId: string } | undefined;
+let command: ReturnType<typeof spawn> | undefined;
 
 const turnObject = (id: string, status: string) => ({
   id,
@@ -91,11 +93,11 @@ async function runTurn(threadId: string, turnId: string) {
     // Like Codex: the command gets its own session. It ignores TERM, and it
     // leaves an orphan behind (its parent subshell has exited), which only a
     // signal to the whole process group reaches.
-    const shell = spawn(
+    const shell = (command = spawn(
       "sh",
       ["-c", 'trap "" TERM; (sleep 300 & echo $!); sleep 301'],
       { detached: true, stdio: ["ignore", "pipe", "ignore"] },
-    );
+    ));
     shell.stdout.once("data", (chunk: Buffer) => {
       record({ command: shell.pid, child: Number(chunk.toString().trim()) });
     });
@@ -172,7 +174,6 @@ function handle(method: string, params: Record<string, unknown>): unknown {
       return {
         config: {
           model_provider: "openai_chatgpt_plan",
-          web_search: "live",
           model_reasoning_effort: "low",
           ...scenario.config,
         },
@@ -200,6 +201,10 @@ function handle(method: string, params: Record<string, unknown>): unknown {
           },
         });
       });
+      return {};
+    case "thread/backgroundTerminals/clean":
+      // Ends the command's whole process group, as Codex does.
+      if (command?.pid !== undefined) process.kill(-command.pid, "SIGKILL");
       return {};
     default:
       throw new Error(`fake doesn't know ${method}`);
