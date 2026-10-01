@@ -145,6 +145,8 @@ function featureList() {
   const reported: Record<string, boolean> = {
     shell_tool: true,
     daemon_auto_start: false,
+    plugins: false,
+    apps: false,
     ...scenario.features,
   };
   return Object.entries(reported).map(([name, enabled]) => ({

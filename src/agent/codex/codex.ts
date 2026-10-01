@@ -67,11 +67,11 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   async function serverFor(token: string): Promise<AppServer> {
     if (server?.running() && server.token === token) return server;
     await shutDown();
-    const paths = await prepareCodexHome(deps.home);
+    const paths = await prepareCodexHome(deps.home, deps.env["HOME"]);
     workspace = paths.workspace;
     const started = await startAppServer({
       command: deps.command,
-      env: deps.env,
+      env: { ...deps.env, HOME: paths.processHome },
       codexHome: paths.codexHome,
       token,
       version: deps.version,

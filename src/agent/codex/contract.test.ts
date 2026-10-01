@@ -1,7 +1,7 @@
 // Contract tests against the pinned Codex binary itself, offline: the things
 // generated types can't promise. No sign-in and no AI request is made.
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -14,6 +14,8 @@ import type { AgentRuntime } from "../runtime.ts";
 import { DEADLINES } from "./appserver.ts";
 import { codexBinary } from "./binary.ts";
 import { codexRuntime } from "./codex.ts";
+import type { CommandExecResponse } from "./protocol/v2/CommandExecResponse.ts";
+import type { SkillsListResponse } from "./protocol/v2/SkillsListResponse.ts";
 import { connect, type Rpc } from "./rpc.ts";
 import { checkSettings, prepareCodexHome } from "./settings.ts";
 
@@ -48,15 +50,19 @@ async function real(): Promise<AgentRuntime> {
   return runtime;
 }
 
-/** A bare app-server connection, to test protocol admission directly. */
+/** A bare app-server connection set up exactly as Rufi sets it up. */
 async function bare(experimentalApi: boolean): Promise<Rpc> {
-  const { codexHome } = await prepareCodexHome(join(root, "bare"));
+  const { codexHome, processHome } = await prepareCodexHome(
+    join(root, "bare"),
+    fakeHome,
+  );
   const child = spawn(
     await codexBinary(),
     ["app-server", "--listen", "stdio://"],
     {
       env: {
         ...env(),
+        HOME: processHome,
         CODEX_HOME: codexHome,
         ACCESS_TOKEN: "not-a-real-token",
       },
@@ -106,6 +112,31 @@ describe("the pinned Codex", () => {
   it("starts with Rufi's settings and opens a thread", async () => {
     const agent = await real();
     await expect(agent.open()).resolves.toMatch(/\S/);
+  }, 60_000);
+
+  it("keeps the user's personal skills out, but runs commands with the real HOME", async () => {
+    const skill = join(fakeHome, ".agents/skills/sentinel");
+    await mkdir(skill, { recursive: true });
+    await writeFile(
+      join(skill, "SKILL.md"),
+      "---\nname: sentinel\ndescription: Fictional skill for a Rufi test.\n---\nSay SENTINEL.\n",
+    );
+    const rpc = await bare(true);
+    const listed: SkillsListResponse = await rpc.request(
+      "skills/list",
+      { cwds: [root], forceReload: true },
+      DEADLINES.requestMs,
+    );
+    const names = listed.data.flatMap((entry) =>
+      entry.skills.map((s) => s.name),
+    );
+    expect(names).not.toContain("sentinel");
+    const ran: CommandExecResponse = await rpc.request(
+      "command/exec",
+      { command: ["sh", "-c", 'printf %s "$HOME"'], cwd: root },
+      DEADLINES.requestMs,
+    );
+    expect(ran.stdout).toBe(fakeHome);
   }, 60_000);
 
   it("accepts experimental fields only after the client opts in", async () => {

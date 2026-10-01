@@ -1,7 +1,8 @@
 // Rufi's Codex settings, in one place. Everything not listed here is Codex's
-// standard behaviour. Skills, plugins and MCP servers aren't decided yet
-// (PLAN.md §3.1): for now Codex's own defaults apply, and because CODEX_HOME
-// is Rufi's, nothing from the user's ~/.codex is loaded.
+// standard behaviour. Codex sees none of the user's own setup: CODEX_HOME is
+// Rufi's (so no ~/.codex), and the app-server process gets its own HOME (so no
+// personal skills from ~/.agents/skills), while the agent's commands still get
+// the real HOME. MCP servers arrive one by one, chosen here (PLAN.md §3.1).
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ConfigReadResponse } from "./protocol/v2/ConfigReadResponse.ts";
@@ -29,10 +30,16 @@ const SETTINGS = {
   features: {
     /** Rufi starts and ends app-server itself; nothing keeps running after it. */
     daemon_auto_start: false,
+    /**
+     * No plugin catalogs or connectors: they'd only be downloaded, and
+     * connectors don't work with ChatGPT plan sign-in. Chosen ones come later.
+     */
+    plugins: false,
+    apps: false,
   },
 } as const;
 
-function configToml(): string {
+function configToml(userHome: string | undefined): string {
   const features = Object.entries(SETTINGS.features)
     .map(([name, on]) => `${name} = ${String(on)}`)
     .join("\n");
@@ -46,21 +53,43 @@ model_reasoning_effort = "${SETTINGS.model_reasoning_effort}"
 ${features}
 
 ${PROVIDER}
-`;
+${
+  userHome === undefined
+    ? ""
+    : `
+# The agent's commands run with the user's real HOME.
+[shell_environment_policy.set]
+HOME = ${JSON.stringify(userHome)}
+`
+}`;
 }
 
-/** Writes Rufi's CODEX_HOME and creates the agent's working folder. */
+export interface CodexPaths {
+  /** CODEX_HOME: Codex's config and threads. */
+  codexHome: string;
+  /** HOME for the app-server process only, so it finds none of the user's setup. */
+  processHome: string;
+  /** Where the agent works. */
+  workspace: string;
+}
+
+/** Writes Rufi's CODEX_HOME and creates the folders Codex uses. */
 export async function prepareCodexHome(
   home: string,
-): Promise<{ codexHome: string; workspace: string }> {
-  const codexHome = join(home, "codex");
-  const workspace = join(home, "workspace");
-  await mkdir(codexHome, { recursive: true, mode: 0o700 });
-  await mkdir(workspace, { recursive: true, mode: 0o700 });
-  await writeFile(join(codexHome, "config.toml"), configToml(), {
+  userHome: string | undefined,
+): Promise<CodexPaths> {
+  const paths = {
+    codexHome: join(home, "codex"),
+    processHome: join(home, "codex", "home"),
+    workspace: join(home, "workspace"),
+  };
+  for (const dir of Object.values(paths)) {
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+  }
+  await writeFile(join(paths.codexHome, "config.toml"), configToml(userHome), {
     mode: 0o600,
   });
-  return { codexHome, workspace };
+  return paths;
 }
 
 /**
