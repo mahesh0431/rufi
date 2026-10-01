@@ -2,7 +2,7 @@
 // plan use, and checked before Rufi uses it.
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
-import { killTree } from "./processes.ts";
+import { killTree, trackGroups } from "./processes.ts";
 import type { InitializeParams } from "./protocol/InitializeParams.ts";
 import { connect, type Rpc, type RpcHandlers } from "./rpc.ts";
 import { checkSettings } from "./settings.ts";
@@ -38,6 +38,10 @@ export interface AppServer {
   /** The access token this process was started with. */
   token: string;
   running: () => boolean;
+  /** Remembers the process groups of the commands running under app-server. */
+  track: () => Promise<void>;
+  /** Whether any remembered command group still has a process running. */
+  commandsRunning: () => Promise<boolean>;
   /** Ends app-server and every program it started. */
   stop: () => Promise<void>;
 }
@@ -51,6 +55,7 @@ export interface StartOptions {
   version: string;
   deadlines: Deadlines;
   handlers: RpcHandlers;
+  /** Called once app-server has exited and the commands it left are ended. */
   onExit: (why: Error) => void;
 }
 
@@ -82,14 +87,26 @@ export async function startAppServer(
     options.handlers,
     options.deadlines.answerMs,
   );
+  // Codex runs each command in a new session, so once app-server is gone its
+  // commands are no longer below it; Rufi remembers their groups instead.
+  const groups = new Set<number>();
   const exited = Promise.withResolvers<undefined>();
   let running = true;
   const ended = (why: Error) => {
     if (!running) return;
     running = false;
     rpc.close(why);
-    options.onExit(why);
-    exited.resolve(undefined);
+    // Only the remembered groups: app-server's own pid may already be reused.
+    void killTree(undefined, groups)
+      .catch((error: unknown) => {
+        options.handlers.ignored(
+          `cleanup after exit failed: ${(error as Error).message}`,
+        );
+      })
+      .finally(() => {
+        options.onExit(why);
+        exited.resolve(undefined);
+      });
   };
   child.on("exit", (code, signal) => {
     ended(
@@ -103,8 +120,15 @@ export async function startAppServer(
   });
 
   const stop = async () => {
-    if (running && child.pid !== undefined) await killTree(child.pid);
+    if (running && child.pid !== undefined) {
+      await killTree(child.pid, groups);
+    }
     await Promise.race([exited.promise, sleep(5_000)]);
+  };
+  const track = async () => {
+    if (running && child.pid !== undefined) {
+      await trackGroups(child.pid, groups);
+    }
   };
   try {
     const params: InitializeParams = {
@@ -119,5 +143,15 @@ export async function startAppServer(
     await stop();
     throw error;
   }
-  return { rpc, token: options.token, running: () => running, stop };
+  return {
+    rpc,
+    token: options.token,
+    running: () => running,
+    track,
+    commandsRunning: async () => {
+      await track();
+      return groups.size > 0;
+    },
+    stop,
+  };
 }

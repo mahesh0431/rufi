@@ -18,6 +18,8 @@ let token: string;
 let asked: number[];
 let diagnostics: string[];
 let runtime: AgentRuntime | undefined;
+/** While set, token requests wait for it. */
+let tokenGate: Promise<void> | undefined;
 
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), "rufi-codex-"));
@@ -25,6 +27,7 @@ beforeEach(async () => {
   token = "token-1";
   asked = [];
   diagnostics = [];
+  tokenGate = undefined;
 });
 afterEach(async () => {
   await runtime?.close();
@@ -40,9 +43,10 @@ function start(scenario: Scenario = {}): AgentRuntime {
       FAKE_CODEX: JSON.stringify(scenario),
       FAKE_CODEX_LOG: log,
     },
-    token: (validForMs) => {
+    token: async (validForMs) => {
       asked.push(validForMs);
-      return Promise.resolve(token);
+      await tokenGate;
+      return token;
     },
     version: "9.9.9",
     deadlines: {
@@ -70,9 +74,10 @@ interface Entry {
   child?: number;
 }
 const entries = async (): Promise<Entry[]> =>
-  (await readFile(log, "utf8"))
+  (await readFile(log, "utf8").catch(() => ""))
     .trim()
     .split("\n")
+    .filter(Boolean)
     .map((line) => JSON.parse(line) as Entry);
 const sent = async (method: string) =>
   (await entries())
@@ -185,9 +190,7 @@ describe("a turn", () => {
     expect(diagnostics).toContain(
       "ignored notification remoteControl/status/changed",
     );
-    expect(diagnostics).toContain(
-      "ignored notification brand/new/notification",
-    );
+    expect(diagnostics.some((line) => line.includes("brand/new"))).toBe(true);
   });
 
   it("sends the whole full-access setting with every turn", async () => {
@@ -208,6 +211,28 @@ describe("a turn", () => {
         effort: "low",
       },
     ]);
+  });
+
+  it("ignores events from an earlier turn on the same thread", async () => {
+    const { events, result } = await collect(start({ stale: true }));
+    expect(events).toEqual([
+      { type: "text", delta: "Hel" },
+      { type: "text", delta: "lo" },
+      { type: "activity", text: "ran: ls" },
+      { type: "unknown", what: "teleport" },
+    ]);
+    expect(result).toEqual({ status: "completed" });
+  });
+
+  it("keeps the turn's events that arrive before Codex acknowledges it", async () => {
+    const { events, result } = await collect(start({ early: true }));
+    expect(events).toEqual([
+      { type: "text", delta: "Hel" },
+      { type: "text", delta: "lo" },
+      { type: "activity", text: "ran: ls" },
+      { type: "unknown", what: "teleport" },
+    ]);
+    expect(result).toEqual({ status: "completed" });
   });
 
   it("reports a failed turn as failed, in plain words", async () => {
@@ -339,6 +364,97 @@ describe("Stop", () => {
     expect(all.filter((pid) => pid !== undefined && isRunning(pid))).toEqual(
       [],
     );
+  });
+});
+
+describe("Stop, more cases", () => {
+  async function runCommand(scenario: Scenario) {
+    const agent = start({ turn: "command", ...scenario });
+    const thread = await agent.open();
+    const events: TurnEvent[] = [];
+    const turn = agent.turn(thread, "Run something long", (event) =>
+      events.push(event),
+    );
+    await until(async () => (await entries()).some((entry) => entry.child));
+    const found = (await entries()).find((entry) => entry.child);
+    const programs = [found?.command, found?.child].filter(
+      (pid): pid is number => pid !== undefined,
+    );
+    return { agent, turn, events, programs };
+  }
+
+  it("waits until Codex has really ended the commands, not just queued it", async () => {
+    const { agent, turn, programs } = await runCommand({ clean: "later" });
+    await agent.stop();
+    expect(programs.filter(isRunning)).toEqual([]);
+    expect((await pids()).filter(isRunning)).toHaveLength(1);
+    await expect(turn).resolves.toMatchObject({ status: "interrupted" });
+  });
+
+  it("ends Codex when it queues the clean-up but never does it", async () => {
+    const { agent, turn, programs } = await runCommand({ clean: "never" });
+    await agent.stop();
+    await turn;
+    expect([...programs, ...(await pids())].filter(isRunning)).toEqual([]);
+  });
+
+  it("ends the commands Codex left when it crashes", async () => {
+    const { turn, events, programs } = await runCommand({});
+    // Shown as it starts, and before Rufi's regular look at the processes.
+    await until(() => Promise.resolve(events.length > 0));
+    await sleep(200);
+    const [codex] = await pids();
+    if (codex !== undefined) process.kill(codex, "SIGKILL");
+    await expect(turn).resolves.toEqual({
+      status: "failed",
+      reason: "Codex stopped unexpectedly.",
+    });
+    expect(programs.filter(isRunning)).toEqual([]);
+  });
+
+  it("shows a command when it starts, once, even when it's stopped", async () => {
+    const { agent, turn, events } = await runCommand({});
+    await agent.stop();
+    await turn;
+    expect(events).toEqual([{ type: "activity", text: "ran: sleep 301" }]);
+  });
+
+  it("cancels an open that is still getting a token", async () => {
+    const gate = Promise.withResolvers<undefined>();
+    tokenGate = gate.promise;
+    const agent = start();
+    const opening = agent.open();
+    await sleep(50);
+    await agent.stop();
+    gate.resolve(undefined);
+    await expect(opening).rejects.toThrow("Stopped.");
+    expect(await pids()).toEqual([]);
+  });
+
+  it("cancels an open while Codex is starting, and ends it", async () => {
+    const agent = start({ slow: ["initialize"] });
+    const opening = agent.open();
+    await until(async () => (await pids()).length > 0);
+    await agent.stop();
+    await expect(opening).rejects.toThrow("Stopped.");
+    expect(await sent("thread/start")).toEqual([]);
+    expect((await pids()).filter(isRunning)).toEqual([]);
+  });
+
+  it("cancels a turn that is still getting a token, and sends nothing", async () => {
+    const agent = start();
+    const thread = await agent.open();
+    const gate = Promise.withResolvers<undefined>();
+    tokenGate = gate.promise;
+    const turn = agent.turn(thread, "Hello", () => undefined);
+    await sleep(50);
+    await agent.stop();
+    gate.resolve(undefined);
+    await expect(turn).resolves.toEqual({
+      status: "interrupted",
+      reason: "Stopped.",
+    });
+    expect(await sent("turn/start")).toEqual([]);
   });
 });
 

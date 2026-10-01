@@ -9,6 +9,8 @@ import { createInterface } from "node:readline";
 export interface Scenario {
   /** Methods the fake never answers. */
   hang?: string[];
+  /** Methods the fake answers after 200 ms. */
+  slow?: string[];
   /** Feature flags as Codex reports them, over what config.toml asked for. */
   features?: Record<string, boolean>;
   /** Effective config as Codex reports it, over what config.toml asked for. */
@@ -19,7 +21,16 @@ export interface Scenario {
   ask?: { method: string; params: unknown }[];
   /** Codex ignores turn/interrupt. */
   ignoreInterrupt?: boolean;
-  /** Like Codex, an interrupt leaves the turn's commands running. */
+  /**
+   * Like Codex, an interrupt leaves the turn's commands running. Codex's reply
+   * to clean-up only means it was queued: "later" ends them 200 ms after it,
+   * "never" doesn't end them.
+   */
+  clean?: "now" | "later" | "never";
+  /** Events from an earlier turn on the same thread, sent before the reply. */
+  stale?: boolean;
+  /** The turn's own events come before the reply to turn/start. */
+  early?: boolean;
 }
 
 const scenario = JSON.parse(process.env["FAKE_CODEX"] ?? "{}") as Scenario;
@@ -100,6 +111,18 @@ async function runTurn(threadId: string, turnId: string) {
     ));
     shell.stdout.once("data", (chunk: Buffer) => {
       record({ command: shell.pid, child: Number(chunk.toString().trim()) });
+      send({
+        method: "item/started",
+        params: {
+          threadId,
+          turnId,
+          item: {
+            id: "item-cmd",
+            type: "commandExecution",
+            command: "sleep 301",
+          },
+        },
+      });
     });
     return;
   }
@@ -187,7 +210,32 @@ function handle(method: string, params: Record<string, unknown>): unknown {
       turns++;
       const turnId = `turn-${String(turns)}`;
       running = { threadId: String(params["threadId"]), turnId };
-      setImmediate(() => void runTurn(running?.threadId ?? "", turnId));
+      if (scenario.stale) {
+        const threadId = running.threadId;
+        const old = "previous-turn";
+        send({
+          method: "turn/started",
+          params: { threadId, turn: turnObject(old, "inProgress") },
+        });
+        send({
+          method: "item/agentMessage/delta",
+          params: { threadId, turnId: old, itemId: "x", delta: "STALE" },
+        });
+        send({
+          method: "item/completed",
+          params: {
+            threadId,
+            turnId: old,
+            item: { id: "y", type: "commandExecution", command: "old" },
+          },
+        });
+        send({
+          method: "turn/completed",
+          params: { threadId, turn: turnObject(old, "failed") },
+        });
+      }
+      if (scenario.early) void runTurn(running.threadId, turnId);
+      else setImmediate(() => void runTurn(running?.threadId ?? "", turnId));
       return { turn: turnObject(turnId, "inProgress") };
     }
     case "turn/interrupt":
@@ -202,10 +250,16 @@ function handle(method: string, params: Record<string, unknown>): unknown {
         });
       });
       return {};
-    case "thread/backgroundTerminals/clean":
+    case "thread/backgroundTerminals/clean": {
       // Ends the command's whole process group, as Codex does.
-      if (command?.pid !== undefined) process.kill(-command.pid, "SIGKILL");
+      const pid = command?.pid;
+      const kill = () => {
+        if (pid !== undefined) process.kill(-pid, "SIGKILL");
+      };
+      if (scenario.clean === "later") setTimeout(kill, 200);
+      else if (scenario.clean !== "never") kill();
       return {};
+    }
     default:
       throw new Error(`fake doesn't know ${method}`);
   }
@@ -226,10 +280,15 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   }
   if (message.id === undefined) return; // a notification, e.g. initialized
   if (scenario.hang?.includes(message.method)) return;
-  try {
-    const result = handle(message.method, message.params ?? {});
-    if (result !== undefined) send({ id: message.id, result });
-  } catch (error) {
-    send({ id: message.id, error: { code: -32601, message: String(error) } });
-  }
+  const { id, method } = message;
+  const reply = () => {
+    try {
+      const result = handle(method, message.params ?? {});
+      if (result !== undefined) send({ id, result });
+    } catch (error) {
+      send({ id, error: { code: -32601, message: String(error) } });
+    }
+  };
+  if (scenario.slow?.includes(method)) setTimeout(reply, 200);
+  else reply();
 });

@@ -11,26 +11,55 @@ interface Row {
 }
 
 /**
- * Ends `rootPid`, its descendants and every process group they lead or share:
- * TERM, then KILL for whatever is still running after `graceMs`. A program that
- * deliberately detaches (double fork, nohup) can still escape; see §4.
+ * Ends `rootPid`, its descendants, and every process in their process groups
+ * or in `knownGroups` (groups seen earlier, whose processes may have been
+ * re-parented since): TERM, then KILL for whatever is still running after
+ * `graceMs`. A program that deliberately detaches (double fork, nohup) can
+ * still escape; see PLAN.md §4.
  */
 export async function killTree(
-  rootPid: number,
+  rootPid: number | undefined,
+  knownGroups: Iterable<number> = [],
   graceMs = 2_000,
 ): Promise<void> {
+  if (rootPid !== undefined && rootPid <= 1) {
+    throw new Error(`Refusing to end process ${String(rootPid)} and below.`);
+  }
   const table = await processTable();
-  const tree = descendants(table, rootPid);
+  const tree = rootPid === undefined ? [] : descendants(table, rootPid);
   const own = table.find((row) => row.pid === process.pid)?.pgid;
   const groups = new Set(
-    tree.map((row) => row.pgid).filter((pgid) => pgid > 1 && pgid !== own),
+    [...tree.map((row) => row.pgid), ...knownGroups].filter(
+      (pgid) => pgid > 1 && pgid !== own,
+    ),
   );
-  const pids = tree.map((row) => row.pid);
+  const pids = table
+    .filter((row) => tree.includes(row) || groups.has(row.pgid))
+    .map((row) => row.pid);
   signal(groups, pids, "SIGTERM");
   await waitUntilGone(pids, graceMs);
   signal(groups, pids, "SIGKILL");
   // KILL can't be refused, but the process still takes a moment to go.
   await waitUntilGone(pids, 1_000);
+}
+
+/**
+ * Adds the process groups of `rootPid`'s descendants (other than its own
+ * group) to `groups`, and drops groups that no longer have any process, so a
+ * group id the system has reused later is unlikely to be in the set.
+ */
+export async function trackGroups(
+  rootPid: number,
+  groups: Set<number>,
+): Promise<void> {
+  const table = await processTable();
+  const tree = descendants(table, rootPid);
+  const own = tree.find((row) => row.pid === rootPid)?.pgid;
+  for (const row of tree) {
+    if (row.pgid !== own && row.pgid > 1) groups.add(row.pgid);
+  }
+  const alive = new Set(table.map((row) => row.pgid));
+  for (const group of groups) if (!alive.has(group)) groups.delete(group);
 }
 
 async function waitUntilGone(pids: readonly number[], ms: number) {
@@ -74,8 +103,11 @@ function send(target: number, name: NodeJS.Signals): void {
   try {
     process.kill(target, name);
   } catch (error) {
-    // Already gone is the goal; anything else is a real failure.
-    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    // Already gone is the goal. EPERM: macOS answers it for a group whose
+    // processes have exited but aren't reaped yet; and a process Rufi may not
+    // signal isn't one of Rufi's. Anything else is a real failure.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ESRCH" && code !== "EPERM") throw error;
   }
 }
 
@@ -84,7 +116,9 @@ export function isRunning(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return false;
+    if (code === "EPERM") return true; // exists, but isn't Rufi's to signal
     throw error;
   }
 }
