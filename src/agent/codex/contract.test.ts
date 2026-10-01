@@ -133,10 +133,15 @@ describe("the pinned Codex", () => {
     expect(names).not.toContain("sentinel");
     const ran: CommandExecResponse = await rpc.request(
       "command/exec",
-      { command: ["sh", "-c", 'printf %s "$HOME"'], cwd: root },
+      {
+        command: ["sh", "-c", 'printf %s "$HOME"'],
+        cwd: root,
+        // Rufi's agent runs with full access (PLAN.md §4).
+        sandboxPolicy: { type: "dangerFullAccess" },
+      },
       DEADLINES.requestMs,
     );
-    expect(ran.stdout).toBe(fakeHome);
+    expect(ran).toEqual({ exitCode: 0, stdout: fakeHome, stderr: "" });
   }, 60_000);
 
   it("accepts experimental fields only after the client opts in", async () => {
