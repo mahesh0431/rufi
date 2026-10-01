@@ -12,6 +12,7 @@ import {
 import type { AgentMessageDeltaNotification } from "./protocol/v2/AgentMessageDeltaNotification.ts";
 import type { ItemCompletedNotification } from "./protocol/v2/ItemCompletedNotification.ts";
 import type { ItemStartedNotification } from "./protocol/v2/ItemStartedNotification.ts";
+import type { ThreadBackgroundTerminalsListResponse } from "./protocol/v2/ThreadBackgroundTerminalsListResponse.ts";
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
 import type { ThreadResumeResponse } from "./protocol/v2/ThreadResumeResponse.ts";
 import type { ThreadStartResponse } from "./protocol/v2/ThreadStartResponse.ts";
@@ -61,6 +62,8 @@ interface Running {
   result: TurnResult | undefined;
   /** Settles once the turn has really ended (or Codex is gone). */
   ended: PromiseWithResolvers<void>;
+  /** A Stop under way; the turn returns only once it has finished. */
+  stopping: Promise<void> | undefined;
 }
 
 export function codexRuntime(deps: CodexDeps): AgentRuntime {
@@ -267,11 +270,35 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   }
 
   /**
-   * Interrupts the turn, then ends the commands it left running (Codex keeps
-   * them by design) and checks they're gone: Codex's reply only means the
-   * clean-up was queued. If anything fails or takes too long, Rufi ends Codex.
+   * Whether Codex still lists commands of the thread as running. Codex's list,
+   * not the process table: Codex keeps helpers of its own in other process
+   * groups, and the list doesn't give the commands' process ids (0.159.2).
    */
-  async function stopTurn(running: Running): Promise<void> {
+  async function commandsLeft(
+    app: AppServer,
+    threadId: string,
+  ): Promise<boolean> {
+    const { data } =
+      await app.rpc.request<ThreadBackgroundTerminalsListResponse>(
+        "thread/backgroundTerminals/list",
+        { threadId },
+        deadlines.interruptAckMs,
+      );
+    return data.length > 0;
+  }
+
+  /**
+   * Interrupts the turn, then ends the commands it left running (Codex keeps
+   * them by design) and waits until Codex no longer lists them: its reply to
+   * the clean-up only means it was queued. If anything fails or takes too long, Rufi ends Codex.
+   * Runs once per turn, and the turn returns only after it.
+   */
+  function stopTurn(running: Running): Promise<void> {
+    running.stopping ??= interruptAndClean(running);
+    return running.stopping;
+  }
+
+  async function interruptAndClean(running: Running): Promise<void> {
     const app = server;
     if (app?.running() && running.turnId !== undefined) {
       try {
@@ -282,7 +309,10 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         );
         const stopped = await Promise.race([
           running.ended.promise.then(() => true),
-          sleep(deadlines.interruptEndMs).then(() => false),
+          // A deadline alone mustn't keep Rufi running once the turn has ended.
+          sleep(deadlines.interruptEndMs, undefined, { ref: false }).then(
+            () => false,
+          ),
         ]);
         if (stopped) {
           await app.track();
@@ -292,8 +322,8 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
             deadlines.interruptAckMs,
           );
           const deadline = Date.now() + deadlines.interruptEndMs;
-          while (Date.now() < deadline) {
-            if (!(await app.commandsRunning())) return;
+          while (app.running() && Date.now() < deadline) {
+            if (!(await commandsLeft(app, running.threadId))) return;
             await sleep(100);
           }
           log("commands still running after clean-up");
@@ -345,6 +375,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         lastMessageId: undefined,
         result: undefined,
         ended: Promise.withResolvers(),
+        stopping: undefined,
       };
       current = running;
       const tracking = setInterval(() => void track(), TRACK_EVERY_MS);
@@ -384,6 +415,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
             },
           );
         await running.ended.promise;
+        await running.stopping;
         return running.result ?? { status: "failed", reason: "Unknown." };
       } finally {
         clearInterval(tracking);

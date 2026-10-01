@@ -385,17 +385,26 @@ describe("Stop, more cases", () => {
 
   it("waits until Codex has really ended the commands, not just queued it", async () => {
     const { agent, turn, programs } = await runCommand({ clean: "later" });
-    await agent.stop();
+    void agent.stop();
+    // The turn returns only once Stop has finished.
+    await expect(turn).resolves.toMatchObject({ status: "interrupted" });
     expect(programs.filter(isRunning)).toEqual([]);
     expect((await pids()).filter(isRunning)).toHaveLength(1);
-    await expect(turn).resolves.toMatchObject({ status: "interrupted" });
   });
 
   it("ends Codex when it queues the clean-up but never does it", async () => {
     const { agent, turn, programs } = await runCommand({ clean: "never" });
-    await agent.stop();
+    void agent.stop();
     await turn;
     expect([...programs, ...(await pids())].filter(isRunning)).toEqual([]);
+  });
+
+  it("stops a turn once, however often Stop is pressed", async () => {
+    const { agent, turn } = await runCommand({});
+    await Promise.all([agent.stop(), agent.stop()]);
+    await turn;
+    expect(await sent("turn/interrupt")).toHaveLength(1);
+    expect(await sent("thread/backgroundTerminals/clean")).toHaveLength(1);
   });
 
   it("ends the commands Codex left when it crashes", async () => {

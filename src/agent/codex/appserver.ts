@@ -38,10 +38,11 @@ export interface AppServer {
   /** The access token this process was started with. */
   token: string;
   running: () => boolean;
-  /** Remembers the process groups of the commands running under app-server. */
+  /**
+   * Remembers the process groups started under app-server, so they can be
+   * ended if app-server crashes.
+   */
   track: () => Promise<void>;
-  /** Whether any remembered command group still has a process running. */
-  commandsRunning: () => Promise<boolean>;
   /** Ends app-server and every program it started. */
   stop: () => Promise<void>;
 }
@@ -123,7 +124,11 @@ export async function startAppServer(
     if (running && child.pid !== undefined) {
       await killTree(child.pid, groups);
     }
-    await Promise.race([exited.promise, sleep(5_000)]);
+    // A deadline alone mustn't keep Rufi running once Codex has exited.
+    await Promise.race([
+      exited.promise,
+      sleep(5_000, undefined, { ref: false }),
+    ]);
   };
   const track = async () => {
     if (running && child.pid !== undefined) {
@@ -148,10 +153,6 @@ export async function startAppServer(
     token: options.token,
     running: () => running,
     track,
-    commandsRunning: async () => {
-      await track();
-      return groups.size > 0;
-    },
     stop,
   };
 }

@@ -23,7 +23,7 @@ export interface Scenario {
   ignoreInterrupt?: boolean;
   /**
    * Like Codex, an interrupt leaves the turn's commands running. Codex's reply
-   * to clean-up only means it was queued: "later" ends them 200 ms after it,
+   * to clean-up only means it was queued: "later" ends them 100 ms after it,
    * "never" doesn't end them.
    */
   clean?: "now" | "later" | "never";
@@ -62,6 +62,7 @@ let threads = 0;
 let turns = 0;
 let running: { threadId: string; turnId: string } | undefined;
 let command: ReturnType<typeof spawn> | undefined;
+let commandRunning = false;
 
 const turnObject = (id: string, status: string) => ({
   id,
@@ -109,6 +110,8 @@ async function runTurn(threadId: string, turnId: string) {
       ["-c", 'trap "" TERM; (sleep 300 & echo $!); sleep 301'],
       { detached: true, stdio: ["ignore", "pipe", "ignore"] },
     ));
+    commandRunning = true;
+    shell.once("exit", () => (commandRunning = false));
     shell.stdout.once("data", (chunk: Buffer) => {
       record({ command: shell.pid, child: Number(chunk.toString().trim()) });
       send({
@@ -250,13 +253,28 @@ function handle(method: string, params: Record<string, unknown>): unknown {
         });
       });
       return {};
+    case "thread/backgroundTerminals/list":
+      // Like 0.159.2: no process ids.
+      return {
+        data: commandRunning
+          ? [
+              {
+                itemId: "item-cmd",
+                processId: "1",
+                command: "sleep 301",
+                osPid: null,
+              },
+            ]
+          : [],
+        nextCursor: null,
+      };
     case "thread/backgroundTerminals/clean": {
       // Ends the command's whole process group, as Codex does.
       const pid = command?.pid;
       const kill = () => {
         if (pid !== undefined) process.kill(-pid, "SIGKILL");
       };
-      if (scenario.clean === "later") setTimeout(kill, 200);
+      if (scenario.clean === "later") setTimeout(kill, 100);
       else if (scenario.clean !== "never") kill();
       return {};
     }
