@@ -5,7 +5,12 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Scenario } from "../../../tests/fake-codex.ts";
 import { childEnvironment } from "../../platform/config.ts";
-import type { AgentRuntime, TurnEvent } from "../runtime.ts";
+import type {
+  AgentRuntime,
+  AgentTools,
+  ToolAnswer,
+  TurnEvent,
+} from "../runtime.ts";
 import { checkExecutable } from "./binary.ts";
 import { codexRuntime, describe as describeItem, resultOf } from "./codex.ts";
 import { isRunning } from "./processes.ts";
@@ -34,8 +39,9 @@ afterEach(async () => {
   runtime = undefined;
 });
 
-function start(scenario: Scenario = {}): AgentRuntime {
+function start(scenario: Scenario = {}, tools?: AgentTools): AgentRuntime {
   runtime = codexRuntime({
+    ...(tools && { tools }),
     home,
     command: { file: process.execPath, args: [FAKE] },
     env: {
@@ -55,6 +61,7 @@ function start(scenario: Scenario = {}): AgentRuntime {
       interruptAckMs: 300,
       interruptEndMs: 300,
       answerMs: 500,
+      toolMs: 200,
     },
     log: (line) => diagnostics.push(line),
   });
@@ -164,6 +171,10 @@ describe("starting Codex", () => {
     await expect(
       start({ config: { model_reasoning_effort: "high" } }).open(),
     ).rejects.toThrow("model_reasoning_effort is high");
+    // Codex would drop Rufi's tools without a word.
+    await expect(
+      start({ capabilities: { namespaceTools: false } }).open(),
+    ).rejects.toThrow("the provider doesn't take Rufi's tools");
   });
 
   it.each(["initialize", "config/read", "thread/start"])(
@@ -235,6 +246,27 @@ describe("a turn", () => {
     expect(result).toEqual({ status: "completed" });
   });
 
+  it("shows a message that didn't stream, and the AI's questions for the user", async () => {
+    const { events } = await collect(
+      start({
+        unstreamed: {
+          text: "Which person do you mean?",
+          questions: [
+            { title: "Whose results?", options: ["Asha", "Ravi"] },
+            { title: "Anything else?", options: null },
+          ],
+        },
+      }),
+    );
+    expect(events.slice(-3)).toEqual([
+      { type: "text", delta: "Which person do you mean?" },
+      { type: "question", title: "Whose results?", options: ["Asha", "Ravi"] },
+      { type: "question", title: "Anything else?", options: [] },
+    ]);
+    // The streamed message isn't repeated when it completes.
+    expect(events.filter((e) => e.type === "text")).toHaveLength(3);
+  });
+
   it("reports a failed turn as failed, in plain words", async () => {
     const { result } = await collect(start({ turn: "fail" }));
     expect(result).toEqual({
@@ -263,7 +295,7 @@ describe("a turn", () => {
     ]);
   });
 
-  it("declines approvals, answers unknown tools, and refuses other requests", async () => {
+  it("declines approvals, answers a tool call that isn't this turn's, and refuses other requests", async () => {
     await collect(
       start({
         ask: [
@@ -281,7 +313,10 @@ describe("a turn", () => {
       { decision: "decline" },
       {
         contentItems: [
-          { type: "inputText", text: "Unknown tool: read_record" },
+          {
+            type: "inputText",
+            text: '{"ok":false,"error":"No turn is running."}',
+          },
         ],
         success: false,
       },
@@ -514,6 +549,160 @@ describe("token renewal", () => {
     await agent.turn(thread, "First", () => undefined);
     await agent.turn(thread, "Second", () => undefined);
     expect(await pids()).toHaveLength(1);
+  });
+});
+
+describe("Rufi's tools", () => {
+  /** Tools for the adapter: what each call got, and what it answers. */
+  function fakeTools(
+    run: (name: string, input: unknown) => Promise<ToolAnswer> | ToolAnswer,
+  ): AgentTools & { calls: [string, unknown][] } {
+    const calls: [string, unknown][] = [];
+    return {
+      calls,
+      namespace: "rufi",
+      specs: [
+        {
+          name: "get_overview",
+          description: "The record at a glance.",
+          inputSchema: { type: "object", properties: {} },
+        },
+      ],
+      instructions: "Use the rufi tools.",
+      forTurn: () => async (name, input) => {
+        calls.push([name, input]);
+        return run(name, input);
+      },
+    };
+  }
+  const overview = { namespace: "rufi", tool: "get_overview", arguments: {} };
+  const replies = async () =>
+    (await entries())
+      .filter((entry) => entry.answered === "item/tool/call")
+      .map((entry) => entry.reply);
+
+  it("gives Codex the tools and their instructions when a thread starts", async () => {
+    await collect(
+      start(
+        {},
+        fakeTools(() => ({ ok: true, text: "{}" })),
+      ),
+    );
+    expect(await sent("thread/start")).toEqual([
+      {
+        cwd: join(home, "workspace"),
+        approvalPolicy: "never",
+        sandbox: "danger-full-access",
+        developerInstructions: "Use the rufi tools.",
+        dynamicTools: [
+          {
+            type: "namespace",
+            name: "rufi",
+            description: "Rufi: the user's health record.",
+            tools: [
+              {
+                type: "function",
+                name: "get_overview",
+                description: "The record at a glance.",
+                inputSchema: { type: "object", properties: {} },
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("runs a call, answers with its result, and shows it once", async () => {
+    const tools = fakeTools(() => ({ ok: true, text: '{"ok":true}' }));
+    const { events, result } = await collect(
+      start({ calls: [overview] }, tools),
+    );
+    expect(tools.calls).toEqual([["get_overview", {}]]);
+    expect(await replies()).toEqual([
+      {
+        contentItems: [{ type: "inputText", text: '{"ok":true}' }],
+        success: true,
+      },
+    ]);
+    expect(events.filter((e) => e.type === "activity")).toEqual([
+      { type: "activity", text: "used rufi.get_overview" },
+      { type: "activity", text: "ran: ls" },
+    ]);
+    expect(result).toEqual({ status: "completed" });
+  });
+
+  it("passes a call outside Rufi's namespace on as an unknown tool, never an RPC error", async () => {
+    const tools = fakeTools((name) => ({
+      ok: false,
+      text: JSON.stringify({ ok: false, error: `no ${name}` }),
+    }));
+    await collect(
+      start({ calls: [{ ...overview, namespace: "other" }] }, tools),
+    );
+    expect(tools.calls).toEqual([["other.get_overview", {}]]);
+    expect(await replies()).toEqual([
+      {
+        contentItems: [
+          {
+            type: "inputText",
+            text: '{"ok":false,"error":"no other.get_overview"}',
+          },
+        ],
+        success: false,
+      },
+    ]);
+  });
+
+  it("answers a tool that takes too long within the deadline", async () => {
+    const tools = fakeTools(async () => {
+      await sleep(2_000);
+      return { ok: true, text: "late" };
+    });
+    const begun = Date.now();
+    const { result } = await collect(start({ calls: [overview] }, tools));
+    expect(Date.now() - begun).toBeLessThan(1_500);
+    expect(await replies()).toEqual([
+      {
+        contentItems: [
+          {
+            type: "inputText",
+            text: '{"ok":false,"error":"get_overview took too long."}',
+          },
+        ],
+        success: false,
+      },
+    ]);
+    expect(result).toEqual({ status: "completed" });
+  });
+
+  it("stops the turn when the tools say so", async () => {
+    const tools = fakeTools(() => ({
+      ok: false,
+      text: "{}",
+      stopTurn: "The AI kept making requests Rufi couldn't accept.",
+    }));
+    const { result } = await collect(
+      start({ calls: [overview], turn: "hang" }, tools),
+    );
+    expect(result).toEqual({
+      status: "failed",
+      reason: "The AI kept making requests Rufi couldn't accept.",
+    });
+    expect(await sent("turn/interrupt")).toHaveLength(1);
+  });
+
+  it("gives no tools again when a thread is resumed (Codex keeps them)", async () => {
+    const tools = fakeTools(() => ({ ok: true, text: "{}" }));
+    const agent = start({}, tools);
+    const thread = await agent.open();
+    token = "token-2";
+    await agent.turn(thread, "Again", () => undefined);
+    const [resumed] = await sent("thread/resume");
+    expect(resumed).toMatchObject({
+      developerInstructions: "Use the rufi tools.",
+    });
+    expect(resumed).not.toHaveProperty("dynamicTools");
   });
 });
 

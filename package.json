@@ -15,6 +15,7 @@
     "test": "vitest run",
     "rufi": "node src/cli/main.ts",
     "codex:types": "node scripts/codex-types.ts",
+    "tools:json": "node scripts/tools-json.ts",
     "check": "prettier --check . && eslint . && tsc --noEmit && vitest run && knip"
   },
   "devDependencies": {

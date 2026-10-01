@@ -1,7 +1,13 @@
 // The Codex implementation of AgentRuntime: one app-server at a time, full
 // access as PLAN.md §4 sets it, and a restart whenever the access token changes.
 import { setTimeout as sleep } from "node:timers/promises";
-import type { AgentRuntime, TurnEvent, TurnResult } from "../runtime.ts";
+import type {
+  AgentRuntime,
+  AgentTools,
+  ToolAnswer,
+  TurnEvent,
+  TurnResult,
+} from "../runtime.ts";
 import {
   DEADLINES,
   startAppServer,
@@ -10,6 +16,10 @@ import {
   type Deadlines,
 } from "./appserver.ts";
 import type { AgentMessageDeltaNotification } from "./protocol/v2/AgentMessageDeltaNotification.ts";
+import type { DynamicToolCallParams } from "./protocol/v2/DynamicToolCallParams.ts";
+import type { DynamicToolCallResponse } from "./protocol/v2/DynamicToolCallResponse.ts";
+import type { DynamicToolSpec } from "./protocol/v2/DynamicToolSpec.ts";
+import type { JsonValue } from "./protocol/serde_json/JsonValue.ts";
 import type { ItemCompletedNotification } from "./protocol/v2/ItemCompletedNotification.ts";
 import type { ItemStartedNotification } from "./protocol/v2/ItemStartedNotification.ts";
 import type { ThreadBackgroundTerminalsListResponse } from "./protocol/v2/ThreadBackgroundTerminalsListResponse.ts";
@@ -34,6 +44,8 @@ export interface CodexDeps {
   token: (validForMs: number) => Promise<string>;
   version: string;
   deadlines?: Partial<Deadlines>;
+  /** Rufi's tools; fixed for the life of each thread (Codex keeps them). */
+  tools?: AgentTools;
   /** Diagnostics: what Rufi ignored or refused. Never the token. */
   log?: (line: string) => void;
 }
@@ -64,6 +76,8 @@ interface Running {
   ended: PromiseWithResolvers<void>;
   /** A Stop under way; the turn returns only once it has finished. */
   stopping: Promise<void> | undefined;
+  /** Runs Rufi's tools for this turn. */
+  callTool: ReturnType<AgentTools["forTurn"]> | undefined;
 }
 
 export function codexRuntime(deps: CodexDeps): AgentRuntime {
@@ -96,7 +110,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       version: deps.version,
       deadlines,
       handlers: {
-        request: (method, params) => Promise.resolve(answer(method, params)),
+        request: answer,
         notification: onNotification,
         ignored: (what) => {
           log(`ignored ${what}`);
@@ -149,7 +163,10 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       cwd: workspace,
       approvalPolicy: "never",
       sandbox: "danger-full-access",
+      ...(deps.tools && { developerInstructions: deps.tools.instructions }),
     } as const;
+    // Codex keeps a thread's tools and restores them on resume; they can only
+    // be given when it starts.
     const response = threadId
       ? await app.rpc.request<ThreadResumeResponse>(
           "thread/resume",
@@ -158,7 +175,10 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         )
       : await app.rpc.request<ThreadStartResponse>(
           "thread/start",
-          settings,
+          {
+            ...settings,
+            ...(deps.tools && { dynamicTools: dynamicTools(deps.tools) }),
+          },
           deadlines.requestMs,
         );
     loaded.add(response.thread.id);
@@ -178,25 +198,55 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     return { app, id };
   }
 
-  /** Codex asked Rufi something. Approvals are declined; tools arrive in M1.3. */
-  function answer(method: string, params: unknown): unknown {
+  /** Codex asked Rufi something. Approvals are declined; tools are run. */
+  async function answer(method: string, params: unknown): Promise<unknown> {
     log(`Codex asked: ${method}`);
     switch (method) {
       case "item/commandExecution/requestApproval":
       case "item/fileChange/requestApproval":
         return { decision: "decline" };
-      case "item/tool/call": {
-        const tool = (params as { tool?: unknown } | undefined)?.tool;
-        return {
-          contentItems: [
-            { type: "inputText", text: `Unknown tool: ${String(tool)}` },
-          ],
-          success: false,
-        };
-      }
+      case "item/tool/call":
+        return callTool(params as DynamicToolCallParams);
       default:
         throw new RpcError(-32601, `Rufi doesn't handle ${method}.`);
     }
+  }
+
+  /**
+   * Runs one of Rufi's tools for the current turn. Always a result, never a
+   * JSON-RPC error: Codex would turn that into a bare "request failed".
+   */
+  async function callTool(
+    call: DynamicToolCallParams,
+  ): Promise<DynamicToolCallResponse> {
+    const reply = (ok: boolean, text: string): DynamicToolCallResponse => ({
+      contentItems: [{ type: "inputText", text }],
+      success: ok,
+    });
+    const running = current;
+    if (!running?.callTool || call.turnId !== running.turnId) {
+      return reply(
+        false,
+        JSON.stringify({ ok: false, error: "No turn is running." }),
+      );
+    }
+    const name =
+      call.namespace === deps.tools?.namespace
+        ? call.tool
+        : `${call.namespace ?? ""}.${call.tool}`;
+    const timedOut: ToolAnswer = {
+      ok: false,
+      text: JSON.stringify({ ok: false, error: `${name} took too long.` }),
+    };
+    const answer = await Promise.race([
+      running.callTool(name, call.arguments),
+      sleep(deadlines.toolMs, timedOut, { ref: false }),
+    ]);
+    if (answer.stopTurn !== undefined) {
+      running.result ??= { status: "failed", reason: answer.stopTurn };
+      void stopTurn(running);
+    }
+    return reply(answer.ok, answer.text);
   }
 
   function onNotification(method: string, params: unknown): void {
@@ -240,14 +290,29 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         }
         return;
       }
-      case "item/agentMessage/delta":
-        running.onEvent({
-          type: "text",
-          delta: (params as AgentMessageDeltaNotification).delta,
-        });
+      case "item/agentMessage/delta": {
+        const { itemId, delta } = params as AgentMessageDeltaNotification;
+        running.shown.add(itemId);
+        running.onEvent({ type: "text", delta });
         return;
+      }
       case "item/completed": {
         const { item } = params as ItemCompletedNotification;
+        if (item.type === "agentMessage") {
+          // Text that didn't stream, and questions the AI asks the user
+          // (Codex's request_user_input_async), arrive only here.
+          if (!running.shown.has(item.id) && item.text) {
+            running.onEvent({ type: "text", delta: item.text });
+          }
+          for (const question of item.questions ?? []) {
+            running.onEvent({
+              type: "question",
+              title: question.title,
+              options: question.options ?? [],
+            });
+          }
+          return;
+        }
         if (running.shown.has(item.id)) return;
         const event = describe(item);
         if (event) running.onEvent(event);
@@ -376,6 +441,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         result: undefined,
         ended: Promise.withResolvers(),
         stopping: undefined,
+        callTool: deps.tools?.forTurn(),
       };
       current = running;
       const tracking = setInterval(() => void track(), TRACK_EVERY_MS);
@@ -443,6 +509,24 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   };
 }
 
+/** Rufi's tools in Codex's shape: one namespace. */
+function dynamicTools(tools: AgentTools): DynamicToolSpec[] {
+  if (tools.specs.length === 0) return [];
+  return [
+    {
+      type: "namespace",
+      name: tools.namespace,
+      description: "Rufi: the user's health record.",
+      tools: tools.specs.map((spec) => ({
+        type: "function",
+        ...spec,
+        // A JSON Schema made by Zod: plain JSON.
+        inputSchema: spec.inputSchema as JsonValue,
+      })),
+    },
+  ];
+}
+
 /** One plain line for what the agent did; undefined for what the reply already shows. */
 export function describe(item: ThreadItem): TurnEvent | undefined {
   switch (item.type) {
@@ -467,7 +551,10 @@ export function describe(item: ThreadItem): TurnEvent | undefined {
     case "imageView":
       return { type: "activity", text: `looked at ${item.path}` };
     case "dynamicToolCall":
-      return { type: "activity", text: `used the tool ${item.tool}` };
+      return {
+        type: "activity",
+        text: `used ${item.namespace ? `${item.namespace}.` : ""}${item.tool}`,
+      };
     case "mcpToolCall":
       return { type: "activity", text: `used ${item.server}: ${item.tool}` };
     case "contextCompaction":

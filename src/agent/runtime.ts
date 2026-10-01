@@ -7,12 +7,37 @@ export type TurnEvent =
   /** One plain line about something the agent did ("ran: ls"). */
   | { type: "activity"; text: string }
   /** Something the agent did that Rufi can't display yet. */
-  | { type: "unknown"; what: string };
+  | { type: "unknown"; what: string }
+  /** A question for the user; the answer is their next message. */
+  | { type: "question"; title: string; options: string[] };
 
 export interface TurnResult {
   status: "completed" | "failed" | "interrupted";
   /** Why it didn't complete, in plain words. */
   reason?: string;
+}
+
+/** Rufi's tools as an agent gets them; the registry in core/tools fills it. */
+export interface AgentTools {
+  /** Shown to the agent as `<namespace>.<tool>`. */
+  namespace: string;
+  specs: readonly {
+    name: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+  }[];
+  /** What the agent is told about using them. */
+  instructions: string;
+  /** A caller for one turn; it counts the turn's rejected calls. */
+  forTurn: () => (name: string, input: unknown) => Promise<ToolAnswer>;
+}
+
+/** A tool's answer for the agent; `stopTurn` asks Rufi to end the turn. */
+export interface ToolAnswer {
+  ok: boolean;
+  /** JSON, for the model. */
+  text: string;
+  stopTurn?: string;
 }
 
 export interface AgentRuntime {

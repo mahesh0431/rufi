@@ -10,7 +10,10 @@ import {
   listFiles,
   PROTOCOL_DIR,
 } from "../../../scripts/codex-types.ts";
-import type { AgentRuntime } from "../runtime.ts";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { forAgent } from "../../core/tools/tools.ts";
+import type { AgentRuntime, AgentTools } from "../runtime.ts";
 import { DEADLINES } from "./appserver.ts";
 import { codexBinary } from "./binary.ts";
 import { codexRuntime } from "./codex.ts";
@@ -39,10 +42,13 @@ afterEach(async () => {
 const env = () => ({ PATH: process.env["PATH"] ?? "", HOME: fakeHome });
 
 /** Rufi's Codex runtime on the real binary, with a fake token. */
-async function real(): Promise<AgentRuntime> {
+async function real(
+  options: { args?: string[]; tools?: AgentTools } = {},
+): Promise<AgentRuntime> {
   runtime = codexRuntime({
     home: join(root, "rufi"),
-    command: { file: await codexBinary(), args: [] },
+    command: { file: await codexBinary(), args: options.args ?? [] },
+    ...(options.tools && { tools: options.tools }),
     env: env(),
     token: () => Promise.resolve("not-a-real-token"),
     version: "0.0.0",
@@ -169,4 +175,53 @@ describe("the pinned Codex", () => {
       checkSettings(await bare(true), 30_000),
     ).resolves.toBeUndefined();
   }, 60_000);
+
+  it("sends Rufi's tools to the model as the rufi namespace", async () => {
+    // A local stand-in for the model endpoint: it records what Codex sends
+    // and refuses, so the turn ends without any AI. A protocol check only.
+    const bodies: unknown[] = [];
+    const server = createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => {
+        if (request.url?.endsWith("/responses")) {
+          bodies.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+        }
+        response.writeHead(400, { "content-type": "application/json" });
+        response.end('{"error":{"message":"offline test"}}');
+      });
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const { port } = server.address() as AddressInfo;
+    try {
+      const tools = forAgent(
+        () => ({ store: undefined, personId: undefined }),
+        () => undefined,
+      );
+      const agent = await real({
+        args: [
+          "-c",
+          `model_providers.openai_chatgpt_plan.base_url="http://127.0.0.1:${String(port)}/v1"`,
+        ],
+        tools,
+      });
+      const thread = await agent.open();
+      await agent.turn(thread, "What are my latest results?", () => undefined);
+      // On this route the model gets one JavaScript tool, `exec`, and Rufi's
+      // tools as functions inside it, declared in its description.
+      const sent = JSON.stringify(bodies[0]);
+      const spec = tools.specs[0];
+      expect(sent).toContain("\\n## rufi\\nRufi: the user's health record.");
+      expect(sent).toContain("### `rufi__get_overview`");
+      expect(sent).toContain(JSON.stringify(spec?.description).slice(1, -1));
+      expect(sent).toContain(
+        "declare const tools: { rufi__get_overview(args: {}): Promise<unknown>; };",
+      );
+      expect(sent).toContain(tools.instructions);
+    } finally {
+      server.close();
+    }
+  });
 });
