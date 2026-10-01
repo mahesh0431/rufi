@@ -34,4 +34,6 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 - `pnpm check`: format, lint, types, tests and unused-code check. Green before every pull request.
 - `pnpm rufi signin | status | signout`: Sign in with ChatGPT from the terminal. Needs `RUFI_HOME` set to a fictional data folder; tokens go to the macOS Keychain, never to files or logs.
 - `pnpm rufi ask "question"`: asks Codex (the pinned `@openai/codex`, never one on PATH) using that sign-in, streaming the answer; Ctrl-C stops it. Codex runs from `$RUFI_HOME/codex` and works in `$RUFI_HOME/workspace`, with full access (`PLAN.md` §4). Rufi's choices on top of Codex's defaults are all in `src/agent/codex/settings.ts`; none of the user's own Codex setup or personal skills is loaded.
+- Rufi's tools live in `src/core/tools/` (a Zod schema each, no agent types); the agent gets them as `rufi.<tool>`. The person a tool reads is chosen by Rufi (`--person`, or the only one), never by the model. `pnpm tools:json` regenerates `tools.json`; a test fails if it differs.
+- Test data: `cat src/core/store/schema.sql tests/fixtures/fictional-family.sql | sqlite3 "$RUFI_HOME/rufi.sqlite"` in a test folder. Rufi only reads the database until M2.
 - `pnpm codex:types`: regenerates `src/agent/codex/protocol/` from the pinned Codex after changing the pin; a test fails if they differ.

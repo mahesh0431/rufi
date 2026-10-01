@@ -23,6 +23,8 @@ export interface Deadlines {
   interruptEndMs: number;
   /** Rufi's own answers to Codex's requests. */
   answerMs: number;
+  /** One of Rufi's tools; Codex itself would wait forever. Under answerMs. */
+  toolMs: number;
 }
 
 export const DEADLINES: Deadlines = {
@@ -31,6 +33,7 @@ export const DEADLINES: Deadlines = {
   interruptAckMs: 5_000,
   interruptEndMs: 10_000,
   answerMs: 30_000,
+  toolMs: 20_000,
 };
 
 export interface AppServer {

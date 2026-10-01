@@ -1,0 +1,19 @@
+{
+  "tools": [
+    {
+      "name": "rufi.get_overview",
+      "description": "The active person's health record in Rufi at a glance: their name, how many documents and reports they have, and their current test results exactly as printed (test, value, unit, reference range, flag, method or context, measured date at the precision known). At most 20 results, newest measured first, undated last. An amended result replaces the one it corrects and says \"amended\": true. Takes no input: Rufi chooses the person, not you.",
+      "callers": "both",
+      "readOnly": true,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "examples": [
+        {}
+      ]
+    }
+  ]
+}

@@ -2,6 +2,7 @@
 // OpenAI, the real browser.
 import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
+import { parseArgs } from "node:util";
 import { setTimeout as sleep } from "node:timers/promises";
 import { signIn } from "../agent/chatgpt/signin.ts";
 import { accessToken, signOut, status } from "../agent/chatgpt/session.ts";
@@ -9,6 +10,12 @@ import type { ChatGptDeps } from "../agent/chatgpt/openai.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexRuntime } from "../agent/codex/codex.ts";
 import type { TurnEvent } from "../agent/runtime.ts";
+import {
+  databasePath,
+  onlyPersonId,
+  openReadOnly,
+} from "../core/store/database.ts";
+import { forAgent } from "../core/tools/tools.ts";
 import { childEnvironment, rufiHome } from "../platform/config.ts";
 import { keychain } from "../platform/keychain.ts";
 
@@ -17,6 +24,7 @@ const USAGE = `Usage: pnpm rufi <command>
   status              who is signed in
   signout             sign out and revoke the sign-in
   ask "question"      ask the AI and watch the answer stream (Ctrl-C stops it)
+      [--person id]   whose record Rufi's tools read (not needed with one person)
       [--debug]       also print what Rufi ignored or refused`;
 
 async function main(args: readonly string[]): Promise<void> {
@@ -93,17 +101,18 @@ async function main(args: readonly string[]): Promise<void> {
       return;
     }
     case "ask": {
-      const debug = rest.includes("--debug");
-      const question = rest
-        .filter((arg) => arg !== "--debug")
-        .join(" ")
-        .trim();
+      const { values, positionals } = parseArgs({
+        args: rest,
+        options: { debug: { type: "boolean" }, person: { type: "string" } },
+        allowPositionals: true,
+      });
+      const question = positionals.join(" ").trim();
       if (!question) {
         console.log(USAGE);
         process.exitCode = 2;
         return;
       }
-      await ask(deps, question, debug);
+      await ask(deps, question, values);
       return;
     }
     default:
@@ -116,20 +125,24 @@ async function main(args: readonly string[]): Promise<void> {
 async function ask(
   deps: ChatGptDeps,
   question: string,
-  debug: boolean,
+  options: { debug?: boolean; person?: string },
 ): Promise<void> {
   const { version } = createRequire(import.meta.url)("../../package.json") as {
     version: string;
   };
+  const log = (line: string) => {
+    if (options.debug) console.error(`[debug] ${line}`);
+  };
+  const store = openReadOnly(databasePath(deps.home));
+  const personId = options.person ?? (store ? onlyPersonId(store) : undefined);
   const runtime = codexRuntime({
     home: deps.home,
     command: { file: await codexBinary(), args: [] },
     env: childEnvironment(),
     token: (validForMs) => accessToken(deps, validForMs),
     version,
-    log: (line) => {
-      if (debug) console.error(`[debug] ${line}`);
-    },
+    tools: forAgent(() => ({ store, personId }), log),
+    log,
   });
   const onInterrupt = () => {
     process.stderr.write("\nStopping…\n");
@@ -147,6 +160,7 @@ async function ask(
   } finally {
     process.off("SIGINT", onInterrupt);
     await runtime.close();
+    store?.close();
   }
 }
 
@@ -160,7 +174,9 @@ function show(event: TurnEvent): void {
   const line =
     event.type === "activity"
       ? `· ${event.text}`
-      : `· the AI did something Rufi can't display yet (${event.what})`;
+      : event.type === "question"
+        ? `\n? ${event.title}${event.options.length > 0 ? `\n  ${event.options.join(" / ")}` : ""}`
+        : `· the AI did something Rufi can't display yet (${event.what})`;
   process.stdout.write(`${midLine ? "\n" : ""}${line}\n`);
   midLine = false;
 }

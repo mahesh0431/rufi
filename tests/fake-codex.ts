@@ -31,6 +31,15 @@ export interface Scenario {
   stale?: boolean;
   /** The turn's own events come before the reply to turn/start. */
   early?: boolean;
+  /** What the provider supports, over what Codex reports by default. */
+  capabilities?: { namespaceTools?: boolean };
+  /** A last message that arrives only completed, never streamed. */
+  unstreamed?: {
+    text: string;
+    questions?: { title: string; options: string[] | null }[];
+  };
+  /** Tool calls the model makes during a turn, before answering. */
+  calls?: { namespace: string | null; tool: string; arguments: unknown }[];
 }
 
 const scenario = JSON.parse(process.env["FAKE_CODEX"] ?? "{}") as Scenario;
@@ -94,6 +103,28 @@ async function runTurn(threadId: string, turnId: string) {
     method: "turn/started",
     params: { threadId, turn: turnObject(turnId, "inProgress") },
   });
+  for (const [i, call] of (scenario.calls ?? []).entries()) {
+    // Like Codex: the item starts, then Rufi is asked to run it.
+    const item = {
+      id: `call-${String(i)}`,
+      type: "dynamicToolCall",
+      namespace: call.namespace,
+      tool: call.tool,
+      arguments: call.arguments,
+      status: "inProgress",
+      contentItems: null,
+      success: null,
+      durationMs: null,
+    };
+    send({ method: "item/started", params: { threadId, turnId, item } });
+    const reply = await askRufi("item/tool/call", {
+      threadId,
+      turnId,
+      callId: item.id,
+      ...call,
+    });
+    record({ answered: "item/tool/call", reply });
+  }
   for (const request of scenario.ask ?? []) {
     record({
       answered: request.method,
@@ -156,6 +187,14 @@ async function runTurn(threadId: string, turnId: string) {
     params: {
       threadId,
       turnId,
+      item: item("agentMessage", { text: "Hello", questions: null }),
+    },
+  });
+  send({
+    method: "item/completed",
+    params: {
+      threadId,
+      turnId,
       item: item("commandExecution", { command: "ls" }),
     },
   });
@@ -163,6 +202,22 @@ async function runTurn(threadId: string, turnId: string) {
     method: "item/completed",
     params: { threadId, turnId, item: item("teleport", {}) },
   });
+  if (scenario.unstreamed) {
+    send({
+      method: "item/completed",
+      params: {
+        threadId,
+        turnId,
+        item: {
+          id: "item-last",
+          type: "agentMessage",
+          phase: "final_answer",
+          questions: null,
+          ...scenario.unstreamed,
+        },
+      },
+    });
+  }
   send({
     method: "turn/completed",
     params: { threadId, turn: turnObject(turnId, "completed") },
@@ -196,6 +251,13 @@ function handle(method: string, params: Record<string, unknown>): unknown {
         ? { data: all.slice(half), nextCursor: null }
         : { data: all.slice(0, half), nextCursor: "page-2" };
     }
+    case "modelProvider/capabilities/read":
+      return {
+        namespaceTools: true,
+        imageGeneration: false,
+        webSearch: false,
+        ...scenario.capabilities,
+      };
     case "config/read":
       return {
         config: {
