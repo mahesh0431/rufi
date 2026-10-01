@@ -66,3 +66,4 @@ CREATE INDEX documents_by_file ON documents (file_id);
 CREATE INDEX reports_by_document ON reports (person_id, document_id);
 CREATE INDEX results_by_report ON results (person_id, report_id);
 CREATE INDEX results_by_test ON results (person_id, test_name, unit, measured_at);
+CREATE INDEX results_by_replaced ON results (person_id, replaces_id); -- current results leave out replaced ones

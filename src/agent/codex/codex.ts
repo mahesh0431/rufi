@@ -78,6 +78,8 @@ interface Running {
   stopping: Promise<void> | undefined;
   /** Runs Rufi's tools for this turn. */
   callTool: ReturnType<AgentTools["forTurn"]> | undefined;
+  /** Settles when Codex has answered turn/start, either way. */
+  acknowledged: PromiseWithResolvers<void>;
 }
 
 export function codexRuntime(deps: CodexDeps): AgentRuntime {
@@ -224,7 +226,18 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       success: ok,
     });
     const running = current;
-    if (!running?.callTool || call.turnId !== running.turnId) {
+    // A call can come before Codex's answer to turn/start, like any event.
+    if (running?.turnId === undefined) {
+      await Promise.race([
+        running?.acknowledged.promise,
+        sleep(deadlines.requestMs, undefined, { ref: false }),
+      ]);
+    }
+    if (
+      !running?.callTool ||
+      call.threadId !== running.threadId ||
+      call.turnId !== running.turnId
+    ) {
       return reply(
         false,
         JSON.stringify({ ok: false, error: "No turn is running." }),
@@ -442,6 +455,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         ended: Promise.withResolvers(),
         stopping: undefined,
         callTool: deps.tools?.forTurn(),
+        acknowledged: Promise.withResolvers(),
       };
       current = running;
       const tracking = setInterval(() => void track(), TRACK_EVERY_MS);
@@ -466,11 +480,13 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           .then(
             (started) => {
               running.turnId = started.turn.id;
+              running.acknowledged.resolve();
               for (const [method, early] of running.early.splice(0)) {
                 handle(running, method, early);
               }
             },
             async (error: unknown) => {
+              running.acknowledged.resolve();
               running.result ??= {
                 status: "failed",
                 reason: `Codex didn't start the turn: ${(error as Error).message}`,

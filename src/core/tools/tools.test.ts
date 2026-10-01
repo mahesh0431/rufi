@@ -173,6 +173,18 @@ describe("get_overview", () => {
     ]);
   });
 
+  it("finds replaced results through an index, not a scan", () => {
+    const store = makeDatabase(family);
+    const plan = store.db
+      .prepare(
+        "EXPLAIN QUERY PLAN SELECT 1 FROM results r WHERE r.person_id = ? AND NOT EXISTS (SELECT 1 FROM results n WHERE n.person_id = r.person_id AND n.replaces_id = r.id)",
+      )
+      .all("asha") as { detail: string }[];
+    expect(plan.map((row) => row.detail).join("\n")).toContain(
+      "USING COVERING INDEX results_by_replaced",
+    );
+  });
+
   it("asks for a person to be chosen when there is more than one", async () => {
     const store = makeDatabase(family);
     const { ok, body } = await call({ store, personId: undefined });

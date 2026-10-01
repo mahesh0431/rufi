@@ -632,6 +632,21 @@ describe("Rufi's tools", () => {
     expect(result).toEqual({ status: "completed" });
   });
 
+  it("runs a call that comes before Codex acknowledges the turn", async () => {
+    const tools = fakeTools(() => ({ ok: true, text: '{"ok":true}' }));
+    const { result } = await collect(
+      start({ calls: [overview], early: true }, tools),
+    );
+    expect(tools.calls).toEqual([["get_overview", {}]]);
+    expect(await replies()).toEqual([
+      {
+        contentItems: [{ type: "inputText", text: '{"ok":true}' }],
+        success: true,
+      },
+    ]);
+    expect(result).toEqual({ status: "completed" });
+  });
+
   it("passes a call outside Rufi's namespace on as an unknown tool, never an RPC error", async () => {
     const tools = fakeTools((name) => ({
       ok: false,
