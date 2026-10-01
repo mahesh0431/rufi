@@ -89,17 +89,34 @@ describe("access token", () => {
     expect(openai.token).toHaveLength(1);
   });
 
-  it("honours earliest_refresh_at", async () => {
+  it("returns a token valid for the time asked, renewing when it has less", async () => {
+    store({ expiresAt: Date.now() + 11 * 60_000 });
+    const current = stored().accessToken;
+    await expect(accessToken(deps, 10 * 60_000)).resolves.toBe(current);
+    expect(openai.token).toHaveLength(0);
+    store({ expiresAt: Date.now() + 9 * 60_000 });
+    await expect(accessToken(deps, 10 * 60_000)).resolves.not.toBe(current);
+    expect(openai.token).toHaveLength(1);
+  });
+
+  it("honours earliest_refresh_at: no renewal, and no token too short for the time asked", async () => {
     store({
-      expiresAt: Date.now() + 30_000,
+      expiresAt: Date.now() + 5 * 60_000,
       earliestRefreshAt: Date.now() + 60_000,
     });
     await expect(accessToken(deps)).resolves.toBe(stored().accessToken);
-    store({ expiresAt: Date.now() - 1_000 });
-    await expect(accessToken(deps)).rejects.toThrow(
-      "can't renew the sign-in yet",
+    await expect(accessToken(deps, 10 * 60_000)).rejects.toThrow(
+      "can't renew the sign-in until",
     );
     expect(openai.token).toHaveLength(0);
+  });
+
+  it("refuses a renewal that is shorter than the time asked", async () => {
+    nearExpiry();
+    openai.expiresIn = 300;
+    await expect(accessToken(deps, 10 * 60_000)).rejects.toThrow(
+      "too short a time",
+    );
   });
 
   it.each([

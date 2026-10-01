@@ -1,5 +1,6 @@
 {
   "name": "rufi",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.8.1",
@@ -13,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "rufi": "node src/cli/main.ts",
+    "codex:types": "node scripts/codex-types.ts",
     "check": "prettier --check . && eslint . && tsc --noEmit && vitest run && knip"
   },
   "devDependencies": {
@@ -30,8 +32,14 @@
   },
   "dependencies": {
     "@napi-rs/keyring": "2.1.0",
+    "@openai/codex": "0.159.2",
     "jose": "6.2.12",
     "proper-lockfile": "4.1.2",
     "zod": "4.6.5"
+  },
+  "knip": {
+    "ignore": [
+      "src/agent/codex/protocol/**"
+    ]
   }
 }

@@ -64,6 +64,7 @@ export async function fakeOpenAI() {
     subject: "user-amma",
     email: "amma@example.com",
     scope: FULL_SCOPE,
+    expiresIn: 3600,
     tamper: {} as Tamper,
     /** Queued replies for /token, used before normal behaviour. */
     tokenReplies: [] as { status: number; body?: unknown }[],
@@ -113,7 +114,7 @@ export async function fakeOpenAI() {
       token_type: "Bearer",
       access_token: `at-${randomBytes(8).toString("hex")}`,
       refresh_token: refresh,
-      expires_in: 3600,
+      expires_in: fake.expiresIn,
       scope: fake.scope,
       ...(id ? { id_token: id } : {}),
     };
