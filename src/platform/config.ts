@@ -13,3 +13,28 @@ export function rufiHome(env: NodeJS.ProcessEnv = process.env): string {
   }
   return isAbsolute(home) ? home : resolve(home);
 }
+
+/** Variables a child program (Codex) may inherit; secrets like API keys never do. */
+const CHILD_VARIABLES = [
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "TMPDIR",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TERM",
+];
+
+export function childEnvironment(
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const picked: Record<string, string> = {};
+  for (const name of CHILD_VARIABLES) {
+    const value = env[name];
+    if (value !== undefined) picked[name] = value;
+  }
+  return picked;
+}

@@ -1,17 +1,23 @@
 // Rufi's terminal commands. This is the composition root: real Keychain, real
 // OpenAI, the real browser.
 import { execFile } from "node:child_process";
+import { createRequire } from "node:module";
 import { setTimeout as sleep } from "node:timers/promises";
 import { signIn } from "../agent/chatgpt/signin.ts";
-import { signOut, status } from "../agent/chatgpt/session.ts";
+import { accessToken, signOut, status } from "../agent/chatgpt/session.ts";
 import type { ChatGptDeps } from "../agent/chatgpt/openai.ts";
-import { rufiHome } from "../platform/config.ts";
+import { codexBinary } from "../agent/codex/binary.ts";
+import { codexRuntime } from "../agent/codex/codex.ts";
+import type { TurnEvent } from "../agent/runtime.ts";
+import { childEnvironment, rufiHome } from "../platform/config.ts";
 import { keychain } from "../platform/keychain.ts";
 
 const USAGE = `Usage: pnpm rufi <command>
   signin [--no-open]  sign in with ChatGPT
   status              who is signed in
-  signout             sign out and revoke the sign-in`;
+  signout             sign out and revoke the sign-in
+  ask "question"      ask the AI and watch the answer stream (Ctrl-C stops it)
+      [--debug]       also print what Rufi ignored or refused`;
 
 async function main(args: readonly string[]): Promise<void> {
   const [command, ...rest] = args;
@@ -86,10 +92,77 @@ async function main(args: readonly string[]): Promise<void> {
       }
       return;
     }
+    case "ask": {
+      const debug = rest.includes("--debug");
+      const question = rest
+        .filter((arg) => arg !== "--debug")
+        .join(" ")
+        .trim();
+      if (!question) {
+        console.log(USAGE);
+        process.exitCode = 2;
+        return;
+      }
+      await ask(deps, question, debug);
+      return;
+    }
     default:
       console.log(USAGE);
       process.exitCode = 2;
   }
+}
+
+/** Asks one question and streams the answer; the first Ctrl-C stops the turn. */
+async function ask(
+  deps: ChatGptDeps,
+  question: string,
+  debug: boolean,
+): Promise<void> {
+  const { version } = createRequire(import.meta.url)("../../package.json") as {
+    version: string;
+  };
+  const runtime = codexRuntime({
+    home: deps.home,
+    command: { file: await codexBinary(), args: [] },
+    env: childEnvironment(),
+    token: (validForMs) => accessToken(deps, validForMs),
+    version,
+    log: (line) => {
+      if (debug) console.error(`[debug] ${line}`);
+    },
+  });
+  const onInterrupt = () => {
+    process.stderr.write("\nStopping…\n");
+    void runtime.stop();
+  };
+  process.once("SIGINT", onInterrupt);
+  try {
+    const conversation = await runtime.open();
+    const result = await runtime.turn(conversation, question, show);
+    process.stdout.write("\n");
+    if (result.status !== "completed") {
+      console.error(result.reason ?? result.status);
+      process.exitCode = 1;
+    }
+  } finally {
+    process.off("SIGINT", onInterrupt);
+    await runtime.close();
+  }
+}
+
+let midLine = false;
+function show(event: TurnEvent): void {
+  if (event.type === "text") {
+    process.stdout.write(event.delta);
+    midLine = !event.delta.endsWith("\n");
+    return;
+  }
+  const line =
+    event.type === "activity"
+      ? `· ${event.text}`
+      : `· the AI did something Rufi can't display yet (${event.what})`;
+  process.stdout.write(`${midLine ? "\n" : ""}${line}\n`);
+  midLine = false;
 }
 
 /** Opens the default browser; if that fails, the link is already on screen. */

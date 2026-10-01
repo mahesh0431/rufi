@@ -27,7 +27,6 @@ const TERMINAL = new Set([
   "refresh_token_invalidated",
   "refresh_token_reused",
 ]);
-const RENEW_BEFORE_MS = 60_000;
 
 export interface Status {
   signedIn: boolean;
@@ -49,14 +48,21 @@ export async function status(deps: ChatGptDeps): Promise<Status> {
 }
 
 /**
- * A current access token for ChatGPT plan use, renewed when it has under a
- * minute left. One renewal at a time, within this process and across processes.
+ * An access token for ChatGPT plan use that stays valid for at least
+ * `validForMs`, renewed when it has less. One renewal at a time, within this
+ * process and across processes.
  */
-export function accessToken(deps: ChatGptDeps): Promise<string> {
-  return withLock(deps.home, 5_000, () => accessTokenLocked(deps));
+export function accessToken(
+  deps: ChatGptDeps,
+  validForMs = 60_000,
+): Promise<string> {
+  return withLock(deps.home, 5_000, () => accessTokenLocked(deps, validForMs));
 }
 
-async function accessTokenLocked(deps: ChatGptDeps): Promise<string> {
+async function accessTokenLocked(
+  deps: ChatGptDeps,
+  validForMs: number,
+): Promise<string> {
   const registration = await readRegistration(deps.home);
   const credentials =
     registration && (await readCredentials(deps, registration));
@@ -68,16 +74,15 @@ async function accessTokenLocked(deps: ChatGptDeps): Promise<string> {
   }
   requirePlanUse(credentials);
   const now = Date.now();
-  if (credentials.expiresAt - now > RENEW_BEFORE_MS)
-    return credentials.accessToken;
+  if (credentials.expiresAt - now >= validForMs) return credentials.accessToken;
   if (
     credentials.earliestRefreshAt !== undefined &&
     credentials.earliestRefreshAt > now
   ) {
-    if (credentials.expiresAt > now) return credentials.accessToken;
+    const at = new Date(credentials.earliestRefreshAt).toLocaleTimeString();
     throw new ChatGptError(
       "temporary",
-      "ChatGPT can't renew the sign-in yet. Try again shortly.",
+      `ChatGPT can't renew the sign-in until ${at}. Try again then.`,
     );
   }
 
@@ -147,6 +152,12 @@ async function accessTokenLocked(deps: ChatGptDeps): Promise<string> {
   };
   await saveCredentials(deps, registration.hostId, renewed);
   requirePlanUse(renewed);
+  if (renewed.expiresAt - Date.now() < validForMs) {
+    throw new ChatGptError(
+      "temporary",
+      "ChatGPT renewed the sign-in for too short a time. Try again shortly.",
+    );
+  }
   return renewed.accessToken;
 }
 

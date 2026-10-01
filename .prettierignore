@@ -1,2 +1,4 @@
 pnpm-lock.yaml
 mise.lock
+# Generated from the pinned Codex binary (pnpm codex:types); compared in tests.
+src/agent/codex/protocol/
