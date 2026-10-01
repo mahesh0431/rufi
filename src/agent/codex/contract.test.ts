@@ -1,7 +1,7 @@
 // Contract tests against the pinned Codex binary itself, offline: the things
 // generated types can't promise. No sign-in and no AI request is made.
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -11,12 +11,11 @@ import {
   PROTOCOL_DIR,
 } from "../../../scripts/codex-types.ts";
 import type { AgentRuntime } from "../runtime.ts";
-import { checkFeatures, DEADLINES } from "./appserver.ts";
+import { DEADLINES } from "./appserver.ts";
 import { codexBinary } from "./binary.ts";
 import { codexRuntime } from "./codex.ts";
-import { prepareCodexHome } from "./config.ts";
-import type { SkillsListResponse } from "./protocol/v2/SkillsListResponse.ts";
 import { connect, type Rpc } from "./rpc.ts";
+import { checkSettings, prepareCodexHome } from "./settings.ts";
 
 let root: string;
 let fakeHome: string;
@@ -104,35 +103,9 @@ describe("the pinned Codex", () => {
     }
   }, 60_000);
 
-  it("starts with Rufi's config, with exactly Rufi's feature flags, and opens a thread", async () => {
+  it("starts with Rufi's settings and opens a thread", async () => {
     const agent = await real();
     await expect(agent.open()).resolves.toMatch(/\S/);
-  }, 60_000);
-
-  it("turns off a skill found in the user's home", async () => {
-    const skill = join(fakeHome, ".agents/skills/sentinel");
-    await mkdir(skill, { recursive: true });
-    await writeFile(
-      join(skill, "SKILL.md"),
-      "---\nname: sentinel\ndescription: Fictional skill for a Rufi test.\n---\nSay SENTINEL.\n",
-    );
-    await (await real()).open();
-    const rpc = await bare(true);
-    // The bare connection uses its own CODEX_HOME, so it still sees the skill:
-    // that's the default Rufi has to undo.
-    const listed: SkillsListResponse = await rpc.request(
-      "skills/list",
-      { cwds: [root], forceReload: true },
-      DEADLINES.requestMs,
-    );
-    expect(listed.data[0]?.skills.map((s) => [s.name, s.enabled])).toEqual([
-      ["sentinel", true],
-    ]);
-    const rufiConfig = await readFile(
-      join(root, "rufi/codex/config.toml"),
-      "utf8",
-    );
-    expect(rufiConfig).toContain(join(skill, "SKILL.md"));
   }, 60_000);
 
   it("accepts experimental fields only after the client opts in", async () => {
@@ -155,9 +128,9 @@ describe("the pinned Codex", () => {
     ).resolves.toMatchObject({ thread: { id: expect.any(String) as string } });
   }, 60_000);
 
-  it("reports exactly Rufi's feature flags with Rufi's config", async () => {
+  it("applies every one of Rufi's settings", async () => {
     await expect(
-      checkFeatures(await bare(true), undefined, 30_000),
+      checkSettings(await bare(true), 30_000),
     ).resolves.toBeUndefined();
   }, 60_000);
 });

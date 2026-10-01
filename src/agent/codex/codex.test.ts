@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Scenario } from "../../../tests/fake-codex.ts";
 import { childEnvironment } from "../../platform/config.ts";
 import type { AgentRuntime, TurnEvent } from "../runtime.ts";
-import { featureProblems } from "./appserver.ts";
 import { checkExecutable } from "./binary.ts";
 import { codexRuntime, describe as describeItem, resultOf } from "./codex.ts";
 import { isRunning } from "./processes.ts";
@@ -116,9 +115,9 @@ describe("starting Codex", () => {
       'wire_api = "responses"',
       "requires_openai_auth = false",
       "supports_websockets = false",
-      "include_instructions = false",
-      "plugins = false",
-      "shell_tool = true",
+      'web_search = "live"',
+      'model_reasoning_effort = "low"',
+      "daemon_auto_start = false",
     ]) {
       expect(config).toContain(line);
     }
@@ -151,43 +150,19 @@ describe("starting Codex", () => {
     expect(asked).toEqual([3_000 + 5 * 60_000]);
   });
 
-  it("refuses Codex when a feature flag differs from Rufi's list, and stops it", async () => {
-    await expect(start({ features: { plugins: true } }).open()).rejects.toThrow(
-      "plugins is on",
+  it("refuses Codex when it didn't take Rufi's settings, and stops it", async () => {
+    await expect(
+      start({ features: { daemon_auto_start: true } }).open(),
+    ).rejects.toThrow(
+      "Codex didn't take Rufi's settings: daemon_auto_start is on.",
     );
     expect((await pids()).filter(isRunning)).toEqual([]);
     await expect(
-      start({ features: { warp_drive: false } }).open(),
-    ).rejects.toThrow("warp_drive is a feature Rufi's list doesn't name");
+      start({ config: { web_search: "cached" } }).open(),
+    ).rejects.toThrow("web_search is cached");
   });
 
-  it("checks each thread too, because a working folder can turn features on", async () => {
-    await expect(
-      start({ threadFeatures: { hooks: true } }).open(),
-    ).rejects.toThrow("hooks is on");
-  });
-
-  it("turns off skills Codex discovers, and refuses one it can't turn off", async () => {
-    await start({ skills: [{ path: "/s/one/SKILL.md", name: "one" }] }).open();
-    expect(await sent("skills/config/write")).toEqual([
-      { path: "/s/one/SKILL.md", enabled: false },
-    ]);
-    await runtime?.close();
-    await expect(
-      start({
-        skills: [{ path: "/s/two/SKILL.md", name: "two", sticky: true }],
-      }).open(),
-    ).rejects.toThrow("wouldn't turn off the skill two");
-  });
-
-  it("refuses MCP servers and hooks", async () => {
-    await expect(start({ mcpServers: ["drive"] }).open()).rejects.toThrow(
-      "MCP servers set up (drive)",
-    );
-    await expect(start({ hooks: 1 }).open()).rejects.toThrow("hooks set up");
-  });
-
-  it.each(["initialize", "experimentalFeature/list", "thread/start"])(
+  it.each(["initialize", "config/read", "thread/start"])(
     "gives up when Codex doesn't answer %s, and ends it",
     async (method) => {
       await expect(start({ hang: [method] }).open()).rejects.toThrow(
@@ -360,16 +335,6 @@ describe("token renewal", () => {
 });
 
 describe("protocol details", () => {
-  it("ignores removed features and flags differences", () => {
-    expect(
-      featureProblems([
-        { name: "sqlite", stage: "removed", enabled: true },
-        { name: "shell_tool", stage: "stable", enabled: true },
-        { name: "apps", stage: "stable", enabled: true },
-      ]),
-    ).toEqual(["apps is on"]);
-  });
-
   it("counts only `completed` as success", () => {
     expect(resultOf({ status: "completed", error: null })).toEqual({
       status: "completed",

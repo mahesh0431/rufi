@@ -3,14 +3,12 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import type { AgentRuntime, TurnEvent, TurnResult } from "../runtime.ts";
 import {
-  checkThread,
   DEADLINES,
   startAppServer,
   type AppServer,
   type CodexCommand,
   type Deadlines,
 } from "./appserver.ts";
-import { prepareCodexHome } from "./config.ts";
 import type { AgentMessageDeltaNotification } from "./protocol/v2/AgentMessageDeltaNotification.ts";
 import type { ItemCompletedNotification } from "./protocol/v2/ItemCompletedNotification.ts";
 import type { ItemStartedNotification } from "./protocol/v2/ItemStartedNotification.ts";
@@ -24,6 +22,7 @@ import type { TurnStartedNotification } from "./protocol/v2/TurnStartedNotificat
 import type { TurnStartParams } from "./protocol/v2/TurnStartParams.ts";
 import type { TurnStartResponse } from "./protocol/v2/TurnStartResponse.ts";
 import { RpcError } from "./rpc.ts";
+import { prepareCodexHome } from "./settings.ts";
 
 export interface CodexDeps {
   /** Rufi's data folder; Codex gets `codex/` and `workspace/` inside it. */
@@ -109,7 +108,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     await old?.stop();
   }
 
-  /** Starts a thread, or resumes one, and checks it; on failure Codex is ended. */
+  /** Starts a thread, or resumes one; on failure Codex is ended. */
   async function load(app: AppServer, threadId?: string): Promise<string> {
     try {
       return await loadThread(app, threadId);
@@ -139,10 +138,8 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           settings,
           deadlines.requestMs,
         );
-    const id = response.thread.id;
-    await checkThread(app.rpc, id, workspace, deadlines.requestMs);
-    loaded.add(id);
-    return id;
+    loaded.add(response.thread.id);
+    return response.thread.id;
   }
 
   const tokenForTurn = () => deps.token(deadlines.turnMs + TOKEN_MARGIN_MS);

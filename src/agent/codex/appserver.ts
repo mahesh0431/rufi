@@ -2,16 +2,10 @@
 // plan use, and checked before Rufi uses it.
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
-import { FEATURES } from "./features.ts";
 import { killTree } from "./processes.ts";
 import type { InitializeParams } from "./protocol/InitializeParams.ts";
-import type { ExperimentalFeature } from "./protocol/v2/ExperimentalFeature.ts";
-import type { ExperimentalFeatureListResponse } from "./protocol/v2/ExperimentalFeatureListResponse.ts";
-import type { HooksListResponse } from "./protocol/v2/HooksListResponse.ts";
-import type { ListMcpServerStatusResponse } from "./protocol/v2/ListMcpServerStatusResponse.ts";
-import type { SkillsConfigWriteResponse } from "./protocol/v2/SkillsConfigWriteResponse.ts";
-import type { SkillsListResponse } from "./protocol/v2/SkillsListResponse.ts";
 import { connect, type Rpc, type RpcHandlers } from "./rpc.ts";
+import { checkSettings } from "./settings.ts";
 
 /** How to run Codex: the pinned binary in the app, a scripted fake in tests. */
 export interface CodexCommand {
@@ -120,98 +114,10 @@ export async function startAppServer(
     };
     await rpc.request("initialize", params, options.deadlines.requestMs);
     rpc.notify("initialized");
-    await checkFeatures(rpc, undefined, options.deadlines.requestMs);
+    await checkSettings(rpc, options.deadlines.requestMs);
   } catch (error) {
     await stop();
     throw error;
   }
   return { rpc, token: options.token, running: () => running, stop };
-}
-
-/** Refuses Codex unless its feature flags are exactly Rufi's list. */
-export async function checkFeatures(
-  rpc: Rpc,
-  threadId: string | undefined,
-  timeoutMs: number,
-): Promise<void> {
-  const features: ExperimentalFeature[] = [];
-  let cursor: string | null = null;
-  do {
-    const page: ExperimentalFeatureListResponse = await rpc.request(
-      "experimentalFeature/list",
-      { cursor, threadId },
-      timeoutMs,
-    );
-    features.push(...page.data);
-    cursor = page.nextCursor;
-  } while (cursor);
-  const problems = featureProblems(features);
-  if (problems.length > 0) {
-    throw new Error(
-      `Codex isn't set up the way Rufi needs: ${problems.join("; ")}.`,
-    );
-  }
-}
-
-export function featureProblems(
-  features: readonly Pick<ExperimentalFeature, "name" | "stage" | "enabled">[],
-): string[] {
-  const problems: string[] = [];
-  for (const { name, stage, enabled } of features) {
-    if (stage === "removed") continue; // no longer does anything
-    const wanted = FEATURES[name];
-    if (wanted === undefined) {
-      problems.push(`${name} is a feature Rufi's list doesn't name`);
-    } else if (enabled !== wanted) {
-      problems.push(`${name} is ${enabled ? "on" : "off"}`);
-    }
-  }
-  return problems;
-}
-
-/**
- * Checks a thread before use: its feature flags, no skills offered, and no MCP
- * servers or hooks, which a project config in the working folder could add.
- */
-export async function checkThread(
-  rpc: Rpc,
-  threadId: string,
-  cwd: string,
-  timeoutMs: number,
-): Promise<void> {
-  await checkFeatures(rpc, threadId, timeoutMs);
-  const skills: SkillsListResponse = await rpc.request(
-    "skills/list",
-    { cwds: [cwd], forceReload: true },
-    timeoutMs,
-  );
-  for (const skill of skills.data.flatMap((entry) => entry.skills)) {
-    if (!skill.enabled) continue;
-    const written: SkillsConfigWriteResponse = await rpc.request(
-      "skills/config/write",
-      { path: skill.path, enabled: false },
-      timeoutMs,
-    );
-    if (written.effectiveEnabled) {
-      throw new Error(`Codex wouldn't turn off the skill ${skill.name}.`);
-    }
-  }
-  const mcp: ListMcpServerStatusResponse = await rpc.request(
-    "mcpServerStatus/list",
-    {},
-    timeoutMs,
-  );
-  if (mcp.data.length > 0) {
-    throw new Error(
-      `Codex has MCP servers set up (${mcp.data.map((server) => server.name).join(", ")}); Rufi doesn't allow them.`,
-    );
-  }
-  const hooks: HooksListResponse = await rpc.request(
-    "hooks/list",
-    { cwds: [cwd] },
-    timeoutMs,
-  );
-  if (hooks.data.some((entry) => entry.hooks.length > 0)) {
-    throw new Error("Codex has hooks set up; Rufi doesn't allow them.");
-  }
 }
