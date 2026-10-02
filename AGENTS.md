@@ -14,7 +14,12 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 - Every external call has a deadline. Errors keep their `cause`. No empty `catch`, and a comment is not handling.
 - Logs hold fixed events and checked fields only (`platform/logs.ts`): a new event or field is added there. Never prompts, replies, health text, tokens or error messages.
 - Folders in `apps/server/src`: `platform` (Mac things) uses no other folder; `core` (record, tools) and `agent` (sign-in, Codex) use only `platform`; `cli` joins them. Lint checks these borders.
+
+## Docs
+
 - A change to behaviour, commands or settings updates its docs in the same pull request.
+- Use the words in `GLOSSARY.md` everywhere: screens, docs, the AI's instructions and code. A new concept, or a changed meaning, updates the glossary in the same pull request.
+- Write an ADR in `docs/adr/` only when a decision is hard to reverse, surprising without its reason, and a real choice between options; a paragraph is enough. Update the existing ADR rather than adding a near-copy.
 
 ## Data model
 
