@@ -11,7 +11,12 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 ## Code
 
 - Every external call has a deadline. Errors keep their `cause`. No empty `catch`.
+
+## Docs
+
 - A change to behaviour, commands or settings updates its docs in the same pull request.
+- Use the words in `GLOSSARY.md` everywhere: screens, docs, the AI's instructions and code. A new concept, or a changed meaning, updates the glossary in the same pull request.
+- Write an ADR in `docs/adr/` only when a decision is hard to reverse, surprising without its reason, and a real choice between options; a paragraph is enough. Update the existing ADR rather than adding a near-copy.
 
 ## Data model
 
