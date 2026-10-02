@@ -27,19 +27,19 @@ A lab or clinic report read from a document: who issued it and when the sample w
 _Avoid_: lab sheet, test report
 
 **Result**:
-One test value as printed: test name, value, unit, reference range and the lab's own flag.
-_Avoid_: reading, measurement, lab value
+One lab test or measurement, kept exactly as reported or entered: name, value, unit, reference range, the lab's own flag, method or context, and when it was measured at the precision known. A measurement such as weight is a result typed in without a report.
+_Avoid_: reading, lab value
 
 **As printed**:
 Exactly what the source shows, kept unchanged. A printed "High" is the lab's word, never Rufi's judgement.
 _Avoid_: normalised, cleaned
 
 **Amended result**:
-A result the lab issued again with a new value; it replaces the earlier one, which is kept.
+A result the lab issued again, replacing an earlier version; its value or any other reported detail may differ, and the earlier version is kept.
 _Avoid_: corrected, updated, overwritten
 
 **Source**:
-Where an item in the record came from: a document, a message in a conversation, or the keeper typing it in.
+Where something came from, such as a document, a message in a conversation, the keeper typing it in, a record item or a research entry.
 _Avoid_: origin, provenance
 
 ## Changes
@@ -71,7 +71,10 @@ _Avoid_: inbox, notifications, tasks
 
 **Conversation**:
 An exchange between the keeper and Rufi's AI about one person, kept by Rufi.
-_Avoid_: chat, thread, session
+_Avoid_: thread, session
+
+**Chat**:
+The panel and box where the keeper talks with Rufi's AI; what is said there is a conversation.
 
 **Transcript**:
 Rufi's own stored copy of a conversation: messages, what the AI read and did, cards and receipts.
@@ -91,9 +94,13 @@ _Avoid_: handoff, summary, report
 A saved write-up of something the AI looked into for a person, with its sources.
 _Avoid_: note, article
 
+**Emergency button**:
+Always on screen; shows the local emergency number and what to do now, and works without the AI.
+_Avoid_: SOS, panic button, alert
+
 **Emergency sheet**:
-A person's essentials and the local emergency number on one screen, which works without the AI.
-_Avoid_: SOS, alert
+A person's essentials (medicines, allergies, conditions, blood group, contacts) on one page to hand to someone, also without the AI.
+_Avoid_: medical ID card
 
 ## Relationships
 
