@@ -1,25 +1,25 @@
 # Rufi
 
-A family health record on your Mac: one keeper keeps the records of a few people, and an AI helps by reading the record and proposing changes the keeper approves. The same words are used on screen, in the docs, in the AI's instructions and in the code.
+A family health record on your Mac: you keep the records of a few people, and an AI helps by reading the record and proposing changes you approve. The same words are used on screen, in the docs, in the AI's instructions and in the code.
 
 ## People
 
-**Keeper**:
-The one person who uses Rufi and keeps the records, for themselves and for others.
-_Avoid_: user, admin, caregiver
+**You (the user)**:
+The one person using Rufi on this Mac, keeping records for themselves and others. Screens and help say "you" or use your name; the AI's instructions and code say "the user".
+_Avoid_: keeper, owner, admin, caregiver
 
 **Person**:
-Someone whose health record Rufi keeps; the keeper is often one of them.
+Someone whose health record Rufi keeps; you are often one of them.
 _Avoid_: patient, profile, member
 
 ## The record
 
 **Record**:
-Everything Rufi holds as true about one person: what the keeper entered or accepted.
+Everything Rufi holds as true about one person: what the user entered or accepted.
 _Avoid_: chart, file, history
 
 **Document**:
-An original file the keeper added for a person, such as a lab report PDF or a photo of a prescription, kept exactly as it came.
+An original file the user added for a person, such as a lab report PDF or a photo of a prescription, kept exactly as it came.
 _Avoid_: upload, attachment
 
 **Report**:
@@ -39,13 +39,13 @@ A result the lab issued again, replacing an earlier version; its value or any ot
 _Avoid_: corrected, updated, overwritten
 
 **Source**:
-Where something came from, such as a document, a message in a conversation, the keeper typing it in, a record item or a research entry.
+Where something came from, such as a document, a message in a conversation, the user typing it in, a record item or a research entry.
 _Avoid_: origin, provenance
 
 ## Changes
 
 **Proposal**:
-A change to a person's record that the AI, or another app, wants to make. Nothing in the record changes until the keeper accepts it.
+A change to a person's record that the AI, or another app, wants to make. Nothing in the record changes until the user accepts it.
 _Avoid_: suggestion, pending change, draft
 
 **Card**:
@@ -64,17 +64,17 @@ The confirmation that a change set was saved, shown only after it was.
 _Avoid_: toast, success message
 
 **Needs you**:
-The list of what is waiting for the keeper for one person: proposals and documents to review.
+The list of what is waiting for the user for one person: proposals and documents to review.
 _Avoid_: inbox, notifications, tasks
 
 ## Conversations
 
 **Conversation**:
-An exchange between the keeper and Rufi's AI about one person, kept by Rufi.
+An exchange between the user and Rufi's AI about one person, kept by Rufi.
 _Avoid_: thread, session
 
 **Chat**:
-The panel and box where the keeper talks with Rufi's AI; what is said there is a conversation.
+The panel and box where the user talks with Rufi's AI; what is said there is a conversation.
 
 **Transcript**:
 Rufi's own stored copy of a conversation: messages, what the AI read and did, cards and receipts.
@@ -104,7 +104,7 @@ _Avoid_: medical ID card
 
 ## Relationships
 
-- A **keeper** keeps the **records** of one or more **people**.
+- **You** keep the **records** of one or more **people**.
 - A **document** can hold **reports**; a **report** has **results**. A **result** can also be typed in without a report.
 - A **proposal** belongs to one **person**; accepting it saves one **change set** and gives one **receipt**.
 - A **conversation** is about one **person** and can produce **proposals**, **follow-ups** and **research entries**.
