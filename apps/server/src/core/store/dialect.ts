@@ -42,10 +42,12 @@ class NodeSqliteDriver implements Driver {
 
   acquireConnection = async (): Promise<DatabaseConnection> => {
     const previous = this.#queue;
-    const { promise, resolve } = Promise.withResolvers<void>();
+    const { promise, resolve } = Promise.withResolvers<undefined>();
     this.#queue = previous.then(() => promise);
     await previous;
-    this.#release = resolve;
+    this.#release = () => {
+      resolve(undefined);
+    };
     return this.#connection;
   };
 
@@ -83,6 +85,8 @@ class NodeSqliteConnection implements DatabaseConnection {
     if (statement.columns().length > 0) {
       return Promise.resolve({ rows: statement.all(...parameters) as R[] });
     }
+    // As BigInts, so a large row id or count isn't rounded on the way.
+    statement.setReadBigInts(true);
     const { changes, lastInsertRowid } = statement.run(...parameters);
     return Promise.resolve({
       rows: [],

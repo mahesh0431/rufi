@@ -25,16 +25,40 @@ const FILE_BYTES = 10 * 1024 * 1024;
 const FILES = 5;
 
 /**
- * A text value is kept only when it looks like an ID, a name or a code: at
- * most 64 characters (a UUID is 36), without spaces. Any other text (words,
- * tokens, which are longer) is replaced, so a mistake at a
- * call site can't put health text or a secret in the file.
+ * What a log line may hold. An event is a code-shaped name; anything else
+ * becomes "unnamed". Only the fields named here are kept, and a text value
+ * only when it looks like an ID, a name or a code: at most 64 characters (a
+ * UUID is 36), without spaces. So neither a mistake at a call site nor a
+ * free-text Effect message can put health text or a secret in the file.
  */
+const EVENT = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/;
 const SAFE_TEXT = /^[\w.:/@#+-]{1,64}$/;
+const FIELDS = new Set([
+  "method",
+  "what",
+  "tool",
+  "status",
+  "code",
+  "error",
+  "errors",
+  "level",
+  "ms",
+  "turn",
+  "conversation",
+]);
+/** Timings from Effect log spans: `<label>_ms`, with a short code-word label. */
+const TIMING = /^[a-z][a-z0-9_]{0,31}_ms$/;
+
+export function safeEvent(event: unknown): string {
+  return typeof event === "string" && event.length <= 64 && EVENT.test(event)
+    ? event
+    : "unnamed";
+}
 
 export function safeFields(fields: LogFields = {}): LogFields {
   const out: Record<string, string | number | boolean> = {};
   for (const [key, value] of Object.entries(fields) as [string, unknown][]) {
+    if (!FIELDS.has(key) && !TIMING.test(key)) continue;
     if (typeof value === "number" || typeof value === "boolean") {
       out[key] = value;
     } else if (typeof value === "string") {
@@ -74,16 +98,27 @@ export function diagnostics(
 ): Diagnostics {
   const folder = join(home, "logs");
   const path = join(folder, "rufi.log");
+  let writing = true;
   const log: Log = (event, fields) => {
     const line = JSON.stringify({
       time: new Date().toISOString(),
-      event,
+      event: safeEvent(event),
       ...safeFields(fields),
     });
     echo?.(line);
-    mkdirSync(folder, { recursive: true, mode: 0o700 });
-    if (existsSync(path) && statSync(path).size >= FILE_BYTES) rotate(path);
-    appendFileSync(path, `${line}\n`, { mode: 0o600 });
+    if (!writing) return;
+    try {
+      mkdirSync(folder, { recursive: true, mode: 0o700 });
+      if (existsSync(path) && statSync(path).size >= FILE_BYTES) rotate(path);
+      appendFileSync(path, `${line}\n`, { mode: 0o600 });
+    } catch (error) {
+      // Logging must never stop Rufi or skip a clean-up: the log turns off
+      // for this run, and the person is told once, with the code only.
+      writing = false;
+      process.stderr.write(
+        `Rufi couldn't write its log (${errorCode(error)}); the log is off until Rufi restarts.\n`,
+      );
+    }
   };
   return { log, path };
 }
@@ -121,7 +156,7 @@ export function effectLogs(log: Log) {
           ? errorCode(reason.defect)
           : "interrupted",
     );
-    log(typeof event === "string" ? event : "effect.log", {
+    log(safeEvent(event), {
       level: logLevel,
       ...(isFields(fields) ? fields : {}),
       ...timings,

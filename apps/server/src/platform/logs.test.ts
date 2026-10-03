@@ -4,7 +4,13 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import { beforeEach, describe, expect, it } from "vitest";
 import { defineTool, NoInput, toolCaller } from "../core/tools/registry.ts";
-import { diagnostics, effectLogs, errorCode, safeFields } from "./logs.ts";
+import {
+  diagnostics,
+  effectLogs,
+  errorCode,
+  safeEvent,
+  safeFields,
+} from "./logs.ts";
 
 // Fictional, and shaped like what must never reach a log.
 const HEALTH_TEXT = "Asha Fictional HbA1c 7.9% on metformin";
@@ -59,24 +65,53 @@ describe("the log file", () => {
     ]);
   });
 
-  it("replaces any text that isn't an ID or a code", () => {
+  it("keeps only known fields, and only ID- or code-like text in them", () => {
     expect(
       safeFields({
         method: "turn/start",
-        id: "019a3c2e-7f00-7000-8000-000000000001",
-        note: HEALTH_TEXT,
-        token: FAKE_TOKEN,
+        turn: "019a3c2e-7f00-7000-8000-000000000001",
+        status: HEALTH_TEXT,
+        error: FAKE_TOKEN,
         ms: 41,
-        ok: true,
+        note: "fictional",
+        token: "rt-fictional-short",
+        [HEALTH_TEXT]: 1,
       }),
     ).toEqual({
       method: "turn/start",
-      id: "019a3c2e-7f00-7000-8000-000000000001",
-      note: "[redacted]",
-      token: "[redacted]",
+      turn: "019a3c2e-7f00-7000-8000-000000000001",
+      status: "[redacted]",
+      error: "[redacted]",
       ms: 41,
-      ok: true,
     });
+  });
+
+  it("names an event only with a code-shaped name", () => {
+    expect(safeEvent("tool.failed")).toBe("tool.failed");
+    expect(safeEvent(HEALTH_TEXT)).toBe("unnamed");
+    expect(safeEvent("rt-fictional-short")).toBe("unnamed");
+  });
+
+  it("turns off, once, when it can't write, instead of failing the caller", async () => {
+    await writeFile(join(home, "logs"), "a file where the folder should be");
+    const { log } = diagnostics(home);
+    const notices: string[] = [];
+    const write = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (chunk: string | Uint8Array) => {
+      notices.push(String(chunk));
+      return true;
+    };
+    try {
+      expect(() => {
+        log("test.event");
+        log("test.event");
+      }).not.toThrow();
+    } finally {
+      process.stderr.write = write;
+    }
+    expect(notices).toEqual([
+      "Rufi couldn't write its log (EEXIST); the log is off until Rufi restarts.\n",
+    ]);
   });
 
   it("gives an error's code, never its message", () => {
@@ -95,11 +130,11 @@ describe("the log file", () => {
 
   it("moves on at 10 MB and keeps five files", async () => {
     const { log, path } = diagnostics(home);
-    log("test.event", { n: -1 });
+    log("test.event", { ms: -1 });
     const full = "x".repeat(10 * 1024 * 1024);
     for (let n = 0; n < 7; n++) {
       await writeFile(path, full);
-      log("test.event", { n });
+      log("test.event", { ms: n });
     }
     const files = (await readdir(join(home, "logs"))).sort();
     expect(files).toEqual([
@@ -109,7 +144,7 @@ describe("the log file", () => {
       "rufi.log.3",
       "rufi.log.4",
     ]);
-    expect(await lines(path)).toEqual([{ event: "test.event", n: 6 }]);
+    expect(await lines(path)).toEqual([{ event: "test.event", ms: 6 }]);
   });
 });
 
@@ -117,7 +152,9 @@ describe("Effect's logs", () => {
   it("go to the same file with timings and error codes only", async () => {
     const { log, path } = diagnostics(home);
     await Effect.runPromise(
-      Effect.logError("turn.failed", { turn: "019a3c2e" }).pipe(
+      Effect.logError(HEALTH_TEXT, { token: "rt-fictional-short" }).pipe(
+        Effect.andThen(Effect.logError("turn.failed", { turn: "019a3c2e" })),
+        Effect.withLogSpan(HEALTH_TEXT),
         Effect.withLogSpan("turn"),
         Effect.andThen(Effect.fail(new Error(HEALTH_TEXT))),
         Effect.tapCause((cause) => Effect.logError("command.failed", cause)),
@@ -127,15 +164,15 @@ describe("Effect's logs", () => {
     );
     const text = await readFile(path, "utf8");
     expect(text).not.toContain("HbA1c");
-    const [failed, ...rest] = await lines(path);
-    expect(typeof failed?.["turn_ms"]).toBe("number");
-    expect({ ...failed, turn_ms: 0 }).toEqual({
-      event: "turn.failed",
-      level: "Error",
-      turn: "019a3c2e",
-      turn_ms: 0,
+    // Each time is a number; it's set to 0 to compare the rest exactly.
+    const events = (await lines(path)).map((event) => {
+      if (!("turn_ms" in event)) return event;
+      expect(typeof event["turn_ms"]).toBe("number");
+      return { ...event, turn_ms: 0 };
     });
-    expect(rest).toEqual([
+    expect(events).toEqual([
+      { event: "unnamed", level: "Error", turn_ms: 0 },
+      { event: "turn.failed", level: "Error", turn: "019a3c2e", turn_ms: 0 },
       {
         event: "command.failed",
         level: "Error",

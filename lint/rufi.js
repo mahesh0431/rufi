@@ -16,7 +16,37 @@ const noSilentCatch = {
   },
 };
 
+/** A throw inside the catch, not inside a function defined there. */
+function throwsIn(node) {
+  if (!node || typeof node.type !== "string") return false;
+  if (node.type === "ThrowStatement") return true;
+  if (/Function/.test(node.type)) return false;
+  return Object.entries(node).some(
+    ([key, value]) =>
+      key !== "parent" &&
+      (Array.isArray(value) ? value.some(throwsIn) : throwsIn(value)),
+  );
+}
+
+// A catch that throws a new error needs the caught one, to keep it as cause.
+const noLostCause = {
+  meta: { type: "problem" },
+  create(context) {
+    return {
+      CatchClause(node) {
+        if (node.param === null && throwsIn(node.body)) {
+          context.report({
+            node,
+            message:
+              "Name the caught error and pass it on as { cause }: this catch throws without it.",
+          });
+        }
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "rufi" },
-  rules: { "no-silent-catch": noSilentCatch },
+  rules: { "no-silent-catch": noSilentCatch, "no-lost-cause": noLostCause },
 };

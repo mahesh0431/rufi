@@ -1,6 +1,6 @@
 // The agent adapter: Rufi talks to a coding agent through this, so the agent
 // behind it (Codex now) can change without the rest of Rufi changing.
-import { Context } from "effect";
+import { Context, Effect } from "effect";
 
 export type TurnEvent =
   /** Part of the reply, as it streams. */
@@ -60,3 +60,32 @@ export interface AgentRuntime {
 export class Agent extends Context.Service<Agent, AgentRuntime>()(
   "rufi/Agent",
 ) {}
+
+/**
+ * One agent call as an Effect. When it is interrupted (Ctrl-C, a closing
+ * scope), the agent is asked to stop and the call is awaited until it has
+ * really ended, so nothing it started outlives the command. `onStop` runs
+ * first, for a word to the person.
+ */
+export const agentCall = <A>(
+  agent: AgentRuntime,
+  call: () => Promise<A>,
+  onStop?: () => void,
+) =>
+  Effect.callback<A, unknown>((resume) => {
+    const pending = call();
+    pending.then(
+      (value) => {
+        resume(Effect.succeed(value));
+      },
+      (error: unknown) => {
+        resume(Effect.fail(error));
+      },
+    );
+    return Effect.promise(async () => {
+      onStop?.();
+      await agent.stop();
+      // Its result no longer matters; only that it has ended.
+      await Promise.allSettled([pending]);
+    });
+  });

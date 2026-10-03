@@ -2,14 +2,16 @@ import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { Effect, Fiber } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Scenario } from "../../../tests/fake-codex.ts";
 import { childEnvironment } from "../../platform/config.ts";
-import type {
-  AgentRuntime,
-  AgentTools,
-  ToolAnswer,
-  TurnEvent,
+import {
+  agentCall,
+  type AgentRuntime,
+  type AgentTools,
+  type ToolAnswer,
+  type TurnEvent,
 } from "../runtime.ts";
 import { checkExecutable } from "./binary.ts";
 import { codexRuntime, describe as describeItem, resultOf } from "./codex.ts";
@@ -485,6 +487,14 @@ describe("Stop, more cases", () => {
     await agent.stop();
     await expect(opening).rejects.toThrow("Stopped.");
     expect(await sent("thread/start")).toEqual([]);
+    expect((await pids()).filter(isRunning)).toEqual([]);
+  });
+
+  it("ends Codex before an interrupted open returns, through agentCall", async () => {
+    const agent = start({ slow: ["initialize"] });
+    const opening = Effect.runFork(agentCall(agent, () => agent.open()));
+    await until(async () => (await pids()).length > 0);
+    await Effect.runPromise(Fiber.interrupt(opening));
     expect((await pids()).filter(isRunning)).toEqual([]);
   });
 

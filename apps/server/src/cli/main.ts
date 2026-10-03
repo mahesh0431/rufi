@@ -13,7 +13,7 @@ import { accessToken, signOut, status } from "../agent/chatgpt/session.ts";
 import type { ChatGptDeps } from "../agent/chatgpt/openai.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexRuntime } from "../agent/codex/codex.ts";
-import { Agent, type TurnEvent } from "../agent/runtime.ts";
+import { Agent, agentCall, type TurnEvent } from "../agent/runtime.ts";
 import {
   onlyPersonId,
   RecordStore,
@@ -198,17 +198,15 @@ const askCommand = (question: string) =>
   Effect.gen(function* () {
     const agent = yield* Agent;
     const log = yield* Logs;
-    const conversation = yield* run(() => agent.open());
+    const stopping = () => {
+      console.error("\nStopping…");
+    };
+    const conversation = yield* agentCall(agent, () => agent.open(), stopping);
     const started = Date.now();
-    const result = yield* run(() =>
-      agent.turn(conversation, question, show),
-    ).pipe(
-      Effect.onInterrupt(() =>
-        Effect.andThen(
-          Console.error("\nStopping…"),
-          Effect.promise(() => agent.stop()),
-        ),
-      ),
+    const result = yield* agentCall(
+      agent,
+      () => agent.turn(conversation, question, show),
+      stopping,
     );
     log("turn.ended", { status: result.status, ms: Date.now() - started });
     process.stdout.write("\n");

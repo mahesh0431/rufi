@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { Kysely } from "kysely";
+import { Kysely, sql } from "kysely";
 import { beforeEach, describe, expect, it } from "vitest";
 import { NodeSqliteDialect } from "./dialect.ts";
 import type { Tables } from "./tables.ts";
@@ -46,6 +46,12 @@ describe("Rufi's node:sqlite dialect", () => {
       .where("id", "=", "a")
       .execute();
     expect(result?.numUpdatedRows).toBe(1n);
+  });
+
+  it("gives a large row id exactly", async () => {
+    const result = await sql`INSERT INTO people (rowid, id, display_name)
+      VALUES (9007199254740993, 'a', 'Asha Fictional')`.execute(query);
+    expect(result.insertId).toBe(9007199254740993n);
   });
 
   it("commits a transaction, and rolls back a failed one completely", async () => {
