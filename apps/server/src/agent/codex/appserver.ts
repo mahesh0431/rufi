@@ -112,10 +112,14 @@ export async function startAppServer(
       });
   };
   child.on("exit", (code, signal) => {
+    // The exit code or signal is the error's code, for the log.
     ended(
-      new Error(`Codex stopped (${String(code ?? signal)}).`, {
-        cause: new Error(stderr),
-      }),
+      Object.assign(
+        new Error(`Codex stopped (${String(code ?? signal)}).`, {
+          cause: new Error(stderr),
+        }),
+        { code: String(code ?? signal) },
+      ),
     );
   });
   child.on("error", (error) => {

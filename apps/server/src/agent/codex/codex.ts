@@ -120,7 +120,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         },
       },
       onExit: (why) => {
-        log("codex.exited", { error: errorCode(why.cause ?? why) });
+        log("codex.exited", { code: errorCode(why) });
         // Rufi clears `server` before ending one itself; only a crash gets here.
         if (!server || server.running()) return;
         server = undefined;
