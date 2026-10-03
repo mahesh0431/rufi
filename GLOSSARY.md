@@ -2,6 +2,8 @@
 
 A family health record on your Mac: you keep the records of a few people, and an AI helps by reading the record and proposing changes you approve. The same words are used on screen, in the docs, in the AI's instructions and in the code.
 
+Some words are for features still being built, such as the Emergency button. The help pages in [`docs/help/`](docs/help/index.md) say what works today.
+
 ## People
 
 **You (the user)**:
@@ -101,6 +103,38 @@ _Avoid_: SOS, panic button, alert
 **Emergency sheet**:
 A person's essentials (medicines, allergies, conditions, blood group, contacts) on one page to hand to someone, also without the AI.
 _Avoid_: medical ID card
+
+## Rufi and the AI
+
+**The AI**:
+The AI agent that answers in the chat and works with the record through Rufi's tools. Screens and help say "the AI"; "Codex" appears only where its folder is named.
+_Avoid_: assistant, bot, model
+
+**Tool**:
+Something Rufi offers the AI, such as reading a person's Overview. Tools are how the AI works with the record.
+_Avoid_: function, plugin, skill
+
+**Overview**:
+A short view of one person's record: who they are, how much is in it, and their current results as printed. The AI reads it through a tool; from the first screens it is also the first page you see.
+_Avoid_: dashboard, summary
+
+**Sign in with ChatGPT**:
+How you connect Rufi to your ChatGPT account, in your browser, so the AI runs on your ChatGPT plan.
+_Avoid_: login, API key
+
+**ChatGPT plan use**:
+The permission you give Rufi when you sign in, so it can use your ChatGPT plan. Without it the AI can't answer.
+
+**Data folder**:
+The one folder on your Mac where Rufi keeps everything for your records: the record, the sign-in details, the log and the AI's own files.
+_Avoid_: vault, profile, workspace
+
+**Keychain**:
+Your Mac's store for secrets. Rufi keeps the sign-in itself there, never in the data folder.
+
+**Log**:
+Rufi's diagnostic file, `logs/rufi.log` in the data folder: fixed events with checked details, never your words or health text.
+_Avoid_: history, transcript
 
 ## Relationships
 

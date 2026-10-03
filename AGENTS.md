@@ -17,7 +17,10 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 
 ## Docs
 
-- A change to behaviour, commands or settings updates its docs in the same pull request.
+- Three places: `docs/help/` for people (the in-app help and the website use these files as they are), `GLOSSARY.md` for everyone, `AGENTS.md` and `docs/adr/` for developers.
+- A change to behaviour, commands or settings updates its help page in the same pull request; the step's plan names the pages, or says why none change.
+- A help page says what a person sees and can rely on, never module, table, protocol or library names (those go in an ADR). It comes with its feature, never before it.
+- Help format: the first heading is the title and the first paragraph the summary; `docs/help/index.md` gives the order. Plain Markdown and tables: relative `.md` links, local images, no front matter, HTML, MDX, admonitions or Mermaid. Fictional data only, and never a real account's email.
 - Use the words in `GLOSSARY.md` everywhere: screens, docs, the AI's instructions and code. A new concept, or a changed meaning, updates the glossary in the same pull request.
 - Write an ADR in `docs/adr/` only when a decision is hard to reverse, surprising without its reason, and a real choice between options; a paragraph is enough. Update the existing ADR rather than adding a near-copy.
 
