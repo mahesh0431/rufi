@@ -1,13 +1,13 @@
-# Rufi
+# Rufi glossary
 
-A family health record on your Mac: you keep the records of a few people, and an AI helps by reading the record and proposing changes you approve. The same words are used on screen, in the docs, in the AI's instructions and in the code.
+Your health record on your Mac: you keep your record, and an AI helps by reading it and proposing changes you approve. The record can hold more than one person; the screens for that come later. The same words are used on screen, in the docs, in the AI's instructions and in the code.
 
 Some words are for features still being built, such as the Emergency button. The help pages in [`docs/help/`](docs/help/index.md) say what works today.
 
 ## People
 
 **You (the user)**:
-The one person using Rufi on this Mac, keeping records for themselves and others. Screens and help say "you" or use your name; the AI's instructions and code say "the user".
+The one person using Rufi on this Mac, keeping their own health record (and later, other people's too). Screens and help say "you" or use your name; the AI's instructions and code say "the user".
 _Avoid_: keeper, owner, admin, caregiver
 
 **Person**:

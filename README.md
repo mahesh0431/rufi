@@ -1,6 +1,6 @@
 # Rufi
 
-A family health record on your Mac, with an AI that helps.
+Your health record on your Mac, with an AI that shows its work.
 
 Rufi is in early development and not ready for use yet.
 
