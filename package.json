@@ -3,44 +3,41 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@12.8.1",
+  "scripts": {
+    "prepare": "test \"$(git config --get core.hooksPath)\" = .githooks || git config core.hooksPath .githooks",
+    "format": "oxfmt",
+    "lint": "oxlint --type-aware --deny-warnings",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "rufi": "node apps/server/src/cli/main.ts",
+    "codex:types": "node apps/server/scripts/codex-types.ts",
+    "tools:json": "node apps/server/scripts/tools-json.ts",
+    "check": "oxfmt --check && oxlint --type-aware --deny-warnings && tsc --noEmit && vitest run && knip",
+    "db:types": "node apps/server/scripts/db-types.ts"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.0",
+    "knip": "6.38.0",
+    "oxfmt": "0.71.0",
+    "oxlint": "1.86.0",
+    "oxlint-tsgolint": "7.0.2003",
+    "typescript": "7.0.2",
+    "vitest": "5.0.2"
+  },
   "engines": {
     "node": ">=24.21.0"
   },
-  "scripts": {
-    "prepare": "test \"$(git config --get core.hooksPath)\" = .githooks || git config core.hooksPath .githooks",
-    "format": "prettier --write .",
-    "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "rufi": "node src/cli/main.ts",
-    "codex:types": "node scripts/codex-types.ts",
-    "tools:json": "node scripts/tools-json.ts",
-    "check": "prettier --check . && eslint . && tsc --noEmit && vitest run && knip"
-  },
-  "devDependencies": {
-    "@eslint/js": "10.0.1",
-    "@types/node": "24.19.0",
-    "@types/proper-lockfile": "4.1.4",
-    "eslint": "10.11.0",
-    "eslint-config-prettier": "10.1.8",
-    "jiti": "2.7.0",
-    "knip": "6.38.0",
-    "prettier": "3.9.9",
-    "typescript": "6.0.3",
-    "typescript-eslint": "8.71.0",
-    "vitest": "5.0.2"
-  },
-  "dependencies": {
-    "@napi-rs/keyring": "2.1.0",
-    "@openai/codex": "0.159.2",
-    "jose": "6.2.12",
-    "proper-lockfile": "4.1.2",
-    "zod": "4.6.5"
-  },
+  "packageManager": "pnpm@12.8.1",
   "knip": {
-    "ignore": [
-      "src/agent/codex/protocol/**"
-    ]
+    "workspaces": {
+      "apps/server": {
+        "entry": [
+          "scripts/*.ts"
+        ],
+        "ignore": [
+          "src/agent/codex/protocol/**"
+        ]
+      }
+    }
   }
 }
