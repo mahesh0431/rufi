@@ -7,7 +7,7 @@
   "options": {
     "typeAware": true
   },
-  "ignorePatterns": ["src/agent/codex/protocol/**", "lint/**"],
+  "ignorePatterns": ["apps/server/src/agent/codex/protocol/**", "lint/**"],
   "rules": {
     "preserve-caught-error": "error",
     "typescript/switch-exhaustiveness-check": "error",
@@ -84,7 +84,7 @@
   },
   "overrides": [
     {
-      "files": ["src/platform/**/*.ts"],
+      "files": ["apps/server/src/platform/**/*.ts"],
       "excludeFiles": ["**/*.test.ts"],
       "rules": {
         "no-restricted-imports": [
@@ -151,7 +151,7 @@
       }
     },
     {
-      "files": ["src/core/**/*.ts"],
+      "files": ["apps/server/src/core/**/*.ts"],
       "excludeFiles": ["**/*.test.ts"],
       "rules": {
         "no-restricted-imports": [
@@ -214,7 +214,7 @@
       }
     },
     {
-      "files": ["src/agent/**/*.ts"],
+      "files": ["apps/server/src/agent/**/*.ts"],
       "excludeFiles": ["**/*.test.ts"],
       "rules": {
         "no-restricted-imports": [

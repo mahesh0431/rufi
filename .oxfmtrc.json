@@ -4,7 +4,7 @@
   "ignorePatterns": [
     "pnpm-lock.yaml",
     "mise.lock",
-    "src/agent/codex/protocol/**",
-    "tools.json"
+    "apps/server/src/agent/codex/protocol/**",
+    "apps/server/tools.json"
   ]
 }

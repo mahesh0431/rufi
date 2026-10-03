@@ -1,6 +1,6 @@
 -- A fictional family for tests and live tries. Every name and value is made up.
 -- Load into a test folder (never the real one):
---   cat src/core/store/schema.sql tests/fixtures/fictional-family.sql | sqlite3 "$RUFI_HOME/rufi.sqlite"
+--   cat apps/server/src/core/store/schema.sql apps/server/tests/fixtures/fictional-family.sql | sqlite3 "$RUFI_HOME/rufi.sqlite"
 
 INSERT INTO people (id, display_name) VALUES
   ('asha', 'Asha Fictional'),

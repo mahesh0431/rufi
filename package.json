@@ -9,21 +9,13 @@
     "lint": "oxlint --type-aware --deny-warnings",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "rufi": "node src/cli/main.ts",
-    "codex:types": "node scripts/codex-types.ts",
-    "tools:json": "node scripts/tools-json.ts",
+    "rufi": "node apps/server/src/cli/main.ts",
+    "codex:types": "node apps/server/scripts/codex-types.ts",
+    "tools:json": "node apps/server/scripts/tools-json.ts",
     "check": "oxfmt --check && oxlint --type-aware --deny-warnings && tsc --noEmit && vitest run && knip"
-  },
-  "dependencies": {
-    "@napi-rs/keyring": "2.1.0",
-    "@openai/codex": "0.159.2",
-    "jose": "6.2.12",
-    "proper-lockfile": "4.1.2",
-    "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/node": "24.19.0",
-    "@types/proper-lockfile": "4.1.4",
     "knip": "6.38.0",
     "oxfmt": "0.71.0",
     "oxlint": "1.86.0",
@@ -36,8 +28,15 @@
   },
   "packageManager": "pnpm@12.8.1",
   "knip": {
-    "ignore": [
-      "src/agent/codex/protocol/**"
-    ]
+    "workspaces": {
+      "apps/server": {
+        "entry": [
+          "scripts/*.ts"
+        ],
+        "ignore": [
+          "src/agent/codex/protocol/**"
+        ]
+      }
+    }
   }
 }
