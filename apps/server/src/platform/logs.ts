@@ -1,8 +1,8 @@
 // Rufi's diagnostics: one JSON line per event in $RUFI_HOME/logs/rufi.log,
-// on this Mac only. An event is a fixed name and a few fields: IDs, names,
-// numbers, timings and error codes. Never a prompt, a reply, health text, a
-// token or an error's message: those stay in memory with the code that
-// handles them.
+// on this Mac only. An event is a fixed name and a few checked fields:
+// protocol methods, tool names, statuses, timings and error codes. Never a
+// prompt, a reply, health text, a token or an error's message: those stay in
+// memory with the code that handles them.
 import {
   appendFileSync,
   existsSync,
@@ -12,73 +12,92 @@ import {
   statSync,
 } from "node:fs";
 import { join } from "node:path";
-import { Cause, Context, Effect, Layer, Logger, References } from "effect";
+import { Context, Effect, Layer, Logger } from "effect";
 import { Home } from "./config.ts";
 
-export type LogFields = Readonly<
-  Record<string, string | number | boolean | undefined>
->;
-export type Log = (event: string, fields?: LogFields) => void;
+/** Every event Rufi logs. */
+const EVENTS = new Set([
+  "codex.ignored",
+  "codex.exited",
+  "codex.request",
+  "codex.notification_ignored",
+  "codex.other_turn",
+  "codex.process_list_failed",
+  "codex.commands_left",
+  "codex.interrupt_failed",
+  "tool.failed",
+  "turn.ended",
+] as const);
+
+export type LogEvent = typeof EVENTS extends Set<infer E> ? E : never;
+type LogFields = Readonly<Record<string, string | number | undefined>>;
+export type Log = (event: LogEvent, fields?: LogFields) => void;
 
 /** The size one log file reaches before the next starts, and how many are kept. */
 const FILE_BYTES = 10 * 1024 * 1024;
 const FILES = 5;
 
-/**
- * What a log line may hold. An event is a code-shaped name; anything else
- * becomes "unnamed". Only the fields named here are kept, and a text value
- * only when it looks like an ID, a name or a code: at most 64 characters (a
- * UUID is 36), without spaces. So neither a mistake at a call site nor a
- * free-text Effect message can put health text or a secret in the file.
- */
-const EVENT = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/;
-const SAFE_TEXT = /^[\w.:/@#+-]{1,64}$/;
-const FIELDS = new Set([
-  "method",
-  "what",
-  "tool",
-  "status",
-  "code",
-  "error",
-  "errors",
-  "level",
-  "ms",
-  "turn",
-  "conversation",
+/** An OS or Node code (ENOENT, ERR_…), a number or a signal. */
+const CODE = /^(?:E[A-Z0-9_]{1,40}|-?\d{1,10}|SIG[A-Z0-9]{1,10})$/;
+/** The built-in error kinds; Rufi's own errors are kind "Error". */
+const KINDS = new Set([
+  "Error",
+  "TypeError",
+  "RangeError",
+  "SyntaxError",
+  "ReferenceError",
+  "AbortError",
+  "TimeoutError",
 ]);
-/** Timings from Effect log spans: `<label>_ms`, with a short code-word label. */
-const TIMING = /^[a-z][a-z0-9_]{0,31}_ms$/;
+const isCode = (value: unknown) =>
+  typeof value === "string" && (CODE.test(value) || KINDS.has(value));
 
-export function safeEvent(event: unknown): string {
-  return typeof event === "string" && event.length <= 64 && EVENT.test(event)
-    ? event
-    : "unnamed";
-}
+/**
+ * What each field may hold. Values come from code, never from a person or the
+ * model: a field not named here is left out, and a value that doesn't fit
+ * becomes "other". So no call site can put health text or a secret in a log.
+ */
+const FIELDS: Record<string, (value: unknown) => boolean> = {
+  // A Codex protocol method ("item/tool/call"), as the Codex binary sends it.
+  method: (value) =>
+    typeof value === "string" &&
+    /^[a-z][a-zA-Z]{0,40}(?:\/[a-z][a-zA-Z]{0,40}){0,3}$/.test(value),
+  // A tool in Rufi's registry; the registry logs only after finding it.
+  tool: (value) =>
+    typeof value === "string" && /^[a-z][a-z_]{0,63}$/.test(value),
+  // What the Codex connection ignored (rpc.ts, appserver.ts).
+  what: (value) =>
+    value === "not_json_rpc" ||
+    value === "reply_to_no_request" ||
+    value === "cleanup_after_exit_failed",
+  status: (value) =>
+    value === "completed" || value === "failed" || value === "interrupted",
+  code: isCode,
+  error: isCode,
+  ms: (value) => typeof value === "number" && Number.isFinite(value),
+};
 
-export function safeFields(fields: LogFields = {}): LogFields {
-  const out: Record<string, string | number | boolean> = {};
-  for (const [key, value] of Object.entries(fields) as [string, unknown][]) {
-    if (!FIELDS.has(key) && !TIMING.test(key)) continue;
-    if (typeof value === "number" || typeof value === "boolean") {
-      out[key] = value;
-    } else if (typeof value === "string") {
-      out[key] = SAFE_TEXT.test(value) ? value : "[redacted]";
-    }
-    // Anything else (an object, an error) is left out: it could hold anything.
+function line(event: LogEvent, fields: LogFields = {}): string {
+  const out: Record<string, string | number> = {
+    time: new Date().toISOString(),
+    event: EVENTS.has(event) ? event : "unnamed",
+  };
+  for (const [key, value] of Object.entries(fields)) {
+    const valid = FIELDS[key];
+    if (valid && value !== undefined) out[key] = valid(value) ? value : "other";
   }
-  return out;
+  return JSON.stringify(out);
 }
 
-/** An error's code: its `code` when it has one, else its kind. Never its message. */
+/** An error's code when it has a known shape, else its kind. Never its message. */
 export function errorCode(error: unknown): string {
   if (typeof error === "object" && error !== null) {
     const code = (error as { code?: unknown }).code;
-    if (typeof code === "string" || typeof code === "number") {
-      return String(code);
-    }
-    if (error instanceof Error) return error.name;
+    if (typeof code === "number" && Number.isInteger(code)) return String(code);
+    if (isCode(code)) return code as string;
+    if (error instanceof Error && KINDS.has(error.name)) return error.name;
   }
-  return typeof error;
+  return "other";
 }
 
 export interface Diagnostics {
@@ -100,17 +119,13 @@ export function diagnostics(
   const path = join(folder, "rufi.log");
   let writing = true;
   const log: Log = (event, fields) => {
-    const line = JSON.stringify({
-      time: new Date().toISOString(),
-      event: safeEvent(event),
-      ...safeFields(fields),
-    });
-    echo?.(line);
+    const text = line(event, fields);
+    echo?.(text);
     if (!writing) return;
     try {
       mkdirSync(folder, { recursive: true, mode: 0o700 });
       if (existsSync(path) && statSync(path).size >= FILE_BYTES) rotate(path);
-      appendFileSync(path, `${line}\n`, { mode: 0o600 });
+      appendFileSync(path, `${text}\n`, { mode: 0o600 });
     } catch (error) {
       // Logging must never stop Rufi or skip a clean-up: the log turns off
       // for this run, and the person is told once, with the code only.
@@ -133,54 +148,18 @@ function rotate(path: string): void {
   renameSync(path, `${path}.1`);
 }
 
-/**
- * Effect's logging, sent to the same file under the same rules: the message
- * is the event name, an optional object gives the fields, open log spans give
- * timings in ms, and a failure gives only its error codes. It replaces
- * Effect's own loggers, which would print errors and stack traces.
- */
-export function effectLogs(log: Log) {
-  const logger = Logger.make(({ message, logLevel, cause, fiber, date }) => {
-    const parts: readonly unknown[] = Array.isArray(message)
-      ? message
-      : [message];
-    const [event, fields] = parts;
-    const timings: Record<string, number> = {};
-    for (const [label, start] of fiber.getRef(References.CurrentLogSpans)) {
-      timings[`${label}_ms`] = date.getTime() - start;
-    }
-    const codes = cause.reasons.map((reason) =>
-      Cause.isFailReason(reason)
-        ? errorCode(reason.error)
-        : Cause.isDieReason(reason)
-          ? errorCode(reason.defect)
-          : "interrupted",
-    );
-    log(safeEvent(event), {
-      level: logLevel,
-      ...(isFields(fields) ? fields : {}),
-      ...timings,
-      ...(codes.length > 0 && { errors: codes.join(",") }),
-    });
-  });
-  return Logger.layer([logger]);
-}
-
-function isFields(value: unknown): value is LogFields {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 /** The log, for the parts that write to it. */
 export class Logs extends Context.Service<Logs, Log>()("rufi/Logs") {}
 
-/**
- * The log file in Rufi's data folder (and the terminal, with `echo`), for
- * Rufi's own events and for Effect's.
- */
+/** The log file in Rufi's data folder (and the terminal, with `echo`). */
 export const logsLayer = (echo?: (line: string) => void) =>
-  Layer.unwrap(
-    Effect.map(Home, (home) => {
-      const { log } = diagnostics(home, echo);
-      return Layer.merge(Layer.succeed(Logs, log), effectLogs(log));
-    }),
+  Layer.effect(
+    Logs,
+    Effect.map(Home, (home) => diagnostics(home, echo).log),
   );
+
+/**
+ * Effect's own logging, off: Rufi logs only the events above, and Effect's
+ * loggers would print messages, causes and stack traces.
+ */
+export const noEffectLogs = Logger.layer([]);

@@ -12,7 +12,7 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 
 - **Effect v4 only; never v3 APIs** (lint refuses v3 package names). Effect for the parts that open, close, wait or fail; plain TypeScript elsewhere (ADR 0002).
 - Every external call has a deadline. Errors keep their `cause`. No empty `catch`, and a comment is not handling.
-- Logs hold event names, IDs, timings and error codes only (`platform/logs.ts`): never prompts, replies, health text, tokens or error messages.
+- Logs hold fixed events and checked fields only (`platform/logs.ts`): a new event or field is added there. Never prompts, replies, health text, tokens or error messages.
 - Folders in `apps/server/src`: `platform` (Mac things) uses no other folder; `core` (record, tools) and `agent` (sign-in, Codex) use only `platform`; `cli` joins them. Lint checks these borders.
 - A change to behaviour, commands or settings updates its docs in the same pull request.
 

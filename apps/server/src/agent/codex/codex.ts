@@ -56,11 +56,6 @@ const TOKEN_MARGIN_MS = 5 * 60_000;
 /** How often Rufi notes the process groups of running commands. */
 const TRACK_EVERY_MS = 500;
 
-/** An open or turn that hasn't sent its question yet; Stop can cancel it. */
-interface Starting {
-  cancelled: boolean;
-}
-
 class Stopped extends Error {}
 
 interface Running {
@@ -89,22 +84,27 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   let server: AppServer | undefined;
   let workspace = "";
   const loaded = new Set<string>(); // threads open in the current app-server
-  let starting: Starting | undefined;
+  /** An open or turn that hasn't sent its question yet; Stop aborts it. */
+  let starting: AbortController | undefined;
   let current: Running | undefined;
 
   const end = (running: Running, result: TurnResult) => {
     running.result ??= result;
     running.ended.resolve();
   };
-  const check = (op: Starting) => {
-    if (op.cancelled) throw new Stopped("Stopped.");
+  const check = (op: AbortController) => {
+    if (op.signal.aborted) throw new Stopped("Stopped.");
   };
 
-  async function serverFor(token: string, op: Starting): Promise<AppServer> {
+  async function serverFor(
+    token: string,
+    op: AbortController,
+  ): Promise<AppServer> {
     if (server?.running() && server.token === token) return server;
     await shutDown();
     const paths = await prepareCodexHome(deps.home, deps.env["HOME"]);
     workspace = paths.workspace;
+    check(op);
     const started = await startAppServer({
       command: deps.command,
       env: { ...deps.env, HOME: paths.processHome },
@@ -112,6 +112,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       token,
       version: deps.version,
       deadlines,
+      signal: op.signal,
       handlers: {
         request: answer,
         notification: onNotification,
@@ -132,8 +133,12 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           });
         }
       },
+    }).catch((error: unknown) => {
+      // A Stop ends a starting app-server; that is a stop, not a failure.
+      check(op);
+      throw error;
     });
-    if (op.cancelled) {
+    if (op.signal.aborted) {
       await started.stop();
       throw new Stopped("Stopped.");
     }
@@ -189,7 +194,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   }
 
   /** Gets a token, Codex and the thread ready; Stop can cancel at each step. */
-  async function prepare(op: Starting, threadId?: string) {
+  async function prepare(op: AbortController, threadId?: string) {
     const token = await deps.token(deadlines.turnMs + TOKEN_MARGIN_MS);
     check(op);
     const app = await serverFor(token, op);
@@ -421,7 +426,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   return {
     open: async (conversationId) => {
       if (starting || current) throw new Error("Codex is busy.");
-      const op: Starting = { cancelled: false };
+      const op = new AbortController();
       starting = op;
       try {
         return (await prepare(op, conversationId)).id;
@@ -432,7 +437,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
 
     turn: async (threadId, text, onEvent) => {
       if (starting || current) throw new Error("A turn is already running.");
-      const op: Starting = { cancelled: false };
+      const op = new AbortController();
       starting = op;
       let app: AppServer;
       try {
@@ -511,13 +516,13 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       if (current) {
         await stopTurn(current);
       } else if (starting) {
-        starting.cancelled = true;
+        starting.abort();
         await shutDown();
       }
     },
 
     close: async () => {
-      if (starting) starting.cancelled = true;
+      starting?.abort();
       if (current) {
         end(current, { status: "interrupted", reason: "Rufi closed Codex." });
       }

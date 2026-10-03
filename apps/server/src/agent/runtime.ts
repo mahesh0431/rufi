@@ -1,5 +1,6 @@
 // The agent adapter: Rufi talks to a coding agent through this, so the agent
 // behind it (Codex now) can change without the rest of Rufi changing.
+import { setTimeout as sleep } from "node:timers/promises";
 import { Context, Effect } from "effect";
 
 export type TurnEvent =
@@ -62,6 +63,13 @@ export class Agent extends Context.Service<Agent, AgentRuntime>()(
 ) {}
 
 /**
+ * How long Rufi waits for a stopped call to end. The agent's own steps have
+ * shorter deadlines, so reaching this means a bug; the agent is then closed
+ * with the scope that holds it.
+ */
+const STOP_LIMIT_MS = 45_000;
+
+/**
  * One agent call as an Effect. When it is interrupted (Ctrl-C, a closing
  * scope), the agent is asked to stop and the call is awaited until it has
  * really ended, so nothing it started outlives the command. `onStop` runs
@@ -71,6 +79,7 @@ export const agentCall = <A>(
   agent: AgentRuntime,
   call: () => Promise<A>,
   onStop?: () => void,
+  limitMs = STOP_LIMIT_MS,
 ) =>
   Effect.callback<A, unknown>((resume) => {
     const pending = call();
@@ -84,8 +93,13 @@ export const agentCall = <A>(
     );
     return Effect.promise(async () => {
       onStop?.();
-      await agent.stop();
-      // Its result no longer matters; only that it has ended.
-      await Promise.allSettled([pending]);
+      // Only that they have ended matters, not how.
+      await Promise.race([
+        Promise.allSettled([
+          Promise.resolve().then(() => agent.stop()),
+          pending,
+        ]),
+        sleep(limitMs, undefined, { ref: false }),
+      ]);
     });
   });

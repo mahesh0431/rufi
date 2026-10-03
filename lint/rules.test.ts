@@ -18,6 +18,12 @@ const probes: Record<string, string> = {
   plusNumber: `export const s = (n: number) => "a" + n;\n`,
   dynamicDelete: `export function f(o: Record<string, number>, k: string): void {\n  delete o[k];\n}\n`,
   floating: `async function f(): Promise<void> {\n  await Promise.resolve();\n}\nexport function g(): void {\n  f();\n}\n`,
+  noVar: `export function f(): number {\n  var a = 1;\n  return a;\n}\n`,
+  preferConst: `export function f(): number {\n  let a = 1;\n  return a;\n}\n`,
+  restParams: `export function f(): unknown {\n  return arguments[0];\n}\n`,
+  spread: `export const f = (xs: number[]) => Math.max.apply(Math, xs);\n`,
+  // Permitted: the inner catch keeps its own error as the cause.
+  nestedCatch: `export function f(): unknown {\n  try {\n    return JSON.parse("1");\n  } catch {\n    try {\n      return JSON.parse("2");\n    } catch (error) {\n      throw new Error("fallback failed", { cause: error });\n    }\n  }\n}\n`,
   switchCase: `export function f(x: "a" | "b"): number {\n  switch (x) {\n    case "a":\n      return 1;\n  }\n  return 0;\n}\n`,
 };
 
@@ -57,6 +63,11 @@ describe("lint", () => {
     expect(codes("plusNumber")).toContain("typescript(restrict-plus-operands)");
     expect(codes("dynamicDelete")).toContain("typescript(no-dynamic-delete)");
     expect(codes("floating")).toContain("typescript(no-floating-promises)");
+    expect(codes("noVar")).toContain("eslint(no-var)");
+    expect(codes("preferConst")).toContain("eslint(prefer-const)");
+    expect(codes("restParams")).toContain("eslint(prefer-rest-params)");
+    expect(codes("spread")).toContain("eslint(prefer-spread)");
+    expect(codes("nestedCatch")).toEqual([]);
     expect(codes("switchCase")).toContain(
       "typescript(switch-exhaustiveness-check)",
     );

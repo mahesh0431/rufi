@@ -16,11 +16,14 @@ const noSilentCatch = {
   },
 };
 
-/** A throw inside the catch, not inside a function defined there. */
+/**
+ * A throw that belongs to this catch: not one inside a function, static block
+ * or nested catch, which has its own error.
+ */
 function throwsIn(node) {
   if (!node || typeof node.type !== "string") return false;
   if (node.type === "ThrowStatement") return true;
-  if (/Function/.test(node.type)) return false;
+  if (/Function|StaticBlock|CatchClause/.test(node.type)) return false;
   return Object.entries(node).some(
     ([key, value]) =>
       key !== "parent" &&

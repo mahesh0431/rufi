@@ -490,12 +490,30 @@ describe("Stop, more cases", () => {
     expect((await pids()).filter(isRunning)).toEqual([]);
   });
 
-  it("ends Codex before an interrupted open returns, through agentCall", async () => {
-    const agent = start({ slow: ["initialize"] });
+  it("ends Codex at once when an open is interrupted while it starts", async () => {
+    const agent = start({ hang: ["initialize"] });
     const opening = Effect.runFork(agentCall(agent, () => agent.open()));
     await until(async () => (await pids()).length > 0);
+    const began = Date.now();
     await Effect.runPromise(Fiber.interrupt(opening));
+    // Well before initialize's own deadline (requestMs, 1 s here).
+    expect(Date.now() - began).toBeLessThan(500);
     expect((await pids()).filter(isRunning)).toEqual([]);
+  });
+
+  it("gives up waiting for an agent that never stops", async () => {
+    const never = new Promise<never>(() => undefined);
+    const agent: AgentRuntime = {
+      open: () => never,
+      turn: () => never,
+      stop: () => never,
+      close: () => never,
+    };
+    const opening = Effect.runFork(
+      agentCall(agent, () => agent.open(), undefined, 50),
+    );
+    await sleep(10);
+    await Effect.runPromise(Fiber.interrupt(opening));
   });
 
   it("cancels a turn that is still getting a token, and sends nothing", async () => {

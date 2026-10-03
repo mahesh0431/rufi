@@ -60,6 +60,8 @@ export interface StartOptions {
   version: string;
   deadlines: Deadlines;
   handlers: RpcHandlers;
+  /** Aborting it while app-server starts ends app-server. */
+  signal?: AbortSignal;
   /** Called once app-server has exited and the commands it left are ended. */
   onExit: (why: Error) => void;
 }
@@ -67,6 +69,7 @@ export interface StartOptions {
 export async function startAppServer(
   options: StartOptions,
 ): Promise<AppServer> {
+  options.signal?.throwIfAborted();
   const child = spawn(
     options.command.file,
     [...options.command.args, "app-server", "--listen", "stdio://"],
@@ -141,6 +144,8 @@ export async function startAppServer(
       await trackGroups(child.pid, groups);
     }
   };
+  const abort = () => void stop();
+  options.signal?.addEventListener("abort", abort);
   try {
     const params: InitializeParams = {
       // The name matches the agent_name_hint sent when Rufi registers.
@@ -153,6 +158,8 @@ export async function startAppServer(
   } catch (error) {
     await stop();
     throw error;
+  } finally {
+    options.signal?.removeEventListener("abort", abort);
   }
   return {
     rpc,

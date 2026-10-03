@@ -2,15 +2,9 @@ import { mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defineTool, NoInput, toolCaller } from "../core/tools/registry.ts";
-import {
-  diagnostics,
-  effectLogs,
-  errorCode,
-  safeEvent,
-  safeFields,
-} from "./logs.ts";
+import { diagnostics, errorCode, type LogEvent, noEffectLogs } from "./logs.ts";
 
 // Fictional, and shaped like what must never reach a log.
 const HEALTH_TEXT = "Asha Fictional HbA1c 7.9% on metformin";
@@ -65,31 +59,46 @@ describe("the log file", () => {
     ]);
   });
 
-  it("keeps only known fields, and only ID- or code-like text in them", () => {
-    expect(
-      safeFields({
-        method: "turn/start",
-        turn: "019a3c2e-7f00-7000-8000-000000000001",
-        status: HEALTH_TEXT,
-        error: FAKE_TOKEN,
-        ms: 41,
-        note: "fictional",
-        token: "rt-fictional-short",
-        [HEALTH_TEXT]: 1,
-      }),
-    ).toEqual({
-      method: "turn/start",
-      turn: "019a3c2e-7f00-7000-8000-000000000001",
-      status: "[redacted]",
-      error: "[redacted]",
+  it("keeps only known fields, and only values that fit each field", async () => {
+    const { log, path } = diagnostics(home);
+    log("codex.request", {
+      method: "item/tool/call",
+      status: "completed",
+      error: "ENOENT",
       ms: 41,
     });
-  });
-
-  it("names an event only with a code-shaped name", () => {
-    expect(safeEvent("tool.failed")).toBe("tool.failed");
-    expect(safeEvent(HEALTH_TEXT)).toBe("unnamed");
-    expect(safeEvent("rt-fictional-short")).toBe("unnamed");
+    log("codex.request", {
+      method: "HbA1c:7.9",
+      tool: HEALTH_TEXT,
+      what: "metformin",
+      status: HEALTH_TEXT,
+      error: "rt-fictional-short",
+      code: FAKE_TOKEN,
+      ms: Number.NaN,
+      note: "fictional",
+      [HEALTH_TEXT]: 1,
+    });
+    log(HEALTH_TEXT as LogEvent);
+    expect(await lines(path)).toEqual([
+      {
+        event: "codex.request",
+        method: "item/tool/call",
+        status: "completed",
+        error: "ENOENT",
+        ms: 41,
+      },
+      {
+        event: "codex.request",
+        method: "other",
+        tool: "other",
+        what: "other",
+        status: "other",
+        error: "other",
+        code: "other",
+        ms: "other",
+      },
+      { event: "unnamed" },
+    ]);
   });
 
   it("turns off, once, when it can't write, instead of failing the caller", async () => {
@@ -103,8 +112,8 @@ describe("the log file", () => {
     };
     try {
       expect(() => {
-        log("test.event");
-        log("test.event");
+        log("turn.ended");
+        log("turn.ended");
       }).not.toThrow();
     } finally {
       process.stderr.write = write;
@@ -114,27 +123,34 @@ describe("the log file", () => {
     ]);
   });
 
-  it("gives an error's code, never its message", () => {
+  it("gives an error's code or kind, never its message", () => {
     const busy = Object.assign(new Error(HEALTH_TEXT), { code: "ELOCKED" });
     expect(errorCode(busy)).toBe("ELOCKED");
+    expect(errorCode(Object.assign(new Error(), { code: -32601 }))).toBe(
+      "-32601",
+    );
     expect(errorCode(new TypeError(HEALTH_TEXT))).toBe("TypeError");
-    expect(errorCode(HEALTH_TEXT)).toBe("string");
+    const odd = Object.assign(new Error(), { code: "rt-fictional-short" });
+    expect(errorCode(odd)).toBe("Error");
+    const named = Object.assign(new Error(), { name: "Metformin" });
+    expect(errorCode(named)).toBe("other");
+    expect(errorCode(HEALTH_TEXT)).toBe("other");
   });
 
   it("is readable only by this user", async () => {
     const { log, path } = diagnostics(home);
-    log("test.event");
+    log("turn.ended");
     expect((await stat(path)).mode & 0o777).toBe(0o600);
     expect((await stat(join(home, "logs"))).mode & 0o777).toBe(0o700);
   });
 
   it("moves on at 10 MB and keeps five files", async () => {
     const { log, path } = diagnostics(home);
-    log("test.event", { ms: -1 });
+    log("turn.ended", { ms: -1 });
     const full = "x".repeat(10 * 1024 * 1024);
     for (let n = 0; n < 7; n++) {
       await writeFile(path, full);
-      log("test.event", { ms: n });
+      log("turn.ended", { ms: n });
     }
     const files = (await readdir(join(home, "logs"))).sort();
     expect(files).toEqual([
@@ -144,40 +160,31 @@ describe("the log file", () => {
       "rufi.log.3",
       "rufi.log.4",
     ]);
-    expect(await lines(path)).toEqual([{ event: "test.event", ms: 6 }]);
+    expect(await lines(path)).toEqual([{ event: "turn.ended", ms: 6 }]);
   });
 });
 
 describe("Effect's logs", () => {
-  it("go to the same file with timings and error codes only", async () => {
-    const { log, path } = diagnostics(home);
-    await Effect.runPromise(
-      Effect.logError(HEALTH_TEXT, { token: "rt-fictional-short" }).pipe(
-        Effect.andThen(Effect.logError("turn.failed", { turn: "019a3c2e" })),
-        Effect.withLogSpan(HEALTH_TEXT),
-        Effect.withLogSpan("turn"),
-        Effect.andThen(Effect.fail(new Error(HEALTH_TEXT))),
-        Effect.tapCause((cause) => Effect.logError("command.failed", cause)),
-        Effect.ignore,
-        Effect.provide(effectLogs(log)),
-      ),
+  it("are off: they print nothing", async () => {
+    const write = vi.spyOn(process.stdout, "write");
+    const writeErr = vi.spyOn(process.stderr, "write");
+    const consoleCalls = (
+      ["log", "info", "warn", "error", "debug"] as const
+    ).map((method) =>
+      vi.spyOn(console, method).mockImplementation(() => undefined),
     );
-    const text = await readFile(path, "utf8");
-    expect(text).not.toContain("HbA1c");
-    // Each time is a number; it's set to 0 to compare the rest exactly.
-    const events = (await lines(path)).map((event) => {
-      if (!("turn_ms" in event)) return event;
-      expect(typeof event["turn_ms"]).toBe("number");
-      return { ...event, turn_ms: 0 };
-    });
-    expect(events).toEqual([
-      { event: "unnamed", level: "Error", turn_ms: 0 },
-      { event: "turn.failed", level: "Error", turn: "019a3c2e", turn_ms: 0 },
-      {
-        event: "command.failed",
-        level: "Error",
-        errors: "Error",
-      },
-    ]);
+    try {
+      await Effect.runPromise(
+        Effect.logError(HEALTH_TEXT, { token: "rt-fictional-short" }).pipe(
+          Effect.withLogSpan("diabetes"),
+          Effect.provide(noEffectLogs),
+        ),
+      );
+      for (const spy of [write, writeErr, ...consoleCalls]) {
+        expect(spy).not.toHaveBeenCalled();
+      }
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });

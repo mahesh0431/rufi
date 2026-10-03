@@ -22,7 +22,7 @@ import {
 import { forAgent } from "../core/tools/tools.ts";
 import { childEnvironment, Home, homeLayer } from "../platform/config.ts";
 import { Secrets, secretsLayer } from "../platform/keychain.ts";
-import { Logs, logsLayer } from "../platform/logs.ts";
+import { Logs, logsLayer, noEffectLogs } from "../platform/logs.ts";
 
 const USAGE = `Usage: pnpm rufi <command>
   signin [--no-open]  sign in with ChatGPT
@@ -242,6 +242,7 @@ function openBrowser(link: string): void {
 
 /** A failure shows its message only, as before; the full error never prints. */
 const reported = main.pipe(
+  Effect.provide(noEffectLogs),
   Effect.catchCause((cause) =>
     Cause.hasInterruptsOnly(cause)
       ? Effect.failCause(cause)

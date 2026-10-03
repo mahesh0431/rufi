@@ -10,7 +10,7 @@ Rufi's core runs on Effect 4. The parts that open something, wait for something 
 - **Where Effect is not used:** pure functions (tools, schemas' rules, small helpers) stay plain TypeScript. Rufi doesn't use Effect's HTTP server, SQL or UI-state modules: Hono, Kysely and the web's own state libraries do those jobs.
 - **Tested code keeps its inside.** The JSON-RPC link, the process clean-up, the sign-in steps and the Codex turn code were wrapped in services, not rewritten, when Effect came in (M2.0).
 - **Effect Schema** checks all data at the edges (tool input, sign-in data, later the API contracts); `tools.json` is made from it as JSON Schema.
-- **Logs** go through Effect's logging to Rufi's own file logger (`platform/logs.ts`), which keeps event names, IDs, timings and error codes only. Effect's own loggers are replaced because they print errors and stack traces.
+- **Logs** are Rufi's own file logger (`platform/logs.ts`), a service: a fixed set of events, each field checked for what it may hold. Effect's own loggers are off, because they would print messages, causes and stack traces.
 
 ## Why
 
