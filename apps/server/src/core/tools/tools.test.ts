@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, it } from "vitest";
 import { Result, Schema } from "effect";
+import { TABLES_TS, tablesTs } from "../../../scripts/db-types.ts";
 import { TOOLS_JSON } from "../../../scripts/tools-json.ts";
 import {
   databasePath,
@@ -361,6 +362,12 @@ describe("the error envelope", () => {
   });
 });
 
+describe("tables.ts", () => {
+  it("matches schema.sql (run pnpm db:types)", async () => {
+    expect(await readFile(TABLES_TS, "utf8")).toBe(tablesTs(schema));
+  });
+});
+
 describe("tools.json", () => {
   it("matches the registry (run pnpm tools:json)", async () => {
     expect(await readFile(TOOLS_JSON, "utf8")).toBe(toolsJson());
@@ -397,11 +404,11 @@ describe("the database", () => {
     expect(() => openReadOnly(path)).toThrow("made by an older Rufi");
   });
 
-  it("picks the person only when there is exactly one", () => {
-    expect(onlyPersonId(makeDatabase(family))).toBeUndefined();
+  it("picks the person only when there is exactly one", async () => {
+    expect(await onlyPersonId(makeDatabase(family))).toBeUndefined();
     path = `${path}-one`;
     expect(
-      onlyPersonId(
+      await onlyPersonId(
         makeDatabase("INSERT INTO people VALUES ('solo', 'Solo Fictional')"),
       ),
     ).toBe("solo");

@@ -1,19 +1,9 @@
 // get_overview: the active person's record at a glance, as printed.
+import { sql } from "kysely";
 import { defineTool, NoInput, Refusal } from "./registry.ts";
 
 /** Results shown at most; the description says the same number. */
 export const RESULTS_SHOWN = 20;
-
-interface ResultRow {
-  test_name: string;
-  value_text: string;
-  unit: string | null;
-  reference_range: string | null;
-  flag_text: string | null;
-  context_text: string | null;
-  measured_at: string | null;
-  amended: number;
-}
 
 export const getOverview = defineTool({
   name: "get_overview",
@@ -23,48 +13,78 @@ export const getOverview = defineTool({
   readOnly: true,
   destructive: false,
   examples: [{}],
-  run: (_input, { store, personId }) => {
+  run: async (_input, { store, personId }) => {
     if (!store) return { note: "Rufi has no records yet." };
-    const { db } = store;
+    const { query } = store;
     if (personId === undefined) {
-      const people = db
-        .prepare("SELECT display_name FROM people ORDER BY display_name")
-        .all() as { display_name: string }[];
+      const people = await query
+        .selectFrom("people")
+        .select("display_name")
+        .orderBy("display_name")
+        .execute();
       if (people.length === 0) return { note: "Rufi has no people yet." };
       throw new Refusal(
         `No person is chosen in Rufi, so the record can't be read. Ask the user which person they mean: ${people.map((p) => p.display_name).join(", ")}.`,
       );
     }
-    const person = db
-      .prepare("SELECT id, display_name FROM people WHERE id = ?")
-      .get(personId) as { id: string; display_name: string } | undefined;
+    const person = await query
+      .selectFrom("people")
+      .select(["id", "display_name"])
+      .where("id", "=", personId)
+      .executeTakeFirst();
     if (!person) throw new Refusal("The chosen person isn't in Rufi.");
 
-    const count = (sql: string) =>
-      (db.prepare(sql).get(person.id) as { n: number }).n;
+    const count = async (table: "documents" | "reports" | "results") =>
+      (
+        await query
+          .selectFrom(table)
+          .select((eb) => eb.fn.countAll<number>().as("n"))
+          .where("person_id", "=", person.id)
+          .executeTakeFirstOrThrow()
+      ).n;
     // Current: no other result of this person replaces it.
-    const current = `FROM results r WHERE r.person_id = ? AND NOT EXISTS (
-      SELECT 1 FROM results n WHERE n.person_id = r.person_id AND n.replaces_id = r.id)`;
-    const total = count(
-      "SELECT count(*) AS n FROM results WHERE person_id = ?",
-    );
-    const currentCount = count(`SELECT count(*) AS n ${current}`);
-    const rows = db
-      .prepare(
-        `SELECT test_name, value_text, unit, reference_range, flag_text,
-           context_text, measured_at, replaces_id IS NOT NULL AS amended
-         ${current}
-         ORDER BY measured_at IS NULL, measured_at DESC, entered_at DESC, id DESC
-         LIMIT ${String(RESULTS_SHOWN)}`,
-      )
-      .all(person.id) as unknown as ResultRow[];
+    const current = query
+      .selectFrom("results as r")
+      .where("r.person_id", "=", person.id)
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            eb
+              .selectFrom("results as n")
+              .select("n.id")
+              .whereRef("n.person_id", "=", "r.person_id")
+              .whereRef("n.replaces_id", "=", "r.id"),
+          ),
+        ),
+      );
+    const total = await count("results");
+    const currentCount = (
+      await current
+        .select((eb) => eb.fn.countAll<number>().as("n"))
+        .executeTakeFirstOrThrow()
+    ).n;
+    const rows = await current
+      .select([
+        "r.test_name",
+        "r.value_text",
+        "r.unit",
+        "r.reference_range",
+        "r.flag_text",
+        "r.context_text",
+        "r.measured_at",
+        sql<number>`r.replaces_id IS NOT NULL`.as("amended"),
+      ])
+      .orderBy(sql`r.measured_at IS NULL`)
+      .orderBy("r.measured_at", "desc")
+      .orderBy("r.entered_at", "desc")
+      .orderBy("r.id", "desc")
+      .limit(RESULTS_SHOWN)
+      .execute();
 
     return {
       person: person.display_name,
-      documents: count(
-        "SELECT count(*) AS n FROM documents WHERE person_id = ?",
-      ),
-      reports: count("SELECT count(*) AS n FROM reports WHERE person_id = ?"),
+      documents: await count("documents"),
+      reports: await count("reports"),
       results: currentCount,
       earlier_versions_kept: total - currentCount,
       latest_results: rows.map((row) => ({

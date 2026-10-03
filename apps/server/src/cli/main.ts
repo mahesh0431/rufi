@@ -134,7 +134,8 @@ async function ask(
     if (options.debug) console.error(`[debug] ${line}`);
   };
   const store = openReadOnly(databasePath(deps.home));
-  const personId = options.person ?? (store ? onlyPersonId(store) : undefined);
+  const personId =
+    options.person ?? (store ? await onlyPersonId(store) : undefined);
   const runtime = codexRuntime({
     home: deps.home,
     command: { file: await codexBinary(), args: [] },

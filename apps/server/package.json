@@ -6,13 +6,15 @@
   "scripts": {
     "rufi": "node src/cli/main.ts",
     "codex:types": "node scripts/codex-types.ts",
-    "tools:json": "node scripts/tools-json.ts"
+    "tools:json": "node scripts/tools-json.ts",
+    "db:types": "node scripts/db-types.ts"
   },
   "dependencies": {
     "@napi-rs/keyring": "2.1.0",
     "@openai/codex": "0.159.2",
     "effect": "4.0.0",
     "jose": "6.2.12",
+    "kysely": "0.29.6",
     "proper-lockfile": "4.1.2"
   },
   "devDependencies": {

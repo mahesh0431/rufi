@@ -3,9 +3,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { Kysely } from "kysely";
+import { NodeSqliteDialect } from "./dialect.ts";
+import type { Tables } from "./tables.ts";
 
 export interface Store {
+  /** The connection itself, for checks Kysely doesn't build (schema, pragmas). */
   db: DatabaseSync;
+  /** Typed queries on the same connection. */
+  query: Kysely<Tables>;
   close: () => void;
 }
 
@@ -39,6 +45,7 @@ export function openReadOnly(path: string): Store | undefined {
   }
   return {
     db,
+    query: new Kysely<Tables>({ dialect: new NodeSqliteDialect(db) }),
     close: () => {
       db.close();
     },
@@ -46,10 +53,12 @@ export function openReadOnly(path: string): Store | undefined {
 }
 
 /** The one person in the record, when there is exactly one. */
-export function onlyPersonId(store: Store): string | undefined {
-  const people = store.db.prepare("SELECT id FROM people LIMIT 2").all() as {
-    id: string;
-  }[];
+export async function onlyPersonId(store: Store): Promise<string | undefined> {
+  const people = await store.query
+    .selectFrom("people")
+    .select("id")
+    .limit(2)
+    .execute();
   return people.length === 1 ? people[0]?.id : undefined;
 }
 
