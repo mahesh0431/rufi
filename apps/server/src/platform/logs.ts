@@ -83,7 +83,8 @@ function line(event: LogEvent, fields: LogFields = {}): string {
     event: EVENTS.has(event) ? event : "unnamed",
   };
   for (const [key, value] of Object.entries(fields)) {
-    const valid = FIELDS[key];
+    // Own keys only: "constructor" or "toString" must not find Object's.
+    const valid = Object.hasOwn(FIELDS, key) ? FIELDS[key] : undefined;
     if (valid && value !== undefined) out[key] = valid(value) ? value : "other";
   }
   return JSON.stringify(out);

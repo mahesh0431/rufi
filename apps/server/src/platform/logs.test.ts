@@ -77,7 +77,15 @@ describe("the log file", () => {
       ms: Number.NaN,
       note: "fictional",
       [HEALTH_TEXT]: 1,
+      constructor: "HbA1c:7.9",
+      toString: "rt-fictional-short",
     });
+    // As parsed JSON can have it: an own "__proto__" key.
+    const parsed = JSON.parse('{"__proto__": "metformin"}') as Record<
+      string,
+      string
+    >;
+    log("codex.request", parsed);
     log(HEALTH_TEXT as LogEvent);
     expect(await lines(path)).toEqual([
       {
@@ -97,6 +105,7 @@ describe("the log file", () => {
         code: "other",
         ms: "other",
       },
+      { event: "codex.request" },
       { event: "unnamed" },
     ]);
   });

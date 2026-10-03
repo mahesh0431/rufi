@@ -63,11 +63,13 @@ export class Agent extends Context.Service<Agent, AgentRuntime>()(
 ) {}
 
 /**
- * How long Rufi waits for a stopped call to end. The agent's own steps have
- * shorter deadlines, so reaching this means a bug; the agent is then closed
+ * How long Rufi waits for a stopped call to end. It covers the slowest path
+ * with its own deadlines: renewing the sign-in (Keychain reads and writes up
+ * to 60 s each, OpenAI up to three tries of 20 s), whose new token must be
+ * saved before Rufi exits. Reaching it means a bug; the agent is then closed
  * with the scope that holds it.
  */
-const STOP_LIMIT_MS = 45_000;
+const STOP_LIMIT_MS = 5 * 60_000;
 
 /**
  * One agent call as an Effect. When it is interrupted (Ctrl-C, a closing
