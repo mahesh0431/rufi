@@ -1,31 +1,31 @@
 // Where a ChatGPT sign-in is kept: the registration (no secrets) in
 // RUFI_HOME/chatgpt.json, the tokens in the Keychain under the host id.
 import { join } from "node:path";
-import { z } from "zod";
+import { Result, Schema } from "effect";
 import { readJson, writePrivateJson } from "../../platform/files.ts";
 import { ChatGptError, type ChatGptDeps } from "./openai.ts";
 
-const Registration = z.object({
-  hostId: z.string().startsWith("urn:uuid:"),
+const Registration = Schema.Struct({
+  hostId: Schema.String.check(Schema.isPattern(/^urn:uuid:/)),
   /** The issued `oaiapp_…` id; set as soon as the first callback arrives. */
-  clientId: z.string().optional(),
+  clientId: Schema.optional(Schema.String),
   /** Set once a sign-in is verified; later sign-ins must match it. */
-  subject: z.string().optional(),
-  email: z.string().optional(),
+  subject: Schema.optional(Schema.String),
+  email: Schema.optional(Schema.String),
 });
-export type Registration = z.infer<typeof Registration>;
+export type Registration = typeof Registration.Type;
 
-const Credentials = z.object({
-  clientId: z.string(),
-  subject: z.string(),
-  scopes: z.array(z.string()),
-  accessToken: z.string(),
-  refreshToken: z.string(),
-  idToken: z.string(),
-  expiresAt: z.number(),
-  earliestRefreshAt: z.number().optional(),
+const Credentials = Schema.Struct({
+  clientId: Schema.String,
+  subject: Schema.String,
+  scopes: Schema.Array(Schema.String),
+  accessToken: Schema.String,
+  refreshToken: Schema.String,
+  idToken: Schema.String,
+  expiresAt: Schema.Finite,
+  earliestRefreshAt: Schema.optional(Schema.Finite),
 });
-export type Credentials = z.infer<typeof Credentials>;
+export type Credentials = typeof Credentials.Type;
 
 const file = (home: string) => join(home, "chatgpt.json");
 
@@ -34,17 +34,17 @@ export async function readRegistration(
 ): Promise<Registration | undefined> {
   const value = await readJson(file(home));
   if (value === undefined) return undefined;
-  const parsed = Registration.safeParse(value);
-  if (!parsed.success) {
+  const parsed = Schema.decodeUnknownResult(Registration)(value);
+  if (Result.isFailure(parsed)) {
     throw new ChatGptError(
       "storage",
       `${file(home)} is damaged. Remove it and sign in again.`,
       {
-        cause: parsed.error,
+        cause: parsed.failure,
       },
     );
   }
-  return parsed.data;
+  return parsed.success;
 }
 
 export async function saveRegistration(
@@ -82,14 +82,14 @@ export async function readCredentials(
     );
   }
   if (stored === undefined) return undefined;
-  const parsed = Credentials.safeParse(parseJson(stored));
+  const parsed = Schema.decodeUnknownResult(Credentials)(parseJson(stored));
   if (
-    !parsed.success ||
-    parsed.data.clientId !== registration.clientId ||
-    parsed.data.subject !== registration.subject
+    Result.isFailure(parsed) ||
+    parsed.success.clientId !== registration.clientId ||
+    parsed.success.subject !== registration.subject
   )
     return undefined;
-  return parsed.data;
+  return parsed.success;
 }
 
 function parseJson(text: string): unknown {

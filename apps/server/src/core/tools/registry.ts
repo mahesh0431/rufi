@@ -1,6 +1,6 @@
-// Rufi's tools: plain functions with a Zod schema, free of any agent's types,
-// so Codex now and an MCP host later are thin adapters over the same list.
-import { z } from "zod";
+// Rufi's tools: plain functions with an Effect Schema, free of any agent's
+// types, so Codex now and an MCP host later are thin adapters over the same list.
+import { Result, Schema, SchemaIssue } from "effect";
 import type { Store } from "../store/database.ts";
 
 /** What a tool gets from Rufi, never from the model. */
@@ -11,30 +11,39 @@ export interface ToolContext {
   personId: string | undefined;
 }
 
-export interface Tool<Input extends z.ZodType = z.ZodType> {
+/** A tool's input: decoded without services, like JSON. */
+type Input = Schema.Codec<unknown, unknown>;
+
+export interface Tool<In extends Input = Input> {
   name: string;
   /** Written for the model; every limit the tool enforces is stated here. */
   description: string;
-  input: Input;
+  input: In;
   /** Who may call it; maps to MCP Apps' `visibility` later. */
   callers: "model" | "ui" | "both";
   readOnly: boolean;
   destructive: boolean;
   /** Valid inputs, shown in tools.json and to the model after a mistake. */
-  examples: readonly z.input<Input>[];
-  run: (input: z.output<Input>, context: ToolContext) => unknown;
+  examples: readonly In["Encoded"][];
+  run: (input: In["Type"], context: ToolContext) => unknown;
 }
 
 /** A tool's answer that isn't a result, in words the model can act on. */
 export class Refusal extends Error {}
 
 /** Kept generic per tool, then stored in one list. */
-export const defineTool = <Input extends z.ZodType>(tool: Tool<Input>): Tool =>
-  tool;
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- one list of differently typed tools
+export const defineTool = <In extends Input>(tool: Tool<In>): Tool =>
+  tool as unknown as Tool;
+
+/** The input of a tool that takes none: an object with no keys. */
+export const NoInput = Schema.Record(
+  Schema.String,
+  Schema.Never.annotate({ message: "This tool takes no input; leave it out" }),
+);
 
 interface Issue {
   path: string;
-  expected: string;
   got: string;
   fix: string;
 }
@@ -90,16 +99,16 @@ export function toolCaller(
         `There is no tool called ${name}. Rufi's tools: ${names.join(", ")}.`,
       );
     }
-    const parsed = tool.input.safeParse(input, { reportInput: true });
-    if (!parsed.success) {
+    const parsed = Schema.decodeUnknownResult(tool.input, STRICT)(input);
+    if (Result.isFailure(parsed)) {
       return reject(
         `The input for ${name} isn't valid.`,
-        parsed.error.issues.map(toIssue),
+        issuesOf(parsed.failure.issue, input),
         tool.examples[0],
       );
     }
     try {
-      const result: unknown = await tool.run(parsed.data, context());
+      const result: unknown = await tool.run(parsed.success, context());
       return { ok: true, text: JSON.stringify({ ok: true, result }) };
     } catch (error) {
       if (error instanceof Refusal) return reject(error.message);
@@ -116,17 +125,29 @@ export function toolCaller(
   };
 }
 
-function toIssue(issue: z.core.$ZodIssue): Issue {
-  const expected =
-    "expected" in issue && typeof issue.expected === "string"
-      ? issue.expected
-      : issue.code;
-  return {
-    path: issue.path.map(String).join("."),
-    expected,
-    got: describeInput(issue.input),
-    fix: issue.message,
-  };
+/** Unknown keys are mistakes, and every mistake is reported at once. */
+const STRICT = { onExcessProperty: "error", errors: "all" } as const;
+
+const standardIssues = SchemaIssue.makeFormatterStandardSchemaV1();
+
+function issuesOf(issue: SchemaIssue.Issue, input: unknown): Issue[] {
+  return standardIssues(issue).issues.map(({ path = [], message }) => {
+    const keys = path.map((key) => (typeof key === "object" ? key.key : key));
+    return {
+      path: keys.map(String).join("."),
+      got: describeInput(valueAt(input, keys)),
+      fix: message,
+    };
+  });
+}
+
+function valueAt(input: unknown, keys: readonly PropertyKey[]): unknown {
+  let value = input;
+  for (const key of keys) {
+    if (typeof value !== "object" || value === null) return undefined;
+    value = (value as Record<PropertyKey, unknown>)[key];
+  }
+  return value;
 }
 
 function describeInput(input: unknown): string {
@@ -137,9 +158,15 @@ function describeInput(input: unknown): string {
 
 /** The JSON Schema of a tool's input, as tools.json and the agent get it. */
 export function inputSchema(tool: Tool): Record<string, unknown> {
-  const schema: Record<string, unknown> = z.toJSONSchema(tool.input, {
-    io: "input",
+  const { schema, definitions } = Schema.toJsonSchemaDocument(tool.input, {
+    onExcessProperty: "error",
   });
-  delete schema["$schema"]; // the dialect; agents don't need it
-  return schema;
+  // `properties` comes first and is always there: the shape Codex already
+  // takes for a tool without input.
+  const json: Record<string, unknown> =
+    schema["type"] === "object"
+      ? { type: "object", properties: {}, ...schema }
+      : { ...schema };
+  if (Object.keys(definitions).length > 0) json["$defs"] = definitions;
+  return json;
 }

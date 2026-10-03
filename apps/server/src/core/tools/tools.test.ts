@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, it } from "vitest";
-import { z } from "zod";
+import { Result, Schema } from "effect";
 import { TOOLS_JSON } from "../../../scripts/tools-json.ts";
 import {
   databasePath,
@@ -14,6 +14,7 @@ import {
 import { RESULTS_SHOWN } from "./overview.ts";
 import {
   defineTool,
+  NoInput,
   REJECTIONS_PER_TURN,
   Refusal,
   toolCaller,
@@ -231,15 +232,25 @@ describe("the error envelope", () => {
       error: "The input for get_overview isn't valid.",
       issues: [
         {
-          path: "",
-          expected: "unrecognized_keys",
-          got: '{"person":"ravi"}',
-          fix: 'Unrecognized key: "person"',
+          path: "person",
+          got: '"ravi"',
+          fix: "This tool takes no input; leave it out",
         },
       ],
       example: {},
       rejections_left: REJECTIONS_PER_TURN - 1,
     });
+  });
+
+  it("refuses input that isn't an object", async () => {
+    const { body } = await call(
+      { store: undefined, personId: undefined },
+      "get_overview",
+      "everything",
+    );
+    expect(body["issues"]).toEqual([
+      { path: "", got: '"everything"', fix: "Expected object" },
+    ]);
   });
 
   it("names Rufi's tools when the model asks for one that doesn't exist", async () => {
@@ -283,7 +294,7 @@ describe("the error envelope", () => {
     const broken = defineTool({
       name: "broken",
       description: "Fails.",
-      input: z.strictObject({}),
+      input: NoInput,
       callers: "model",
       readOnly: true,
       destructive: false,
@@ -309,7 +320,7 @@ describe("the error envelope", () => {
     const refusing = defineTool({
       name: "refusing",
       description: "Refuses.",
-      input: z.strictObject({}),
+      input: NoInput,
       callers: "model",
       readOnly: true,
       destructive: false,
@@ -334,7 +345,7 @@ describe("the error envelope", () => {
     const uiOnly = defineTool({
       name: "accept_changes",
       description: "UI only.",
-      input: z.strictObject({}),
+      input: NoInput,
       callers: "ui",
       readOnly: false,
       destructive: false,
@@ -359,7 +370,9 @@ describe("tools.json", () => {
     for (const tool of TOOLS) {
       expect(tool.examples.length).toBeGreaterThan(0);
       for (const example of tool.examples) {
-        expect(tool.input.safeParse(example).success).toBe(true);
+        expect(
+          Result.isSuccess(Schema.decodeUnknownResult(tool.input)(example)),
+        ).toBe(true);
       }
     }
   });

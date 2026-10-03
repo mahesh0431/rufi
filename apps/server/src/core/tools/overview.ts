@@ -1,6 +1,5 @@
 // get_overview: the active person's record at a glance, as printed.
-import { z } from "zod";
-import { defineTool, Refusal } from "./registry.ts";
+import { defineTool, NoInput, Refusal } from "./registry.ts";
 
 /** Results shown at most; the description says the same number. */
 export const RESULTS_SHOWN = 20;
@@ -19,7 +18,7 @@ interface ResultRow {
 export const getOverview = defineTool({
   name: "get_overview",
   description: `The active person's health record in Rufi at a glance: their name, how many documents and reports they have, and their current test results exactly as printed (test, value, unit, reference range, flag, method or context, measured date at the precision known). At most ${String(RESULTS_SHOWN)} results, newest measured first, undated last. An amended result replaces the one it corrects and says "amended": true. Takes no input: Rufi chooses the person, not you.`,
-  input: z.strictObject({}),
+  input: NoInput,
   callers: "both",
   readOnly: true,
   destructive: false,

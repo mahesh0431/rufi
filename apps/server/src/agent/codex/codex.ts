@@ -536,7 +536,7 @@ function dynamicTools(tools: AgentTools): DynamicToolSpec[] {
       tools: tools.specs.map((spec) => ({
         type: "function",
         ...spec,
-        // A JSON Schema made by Zod: plain JSON.
+        // A JSON Schema made by Effect Schema: plain JSON.
         inputSchema: spec.inputSchema as JsonValue,
       })),
     },

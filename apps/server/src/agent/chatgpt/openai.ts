@@ -1,7 +1,7 @@
 // OpenAI's Sign in with ChatGPT for open-source local apps, as documented at
 // https://developers.openai.com/siwc/token-sharing-open-source (checked 30 Sep 2026).
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import { z } from "zod";
+import { Result, Schema } from "effect";
 import type { SecretStore } from "../../platform/keychain.ts";
 
 export const SCOPE =
@@ -43,15 +43,21 @@ export class ChatGptError extends Error {
   }
 }
 
-const Discovery = z.object({
-  issuer: z.string(),
-  authorization_endpoint: z.url(),
-  token_endpoint: z.url(),
-  jwks_uri: z.url(),
-  revocation_endpoint: z.url(),
+const Url = Schema.String.check(
+  Schema.makeFilter((text: string) => URL.canParse(text), {
+    expected: "a URL",
+  }),
+);
+
+const Discovery = Schema.Struct({
+  issuer: Schema.String,
+  authorization_endpoint: Url,
+  token_endpoint: Url,
+  jwks_uri: Url,
+  revocation_endpoint: Url,
 });
 
-export interface OpenAI extends z.infer<typeof Discovery> {
+export interface OpenAI extends Schema.Schema.Type<typeof Discovery> {
   keys: ReturnType<typeof createRemoteJWKSet>;
 }
 
@@ -62,11 +68,11 @@ export async function discover(deps: ChatGptDeps): Promise<OpenAI> {
     `${deps.issuer}/.well-known/openid-configuration`,
     {},
   );
-  let doc: z.infer<typeof Discovery>;
+  let doc: typeof Discovery.Type;
   try {
     if (response.status !== 200)
       throw new Error(`HTTP ${String(response.status)}`);
-    doc = Discovery.parse(JSON.parse(response.text));
+    doc = Schema.decodeUnknownSync(Discovery)(JSON.parse(response.text));
   } catch (error) {
     throw new ChatGptError(
       "discovery",
@@ -162,14 +168,18 @@ function parseObject(text: string): Record<string, unknown> | undefined {
   }
 }
 
-const TokenResponse = z.object({
-  token_type: z.string().refine((type) => type.toLowerCase() === "bearer"),
-  access_token: z.string().min(1),
-  refresh_token: z.string().min(1),
-  id_token: z.string().min(1).optional(),
-  expires_in: z.number().int().positive(),
-  scope: z.string().optional(),
-  earliest_refresh_at: z.union([z.number(), z.string()]).optional(),
+const TokenResponse = Schema.Struct({
+  token_type: Schema.String.check(
+    Schema.makeFilter((type: string) => type.toLowerCase() === "bearer"),
+  ),
+  access_token: Schema.NonEmptyString,
+  refresh_token: Schema.NonEmptyString,
+  id_token: Schema.optional(Schema.NonEmptyString),
+  expires_in: Schema.Int.check(Schema.isGreaterThan(0)),
+  scope: Schema.optional(Schema.String),
+  earliest_refresh_at: Schema.optional(
+    Schema.Union([Schema.Finite, Schema.String]),
+  ),
 });
 
 export interface TokenSet {
@@ -183,9 +193,9 @@ export interface TokenSet {
 
 /** Parses a token response, or undefined when it's unusable. */
 export function parseTokens(body: unknown): TokenSet | undefined {
-  const parsed = TokenResponse.safeParse(body);
-  if (!parsed.success) return undefined;
-  const tokens = parsed.data;
+  const parsed = Schema.decodeUnknownResult(TokenResponse)(body);
+  if (Result.isFailure(parsed)) return undefined;
+  const tokens = parsed.success;
   const earliest = tokens.earliest_refresh_at;
   const earliestMs =
     earliest === undefined
