@@ -1,6 +1,5 @@
 // The agent adapter: Rufi talks to a coding agent through this, so the agent
 // behind it (Codex now) can change without the rest of Rufi changing.
-import { setTimeout as sleep } from "node:timers/promises";
 import { Context, Effect } from "effect";
 
 export type TurnEvent =
@@ -101,7 +100,7 @@ export const agentCall = <A>(
           Promise.resolve().then(() => agent.stop()),
           pending,
         ]),
-        sleep(limitMs, undefined, { ref: false }),
+        new Promise((resolve) => setTimeout(resolve, limitMs).unref()),
       ]);
     });
   });

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Effect, Fiber } from "effect";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Scenario } from "../../../tests/fake-codex.ts";
 import { childEnvironment } from "../../platform/config.ts";
 import {
@@ -499,6 +499,38 @@ describe("Stop, more cases", () => {
     // Well before initialize's own deadline (requestMs, 1 s here).
     expect(Date.now() - began).toBeLessThan(500);
     expect((await pids()).filter(isRunning)).toEqual([]);
+  });
+
+  it("waits for a sign-in renewal to be saved before it ends", async () => {
+    vi.useFakeTimers();
+    try {
+      let saved = false;
+      // A renewal whose Keychain save takes 50 s, within its 60 s deadline.
+      const renewal = new Promise<string>((resolve) =>
+        setTimeout(() => {
+          saved = true;
+          resolve("thread-1");
+        }, 50_000),
+      );
+      const agent: AgentRuntime = {
+        open: () => renewal,
+        turn: () => Promise.reject(new Error("unused")),
+        stop: () => Promise.resolve(),
+        close: () => Promise.resolve(),
+      };
+      const opening = Effect.runFork(agentCall(agent, () => agent.open()));
+      let ended = false;
+      void Effect.runPromise(Fiber.interrupt(opening)).then(() => {
+        ended = true;
+      });
+      await vi.advanceTimersByTimeAsync(45_000);
+      expect(ended).toBe(false);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(saved).toBe(true);
+      expect(ended).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("gives up waiting for an agent that never stops", async () => {
