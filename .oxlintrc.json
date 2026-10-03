@@ -1,0 +1,281 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "import", "oxc", "unicorn"],
+  "categories": {
+    "correctness": "error"
+  },
+  "options": {
+    "typeAware": true
+  },
+  "ignorePatterns": ["src/agent/codex/protocol/**", "lint/**"],
+  "rules": {
+    "preserve-caught-error": "error",
+    "typescript/switch-exhaustiveness-check": "error",
+    "import/no-cycle": "error",
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "@effect/schema",
+            "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+          },
+          {
+            "name": "@effect/platform",
+            "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+          },
+          {
+            "name": "@effect/data",
+            "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+          },
+          {
+            "name": "@effect/io",
+            "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+          },
+          {
+            "name": "@effect/stream",
+            "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+          },
+          {
+            "name": "@effect/cli",
+            "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+          },
+          {
+            "name": "@effect/rpc",
+            "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+          },
+          {
+            "name": "@effect/sql",
+            "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+          },
+          {
+            "name": "@effect/experimental",
+            "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+          },
+          {
+            "name": "@effect/typeclass",
+            "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+          }
+        ]
+      }
+    ],
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/await-thenable": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/restrict-template-expressions": "error",
+    "typescript/restrict-plus-operands": "error",
+    "typescript/no-unnecessary-condition": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/prefer-promise-reject-errors": "error",
+    "typescript/no-base-to-string": "error",
+    "typescript/no-confusing-void-expression": "error",
+    "typescript/use-unknown-in-catch-callback-variable": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/require-await": "error",
+    "rufi/no-silent-catch": "error",
+    "no-empty": "error"
+  },
+  "overrides": [
+    {
+      "files": ["src/platform/**/*.ts"],
+      "excludeFiles": ["**/*.test.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@effect/schema",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/platform",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/data",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/io",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/stream",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/cli",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/rpc",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/sql",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/experimental",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/typeclass",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["**/core/**"],
+                "message": "src/platform may not import src/core (folder borders, AGENTS.md)."
+              },
+              {
+                "group": ["**/agent/**"],
+                "message": "src/platform may not import src/agent (folder borders, AGENTS.md)."
+              },
+              {
+                "group": ["**/cli/**"],
+                "message": "src/platform may not import src/cli (folder borders, AGENTS.md)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/core/**/*.ts"],
+      "excludeFiles": ["**/*.test.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@effect/schema",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/platform",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/data",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/io",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/stream",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/cli",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/rpc",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/sql",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/experimental",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/typeclass",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["**/agent/**"],
+                "message": "src/core may not import src/agent (folder borders, AGENTS.md)."
+              },
+              {
+                "group": ["**/cli/**"],
+                "message": "src/core may not import src/cli (folder borders, AGENTS.md)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/agent/**/*.ts"],
+      "excludeFiles": ["**/*.test.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@effect/schema",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/platform",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/data",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/io",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/stream",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/cli",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/rpc",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/sql",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/experimental",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/typeclass",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["**/core/**"],
+                "message": "src/agent may not import src/core (folder borders, AGENTS.md)."
+              },
+              {
+                "group": ["**/cli/**"],
+                "message": "src/agent may not import src/cli (folder borders, AGENTS.md)."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "jsPlugins": ["./lint/rufi.js"]
+}

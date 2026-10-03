@@ -113,7 +113,8 @@ export function connect(
     pending.delete(id as number);
     clearTimeout(call.timer);
     const error = message["error"] as
-      { code?: unknown; message?: unknown } | undefined;
+      | { code?: unknown; message?: unknown }
+      | undefined;
     if (error) {
       call.reject(
         new RpcError(
