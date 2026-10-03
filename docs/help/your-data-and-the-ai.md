@@ -13,9 +13,9 @@ Everything is in one data folder on your Mac. Today you choose it with the `RUFI
 | `logs/`            | Rufi's log (see below)                                                               |
 | `codex/`           | The AI's own files: its settings and its copies of your conversations                |
 | `workspace/`       | The folder where the AI works                                                        |
-| `rufi.lock`        | A short-lived file while Rufi changes the sign-in                                    |
+| `rufi.lock`        | A short-lived folder while Rufi uses or changes the sign-in                          |
 
-Rufi makes its new folders and files so that only your Mac user account can open them. It doesn't change a folder that already existed, so who can open a folder you chose depends on that folder's permissions and on who can use your Mac account.
+When Rufi creates your data folder, it makes it private to your Mac user account. It doesn't change a folder that already existed, so who can open a folder you chose depends on that folder's permissions and on who can use your Mac account.
 
 > **Note:** When you ask Rufi something, the AI reads the parts of your record it needs. That text goes to the AI service you signed in with (today OpenAI, through your ChatGPT plan) so it can answer. See [OpenAI's policies](https://openai.com/policies/) for how they handle it.
 
