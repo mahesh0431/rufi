@@ -1,5 +1,6 @@
 // The agent adapter: Rufi talks to a coding agent through this, so the agent
 // behind it (Codex now) can change without the rest of Rufi changing.
+import { Context } from "effect";
 
 export type TurnEvent =
   /** Part of the reply, as it streams. */
@@ -54,3 +55,8 @@ export interface AgentRuntime {
   /** Ends the agent process and everything it started. */
   close: () => Promise<void>;
 }
+
+/** The agent, for as long as it's needed; closing it ends what it started. */
+export class Agent extends Context.Service<Agent, AgentRuntime>()(
+  "rufi/Agent",
+) {}

@@ -22,6 +22,7 @@ import {
   type ToolContext,
 } from "./registry.ts";
 import { forAgent, TOOLS, toolsJson } from "./tools.ts";
+import type { Log } from "../../platform/logs.ts";
 
 const read = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
 const schema = await read("../store/schema.sql");
@@ -29,6 +30,10 @@ const family = await read("../../../tests/fixtures/fictional-family.sql");
 
 let path: string;
 let logged: string[];
+/** Records each log event as one JSON line, as the log file would. */
+const record: Log = (event, fields) => {
+  logged.push(JSON.stringify({ event, ...fields }));
+};
 
 /** A database file with the schema and, by default, the fictional family. */
 function makeDatabase(...sql: string[]): Store {
@@ -52,10 +57,7 @@ async function call(
   name = "get_overview",
   input: unknown = {},
 ) {
-  const answer = await forAgent(
-    () => context,
-    logged.push.bind(logged),
-  ).forTurn()(name, input);
+  const answer = await forAgent(() => context, record).forTurn()(name, input);
   return {
     ...answer,
     body: JSON.parse(answer.text) as Record<string, unknown>,
@@ -291,7 +293,7 @@ describe("the error envelope", () => {
     expect(left(next.text)).toBe(REJECTIONS_PER_TURN - 1);
   });
 
-  it("tells the model only that a tool failed, and logs the detail", async () => {
+  it("tells the model only that a tool failed, and logs only its name and error code", async () => {
     const broken = defineTool({
       name: "broken",
       description: "Fails.",
@@ -307,14 +309,16 @@ describe("the error envelope", () => {
     const caller = toolCaller(
       [broken],
       () => ({ store: undefined, personId: undefined }),
-      logged.push.bind(logged),
+      record,
     );
     const answer = await caller("broken", {});
     expect(JSON.parse(answer.text)).toEqual({
       ok: false,
       error: "Rufi couldn't run broken.",
     });
-    expect(logged.join("\n")).toContain("disk on fire");
+    expect(logged).toEqual([
+      JSON.stringify({ event: "tool.failed", tool: "broken", error: "Error" }),
+    ]);
   });
 
   it("treats a refusal as a rejection with its own words", async () => {

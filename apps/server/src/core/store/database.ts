@@ -3,7 +3,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { Context, Effect, Layer } from "effect";
 import { Kysely } from "kysely";
+import { Home } from "../../platform/config.ts";
 import { NodeSqliteDialect } from "./dialect.ts";
 import type { Tables } from "./tables.ts";
 
@@ -51,6 +53,25 @@ export function openReadOnly(path: string): Store | undefined {
     },
   };
 }
+
+/** The record, open read-only for as long as it's needed; undefined when there is none yet. */
+export class RecordStore extends Context.Service<
+  RecordStore,
+  Store | undefined
+>()("rufi/RecordStore") {}
+
+export const recordLayer = Layer.effect(
+  RecordStore,
+  Effect.acquireRelease(
+    Effect.flatMap(Home, (home) =>
+      Effect.try({
+        try: () => openReadOnly(databasePath(home)),
+        catch: (error) => error,
+      }),
+    ),
+    (store) => Effect.sync(() => store?.close()),
+  ),
+);
 
 /** The one person in the record, when there is exactly one. */
 export async function onlyPersonId(store: Store): Promise<string | undefined> {

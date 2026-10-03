@@ -6,6 +6,7 @@ import {
   type Tool,
   type ToolContext,
 } from "./registry.ts";
+import type { Log } from "../../platform/logs.ts";
 
 export const TOOLS: readonly Tool[] = [getOverview];
 
@@ -17,10 +18,7 @@ const TOOL_INSTRUCTIONS =
   "The user's health record lives in Rufi. Read it only through the rufi tools. Never open, copy or query Rufi's database or files directly, by code, SQL or shell.";
 
 /** The model's tools, in the shape an agent adapter takes (AgentTools). */
-export function forAgent(
-  context: () => ToolContext,
-  log: (line: string) => void,
-) {
+export function forAgent(context: () => ToolContext, log: Log) {
   const tools = TOOLS.filter((tool) => tool.callers !== "ui");
   return {
     namespace: NAMESPACE,

@@ -1,4 +1,5 @@
 import { AsyncEntry } from "@napi-rs/keyring";
+import { Context, Layer } from "effect";
 
 /** A small secret store; the macOS Keychain in the app, an in-memory map in tests. */
 export interface SecretStore {
@@ -10,7 +11,7 @@ export interface SecretStore {
 // Generous, because macOS may be asking the person to allow access.
 const DEADLINE_MS = 60_000;
 
-export function keychain(service: string): SecretStore {
+function keychain(service: string): SecretStore {
   const entry = (account: string) => new AsyncEntry(service, account);
   const deadline = () => AbortSignal.timeout(DEADLINE_MS);
   return {
@@ -24,3 +25,10 @@ export function keychain(service: string): SecretStore {
     },
   };
 }
+
+/** The macOS Keychain, under Rufi's own service name. */
+export class Secrets extends Context.Service<Secrets, SecretStore>()(
+  "rufi/Secrets",
+) {}
+
+export const secretsLayer = Layer.sync(Secrets, () => keychain("Rufi ChatGPT"));

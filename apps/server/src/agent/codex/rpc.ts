@@ -15,8 +15,8 @@ export interface RpcHandlers {
   /** Answers a request from Codex; throw an RpcError to refuse it. */
   request: (method: string, params: unknown) => Promise<unknown>;
   notification: (method: string, params: unknown) => void;
-  /** Something Rufi ignored, for the debug log. */
-  ignored: (what: string) => void;
+  /** Something Rufi ignored, for the log: a short code. */
+  ignored: (what: string, error?: string) => void;
 }
 
 export interface Rpc {
@@ -96,7 +96,7 @@ export function connect(
         throw new Error("not an object");
       message = parsed as Record<string, unknown>;
     } catch {
-      handlers.ignored("a line that isn't JSON-RPC");
+      handlers.ignored("not_json_rpc");
       return;
     }
     const { id, method } = message;
@@ -107,7 +107,7 @@ export function connect(
     }
     const call = typeof id === "number" ? pending.get(id) : undefined;
     if (!call) {
-      handlers.ignored("a reply to no request");
+      handlers.ignored("reply_to_no_request");
       return;
     }
     pending.delete(id as number);

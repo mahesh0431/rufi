@@ -1,6 +1,7 @@
 // Rufi's tools: plain functions with an Effect Schema, free of any agent's
 // types, so Codex now and an MCP host later are thin adapters over the same list.
 import { Result, Schema, SchemaIssue } from "effect";
+import { errorCode, type Log } from "../../platform/logs.ts";
 import type { Store } from "../store/database.ts";
 
 /** What a tool gets from Rufi, never from the model. */
@@ -66,7 +67,7 @@ export const REJECTIONS_PER_TURN = 3;
 export function toolCaller(
   tools: readonly Tool[],
   context: () => ToolContext,
-  log: (line: string) => void,
+  log: Log,
 ): (name: string, input: unknown) => Promise<ToolAnswer> {
   let left = REJECTIONS_PER_TURN;
   const reject = (
@@ -112,8 +113,8 @@ export function toolCaller(
       return { ok: true, text: JSON.stringify({ ok: true, result }) };
     } catch (error) {
       if (error instanceof Refusal) return reject(error.message);
-      // The detail is for Rufi's log; the model only learns it failed.
-      log(`tool ${name} failed: ${(error as Error).stack ?? String(error)}`);
+      // The model only learns it failed; the log gets the tool and the error's code.
+      log("tool.failed", { tool: name, error: errorCode(error) });
       return {
         ok: false,
         text: JSON.stringify({

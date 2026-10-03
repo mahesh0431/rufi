@@ -10,6 +10,7 @@
     "db:types": "node scripts/db-types.ts"
   },
   "dependencies": {
+    "@effect/platform-node": "4.0.0",
     "@napi-rs/keyring": "2.1.0",
     "@openai/codex": "0.159.2",
     "effect": "4.0.0",

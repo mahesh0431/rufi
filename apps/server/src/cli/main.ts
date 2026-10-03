@@ -1,23 +1,28 @@
-// Rufi's terminal commands. This is the composition root: real Keychain, real
-// OpenAI, the real browser.
+// Rufi's terminal commands. This is the composition root: the real data
+// folder, Keychain, OpenAI and Codex are joined here, as Effect layers, and
+// each command gets only the parts it needs. Effect closes every part when the
+// command ends, fails or is stopped with Ctrl-C.
 import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
 import { parseArgs } from "node:util";
 import { setTimeout as sleep } from "node:timers/promises";
+import { NodeRuntime } from "@effect/platform-node";
+import { Cause, Console, Effect, Layer } from "effect";
 import { signIn } from "../agent/chatgpt/signin.ts";
 import { accessToken, signOut, status } from "../agent/chatgpt/session.ts";
 import type { ChatGptDeps } from "../agent/chatgpt/openai.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexRuntime } from "../agent/codex/codex.ts";
-import type { TurnEvent } from "../agent/runtime.ts";
+import { Agent, type TurnEvent } from "../agent/runtime.ts";
 import {
-  databasePath,
   onlyPersonId,
-  openReadOnly,
+  RecordStore,
+  recordLayer,
 } from "../core/store/database.ts";
 import { forAgent } from "../core/tools/tools.ts";
-import { childEnvironment, rufiHome } from "../platform/config.ts";
-import { keychain } from "../platform/keychain.ts";
+import { childEnvironment, Home, homeLayer } from "../platform/config.ts";
+import { Secrets, secretsLayer } from "../platform/keychain.ts";
+import { Logs, logsLayer } from "../platform/logs.ts";
 
 const USAGE = `Usage: pnpm rufi <command>
   signin [--no-open]  sign in with ChatGPT
@@ -25,24 +30,80 @@ const USAGE = `Usage: pnpm rufi <command>
   signout             sign out and revoke the sign-in
   ask "question"      ask the AI and watch the answer stream (Ctrl-C stops it)
       [--person id]   whose record Rufi's tools read (not needed with one person)
-      [--debug]       also print what Rufi ignored or refused`;
+      [--debug]       also print Rufi's log lines`;
 
-async function main(args: readonly string[]): Promise<void> {
-  const [command, ...rest] = args;
-  if (command === undefined || command === "help" || command === "--help") {
-    console.log(USAGE);
-    return;
-  }
+/** A promise-based step, with its error kept as it is. */
+const run = <A>(step: () => Promise<A>) =>
+  Effect.tryPromise({ try: step, catch: (error) => error });
+
+/** What the sign-in code needs, from the data folder and the Keychain. */
+const chatGpt = Effect.gen(function* () {
   const deps: ChatGptDeps = {
-    home: rufiHome(),
-    secrets: keychain("Rufi ChatGPT"),
+    home: yield* Home,
+    secrets: yield* Secrets,
     issuer: "https://auth.openai.com",
     sleep: (ms) => sleep(ms),
   };
+  return deps;
+});
+
+/** The data folder and the Keychain; built only for commands that use them. */
+const base = Layer.mergeAll(homeLayer, secretsLayer);
+
+const main = Effect.gen(function* () {
+  const [command, ...rest] = process.argv.slice(2);
   switch (command) {
-    case "signin": {
-      const open = !rest.includes("--no-open");
-      const result = await signIn(deps, {
+    case undefined:
+    case "help":
+    case "--help":
+      return yield* Console.log(USAGE);
+    case "signin":
+      return yield* signinCommand(!rest.includes("--no-open")).pipe(
+        Effect.provide(base),
+      );
+    case "status":
+      return yield* statusCommand.pipe(Effect.provide(base));
+    case "signout":
+      return yield* signoutCommand.pipe(Effect.provide(base));
+    case "ask": {
+      const { values, positionals } = parseArgs({
+        args: rest,
+        options: { debug: { type: "boolean" }, person: { type: "string" } },
+        allowPositionals: true,
+      });
+      const question = positionals.join(" ").trim();
+      if (!question) return yield* usageError;
+      // Closed in reverse: Codex first, then the record, then the log.
+      return yield* askCommand(question).pipe(
+        Effect.provide(agentLayer(values.person)),
+        Effect.provide(recordLayer),
+        Effect.provide(
+          logsLayer(
+            values.debug
+              ? (line) => {
+                  console.error(line);
+                }
+              : undefined,
+          ),
+        ),
+        Effect.provide(base),
+      );
+    }
+    default:
+      return yield* usageError;
+  }
+});
+
+const usageError = Effect.sync(() => {
+  console.log(USAGE);
+  process.exitCode = 2;
+});
+
+const signinCommand = (open: boolean) =>
+  Effect.gen(function* () {
+    const deps = yield* chatGpt;
+    const result = yield* run(() =>
+      signIn(deps, {
         showLink: (link) => {
           console.log(
             open
@@ -57,113 +118,105 @@ async function main(args: readonly string[]): Promise<void> {
         openBrowser: (link) => {
           if (open) openBrowser(link);
         },
-      });
-      console.log(`Signed in as ${result.email ?? "your ChatGPT account"}.`);
-      if (!result.planUse) {
-        console.log(
-          "ChatGPT plan use wasn't allowed, so Rufi can't use your plan yet. Run pnpm rufi signin again to allow it.",
-        );
-      }
-      return;
-    }
-    case "status": {
-      const now = await status(deps);
-      if (!now.signedIn) {
-        console.log(
-          now.email
-            ? `Not signed in (last account: ${now.email}).`
-            : "Not signed in.",
-        );
-        return;
-      }
-      const until = now.expiresAt
-        ? new Date(now.expiresAt).toLocaleTimeString()
-        : "unknown";
-      console.log(`Signed in as ${now.email ?? "your ChatGPT account"}.`);
+      }),
+    );
+    console.log(`Signed in as ${result.email ?? "your ChatGPT account"}.`);
+    if (!result.planUse) {
       console.log(
-        `ChatGPT plan use: ${now.planUse ? "allowed" : "not allowed"}.`,
+        "ChatGPT plan use wasn't allowed, so Rufi can't use your plan yet. Run pnpm rufi signin again to allow it.",
       );
-      console.log(
-        `Current access token valid until ${until}; Rufi renews it when needed.`,
-      );
-      return;
     }
-    case "signout": {
-      const result = await signOut(deps);
-      if (!result.wasSignedIn) console.log("Not signed in.");
-      else if (result.revoked)
-        console.log("Signed out. ChatGPT confirmed the sign-in is revoked.");
-      else {
-        console.log(
-          "Signed out here, but ChatGPT couldn't confirm the revocation. To be sure, disconnect Rufi in ChatGPT settings.",
-        );
-      }
-      return;
-    }
-    case "ask": {
-      const { values, positionals } = parseArgs({
-        args: rest,
-        options: { debug: { type: "boolean" }, person: { type: "string" } },
-        allowPositionals: true,
-      });
-      const question = positionals.join(" ").trim();
-      if (!question) {
-        console.log(USAGE);
-        process.exitCode = 2;
-        return;
-      }
-      await ask(deps, question, values);
-      return;
-    }
-    default:
-      console.log(USAGE);
-      process.exitCode = 2;
-  }
-}
-
-/** Asks one question and streams the answer; the first Ctrl-C stops the turn. */
-async function ask(
-  deps: ChatGptDeps,
-  question: string,
-  options: { debug?: boolean; person?: string },
-): Promise<void> {
-  const { version } = createRequire(import.meta.url)("../../package.json") as {
-    version: string;
-  };
-  const log = (line: string) => {
-    if (options.debug) console.error(`[debug] ${line}`);
-  };
-  const store = openReadOnly(databasePath(deps.home));
-  const personId =
-    options.person ?? (store ? await onlyPersonId(store) : undefined);
-  const runtime = codexRuntime({
-    home: deps.home,
-    command: { file: await codexBinary(), args: [] },
-    env: childEnvironment(),
-    token: (validForMs) => accessToken(deps, validForMs),
-    version,
-    tools: forAgent(() => ({ store, personId }), log),
-    log,
   });
-  const onInterrupt = () => {
-    process.stderr.write("\nStopping…\n");
-    void runtime.stop();
-  };
-  process.once("SIGINT", onInterrupt);
-  try {
-    const conversation = await runtime.open();
-    const result = await runtime.turn(conversation, question, show);
+
+const statusCommand = Effect.gen(function* () {
+  const deps = yield* chatGpt;
+  const now = yield* run(() => status(deps));
+  if (!now.signedIn) {
+    console.log(
+      now.email
+        ? `Not signed in (last account: ${now.email}).`
+        : "Not signed in.",
+    );
+    return;
+  }
+  const until = now.expiresAt
+    ? new Date(now.expiresAt).toLocaleTimeString()
+    : "unknown";
+  console.log(`Signed in as ${now.email ?? "your ChatGPT account"}.`);
+  console.log(`ChatGPT plan use: ${now.planUse ? "allowed" : "not allowed"}.`);
+  console.log(
+    `Current access token valid until ${until}; Rufi renews it when needed.`,
+  );
+});
+
+const signoutCommand = Effect.gen(function* () {
+  const deps = yield* chatGpt;
+  const result = yield* run(() => signOut(deps));
+  if (!result.wasSignedIn) console.log("Not signed in.");
+  else if (result.revoked)
+    console.log("Signed out. ChatGPT confirmed the sign-in is revoked.");
+  else {
+    console.log(
+      "Signed out here, but ChatGPT couldn't confirm the revocation. To be sure, disconnect Rufi in ChatGPT settings.",
+    );
+  }
+});
+
+/** Codex, with Rufi's tools reading the record for `person`; closed at the end. */
+const agentLayer = (person: string | undefined) =>
+  Layer.effect(
+    Agent,
+    Effect.gen(function* () {
+      const deps = yield* chatGpt;
+      const log = yield* Logs;
+      const store = yield* RecordStore;
+      const personId =
+        person ?? (store ? yield* run(() => onlyPersonId(store)) : undefined);
+      const file = yield* run(() => codexBinary());
+      const { version } = createRequire(import.meta.url)(
+        "../../package.json",
+      ) as { version: string };
+      return yield* Effect.acquireRelease(
+        Effect.sync(() =>
+          codexRuntime({
+            home: deps.home,
+            command: { file, args: [] },
+            env: childEnvironment(),
+            token: (validForMs) => accessToken(deps, validForMs),
+            version,
+            tools: forAgent(() => ({ store, personId }), log),
+            log,
+          }),
+        ),
+        (runtime) => Effect.promise(() => runtime.close()),
+      );
+    }),
+  );
+
+/** Asks one question and streams the answer; Ctrl-C stops the turn. */
+const askCommand = (question: string) =>
+  Effect.gen(function* () {
+    const agent = yield* Agent;
+    const log = yield* Logs;
+    const conversation = yield* run(() => agent.open());
+    const started = Date.now();
+    const result = yield* run(() =>
+      agent.turn(conversation, question, show),
+    ).pipe(
+      Effect.onInterrupt(() =>
+        Effect.andThen(
+          Console.error("\nStopping…"),
+          Effect.promise(() => agent.stop()),
+        ),
+      ),
+    );
+    log("turn.ended", { status: result.status, ms: Date.now() - started });
     process.stdout.write("\n");
     if (result.status !== "completed") {
       console.error(result.reason ?? result.status);
       process.exitCode = 1;
     }
-  } finally {
-    process.off("SIGINT", onInterrupt);
-    await runtime.close();
-    store?.close();
-  }
-}
+  });
 
 let midLine = false;
 function show(event: TurnEvent): void {
@@ -189,7 +242,17 @@ function openBrowser(link: string): void {
   });
 }
 
-main(process.argv.slice(2)).catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+/** A failure shows its message only, as before; the full error never prints. */
+const reported = main.pipe(
+  Effect.catchCause((cause) =>
+    Cause.hasInterruptsOnly(cause)
+      ? Effect.failCause(cause)
+      : Effect.sync(() => {
+          const error = Cause.squash(cause);
+          console.error(error instanceof Error ? error.message : String(error));
+          process.exitCode = 1;
+        }),
+  ),
+);
+
+NodeRuntime.runMain(reported, { disableErrorReporting: true });

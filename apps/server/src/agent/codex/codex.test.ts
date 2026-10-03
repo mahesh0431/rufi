@@ -21,7 +21,7 @@ let home: string;
 let log: string;
 let token: string;
 let asked: number[];
-let diagnostics: string[];
+let diagnostics: { event: string; method?: unknown }[];
 let runtime: AgentRuntime | undefined;
 /** While set, token requests wait for it. */
 let tokenGate: Promise<void> | undefined;
@@ -63,7 +63,7 @@ function start(scenario: Scenario = {}, tools?: AgentTools): AgentRuntime {
       answerMs: 500,
       toolMs: 200,
     },
-    log: (line) => diagnostics.push(line),
+    log: (event, fields) => diagnostics.push({ event, ...fields }),
   });
   return runtime;
 }
@@ -198,10 +198,13 @@ describe("a turn", () => {
       { type: "unknown", what: "teleport" },
     ]);
     expect(result).toEqual({ status: "completed" });
-    expect(diagnostics).toContain(
-      "ignored notification remoteControl/status/changed",
-    );
-    expect(diagnostics.some((line) => line.includes("brand/new"))).toBe(true);
+    expect(diagnostics).toContainEqual({
+      event: "codex.notification_ignored",
+      method: "remoteControl/status/changed",
+    });
+    expect(
+      diagnostics.some((d) => String(d.method).startsWith("brand/new")),
+    ).toBe(true);
   });
 
   it("sends the whole full-access setting with every turn", async () => {

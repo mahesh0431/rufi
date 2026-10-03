@@ -31,6 +31,7 @@ import type { TurnCompletedNotification } from "./protocol/v2/TurnCompletedNotif
 import type { TurnError } from "./protocol/v2/TurnError.ts";
 import type { TurnStartParams } from "./protocol/v2/TurnStartParams.ts";
 import type { TurnStartResponse } from "./protocol/v2/TurnStartResponse.ts";
+import { errorCode, type Log } from "../../platform/logs.ts";
 import { RpcError } from "./rpc.ts";
 import { prepareCodexHome } from "./settings.ts";
 
@@ -46,8 +47,8 @@ export interface CodexDeps {
   deadlines?: Partial<Deadlines>;
   /** Rufi's tools; fixed for the life of each thread (Codex keeps them). */
   tools?: AgentTools;
-  /** Diagnostics: what Rufi ignored or refused. Never the token. */
-  log?: (line: string) => void;
+  /** Diagnostics: what Rufi ignored or refused, as event names and codes. */
+  log?: Log;
 }
 
 /** A token must outlast a whole turn, plus this margin. */
@@ -114,12 +115,12 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       handlers: {
         request: answer,
         notification: onNotification,
-        ignored: (what) => {
-          log(`ignored ${what}`);
+        ignored: (what, error) => {
+          log("codex.ignored", { what, error });
         },
       },
       onExit: (why) => {
-        log(why.message);
+        log("codex.exited", { error: errorCode(why.cause ?? why) });
         // Rufi clears `server` before ending one itself; only a crash gets here.
         if (!server || server.running()) return;
         server = undefined;
@@ -202,7 +203,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
 
   /** Codex asked Rufi something. Approvals are declined; tools are run. */
   async function answer(method: string, params: unknown): Promise<unknown> {
-    log(`Codex asked: ${method}`);
+    log("codex.request", { method });
     switch (method) {
       case "item/commandExecution/requestApproval":
       case "item/fileChange/requestApproval":
@@ -266,7 +267,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     const running = current;
     const threadId = (params as { threadId?: unknown } | undefined)?.threadId;
     if (!running || threadId !== running.threadId) {
-      log(`ignored notification ${method}`);
+      log("codex.notification_ignored", { method });
       return;
     }
     if (running.turnId === undefined) {
@@ -281,7 +282,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     const p = params as { turnId?: unknown; turn?: { id?: unknown } };
     const turnId = p.turnId ?? p.turn?.id;
     if (turnId !== running.turnId) {
-      log(`ignored ${method} for another turn`);
+      log("codex.other_turn", { method });
       return;
     }
     switch (method) {
@@ -335,7 +336,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         end(running, resultOf((params as TurnCompletedNotification).turn));
         return;
       default:
-        log(`ignored notification ${method}`);
+        log("codex.notification_ignored", { method });
     }
   }
 
@@ -343,7 +344,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     try {
       await server?.track();
     } catch (error) {
-      log(`couldn't list processes: ${(error as Error).message}`);
+      log("codex.process_list_failed", { error: errorCode(error) });
     }
   }
 
@@ -404,10 +405,10 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
             if (!(await commandsLeft(app, running.threadId))) return;
             await sleep(100);
           }
-          log("commands still running after clean-up");
+          log("codex.commands_left");
         }
       } catch (error) {
-        log(`interrupt failed: ${(error as Error).message}`);
+        log("codex.interrupt_failed", { error: errorCode(error) });
       }
     }
     await shutDown();

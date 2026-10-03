@@ -2,6 +2,7 @@
 // plan use, and checked before Rufi uses it.
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
+import { errorCode } from "../../platform/logs.ts";
 import { killTree, trackGroups } from "./processes.ts";
 import type { InitializeParams } from "./protocol/InitializeParams.ts";
 import { connect, type Rpc, type RpcHandlers } from "./rpc.ts";
@@ -103,9 +104,7 @@ export async function startAppServer(
     // Only the remembered groups: app-server's own pid may already be reused.
     void killTree(undefined, groups)
       .catch((error: unknown) => {
-        options.handlers.ignored(
-          `cleanup after exit failed: ${(error as Error).message}`,
-        );
+        options.handlers.ignored("cleanup_after_exit_failed", errorCode(error));
       })
       .finally(() => {
         options.onExit(why);
