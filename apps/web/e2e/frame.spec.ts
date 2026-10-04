@@ -199,12 +199,77 @@ test.describe("Overview", () => {
     await expect(page.getByRole("alert")).toContainText(
       "Rufi had a problem reading the record.",
     );
+    // Emergency works while the page shows its error.
+    await emergency(page).click();
+    await expect(page.getByRole("dialog")).toContainText(
+      "Don't wait for Rufi or any AI to answer.",
+    );
+    await page.keyboard.press("Escape");
+
     await page.unroute("**/overview");
     await page.getByRole("button", { name: "Try again" }).click();
     await expect(page.getByText("Latest results")).toBeVisible();
+  });
+});
 
+test.describe("when Rufi is slow or away", () => {
+  test("Emergency shows while the link is still being opened", async ({
+    page,
+    rufi,
+  }) => {
+    await rufi.start();
+    // The core never answers the swap.
+    await page.route("**/api/session", () => undefined);
+    await page.goto(rufi.link());
     await emergency(page).click();
-    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(
+      page.getByRole("dialog", {
+        name: "Call your local emergency number now.",
+      }),
+    ).toBeVisible();
+  });
+
+  test("a read that never answers shows Rufi as offline", async ({
+    page,
+    rufi,
+  }) => {
+    await rufi.family();
+    await rufi.start();
+    await page.clock.install();
+    await page.route("**/api/people", () => undefined);
+    await page.goto(rufi.link());
+    await expect(page.getByRole("status")).toHaveCount(0);
+    await page.clock.runFor(15_000);
+    await expect(page.getByRole("status")).toContainText(
+      "Rufi can't be reached.",
+    );
+  });
+
+  test("after a long outage the page comes back by itself", async ({
+    page,
+    rufi,
+  }) => {
+    await rufi.family();
+    await rufi.start();
+    await page.clock.install();
+    await page.goto(rufi.link());
+    await expect(page.getByText("Latest results")).toBeVisible();
+
+    await page.route("**/api/**", (route) => route.abort());
+    await sidebar(page).getByRole("link", { name: "Settings" }).click();
+    await expect(page.getByRole("status")).toContainText(
+      "Rufi can't be reached.",
+    );
+    // Two checks fail while it is away.
+    await page.clock.runFor(7_000);
+    await expect(page.getByRole("status")).toBeVisible();
+
+    await page.unroute("**/api/**");
+    await page.clock.runFor(3_000);
+    await expect(page.getByRole("status")).toHaveCount(0);
+    await expect(
+      page.getByRole("combobox", { name: "Emergency region" }),
+    ).toBeVisible();
   });
 });
 
@@ -216,19 +281,19 @@ test.describe("Emergency", () => {
     await rufi.start(); // before first run, too
     await page.goto(rufi.link());
     await emergency(page).click();
-    const sheet = page.getByRole("dialog", {
+    const panel = page.getByRole("dialog", {
       name: "Call your local emergency number now.",
     });
-    await expect(sheet).toBeVisible();
-    await expect(sheet).toContainText("Works without the AI");
-    await expect(sheet).toContainText(
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText("Works without the AI");
+    await expect(panel).toContainText(
       "Don't wait for Rufi or any AI to answer.",
     );
-    await expect(sheet).not.toContainText(/\d{3}/);
+    await expect(panel).not.toContainText(/\d{3}/);
     await accessible(page);
 
-    await sheet.getByRole("button", { name: "Choose your region" }).click();
-    await expect(sheet).toBeHidden();
+    await panel.getByRole("button", { name: "Choose your region" }).click();
+    await expect(panel).toBeHidden();
     await page
       .getByRole("combobox", { name: "Emergency region" })
       .selectOption("IN");

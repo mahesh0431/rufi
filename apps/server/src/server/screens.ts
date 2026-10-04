@@ -1,7 +1,8 @@
 // The built screens (apps/web/dist), served by the core on its own port. Only
 // files inside that folder are served; a page path that isn't a file gets the
-// app, which routes it; a missing file with an extension stays a 404.
-import { readFile } from "node:fs/promises";
+// app, which routes it; a missing file with an extension stays a 404. Paths
+// are checked as the disk resolves them, so a link can't lead outside.
+import { readFile, realpath } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
 
 const TYPES: Record<string, string> = {
@@ -28,27 +29,44 @@ export async function screen(
   folder: string,
   path: string,
 ): Promise<Screen | undefined> {
-  const root = resolve(folder);
+  const root = await real(resolve(folder));
+  if (root === undefined) return undefined;
   let decoded: string;
   try {
     decoded = decodeURIComponent(path);
   } catch {
     return undefined; // a malformed path is not a file
   }
-  const file = resolve(join(root, decoded));
-  if (file !== root && !file.startsWith(root + sep)) return undefined;
-  const extension = extname(file);
+  const asked = resolve(join(root, decoded));
+  const extension = extname(asked);
   if (extension !== "") {
     const type = TYPES[extension];
-    if (type === undefined) return undefined;
+    const file = await real(asked);
+    if (type === undefined || file === undefined) return undefined;
+    if (!file.startsWith(root + sep)) return undefined;
     const body = await read(file);
     return (
-      body && { body, type, immutable: file.includes(`${sep}assets${sep}`) }
+      body && {
+        body,
+        type,
+        immutable: file.startsWith(join(root, "assets") + sep),
+      }
     );
   }
   // A page: the app routes it.
   const index = await read(join(root, "index.html"));
   return index && { body: index, type: TYPES[".html"] ?? "", immutable: false };
+}
+
+/** The path as the disk resolves it (links followed); undefined when missing. */
+async function real(path: string): Promise<string | undefined> {
+  try {
+    return await realpath(path);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return undefined;
+    throw new Error(`Couldn't resolve ${path}`, { cause: error });
+  }
 }
 
 async function read(file: string): Promise<Buffer | undefined> {

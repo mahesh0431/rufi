@@ -3,7 +3,10 @@
 // each command gets only the parts it needs. Effect closes every part when the
 // command ends, fails or is stopped with Ctrl-C.
 import { execFile } from "node:child_process";
+import { access } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { setTimeout as sleep } from "node:timers/promises";
 import { NodeRuntime } from "@effect/platform-node";
@@ -205,7 +208,8 @@ const signoutCommand = Effect.gen(function* () {
 });
 
 /** The built screens, next to this package. */
-const SCREENS = new URL("../../../web/dist", import.meta.url).pathname;
+// A file path, decoded: a folder name with a space or an accent stays as it is.
+const SCREENS = fileURLToPath(new URL("../../../web/dist", import.meta.url));
 
 /**
  * Starts Rufi and opens it in the browser, until Ctrl-C. When Rufi already
@@ -222,6 +226,14 @@ const startCommand = (open: boolean) =>
       if (open) openBrowser(again);
       return;
     }
+    yield* run(() =>
+      access(join(SCREENS, "index.html")).catch((error: unknown) => {
+        throw new Error(
+          "Rufi's screens aren't built. Run pnpm start: it builds them first.",
+          { cause: error },
+        );
+      }),
+    );
     const deps = yield* chatGpt;
     const { log } = diagnostics(home);
     const file = yield* run(() => codexBinary());

@@ -1,4 +1,4 @@
-// The Emergency sheet: the local number and what to do now. It needs nothing
+// What the Emergency button opens: the local number and what to do now. It needs nothing
 // but the settings already read (or none): no AI, no sign-in, no person.
 import { useNavigate } from "@tanstack/react-router";
 import { Phone } from "lucide-react";
@@ -7,12 +7,12 @@ import { useSettings } from "./reads.ts";
 import { Button } from "./ui.tsx";
 
 export function Emergency() {
-  const sheet = useRef<HTMLDialogElement>(null);
+  const panel = useRef<HTMLDialogElement>(null);
   const navigate = useNavigate();
-  // When the settings can't be read, the sheet works as if no region is set.
+  // When the settings can't be read, it works as if no region is set.
   const known = useSettings().data?.emergency ?? null;
   const toSettings = () => {
-    sheet.current?.close();
+    panel.current?.close();
     void navigate({ to: "/settings" });
   };
   // Without a region the heading already says to call.
@@ -22,12 +22,12 @@ export function Emergency() {
 
   return (
     <>
-      <Button onClick={() => sheet.current?.showModal()}>
+      <Button onClick={() => panel.current?.showModal()}>
         <Phone size={14} aria-hidden />
         Emergency
       </Button>
       <dialog
-        ref={sheet}
+        ref={panel}
         aria-labelledby="emergency-title"
         className="mx-auto mt-12 w-[560px] max-w-[calc(100%-32px)] rounded-2xl border border-line bg-white p-6 text-ink shadow-xl"
       >
@@ -63,7 +63,7 @@ export function Emergency() {
         </ol>
         <div className="mt-5 flex justify-end gap-2">
           {!known && <Button onClick={toSettings}>Choose your region</Button>}
-          <Button look="quiet" autoFocus onClick={() => sheet.current?.close()}>
+          <Button look="quiet" autoFocus onClick={() => panel.current?.close()}>
             Close
           </Button>
         </div>

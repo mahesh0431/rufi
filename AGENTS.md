@@ -8,7 +8,7 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 - If the AI decides it, a live AI test covers it (real AI, fictional data), reported as passes out of runs. The live smoke set (`pnpm smoke`, the test sign-in in `RUFI_HOME`) runs each case three times; run it when the agent, its instructions or Rufi's tools change.
 - An agent adapter passes the same contract tests as the others: `server/chat.test.ts` runs on the scripted fake Codex and on the real Codex binary against a local fake model, offline.
 - No mocking the AI's judgement in code tests. No test modes in `src`: fakes are injected at the composition root.
-- The screens are tested in Chromium with Playwright (`apps/web/e2e/`) on the real core with the built screens, the scripted fake Codex and a fictional data folder, with axe on each screen and sheet.
+- The screens are tested in Chromium with Playwright (`apps/web/e2e/`) on the real core with the built screens, the scripted fake Codex and a fictional data folder, with axe on each screen and dialog.
 
 ## Code
 

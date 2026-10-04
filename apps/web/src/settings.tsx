@@ -1,4 +1,4 @@
-// Settings: for now, the region whose emergency number the sheet shows.
+// Settings: for now, the region whose emergency number the Emergency button shows.
 import { type SaveSettings, Settings } from "@rufi/contracts";
 import { useMutation } from "@tanstack/react-query";
 import { read } from "./api.ts";

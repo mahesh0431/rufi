@@ -7,6 +7,7 @@ import {
   readFile,
   rm,
   stat,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -766,13 +767,20 @@ describe("the screens", () => {
   let screens: string;
 
   beforeEach(async () => {
-    folder = await mkdtemp(join(tmpdir(), "rufi-dist-"));
+    // A space in the path, as in "My Projects".
+    folder = await mkdtemp(join(tmpdir(), "rufi screens-"));
     screens = join(folder, "dist");
     await mkdir(join(screens, "assets"), { recursive: true });
     await writeFile(join(screens, "index.html"), "<!doctype html><p>Rufi");
     await writeFile(join(screens, "assets", "app-1a2b.js"), "export {};");
     // Next to the screens, not in them: never served.
     await writeFile(join(folder, "secret.txt"), "not a screen");
+    // Links in the build that lead outside it.
+    await symlink(
+      join(folder, "secret.txt"),
+      join(screens, "assets", "out.txt"),
+    );
+    await symlink(folder, join(screens, "assets", "up"));
   });
   afterEach(async () => {
     await rm(folder, { recursive: true, force: true });
@@ -806,6 +814,9 @@ describe("the screens", () => {
     expect((await get("/..%2Fsecret.txt")).status).toBe(404);
     expect((await get("/assets/..%2F..%2Fsecret.txt")).status).toBe(404);
     expect((await get("/%E0%A4%A")).status).toBe(404);
+    expect((await get("/assets/out.txt")).status).toBe(404);
+    expect((await get("/assets/up/secret.txt")).status).toBe(404);
+    expect((await get("/assets/app-1a2b.js/x.js")).status).toBe(404);
   });
 
   it("serves the API only, when it has no screens", async () => {
