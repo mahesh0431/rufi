@@ -62,7 +62,18 @@ const TOOLS: AgentTools = {
   ],
 };
 
-function start(scenario: Scenario = {}, tools?: AgentTools): AgentRuntime {
+/**
+ * Stop's deadlines when the fake never answers, so Rufi gives up soon. A
+ * fake that answers gets requestMs, like every other request: a busy machine
+ * can take longer than this to answer, and Rufi would end Codex.
+ */
+const GIVE_UP = { interruptAckMs: 300, interruptEndMs: 300 };
+
+function start(
+  scenario: Scenario = {},
+  tools?: AgentTools,
+  deadlines?: typeof GIVE_UP,
+): AgentRuntime {
   runtime = codexRuntime({
     ...(tools && { tools }),
     home,
@@ -81,10 +92,11 @@ function start(scenario: Scenario = {}, tools?: AgentTools): AgentRuntime {
     deadlines: {
       requestMs: 1_000,
       turnMs: 3_000,
-      interruptAckMs: 300,
-      interruptEndMs: 300,
+      interruptAckMs: 1_000,
+      interruptEndMs: 1_000,
       answerMs: 500,
       toolMs: 200,
+      ...deadlines,
     },
     host: {
       onEvent: (event) => events.push(event),
@@ -776,7 +788,11 @@ describe("Stop", () => {
   });
 
   it("ends Codex when it can't clean up after an interrupt", async () => {
-    const agent = start({ hang: ["thread/backgroundTerminals/clean"] });
+    const agent = start(
+      { hang: ["thread/backgroundTerminals/clean"] },
+      undefined,
+      GIVE_UP,
+    );
     const thread = await ask(agent, "command");
     await until(async () => (await entries()).some((entry) => entry.child));
     const programs = (await entries()).find((entry) => entry.child);
@@ -788,7 +804,7 @@ describe("Stop", () => {
   });
 
   it("ends Codex and the programs it started when the interrupt is ignored", async () => {
-    const agent = start({ ignoreInterrupt: true });
+    const agent = start({ ignoreInterrupt: true }, undefined, GIVE_UP);
     const thread = await ask(agent, "command");
     await until(async () => (await entries()).some((entry) => entry.child));
     const programs = (await entries()).find((entry) => entry.child);
@@ -804,8 +820,8 @@ describe("Stop", () => {
     );
   });
 
-  async function runCommand(scenario: Scenario) {
-    const agent = start(scenario);
+  async function runCommand(scenario: Scenario, deadlines?: typeof GIVE_UP) {
+    const agent = start(scenario, undefined, deadlines);
     const thread = await ask(agent, "command");
     await until(async () => (await entries()).some((entry) => entry.child));
     // The process shows up in the fake's log before Rufi hears of the turn
@@ -832,7 +848,10 @@ describe("Stop", () => {
   });
 
   it("ends Codex when it queues the clean-up but never does it", async () => {
-    const { agent, thread, programs } = await runCommand({ clean: "never" });
+    const { agent, thread, programs } = await runCommand(
+      { clean: "never" },
+      GIVE_UP,
+    );
     await agent.stop(thread);
     expect([...programs, ...(await pids())].filter(isRunning)).toEqual([]);
   });
