@@ -507,7 +507,7 @@ describe("the chat, on the scripted Codex", () => {
       .filter((e) => e.kind === "activity")
       .map((e) => [e.activity, e.text, e.detail, e.status]);
     expect(lines).toEqual([
-      ["tool", "Used get_overview", "{}", "done"],
+      ["tool", "Used get_overview", null, "done"],
       ["command", "Ran a command", "ls", "done"],
       ["other", "The AI did something Rufi can't display", "teleport", "done"],
     ]);

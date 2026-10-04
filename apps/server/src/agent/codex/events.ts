@@ -34,6 +34,12 @@ const line = (
   };
 };
 
+/** A tool call's arguments as its detail; none when it took none. */
+const argumentsOf = (args: unknown) => {
+  const text = JSON.stringify(args);
+  return text === "{}" || text === "null" ? undefined : text;
+};
+
 /** Codex's status words in Rufi's three. */
 function statusOf(status: string | undefined, ended: boolean) {
   if (status === "failed" || status === "declined") return "failed";
@@ -60,7 +66,7 @@ export function activityOf(
       return line(
         "tool",
         `Used ${item.tool}`,
-        JSON.stringify(item.arguments),
+        argumentsOf(item.arguments),
         status,
       );
     }
@@ -68,7 +74,7 @@ export function activityOf(
       return line(
         "tool",
         `Used ${item.server}.${item.tool}`,
-        JSON.stringify(item.arguments),
+        argumentsOf(item.arguments),
         statusOf(item.status, ended),
       );
     case "commandExecution":

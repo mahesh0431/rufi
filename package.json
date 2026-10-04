@@ -13,7 +13,8 @@
     "codex:types": "node apps/server/scripts/codex-types.ts",
     "tools:json": "node apps/server/scripts/tools-json.ts",
     "check": "oxfmt --check && oxlint --type-aware --deny-warnings && tsc --noEmit && vitest run && knip",
-    "db:types": "node apps/server/scripts/db-types.ts"
+    "db:types": "node apps/server/scripts/db-types.ts",
+    "smoke": "node apps/server/scripts/smoke.ts"
   },
   "devDependencies": {
     "@types/node": "24.19.0",

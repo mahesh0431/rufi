@@ -79,8 +79,40 @@ _Avoid_: thread, session
 The panel and box where the user talks with Rufi's AI; what is said there is a conversation.
 
 **Transcript**:
-Rufi's own stored copy of a conversation: messages, what the AI read and did, cards and receipts.
+Rufi's own stored copy of a conversation: your messages, one activity line for each thing the AI did, and the AI's replies, each saved before it is shown. Never the AI's tool outputs or its reasoning. Cards and receipts join it when they come.
 _Avoid_: log, history
+
+**Activity**:
+One line in a transcript for something the AI did: read the record with a tool, ran a command, searched the web, changed a file, worked with a sub-agent, or did something Rufi can't display yet. It has a short title and one short detail (the search words, the command), never the output.
+_Avoid_: trace, steps, log
+
+**Steer**:
+A message sent while the AI is replying, passed into that reply so it can change course. The transcript keeps it as your message, marked as a steer.
+_Avoid_: nudge, interrupt
+
+**Waiting messages**:
+Messages sent while the AI is replying. They wait, then run in order after the reply. You can edit, reorder or delete them, or run one now. After a Stop they keep waiting until you send again. The code calls them the queue.
+_Avoid_: backlog, pending messages
+
+**Stop**:
+Ends the AI's reply now, with anything it started. What it wrote so far is kept; waiting messages keep waiting.
+_Avoid_: cancel, abort
+
+**Interrupted**:
+A reply that didn't finish because you stopped it or Rufi closed. What it wrote so far is kept, and it never runs again.
+_Avoid_: cancelled, aborted
+
+**Draft**:
+A message you started and haven't sent: one for each conversation, and one for a new conversation. Rufi never sends a draft by itself.
+_Avoid_: note, unsent
+
+**Model**:
+The version of the AI that answers, such as GPT-6.1-Sol, chosen for each conversation from the allowlist. A new model starts the AI afresh with the conversation's last 10 messages; it can read further back.
+_Avoid_: engine, brain
+
+**Allowlist**:
+The models Rufi may use: `models.json` in the data folder. It starts with the strongest models, and you can edit it.
+_Avoid_: whitelist
 
 ## Coming back to things
 
@@ -108,7 +140,7 @@ _Avoid_: medical ID card
 
 **The AI**:
 The AI agent that answers in the chat and works with the record through Rufi's tools. Screens and help say "the AI"; "Codex" appears only where its folder is named.
-_Avoid_: assistant, bot, model
+_Avoid_: assistant, bot; "model" only for a version of the AI (see Model)
 
 **Tool**:
 Something Rufi offers the AI, such as reading a person's Overview. Tools are how the AI works with the record.
@@ -142,3 +174,4 @@ _Avoid_: history, transcript
 - A **document** can hold **reports**; a **report** has **results**. A **result** can also be typed in without a report.
 - A **proposal** belongs to one **person**; accepting it saves one **change set** and gives one **receipt**.
 - A **conversation** is about one **person** and can produce **proposals**, **follow-ups** and **research entries**.
+- A **conversation** has one **transcript**, one **draft**, a **model** and its **waiting messages**; a **steer** and each **activity** belong to one reply.

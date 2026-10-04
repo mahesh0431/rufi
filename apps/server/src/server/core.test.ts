@@ -1,7 +1,7 @@
 // The core as the screens will meet it: started in a scope on a fictional
 // data folder with the scripted Codex, and used over HTTP like a browser.
 import { request as httpRequest, type IncomingMessage } from "node:http";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -235,9 +235,12 @@ async function conversation(page: Awaited<ReturnType<typeof session>>) {
 }
 
 describe("the core", () => {
-  it("creates the database, and holds rufi.lock while it runs", async () => {
+  it("creates the database for this user only, and holds rufi.lock while it runs", async () => {
     await start();
     expect(openReadOnly(databasePath(home))).toBeDefined();
+    for (const file of ["rufi.sqlite", "rufi.sqlite-wal", "rufi.sqlite-shm"]) {
+      expect((await stat(join(home, file))).mode & 0o777).toBe(0o600);
+    }
     await expect(start()).rejects.toThrow(
       "Rufi is already running with this data folder",
     );

@@ -1,7 +1,7 @@
 // Rufi's one database. The running Rufi opens it for writing (creating it in
 // a new data folder) while it holds rufi.lock; Rufi's tools read it through a
 // read-only connection of their own.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Context, Effect, Layer } from "effect";
@@ -35,11 +35,13 @@ export function openReadOnly(path: string): Store | undefined {
 
 /**
  * Opens the database for writing, creating it from schema.sql when there is
- * none. Every write is synced to disk (WAL, synchronous FULL), and deleted
- * data is overwritten (secure_delete).
+ * none, readable by this user only (SQLite gives its side files the same
+ * permissions). Every write is synced to disk (WAL, synchronous FULL), and
+ * deleted data is overwritten (secure_delete).
  */
 export function openWritable(path: string): Store {
   const created = !existsSync(path);
+  if (created) writeFileSync(path, "", { flag: "wx", mode: 0o600 });
   const db = new DatabaseSync(path);
   try {
     db.exec(

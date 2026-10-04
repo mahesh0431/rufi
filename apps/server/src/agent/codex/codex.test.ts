@@ -1072,6 +1072,30 @@ describe("Codex's items and endings in Rufi's words", () => {
     });
   });
 
+  it("gives a tool call its arguments as detail, and none when it took none", () => {
+    const call = (args: unknown) =>
+      activityOf(
+        {
+          type: "dynamicToolCall",
+          id: "t",
+          namespace: "rufi",
+          tool: "read_conversation",
+          arguments: args,
+          status: "completed",
+          contentItems: null,
+          success: true,
+          durationMs: 1,
+        } as never,
+        true,
+      );
+    expect(call({})).toEqual({
+      activity: "tool",
+      title: "Used read_conversation",
+      status: "done",
+    });
+    expect(call({ limit: 5 })?.detail).toBe('{"limit":5}');
+  });
+
   it("keeps an activity's detail to one short line", () => {
     const line = activityOf(
       {
