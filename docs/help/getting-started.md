@@ -1,6 +1,6 @@
 # Getting started
 
-Rufi runs on your Mac and opens in your browser. Your records stay in your data folder on your Mac (see [Your data and the AI](your-data-and-the-ai.md)).
+Rufi runs on your Mac and opens in your browser, or as an app in its own window. Your records stay in your data folder on your Mac (see [Your data and the AI](your-data-and-the-ai.md)).
 
 ## Start Rufi
 
@@ -16,6 +16,23 @@ While Rufi runs, run `pnpm start` again in another terminal. It doesn't start a 
 If Rufi stops while a tab is open, the tab says "Rufi can't be reached" and keeps trying, in case Rufi was only busy. When you start Rufi again, use its new link: the old tab can't reach it.
 
 If a tab says "This session has ended", the link was already used, or Rufi was started again. Run `pnpm start` to open Rufi again.
+
+## Open Rufi as an app
+
+1. In the Rufi folder, run `pnpm desktop`. A Rufi window opens, and Rufi is in the Dock. You don't need a link or a browser tab.
+2. Keep the terminal open while you use Rufi.
+
+- **⌘W** closes the window, and Rufi keeps running. To open the window again, click Rufi in the Dock.
+- **⌘Q** quits the app and stops Rufi. If a reply is running, Rufi stops it first, as Stop does. Ctrl-C in the terminal does the same. If Rufi doesn't stop within 10 seconds, the app ends it at once, with anything the AI started.
+- If you run `pnpm desktop` again while the app runs, the app comes to the front.
+- If Rufi already runs from `pnpm start`, the app opens on that Rufi and doesn't start a second one. Then ⌘Q closes only the app: that Rufi keeps running until you press Ctrl-C in its terminal.
+- A web link opens in your browser, as it does when you use Rufi in a browser tab.
+
+If something goes wrong:
+
+- If the app can't start Rufi, or the Rufi that the app started stops, or the window's page stops working, a message tells you what happened. Click Quit, then open the app again.
+- If the app opened on the Rufi from `pnpm start` and that Rufi stops, the window says "Rufi can't be reached", as a tab does. Close the window with ⌘W, then click Rufi in the Dock: the app starts Rufi itself.
+- If Rufi ended before it could stop a reply (it stopped by itself, or the app had to end it), the reply is marked interrupted the next time Rufi starts. What it wrote so far is kept.
 
 ## The first time
 

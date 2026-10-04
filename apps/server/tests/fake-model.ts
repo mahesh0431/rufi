@@ -2,7 +2,10 @@
 // turns offline. Codex sends it each request; it answers by the user's last
 // message, with the same words as the scripted fake Codex (fake-codex.ts):
 // "hang" never answers, "slow" answers after 1.5 s, "overview" first reads
-// Rufi's get_overview (through Codex's `exec` tool, as a model does), and
+// Rufi's get_overview (through Codex's `exec` tool, as a model does),
+// "command" runs a long command (as the fake's does, it ignores TERM and
+// leaves a program in the background) and Codex waits for it, "background
+// command" runs the same command and the reply ends while it runs, and
 // anything else answers "ok:<text>". No sign-in and no AI.
 import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -82,6 +85,29 @@ export async function fakeModel(): Promise<FakeModel> {
       }
       if (last.includes("hang")) {
         open.add(response);
+        return;
+      }
+      const ran = body.input.some(
+        (item) => item.type === "function_call_output",
+      );
+      if (last.includes("command") && !ran) {
+        const call = {
+          type: "function_call",
+          call_id: "call-command",
+          name: "exec_command",
+          arguments: JSON.stringify({
+            cmd: 'trap "" TERM; sleep 300 & sleep 301',
+            // How long Codex waits for the command before the reply goes on.
+            yield_time_ms: last.includes("background") ? 500 : 60_000,
+          }),
+        };
+        for (const type of [
+          "response.output_item.added",
+          "response.output_item.done",
+        ]) {
+          event({ type, item: call } as { type: string });
+        }
+        completed();
         return;
       }
       // A steer arrives as the last message of a later request in the same turn.

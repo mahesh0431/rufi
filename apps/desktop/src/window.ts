@@ -1,0 +1,131 @@
+// A Rufi window: the screens from the core's own origin, as a browser loads
+// them, with nothing of Node or Electron in the page. Every setting that
+// guards the page is set here on purpose, not left to Electron's defaults.
+import { BrowserWindow, type Session, shell } from "electron";
+
+/** What the screens look for to know they are in the app (apps/web main.tsx). */
+const MARK = "RufiApp";
+
+/**
+ * The window's session: in memory only, so nothing of the page is kept on
+ * disk; no permission, no download, and a user agent with the app's mark.
+ */
+export function lockDown(session: Session): void {
+  session.setPermissionRequestHandler((_contents, _permission, answer) => {
+    answer(false);
+  });
+  session.setPermissionCheckHandler(() => false);
+  session.on("will-download", (event) => {
+    event.preventDefault();
+  });
+  session.setUserAgent(`${session.getUserAgent()} ${MARK}`);
+}
+
+/**
+ * Opens a window on `link` (a launch link, checked by core.ts). `failed`
+ * hears when the page can't be loaded or stops working.
+ */
+export function openWindow(
+  link: URL,
+  session: Session,
+  failed: (title: string, detail: string) => void,
+): BrowserWindow {
+  const window = new BrowserWindow({
+    width: 1100,
+    height: 760,
+    minWidth: 640,
+    minHeight: 420,
+    show: false,
+    title: "Rufi",
+    // The Mac look: the window buttons over the sidebar, the Mac's sidebar
+    // material behind it (the screens keep their content opaque).
+    titleBarStyle: "hidden",
+    trafficLightPosition: { x: 18, y: 18 },
+    vibrancy: "sidebar",
+    backgroundColor: "#00000000",
+    webPreferences: {
+      session,
+      nodeIntegration: false,
+      nodeIntegrationInWorker: false,
+      nodeIntegrationInSubFrames: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
+      navigateOnDragDrop: false,
+      devTools: true,
+    },
+  });
+  const contents = window.webContents;
+  const ours = (url: string) => URL.parse(url)?.origin === link.origin;
+
+  // Web links open in the browser, as in the web app; what guards them is
+  // the page's own security rules (only Rufi's code runs in it). The window
+  // itself never leaves Rufi, and opens no other window.
+  //
+  // A popup's opener isn't told, so one goes to the browser only while the
+  // page has no frame. Rufi has none: its pages refuse to be framed, and its
+  // CSP blocks frames from elsewhere, but script can still make a blank or
+  // srcdoc frame, which takes the page's CSP.
+  contents.setWindowOpenHandler(({ url }) => {
+    if (contents.mainFrame.frames.length === 0) toBrowser(url);
+    return { action: "deny" };
+  });
+  // Only Rufi's own pages, in any frame. A link away goes to the browser
+  // when the page itself follows it, not a frame inside it.
+  contents.on("will-frame-navigate", (event) => {
+    if (ours(event.url)) return;
+    event.preventDefault();
+    if (
+      event.isMainFrame &&
+      event.initiator?.frameTreeNodeId === contents.mainFrame.frameTreeNodeId
+    ) {
+      toBrowser(event.url);
+    }
+  });
+  // A redirect away from Rufi is stopped, and opens nothing.
+  contents.on("will-redirect", (event) => {
+    if (!ours(event.url)) event.preventDefault();
+  });
+  contents.on("will-attach-webview", (event) => {
+    event.preventDefault();
+  });
+
+  contents.on(
+    "did-fail-load",
+    (_event, code, _description, _url, mainFrame) => {
+      // -3 is a load that was stopped, such as a navigation refused above.
+      if (mainFrame && code !== -3) {
+        failed(
+          "Rufi's page couldn't be loaded",
+          "Quit, then open the app again.",
+        );
+      }
+    },
+  );
+  contents.on("render-process-gone", (_event, details) => {
+    if (details.reason !== "clean-exit") {
+      failed("Rufi's page stopped working", "Quit, then open the app again.");
+    }
+  });
+  window.once("ready-to-show", () => {
+    window.show();
+  });
+  // A failed load is told by did-fail-load above.
+  window.loadURL(link.href).catch(() => undefined);
+  return window;
+}
+
+/**
+ * Opens a web link in the person's browser. Any other kind, or one that
+ * carries a name or password, is dropped.
+ */
+function toBrowser(url: string): void {
+  const link = URL.parse(url);
+  if (link?.protocol !== "http:" && link?.protocol !== "https:") return;
+  if (link.username !== "" || link.password !== "") return;
+  shell.openExternal(url).catch(() => {
+    console.error("Rufi couldn't open the link in your browser.");
+  });
+}

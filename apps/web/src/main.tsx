@@ -13,6 +13,12 @@ addEventListener("hashchange", () => {
   if (location.hash.includes("launch=")) location.reload();
 });
 
+// In the Rufi app (apps/desktop), its windows add this mark to the user
+// agent; the app's own look is in styles.css, under [data-app].
+if (navigator.userAgent.endsWith(" RufiApp")) {
+  document.documentElement.dataset["app"] = "";
+}
+
 // When Rufi can be reached again, what failed meanwhile is read again.
 onReconnect(() => void queries.invalidateQueries());
 

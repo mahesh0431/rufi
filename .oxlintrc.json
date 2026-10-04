@@ -638,6 +638,88 @@
         "react/rules-of-hooks": "error",
         "react/exhaustive-deps": "error"
       }
+    },
+    {
+      "files": ["apps/desktop/src/**/*.ts", "apps/desktop/scripts/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@effect/schema",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/platform",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/data",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/io",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/stream",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/cli",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/rpc",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/sql",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/experimental",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "name": "@effect/typeclass",
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@effect/schema/*",
+                  "@effect/platform/*",
+                  "@effect/data/*",
+                  "@effect/io/*",
+                  "@effect/stream/*",
+                  "@effect/cli/*",
+                  "@effect/rpc/*",
+                  "@effect/sql/*",
+                  "@effect/experimental/*",
+                  "@effect/typeclass/*"
+                ],
+                "message": "Effect v3 package. Rufi uses Effect v4 only (AGENTS.md)."
+              },
+              {
+                "group": [
+                  "**/apps/server/**",
+                  "**/server/src/**",
+                  "**/apps/web/**",
+                  "**/web/src/**",
+                  "@rufi/server",
+                  "@rufi/server/*",
+                  "@rufi/web",
+                  "@rufi/web/*"
+                ],
+                "message": "apps/desktop runs Rufi as a child process and loads the screens from the core: it imports neither (borders, AGENTS.md)."
+              }
+            ]
+          }
+        ]
+      }
     }
   ],
   "jsPlugins": ["./lint/rufi.js"]

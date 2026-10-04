@@ -32,7 +32,10 @@ export function Frame() {
 
   return (
     <div className="flex h-full">
-      <aside className="flex w-60 shrink-0 flex-col gap-0.5 border-r border-line bg-side p-2.5">
+      <aside
+        data-sidebar=""
+        className="flex w-60 shrink-0 flex-col gap-0.5 border-r border-line bg-side p-2.5"
+      >
         <p className="truncate px-2 py-1.5 font-semibold">
           {person?.displayName ?? "Rufi"}
         </p>
@@ -66,8 +69,11 @@ export function Frame() {
         </nav>
         <Account />
       </aside>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-[52px] shrink-0 items-center border-b border-line bg-page/80 px-5 backdrop-blur">
+      <div className="flex min-w-0 flex-1 flex-col bg-page">
+        <header
+          data-toolbar=""
+          className="flex h-[52px] shrink-0 items-center border-b border-line bg-page/80 px-5 backdrop-blur"
+        >
           <h1 className="truncate text-[15px] font-semibold">
             {onConversation ? (
               <ConversationTitle {...onConversation} />

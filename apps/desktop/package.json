@@ -1,0 +1,14 @@
+{
+  "name": "@rufi/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/main.ts",
+  "dependencies": {
+    "@rufi/contracts": "workspace:*",
+    "effect": "4.0.0"
+  },
+  "devDependencies": {
+    "electron": "44.5.1"
+  }
+}

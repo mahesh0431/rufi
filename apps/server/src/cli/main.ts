@@ -37,6 +37,7 @@ import {
   noEffectLogs,
 } from "../platform/logs.ts";
 import { runningLink, startCore } from "../server/core.ts";
+import { appChannel, closeAppChannel } from "./app.ts";
 
 const USAGE = `Usage: pnpm rufi <command>
   start [--no-open]   start Rufi and open it in your browser (Ctrl-C stops it);
@@ -214,12 +215,17 @@ const SCREENS = fileURLToPath(new URL("../../../web/dist", import.meta.url));
 /**
  * Starts Rufi and opens it in the browser, until Ctrl-C. When Rufi already
  * runs with this data folder, opens a fresh link to it instead. With
- * `open` false, only shows the link.
+ * `open` false, only shows the link. Started by the Rufi app, it gives the
+ * links to the app instead (./app.ts) and runs until the app is gone.
  */
 const startCommand = (open: boolean) =>
   Effect.gen(function* () {
     const home = yield* Home;
+    const app = appChannel();
     const again = yield* run(() => runningLink(home));
+    if (again !== undefined && app !== undefined) {
+      return yield* app.send({ type: "attached", url: again });
+    }
     if (again !== undefined) {
       console.log("Rufi is already running. A new link to it:");
       console.log(again);
@@ -229,7 +235,7 @@ const startCommand = (open: boolean) =>
     yield* run(() =>
       access(join(SCREENS, "index.html")).catch((error: unknown) => {
         throw new Error(
-          "Rufi's screens aren't built. Run pnpm start: it builds them first.",
+          "Rufi's screens aren't built. Run pnpm start or pnpm desktop: they build them first.",
           { cause: error },
         );
       }),
@@ -270,6 +276,11 @@ const startCommand = (open: boolean) =>
       log,
     });
     const link = core.launchUrl();
+    if (app !== undefined) {
+      yield* app.send({ type: "owned", url: link });
+      // Until the app quits or dies; then Rufi stops as with Ctrl-C.
+      return yield* app.serve(core.launchUrl);
+    }
     console.log("Rufi is running. Its link (it works once):");
     console.log(link);
     console.log("Press Ctrl-C to stop Rufi.");
@@ -403,18 +414,21 @@ function openBrowser(link: string): void {
   });
 }
 
-/** A failure shows its message only, as before; the full error never prints. */
+/**
+ * A failure shows its message only, as before; the full error never prints.
+ * The Rufi app, when it started the command, gets the message too.
+ */
 const reported = main.pipe(
   Effect.provide(noEffectLogs),
-  Effect.catchCause((cause) =>
-    Cause.hasInterruptsOnly(cause)
-      ? Effect.failCause(cause)
-      : Effect.sync(() => {
-          const error = Cause.squash(cause);
-          console.error(error instanceof Error ? error.message : String(error));
-          process.exitCode = 1;
-        }),
-  ),
+  Effect.catchCause((cause) => {
+    if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause);
+    const error = Cause.squash(cause);
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
+    process.exitCode = 1;
+    return appChannel()?.send({ type: "failed", message }) ?? Effect.void;
+  }),
+  Effect.ensuring(Effect.sync(closeAppChannel)),
 );
 
 NodeRuntime.runMain(reported, { disableErrorReporting: true });
