@@ -242,110 +242,148 @@ async function members(groups: ReadonlySet<number>) {
     .map((match) => ({ pid: Number(match?.[1]), command: match?.[3] ?? "" }));
 }
 
-/** Polls `done` until it holds, for up to `ms`. */
-async function until(done: () => Promise<boolean>, ms: number) {
+/** Polls `done` until it holds; fails, saying `what`, after `ms`. */
+async function until(what: string, done: () => Promise<boolean>, ms: number) {
   const deadline = Date.now() + ms;
-  while (!(await done()) && Date.now() < deadline) await sleep(50);
+  while (!(await done())) {
+    if (Date.now() > deadline) throw new Error(`Timed out: ${what}.`);
+    await sleep(50);
+  }
 }
 
 describe.each(["fake", "real"] as const)(
   "the %s Codex, when Rufi goes away",
   (name) => {
     // Rufi relies on this when its core is killed or crashes: nothing it
-    // started keeps running.
-    it("ends the commands it runs, with what they left in the background, and itself", async () => {
-      const model = await fakeModel();
-      const { codexHome, processHome } = await prepareCodexHome(
-        join(root, "gone"),
-        fakeHome,
-      );
-      // Started as Rufi starts it (appserver.ts): its own process group, pipes.
-      const codex = spawn(
-        name === "real" ? await codexBinary() : process.execPath,
-        [
-          ...(name === "real"
-            ? [
-                "-c",
-                `model_providers.openai_chatgpt_plan.base_url="${model.url}"`,
-              ]
-            : [FAKE]),
-          "app-server",
-          "--listen",
-          "stdio://",
-        ],
-        {
-          env: {
-            ...env(),
-            HOME: processHome,
-            CODEX_HOME: codexHome,
-            ACCESS_TOKEN: "not-a-real-token",
-          },
-          stdio: ["pipe", "pipe", "ignore"],
-          detached: true,
-        },
-      );
-      const groups = new Set<number>();
-      try {
-        const rpc = connect(
-          codex.stdout,
-          codex.stdin,
-          {
-            request: () => Promise.reject(new Error("no requests expected")),
-            notification: () => undefined,
-            ignored: () => undefined,
-          },
-          DEADLINES.answerMs,
+    // started keeps running, whether the reply that started it still runs or
+    // has ended.
+    it.each([
+      { when: "while its reply runs", message: "command", ended: false },
+      {
+        when: "after its reply has ended",
+        message: "background command",
+        ended: true,
+      },
+    ])(
+      "ends the command it runs $when, with what it left in the background, and itself",
+      async ({ message, ended }) => {
+        const model = await fakeModel();
+        const { codexHome, processHome } = await prepareCodexHome(
+          join(root, "gone"),
+          fakeHome,
         );
-        await rpc.request(
-          "initialize",
+        // Started as Rufi starts it (appserver.ts): its own process group, pipes.
+        const codex = spawn(
+          name === "real" ? await codexBinary() : process.execPath,
+          [
+            ...(name === "real"
+              ? [
+                  "-c",
+                  `model_providers.openai_chatgpt_plan.base_url="${model.url}"`,
+                ]
+              : [FAKE]),
+            "app-server",
+            "--listen",
+            "stdio://",
+          ],
           {
-            clientInfo: { name: "Rufi", title: "Rufi", version: "0.0.0" },
-            capabilities: { experimentalApi: true, requestAttestation: false },
+            env: {
+              ...env(),
+              HOME: processHome,
+              CODEX_HOME: codexHome,
+              ACCESS_TOKEN: "not-a-real-token",
+            },
+            stdio: ["pipe", "pipe", "ignore"],
+            detached: true,
           },
-          DEADLINES.requestMs,
         );
-        rpc.notify("initialized");
-        const { thread } = await rpc.request<{ thread: { id: string } }>(
-          "thread/start",
-          {
-            model: "gpt-6.1-sol",
-            approvalPolicy: "never",
-            sandbox: "danger-full-access",
-            cwd: root,
-          },
-          DEADLINES.requestMs,
-        );
-        await rpc.request(
-          "thread/queue/add",
-          {
-            threadId: thread.id,
-            input: [{ type: "text", text: "command", text_elements: [] }],
-            clientUserMessageId: "m-1",
-          },
-          DEADLINES.requestMs,
-        );
-        // The command runs, and a program it started in the background.
         const pid = codex.pid ?? 0;
-        await until(async () => {
-          await trackGroups(pid, groups);
-          const running = (await members(groups)).map((p) => p.command);
-          return ["sleep 300", "sleep 301"].every((c) => running.includes(c));
-        }, 30_000);
-        const programs = (await members(groups)).map((p) => p.pid);
-        expect(programs.length).toBeGreaterThanOrEqual(2);
+        const groups = new Set<number>();
+        const completed: unknown[] = [];
+        try {
+          const rpc = connect(
+            codex.stdout,
+            codex.stdin,
+            {
+              request: () => Promise.reject(new Error("no requests expected")),
+              notification: (method, params) => {
+                if (method === "turn/completed") completed.push(params);
+              },
+              ignored: () => undefined,
+            },
+            DEADLINES.answerMs,
+          );
+          await rpc.request(
+            "initialize",
+            {
+              clientInfo: { name: "Rufi", title: "Rufi", version: "0.0.0" },
+              capabilities: {
+                experimentalApi: true,
+                requestAttestation: false,
+              },
+            },
+            DEADLINES.requestMs,
+          );
+          rpc.notify("initialized");
+          const { thread } = await rpc.request<{ thread: { id: string } }>(
+            "thread/start",
+            {
+              model: "gpt-6.1-sol",
+              approvalPolicy: "never",
+              sandbox: "danger-full-access",
+              cwd: root,
+            },
+            DEADLINES.requestMs,
+          );
+          await rpc.request(
+            "thread/queue/add",
+            {
+              threadId: thread.id,
+              input: [{ type: "text", text: message, text_elements: [] }],
+              clientUserMessageId: "m-1",
+            },
+            DEADLINES.requestMs,
+          );
+          const running = async () => {
+            await trackGroups(pid, groups);
+            return (await members(groups)).map((p) => p.command);
+          };
+          await until(
+            "the command and its background program to start",
+            async () => {
+              const now = await running();
+              return ["sleep 300", "sleep 301"].every((c) => now.includes(c));
+            },
+            30_000,
+          );
+          if (ended) {
+            await until(
+              "the reply to end",
+              () => Promise.resolve(completed.length > 0),
+              30_000,
+            );
+          }
+          // Both programs run now, and the reply has ended or still runs.
+          expect(await running()).toEqual(
+            expect.arrayContaining(["sleep 300", "sleep 301"]),
+          );
+          expect(completed).toHaveLength(ended ? 1 : 0);
+          const programs = (await members(groups)).map((p) => p.pid);
 
-        // When Rufi's process ends, the system closes its ends of the pipes.
-        codex.stdin.destroy();
-        codex.stdout.destroy();
-        await until(
-          () => Promise.resolve(![pid, ...programs].some(isRunning)),
-          5_000,
-        );
-        expect([pid, ...programs].filter(isRunning)).toEqual([]);
-      } finally {
-        await killTree(codex.pid, groups);
-        await model.close();
-      }
-    }, 60_000);
+          // When Rufi's process ends, the system closes its ends of the pipes.
+          codex.stdin.destroy();
+          codex.stdout.destroy();
+          await until(
+            "Codex and its programs to end",
+            () => Promise.resolve(![pid, ...programs].some(isRunning)),
+            5_000,
+          );
+        } finally {
+          await killTree(pid, groups);
+          await model.close();
+        }
+      },
+      60_000,
+    );
   },
 );

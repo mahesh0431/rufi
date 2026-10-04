@@ -5,7 +5,8 @@
 // thread/queue/start. What a turn does is chosen by its message's text, the
 // same words the fake model uses for the real Codex (tests/fake-model.ts):
 // "hang" never ends, "slow" answers after 300 ms, "fail" fails, "command"
-// starts a long command, "drip" streams its answer in five parts 100 ms
+// starts a long command ("background command": and the turn ends while it
+// runs), "drip" streams its answer in five parts 100 ms
 // apart, "long" streams 200 parts of 1,000 characters, and anything else
 // answers "ok:<text>".
 // The test passes a scenario in FAKE_CODEX and reads what happened from the
@@ -316,6 +317,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
           status: "inProgress",
         },
       });
+      if (text.includes("background")) complete(thread, turnId, "completed");
     });
     return;
   }

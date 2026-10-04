@@ -3,8 +3,9 @@
 // message, with the same words as the scripted fake Codex (fake-codex.ts):
 // "hang" never answers, "slow" answers after 1.5 s, "command" runs a long
 // command (as the fake's does, it ignores TERM and leaves a program in the
-// background) and answers once Codex has given back what it printed so far,
-// anything else answers "ok:<text>". No sign-in and no AI.
+// background) and Codex waits for it, "background command" runs the same
+// command and the reply ends while it runs, anything else answers
+// "ok:<text>". No sign-in and no AI.
 import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -68,7 +69,8 @@ export async function fakeModel(): Promise<FakeModel> {
           name: "exec_command",
           arguments: JSON.stringify({
             cmd: 'trap "" TERM; sleep 300 & sleep 301',
-            yield_time_ms: 500,
+            // How long Codex waits for the command before the reply goes on.
+            yield_time_ms: last.includes("background") ? 500 : 60_000,
           }),
         };
         event({ type: "response.output_item.added", item: call } as {
