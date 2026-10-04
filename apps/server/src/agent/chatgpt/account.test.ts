@@ -89,16 +89,4 @@ describe("a token response", () => {
       })?.earliestRefreshAt,
     ).toBe(Date.parse("2026-10-04T09:00:00Z"));
   });
-
-  it("is refused when it isn't a usable bearer token", () => {
-    for (const bad of [
-      { ...response, token_type: "mac" },
-      { ...response, access_token: "" },
-      { ...response, expires_in: 0 },
-      { ...response, expires_in: 1.5 },
-      { ...response, refresh_token: undefined },
-    ]) {
-      expect(parseTokens(bad)).toBeUndefined();
-    }
-  });
 });

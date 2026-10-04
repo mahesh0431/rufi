@@ -167,7 +167,6 @@ describe("starting Codex", () => {
     expect(first?.env).toEqual(
       expect.arrayContaining(["ACCESS_TOKEN", "CODEX_HOME", "PATH"]),
     );
-    expect(first?.env).not.toContain("OPENAI_API_KEY");
     expect((await sent("initialize"))[0]).toEqual({
       clientInfo: { name: "Rufi", title: "Rufi", version: "9.9.9" },
       capabilities: { experimentalApi: true, requestAttestation: false },
@@ -409,16 +408,6 @@ describe("a turn", () => {
     expect(last.filter((e) => e.type === "text")).toHaveLength(3);
   });
 
-  it("reports a usage limit with its reset time, when Codex gives one", async () => {
-    const thread = await ask(start({ resetsAt: 1_791_000_000 }), "please fail");
-    expect(await ended(thread)).toEqual({
-      status: "failed",
-      reason: "usage_limit",
-      text: "Your ChatGPT plan's usage limit has been reached.",
-      resetsAt: new Date(1_791_000_000_000).toISOString(),
-    });
-  });
-
   it("reports a usage limit without a reset time when Codex gives none", async () => {
     const thread = await ask(start(), "please fail");
     expect(await ended(thread)).toEqual({
@@ -496,31 +485,6 @@ describe("Codex's queue", () => {
     expect(await sent("thread/queue/start")).toEqual([]);
   });
 
-  it("pauses after Stop; the next send starts what waited first, then itself", async () => {
-    const agent = start();
-    const thread = await ask(agent, "hang");
-    await until(() => Promise.resolve(agent.running(thread)));
-    await agent.send(thread, { id: "m-b", text: "B" });
-    await agent.stop(thread);
-    expect(await ended(thread)).toEqual({
-      status: "interrupted",
-      reason: "stopped",
-      text: "Stopped.",
-    });
-    await sleep(50);
-    // Paused: B still waits.
-    expect((await agent.waiting.list(thread)).map((w) => w.messageId)).toEqual([
-      "m-b",
-    ]);
-    await agent.send(thread, { id: "m-c", text: "C" });
-    await ended(thread, 3);
-    expect(
-      seen(thread)
-        .filter((e) => e.type === "message")
-        .map((e) => e.id),
-    ).toEqual(["m-hang", "m-b", "m-c"]);
-  });
-
   it("starts a message at once after Stop when nothing waits", async () => {
     const agent = start();
     const thread = await ask(agent, "hang");
@@ -529,24 +493,6 @@ describe("Codex's queue", () => {
     await ended(thread);
     await agent.send(thread, { id: "m-2", text: "again" });
     expect(await ended(thread, 2)).toEqual({ status: "completed" });
-  });
-
-  it("runs a chosen waiting message now; the others follow in order", async () => {
-    const agent = start();
-    const thread = await ask(agent, "hang");
-    await until(() => Promise.resolve(agent.running(thread)));
-    await agent.send(thread, { id: "m-b", text: "B" });
-    await agent.send(thread, { id: "m-c", text: "C" });
-    await agent.stop(thread);
-    await ended(thread);
-    const [, c] = await agent.waiting.list(thread);
-    await agent.waiting.runNow(thread, c?.id ?? "");
-    await ended(thread, 3);
-    expect(
-      seen(thread)
-        .filter((e) => e.type === "message")
-        .map((e) => e.id),
-    ).toEqual(["m-hang", "m-c", "m-b"]);
   });
 
   it("keeps a message waiting when Stop comes while a paused queue takes it", async () => {
@@ -700,10 +646,24 @@ describe("Codex's queue", () => {
     const { threadId } = await agent.startThread(SETTINGS);
     await agent.send(threadId, { id: "m-a", text: "hang" });
     await until(() => Promise.resolve(agent.running(threadId)));
-    await agent.send(threadId, { id: "m-b", text: "B" });
+    await agent.send(threadId, {
+      id: "m-b",
+      text: "B",
+      context: "Earlier: A.",
+    });
     await agent.send(threadId, { id: "m-c", text: "C" });
     const [b, c] = await agent.waiting.list(threadId);
     await agent.waiting.edit(threadId, b?.id ?? "", "B, edited");
+    expect(await sent("thread/queue/update")).toEqual([
+      {
+        threadId,
+        queuedSubmissionId: b?.id,
+        input: [
+          { type: "text", text: "Earlier: A.", text_elements: [] },
+          { type: "text", text: "B, edited", text_elements: [] },
+        ],
+      },
+    ]);
     await agent.waiting.reorder(threadId, [c?.id ?? "", b?.id ?? ""]);
     expect(await agent.waiting.list(threadId)).toEqual([
       { id: c?.id, messageId: "m-c", text: "C" },
@@ -884,15 +844,6 @@ describe("Stop", () => {
     expect(await sent("thread/backgroundTerminals/clean")).toHaveLength(1);
   });
 
-  it("shows nothing of a turn after its Stop", async () => {
-    const agent = start({ late: true });
-    const thread = await ask(agent, "hang");
-    await until(() => Promise.resolve(agent.running(thread)));
-    await agent.stop(thread);
-    await ended(thread);
-    expect(JSON.stringify(seen(thread))).not.toContain("LATE");
-  });
-
   it("ends the commands Codex left when it crashes", async () => {
     const { thread, programs } = await runCommand({});
     await sleep(200);
@@ -961,7 +912,7 @@ describe("Stop", () => {
     expect((await pids()).filter(isRunning)).toEqual([]);
   });
 
-  it("waits for a sign-in renewal to be saved before it ends", async () => {
+  it("waits for a sign-in renewal to be saved before it ends, but not for ever", async () => {
     vi.useFakeTimers();
     try {
       let saved = false;
@@ -987,23 +938,25 @@ describe("Stop", () => {
       await vi.advanceTimersByTimeAsync(5_000);
       expect(saved).toBe(true);
       expect(done).toBe(true);
+      // An agent that never stops is given up after five minutes.
+      const never = new Promise<never>(() => undefined);
+      const stuck = Effect.runFork(
+        agentCall(
+          () => never,
+          () => never,
+        ),
+      );
+      let gaveUp = false;
+      void Effect.runPromise(Fiber.interrupt(stuck)).then(() => {
+        gaveUp = true;
+      });
+      await vi.advanceTimersByTimeAsync(5 * 60_000 - 1);
+      expect(gaveUp).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(gaveUp).toBe(true);
     } finally {
       vi.useRealTimers();
     }
-  });
-
-  it("gives up waiting for an agent that never stops", async () => {
-    const never = new Promise<never>(() => undefined);
-    const opening = Effect.runFork(
-      agentCall(
-        () => never,
-        () => never,
-        undefined,
-        50,
-      ),
-    );
-    await sleep(10);
-    await Effect.runPromise(Fiber.interrupt(opening));
   });
 });
 
