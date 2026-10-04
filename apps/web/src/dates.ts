@@ -1,0 +1,47 @@
+// Dates as Rufi prints them: "12 Aug 2026", at the precision known. A month
+// or a year alone stays that way; nothing is invented. Text that isn't a date
+// is shown as it is.
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/** "2026-08-12" → "12 Aug 2026"; "2026-08" → "Aug 2026"; "2026" → "2026". */
+export function printedDate(value: string): string {
+  const match = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$/.exec(value);
+  if (!match) return value;
+  const [, year = "", month, day] = match;
+  const name = month === undefined ? undefined : MONTHS[Number(month) - 1];
+  if (month !== undefined && name === undefined) return value;
+  if (name === undefined) return year;
+  return day === undefined
+    ? `${name} ${year}`
+    : `${String(Number(day))} ${name} ${year}`;
+}
+
+/** "Sunday, 4 October" for today's greeting. */
+export function today(now: Date): string {
+  return now.toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+}
+
+/** Good morning, afternoon or evening, by the hour. */
+export function greeting(now: Date): string {
+  const hour = now.getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}

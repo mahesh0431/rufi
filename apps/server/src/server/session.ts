@@ -1,9 +1,9 @@
 // The browser session (PLAN.md §3.3): every API call needs two proofs. A
 // cookie alone isn't enough, because cookies aren't kept apart by port.
-//   1. Opening Rufi gives a single-use launch token in the URL.
+//   1. Opening Rufi gives a single-use launch token in the link's fragment.
 //   2. The page swaps it for an HttpOnly, SameSite=Strict cookie (one per
 //      browser) and a proof for this tab, which the page sends as a header.
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
 /** A launch link works once, and only for this long. */
 const LAUNCH_MS = 5 * 60_000;
@@ -11,6 +11,17 @@ const LAUNCH_MS = 5 * 60_000;
 const token = () => randomBytes(32).toString("base64url");
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("base64url");
+
+/** A new random secret. */
+export const secret = token;
+
+/** Whether `given` is `expected`, in constant time. */
+export function sameSecret(given: string | undefined, expected: string) {
+  if (given === undefined) return false;
+  const a = Buffer.from(hash(given));
+  const b = Buffer.from(hash(expected));
+  return timingSafeEqual(a, b);
+}
 
 export type Sessions = ReturnType<typeof sessions>;
 

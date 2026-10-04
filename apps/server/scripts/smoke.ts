@@ -95,7 +95,10 @@ async function page(core: Core) {
         req.end(JSON.stringify(body));
       }
     });
-  const launch = new URL(core.launchUrl()).searchParams.get("launch") ?? "";
+  const launch =
+    new URLSearchParams(new URL(core.launchUrl()).hash.slice(1)).get(
+      "launch",
+    ) ?? "";
   const swapped = await call("POST", "/api/session", {}, { launch });
   const headers = {
     cookie: swapped.cookie ?? "",

@@ -10,6 +10,9 @@ import {
   SaveDraft,
   SaveSettings,
   SelectModel,
+  type Overview,
+  type Settings,
+  type Status,
   type StreamLine,
 } from "@rufi/contracts";
 import { Result, Schema } from "effect";
@@ -19,11 +22,12 @@ import { bodyLimit } from "hono/body-limit";
 import { getCookie, setCookie } from "hono/cookie";
 import { stream } from "hono/streaming";
 import { Stopped } from "../agent/runtime.ts";
-import { emergencyFor } from "../core/chat/safety.ts";
+import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
 import type { Change, Transcripts } from "../core/chat/transcript.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { ChatRefusal, type Chat } from "./chat.ts";
-import type { Sessions } from "./session.ts";
+import { screen } from "./screens.ts";
+import { sameSecret, type Sessions } from "./session.ts";
 
 export interface ApiDeps {
   transcripts: Transcripts;
@@ -32,7 +36,15 @@ export interface ApiDeps {
   /** The port Rufi listens on, once known. */
   port: () => number;
   /** A person's overview (the get_overview tool's answer). */
-  overview: (personId: string) => Promise<unknown>;
+  overview: (personId: string) => Promise<Overview>;
+  /** The ChatGPT sign-in, read when asked. */
+  account: () => Promise<Status>;
+  /** The secret `pnpm start` shows to get a fresh link while Rufi runs. */
+  launcher: string;
+  /** A fresh single-use link that opens Rufi. */
+  launchUrl: () => string;
+  /** The built screens' folder; none in tests that only use the API. */
+  screens?: string;
   log: Log;
   /** Updates a screen may fall behind by before its stream is closed. */
   behindMax?: number;
@@ -40,6 +52,8 @@ export interface ApiDeps {
 
 /** The header the page sends its tab proof in. */
 export const PROOF_HEADER = "x-rufi-proof";
+/** The header `pnpm start` sends the launcher secret in. */
+export const LAUNCHER_HEADER = "x-rufi-launcher";
 
 const MESSAGE_REFUSAL = `A message needs some text, and can be at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters.`;
 /** A stream says it's alive this often when nothing happens. */
@@ -137,6 +151,15 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     return c.json({ proof: exchanged.proof });
   });
 
+  // `pnpm start` while Rufi runs: a fresh link, only for the data folder's
+  // secret (core.json, readable by this user only).
+  app.post("/api/launch", (c) => {
+    if (!sameSecret(c.req.header(LAUNCHER_HEADER), deps.launcher)) {
+      throw new HttpError(403, "That request didn't come from Rufi.");
+    }
+    return c.json({ url: deps.launchUrl() });
+  });
+
   app.use("/api/*", async (c: Context, next: Next) => {
     if (
       !deps.sessions.verify(getCookie(c, cookie()), c.req.header(PROOF_HEADER))
@@ -189,11 +212,12 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       );
     }
   };
-  const emergency = async () => {
+  const emergency = async (): Promise<Settings> => {
     const known = emergencyFor(await transcripts.setting("emergency_region"));
     return {
       emergencyRegion: known?.region ?? null,
       emergency: known ? { name: known.name, number: known.number } : null,
+      regions: emergencyRegions(),
     };
   };
 
@@ -214,6 +238,8 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     await transcripts.saveSetting("emergency_region", emergencyRegion);
     return c.json(await emergency());
   });
+
+  app.get("/api/status", async (c) => c.json(await deps.account()));
 
   app.get("/api/models", async (c) => {
     const { models, error } = await acting(() => chat.models());
@@ -382,6 +408,21 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
         unwatch();
       }
     });
+  });
+
+  // The screens: every page path that isn't the API.
+  app.get("*", async (c) => {
+    if (c.req.path.startsWith("/api/") || deps.screens === undefined) {
+      throw new HttpError(404, "Not found.");
+    }
+    const found = await screen(deps.screens, c.req.path);
+    if (!found) throw new HttpError(404, "Not found.");
+    c.header("Content-Type", found.type);
+    c.header(
+      "Cache-Control",
+      found.immutable ? "public, max-age=31536000, immutable" : "no-cache",
+    );
+    return c.body(new Uint8Array(found.body));
   });
 
   return app;

@@ -9,14 +9,17 @@
     "lint": "oxlint --type-aware --deny-warnings",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "start": "pnpm --filter @rufi/web build && node apps/server/src/cli/main.ts start",
     "rufi": "node apps/server/src/cli/main.ts",
     "codex:types": "node apps/server/scripts/codex-types.ts",
     "tools:json": "node apps/server/scripts/tools-json.ts",
-    "check": "oxfmt --check && oxlint --type-aware --deny-warnings && tsc --noEmit && vitest run && knip",
+    "check": "oxfmt --check && oxlint --type-aware --deny-warnings && tsc --noEmit && tsc --noEmit -p apps/web && vitest run && knip && pnpm --filter @rufi/web build && playwright test",
     "db:types": "node apps/server/scripts/db-types.ts",
     "smoke": "node apps/server/scripts/smoke.ts"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.63.0",
     "@types/node": "24.19.0",
     "knip": "6.39.0",
     "oxfmt": "0.71.0",

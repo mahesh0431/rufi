@@ -8,6 +8,7 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 - If the AI decides it, a live AI test covers it (real AI, fictional data), reported as passes out of runs. The live smoke set (`pnpm smoke`, the test sign-in in `RUFI_HOME`) runs each case three times; run it when the agent, its instructions or Rufi's tools change.
 - An agent adapter passes the same contract tests as the others: `server/chat.test.ts` runs on the scripted fake Codex and on the real Codex binary against a local fake model, offline.
 - No mocking the AI's judgement in code tests. No test modes in `src`: fakes are injected at the composition root.
+- The screens are tested in Chromium with Playwright (`apps/web/e2e/`) on the real core with the built screens, the scripted fake Codex and a fictional data folder, with axe on each screen and sheet.
 
 ## Code
 
@@ -15,6 +16,7 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 - Every external call has a deadline. Errors keep their `cause`. No empty `catch`, and a comment is not handling.
 - Logs hold fixed events and checked fields only (`platform/logs.ts`): a new event or field is added there. Never prompts, replies, health text, tokens or error messages.
 - Folders in `apps/server/src`: `platform` (Mac things) uses no other folder; `core` (record, tools, transcripts) and `agent` (sign-in, Codex) use only `platform`; `server` (the chat and the local API) joins `core` and `agent`; `cli` joins them all. Lint checks these borders. API shapes live in `packages/contracts` (Effect Schema).
+- `apps/web` (the screens: React, TanStack Router and Query, Tailwind) uses only `@rufi/contracts` and the HTTP API; no server code and no `node:` modules (lint checks this). The core serves its build (`apps/web/dist`) on its own port. The tab's proof stays in `api.ts`; a 401 ends the session for every request.
 - One process owns the data folder at a time: the core holds `rufi.lock` for its whole life, and each terminal command holds it too. Sign-in and token renewal take `credentials.lock` inside it (always `rufi.lock` first). If `rufi.lock` is lost, the core stops writing at once.
 - Only the core writes the database. Rufi's tools read through their own read-only connection. A transcript change is stored first and shown from what was stored (`core/chat/transcript.ts`).
 - Rufi keeps no queue, delivery states or retries of its own for messages: the agent's queue holds what waits, and its errors are shown as they are (ADR 0004).
@@ -46,7 +48,8 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 ## Commands
 
 - `mise install && pnpm install`: pinned Node, pnpm and gitleaks; turns on the git hooks.
-- `pnpm check`: oxfmt, oxlint (type-aware), TypeScript 7, tests and unused-code check. Green before every pull request. `pnpm format` fixes formatting.
+- `pnpm check`: oxfmt, oxlint (type-aware), TypeScript 7, tests, unused-code check, then builds the screens and runs Playwright. Green before every pull request. `pnpm format` fixes formatting. Once: `pnpm exec playwright install chromium`.
+- `pnpm start [--no-open]`: builds the screens, starts the core with the real Codex and opens a single-use link; while it runs, it asks the running core for a fresh link instead (`core.json`). Ctrl-C stops it. For screen work, `pnpm --filter @rufi/web watch` rebuilds and you reload.
 - `pnpm rufi signin | status | signout`: Sign in with ChatGPT from the terminal. Needs `RUFI_HOME` set to a fictional data folder; tokens go to the macOS Keychain, never to files or logs.
 - `pnpm rufi ask "question"`: asks Codex (the pinned `@openai/codex`, never one on PATH) in a new thread using that sign-in, streaming the answer; nothing is saved in Rufi's conversations. Ctrl-C stops it. Codex runs from `$RUFI_HOME/codex` and works in `$RUFI_HOME/workspace`, with full access (`PLAN.md` §4). Rufi's choices on top of Codex's defaults are all in `apps/server/src/agent/codex/settings.ts`; none of the user's own Codex setup or personal skills is loaded. `--debug` prints the log lines that go to `$RUFI_HOME/logs/rufi.log`.
 - Rufi's tools live in `apps/server/src/core/tools/` (an Effect Schema each, no agent types); the agent gets them as `rufi.<tool>`. The person a tool reads is chosen by Rufi (`--person`, or the only one), never by the model. `pnpm tools:json` regenerates `tools.json`; a test fails if it differs.
