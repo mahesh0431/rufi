@@ -5,6 +5,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Rufi runs on Node 24 until it moves to Node 26 LTS; Node's types follow it.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       npm:
         patterns: ["*"]
