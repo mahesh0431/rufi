@@ -2,7 +2,8 @@
 // scratch data folder holding the fictional family. Only the sign-in comes
 // from RUFI_HOME (the test sign-in). Each case runs three times (--runs n);
 // the transcripts are written to --out for a person to judge, with the checks
-// code can decide marked as passed or failed.
+// code can decide marked as passed or failed. Any failed check or error
+// makes the exit code nonzero.
 //
 //   RUFI_HOME=<test sign-in folder> pnpm smoke [--runs 3] [--only name] [--out dir]
 import { request as httpRequest } from "node:http";
@@ -19,6 +20,8 @@ import { accessToken } from "../src/agent/chatgpt/session.ts";
 import { codexBinary } from "../src/agent/codex/binary.ts";
 import { codexRuntime } from "../src/agent/codex/codex.ts";
 import { databasePath, openWritable } from "../src/core/store/database.ts";
+import { readConversation } from "../src/core/tools/conversation.ts";
+import { getOverview } from "../src/core/tools/overview.ts";
 import { childEnvironment, rufiHome } from "../src/platform/config.ts";
 import { Secrets, secretsLayer } from "../src/platform/keychain.ts";
 import { diagnostics } from "../src/platform/logs.ts";
@@ -120,6 +123,7 @@ async function conversation(api: Api) {
     "conversation"
   ] as { id: string };
   const path = `/api/people/asha/conversations/${created.id}`;
+  const draft = `/api/people/asha/drafts/${created.id}`;
   const read = async () => (await api("GET", path)) as unknown as Snapshot;
   const ended = async (n: number) => {
     for (let i = 0; i < 600; i++) {
@@ -129,6 +133,12 @@ async function conversation(api: Api) {
     }
     throw new Error("a reply took over five minutes");
   };
+  /** As the box does: saves the text as the draft, then sends it. */
+  const fromBox = async (action: "messages" | "steer", text: string) => {
+    const { revision } = await api("GET", draft);
+    const saved = await api("PUT", draft, { text, revision });
+    await api("POST", `${path}/${action}`, { text, draft: saved["revision"] });
+  };
   let sent = 0;
   return {
     path,
@@ -136,14 +146,15 @@ async function conversation(api: Api) {
     ended,
     /** Sends and waits for this message's reply to end. */
     ask: async (text: string) => {
-      await api("POST", `${path}/messages`, { text });
+      await fromBox("messages", text);
       sent++;
       await ended(sent);
     },
     send: async (text: string) => {
-      await api("POST", `${path}/messages`, { text });
+      await fromBox("messages", text);
       sent++;
     },
+    steer: (text: string) => fromBox("steer", text),
   };
 }
 
@@ -153,10 +164,9 @@ const lastReply = (snapshot: Snapshot) =>
     .slice(-3)
     .map((e) => e.text)
     .join("\n\n");
-const usedTool = (snapshot: Snapshot, tool: string) =>
-  snapshot.entries.some(
-    (e) => e.kind === "activity" && e.text === `Used ${tool}`,
-  );
+/** The tool's activity line, in the words the person sees. */
+const usedTool = (snapshot: Snapshot, tool: { shown: string }) =>
+  snapshot.entries.some((e) => e.kind === "activity" && e.text === tool.shown);
 
 interface Outcome {
   /** What code could check; the rest is for a person to judge. */
@@ -173,7 +183,7 @@ const CASES: Record<string, (api: Api) => Promise<Outcome>> = {
     return {
       checks: {
         completed: snapshot.turns[0]?.status === "completed",
-        used_get_overview: usedTool(snapshot, "get_overview"),
+        used_get_overview: usedTool(snapshot, getOverview),
         mentions_hba1c: /hba1c/i.test(lastReply(snapshot)),
       },
       snapshot,
@@ -235,7 +245,7 @@ const CASES: Record<string, (api: Api) => Promise<Outcome>> = {
     const snapshot = await c.read();
     return {
       checks: {
-        used_read_conversation: usedTool(snapshot, "read_conversation"),
+        used_read_conversation: usedTool(snapshot, readConversation),
         says_biscuit: /biscuit/i.test(lastReply(snapshot)),
         new_model: snapshot.turns.at(-1)?.model === "gpt-6-astra",
       },
@@ -254,9 +264,9 @@ const CASES: Record<string, (api: Api) => Promise<Outcome>> = {
       if (turns.some((t) => t.status === "running")) break;
       await sleep(100);
     }
-    await api("POST", `${c.path}/steer`, {
-      text: "Change of plan: give only 3 ideas, and say 'Steered' first.",
-    });
+    await c.steer(
+      "Change of plan: give only 3 ideas, and say 'Steered' first.",
+    );
     await c.ended(1);
     const snapshot = await c.read();
     const reply = lastReply(snapshot);
@@ -288,6 +298,7 @@ const names = Object.keys(CASES).filter(
   (name) => values.only === undefined || values.only.split(",").includes(name),
 );
 const file = await codexBinary();
+let failures = 0;
 const { version } = createRequire(import.meta.url)("../package.json") as {
   version: string;
 };
@@ -325,12 +336,14 @@ for (const name of names) {
       const failed = Object.entries(outcome.checks)
         .filter(([, ok]) => !ok)
         .map(([check]) => check);
+      if (failed.length > 0) failures++;
       line = `${name} run ${String(run)}: ${failed.length === 0 ? "checks passed" : `FAILED ${failed.join(", ")}`}`;
       await writeFile(
         join(out, `${name}-${String(run)}.md`),
         `# ${line}\n\n${transcriptText(outcome.snapshot)}\n`,
       );
     } catch (error) {
+      failures++;
       line = `${name} run ${String(run)}: ERROR ${error instanceof Error ? error.message : String(error)}`;
     } finally {
       await Effect.runPromise(Scope.close(scope, Exit.void));
@@ -341,3 +354,7 @@ for (const name of names) {
 }
 await writeFile(join(out, "report.md"), `${report.join("\n")}\n`);
 console.log(`Transcripts in ${out}`);
+if (failures > 0) {
+  console.log(`${String(failures)} run(s) failed a check or had an error.`);
+  process.exitCode = 1;
+}

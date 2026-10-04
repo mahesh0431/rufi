@@ -143,13 +143,13 @@ test("using the bar starts a conversation at once; the reply streams in and its 
 
 test("Stop keeps what the reply wrote so far", async ({ page, rufi }) => {
   await opened(page, rufi);
-  await send(page, "drip");
+  // The reply writes a part, then runs until it is stopped.
+  await send(page, "partial");
   const reply = log(chat(page)).locator(".reply");
-  await expect(reply).toContainText("ok:");
+  await expect(reply).toHaveText("ok:part");
   await chat(page).getByRole("button", { name: "Stop" }).click();
   await expect(log(chat(page))).toContainText("Stopped.");
-  const kept = await reply.textContent();
-  expect(kept).toMatch(/^ok:d?r?i?$/);
+  await expect(reply).toHaveText("ok:part");
   await expect(chat(page).getByRole("button", { name: "Stop" })).toHaveCount(0);
 });
 
