@@ -203,6 +203,16 @@ const ended = (id: string, n = 1) =>
       (await transcript(id)).turns.filter((t) => t.status !== "running")
         .length >= n,
   );
+/**
+ * Waits until the reply to `text` has really begun: Codex records a message
+ * only a moment after the reply starts, and a Stop before that loses it.
+ */
+const started = (id: string, text: string) =>
+  until(async () =>
+    (await transcript(id)).entries.some(
+      ([kind, saved]) => kind === "message" && saved === text,
+    ),
+  );
 const running = (id: string) =>
   until(async () =>
     (await transcript(id)).turns.some((t) => t.status === "running"),
@@ -255,7 +265,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       await chat?.send(c, "B");
       expect((await chat?.waiting.list(c))?.map((w) => w.text)).toEqual(["B"]);
       // A waiting message is not in the transcript; the running one is.
-      await until(async () => (await transcript(c.id)).entries.length > 0);
+      await started(c.id, "hang");
       expect((await transcript(c.id)).entries).toEqual([["message", "hang"]]);
       await chat?.stop(c);
       await ended(c.id);
@@ -328,7 +338,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       await startChat(name);
       const c = await newConversation();
       await chat?.send(c, "hang");
-      await running(c.id);
+      await started(c.id, "hang");
       await chat?.send(c, "B");
       await chat?.send(c, "C");
       await chat?.stop(c);
