@@ -7,6 +7,8 @@ import {
   type Conversation,
   Draft,
   DraftChanged,
+  MAX_MESSAGE_CHARS,
+  NotSent,
   NotStarted,
   type Person,
   Sent,
@@ -19,7 +21,7 @@ import { type ReactNode, type RefObject, useState } from "react";
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { ApiError, putOnLeave, read, request } from "./api.ts";
-import { type DraftBox, type DraftIo, draftBox } from "./draft.ts";
+import { type DraftBox, type DraftIo, draftBox, tooLong } from "./draft.ts";
 import { conversationPath, type Live, messageOf } from "./live.ts";
 import { isRunning } from "./transcript-state.ts";
 import { Button } from "./ui.tsx";
@@ -28,13 +30,20 @@ const boxes = new Map<string, DraftBox>();
 const boxKey = (personId: string, conversationId: string | null) =>
   `${personId}/${conversationId ?? "new"}`;
 
+/** This page's name in its draft saves, so its last save can follow its own. */
+const TAB = crypto.randomUUID();
+
 function draftIo(personId: string, conversationId: string | null): DraftIo {
   const path = `/api/people/${encodeURIComponent(personId)}/drafts/${encodeURIComponent(conversationId ?? "new")}`;
   return {
     load: () => read(Draft, "GET", path),
     save: async (text, revision) => {
       try {
-        const draft = await read(Draft, "PUT", path, { text, revision });
+        const draft = await read(Draft, "PUT", path, {
+          text,
+          revision,
+          tab: TAB,
+        });
         return { saved: true, draft };
       } catch (error) {
         if (error instanceof ApiError && error.status === 409) {
@@ -45,7 +54,7 @@ function draftIo(personId: string, conversationId: string | null): DraftIo {
       }
     },
     saveOnLeave: (text, revision) => {
-      putOnLeave(path, { text, revision });
+      putOnLeave(path, { text, revision, tab: TAB, leaving: true });
     },
   };
 }
@@ -82,6 +91,9 @@ function moveBox(
 addEventListener("pagehide", () => {
   for (const box of boxes.values()) box.leave();
 });
+
+/** A send reaches the core even when the page goes away meanwhile. */
+const SEND = { keepalive: true };
 
 /** For a new conversation, which has no live store yet. */
 const IDLE = createStore<Live>(() => ({
@@ -124,7 +136,8 @@ export function Box({
   const notice = useStore(box.store, (state) => state.notice);
   const running = useStore(live ?? IDLE, isRunning);
   const [problem, setProblem] = useState<string | null>(null);
-  const hasText = text.trim() !== "";
+  const long = tooLong(text);
+  const hasText = text.trim() !== "" && !long;
 
   async function submit(steer: boolean) {
     const taken = await box.take();
@@ -147,6 +160,7 @@ export function Box({
             draft: taken.revision,
             ...(model !== undefined && { model }),
           },
+          SEND,
         );
         moveBox(person.id, started.conversation, started.draft, null);
         onStarted(started.conversation);
@@ -174,10 +188,18 @@ export function Box({
         "POST",
         `${conversationPath(person.id, conversationId)}/${steer ? "steer" : "messages"}`,
         { text: message, draft: taken.revision },
+        SEND,
       );
       box.sent(sent.draft);
     } catch (error) {
-      box.failed(messageOf(error));
+      const kept =
+        error instanceof ApiError
+          ? Schema.decodeUnknownOption(NotSent)(error.body)
+          : undefined;
+      box.failed(
+        messageOf(error),
+        kept?._tag === "Some" ? kept.value.draft : undefined,
+      );
     }
   }
 
@@ -292,9 +314,11 @@ export function Box({
           </button>
         )}
       </div>
-      {(notice || problem) && (
+      {(notice || problem || long) && (
         <p role="alert" className="px-3.5 pb-2 text-muted">
-          {notice || problem}
+          {long
+            ? `Too long to keep or send: at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters, and this is ${text.length.toLocaleString("en")}.`
+            : notice || problem}
         </p>
       )}
     </form>

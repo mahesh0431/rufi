@@ -8,7 +8,7 @@ The chat bar is the box at the bottom right of every page. It says "Ask or tell 
 
 The bar continues the conversation you chose last. Point at the bar, or move into it with Tab, to see which conversation it is. When you haven't chosen one, the bar starts a new conversation. Opening the chat doesn't create a conversation: your first message does.
 
-Under the box in the panel and on the page, "AI can be wrong" reminds you to check what the AI says.
+Under the box, in every size of the chat, "AI can be wrong" reminds you to check what the AI says.
 
 ## The chat panel
 
@@ -41,7 +41,9 @@ If your first message can't be sent, the conversation stays, with your message s
 
 Type in the box and press Enter, or click the send button. Shift-Enter starts a new line.
 
-The box clears when Rufi has taken your message. If Rufi can't take it, your text stays in the box with the reason. Rufi never sends a message again by itself: send it again when you want to.
+The box clears when Rufi has taken your message. If Rufi can't take it, your text stays in the box with the reason. This is also true when you reload the page while the message is on its way. If Rufi stops while the message is on its way, your text is in the box when you open Rufi again: look at the conversation before you send it again. Rufi never sends a message again by itself: send it again when you want to.
+
+A message can have up to 10,000 characters. When the box has more, it says so, and Rufi doesn't keep or send the text until you make it shorter.
 
 ## What you see
 

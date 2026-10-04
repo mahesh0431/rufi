@@ -10,7 +10,6 @@ function core(start: Draft = { text: "", revision: 0 }) {
     answer: (saved: boolean, draft: Draft) => void;
     fail: (error: Error) => void;
   }[] = [];
-  const left: { text: string; revision: number }[] = [];
   const io: DraftIo = {
     load: () => Promise.resolve(start),
     save: (text, revision) =>
@@ -24,11 +23,9 @@ function core(start: Draft = { text: "", revision: 0 }) {
           fail: reject,
         });
       }),
-    saveOnLeave: (text, revision) => {
-      left.push({ text, revision });
-    },
+    saveOnLeave: () => undefined,
   };
-  return { io, saves, left };
+  return { io, saves };
 }
 
 /** Lets the box's promises run. */
@@ -148,21 +145,20 @@ describe("the box's draft", () => {
     expect(saves[0]).toMatchObject({ text: "Keep this", revision: 0 });
   });
 
-  it("sends what wasn't saved yet as the page goes away, and nothing when all is saved", async () => {
-    const { io, saves, left } = core();
+  it("goes on from the draft the core kept for a send that failed", async () => {
+    const { io, saves } = core({ text: "", revision: 3 });
     const box = draftBox(io);
     await settle();
-    box.type("Typed just now");
-    box.leave();
-    expect(left).toEqual([{ text: "Typed just now", revision: 0 }]);
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(saves).toHaveLength(0);
-
-    box.type("Saved");
+    box.type("Keep this");
+    await box.take();
+    box.failed("The AI couldn't take the message.", {
+      text: "Keep this",
+      revision: 4,
+    });
     await vi.advanceTimersByTimeAsync(400);
-    saves[0]?.answer(true, { text: "Saved", revision: 1 });
-    await settle();
-    box.leave();
-    expect(left).toHaveLength(1);
+    expect(saves).toHaveLength(0);
+    box.type("Keep this, please");
+    await vi.advanceTimersByTimeAsync(400);
+    expect(saves[0]).toMatchObject({ text: "Keep this, please", revision: 4 });
   });
 });

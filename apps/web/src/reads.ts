@@ -57,16 +57,34 @@ export const conversationsKey = (personId: string) => [
   personId,
 ];
 
+/** Each person's latest choice of conversation here, numbered. */
+const choices = new Map<string, { n: number; chosen: string | null }>();
+
+/**
+ * The person chose the conversation the chat continues (null: a new one). A
+ * list read that started before it shows this choice, not the core's older
+ * one.
+ */
+export function chose(personId: string, chosen: string | null): void {
+  choices.set(personId, { n: (choices.get(personId)?.n ?? 0) + 1, chosen });
+}
+
 /** A person's conversations and the one the chat continues. */
 export const useConversations = (personId: string) =>
   useQuery({
     queryKey: conversationsKey(personId),
-    queryFn: () =>
-      read(
+    queryFn: async () => {
+      const before = choices.get(personId)?.n;
+      const list = await read(
         Conversations,
         "GET",
         `/api/people/${encodeURIComponent(personId)}/conversations`,
-      ),
+      );
+      const latest = choices.get(personId);
+      return latest && latest.n !== before
+        ? { ...list, chosen: latest.chosen }
+        : list;
+    },
     // A title another tab gave shows when you come back to this one.
     refetchOnWindowFocus: true,
   });

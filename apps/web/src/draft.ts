@@ -2,8 +2,9 @@
 // at a time, a moment after the typing stops; an answer never replaces newer
 // text. A save based on an older revision is refused (another tab saved
 // first) and the box shows the newer text. Nothing here sends a message: a
-// send takes the text, and the box clears only when the core took it.
-import type { Draft } from "@rufi/contracts";
+// send takes the text, the core keeps it as the draft until the agent took
+// it, and the box clears only then. Text longer than Rufi takes isn't saved.
+import { type Draft, MAX_MESSAGE_CHARS } from "@rufi/contracts";
 import { createStore } from "zustand/vanilla";
 
 export interface DraftIo {
@@ -13,7 +14,10 @@ export interface DraftIo {
     text: string,
     revision: number,
   ) => Promise<{ saved: boolean; draft: Draft }>;
-  /** The last save as the page goes away; nobody waits for its answer. */
+  /**
+   * The last save as the page goes away; nobody waits for its answer. It
+   * also follows this tab's own save still on its way.
+   */
   saveOnLeave: (text: string, revision: number) => void;
 }
 
@@ -48,6 +52,8 @@ export function draftBox(
   let stored: Draft = start?.draft ?? { text: "", revision: 0 };
   let saving: Promise<undefined> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /** A send has the text: the core keeps it until the agent took it. */
+  let handedOver = false;
 
   if (!start) {
     io.load().then(
@@ -73,7 +79,7 @@ export function draftBox(
     clearTimeout(timer);
     while (saving) await saving;
     const { text, loaded, sending } = store.getState();
-    if (!loaded || sending || text === stored.text) return;
+    if (!loaded || sending || text === stored.text || tooLong(text)) return;
     const done = Promise.withResolvers<undefined>();
     saving = done.promise;
     try {
@@ -115,29 +121,45 @@ export function draftBox(
         store.setState({ sending: false });
         return undefined;
       }
+      handedOver = true;
       return { text, revision: stored.revision };
     },
 
     /** The core took the message; the box shows the draft it kept. */
     sent(draft: Draft): void {
+      handedOver = false;
       stored = draft;
       store.setState({ text: draft.text, sending: false, notice: null });
     },
 
-    /** The message wasn't sent: the text stays, with why. */
-    failed(notice: string | null): void {
+    /**
+     * The message wasn't sent: the text stays, with why, and the draft the
+     * core kept, when it said.
+     */
+    failed(notice: string | null, draft?: Draft): void {
+      handedOver = false;
+      if (draft) stored = draft;
       store.setState({ sending: false, notice });
       if (store.getState().text !== stored.text) later();
     },
 
-    /** The page goes away: what wasn't saved yet goes in one last save. */
+    /**
+     * The page goes away: what wasn't saved yet goes in one last save. A
+     * send's text is the core's to keep.
+     */
     leave(): void {
       clearTimeout(timer);
       const { text, loaded } = store.getState();
-      if (loaded && text !== stored.text) io.saveOnLeave(text, stored.revision);
+      if (!loaded || handedOver || text === stored.text || tooLong(text)) {
+        return;
+      }
+      io.saveOnLeave(text, stored.revision);
     },
   };
 }
+
+/** Longer than Rufi takes: the box says so, and it isn't saved or sent. */
+export const tooLong = (text: string) => text.length > MAX_MESSAGE_CHARS;
 
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : "Rufi had a problem with that.";

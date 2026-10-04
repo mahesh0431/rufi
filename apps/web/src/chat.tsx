@@ -219,7 +219,7 @@ export function ChatDock({ person }: { person: Person }) {
               }}
             />
           </div>
-          {open && <AiCanBeWrong />}
+          <AiCanBeWrong />
         </div>
       </Menus>
       <div ref={menus} />

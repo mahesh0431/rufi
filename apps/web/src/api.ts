@@ -156,11 +156,16 @@ const headersFor = (body: unknown): Record<string, string> => ({
   ...(body !== undefined && { "content-type": "application/json" }),
 });
 
-/** A request to the core; its answer as JSON. */
+/**
+ * A request to the core; its answer as JSON. With `keepalive` it still
+ * reaches the core when the page goes away meanwhile (a send: its text is
+ * the core's to keep from then on).
+ */
 export async function request(
   method: "GET" | "POST" | "PUT" | "DELETE",
   path: string,
   body?: unknown,
+  { keepalive = false }: { keepalive?: boolean } = {},
 ): Promise<unknown> {
   await session;
   const headers = headersFor(body);
@@ -169,6 +174,7 @@ export async function request(
     answer = await fetchInTime(path, {
       method,
       headers,
+      keepalive,
       ...(body !== undefined && { body: JSON.stringify(body) }),
     });
   } catch (error) {
@@ -272,6 +278,9 @@ export async function read<S extends Schema.Codec<unknown, unknown>>(
   method: "GET" | "POST" | "PUT",
   path: string,
   body?: unknown,
+  options?: { keepalive?: boolean },
 ): Promise<S["Type"]> {
-  return Schema.decodeUnknownSync(schema)(await request(method, path, body));
+  return Schema.decodeUnknownSync(schema)(
+    await request(method, path, body, options),
+  );
 }

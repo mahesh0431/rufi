@@ -76,6 +76,7 @@ test("the bar starts a conversation with its first message; the reply streams in
     "placeholder",
     "Ask or tell Rufi about Asha Fictional…",
   );
+  await expect(chat(page).getByText("AI can be wrong")).toBeVisible();
   await accessible(page);
 
   // Opening the chat creates nothing; it says what goes to OpenAI.
@@ -171,6 +172,48 @@ test("messages sent during a reply wait: edit, reorder, delete, and run one afte
   await expect(waiting).toHaveCount(0);
 });
 
+test("an older read of the waiting messages never undoes a newer change", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  await send(page, "hang");
+  await send(page, "Second");
+  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
+  const items = waiting.getByRole("listitem");
+  await expect(items).toHaveText(["Second"]);
+
+  // A read that still sees "Second" as it was is held back.
+  const read = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  let held = false;
+  await page.route("**/waiting", async (route) => {
+    if (route.request().method() !== "GET" || held) return route.continue();
+    held = true;
+    const response = await route.fetch();
+    read.resolve(undefined);
+    await release.promise;
+    await route.fulfill({ response });
+  });
+  await send(page, "Third");
+  await read.promise;
+  await items.first().getByRole("button", { name: "Edit" }).click();
+  await waiting
+    .getByRole("textbox", { name: "Waiting message" })
+    .fill("Second, edited");
+  await waiting.getByRole("button", { name: "Save" }).click();
+  await expect(items).toHaveText(["Second, edited", "Third"]);
+
+  const late = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/waiting") &&
+      response.request().method() === "GET",
+  );
+  release.resolve(undefined);
+  await (await late).finished();
+  await expect(items).toHaveText(["Second, edited", "Third"]);
+});
+
 test("Steer passes your text into the running reply", async ({
   page,
   rufi,
@@ -241,6 +284,99 @@ test("a draft survives fast typing, a reload and a restart, and is never sent by
     "Help",
     "Settings",
   ]);
+});
+
+test("a reload keeps what you typed while an earlier save is still on its way", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  await box(chat(page)).click();
+  // The core keeps the first save; its answer is held back.
+  const kept = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  let held = false;
+  await page.route("**/drafts/*", async (route) => {
+    if (route.request().method() !== "PUT" || held) return route.continue();
+    held = true;
+    const response = await route.fetch();
+    kept.resolve(undefined);
+    await release.promise;
+    await route.fulfill({ response }).catch(() => undefined);
+  });
+  await box(chat(page)).fill("Questions");
+  await kept.promise;
+  await box(chat(page)).fill("Questions for my next visit");
+  await page.reload();
+  release.resolve(undefined);
+  await box(chat(page)).click();
+  await expect(box(chat(page))).toHaveValue("Questions for my next visit");
+});
+
+test("a reload while a message is on its way never puts it back in the box", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi, {
+    scenario: { slow: ["thread/queue/add"], slowMs: 1_000 },
+  });
+  await send(page, "Hello");
+  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
+
+  // Reloaded before the AI took it.
+  const posted = page.waitForRequest((request) =>
+    request.url().endsWith("/messages"),
+  );
+  await box(chat(page)).fill("Questions for the visit");
+  await box(chat(page)).press("Enter");
+  await posted;
+  await page.reload();
+  await box(chat(page)).click();
+  await expect(log(chat(page)).locator(".reply").last()).toHaveText(
+    "ok:Questions for the visit",
+  );
+  await expect(box(chat(page))).toHaveValue("");
+
+  // Reloaded before the message even reached the core.
+  const leaving = Promise.withResolvers<undefined>();
+  const reload = Promise.withResolvers<undefined>();
+  await page.route("**/messages", async (route) => {
+    leaving.resolve(undefined);
+    await reload.promise;
+    await route.continue();
+  });
+  await box(chat(page)).fill("And the Free T4?");
+  await box(chat(page)).press("Enter");
+  await leaving.promise;
+  await page.reload();
+  await expect(sidebar(page)).toBeVisible();
+  reload.resolve(undefined);
+  await box(chat(page)).click();
+  await expect(log(chat(page)).locator(".reply").last()).toHaveText(
+    "ok:And the Free T4?",
+  );
+  await expect(box(chat(page))).toHaveValue("");
+});
+
+test("a draft as long as Rufi takes survives an immediate reload; a longer one says so", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  await box(chat(page)).click();
+  await box(chat(page)).fill("x".repeat(10_001));
+  await expect(chat(page).getByRole("alert")).toHaveText(
+    "Too long to keep or send: at most 10,000 characters, and this is 10,001.",
+  );
+  await expect(chat(page).getByRole("button", { name: "Send" })).toBeDisabled();
+
+  // The heaviest draft as it is saved: every character escaped, 6 bytes.
+  const text = "\u0001".repeat(10_000);
+  await box(chat(page)).fill(text);
+  await expect(chat(page).getByRole("alert")).toHaveCount(0);
+  await page.reload();
+  await box(chat(page)).click();
+  await expect(box(chat(page))).toHaveValue(text);
 });
 
 test("a failed send keeps your text and says why; nothing is sent again by itself", async ({
@@ -382,6 +518,77 @@ test("the chat continues the conversation you chose, after reopening Rufi", asyn
   );
 });
 
+test("your last choice of conversation stays, whatever order the core hears of it", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  await send(page, "First conversation");
+  await sidebar(page).getByRole("button", { name: "New conversation" }).click();
+  await send(page, "Second conversation");
+  const switcher = (title: string) =>
+    chat(page).getByRole("button", { name: title, exact: true });
+  const pick = async (from: string, to: string) => {
+    await switcher(from).click();
+    await page.getByRole("menuitemradio", { name: to, exact: true }).click();
+  };
+
+  // A list read that left the core before the choice comes back after it.
+  const read = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  let heldRead = false;
+  await page.route("**/conversations", async (route) => {
+    if (heldRead) return route.continue();
+    heldRead = true;
+    const response = await route.fetch();
+    read.resolve(undefined);
+    await release.promise;
+    await route.fulfill({ response });
+  });
+  // Coming back to the tab reads the list again.
+  await page.evaluate(() => {
+    (globalThis as unknown as EventTarget).dispatchEvent(
+      new Event("visibilitychange"),
+    );
+  });
+  await read.promise;
+  const chosen = page.waitForResponse((r) => r.url().endsWith("/chosen"));
+  await sidebar(page).getByRole("button", { name: "New conversation" }).click();
+  await chosen;
+  await expect(switcher("New conversation")).toBeVisible();
+  const late = page.waitForResponse((response) =>
+    response.url().endsWith("/conversations"),
+  );
+  release.resolve(undefined);
+  await (await late).finished();
+  await expect(switcher("New conversation")).toBeVisible();
+  await page.unroute("**/conversations");
+
+  // The first of two choices reaches the core late.
+  const first = Promise.withResolvers<undefined>();
+  const letFirstGo = Promise.withResolvers<undefined>();
+  let heldPut = false;
+  await page.route("**/chosen", async (route) => {
+    if (heldPut) return route.continue();
+    heldPut = true;
+    first.resolve(undefined);
+    await letFirstGo.promise;
+    await route.continue();
+  });
+  let answered = 0;
+  page.on("response", (response) => {
+    if (response.url().endsWith("/chosen")) answered += 1;
+  });
+  await pick("New conversation", "First conversation");
+  await first.promise;
+  await pick("First conversation", "Second conversation");
+  letFirstGo.resolve(undefined);
+  await expect.poll(() => answered).toBe(2);
+  await page.goto((await runningLink(rufi.home)) ?? "");
+  await box(chat(page)).click();
+  await expect(switcher("Second conversation")).toBeVisible();
+});
+
 test("⌘J opens the panel; Esc steps back and returns focus", async ({
   page,
   rufi,
@@ -391,15 +598,16 @@ test("⌘J opens the panel; Esc steps back and returns focus", async ({
   await settings.focus();
   await page.keyboard.press("ControlOrMeta+j");
   await expect(box(chat(page))).toBeFocused();
-  await expect(chat(page).getByText("AI can be wrong")).toBeVisible();
+  const minimise = chat(page).getByRole("button", { name: "Minimise" });
+  await expect(minimise).toBeVisible();
   // In a menu, Esc closes the menu first.
   await chat(page).getByRole("button", { name: "Model: GPT-6.1-Sol" }).click();
   await expect(page.getByRole("menu")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("menu")).toHaveCount(0);
-  await expect(chat(page).getByText("AI can be wrong")).toBeVisible();
+  await expect(minimise).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(chat(page).getByText("AI can be wrong")).toHaveCount(0);
+  await expect(minimise).toHaveCount(0);
   await expect(settings).toBeFocused();
 });
 
@@ -433,13 +641,17 @@ test("a reply stopped by the usage limit says when it resets", async ({
 });
 
 test.describe("on the real Codex binary, with a local fake model", () => {
-  test("a reply streams; Stop; a message waits; Steer", async ({
+  test("a reply streams after Rufi's tool; Stop; a message waits; Steer", async ({
     page,
     rufi,
   }) => {
     await opened(page, rufi, { codex: "real" });
-    await send(page, "Hello");
-    await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
+    // The model reads Rufi's overview first: one line says so, in plain words.
+    await send(page, "Read my overview");
+    await expect(log(chat(page)).locator(".reply")).toHaveText(
+      "ok:Read my overview",
+    );
+    await expect(log(chat(page))).toContainText("Read your overview");
 
     await send(page, "hang");
     await expect(
