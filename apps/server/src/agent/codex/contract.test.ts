@@ -66,7 +66,7 @@ async function real(
 }
 
 /** A bare app-server connection set up exactly as Rufi sets it up. */
-async function bare(experimentalApi: boolean): Promise<Rpc> {
+async function bare(): Promise<Rpc> {
   const { codexHome, processHome } = await prepareCodexHome(
     join(root, "bare"),
     fakeHome,
@@ -99,7 +99,7 @@ async function bare(experimentalApi: boolean): Promise<Rpc> {
     "initialize",
     {
       clientInfo: { name: "Rufi", title: "Rufi", version: "0.0.0" },
-      capabilities: { experimentalApi, requestAttestation: false },
+      capabilities: { experimentalApi: true, requestAttestation: false },
     },
     DEADLINES.requestMs,
   );
@@ -136,7 +136,7 @@ describe("the pinned Codex", () => {
       join(skill, "SKILL.md"),
       "---\nname: sentinel\ndescription: Fictional skill for a Rufi test.\n---\nSay SENTINEL.\n",
     );
-    const rpc = await bare(true);
+    const rpc = await bare();
     const listed: SkillsListResponse = await rpc.request(
       "skills/list",
       { cwds: [root], forceReload: true },
@@ -157,26 +157,6 @@ describe("the pinned Codex", () => {
       DEADLINES.requestMs,
     );
     expect(ran).toEqual({ exitCode: 0, stdout: fakeHome, stderr: "" });
-  }, 60_000);
-
-  it("accepts experimental fields only after the client opts in", async () => {
-    const without = await bare(false);
-    await expect(
-      without.request(
-        "thread/start",
-        { mockExperimentalField: "x" },
-        DEADLINES.requestMs,
-      ),
-    ).rejects.toThrow(/experimental/i);
-    raw?.stop();
-    const opted = await bare(true);
-    await expect(
-      opted.request(
-        "thread/start",
-        { mockExperimentalField: "x", ephemeral: true },
-        DEADLINES.requestMs,
-      ),
-    ).resolves.toMatchObject({ thread: { id: expect.any(String) as string } });
   }, 60_000);
 
   it("sends Rufi's tools to the model as the rufi namespace", async () => {

@@ -212,6 +212,7 @@ describe("rejects a sign-in that can't be trusted", () => {
     ["not Bearer", { token_type: "mac" }],
     ["no access token", { access_token: "" }],
     ["no refresh token", { refresh_token: undefined }],
+    ["a negative expiry", { expires_in: -5 }],
     ["no time left", { expires_in: 0 }],
     ["a fractional expiry", { expires_in: 1.5 }],
   ])("a token response with %s", async (_name, change) => {
