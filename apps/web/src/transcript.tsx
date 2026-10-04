@@ -241,15 +241,16 @@ function ActivityIcon({
 }: {
   status: keyof typeof STATUS_WORDS | null;
 }) {
+  // The sign keeps its size beside a long detail.
   const icon =
     status === "running" ? (
-      <LoaderCircle size={13} className="animate-spin" aria-hidden />
+      <LoaderCircle size={13} className="shrink-0 animate-spin" aria-hidden />
     ) : status === "failed" ? (
-      <X size={13} aria-hidden />
+      <X size={13} className="shrink-0" aria-hidden />
     ) : status === "stopped" ? (
-      <Square size={11} aria-hidden />
+      <Square size={11} className="shrink-0" aria-hidden />
     ) : (
-      <Check size={13} aria-hidden />
+      <Check size={13} className="shrink-0" aria-hidden />
     );
   return (
     <>

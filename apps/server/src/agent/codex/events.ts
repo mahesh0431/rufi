@@ -56,7 +56,7 @@ function statusOf(status: string | undefined, ended: boolean) {
  * The activity line for an item, as it starts (`ended` false) or ends;
  * undefined for what isn't activity: messages, replies and reasoning. A
  * tool's name is never shown: Rufi's own tools say what they did, in plain
- * words, and any other is "Used a tool".
+ * words and with no detail, and any other is "Used a tool".
  */
 export function activityOf(
   item: ThreadItem,
@@ -75,12 +75,11 @@ export function activityOf(
         item.namespace === tools?.namespace
           ? tools.specs.find((spec) => spec.name === item.tool)
           : undefined;
-      return line(
-        "tool",
-        rufi?.shown ?? "Used a tool",
-        argumentsOf(item.arguments),
-        status,
-      );
+      // Rufi's own tools say what they did; their input stays out of the
+      // line (a save shows its own receipt). Any other shows its arguments.
+      return rufi
+        ? line("tool", rufi.shown, undefined, status)
+        : line("tool", "Used a tool", argumentsOf(item.arguments), status);
     }
     case "mcpToolCall":
       return line(

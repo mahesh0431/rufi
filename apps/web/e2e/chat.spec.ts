@@ -991,6 +991,50 @@ test("a save to the record shows Rufi's receipt line, also after a reload", asyn
   await expect(receipt).toBeVisible();
 });
 
+test("activity lines keep their sign beside a long detail; Rufi's own tool lines say only what they did", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi, {
+    scenario: {
+      calls: [
+        {
+          namespace: "rufi",
+          tool: "save_changes",
+          arguments: {
+            changes: [
+              {
+                kind: "symptom",
+                action: "add",
+                source: "I have a headache",
+                fields: { name: "Headache" },
+              },
+            ],
+          },
+        },
+        {
+          namespace: "elsewhere",
+          tool: "lookup",
+          arguments: { query: "headache ".repeat(40) },
+        },
+      ],
+    },
+  });
+  await send(page, "I have a headache");
+  await expect(log(chat(page)).locator(".reply")).toHaveText(
+    "ok:I have a headache",
+  );
+  const own = log(chat(page)).locator("p", { hasText: "Save to your record" });
+  await expect(own).toHaveText("done:Save to your record");
+  const other = log(chat(page)).locator("p", { hasText: "Used a tool" });
+  await expect(other).toContainText('{"query":"headache headache');
+  // The sign keeps its 13 px beside a detail longer than the line.
+  for (const line of [own, other]) {
+    const sign = await line.locator("svg").boundingBox();
+    expect(sign?.width).toBe(13);
+  }
+});
+
 test.describe("on the real Codex binary, with a local fake model", () => {
   test("a reply streams after Rufi's tool; Stop; a message waits; Steer", async ({
     page,

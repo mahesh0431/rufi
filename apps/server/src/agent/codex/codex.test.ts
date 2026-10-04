@@ -1223,14 +1223,14 @@ describe("Codex's items and endings in Rufi's words", () => {
     });
   });
 
-  it("gives a tool call its arguments as detail, and none when it took none", () => {
-    const call = (args: unknown) =>
+  it("says what Rufi's own tool did in its own words, with no detail; another tool gets its arguments", () => {
+    const call = (namespace: string, args: unknown) =>
       activityOf(
         {
           type: "dynamicToolCall",
           id: "t",
-          namespace: "rufi",
-          tool: "read_conversation",
+          namespace,
+          tool: "save_changes",
           arguments: args,
           status: "completed",
           contentItems: null,
@@ -1238,13 +1238,35 @@ describe("Codex's items and endings in Rufi's words", () => {
           durationMs: 1,
         } as never,
         true,
+        {
+          namespace: "rufi",
+          specs: [
+            {
+              name: "save_changes",
+              description: "Saves changes.",
+              shown: "Save to your record",
+              inputSchema: {},
+            },
+          ],
+        },
       );
-    expect(call({})).toEqual({
+    const changes = { changes: [{ kind: "symptom", action: "add" }] };
+    expect(call("rufi", changes)).toEqual({
+      activity: "tool",
+      title: "Save to your record",
+      status: "done",
+    });
+    expect(call("other", changes)).toEqual({
+      activity: "tool",
+      title: "Used a tool",
+      detail: '{"changes":[{"kind":"symptom","action":"add"}]}',
+      status: "done",
+    });
+    expect(call("other", {})).toEqual({
       activity: "tool",
       title: "Used a tool",
       status: "done",
     });
-    expect(call({ limit: 5 })?.detail).toBe('{"limit":5}');
   });
 
   it("keeps an activity's detail to one short line", () => {
