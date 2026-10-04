@@ -22,7 +22,7 @@ import { create } from "zustand/react";
 import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
 import { Box } from "./box.tsx";
-import { choose, useChosen } from "./choice.ts";
+import { choose, startConversation, useChosen } from "./choice.ts";
 import {
   conversationPath,
   type Live,
@@ -44,6 +44,7 @@ const useChat = create<{ open: boolean; focusBefore: Element | null }>(() => ({
 
 /** Opens the panel, remembering where focus goes back to. */
 const openPanel = () => {
+  if (useChat.getState().open) return;
   useChat.setState({ open: true, focusBefore: document.activeElement });
 };
 
@@ -54,11 +55,11 @@ const isSmall = () =>
 export const titleOf = (conversation: Conversation | null | undefined) =>
   conversation?.title ?? "New conversation";
 
-/** The page of a person's conversation; "new" for a new one. */
-const pageOf = (personId: string, conversationId: string | null) =>
+/** The page of a person's conversation. */
+const pageOf = (personId: string, conversationId: string) =>
   ({
     to: "/people/$personId/conversations/$conversationId",
-    params: { personId, conversationId: conversationId ?? "new" },
+    params: { personId, conversationId },
   }) as const;
 
 /** The live store of a conversation, open while this view shows it. */
@@ -71,13 +72,18 @@ function useLive(personId: string, conversationId: string | null) {
   return conversationId === null ? null : liveStore(personId, conversationId);
 }
 
-/** "New conversation": the chat starts a new one, in the panel or a page. */
+/**
+ * "New conversation": the core creates it at once, and the chat shows it, in
+ * the panel or as its page; unless the person chose another one meanwhile.
+ * Throws when it can't be created.
+ */
 export function useNewConversation(personId: string) {
   const navigate = useNavigate();
-  return (onPage: boolean) => {
-    choose(personId, null);
+  return async (onPage: boolean) => {
+    const started = await startConversation(personId);
+    if (!started) return;
     if (onPage || isSmall()) {
-      void navigate(pageOf(personId, null));
+      void navigate(pageOf(personId, started.id));
       return;
     }
     openPanel();
@@ -94,15 +100,30 @@ export function ChatDock({ person }: { person: Person }) {
   const navigate = useNavigate();
   const field = useRef<HTMLTextAreaElement | null>(null);
   const menus = useRef<HTMLDivElement | null>(null);
-  const [model, setModel] = useState<string>();
+  const start = useNewConversation(person.id);
+  const [problem, setProblem] = useState<string | null>(null);
 
   const openChat = () => {
     if (useChat.getState().open) return;
-    if (isSmall()) {
+    if (isSmall() && conversationId !== null) {
       void navigate(pageOf(person.id, conversationId));
       return;
     }
     openPanel();
+  };
+  /** With no conversation yet, using the box starts one, once. */
+  const starting = useRef(false);
+  const startHere = () => {
+    if (starting.current) return;
+    starting.current = true;
+    setProblem(null);
+    start(false)
+      .catch((error: unknown) => {
+        setProblem(messageOf(error));
+      })
+      .finally(() => {
+        starting.current = false;
+      });
   };
   const close = () => {
     const back = useChat.getState().focusBefore;
@@ -134,10 +155,10 @@ export function ChatDock({ person }: { person: Person }) {
       removeEventListener("keydown", onKey);
     };
   });
-  // The panel opens with the box ready for typing.
+  // The panel opens with the box ready for typing, also a new one's.
   useEffect(() => {
     if (open) field.current?.focus();
-  }, [open]);
+  }, [open, conversationId]);
 
   if (chosen === undefined) return null;
   const title = titleOf(
@@ -169,19 +190,19 @@ export function ChatDock({ person }: { person: Person }) {
             conversationId={conversationId}
             title={title}
             live={live}
-            model={model}
-            setModel={setModel}
             withModel={open}
             actions={
-              <IconButton
-                label="Open as page"
-                onClick={() => {
-                  useChat.setState({ open: false });
-                  void navigate(pageOf(person.id, conversationId));
-                }}
-              >
-                <Maximize2 size={14} aria-hidden />
-              </IconButton>
+              conversationId !== null && (
+                <IconButton
+                  label="Open as page"
+                  onClick={() => {
+                    useChat.setState({ open: false });
+                    void navigate(pageOf(person.id, conversationId));
+                  }}
+                >
+                  <Maximize2 size={14} aria-hidden />
+                </IconButton>
+              )
             }
             lead={
               open ? (
@@ -203,19 +224,24 @@ export function ChatDock({ person }: { person: Person }) {
               </div>
             ))}
           <div className={open ? "border-t border-line" : undefined}>
-            <Box
-              key={conversationId ?? "new"}
-              person={person}
-              conversationId={conversationId}
-              live={live}
-              model={model}
-              size={open ? "panel" : "bar"}
-              inputRef={field}
-              onOpen={openChat}
-              onStarted={() => {
-                setModel(undefined);
-              }}
-            />
+            {conversationId !== null && live ? (
+              <Box
+                key={conversationId}
+                person={person}
+                conversationId={conversationId}
+                live={live}
+                size={open ? "panel" : "bar"}
+                inputRef={field}
+                onOpen={openChat}
+              />
+            ) : (
+              <StartBox
+                inputRef={field}
+                person={person}
+                problem={problem}
+                onStart={startHere}
+              />
+            )}
           </div>
           <AiCanBeWrong />
         </div>
@@ -231,23 +257,19 @@ export function ConversationPage({
   conversationId,
 }: {
   person: Person;
-  conversationId: string | null;
+  conversationId: string;
 }) {
-  const live = useLive(person.id, conversationId);
-  const navigate = useNavigate();
+  const live = liveStore(person.id, conversationId);
   const field = useRef<HTMLTextAreaElement | null>(null);
   const menus = useRef<HTMLDivElement | null>(null);
-  const [model, setModel] = useState<string>();
 
-  /** The page is on screen. */
-  const shown = useRef(false);
+  useEffect(
+    () => retain(person.id, conversationId),
+    [person.id, conversationId],
+  );
   useEffect(() => {
-    shown.current = true;
     choose(person.id, conversationId);
     field.current?.focus();
-    return () => {
-      shown.current = false;
-    };
   }, [person.id, conversationId]);
   // ⌘J goes to the box.
   useEffect(() => {
@@ -273,43 +295,63 @@ export function ConversationPage({
           conversationId={conversationId}
           title={null}
           live={live}
-          model={model}
-          setModel={setModel}
           withModel
         />
-        {live ? (
-          <TranscriptView
-            live={live}
-            className="flex-1 overflow-auto"
-            inner="mx-auto max-w-[760px] px-10 py-6"
-          />
-        ) : (
-          <div className="mx-auto w-full max-w-[760px] flex-1 px-10 py-6">
-            <FirstMessage />
-          </div>
-        )}
+        <TranscriptView
+          live={live}
+          className="flex-1 overflow-auto"
+          inner="mx-auto max-w-[760px] px-10 py-6"
+        />
         <div className="mx-auto w-full max-w-[760px] px-10 pb-1">
           <Box
-            key={conversationId ?? "new"}
+            key={conversationId}
             person={person}
             conversationId={conversationId}
             live={live}
-            model={model}
             size="page"
             inputRef={field}
-            onStarted={(conversation) => {
-              // Only from this page: never take the person from where they went.
-              if (!shown.current) return;
-              setModel(undefined);
-              void navigate({
-                ...pageOf(person.id, conversation.id),
-                replace: true,
-              });
-            }}
           />
           <AiCanBeWrong />
         </div>
       </Menus>
+    </div>
+  );
+}
+
+/**
+ * The bar with no conversation yet: using its box starts one, and the box
+ * of that conversation takes its place.
+ */
+function StartBox({
+  inputRef,
+  person,
+  problem,
+  onStart,
+}: {
+  inputRef: RefObject<HTMLTextAreaElement | null>;
+  person: Person;
+  problem: string | null;
+  onStart: () => void;
+}) {
+  return (
+    <div className="flex flex-col">
+      <div className="py-2.5 pr-2.5 pl-3.5">
+        <textarea
+          ref={inputRef}
+          rows={1}
+          readOnly
+          aria-label="Message to Rufi"
+          placeholder={`Ask or tell Rufi about ${person.displayName}…`}
+          onClick={onStart}
+          onFocus={onStart}
+          className="w-full resize-none overflow-hidden bg-transparent outline-none placeholder:text-muted"
+        />
+      </div>
+      {problem !== null && (
+        <p role="alert" className="px-3.5 pb-2 text-muted">
+          {problem}
+        </p>
+      )}
     </div>
   );
 }
@@ -333,8 +375,6 @@ function Header({
   conversationId,
   title,
   live,
-  model,
-  setModel,
   withModel,
   lead,
   actions,
@@ -345,8 +385,6 @@ function Header({
   /** The switcher's title; null on the page, whose title is the toolbar's. */
   title: string | null;
   live: StoreApi<Live> | null;
-  model: string | undefined;
-  setModel: (model: string) => void;
   withModel: boolean;
   lead?: ReactNode;
   actions?: ReactNode;
@@ -361,32 +399,29 @@ function Header({
             person={person}
             conversationId={conversationId}
             title={title}
+            onProblem={setProblem}
           />
           <span className="flex-1" />
           {actions}
         </div>
       )}
-      {withModel && (
+      {withModel && live && conversationId !== null && (
         <div
           className={`flex items-center gap-0.5 px-3 pb-1.5 text-xs text-muted ${title === null ? "justify-end pt-2" : "-mt-2"}`}
         >
-          {live ? (
-            <LiveModel
-              live={live}
-              onChange={(next) => {
-                setProblem(null);
-                request(
-                  "PUT",
-                  `${conversationPath(person.id, conversationId ?? "")}/model`,
-                  { model: next },
-                ).catch((error: unknown) => {
-                  setProblem(messageOf(error));
-                });
-              }}
-            />
-          ) : (
-            <ModelMenu value={model} onChange={setModel} />
-          )}
+          <LiveModel
+            live={live}
+            onChange={(next) => {
+              setProblem(null);
+              request(
+                "PUT",
+                `${conversationPath(person.id, conversationId)}/model`,
+                { model: next },
+              ).catch((error: unknown) => {
+                setProblem(messageOf(error));
+              });
+            }}
+          />
           <span className="whitespace-nowrap">
             · Using ChatGPT plan ·{" "}
             <a
@@ -416,7 +451,10 @@ function LiveModel({
   live: StoreApi<Live>;
   onChange: (model: string) => void;
 }) {
-  const model = useStore(live, (state) => state.conversation?.model);
+  const model = useStore(
+    live,
+    (state) => state.conversation?.model ?? undefined,
+  );
   return <ModelMenu value={model} onChange={onChange} />;
 }
 
@@ -425,7 +463,7 @@ const POPUP =
 const ITEM =
   "flex cursor-default items-center gap-2 rounded-lg px-2.5 py-1.5 outline-none select-none data-[highlighted]:bg-accent-soft data-[highlighted]:text-accent-ink";
 
-/** The allowed models; for a new conversation, the first one unless chosen. */
+/** The allowed models; with none chosen yet, the first one, which the first message takes. */
 function ModelMenu({
   value,
   onChange,
@@ -489,12 +527,15 @@ function Switcher({
   person,
   conversationId,
   title,
+  onProblem,
 }: {
   person: Person;
   conversationId: string | null;
   title: string;
+  onProblem: (problem: string | null) => void;
 }) {
   const menus = useContext(Menus);
+  const start = useNewConversation(person.id);
   const conversations = useConversations(person.id).data?.conversations ?? [];
   return (
     <Menu.Root>
@@ -506,9 +547,9 @@ function Switcher({
         <Menu.Positioner sideOffset={6} align="start" className="z-30">
           <Menu.Popup className={`${POPUP} max-h-80 overflow-auto`}>
             <Menu.RadioGroup
-              value={conversationId ?? "new"}
+              value={conversationId ?? ""}
               onValueChange={(next: string) => {
-                choose(person.id, next === "new" ? null : next);
+                choose(person.id, next);
               }}
             >
               {conversations.map((c) => (
@@ -524,16 +565,22 @@ function Switcher({
                   </Menu.RadioItemIndicator>
                 </Menu.RadioItem>
               ))}
-              {conversations.length > 0 && (
-                <Menu.Separator className="my-1 h-px bg-line" />
-              )}
-              <Menu.RadioItem value="new" closeOnClick className={ITEM}>
-                <span className="flex-1">New conversation</span>
-                <Menu.RadioItemIndicator>
-                  <Check size={13} aria-hidden />
-                </Menu.RadioItemIndicator>
-              </Menu.RadioItem>
             </Menu.RadioGroup>
+            {conversations.length > 0 && (
+              <Menu.Separator className="my-1 h-px bg-line" />
+            )}
+            <Menu.Item
+              closeOnClick
+              className={ITEM}
+              onClick={() => {
+                onProblem(null);
+                start(false).catch((error: unknown) => {
+                  onProblem(messageOf(error));
+                });
+              }}
+            >
+              New conversation
+            </Menu.Item>
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>

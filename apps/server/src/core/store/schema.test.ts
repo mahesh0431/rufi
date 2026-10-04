@@ -174,23 +174,21 @@ describe("schema", () => {
       }).toThrow("CHECK constraint failed");
     });
 
-    it("allows one draft per conversation and one for a new conversation", () => {
-      insert("drafts", {
+    it("holds a draft for a send only with its message id", () => {
+      const draft = {
         person_id: "amma",
-        conversation_id: null,
+        conversation_id: "c-amma",
         text: "a",
         revision: 1,
         updated_at: now,
-      });
+      };
       expect(() => {
-        insert("drafts", {
-          person_id: "amma",
-          conversation_id: null,
-          text: "b",
-          revision: 1,
-          updated_at: now,
-        });
-      }).toThrow("UNIQUE constraint failed");
+        insert("drafts", { ...draft, state: "sending" });
+      }).toThrow("CHECK constraint failed");
+      expect(() => {
+        insert("drafts", { ...draft, attempt: "m-1" });
+      }).toThrow("CHECK constraint failed");
+      insert("drafts", { ...draft, state: "sending", attempt: "m-1" });
     });
   });
 

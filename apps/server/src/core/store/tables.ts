@@ -9,7 +9,7 @@ export interface Tables {
     person_id: string;
     title: string | null;
     provider: string;
-    model: string;
+    model: string | null;
     thread_id: string | null;
     thread_provider: string | null;
     thread_model: string | null;
@@ -26,10 +26,11 @@ export interface Tables {
   };
   drafts: {
     person_id: string;
-    conversation_id: string | null;
+    conversation_id: string;
     text: string;
     revision: number;
-    tab: string | null;
+    state: string;
+    attempt: string | null;
     updated_at: string;
   };
   files: {

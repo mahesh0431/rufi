@@ -57,7 +57,7 @@ const conversation = createRoute({
       <ConversationPage
         key={`${personId}/${conversationId}`}
         person={person}
-        conversationId={conversationId === "new" ? null : conversationId}
+        conversationId={conversationId}
       />
     );
   },

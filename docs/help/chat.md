@@ -6,7 +6,9 @@ The chat is where you talk with Rufi's AI about your record. It is one conversat
 
 The chat bar is the box at the bottom right of every page. It says "Ask or tell Rufi about" and your name.
 
-The bar continues the conversation you chose last. Point at the bar, or move into it with Tab, to see which conversation it is. When you haven't chosen one, the bar starts a new conversation. Opening the chat doesn't create a conversation: your first message does. If Rufi is open in two browser tabs, a choice in one tab doesn't change the other.
+The bar shows the conversation you chose last. Point at the bar, or move into it with Tab, to see which conversation it is. When you have no conversation yet, clicking the box starts one.
+
+Each browser tab keeps its own conversation open: a choice in one tab doesn't change another. When you open Rufi again, the bar shows the last choice Rufi saved. A choice made just before you close Rufi may not be remembered.
 
 Under the box, in every size of the chat, "AI can be wrong" reminds you to check what the AI says.
 
@@ -25,23 +27,23 @@ Press ⌘J again to close the panel.
 
 ## The chat page
 
-Each conversation has its own page, listed under **Conversations** in the sidebar. The page shows the same conversation as the panel, with the same box. When you open a conversation's page, the bar continues that conversation.
+Each conversation has its own page, listed under **Conversations** in the sidebar. The page shows the same conversation as the panel, with the same box. When you open a conversation's page, the bar shows that conversation.
 
 In a small window, the chat opens as a page instead of the panel.
 
 ## Starting a conversation
 
-Click **New conversation** in the sidebar, or choose it at the top of the panel. Your first message starts the conversation. Its first words become its name, in the panel, on the page and in the sidebar.
+Click **New conversation** in the sidebar, or choose it at the top of the panel. New conversation opens an empty conversation, listed as "New conversation". Its first message that Rufi takes gives it a name, in the panel, on the page and in the sidebar. An empty conversation stays in the list.
 
 Before your first message, the chat says what goes to OpenAI. See [Your data and the AI](your-data-and-the-ai.md).
-
-If your first message can't be sent, the conversation stays, with your message still in the box. If you go to another conversation or page while your first message is on its way, the chat doesn't take you back.
 
 ## Sending a message
 
 Type in the box and press Enter, or click the send button. Shift-Enter starts a new line.
 
-The box clears when Rufi has taken your message. If Rufi can't take it, your text stays in the box with the reason. If you reload or close the page while the message is on its way, your text isn't lost: when you come back, the box is empty if Rufi took the message, and has your text if it didn't. If Rufi stops while the message is on its way, your text is in the box when you open Rufi again: look at the conversation before you send it again. Rufi never sends a message again by itself: send it again when you want to.
+While Rufi sends your message, the box says "Sending…" and you can't change it, in this tab or another. You can use another conversation meanwhile. The box clears when the AI has taken your message. If the AI can't take it, your text stays in the box with the reason.
+
+If you reload or close the page while the message is on its way, nothing is lost: when you come back, the box is empty if the AI took the message, or still says "Sending…" until it knows. If Rufi stops during a send, or the AI doesn't answer it, Rufi keeps your text, but it may not know whether the AI got it: the box says so. Check the conversation before you send it again. Rufi never sends a message again by itself: send it again when you want to.
 
 A message can have up to 10,000 characters. When the box has more, it says so, and Rufi doesn't keep or send the text until you make it shorter.
 
@@ -68,12 +70,14 @@ After you stop a reply, waiting messages keep waiting. Send a message, or click 
 
 ## The model
 
-Each conversation has its own model. To change it, click the model's name in the panel or on the page, and choose another. For a new conversation, choose it before your first message.
+Each conversation has its own model. To change it, click the model's name in the panel or on the page, and choose another. A new conversation shows the first model it can use; choose another before your first message if you like.
 
 You can't change the model while a reply runs or messages wait. Rufi says so: stop the reply, or run or delete the waiting messages, then change it. A new model starts the AI afresh with the conversation's last 10 messages.
 
 ## What you typed but didn't send
 
-Rufi keeps what you type in the box as a draft: one for each conversation, and one for a new conversation. The draft stays when you change the size of the chat, go to another page, reload the page or start Rufi again. Rufi never sends a draft by itself.
+Rufi saves what you type in the box as the conversation's draft, a moment after you stop typing, and at once when you go to another conversation or page. Under the box, "Saving…" turns into "Saved". A saved draft stays when you change the size of the chat, go to another page, reload the page or start Rufi again. Rufi never sends a draft by itself.
+
+Wait for "Saved" before you reload, close the page or stop Rufi: what you typed in the last moment before can be lost. If a save fails, the box says "Not saved" with the reason, and your text stays in this tab, also when you go to another conversation and back. Click **Retry** to save it again.
 
 If you type in the same conversation in two browser tabs, the tab that saves or sends second shows "Changed in another tab" and the newer text, and sends nothing. Go on from there.

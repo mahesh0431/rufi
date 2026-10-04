@@ -1,91 +1,82 @@
-// The conversation the chat continues, per person. This tab owns it: the
-// core's choice is taken once, from the first read of the list, and from then
-// on only the person changes it here, so no read, late answer or other tab
-// moves the chat. The core's copy is for the next time Rufi opens. Every
-// write of it goes in one line per person, the first message of a new
-// conversation too (the core chooses the conversation it starts), so the core
-// keeps the person's last choice whatever order the answers come in.
-import { Conversations } from "@rufi/contracts";
+// The conversation the chat shows, per person. Each tab owns its own: only
+// the person changes it here (choosing one, or starting a new one), never a
+// read, a late answer or a save that failed. The core keeps the last choice
+// a tab saved, only to open the chat on the next time Rufi opens; this tab's
+// saves of it go one after another (one mutation scope per person), so the
+// core keeps this tab's last one.
+import { Conversation, type Conversations } from "@rufi/contracts";
+import { Schema } from "effect";
+import { useEffect } from "react";
 import { create } from "zustand/react";
 import { read, request } from "./api.ts";
+import { inTurn } from "./draft.ts";
+import { conversationsKey, queries, useConversations } from "./reads.ts";
 
-/** By person; undefined until known. */
-const useChoices = create<Record<string, string | null | undefined>>(
-  () => ({}),
-);
-/** By person: how many choices the person made in this tab. */
+/** By person; absent until the core's choice is read. */
+const useChoices = create<Record<string, string | null>>(() => ({}));
+/** By person: how many times the person chose here. */
 const made = new Map<string, number>();
-/** By person: the last write of the core's choice, in line. */
-const lines = new Map<string, Promise<unknown>>();
 
 const peoplePath = (personId: string) =>
   `/api/people/${encodeURIComponent(personId)}`;
 
-/** The conversation the chat continues (null: a new one); undefined until read. */
-export const useChosen = (personId: string) =>
-  useChoices((choices) => choices[personId]);
-
-/** The core's choice, read with the list: taken while this tab has none. */
-export function adopt(personId: string, chosen: string | null): void {
-  if (useChoices.getState()[personId] === undefined) {
-    useChoices.setState({ [personId]: chosen });
-  }
+/**
+ * The conversation the chat shows (null: none yet); undefined until read.
+ * The core's choice is taken once, from the first read of the list.
+ */
+export function useChosen(personId: string): string | null | undefined {
+  const local = useChoices((choices) => choices[personId]);
+  const saved = useConversations(personId).data?.chosen;
+  useEffect(() => {
+    if (saved === undefined) return;
+    if (useChoices.getState()[personId] === undefined) {
+      useChoices.setState({ [personId]: saved });
+    }
+  }, [personId, saved]);
+  return local === undefined ? saved : local;
 }
 
-/** Runs `write` after the person's earlier writes of the core's choice. */
-export function inLine<T>(
-  personId: string,
-  write: () => Promise<T>,
-): Promise<T> {
-  const run = (lines.get(personId) ?? Promise.resolve()).then(write);
-  const done = run.then(
-    () => undefined,
-    () => undefined,
-  );
-  lines.set(personId, done);
-  void done.then(() => {
-    if (lines.get(personId) === done) lines.delete(personId);
-  });
-  return run;
-}
-
-/** Chooses the conversation the chat continues; null starts a new one. */
-export function choose(personId: string, conversationId: string | null): void {
+/** The person chose the conversation the chat shows. */
+export function choose(personId: string, conversationId: string): void {
   if (useChoices.getState()[personId] === conversationId) return;
   made.set(personId, (made.get(personId) ?? 0) + 1);
   useChoices.setState({ [personId]: conversationId });
-  void inLine(personId, async () => {
-    try {
-      await request("PUT", `${peoplePath(personId)}/chosen`, {
-        conversationId,
-      });
-    } catch {
-      // Not kept: the chat shows what the core keeps, unless the person
-      // chose again meanwhile. If even that can't be read, the page says
-      // Rufi can't be reached, and the choice stays as it is.
-      const kept = await read(
-        Conversations,
-        "GET",
-        `${peoplePath(personId)}/conversations`,
-      ).catch(() => undefined);
-      if (kept && useChoices.getState()[personId] === conversationId) {
-        useChoices.setState({ [personId]: kept.chosen });
-      }
-    }
-  });
+  void inTurn(queries, `chosen/${personId}`, () =>
+    request("PUT", `${peoplePath(personId)}/chosen`, { conversationId }),
+  )
+    // Only the next opening of Rufi needed it: the chat stays where it is,
+    // and the page already says when Rufi can't be reached.
+    .catch(() => undefined);
 }
+
+const Created = Schema.Struct({ conversation: Conversation });
 
 /**
- * A new conversation's first message is about to go: the returned function
- * says, when it comes back, whether the chat may continue the conversation
- * it started, which it may unless the person chose another one meanwhile.
+ * Starts a new conversation (the core creates it at once) and shows it,
+ * unless the person chose another one while it was being made: then it is
+ * only listed, and undefined.
  */
-export function beforeFirstMessage(personId: string): () => boolean {
+export async function startConversation(
+  personId: string,
+): Promise<Conversation | undefined> {
   const before = made.get(personId) ?? 0;
-  return () => (made.get(personId) ?? 0) === before;
-}
-
-/** The chat continues the conversation a first message started (the core chose it). */
-export function continueStarted(personId: string, conversationId: string) {
-  useChoices.setState({ [personId]: conversationId });
+  const { conversation } = await read(
+    Created,
+    "POST",
+    `${peoplePath(personId)}/conversations`,
+    {},
+  );
+  // An older read of the list must not drop it.
+  await queries.cancelQueries({ queryKey: conversationsKey(personId) });
+  queries.setQueryData<typeof Conversations.Type>(
+    conversationsKey(personId),
+    (list) =>
+      list && {
+        ...list,
+        conversations: [conversation, ...list.conversations],
+      },
+  );
+  if ((made.get(personId) ?? 0) !== before) return undefined;
+  choose(personId, conversation.id);
+  return conversation;
 }

@@ -21,8 +21,8 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 - In `apps/web`, a value that changes lives in a store, state or ref, never in a module-level `let` that components reassign: React Compiler 1.0 can read such a variable after a later reassignment.
 - One process owns the data folder at a time: the core holds `rufi.lock` for its whole life, and each terminal command holds it too. Sign-in and token renewal take `credentials.lock` inside it (always `rufi.lock` first). If `rufi.lock` is lost, the core stops writing at once.
 - Only the core writes the database. Rufi's tools read through their own read-only connection. A transcript change is stored first and shown from what was stored (`core/chat/transcript.ts`).
-- Rufi keeps no queue, delivery states or retries of its own for messages: the agent's queue holds what waits, and its errors are shown as they are (ADR 0004).
-- The chat's state has one owner each: a message from the box is first its saved draft (the core refuses any other); only the box on screen may hold unsaved text, so the closing save fits the browser's 64 KiB; the chosen conversation is the tab's own, and its writes to the core go in one line per person (`apps/web/src/choice.ts`).
+- Rufi keeps no queue or retries of its own for messages: the agent's queue holds what waits, and its errors are shown as they are (ADR 0004). The one delivery state is the draft a send holds until the agent took or refused the message (`drafts.state`); a send Rufi stopped during is never sent again.
+- The chat's state has one owner each: a draft is the core's, and every save or send is checked against its revision and the send holding it; a conversation exists before its first message (Send never creates, chooses or navigates); the conversation on screen is the tab's own (`apps/web/src/choice.ts`), and the core's chosen conversation is only where the chat opens next time. Nothing is saved as a page closes.
 
 ## Docs
 

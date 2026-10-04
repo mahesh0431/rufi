@@ -3,9 +3,10 @@
 import type { Person } from "@rufi/contracts";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { CircleHelp, House, Settings, SquarePen } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { useConnection } from "./api.ts";
 import { ChatDock, titleOf, useNewConversation } from "./chat.tsx";
+import { messageOf } from "./live.ts";
 import { useConversations, usePeople, useStatus } from "./reads.ts";
 
 const TITLES: Record<string, string> = { settings: "Settings", help: "Help" };
@@ -110,17 +111,28 @@ function NewConversation({
   onPage: boolean;
 }) {
   const start = useNewConversation(personId);
+  const [problem, setProblem] = useState<string | null>(null);
   return (
-    <button
-      type="button"
-      onClick={() => {
-        start(onPage);
-      }}
-      className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-white/60"
-    >
-      <SquarePen size={15} aria-hidden />
-      New conversation
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          setProblem(null);
+          start(onPage).catch((error: unknown) => {
+            setProblem(messageOf(error));
+          });
+        }}
+        className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-white/60"
+      >
+        <SquarePen size={15} aria-hidden />
+        New conversation
+      </button>
+      {problem !== null && (
+        <p role="alert" className="px-2 text-xs text-muted">
+          {problem}
+        </p>
+      )}
+    </>
   );
 }
 

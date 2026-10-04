@@ -26,7 +26,7 @@ When Rufi creates your data folder, it makes it private to your Mac user account
 
 Rufi keeps each conversation in `rufi.sqlite`: your messages, the AI's replies, and one line for each thing the AI did, such as reading your record or searching the web. Rufi saves each part before it shows it, so what you see is what was saved.
 
-It also keeps what you typed in the chat but didn't send (a draft for each conversation, and one for a new conversation), and which conversation the chat continues for each person. Drafts stay on your Mac until you send them.
+It also keeps what you typed in the chat but didn't send (a draft for each conversation), and which conversation to open the chat on for each person. Drafts stay on your Mac until you send them.
 
 Rufi doesn't keep the AI's tool outputs or its reasoning. The AI's own copies in `codex/` hold more, as long as the AI keeps them.
 

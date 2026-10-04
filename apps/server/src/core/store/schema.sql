@@ -75,7 +75,7 @@ CREATE TABLE conversations (
   person_id TEXT NOT NULL REFERENCES people (id),
   title TEXT,                  -- the first words of the first message Rufi took; null until then
   provider TEXT NOT NULL,      -- the agent chosen for it: 'codex'
-  model TEXT NOT NULL,         -- the model chosen for it
+  model TEXT,                  -- the model chosen for it; null: the first allowed one, set when the first message goes
   thread_id TEXT,              -- the agent's thread; none until the first message
   thread_provider TEXT,        -- whose thread it is, so another agent never reuses it
   thread_model TEXT,           -- the model the thread started with
@@ -129,20 +129,27 @@ CREATE TABLE transcript_entries (
   CHECK ((kind = 'activity') = (activity IS NOT NULL) AND (kind = 'activity') = (status IS NOT NULL))
 ) STRICT;
 
--- One unsent message per conversation, and one per person for a new
--- conversation (conversation_id null). Rufi never sends a draft.
+-- One unsent message per conversation. Rufi never sends a draft by itself.
+-- A send holds the draft (state 'sending', its message id in attempt) until
+-- the agent took the message (the draft is emptied) or refused it (the
+-- text is back); nobody can change it meanwhile. 'unknown': Rufi stopped
+-- during that send, so the text stays, and nobody knows if the agent has it.
 CREATE TABLE drafts (
   person_id TEXT NOT NULL REFERENCES people (id),
-  conversation_id TEXT,
+  conversation_id TEXT NOT NULL,
   text TEXT NOT NULL,          -- may be empty: the row stays so its revision keeps growing
-  revision INTEGER NOT NULL,   -- grows with every save; a save based on an older one is refused
-  tab TEXT,                    -- the browser tab that saved this revision; null: the core itself
+  revision INTEGER NOT NULL,   -- grows with every change; a save or send based on an older one is refused
+  state TEXT NOT NULL DEFAULT 'editable' CHECK (state IN ('editable', 'sending', 'unknown')),
+  attempt TEXT,                -- the id of the message a send holds it for (the id the agent gets)
   updated_at TEXT NOT NULL,
-  FOREIGN KEY (person_id, conversation_id) REFERENCES conversations (person_id, id)
+  PRIMARY KEY (person_id, conversation_id),
+  FOREIGN KEY (person_id, conversation_id) REFERENCES conversations (person_id, id),
+  CHECK ((state = 'sending') = (attempt IS NOT NULL))
 ) STRICT;
 
--- The conversation the chat continues for each person: the one chosen last.
--- No row: the chat starts a new conversation.
+-- The conversation Rufi opens the chat on for each person, the next time it
+-- opens: the last choice a tab saved. Each open tab keeps its own. No row:
+-- none yet.
 CREATE TABLE chosen_conversations (
   person_id TEXT PRIMARY KEY REFERENCES people (id),
   conversation_id TEXT NOT NULL,
@@ -158,4 +165,3 @@ CREATE INDEX conversations_by_person ON conversations (person_id, created_at);
 CREATE INDEX turns_by_conversation ON turns (person_id, conversation_id, started_at);
 CREATE INDEX turns_by_status ON turns (status); -- running turns, found at start
 CREATE INDEX entries_by_turn ON transcript_entries (person_id, turn_id);
-CREATE UNIQUE INDEX drafts_one_each ON drafts (person_id, ifnull(conversation_id, ''));

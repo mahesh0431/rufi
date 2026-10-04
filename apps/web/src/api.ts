@@ -253,19 +253,6 @@ export async function stream(
   }
 }
 
-/**
- * A last PUT as the page goes away (reload, close): the browser sends it
- * after the page is gone, so nobody waits for its answer.
- */
-export function putOnLeave(path: string, body: unknown): void {
-  void fetch(path, {
-    method: "PUT",
-    headers: headersFor(body),
-    body: JSON.stringify(body),
-    keepalive: true,
-  }).catch(() => undefined); // the page is gone: nobody is left to tell
-}
-
 /** A request whose answer must match a contract. */
 export async function read<S extends Schema.Codec<unknown, unknown>>(
   schema: S,

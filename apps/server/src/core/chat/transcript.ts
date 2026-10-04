@@ -290,103 +290,93 @@ export function transcripts(
     return id;
   }
 
-  /** A draft as stored; revision 0 when there is none yet. */
-  async function draftOf(
-    trx: Db,
-    personId: string,
-    conversationId: string | null,
-  ): Promise<Draft> {
-    const row = await trx
+  const draftRow = (trx: Db, personId: string, conversationId: string) =>
+    trx
       .selectFrom("drafts")
-      .select(["text", "revision"])
+      .select(["text", "revision", "state", "attempt"])
       .where("person_id", "=", personId)
-      .where((eb) =>
-        conversationId === null
-          ? eb("conversation_id", "is", null)
-          : eb("conversation_id", "=", conversationId),
-      )
+      .where("conversation_id", "=", conversationId)
       .executeTakeFirst();
-    return row ?? { text: "", revision: 0 };
-  }
+
+  const toDraft = (
+    row: { text: string; revision: number; state: string } | undefined,
+  ): Draft =>
+    row
+      ? {
+          text: row.text,
+          revision: row.revision,
+          state: row.state as Draft["state"],
+        }
+      : { text: "", revision: 0, state: "editable" };
 
   /**
-   * Keeps the draft when it is still at `revision` (the one the box last
-   * saw), and moves its revision on; otherwise it is refused, with the draft
-   * as it is now. A tab's last save as the page goes (`leaving`) also follows
-   * the tab's own save that is still on its way: it may have been kept just
-   * before.
+   * Changes a draft when it is at `revision`, moving its revision on.
+   * Refused: undefined.
    */
   async function writeDraft(
     trx: Transaction<Tables>,
     personId: string,
-    conversationId: string | null,
-    text: string,
+    conversationId: string,
     revision: number,
-    by?: { tab: string; leaving?: boolean },
-  ): Promise<{ saved: boolean; draft: Draft }> {
-    const current = await trx
-      .selectFrom("drafts")
-      .select(["text", "revision", "tab"])
-      .where("person_id", "=", personId)
-      .where((eb) =>
-        conversationId === null
-          ? eb("conversation_id", "is", null)
-          : eb("conversation_id", "=", conversationId),
-      )
-      .executeTakeFirst();
-    const at = current?.revision ?? 0;
-    const follows =
-      by?.leaving === true &&
-      current !== undefined &&
-      at === revision + 1 &&
-      current.tab === by.tab;
-    if (at !== revision && !follows) {
-      return {
-        saved: false,
-        draft: { text: current?.text ?? "", revision: at },
-      };
-    }
-    const next = { text, revision: at + 1 };
-    if (current === undefined) {
+    next: { text: string; state: Draft["state"]; attempt: string | null },
+  ): Promise<Draft | undefined> {
+    const row = await draftRow(trx, personId, conversationId);
+    if (toDraft(row).revision !== revision) return undefined;
+    const draft = {
+      text: next.text,
+      revision: revision + 1,
+      state: next.state,
+    };
+    const values = { ...next, revision: draft.revision, updated_at: now() };
+    if (row === undefined) {
       await trx
         .insertInto("drafts")
         .values({
           person_id: personId,
           conversation_id: conversationId,
-          ...next,
-          tab: by?.tab ?? null,
-          updated_at: now(),
+          ...values,
         })
         .execute();
     } else {
       await trx
         .updateTable("drafts")
-        .set({ ...next, tab: by?.tab ?? null, updated_at: now() })
+        .set(values)
         .where("person_id", "=", personId)
-        .where((eb) =>
-          conversationId === null
-            ? eb("conversation_id", "is", null)
-            : eb("conversation_id", "=", conversationId),
-        )
+        .where("conversation_id", "=", conversationId)
         .execute();
     }
-    return { saved: true, draft: next };
+    return draft;
   }
 
-  /** Chooses the conversation the chat continues; null starts a new one. */
+  /** Ends the send that holds the draft (by its message id), if it still does. */
+  async function endSend(
+    trx: Transaction<Tables>,
+    personId: string,
+    conversationId: string,
+    attempt: string,
+    outcome: "taken" | "refused" | "unknown",
+  ): Promise<Draft> {
+    const row = await draftRow(trx, personId, conversationId);
+    if (row?.attempt !== attempt) return toDraft(row);
+    return (await writeDraft(trx, personId, conversationId, row.revision, {
+      text: outcome === "taken" ? "" : row.text,
+      state: outcome === "unknown" ? "unknown" : "editable",
+      attempt: null,
+    })) as Draft;
+  }
+
+  /** Chooses the conversation Rufi opens the chat on next time. */
   async function chooseIn(
     trx: Transaction<Tables>,
     personId: string,
-    conversationId: string | null,
+    conversationId: string,
   ): Promise<void> {
-    await trx
-      .deleteFrom("chosen_conversations")
-      .where("person_id", "=", personId)
-      .execute();
-    if (conversationId === null) return;
     await trx
       .insertInto("chosen_conversations")
       .values({ person_id: personId, conversation_id: conversationId })
+      .onConflict((oc) =>
+        oc.column("person_id").doUpdateSet({ conversation_id: conversationId }),
+      )
       .execute();
   }
 
@@ -456,18 +446,12 @@ export function transcripts(
       return row && toConversation(row);
     },
 
-    /**
-     * A new conversation. With its `first` message, in the same commit: the
-     * chat continues it, and the message is its draft until the agent takes
-     * it; the box's draft for a new conversation is cleared when it is still
-     * at the revision the box saw (`newDraft`).
-     */
+    /** A new conversation; with no model, the first message chooses one. */
     createConversation: async (
       personId: string,
       title: string | null,
       provider: string,
-      model: string,
-      first?: { text: string; newDraft?: number | undefined },
+      model: string | null,
     ): Promise<ConversationRow> => {
       const row = {
         id: uuid(),
@@ -482,15 +466,7 @@ export function transcripts(
         revision: 0,
         created_at: now(),
       };
-      await db.transaction().execute(async (trx) => {
-        await trx.insertInto("conversations").values(row).execute();
-        if (!first) return;
-        await chooseIn(trx, personId, row.id);
-        await writeDraft(trx, personId, row.id, first.text, 0);
-        if (first.newDraft !== undefined) {
-          await writeDraft(trx, personId, null, "", first.newDraft);
-        }
-      });
+      await db.insertInto("conversations").values(row).execute();
       return toConversation(row);
     },
 
@@ -802,24 +778,114 @@ export function transcripts(
         .where("id", "=", id)
         .executeTakeFirst()) !== undefined,
 
-    draft: (personId: string, conversationId: string | null) =>
-      draftOf(db, personId, conversationId),
+    draft: async (personId: string, conversationId: string) =>
+      toDraft(await draftRow(db, personId, conversationId)),
 
-    /** Saves the box's text: see writeDraft. */
+    /**
+     * Saves the box's text when the draft is still at `revision` (the one
+     * the box last saw) and no send holds it; otherwise it is refused, with
+     * the draft as it is now.
+     */
     saveDraft: (
       personId: string,
-      conversationId: string | null,
+      conversationId: string,
       text: string,
       revision: number,
-      by?: { tab: string; leaving?: boolean },
     ): Promise<{ saved: boolean; draft: Draft }> =>
+      db.transaction().execute(async (trx) => {
+        const current = toDraft(await draftRow(trx, personId, conversationId));
+        const saved =
+          current.state === "sending"
+            ? undefined
+            : await writeDraft(trx, personId, conversationId, revision, {
+                text,
+                state: "editable",
+                attempt: null,
+              });
+        return saved
+          ? { saved: true, draft: saved }
+          : { saved: false, draft: current };
+      }),
+
+    /**
+     * A send holds the draft for its message (`attempt`, the id the agent
+     * gets): only when the draft is at `revision`, holds `text` and no
+     * other send holds it. Nothing can change the draft until the send ends.
+     */
+    holdForSend: (
+      personId: string,
+      conversationId: string,
+      text: string,
+      revision: number,
+      attempt: string,
+    ): Promise<{ held: boolean; draft: Draft }> =>
+      db.transaction().execute(async (trx) => {
+        const current = toDraft(await draftRow(trx, personId, conversationId));
+        const held =
+          current.state !== "sending" && current.text.trim() === text
+            ? await writeDraft(trx, personId, conversationId, revision, {
+                text: current.text,
+                state: "sending",
+                attempt,
+              })
+            : undefined;
+        return held
+          ? { held: true, draft: held }
+          : { held: false, draft: current };
+      }),
+
+    /**
+     * The send that holds the draft ended: taken, the draft is emptied;
+     * refused, its text is back to edit; unknown, the text stays and the
+     * person is told to check the conversation.
+     */
+    endSend: (
+      personId: string,
+      conversationId: string,
+      attempt: string,
+      outcome: "taken" | "refused" | "unknown",
+    ): Promise<Draft> =>
       db
         .transaction()
         .execute((trx) =>
-          writeDraft(trx, personId, conversationId, text, revision, by),
+          endSend(trx, personId, conversationId, attempt, outcome),
         ),
 
-    /** The conversation the chat continues for the person; null: a new one. */
+    /**
+     * When Rufi starts: sends that held a draft as Rufi stopped have ended.
+     * One whose message is in the transcript was taken; otherwise nobody
+     * knows, and the text stays. Never sent again. Returns how many.
+     */
+    endStoppedSends: async (): Promise<number> => {
+      const held = await db
+        .selectFrom("drafts")
+        .select(["person_id", "conversation_id", "attempt"])
+        .where("state", "=", "sending")
+        .execute();
+      for (const row of held) {
+        const attempt = row.attempt ?? "";
+        const taken = await db
+          .selectFrom("transcript_entries")
+          .select("id")
+          .where("person_id", "=", row.person_id)
+          .where("id", "=", attempt)
+          .executeTakeFirst();
+        await db
+          .transaction()
+          .execute((trx) =>
+            endSend(
+              trx,
+              row.person_id,
+              row.conversation_id,
+              attempt,
+              taken ? "taken" : "unknown",
+            ),
+          );
+      }
+      return held.length;
+    },
+
+    /** The conversation Rufi opens the chat on for the person; null: none yet. */
     chosen: async (personId: string) =>
       (
         await db
@@ -829,8 +895,8 @@ export function transcripts(
           .executeTakeFirst()
       )?.conversation_id ?? null,
 
-    /** Chooses the conversation the chat continues; null starts a new one. */
-    choose: (personId: string, conversationId: string | null) =>
+    /** Chooses the conversation Rufi opens the chat on next time. */
+    choose: (personId: string, conversationId: string) =>
       db
         .transaction()
         .execute((trx) => chooseIn(trx, personId, conversationId)),

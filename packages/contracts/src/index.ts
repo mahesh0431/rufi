@@ -86,7 +86,8 @@ export const Conversation = Schema.Struct({
   /** The first words of the first message Rufi took; null until then. */
   title: Schema.NullOr(Schema.String),
   provider: Schema.String,
-  model: Schema.String,
+  /** The model chosen for it; null: the first allowed one, when the first message goes. */
+  model: Schema.NullOr(Schema.String),
   createdAt: Schema.String,
 });
 export type Conversation = typeof Conversation.Type;
@@ -130,7 +131,7 @@ export type StreamLine = typeof StreamLine.Type;
 /** A person's conversations, newest first, and the one the chat continues. */
 export const Conversations = Schema.Struct({
   conversations: Schema.Array(Conversation),
-  /** The conversation chosen last; null: the chat starts a new one. */
+  /** The conversation to open the chat on: the last choice a tab saved. */
   chosen: Schema.NullOr(Schema.String),
 });
 
@@ -140,15 +141,22 @@ export const WaitingMessages = Schema.Struct({
 
 /**
  * The unsent text of a conversation's box. Its revision grows with every
- * save, so a save based on an older revision is refused.
+ * change, so a save based on an older revision is refused. `sending`: a
+ * send holds it until the agent took or refused the message, and it can't
+ * be changed meanwhile; `unknown`: Rufi stopped during that send, so the
+ * text stays and nobody knows whether the agent has it.
  */
 export const Draft = Schema.Struct({
   text: Schema.String,
   revision: Schema.Int,
+  state: Schema.Literals(["editable", "sending", "unknown"]),
 });
 export type Draft = typeof Draft.Type;
 
-/** A refused save: the draft changed meanwhile (another tab). */
+/**
+ * A refused save or send: the draft changed meanwhile (another tab), or a
+ * send holds it.
+ */
 export const DraftChanged = Schema.Struct({ draft: Draft });
 
 /** A message the core took, and the box's draft after it. */
@@ -156,22 +164,6 @@ export const Sent = Schema.Struct({ id: Schema.String, draft: Draft });
 
 /** A message the core didn't send: the box's draft, which keeps it. */
 export const NotSent = Schema.Struct({ draft: Draft });
-
-/** The first message of a new conversation, taken. */
-export const Started = Schema.Struct({
-  id: Schema.String,
-  conversation: Conversation,
-  draft: Draft,
-});
-
-/**
- * A new conversation whose first message wasn't taken: the conversation
- * stays, with the message as its draft.
- */
-export const NotStarted = Schema.Struct({
-  conversation: Conversation,
-  draft: Draft,
-});
 
 export const Model = Schema.Struct({ id: Schema.String, name: Schema.String });
 export type Model = typeof Model.Type;
@@ -269,42 +261,20 @@ export const MessageText = Schema.Struct({ text: Message });
 
 /**
  * A message from the box: sent or steered in. `draft` is the revision the
- * box saved this text at: the core sends only text it keeps as the draft
- * (else 409 with the draft as it is), and clears the draft once the agent
- * took it, if it is still that revision.
+ * box saved this text at: the core sends only the text it keeps as the
+ * draft at that revision (else 409 with the draft as it is), and holds the
+ * draft until the agent took the message (emptied) or refused it.
  */
-export const SendMessage = Schema.Struct({
-  text: Message,
-  draft: Schema.optionalKey(Schema.Int),
-});
+export const SendMessage = Schema.Struct({ text: Message, draft: Schema.Int });
 
-/**
- * The first message of a new conversation, on the model chosen for it;
- * `draft` as for SendMessage, of the new conversation's draft.
- */
-export const StartConversation = Schema.Struct({
-  text: Message,
-  draft: Schema.optionalKey(Schema.Int),
-  model: Schema.optionalKey(Id),
-});
-
-/**
- * The box's text, based on the draft's revision as the box last saw it.
- * `tab` names the browser tab that saves; `leaving` marks the tab's last
- * save as the page goes, which also follows the tab's own save still on its
- * way.
- */
+/** The box's text, based on the draft's revision as the box last saw it. */
 export const SaveDraft = Schema.Struct({
   text: Text(MAX_MESSAGE_CHARS),
   revision: Schema.Int,
-  tab: Schema.optionalKey(Id),
-  leaving: Schema.optionalKey(Schema.Literal(true)),
 });
 
-/** The conversation the chat continues; null starts a new one. */
-export const ChooseConversation = Schema.Struct({
-  conversationId: Schema.NullOr(Id),
-});
+/** The conversation Rufi opens the chat on next time. */
+export const ChooseConversation = Schema.Struct({ conversationId: Id });
 
 export const ReorderWaiting = Schema.Struct({ ids: Schema.Array(Id) });
 

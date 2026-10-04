@@ -72,14 +72,14 @@ _Avoid_: inbox, notifications, tasks
 ## Conversations
 
 **Conversation**:
-An exchange between the user and Rufi's AI about one person, kept by Rufi. Its name is the first words of its first message.
+An exchange between the user and Rufi's AI about one person, kept by Rufi. **New conversation** creates it at once; its name is the first words of its first message the AI took, "New conversation" until then.
 _Avoid_: thread, session
 
 **Chat**:
 Where the user talks with Rufi's AI: one conversation, shown in three sizes (the chat bar, the chat panel and the chat page) with the same box.
 
 **Chat bar**:
-The box at the bottom right of every page. It continues the conversation the user chose last for the person, or starts a new one.
+The box at the bottom right of every page. It shows the conversation the user chose last for the person in this tab; with none yet, using it starts one.
 _Avoid_: composer, input
 
 **Chat panel**:
@@ -114,7 +114,7 @@ A reply that didn't finish because you stopped it or Rufi closed. What it wrote 
 _Avoid_: cancelled, aborted
 
 **Draft**:
-A message you started and haven't sent: one for each conversation, and one for a new conversation. Rufi never sends a draft by itself.
+A message you started and haven't sent, one for each conversation, saved while you type ("Saved" under the box). While a send holds it, nobody can change it. Rufi never sends a draft by itself.
 _Avoid_: note, unsent
 
 **Model**:

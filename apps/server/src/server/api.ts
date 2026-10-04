@@ -12,7 +12,6 @@ import {
   SaveSettings,
   SelectModel,
   SendMessage,
-  StartConversation,
   type Draft,
   type Overview,
   type Settings,
@@ -25,11 +24,13 @@ import { Hono, type Context, type Next } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { getCookie, setCookie } from "hono/cookie";
 import { stream } from "hono/streaming";
+import { v7 as uuid } from "uuid";
 import { Stopped } from "../agent/runtime.ts";
 import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
 import {
   shown,
   type Change,
+  type ConversationRow,
   type Transcripts,
 } from "../core/chat/transcript.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
@@ -276,7 +277,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.post(base, async (c) => {
     const { id } = await person(c);
     const { title } = await body(c, CreateConversation);
-    const created = await acting(() => chat.create(id, title ?? null));
+    const created = await chat.create(id, title ?? null);
     return c.json({ conversation: shown(created) }, 201);
   });
 
@@ -284,127 +285,68 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.put("/api/people/:personId/chosen", async (c) => {
     const { id } = await person(c);
     const { conversationId } = await body(c, ChooseConversation);
-    if (
-      conversationId !== null &&
-      !(await transcripts.conversation(id, conversationId))
-    ) {
+    if (!(await transcripts.conversation(id, conversationId))) {
       throw new HttpError(404, "Not found.");
     }
     await transcripts.choose(id, conversationId);
     return c.json({ chosen: conversationId });
   });
 
-  /** Sends from a box under way, by its draft: a read of that draft waits. */
-  const sending = new Map<string, Promise<unknown>>();
-  const draftKey = (personId: string, conversationId: string | null) =>
-    `${personId}/${conversationId ?? "new"}`;
-  /** Runs a send's step that a read of the box's draft waits for. */
-  const whileSending = async <T>(
-    personId: string,
-    conversationId: string | null,
-    run: Promise<T>,
-  ): Promise<T> => {
-    const key = draftKey(personId, conversationId);
-    sending.set(key, run);
-    try {
-      return await run;
-    } finally {
-      if (sending.get(key) === run) sending.delete(key);
-    }
-  };
-
   /**
-   * A message from a box is its draft as stored: the box saved it first, at
-   * `revision`. Anything else is refused and nothing is sent, so a message
-   * Rufi takes is never only in a request: the draft keeps it until the
-   * agent took it, also when Rufi stops meanwhile.
+   * Sends a message from a box. One short commit checks that the text is the
+   * draft the box saved at `revision` and holds the draft for this send, so
+   * another tab can't change or send it meanwhile, and the text survives
+   * Rufi stopping (docs/adr/0004). Then the agent is asked. Taken: the draft
+   * is emptied. Refused: the text is back to edit, with why. Any other
+   * failure: the text stays, and nobody knows whether the agent has it. The
+   * message's id is the send's, so after a stop the transcript tells.
    */
-  const fromDraft = async (
-    personId: string,
-    conversationId: string | null,
+  const fromBox = async (
+    found: ConversationRow,
     text: string,
-    revision: number | undefined,
-  ): Promise<void> => {
-    if (revision === undefined) return;
-    const draft = await transcripts.draft(personId, conversationId);
-    if (draft.revision !== revision || draft.text.trim() !== text) {
-      throw new HttpError(409, "Changed in another tab.", { draft });
+    revision: number,
+    action: (id: string) => Promise<unknown>,
+  ): Promise<{ id: string; draft: Draft }> => {
+    const id = uuid();
+    const hold = await transcripts.holdForSend(
+      found.personId,
+      found.id,
+      text,
+      revision,
+      id,
+    );
+    if (!hold.held) {
+      throw new HttpError(
+        409,
+        hold.draft.state === "sending"
+          ? "This message is being sent."
+          : "Changed in another tab.",
+        { draft: hold.draft },
+      );
     }
-  };
-
-  /**
-   * Sends a message from a box whose draft keeps it at `held`. Taken: the
-   * draft is cleared, when it is still that revision (another tab may have
-   * changed it). Not taken: the error carries the draft, which keeps the
-   * text.
-   */
-  const fromBox = <T>(
-    personId: string,
-    conversationId: string,
-    held: number | undefined,
-    action: () => Promise<T>,
-  ): Promise<{ result: T; draft: Draft }> =>
-    whileSending(
-      personId,
-      conversationId,
-      (async () => {
-        let result: T;
-        try {
-          result = await acting(action);
-        } catch (error) {
-          if (!(error instanceof HttpError)) throw error;
-          throw new HttpError(error.status, error.message, {
-            ...error.more,
-            draft: await transcripts.draft(personId, conversationId),
-          });
-        }
-        const draft =
-          held === undefined
-            ? await transcripts.draft(personId, conversationId)
-            : (await transcripts.saveDraft(personId, conversationId, "", held))
-                .draft;
-        return { result, draft };
-      })(),
-    );
-
-  // The first message of a new conversation starts it, and the chat
-  // continues it. The message moves from the new conversation's draft to the
-  // conversation's own, which keeps it until the agent takes it.
-  app.post(`${base}/new/messages`, async (c) => {
-    const { id: personId } = await person(c);
-    const { text, draft, model } = await body(
-      c,
-      StartConversation,
-      MESSAGE_REFUSAL,
-    );
-    await fromDraft(personId, null, text, draft);
-    const created = await whileSending(
-      personId,
-      null,
-      acting(() =>
-        chat.create(personId, null, model, { text, newDraft: draft }),
-      ),
-    );
     try {
-      const { result, draft: after } = await fromBox(
-        personId,
-        created.id,
-        1,
-        () => chat.send(created, text),
-      );
-      const titled = await transcripts.conversation(personId, created.id);
-      return c.json(
-        { id: result.id, conversation: shown(titled ?? created), draft: after },
-        202,
-      );
+      await acting(() => action(id));
     } catch (error) {
       if (!(error instanceof HttpError)) throw error;
+      const draft = await transcripts.endSend(
+        found.personId,
+        found.id,
+        id,
+        error.status === 409 ? "refused" : "unknown",
+      );
       throw new HttpError(error.status, error.message, {
         ...error.more,
-        conversation: shown(created),
+        draft,
       });
     }
-  });
+    const draft = await transcripts.endSend(
+      found.personId,
+      found.id,
+      id,
+      "taken",
+    );
+    return { id, draft };
+  };
 
   const one = `${base}/:conversationId`;
   app.get(one, async (c) =>
@@ -413,26 +355,18 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.post(`${one}/messages`, async (c) => {
     const found = await conversation(c);
     const { text, draft } = await body(c, SendMessage, MESSAGE_REFUSAL);
-    await fromDraft(found.personId, found.id, text, draft);
-    const { result, draft: after } = await fromBox(
-      found.personId,
-      found.id,
-      draft,
-      () => chat.send(found, text),
+    const sent = await fromBox(found, text, draft, (id) =>
+      chat.send(found, text, id),
     );
-    return c.json({ id: result.id, draft: after }, 202);
+    return c.json(sent, 202);
   });
   app.post(`${one}/steer`, async (c) => {
     const found = await conversation(c);
     const { text, draft } = await body(c, SendMessage, MESSAGE_REFUSAL);
-    await fromDraft(found.personId, found.id, text, draft);
-    const { result, draft: after } = await fromBox(
-      found.personId,
-      found.id,
-      draft,
-      () => chat.steer(found, text),
+    const sent = await fromBox(found, text, draft, (id) =>
+      chat.steer(found, text, id),
     );
-    return c.json({ id: result.id, draft: after });
+    return c.json(sent);
   });
   app.post(`${one}/stop`, async (c) => {
     const found = await conversation(c);
@@ -476,34 +410,29 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     return c.json({ ok: true });
   });
 
-  // A draft per conversation; "new" is the draft for a new conversation.
-  const draftScope = async (c: Context) =>
-    c.req.param("conversationId") === "new"
-      ? { personId: (await person(c)).id, conversationId: null }
-      : await conversation(c).then(({ personId, id }) => ({
-          personId,
-          conversationId: id,
-        }));
-  app.get("/api/people/:personId/drafts/:conversationId", async (c) => {
-    const { personId, conversationId } = await draftScope(c);
-    // A message from this box on its way: the box shows what follows it.
-    await sending
-      .get(draftKey(personId, conversationId))
-      ?.catch(() => undefined);
-    return c.json(await transcripts.draft(personId, conversationId));
+  // A draft per conversation.
+  const drafts = "/api/people/:personId/drafts/:conversationId";
+  app.get(drafts, async (c) => {
+    const { personId, id } = await conversation(c);
+    return c.json(await transcripts.draft(personId, id));
   });
-  app.put("/api/people/:personId/drafts/:conversationId", async (c) => {
-    const { personId, conversationId } = await draftScope(c);
-    const { text, revision, tab, leaving } = await body(c, SaveDraft);
+  app.put(drafts, async (c) => {
+    const { personId, id } = await conversation(c);
+    const { text, revision } = await body(c, SaveDraft);
     const { saved, draft } = await transcripts.saveDraft(
       personId,
-      conversationId,
+      id,
       text,
       revision,
-      tab === undefined ? undefined : { tab, leaving: leaving === true },
     );
     if (!saved) {
-      throw new HttpError(409, "Changed in another tab.", { draft });
+      throw new HttpError(
+        409,
+        draft.state === "sending"
+          ? "This message is being sent."
+          : "Changed in another tab.",
+        { draft },
+      );
     }
     return c.json(draft);
   });

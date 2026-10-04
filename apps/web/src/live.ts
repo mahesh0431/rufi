@@ -160,23 +160,23 @@ function open(personId: string, conversationId: string): Opened {
   return entry;
 }
 
-/**
- * A conversation's new title or model, or a conversation just started, in
- * the sidebar and the page title.
- */
-export function showConversation(personId: string, conversation: Conversation) {
-  queries.setQueryData<typeof Conversations.Type>(
-    conversationsKey(personId),
-    (list) =>
-      list && {
-        ...list,
-        conversations: list.conversations.some((c) => c.id === conversation.id)
-          ? list.conversations.map((c) =>
+/** A conversation's new title or model, in the sidebar and the page title. */
+function showConversation(personId: string, conversation: Conversation) {
+  // An older read of the list, still on its way, must not undo this.
+  void queries
+    .cancelQueries({ queryKey: conversationsKey(personId) })
+    .then(() => {
+      queries.setQueryData<typeof Conversations.Type>(
+        conversationsKey(personId),
+        (list) =>
+          list && {
+            ...list,
+            conversations: list.conversations.map((c) =>
               c.id === conversation.id ? conversation : c,
-            )
-          : [conversation, ...list.conversations],
-      },
-  );
+            ),
+          },
+      );
+    });
 }
 
 /** A failure in words for the person: the core's own, or a plain one. */

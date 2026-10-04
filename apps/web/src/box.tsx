@@ -1,55 +1,46 @@
-// The chat's box, one for each conversation (and one for a new one) in every
-// size: what you type is the conversation's draft, kept by the core. Enter
-// sends; while a reply runs the message waits, and Steer passes it into the
-// reply instead. The box clears only when the core took the message, and
-// nothing is sent again by itself. The waiting messages show above it.
+// The chat's box, one for each conversation, the same in every size: what
+// you type is the conversation's draft, kept by the core, and the box says
+// whether it is saved. Enter sends; while a reply runs the message waits,
+// and Steer passes it into the reply instead. The box clears only when the
+// core took the message, and nothing is sent again by itself. The waiting
+// messages show above it.
 import {
-  type Conversation,
   Draft,
   DraftChanged,
   MAX_MESSAGE_CHARS,
   NotSent,
-  NotStarted,
   type Person,
   Sent,
-  Started,
   type WaitingMessage,
 } from "@rufi/contracts";
 import { Schema } from "effect";
 import { ArrowDown, ArrowUp, Pencil, Play, Square, Trash2 } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { useStore } from "zustand";
-import { createStore, type StoreApi } from "zustand/vanilla";
-import { ApiError, putOnLeave, read, request } from "./api.ts";
-import { beforeFirstMessage, continueStarted, inLine } from "./choice.ts";
-import { type DraftBox, type DraftIo, draftBox, tooLong } from "./draft.ts";
+import type { StoreApi } from "zustand/vanilla";
+import { ApiError, read, request } from "./api.ts";
 import {
-  conversationPath,
-  type Live,
-  messageOf,
-  showConversation,
-} from "./live.ts";
+  type BoxState,
+  type DraftBox,
+  type DraftIo,
+  draftBox,
+  held,
+  tooLong,
+} from "./draft.ts";
+import { conversationPath, type Live, messageOf } from "./live.ts";
+import { queries } from "./reads.ts";
 import { isRunning } from "./transcript-state.ts";
 import { Button } from "./ui.tsx";
 
 const boxes = new Map<string, DraftBox>();
-const boxKey = (personId: string, conversationId: string | null) =>
-  `${personId}/${conversationId ?? "new"}`;
 
-/** This page's name in its draft saves, so its last save can follow its own. */
-const TAB = crypto.randomUUID();
-
-function draftIo(personId: string, conversationId: string | null): DraftIo {
-  const path = `/api/people/${encodeURIComponent(personId)}/drafts/${encodeURIComponent(conversationId ?? "new")}`;
+function draftIo(personId: string, conversationId: string): DraftIo {
+  const path = `/api/people/${encodeURIComponent(personId)}/drafts/${encodeURIComponent(conversationId)}`;
   return {
     load: () => read(Draft, "GET", path),
     save: async (text, revision) => {
       try {
-        const draft = await read(Draft, "PUT", path, {
-          text,
-          revision,
-          tab: TAB,
-        });
+        const draft = await read(Draft, "PUT", path, { text, revision });
         return { saved: true, draft };
       } catch (error) {
         if (error instanceof ApiError && error.status === 409) {
@@ -59,15 +50,14 @@ function draftIo(personId: string, conversationId: string | null): DraftIo {
         throw error;
       }
     },
-    saveOnLeave: (text, revision) => {
-      putOnLeave(path, { text, revision, tab: TAB, leaving: true });
-    },
+    client: queries,
+    scope: `draft/${personId}/${conversationId}`,
   };
 }
 
-/** The box of a conversation (null: a new one), the same in every size. */
-function boxFor(personId: string, conversationId: string | null): DraftBox {
-  const key = boxKey(personId, conversationId);
+/** The box of a conversation, the same in every size. */
+function boxFor(personId: string, conversationId: string): DraftBox {
+  const key = `${personId}/${conversationId}`;
   let box = boxes.get(key);
   if (!box) {
     box = draftBox(draftIo(personId, conversationId));
@@ -76,66 +66,37 @@ function boxFor(personId: string, conversationId: string | null): DraftBox {
   return box;
 }
 
-/**
- * A new conversation's first message went to the core: its box starts from
- * the draft the core kept, and the next new conversation's box reads afresh.
- */
-function moveBox(
-  personId: string,
-  conversation: Conversation,
-  draft: Draft,
-  notice: string | null,
-) {
-  boxes.delete(boxKey(personId, null));
-  boxes.set(
-    boxKey(personId, conversation.id),
-    draftBox(draftIo(personId, conversation.id), { draft, notice }),
-  );
-}
-
-// Reloading or closing the page: what wasn't saved yet goes in one last save.
-// Only the box on screen can have such text (see Box), so the last save
-// stays within what a browser sends after a page has gone (64 KiB).
-addEventListener("pagehide", () => {
-  for (const box of boxes.values()) box.leave();
-});
-
 /** The draft in a refusal's answer, when it has one. */
-const draftIn = (body: unknown) => {
-  const kept = Schema.decodeUnknownOption(NotSent)(body);
+const draftIn = (error: unknown) => {
+  const kept = Schema.decodeUnknownOption(NotSent)(
+    error instanceof ApiError ? error.body : undefined,
+  );
   return kept._tag === "Some" ? kept.value.draft : undefined;
 };
 
-/** For a new conversation, which has no live store yet. */
-const IDLE = createStore<Live>(() => ({
-  status: "open",
-  conversation: null,
-  entries: {},
-  order: [],
-  turns: {},
-  waiting: [],
-  waitingError: null,
-}));
+/** Whether the box's text is kept, in a word. */
+function saveState(state: BoxState): string | null {
+  if (held(state)) return "Sending…";
+  if (state.failed) return "Not saved";
+  if (state.text !== state.draft.text) return "Saving…";
+  return state.text === "" ? null : "Saved";
+}
+
+const UNKNOWN =
+  "Rufi doesn't know whether the AI got this message. Check the conversation before you send it again.";
 
 export function Box({
   person,
   conversationId,
   live,
-  model,
   size,
-  onStarted,
   onOpen,
   inputRef,
 }: {
   person: Person;
-  /** null: a new conversation, started by its first message. */
-  conversationId: string | null;
-  live: StoreApi<Live> | null;
-  /** The model chosen for a new conversation. */
-  model?: string | undefined;
+  conversationId: string;
+  live: StoreApi<Live>;
   size: "bar" | "panel" | "page";
-  /** A first message started this conversation; the chat continues it. */
-  onStarted: (conversation: Conversation) => void;
   /** The bar: a click opens the chat. */
   onOpen?: () => void;
   /** The box's text field, for focus. */
@@ -144,73 +105,30 @@ export function Box({
   const box = boxFor(person.id, conversationId);
   const text = useStore(box.store, (state) => state.text);
   const loaded = useStore(box.store, (state) => state.loaded);
-  const sending = useStore(box.store, (state) => state.sending);
-  const paused = useStore(box.store, (state) => state.paused);
+  const locked = useStore(box.store, held);
+  const saved = useStore(box.store, saveState);
+  const unknown = useStore(
+    box.store,
+    (state) => state.draft.state === "unknown",
+  );
   const notice = useStore(box.store, (state) => state.notice);
-  const running = useStore(live ?? IDLE, isRunning);
+  const running = useStore(live, isRunning);
   const [problem, setProblem] = useState<string | null>(null);
   const long = tooLong(text);
   const hasText = text.trim() !== "" && !long;
 
-  // Only the box on screen holds text the core may not have yet: when a box
-  // comes on screen, every other box saves at once, and this one can be
-  // typed in when those saves are done.
-  useEffect(() => {
-    box.pauseUntil(
-      Promise.all(
-        [...boxes.values()]
-          .filter((other) => other !== box)
-          .map((other) => other.saveNow()),
-      ),
-    );
-  }, [box]);
+  // Leaving the screen, the box saves at once what isn't saved yet.
+  useEffect(() => () => void box.saveNow(), [box]);
 
   async function submit(steer: boolean) {
     const taken = await box.take();
     if (!taken) return;
     const message = taken.text.trim();
     if (message === "") {
-      box.failed(null);
+      box.sent(box.store.getState().draft);
       return;
     }
     setProblem(null);
-    const people = `/api/people/${encodeURIComponent(person.id)}`;
-    if (conversationId === null) {
-      // The core chooses the conversation it starts: in line with the
-      // person's choices, and the chat goes there unless they chose again.
-      const mayContinue = beforeFirstMessage(person.id);
-      const started = (conversation: Conversation) => {
-        showConversation(person.id, conversation);
-        if (!mayContinue()) return;
-        continueStarted(person.id, conversation.id);
-        onStarted(conversation);
-      };
-      try {
-        const answer = await inLine(person.id, () =>
-          read(Started, "POST", `${people}/conversations/new/messages`, {
-            text: message,
-            draft: taken.revision,
-            ...(model !== undefined && { model }),
-          }),
-        );
-        moveBox(person.id, answer.conversation, answer.draft, null);
-        started(answer.conversation);
-      } catch (error) {
-        const body = error instanceof ApiError ? error.body : undefined;
-        const kept = Schema.decodeUnknownOption(NotStarted)(body);
-        if (kept._tag === "Some") {
-          // The conversation stays, with your text as its draft.
-          moveBox(
-            person.id,
-            kept.value.conversation,
-            kept.value.draft,
-            messageOf(error),
-          );
-          started(kept.value.conversation);
-        } else box.failed(messageOf(error), draftIn(body));
-      }
-      return;
-    }
     try {
       const sent = await read(
         Sent,
@@ -220,10 +138,7 @@ export function Box({
       );
       box.sent(sent.draft);
     } catch (error) {
-      box.failed(
-        messageOf(error),
-        draftIn(error instanceof ApiError ? error.body : undefined),
-      );
+      box.failed(messageOf(error), draftIn(error));
     }
   }
 
@@ -238,10 +153,7 @@ export function Box({
 
   const stop = () =>
     act(() =>
-      request(
-        "POST",
-        `${conversationPath(person.id, conversationId ?? "")}/stop`,
-      ),
+      request("POST", `${conversationPath(person.id, conversationId)}/stop`),
     );
 
   return (
@@ -252,7 +164,7 @@ export function Box({
         void submit(false);
       }}
     >
-      {live && conversationId !== null && size !== "bar" && (
+      {size !== "bar" && (
         <Waiting
           live={live}
           path={conversationPath(person.id, conversationId)}
@@ -278,7 +190,7 @@ export function Box({
             aria-label="Message to Rufi"
             placeholder={`Ask or tell Rufi about ${person.displayName}…`}
             value={text}
-            readOnly={!loaded || sending || paused}
+            readOnly={!loaded || locked}
             onClick={onOpen}
             onChange={(event) => {
               box.type(event.target.value);
@@ -309,7 +221,7 @@ export function Box({
             look="plain"
             className="py-1"
             title="Pass this into the reply that is running"
-            disabled={sending}
+            disabled={locked}
             onClick={() => {
               void submit(true);
             }}
@@ -321,7 +233,7 @@ export function Box({
           <button
             type="submit"
             aria-label={running ? "Send (waits for the reply)" : "Send"}
-            disabled={!hasText || sending}
+            disabled={!hasText || locked}
             className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-white disabled:bg-muted/40"
           >
             <ArrowUp size={16} aria-hidden />
@@ -338,11 +250,30 @@ export function Box({
           </button>
         )}
       </div>
-      {(notice || problem || long) && (
+      {saved !== null && (
+        <p
+          role="status"
+          className="flex items-center gap-1.5 px-3.5 pb-1 text-xs text-muted"
+        >
+          {saved}
+          {saved === "Not saved" && (
+            <button
+              type="button"
+              onClick={() => void box.saveNow()}
+              className="underline"
+            >
+              Retry
+            </button>
+          )}
+        </p>
+      )}
+      {(notice || problem || long || unknown) && (
         <p role="alert" className="px-3.5 pb-2 text-muted">
           {long
             ? `Too long to keep or send: at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters, and this is ${text.length.toLocaleString("en")}.`
-            : notice || problem}
+            : [notice ?? problem, unknown ? UNKNOWN : null]
+                .filter(Boolean)
+                .join(" ")}
         </p>
       )}
     </form>

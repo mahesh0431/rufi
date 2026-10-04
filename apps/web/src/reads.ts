@@ -11,12 +11,17 @@ import {
 import { Schema } from "effect";
 import { QueryClient, useQuery } from "@tanstack/react-query";
 import { read } from "./api.ts";
-import { adopt } from "./choice.ts";
 
 export const queries = new QueryClient({
   defaultOptions: {
     // The API answers from this Mac; a failure is shown, not hidden by retries.
-    queries: { retry: false, refetchOnWindowFocus: false },
+    // It is there with or without the internet, so nothing waits for that.
+    queries: {
+      retry: false,
+      refetchOnWindowFocus: false,
+      networkMode: "always",
+    },
+    mutations: { networkMode: "always" },
   },
 });
 
@@ -58,18 +63,16 @@ export const conversationsKey = (personId: string) => [
   personId,
 ];
 
-/** A person's conversations, and the one the chat continues (choice.ts). */
+/** A person's conversations, and the one the core opens the chat on (choice.ts). */
 export const useConversations = (personId: string) =>
   useQuery({
     queryKey: conversationsKey(personId),
     queryFn: async () => {
-      const list = await read(
+      return read(
         Conversations,
         "GET",
         `/api/people/${encodeURIComponent(personId)}/conversations`,
       );
-      adopt(personId, list.chosen);
-      return list;
     },
     // A title another tab gave shows when you come back to this one.
     refetchOnWindowFocus: true,

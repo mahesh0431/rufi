@@ -150,7 +150,7 @@ export function chat(deps: ChatDeps) {
         await transcripts.startTurn(
           conversation,
           event.turnId,
-          conversation.threadModel ?? conversation.model,
+          conversation.threadModel ?? conversation.model ?? "",
         );
         return;
       case "message": {
@@ -263,7 +263,8 @@ export function chat(deps: ChatDeps) {
   ): Promise<ThreadSettings> {
     const region = await transcripts.setting("emergency_region");
     return {
-      model: conversation.model,
+      // Set before a thread starts: the first message chooses one.
+      model: conversation.model ?? "",
       instructions: `${safetyInstructions(region)}\n\n${deps.tools.instructions}`,
     };
   }
@@ -362,41 +363,31 @@ export function chat(deps: ChatDeps) {
     models: offered,
 
     /**
-     * A new conversation, on `model` or the first allowed model the provider
-     * offers. Without a title, its first message gives it one. With its
-     * `first` message: see Transcripts.createConversation (nothing is sent).
+     * A new conversation, at once: nothing is asked of the agent. Its first
+     * message chooses the model, unless one is chosen before.
      */
-    create: async (
-      personId: string,
-      title: string | null,
-      model?: string,
-      first?: { text: string; newDraft?: number | undefined },
-    ): Promise<ConversationRow> => {
-      const { models } = await offered();
-      const chosen = model ?? models[0]?.id;
-      if (chosen === undefined) {
-        throw new ChatRefusal("None of the allowed models is offered now.");
-      }
-      if (!models.some((m) => m.id === chosen)) {
-        throw new ChatRefusal("That model isn't allowed or isn't offered now.");
-      }
-      return transcripts.createConversation(
-        personId,
-        title,
-        agent.provider,
-        chosen,
-        first,
-      );
-    },
+    create: (personId: string, title: string | null) =>
+      transcripts.createConversation(personId, title, agent.provider, null),
 
     /**
-     * Sends a message: it runs now, or waits its turn in the agent's queue.
-     * It enters the transcript when the agent starts it.
+     * Sends a message, by the id Rufi gives it (the send's own, from a box):
+     * it runs now, or waits its
+     * turn in the agent's queue. It enters the transcript when the agent
+     * starts it.
      */
-    send: (conversation: ConversationRow, text: string) =>
-      inLane(conversation, async (conversation, signal) => {
+    send: (conversation: ConversationRow, text: string, id: string = uuid()) =>
+      inLane(conversation, async (stored, signal) => {
+        let conversation = stored;
+        if (conversation.model === null) {
+          const { models } = await offered();
+          const first = models[0]?.id;
+          if (first === undefined) {
+            throw new ChatRefusal("None of the allowed models is offered now.");
+          }
+          await transcripts.setModel(conversation, first);
+          conversation = { ...conversation, model: first };
+        }
         const threadId = await threadFor(conversation, signal);
-        const id = uuid();
         const context = pendingContext.get(conversation.id);
         await agent.send(
           threadId,
@@ -419,13 +410,12 @@ export function chat(deps: ChatDeps) {
       }),
 
     /** Passes a message into the running reply; saved as a steer. */
-    steer: (conversation: ConversationRow, text: string) =>
+    steer: (conversation: ConversationRow, text: string, id: string = uuid()) =>
       inLane(conversation, async (conversation) => {
         const threadId = threadOf(conversation);
         if (threadId === null || !agent.running(threadId)) {
           throw new ChatRefusal("No reply is running to steer.");
         }
-        const id = uuid();
         steers.set(id, threadId);
         let turnId: string;
         try {
