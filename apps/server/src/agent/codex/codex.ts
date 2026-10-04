@@ -480,6 +480,17 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
    * the clean-up only means it was queued. If anything fails or takes too
    * long, Rufi ends Codex. Runs once per turn.
    */
+  /**
+   * After a request that may start a reply, when a Stop came during it: that
+   * reply stops too, also one Codex starts a moment later.
+   */
+  async function stoppedDuring(threadId: string): Promise<never> {
+    const reply = turns.get(threadId);
+    if (reply) await stopTurn(reply);
+    else stopNext.add(threadId);
+    throw new Stopped();
+  }
+
   function stopTurn(running: Running): Promise<void> {
     running.stopping ??= interruptAndClean(running);
     return running.stopping;
@@ -609,14 +620,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       loaded.add(threadId);
       const running =
         response.thread.status.type === "active" || turns.has(threadId);
-      if (signal?.aborted) {
-        // A Stop during the resume: a reply it started stops too, also one
-        // that Codex starts a moment later.
-        const reply = turns.get(threadId);
-        if (reply) await stopTurn(reply);
-        else stopNext.add(threadId);
-        throw new Stopped();
-      }
+      if (signal?.aborted) await stoppedDuring(threadId);
       check(response, settings);
       return { model: response.model, running };
     },
@@ -638,6 +642,8 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         input,
         clientUserMessageId: message.id,
       });
+      // A Stop during the add: the message waits, and nothing runs.
+      if (signal?.aborted) await stoppedDuring(threadId);
       // Codex starts it by itself unless a Stop paused the queue.
       if (turns.has(threadId) || paused.get(threadId) === false) return;
       // Start the queue. When Codex has already started the message, or
@@ -656,6 +662,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         if (thread.status.type === "active") return;
         throw error;
       }
+      if (signal?.aborted) await stoppedDuring(threadId);
     },
 
     steer: async (threadId, message) => {
@@ -717,22 +724,39 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           queuedSubmissionIds: ids,
         });
       },
-      runNow: async (threadId, id) => {
-        await request(await open(threadId), "thread/queue/start", {
+      runNow: async (threadId, id, signal) => {
+        const app = await open(threadId);
+        if (signal?.aborted) throw new Stopped();
+        stopNext.delete(threadId);
+        await request(app, "thread/queue/start", {
           threadId,
           queuedSubmissionId: id,
         });
+        if (signal?.aborted) await stoppedDuring(threadId);
       },
     },
 
     startedMessages: async (threadId) => {
       const app = await open(threadId);
-      const { data }: ThreadTurnsListResponse = await request(
-        app,
-        "thread/turns/list",
-        { threadId, limit: 20, sortDirection: "desc", itemsView: "full" },
-      );
-      return data
+      // Every page, newest first; then oldest first.
+      const turnsRun: ThreadTurnsListResponse["data"] = [];
+      let cursor: string | null = null;
+      do {
+        const page: ThreadTurnsListResponse = await request(
+          app,
+          "thread/turns/list",
+          {
+            threadId,
+            cursor,
+            limit: 50,
+            sortDirection: "desc",
+            itemsView: "full",
+          },
+        );
+        turnsRun.push(...page.data);
+        cursor = page.nextCursor;
+      } while (cursor);
+      return turnsRun
         .reverse()
         .flatMap((turn) =>
           turn.items.flatMap((item) =>

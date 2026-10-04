@@ -552,11 +552,16 @@ function handle(method: string, params: Record<string, unknown>): unknown {
     }
     case "thread/turns/list": {
       const thread = threadOf(params);
-      const data = [...thread.history].reverse().map((turn) => ({
+      // Newest first, a page at a time, as Codex does.
+      const all = [...thread.history].reverse();
+      const from = Number(params["cursor"] ?? 0);
+      const to = from + Number(params["limit"] ?? 25);
+      const data = all.slice(from, to).map((turn) => ({
         ...turnObject(turn.id, turn.status),
         items: turn.messages.map(userItem),
       }));
-      return { data, nextCursor: null, backwardsCursor: null };
+      const nextCursor = to < all.length ? String(to) : null;
+      return { data, nextCursor, backwardsCursor: null };
     }
     case "turn/steer": {
       const thread = threadOf(params);

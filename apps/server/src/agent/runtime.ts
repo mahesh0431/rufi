@@ -154,7 +154,11 @@ export interface AgentRuntime {
     remove: (threadId: string, id: string) => Promise<void>;
     reorder: (threadId: string, ids: string[]) => Promise<void>;
     /** Runs one waiting message now; those after it follow in order. */
-    runNow: (threadId: string, id: string) => Promise<void>;
+    runNow: (
+      threadId: string,
+      id: string,
+      signal?: AbortSignal,
+    ) => Promise<void>;
   };
   /**
    * The user's messages the thread has run, oldest first, with the ids Rufi

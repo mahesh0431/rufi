@@ -280,6 +280,46 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
+    "keeps one thread when two first messages are sent at once",
+    timeout,
+    async () => {
+      await startChat(name);
+      const c = await newConversation();
+      // Two requests, each with the conversation as it read it.
+      const again = await conversation(c.id);
+      await Promise.all([chat?.send(c, "slow first"), chat?.send(again, "B")]);
+      await ended(c.id, 2);
+      const { entries, turns } = await transcript(c.id);
+      expect(
+        entries.filter(([kind]) => kind === "message" || kind === "reply"),
+      ).toEqual([
+        ["message", "slow first"],
+        ["reply", "ok:slow first"],
+        ["message", "B"],
+        ["reply", "ok:B"],
+      ]);
+      expect(turns.map((t) => t.status)).toEqual(["completed", "completed"]);
+    },
+  );
+
+  it(
+    "sends with the new model when the model changed after the request read the conversation",
+    timeout,
+    async () => {
+      await startChat(name);
+      const c = await newConversation();
+      await Promise.all([
+        chat?.selectModel(c, "gpt-6-astra"),
+        chat?.send(c, "Hello"),
+      ]);
+      await ended(c.id);
+      expect((await transcript(c.id)).turns).toMatchObject([
+        { model: "gpt-6-astra" },
+      ]);
+    },
+  );
+
+  it(
     "runs a waiting message now; the others follow in order",
     timeout,
     async () => {

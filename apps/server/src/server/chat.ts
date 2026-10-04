@@ -181,10 +181,28 @@ export function chat(deps: ChatDeps) {
     }
   }
 
-  /** Runs `action` after the conversation's earlier actions; Stop can end it. */
+  /**
+   * The conversation as stored now: an earlier action may have given it a
+   * new thread or model since the request read it.
+   */
+  async function latest(
+    conversation: ConversationRow,
+  ): Promise<ConversationRow> {
+    const row = await transcripts.conversation(
+      conversation.personId,
+      conversation.id,
+    );
+    if (!row) throw new ChatRefusal("That conversation isn't there any more.");
+    return row;
+  }
+
+  /**
+   * Runs `action` after the conversation's earlier actions, on the
+   * conversation as stored then; Stop can end it.
+   */
   function inLane<T>(
     conversation: ConversationRow,
-    action: (signal: AbortSignal) => Promise<T>,
+    action: (fresh: ConversationRow, signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
     const op = new AbortController();
     const ops = acting.get(conversation.id) ?? new Set();
@@ -193,9 +211,10 @@ export function chat(deps: ChatDeps) {
     const previous = lanes.get(conversation.id) ?? Promise.resolve();
     const run = previous
       .catch(() => undefined)
-      .then(() => {
+      .then(async () => {
+        const fresh = await latest(conversation);
         if (op.signal.aborted) throw new Stopped();
-        return action(op.signal);
+        return action(fresh, op.signal);
       })
       .finally(() => {
         ops.delete(op);
@@ -330,7 +349,7 @@ export function chat(deps: ChatDeps) {
      * It enters the transcript when the agent starts it.
      */
     send: (conversation: ConversationRow, text: string) =>
-      inLane(conversation, async (signal) => {
+      inLane(conversation, async (conversation, signal) => {
         const threadId = await threadFor(conversation, signal);
         const id = uuid();
         const context = pendingContext.get(conversation.id);
@@ -345,7 +364,7 @@ export function chat(deps: ChatDeps) {
 
     /** Passes a message into the running reply; saved as a steer. */
     steer: (conversation: ConversationRow, text: string) =>
-      inLane(conversation, async () => {
+      inLane(conversation, async (conversation) => {
         const threadId = threadOf(conversation);
         if (threadId === null || !agent.running(threadId)) {
           throw new ChatRefusal("No reply is running to steer.");
@@ -379,7 +398,7 @@ export function chat(deps: ChatDeps) {
     /** Stops the running reply, or a send still getting ready. Waiting messages wait. */
     stop: async (conversation: ConversationRow) => {
       for (const op of acting.get(conversation.id) ?? []) op.abort();
-      const threadId = threadOf(conversation);
+      const threadId = threadOf(await latest(conversation));
       if (threadId !== null) await agent.stop(threadId);
     },
 
@@ -387,7 +406,7 @@ export function chat(deps: ChatDeps) {
       list: async (
         conversation: ConversationRow,
       ): Promise<WaitingMessage[]> => {
-        const threadId = threadOf(conversation);
+        const threadId = threadOf(await latest(conversation));
         return threadId === null ? [] : agent.waiting.list(threadId);
       },
       edit: (conversation: ConversationRow, id: string, text: string) =>
@@ -404,7 +423,7 @@ export function chat(deps: ChatDeps) {
         ),
       /** Runs one now; this is the person acting, so the thread is picked up. */
       runNow: (conversation: ConversationRow, id: string) =>
-        inLane(conversation, async (signal) => {
+        inLane(conversation, async (conversation, signal) => {
           const threadId = threadOf(conversation);
           if (threadId === null) {
             throw new ChatRefusal("That message isn't waiting any more.");
@@ -417,7 +436,7 @@ export function chat(deps: ChatDeps) {
             );
             await fillGaps(conversation, threadId);
           }
-          await agent.waiting.runNow(threadId, id);
+          await agent.waiting.runNow(threadId, id, signal);
         }),
       subscribe: (conversationId: string, listener: () => void) => {
         const set = waitingListeners.get(conversationId) ?? new Set();
@@ -435,7 +454,7 @@ export function chat(deps: ChatDeps) {
      * message waits: the new model comes with a new thread.
      */
     selectModel: (conversation: ConversationRow, model: string) =>
-      inLane(conversation, async () => {
+      inLane(conversation, async (conversation) => {
         const { models } = await deps.allowlist();
         if (!models.includes(model)) {
           throw new ChatRefusal("That model isn't allowed.");
@@ -466,7 +485,7 @@ export function chat(deps: ChatDeps) {
     conversation: ConversationRow,
     change: (threadId: string) => Promise<void>,
   ): Promise<void> {
-    const threadId = threadOf(conversation);
+    const threadId = threadOf(await latest(conversation));
     if (threadId === null) {
       throw new ChatRefusal("That message isn't waiting any more.");
     }

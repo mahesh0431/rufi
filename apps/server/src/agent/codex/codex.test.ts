@@ -549,6 +549,56 @@ describe("Codex's queue", () => {
     ).toEqual(["m-hang", "m-c", "m-b"]);
   });
 
+  it("keeps a message waiting when Stop comes while a paused queue takes it", async () => {
+    const agent = start({ slow: ["thread/queue/add"] });
+    const thread = await ask(agent, "hang");
+    await until(() => Promise.resolve(agent.running(thread)));
+    await agent.stop(thread);
+    await ended(thread);
+    const op = new AbortController();
+    const sending = agent.send(thread, { id: "m-b", text: "B" }, op.signal);
+    await until(async () => (await sent("thread/queue/add")).length === 2);
+    op.abort();
+    await expect(sending).rejects.toThrow("Stopped.");
+    await sleep(50);
+    expect(await sent("thread/queue/start")).toEqual([]);
+    expect(agent.running(thread)).toBe(false);
+    expect((await agent.waiting.list(thread)).map((w) => w.messageId)).toEqual([
+      "m-b",
+    ]);
+  });
+
+  it("stops a message Codex started by itself when Stop came while it was added", async () => {
+    const agent = start({ slow: ["thread/queue/add"] });
+    const { threadId } = await agent.startThread(SETTINGS);
+    const op = new AbortController();
+    const sending = agent.send(
+      threadId,
+      { id: "m-a", text: "hang" },
+      op.signal,
+    );
+    await until(async () => (await sent("thread/queue/add")).length === 1);
+    op.abort();
+    await expect(sending).rejects.toThrow("Stopped.");
+    expect(await ended(threadId)).toMatchObject({ status: "interrupted" });
+  });
+
+  it("stops a waiting message run now when Stop came while it started", async () => {
+    const agent = start({ slow: ["thread/queue/start"] });
+    const thread = await ask(agent, "hang");
+    await until(() => Promise.resolve(agent.running(thread)));
+    await agent.send(thread, { id: "m-b", text: "hang again" });
+    await agent.stop(thread);
+    await ended(thread);
+    const [b] = await agent.waiting.list(thread);
+    const op = new AbortController();
+    const running = agent.waiting.runNow(thread, b?.id ?? "", op.signal);
+    await until(async () => (await sent("thread/queue/start")).length === 1);
+    op.abort();
+    await expect(running).rejects.toThrow("Stopped.");
+    expect(await ended(thread, 2)).toMatchObject({ status: "interrupted" });
+  });
+
   it("edits, reorders and deletes waiting messages, keeping Rufi's context", async () => {
     const agent = start();
     const { threadId } = await agent.startThread(SETTINGS);
@@ -600,6 +650,15 @@ describe("Codex's queue", () => {
       { id: "m-first", text: "first" },
       { id: "m-2", text: "second" },
     ]);
+  });
+
+  it("lists every message of a long thread, page after page", async () => {
+    const history = Array.from({ length: 120 }, (_, i) => `m-${String(i)}`);
+    const agent = start({ threads: { "old-1": { history } } });
+    await agent.resumeThread("old-1", SETTINGS);
+    const messages = await agent.startedMessages("old-1");
+    expect(messages.map((m) => m.id)).toEqual(history);
+    expect(await sent("thread/turns/list")).toHaveLength(3);
   });
 
   it("resumes a thread with the settings, and may start what waited", async () => {
