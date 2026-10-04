@@ -19,6 +19,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { setTimeout as sleep } from "node:timers/promises";
 
 export interface Scenario {
   /** Methods the fake never answers. */
@@ -26,6 +27,12 @@ export interface Scenario {
   /** Methods the fake takes and answers after `slowMs` (200 ms). */
   slow?: string[];
   slowMs?: number;
+  /** Methods the fake takes at once but answers after `slowMs`. */
+  answerLate?: string[];
+  /** How long Codex takes to start a message by itself (at once). */
+  startMs?: number;
+  /** How long after a turn starts Codex shows the user's message (at once). */
+  userMessageMs?: number;
   /** Feature flags as Codex reports them, over what config.toml asked for. */
   features?: Record<string, boolean>;
   /** Effective config as Codex reports it, over what config.toml asked for. */
@@ -240,6 +247,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     method: "turn/started",
     params: { threadId, turn: turnObject(turnId, "inProgress") },
   });
+  if (scenario.userMessageMs) await sleep(scenario.userMessageMs);
   event("item/started", { item: userItem(entry) });
   for (const [i, call] of (scenario.calls ?? []).entries()) {
     // Like Codex: the item starts, then Rufi is asked to run it.
@@ -509,7 +517,12 @@ function handle(method: string, params: Record<string, unknown>): unknown {
       };
       thread.queue.push(entry);
       changed(thread);
-      if (!thread.paused) setImmediate(() => dispatch(thread));
+      // Like Codex, it starts only while the queue isn't paused.
+      const start = () => {
+        if (!thread.paused) dispatch(thread);
+      };
+      if (scenario.startMs) setTimeout(start, scenario.startMs);
+      else setImmediate(start);
       return { queuedSubmission: entry };
     }
     case "thread/queue/list":
@@ -656,5 +669,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   };
   if (scenario.slow?.includes(method)) {
     setTimeout(reply, scenario.slowMs ?? 200);
+  } else if (scenario.answerLate?.includes(method)) {
+    const result = handle(method, message.params ?? {});
+    setTimeout(() => send({ id, result }), scenario.slowMs ?? 200);
   } else reply();
 });

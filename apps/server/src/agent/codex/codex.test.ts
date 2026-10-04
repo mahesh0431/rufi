@@ -615,6 +615,54 @@ describe("Codex's queue", () => {
     expect(await ended(thread, 2)).toMatchObject({ status: "interrupted" });
   });
 
+  it("stops at once a message Codex starts before it answers, when Stop came meanwhile", async () => {
+    // Codex starts the message, then answers the add.
+    const agent = start({
+      answerLate: ["thread/queue/add"],
+      slowMs: 300,
+      startMs: 100,
+    });
+    const { threadId } = await agent.startThread(SETTINGS);
+    const op = new AbortController();
+    const sending = agent.send(
+      threadId,
+      { id: "m-a", text: "Hello" },
+      op.signal,
+    );
+    await until(async () => (await sent("thread/queue/add")).length === 1);
+    op.abort();
+    await expect(sending).rejects.toThrow("Stopped.");
+    expect(await ended(threadId)).toMatchObject({ status: "interrupted" });
+    expect(seen(threadId).filter((e) => e.type === "text")).toEqual([]);
+  });
+
+  it("stops what a resume starts after the resume timed out, when Stop came meanwhile", async () => {
+    const agent = start({
+      threads: { "old-1": { queue: ["hang"] } },
+      slow: ["thread/resume"],
+      slowMs: 1_500,
+    });
+    const op = new AbortController();
+    const resuming = agent.resumeThread("old-1", SETTINGS, op.signal);
+    await until(async () => (await sent("thread/resume")).length > 0);
+    op.abort();
+    await expect(resuming).rejects.toThrow("Stopped.");
+    expect(await ended("old-1")).toMatchObject({ status: "interrupted" });
+  });
+
+  it("keeps the person's message when Stop came before Codex showed it", async () => {
+    const agent = start({ userMessageMs: 100, ignoreInterrupt: true });
+    const { threadId } = await agent.startThread(SETTINGS);
+    await agent.send(threadId, { id: "m-a", text: "hang" });
+    await until(() => Promise.resolve(agent.running(threadId)));
+    const stopping = agent.stop(threadId);
+    await ended(threadId);
+    await stopping;
+    expect(seen(threadId).filter((e) => e.type === "message")).toMatchObject([
+      { id: "m-a", text: "hang" },
+    ]);
+  });
+
   it("stops a reply only when it is the one asked for", async () => {
     const agent = start();
     const thread = await ask(agent, "hang");

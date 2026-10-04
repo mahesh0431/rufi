@@ -254,7 +254,8 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       await running(c.id);
       await chat?.send(c, "B");
       expect((await chat?.waiting.list(c))?.map((w) => w.text)).toEqual(["B"]);
-      // A waiting message is not in the transcript.
+      // A waiting message is not in the transcript; the running one is.
+      await until(async () => (await transcript(c.id)).entries.length > 0);
       expect((await transcript(c.id)).entries).toEqual([["message", "hang"]]);
       await chat?.stop(c);
       await ended(c.id);

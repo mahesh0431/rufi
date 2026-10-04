@@ -324,11 +324,21 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     if (method === "turn/completed") {
       const { turn } = params as TurnCompletedNotification;
       paused.set(running.threadId, turn.status === "interrupted");
-      finish(running, endOf(turn, limits));
+      // Nothing after a Stop was kept, so a stopped reply isn't whole even
+      // when Codex finished it first.
+      const stopped = running.stopping && turn.status === "completed";
+      finish(
+        running,
+        endOf(stopped ? { ...turn, status: "interrupted" } : turn, limits),
+      );
       return;
     }
-    // Nothing of a stopped turn is shown or saved after the Stop.
-    if (running.stopping) return;
+    // Nothing of a stopped turn is shown or saved after the Stop, except the
+    // person's own message, which Codex may show a moment after the start.
+    const ownMessage =
+      method === "item/started" &&
+      (params as ItemStartedNotification).item.type === "userMessage";
+    if (running.stopping && !ownMessage) return;
     handle(running, method, params);
   }
 
@@ -492,22 +502,32 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   }
 
   /**
-   * Runs requests that may start a reply. When a Stop came meanwhile, however
-   * they ended (also failed or timed out, as Codex may still act on them),
-   * that reply stops too.
+   * Runs requests that may start a reply. A Stop while they run stops that
+   * reply at once, or as soon as Codex starts it; Codex may still act on a
+   * request that failed or timed out here.
    */
-  async function mayStart(
+  async function mayStart<T>(
     threadId: string,
     signal: AbortSignal | undefined,
-    run: () => Promise<unknown>,
-  ): Promise<void> {
+    run: () => Promise<T>,
+  ): Promise<T> {
+    const onStop = () => {
+      const reply = turns.get(threadId);
+      if (reply) void stopTurn(reply);
+      else stopNext.add(threadId);
+    };
+    signal?.addEventListener("abort", onStop, { once: true });
+    let result: T;
     try {
-      await run();
+      result = await run();
     } catch (error) {
       if (signal?.aborted) await stoppedDuring(threadId);
       throw error;
+    } finally {
+      signal?.removeEventListener("abort", onStop);
     }
     if (signal?.aborted) await stoppedDuring(threadId);
+    return result;
   }
 
   function stopTurn(running: Running): Promise<void> {
@@ -631,15 +651,17 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       stopNext.delete(threadId);
       paused.delete(threadId);
       // Codex may start what waits as it resumes: the person asked for that.
-      const response = await request<ThreadResumeResponse>(
-        app,
-        "thread/resume",
-        { threadId, excludeTurns: true, ...settingsFor(settings) },
-      );
-      loaded.add(threadId);
+      const response = await mayStart(threadId, signal, async () => {
+        const resumed = await request<ThreadResumeResponse>(
+          app,
+          "thread/resume",
+          { threadId, excludeTurns: true, ...settingsFor(settings) },
+        );
+        loaded.add(threadId);
+        return resumed;
+      });
       const running =
         response.thread.status.type === "active" || turns.has(threadId);
-      if (signal?.aborted) await stoppedDuring(threadId);
       check(response, settings);
       return { model: response.model, running };
     },
