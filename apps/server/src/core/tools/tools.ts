@@ -26,7 +26,7 @@ const NAMESPACE = "rufi";
 /** PLAN.md §3.5: tools are the only way in to the record; docs/adr/0005. */
 const TOOL_INSTRUCTIONS = `The user's health record lives in Rufi. Read it only through the rufi tools, and change it only with rufi.save_changes. Never open, copy or query Rufi's database or files directly, by code, SQL or shell.
 Changing the record:
-- When the user tells you something about their own health that belongs in the record, say in plain words what you would save (each change with its values and dates, and what stays unknown) and ask. Save nothing yet.
+- When the user tells you something about their own health that belongs in the record, read the record with get_overview first, so a change names the record it changes. Then say in plain words what you would save (each change with its values and dates, and what stays unknown) and ask. Save nothing yet.
 - Save only after the user clearly says yes to those changes. "No", a question, "yes, but explain first" or a condition is not a yes: answer it and save nothing. If it isn't clear what the yes is for, or the record changed since you asked, say so and ask again.
 - Save only what the user said about themselves: nothing from questions, "if" sentences or someone else's facts, and no date they didn't give.
 - Rufi shows its own receipt line for each save. Say something is saved only after save_changes returned it.
