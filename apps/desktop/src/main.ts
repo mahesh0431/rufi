@@ -38,7 +38,6 @@ const rufi = core(node, () => {
 });
 
 let quitting = false;
-let stopped = false;
 let failing = false;
 let opening: Promise<void> | undefined;
 
@@ -51,13 +50,13 @@ if (!app.requestSingleInstanceLock()) {
   // ⌘W closes the window; Rufi keeps running until ⌘Q.
   app.on("window-all-closed", () => undefined);
   // ⌘Q, the menu, Ctrl-C and SIGTERM: Rufi stops first, then the app quits.
+  // It closes the windows without asking them, so no page can keep the app
+  // open once Rufi has stopped.
   app.on("before-quit", (event) => {
     quitting = true;
-    if (stopped) return;
     event.preventDefault();
     void rufi.stop().then(() => {
-      stopped = true;
-      app.quit();
+      app.exit(0);
     });
   });
   process.on("SIGINT", () => {

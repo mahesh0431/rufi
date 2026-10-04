@@ -1,8 +1,10 @@
 // A local stand-in for the model endpoint, so the real Codex binary runs real
 // turns offline. Codex sends it each request; it answers by the user's last
 // message, with the same words as the scripted fake Codex (fake-codex.ts):
-// "hang" never answers, "slow" answers after 1.5 s, anything else answers
-// "ok:<text>". No sign-in and no AI.
+// "hang" never answers, "slow" answers after 1.5 s, "command" runs a long
+// command (as the fake's does, it ignores TERM and leaves a program in the
+// background) and answers once Codex has given back what it printed so far,
+// anything else answers "ok:<text>". No sign-in and no AI.
 import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -10,9 +12,19 @@ export interface FakeModel {
   /** The base URL for Codex's provider setting. */
   url: string;
   /** Every request body Codex sent, in order. */
-  requests: { input: { role?: string; content?: { text?: string }[] }[] }[];
+  requests: {
+    input: { type?: string; role?: string; content?: { text?: string }[] }[];
+  }[];
   close: () => Promise<void>;
 }
+
+const USAGE = {
+  input_tokens: 1,
+  input_tokens_details: null,
+  output_tokens: 1,
+  output_tokens_details: null,
+  total_tokens: 2,
+};
 
 export async function fakeModel(): Promise<FakeModel> {
   const requests: FakeModel["requests"] = [];
@@ -46,6 +58,32 @@ export async function fakeModel(): Promise<FakeModel> {
         open.add(response);
         return;
       }
+      const ran = body.input.some(
+        (item) => item.type === "function_call_output",
+      );
+      if (last.includes("command") && !ran) {
+        const call = {
+          type: "function_call",
+          call_id: "call-command",
+          name: "exec_command",
+          arguments: JSON.stringify({
+            cmd: 'trap "" TERM; sleep 300 & sleep 301',
+            yield_time_ms: 500,
+          }),
+        };
+        event({ type: "response.output_item.added", item: call } as {
+          type: string;
+        });
+        event({ type: "response.output_item.done", item: call } as {
+          type: string;
+        });
+        event({
+          type: "response.completed",
+          response: { id, usage: USAGE },
+        } as { type: string });
+        response.end();
+        return;
+      }
       // A steer arrives as the last message of a later request in the same turn.
       const delay = last.includes("slow") ? 1_500 : 0;
       setTimeout(() => {
@@ -75,13 +113,7 @@ export async function fakeModel(): Promise<FakeModel> {
           type: "response.completed",
           response: {
             id,
-            usage: {
-              input_tokens: 1,
-              input_tokens_details: null,
-              output_tokens: 1,
-              output_tokens_details: null,
-              total_tokens: 2,
-            },
+            usage: USAGE,
           },
         } as { type: string });
         response.end();

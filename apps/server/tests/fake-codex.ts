@@ -652,6 +652,20 @@ function handle(method: string, params: Record<string, unknown>): unknown {
   }
 }
 
+// Like Codex: when Rufi goes away, its end of stdin closes, and the fake ends
+// the command it runs, with what that left in the background, then itself.
+process.stdin.once("end", () => {
+  const pid = command?.pid;
+  try {
+    if (pid !== undefined) process.kill(-pid, "SIGKILL");
+  } catch (error) {
+    // Already gone; EPERM is macOS's answer for a group not yet reaped.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ESRCH" && code !== "EPERM") throw error;
+  }
+  process.exit(0);
+});
+
 createInterface({ input: process.stdin }).on("line", (line) => {
   const message = JSON.parse(line) as {
     id?: number;
