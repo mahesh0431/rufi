@@ -1,7 +1,7 @@
 // A Rufi window: the screens from the core's own origin, as a browser loads
 // them, with nothing of Node or Electron in the page. Every setting that
 // guards the page is set here on purpose, not left to Electron's defaults.
-import { BrowserWindow, type InputEvent, type Session, shell } from "electron";
+import { BrowserWindow, type Session, shell } from "electron";
 
 /** What the screens look for to know they are in the app (apps/web main.tsx). */
 const MARK = "RufiApp";
@@ -60,26 +60,27 @@ export function openWindow(
   const contents = window.webContents;
   const ours = (url: string) => URL.parse(url)?.origin === link.origin;
 
-  // When the person last clicked or pressed Return in the window. These come
-  // from the Mac, not from the page, so a page's script can't make one.
-  let pressed = Number.NEGATIVE_INFINITY;
-  contents.on("input-event", (_event, input) => {
-    if (input.type === "mouseUp" || isReturn(input)) pressed = Date.now();
-  });
-  /** A link is the person's when they clicked or pressed Return just now. */
-  const theirs = () => Date.now() - pressed < PRESS_MS;
-
-  // No other window, ever; a link the person opens in one goes to the browser.
+  // Web links open in the browser, as in the web app; what guards them is
+  // the page's own security rules (only Rufi's code runs in it). The window
+  // itself never leaves Rufi, and opens no other window.
+  //
+  // A popup's opener isn't told, so one goes to the browser only while the
+  // page has no frame: Rufi has none, and the core's CSP lets none load.
   contents.setWindowOpenHandler(({ url }) => {
-    if (theirs()) toBrowser(url);
+    if (contents.mainFrame.frames.length === 0) toBrowser(url);
     return { action: "deny" };
   });
-  // Only Rufi's own pages, and no frames: Rufi has none. A link to elsewhere
-  // that the person follows goes to the browser; the page alone goes nowhere.
+  // Only Rufi's own pages, in any frame. A link away goes to the browser
+  // when the page itself follows it, not a frame inside it.
   contents.on("will-frame-navigate", (event) => {
-    if (event.isMainFrame && ours(event.url)) return;
+    if (ours(event.url)) return;
     event.preventDefault();
-    if (event.isMainFrame && theirs()) toBrowser(event.url);
+    if (
+      event.isMainFrame &&
+      event.initiator?.frameTreeNodeId === contents.mainFrame.frameTreeNodeId
+    ) {
+      toBrowser(event.url);
+    }
   });
   // A redirect away from Rufi is stopped, and opens nothing.
   contents.on("will-redirect", (event) => {
@@ -115,27 +116,13 @@ export function openWindow(
 }
 
 /**
- * How soon after the person's click or Return a link counts as theirs. A
- * link's click becomes a navigation within milliseconds.
+ * Opens a web link in the person's browser. Any other kind, or one that
+ * carries a name or password, is dropped.
  */
-const PRESS_MS = 1_000;
-
-/**
- * Return pressed. A key's input event carries `key` as the DOM names it,
- * though Electron's types leave it out.
- */
-function isReturn(input: InputEvent): boolean {
-  return (
-    (input.type === "rawKeyDown" || input.type === "keyDown") &&
-    "key" in input &&
-    input.key === "Enter"
-  );
-}
-
-/** Opens a web link in the person's browser; any other kind is dropped. */
 function toBrowser(url: string): void {
-  const protocol = URL.parse(url)?.protocol;
-  if (protocol !== "http:" && protocol !== "https:") return;
+  const link = URL.parse(url);
+  if (link?.protocol !== "http:" && link?.protocol !== "https:") return;
+  if (link.username !== "" || link.password !== "") return;
   shell.openExternal(url).catch(() => {
     console.error("Rufi couldn't open the link in your browser.");
   });

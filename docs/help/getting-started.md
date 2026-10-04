@@ -26,7 +26,7 @@ If a tab says "This session has ended", the link was already used, or Rufi was s
 - **⌘Q** quits the app and stops Rufi. If a reply is running, Rufi stops it first, as Stop does. Ctrl-C in the terminal does the same. If Rufi doesn't stop within 10 seconds, the app ends it at once, with anything the AI started.
 - If you run `pnpm desktop` again while the app runs, the app comes to the front.
 - If Rufi already runs from `pnpm start`, the app opens on that Rufi and doesn't start a second one. Then ⌘Q closes only the app: that Rufi keeps running until you press Ctrl-C in its terminal.
-- A web link opens in your browser when you click it, or press Return on it.
+- A web link opens in your browser, as it does when you use Rufi in a browser tab.
 
 If something goes wrong:
 

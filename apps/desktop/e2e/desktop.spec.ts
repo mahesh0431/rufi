@@ -297,7 +297,8 @@ test.describe("the page", () => {
         headers: { location: "https://example.com/redirected" },
       }),
     );
-    const link = async (href: string, target = "", how = "click") => {
+    /** Clicks a link with the mouse, then takes it away. */
+    const link = async (href: string, target = "") => {
       await page.evaluate(
         ([href, target]) => {
           const a = document.createElement("a");
@@ -306,14 +307,11 @@ test.describe("the page", () => {
           a.textContent = "a test link";
           a.style.cssText = "position: fixed; top: 120px; left: 320px";
           document.body.append(a);
-          a.focus();
         },
         [href, target],
       );
-      // The mouse where the link is, or Return: Playwright's locators would
-      // wait for the navigation the app refuses.
-      if (how === "Return") await page.keyboard.press("Enter");
-      else await page.mouse.click(324, 124);
+      // Playwright's locators would wait for the navigation the app refuses.
+      await page.mouse.click(324, 124);
       await page.evaluate(() => {
         for (const a of document.querySelectorAll("a")) {
           if (a.textContent === "a test link") a.remove();
@@ -321,50 +319,43 @@ test.describe("the page", () => {
       });
     };
 
-    // A same-origin page in a frame, with a web link and a script that
-    // opens one; the network answers it without Rufi's guards.
-    await page.route("**/framed", (route) =>
-      route.fulfill({
-        contentType: "text/html",
-        body: `<a href="https://example.com/clicked-in-frame" target="_blank" style="display: block; height: 100vh">a link</a>
-<script>open("https://example.com/opened-by-frame")</script>`,
+    // Rufi has no frames, and its pages can't be framed, but a frame made
+    // without a page has a blank one. That page can try to open a link, or
+    // to take the window to one: neither opens anything.
+    expect(
+      await page.evaluate(() => {
+        const frame = document.createElement("iframe");
+        document.body.append(frame);
+        const inside = frame.contentDocument;
+        if (!frame.contentWindow || !inside?.body) return false;
+        frame.contentWindow.open("https://example.com/opened-by-frame");
+        const a = inside.createElement("a");
+        a.href = "https://example.com/followed-by-frame";
+        a.target = "_top";
+        inside.body.append(a);
+        a.click();
+        return true;
       }),
-    );
-
-    // Nobody clicked: the page goes nowhere and opens nothing by itself.
+    ).toBe(true);
     await page.evaluate(() => {
-      location.href = "https://example.com/went-by-itself";
+      for (const frame of document.querySelectorAll("iframe")) frame.remove();
     });
-    await page.evaluate(() => {
-      window.open("https://example.com/opened-by-script");
-    });
-    // Return on a link, before any click.
-    await link("https://example.com/by-keyboard", "", "Return");
-    // A frame shows nothing, so a click in it opens nothing either. One from
-    // this Mac loads within milliseconds, if it loads at all.
-    await page.evaluate(
-      () =>
-        new Promise((resolve) => {
-          const frame = document.createElement("iframe");
-          frame.src = "/framed";
-          frame.style.cssText =
-            "position: fixed; top: 200px; left: 320px; width: 200px; height: 100px";
-          frame.addEventListener("load", resolve);
-          setTimeout(resolve, 1_000);
-          document.body.append(frame);
-        }),
-    );
-    await page.mouse.click(420, 250);
 
+    // Web links that the page follows or opens go to the browser, once each.
     await link("https://example.com/clicked");
     await link("https://example.com/new-tab", "_blank");
+    // Another kind of link, a web link with a name and password in it, and a
+    // link to Rufi that the network sends away, don't. (No link here ever
+    // names a scheme the Mac itself would open.)
+    await page.evaluate(() => {
+      window.open("data:text/plain,not-for-the-browser");
+    });
+    await link("https://someone:secret@example.com/with-password");
     await link("/away");
-    await link("file:///etc/hosts");
 
     await expect
       .poll(() => app.told)
       .toEqual([
-        { kind: "browser", value: "https://example.com/by-keyboard" },
         { kind: "browser", value: "https://example.com/clicked" },
         { kind: "browser", value: "https://example.com/new-tab" },
       ]);
