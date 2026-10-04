@@ -160,7 +160,7 @@ function stream(port: number, path: string, headers: Record<string, string>) {
       res.on("close", () => {
         ended.resolve(undefined);
       });
-      // A paused stream learns of a cut connection only as an error.
+      // A cut connection can also surface as a response error.
       res.on("error", () => {
         ended.resolve(undefined);
       });
@@ -170,7 +170,7 @@ function stream(port: number, path: string, headers: Record<string, string>) {
   req.on("error", () => {
     ended.resolve(undefined);
   });
-  // A paused stream hears of a cut connection only from its socket.
+  // The socket can close before the response reports the cut.
   req.on("socket", (socket) => {
     socket.on("close", () => {
       ended.resolve(undefined);
@@ -181,6 +181,7 @@ function stream(port: number, path: string, headers: Record<string, string>) {
     lines,
     ended: ended.promise,
     pause: () => response?.pause(),
+    resume: () => response?.resume(),
     hangUp: () => {
       req.destroy();
     },
@@ -606,6 +607,17 @@ describe("the local API", () => {
       await until(() => slow.lines.length > 0);
       slow.pause();
       await page.api("POST", `${c.path}/messages`, { text: "long" });
+      // Keep the screen behind until the reply is stored. A paused reader
+      // may not see the server's cut until it drains buffered bytes.
+      await until(
+        async () =>
+          (
+            (await page.api("GET", c.path)).body["turns"] as {
+              status: string;
+            }[]
+          )[0]?.status === "completed",
+      );
+      slow.resume();
       await slow.ended;
       const fresh = stream(core.port, `${c.path}/stream`, page.headers);
       await until(() => replyText(fresh.lines).length === 200_000, 20_000);
