@@ -671,6 +671,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     setTimeout(reply, scenario.slowMs ?? 200);
   } else if (scenario.answerLate?.includes(method)) {
     const result = handle(method, message.params ?? {});
-    setTimeout(() => send({ id, result }), scenario.slowMs ?? 200);
+    setTimeout(() => {
+      send({ id, result });
+    }, scenario.slowMs ?? 200);
   } else reply();
 });
