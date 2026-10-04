@@ -1,5 +1,6 @@
-// Reading Rufi's database. Creating it, the lock and writes come with the
-// first write path (M2); until then a test database is loaded with sqlite3.
+// Rufi's one database. The running Rufi opens it for writing (creating it in
+// a new data folder) while it holds rufi.lock; Rufi's tools read it through a
+// read-only connection of their own.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -29,7 +30,32 @@ export const databasePath = (home: string) => join(home, "rufi.sqlite");
  */
 export function openReadOnly(path: string): Store | undefined {
   if (!existsSync(path)) return undefined;
-  const db = new DatabaseSync(path, { readOnly: true });
+  return checked(new DatabaseSync(path, { readOnly: true }), path);
+}
+
+/**
+ * Opens the database for writing, creating it from schema.sql when there is
+ * none. Every write is synced to disk (WAL, synchronous FULL), and deleted
+ * data is overwritten (secure_delete).
+ */
+export function openWritable(path: string): Store {
+  const created = !existsSync(path);
+  const db = new DatabaseSync(path);
+  try {
+    db.exec(
+      "PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA secure_delete = ON;",
+    );
+    // All of it or none: a half-made database would be refused next time.
+    if (created) db.exec(`BEGIN; ${SCHEMA}; COMMIT;`);
+  } catch (error) {
+    db.close();
+    throw new Error(`Couldn't set up ${path}`, { cause: error });
+  }
+  return checked(db, path);
+}
+
+/** Turns on foreign keys and refuses a database made by another schema. */
+function checked(db: DatabaseSync, path: string): Store {
   try {
     db.exec("PRAGMA foreign_keys = ON");
     const expected = new DatabaseSync(":memory:");
@@ -38,7 +64,7 @@ export function openReadOnly(path: string): Store | undefined {
     expected.close();
     if (!same) {
       throw new Error(
-        `${path} was made by an older Rufi. It's test data until dogfood: delete it and load it again.`,
+        `${path} was made by an older Rufi. It's test data until dogfood: delete it and start again.`,
       );
     }
   } catch (error) {

@@ -27,6 +27,12 @@ const EVENTS = new Set([
   "codex.interrupt_failed",
   "tool.failed",
   "turn.ended",
+  "chat.unknown_thread",
+  "chat.save_failed",
+  "chat.resume_failed",
+  "core.started",
+  "core.lock_lost",
+  "api.failed",
 ] as const);
 
 export type LogEvent = typeof EVENTS extends Set<infer E> ? E : never;
@@ -75,6 +81,20 @@ const FIELDS: Record<string, (value: unknown) => boolean> = {
   code: isCode,
   error: isCode,
   ms: (value) => typeof value === "number" && Number.isFinite(value),
+  count: (value) => typeof value === "number" && Number.isInteger(value),
+  // The kind of agent event Rufi was saving (server/chat.ts).
+  kind: (value) =>
+    typeof value === "string" &&
+    [
+      "turnStarted",
+      "message",
+      "text",
+      "question",
+      "activity",
+      "turnEnded",
+      "waitingChanged",
+      "fill",
+    ].includes(value),
 };
 
 function line(event: LogEvent, fields: LogFields = {}): string {

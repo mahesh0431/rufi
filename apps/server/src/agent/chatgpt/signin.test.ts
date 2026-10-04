@@ -9,7 +9,7 @@ import {
   type Tamper,
 } from "../../../tests/fakes.ts";
 import { rufiHome } from "../../platform/config.ts";
-import { withLock } from "../../platform/files.ts";
+import { withCredentialsLock } from "../../platform/files.ts";
 import type { ChatGptDeps } from "./openai.ts";
 import { status } from "./session.ts";
 import { signIn, type SignInOptions } from "./signin.ts";
@@ -307,7 +307,7 @@ describe("recovery", () => {
     );
     await expect(waiting).rejects.toThrow("in time");
     await expect(
-      withLock(deps.home, 0, () => Promise.resolve("free")),
+      withCredentialsLock(deps.home, 0, () => Promise.resolve("free")),
     ).resolves.toBe("free");
   });
 });

@@ -1,5 +1,6 @@
 packages:
   - apps/*
+  - packages/*
 
 # Supply chain: no dependency runs an install script unless it is listed in
 # allowBuilds, and an unlisted one fails the install instead of being skipped.

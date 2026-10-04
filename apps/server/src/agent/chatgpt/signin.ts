@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { withLock } from "../../platform/files.ts";
+import { withCredentialsLock } from "../../platform/files.ts";
 import {
   readCredentials,
   readRegistration,
@@ -45,7 +45,7 @@ export function signIn(
   deps: ChatGptDeps,
   options: SignInOptions,
 ): Promise<SignedIn> {
-  return withLock(deps.home, 0, () => signInLocked(deps, options));
+  return withCredentialsLock(deps.home, 0, () => signInLocked(deps, options));
 }
 
 async function signInLocked(
