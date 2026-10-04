@@ -128,6 +128,8 @@ function fail(title: string, detail: string): void {
 function menu(): Menu {
   return Menu.buildFromTemplate([
     { role: "appMenu" },
+    // ⌘W closes the window; Rufi keeps running.
+    { label: "File", submenu: [{ role: "close" }] },
     { role: "editMenu" },
     {
       label: "View",

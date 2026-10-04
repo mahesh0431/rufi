@@ -65,7 +65,9 @@ export function openWindow(
   // itself never leaves Rufi, and opens no other window.
   //
   // A popup's opener isn't told, so one goes to the browser only while the
-  // page has no frame: Rufi has none, and the core's CSP lets none load.
+  // page has no frame. Rufi has none: its pages refuse to be framed, and its
+  // CSP blocks frames from elsewhere, but script can still make a blank or
+  // srcdoc frame, which takes the page's CSP.
   contents.setWindowOpenHandler(({ url }) => {
     if (contents.mainFrame.frames.length === 0) toBrowser(url);
     return { action: "deny" };

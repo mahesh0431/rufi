@@ -30,6 +30,33 @@ async function core(desktop: Desktop, app: App): Promise<number> {
   return pid;
 }
 
+/**
+ * ⌘W: the app's menu must bind it to Close. On the Mac, Close is the Mac's
+ * own action, which only real key presses reach, so the window is closed as
+ * that action closes it; elsewhere the menu item does it.
+ */
+async function commandW(app: App): Promise<void> {
+  const closed = await app.electron.evaluate(({ BrowserWindow, Menu }) => {
+    const item = Menu.getApplicationMenu()
+      ?.items.flatMap((menu) => menu.submenu?.items ?? [])
+      .find((entry) => entry.accelerator === "CommandOrControl+W");
+    const window = BrowserWindow.getAllWindows()[0];
+    if (item?.role !== "close" || window === undefined) return false;
+    if (process.platform === "darwin") window.close();
+    else {
+      // Electron types the item's click loosely; this is how a menu calls it.
+      const click = item.click as (
+        event: undefined,
+        window: typeof BrowserWindow.prototype,
+        contents: typeof window.webContents,
+      ) => void;
+      click(undefined, window, window.webContents);
+    }
+    return true;
+  });
+  expect(closed).toBe(true);
+}
+
 test.describe("starting", () => {
   test("opens on the Rufi it starts", async ({ desktop }) => {
     const app = await desktop.launch();
@@ -65,9 +92,7 @@ test.describe("starting", () => {
     await ended(rufi.pid ?? 0);
 
     // ⌘W, then a click on Rufi in the Dock.
-    await app.electron.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0]?.close();
-    });
+    await commandW(app);
     await expect.poll(() => app.electron.windows().length).toBe(0);
     const opened = app.electron.waitForEvent("window");
     await app.electron.evaluate(({ app }) => {
@@ -115,10 +140,9 @@ test.describe("starting", () => {
 
     // ⌘W: the window closes, Rufi keeps running.
     const pid = await core(desktop, app);
-    await app.electron.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0]?.close();
-    });
+    await commandW(app);
     await expect.poll(() => app.electron.windows().length).toBe(0);
+    expect(app.process.exitCode).toBeNull();
     expect(await rufiStarts(app.process.pid)).toEqual([pid]);
 
     // Opening the app again opens a window with a fresh link that works.
@@ -359,6 +383,22 @@ test.describe("the page", () => {
         { kind: "browser", value: "https://example.com/clicked" },
         { kind: "browser", value: "https://example.com/new-tab" },
       ]);
+    // A same-origin page that the network sends without Rufi's CSP, with a
+    // frame of a page elsewhere: only the window's own rules meet that frame,
+    // and it loads nothing and opens nothing.
+    await page.route("**/without-csp", (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: '<iframe src="https://example.com/in-a-frame"></iframe>',
+      }),
+    );
+    await page.goto(new URL("/without-csp", home).href);
+    expect(page.frames().map((frame) => frame.url())).not.toContain(
+      "https://example.com/in-a-frame",
+    );
+    expect(app.told).toHaveLength(2);
+    await page.goBack();
+
     // No other window opened, not even for a moment.
     expect(
       await app.electron.evaluate(
