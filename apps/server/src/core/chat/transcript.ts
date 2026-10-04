@@ -5,6 +5,7 @@
 import type {
   ActivityKind,
   Conversation,
+  Draft,
   EndReason,
   Entry,
   Turn,
@@ -29,6 +30,8 @@ export interface Change {
   revision: number;
   entries: Entry[];
   turns: Turn[];
+  /** The conversation, when its title or model changed. */
+  conversation?: Conversation;
 }
 
 export interface Snapshot {
@@ -46,6 +49,22 @@ export interface TurnEnding {
 }
 
 type Db = Kysely<Tables> | Transaction<Tables>;
+
+/** The longest title Rufi makes from a message, in characters. */
+const TITLE_MAX = 60;
+
+/**
+ * A conversation's title from its first message: the first words of its
+ * first line, cut at a word to at most TITLE_MAX characters.
+ */
+export function titleFrom(message: string): string {
+  const line = (message.trim().split("\n")[0] ?? "").replace(/\s+/g, " ");
+  if (line.length <= TITLE_MAX) return line;
+  const cut = line.slice(0, TITLE_MAX - 1);
+  // Cut at the last whole word; a word longer than the title is cut in it.
+  const end = line[cut.length] === " " ? cut.length : cut.lastIndexOf(" ");
+  return `${(end > 0 ? cut.slice(0, end) : cut).trimEnd()}…`;
+}
 type EntryRow = Selectable<Tables["transcript_entries"]>;
 type TurnRow = Selectable<Tables["turns"]>;
 
@@ -72,6 +91,15 @@ const toTurn = (row: TurnRow): Turn => ({
   startedAt: row.started_at,
   endedAt: row.ended_at,
 });
+
+/** A conversation as the screens get it, without its thread. */
+export const shown = ({
+  id,
+  title,
+  provider,
+  model,
+  createdAt,
+}: Conversation): Conversation => ({ id, title, provider, model, createdAt });
 
 const toConversation = (
   row: Selectable<Tables["conversations"]>,
@@ -107,7 +135,9 @@ export function transcripts(
     write: (
       trx: Transaction<Tables>,
       revision: number,
-    ) => Promise<{ entries: string[]; turns: string[] } | undefined>,
+    ) => Promise<
+      { entries: string[]; turns: string[]; conversation?: true } | undefined
+    >,
   ): Promise<Change | undefined> {
     const changed = await db.transaction().execute(async (trx) => {
       const { revision } = await trx
@@ -143,11 +173,21 @@ export function transcripts(
               .selectAll()
               .where("id", "in", ids.turns)
               .execute();
+      const conversation = ids.conversation
+        ? await trx
+            .selectFrom("conversations")
+            .selectAll()
+            .where("id", "=", conversationId)
+            .executeTakeFirstOrThrow()
+        : undefined;
       return {
         conversationId,
         revision,
         entries: entries.map(toEntry),
         turns: turns.map(toTurn),
+        ...(conversation && {
+          conversation: shown(toConversation(conversation)),
+        }),
       };
     });
     if (changed) {
@@ -225,6 +265,25 @@ export function transcripts(
     return id;
   }
 
+  /** A draft as stored; revision 0 when there is none yet. */
+  async function draftOf(
+    trx: Db,
+    personId: string,
+    conversationId: string | null,
+  ): Promise<Draft> {
+    const row = await trx
+      .selectFrom("drafts")
+      .select(["text", "revision"])
+      .where("person_id", "=", personId)
+      .where((eb) =>
+        conversationId === null
+          ? eb("conversation_id", "is", null)
+          : eb("conversation_id", "=", conversationId),
+      )
+      .executeTakeFirst();
+    return row ?? { text: "", revision: 0 };
+  }
+
   return {
     subscribe(
       conversationId: string,
@@ -268,10 +327,7 @@ export function transcripts(
           .orderBy("created_at", "desc")
           .orderBy("id", "desc")
           .execute()
-      ).map((row) => {
-        const { id, title, provider, model, createdAt } = toConversation(row);
-        return { id, title, provider, model, createdAt };
-      }),
+      ).map((row) => shown(toConversation(row))),
 
     /** One of the person's conversations; another person's is not found. */
     conversation: async (personId: string, id: string) => {
@@ -296,7 +352,7 @@ export function transcripts(
 
     createConversation: async (
       personId: string,
-      title: string,
+      title: string | null,
       provider: string,
       model: string,
     ): Promise<ConversationRow> => {
@@ -334,20 +390,36 @@ export function transcripts(
         .execute();
     },
 
-    setModel: async (conversation: ConversationRow, model: string) => {
-      await db
-        .updateTable("conversations")
-        .set({ model })
-        .where("id", "=", conversation.id)
-        .execute();
-    },
+    setModel: (conversation: ConversationRow, model: string) =>
+      change(conversation.id, async (trx) => {
+        await trx
+          .updateTable("conversations")
+          .set({ model })
+          .where("id", "=", conversation.id)
+          .execute();
+        return { entries: [], turns: [], conversation: true };
+      }),
+
+    /** Titles a conversation that has no title yet; a title is never replaced. */
+    setTitle: (conversation: ConversationRow, title: string) =>
+      change(conversation.id, async (trx) => {
+        const titled = await trx
+          .updateTable("conversations")
+          .set({ title })
+          .where("id", "=", conversation.id)
+          .where("title", "is", null)
+          .returning("id")
+          .executeTakeFirst();
+        return titled && { entries: [], turns: [], conversation: true };
+      }),
 
     /** The whole transcript and its revision, read in one go. */
     snapshot: (conversation: ConversationRow): Promise<Snapshot> =>
       db.transaction().execute(async (trx) => {
-        const { revision } = await trx
+        // As stored now: its title or model may have changed since it was read.
+        const row = await trx
           .selectFrom("conversations")
-          .select("revision")
+          .selectAll()
           .where("id", "=", conversation.id)
           .executeTakeFirstOrThrow();
         const entries = await trx
@@ -364,10 +436,9 @@ export function transcripts(
           .where("conversation_id", "=", conversation.id)
           .orderBy("started_at")
           .execute();
-        const { id, title, provider, model, createdAt } = conversation;
         return {
-          revision,
-          conversation: { id, title, provider, model, createdAt },
+          revision: row.revision,
+          conversation: shown(toConversation(row)),
           entries: entries.map(toEntry),
           turns: turns.map(toTurn),
         };
@@ -610,45 +681,71 @@ export function transcripts(
         .where("id", "=", id)
         .executeTakeFirst()) !== undefined,
 
-    draft: async (personId: string, conversationId: string | null) =>
-      (
-        await db
-          .selectFrom("drafts")
-          .select("text")
-          .where("person_id", "=", personId)
-          .where((eb) =>
-            conversationId === null
-              ? eb("conversation_id", "is", null)
-              : eb("conversation_id", "=", conversationId),
-          )
-          .executeTakeFirst()
-      )?.text ?? "",
+    draft: (personId: string, conversationId: string | null) =>
+      draftOf(db, personId, conversationId),
 
-    /** Keeps the draft; an empty one is removed. */
+    /**
+     * Keeps the draft when it is still at `revision` (the one the box last
+     * saw), and moves its revision on; otherwise it is refused, with the
+     * draft as it is now.
+     */
     saveDraft: (
       personId: string,
       conversationId: string | null,
       text: string,
-    ) =>
+      revision: number,
+    ): Promise<{ saved: boolean; draft: Draft }> =>
+      db.transaction().execute(async (trx) => {
+        const current = await draftOf(trx, personId, conversationId);
+        if (current.revision !== revision)
+          return { saved: false, draft: current };
+        const next = { text, revision: revision + 1 };
+        if (revision === 0) {
+          await trx
+            .insertInto("drafts")
+            .values({
+              person_id: personId,
+              conversation_id: conversationId,
+              ...next,
+              updated_at: now(),
+            })
+            .execute();
+        } else {
+          await trx
+            .updateTable("drafts")
+            .set({ ...next, updated_at: now() })
+            .where("person_id", "=", personId)
+            .where((eb) =>
+              conversationId === null
+                ? eb("conversation_id", "is", null)
+                : eb("conversation_id", "=", conversationId),
+            )
+            .execute();
+        }
+        return { saved: true, draft: next };
+      }),
+
+    /** The conversation the chat continues for the person; null: a new one. */
+    chosen: async (personId: string) =>
+      (
+        await db
+          .selectFrom("chosen_conversations")
+          .select("conversation_id")
+          .where("person_id", "=", personId)
+          .executeTakeFirst()
+      )?.conversation_id ?? null,
+
+    /** Chooses the conversation the chat continues; null starts a new one. */
+    choose: (personId: string, conversationId: string | null) =>
       db.transaction().execute(async (trx) => {
         await trx
-          .deleteFrom("drafts")
+          .deleteFrom("chosen_conversations")
           .where("person_id", "=", personId)
-          .where((eb) =>
-            conversationId === null
-              ? eb("conversation_id", "is", null)
-              : eb("conversation_id", "=", conversationId),
-          )
           .execute();
-        if (text === "") return;
+        if (conversationId === null) return;
         await trx
-          .insertInto("drafts")
-          .values({
-            person_id: personId,
-            conversation_id: conversationId,
-            text,
-            updated_at: now(),
-          })
+          .insertInto("chosen_conversations")
+          .values({ person_id: personId, conversation_id: conversationId })
           .execute();
       }),
 

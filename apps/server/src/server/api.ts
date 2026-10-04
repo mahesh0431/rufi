@@ -3,6 +3,7 @@
 // conversation is not found.
 import {
   AddPerson,
+  ChooseConversation,
   CreateConversation,
   MessageText,
   MAX_MESSAGE_CHARS,
@@ -10,6 +11,9 @@ import {
   SaveDraft,
   SaveSettings,
   SelectModel,
+  SendMessage,
+  StartConversation,
+  type Draft,
   type Overview,
   type Settings,
   type Status,
@@ -23,7 +27,11 @@ import { getCookie, setCookie } from "hono/cookie";
 import { stream } from "hono/streaming";
 import { Stopped } from "../agent/runtime.ts";
 import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
-import type { Change, Transcripts } from "../core/chat/transcript.ts";
+import {
+  shown,
+  type Change,
+  type Transcripts,
+} from "../core/chat/transcript.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { ChatRefusal, type Chat } from "./chat.ts";
 import { screen } from "./screens.ts";
@@ -73,9 +81,16 @@ const FORWARDING = [
 
 class HttpError extends Error {
   readonly status: 400 | 401 | 403 | 404 | 409 | 413 | 502;
-  constructor(status: HttpError["status"], message: string) {
+  /** More of the answer, beside the error. */
+  readonly more: Record<string, unknown>;
+  constructor(
+    status: HttpError["status"],
+    message: string,
+    more: Record<string, unknown> = {},
+  ) {
     super(message);
     this.status = status;
+    this.more = more;
   }
 }
 
@@ -87,7 +102,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
 
   app.onError((error, c) => {
     if (error instanceof HttpError) {
-      return c.json({ error: error.message }, error.status);
+      return c.json({ ...error.more, error: error.message }, error.status);
     }
     deps.log("api.failed", { error: errorCode(error) });
     return c.json({ error: "Rufi had a problem with that request." }, 500);
@@ -251,18 +266,81 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   );
 
   const base = "/api/people/:personId/conversations";
-  app.get(base, async (c) =>
-    c.json({
-      conversations: await transcripts.conversations((await person(c)).id),
-    }),
-  );
+  app.get(base, async (c) => {
+    const { id } = await person(c);
+    return c.json({
+      conversations: await transcripts.conversations(id),
+      chosen: await transcripts.chosen(id),
+    });
+  });
   app.post(base, async (c) => {
     const { id } = await person(c);
     const { title } = await body(c, CreateConversation);
-    const created = await acting(() =>
-      chat.create(id, title ?? "New conversation"),
+    const created = await acting(() => chat.create(id, title ?? null));
+    return c.json({ conversation: shown(created) }, 201);
+  });
+
+  // The conversation the chat continues for the person.
+  app.put("/api/people/:personId/chosen", async (c) => {
+    const { id } = await person(c);
+    const { conversationId } = await body(c, ChooseConversation);
+    if (
+      conversationId !== null &&
+      !(await transcripts.conversation(id, conversationId))
+    ) {
+      throw new HttpError(404, "Not found.");
+    }
+    await transcripts.choose(id, conversationId);
+    return c.json({ chosen: conversationId });
+  });
+
+  /**
+   * The box's draft after a message from it was taken: cleared, when it is
+   * still at the revision the box saw (another tab may have changed it).
+   */
+  const afterSend = async (
+    personId: string,
+    conversationId: string | null,
+    revision: number | undefined,
+  ): Promise<Draft> =>
+    revision === undefined
+      ? transcripts.draft(personId, conversationId)
+      : (await transcripts.saveDraft(personId, conversationId, "", revision))
+          .draft;
+
+  // The first message of a new conversation starts it, and the chat
+  // continues it. If the message isn't taken, the conversation stays with
+  // the message as its draft.
+  app.post(`${base}/new/messages`, async (c) => {
+    const { id: personId } = await person(c);
+    const { text, draft, model } = await body(
+      c,
+      StartConversation,
+      MESSAGE_REFUSAL,
     );
-    return c.json({ conversation: created }, 201);
+    const created = await acting(() => chat.create(personId, null, model));
+    await transcripts.choose(personId, created.id);
+    await afterSend(personId, null, draft);
+    let sent: { id: string };
+    try {
+      sent = await acting(() => chat.send(created, text));
+    } catch (error) {
+      if (!(error instanceof HttpError)) throw error;
+      const kept = await transcripts.saveDraft(personId, created.id, text, 0);
+      throw new HttpError(error.status, error.message, {
+        conversation: shown(created),
+        draft: kept.draft,
+      });
+    }
+    const titled = await transcripts.conversation(personId, created.id);
+    return c.json(
+      {
+        id: sent.id,
+        conversation: shown(titled ?? created),
+        draft: await transcripts.draft(personId, created.id),
+      },
+      202,
+    );
   });
 
   const one = `${base}/:conversationId`;
@@ -271,13 +349,21 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   );
   app.post(`${one}/messages`, async (c) => {
     const found = await conversation(c);
-    const { text } = await body(c, MessageText, MESSAGE_REFUSAL);
-    return c.json(await acting(() => chat.send(found, text)), 202);
+    const { text, draft } = await body(c, SendMessage, MESSAGE_REFUSAL);
+    const { id } = await acting(() => chat.send(found, text));
+    return c.json(
+      { id, draft: await afterSend(found.personId, found.id, draft) },
+      202,
+    );
   });
   app.post(`${one}/steer`, async (c) => {
     const found = await conversation(c);
-    const { text } = await body(c, MessageText, MESSAGE_REFUSAL);
-    return c.json(await acting(() => chat.steer(found, text)));
+    const { text, draft } = await body(c, SendMessage, MESSAGE_REFUSAL);
+    const { id } = await acting(() => chat.steer(found, text));
+    return c.json({
+      id,
+      draft: await afterSend(found.personId, found.id, draft),
+    });
   });
   app.post(`${one}/stop`, async (c) => {
     const found = await conversation(c);
@@ -331,13 +417,21 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
         }));
   app.get("/api/people/:personId/drafts/:conversationId", async (c) => {
     const { personId, conversationId } = await draftScope(c);
-    return c.json({ text: await transcripts.draft(personId, conversationId) });
+    return c.json(await transcripts.draft(personId, conversationId));
   });
   app.put("/api/people/:personId/drafts/:conversationId", async (c) => {
     const { personId, conversationId } = await draftScope(c);
-    const { text } = await body(c, SaveDraft);
-    await transcripts.saveDraft(personId, conversationId, text);
-    return c.json({ text });
+    const { text, revision } = await body(c, SaveDraft);
+    const { saved, draft } = await transcripts.saveDraft(
+      personId,
+      conversationId,
+      text,
+      revision,
+    );
+    if (!saved) {
+      throw new HttpError(409, "Changed in another tab.", { draft });
+    }
+    return c.json(draft);
   });
 
   // The live stream: a snapshot, then every stored change after it.
@@ -368,6 +462,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
           revision: change.revision,
           entries: change.entries,
           turns: change.turns,
+          ...(change.conversation && { conversation: change.conversation }),
         });
       });
       const unwatch = chat.waiting.subscribe(found.id, () => {

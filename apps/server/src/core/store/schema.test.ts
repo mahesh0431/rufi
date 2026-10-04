@@ -71,6 +71,7 @@ describe("schema", () => {
       .all()
       .map((row) => row.name);
     expect(tables).toEqual([
+      "chosen_conversations",
       "conversations",
       "documents",
       "drafts",
@@ -115,7 +116,7 @@ describe("schema", () => {
       conversation("c-nanna", "nanna");
     });
 
-    it("rejects a turn, an entry or a draft for one person in another's conversation", () => {
+    it("rejects a turn, an entry, a draft or a chosen conversation for one person in another's conversation", () => {
       expect(() => {
         insert("turns", {
           ...turn,
@@ -137,7 +138,14 @@ describe("schema", () => {
           person_id: "amma",
           conversation_id: "c-nanna",
           text: "x",
+          revision: 1,
           updated_at: now,
+        });
+      }).toThrow("FOREIGN KEY constraint failed");
+      expect(() => {
+        insert("chosen_conversations", {
+          person_id: "amma",
+          conversation_id: "c-nanna",
         });
       }).toThrow("FOREIGN KEY constraint failed");
     });
@@ -193,6 +201,7 @@ describe("schema", () => {
         person_id: "amma",
         conversation_id: null,
         text: "a",
+        revision: 1,
         updated_at: now,
       });
       expect(() => {
@@ -200,6 +209,7 @@ describe("schema", () => {
           person_id: "amma",
           conversation_id: null,
           text: "b",
+          revision: 1,
           updated_at: now,
         });
       }).toThrow("UNIQUE constraint failed");

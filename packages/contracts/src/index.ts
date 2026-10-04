@@ -78,7 +78,8 @@ export type Turn = typeof Turn.Type;
 
 export const Conversation = Schema.Struct({
   id: Schema.String,
-  title: Schema.String,
+  /** The first words of the first message Rufi took; null until then. */
+  title: Schema.NullOr(Schema.String),
   provider: Schema.String,
   model: Schema.String,
   createdAt: Schema.String,
@@ -111,6 +112,8 @@ export const StreamLine = Schema.Union([
     revision: Schema.Int,
     entries: Schema.Array(Entry),
     turns: Schema.Array(Turn),
+    /** The conversation, when its title or model changed. */
+    conversation: Schema.optionalKey(Conversation),
   }),
   /** The waiting messages changed; read them again. */
   Schema.Struct({ type: Schema.Literal("waiting") }),
@@ -118,6 +121,58 @@ export const StreamLine = Schema.Union([
   Schema.Struct({ type: Schema.Literal("ping") }),
 ]);
 export type StreamLine = typeof StreamLine.Type;
+
+/** A person's conversations, newest first, and the one the chat continues. */
+export const Conversations = Schema.Struct({
+  conversations: Schema.Array(Conversation),
+  /** The conversation chosen last; null: the chat starts a new one. */
+  chosen: Schema.NullOr(Schema.String),
+});
+
+export const WaitingMessages = Schema.Struct({
+  messages: Schema.Array(WaitingMessage),
+});
+
+/**
+ * The unsent text of a conversation's box. Its revision grows with every
+ * save, so a save based on an older revision is refused.
+ */
+export const Draft = Schema.Struct({
+  text: Schema.String,
+  revision: Schema.Int,
+});
+export type Draft = typeof Draft.Type;
+
+/** A refused save: the draft changed meanwhile (another tab). */
+export const DraftChanged = Schema.Struct({ draft: Draft });
+
+/** A message the core took, and the box's draft after it. */
+export const Sent = Schema.Struct({ id: Schema.String, draft: Draft });
+
+/** The first message of a new conversation, taken. */
+export const Started = Schema.Struct({
+  id: Schema.String,
+  conversation: Conversation,
+  draft: Draft,
+});
+
+/**
+ * A new conversation whose first message wasn't taken: the conversation
+ * stays, with the message as its draft.
+ */
+export const NotStarted = Schema.Struct({
+  conversation: Conversation,
+  draft: Draft,
+});
+
+export const Model = Schema.Struct({ id: Schema.String, name: Schema.String });
+export type Model = typeof Model.Type;
+
+/** The allowed models offered now, and any problem with the allowlist. */
+export const Models = Schema.Struct({
+  models: Schema.Array(Model),
+  allowlistError: Schema.NullOr(Schema.String),
+});
 
 /** The page's tab proof, for the session's header. */
 export const SessionProof = Schema.Struct({ proof: Schema.String });
@@ -195,16 +250,41 @@ export const CreateConversation = Schema.Struct({
   title: Schema.optionalKey(Line(200)),
 });
 
-/** A message: sent, steered in, or a waiting one edited. */
-export const MessageText = Schema.Struct({
-  text: Schema.String.check(
-    Schema.isTrimmed(),
-    Schema.isMinLength(1),
-    Schema.isMaxLength(MAX_MESSAGE_CHARS),
-  ),
+const Message = Schema.String.check(
+  Schema.isTrimmed(),
+  Schema.isMinLength(1),
+  Schema.isMaxLength(MAX_MESSAGE_CHARS),
+);
+
+/** A waiting message, edited. */
+export const MessageText = Schema.Struct({ text: Message });
+
+/**
+ * A message from the box: sent or steered in. `draft` is the revision the
+ * box's draft was saved at; the core clears the draft if it is still that.
+ */
+export const SendMessage = Schema.Struct({
+  text: Message,
+  draft: Schema.optionalKey(Schema.Int),
 });
 
-export const SaveDraft = Schema.Struct({ text: Text(MAX_MESSAGE_CHARS) });
+/** The first message of a new conversation, on the model chosen for it. */
+export const StartConversation = Schema.Struct({
+  text: Message,
+  draft: Schema.optionalKey(Schema.Int),
+  model: Schema.optionalKey(Id),
+});
+
+/** The box's text, based on the draft's revision as the box last saw it. */
+export const SaveDraft = Schema.Struct({
+  text: Text(MAX_MESSAGE_CHARS),
+  revision: Schema.Int,
+});
+
+/** The conversation the chat continues; null starts a new one. */
+export const ChooseConversation = Schema.Struct({
+  conversationId: Schema.NullOr(Id),
+});
 
 export const ReorderWaiting = Schema.Struct({ ids: Schema.Array(Id) });
 

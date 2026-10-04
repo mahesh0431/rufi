@@ -491,22 +491,201 @@ describe("the local API", () => {
     }
   });
 
-  it("keeps a draft per conversation, and one for a new conversation", async () => {
+  it("keeps a draft per conversation and one for a new conversation, and refuses a save based on an older revision", async () => {
     const core = await start();
     const page = await session(core);
     const c = await conversation(page);
-    await page.api("PUT", `/api/people/${c.person}/drafts/new`, {
-      text: "Start here",
+    const drafts = `/api/people/${c.person}/drafts`;
+    expect((await page.api("GET", `${drafts}/new`)).body).toEqual({
+      text: "",
+      revision: 0,
     });
-    await page.api("PUT", `/api/people/${c.person}/drafts/${c.id}`, {
+    expect(
+      (await page.api("PUT", `${drafts}/new`, { text: "Start", revision: 0 }))
+        .body,
+    ).toEqual({ text: "Start", revision: 1 });
+    await page.api("PUT", `${drafts}/new`, { text: "Start here", revision: 1 });
+    await page.api("PUT", `${drafts}/${c.id}`, {
       text: "Half written",
+      revision: 0,
     });
+    expect((await page.api("GET", `${drafts}/new`)).body).toEqual({
+      text: "Start here",
+      revision: 2,
+    });
+    expect((await page.api("GET", `${drafts}/${c.id}`)).body).toEqual({
+      text: "Half written",
+      revision: 1,
+    });
+    // Another tab, still at revision 1: refused, with the draft as it is now.
+    const stale = await page.api("PUT", `${drafts}/new`, {
+      text: "Older text",
+      revision: 1,
+    });
+    expect(stale).toMatchObject({
+      status: 409,
+      body: {
+        error: "Changed in another tab.",
+        draft: { text: "Start here", revision: 2 },
+      },
+    });
+    // Emptied, a draft keeps its revision moving.
+    await page.api("PUT", `${drafts}/new`, { text: "", revision: 2 });
     expect(
-      (await page.api("GET", `/api/people/${c.person}/drafts/new`)).body,
-    ).toEqual({ text: "Start here" });
+      (await page.api("PUT", `${drafts}/new`, { text: "x", revision: 2 }))
+        .status,
+    ).toBe(409);
+  });
+
+  it("clears the box's draft when its message is taken, unless another tab changed it meanwhile", async () => {
+    const core = await start();
+    const page = await session(core);
+    const c = await conversation(page);
+    const draft = `/api/people/${c.person}/drafts/${c.id}`;
+    await page.api("PUT", draft, { text: "First", revision: 0 });
+    const sent = await page.api("POST", `${c.path}/messages`, {
+      text: "First",
+      draft: 1,
+    });
+    expect(sent.status).toBe(202);
+    expect(sent.body["draft"]).toEqual({ text: "", revision: 2 });
+
+    // The box saw revision 2; another tab saved after it.
+    await page.api("PUT", draft, { text: "Other tab", revision: 2 });
+    const second = await page.api("POST", `${c.path}/messages`, {
+      text: "Second",
+      draft: 2,
+    });
+    expect(second.body["draft"]).toEqual({ text: "Other tab", revision: 3 });
+    expect((await page.api("GET", draft)).body).toEqual({
+      text: "Other tab",
+      revision: 3,
+    });
+  });
+
+  it("starts a conversation with its first message, titles it from its first words, and the chat continues it", async () => {
+    const core = await start();
+    const page = await session(core);
+    const asha = (
+      await page.api("POST", "/api/people", { displayName: "Asha Fictional" })
+    ).body["person"] as { id: string };
+    const people = `/api/people/${asha.id}`;
+    await page.api("PUT", `${people}/drafts/new`, {
+      text: "draft",
+      revision: 0,
+    });
+    const text =
+      "Is my TSH still high after the lab amended it in August?\nAnd the Free T4?";
+    const started = await page.api(
+      "POST",
+      `${people}/conversations/new/messages`,
+      { text, draft: 1, model: "gpt-6-astra" },
+    );
+    expect(started.status).toBe(202);
+    const created = started.body["conversation"] as {
+      id: string;
+      title: string;
+      model: string;
+    };
+    expect(created).toMatchObject({
+      title: "Is my TSH still high after the lab amended it in August?",
+      model: "gpt-6-astra",
+    });
+    expect(started.body["draft"]).toEqual({ text: "", revision: 0 });
+    expect((await page.api("GET", `${people}/drafts/new`)).body).toEqual({
+      text: "",
+      revision: 2,
+    });
+    const listed = (await page.api("GET", `${people}/conversations`)).body;
+    expect(listed["chosen"]).toBe(created.id);
+    expect(listed["conversations"]).toEqual([started.body["conversation"]]);
+
+    // A long first line is cut at a word; a later message keeps the title.
+    const path = `${people}/conversations/${created.id}`;
+    await until(async () =>
+      (
+        (await page.api("GET", path)).body["turns"] as { status: string }[]
+      ).every((turn) => turn.status !== "running"),
+    );
+    await page.api("POST", `${path}/messages`, { text: "Something else" });
+    const long = await page.api(
+      "POST",
+      `${people}/conversations/new/messages`,
+      {
+        text: `${"word ".repeat(20)}end`,
+      },
+    );
+    expect((long.body["conversation"] as { title: string }).title).toBe(
+      `${"word ".repeat(12).trimEnd()}…`,
+    );
     expect(
-      (await page.api("GET", `/api/people/${c.person}/drafts/${c.id}`)).body,
-    ).toEqual({ text: "Half written" });
+      ((await page.api("GET", path)).body["conversation"] as { title: string })
+        .title,
+    ).toBe("Is my TSH still high after the lab amended it in August?");
+  });
+
+  it("keeps a new conversation whose first message wasn't taken, with the message as its draft", async () => {
+    const core = await start({
+      agent: (tools, host) =>
+        codexRuntime({
+          home,
+          command: { file: process.execPath, args: [FAKE] },
+          env: {
+            PATH: process.env["PATH"] ?? "",
+            FAKE_CODEX: JSON.stringify({ hang: ["thread/queue/add"] }),
+          },
+          token: () => Promise.resolve("token"),
+          version: "0.0.0",
+          deadlines: { requestMs: 500 },
+          tools,
+          host,
+        }),
+    });
+    const page = await session(core);
+    const asha = (
+      await page.api("POST", "/api/people", { displayName: "Asha Fictional" })
+    ).body["person"] as { id: string };
+    const people = `/api/people/${asha.id}`;
+    const refused = await page.api(
+      "POST",
+      `${people}/conversations/new/messages`,
+      { text: "Hello" },
+    );
+    expect(refused.status).toBe(502);
+    const kept = refused.body["conversation"] as { id: string; title: null };
+    expect(kept.title).toBeNull();
+    expect(refused.body["draft"]).toEqual({ text: "Hello", revision: 1 });
+    expect((await page.api("GET", `${people}/drafts/${kept.id}`)).body).toEqual(
+      { text: "Hello", revision: 1 },
+    );
+    expect(
+      (await page.api("GET", `${people}/conversations`)).body["chosen"],
+    ).toBe(kept.id);
+  });
+
+  it("remembers the conversation the chat continues, for that person only", async () => {
+    const core = await start();
+    const page = await session(core);
+    const c = await conversation(page);
+    const list = `/api/people/${c.person}/conversations`;
+    expect((await page.api("GET", list)).body["chosen"]).toBeNull();
+    const chosen = `/api/people/${c.person}/chosen`;
+    await page.api("PUT", chosen, { conversationId: c.id });
+    expect((await page.api("GET", list)).body["chosen"]).toBe(c.id);
+
+    const ravi = (
+      await page.api("POST", "/api/people", { displayName: "Ravi Fictional" })
+    ).body["person"] as { id: string };
+    expect(
+      (
+        await page.api("PUT", `/api/people/${ravi.id}/chosen`, {
+          conversationId: c.id,
+        })
+      ).status,
+    ).toBe(404);
+
+    await page.api("PUT", chosen, { conversationId: null });
+    expect((await page.api("GET", list)).body["chosen"]).toBeNull();
   });
 
   it("offers the allowed models, and says when the allowlist is broken", async () => {
@@ -594,6 +773,34 @@ describe("the local API", () => {
       l.type === "update" ? [l.revision] : [],
     );
     expect(revisions).toEqual(revisions.map((_, i) => i + 1));
+    live.hangUp();
+  });
+
+  it("tells an open stream when the conversation's title or model changes", async () => {
+    const core = await start();
+    const page = await session(core);
+    const c = await conversation(page);
+    const live = stream(core.port, `${c.path}/stream`, page.headers);
+    await until(() => live.lines.length > 0);
+    expect(live.lines[0]).toMatchObject({ conversation: { title: null } });
+    const changed = () =>
+      live.lines.flatMap((line) =>
+        line.type === "update" && line.conversation ? [line.conversation] : [],
+      );
+    await page.api("POST", `${c.path}/messages`, { text: "Hello there" });
+    await until(() => changed().length === 1);
+    expect(changed()[0]).toMatchObject({ title: "Hello there" });
+    await until(async () =>
+      (
+        (await page.api("GET", c.path)).body["turns"] as { status: string }[]
+      ).every((turn) => turn.status === "completed"),
+    );
+    await page.api("PUT", `${c.path}/model`, { model: "gpt-6-astra" });
+    await until(() => changed().length === 2);
+    expect(changed()[1]).toMatchObject({
+      title: "Hello there",
+      model: "gpt-6-astra",
+    });
     live.hangUp();
   });
 

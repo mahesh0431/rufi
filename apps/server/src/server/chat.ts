@@ -1,7 +1,7 @@
 // The chat: joins the agent and Rufi's transcripts. What the agent does is
 // saved first and shown from what was saved; messages wait in the agent's own
 // queue, and Rufi saves each one when the agent starts it.
-import type { Conversation, WaitingMessage } from "@rufi/contracts";
+import type { WaitingMessage } from "@rufi/contracts";
 import { v7 as uuid } from "uuid";
 import {
   Stopped,
@@ -15,7 +15,11 @@ import {
 import type { Allowlist } from "../core/chat/models.ts";
 import { allowedModels } from "../core/chat/models.ts";
 import { safetyInstructions } from "../core/chat/safety.ts";
-import type { ConversationRow, Transcripts } from "../core/chat/transcript.ts";
+import {
+  titleFrom,
+  type ConversationRow,
+  type Transcripts,
+} from "../core/chat/transcript.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 
 /** How many earlier messages a new thread starts with. */
@@ -357,20 +361,29 @@ export function chat(deps: ChatDeps) {
     /** The allowed models the provider offers now, and any allowlist problem. */
     models: offered,
 
-    /** A new conversation on the first allowed model the provider offers. */
-    create: async (personId: string, title: string): Promise<Conversation> => {
-      const model = (await offered()).models[0]?.id;
-      if (model === undefined) {
+    /**
+     * A new conversation, on `model` or the first allowed model the provider
+     * offers. Without a title, its first message gives it one.
+     */
+    create: async (
+      personId: string,
+      title: string | null,
+      model?: string,
+    ): Promise<ConversationRow> => {
+      const { models } = await offered();
+      const chosen = model ?? models[0]?.id;
+      if (chosen === undefined) {
         throw new ChatRefusal("None of the allowed models is offered now.");
       }
-      const row = await transcripts.createConversation(
+      if (!models.some((m) => m.id === chosen)) {
+        throw new ChatRefusal("That model isn't allowed or isn't offered now.");
+      }
+      return transcripts.createConversation(
         personId,
         title,
         agent.provider,
-        model,
+        chosen,
       );
-      const { id, provider, createdAt } = row;
-      return { id, title, provider, model, createdAt };
     },
 
     /**
@@ -388,6 +401,17 @@ export function chat(deps: ChatDeps) {
           signal,
         );
         pendingContext.delete(conversation.id);
+        if (conversation.title === null) {
+          // The message is taken: a title that can't be saved doesn't undo that.
+          await transcripts
+            .setTitle(conversation, titleFrom(text))
+            .catch((error: unknown) => {
+              log("chat.save_failed", {
+                kind: "title",
+                error: errorCode(error),
+              });
+            });
+        }
         return { id };
       }),
 

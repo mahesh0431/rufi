@@ -73,7 +73,7 @@ CREATE TABLE settings (
 CREATE TABLE conversations (
   id TEXT PRIMARY KEY,         -- UUIDv7
   person_id TEXT NOT NULL REFERENCES people (id),
-  title TEXT NOT NULL,
+  title TEXT,                  -- the first words of the first message Rufi took; null until then
   provider TEXT NOT NULL,      -- the agent chosen for it: 'codex'
   model TEXT NOT NULL,         -- the model chosen for it
   thread_id TEXT,              -- the agent's thread; none until the first message
@@ -134,8 +134,17 @@ CREATE TABLE transcript_entries (
 CREATE TABLE drafts (
   person_id TEXT NOT NULL REFERENCES people (id),
   conversation_id TEXT,
-  text TEXT NOT NULL,
+  text TEXT NOT NULL,          -- may be empty: the row stays so its revision keeps growing
+  revision INTEGER NOT NULL,   -- grows with every save; a save based on an older one is refused
   updated_at TEXT NOT NULL,
+  FOREIGN KEY (person_id, conversation_id) REFERENCES conversations (person_id, id)
+) STRICT;
+
+-- The conversation the chat continues for each person: the one chosen last.
+-- No row: the chat starts a new conversation.
+CREATE TABLE chosen_conversations (
+  person_id TEXT PRIMARY KEY REFERENCES people (id),
+  conversation_id TEXT NOT NULL,
   FOREIGN KEY (person_id, conversation_id) REFERENCES conversations (person_id, id)
 ) STRICT;
 
