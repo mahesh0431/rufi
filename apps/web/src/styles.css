@@ -89,3 +89,24 @@ body {
   padding-left: 12px;
   color: var(--color-muted);
 }
+
+/* In the Rufi app on the Mac: the window's own sidebar material shows
+   through the sidebar (a desktop exception to "glass only on floating
+   parts"), the content stays opaque, the window buttons sit in the
+   sidebar's top corner, and the sidebar's edges and the toolbar move the
+   window. */
+[data-app] body {
+  background: transparent;
+}
+[data-app] [data-sidebar] {
+  background: transparent;
+  padding-top: 52px;
+  -webkit-app-region: drag;
+}
+[data-app] [data-sidebar] > *,
+[data-app] [data-toolbar] :is(a, button, input, select, textarea) {
+  -webkit-app-region: no-drag;
+}
+[data-app] [data-toolbar] {
+  -webkit-app-region: drag;
+}

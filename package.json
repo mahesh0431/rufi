@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "start": "pnpm --filter @rufi/web build && node apps/server/src/cli/main.ts start",
+    "desktop": "pnpm --filter @rufi/web build && node apps/desktop/scripts/desktop.ts",
     "rufi": "node apps/server/src/cli/main.ts",
     "codex:types": "node apps/server/scripts/codex-types.ts",
     "tools:json": "node apps/server/scripts/tools-json.ts",
@@ -40,6 +41,11 @@
         ],
         "ignore": [
           "src/agent/codex/protocol/**"
+        ]
+      },
+      "apps/desktop": {
+        "entry": [
+          "e2e/fakes.ts"
         ]
       }
     }

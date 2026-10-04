@@ -9,6 +9,7 @@ import { afterAll, describe, expect, it } from "vitest";
 const ROOT = join(import.meta.dirname, "..");
 const PROBES = join(ROOT, "apps/server/src/core/lint-probes");
 const WEB_PROBES = join(ROOT, "apps/web/src/lint-probes");
+const DESKTOP_PROBES = join(ROOT, "apps/desktop/src/lint-probes");
 
 const probes: Record<string, string> = {
   border: `import { Stopped } from "../../agent/runtime.ts";\nexport const a = Stopped;\n`,
@@ -36,6 +37,12 @@ const webProbes: Record<string, string> = {
   webHooks: `import { useState } from "react";\nexport function A({ on }: { on: boolean }) {\n  if (on) useState(0);\n  return null;\n}\n`,
 };
 
+/** The app's border: neither the core's code nor the screens'. */
+const desktopProbes: Record<string, string> = {
+  desktopServer: `import { startCore } from "../../../server/src/server/core.ts";\nexport const a = startCore;\n`,
+  desktopWeb: `import { router } from "../../../web/src/router.tsx";\nexport const a = router;\n`,
+};
+
 interface Diagnostic {
   code: string;
   filename: string;
@@ -50,9 +57,22 @@ async function lint(): Promise<Diagnostic[]> {
   for (const [name, text] of Object.entries(webProbes)) {
     await writeFile(join(WEB_PROBES, `${name}.tsx`), text);
   }
+  await mkdir(DESKTOP_PROBES, { recursive: true });
+  for (const [name, text] of Object.entries(desktopProbes)) {
+    await writeFile(join(DESKTOP_PROBES, `${name}.ts`), text);
+  }
   const result = await promisify(execFile)(
     "pnpm",
-    ["exec", "oxlint", "--type-aware", "-f", "json", PROBES, WEB_PROBES],
+    [
+      "exec",
+      "oxlint",
+      "--type-aware",
+      "-f",
+      "json",
+      PROBES,
+      WEB_PROBES,
+      DESKTOP_PROBES,
+    ],
     { cwd: ROOT, timeout: 60_000 },
   ).catch((error: unknown) => error as { stdout: string });
   return (JSON.parse(result.stdout) as { diagnostics: Diagnostic[] })
@@ -62,6 +82,7 @@ async function lint(): Promise<Diagnostic[]> {
 afterAll(async () => {
   await rm(PROBES, { recursive: true, force: true });
   await rm(WEB_PROBES, { recursive: true, force: true });
+  await rm(DESKTOP_PROBES, { recursive: true, force: true });
 });
 
 describe("lint", () => {
@@ -89,6 +110,8 @@ describe("lint", () => {
     expect(codes("nestedCatch")).toEqual([]);
     expect(codes("webServer")).toContain("eslint(no-restricted-imports)");
     expect(codes("webNode")).toContain("eslint(no-restricted-imports)");
+    expect(codes("desktopServer")).toContain("eslint(no-restricted-imports)");
+    expect(codes("desktopWeb")).toContain("eslint(no-restricted-imports)");
     expect(codes("webHooks")).toContain("react-hooks(rules-of-hooks)");
     expect(codes("switchCase")).toContain(
       "typescript(switch-exhaustiveness-check)",
