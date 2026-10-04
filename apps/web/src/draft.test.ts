@@ -93,14 +93,16 @@ describe("the box's draft", () => {
     expect(saves[1]).toMatchObject({ revision: 3 });
   });
 
-  it("gives a send the text after the save under way, with its revision", async () => {
+  it("gives a send the text only once the core keeps it as the draft, with its revision", async () => {
     const { io, saves } = core();
     const box = draftBox(io);
     await settle();
     box.type("Hello");
-    await vi.advanceTimersByTimeAsync(400);
     const taken = box.take();
-    // The box can't change while the message is on its way.
+    // Saved at once, not a moment later; the box can't change meanwhile.
+    expect(saves.map(({ text, revision }) => ({ text, revision }))).toEqual([
+      { text: "Hello", revision: 0 },
+    ]);
     box.type("Hello!");
     saves[0]?.answer(true, { text: "Hello", revision: 1 });
     expect(await taken).toEqual({ text: "Hello", revision: 1 });
@@ -129,36 +131,51 @@ describe("the box's draft", () => {
     });
   });
 
-  it("keeps the text of a send that failed, says why, and saves it", async () => {
+  it("sends nothing when the text can't be saved, and says why", async () => {
     const { io, saves } = core();
     const box = draftBox(io);
     await settle();
     box.type("Keep this");
-    await box.take();
-    box.failed("Rufi can't be reached.");
+    const taken = box.take();
+    saves[0]?.fail(new Error("Rufi can't be reached."));
+    expect(await taken).toBeUndefined();
     expect(box.store.getState()).toMatchObject({
       text: "Keep this",
       sending: false,
       notice: "Rufi can't be reached.",
     });
-    await vi.advanceTimersByTimeAsync(400);
-    expect(saves[0]).toMatchObject({ text: "Keep this", revision: 0 });
   });
 
-  it("goes on from the draft the core kept for a send that failed", async () => {
+  it("goes on from the draft the core has after a send that failed", async () => {
     const { io, saves } = core({ text: "", revision: 3 });
     const box = draftBox(io);
     await settle();
     box.type("Keep this");
-    await box.take();
+    const taken = box.take();
+    saves[0]?.answer(true, { text: "Keep this", revision: 4 });
+    await taken;
+    // The AI didn't take it: the draft keeps the text, nothing to save.
     box.failed("The AI couldn't take the message.", {
       text: "Keep this",
       revision: 4,
     });
-    await vi.advanceTimersByTimeAsync(400);
-    expect(saves).toHaveLength(0);
+    expect(box.store.getState()).toMatchObject({
+      text: "Keep this",
+      sending: false,
+    });
     box.type("Keep this, please");
     await vi.advanceTimersByTimeAsync(400);
-    expect(saves[0]).toMatchObject({ text: "Keep this, please", revision: 4 });
+    expect(saves[1]).toMatchObject({ text: "Keep this, please", revision: 4 });
+    saves[1]?.answer(true, { text: "Keep this, please", revision: 5 });
+    await settle();
+
+    // Another tab changed the draft before the send: the box shows its text.
+    const again = box.take();
+    await again;
+    box.failed(CHANGED, { text: "From the other tab", revision: 6 });
+    expect(box.store.getState()).toMatchObject({
+      text: "From the other tab",
+      notice: CHANGED,
+    });
   });
 });

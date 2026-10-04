@@ -11,6 +11,7 @@ import {
 import { Schema } from "effect";
 import { QueryClient, useQuery } from "@tanstack/react-query";
 import { read } from "./api.ts";
+import { adopt } from "./choice.ts";
 
 export const queries = new QueryClient({
   defaultOptions: {
@@ -57,33 +58,18 @@ export const conversationsKey = (personId: string) => [
   personId,
 ];
 
-/** Each person's latest choice of conversation here, numbered. */
-const choices = new Map<string, { n: number; chosen: string | null }>();
-
-/**
- * The person chose the conversation the chat continues (null: a new one). A
- * list read that started before it shows this choice, not the core's older
- * one.
- */
-export function chose(personId: string, chosen: string | null): void {
-  choices.set(personId, { n: (choices.get(personId)?.n ?? 0) + 1, chosen });
-}
-
-/** A person's conversations and the one the chat continues. */
+/** A person's conversations, and the one the chat continues (choice.ts). */
 export const useConversations = (personId: string) =>
   useQuery({
     queryKey: conversationsKey(personId),
     queryFn: async () => {
-      const before = choices.get(personId)?.n;
       const list = await read(
         Conversations,
         "GET",
         `/api/people/${encodeURIComponent(personId)}/conversations`,
       );
-      const latest = choices.get(personId);
-      return latest && latest.n !== before
-        ? { ...list, chosen: latest.chosen }
-        : list;
+      adopt(personId, list.chosen);
+      return list;
     },
     // A title another tab gave shows when you come back to this one.
     refetchOnWindowFocus: true,

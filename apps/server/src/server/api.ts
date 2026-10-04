@@ -298,38 +298,13 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   const sending = new Map<string, Promise<unknown>>();
   const draftKey = (personId: string, conversationId: string | null) =>
     `${personId}/${conversationId ?? "new"}`;
-
-  /**
-   * A message from a box (`held`: the draft revision that keeps its text
-   * until the agent takes it). Taken: the draft is cleared, when it is still
-   * that revision (another tab may have changed it). Not taken: the error
-   * carries the draft, which keeps the text.
-   */
-  const fromBox = async <T>(
+  /** Runs a send's step that a read of the box's draft waits for. */
+  const whileSending = async <T>(
     personId: string,
-    conversationId: string,
-    held: number | undefined,
-    action: () => Promise<T>,
-  ): Promise<{ result: T; draft: Draft }> => {
+    conversationId: string | null,
+    run: Promise<T>,
+  ): Promise<T> => {
     const key = draftKey(personId, conversationId);
-    const run = (async () => {
-      let result: T;
-      try {
-        result = await acting(action);
-      } catch (error) {
-        if (!(error instanceof HttpError)) throw error;
-        throw new HttpError(error.status, error.message, {
-          ...error.more,
-          draft: await transcripts.draft(personId, conversationId),
-        });
-      }
-      const draft =
-        held === undefined
-          ? await transcripts.draft(personId, conversationId)
-          : (await transcripts.saveDraft(personId, conversationId, "", held))
-              .draft;
-      return { result, draft };
-    })();
     sending.set(key, run);
     try {
       return await run;
@@ -338,26 +313,63 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     }
   };
 
-  /** Keeps a message as its conversation's draft, when the box saw the latest. */
-  const hold = async (
+  /**
+   * A message from a box is its draft as stored: the box saved it first, at
+   * `revision`. Anything else is refused and nothing is sent, so a message
+   * Rufi takes is never only in a request: the draft keeps it until the
+   * agent took it, also when Rufi stops meanwhile.
+   */
+  const fromDraft = async (
     personId: string,
-    conversationId: string,
+    conversationId: string | null,
     text: string,
     revision: number | undefined,
-  ): Promise<number | undefined> => {
-    if (revision === undefined) return undefined;
-    const kept = await transcripts.saveDraft(
-      personId,
-      conversationId,
-      text,
-      revision,
-    );
-    return kept.saved ? kept.draft.revision : undefined;
+  ): Promise<void> => {
+    if (revision === undefined) return;
+    const draft = await transcripts.draft(personId, conversationId);
+    if (draft.revision !== revision || draft.text.trim() !== text) {
+      throw new HttpError(409, "Changed in another tab.", { draft });
+    }
   };
 
+  /**
+   * Sends a message from a box whose draft keeps it at `held`. Taken: the
+   * draft is cleared, when it is still that revision (another tab may have
+   * changed it). Not taken: the error carries the draft, which keeps the
+   * text.
+   */
+  const fromBox = <T>(
+    personId: string,
+    conversationId: string,
+    held: number | undefined,
+    action: () => Promise<T>,
+  ): Promise<{ result: T; draft: Draft }> =>
+    whileSending(
+      personId,
+      conversationId,
+      (async () => {
+        let result: T;
+        try {
+          result = await acting(action);
+        } catch (error) {
+          if (!(error instanceof HttpError)) throw error;
+          throw new HttpError(error.status, error.message, {
+            ...error.more,
+            draft: await transcripts.draft(personId, conversationId),
+          });
+        }
+        const draft =
+          held === undefined
+            ? await transcripts.draft(personId, conversationId)
+            : (await transcripts.saveDraft(personId, conversationId, "", held))
+                .draft;
+        return { result, draft };
+      })(),
+    );
+
   // The first message of a new conversation starts it, and the chat
-  // continues it. The message is its draft until the agent takes it, so a
-  // message not taken (or a crash meanwhile) leaves it in the box.
+  // continues it. The message moves from the new conversation's draft to the
+  // conversation's own, which keeps it until the agent takes it.
   app.post(`${base}/new/messages`, async (c) => {
     const { id: personId } = await person(c);
     const { text, draft, model } = await body(
@@ -365,8 +377,13 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       StartConversation,
       MESSAGE_REFUSAL,
     );
-    const created = await acting(() =>
-      chat.create(personId, null, model, { text, newDraft: draft }),
+    await fromDraft(personId, null, text, draft);
+    const created = await whileSending(
+      personId,
+      null,
+      acting(() =>
+        chat.create(personId, null, model, { text, newDraft: draft }),
+      ),
     );
     try {
       const { result, draft: after } = await fromBox(
@@ -396,11 +413,11 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.post(`${one}/messages`, async (c) => {
     const found = await conversation(c);
     const { text, draft } = await body(c, SendMessage, MESSAGE_REFUSAL);
-    const held = await hold(found.personId, found.id, text, draft);
+    await fromDraft(found.personId, found.id, text, draft);
     const { result, draft: after } = await fromBox(
       found.personId,
       found.id,
-      held,
+      draft,
       () => chat.send(found, text),
     );
     return c.json({ id: result.id, draft: after }, 202);
@@ -408,11 +425,11 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.post(`${one}/steer`, async (c) => {
     const found = await conversation(c);
     const { text, draft } = await body(c, SendMessage, MESSAGE_REFUSAL);
-    const held = await hold(found.personId, found.id, text, draft);
+    await fromDraft(found.personId, found.id, text, draft);
     const { result, draft: after } = await fromBox(
       found.personId,
       found.id,
-      held,
+      draft,
       () => chat.steer(found, text),
     );
     return c.json({ id: result.id, draft: after });

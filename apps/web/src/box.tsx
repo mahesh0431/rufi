@@ -17,12 +17,18 @@ import {
 } from "@rufi/contracts";
 import { Schema } from "effect";
 import { ArrowDown, ArrowUp, Pencil, Play, Square, Trash2 } from "lucide-react";
-import { type ReactNode, type RefObject, useState } from "react";
+import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { ApiError, putOnLeave, read, request } from "./api.ts";
+import { beforeFirstMessage, continueStarted, inLine } from "./choice.ts";
 import { type DraftBox, type DraftIo, draftBox, tooLong } from "./draft.ts";
-import { conversationPath, type Live, messageOf } from "./live.ts";
+import {
+  conversationPath,
+  type Live,
+  messageOf,
+  showConversation,
+} from "./live.ts";
 import { isRunning } from "./transcript-state.ts";
 import { Button } from "./ui.tsx";
 
@@ -88,12 +94,17 @@ function moveBox(
 }
 
 // Reloading or closing the page: what wasn't saved yet goes in one last save.
+// Only the box on screen can have such text (see Box), so the last save
+// stays within what a browser sends after a page has gone (64 KiB).
 addEventListener("pagehide", () => {
   for (const box of boxes.values()) box.leave();
 });
 
-/** A send reaches the core even when the page goes away meanwhile. */
-const SEND = { keepalive: true };
+/** The draft in a refusal's answer, when it has one. */
+const draftIn = (body: unknown) => {
+  const kept = Schema.decodeUnknownOption(NotSent)(body);
+  return kept._tag === "Some" ? kept.value.draft : undefined;
+};
 
 /** For a new conversation, which has no live store yet. */
 const IDLE = createStore<Live>(() => ({
@@ -123,6 +134,7 @@ export function Box({
   /** The model chosen for a new conversation. */
   model?: string | undefined;
   size: "bar" | "panel" | "page";
+  /** A first message started this conversation; the chat continues it. */
   onStarted: (conversation: Conversation) => void;
   /** The bar: a click opens the chat. */
   onOpen?: () => void;
@@ -133,11 +145,25 @@ export function Box({
   const text = useStore(box.store, (state) => state.text);
   const loaded = useStore(box.store, (state) => state.loaded);
   const sending = useStore(box.store, (state) => state.sending);
+  const paused = useStore(box.store, (state) => state.paused);
   const notice = useStore(box.store, (state) => state.notice);
   const running = useStore(live ?? IDLE, isRunning);
   const [problem, setProblem] = useState<string | null>(null);
   const long = tooLong(text);
   const hasText = text.trim() !== "" && !long;
+
+  // Only the box on screen holds text the core may not have yet: when a box
+  // comes on screen, every other box saves at once, and this one can be
+  // typed in when those saves are done.
+  useEffect(() => {
+    box.pauseUntil(
+      Promise.all(
+        [...boxes.values()]
+          .filter((other) => other !== box)
+          .map((other) => other.saveNow()),
+      ),
+    );
+  }, [box]);
 
   async function submit(steer: boolean) {
     const taken = await box.take();
@@ -150,26 +176,29 @@ export function Box({
     setProblem(null);
     const people = `/api/people/${encodeURIComponent(person.id)}`;
     if (conversationId === null) {
+      // The core chooses the conversation it starts: in line with the
+      // person's choices, and the chat goes there unless they chose again.
+      const mayContinue = beforeFirstMessage(person.id);
+      const started = (conversation: Conversation) => {
+        showConversation(person.id, conversation);
+        if (!mayContinue()) return;
+        continueStarted(person.id, conversation.id);
+        onStarted(conversation);
+      };
       try {
-        const started = await read(
-          Started,
-          "POST",
-          `${people}/conversations/new/messages`,
-          {
+        const answer = await inLine(person.id, () =>
+          read(Started, "POST", `${people}/conversations/new/messages`, {
             text: message,
             draft: taken.revision,
             ...(model !== undefined && { model }),
-          },
-          SEND,
+          }),
         );
-        moveBox(person.id, started.conversation, started.draft, null);
-        onStarted(started.conversation);
+        moveBox(person.id, answer.conversation, answer.draft, null);
+        started(answer.conversation);
       } catch (error) {
-        const kept =
-          error instanceof ApiError
-            ? Schema.decodeUnknownOption(NotStarted)(error.body)
-            : undefined;
-        if (kept?._tag === "Some") {
+        const body = error instanceof ApiError ? error.body : undefined;
+        const kept = Schema.decodeUnknownOption(NotStarted)(body);
+        if (kept._tag === "Some") {
           // The conversation stays, with your text as its draft.
           moveBox(
             person.id,
@@ -177,8 +206,8 @@ export function Box({
             kept.value.draft,
             messageOf(error),
           );
-          onStarted(kept.value.conversation);
-        } else box.failed(messageOf(error));
+          started(kept.value.conversation);
+        } else box.failed(messageOf(error), draftIn(body));
       }
       return;
     }
@@ -188,17 +217,12 @@ export function Box({
         "POST",
         `${conversationPath(person.id, conversationId)}/${steer ? "steer" : "messages"}`,
         { text: message, draft: taken.revision },
-        SEND,
       );
       box.sent(sent.draft);
     } catch (error) {
-      const kept =
-        error instanceof ApiError
-          ? Schema.decodeUnknownOption(NotSent)(error.body)
-          : undefined;
       box.failed(
         messageOf(error),
-        kept?._tag === "Some" ? kept.value.draft : undefined,
+        draftIn(error instanceof ApiError ? error.body : undefined),
       );
     }
   }
@@ -254,7 +278,7 @@ export function Box({
             aria-label="Message to Rufi"
             placeholder={`Ask or tell Rufi about ${person.displayName}…`}
             value={text}
-            readOnly={!loaded || sending}
+            readOnly={!loaded || sending || paused}
             onClick={onOpen}
             onChange={(event) => {
               box.type(event.target.value);

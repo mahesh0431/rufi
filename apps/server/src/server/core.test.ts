@@ -559,21 +559,47 @@ describe("the local API", () => {
     });
   });
 
-  it("clears the box's draft when its message is taken, unless another tab changed it meanwhile", async () => {
+  it("sends a message from the box only as its stored draft, and clears it when the agent took it, unless another tab changed it meanwhile", async () => {
     const core = await start();
     const page = await session(core);
     const c = await conversation(page);
     const draft = `/api/people/${c.person}/drafts/${c.id}`;
-    await page.api("PUT", draft, { text: "Fir", revision: 0 });
-    // The box's text is the draft until the agent took it, then cleared.
+    const changed = (text: string, revision: number) => ({
+      status: 409,
+      body: { error: "Changed in another tab.", draft: { text, revision } },
+    });
+    // Text the core doesn't keep as the draft is never sent, and a first
+    // message never starts a conversation.
+    expect(
+      await page.api("POST", `${c.path}/messages`, { text: "First", draft: 0 }),
+    ).toMatchObject(changed("", 0));
+    expect(
+      await page.api(
+        "POST",
+        `/api/people/${c.person}/conversations/new/messages`,
+        { text: "Hello", draft: 0 },
+      ),
+    ).toMatchObject(changed("", 0));
+    expect(
+      (await page.api("GET", `/api/people/${c.person}/conversations`)).body[
+        "conversations"
+      ],
+    ).toHaveLength(1);
+
+    // The draft: sent, then cleared once the agent took it.
+    await page.api("PUT", draft, { text: "First\n", revision: 0 });
     const sent = await page.api("POST", `${c.path}/messages`, {
       text: "First",
       draft: 1,
     });
     expect(sent.status).toBe(202);
-    expect(sent.body["draft"]).toEqual({ text: "", revision: 3 });
+    expect(sent.body["draft"]).toEqual({ text: "", revision: 2 });
 
     // Not taken: the draft keeps the text, and the answer says so.
+    await page.api("PUT", draft, {
+      text: "Only the latest results",
+      revision: 2,
+    });
     const refused = await page.api("POST", `${c.path}/steer`, {
       text: "Only the latest results",
       draft: 3,
@@ -582,21 +608,32 @@ describe("the local API", () => {
       status: 409,
       body: {
         error: "No reply is running to steer.",
-        draft: { text: "Only the latest results", revision: 4 },
+        draft: { text: "Only the latest results", revision: 3 },
       },
     });
 
-    // The box saw revision 4; another tab saved after it.
+    // The box saved at revision 4; another tab saved after it: nothing is
+    // sent, and the box gets that tab's text.
+    await page.api("PUT", draft, { text: "Second", revision: 3 });
     await page.api("PUT", draft, { text: "Other tab", revision: 4 });
-    const second = await page.api("POST", `${c.path}/messages`, {
-      text: "Second",
-      draft: 4,
-    });
-    expect(second.body["draft"]).toEqual({ text: "Other tab", revision: 5 });
-    expect((await page.api("GET", draft)).body).toEqual({
-      text: "Other tab",
-      revision: 5,
-    });
+    expect(
+      await page.api("POST", `${c.path}/messages`, {
+        text: "Second",
+        draft: 4,
+      }),
+    ).toMatchObject(changed("Other tab", 5));
+    await until(async () =>
+      (
+        (await page.api("GET", c.path)).body["turns"] as { status: string }[]
+      ).some((turn) => turn.status === "completed"),
+    );
+    const said = (
+      (await page.api("GET", c.path)).body["entries"] as {
+        kind: string;
+        text: string;
+      }[]
+    ).filter((entry) => entry.kind === "message" || entry.kind === "steer");
+    expect(said.map((entry) => entry.text)).toEqual(["First"]);
   });
 
   it("starts a conversation with its first message, titles it from its first words, and the chat continues it", async () => {
@@ -606,12 +643,9 @@ describe("the local API", () => {
       await page.api("POST", "/api/people", { displayName: "Asha Fictional" })
     ).body["person"] as { id: string };
     const people = `/api/people/${asha.id}`;
-    await page.api("PUT", `${people}/drafts/new`, {
-      text: "draft",
-      revision: 0,
-    });
     const text =
       "Is my **TSH** still high after the lab [amended](https://example.com/lab) it in August?\nAnd the Free T4?";
+    await page.api("PUT", `${people}/drafts/new`, { text, revision: 0 });
     const started = await page.api(
       "POST",
       `${people}/conversations/new/messages`,

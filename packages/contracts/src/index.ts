@@ -269,14 +269,19 @@ export const MessageText = Schema.Struct({ text: Message });
 
 /**
  * A message from the box: sent or steered in. `draft` is the revision the
- * box's draft was saved at; the core clears the draft if it is still that.
+ * box saved this text at: the core sends only text it keeps as the draft
+ * (else 409 with the draft as it is), and clears the draft once the agent
+ * took it, if it is still that revision.
  */
 export const SendMessage = Schema.Struct({
   text: Message,
   draft: Schema.optionalKey(Schema.Int),
 });
 
-/** The first message of a new conversation, on the model chosen for it. */
+/**
+ * The first message of a new conversation, on the model chosen for it;
+ * `draft` as for SendMessage, of the new conversation's draft.
+ */
 export const StartConversation = Schema.Struct({
   text: Message,
   draft: Schema.optionalKey(Schema.Int),

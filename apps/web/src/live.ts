@@ -12,8 +12,8 @@ import {
 } from "@rufi/contracts";
 import { Schema } from "effect";
 import { createStore, type StoreApi } from "zustand/vanilla";
-import { ApiError, read, request, stream } from "./api.ts";
-import { chose, conversationsKey, queries } from "./reads.ts";
+import { ApiError, read, stream } from "./api.ts";
+import { conversationsKey, queries } from "./reads.ts";
 import { apply, type Transcript } from "./transcript-state.ts";
 
 export interface Live extends Transcript {
@@ -160,8 +160,11 @@ function open(personId: string, conversationId: string): Opened {
   return entry;
 }
 
-/** A conversation's new title or model, in the sidebar and the page title. */
-function showConversation(personId: string, conversation: Conversation) {
+/**
+ * A conversation's new title or model, or a conversation just started, in
+ * the sidebar and the page title.
+ */
+export function showConversation(personId: string, conversation: Conversation) {
   queries.setQueryData<typeof Conversations.Type>(
     conversationsKey(personId),
     (list) =>
@@ -174,49 +177,6 @@ function showConversation(personId: string, conversation: Conversation) {
           : [conversation, ...list.conversations],
       },
   );
-}
-
-/** A new conversation's first message went to the core: the chat continues it. */
-export function showStarted(personId: string, conversation: Conversation) {
-  showConversation(personId, conversation);
-  chose(personId, conversation.id);
-  queries.setQueryData<typeof Conversations.Type>(
-    conversationsKey(personId),
-    (list) => list && { ...list, chosen: conversation.id },
-  );
-}
-
-/** Each person's choices on their way to the core, one after another. */
-const choosing = new Map<string, Promise<unknown>>();
-
-/** Chooses the conversation the chat continues; null starts a new one. */
-export async function choose(
-  personId: string,
-  conversationId: string | null,
-): Promise<void> {
-  const list = queries.getQueryData<typeof Conversations.Type>(
-    conversationsKey(personId),
-  );
-  if (list?.chosen === conversationId) return;
-  chose(personId, conversationId);
-  queries.setQueryData<typeof Conversations.Type>(
-    conversationsKey(personId),
-    (current) => current && { ...current, chosen: conversationId },
-  );
-  // In order, so the last choice is the one the core keeps.
-  const put = (choosing.get(personId) ?? Promise.resolve())
-    .then(() =>
-      request("PUT", `/api/people/${encodeURIComponent(personId)}/chosen`, {
-        conversationId,
-      }),
-    )
-    .catch(() =>
-      // Not taken: show what the core keeps.
-      queries.invalidateQueries({ queryKey: conversationsKey(personId) }),
-    );
-  choosing.set(personId, put);
-  await put;
-  if (choosing.get(personId) === put) choosing.delete(personId);
 }
 
 /** A failure in words for the person: the core's own, or a plain one. */

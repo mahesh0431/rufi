@@ -22,14 +22,13 @@ import { create } from "zustand/react";
 import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
 import { Box } from "./box.tsx";
+import { choose, useChosen } from "./choice.ts";
 import {
-  choose,
   conversationPath,
   type Live,
   liveStore,
   messageOf,
   retain,
-  showStarted,
 } from "./live.ts";
 import { useConversations, useModels } from "./reads.ts";
 import { FirstMessage, TranscriptView } from "./transcript.tsx";
@@ -76,7 +75,7 @@ function useLive(personId: string, conversationId: string | null) {
 export function useNewConversation(personId: string) {
   const navigate = useNavigate();
   return (onPage: boolean) => {
-    void choose(personId, null);
+    choose(personId, null);
     if (onPage || isSmall()) {
       void navigate(pageOf(personId, null));
       return;
@@ -89,7 +88,7 @@ export function useNewConversation(personId: string) {
 export function ChatDock({ person }: { person: Person }) {
   const open = useChat((state) => state.open);
   const list = useConversations(person.id);
-  const chosen = list.data?.chosen;
+  const chosen = useChosen(person.id);
   const conversationId = chosen ?? null;
   const live = useLive(person.id, conversationId);
   const navigate = useNavigate();
@@ -213,9 +212,8 @@ export function ChatDock({ person }: { person: Person }) {
               size={open ? "panel" : "bar"}
               inputRef={field}
               onOpen={openChat}
-              onStarted={(conversation) => {
+              onStarted={() => {
                 setModel(undefined);
-                showStarted(person.id, conversation);
               }}
             />
           </div>
@@ -241,9 +239,15 @@ export function ConversationPage({
   const menus = useRef<HTMLDivElement | null>(null);
   const [model, setModel] = useState<string>();
 
+  /** The page is on screen. */
+  const shown = useRef(false);
   useEffect(() => {
-    void choose(person.id, conversationId);
+    shown.current = true;
+    choose(person.id, conversationId);
     field.current?.focus();
+    return () => {
+      shown.current = false;
+    };
   }, [person.id, conversationId]);
   // ⌘J goes to the box.
   useEffect(() => {
@@ -294,8 +298,9 @@ export function ConversationPage({
             size="page"
             inputRef={field}
             onStarted={(conversation) => {
+              // Only from this page: never take the person from where they went.
+              if (!shown.current) return;
               setModel(undefined);
-              showStarted(person.id, conversation);
               void navigate({
                 ...pageOf(person.id, conversation.id),
                 replace: true,
@@ -503,7 +508,7 @@ function Switcher({
             <Menu.RadioGroup
               value={conversationId ?? "new"}
               onValueChange={(next: string) => {
-                void choose(person.id, next === "new" ? null : next);
+                choose(person.id, next === "new" ? null : next);
               }}
             >
               {conversations.map((c) => (

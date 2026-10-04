@@ -2,8 +2,9 @@
 // at a time, a moment after the typing stops; an answer never replaces newer
 // text. A save based on an older revision is refused (another tab saved
 // first) and the box shows the newer text. Nothing here sends a message: a
-// send takes the text, the core keeps it as the draft until the agent took
-// it, and the box clears only then. Text longer than Rufi takes isn't saved.
+// send takes the text once it is saved, so the core keeps it as the draft
+// until the agent took it, and the box clears only then. Text longer than
+// Rufi takes isn't saved.
 import { type Draft, MAX_MESSAGE_CHARS } from "@rufi/contracts";
 import { createStore } from "zustand/vanilla";
 
@@ -27,6 +28,8 @@ export interface BoxState {
   loaded: boolean;
   /** A message from the box is on its way: the text can't change meanwhile. */
   sending: boolean;
+  /** Another box's save is on its way: until it is done, this can't be typed in. */
+  paused: boolean;
   /** What the person should know: another tab's change, a send that failed. */
   notice: string | null;
 }
@@ -46,14 +49,14 @@ export function draftBox(
     text: start?.draft.text ?? "",
     loaded: start !== undefined,
     sending: false,
+    paused: false,
     notice: start?.notice ?? null,
   }));
   /** The draft as the core has it, as far as the box knows. */
   let stored: Draft = start?.draft ?? { text: "", revision: 0 };
   let saving: Promise<undefined> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  /** A send has the text: the core keeps it until the agent took it. */
-  let handedOver = false;
+  let pauses = 0;
 
   if (!start) {
     io.load().then(
@@ -78,8 +81,8 @@ export function draftBox(
   async function flush(): Promise<void> {
     clearTimeout(timer);
     while (saving) await saving;
-    const { text, loaded, sending } = store.getState();
-    if (!loaded || sending || text === stored.text || tooLong(text)) return;
+    const { text, loaded } = store.getState();
+    if (!loaded || text === stored.text || tooLong(text)) return;
     const done = Promise.withResolvers<undefined>();
     saving = done.promise;
     try {
@@ -101,58 +104,68 @@ export function draftBox(
 
     /** The person typed. */
     type(text: string): void {
-      const { loaded, sending } = store.getState();
-      if (!loaded || sending) return;
+      const { loaded, sending, paused } = store.getState();
+      if (!loaded || sending || paused) return;
       store.setState({ text, notice: null });
       later();
     },
 
+    /** Saves now what wasn't saved yet; done when the core answered. */
+    saveNow: flush,
+
+    /** The box can't be typed in until `until` is done. */
+    pauseUntil(until: Promise<unknown>): void {
+      pauses += 1;
+      store.setState({ paused: true });
+      void until.finally(() => {
+        pauses -= 1;
+        if (pauses === 0) store.setState({ paused: false });
+      });
+    },
+
     /**
-     * Takes the text for a send, after the save under way. Undefined when
-     * another tab's text replaced it meanwhile: that isn't sent.
+     * Takes the text for a send once the core keeps it as the draft, with
+     * its revision: whatever happens to the send then, the draft has it.
+     * Undefined when it couldn't be saved, or another tab's text replaced
+     * it: that isn't sent.
      */
     async take(): Promise<{ text: string; revision: number } | undefined> {
-      const { text, loaded, sending } = store.getState();
-      if (!loaded || sending) return undefined;
-      clearTimeout(timer);
+      const { text, loaded, sending, paused } = store.getState();
+      if (!loaded || sending || paused || tooLong(text)) return undefined;
       store.setState({ sending: true, notice: null });
-      while (saving) await saving;
-      if (store.getState().text !== text) {
+      await flush();
+      if (stored.text !== text) {
         store.setState({ sending: false });
         return undefined;
       }
-      handedOver = true;
       return { text, revision: stored.revision };
     },
 
     /** The core took the message; the box shows the draft it kept. */
     sent(draft: Draft): void {
-      handedOver = false;
       stored = draft;
       store.setState({ text: draft.text, sending: false, notice: null });
     },
 
     /**
-     * The message wasn't sent: the text stays, with why, and the draft the
-     * core kept, when it said.
+     * The message wasn't sent: the text stays, with why. With the draft the
+     * core has now, the box goes on from it (another tab's text, if it
+     * changed it).
      */
     failed(notice: string | null, draft?: Draft): void {
-      handedOver = false;
       if (draft) stored = draft;
-      store.setState({ sending: false, notice });
-      if (store.getState().text !== stored.text) later();
+      store.setState({
+        sending: false,
+        notice,
+        ...(draft && { text: draft.text }),
+      });
     },
 
-    /**
-     * The page goes away: what wasn't saved yet goes in one last save. A
-     * send's text is the core's to keep.
-     */
+    /** The page goes away: what wasn't saved yet goes in one last save. */
     leave(): void {
       clearTimeout(timer);
       const { text, loaded } = store.getState();
-      if (!loaded || handedOver || text === stored.text || tooLong(text)) {
-        return;
-      }
+      if (!loaded || text === stored.text || tooLong(text)) return;
       io.saveOnLeave(text, stored.revision);
     },
   };
