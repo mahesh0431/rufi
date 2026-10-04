@@ -245,6 +245,37 @@ test.describe("when Rufi is slow or away", () => {
     );
   });
 
+  test("an answer that stops halfway shows Rufi as offline", async ({
+    page,
+    rufi,
+  }) => {
+    await rufi.family();
+    await rufi.start();
+    await page.clock.install();
+    // The headers arrive, then the body stops. As with a real fetch, the body
+    // ends only when the request is aborted.
+    await page.addInitScript(() => {
+      const real = globalThis.fetch;
+      globalThis.fetch = (input, init) => {
+        if (input !== "/api/people") return real(input, init);
+        const body = new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"people":['));
+            init?.signal?.addEventListener("abort", () => {
+              controller.error(new Error("aborted"));
+            });
+          },
+        });
+        return Promise.resolve(new Response(body, { status: 200 }));
+      };
+    });
+    await page.goto(rufi.link());
+    await page.clock.runFor(15_000);
+    await expect(page.getByRole("status")).toContainText(
+      "Rufi can't be reached.",
+    );
+  });
+
   test("after a long outage the page comes back by itself", async ({
     page,
     rufi,

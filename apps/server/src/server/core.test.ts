@@ -819,6 +819,15 @@ describe("the screens", () => {
     expect((await get("/assets/app-1a2b.js/x.js")).status).toBe(404);
   });
 
+  it("refuses an app page that is a link leading outside", async () => {
+    await rm(join(screens, "index.html"));
+    await symlink(join(folder, "secret.txt"), join(screens, "index.html"));
+    const core = await start({ screens });
+    for (const path of ["/", "/help/glossary", "/index.html"]) {
+      expect((await call(core.port, "GET", path)).status).toBe(404);
+    }
+  });
+
   it("serves the API only, when it has no screens", async () => {
     const core = await start();
     expect((await call(core.port, "GET", "/")).status).toBe(404);

@@ -41,9 +41,8 @@ export async function screen(
   const extension = extname(asked);
   if (extension !== "") {
     const type = TYPES[extension];
-    const file = await real(asked);
+    const file = await inside(root, asked);
     if (type === undefined || file === undefined) return undefined;
-    if (!file.startsWith(root + sep)) return undefined;
     const body = await read(file);
     return (
       body && {
@@ -54,8 +53,15 @@ export async function screen(
     );
   }
   // A page: the app routes it.
-  const index = await read(join(root, "index.html"));
+  const page = await inside(root, join(root, "index.html"));
+  const index = page === undefined ? undefined : await read(page);
   return index && { body: index, type: TYPES[".html"] ?? "", immutable: false };
+}
+
+/** `path` as the disk resolves it, when that is inside `root`. */
+async function inside(root: string, path: string): Promise<string | undefined> {
+  const file = await real(path);
+  return file?.startsWith(root + sep) ? file : undefined;
 }
 
 /** The path as the disk resolves it (links followed); undefined when missing. */

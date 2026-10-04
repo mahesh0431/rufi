@@ -60,20 +60,39 @@ function retry(): void {
   }, RETRY_MS);
 }
 
-/** A fetch that gives up at the deadline, or when the session ends. */
-async function fetchInTime(path: string, init: RequestInit): Promise<Response> {
+/** An answer read to its end: the status, and the body as JSON ({} if none). */
+interface Answer {
+  status: number;
+  json: unknown;
+}
+
+/**
+ * A request and its whole answer, body included, within the deadline; it
+ * gives up then, or when the session ends.
+ */
+async function fetchInTime(path: string, init: RequestInit): Promise<Answer> {
   // A timer, not AbortSignal.timeout, so a test's clock can drive it.
   const late = new AbortController();
   const timer = setTimeout(() => {
     late.abort();
   }, DEADLINE_MS);
   try {
-    return await fetch(path, {
+    const response = await fetch(path, {
       ...init,
       signal: AbortSignal.any([ending.signal, late.signal]),
     });
+    const text = await response.text();
+    return { status: response.status, json: parseJson(text) };
   } finally {
     clearTimeout(timer);
+  }
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {}; // not JSON: the status says what happened
   }
 }
 
@@ -87,15 +106,13 @@ async function startSession(): Promise<void> {
   if (launch !== null) {
     history.replaceState(null, "", location.pathname + location.search);
     try {
-      const response = await fetchInTime("/api/session", {
+      const answer = await fetchInTime("/api/session", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ launch }),
       });
-      if (response.ok) {
-        const { proof } = Schema.decodeUnknownSync(SessionProof)(
-          await response.json(),
-        );
+      if (answer.status === 200) {
+        const { proof } = Schema.decodeUnknownSync(SessionProof)(answer.json);
         sessionStorage.setItem(PROOF_KEY, proof);
       }
     } catch {
@@ -131,9 +148,9 @@ async function request(
     [PROOF_HEADER]: sessionStorage.getItem(PROOF_KEY) ?? "",
   };
   if (body !== undefined) headers["content-type"] = "application/json";
-  let response: Response;
+  let answer: Answer;
   try {
-    response = await fetchInTime(path, {
+    answer = await fetchInTime(path, {
       method,
       headers,
       ...(body !== undefined && { body: JSON.stringify(body) }),
@@ -142,18 +159,18 @@ async function request(
     if (!ending.signal.aborted) setConnection("offline");
     throw new ApiError(0, "Rufi can't be reached.", { cause: error });
   }
-  if (response.status === 401) {
+  if (answer.status === 401) {
     setConnection("ended");
     throw new ApiError(401, "Open Rufi again from the terminal.");
   }
   setConnection("ok");
-  const json: unknown = await response.json().catch(() => ({}));
-  if (!response.ok) {
+  const { json } = answer;
+  if (answer.status < 200 || answer.status > 299) {
     const message =
       typeof json === "object" && json !== null && "error" in json
         ? String(json.error)
         : "Rufi had a problem with that.";
-    throw new ApiError(response.status, message);
+    throw new ApiError(answer.status, message);
   }
   return json;
 }

@@ -48,7 +48,7 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 ## Commands
 
 - `mise install && pnpm install`: pinned Node, pnpm and gitleaks; turns on the git hooks.
-- `pnpm check`: oxfmt, oxlint (type-aware), TypeScript 7, tests, unused-code check, then builds the screens and runs Playwright. Green before every pull request. `pnpm format` fixes formatting. Once: `pnpm exec playwright install chromium`.
+- `pnpm check`: oxfmt, oxlint (type-aware), TypeScript 7, builds the screens, then tests, unused-code check and Playwright. Green before every pull request. `pnpm format` fixes formatting. Once: `pnpm exec playwright install chromium`.
 - `pnpm start [--no-open]`: builds the screens, starts the core with the real Codex and opens a single-use link; while it runs, it asks the running core for a fresh link instead (`core.json`). Ctrl-C stops it. For screen work, `pnpm --filter @rufi/web watch` rebuilds and you reload.
 - `pnpm rufi signin | status | signout`: Sign in with ChatGPT from the terminal. Needs `RUFI_HOME` set to a fictional data folder; tokens go to the macOS Keychain, never to files or logs.
 - `pnpm rufi ask "question"`: asks Codex (the pinned `@openai/codex`, never one on PATH) in a new thread using that sign-in, streaming the answer; nothing is saved in Rufi's conversations. Ctrl-C stops it. Codex runs from `$RUFI_HOME/codex` and works in `$RUFI_HOME/workspace`, with full access (`PLAN.md` §4). Rufi's choices on top of Codex's defaults are all in `apps/server/src/agent/codex/settings.ts`; none of the user's own Codex setup or personal skills is loaded. `--debug` prints the log lines that go to `$RUFI_HOME/logs/rufi.log`.

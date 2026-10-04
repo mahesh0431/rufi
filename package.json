@@ -13,7 +13,7 @@
     "rufi": "node apps/server/src/cli/main.ts",
     "codex:types": "node apps/server/scripts/codex-types.ts",
     "tools:json": "node apps/server/scripts/tools-json.ts",
-    "check": "oxfmt --check && oxlint --type-aware --deny-warnings && tsc --noEmit && tsc --noEmit -p apps/web && vitest run && knip && pnpm --filter @rufi/web build && playwright test",
+    "check": "oxfmt --check && oxlint --type-aware --deny-warnings && tsc --noEmit && tsc --noEmit -p apps/web && pnpm --filter @rufi/web build && vitest run && knip && playwright test",
     "db:types": "node apps/server/scripts/db-types.ts",
     "smoke": "node apps/server/scripts/smoke.ts"
   },
