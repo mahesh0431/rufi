@@ -223,26 +223,29 @@ const CASES: Record<string, (api: Api) => Promise<Outcome>> = {
       snapshot,
     };
   },
-  /** A steer changes the answer mid-reply. */
+  /** A steer is answered in the same reply, at the AI's next step. */
   steer: async (api) => {
     const c = await conversation(api);
     await c.send(
       "Write a numbered list of 40 healthy breakfast ideas, one line each, with a short reason for each.",
     );
+    // As soon as the reply runs, before it has written much.
     for (let i = 0; i < 120; i++) {
-      const { entries } = await c.read();
-      if (entries.some((e) => e.kind === "reply" && e.text.length > 0)) break;
-      await sleep(250);
+      const { turns } = await c.read();
+      if (turns.some((t) => t.status === "running")) break;
+      await sleep(100);
     }
     await api("POST", `${c.path}/steer`, {
       text: "Change of plan: give only 3 ideas, and say 'Steered' first.",
     });
     await c.ended(1);
     const snapshot = await c.read();
+    const reply = lastReply(snapshot);
     return {
       checks: {
         steer_saved: snapshot.entries.some((e) => e.kind === "steer"),
-        says_steered: /steered/i.test(lastReply(snapshot)),
+        says_steered: /steered/i.test(reply),
+        one_reply: snapshot.turns.length === 1,
       },
       snapshot,
     };

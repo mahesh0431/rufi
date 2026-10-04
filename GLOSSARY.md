@@ -87,7 +87,7 @@ One line in a transcript for something the AI did: read the record with a tool, 
 _Avoid_: trace, steps, log
 
 **Steer**:
-A message sent while the AI is replying, passed into that reply so it can change course. The transcript keeps it as your message, marked as a steer.
+A message sent while the AI is replying, passed into that reply. The AI takes it at its next step, after what it is writing now, so it can change course. The transcript keeps it as your message, marked as a steer.
 _Avoid_: nudge, interrupt
 
 **Waiting messages**:
