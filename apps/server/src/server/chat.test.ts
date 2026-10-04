@@ -485,6 +485,53 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
+    "keeps every reply when the model changes while a restart's history read is slow",
+    timeout,
+    async () => {
+      await startChat(name);
+      const c = await newConversation();
+      await chat?.send(c, "first");
+      await ended(c.id);
+      await startChat(name); // Rufi restarts.
+      const agent = chat?.agent;
+      if (!agent) throw new Error("no chat");
+      // The history read after the resume is slow; the reply isn't.
+      const gate = Promise.withResolvers<undefined>();
+      const read = agent.startedMessages;
+      agent.startedMessages = async (threadId) => {
+        await gate.promise;
+        return read(threadId);
+      };
+      await chat?.send(await conversation(c.id), "after restart");
+      await sleep(1_000);
+      const switching = chat?.selectModel(
+        await conversation(c.id),
+        "gpt-6-astra",
+      );
+      const sending = chat?.send(await conversation(c.id), "after the switch");
+      await sleep(300);
+      gate.resolve(undefined);
+      await Promise.all([switching, sending]);
+      await ended(c.id, 3);
+      const { entries, turns } = await transcript(c.id);
+      expect(entries.filter(([kind]) => kind === "reply")).toEqual([
+        ["reply", "ok:first"],
+        ["reply", "ok:after restart"],
+        ["reply", "ok:after the switch"],
+      ]);
+      expect(turns.map((t) => [t.status, t.model])).toEqual([
+        ["completed", "gpt-6.1-sol"],
+        ["completed", "gpt-6.1-sol"],
+        ["completed", "gpt-6-astra"],
+      ]);
+      // The new thread's seed has the reply too.
+      expect((await backend.contexts()).at(-1)).toContain(
+        "AI: ok:after restart",
+      );
+    },
+  );
+
+  it(
     "fills a message a crash kept from the transcript, once, from the agent's own record",
     timeout,
     async () => {
@@ -577,6 +624,30 @@ describe("the chat, on the scripted Codex", () => {
     ]);
     const log = await readFile(join(home, "fake.jsonl"), "utf8");
     expect(log).toContain('"method":"turn/interrupt"');
+  });
+
+  it("fails only the reply it couldn't save, also when the next one already runs", async () => {
+    await startChat("fake");
+    const c = await newConversation();
+    const appendReply = transcripts.appendReply;
+    let parts = 0;
+    transcripts.appendReply = async (...args) => {
+      if (++parts !== 2) return appendReply(...args);
+      // The failure comes late: the first reply has ended, the next runs.
+      await sleep(1_500);
+      throw new Error("disk full");
+    };
+    await chat?.send(c, "drip");
+    await chat?.send(c, "hang");
+    await ended(c.id);
+    await running(c.id);
+    await sleep(300);
+    expect((await transcript(c.id)).turns).toMatchObject([
+      { status: "failed", endReason: "save_failed" },
+      { status: "running" },
+    ]);
+    transcripts.appendReply = appendReply;
+    await chat?.stop(c);
   });
 
   it("writes the AI's question into its reply, also when the reply has no text", async () => {

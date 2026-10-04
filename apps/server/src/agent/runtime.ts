@@ -148,8 +148,11 @@ export interface AgentRuntime {
     threadId: string,
     message: { id: string; text: string },
   ) => Promise<{ turnId: string }>;
-  /** Stops the running reply and what it started; waiting messages wait. */
-  stop: (threadId: string) => Promise<void>;
+  /**
+   * Stops the running reply (only when it is `turnId`, if given) and what it
+   * started; waiting messages wait.
+   */
+  stop: (threadId: string, turnId?: string) => Promise<void>;
   waiting: {
     list: (threadId: string) => Promise<WaitingMessage[]>;
     edit: (threadId: string, id: string, text: string) => Promise<void>;

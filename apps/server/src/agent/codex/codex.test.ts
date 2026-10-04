@@ -583,6 +583,49 @@ describe("Codex's queue", () => {
     expect(await ended(threadId)).toMatchObject({ status: "interrupted" });
   });
 
+  it("stops a message Codex takes after its request timed out, when Stop came meanwhile", async () => {
+    // Codex takes the add only after Rufi gave up waiting for it.
+    const agent = start({ slow: ["thread/queue/add"], slowMs: 1_500 });
+    const { threadId } = await agent.startThread(SETTINGS);
+    const op = new AbortController();
+    const sending = agent.send(
+      threadId,
+      { id: "m-a", text: "hang" },
+      op.signal,
+    );
+    await until(async () => (await sent("thread/queue/add")).length === 1);
+    op.abort();
+    await expect(sending).rejects.toThrow("Stopped.");
+    expect(await ended(threadId)).toMatchObject({ status: "interrupted" });
+  });
+
+  it("stops a waiting message Codex starts after Run Now timed out, when Stop came meanwhile", async () => {
+    const agent = start({ slow: ["thread/queue/start"], slowMs: 1_500 });
+    const thread = await ask(agent, "hang");
+    await until(() => Promise.resolve(agent.running(thread)));
+    await agent.send(thread, { id: "m-b", text: "hang again" });
+    await agent.stop(thread);
+    await ended(thread);
+    const [b] = await agent.waiting.list(thread);
+    const op = new AbortController();
+    const running = agent.waiting.runNow(thread, b?.id ?? "", op.signal);
+    await until(async () => (await sent("thread/queue/start")).length === 1);
+    op.abort();
+    await expect(running).rejects.toThrow("Stopped.");
+    expect(await ended(thread, 2)).toMatchObject({ status: "interrupted" });
+  });
+
+  it("stops a reply only when it is the one asked for", async () => {
+    const agent = start();
+    const thread = await ask(agent, "hang");
+    await until(() => Promise.resolve(agent.running(thread)));
+    await agent.stop(thread, "an-earlier-turn");
+    await sleep(100);
+    expect(agent.running(thread)).toBe(true);
+    await agent.stop(thread, "turn-1");
+    expect(await ended(thread)).toMatchObject({ status: "interrupted" });
+  });
+
   it("stops a waiting message run now when Stop came while it started", async () => {
     const agent = start({ slow: ["thread/queue/start"] });
     const thread = await ask(agent, "hang");

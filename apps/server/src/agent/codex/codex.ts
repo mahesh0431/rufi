@@ -491,6 +491,25 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     throw new Stopped();
   }
 
+  /**
+   * Runs requests that may start a reply. When a Stop came meanwhile, however
+   * they ended (also failed or timed out, as Codex may still act on them),
+   * that reply stops too.
+   */
+  async function mayStart(
+    threadId: string,
+    signal: AbortSignal | undefined,
+    run: () => Promise<unknown>,
+  ): Promise<void> {
+    try {
+      await run();
+    } catch (error) {
+      if (signal?.aborted) await stoppedDuring(threadId);
+      throw error;
+    }
+    if (signal?.aborted) await stoppedDuring(threadId);
+  }
+
   function stopTurn(running: Running): Promise<void> {
     running.stopping ??= interruptAndClean(running);
     return running.stopping;
@@ -637,32 +656,35 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         ...(message.context === undefined ? [] : [textInput(message.context)]),
         textInput(message.text),
       ];
-      await request(app, "thread/queue/add", {
-        threadId,
-        input,
-        clientUserMessageId: message.id,
+      await mayStart(threadId, signal, async () => {
+        await request(app, "thread/queue/add", {
+          threadId,
+          input,
+          clientUserMessageId: message.id,
+        });
+        // A Stop during the add: the message waits, and nothing runs.
+        if (signal?.aborted) return;
+        // Codex starts it by itself unless a Stop paused the queue.
+        if (turns.has(threadId) || paused.get(threadId) === false) return;
+        // Start the queue. When Codex has already started the message, or
+        // another reply, that's what was wanted.
+        try {
+          await request(app, "thread/queue/start", { threadId });
+        } catch (error) {
+          if (turns.has(threadId)) return;
+          const waiting = await waitingList(app, threadId);
+          if (!waiting.some((w) => w.clientUserMessageId === message.id)) {
+            return;
+          }
+          const { thread } = await request<ThreadReadResponse>(
+            app,
+            "thread/read",
+            { threadId, includeTurns: false },
+          );
+          if (thread.status.type === "active") return;
+          throw error;
+        }
       });
-      // A Stop during the add: the message waits, and nothing runs.
-      if (signal?.aborted) await stoppedDuring(threadId);
-      // Codex starts it by itself unless a Stop paused the queue.
-      if (turns.has(threadId) || paused.get(threadId) === false) return;
-      // Start the queue. When Codex has already started the message, or
-      // another reply, that's what was wanted.
-      try {
-        await request(app, "thread/queue/start", { threadId });
-      } catch (error) {
-        if (turns.has(threadId)) return;
-        const waiting = await waitingList(app, threadId);
-        if (!waiting.some((w) => w.clientUserMessageId === message.id)) return;
-        const { thread } = await request<ThreadReadResponse>(
-          app,
-          "thread/read",
-          { threadId, includeTurns: false },
-        );
-        if (thread.status.type === "active") return;
-        throw error;
-      }
-      if (signal?.aborted) await stoppedDuring(threadId);
     },
 
     steer: async (threadId, message) => {
@@ -680,9 +702,11 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       return { turnId };
     },
 
-    stop: async (threadId) => {
+    stop: async (threadId, turnId) => {
       const running = turns.get(threadId);
-      if (running) await stopTurn(running);
+      if (running && (turnId === undefined || running.turnId === turnId)) {
+        await stopTurn(running);
+      }
     },
 
     waiting: {
@@ -728,11 +752,12 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         const app = await open(threadId);
         if (signal?.aborted) throw new Stopped();
         stopNext.delete(threadId);
-        await request(app, "thread/queue/start", {
-          threadId,
-          queuedSubmissionId: id,
-        });
-        if (signal?.aborted) await stoppedDuring(threadId);
+        await mayStart(threadId, signal, () =>
+          request(app, "thread/queue/start", {
+            threadId,
+            queuedSubmissionId: id,
+          }),
+        );
       },
     },
 

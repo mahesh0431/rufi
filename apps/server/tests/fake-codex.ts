@@ -23,8 +23,9 @@ import { createInterface } from "node:readline";
 export interface Scenario {
   /** Methods the fake never answers. */
   hang?: string[];
-  /** Methods the fake answers after 200 ms. */
+  /** Methods the fake takes and answers after `slowMs` (200 ms). */
   slow?: string[];
+  slowMs?: number;
   /** Feature flags as Codex reports them, over what config.toml asked for. */
   features?: Record<string, boolean>;
   /** Effective config as Codex reports it, over what config.toml asked for. */
@@ -653,6 +654,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       send({ id, error: { code: -32600, message: (error as Error).message } });
     }
   };
-  if (scenario.slow?.includes(method)) setTimeout(reply, 200);
-  else reply();
+  if (scenario.slow?.includes(method)) {
+    setTimeout(reply, scenario.slowMs ?? 200);
+  } else reply();
 });

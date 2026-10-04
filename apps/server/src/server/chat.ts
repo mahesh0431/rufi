@@ -88,12 +88,14 @@ export function chat(deps: ChatDeps) {
             return;
           }
           unsaved.add(event.turnId);
-          agent.stop(event.threadId).catch((stopError: unknown) => {
-            log("chat.save_failed", {
-              kind: "stop",
-              error: errorCode(stopError),
+          agent
+            .stop(event.threadId, event.turnId)
+            .catch((stopError: unknown) => {
+              log("chat.save_failed", {
+                kind: "stop",
+                error: errorCode(stopError),
+              });
             });
-          });
         }),
       );
     },
@@ -292,6 +294,9 @@ export function chat(deps: ChatDeps) {
         log("chat.resume_failed", { error: errorCode(error) });
       }
     }
+    // The old thread's events are saved first: once the pointer moves, they
+    // can't find the conversation, and the new thread's seed needs them.
+    await saving;
     const modelChanged =
       conversation.threadModel !== null &&
       conversation.threadModel !== conversation.model;
@@ -486,6 +491,8 @@ export function chat(deps: ChatDeps) {
           );
         }
         const threadId = threadOf(conversation);
+        // What the thread did is saved before the model changes.
+        await saving;
         if (threadId !== null) {
           if (agent.running(threadId)) {
             throw new ChatRefusal("Stop the reply before changing the model.");
