@@ -119,10 +119,17 @@ test("first run asks your name and adds you", async ({ page, rufi }) => {
 });
 
 test.describe("sign-in status", () => {
-  test("signed in", async ({ page, rufi }) => {
+  test("signed in: nothing to say", async ({ page, rufi }) => {
     await rufi.start();
+    const status = page.waitForResponse((response) =>
+      response.url().endsWith("/api/status"),
+    );
     await page.goto(rufi.link());
-    await expect(sidebar(page)).toContainText("Using ChatGPT plan");
+    expect((await status).status()).toBe(200);
+    await expect(
+      sidebar(page).getByRole("link", { name: "Settings" }),
+    ).toBeVisible();
+    await expect(sidebar(page)).not.toContainText(/signed in|ChatGPT/);
   });
 
   test("signed out links to how to sign in", async ({ page, rufi }) => {

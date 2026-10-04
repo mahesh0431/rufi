@@ -87,13 +87,10 @@ function Place({
   );
 }
 
-/** The ChatGPT sign-in, in one line at the bottom of the sidebar. */
+/** The ChatGPT sign-in, at the bottom of the sidebar only when it needs you. */
 function Account() {
   const account = useStatus().data?.account;
-  if (account === undefined) return null;
-  if (account === "signed_in") {
-    return <p className="px-2 pt-2 text-xs text-muted">Using ChatGPT plan</p>;
-  }
+  if (account === undefined || account === "signed_in") return null;
   return (
     <Link
       to="/help/$page"

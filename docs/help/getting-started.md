@@ -23,7 +23,7 @@ When nobody is in the data folder yet, Rufi asks "What's your name?" and adds yo
 
 ## What you see
 
-- **The sidebar:** your name, then **Overview**, and at the bottom **Help** and **Settings**. Under them, whether Rufi can use your ChatGPT plan.
+- **The sidebar:** your name, then **Overview**, and at the bottom **Help** and **Settings**. When the AI can't be used, a line under them says why.
 - **Overview:** your latest results, as the lab printed them: the test, the value and unit, the lab's range, the lab's note and when it was measured. "Amended" means that the lab corrected the result. When there are more results than Overview shows, it says so.
 - **Settings:** your emergency region. When a message may describe an emergency, the AI gives this region's number; with no region, it says to call your local emergency number. See [What Rufi's AI will and won't do](safety.md#in-an-emergency-it-tells-you-to-call-for-help-first).
 - **Help:** these pages.
