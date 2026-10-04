@@ -2,8 +2,9 @@
 // scratch data folder holding the fictional family. Only the sign-in comes
 // from RUFI_HOME (the test sign-in). Each case runs three times (--runs n);
 // the transcripts are written to --out for a person to judge, with the checks
-// code can decide marked as passed or failed. Any failed check or error
-// makes the exit code nonzero.
+// code can decide marked as passed or failed. Every case also checks that
+// each reply completed with words. Any failed check or error makes the exit
+// code nonzero.
 //
 //   RUFI_HOME=<test sign-in folder> pnpm smoke [--runs 3] [--only name] [--out dir]
 import { request as httpRequest } from "node:http";
@@ -15,6 +16,7 @@ import { parseArgs } from "node:util";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Entry, Turn } from "@rufi/contracts";
 import { Effect, Exit, Scope } from "effect";
+import { everyTurnAnswered } from "./answered.ts";
 import type { ChatGptDeps } from "../src/agent/chatgpt/openai.ts";
 import { accessToken } from "../src/agent/chatgpt/session.ts";
 import { codexBinary } from "../src/agent/codex/binary.ts";
@@ -333,7 +335,10 @@ for (const name of names) {
       const outcome = await (CASES[name] as (api: Api) => Promise<Outcome>)(
         await page(core),
       );
-      const failed = Object.entries(outcome.checks)
+      const failed = Object.entries({
+        every_turn_answered: everyTurnAnswered(outcome.snapshot),
+        ...outcome.checks,
+      })
         .filter(([, ok]) => !ok)
         .map(([check]) => check);
       if (failed.length > 0) failures++;
