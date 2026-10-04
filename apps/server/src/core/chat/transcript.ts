@@ -10,6 +10,10 @@ import type {
   Entry,
   Turn,
 } from "@rufi/contracts";
+import { fromMarkdown } from "mdast-util-from-markdown";
+import { gfmFromMarkdown } from "mdast-util-gfm";
+import { toString } from "mdast-util-to-string";
+import { gfm } from "micromark-extension-gfm";
 import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
 import type { Store } from "../store/database.ts";
@@ -54,17 +58,38 @@ type Db = Kysely<Tables> | Transaction<Tables>;
 const TITLE_MAX = 60;
 
 /**
- * A conversation's title from its first message: the first words of its
- * first line, cut at a word to at most TITLE_MAX characters.
+ * A conversation's title from its first message: the first line with words,
+ * as plain text without its Markdown marks, cut at a word to at most
+ * TITLE_MAX characters.
  */
 export function titleFrom(message: string): string {
-  const line = (message.trim().split("\n")[0] ?? "").replace(/\s+/g, " ");
+  let line = "";
+  for (const raw of message.split("\n")) {
+    line = plain(raw);
+    if (line !== "") break;
+  }
+  // Only marks, no words: the marks it is.
+  if (line === "") {
+    line = (message.trim().split("\n")[0] ?? "").replace(/\s+/g, " ").trim();
+  }
   if (line.length <= TITLE_MAX) return line;
   const cut = line.slice(0, TITLE_MAX - 1);
   // Cut at the last whole word; a word longer than the title is cut in it.
   const end = line[cut.length] === " " ? cut.length : cut.lastIndexOf(" ");
   return `${(end > 0 ? cut.slice(0, end) : cut).trimEnd()}…`;
 }
+
+/** One line of Markdown as the words it shows, on one line. */
+const plain = (line: string) =>
+  toString(
+    fromMarkdown(line, {
+      extensions: [gfm()],
+      mdastExtensions: [gfmFromMarkdown()],
+    }),
+    { includeHtml: false },
+  )
+    .replace(/\s+/g, " ")
+    .trim();
 type EntryRow = Selectable<Tables["transcript_entries"]>;
 type TurnRow = Selectable<Tables["turns"]>;
 
@@ -284,6 +309,87 @@ export function transcripts(
     return row ?? { text: "", revision: 0 };
   }
 
+  /**
+   * Keeps the draft when it is still at `revision` (the one the box last
+   * saw), and moves its revision on; otherwise it is refused, with the draft
+   * as it is now. A tab's last save as the page goes (`leaving`) also follows
+   * the tab's own save that is still on its way: it may have been kept just
+   * before.
+   */
+  async function writeDraft(
+    trx: Transaction<Tables>,
+    personId: string,
+    conversationId: string | null,
+    text: string,
+    revision: number,
+    by?: { tab: string; leaving?: boolean },
+  ): Promise<{ saved: boolean; draft: Draft }> {
+    const current = await trx
+      .selectFrom("drafts")
+      .select(["text", "revision", "tab"])
+      .where("person_id", "=", personId)
+      .where((eb) =>
+        conversationId === null
+          ? eb("conversation_id", "is", null)
+          : eb("conversation_id", "=", conversationId),
+      )
+      .executeTakeFirst();
+    const at = current?.revision ?? 0;
+    const follows =
+      by?.leaving === true &&
+      current !== undefined &&
+      at === revision + 1 &&
+      current.tab === by.tab;
+    if (at !== revision && !follows) {
+      return {
+        saved: false,
+        draft: { text: current?.text ?? "", revision: at },
+      };
+    }
+    const next = { text, revision: at + 1 };
+    if (current === undefined) {
+      await trx
+        .insertInto("drafts")
+        .values({
+          person_id: personId,
+          conversation_id: conversationId,
+          ...next,
+          tab: by?.tab ?? null,
+          updated_at: now(),
+        })
+        .execute();
+    } else {
+      await trx
+        .updateTable("drafts")
+        .set({ ...next, tab: by?.tab ?? null, updated_at: now() })
+        .where("person_id", "=", personId)
+        .where((eb) =>
+          conversationId === null
+            ? eb("conversation_id", "is", null)
+            : eb("conversation_id", "=", conversationId),
+        )
+        .execute();
+    }
+    return { saved: true, draft: next };
+  }
+
+  /** Chooses the conversation the chat continues; null starts a new one. */
+  async function chooseIn(
+    trx: Transaction<Tables>,
+    personId: string,
+    conversationId: string | null,
+  ): Promise<void> {
+    await trx
+      .deleteFrom("chosen_conversations")
+      .where("person_id", "=", personId)
+      .execute();
+    if (conversationId === null) return;
+    await trx
+      .insertInto("chosen_conversations")
+      .values({ person_id: personId, conversation_id: conversationId })
+      .execute();
+  }
+
   return {
     subscribe(
       conversationId: string,
@@ -350,11 +456,18 @@ export function transcripts(
       return row && toConversation(row);
     },
 
+    /**
+     * A new conversation. With its `first` message, in the same commit: the
+     * chat continues it, and the message is its draft until the agent takes
+     * it; the box's draft for a new conversation is cleared when it is still
+     * at the revision the box saw (`newDraft`).
+     */
     createConversation: async (
       personId: string,
       title: string | null,
       provider: string,
       model: string,
+      first?: { text: string; newDraft?: number | undefined },
     ): Promise<ConversationRow> => {
       const row = {
         id: uuid(),
@@ -369,7 +482,15 @@ export function transcripts(
         revision: 0,
         created_at: now(),
       };
-      await db.insertInto("conversations").values(row).execute();
+      await db.transaction().execute(async (trx) => {
+        await trx.insertInto("conversations").values(row).execute();
+        if (!first) return;
+        await chooseIn(trx, personId, row.id);
+        await writeDraft(trx, personId, row.id, first.text, 0);
+        if (first.newDraft !== undefined) {
+          await writeDraft(trx, personId, null, "", first.newDraft);
+        }
+      });
       return toConversation(row);
     },
 
@@ -684,46 +805,19 @@ export function transcripts(
     draft: (personId: string, conversationId: string | null) =>
       draftOf(db, personId, conversationId),
 
-    /**
-     * Keeps the draft when it is still at `revision` (the one the box last
-     * saw), and moves its revision on; otherwise it is refused, with the
-     * draft as it is now.
-     */
+    /** Saves the box's text: see writeDraft. */
     saveDraft: (
       personId: string,
       conversationId: string | null,
       text: string,
       revision: number,
+      by?: { tab: string; leaving?: boolean },
     ): Promise<{ saved: boolean; draft: Draft }> =>
-      db.transaction().execute(async (trx) => {
-        const current = await draftOf(trx, personId, conversationId);
-        if (current.revision !== revision)
-          return { saved: false, draft: current };
-        const next = { text, revision: revision + 1 };
-        if (revision === 0) {
-          await trx
-            .insertInto("drafts")
-            .values({
-              person_id: personId,
-              conversation_id: conversationId,
-              ...next,
-              updated_at: now(),
-            })
-            .execute();
-        } else {
-          await trx
-            .updateTable("drafts")
-            .set({ ...next, updated_at: now() })
-            .where("person_id", "=", personId)
-            .where((eb) =>
-              conversationId === null
-                ? eb("conversation_id", "is", null)
-                : eb("conversation_id", "=", conversationId),
-            )
-            .execute();
-        }
-        return { saved: true, draft: next };
-      }),
+      db
+        .transaction()
+        .execute((trx) =>
+          writeDraft(trx, personId, conversationId, text, revision, by),
+        ),
 
     /** The conversation the chat continues for the person; null: a new one. */
     chosen: async (personId: string) =>
@@ -737,17 +831,9 @@ export function transcripts(
 
     /** Chooses the conversation the chat continues; null starts a new one. */
     choose: (personId: string, conversationId: string | null) =>
-      db.transaction().execute(async (trx) => {
-        await trx
-          .deleteFrom("chosen_conversations")
-          .where("person_id", "=", personId)
-          .execute();
-        if (conversationId === null) return;
-        await trx
-          .insertInto("chosen_conversations")
-          .values({ person_id: personId, conversation_id: conversationId })
-          .execute();
-      }),
+      db
+        .transaction()
+        .execute((trx) => chooseIn(trx, personId, conversationId)),
 
     setting: async (key: string) =>
       (

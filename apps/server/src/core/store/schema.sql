@@ -136,6 +136,7 @@ CREATE TABLE drafts (
   conversation_id TEXT,
   text TEXT NOT NULL,          -- may be empty: the row stays so its revision keeps growing
   revision INTEGER NOT NULL,   -- grows with every save; a save based on an older one is refused
+  tab TEXT,                    -- the browser tab that saved this revision; null: the core itself
   updated_at TEXT NOT NULL,
   FOREIGN KEY (person_id, conversation_id) REFERENCES conversations (person_id, id)
 ) STRICT;

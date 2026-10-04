@@ -2,8 +2,13 @@
 // Requests are decoded with these schemas; responses are built to their types.
 import { Schema } from "effect";
 
-/** The longest message or draft Rufi takes, in characters. */
-export const MAX_MESSAGE_CHARS = 100_000;
+/**
+ * The longest message or draft Rufi takes, in characters. A draft must fit
+ * in the last save a page sends as it closes, which browsers cap at 64 KB:
+ * 10,000 characters are at most 60,000 bytes, even when every one of them
+ * is escaped in JSON (6 bytes).
+ */
+export const MAX_MESSAGE_CHARS = 10_000;
 
 const Text = (max: number) => Schema.String.check(Schema.isMaxLength(max));
 const Line = (max: number) =>
@@ -149,6 +154,9 @@ export const DraftChanged = Schema.Struct({ draft: Draft });
 /** A message the core took, and the box's draft after it. */
 export const Sent = Schema.Struct({ id: Schema.String, draft: Draft });
 
+/** A message the core didn't send: the box's draft, which keeps it. */
+export const NotSent = Schema.Struct({ draft: Draft });
+
 /** The first message of a new conversation, taken. */
 export const Started = Schema.Struct({
   id: Schema.String,
@@ -275,10 +283,17 @@ export const StartConversation = Schema.Struct({
   model: Schema.optionalKey(Id),
 });
 
-/** The box's text, based on the draft's revision as the box last saw it. */
+/**
+ * The box's text, based on the draft's revision as the box last saw it.
+ * `tab` names the browser tab that saves; `leaving` marks the tab's last
+ * save as the page goes, which also follows the tab's own save still on its
+ * way.
+ */
 export const SaveDraft = Schema.Struct({
   text: Text(MAX_MESSAGE_CHARS),
   revision: Schema.Int,
+  tab: Schema.optionalKey(Id),
+  leaving: Schema.optionalKey(Schema.Literal(true)),
 });
 
 /** The conversation the chat continues; null starts a new one. */

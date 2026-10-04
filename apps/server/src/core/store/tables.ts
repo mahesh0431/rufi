@@ -29,6 +29,7 @@ export interface Tables {
     conversation_id: string | null;
     text: string;
     revision: number;
+    tab: string | null;
     updated_at: string;
   };
   files: {

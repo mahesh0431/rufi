@@ -363,12 +363,14 @@ export function chat(deps: ChatDeps) {
 
     /**
      * A new conversation, on `model` or the first allowed model the provider
-     * offers. Without a title, its first message gives it one.
+     * offers. Without a title, its first message gives it one. With its
+     * `first` message: see Transcripts.createConversation (nothing is sent).
      */
     create: async (
       personId: string,
       title: string | null,
       model?: string,
+      first?: { text: string; newDraft?: number | undefined },
     ): Promise<ConversationRow> => {
       const { models } = await offered();
       const chosen = model ?? models[0]?.id;
@@ -383,6 +385,7 @@ export function chat(deps: ChatDeps) {
         title,
         agent.provider,
         chosen,
+        first,
       );
     },
 

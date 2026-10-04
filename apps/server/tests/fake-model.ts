@@ -1,8 +1,9 @@
 // A local stand-in for the model endpoint, so the real Codex binary runs real
 // turns offline. Codex sends it each request; it answers by the user's last
 // message, with the same words as the scripted fake Codex (fake-codex.ts):
-// "hang" never answers, "slow" answers after 1.5 s, anything else answers
-// "ok:<text>". No sign-in and no AI.
+// "hang" never answers, "slow" answers after 1.5 s, "overview" first reads
+// Rufi's get_overview (through Codex's `exec` tool, as a model does), and
+// anything else answers "ok:<text>". No sign-in and no AI.
 import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -10,7 +11,9 @@ export interface FakeModel {
   /** The base URL for Codex's provider setting. */
   url: string;
   /** Every request body Codex sent, in order. */
-  requests: { input: { role?: string; content?: { text?: string }[] }[] }[];
+  requests: {
+    input: { type?: string; role?: string; content?: { text?: string }[] }[];
+  }[];
   close: () => Promise<void>;
 }
 
@@ -34,6 +37,8 @@ export async function fakeModel(): Promise<FakeModel> {
         .filter((item) => item.role === "user")
         .flatMap((item) => (item.content ?? []).map((part) => part.text ?? ""));
       const last = texts.at(-1) ?? "";
+      // The tool's result came back: now the answer.
+      const answered = body.input.at(-1)?.type === "custom_tool_call_output";
       response.writeHead(200, { "content-type": "text/event-stream" });
       const event = (data: { type: string }) => {
         response.write(
@@ -42,6 +47,39 @@ export async function fakeModel(): Promise<FakeModel> {
       };
       const id = `resp-${String(requests.length)}`;
       event({ type: "response.created", response: { id } } as { type: string });
+      const completed = () => {
+        event({
+          type: "response.completed",
+          response: {
+            id,
+            usage: {
+              input_tokens: 1,
+              input_tokens_details: null,
+              output_tokens: 1,
+              output_tokens_details: null,
+              total_tokens: 2,
+            },
+          },
+        } as { type: string });
+        response.end();
+      };
+      if (last.includes("overview") && !answered) {
+        const call = {
+          type: "custom_tool_call",
+          id: `ctc-${String(requests.length)}`,
+          call_id: `call-${String(requests.length)}`,
+          name: "exec",
+          input: "text(JSON.stringify(await tools.rufi__get_overview({})))",
+        };
+        for (const type of [
+          "response.output_item.added",
+          "response.output_item.done",
+        ]) {
+          event({ type, item: call } as { type: string });
+        }
+        completed();
+        return;
+      }
       if (last.includes("hang")) {
         open.add(response);
         return;
@@ -71,20 +109,7 @@ export async function fakeModel(): Promise<FakeModel> {
             content: [{ type: "output_text", text }],
           },
         } as { type: string });
-        event({
-          type: "response.completed",
-          response: {
-            id,
-            usage: {
-              input_tokens: 1,
-              input_tokens_details: null,
-              output_tokens: 1,
-              output_tokens_details: null,
-              total_tokens: 2,
-            },
-          },
-        } as { type: string });
-        response.end();
+        completed();
       }, delay);
     });
   });

@@ -294,23 +294,70 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     return c.json({ chosen: conversationId });
   });
 
+  /** Sends from a box under way, by its draft: a read of that draft waits. */
+  const sending = new Map<string, Promise<unknown>>();
+  const draftKey = (personId: string, conversationId: string | null) =>
+    `${personId}/${conversationId ?? "new"}`;
+
   /**
-   * The box's draft after a message from it was taken: cleared, when it is
-   * still at the revision the box saw (another tab may have changed it).
+   * A message from a box (`held`: the draft revision that keeps its text
+   * until the agent takes it). Taken: the draft is cleared, when it is still
+   * that revision (another tab may have changed it). Not taken: the error
+   * carries the draft, which keeps the text.
    */
-  const afterSend = async (
+  const fromBox = async <T>(
     personId: string,
-    conversationId: string | null,
+    conversationId: string,
+    held: number | undefined,
+    action: () => Promise<T>,
+  ): Promise<{ result: T; draft: Draft }> => {
+    const key = draftKey(personId, conversationId);
+    const run = (async () => {
+      let result: T;
+      try {
+        result = await acting(action);
+      } catch (error) {
+        if (!(error instanceof HttpError)) throw error;
+        throw new HttpError(error.status, error.message, {
+          ...error.more,
+          draft: await transcripts.draft(personId, conversationId),
+        });
+      }
+      const draft =
+        held === undefined
+          ? await transcripts.draft(personId, conversationId)
+          : (await transcripts.saveDraft(personId, conversationId, "", held))
+              .draft;
+      return { result, draft };
+    })();
+    sending.set(key, run);
+    try {
+      return await run;
+    } finally {
+      if (sending.get(key) === run) sending.delete(key);
+    }
+  };
+
+  /** Keeps a message as its conversation's draft, when the box saw the latest. */
+  const hold = async (
+    personId: string,
+    conversationId: string,
+    text: string,
     revision: number | undefined,
-  ): Promise<Draft> =>
-    revision === undefined
-      ? transcripts.draft(personId, conversationId)
-      : (await transcripts.saveDraft(personId, conversationId, "", revision))
-          .draft;
+  ): Promise<number | undefined> => {
+    if (revision === undefined) return undefined;
+    const kept = await transcripts.saveDraft(
+      personId,
+      conversationId,
+      text,
+      revision,
+    );
+    return kept.saved ? kept.draft.revision : undefined;
+  };
 
   // The first message of a new conversation starts it, and the chat
-  // continues it. If the message isn't taken, the conversation stays with
-  // the message as its draft.
+  // continues it. The message is its draft until the agent takes it, so a
+  // message not taken (or a crash meanwhile) leaves it in the box.
   app.post(`${base}/new/messages`, async (c) => {
     const { id: personId } = await person(c);
     const { text, draft, model } = await body(
@@ -318,29 +365,28 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       StartConversation,
       MESSAGE_REFUSAL,
     );
-    const created = await acting(() => chat.create(personId, null, model));
-    await transcripts.choose(personId, created.id);
-    await afterSend(personId, null, draft);
-    let sent: { id: string };
+    const created = await acting(() =>
+      chat.create(personId, null, model, { text, newDraft: draft }),
+    );
     try {
-      sent = await acting(() => chat.send(created, text));
+      const { result, draft: after } = await fromBox(
+        personId,
+        created.id,
+        1,
+        () => chat.send(created, text),
+      );
+      const titled = await transcripts.conversation(personId, created.id);
+      return c.json(
+        { id: result.id, conversation: shown(titled ?? created), draft: after },
+        202,
+      );
     } catch (error) {
       if (!(error instanceof HttpError)) throw error;
-      const kept = await transcripts.saveDraft(personId, created.id, text, 0);
       throw new HttpError(error.status, error.message, {
+        ...error.more,
         conversation: shown(created),
-        draft: kept.draft,
       });
     }
-    const titled = await transcripts.conversation(personId, created.id);
-    return c.json(
-      {
-        id: sent.id,
-        conversation: shown(titled ?? created),
-        draft: await transcripts.draft(personId, created.id),
-      },
-      202,
-    );
   });
 
   const one = `${base}/:conversationId`;
@@ -350,20 +396,26 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.post(`${one}/messages`, async (c) => {
     const found = await conversation(c);
     const { text, draft } = await body(c, SendMessage, MESSAGE_REFUSAL);
-    const { id } = await acting(() => chat.send(found, text));
-    return c.json(
-      { id, draft: await afterSend(found.personId, found.id, draft) },
-      202,
+    const held = await hold(found.personId, found.id, text, draft);
+    const { result, draft: after } = await fromBox(
+      found.personId,
+      found.id,
+      held,
+      () => chat.send(found, text),
     );
+    return c.json({ id: result.id, draft: after }, 202);
   });
   app.post(`${one}/steer`, async (c) => {
     const found = await conversation(c);
     const { text, draft } = await body(c, SendMessage, MESSAGE_REFUSAL);
-    const { id } = await acting(() => chat.steer(found, text));
-    return c.json({
-      id,
-      draft: await afterSend(found.personId, found.id, draft),
-    });
+    const held = await hold(found.personId, found.id, text, draft);
+    const { result, draft: after } = await fromBox(
+      found.personId,
+      found.id,
+      held,
+      () => chat.steer(found, text),
+    );
+    return c.json({ id: result.id, draft: after });
   });
   app.post(`${one}/stop`, async (c) => {
     const found = await conversation(c);
@@ -417,16 +469,21 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
         }));
   app.get("/api/people/:personId/drafts/:conversationId", async (c) => {
     const { personId, conversationId } = await draftScope(c);
+    // A message from this box on its way: the box shows what follows it.
+    await sending
+      .get(draftKey(personId, conversationId))
+      ?.catch(() => undefined);
     return c.json(await transcripts.draft(personId, conversationId));
   });
   app.put("/api/people/:personId/drafts/:conversationId", async (c) => {
     const { personId, conversationId } = await draftScope(c);
-    const { text, revision } = await body(c, SaveDraft);
+    const { text, revision, tab, leaving } = await body(c, SaveDraft);
     const { saved, draft } = await transcripts.saveDraft(
       personId,
       conversationId,
       text,
       revision,
+      tab === undefined ? undefined : { tab, leaving: leaving === true },
     );
     if (!saved) {
       throw new HttpError(409, "Changed in another tab.", { draft });

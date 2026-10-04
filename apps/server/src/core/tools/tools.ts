@@ -27,6 +27,7 @@ export function forAgent(context: () => ToolContext, log: Log) {
     specs: tools.map((tool) => ({
       name: tool.name,
       description: tool.description,
+      shown: tool.shown,
       inputSchema: inputSchema(tool),
     })),
     instructions: TOOL_INSTRUCTIONS,
@@ -43,8 +44,14 @@ export function toolsVersion(): string {
     () => ({ store: undefined, personId: undefined }),
     () => undefined,
   );
+  // What the agent is told; the words a person sees aren't part of it.
+  const told = specs.map(({ name, description, inputSchema: input }) => ({
+    name,
+    description,
+    inputSchema: input,
+  }));
   return createHash("sha256")
-    .update(JSON.stringify({ namespace, specs, instructions }))
+    .update(JSON.stringify({ namespace, specs: told, instructions }))
     .digest("hex")
     .slice(0, 16);
 }
