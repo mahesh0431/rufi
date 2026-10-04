@@ -57,6 +57,7 @@ const TOOLS: AgentTools = {
     {
       name: "get_overview",
       description: "The record at a glance.",
+      shown: "Read your overview",
       inputSchema: { type: "object", properties: {} },
     },
   ],
@@ -1061,8 +1062,8 @@ describe("Rufi's tools", () => {
         .filter((e) => e.type === "activity" && e.activity === "tool")
         .map((e) => e.type === "activity" && [e.title, e.status]),
     ).toEqual([
-      ["Used get_overview", "running"],
-      ["Used get_overview", "done"],
+      ["Read your overview", "running"],
+      ["Read your overview", "done"],
     ]);
   });
 
@@ -1226,7 +1227,7 @@ describe("Codex's items and endings in Rufi's words", () => {
       );
     expect(call({})).toEqual({
       activity: "tool",
-      title: "Used read_conversation",
+      title: "Used a tool",
       status: "done",
     });
     expect(call({ limit: 5 })?.detail).toBe('{"limit":5}');

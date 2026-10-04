@@ -3,6 +3,7 @@
 // conversation is not found.
 import {
   AddPerson,
+  ChooseConversation,
   CreateConversation,
   MessageText,
   MAX_MESSAGE_CHARS,
@@ -10,6 +11,8 @@ import {
   SaveDraft,
   SaveSettings,
   SelectModel,
+  SendMessage,
+  type Draft,
   type Overview,
   type Settings,
   type Status,
@@ -21,9 +24,15 @@ import { Hono, type Context, type Next } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { getCookie, setCookie } from "hono/cookie";
 import { stream } from "hono/streaming";
+import { v7 as uuid } from "uuid";
 import { Stopped } from "../agent/runtime.ts";
 import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
-import type { Change, Transcripts } from "../core/chat/transcript.ts";
+import {
+  shown,
+  type Change,
+  type ConversationRow,
+  type Transcripts,
+} from "../core/chat/transcript.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { ChatRefusal, type Chat } from "./chat.ts";
 import { screen } from "./screens.ts";
@@ -73,9 +82,16 @@ const FORWARDING = [
 
 class HttpError extends Error {
   readonly status: 400 | 401 | 403 | 404 | 409 | 413 | 502;
-  constructor(status: HttpError["status"], message: string) {
+  /** More of the answer, beside the error. */
+  readonly more: Record<string, unknown>;
+  constructor(
+    status: HttpError["status"],
+    message: string,
+    more: Record<string, unknown> = {},
+  ) {
     super(message);
     this.status = status;
+    this.more = more;
   }
 }
 
@@ -87,7 +103,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
 
   app.onError((error, c) => {
     if (error instanceof HttpError) {
-      return c.json({ error: error.message }, error.status);
+      return c.json({ ...error.more, error: error.message }, error.status);
     }
     deps.log("api.failed", { error: errorCode(error) });
     return c.json({ error: "Rufi had a problem with that request." }, 500);
@@ -195,21 +211,23 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     }
     return parsed.success;
   };
+  /** The agent's error, as the answer shows it. */
+  const answerOf = (error: unknown): HttpError => {
+    if (error instanceof HttpError) return error;
+    if (error instanceof ChatRefusal) return new HttpError(409, error.message);
+    if (error instanceof Stopped) return new HttpError(409, "Stopped.");
+    deps.log("api.failed", { error: errorCode(error) });
+    return new HttpError(
+      502,
+      error instanceof Error ? error.message : "The AI couldn't do that.",
+    );
+  };
   /** A chat action: the agent's errors are shown as they are. */
   const acting = async <T>(action: () => Promise<T>): Promise<T> => {
     try {
       return await action();
     } catch (error) {
-      if (error instanceof HttpError) throw error;
-      if (error instanceof ChatRefusal) throw new HttpError(409, error.message);
-      if (error instanceof Stopped) {
-        throw new HttpError(409, "Stopped before the message was sent.");
-      }
-      deps.log("api.failed", { error: errorCode(error) });
-      throw new HttpError(
-        502,
-        error instanceof Error ? error.message : "The AI couldn't do that.",
-      );
+      throw answerOf(error);
     }
   };
   const emergency = async (): Promise<Settings> => {
@@ -251,19 +269,86 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   );
 
   const base = "/api/people/:personId/conversations";
-  app.get(base, async (c) =>
-    c.json({
-      conversations: await transcripts.conversations((await person(c)).id),
-    }),
-  );
+  app.get(base, async (c) => {
+    const { id } = await person(c);
+    return c.json({
+      conversations: await transcripts.conversations(id),
+      chosen: await transcripts.chosen(id),
+    });
+  });
   app.post(base, async (c) => {
     const { id } = await person(c);
     const { title } = await body(c, CreateConversation);
-    const created = await acting(() =>
-      chat.create(id, title ?? "New conversation"),
-    );
-    return c.json({ conversation: created }, 201);
+    const created = await chat.create(id, title ?? null);
+    return c.json({ conversation: shown(created) }, 201);
   });
+
+  // The conversation the chat continues for the person.
+  app.put("/api/people/:personId/chosen", async (c) => {
+    const { id } = await person(c);
+    const { conversationId } = await body(c, ChooseConversation);
+    if (!(await transcripts.conversation(id, conversationId))) {
+      throw new HttpError(404, "Not found.");
+    }
+    await transcripts.choose(id, conversationId);
+    return c.json({ chosen: conversationId });
+  });
+
+  /**
+   * Sends a message from a box. One short commit checks that the text is the
+   * draft the box saved at `revision` and holds the draft for this send, so
+   * another tab can't change or send it meanwhile, and the text survives
+   * Rufi stopping (docs/adr/0004). Then the agent is asked. Taken: the draft
+   * is emptied. Refused by the chat: the text is back to edit, with why. A
+   * Stop or any other failure: the text stays, and nobody knows whether the
+   * agent has it. The
+   * message's id is the send's, so after a stop the transcript tells.
+   */
+  const fromBox = async (
+    found: ConversationRow,
+    text: string,
+    revision: number,
+    action: (id: string) => Promise<unknown>,
+  ): Promise<{ id: string; draft: Draft }> => {
+    const id = uuid();
+    const hold = await transcripts.holdForSend(
+      found.personId,
+      found.id,
+      text,
+      revision,
+      id,
+    );
+    if (!hold.held) {
+      throw new HttpError(
+        409,
+        hold.draft.state === "sending"
+          ? "This message is being sent."
+          : "Changed in another tab.",
+        { draft: hold.draft },
+      );
+    }
+    try {
+      await action(id);
+    } catch (error) {
+      // Only the chat's own refusal means the agent never had it; a Stop or
+      // the agent's failure may come after the agent took it.
+      const draft = await transcripts.endSend(
+        found.personId,
+        found.id,
+        id,
+        error instanceof ChatRefusal ? "refused" : "unknown",
+      );
+      const { status, message, more } = answerOf(error);
+      throw new HttpError(status, message, { ...more, draft });
+    }
+    const draft = await transcripts.endSend(
+      found.personId,
+      found.id,
+      id,
+      "taken",
+    );
+    return { id, draft };
+  };
 
   const one = `${base}/:conversationId`;
   app.get(one, async (c) =>
@@ -271,13 +356,19 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   );
   app.post(`${one}/messages`, async (c) => {
     const found = await conversation(c);
-    const { text } = await body(c, MessageText, MESSAGE_REFUSAL);
-    return c.json(await acting(() => chat.send(found, text)), 202);
+    const { text, draft } = await body(c, SendMessage, MESSAGE_REFUSAL);
+    const sent = await fromBox(found, text, draft, (id) =>
+      chat.send(found, text, id),
+    );
+    return c.json(sent, 202);
   });
   app.post(`${one}/steer`, async (c) => {
     const found = await conversation(c);
-    const { text } = await body(c, MessageText, MESSAGE_REFUSAL);
-    return c.json(await acting(() => chat.steer(found, text)));
+    const { text, draft } = await body(c, SendMessage, MESSAGE_REFUSAL);
+    const sent = await fromBox(found, text, draft, (id) =>
+      chat.steer(found, text, id),
+    );
+    return c.json(sent);
   });
   app.post(`${one}/stop`, async (c) => {
     const found = await conversation(c);
@@ -321,23 +412,31 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     return c.json({ ok: true });
   });
 
-  // A draft per conversation; "new" is the draft for a new conversation.
-  const draftScope = async (c: Context) =>
-    c.req.param("conversationId") === "new"
-      ? { personId: (await person(c)).id, conversationId: null }
-      : await conversation(c).then(({ personId, id }) => ({
-          personId,
-          conversationId: id,
-        }));
-  app.get("/api/people/:personId/drafts/:conversationId", async (c) => {
-    const { personId, conversationId } = await draftScope(c);
-    return c.json({ text: await transcripts.draft(personId, conversationId) });
+  // A draft per conversation.
+  const drafts = "/api/people/:personId/drafts/:conversationId";
+  app.get(drafts, async (c) => {
+    const { personId, id } = await conversation(c);
+    return c.json(await transcripts.draft(personId, id));
   });
-  app.put("/api/people/:personId/drafts/:conversationId", async (c) => {
-    const { personId, conversationId } = await draftScope(c);
-    const { text } = await body(c, SaveDraft);
-    await transcripts.saveDraft(personId, conversationId, text);
-    return c.json({ text });
+  app.put(drafts, async (c) => {
+    const { personId, id } = await conversation(c);
+    const { text, revision } = await body(c, SaveDraft);
+    const { saved, draft } = await transcripts.saveDraft(
+      personId,
+      id,
+      text,
+      revision,
+    );
+    if (!saved) {
+      throw new HttpError(
+        409,
+        draft.state === "sending"
+          ? "This message is being sent."
+          : "Changed in another tab.",
+        { draft },
+      );
+    }
+    return c.json(draft);
   });
 
   // The live stream: a snapshot, then every stored change after it.
@@ -368,6 +467,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
           revision: change.revision,
           entries: change.entries,
           turns: change.turns,
+          ...(change.conversation && { conversation: change.conversation }),
         });
       });
       const unwatch = chat.waiting.subscribe(found.id, () => {

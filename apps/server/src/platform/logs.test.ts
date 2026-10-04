@@ -33,6 +33,7 @@ describe("the log file", () => {
     const leaky = defineTool({
       name: "leaky",
       description: "Fails with private details in its error.",
+      shown: "Did something",
       input: NoInput,
       callers: "model",
       readOnly: true,

@@ -8,7 +8,7 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 - If the AI decides it, a live AI test covers it (real AI, fictional data), reported as passes out of runs. The live smoke set (`pnpm smoke`, the test sign-in in `RUFI_HOME`) runs each case three times; run it when the agent, its instructions or Rufi's tools change.
 - An agent adapter passes the same contract tests as the others: `server/chat.test.ts` runs on the scripted fake Codex and on the real Codex binary against a local fake model, offline.
 - No mocking the AI's judgement in code tests. No test modes in `src`: fakes are injected at the composition root.
-- The screens are tested in Chromium with Playwright (`apps/web/e2e/`) on the real core with the built screens, the scripted fake Codex and a fictional data folder, with axe on each screen.
+- The screens are tested in Chromium with Playwright (`apps/web/e2e/`) on the real core with the built screens, the scripted fake Codex and a fictional data folder, with axe on each screen and no CSP refusal; a short chat smoke runs the real Codex binary on the local fake model.
 
 ## Code
 
@@ -17,9 +17,12 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 - Logs hold fixed events and checked fields only (`platform/logs.ts`): a new event or field is added there. Never prompts, replies, health text, tokens or error messages.
 - Folders in `apps/server/src`: `platform` (Mac things) uses no other folder; `core` (record, tools, transcripts) and `agent` (sign-in, Codex) use only `platform`; `server` (the chat and the local API) joins `core` and `agent`; `cli` joins them all. Lint checks these borders. API shapes live in `packages/contracts` (Effect Schema).
 - `apps/web` (the screens: React, TanStack Router and Query, Tailwind) uses only `@rufi/contracts` and the HTTP API; no server code and no `node:` modules (lint checks this). The core serves its build (`apps/web/dist`) on its own port. The tab's proof stays in `api.ts`; a 401 ends the session for every request.
+- The AI's text is shown as Markdown only: no HTML, no images, and links only to http(s) pages, opened outside Rufi with no opener or referrer (`apps/web/src/transcript.tsx`).
+- In `apps/web`, a value that changes lives in a store, state or ref, never in a module-level `let` that components reassign: React Compiler 1.0 can read such a variable after a later reassignment.
 - One process owns the data folder at a time: the core holds `rufi.lock` for its whole life, and each terminal command holds it too. Sign-in and token renewal take `credentials.lock` inside it (always `rufi.lock` first). If `rufi.lock` is lost, the core stops writing at once.
 - Only the core writes the database. Rufi's tools read through their own read-only connection. A transcript change is stored first and shown from what was stored (`core/chat/transcript.ts`).
-- Rufi keeps no queue, delivery states or retries of its own for messages: the agent's queue holds what waits, and its errors are shown as they are (ADR 0004).
+- Rufi keeps no queue or retries of its own for messages: the agent's queue holds what waits, and its errors are shown as they are (ADR 0004). The one delivery state is the draft a send holds until the agent took or refused the message (`drafts.state`); a send Rufi stopped during is never sent again.
+- The chat's state has one owner each: a draft is the core's, and every save or send is checked against its revision and the send holding it; a conversation exists before its first message (Send never creates, chooses or navigates); the conversation on screen is the tab's own (`apps/web/src/choice.ts`), and the core's chosen conversation is only where the chat opens next time. Nothing is saved as a page closes.
 
 ## Docs
 

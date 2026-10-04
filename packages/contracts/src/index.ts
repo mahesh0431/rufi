@@ -2,8 +2,13 @@
 // Requests are decoded with these schemas; responses are built to their types.
 import { Schema } from "effect";
 
-/** The longest message or draft Rufi takes, in characters. */
-export const MAX_MESSAGE_CHARS = 100_000;
+/**
+ * The longest message or draft Rufi takes, in characters. A draft must fit
+ * in the last save a page sends as it closes, which browsers cap at 64 KB:
+ * 10,000 characters are at most 60,000 bytes, even when every one of them
+ * is escaped in JSON (6 bytes).
+ */
+export const MAX_MESSAGE_CHARS = 10_000;
 
 const Text = (max: number) => Schema.String.check(Schema.isMaxLength(max));
 const Line = (max: number) =>
@@ -78,9 +83,11 @@ export type Turn = typeof Turn.Type;
 
 export const Conversation = Schema.Struct({
   id: Schema.String,
-  title: Schema.String,
+  /** The first words of the first message Rufi took; null until then. */
+  title: Schema.NullOr(Schema.String),
   provider: Schema.String,
-  model: Schema.String,
+  /** The model chosen for it; null: the first allowed one, when the first message goes. */
+  model: Schema.NullOr(Schema.String),
   createdAt: Schema.String,
 });
 export type Conversation = typeof Conversation.Type;
@@ -111,6 +118,8 @@ export const StreamLine = Schema.Union([
     revision: Schema.Int,
     entries: Schema.Array(Entry),
     turns: Schema.Array(Turn),
+    /** The conversation, when its title or model changed. */
+    conversation: Schema.optionalKey(Conversation),
   }),
   /** The waiting messages changed; read them again. */
   Schema.Struct({ type: Schema.Literal("waiting") }),
@@ -118,6 +127,52 @@ export const StreamLine = Schema.Union([
   Schema.Struct({ type: Schema.Literal("ping") }),
 ]);
 export type StreamLine = typeof StreamLine.Type;
+
+/** A person's conversations, newest first, and the one the chat continues. */
+export const Conversations = Schema.Struct({
+  conversations: Schema.Array(Conversation),
+  /** The conversation to open the chat on: the last choice a tab saved. */
+  chosen: Schema.NullOr(Schema.String),
+});
+
+export const WaitingMessages = Schema.Struct({
+  messages: Schema.Array(WaitingMessage),
+});
+
+/**
+ * The unsent text of a conversation's box. Its revision grows with every
+ * change, so a save based on an older revision is refused. `sending`: a
+ * send holds it until the agent took or refused the message, and it can't
+ * be changed meanwhile; `unknown`: Rufi stopped during that send, so the
+ * text stays and nobody knows whether the agent has it.
+ */
+export const Draft = Schema.Struct({
+  text: Schema.String,
+  revision: Schema.Int,
+  state: Schema.Literals(["editable", "sending", "unknown"]),
+});
+export type Draft = typeof Draft.Type;
+
+/**
+ * A refused save or send: the draft changed meanwhile (another tab), or a
+ * send holds it.
+ */
+export const DraftChanged = Schema.Struct({ draft: Draft });
+
+/** A message the core took, and the box's draft after it. */
+export const Sent = Schema.Struct({ id: Schema.String, draft: Draft });
+
+/** A message the core didn't send: the box's draft, which keeps it. */
+export const NotSent = Schema.Struct({ draft: Draft });
+
+export const Model = Schema.Struct({ id: Schema.String, name: Schema.String });
+export type Model = typeof Model.Type;
+
+/** The allowed models offered now, and any problem with the allowlist. */
+export const Models = Schema.Struct({
+  models: Schema.Array(Model),
+  allowlistError: Schema.NullOr(Schema.String),
+});
 
 /** The page's tab proof, for the session's header. */
 export const SessionProof = Schema.Struct({ proof: Schema.String });
@@ -195,16 +250,31 @@ export const CreateConversation = Schema.Struct({
   title: Schema.optionalKey(Line(200)),
 });
 
-/** A message: sent, steered in, or a waiting one edited. */
-export const MessageText = Schema.Struct({
-  text: Schema.String.check(
-    Schema.isTrimmed(),
-    Schema.isMinLength(1),
-    Schema.isMaxLength(MAX_MESSAGE_CHARS),
-  ),
+const Message = Schema.String.check(
+  Schema.isTrimmed(),
+  Schema.isMinLength(1),
+  Schema.isMaxLength(MAX_MESSAGE_CHARS),
+);
+
+/** A waiting message, edited. */
+export const MessageText = Schema.Struct({ text: Message });
+
+/**
+ * A message from the box: sent or steered in. `draft` is the revision the
+ * box saved this text at: the core sends only the text it keeps as the
+ * draft at that revision (else 409 with the draft as it is), and holds the
+ * draft until the agent took the message (emptied) or refused it.
+ */
+export const SendMessage = Schema.Struct({ text: Message, draft: Schema.Int });
+
+/** The box's text, based on the draft's revision as the box last saw it. */
+export const SaveDraft = Schema.Struct({
+  text: Text(MAX_MESSAGE_CHARS),
+  revision: Schema.Int,
 });
 
-export const SaveDraft = Schema.Struct({ text: Text(MAX_MESSAGE_CHARS) });
+/** The conversation Rufi opens the chat on next time. */
+export const ChooseConversation = Schema.Struct({ conversationId: Id });
 
 export const ReorderWaiting = Schema.Struct({ ids: Schema.Array(Id) });
 

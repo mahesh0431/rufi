@@ -45,3 +45,11 @@ export function greeting(now: Date): string {
   if (hour < 17) return "Good afternoon";
   return "Good evening";
 }
+
+/** An ISO time as "at 18:30 on 4 Oct 2026", in this Mac's time zone. */
+export function printedTime(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `at ${pad(at.getHours())}:${pad(at.getMinutes())} on ${String(at.getDate())} ${MONTHS[at.getMonth()] ?? ""} ${String(at.getFullYear())}`;
+}
