@@ -4,7 +4,8 @@
 // runs, waits otherwise, and the queue pauses after an interrupt until
 // thread/queue/start. What a turn does is chosen by its message's text, the
 // same words the fake model uses for the real Codex (tests/fake-model.ts):
-// "hang" never ends, "slow" answers after 300 ms, "fail" fails, "command"
+// "hang" never ends, "partial" writes "ok:part" and then never ends, "slow"
+// answers after 300 ms, "fail" fails, "command"
 // starts a long command ("background command": and the turn ends while it
 // runs), "drip" streams its answer in five parts 100 ms
 // apart, "long" streams 200 parts of 1,000 characters, and anything else
@@ -301,6 +302,13 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     });
   }
   if (text.includes("hang")) return;
+  if (text.includes("partial")) {
+    event("item/started", {
+      item: { id: "item-1", type: "agentMessage", text: "" },
+    });
+    event("item/agentMessage/delta", { itemId: "item-1", delta: "ok:part" });
+    return;
+  }
   if (text.includes("command")) {
     // Like Codex: the command gets its own session. It ignores TERM, and it
     // leaves an orphan behind (its parent subshell has exited), which only a
