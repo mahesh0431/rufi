@@ -209,7 +209,6 @@ export const agentCall = <A>(
   call: () => Promise<A>,
   stop: () => Promise<void>,
   onStop?: () => void,
-  limitMs = STOP_LIMIT_MS,
 ) =>
   Effect.callback<A, unknown>((resume) => {
     const pending = call();
@@ -226,7 +225,7 @@ export const agentCall = <A>(
       // Only that they have ended matters, not how.
       await Promise.race([
         Promise.allSettled([Promise.resolve().then(stop), pending]),
-        new Promise((resolve) => setTimeout(resolve, limitMs).unref()),
+        new Promise((resolve) => setTimeout(resolve, STOP_LIMIT_MS).unref()),
       ]);
     });
   });

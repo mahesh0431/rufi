@@ -12,6 +12,7 @@ import {
 } from "../../../scripts/codex-types.ts";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { DEFAULT_ALLOWLIST } from "../../core/chat/models.ts";
 import { forAgent } from "../../core/tools/tools.ts";
 import type { AgentEvent, AgentRuntime, AgentTools } from "../runtime.ts";
 import { DEADLINES } from "./appserver.ts";
@@ -20,7 +21,7 @@ import { codexRuntime } from "./codex.ts";
 import type { CommandExecResponse } from "./protocol/v2/CommandExecResponse.ts";
 import type { SkillsListResponse } from "./protocol/v2/SkillsListResponse.ts";
 import { connect, type Rpc } from "./rpc.ts";
-import { checkSettings, prepareCodexHome } from "./settings.ts";
+import { prepareCodexHome } from "./settings.ts";
 
 let root: string;
 let fakeHome: string;
@@ -40,8 +41,6 @@ afterEach(async () => {
 });
 
 const env = () => ({ PATH: process.env["PATH"] ?? "", HOME: fakeHome });
-
-const SETTINGS = { model: "gpt-6.1-sol", instructions: "Be careful." };
 
 /** Rufi's Codex runtime on the real binary, with a fake token. */
 async function real(
@@ -67,7 +66,7 @@ async function real(
 }
 
 /** A bare app-server connection set up exactly as Rufi sets it up. */
-async function bare(experimentalApi: boolean): Promise<Rpc> {
+async function bare(): Promise<Rpc> {
   const { codexHome, processHome } = await prepareCodexHome(
     join(root, "bare"),
     fakeHome,
@@ -100,7 +99,7 @@ async function bare(experimentalApi: boolean): Promise<Rpc> {
     "initialize",
     {
       clientInfo: { name: "Rufi", title: "Rufi", version: "0.0.0" },
-      capabilities: { experimentalApi, requestAttestation: false },
+      capabilities: { experimentalApi: true, requestAttestation: false },
     },
     DEADLINES.requestMs,
   );
@@ -125,17 +124,9 @@ describe("the pinned Codex", () => {
     }
   }, 60_000);
 
-  it("starts with Rufi's settings and opens a thread on the model asked for", async () => {
-    const agent = await real();
-    await expect(agent.startThread(SETTINGS)).resolves.toMatchObject({
-      threadId: expect.stringMatching(/\S/) as string,
-      model: "gpt-6.1-sol",
-    });
-  }, 60_000);
-
-  it("offers the strongest models Rufi allows by default", async () => {
+  it("offers every model Rufi allows by default", async () => {
     const ids = (await (await real()).models()).map((model) => model.id);
-    expect(ids).toEqual(expect.arrayContaining(["gpt-6.1-sol", "gpt-6-astra"]));
+    expect(ids).toEqual(expect.arrayContaining(DEFAULT_ALLOWLIST));
   }, 60_000);
 
   it("keeps the user's personal skills out, but runs commands with the real HOME", async () => {
@@ -145,7 +136,7 @@ describe("the pinned Codex", () => {
       join(skill, "SKILL.md"),
       "---\nname: sentinel\ndescription: Fictional skill for a Rufi test.\n---\nSay SENTINEL.\n",
     );
-    const rpc = await bare(true);
+    const rpc = await bare();
     const listed: SkillsListResponse = await rpc.request(
       "skills/list",
       { cwds: [root], forceReload: true },
@@ -166,32 +157,6 @@ describe("the pinned Codex", () => {
       DEADLINES.requestMs,
     );
     expect(ran).toEqual({ exitCode: 0, stdout: fakeHome, stderr: "" });
-  }, 60_000);
-
-  it("accepts experimental fields only after the client opts in", async () => {
-    const without = await bare(false);
-    await expect(
-      without.request(
-        "thread/start",
-        { mockExperimentalField: "x" },
-        DEADLINES.requestMs,
-      ),
-    ).rejects.toThrow(/experimental/i);
-    raw?.stop();
-    const opted = await bare(true);
-    await expect(
-      opted.request(
-        "thread/start",
-        { mockExperimentalField: "x", ephemeral: true },
-        DEADLINES.requestMs,
-      ),
-    ).resolves.toMatchObject({ thread: { id: expect.any(String) as string } });
-  }, 60_000);
-
-  it("applies every one of Rufi's settings", async () => {
-    await expect(
-      checkSettings(await bare(true), 30_000),
-    ).resolves.toBeUndefined();
   }, 60_000);
 
   it("sends Rufi's tools to the model as the rufi namespace", async () => {

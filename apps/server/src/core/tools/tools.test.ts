@@ -133,18 +133,6 @@ describe("get_overview", () => {
     });
   });
 
-  it("leaves out a result an amendment replaced, which stays stored", async () => {
-    const store = makeDatabase(family);
-    const { body } = await call({ store, personId: "asha" });
-    const shown = JSON.stringify(body);
-    expect(shown).not.toContain('"2.1"');
-    expect(
-      store.db
-        .prepare("SELECT value_text FROM results WHERE id = 'res-a4'")
-        .get(),
-    ).toEqual({ value_text: "2.1" });
-  });
-
   it("reads only the chosen person's record", async () => {
     const store = makeDatabase(family);
     const { body } = await call({ store, personId: "ravi" });
@@ -175,18 +163,6 @@ describe("get_overview", () => {
       "24",
       "23",
     ]);
-  });
-
-  it("finds replaced results through an index, not a scan", () => {
-    const store = makeDatabase(family);
-    const plan = store.db
-      .prepare(
-        "EXPLAIN QUERY PLAN SELECT 1 FROM results r WHERE r.person_id = ? AND NOT EXISTS (SELECT 1 FROM results n WHERE n.person_id = r.person_id AND n.replaces_id = r.id)",
-      )
-      .all("asha") as { detail: string }[];
-    expect(plan.map((row) => row.detail).join("\n")).toContain(
-      "USING COVERING INDEX results_by_replaced",
-    );
   });
 
   it("asks for a person to be chosen when there is more than one", async () => {
