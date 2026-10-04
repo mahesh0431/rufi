@@ -35,7 +35,9 @@ function changeOf(kind: Kind) {
     Object.entries(kind.fields).map(([name, field]) => [
       name,
       Schema.optionalKey(
-        field.required ? field.input : Schema.NullOr(field.input),
+        field.required || field.notNull
+          ? field.input
+          : Schema.NullOr(field.input),
       ),
     ]),
   );
@@ -57,7 +59,7 @@ function changeOf(kind: Kind) {
     fields: Schema.optionalKey(
       Schema.Struct(fields).annotate({
         description:
-          "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one.",
+          'Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one (a status or certainty takes "unknown" instead).',
       }),
     ),
   }).check(
@@ -260,7 +262,8 @@ export async function saveChanges(
       touched.set(key, index);
       before = await recordOf(trx, kind, where.personId, id);
       const wrong = before
-        ? stateProblem(kind, change.action, before)
+        ? (stateProblem(kind, change.action, before) ??
+          (await amendedSince(trx, kind, change.action, before)))
         : `No ${kind.noun} with this id is in this person's record.`;
       if (wrong) {
         problem(`${at}.id`, id, wrong);
@@ -381,7 +384,7 @@ export async function saveChanges(
   }
   return {
     id,
-    receipt: receiptLine(written),
+    receipt: receiptLine(written, await linksOf(trx, where.personId, written)),
     fresh: true,
     changes: written.map((w) => ({
       kind: w.kind.name,
@@ -441,6 +444,31 @@ function stateProblem(
   return undefined;
 }
 
+/**
+ * Why a removed amendment can't come back: the result it amends was amended
+ * again since, and two versions would be current.
+ */
+async function amendedSince(
+  trx: Transaction<Tables>,
+  kind: Kind,
+  action: Action,
+  row: Row,
+): Promise<string | undefined> {
+  if (kind.name !== "result" || action !== "restore") return undefined;
+  if (typeof row["replaces_id"] !== "string") return undefined;
+  const other = await trx
+    .selectFrom("results")
+    .select("id")
+    .where("person_id", "=", String(row["person_id"]))
+    .where("replaces_id", "=", row["replaces_id"])
+    .where("removed", "=", 0)
+    .where("id", "!=", String(row["id"]))
+    .executeTakeFirst();
+  return other
+    ? "The result it amends was amended again since: amend the newest version instead."
+    : undefined;
+}
+
 /** Why a result can't be amended by a new one. */
 async function replacedProblem(
   trx: Transaction<Tables>,
@@ -451,11 +479,13 @@ async function replacedProblem(
   const row = await recordOf(trx, kind, personId, id);
   if (!row) return "No result with this id is in this person's record.";
   if (row["removed"] === 1) return "That result is removed.";
+  // An amendment that was removed no longer replaces it.
   const newer = await trx
     .selectFrom("results")
     .select("id")
     .where("person_id", "=", personId)
     .where("replaces_id", "=", id)
+    .where("removed", "=", 0)
     .executeTakeFirst();
   return newer
     ? "That result was already amended: amend the newest version."
@@ -592,36 +622,92 @@ async function replay(
 /** Longest value a receipt shows, in characters. */
 const VALUE_MAX = 80;
 
-/** A field of a stored record, as a receipt shows it; undefined when unknown. */
-function shownField(field: Field, row: Row): string | undefined {
+/** The records links point at, as a receipt names them: "symptom Headache". */
+type Links = Map<string, string>;
+
+const linkKey = (kind: unknown, id: unknown) => `${String(kind)}:${String(id)}`;
+
+/** The labels of every record the rows link to. */
+async function linksOf(
+  trx: Transaction<Tables>,
+  personId: string,
+  written: readonly Written[],
+): Promise<Links> {
+  const links: Links = new Map();
+  for (const { before, after } of written) {
+    for (const row of [before, after]) {
+      const kind = row && kindNamed(String(row["linked_kind"]));
+      if (!row || !kind) continue;
+      const linked = await recordOf(
+        trx,
+        kind,
+        personId,
+        String(row["linked_id"]),
+      );
+      if (linked) {
+        links.set(
+          linkKey(row["linked_kind"], row["linked_id"]),
+          `${kind.noun} ${kind.label(linked)}`,
+        );
+      }
+    }
+  }
+  return links;
+}
+
+/** A field's stored columns, to tell whether a change changed it. */
+const storedOf = (field: Field, row: Row) =>
+  JSON.stringify(
+    field.type === "link"
+      ? [row["linked_kind"], row["linked_id"]]
+      : field.type === "date" || field.type === "due"
+        ? [row[field.column], row[wordsColumn(field)]]
+        : [row[field.column]],
+  );
+
+/** A field of a stored record, in full, as a receipt says it; undefined when unknown. */
+function shownField(field: Field, row: Row, links: Links): string | undefined {
   const value = row[field.column];
   if (value === null || value === undefined) return undefined;
-  let text: string;
   switch (field.type) {
     case "boolean":
-      text = value === 1 ? "yes" : "no";
-      break;
+      return value === 1 ? "yes" : "no";
     case "due":
     case "date": {
-      if (value === "next_visit") {
-        text = "at the next visit";
-        break;
-      }
+      if (value === "next_visit") return "at the next visit";
       const words = row[wordsColumn(field)];
-      text = `${shownDate(value as string)}${typeof words === "string" ? ` ("${words}")` : ""}`;
-      break;
+      return `${shownDate(value as string)}${typeof words === "string" ? ` ("${words}")` : ""}`;
     }
     case "link":
-      text = `a ${kindNamed(String(row["linked_kind"]))?.noun ?? "record"}`;
-      break;
+      return (
+        links.get(linkKey(row["linked_kind"], value)) ??
+        `${kindNamed(String(row["linked_kind"]))?.noun ?? "record"} ${value as string}`
+      );
     case "value":
-      text = typeof value === "number" ? String(value) : (value as string);
+      return typeof value === "number" ? String(value) : (value as string);
   }
-  return text.length > VALUE_MAX ? `${text.slice(0, VALUE_MAX - 1)}…` : text;
+}
+
+const cut = (text: string) =>
+  text.length > VALUE_MAX ? `${text.slice(0, VALUE_MAX - 1)}…` : text;
+
+/**
+ * An old and a new value, short enough for a receipt and still different:
+ * long ones start a few words before where they differ.
+ */
+function apart(then: string, now: string): [string, string] {
+  if (then.length <= VALUE_MAX && now.length <= VALUE_MAX) return [then, now];
+  let same = 0;
+  while (same < then.length && then[same] === now[same]) same++;
+  let from = Math.max(0, same - 30);
+  if (from > 0) from = then.indexOf(" ", from) + 1;
+  const tail = (text: string) =>
+    from > 0 ? `…${cut(text.slice(from))}` : cut(text);
+  return [tail(then), tail(now)];
 }
 
 /** One line for a save, from the records as written. */
-function receiptLine(written: readonly Written[]): string {
+function receiptLine(written: readonly Written[], links: Links): string {
   const parts = written.map(({ kind, action, before, after }) => {
     // A statement's label says what it is: "no known allergies (as of …)".
     const name =
@@ -632,18 +718,27 @@ function receiptLine(written: readonly Written[]): string {
     if (action === "restore") return `restored ${name}`;
     const details: string[] = [];
     for (const [key, field] of Object.entries(kind.fields)) {
-      const now = shownField(field, after);
       if (action === "add") {
+        const now = shownField(field, after, links);
         if (now === undefined || now === "unknown") continue;
         if (kind.inLabel.includes(key)) continue;
-        details.push(field.shown === "status" ? now : `${field.shown}: ${now}`);
+        details.push(
+          field.shown === "status" ? cut(now) : `${field.shown}: ${cut(now)}`,
+        );
         continue;
       }
-      const then = before ? shownField(field, before) : undefined;
-      if (now === then) continue;
-      details.push(
-        `${field.shown}: ${then ?? "not given"} → ${now ?? "not given"}`,
-      );
+      if (before && storedOf(field, before) === storedOf(field, after)) {
+        continue;
+      }
+      let then = (before && shownField(field, before, links)) ?? "not given";
+      let now = shownField(field, after, links) ?? "not given";
+      // Two linked records of the same name are told apart by their ids.
+      if (then === now && field.type === "link") {
+        then = `${then} (${String(before?.["linked_id"])})`;
+        now = `${now} (${String(after["linked_id"])})`;
+      }
+      [then, now] = apart(then, now);
+      details.push(`${field.shown}: ${then} → ${now}`);
     }
     const said = details.length > 0 ? ` (${details.join(", ")})` : "";
     return `${action === "add" ? "added" : "changed"} ${name}${said}`;

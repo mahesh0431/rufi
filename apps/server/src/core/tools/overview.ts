@@ -77,7 +77,9 @@ export async function readOverview(store: Store, personId: string) {
             .selectFrom("results as n")
             .select("n.id")
             .whereRef("n.person_id", "=", "r.person_id")
-            .whereRef("n.replaces_id", "=", "r.id"),
+            .whereRef("n.replaces_id", "=", "r.id")
+            // A removed amendment no longer replaces it.
+            .where("n.removed", "=", 0),
         ),
       ),
     );
@@ -93,7 +95,9 @@ export async function readOverview(store: Store, personId: string) {
             .selectFrom("results as n")
             .select("n.id")
             .whereRef("n.person_id", "=", "r.person_id")
-            .whereRef("n.replaces_id", "=", "r.id"),
+            .whereRef("n.replaces_id", "=", "r.id")
+            // A removed amendment no longer replaces it.
+            .where("n.removed", "=", 0),
         ),
       )
       .executeTakeFirstOrThrow()

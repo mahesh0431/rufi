@@ -369,6 +369,8 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     await c.ask("I stopped creatine because of a stomach upset.");
     await c.ask("yes");
     const stopped = medicine(home, "Creatine")?.["status"] === "stopped";
+    // Undo is tested on both changes only when both were saved.
+    const symptomSaved = record(home).symptoms.some((s) => s["removed"] === 0);
     await c.ask("undo that");
     const asked = record(home).saves === 1;
     await c.ask("yes");
@@ -377,6 +379,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         first_save_stopped_creatine: stopped,
+        first_save_added_the_symptom: symptomSaved,
         undo_asked_first: asked,
         two_receipts: receipts(snapshot) === 2,
         creatine_current_again:

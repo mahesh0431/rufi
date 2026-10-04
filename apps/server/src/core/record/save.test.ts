@@ -361,7 +361,7 @@ const KIND_CASES: KindCase[] = [
       linked_id: "res-a1",
     },
     added:
-      "Saved: added follow-up Recheck HbA1c (due: at the next visit, open, about: a result).",
+      "Saved: added follow-up Recheck HbA1c (due: at the next visit, open, about: result HbA1c 6.8 %).",
     change: {
       said: "Done, the HbA1c recheck was 6.5%",
       fields: { status: "done", outcome: "HbA1c 6.5%" },
@@ -510,6 +510,116 @@ describe("a save", () => {
     expect(receipts()).toHaveLength(2);
   });
 
+  it("shows every changed field and link on the receipt, compared on what was stored", async () => {
+    const prefix =
+      "Headache after meals, mild pain, lasts about an hour, no nausea, no vision changes;";
+    const said = "I get headaches and toothaches, and a sore back";
+    await say(said);
+    const added = await save([
+      {
+        kind: "symptom",
+        action: "add",
+        source: "headaches",
+        fields: {
+          name: "Headache",
+          details: `${prefix} frequency once a week`,
+        },
+      },
+      {
+        kind: "symptom",
+        action: "add",
+        source: "toothaches",
+        fields: { name: "Toothache" },
+      },
+      {
+        kind: "symptom",
+        action: "add",
+        source: "sore back",
+        fields: { name: "Back pain" },
+      },
+      {
+        kind: "symptom",
+        action: "add",
+        source: "sore back",
+        fields: { name: "Back pain" },
+      },
+    ]);
+    const [headache, toothache, back, otherBack] =
+      added.body.result.changes.map((c) => c.id);
+    await say("Ask the doctor about my pain");
+    const followUp = await save(
+      [
+        {
+          kind: "follow_up",
+          action: "add",
+          source: "Ask the doctor about my pain",
+          fields: {
+            title: "Discuss pain",
+            about: { kind: "symptom", id: headache },
+          },
+        },
+      ],
+      "call-2",
+    );
+    const id = followUp.body.result.changes[0]?.id ?? "";
+    await say(
+      "The headaches come every day now, and the follow-up is about my teeth",
+    );
+    const changed = await save(
+      [
+        {
+          kind: "symptom",
+          action: "change",
+          id: headache,
+          source: "every day now",
+          fields: { details: `${prefix} frequency every day` },
+        },
+        {
+          kind: "follow_up",
+          action: "change",
+          id,
+          source: "about my teeth",
+          fields: { about: { kind: "symptom", id: toothache } },
+        },
+      ],
+      "call-3",
+    );
+    expect(changed.body.result.receipt).toBe(
+      "Saved: changed symptom Headache (details: …no vision changes; frequency once a week → …no vision changes; frequency every day); changed follow-up Discuss pain (about: symptom Headache → symptom Toothache).",
+    );
+    // Two records with the same name are told apart by their ids.
+    await say("No, the follow-up is about my back");
+    const backs = await save(
+      [
+        {
+          kind: "follow_up",
+          action: "change",
+          id,
+          source: "about my back",
+          fields: { about: { kind: "symptom", id: back } },
+        },
+      ],
+      "call-4",
+    );
+    await save(
+      [
+        {
+          kind: "follow_up",
+          action: "change",
+          id,
+          source: "about my back",
+          fields: { about: { kind: "symptom", id: otherBack } },
+        },
+      ],
+      "call-5",
+    );
+    expect(backs.ok).toBe(true);
+    expect(receipts().at(-1)).toEqual({
+      text: `Saved: changed follow-up Discuss pain (about: symptom Back pain (${back ?? ""}) → symptom Back pain (${otherBack ?? ""})).`,
+      in_turn: 1,
+    });
+  });
+
   it("saves nothing when one change is wrong, and says exactly what", async () => {
     await say("I started magnesium and stopped creatine on 30 Feb");
     const before = written();
@@ -577,6 +687,17 @@ describe("a save", () => {
         fields: { status: "resolved" },
       },
       path: "changes.0.id",
+    },
+    {
+      name: "a status left unknown with null",
+      change: {
+        kind: "medicine_use",
+        action: "change",
+        id: "med-a1",
+        source: "headache",
+        fields: { status: null },
+      },
+      path: "changes.0.fields.status",
     },
     {
       name: "a status the kind doesn't have",
@@ -889,6 +1010,79 @@ describe("the health rules", () => {
     expect(
       overview.result.latest_results.filter((r) => r.test === "HbA1c"),
     ).toMatchObject([{ value: "6.6", amended: true }]);
+
+    // Undoing the amendment brings back the result it replaced, which can
+    // then be amended again; the undone amendment can't come back beside it.
+    const amendment = amended.body.result.changes[0]?.id ?? "";
+    await say("Undo that, the lab was wrong, it is 6.5");
+    const undone = await save(
+      [
+        {
+          kind: "result",
+          action: "remove",
+          id: amendment,
+          source: "Undo that",
+        },
+      ],
+      "call-3",
+    );
+    expect(undone.ok).toBe(true);
+    const hba1c = async () =>
+      (
+        JSON.parse(
+          (
+            await forAgent(
+              () => ({ store: reader, personId: "asha" }),
+              () => undefined,
+            ).forTurn()("get_overview", {})
+          ).text,
+        ) as {
+          result: {
+            latest_results: {
+              id: string;
+              test: string;
+              value: string;
+              amended?: boolean;
+            }[];
+          };
+        }
+      ).result.latest_results.filter((r) => r.test === "HbA1c");
+    expect(await hba1c()).toEqual([
+      expect.objectContaining({ id: "res-a1", value: "6.8" }),
+    ]);
+    expect((await hba1c())[0]?.amended).toBeUndefined();
+    const again = await save(
+      [
+        {
+          kind: "result",
+          action: "add",
+          source: "it is 6.5",
+          fields: {
+            test: "HbA1c",
+            value: "6.5",
+            unit: "%",
+            replaces: "res-a1",
+          },
+        },
+      ],
+      "call-4",
+    );
+    expect(again.ok).toBe(true);
+    expect(await hba1c()).toMatchObject([{ value: "6.5", amended: true }]);
+    const back = await save(
+      [
+        {
+          kind: "result",
+          action: "restore",
+          id: amendment,
+          source: "Undo that",
+        },
+      ],
+      "call-5",
+    );
+    expect(back.body.issues[0]?.fix).toBe(
+      "The result it amends was amended again since: amend the newest version instead.",
+    );
   });
 
   it("keeps planned care apart from done care: done care has happened by the time the user says so", async () => {

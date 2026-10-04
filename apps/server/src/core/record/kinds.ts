@@ -43,6 +43,8 @@ export interface Field {
   past?: boolean | ((after: Row) => boolean);
   /** The AI must give it when adding, and can't forget it. */
   required?: true;
+  /** Always known in the record: "unknown" stands for not known. */
+  notNull?: true;
 }
 
 /** A record's row as stored. */
@@ -87,6 +89,11 @@ const choice = (
   values: readonly [string, ...string[]],
   shown = column,
 ): Field => ({ column, shown, input: Schema.Literals(values), type: "value" });
+/** A status or certainty: its column always holds one, "unknown" at least. */
+const state = (column: string, values: readonly [string, ...string[]]) => ({
+  ...choice(column, values),
+  notNull: true as const,
+});
 const date = (
   column: string,
   shown: string,
@@ -109,7 +116,7 @@ export const KINDS: readonly Kind[] = [
       schedule: text("schedule"),
       route: text("route"),
       purpose: text("purpose"),
-      status: choice("status", [
+      status: state("status", [
         "current",
         "paused",
         "stopped",
@@ -145,7 +152,7 @@ export const KINDS: readonly Kind[] = [
     noun: "symptom",
     fields: {
       name: required(text("name")),
-      status: choice("status", ["ongoing", "resolved", "unknown"]),
+      status: state("status", ["ongoing", "resolved", "unknown"]),
       onset: date("onset", "onset", true),
       ended: date("ended", "end", true),
       severity: text("severity"),
@@ -167,8 +174,8 @@ export const KINDS: readonly Kind[] = [
     noun: "condition",
     fields: {
       name: required(text("name")),
-      certainty: choice("certainty", ["suspected", "diagnosed", "unknown"]),
-      status: choice("status", ["ongoing", "resolved", "unknown"]),
+      certainty: state("certainty", ["suspected", "diagnosed", "unknown"]),
+      status: state("status", ["ongoing", "resolved", "unknown"]),
       recognised: date("recognised", "recognised", true),
       resolved: date("resolved", "resolved", true),
       details: long("details"),
@@ -183,8 +190,8 @@ export const KINDS: readonly Kind[] = [
     fields: {
       substance: required(text("substance")),
       reaction: text("reaction"),
-      status: choice("status", ["active", "inactive", "unknown"]),
-      certainty: choice("certainty", ["confirmed", "suspected", "unknown"]),
+      status: state("status", ["active", "inactive", "unknown"]),
+      certainty: state("certainty", ["confirmed", "suspected", "unknown"]),
       reacted: date("reacted", "reaction date", true),
     },
     label: (row) => join(row["substance"]),
@@ -222,7 +229,7 @@ export const KINDS: readonly Kind[] = [
     fields: {
       type: required(choice("type", ["visit", "procedure", "immunisation"])),
       name: required(text("name")),
-      status: choice("status", ["planned", "done", "not_done", "unknown"]),
+      status: state("status", ["planned", "done", "not_done", "unknown"]),
       // Done or missed care happened by the time the user said so.
       date: date(
         "date",
@@ -259,7 +266,7 @@ export const KINDS: readonly Kind[] = [
         input: Schema.Union([DateSaid, Schema.Literal("next_visit")]),
         type: "due",
       },
-      status: choice("status", ["open", "done", "dropped"]),
+      status: state("status", ["open", "done", "dropped"]),
       outcome: long("outcome"),
       about: {
         column: "linked_id",

@@ -147,20 +147,13 @@
                           ]
                         },
                         "status": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "enum": [
-                                "current",
-                                "paused",
-                                "stopped",
-                                "completed",
-                                "unknown"
-                              ]
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": "string",
+                          "enum": [
+                            "current",
+                            "paused",
+                            "stopped",
+                            "completed",
+                            "unknown"
                           ]
                         },
                         "started": {
@@ -185,7 +178,7 @@
                         }
                       },
                       "additionalProperties": false,
-                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one."
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one (a status or certainty takes \"unknown\" instead)."
                     }
                   },
                   "required": [
@@ -304,7 +297,7 @@
                         }
                       },
                       "additionalProperties": false,
-                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one."
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one (a status or certainty takes \"unknown\" instead)."
                     }
                   },
                   "required": [
@@ -352,18 +345,11 @@
                           "$ref": "#/$defs/Text"
                         },
                         "status": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "enum": [
-                                "ongoing",
-                                "resolved",
-                                "unknown"
-                              ]
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": "string",
+                          "enum": [
+                            "ongoing",
+                            "resolved",
+                            "unknown"
                           ]
                         },
                         "onset": {
@@ -428,7 +414,7 @@
                         }
                       },
                       "additionalProperties": false,
-                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one."
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one (a status or certainty takes \"unknown\" instead)."
                     }
                   },
                   "required": [
@@ -476,33 +462,19 @@
                           "$ref": "#/$defs/Text"
                         },
                         "certainty": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "enum": [
-                                "suspected",
-                                "diagnosed",
-                                "unknown"
-                              ]
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": "string",
+                          "enum": [
+                            "suspected",
+                            "diagnosed",
+                            "unknown"
                           ]
                         },
                         "status": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "enum": [
-                                "ongoing",
-                                "resolved",
-                                "unknown"
-                              ]
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": "string",
+                          "enum": [
+                            "ongoing",
+                            "resolved",
+                            "unknown"
                           ]
                         },
                         "recognised": {
@@ -537,7 +509,7 @@
                         }
                       },
                       "additionalProperties": false,
-                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one."
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one (a status or certainty takes \"unknown\" instead)."
                     }
                   },
                   "required": [
@@ -595,33 +567,19 @@
                           ]
                         },
                         "status": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "enum": [
-                                "active",
-                                "inactive",
-                                "unknown"
-                              ]
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "inactive",
+                            "unknown"
                           ]
                         },
                         "certainty": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "enum": [
-                                "confirmed",
-                                "suspected",
-                                "unknown"
-                              ]
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": "string",
+                          "enum": [
+                            "confirmed",
+                            "suspected",
+                            "unknown"
                           ]
                         },
                         "reacted": {
@@ -636,7 +594,7 @@
                         }
                       },
                       "additionalProperties": false,
-                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one."
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one (a status or certainty takes \"unknown\" instead)."
                     }
                   },
                   "required": [
@@ -784,7 +742,7 @@
                         }
                       },
                       "additionalProperties": false,
-                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one."
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one (a status or certainty takes \"unknown\" instead)."
                     }
                   },
                   "required": [
@@ -840,19 +798,12 @@
                           "$ref": "#/$defs/Text"
                         },
                         "status": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "enum": [
-                                "planned",
-                                "done",
-                                "not_done",
-                                "unknown"
-                              ]
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": "string",
+                          "enum": [
+                            "planned",
+                            "done",
+                            "not_done",
+                            "unknown"
                           ]
                         },
                         "date": {
@@ -887,7 +838,7 @@
                         }
                       },
                       "additionalProperties": false,
-                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one."
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one (a status or certainty takes \"unknown\" instead)."
                     }
                   },
                   "required": [
@@ -943,7 +894,7 @@
                         }
                       },
                       "additionalProperties": false,
-                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one."
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one (a status or certainty takes \"unknown\" instead)."
                     }
                   },
                   "required": [
@@ -1011,18 +962,11 @@
                           ]
                         },
                         "status": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "enum": [
-                                "open",
-                                "done",
-                                "dropped"
-                              ]
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "done",
+                            "dropped"
                           ]
                         },
                         "outcome": {
@@ -1069,7 +1013,7 @@
                         }
                       },
                       "additionalProperties": false,
-                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one."
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one (a status or certainty takes \"unknown\" instead)."
                     }
                   },
                   "required": [

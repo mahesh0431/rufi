@@ -72,7 +72,7 @@ What Rufi does when it saves:
 - **All or nothing.** When one part can't be saved, nothing is saved, and the AI tells you why.
 - **Nothing is deleted.** A record you remove leaves your current record, and Rufi keeps its history.
 - **One medicine, one use.** When you take a medicine in two ways, such as a morning and a night dose, stopping one doesn't stop the other. A prescription doesn't add a medicine you take.
-- **"No known allergies" has a date.** It can't stay in your record beside an allergy. When you tell the AI about an allergy, it asks you to remove "no known allergies" in the same save.
+- **"No known allergies" has a date.** It can't stay in your record beside an allergy that is active or whose status is unknown. When you tell the AI about such an allergy, it asks you to remove "no known allergies" in the same save.
 
 Your record isn't shown on a page yet, except your results on the Overview. Ask the AI what is in it.
 
