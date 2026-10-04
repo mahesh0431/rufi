@@ -52,11 +52,14 @@ const next = (personId: string) => {
   return n;
 };
 
-/** The person chose the conversation the chat shows. */
+/**
+ * The person chose the conversation the chat shows. Also when it already
+ * shows it: a New still being made then doesn't take the chat.
+ */
 export function choose(personId: string, conversationId: string): void {
   useStarting.setState({ [personId]: false });
-  if (useChoices.getState()[personId] === conversationId) return;
   next(personId);
+  if (useChoices.getState()[personId] === conversationId) return;
   useChoices.setState({ [personId]: conversationId });
   void inTurn(queries, `chosen/${personId}`, () =>
     request("PUT", `${peoplePath(personId)}/chosen`, { conversationId }),

@@ -172,7 +172,8 @@ export function draftBox(io: DraftIo) {
         return;
       }
       if (text === draft.text) {
-        store.setState({ failed: false });
+        // Kept after all: the failure's reason is old news.
+        if (state.failed) store.setState({ failed: false, notice: null });
         return;
       }
       try {

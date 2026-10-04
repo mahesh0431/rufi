@@ -785,6 +785,9 @@ test("while New conversation is being made, nothing can be sent into the one bef
   await expect(log(chat(page)).locator(".reply")).toHaveText(
     "ok:Previous context",
   );
+  // A saved draft that Enter would send into the conversation before.
+  await box(chat(page)).fill("Not for the old one");
+  await expect(chat(page).getByRole("status")).toHaveText("Saved");
   let sends = 0;
   page.on("request", (request) => {
     if (request.url().endsWith("/messages")) sends += 1;
@@ -826,6 +829,24 @@ test("while New conversation is being made, nothing can be sent into the one bef
   await made;
   await painted(page);
   await expect(page).toHaveURL(/\/settings$/);
+
+  // Back to the conversation it was started from, before it is made.
+  await sidebar(page).getByRole("link", { name: "Previous context" }).click();
+  const previous = page.url();
+  release = Promise.withResolvers<undefined>();
+  const again = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/conversations") && r.request().method() === "POST",
+  );
+  await sidebar(page).getByRole("button", { name: "New conversation" }).click();
+  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await sidebar(page).getByRole("link", { name: "Previous context" }).click();
+  await expect(page).toHaveURL(previous);
+  release.resolve(undefined);
+  await again;
+  await painted(page);
+  await expect(page).toHaveURL(previous);
 });
 
 test("a send never moves the chat; back in its conversation, the box shows it held until it ends", async ({

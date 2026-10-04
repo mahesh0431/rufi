@@ -33,7 +33,7 @@ In a small window, the chat opens as a page instead of the panel.
 
 ## Starting a conversation
 
-Click **New conversation** in the sidebar, or choose it at the top of the panel. New conversation opens an empty conversation, listed as "New conversation". Until it opens, the box says "Starting a new conversation…" and you can't send from it. If you choose another conversation or page meanwhile, the new one is only listed. Its first message that Rufi takes gives it a name, in the panel, on the page and in the sidebar. An empty conversation stays in the list.
+Click **New conversation** in the sidebar, or choose it at the top of the panel. New conversation opens an empty conversation, listed as "New conversation". Until it opens, the box says "Starting a new conversation…" and you can't send from it. If you choose another conversation meanwhile, the new one is only listed. If you go to another page meanwhile, Rufi stays on that page, and the chat bar shows the new conversation. Its first message that Rufi takes gives it a name, in the panel, on the page and in the sidebar. An empty conversation stays in the list.
 
 Before your first message, the chat says what goes to OpenAI. See [Your data and the AI](your-data-and-the-ai.md).
 
@@ -41,9 +41,9 @@ Before your first message, the chat says what goes to OpenAI. See [Your data and
 
 Type in the box and press Enter, or click the send button. Shift-Enter starts a new line.
 
-When you send, Rufi first saves your text: the box says "Saving…". If you reload or close the page then, the text since the last "Saved" can be lost, and nothing is sent. Then, while Rufi sends your message, the box says "Sending…" and you can't change it, in this tab or another. You can use another conversation meanwhile. The box clears when the AI has taken your message. If the AI can't take it, your text stays in the box with the reason.
+When you send, Rufi first saves your text: the box says "Saving…". If you reload or close the page then, the text since the last "Saved" can be lost, and nothing is sent. Then, while Rufi sends your message, the box says "Sending…" and you can't change it. If another tab changed the text just before, nothing is sent and the box shows that tab's text. You can use another conversation meanwhile. The box clears when the AI has taken your message. If the AI can't take it, your text stays in the box with the reason.
 
-If you reload or close the page while the box says "Sending…", nothing is lost: when you come back, the box is empty if the AI took the message, or still says "Sending…" until it knows. If you stop the reply or Rufi stops during a send, or the AI doesn't answer it, Rufi keeps your text, but it may not know whether the AI got it: the box says so. Check the conversation before you send it again. Rufi never sends a message again by itself: send it again when you want to.
+If you reload or close the page while the box says "Sending…", nothing is lost: when you come back, the box is empty if the AI took the message, still says "Sending…" until it knows, or shows your text again if the message hadn't left yet. If you stop the reply or Rufi stops during a send, or the AI doesn't answer it, Rufi keeps your text, but it may not know whether the AI got it: the box says so. Check the conversation before you send it again. Rufi never sends a message again by itself: send it again when you want to.
 
 A message can have up to 10,000 characters. When the box has more, it says so, and Rufi doesn't keep or send the text until you make it shorter.
 

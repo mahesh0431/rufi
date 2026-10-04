@@ -139,6 +139,24 @@ describe("the box's draft", () => {
     });
   });
 
+  it("after a save whose answer didn't come, Retry finds it kept: Saved, and the old reason goes", async () => {
+    const { io, saves } = core(editable("", 0), editable("Start", 1));
+    const box = draftBox(io);
+    await settle();
+    box.type("Start");
+    await vi.advanceTimersByTimeAsync(400);
+    saves[0]?.fail(new Error("Rufi can't be reached."));
+    await settle();
+    void box.saveNow();
+    await settle();
+    expect(saves).toHaveLength(1);
+    expect(box.store.getState()).toMatchObject({
+      draft: { revision: 1 },
+      failed: false,
+      notice: null,
+    });
+  });
+
   it("gives a send the text only once the core keeps it as the draft, with its revision", async () => {
     const { io, saves } = core();
     const box = draftBox(io);
