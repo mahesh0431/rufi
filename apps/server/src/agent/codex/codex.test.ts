@@ -848,6 +848,15 @@ describe("Stop", () => {
     const agent = start(scenario);
     const thread = await ask(agent, "command");
     await until(async () => (await entries()).some((entry) => entry.child));
+    // The process shows up in the fake's log before Rufi hears of the turn
+    // on stdout; Stop needs the turn.
+    await until(() =>
+      Promise.resolve(
+        seen(thread).some(
+          (event) => event.type === "activity" && event.activity === "command",
+        ),
+      ),
+    );
     const found = (await entries()).find((entry) => entry.child);
     const programs = [found?.command, found?.child].filter(
       (pid): pid is number => pid !== undefined,
