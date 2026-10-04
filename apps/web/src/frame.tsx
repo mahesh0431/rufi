@@ -1,10 +1,9 @@
-// The frame around every page: the sidebar, the toolbar with Emergency, and
+// The frame around every page: the sidebar, the toolbar, and
 // what the connection to Rufi is doing. It stays when a page fails.
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { CircleHelp, House, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 import { useConnection } from "./api.ts";
-import { Emergency } from "./emergency.tsx";
 import { usePeople, useStatus } from "./reads.ts";
 
 const TITLES: Record<string, string> = { settings: "Settings", help: "Help" };
@@ -39,9 +38,8 @@ export function Frame() {
         <Account />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-[52px] shrink-0 items-center justify-between border-b border-line bg-page/80 px-5 backdrop-blur">
+        <header className="flex h-[52px] shrink-0 items-center border-b border-line bg-page/80 px-5 backdrop-blur">
           <h1 className="text-[15px] font-semibold">{titleOf(pathname)}</h1>
-          <Emergency />
         </header>
         {connection === "offline" && (
           <p role="status" className="bg-accent-soft px-5 py-2 text-accent-ink">

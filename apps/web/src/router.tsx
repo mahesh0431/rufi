@@ -1,5 +1,5 @@
 // The pages and their addresses. Every page draws inside the frame, so a page
-// that fails leaves the sidebar and Emergency working.
+// that fails leaves the sidebar working.
 import {
   createRootRoute,
   createRoute,

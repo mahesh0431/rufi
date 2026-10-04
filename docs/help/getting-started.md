@@ -25,11 +25,11 @@ When nobody is in the data folder yet, Rufi asks "What's your name?" and adds yo
 
 - **The sidebar:** your name, then **Overview**, and at the bottom **Help** and **Settings**. Under them, whether Rufi can use your ChatGPT plan.
 - **Overview:** your latest results, as the lab printed them: the test, the value and unit, the lab's range, the lab's note and when it was measured. "Amended" means that the lab corrected the result. When there are more results than Overview shows, it says so.
-- **Emergency:** the button at the top of every page. See [Emergency](emergency.md).
+- **Settings:** your emergency region. When a message may describe an emergency, the AI gives this region's number; with no region, it says to call your local emergency number. See [What Rufi's AI will and won't do](safety.md#in-an-emergency-it-tells-you-to-call-for-help-first).
 - **Help:** these pages.
 
 The chat and the other pages come in later steps.
 
 ## If you're not signed in
 
-The sidebar says "Not signed in" or "ChatGPT plan can't be used". Overview, Help and Emergency still work; only the AI needs the sign-in. To sign in, stop Rufi and follow [how to sign in](signing-in.md#sign-in).
+The sidebar says "Not signed in" or "ChatGPT plan can't be used". Overview, Settings and Help still work; only the AI needs the sign-in. To sign in, stop Rufi and follow [how to sign in](signing-in.md#sign-in).

@@ -1,5 +1,5 @@
 // The frame on the real core: opening Rufi, first run, sign-in, Overview,
-// Emergency, Settings and Help, and what the page does when the core is gone.
+// Settings and Help, and what the page does when the core is slow or gone.
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { runningLink } from "../../server/src/server/core.ts";
@@ -12,8 +12,6 @@ async function accessible(page: Page) {
 }
 
 const sidebar = (page: Page) => page.getByRole("complementary");
-const emergency = (page: Page) =>
-  page.getByRole("button", { name: "Emergency" });
 
 test.describe("opening Rufi", () => {
   test("the link opens the Overview and leaves the address bar", async ({
@@ -183,10 +181,7 @@ test.describe("Overview", () => {
     ).toBeVisible();
   });
 
-  test("a page that fails leaves the frame and Emergency working", async ({
-    page,
-    rufi,
-  }) => {
+  test("a page that fails leaves the frame working", async ({ page, rufi }) => {
     await rufi.family();
     await rufi.start();
     await page.route("**/overview", (route) =>
@@ -199,12 +194,13 @@ test.describe("Overview", () => {
     await expect(page.getByRole("alert")).toContainText(
       "Rufi had a problem reading the record.",
     );
-    // Emergency works while the page shows its error.
-    await emergency(page).click();
-    await expect(page.getByRole("dialog")).toContainText(
-      "Don't wait for Rufi or any AI to answer.",
-    );
-    await page.keyboard.press("Escape");
+    // The sidebar works while the page shows its error.
+    await sidebar(page).getByRole("link", { name: "Help" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Rufi help", level: 1 }),
+    ).toBeVisible();
+    await sidebar(page).getByRole("link", { name: "Overview" }).click();
+    await expect(page.getByRole("alert")).toBeVisible();
 
     await page.unroute("**/overview");
     await page.getByRole("button", { name: "Try again" }).click();
@@ -213,7 +209,7 @@ test.describe("Overview", () => {
 });
 
 test.describe("when Rufi is slow or away", () => {
-  test("Emergency shows while the link is still being opened", async ({
+  test("the frame shows while the link is still being opened", async ({
     page,
     rufi,
   }) => {
@@ -221,11 +217,9 @@ test.describe("when Rufi is slow or away", () => {
     // The core never answers the swap.
     await page.route("**/api/session", () => undefined);
     await page.goto(rufi.link());
-    await emergency(page).click();
+    await sidebar(page).getByRole("link", { name: "Help" }).click();
     await expect(
-      page.getByRole("dialog", {
-        name: "Call your local emergency number now.",
-      }),
+      page.getByRole("heading", { name: "Rufi help", level: 1 }),
     ).toBeVisible();
   });
 
@@ -304,86 +298,29 @@ test.describe("when Rufi is slow or away", () => {
   });
 });
 
-test.describe("Emergency", () => {
-  test("without a region: the local number, and a way to choose one", async ({
-    page,
-    rufi,
-  }) => {
-    await rufi.start(); // before first run, too
-    await page.goto(rufi.link());
-    await emergency(page).click();
-    const panel = page.getByRole("dialog", {
-      name: "Call your local emergency number now.",
-    });
-    await expect(panel).toBeVisible();
-    await expect(panel).toContainText("Works without the AI");
-    await expect(panel).toContainText(
-      "Don't wait for Rufi or any AI to answer.",
-    );
-    await expect(panel).not.toContainText(/\d{3}/);
-    await accessible(page);
+test("Settings keeps the emergency region the AI uses, and clears it", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.start(); // before first run, too
+  await page.goto(rufi.link());
+  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  const region = page.getByRole("combobox", { name: "Emergency region" });
+  await expect(region).toHaveValue("");
+  await expect(region.getByRole("option", { name: "India (112)" })).toHaveCount(
+    1,
+  );
+  await accessible(page);
 
-    await panel.getByRole("button", { name: "Choose your region" }).click();
-    await expect(panel).toBeHidden();
-    await page
-      .getByRole("combobox", { name: "Emergency region" })
-      .selectOption("IN");
-    await expect(
-      page.getByRole("combobox", { name: "Emergency region" }),
-    ).toHaveValue("IN");
+  await region.selectOption("IN");
+  await expect(region).toHaveValue("IN");
+  await page.reload();
+  await expect(region).toHaveValue("IN");
 
-    await emergency(page).click();
-    await expect(page.getByRole("dialog", { name: "112" })).toContainText(
-      "Emergency number · India",
-    );
-    await expect(page.getByRole("dialog")).toContainText(
-      "Call 112 now. Say who needs help, where you are and what happened.",
-    );
-    await accessible(page);
-
-    // Esc closes it and gives focus back.
-    await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog")).toBeHidden();
-    await expect(emergency(page)).toBeFocused();
-  });
-
-  test("works when Rufi can't be reached", async ({ page, rufi }) => {
-    await rufi.family();
-    await rufi.start();
-    await page.goto(rufi.link());
-    await sidebar(page).getByRole("link", { name: "Settings" }).click();
-    await page
-      .getByRole("combobox", { name: "Emergency region" })
-      .selectOption("IN");
-    await expect(
-      page.getByRole("combobox", { name: "Emergency region" }),
-    ).toHaveValue("IN");
-
-    await rufi.stop();
-    await emergency(page).click();
-    await expect(page.getByRole("dialog", { name: "112" })).toBeVisible();
-  });
-
-  test("clearing the region goes back to the local number", async ({
-    page,
-    rufi,
-  }) => {
-    await rufi.start();
-    await page.goto(rufi.link());
-    await sidebar(page).getByRole("link", { name: "Settings" }).click();
-    const region = page.getByRole("combobox", { name: "Emergency region" });
-    await region.selectOption("IN");
-    await expect(region).toHaveValue("IN");
-    await region.selectOption("");
-    await expect(region).toHaveValue("");
-    await accessible(page);
-    await emergency(page).click();
-    await expect(
-      page.getByRole("dialog", {
-        name: "Call your local emergency number now.",
-      }),
-    ).toBeVisible();
-  });
+  await region.selectOption("");
+  await expect(region).toHaveValue("");
+  await page.reload();
+  await expect(region).toHaveValue("");
 });
 
 test.describe("Help", () => {

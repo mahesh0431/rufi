@@ -20,7 +20,7 @@ const element = document.getElementById("root");
 if (element === null) throw new Error("The page has no #root.");
 const root = createRoot(element);
 
-// The frame and Emergency show at once; reads wait for the session (api.ts).
+// The frame shows at once; reads wait for the session (api.ts).
 root.render(
   <StrictMode>
     <QueryClientProvider client={queries}>

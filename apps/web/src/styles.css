@@ -31,11 +31,6 @@ body {
   line-height: 1.5;
 }
 
-dialog::backdrop {
-  background: rgb(245 247 250 / 0.6);
-  backdrop-filter: blur(6px);
-}
-
 /* Help pages: plain Markdown, as written. */
 .prose h1 {
   font-size: 22px;

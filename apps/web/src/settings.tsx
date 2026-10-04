@@ -1,4 +1,4 @@
-// Settings: for now, the region whose emergency number the Emergency button shows.
+// Settings: for now, the region whose emergency number the AI gives.
 import { type SaveSettings, Settings } from "@rufi/contracts";
 import { useMutation } from "@tanstack/react-query";
 import { read } from "./api.ts";
@@ -47,8 +47,8 @@ export function SettingsPage() {
                 ))}
               </select>
               <p className="text-muted">
-                The Emergency button shows this region's number. The AI uses it
-                too.
+                The AI gives this number when a message may describe an
+                emergency. Not set: it says to call your local emergency number.
               </p>
               {save.error && (
                 <p role="alert" className="text-muted">

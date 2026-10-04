@@ -128,12 +128,8 @@ _Avoid_: handoff, summary, report
 A saved write-up of something the AI looked into for a person, with its sources.
 _Avoid_: note, article
 
-**Emergency button**:
-Always on screen; shows the local emergency number and what to do now, and works without the AI.
-_Avoid_: SOS, panic button, alert
-
 **Emergency region**:
-The region whose emergency number the Emergency button shows and the AI gives. You choose it in Settings; with none chosen, Rufi says to call your local emergency number and never guesses one.
+The region whose emergency number the AI gives when a message may describe an emergency. You choose it in Settings; with none chosen, the AI says to call your local emergency number and never guesses one.
 _Avoid_: country, locale
 
 **Emergency sheet**:
