@@ -10,7 +10,8 @@ const ROOT = join(import.meta.dirname, "..");
 const PROBES = join(ROOT, "apps/server/src/core/lint-probes");
 
 const probes: Record<string, string> = {
-  border: `import { Agent } from "../../agent/runtime.ts";\nexport const a = Agent;\n`,
+  border: `import { Stopped } from "../../agent/runtime.ts";\nexport const a = Stopped;\n`,
+  serverBorder: `import { chat } from "../../server/chat.ts";\nexport const a = chat;\n`,
   effectV3: `import { Schema } from "@effect/schema";\nexport const a = Schema;\n`,
   effectV3Subpath: `import { Schema } from "@effect/schema/Schema";\nexport const a = Schema;\n`,
   silentCatch: `export function f(): unknown {\n  try {\n    return JSON.parse("1");\n  } catch {\n    // ignored\n  }\n  return undefined;\n}\n`,
@@ -56,6 +57,7 @@ describe("lint", () => {
         .filter((d) => d.filename.endsWith(`lint-probes/${name}.ts`))
         .map((d) => d.code);
     expect(codes("border")).toContain("eslint(no-restricted-imports)");
+    expect(codes("serverBorder")).toContain("eslint(no-restricted-imports)");
     expect(codes("effectV3")).toContain("eslint(no-restricted-imports)");
     expect(codes("effectV3Subpath")).toContain("eslint(no-restricted-imports)");
     expect(codes("silentCatch")).toContain("rufi(no-silent-catch)");

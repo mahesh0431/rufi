@@ -11,9 +11,12 @@ import { Cause, Console, Effect, Layer } from "effect";
 import { signIn } from "../agent/chatgpt/signin.ts";
 import { accessToken, signOut, status } from "../agent/chatgpt/session.ts";
 import type { ChatGptDeps } from "../agent/chatgpt/openai.ts";
+import { v7 as uuid } from "uuid";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexRuntime } from "../agent/codex/codex.ts";
-import { Agent, agentCall, type TurnEvent } from "../agent/runtime.ts";
+import { agentCall, type AgentEvent, type TurnEnd } from "../agent/runtime.ts";
+import { allowlistFile } from "../core/chat/models.ts";
+import { safetyInstructions } from "../core/chat/safety.ts";
 import {
   onlyPersonId,
   RecordStore,
@@ -21,8 +24,9 @@ import {
 } from "../core/store/database.ts";
 import { forAgent } from "../core/tools/tools.ts";
 import { childEnvironment, Home, homeLayer } from "../platform/config.ts";
+import { holdRufiLock } from "../platform/files.ts";
 import { Secrets, secretsLayer } from "../platform/keychain.ts";
-import { Logs, logsLayer, noEffectLogs } from "../platform/logs.ts";
+import { errorCode, Logs, logsLayer, noEffectLogs } from "../platform/logs.ts";
 
 const USAGE = `Usage: pnpm rufi <command>
   signin [--no-open]  sign in with ChatGPT
@@ -47,8 +51,31 @@ const chatGpt = Effect.gen(function* () {
   return deps;
 });
 
-/** The data folder and the Keychain; built only for commands that use them. */
-const base = Layer.mergeAll(homeLayer, secretsLayer);
+/**
+ * rufi.lock for as long as the command runs: a command and the running Rufi
+ * never use the data folder at the same time.
+ */
+const rufiLock = Layer.effectDiscard(
+  Effect.acquireRelease(
+    Effect.flatMap(Home, (home) =>
+      run(() =>
+        holdRufiLock(home, (error) => {
+          console.error(
+            `Rufi lost its lock on the data folder (${errorCode(error)}).`,
+          );
+        }),
+      ),
+    ),
+    (release) => Effect.promise(() => release().catch(() => undefined)),
+  ),
+);
+
+/** The data folder, its lock and the Keychain; built only for commands that use them. */
+const base = Layer.mergeAll(
+  homeLayer,
+  secretsLayer,
+  rufiLock.pipe(Layer.provide(homeLayer)),
+);
 
 const main = Effect.gen(function* () {
   const [command, ...rest] = process.argv.slice(2);
@@ -74,8 +101,8 @@ const main = Effect.gen(function* () {
       const question = positionals.join(" ").trim();
       if (!question) return yield* usageError;
       // Closed in reverse: Codex first, then the record, then the log.
-      return yield* askCommand(question).pipe(
-        Effect.provide(agentLayer(values.person)),
+      return yield* askCommand(question, values.person).pipe(
+        Effect.scoped,
         Effect.provide(recordLayer),
         Effect.provide(
           logsLayer(
@@ -162,73 +189,121 @@ const signoutCommand = Effect.gen(function* () {
   }
 });
 
-/** Codex, with Rufi's tools reading the record for `person`; closed at the end. */
-const agentLayer = (person: string | undefined) =>
-  Layer.effect(
-    Agent,
-    Effect.gen(function* () {
-      const deps = yield* chatGpt;
-      const log = yield* Logs;
-      const store = yield* RecordStore;
-      const personId =
-        person ?? (store ? yield* run(() => onlyPersonId(store)) : undefined);
-      const file = yield* run(() => codexBinary());
-      const { version } = createRequire(import.meta.url)(
-        "../../package.json",
-      ) as { version: string };
-      return yield* Effect.acquireRelease(
-        Effect.sync(() =>
-          codexRuntime({
-            home: deps.home,
-            command: { file, args: [] },
-            env: childEnvironment(),
-            token: (validForMs) => accessToken(deps, validForMs),
-            version,
-            tools: forAgent(() => ({ store, personId }), log),
-            log,
-          }),
-        ),
-        (runtime) => Effect.promise(() => runtime.close()),
-      );
-    }),
-  );
-
-/** Asks one question and streams the answer; Ctrl-C stops the turn. */
-const askCommand = (question: string) =>
+/**
+ * Asks one question in a new thread and streams the answer; nothing is saved
+ * in Rufi's conversations. Ctrl-C stops the reply. Rufi's tools read the
+ * record for `person`.
+ */
+const askCommand = (question: string, person: string | undefined) =>
   Effect.gen(function* () {
-    const agent = yield* Agent;
+    const deps = yield* chatGpt;
     const log = yield* Logs;
-    const stopping = () => {
-      console.error("\nStopping…");
-    };
-    const conversation = yield* agentCall(agent, () => agent.open(), stopping);
-    const started = Date.now();
-    const result = yield* agentCall(
-      agent,
-      () => agent.turn(conversation, question, show),
-      stopping,
+    const store = yield* RecordStore;
+    const personId =
+      person ?? (store ? yield* run(() => onlyPersonId(store)) : undefined);
+    const tools = forAgent(() => ({ store, personId }), log);
+    const { models } = yield* run(() => allowlistFile(deps.home).read());
+    const file = yield* run(() => codexBinary());
+    const { version } = createRequire(import.meta.url)(
+      "../../package.json",
+    ) as { version: string };
+    const ended = Promise.withResolvers<TurnEnd>();
+    let caller:
+      | { turnId: string; call: ReturnType<typeof tools.forTurn> }
+      | undefined;
+    const agent = yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        codexRuntime({
+          home: deps.home,
+          command: { file, args: [] },
+          env: childEnvironment(),
+          token: (validForMs) => accessToken(deps, validForMs),
+          version,
+          tools: { namespace: tools.namespace, specs: tools.specs },
+          host: {
+            onEvent: (event) => {
+              show(event);
+              if (event.type === "turnEnded") ended.resolve(event.end);
+            },
+            callTool: (_threadId, turnId, name, input) => {
+              if (caller?.turnId !== turnId) {
+                caller = { turnId, call: tools.forTurn() };
+              }
+              return caller.call(name, input);
+            },
+          },
+          log,
+        }),
+      ),
+      (runtime) => Effect.promise(() => runtime.close()),
     );
-    log("turn.ended", { status: result.status, ms: Date.now() - started });
+    const op = new AbortController();
+    let threadId: string | undefined;
+    const started = Date.now();
+    const end = yield* agentCall(
+      async () => {
+        const thread = await agent.startThread(
+          {
+            model: models[0] ?? "",
+            instructions: `${safetyInstructions(undefined)}\n\n${tools.instructions}`,
+          },
+          op.signal,
+        );
+        threadId = thread.threadId;
+        await agent.send(threadId, { id: uuid(), text: question }, op.signal);
+        return ended.promise;
+      },
+      async () => {
+        op.abort();
+        if (threadId !== undefined) await agent.stop(threadId);
+        ended.resolve({
+          status: "interrupted",
+          reason: "stopped",
+          text: "Stopped.",
+        });
+      },
+      () => {
+        console.error("\nStopping…");
+      },
+    );
+    log("turn.ended", { status: end.status, ms: Date.now() - started });
     process.stdout.write("\n");
-    if (result.status !== "completed") {
-      console.error(result.reason ?? result.status);
+    if (end.status !== "completed") {
+      console.error(end.text ?? end.status);
       process.exitCode = 1;
     }
   });
 
 let midLine = false;
-function show(event: TurnEvent): void {
+let lastReply: string | undefined;
+const shown = new Set<string>();
+function show(event: AgentEvent): void {
   if (event.type === "text") {
-    process.stdout.write(event.delta);
+    // A new reply after an earlier one starts on a new paragraph.
+    const gap =
+      lastReply !== undefined && lastReply !== event.itemId ? "\n\n" : "";
+    lastReply = event.itemId;
+    process.stdout.write(gap + event.delta);
     midLine = !event.delta.endsWith("\n");
     return;
   }
-  const line =
-    event.type === "activity"
-      ? `· ${event.text}`
-      : event.type === "question"
-        ? `\n? ${event.title}${event.options.length > 0 ? `\n  ${event.options.join(" / ")}` : ""}`
-        : `· the AI did something Rufi can't display yet (${event.what})`;
+  let line: string;
+  if (event.type === "activity") {
+    if (shown.has(event.itemId)) return;
+    // The words of a web search may come only when it ends.
+    if (
+      event.activity === "web_search" &&
+      event.detail === undefined &&
+      event.status === "running"
+    )
+      return;
+    shown.add(event.itemId);
+    line = `· ${event.title}${event.detail === undefined ? "" : `: ${event.detail}`}`;
+  } else if (event.type === "question") {
+    line = `\n? ${event.title}${event.options.length > 0 ? `\n  ${event.options.join(" / ")}` : ""}`;
+  } else {
+    return;
+  }
   process.stdout.write(`${midLine ? "\n" : ""}${line}\n`);
   midLine = false;
 }

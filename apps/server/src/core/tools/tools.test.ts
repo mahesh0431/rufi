@@ -219,6 +219,107 @@ describe("get_overview", () => {
 const left = (text: string) =>
   (JSON.parse(text) as { rejections_left: number }).rejections_left;
 
+describe("read_conversation", () => {
+  /** Two conversations of Asha's and one of Ravi's, 30 entries each. */
+  const conversations = [
+    ["c-asha", "asha"],
+    ["c-asha-2", "asha"],
+    ["c-ravi", "ravi"],
+  ]
+    .map(
+      ([id, person]) =>
+        `INSERT INTO conversations (id, person_id, title, provider, model, created_at) VALUES ('${id ?? ""}', '${person ?? ""}', 'Fictional', 'codex', 'gpt-6.1-sol', '2026-10-01T10:00:00Z');` +
+        Array.from({ length: 30 }, (_, i) => {
+          const kind =
+            ["message", "reply", "activity", "steer"][i % 4] ?? "message";
+          const activity =
+            kind === "activity" ? "'command', 'done'" : "NULL, NULL";
+          return `INSERT INTO transcript_entries (id, person_id, conversation_id, seq, kind, text, activity, status, detail, revision, created_at, updated_at) VALUES ('${id ?? ""}-${String(i + 1)}', '${person ?? ""}', '${id ?? ""}', ${String(i + 1)}, '${kind}', '${id ?? ""} entry ${String(i + 1)}', ${activity}, ${kind === "activity" ? "'ls'" : "NULL"}, 1, '2026-10-01T10:00:00Z', '2026-10-01T10:00:00Z');`;
+        }).join(""),
+    )
+    .join("");
+
+  it("pages back through the conversation, newest first", async () => {
+    const store = makeDatabase(family, conversations);
+    const context = { store, personId: "asha", conversationId: "c-asha" };
+    const first = await call(context, "read_conversation", { limit: 4 });
+    expect(first.body).toEqual({
+      ok: true,
+      result: {
+        entries: [
+          {
+            position: 30,
+            kind: "reply",
+            text: "c-asha entry 30",
+            at: "2026-10-01T10:00:00Z",
+          },
+          {
+            position: 29,
+            kind: "message",
+            text: "c-asha entry 29",
+            at: "2026-10-01T10:00:00Z",
+          },
+          {
+            position: 28,
+            kind: "steer",
+            text: "c-asha entry 28",
+            at: "2026-10-01T10:00:00Z",
+          },
+          {
+            position: 27,
+            kind: "activity",
+            text: "c-asha entry 27",
+            detail: "ls",
+            at: "2026-10-01T10:00:00Z",
+          },
+        ],
+        next_before: 27,
+      },
+    });
+    const last = await call(context, "read_conversation", { before: 3 });
+    expect(
+      (last.body["result"] as { entries: { position: number }[] }).entries.map(
+        (e) => e.position,
+      ),
+    ).toEqual([2, 1]);
+    expect(last.body["result"]).not.toHaveProperty("next_before");
+  });
+
+  it("reads only the conversation Rufi chose, never another person's", async () => {
+    const store = makeDatabase(family, conversations);
+    const { body } = await call(
+      { store, personId: "asha", conversationId: "c-ravi" },
+      "read_conversation",
+      {},
+    );
+    expect(body).toEqual({ ok: true, result: { entries: [] } });
+    const own = await call(
+      { store, personId: "asha", conversationId: "c-asha-2" },
+      "read_conversation",
+      {},
+    );
+    expect(JSON.stringify(own.body)).not.toContain("c-asha entry");
+    expect(JSON.stringify(own.body)).not.toContain("c-ravi");
+  });
+
+  it("refuses outside a saved conversation, and a page too big", async () => {
+    const store = makeDatabase(family, conversations);
+    expect(
+      (await call({ store, personId: "asha" }, "read_conversation", {})).body[
+        "error"
+      ],
+    ).toBe(
+      "This isn't a saved conversation, so it has nothing earlier to read.",
+    );
+    const { body } = await call(
+      { store, personId: "asha", conversationId: "c-asha" },
+      "read_conversation",
+      { limit: 51 },
+    );
+    expect(body["error"]).toBe("The input for read_conversation isn't valid.");
+  });
+});
+
 describe("the error envelope", () => {
   it("answers bad input with the issues and an example", async () => {
     const store = makeDatabase(family);
@@ -262,7 +363,7 @@ describe("the error envelope", () => {
       "rm_rf",
     );
     expect(body["error"]).toBe(
-      "There is no tool called rm_rf. Rufi's tools: get_overview.",
+      "There is no tool called rm_rf. Rufi's tools: get_overview, read_conversation.",
     );
   });
 

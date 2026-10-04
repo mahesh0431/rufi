@@ -1,4 +1,6 @@
 // Every Rufi tool, and what the agent is told about them.
+import { createHash } from "node:crypto";
+import { readConversation } from "./conversation.ts";
 import { getOverview } from "./overview.ts";
 import {
   inputSchema,
@@ -8,7 +10,7 @@ import {
 } from "./registry.ts";
 import type { Log } from "../../platform/logs.ts";
 
-export const TOOLS: readonly Tool[] = [getOverview];
+export const TOOLS: readonly Tool[] = [getOverview, readConversation];
 
 /** The namespace the agent sees them in: rufi.get_overview. */
 const NAMESPACE = "rufi";
@@ -30,6 +32,21 @@ export function forAgent(context: () => ToolContext, log: Log) {
     instructions: TOOL_INSTRUCTIONS,
     forTurn: () => toolCaller(tools, context, log),
   };
+}
+
+/**
+ * Names the tool set an agent thread started with: a thread keeps its tools,
+ * so a different set needs a new thread.
+ */
+export function toolsVersion(): string {
+  const { namespace, specs, instructions } = forAgent(
+    () => ({ store: undefined, personId: undefined }),
+    () => undefined,
+  );
+  return createHash("sha256")
+    .update(JSON.stringify({ namespace, specs, instructions }))
+    .digest("hex")
+    .slice(0, 16);
 }
 
 /** tools.json: every tool as documentation, generated (pnpm tools:json). */

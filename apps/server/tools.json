@@ -14,6 +14,37 @@
       "examples": [
         {}
       ]
+    },
+    {
+      "name": "rufi.read_conversation",
+      "description": "Earlier parts of this conversation, newest first. Each entry's kind is \"message\" (the user's), \"steer\" (the user's, sent while you were replying), \"reply\" (yours) or \"activity\" (one thing you did: a title and one short detail, never its output). At most 50 entries a page; pass the page's next_before to read further back. Rufi chooses the conversation, not you.",
+      "callers": "model",
+      "readOnly": true,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "before": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "description": "Read entries before this position: the `next_before` of the previous page."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "How many entries, 1 to 50; 20 when left out."
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        {},
+        {
+          "before": 41,
+          "limit": 20
+        }
+      ]
     }
   ]
 }

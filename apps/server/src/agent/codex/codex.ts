@@ -1,12 +1,18 @@
-// The Codex implementation of AgentRuntime: one app-server at a time, full
-// access as PLAN.md §4 sets it, and a restart whenever the access token changes.
+// The Codex implementation of AgentRuntime: one app-server for every thread,
+// full access as PLAN.md §4 sets it, and Codex's own queue for messages that
+// wait. A new app-server starts when the access token changes and no reply is
+// running.
 import { setTimeout as sleep } from "node:timers/promises";
-import type {
-  AgentRuntime,
-  AgentTools,
-  ToolAnswer,
-  TurnEvent,
-  TurnResult,
+import {
+  Stopped,
+  type AgentEvent,
+  type AgentHost,
+  type AgentRuntime,
+  type AgentTools,
+  type Model,
+  type ThreadSettings,
+  type TurnEnd,
+  type WaitingMessage,
 } from "../runtime.ts";
 import {
   DEADLINES,
@@ -15,22 +21,27 @@ import {
   type CodexCommand,
   type Deadlines,
 } from "./appserver.ts";
+import { activityOf, endOf, messageText } from "./events.ts";
+import type { JsonValue } from "./protocol/serde_json/JsonValue.ts";
+import type { AccountRateLimitsUpdatedNotification } from "./protocol/v2/AccountRateLimitsUpdatedNotification.ts";
 import type { AgentMessageDeltaNotification } from "./protocol/v2/AgentMessageDeltaNotification.ts";
 import type { DynamicToolCallParams } from "./protocol/v2/DynamicToolCallParams.ts";
 import type { DynamicToolCallResponse } from "./protocol/v2/DynamicToolCallResponse.ts";
 import type { DynamicToolSpec } from "./protocol/v2/DynamicToolSpec.ts";
-import type { JsonValue } from "./protocol/serde_json/JsonValue.ts";
 import type { ItemCompletedNotification } from "./protocol/v2/ItemCompletedNotification.ts";
 import type { ItemStartedNotification } from "./protocol/v2/ItemStartedNotification.ts";
+import type { ModelListResponse } from "./protocol/v2/ModelListResponse.ts";
+import type { RateLimitSnapshot } from "./protocol/v2/RateLimitSnapshot.ts";
 import type { ThreadBackgroundTerminalsListResponse } from "./protocol/v2/ThreadBackgroundTerminalsListResponse.ts";
-import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
+import type { ThreadQueueListResponse } from "./protocol/v2/ThreadQueueListResponse.ts";
+import type { ThreadReadResponse } from "./protocol/v2/ThreadReadResponse.ts";
 import type { ThreadResumeResponse } from "./protocol/v2/ThreadResumeResponse.ts";
 import type { ThreadStartResponse } from "./protocol/v2/ThreadStartResponse.ts";
-import type { Turn } from "./protocol/v2/Turn.ts";
+import type { ThreadTurnsListResponse } from "./protocol/v2/ThreadTurnsListResponse.ts";
 import type { TurnCompletedNotification } from "./protocol/v2/TurnCompletedNotification.ts";
-import type { TurnError } from "./protocol/v2/TurnError.ts";
-import type { TurnStartParams } from "./protocol/v2/TurnStartParams.ts";
-import type { TurnStartResponse } from "./protocol/v2/TurnStartResponse.ts";
+import type { TurnSteerResponse } from "./protocol/v2/TurnSteerResponse.ts";
+import type { TurnStartedNotification } from "./protocol/v2/TurnStartedNotification.ts";
+import type { UserInput } from "./protocol/v2/UserInput.ts";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import { RpcError } from "./rpc.ts";
 import { prepareCodexHome } from "./settings.ts";
@@ -45,8 +56,10 @@ export interface CodexDeps {
   token: (validForMs: number) => Promise<string>;
   version: string;
   deadlines?: Partial<Deadlines>;
-  /** Rufi's tools; fixed for the life of each thread (Codex keeps them). */
+  /** Rufi's tools; a thread keeps the ones it started with. */
   tools?: AgentTools;
+  /** Where events go and tools run. */
+  host: AgentHost;
   /** Diagnostics: what Rufi ignored or refused, as event names and codes. */
   log?: Log;
 }
@@ -56,55 +69,76 @@ const TOKEN_MARGIN_MS = 5 * 60_000;
 /** How often Rufi notes the process groups of running commands. */
 const TRACK_EVERY_MS = 500;
 
-class Stopped extends Error {}
-
 interface Running {
   threadId: string;
-  /** Known from Codex's acknowledgement; events wait in `early` until then. */
-  turnId: string | undefined;
-  early: [string, unknown][];
-  onEvent: (event: TurnEvent) => void;
-  /** Items already shown when they started. */
-  shown: Set<string>;
-  lastMessageId: string | undefined;
-  result: TurnResult | undefined;
-  /** Settles once the turn has really ended (or Codex is gone). */
+  turnId: string;
+  /** How it ended, when Rufi decided it (a deadline, a tool loop). */
+  end: TurnEnd | undefined;
+  /** Agent messages that streamed; the others arrive whole at their end. */
+  streamed: Set<string>;
+  /** Settles once the turn has ended. */
   ended: PromiseWithResolvers<void>;
-  /** A Stop under way; the turn returns only once it has finished. */
+  /** A Stop under way; nothing more of the turn is shown after it. */
   stopping: Promise<void> | undefined;
-  /** Runs Rufi's tools for this turn. */
-  callTool: ReturnType<AgentTools["forTurn"]> | undefined;
-  /** Settles when Codex has answered turn/start, either way. */
-  acknowledged: PromiseWithResolvers<void>;
+  /** Settles once Codex has shown the user's message that started it. */
+  messaged: PromiseWithResolvers<void>;
+  deadline: NodeJS.Timeout;
 }
+
+const textInput = (text: string): UserInput => ({
+  type: "text",
+  text,
+  text_elements: [],
+});
 
 export function codexRuntime(deps: CodexDeps): AgentRuntime {
   const deadlines = { ...DEADLINES, ...deps.deadlines };
   const log = deps.log ?? (() => undefined);
+  const emit = (event: AgentEvent) => {
+    deps.host.onEvent(event);
+  };
+  /** Aborted by close(): ends an app-server that is still starting. */
+  const lifetime = new AbortController();
   let server: AppServer | undefined;
+  let starting: Promise<AppServer> | undefined;
   let workspace = "";
   const loaded = new Set<string>(); // threads open in the current app-server
-  /** An open or turn that hasn't sent its question yet; Stop aborts it. */
-  let starting: AbortController | undefined;
-  let current: Running | undefined;
+  const turns = new Map<string, Running>(); // the running turn of each thread
+  /**
+   * Whether a thread's queue is paused (its last turn was interrupted), when
+   * Rufi has seen it; unknown after a resume.
+   */
+  const paused = new Map<string, boolean>();
+  /** Threads where a Stop came during a resume: a reply it starts is stopped. */
+  const stopNext = new Set<string>();
+  let limits: RateLimitSnapshot | undefined;
+  let tracking: NodeJS.Timeout | undefined;
 
-  const end = (running: Running, result: TurnResult) => {
-    running.result ??= result;
-    running.ended.resolve();
-  };
-  const check = (op: AbortController) => {
-    if (op.signal.aborted) throw new Stopped("Stopped.");
-  };
+  const request = <T>(app: AppServer, method: string, params: unknown) =>
+    app.rpc.request<T>(method, params, deadlines.requestMs);
 
-  async function serverFor(
-    token: string,
-    op: AbortController,
-  ): Promise<AppServer> {
-    if (server?.running() && server.token === token) return server;
+  /**
+   * Codex with a token that outlasts a turn. The token is always awaited to
+   * the end (a renewed one must be saved); after it, a Stop ends the wait.
+   */
+  async function ready(signal?: AbortSignal): Promise<AppServer> {
+    if (lifetime.signal.aborted) throw new Error("Codex is closed.");
+    const token = await deps.token(deadlines.turnMs + TOKEN_MARGIN_MS);
+    if (signal?.aborted) throw new Stopped();
+    // A running reply keeps its app-server: Codex keeps the turn in it.
+    if (server?.running() && (server.token === token || turns.size > 0)) {
+      return server;
+    }
+    starting ??= start(token).finally(() => {
+      starting = undefined;
+    });
+    return abortable(starting, signal);
+  }
+
+  async function start(token: string): Promise<AppServer> {
     await shutDown();
     const paths = await prepareCodexHome(deps.home, deps.env["HOME"]);
     workspace = paths.workspace;
-    check(op);
     const started = await startAppServer({
       command: deps.command,
       env: { ...deps.env, HOME: paths.processHome },
@@ -112,7 +146,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       token,
       version: deps.version,
       deadlines,
-      signal: op.signal,
+      signal: lifetime.signal,
       handlers: {
         request: answer,
         notification: onNotification,
@@ -126,21 +160,16 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         if (!server || server.running()) return;
         server = undefined;
         loaded.clear();
-        if (current) {
-          end(current, {
-            status: "failed",
-            reason: "Codex stopped unexpectedly.",
-          });
-        }
+        endAll({
+          status: "failed",
+          reason: "provider_failed",
+          text: "Codex stopped unexpectedly.",
+        });
       },
-    }).catch((error: unknown) => {
-      // A Stop ends a starting app-server; that is a stop, not a failure.
-      check(op);
-      throw error;
     });
-    if (op.signal.aborted) {
+    if (lifetime.signal.aborted) {
       await started.stop();
-      throw new Stopped("Stopped.");
+      throw new Error("Codex is closed.");
     }
     server = started;
     return started;
@@ -151,59 +180,65 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     server = undefined;
     loaded.clear();
     await old?.stop();
+    endAll({
+      status: "failed",
+      reason: "provider_failed",
+      text: "Codex stopped.",
+    });
   }
 
-  /** Starts a thread, or resumes one; on failure Codex is ended. */
-  async function load(app: AppServer, threadId?: string): Promise<string> {
-    try {
-      return await loadThread(app, threadId);
-    } catch (error) {
-      await shutDown();
-      throw error;
+  /** Ends every running turn the same way; their app-server is gone. */
+  function endAll(end: TurnEnd): void {
+    // Each one leaves the map as it ends; a Map's iteration allows that.
+    for (const running of turns.values()) finish(running, end);
+  }
+
+  /** A turn has ended: told once, and nothing more of it is shown. */
+  function finish(running: Running, end: TurnEnd): void {
+    if (turns.get(running.threadId) !== running) return;
+    turns.delete(running.threadId);
+    clearTimeout(running.deadline);
+    if (turns.size === 0) {
+      clearInterval(tracking);
+      tracking = undefined;
     }
+    running.ended.resolve();
+    emit({
+      type: "turnEnded",
+      threadId: running.threadId,
+      turnId: running.turnId,
+      end: running.end ?? end,
+    });
   }
 
-  async function loadThread(
-    app: AppServer,
-    threadId?: string,
-  ): Promise<string> {
-    const settings = {
-      cwd: workspace,
-      approvalPolicy: "never",
-      sandbox: "danger-full-access",
-      ...(deps.tools && { developerInstructions: deps.tools.instructions }),
-    } as const;
-    // Codex keeps a thread's tools and restores them on resume; they can only
-    // be given when it starts.
-    const response = threadId
-      ? await app.rpc.request<ThreadResumeResponse>(
-          "thread/resume",
-          { threadId, excludeTurns: true, ...settings },
-          deadlines.requestMs,
-        )
-      : await app.rpc.request<ThreadStartResponse>(
-          "thread/start",
-          {
-            ...settings,
-            ...(deps.tools && { dynamicTools: dynamicTools(deps.tools) }),
-          },
-          deadlines.requestMs,
-        );
-    loaded.add(response.thread.id);
-    return response.thread.id;
-  }
+  /** The settings a thread starts or resumes with; checked against Codex's answer. */
+  const settingsFor = (settings: ThreadSettings) => ({
+    model: settings.model,
+    cwd: workspace,
+    approvalPolicy: "never",
+    sandbox: "danger-full-access",
+    developerInstructions: settings.instructions,
+  });
 
-  /** Gets a token, Codex and the thread ready; Stop can cancel at each step. */
-  async function prepare(op: AbortController, threadId?: string) {
-    const token = await deps.token(deadlines.turnMs + TOKEN_MARGIN_MS);
-    check(op);
-    const app = await serverFor(token, op);
-    const id =
-      threadId !== undefined && loaded.has(threadId)
-        ? threadId
-        : await load(app, threadId);
-    check(op);
-    return { app, id };
+  function check(
+    response: ThreadStartResponse | ThreadResumeResponse,
+    settings: ThreadSettings,
+  ): void {
+    const problems: string[] = [];
+    if (response.model !== settings.model) {
+      problems.push(`the model is ${response.model}`);
+    }
+    if (response.approvalPolicy !== "never") {
+      problems.push("it asks for approvals");
+    }
+    if (response.sandbox.type !== "dangerFullAccess") {
+      problems.push(`its access is ${response.sandbox.type}`);
+    }
+    if (problems.length > 0) {
+      throw new Error(
+        `Codex didn't take Rufi's thread settings: ${problems.join("; ")}.`,
+      );
+    }
   }
 
   /** Codex asked Rufi something. Approvals are declined; tools are run. */
@@ -221,7 +256,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   }
 
   /**
-   * Runs one of Rufi's tools for the current turn. Always a result, never a
+   * Runs one of Rufi's tools for a running turn. Always a result, never a
    * JSON-RPC error: Codex would turn that into a bare "request failed".
    */
   async function callTool(
@@ -231,19 +266,8 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       contentItems: [{ type: "inputText", text }],
       success: ok,
     });
-    const running = current;
-    // A call can come before Codex's answer to turn/start, like any event.
-    if (running?.turnId === undefined) {
-      await Promise.race([
-        running?.acknowledged.promise,
-        sleep(deadlines.requestMs, undefined, { ref: false }),
-      ]);
-    }
-    if (
-      !running?.callTool ||
-      call.threadId !== running.threadId ||
-      call.turnId !== running.turnId
-    ) {
+    const running = turns.get(call.threadId);
+    if (!running || running.turnId !== call.turnId || running.stopping) {
       return reply(
         false,
         JSON.stringify({ ok: false, error: "No turn is running." }),
@@ -253,93 +277,186 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       call.namespace === deps.tools?.namespace
         ? call.tool
         : `${call.namespace ?? ""}.${call.tool}`;
-    const timedOut: ToolAnswer = {
+    const timedOut = {
       ok: false,
       text: JSON.stringify({ ok: false, error: `${name} took too long.` }),
     };
     const answer = await Promise.race([
-      running.callTool(name, call.arguments),
+      deps.host.callTool(call.threadId, call.turnId, name, call.arguments),
       sleep(deadlines.toolMs, timedOut, { ref: false }),
     ]);
-    if (answer.stopTurn !== undefined) {
-      running.result ??= { status: "failed", reason: answer.stopTurn };
+    if ("stopTurn" in answer && answer.stopTurn !== undefined) {
+      running.end ??= { status: "failed", text: answer.stopTurn };
       void stopTurn(running);
     }
     return reply(answer.ok, answer.text);
   }
 
   function onNotification(method: string, params: unknown): void {
-    const running = current;
     const threadId = (params as { threadId?: unknown } | undefined)?.threadId;
-    if (!running || threadId !== running.threadId) {
+    switch (method) {
+      case "account/rateLimits/updated":
+        limits = {
+          ...limits,
+          ...(params as AccountRateLimitsUpdatedNotification).rateLimits,
+        };
+        return;
+      case "thread/queue/changed":
+        if (typeof threadId === "string") {
+          emit({ type: "waitingChanged", threadId });
+        }
+        return;
+      case "turn/started": {
+        const { turn } = params as TurnStartedNotification;
+        if (typeof threadId === "string") started(threadId, turn.id);
+        return;
+      }
+    }
+    const running =
+      typeof threadId === "string" ? turns.get(threadId) : undefined;
+    if (!running) {
       log("codex.notification_ignored", { method });
       return;
     }
-    if (running.turnId === undefined) {
-      running.early.push([method, params]);
-      return;
-    }
-    handle(running, method, params);
-  }
-
-  /** One of this thread's events, once the turn's id is known. */
-  function handle(running: Running, method: string, params: unknown): void {
     const p = params as { turnId?: unknown; turn?: { id?: unknown } };
-    const turnId = p.turnId ?? p.turn?.id;
-    if (turnId !== running.turnId) {
+    if ((p.turnId ?? p.turn?.id) !== running.turnId) {
       log("codex.other_turn", { method });
       return;
     }
+    if (method === "turn/completed") {
+      const { turn } = params as TurnCompletedNotification;
+      paused.set(running.threadId, turn.status === "interrupted");
+      // Nothing after a Stop was kept, so a stopped reply isn't whole even
+      // when Codex finished it first.
+      const stopped = running.stopping && turn.status === "completed";
+      finish(
+        running,
+        endOf(stopped ? { ...turn, status: "interrupted" } : turn, limits),
+      );
+      return;
+    }
+    // Nothing of a stopped turn is shown or saved after the Stop, except the
+    // person's own message, which Codex may show a moment after the start.
+    const ownMessage =
+      method === "item/started" &&
+      (params as ItemStartedNotification).item.type === "userMessage";
+    if (running.stopping && !ownMessage) return;
+    handle(running, method, params);
+  }
+
+  function started(threadId: string, turnId: string): void {
+    const previous = turns.get(threadId);
+    if (previous) {
+      finish(previous, {
+        status: "failed",
+        reason: "provider_failed",
+        text: "Codex started another reply.",
+      });
+    }
+    const running: Running = {
+      threadId,
+      turnId,
+      end: undefined,
+      streamed: new Set(),
+      messaged: Promise.withResolvers(),
+      ended: Promise.withResolvers(),
+      stopping: undefined,
+      deadline: setTimeout(() => {
+        running.end ??= {
+          status: "failed",
+          reason: "timeout",
+          text: "The reply took too long, so Rufi stopped it.",
+        };
+        void stopTurn(running);
+      }, deadlines.turnMs),
+    };
+    turns.set(threadId, running);
+    paused.set(threadId, false);
+    tracking ??= setInterval(() => void track(), TRACK_EVERY_MS);
+    emit({ type: "turnStarted", threadId, turnId });
+    if (stopNext.delete(threadId)) void stopTurn(running);
+  }
+
+  /** One of the running turn's events. */
+  function handle(running: Running, method: string, params: unknown): void {
+    const { threadId, turnId } = running;
     switch (method) {
       case "item/started": {
         const { item } = params as ItemStartedNotification;
-        if (item.type === "agentMessage") {
-          // A new message after an earlier one starts on a new paragraph.
-          if (running.lastMessageId && running.lastMessageId !== item.id) {
-            running.onEvent({ type: "text", delta: "\n\n" });
+        if (item.type === "userMessage") {
+          running.messaged.resolve();
+          // Only messages Rufi sent carry Rufi's id.
+          if (item.clientId === null) {
+            log("codex.notification_ignored", { method });
+            return;
           }
-          running.lastMessageId = item.id;
+          emit({
+            type: "message",
+            threadId,
+            turnId,
+            id: item.clientId,
+            text: messageText(item.content),
+          });
           return;
         }
         if (item.type === "commandExecution") void track();
-        const event = describe(item);
-        if (event) {
-          running.shown.add(item.id);
-          running.onEvent(event);
+        const activity = activityOf(item, false);
+        if (activity) {
+          emit({
+            type: "activity",
+            threadId,
+            turnId,
+            itemId: item.id,
+            ...activity,
+          });
         }
         return;
       }
       case "item/agentMessage/delta": {
         const { itemId, delta } = params as AgentMessageDeltaNotification;
-        running.shown.add(itemId);
-        running.onEvent({ type: "text", delta });
+        running.streamed.add(itemId);
+        emit({ type: "text", threadId, turnId, itemId, delta });
         return;
       }
       case "item/completed": {
         const { item } = params as ItemCompletedNotification;
+        if (item.type === "userMessage") return;
         if (item.type === "agentMessage") {
           // Text that didn't stream, and questions the AI asks the user
           // (Codex's request_user_input_async), arrive only here.
-          if (!running.shown.has(item.id) && item.text) {
-            running.onEvent({ type: "text", delta: item.text });
+          if (!running.streamed.has(item.id) && item.text) {
+            emit({
+              type: "text",
+              threadId,
+              turnId,
+              itemId: item.id,
+              delta: item.text,
+            });
           }
           for (const question of item.questions ?? []) {
-            running.onEvent({
+            emit({
               type: "question",
+              threadId,
+              turnId,
+              itemId: item.id,
               title: question.title,
               options: question.options ?? [],
             });
           }
           return;
         }
-        if (running.shown.has(item.id)) return;
-        const event = describe(item);
-        if (event) running.onEvent(event);
+        const activity = activityOf(item, true);
+        if (activity) {
+          emit({
+            type: "activity",
+            threadId,
+            turnId,
+            itemId: item.id,
+            ...activity,
+          });
+        }
         return;
       }
-      case "turn/completed":
-        end(running, resultOf((params as TurnCompletedNotification).turn));
-        return;
       default:
         log("codex.notification_ignored", { method });
     }
@@ -374,23 +491,72 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   /**
    * Interrupts the turn, then ends the commands it left running (Codex keeps
    * them by design) and waits until Codex no longer lists them: its reply to
-   * the clean-up only means it was queued. If anything fails or takes too long, Rufi ends Codex.
-   * Runs once per turn, and the turn returns only after it.
+   * the clean-up only means it was queued. If anything fails or takes too
+   * long, Rufi ends Codex. Runs once per turn.
    */
+  /**
+   * After a request that may start a reply, when a Stop came during it: that
+   * reply stops too, also one Codex starts a moment later.
+   */
+  async function stoppedDuring(threadId: string): Promise<never> {
+    const reply = turns.get(threadId);
+    if (reply) await stopTurn(reply);
+    else stopNext.add(threadId);
+    throw new Stopped();
+  }
+
+  /**
+   * Runs requests that may start a reply. A Stop while they run stops that
+   * reply at once, or as soon as Codex starts it; Codex may still act on a
+   * request that failed or timed out here.
+   */
+  async function mayStart<T>(
+    threadId: string,
+    signal: AbortSignal | undefined,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    const onStop = () => {
+      const reply = turns.get(threadId);
+      if (reply) void stopTurn(reply);
+      else stopNext.add(threadId);
+    };
+    signal?.addEventListener("abort", onStop, { once: true });
+    let result: T;
+    try {
+      result = await run();
+    } catch (error) {
+      if (signal?.aborted) await stoppedDuring(threadId);
+      throw error;
+    } finally {
+      signal?.removeEventListener("abort", onStop);
+    }
+    if (signal?.aborted) await stoppedDuring(threadId);
+    return result;
+  }
+
   function stopTurn(running: Running): Promise<void> {
     running.stopping ??= interruptAndClean(running);
     return running.stopping;
   }
 
   async function interruptAndClean(running: Running): Promise<void> {
+    // Codex records the message a moment after the turn starts; interrupted
+    // before that, it drops the message. Wait for it (shown, nothing else).
+    await Promise.race([
+      running.messaged.promise,
+      running.ended.promise,
+      sleep(deadlines.interruptAckMs, undefined, { ref: false }),
+    ]);
     const app = server;
-    if (app?.running() && running.turnId !== undefined) {
+    if (app?.running()) {
+      let interrupted = false;
       try {
         await app.rpc.request(
           "turn/interrupt",
           { threadId: running.threadId, turnId: running.turnId },
           deadlines.interruptAckMs,
         );
+        interrupted = true;
         const stopped = await Promise.race([
           running.ended.promise.then(() => true),
           // A deadline alone mustn't keep Rufi running once the turn has ended.
@@ -413,122 +579,279 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           log("codex.commands_left");
         }
       } catch (error) {
+        // The turn may simply have ended before the interrupt.
+        if (!interrupted && turns.get(running.threadId) !== running) return;
         log("codex.interrupt_failed", { error: errorCode(error) });
       }
     }
-    await shutDown();
-    end(running, {
+    running.end ??= {
       status: "interrupted",
-      reason: "Codex didn't stop when asked, so Rufi ended it.",
-    });
+      reason: "stopped",
+      text: "Codex didn't stop when asked, so Rufi ended it.",
+    };
+    await shutDown();
+  }
+
+  /** Every waiting message of a thread, in order, following Codex's pages. */
+  async function waitingList(
+    app: AppServer,
+    threadId: string,
+  ): Promise<ThreadQueueListResponse["data"]> {
+    const all: ThreadQueueListResponse["data"] = [];
+    let cursor: string | null = null;
+    do {
+      const page: ThreadQueueListResponse = await request(
+        app,
+        "thread/queue/list",
+        { threadId, cursor },
+      );
+      all.push(...page.data);
+      cursor = page.nextCursor;
+    } while (cursor);
+    return all;
+  }
+
+  /** Codex with the thread open in it; Rufi opens threads only when asked. */
+  async function open(threadId: string): Promise<AppServer> {
+    const app = await ready();
+    if (!loaded.has(threadId)) {
+      throw new Error("Open the conversation's thread first.");
+    }
+    return app;
   }
 
   return {
-    open: async (conversationId) => {
-      if (starting || current) throw new Error("Codex is busy.");
-      const op = new AbortController();
-      starting = op;
-      try {
-        return (await prepare(op, conversationId)).id;
-      } finally {
-        starting = undefined;
-      }
-    },
+    provider: "codex",
 
-    turn: async (threadId, text, onEvent) => {
-      if (starting || current) throw new Error("A turn is already running.");
-      const op = new AbortController();
-      starting = op;
-      let app: AppServer;
-      try {
-        ({ app } = await prepare(op, threadId));
-      } catch (error) {
-        if (error instanceof Stopped) {
-          return { status: "interrupted", reason: "Stopped." };
+    models: async (signal) => {
+      const app = await ready(signal);
+      const models: Model[] = [];
+      let cursor: string | null = null;
+      do {
+        const page: ModelListResponse = await request(app, "model/list", {
+          cursor,
+          includeHidden: false,
+        });
+        for (const model of page.data) {
+          models.push({ id: model.id, name: model.displayName });
         }
-        throw error;
-      } finally {
-        starting = undefined;
-      }
-      const running: Running = {
-        threadId,
-        turnId: undefined,
-        early: [],
-        onEvent,
-        shown: new Set(),
-        lastMessageId: undefined,
-        result: undefined,
-        ended: Promise.withResolvers(),
-        stopping: undefined,
-        callTool: deps.tools?.forTurn(),
-        acknowledged: Promise.withResolvers(),
-      };
-      current = running;
-      const tracking = setInterval(() => void track(), TRACK_EVERY_MS);
-      const timer = setTimeout(() => {
-        running.result ??= {
-          status: "failed",
-          reason: "The turn took too long, so Rufi stopped it.",
-        };
-        void stopTurn(running);
-      }, deadlines.turnMs);
-      try {
-        // The whole setting goes with every turn; Codex's memory of it isn't relied on.
-        const params: TurnStartParams = {
+        cursor = page.nextCursor;
+      } while (cursor);
+      return models;
+    },
+
+    startThread: async (settings, signal) => {
+      const app = await ready(signal);
+      // Codex keeps a thread's tools and restores them on resume; they can
+      // only be given when it starts.
+      const response = await abortable(
+        request<ThreadStartResponse>(app, "thread/start", {
+          ...settingsFor(settings),
+          ...(deps.tools && { dynamicTools: dynamicTools(deps.tools) }),
+        }),
+        signal,
+      );
+      loaded.add(response.thread.id);
+      paused.set(response.thread.id, false);
+      check(response, settings);
+      return { threadId: response.thread.id, model: response.model };
+    },
+
+    resumeThread: async (threadId, settings, signal) => {
+      const app = await ready(signal);
+      stopNext.delete(threadId);
+      paused.delete(threadId);
+      // Codex may start what waits as it resumes: the person asked for that.
+      const response = await mayStart(threadId, signal, async () => {
+        const resumed = await request<ThreadResumeResponse>(
+          app,
+          "thread/resume",
+          { threadId, excludeTurns: true, ...settingsFor(settings) },
+        );
+        loaded.add(threadId);
+        return resumed;
+      });
+      const running =
+        response.thread.status.type === "active" || turns.has(threadId);
+      check(response, settings);
+      return { model: response.model, running };
+    },
+
+    loaded: (threadId) => loaded.has(threadId) && server?.running() === true,
+
+    running: (threadId) => turns.has(threadId),
+
+    send: async (threadId, message, signal) => {
+      const app = await open(threadId);
+      if (signal?.aborted) throw new Stopped();
+      stopNext.delete(threadId);
+      const input = [
+        ...(message.context === undefined ? [] : [textInput(message.context)]),
+        textInput(message.text),
+      ];
+      await mayStart(threadId, signal, async () => {
+        await request(app, "thread/queue/add", {
           threadId,
-          input: [{ type: "text", text, text_elements: [] }],
-          approvalPolicy: "never",
-          sandboxPolicy: { type: "dangerFullAccess" },
-          effort: "low",
-        };
-        app.rpc
-          .request<TurnStartResponse>("turn/start", params, deadlines.requestMs)
-          .then(
-            (started) => {
-              running.turnId = started.turn.id;
-              running.acknowledged.resolve();
-              for (const [method, early] of running.early.splice(0)) {
-                handle(running, method, early);
-              }
-            },
-            async (error: unknown) => {
-              running.acknowledged.resolve();
-              running.result ??= {
-                status: "failed",
-                reason: `Codex didn't start the turn: ${(error as Error).message}`,
-              };
-              // Codex is in an unknown state; start fresh next time.
-              await shutDown();
-              running.ended.resolve();
-            },
+          input,
+          clientUserMessageId: message.id,
+        });
+        // A Stop during the add: the message waits, and nothing runs.
+        if (signal?.aborted) return;
+        // Codex starts it by itself unless a Stop paused the queue.
+        if (turns.has(threadId) || paused.get(threadId) === false) return;
+        // Start the queue. When Codex has already started the message, or
+        // another reply, that's what was wanted.
+        try {
+          await request(app, "thread/queue/start", { threadId });
+        } catch (error) {
+          if (turns.has(threadId)) return;
+          const waiting = await waitingList(app, threadId);
+          if (!waiting.some((w) => w.clientUserMessageId === message.id)) {
+            return;
+          }
+          const { thread } = await request<ThreadReadResponse>(
+            app,
+            "thread/read",
+            { threadId, includeTurns: false },
           );
-        await running.ended.promise;
-        await running.stopping;
-        return running.result ?? { status: "failed", reason: "Unknown." };
-      } finally {
-        clearInterval(tracking);
-        clearTimeout(timer);
-        current = undefined;
+          if (thread.status.type === "active") return;
+          throw error;
+        }
+      });
+    },
+
+    steer: async (threadId, message) => {
+      const app = await open(threadId);
+      const running = turns.get(threadId);
+      if (!running || running.stopping) {
+        throw new Error("No reply is running to steer.");
+      }
+      const { turnId } = await request<TurnSteerResponse>(app, "turn/steer", {
+        threadId,
+        expectedTurnId: running.turnId,
+        clientUserMessageId: message.id,
+        input: [textInput(message.text)],
+      });
+      return { turnId };
+    },
+
+    stop: async (threadId, turnId) => {
+      const running = turns.get(threadId);
+      if (running && (turnId === undefined || running.turnId === turnId)) {
+        await stopTurn(running);
       }
     },
 
-    stop: async () => {
-      if (current) {
-        await stopTurn(current);
-      } else if (starting) {
-        starting.abort();
-        await shutDown();
-      }
+    waiting: {
+      list: async (threadId) => {
+        const app = await ready();
+        return (await waitingList(app, threadId)).map(
+          (entry): WaitingMessage => ({
+            id: entry.id,
+            messageId: entry.clientUserMessageId,
+            text: messageText(entry.input),
+          }),
+        );
+      },
+      edit: async (threadId, id, text) => {
+        const app = await ready();
+        const entry = (await waitingList(app, threadId)).find(
+          (w) => w.id === id,
+        );
+        if (!entry) throw new Error("That message isn't waiting any more.");
+        // Rufi's context before the message stays as it was.
+        const input = [...entry.input];
+        const last = input.findLastIndex((part) => part.type === "text");
+        input.splice(last < 0 ? input.length : last, 1, textInput(text));
+        await request(app, "thread/queue/update", {
+          threadId,
+          queuedSubmissionId: id,
+          input,
+        });
+      },
+      remove: async (threadId, id) => {
+        await request(await ready(), "thread/queue/delete", {
+          threadId,
+          queuedSubmissionId: id,
+        });
+      },
+      reorder: async (threadId, ids) => {
+        await request(await ready(), "thread/queue/reorder", {
+          threadId,
+          queuedSubmissionIds: ids,
+        });
+      },
+      runNow: async (threadId, id, signal) => {
+        const app = await open(threadId);
+        if (signal?.aborted) throw new Stopped();
+        stopNext.delete(threadId);
+        await mayStart(threadId, signal, () =>
+          request(app, "thread/queue/start", {
+            threadId,
+            queuedSubmissionId: id,
+          }),
+        );
+      },
+    },
+
+    startedMessages: async (threadId) => {
+      const app = await open(threadId);
+      // Every page, newest first; then oldest first.
+      const turnsRun: ThreadTurnsListResponse["data"] = [];
+      let cursor: string | null = null;
+      do {
+        const page: ThreadTurnsListResponse = await request(
+          app,
+          "thread/turns/list",
+          {
+            threadId,
+            cursor,
+            limit: 50,
+            sortDirection: "desc",
+            itemsView: "full",
+          },
+        );
+        turnsRun.push(...page.data);
+        cursor = page.nextCursor;
+      } while (cursor);
+      return turnsRun
+        .reverse()
+        .flatMap((turn) =>
+          turn.items.flatMap((item) =>
+            item.type === "userMessage" && item.clientId !== null
+              ? [{ id: item.clientId, text: messageText(item.content) }]
+              : [],
+          ),
+        );
     },
 
     close: async () => {
-      starting?.abort();
-      if (current) {
-        end(current, { status: "interrupted", reason: "Rufi closed Codex." });
-      }
+      lifetime.abort();
+      // An app-server still starting is ended by the abort; wait for that.
+      await starting?.catch(() => undefined);
+      endAll({
+        status: "interrupted",
+        reason: "stopped",
+        text: "Rufi closed Codex.",
+      });
       await shutDown();
     },
   };
+}
+
+/** Waits for `promise`, or until `signal` aborts: then it's a Stop. */
+function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(new Stopped());
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      reject(new Stopped());
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    void promise.then(resolve, reject).finally(() => {
+      signal.removeEventListener("abort", onAbort);
+    });
+  });
 }
 
 /** Rufi's tools in Codex's shape: one namespace. */
@@ -547,87 +870,4 @@ function dynamicTools(tools: AgentTools): DynamicToolSpec[] {
       })),
     },
   ];
-}
-
-/** One plain line for what the agent did; undefined for what the reply already shows. */
-export function describe(item: ThreadItem): TurnEvent | undefined {
-  switch (item.type) {
-    case "userMessage":
-    case "agentMessage":
-    case "reasoning":
-      return undefined;
-    case "plan":
-      return { type: "activity", text: "updated its plan" };
-    case "commandExecution":
-      return { type: "activity", text: `ran: ${item.command}` };
-    case "webSearch":
-      // The query may only be known once the search has finished.
-      return item.query
-        ? { type: "activity", text: `searched the web: ${item.query}` }
-        : undefined;
-    case "fileChange":
-      return {
-        type: "activity",
-        text: `changed ${item.changes.map((change) => change.path).join(", ")}`,
-      };
-    case "imageView":
-      return { type: "activity", text: `looked at ${item.path}` };
-    case "dynamicToolCall":
-      return {
-        type: "activity",
-        text: `used ${item.namespace ? `${item.namespace}.` : ""}${item.tool}`,
-      };
-    case "mcpToolCall":
-      return { type: "activity", text: `used ${item.server}: ${item.tool}` };
-    case "contextCompaction":
-      return { type: "activity", text: "condensed the earlier conversation" };
-    case "hookPrompt":
-    case "functionCallOutput":
-    case "collabAgentToolCall":
-    case "subAgentActivity":
-    case "sleep":
-    case "imageGeneration":
-    case "enteredReviewMode":
-    case "exitedReviewMode":
-      return { type: "unknown", what: item.type };
-  }
-  // A type newer than the generated protocol.
-  return { type: "unknown", what: String((item as { type: unknown }).type) };
-}
-
-/** Only `completed` counts as success. */
-export function resultOf(turn: Pick<Turn, "status" | "error">): TurnResult {
-  switch (turn.status) {
-    case "completed":
-      return { status: "completed" };
-    case "interrupted":
-      return { status: "interrupted", reason: "Stopped." };
-    case "failed":
-      return { status: "failed", reason: reasonOf(turn.error) };
-    case "inProgress":
-      return { status: "failed", reason: "Codex ended the turn unfinished." };
-  }
-}
-
-function reasonOf(error: TurnError | null): string {
-  const info = error?.codexErrorInfo;
-  if (info === "unauthorized") {
-    return "ChatGPT didn't accept Rufi's sign-in. Run: pnpm rufi signin";
-  }
-  if (info === "usageLimitExceeded") {
-    return "Your ChatGPT plan's usage limit has been reached.";
-  }
-  if (info === "rateLimitExceeded") {
-    return "ChatGPT is limiting requests right now. Try again shortly.";
-  }
-  if (info === "serverOverloaded" || info === "internalServerError") {
-    return "ChatGPT is having trouble. Try again shortly.";
-  }
-  if (info === "contextWindowExceeded") {
-    return "The conversation is too long for the model.";
-  }
-  if (typeof info === "object" && info !== null) {
-    return "Couldn't reach ChatGPT. Check the connection and try again.";
-  }
-  return error?.message || "The AI couldn't finish.";
 }

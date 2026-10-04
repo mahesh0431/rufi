@@ -13,7 +13,7 @@ import {
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { forAgent } from "../../core/tools/tools.ts";
-import type { AgentRuntime, AgentTools } from "../runtime.ts";
+import type { AgentEvent, AgentRuntime, AgentTools } from "../runtime.ts";
 import { DEADLINES } from "./appserver.ts";
 import { codexBinary } from "./binary.ts";
 import { codexRuntime } from "./codex.ts";
@@ -41,9 +41,15 @@ afterEach(async () => {
 
 const env = () => ({ PATH: process.env["PATH"] ?? "", HOME: fakeHome });
 
+const SETTINGS = { model: "gpt-6.1-sol", instructions: "Be careful." };
+
 /** Rufi's Codex runtime on the real binary, with a fake token. */
 async function real(
-  options: { args?: string[]; tools?: AgentTools } = {},
+  options: {
+    args?: string[];
+    tools?: AgentTools;
+    onEvent?: (event: AgentEvent) => void;
+  } = {},
 ): Promise<AgentRuntime> {
   runtime = codexRuntime({
     home: join(root, "rufi"),
@@ -52,6 +58,10 @@ async function real(
     env: env(),
     token: () => Promise.resolve("not-a-real-token"),
     version: "0.0.0",
+    host: {
+      onEvent: options.onEvent ?? (() => undefined),
+      callTool: () => Promise.resolve({ ok: false, text: "{}" }),
+    },
   });
   return runtime;
 }
@@ -115,9 +125,17 @@ describe("the pinned Codex", () => {
     }
   }, 60_000);
 
-  it("starts with Rufi's settings and opens a thread", async () => {
+  it("starts with Rufi's settings and opens a thread on the model asked for", async () => {
     const agent = await real();
-    await expect(agent.open()).resolves.toMatch(/\S/);
+    await expect(agent.startThread(SETTINGS)).resolves.toMatchObject({
+      threadId: expect.stringMatching(/\S/) as string,
+      model: "gpt-6.1-sol",
+    });
+  }, 60_000);
+
+  it("offers the strongest models Rufi allows by default", async () => {
+    const ids = (await (await real()).models()).map((model) => model.id);
+    expect(ids).toEqual(expect.arrayContaining(["gpt-6.1-sol", "gpt-6-astra"]));
   }, 60_000);
 
   it("keeps the user's personal skills out, but runs commands with the real HOME", async () => {
@@ -200,15 +218,26 @@ describe("the pinned Codex", () => {
         () => ({ store: undefined, personId: undefined }),
         () => undefined,
       );
+      const ended = Promise.withResolvers<undefined>();
       const agent = await real({
         args: [
           "-c",
           `model_providers.openai_chatgpt_plan.base_url="http://127.0.0.1:${String(port)}/v1"`,
         ],
-        tools,
+        tools: { namespace: tools.namespace, specs: tools.specs },
+        onEvent: (event) => {
+          if (event.type === "turnEnded") ended.resolve(undefined);
+        },
       });
-      const thread = await agent.open();
-      await agent.turn(thread, "What are my latest results?", () => undefined);
+      const { threadId } = await agent.startThread({
+        model: "gpt-6.1-sol",
+        instructions: tools.instructions,
+      });
+      await agent.send(threadId, {
+        id: "m-1",
+        text: "What are my latest results?",
+      });
+      await ended.promise;
       // On this route the model gets one JavaScript tool, `exec`, and Rufi's
       // tools as functions inside it, declared in its description.
       const sent = JSON.stringify(bodies[0]);

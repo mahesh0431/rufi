@@ -1,4 +1,4 @@
-import { withLock } from "../../platform/files.ts";
+import { withCredentialsLock } from "../../platform/files.ts";
 import {
   clearCredentials,
   readCredentials,
@@ -56,7 +56,9 @@ export function accessToken(
   deps: ChatGptDeps,
   validForMs = 60_000,
 ): Promise<string> {
-  return withLock(deps.home, 5_000, () => accessTokenLocked(deps, validForMs));
+  return withCredentialsLock(deps.home, 5_000, () =>
+    accessTokenLocked(deps, validForMs),
+  );
 }
 
 async function accessTokenLocked(
@@ -178,7 +180,7 @@ export interface SignedOut {
 
 /** Revokes the refresh token with OpenAI, then clears the tokens here either way. */
 export function signOut(deps: ChatGptDeps): Promise<SignedOut> {
-  return withLock(deps.home, 0, async () => {
+  return withCredentialsLock(deps.home, 0, async () => {
     const registration = await readRegistration(deps.home);
     const credentials =
       registration && (await readCredentials(deps, registration));

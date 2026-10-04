@@ -8,8 +8,10 @@ import type { Store } from "../store/database.ts";
 export interface ToolContext {
   /** The record, or undefined when Rufi has none yet. */
   store: Store | undefined;
-  /** The active person; chosen by Rufi (CLI flag, later the conversation). */
+  /** The active person; chosen by Rufi (CLI flag, or the conversation's). */
   personId: string | undefined;
+  /** The conversation the AI is in, when it is in one; chosen by Rufi. */
+  conversationId?: string | undefined;
 }
 
 /** A tool's input: decoded without services, like JSON. */

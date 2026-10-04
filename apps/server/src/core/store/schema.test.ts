@@ -71,12 +71,139 @@ describe("schema", () => {
       .all()
       .map((row) => row.name);
     expect(tables).toEqual([
+      "conversations",
       "documents",
+      "drafts",
       "files",
       "people",
       "reports",
       "results",
+      "settings",
+      "transcript_entries",
+      "turns",
     ]);
+  });
+
+  describe("conversations stay with their person", () => {
+    const conversation = (id: string, person: string) => {
+      insert("conversations", {
+        id,
+        person_id: person,
+        title: "Fictional",
+        provider: "codex",
+        model: "gpt-6.1-sol",
+        created_at: now,
+      });
+    };
+    const turn = {
+      agent_turn_id: "t",
+      model: "gpt-6.1-sol",
+      status: "running",
+      started_at: now,
+    };
+    const entry = {
+      seq: 1,
+      kind: "message",
+      text: "Hello",
+      revision: 1,
+      created_at: now,
+      updated_at: now,
+    };
+
+    beforeEach(() => {
+      conversation("c-amma", "amma");
+      conversation("c-nanna", "nanna");
+    });
+
+    it("rejects a turn, an entry or a draft for one person in another's conversation", () => {
+      expect(() => {
+        insert("turns", {
+          ...turn,
+          id: "t-x",
+          person_id: "amma",
+          conversation_id: "c-nanna",
+        });
+      }).toThrow("FOREIGN KEY constraint failed");
+      expect(() => {
+        insert("transcript_entries", {
+          ...entry,
+          id: "e-x",
+          person_id: "amma",
+          conversation_id: "c-nanna",
+        });
+      }).toThrow("FOREIGN KEY constraint failed");
+      expect(() => {
+        insert("drafts", {
+          person_id: "amma",
+          conversation_id: "c-nanna",
+          text: "x",
+          updated_at: now,
+        });
+      }).toThrow("FOREIGN KEY constraint failed");
+    });
+
+    it("rejects an entry that cites another person's turn", () => {
+      insert("turns", {
+        ...turn,
+        id: "t-nanna",
+        person_id: "nanna",
+        conversation_id: "c-nanna",
+      });
+      expect(() => {
+        insert("transcript_entries", {
+          ...entry,
+          id: "e-x",
+          person_id: "amma",
+          conversation_id: "c-amma",
+          turn_id: "t-nanna",
+        });
+      }).toThrow("FOREIGN KEY constraint failed");
+    });
+
+    it("keeps an activity line's kind and status, and only on activity", () => {
+      const line = {
+        ...entry,
+        person_id: "amma",
+        conversation_id: "c-amma",
+        kind: "activity",
+      };
+      expect(() => {
+        insert("transcript_entries", { ...line, id: "e-1" });
+      }).toThrow("CHECK constraint failed");
+      insert("transcript_entries", {
+        ...line,
+        id: "e-2",
+        activity: "command",
+        status: "done",
+      });
+      expect(() => {
+        insert("transcript_entries", {
+          ...entry,
+          id: "e-3",
+          seq: 2,
+          person_id: "amma",
+          conversation_id: "c-amma",
+          status: "done",
+        });
+      }).toThrow("CHECK constraint failed");
+    });
+
+    it("allows one draft per conversation and one for a new conversation", () => {
+      insert("drafts", {
+        person_id: "amma",
+        conversation_id: null,
+        text: "a",
+        updated_at: now,
+      });
+      expect(() => {
+        insert("drafts", {
+          person_id: "amma",
+          conversation_id: null,
+          text: "b",
+          updated_at: now,
+        });
+      }).toThrow("UNIQUE constraint failed");
+    });
   });
 
   describe("person scope is enforced by the database", () => {
