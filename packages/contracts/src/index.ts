@@ -40,8 +40,8 @@ export const Entry = Schema.Struct({
   seq: Schema.Int,
   /** The reply it belongs to. */
   turnId: Schema.NullOr(Schema.String),
-  kind: Schema.Literals(["message", "steer", "activity", "reply"]),
-  /** The message or the reply; an activity's short title. */
+  kind: Schema.Literals(["message", "steer", "activity", "reply", "receipt"]),
+  /** The message or the reply; an activity's short title; a receipt's line. */
   text: Schema.String,
   activity: Schema.NullOr(ActivityKind),
   /** An activity's one short detail: the query, the search words, the command. */
@@ -213,6 +213,7 @@ export type Status = typeof Status.Type;
 
 /** One current result, exactly as printed. */
 export const OverviewResult = Schema.Struct({
+  id: Schema.String,
   test: Schema.String,
   value: Schema.String,
   unit: Schema.optionalKey(Schema.String),

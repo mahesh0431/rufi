@@ -35,3 +35,12 @@ INSERT INTO results (id, person_id, report_id, test_name, value_text, comparator
   ('res-a8', 'asha', NULL, 'Blood group', 'B positive', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-09-10T10:05:00Z', NULL),
   ('res-r1', 'ravi', 'rep-ravi-jul', 'LDL cholesterol', '162', NULL, 162, 'mg/dL', '<100', 'High', 'Calculated', '2026-06-30', '2026-07-01T08:01:00Z', NULL),
   ('res-r2', 'ravi', 'rep-ravi-jul', 'HDL cholesterol', '41', NULL, 41, 'mg/dL', '>40', NULL, NULL, '2026-06-30', '2026-07-01T08:01:00Z', NULL);
+
+-- Records from before Rufi kept their source (none given).
+INSERT INTO medicine_uses (id, person_id, name, strength, amount, schedule, route, purpose, status, started, started_words) VALUES
+  ('med-a1', 'asha', 'Metformin', '500 mg', '1 tablet', 'twice a day', 'by mouth', 'blood sugar', 'current', '2024-03', NULL),
+  ('med-a2', 'asha', 'Creatine', '5 g', NULL, 'every morning', NULL, NULL, 'current', '2026-06', NULL),
+  ('med-r1', 'ravi', 'Atorvastatin', '10 mg', '1 tablet', 'at night', 'by mouth', 'cholesterol', 'current', '2026-07', NULL);
+
+INSERT INTO allergies (id, person_id, substance, reaction, status, certainty, asserted) VALUES
+  ('all-r1', 'ravi', 'Penicillin', 'rash', 'active', 'confirmed', '2025-02-10');

@@ -79,6 +79,7 @@ describe("get_overview", () => {
         earlier_versions_kept: 1,
         latest_results: [
           {
+            id: "res-a6",
             test: "Free T4",
             value: "1.1",
             unit: "ng/dL",
@@ -87,6 +88,7 @@ describe("get_overview", () => {
             measured: "2026-09-01",
           },
           {
+            id: "res-a5",
             test: "TSH",
             value: "4.6",
             unit: "mIU/L",
@@ -96,6 +98,7 @@ describe("get_overview", () => {
             amended: true,
           },
           {
+            id: "res-a3",
             test: "CRP",
             value: "<5",
             unit: "mg/L",
@@ -103,6 +106,7 @@ describe("get_overview", () => {
             measured: "2026-08-12",
           },
           {
+            id: "res-a2",
             test: "Glucose",
             value: "118",
             unit: "mg/dL",
@@ -112,6 +116,7 @@ describe("get_overview", () => {
             measured: "2026-08-12",
           },
           {
+            id: "res-a1",
             test: "HbA1c",
             value: "6.8",
             unit: "%",
@@ -120,6 +125,7 @@ describe("get_overview", () => {
             measured: "2026-08-12",
           },
           {
+            id: "res-a7",
             test: "Vitamin D",
             value: "22",
             unit: "ng/mL",
@@ -127,8 +133,34 @@ describe("get_overview", () => {
             flag: "Low",
             measured: "2026-05",
           },
-          { test: "Blood group", value: "B positive" },
+          { id: "res-a8", test: "Blood group", value: "B positive" },
         ],
+        record: {
+          medicine_use: {
+            items: [
+              {
+                id: "med-a2",
+                name: "Creatine",
+                strength: "5 g",
+                schedule: "every morning",
+                status: "current",
+                started: { date: "2026-06" },
+              },
+              {
+                id: "med-a1",
+                name: "Metformin",
+                strength: "500 mg",
+                amount: "1 tablet",
+                schedule: "twice a day",
+                route: "by mouth",
+                purpose: "blood sugar",
+                status: "current",
+                started: { date: "2024-03" },
+              },
+            ],
+          },
+        },
+        latest_saves: [],
       },
     });
   });
@@ -339,7 +371,7 @@ describe("the error envelope", () => {
       "rm_rf",
     );
     expect(body["error"]).toBe(
-      "There is no tool called rm_rf. Rufi's tools: get_overview, read_conversation.",
+      "There is no tool called rm_rf. Rufi's tools: get_overview, read_conversation, save_changes.",
     );
   });
 

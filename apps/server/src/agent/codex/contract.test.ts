@@ -219,7 +219,7 @@ describe("the pinned Codex", () => {
       expect(sent).toContain(
         "declare const tools: { rufi__get_overview(args: {}): Promise<unknown>; };",
       );
-      expect(sent).toContain(tools.instructions);
+      expect(sent).toContain(JSON.stringify(tools.instructions).slice(1, -1));
     } finally {
       server.close();
     }

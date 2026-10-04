@@ -2,7 +2,7 @@
   "tools": [
     {
       "name": "rufi.get_overview",
-      "description": "The active person's health record in Rufi at a glance: their name, how many documents and reports they have, and their current test results exactly as printed (test, value, unit, reference range, flag, method or context, measured date at the precision known). At most 20 results, newest measured first, undated last. An amended result replaces the one it corrects and says \"amended\": true. Takes no input: Rufi chooses the person, not you.",
+      "description": "The active person's health record in Rufi at a glance: their name, how many documents and reports they have, their current test results exactly as printed (id, test, value, unit, reference range, flag, method or context, measured date at the precision known), their other records by kind (medicine uses, prescriptions, symptoms, conditions, allergies, care events, \"none known\" statements, follow-ups; each with its id and fields as save_changes takes them), and their latest saves with what each changed. At most 20 results, newest measured first, undated last; at most 50 records of a kind, newest first; the latest 5 saves, newest first. An amended result replaces the one it corrects and says \"amended\": true. Removed records aren't shown. Takes no input: Rufi chooses the person, not you.",
       "callers": "both",
       "readOnly": true,
       "destructive": false,
@@ -17,7 +17,7 @@
     },
     {
       "name": "rufi.read_conversation",
-      "description": "Earlier parts of this conversation, newest first. Each entry's kind is \"message\" (the user's), \"steer\" (the user's, sent while you were replying), \"reply\" (yours) or \"activity\" (one thing you did: a title and one short detail, never its output). At most 50 entries a page; pass the page's next_before to read further back. Rufi chooses the conversation, not you.",
+      "description": "Earlier parts of this conversation, newest first. Each entry's kind is \"message\" (the user's), \"steer\" (the user's, sent while you were replying), \"reply\" (yours), \"activity\" (one thing you did: a title and one short detail, never its output) or \"receipt\" (Rufi's line for a save to the record: what was saved). \"at\" is when it was written. At most 50 entries a page; pass the page's next_before to read further back. Rufi chooses the conversation, not you.",
       "callers": "model",
       "readOnly": true,
       "destructive": false,
@@ -43,6 +43,1124 @@
         {
           "before": 41,
           "limit": 20
+        }
+      ]
+    },
+    {
+      "name": "rufi.save_changes",
+      "description": "Saves changes to the active person's record, all or nothing, after the user clearly said yes to exactly these changes in this conversation. Each change is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history) or restore a removed one; ids come from get_overview. Give only what the user said: a field they didn't give stays out, and a date needs their own words from the source message. source is the user's own words the change rests on, copied from their message. At most 20 changes. Rufi refuses a save with any problem and says each one; nothing is saved then. On success Rufi adds its own receipt line to the conversation and returns it; the same call again returns the same receipt. Never say something was saved without this tool's answer.",
+      "callers": "model",
+      "readOnly": false,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "medicine_use"
+                      ]
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "add",
+                        "change",
+                        "remove",
+                        "restore"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "description": "The medicine use's id, from get_overview; not when adding."
+                    },
+                    "source": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000,
+                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one)."
+                    },
+                    "fields": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "$ref": "#/$defs/Text"
+                        },
+                        "strength": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "amount": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "schedule": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "route": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "purpose": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "current",
+                                "paused",
+                                "stopped",
+                                "completed",
+                                "unknown"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "started": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/DateSaid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "ended": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/DateSaid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one."
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "action",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "prescription"
+                      ]
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "add",
+                        "change",
+                        "remove",
+                        "restore"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "description": "The prescription's id, from get_overview; not when adding."
+                    },
+                    "source": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000,
+                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one)."
+                    },
+                    "fields": {
+                      "type": "object",
+                      "properties": {
+                        "item": {
+                          "$ref": "#/$defs/Text"
+                        },
+                        "strength": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "amount": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "route": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "schedule": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "period": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "prescriber": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "issued": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/DateSaid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one."
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "action",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "symptom"
+                      ]
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "add",
+                        "change",
+                        "remove",
+                        "restore"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "description": "The symptom's id, from get_overview; not when adding."
+                    },
+                    "source": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000,
+                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one)."
+                    },
+                    "fields": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "$ref": "#/$defs/Text"
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "ongoing",
+                                "resolved",
+                                "unknown"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "onset": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/DateSaid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "ended": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/DateSaid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "severity": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "location": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "intermittent": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "details": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/LongText"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one."
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "action",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "condition"
+                      ]
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "add",
+                        "change",
+                        "remove",
+                        "restore"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "description": "The condition's id, from get_overview; not when adding."
+                    },
+                    "source": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000,
+                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one)."
+                    },
+                    "fields": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "$ref": "#/$defs/Text"
+                        },
+                        "certainty": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "suspected",
+                                "diagnosed",
+                                "unknown"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "ongoing",
+                                "resolved",
+                                "unknown"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "recognised": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/DateSaid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "resolved": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/DateSaid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "details": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/LongText"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one."
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "action",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "allergy"
+                      ]
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "add",
+                        "change",
+                        "remove",
+                        "restore"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "description": "The allergy's id, from get_overview; not when adding."
+                    },
+                    "source": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000,
+                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one)."
+                    },
+                    "fields": {
+                      "type": "object",
+                      "properties": {
+                        "substance": {
+                          "$ref": "#/$defs/Text"
+                        },
+                        "reaction": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "active",
+                                "inactive",
+                                "unknown"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "certainty": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "confirmed",
+                                "suspected",
+                                "unknown"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "reacted": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/DateSaid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one."
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "action",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "result"
+                      ]
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "add",
+                        "change",
+                        "remove",
+                        "restore"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "description": "The result's id, from get_overview; not when adding."
+                    },
+                    "source": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000,
+                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one)."
+                    },
+                    "fields": {
+                      "type": "object",
+                      "properties": {
+                        "test": {
+                          "$ref": "#/$defs/Text"
+                        },
+                        "value": {
+                          "$ref": "#/$defs/Text"
+                        },
+                        "comparator": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "<",
+                                "<=",
+                                ">",
+                                ">="
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "number": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "second_number": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "unit": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "range": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "flag": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "measured": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/DateSaid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "replaces": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one."
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "action",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "care_event"
+                      ]
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "add",
+                        "change",
+                        "remove",
+                        "restore"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "description": "The care event's id, from get_overview; not when adding."
+                    },
+                    "source": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000,
+                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one)."
+                    },
+                    "fields": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "visit",
+                            "procedure",
+                            "immunisation"
+                          ]
+                        },
+                        "name": {
+                          "$ref": "#/$defs/Text"
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "planned",
+                                "done",
+                                "not_done",
+                                "unknown"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "date": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/DateSaid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "provider": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "details": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/LongText"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one."
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "action",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "none_known"
+                      ]
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "add",
+                        "change",
+                        "remove",
+                        "restore"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "description": "The statement's id, from get_overview; not when adding."
+                    },
+                    "source": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000,
+                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one)."
+                    },
+                    "fields": {
+                      "type": "object",
+                      "properties": {
+                        "category": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "allergies"
+                              ]
+                            }
+                          ]
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one."
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "action",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "follow_up"
+                      ]
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "add",
+                        "change",
+                        "remove",
+                        "restore"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "description": "The follow-up's id, from get_overview; not when adding."
+                    },
+                    "source": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000,
+                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one)."
+                    },
+                    "fields": {
+                      "type": "object",
+                      "properties": {
+                        "title": {
+                          "$ref": "#/$defs/Text"
+                        },
+                        "due": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "$ref": "#/$defs/DateSaid"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "next_visit"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "open",
+                                "done",
+                                "dropped"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "outcome": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/LongText"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "about": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "medicine_use",
+                                    "prescription",
+                                    "symptom",
+                                    "condition",
+                                    "allergy",
+                                    "result",
+                                    "care_event"
+                                  ]
+                                },
+                                "id": {
+                                  "$ref": "#/$defs/Text"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "id"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one."
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "action",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 20
+          }
+        },
+        "required": [
+          "changes"
+        ],
+        "additionalProperties": false,
+        "$defs": {
+          "Text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "DateSaid": {
+            "type": "object",
+            "properties": {
+              "date": {
+                "type": "string"
+              },
+              "words": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100,
+                "description": "The user's own words for this date, copied from the source message: 'last Monday', 'since 2019', '28 Sep'."
+              }
+            },
+            "required": [
+              "date",
+              "words"
+            ],
+            "additionalProperties": false
+          },
+          "LongText": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        }
+      },
+      "examples": [
+        {
+          "changes": [
+            {
+              "kind": "medicine_use",
+              "action": "add",
+              "source": "I started magnesium 200 mg at night last Monday",
+              "fields": {
+                "name": "Magnesium",
+                "strength": "200 mg",
+                "schedule": "at night",
+                "status": "current",
+                "started": {
+                  "date": "2026-09-28",
+                  "words": "last Monday"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "changes": [
+            {
+              "kind": "medicine_use",
+              "action": "change",
+              "id": "0199a0f2-7c1e-7d3a-9b1e-3f5c2a1d4e6f",
+              "source": "I stopped creatine because of a stomach upset",
+              "fields": {
+                "status": "stopped"
+              }
+            },
+            {
+              "kind": "symptom",
+              "action": "add",
+              "source": "I stopped creatine because of a stomach upset",
+              "fields": {
+                "name": "Stomach upset"
+              }
+            }
+          ]
         }
       ]
     }

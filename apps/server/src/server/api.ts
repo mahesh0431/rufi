@@ -44,7 +44,7 @@ export interface ApiDeps {
   sessions: Sessions;
   /** The port Rufi listens on, once known. */
   port: () => number;
-  /** A person's overview (the get_overview tool's answer). */
+  /** A person's overview (what get_overview starts with). */
   overview: (personId: string) => Promise<Overview>;
   /** The ChatGPT sign-in, read when asked. */
   account: () => Promise<Status>;

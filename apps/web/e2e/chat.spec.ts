@@ -955,6 +955,42 @@ test("a reply stopped by the usage limit says when it resets", async ({
   );
 });
 
+test("a save to the record shows Rufi's receipt line, also after a reload", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi, {
+    scenario: {
+      calls: [
+        {
+          namespace: "rufi",
+          tool: "save_changes",
+          arguments: {
+            changes: [
+              {
+                kind: "symptom",
+                action: "add",
+                source: "I have a headache",
+                fields: { name: "Headache" },
+              },
+            ],
+          },
+        },
+      ],
+    },
+  });
+  await send(page, "I have a headache");
+  const receipt = log(chat(page)).getByText("Saved: added symptom Headache.");
+  await expect(receipt).toBeVisible();
+  await expect(log(chat(page)).locator(".reply")).toHaveText(
+    "ok:I have a headache",
+  );
+  await accessible(page);
+  await page.reload();
+  await box(chat(page)).click();
+  await expect(receipt).toBeVisible();
+});
+
 test.describe("on the real Codex binary, with a local fake model", () => {
   test("a reply streams after Rufi's tool; Stop; a message waits; Steer", async ({
     page,

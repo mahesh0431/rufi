@@ -181,12 +181,16 @@ export interface AgentRuntime {
 /** What the agent needs from Rufi while it runs. */
 export interface AgentHost {
   onEvent: (event: AgentEvent) => void;
-  /** Runs one of Rufi's tools for a turn; Rufi knows whose thread it is. */
+  /**
+   * Runs one of Rufi's tools for a turn; Rufi knows whose thread it is.
+   * `callId` is the agent's id for the call: the same call again has it too.
+   */
   callTool: (
     threadId: string,
     turnId: string,
     name: string,
     input: unknown,
+    callId: string,
   ) => Promise<ToolAnswer>;
 }
 

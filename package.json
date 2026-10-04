@@ -38,7 +38,8 @@
       "apps/server": {
         "entry": [
           "scripts/*.ts",
-          "tests/core-process.ts"
+          "tests/core-process.ts",
+          "tests/save-process.ts"
         ],
         "ignore": [
           "src/agent/codex/protocol/**"

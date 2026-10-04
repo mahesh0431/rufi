@@ -1,7 +1,8 @@
 // A conversation's transcript as the core stored it: your messages, one line
-// per thing the AI did, the AI's replies as Markdown, and how a reply ended
-// when it didn't finish. Each entry reads only itself from the live store, so
-// a streaming reply re-renders alone.
+// per thing the AI did, the AI's replies as Markdown, Rufi's receipt line for
+// each save to the record, and how a reply ended when it didn't finish. Each
+// entry reads only itself from the live store, so a streaming reply
+// re-renders alone.
 import { Link } from "@tanstack/react-router";
 import { Check, LoaderCircle, Square, X } from "lucide-react";
 import { useEffect, useRef } from "react";
@@ -200,6 +201,16 @@ function EntryView({
           )}
           <p className="break-words whitespace-pre-wrap">{entry.text}</p>
         </div>
+      ) : entry.kind === "receipt" ? (
+        // Rufi's own line for a save, from what it saved: never the AI's words.
+        <p className="flex items-start gap-1.5 rounded-lg border border-line bg-side px-3 py-2">
+          <Check
+            size={14}
+            className="mt-1 shrink-0 text-accent-ink"
+            aria-hidden
+          />
+          <span className="break-words">{entry.text}</span>
+        </p>
       ) : entry.kind === "activity" ? (
         <p className="flex min-w-0 items-center gap-1.5 text-muted">
           <ActivityIcon status={entry.status} />

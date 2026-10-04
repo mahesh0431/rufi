@@ -16,6 +16,7 @@ import { toString } from "mdast-util-to-string";
 import { gfm } from "micromark-extension-gfm";
 import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
+import type { Saved } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 
@@ -665,6 +666,33 @@ export function transcripts(
         return { entries: [reply.id], turns: [] };
       }),
 
+    /**
+     * A save to the record and its receipt line, in one transaction
+     * (docs/adr/0005): `save` writes the record in it. The line is added
+     * also when the reply has ended meanwhile (a Stop, a deadline): what is
+     * saved is shown. The same call saved before adds no second line.
+     */
+    saveWithReceipt: async (
+      conversation: ConversationRow,
+      agentTurnId: string,
+      save: (trx: Transaction<Tables>, at: string) => Promise<Saved>,
+    ): Promise<Saved> => {
+      let saved: Saved | undefined;
+      await change(conversation.id, async (trx, revision) => {
+        saved = await save(trx, now());
+        if (!saved.fresh) return undefined;
+        const turn = await turnOf(trx, conversation.id, agentTurnId);
+        const id = await insertEntry(trx, conversation, revision, {
+          id: saved.id,
+          turnId: turn?.id ?? null,
+          kind: "receipt",
+          text: saved.receipt,
+        });
+        return { entries: [id], turns: [] };
+      });
+      return saved as Saved;
+    },
+
     /** One thing the agent did: added when it starts, updated when it ends. */
     setActivity: (
       conversation: ConversationRow,
@@ -743,8 +771,9 @@ export function transcripts(
     },
 
     /**
-     * The last `count` messages (the user's and the AI's replies) from replies
-     * that have ended, oldest first: what a new thread starts with.
+     * The last `count` messages (the user's, the AI's replies and Rufi's
+     * receipt lines) from replies that have ended, oldest first: what a new
+     * thread starts with.
      */
     lastMessages: async (conversation: ConversationRow, count: number) => {
       const rows = await db
@@ -757,7 +786,7 @@ export function transcripts(
         .select(["e.kind", "e.text"])
         .where("e.person_id", "=", conversation.personId)
         .where("e.conversation_id", "=", conversation.id)
-        .where("e.kind", "in", ["message", "steer", "reply"])
+        .where("e.kind", "in", ["message", "steer", "reply", "receipt"])
         .where((eb) =>
           eb.or([eb("t.status", "is", null), eb("t.status", "!=", "running")]),
         )
@@ -765,7 +794,12 @@ export function transcripts(
         .limit(count)
         .execute();
       return rows.reverse().map((row) => ({
-        from: row.kind === "reply" ? ("ai" as const) : ("user" as const),
+        from:
+          row.kind === "reply"
+            ? ("ai" as const)
+            : row.kind === "receipt"
+              ? ("rufi" as const)
+              : ("user" as const),
         text: row.text,
       }));
     },

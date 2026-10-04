@@ -1,8 +1,48 @@
 // Generated from schema.sql by pnpm db:types; a test fails if it differs.
 export interface Tables {
+  allergies: {
+    id: string;
+    person_id: string;
+    substance: string;
+    reaction: string | null;
+    status: string;
+    certainty: string;
+    asserted: string | null;
+    reacted: string | null;
+    reacted_words: string | null;
+    source_entry_id: string | null;
+    removed: number;
+  };
+  care_events: {
+    id: string;
+    person_id: string;
+    type: string;
+    name: string;
+    status: string;
+    date: string | null;
+    date_words: string | null;
+    provider: string | null;
+    details: string | null;
+    source_entry_id: string | null;
+    removed: number;
+  };
   chosen_conversations: {
     person_id: string;
     conversation_id: string;
+  };
+  conditions: {
+    id: string;
+    person_id: string;
+    name: string;
+    certainty: string;
+    status: string;
+    recognised: string | null;
+    recognised_words: string | null;
+    resolved: string | null;
+    resolved_words: string | null;
+    details: string | null;
+    source_entry_id: string | null;
+    removed: number;
   };
   conversations: {
     id: string;
@@ -39,9 +79,81 @@ export interface Tables {
     media_type: string;
     created_at: string;
   };
+  follow_ups: {
+    id: string;
+    person_id: string;
+    title: string;
+    due: string | null;
+    due_words: string | null;
+    status: string;
+    outcome: string | null;
+    linked_kind: string | null;
+    linked_id: string | null;
+    source_entry_id: string | null;
+    removed: number;
+  };
+  medicine_uses: {
+    id: string;
+    person_id: string;
+    name: string;
+    strength: string | null;
+    amount: string | null;
+    schedule: string | null;
+    route: string | null;
+    purpose: string | null;
+    status: string;
+    started: string | null;
+    started_words: string | null;
+    ended: string | null;
+    ended_words: string | null;
+    source_entry_id: string | null;
+    removed: number;
+  };
+  none_known: {
+    id: string;
+    person_id: string;
+    category: string;
+    asserted: string | null;
+    source_entry_id: string | null;
+    removed: number;
+  };
+  operations: {
+    id: string;
+    person_id: string;
+    conversation_id: string;
+    call_id: string;
+    request: string;
+    created_at: string;
+  };
   people: {
     id: string;
     display_name: string;
+  };
+  prescriptions: {
+    id: string;
+    person_id: string;
+    item: string;
+    strength: string | null;
+    amount: string | null;
+    route: string | null;
+    schedule: string | null;
+    period: string | null;
+    prescriber: string | null;
+    issued: string | null;
+    issued_words: string | null;
+    source_entry_id: string | null;
+    removed: number;
+  };
+  record_changes: {
+    operation_id: string;
+    seq: number;
+    person_id: string;
+    kind: string;
+    record_id: string;
+    action: string;
+    before: string | null;
+    after: string;
+    source_entry_id: string;
   };
   reports: {
     id: string;
@@ -66,10 +178,30 @@ export interface Tables {
     entered_at: string;
     replaces_id: string | null;
     group_label: string | null;
+    second_number: number | null;
+    measured_words: string | null;
+    source_entry_id: string | null;
+    removed: number;
   };
   settings: {
     key: string;
     value: string;
+  };
+  symptoms: {
+    id: string;
+    person_id: string;
+    name: string;
+    status: string;
+    onset: string | null;
+    onset_words: string | null;
+    ended: string | null;
+    ended_words: string | null;
+    severity: string | null;
+    location: string | null;
+    intermittent: number | null;
+    details: string | null;
+    source_entry_id: string | null;
+    removed: number;
   };
   transcript_entries: {
     id: string;
