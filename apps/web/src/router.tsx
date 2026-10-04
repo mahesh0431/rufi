@@ -7,6 +7,7 @@ import {
   Link,
   useLocation,
 } from "@tanstack/react-router";
+import { ConversationPage } from "./chat.tsx";
 import { FirstRun } from "./first-run.tsx";
 import { Frame } from "./frame.tsx";
 import { HelpPage } from "./help-page.tsx";
@@ -32,6 +33,33 @@ const home = createRoute({
     if (people.data === undefined) return null;
     const person = people.data[0];
     return person ? <OverviewPage person={person} /> : <FirstRun />;
+  },
+});
+
+const conversation = createRoute({
+  getParentRoute: () => root,
+  path: "/people/$personId/conversations/$conversationId",
+  component: function Conversation() {
+    const { personId, conversationId } = conversation.useParams();
+    const people = usePeople();
+    if (people.data === undefined) {
+      return people.error ? (
+        <div className="px-6 py-8">
+          <Problem error={people.error} retry={() => void people.refetch()} />
+        </div>
+      ) : null;
+    }
+    const person = people.data.find((p) => p.id === personId);
+    if (!person) {
+      return <div className="px-6 py-8 text-muted">There is no page here.</div>;
+    }
+    return (
+      <ConversationPage
+        key={`${personId}/${conversationId}`}
+        person={person}
+        conversationId={conversationId === "new" ? null : conversationId}
+      />
+    );
   },
 });
 
@@ -63,7 +91,13 @@ const helpPage = createRoute({
 });
 
 export const router = createRouter({
-  routeTree: root.addChildren([home, settings, helpIndex, helpPage]),
+  routeTree: root.addChildren([
+    home,
+    conversation,
+    settings,
+    helpIndex,
+    helpPage,
+  ]),
   defaultErrorComponent: ({ error, reset }) => (
     <div className="px-6 py-8">
       <Problem

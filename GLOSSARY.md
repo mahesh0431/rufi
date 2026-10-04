@@ -72,11 +72,22 @@ _Avoid_: inbox, notifications, tasks
 ## Conversations
 
 **Conversation**:
-An exchange between the user and Rufi's AI about one person, kept by Rufi.
+An exchange between the user and Rufi's AI about one person, kept by Rufi. Its name is the first words of its first message.
 _Avoid_: thread, session
 
 **Chat**:
-The panel and box where the user talks with Rufi's AI; what is said there is a conversation.
+Where the user talks with Rufi's AI: one conversation, shown in three sizes (the chat bar, the chat panel and the chat page) with the same box.
+
+**Chat bar**:
+The box at the bottom right of every page. It continues the conversation the user chose last for the person, or starts a new one.
+_Avoid_: composer, input
+
+**Chat panel**:
+The chat opened over the page from the chat bar (or with ⌘J), always the same size. Esc closes it.
+_Avoid_: drawer, popup, sidebar
+
+**Chat page**:
+A conversation at its own address, listed under Conversations in the sidebar. A small window opens the chat as a page.
 
 **Transcript**:
 Rufi's own stored copy of a conversation: your messages, one activity line for each thing the AI did, and the AI's replies, each saved before it is shown. Never the AI's tool outputs or its reasoning. Cards and receipts join it when they come.

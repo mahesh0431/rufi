@@ -89,3 +89,87 @@ body {
   padding-left: 12px;
   color: var(--color-muted);
 }
+
+/* The AI's replies: Markdown at the chat's size. */
+.reply > :last-child {
+  margin-bottom: 0;
+}
+.reply p,
+.reply ul,
+.reply ol,
+.reply table,
+.reply pre,
+.reply blockquote {
+  margin: 0 0 8px;
+}
+.reply h1,
+.reply h2,
+.reply h3,
+.reply h4 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 12px 0 4px;
+}
+.reply ul {
+  list-style: disc;
+  padding-left: 20px;
+}
+.reply ol {
+  list-style: decimal;
+  padding-left: 20px;
+}
+.reply a {
+  color: var(--color-accent-ink);
+  text-decoration: underline;
+}
+.reply code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  background: var(--color-side);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+.reply pre {
+  overflow-x: auto;
+  background: var(--color-side);
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+.reply pre code {
+  padding: 0;
+}
+.reply table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+.reply th,
+.reply td {
+  border-bottom: 1px solid var(--color-line);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.reply blockquote {
+  border-left: 3px solid var(--color-line);
+  padding-left: 10px;
+  color: var(--color-muted);
+}
+
+/* A text box that grows with its text: an invisible copy of the text sizes
+   the grid cell the box shares with it. */
+.grow-box {
+  display: grid;
+}
+.grow-box::after {
+  content: attr(data-text) " ";
+  visibility: hidden;
+  white-space: pre-wrap;
+}
+.grow-box > textarea,
+.grow-box::after {
+  grid-area: 1 / 1;
+  padding: 2px 0;
+  font: inherit;
+  overflow-wrap: anywhere;
+}

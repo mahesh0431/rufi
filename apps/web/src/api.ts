@@ -12,6 +12,8 @@ const PROOF_HEADER = "x-rufi-proof";
 const RETRY_MS = 3_000;
 /** The core answers from this Mac: longer than this means it can't. */
 const DEADLINE_MS = 15_000;
+/** A live stream pings every 15 s; silent this long, it has stopped. */
+const SILENT_MS = 45_000;
 
 /** ok; offline: the core can't be reached; ended: this tab's session is over. */
 export type Connection = "ok" | "offline" | "ended";
@@ -128,26 +130,40 @@ async function startSession(): Promise<void> {
 /** Started once as the page loads; every request waits for it. */
 const session = startSession();
 
-/** What the core refused, in its own words. */
-class ApiError extends Error {
+/** What the core refused, in its own words, with the rest of its answer. */
+export class ApiError extends Error {
   readonly status: number;
-  constructor(status: number, message: string, options?: ErrorOptions) {
+  readonly body: unknown;
+  constructor(
+    status: number,
+    message: string,
+    body?: unknown,
+    options?: ErrorOptions,
+  ) {
     super(message, options);
     this.status = status;
+    this.body = body;
   }
 }
 
+const refusal = (json: unknown) =>
+  typeof json === "object" && json !== null && "error" in json
+    ? String(json.error)
+    : "Rufi had a problem with that.";
+
+const headersFor = (body: unknown): Record<string, string> => ({
+  [PROOF_HEADER]: sessionStorage.getItem(PROOF_KEY) ?? "",
+  ...(body !== undefined && { "content-type": "application/json" }),
+});
+
 /** A request to the core; its answer as JSON. */
-async function request(
+export async function request(
   method: "GET" | "POST" | "PUT" | "DELETE",
   path: string,
   body?: unknown,
 ): Promise<unknown> {
   await session;
-  const headers: Record<string, string> = {
-    [PROOF_HEADER]: sessionStorage.getItem(PROOF_KEY) ?? "",
-  };
-  if (body !== undefined) headers["content-type"] = "application/json";
+  const headers = headersFor(body);
   let answer: Answer;
   try {
     answer = await fetchInTime(path, {
@@ -157,7 +173,9 @@ async function request(
     });
   } catch (error) {
     if (!ending.signal.aborted) setConnection("offline");
-    throw new ApiError(0, "Rufi can't be reached.", { cause: error });
+    throw new ApiError(0, "Rufi can't be reached.", undefined, {
+      cause: error,
+    });
   }
   if (answer.status === 401) {
     setConnection("ended");
@@ -166,13 +184,86 @@ async function request(
   setConnection("ok");
   const { json } = answer;
   if (answer.status < 200 || answer.status > 299) {
-    const message =
-      typeof json === "object" && json !== null && "error" in json
-        ? String(json.error)
-        : "Rufi had a problem with that.";
-    throw new ApiError(answer.status, message);
+    throw new ApiError(answer.status, refusal(json), json);
   }
   return json;
+}
+
+/**
+ * Reads a live stream, giving each line to `onLine`, until the core ends it,
+ * `signal` aborts, or it stays silent too long (the caller connects again).
+ * A 401 ends the session; a stream that can't reach the core marks Rufi as
+ * offline.
+ */
+export async function stream(
+  path: string,
+  onLine: (line: unknown) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  await session;
+  const silent = new AbortController();
+  // A timer, not AbortSignal.timeout, so a test's clock can drive it.
+  let timer = setTimeout(() => {
+    silent.abort();
+  }, DEADLINE_MS);
+  const heard = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      silent.abort();
+    }, SILENT_MS);
+  };
+  const stopped = AbortSignal.any([ending.signal, silent.signal, signal]);
+  try {
+    let response: Response;
+    try {
+      response = await fetch(path, {
+        headers: headersFor(undefined),
+        signal: stopped,
+      });
+    } catch (error) {
+      if (!ending.signal.aborted && !signal.aborted) setConnection("offline");
+      throw new ApiError(0, "Rufi can't be reached.", undefined, {
+        cause: error,
+      });
+    }
+    if (response.status === 401) {
+      setConnection("ended");
+      throw new ApiError(401, "Open Rufi again from the terminal.");
+    }
+    if (!response.ok || response.body === null) {
+      const json = parseJson(await response.text());
+      throw new ApiError(response.status, refusal(json), json);
+    }
+    setConnection("ok");
+    heard();
+    const reader = response.body
+      .pipeThrough(new TextDecoderStream())
+      .getReader();
+    let rest = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      heard();
+      const lines = (rest + value).split("\n");
+      rest = lines.pop() ?? "";
+      for (const line of lines) if (line !== "") onLine(JSON.parse(line));
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * A last PUT as the page goes away (reload, close): the browser sends it
+ * after the page is gone, so nobody waits for its answer.
+ */
+export function putOnLeave(path: string, body: unknown): void {
+  void fetch(path, {
+    method: "PUT",
+    headers: headersFor(body),
+    body: JSON.stringify(body),
+    keepalive: true,
+  }).catch(() => undefined); // the page is gone: nobody is left to tell
 }
 
 /** A request whose answer must match a contract. */
