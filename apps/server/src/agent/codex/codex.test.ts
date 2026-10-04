@@ -651,7 +651,8 @@ describe("Codex's queue", () => {
   });
 
   it("keeps the person's message when Stop came before Codex showed it", async () => {
-    const agent = start({ userMessageMs: 100, ignoreInterrupt: true });
+    // Interrupted before it records the message, Codex would drop it.
+    const agent = start({ userMessageMs: 100 });
     const { threadId } = await agent.startThread(SETTINGS);
     await agent.send(threadId, { id: "m-a", text: "hang" });
     await until(() => Promise.resolve(agent.running(threadId)));
@@ -659,6 +660,10 @@ describe("Codex's queue", () => {
     await ended(threadId);
     await stopping;
     expect(seen(threadId).filter((e) => e.type === "message")).toMatchObject([
+      { id: "m-a", text: "hang" },
+    ]);
+    expect(seen(threadId).filter((e) => e.type === "text")).toEqual([]);
+    await expect(agent.startedMessages(threadId)).resolves.toEqual([
       { id: "m-a", text: "hang" },
     ]);
   });

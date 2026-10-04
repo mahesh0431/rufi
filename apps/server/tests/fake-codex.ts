@@ -247,7 +247,16 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     method: "turn/started",
     params: { threadId, turn: turnObject(turnId, "inProgress") },
   });
-  if (scenario.userMessageMs) await sleep(scenario.userMessageMs);
+  if (scenario.userMessageMs) {
+    await sleep(scenario.userMessageMs);
+    // Like Codex: interrupted before it recorded the message, it drops it.
+    if (thread.running?.turnId !== turnId) {
+      const turn = thread.history.find((t) => t.id === turnId);
+      if (turn) turn.messages = [];
+      persist();
+      return;
+    }
+  }
   event("item/started", { item: userItem(entry) });
   for (const [i, call] of (scenario.calls ?? []).entries()) {
     // Like Codex: the item starts, then Rufi is asked to run it.

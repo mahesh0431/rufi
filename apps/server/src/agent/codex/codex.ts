@@ -80,6 +80,8 @@ interface Running {
   ended: PromiseWithResolvers<void>;
   /** A Stop under way; nothing more of the turn is shown after it. */
   stopping: Promise<void> | undefined;
+  /** Settles once Codex has shown the user's message that started it. */
+  messaged: PromiseWithResolvers<void>;
   deadline: NodeJS.Timeout;
 }
 
@@ -356,6 +358,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       turnId,
       end: undefined,
       streamed: new Set(),
+      messaged: Promise.withResolvers(),
       ended: Promise.withResolvers(),
       stopping: undefined,
       deadline: setTimeout(() => {
@@ -381,6 +384,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       case "item/started": {
         const { item } = params as ItemStartedNotification;
         if (item.type === "userMessage") {
+          running.messaged.resolve();
           // Only messages Rufi sent carry Rufi's id.
           if (item.clientId === null) {
             log("codex.notification_ignored", { method });
@@ -536,6 +540,13 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   }
 
   async function interruptAndClean(running: Running): Promise<void> {
+    // Codex records the message a moment after the turn starts; interrupted
+    // before that, it drops the message. Wait for it (shown, nothing else).
+    await Promise.race([
+      running.messaged.promise,
+      running.ended.promise,
+      sleep(deadlines.interruptAckMs, undefined, { ref: false }),
+    ]);
     const app = server;
     if (app?.running()) {
       let interrupted = false;
