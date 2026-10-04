@@ -693,14 +693,17 @@ const cut = (text: string) =>
 
 /**
  * An old and a new value, short enough for a receipt and still different:
- * long ones start a few words before where they differ.
+ * long ones start shortly before where they differ.
  */
 function apart(then: string, now: string): [string, string] {
   if (then.length <= VALUE_MAX && now.length <= VALUE_MAX) return [then, now];
   let same = 0;
   while (same < then.length && then[same] === now[same]) same++;
+  // Up to 30 characters before the first difference, from a word's start
+  // when one begins there; never past the difference.
   let from = Math.max(0, same - 30);
-  if (from > 0) from = then.indexOf(" ", from) + 1;
+  const space = then.indexOf(" ", from);
+  if (from > 0 && space !== -1 && space < same) from = space + 1;
   const tail = (text: string) =>
     from > 0 ? `…${cut(text.slice(from))}` : cut(text);
   return [tail(then), tail(now)];

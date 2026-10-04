@@ -618,6 +618,38 @@ describe("a save", () => {
       text: `Saved: changed follow-up Discuss pain (about: symptom Back pain (${back ?? ""}) → symptom Back pain (${otherBack ?? ""})).`,
       in_turn: 1,
     });
+
+    // A change inside one long word, such as a link, still shows.
+    const report = (version: number) =>
+      `Report: https://fictional.example/visit-results/2f1468a43bd09659ce218e5c0a904289704c725dc09d63a5b5eeccf3ae761296?version=${String(version)} reviewed at next visit`;
+    await say("The report link is now version 2");
+    await save(
+      [
+        {
+          kind: "symptom",
+          action: "change",
+          id: back,
+          source: "report link",
+          fields: { details: report(1) },
+        },
+      ],
+      "call-6",
+    );
+    const url = await save(
+      [
+        {
+          kind: "symptom",
+          action: "change",
+          id: back,
+          source: "version 2",
+          fields: { details: report(2) },
+        },
+      ],
+      "call-7",
+    );
+    expect(url.body.result.receipt).toBe(
+      "Saved: changed symptom Back pain (details: …d63a5b5eeccf3ae761296?version=1 reviewed at next visit → …d63a5b5eeccf3ae761296?version=2 reviewed at next visit).",
+    );
   });
 
   it("saves nothing when one change is wrong, and says exactly what", async () => {

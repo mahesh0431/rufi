@@ -363,10 +363,12 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       snapshot,
     };
   },
-  /** "Undo that" asks, then saves the reverse. */
+  /** "Undo that" of a save of two records asks, then saves the reverse. */
   undo: async (api, home) => {
     const c = await conversation(api);
-    await c.ask("I stopped creatine because of a stomach upset.");
+    await c.ask(
+      "I stopped creatine yesterday. I have had a stomach upset since Sunday.",
+    );
     await c.ask("yes");
     const stopped = medicine(home, "Creatine")?.["status"] === "stopped";
     // Undo is tested on both changes only when both were saved.

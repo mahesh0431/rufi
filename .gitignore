@@ -18,6 +18,7 @@ codex-home/
 # Dependencies and build output
 node_modules/
 dist/
+*.tsbuildinfo
 /tmp/
 
 # macOS
