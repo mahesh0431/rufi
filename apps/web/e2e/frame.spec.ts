@@ -89,7 +89,7 @@ test.describe("opening Rufi", () => {
     await sidebar(page).getByRole("link", { name: "Overview" }).click();
     await expect(page.getByText("Latest results")).toBeVisible();
 
-    await rufi.start(port);
+    await rufi.start({ port });
     await expect(
       page.getByRole("heading", { name: "This session has ended" }),
     ).toBeVisible();

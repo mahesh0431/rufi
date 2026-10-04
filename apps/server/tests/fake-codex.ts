@@ -16,6 +16,7 @@ import {
   appendFileSync,
   existsSync,
   readFileSync,
+  renameSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -126,8 +127,12 @@ if (existsSync(STATE)) {
     threads.set(thread.id, { ...thread, running: undefined });
   }
 }
+// Rufi may end the fake at any moment, also mid-write: it writes the threads
+// aside, then renames them into place, so a restart never finds half a file.
 function persist() {
-  writeFileSync(STATE, JSON.stringify([...threads.values()]));
+  const aside = `${STATE}.${String(process.pid)}`;
+  writeFileSync(aside, JSON.stringify([...threads.values()]));
+  renameSync(aside, STATE);
 }
 let threadCount = 0;
 let queuedCount = 0;

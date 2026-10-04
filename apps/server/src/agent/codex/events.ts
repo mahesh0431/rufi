@@ -1,6 +1,11 @@
 // Codex's items and turn endings in Rufi's words: one activity line per thing
 // the agent did, and why a reply ended. Plain functions, no state.
-import type { ActivityKind, AgentEvent, TurnEnd } from "../runtime.ts";
+import type {
+  ActivityKind,
+  AgentEvent,
+  AgentTools,
+  TurnEnd,
+} from "../runtime.ts";
 import type { RateLimitSnapshot } from "./protocol/v2/RateLimitSnapshot.ts";
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
 import type { Turn } from "./protocol/v2/Turn.ts";
@@ -49,11 +54,14 @@ function statusOf(status: string | undefined, ended: boolean) {
 
 /**
  * The activity line for an item, as it starts (`ended` false) or ends;
- * undefined for what isn't activity: messages, replies and reasoning.
+ * undefined for what isn't activity: messages, replies and reasoning. A
+ * tool's name is never shown: Rufi's own tools say what they did, in plain
+ * words, and any other is "Used a tool".
  */
 export function activityOf(
   item: ThreadItem,
   ended: boolean,
+  tools?: AgentTools,
 ): Activity | undefined {
   switch (item.type) {
     case "userMessage":
@@ -63,9 +71,13 @@ export function activityOf(
     case "dynamicToolCall": {
       const status =
         item.success === false ? "failed" : statusOf(item.status, ended);
+      const rufi =
+        item.namespace === tools?.namespace
+          ? tools.specs.find((spec) => spec.name === item.tool)
+          : undefined;
       return line(
         "tool",
-        `Used ${item.tool}`,
+        rufi?.shown ?? "Used a tool",
         argumentsOf(item.arguments),
         status,
       );
@@ -73,7 +85,7 @@ export function activityOf(
     case "mcpToolCall":
       return line(
         "tool",
-        `Used ${item.server}.${item.tool}`,
+        "Used a tool",
         argumentsOf(item.arguments),
         statusOf(item.status, ended),
       );

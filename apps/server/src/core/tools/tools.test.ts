@@ -374,6 +374,7 @@ describe("the error envelope", () => {
     const broken = defineTool({
       name: "broken",
       description: "Fails.",
+      shown: "Did something",
       input: NoInput,
       callers: "model",
       readOnly: true,
@@ -402,6 +403,7 @@ describe("the error envelope", () => {
     const refusing = defineTool({
       name: "refusing",
       description: "Refuses.",
+      shown: "Did something",
       input: NoInput,
       callers: "model",
       readOnly: true,
@@ -427,6 +429,7 @@ describe("the error envelope", () => {
     const uiOnly = defineTool({
       name: "accept_changes",
       description: "UI only.",
+      shown: "Did something",
       input: NoInput,
       callers: "ui",
       readOnly: false,

@@ -24,6 +24,7 @@ const Input = Schema.Struct({
 
 export const readConversation = defineTool({
   name: "read_conversation",
+  shown: "Read earlier in the conversation",
   description: `Earlier parts of this conversation, newest first. Each entry's kind is "message" (the user's), "steer" (the user's, sent while you were replying), "reply" (yours) or "activity" (one thing you did: a title and one short detail, never its output). At most ${String(PAGE_MAX)} entries a page; pass the page's next_before to read further back. Rufi chooses the conversation, not you.`,
   input: Input,
   callers: "model",

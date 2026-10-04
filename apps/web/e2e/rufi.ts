@@ -1,12 +1,16 @@
 // Rufi as `pnpm start` runs it, for the screens' tests: the real core with
 // the built screens, on a fresh fictional data folder, with the scripted
-// Codex instead of the real one. Nothing here reaches OpenAI.
+// Codex instead of the real one, or the real Codex binary on a local fake
+// model. Nothing here reaches OpenAI.
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Status } from "@rufi/contracts";
 import { test as base } from "@playwright/test";
 import { Effect, Exit, Scope } from "effect";
+import type { Scenario } from "../../server/tests/fake-codex.ts";
+import { fakeModel, type FakeModel } from "../../server/tests/fake-model.ts";
+import { codexBinary } from "../../server/src/agent/codex/binary.ts";
 import { codexRuntime } from "../../server/src/agent/codex/codex.ts";
 import {
   databasePath,
@@ -24,6 +28,7 @@ export class Rufi {
   account: Status = { account: "signed_in", email: "asha@example.com" };
   #scope: Scope.Closeable | undefined;
   #core: Core | undefined;
+  #model: FakeModel | undefined;
 
   readonly home: string;
 
@@ -42,8 +47,26 @@ export class Rufi {
     }
   }
 
-  /** Starts the core; on `port` to stand in for a restart of the same Rufi. */
-  async start(port?: number): Promise<Core> {
+  /**
+   * Starts the core: on `port` to stand in for a restart of the same Rufi;
+   * the scripted Codex plays `scenario`; `codex: "real"` runs the real Codex
+   * binary on a local fake model instead.
+   */
+  async start(
+    options: { port?: number; scenario?: Scenario; codex?: "real" } = {},
+  ): Promise<Core> {
+    const { port } = options;
+    if (options.codex === "real") this.#model ??= await fakeModel();
+    const command =
+      options.codex === "real"
+        ? {
+            file: await codexBinary(),
+            args: [
+              "-c",
+              `model_providers.openai_chatgpt_plan.base_url="${this.#model?.url ?? ""}"`,
+            ],
+          }
+        : { file: process.execPath, args: [FAKE] };
     const scope = await Effect.runPromise(Scope.make());
     this.#scope = scope;
     this.#core = await Effect.runPromise(
@@ -52,8 +75,11 @@ export class Rufi {
         agent: (tools, host) =>
           codexRuntime({
             home: this.home,
-            command: { file: process.execPath, args: [FAKE] },
-            env: { PATH: process.env["PATH"] ?? "", FAKE_CODEX: "{}" },
+            command,
+            env: {
+              PATH: process.env["PATH"] ?? "",
+              FAKE_CODEX: JSON.stringify(options.scenario ?? {}),
+            },
             token: () => Promise.resolve("token"),
             version: "0.0.0",
             tools,
@@ -84,6 +110,12 @@ export class Rufi {
     this.#core = undefined;
     if (scope) await Effect.runPromise(Scope.close(scope, Exit.void));
   }
+
+  /** After the last test step: the fake model too. */
+  async close(): Promise<void> {
+    await this.stop();
+    await this.#model?.close();
+  }
 }
 
 export const test = base.extend<{ rufi: Rufi }>({
@@ -99,7 +131,7 @@ export const test = base.extend<{ rufi: Rufi }>({
     });
     const rufi = new Rufi(await mkdtemp(join(tmpdir(), "rufi-screens-")));
     await use(rufi);
-    await rufi.stop();
+    await rufi.close();
     await rm(rufi.home, { recursive: true, force: true });
   },
 });

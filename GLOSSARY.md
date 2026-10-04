@@ -72,11 +72,22 @@ _Avoid_: inbox, notifications, tasks
 ## Conversations
 
 **Conversation**:
-An exchange between the user and Rufi's AI about one person, kept by Rufi.
+An exchange between the user and Rufi's AI about one person, kept by Rufi. **New conversation** creates it at once; its name is the first words of its first message the AI took, "New conversation" until then.
 _Avoid_: thread, session
 
 **Chat**:
-The panel and box where the user talks with Rufi's AI; what is said there is a conversation.
+Where the user talks with Rufi's AI: one conversation, shown in three sizes (the chat bar, the chat panel and the chat page) with the same box.
+
+**Chat bar**:
+The box at the bottom right of every page. It shows the conversation the user chose last for the person in this tab; with none yet, using it starts one.
+_Avoid_: composer, input
+
+**Chat panel**:
+The chat opened over the page from the chat bar (or with ⌘J), always the same size. Esc closes it.
+_Avoid_: drawer, popup, sidebar
+
+**Chat page**:
+A conversation at its own address, listed under Conversations in the sidebar. A small window opens the chat as a page.
 
 **Transcript**:
 Rufi's own stored copy of a conversation: your messages, one activity line for each thing the AI did, and the AI's replies, each saved before it is shown. Never the AI's tool outputs or its reasoning. Cards and receipts join it when they come.
@@ -91,7 +102,7 @@ A message sent while the AI is replying, passed into that reply. The AI takes it
 _Avoid_: nudge, interrupt
 
 **Waiting messages**:
-Messages sent while the AI is replying. They wait, then run in order after the reply. You can edit, reorder or delete them, or run one now. After a Stop they keep waiting until you send again. The code calls them the queue.
+Messages sent while the AI is replying. They wait, then run in order after the reply. You can edit, reorder or delete them, or run one now. After a Stop they keep waiting until you send a message or run one now. The code calls them the queue.
 _Avoid_: backlog, pending messages
 
 **Stop**:
@@ -103,7 +114,7 @@ A reply that didn't finish because you stopped it or Rufi closed. What it wrote 
 _Avoid_: cancelled, aborted
 
 **Draft**:
-A message you started and haven't sent: one for each conversation, and one for a new conversation. Rufi never sends a draft by itself.
+A message you started and haven't sent, one for each conversation, saved while you type ("Saved" under the box). While a send holds it, nobody can change it. Rufi never sends a draft by itself.
 _Avoid_: note, unsent
 
 **Model**:

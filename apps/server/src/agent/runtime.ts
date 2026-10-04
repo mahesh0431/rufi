@@ -92,6 +92,8 @@ export interface AgentTools {
   specs: readonly {
     name: string;
     description: string;
+    /** What a person sees when the AI uses it, in plain words. */
+    shown: string;
     inputSchema: Record<string, unknown>;
   }[];
 }

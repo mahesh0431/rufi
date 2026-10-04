@@ -7,6 +7,7 @@ export const RESULTS_SHOWN = 20;
 
 export const getOverview = defineTool({
   name: "get_overview",
+  shown: "Read your overview",
   description: `The active person's health record in Rufi at a glance: their name, how many documents and reports they have, and their current test results exactly as printed (test, value, unit, reference range, flag, method or context, measured date at the precision known). At most ${String(RESULTS_SHOWN)} results, newest measured first, undated last. An amended result replaces the one it corrects and says "amended": true. Takes no input: Rufi chooses the person, not you.`,
   input: NoInput,
   callers: "both",

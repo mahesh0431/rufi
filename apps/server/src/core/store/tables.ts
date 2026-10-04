@@ -1,11 +1,15 @@
 // Generated from schema.sql by pnpm db:types; a test fails if it differs.
 export interface Tables {
+  chosen_conversations: {
+    person_id: string;
+    conversation_id: string;
+  };
   conversations: {
     id: string;
     person_id: string;
-    title: string;
+    title: string | null;
     provider: string;
-    model: string;
+    model: string | null;
     thread_id: string | null;
     thread_provider: string | null;
     thread_model: string | null;
@@ -22,8 +26,11 @@ export interface Tables {
   };
   drafts: {
     person_id: string;
-    conversation_id: string | null;
+    conversation_id: string;
     text: string;
+    revision: number;
+    state: string;
+    attempt: string | null;
     updated_at: string;
   };
   files: {

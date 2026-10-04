@@ -1,7 +1,7 @@
 // The chat: joins the agent and Rufi's transcripts. What the agent does is
 // saved first and shown from what was saved; messages wait in the agent's own
 // queue, and Rufi saves each one when the agent starts it.
-import type { Conversation, WaitingMessage } from "@rufi/contracts";
+import type { WaitingMessage } from "@rufi/contracts";
 import { v7 as uuid } from "uuid";
 import {
   Stopped,
@@ -15,7 +15,11 @@ import {
 import type { Allowlist } from "../core/chat/models.ts";
 import { allowedModels } from "../core/chat/models.ts";
 import { safetyInstructions } from "../core/chat/safety.ts";
-import type { ConversationRow, Transcripts } from "../core/chat/transcript.ts";
+import {
+  titleFrom,
+  type ConversationRow,
+  type Transcripts,
+} from "../core/chat/transcript.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 
 /** How many earlier messages a new thread starts with. */
@@ -146,7 +150,7 @@ export function chat(deps: ChatDeps) {
         await transcripts.startTurn(
           conversation,
           event.turnId,
-          conversation.threadModel ?? conversation.model,
+          conversation.threadModel ?? conversation.model ?? "",
         );
         return;
       case "message": {
@@ -259,7 +263,8 @@ export function chat(deps: ChatDeps) {
   ): Promise<ThreadSettings> {
     const region = await transcripts.setting("emergency_region");
     return {
-      model: conversation.model,
+      // Set before a thread starts: the first message chooses one.
+      model: conversation.model ?? "",
       instructions: `${safetyInstructions(region)}\n\n${deps.tools.instructions}`,
     };
   }
@@ -357,30 +362,32 @@ export function chat(deps: ChatDeps) {
     /** The allowed models the provider offers now, and any allowlist problem. */
     models: offered,
 
-    /** A new conversation on the first allowed model the provider offers. */
-    create: async (personId: string, title: string): Promise<Conversation> => {
-      const model = (await offered()).models[0]?.id;
-      if (model === undefined) {
-        throw new ChatRefusal("None of the allowed models is offered now.");
-      }
-      const row = await transcripts.createConversation(
-        personId,
-        title,
-        agent.provider,
-        model,
-      );
-      const { id, provider, createdAt } = row;
-      return { id, title, provider, model, createdAt };
-    },
+    /**
+     * A new conversation, at once: nothing is asked of the agent. Its first
+     * message chooses the model, unless one is chosen before.
+     */
+    create: (personId: string, title: string | null) =>
+      transcripts.createConversation(personId, title, agent.provider, null),
 
     /**
-     * Sends a message: it runs now, or waits its turn in the agent's queue.
-     * It enters the transcript when the agent starts it.
+     * Sends a message, by the id Rufi gives it (the send's own, from a box):
+     * it runs now, or waits its
+     * turn in the agent's queue. It enters the transcript when the agent
+     * starts it.
      */
-    send: (conversation: ConversationRow, text: string) =>
-      inLane(conversation, async (conversation, signal) => {
+    send: (conversation: ConversationRow, text: string, id: string = uuid()) =>
+      inLane(conversation, async (stored, signal) => {
+        let conversation = stored;
+        if (conversation.model === null) {
+          const { models } = await offered();
+          const first = models[0]?.id;
+          if (first === undefined) {
+            throw new ChatRefusal("None of the allowed models is offered now.");
+          }
+          await transcripts.setModel(conversation, first);
+          conversation = { ...conversation, model: first };
+        }
         const threadId = await threadFor(conversation, signal);
-        const id = uuid();
         const context = pendingContext.get(conversation.id);
         await agent.send(
           threadId,
@@ -388,17 +395,27 @@ export function chat(deps: ChatDeps) {
           signal,
         );
         pendingContext.delete(conversation.id);
+        if (conversation.title === null) {
+          // The message is taken: a title that can't be saved doesn't undo that.
+          await transcripts
+            .setTitle(conversation, titleFrom(text))
+            .catch((error: unknown) => {
+              log("chat.save_failed", {
+                kind: "title",
+                error: errorCode(error),
+              });
+            });
+        }
         return { id };
       }),
 
     /** Passes a message into the running reply; saved as a steer. */
-    steer: (conversation: ConversationRow, text: string) =>
+    steer: (conversation: ConversationRow, text: string, id: string = uuid()) =>
       inLane(conversation, async (conversation) => {
         const threadId = threadOf(conversation);
         if (threadId === null || !agent.running(threadId)) {
           throw new ChatRefusal("No reply is running to steer.");
         }
-        const id = uuid();
         steers.set(id, threadId);
         let turnId: string;
         try {

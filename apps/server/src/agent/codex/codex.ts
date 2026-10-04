@@ -400,7 +400,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           return;
         }
         if (item.type === "commandExecution") void track();
-        const activity = activityOf(item, false);
+        const activity = activityOf(item, false, deps.tools);
         if (activity) {
           emit({
             type: "activity",
@@ -445,7 +445,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           }
           return;
         }
-        const activity = activityOf(item, true);
+        const activity = activityOf(item, true, deps.tools);
         if (activity) {
           emit({
             type: "activity",
@@ -864,7 +864,8 @@ function dynamicTools(tools: AgentTools): DynamicToolSpec[] {
       description: "Rufi: the user's health record.",
       tools: tools.specs.map((spec) => ({
         type: "function",
-        ...spec,
+        name: spec.name,
+        description: spec.description,
         // A JSON Schema made by Effect Schema: plain JSON.
         inputSchema: spec.inputSchema as JsonValue,
       })),

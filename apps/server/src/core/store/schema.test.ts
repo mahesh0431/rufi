@@ -94,7 +94,7 @@ describe("schema", () => {
       conversation("c-nanna", "nanna");
     });
 
-    it("rejects a turn, an entry or a draft for one person in another's conversation", () => {
+    it("rejects a turn, an entry, a draft or a chosen conversation for one person in another's conversation", () => {
       expect(() => {
         insert("turns", {
           ...turn,
@@ -116,7 +116,14 @@ describe("schema", () => {
           person_id: "amma",
           conversation_id: "c-nanna",
           text: "x",
+          revision: 1,
           updated_at: now,
+        });
+      }).toThrow("FOREIGN KEY constraint failed");
+      expect(() => {
+        insert("chosen_conversations", {
+          person_id: "amma",
+          conversation_id: "c-nanna",
         });
       }).toThrow("FOREIGN KEY constraint failed");
     });
@@ -167,21 +174,21 @@ describe("schema", () => {
       }).toThrow("CHECK constraint failed");
     });
 
-    it("allows one draft per conversation and one for a new conversation", () => {
-      insert("drafts", {
+    it("holds a draft for a send only with its message id", () => {
+      const draft = {
         person_id: "amma",
-        conversation_id: null,
+        conversation_id: "c-amma",
         text: "a",
+        revision: 1,
         updated_at: now,
-      });
+      };
       expect(() => {
-        insert("drafts", {
-          person_id: "amma",
-          conversation_id: null,
-          text: "b",
-          updated_at: now,
-        });
-      }).toThrow("UNIQUE constraint failed");
+        insert("drafts", { ...draft, state: "sending" });
+      }).toThrow("CHECK constraint failed");
+      expect(() => {
+        insert("drafts", { ...draft, attempt: "m-1" });
+      }).toThrow("CHECK constraint failed");
+      insert("drafts", { ...draft, state: "sending", attempt: "m-1" });
     });
   });
 

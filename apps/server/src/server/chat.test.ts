@@ -566,12 +566,14 @@ describe("the chat, on the scripted Codex", () => {
   it("starts and changes to allowed models the provider offers only", async () => {
     await startChat("fake", { allowlist: ["gpt-retired", "gpt-6-astra"] });
     const c = await newConversation();
-    expect(c.model).toBe("gpt-6-astra");
+    expect(c.model).toBeNull();
+    await chat?.send(c, "Hello");
+    expect((await conversation(c.id)).model).toBe("gpt-6-astra");
     await expect(chat?.selectModel(c, "gpt-retired")).rejects.toThrow(
       "That model isn't allowed or isn't offered now.",
     );
     await startChat("fake", { allowlist: ["gpt-retired"] });
-    await expect(chat?.create("asha", "Fictional chat")).rejects.toThrow(
+    await expect(chat?.send(await newConversation(), "Hello")).rejects.toThrow(
       "None of the allowed models is offered now.",
     );
   });
@@ -684,7 +686,7 @@ describe("the chat, on the scripted Codex", () => {
       .filter((e) => e.kind === "activity")
       .map((e) => [e.activity, e.text, e.detail, e.status]);
     expect(lines).toEqual([
-      ["tool", "Used get_overview", null, "done"],
+      ["tool", "Read your overview", null, "done"],
       ["command", "Ran a command", "ls", "done"],
       ["other", "The AI did something Rufi can't display", "teleport", "done"],
     ]);

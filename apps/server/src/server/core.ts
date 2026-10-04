@@ -125,6 +125,8 @@ export const startCore = (options: CoreOptions) =>
     );
     const transcripts = openTranscripts(writer);
     const interrupted = yield* attempt(() => transcripts.interruptRunning());
+    // Sends Rufi stopped during: taken, or the text stays; never sent again.
+    yield* attempt(() => transcripts.endStoppedSends());
 
     const tools = forAgent(() => ({ store: reader, personId: undefined }), log);
     const allowlist = allowlistFile(home);

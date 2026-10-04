@@ -21,6 +21,8 @@ export interface Tool<In extends Input = Input> {
   name: string;
   /** Written for the model; every limit the tool enforces is stated here. */
   description: string;
+  /** What a person sees when the AI uses it, in plain words. */
+  shown: string;
   input: In;
   /** Who may call it; maps to MCP Apps' `visibility` later. */
   callers: "model" | "ui" | "both";

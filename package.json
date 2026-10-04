@@ -37,7 +37,8 @@
     "workspaces": {
       "apps/server": {
         "entry": [
-          "scripts/*.ts"
+          "scripts/*.ts",
+          "tests/core-process.ts"
         ],
         "ignore": [
           "src/agent/codex/protocol/**"
