@@ -114,27 +114,28 @@ describe("the box's draft", () => {
     expect(saves[1]).toMatchObject({ revision: 3 });
   });
 
-  it("keeps the text of a save that failed in the box, says so, and saves it on Retry", async () => {
-    const { io, saves } = core();
+  it("after a save whose answer didn't come, asks the core first: goes on from it when it was kept, with what was typed since", async () => {
+    // The core kept the first save; its answer was lost.
+    const { io, saves } = core(editable("", 0), editable("Start", 1));
     const box = draftBox(io);
     await settle();
-    box.type("Keep this");
+    box.type("Start");
     await vi.advanceTimersByTimeAsync(400);
+    box.type("Start, and more");
     saves[0]?.fail(new Error("Rufi can't be reached."));
     await settle();
     expect(box.store.getState()).toMatchObject({
-      text: "Keep this",
+      text: "Start, and more",
       failed: true,
-      notice: "Rufi can't be reached.",
     });
-    const retried = box.saveNow();
+    await vi.advanceTimersByTimeAsync(400);
+    expect(saves[1]).toMatchObject({ text: "Start, and more", revision: 1 });
+    saves[1]?.answer(true, editable("Start, and more", 2));
     await settle();
-    expect(saves[1]).toMatchObject({ text: "Keep this", revision: 0 });
-    saves[1]?.answer(true, editable("Keep this", 1));
-    await retried;
     expect(box.store.getState()).toMatchObject({
+      text: "Start, and more",
       failed: false,
-      draft: { text: "Keep this" },
+      notice: null,
     });
   });
 

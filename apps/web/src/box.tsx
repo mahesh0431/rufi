@@ -19,12 +19,14 @@ import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { ApiError, read, request } from "./api.ts";
+import { startingConversation, useStartingConversation } from "./choice.ts";
 import {
   type BoxState,
   type DraftBox,
   type DraftIo,
   draftBox,
   held,
+  sending,
   tooLong,
 } from "./draft.ts";
 import { conversationPath, type Live, messageOf } from "./live.ts";
@@ -76,7 +78,7 @@ const draftIn = (error: unknown) => {
 
 /** Whether the box's text is kept, in a word. */
 function saveState(state: BoxState): string | null {
-  if (held(state)) return "Sending…";
+  if (sending(state)) return "Sending…";
   if (state.failed) return "Not saved";
   if (state.text !== state.draft.text) return "Saving…";
   return state.text === "" ? null : "Saved";
@@ -105,8 +107,11 @@ export function Box({
   const box = boxFor(person.id, conversationId);
   const text = useStore(box.store, (state) => state.text);
   const loaded = useStore(box.store, (state) => state.loaded);
-  const locked = useStore(box.store, held);
-  const saved = useStore(box.store, saveState);
+  // New conversation is being made: nothing goes into this one meanwhile.
+  const starting = useStartingConversation(person.id);
+  const locked = useStore(box.store, held) || starting;
+  const status = useStore(box.store, saveState);
+  const saved = starting ? "Starting a new conversation…" : status;
   const unknown = useStore(
     box.store,
     (state) => state.draft.state === "unknown",
@@ -121,6 +126,7 @@ export function Box({
   useEffect(() => () => void box.saveNow(), [box]);
 
   async function submit(steer: boolean) {
+    if (startingConversation(person.id)) return;
     const taken = await box.take();
     if (!taken) return;
     const message = taken.text.trim();

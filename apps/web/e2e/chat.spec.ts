@@ -345,6 +345,66 @@ test("a save that fails says so and keeps the text in the tab, also when you wen
   await expect(box(chat(page))).toHaveValue("Half a question, and more");
 });
 
+test("a save whose answer is lost keeps what you typed after it", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  await box(chat(page)).click();
+  await expect(box(chat(page))).toBeEditable();
+  // The core keeps the first save, but its answer never reaches the page.
+  const stored = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  let first = true;
+  await page.route("**/drafts/*", async (route) => {
+    if (route.request().method() !== "PUT" || !first) return route.continue();
+    first = false;
+    await route.fetch();
+    stored.resolve(undefined);
+    await release.promise;
+    await route.abort("failed");
+  });
+  await box(chat(page)).fill("Start of question");
+  await stored.promise;
+  await box(chat(page)).fill("Start of question, and more");
+  release.resolve(undefined);
+  await expect(chat(page).getByRole("status")).toHaveText("Saved");
+  await expect(box(chat(page))).toHaveValue("Start of question, and more");
+  await expect(chat(page).getByRole("alert")).toHaveCount(0);
+  await page.reload();
+  await box(chat(page)).click();
+  await expect(box(chat(page))).toHaveValue("Start of question, and more");
+});
+
+test("Send's own save says Saving…, not Sending…; a reload then loses only that unsaved text", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  await box(chat(page)).click();
+  await expect(box(chat(page))).toBeEditable();
+  const saving = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  await page.route("**/drafts/*", async (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    saving.resolve(undefined);
+    await release.promise;
+    await route.continue().catch(() => undefined);
+  });
+  await box(chat(page)).fill("Message clicked Send");
+  await box(chat(page)).press("Enter");
+  await saving.promise;
+  await expect(chat(page).getByRole("status")).toHaveText("Saving…");
+  await expect(box(chat(page))).toHaveAttribute("readonly", "");
+  await page.reload();
+  release.resolve(undefined);
+  await page.unroute("**/drafts/*");
+  await box(chat(page)).click();
+  await expect(box(chat(page))).toBeEditable();
+  await expect(box(chat(page))).toHaveValue("");
+  await expect(log(chat(page))).toHaveCount(0);
+});
+
 test("a reload while a message is on its way never puts it back in the box", async ({
   page,
   rufi,
@@ -714,6 +774,58 @@ test("the conversation you chose stays on screen whatever the core answers, and 
   await page.goto((await runningLink(rufi.home)) ?? "");
   await box(chat(page)).click();
   await expect(switcher("Second conversation")).toBeVisible();
+});
+
+test("while New conversation is being made, nothing can be sent into the one before, and a later move wins over it", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  await send(page, "Previous context");
+  await expect(log(chat(page)).locator(".reply")).toHaveText(
+    "ok:Previous context",
+  );
+  let sends = 0;
+  page.on("request", (request) => {
+    if (request.url().endsWith("/messages")) sends += 1;
+  });
+  const creating = Promise.withResolvers<undefined>();
+  let release = Promise.withResolvers<undefined>();
+  await page.route("**/conversations", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    creating.resolve(undefined);
+    await release.promise;
+    await route.continue();
+  });
+  await sidebar(page).getByRole("button", { name: "New conversation" }).click();
+  await creating.promise;
+  await expect(chat(page).getByRole("status")).toHaveText(
+    "Starting a new conversation…",
+  );
+  await expect(box(chat(page))).toHaveAttribute("readonly", "");
+  await box(chat(page)).press("Enter");
+  release.resolve(undefined);
+  await expect(
+    chat(page).getByRole("button", { name: "New conversation", exact: true }),
+  ).toBeVisible();
+  await expect(box(chat(page))).toBeEditable();
+  expect(sends).toBe(0);
+
+  // From a conversation's page: you go to Settings before it is made.
+  await sidebar(page).getByRole("link", { name: "Previous context" }).click();
+  await expect(page).toHaveURL(/\/conversations\//);
+  release = Promise.withResolvers<undefined>();
+  const made = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/conversations") && r.request().method() === "POST",
+  );
+  await sidebar(page).getByRole("button", { name: "New conversation" }).click();
+  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  release.resolve(undefined);
+  await made;
+  await painted(page);
+  await expect(page).toHaveURL(/\/settings$/);
 });
 
 test("a send never moves the chat; back in its conversation, the box shows it held until it ends", async ({

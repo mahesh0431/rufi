@@ -102,7 +102,7 @@ A message sent while the AI is replying, passed into that reply. The AI takes it
 _Avoid_: nudge, interrupt
 
 **Waiting messages**:
-Messages sent while the AI is replying. They wait, then run in order after the reply. You can edit, reorder or delete them, or run one now. After a Stop they keep waiting until you send again. The code calls them the queue.
+Messages sent while the AI is replying. They wait, then run in order after the reply. You can edit, reorder or delete them, or run one now. After a Stop they keep waiting until you send a message or run one now. The code calls them the queue.
 _Avoid_: backlog, pending messages
 
 **Stop**:

@@ -211,21 +211,23 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     }
     return parsed.success;
   };
+  /** The agent's error, as the answer shows it. */
+  const answerOf = (error: unknown): HttpError => {
+    if (error instanceof HttpError) return error;
+    if (error instanceof ChatRefusal) return new HttpError(409, error.message);
+    if (error instanceof Stopped) return new HttpError(409, "Stopped.");
+    deps.log("api.failed", { error: errorCode(error) });
+    return new HttpError(
+      502,
+      error instanceof Error ? error.message : "The AI couldn't do that.",
+    );
+  };
   /** A chat action: the agent's errors are shown as they are. */
   const acting = async <T>(action: () => Promise<T>): Promise<T> => {
     try {
       return await action();
     } catch (error) {
-      if (error instanceof HttpError) throw error;
-      if (error instanceof ChatRefusal) throw new HttpError(409, error.message);
-      if (error instanceof Stopped) {
-        throw new HttpError(409, "Stopped before the message was sent.");
-      }
-      deps.log("api.failed", { error: errorCode(error) });
-      throw new HttpError(
-        502,
-        error instanceof Error ? error.message : "The AI couldn't do that.",
-      );
+      throw answerOf(error);
     }
   };
   const emergency = async (): Promise<Settings> => {
@@ -297,8 +299,9 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
    * draft the box saved at `revision` and holds the draft for this send, so
    * another tab can't change or send it meanwhile, and the text survives
    * Rufi stopping (docs/adr/0004). Then the agent is asked. Taken: the draft
-   * is emptied. Refused: the text is back to edit, with why. Any other
-   * failure: the text stays, and nobody knows whether the agent has it. The
+   * is emptied. Refused by the chat: the text is back to edit, with why. A
+   * Stop or any other failure: the text stays, and nobody knows whether the
+   * agent has it. The
    * message's id is the send's, so after a stop the transcript tells.
    */
   const fromBox = async (
@@ -325,19 +328,18 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       );
     }
     try {
-      await acting(() => action(id));
+      await action(id);
     } catch (error) {
-      if (!(error instanceof HttpError)) throw error;
+      // Only the chat's own refusal means the agent never had it; a Stop or
+      // the agent's failure may come after the agent took it.
       const draft = await transcripts.endSend(
         found.personId,
         found.id,
         id,
-        error.status === 409 ? "refused" : "unknown",
+        error instanceof ChatRefusal ? "refused" : "unknown",
       );
-      throw new HttpError(error.status, error.message, {
-        ...error.more,
-        draft,
-      });
+      const { status, message, more } = answerOf(error);
+      throw new HttpError(status, message, { ...more, draft });
     }
     const draft = await transcripts.endSend(
       found.personId,

@@ -708,6 +708,41 @@ describe("the local API", () => {
     ).toEqual({ text: "Hello again", revision: 4, state: "editable" });
   });
 
+  it("keeps the text as unknown when Stop comes while the agent takes the message, which may already wait", async () => {
+    // Codex takes a while to put a message in its queue.
+    const core = await start({
+      agent: scripted({ slow: ["thread/queue/add"], slowMs: 650 }),
+    });
+    const page = await session(core);
+    const c = await conversation(page);
+    const draft = `/api/people/${c.person}/drafts/${c.id}`;
+    await page.say(c.path, "hang");
+    await until(async () =>
+      (
+        (await page.api("GET", c.path)).body["turns"] as { status: string }[]
+      ).some((turn) => turn.status === "running"),
+    );
+    const sending = page.say(c.path, "Next question");
+    await until(
+      async () => (await page.api("GET", draft)).body["state"] === "sending",
+    );
+    await page.api("POST", `${c.path}/stop`);
+    const stopped = await sending;
+    expect(stopped.status).toBe(409);
+    expect(stopped.body["draft"]).toMatchObject({
+      text: "Next question",
+      state: "unknown",
+    });
+    // Why: the agent may have it already.
+    expect(
+      (
+        (await page.api("GET", `${c.path}/waiting`)).body["messages"] as {
+          text: string;
+        }[]
+      ).map((m) => m.text),
+    ).toEqual(["Next question"]);
+  });
+
   it("creates a conversation at once, without the AI; its first message taken chooses the model and names it", async () => {
     // Codex doesn't answer the list of models: creating doesn't need it.
     let core = await start({ agent: scripted({ hang: ["model/list"] }) });

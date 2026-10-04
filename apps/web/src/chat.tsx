@@ -6,7 +6,7 @@
 // instead of the panel.
 import { Menu } from "@base-ui/react/menu";
 import type { Conversation, Person } from "@rufi/contracts";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import { Check, ChevronDown, Maximize2, Minus } from "lucide-react";
 import {
   createContext,
@@ -22,7 +22,12 @@ import { create } from "zustand/react";
 import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
 import { Box } from "./box.tsx";
-import { choose, startConversation, useChosen } from "./choice.ts";
+import {
+  choose,
+  startConversation,
+  startingConversation,
+  useChosen,
+} from "./choice.ts";
 import {
   conversationPath,
   type Live,
@@ -79,9 +84,12 @@ function useLive(personId: string, conversationId: string | null) {
  */
 export function useNewConversation(personId: string) {
   const navigate = useNavigate();
+  const router = useRouter();
   return async (onPage: boolean) => {
+    const from = router.state.location.href;
     const started = await startConversation(personId);
-    if (!started) return;
+    // Gone to another page meanwhile: the bar shows it, nothing more.
+    if (!started || router.state.location.href !== from) return;
     if (onPage || isSmall()) {
       void navigate(pageOf(personId, started.id));
       return;
@@ -112,18 +120,12 @@ export function ChatDock({ person }: { person: Person }) {
     openPanel();
   };
   /** With no conversation yet, using the box starts one, once. */
-  const starting = useRef(false);
   const startHere = () => {
-    if (starting.current) return;
-    starting.current = true;
+    if (startingConversation(person.id)) return;
     setProblem(null);
-    start(false)
-      .catch((error: unknown) => {
-        setProblem(messageOf(error));
-      })
-      .finally(() => {
-        starting.current = false;
-      });
+    start(false).catch((error: unknown) => {
+      setProblem(messageOf(error));
+    });
   };
   const close = () => {
     const back = useChat.getState().focusBefore;

@@ -4,7 +4,9 @@
 // Saved or Not saved (with Retry). Nothing is saved as the page closes, so
 // what was typed since the last Saved can be lost then. A save based on an
 // older revision is refused (another tab saved first) and the box shows the
-// newer text. A send saves first; then the core holds the draft until the
+// newer text. A save whose answer didn't come may still have been kept: the
+// next save asks the core first, and goes on from it if it was. A send saves
+// first ("Saving…"); then the core holds the draft ("Sending…") until the
 // agent took the message (the draft empties) or refused it, and nobody can
 // change it meanwhile, in this tab or another. A box that finds its draft
 // held waits until the send has ended. Nothing here sends a message again.
@@ -30,7 +32,9 @@ export interface BoxState {
   draft: Draft;
   /** The draft is read: until then the box can't be typed in. */
   loaded: boolean;
-  /** A message from this box is on its way. */
+  /** Send is saving the text first: the box can't change meanwhile. */
+  preparing: boolean;
+  /** A message from this box is on its way; the core holds its text. */
   sending: boolean;
   /** The last save failed: the text is only in this tab. */
   failed: boolean;
@@ -61,8 +65,11 @@ export const inTurn = <T>(
     .build(client, { scope: { id: scope }, mutationFn: run })
     .execute(undefined);
 
-/** A send holds the draft: the box can't be changed. */
-export const held = (state: BoxState) =>
+/** A send has the text: the box can't be changed. */
+export const held = (state: BoxState) => state.preparing || sending(state);
+
+/** The core holds the text for a send. */
+export const sending = (state: BoxState) =>
   state.sending || state.draft.state === "sending";
 
 export function draftBox(io: DraftIo) {
@@ -70,12 +77,15 @@ export function draftBox(io: DraftIo) {
     text: "",
     draft: { text: "", revision: 0, state: "editable" },
     loaded: false,
+    preparing: false,
     sending: false,
     failed: false,
     notice: null,
   }));
   let timer: ReturnType<typeof setTimeout> | undefined;
   let waiting = false;
+  /** The text of the last save, when its answer didn't come. */
+  let unanswered: string | undefined;
 
   /** The draft as the core has it now, shown as it is. */
   const show = (draft: Draft, notice: string | null = null) => {
@@ -121,10 +131,41 @@ export function draftBox(io: DraftIo) {
     timer = setTimeout(() => void save(), PAUSE_MS);
   };
 
+  /**
+   * After a save whose answer didn't come: the draft as the core has it.
+   * It kept that save: the box goes on from it, with what was typed since.
+   * It didn't: nothing changes. Another tab changed it: its text shows.
+   * False when the box can't save now.
+   */
+  async function settle(): Promise<boolean> {
+    let now: Draft;
+    try {
+      now = await io.load();
+    } catch (error) {
+      store.setState({ failed: true, notice: messageOf(error) });
+      return false;
+    }
+    const attempted = unanswered;
+    unanswered = undefined;
+    const { draft } = store.getState();
+    if (now.revision === draft.revision) return true;
+    if (
+      now.revision === draft.revision + 1 &&
+      now.state === "editable" &&
+      now.text === attempted
+    ) {
+      store.setState({ draft: now });
+      return true;
+    }
+    show(now, now.state === "sending" ? null : CHANGED);
+    return false;
+  }
+
   /** Saves the text if it changed, after this box's earlier saves. */
   function save(): Promise<void> {
     clearTimeout(timer);
     return inTurn(io.client, io.scope, async () => {
+      if (unanswered !== undefined && !(await settle())) return;
       const state = store.getState();
       const { text, draft } = state;
       if (!state.loaded || draft.state === "sending" || tooLong(text)) {
@@ -144,6 +185,8 @@ export function draftBox(io: DraftIo) {
         // Typed meanwhile: that is saved next.
         if (store.getState().text !== text) later();
       } catch (error) {
+        // The core may have kept it: the next save asks first.
+        unanswered = text;
         store.setState({ failed: true, notice: messageOf(error) });
       }
     });
@@ -172,13 +215,14 @@ export function draftBox(io: DraftIo) {
       const state = store.getState();
       if (!state.loaded || held(state) || tooLong(state.text)) return undefined;
       const { text } = state;
-      store.setState({ sending: true, notice: null });
+      store.setState({ preparing: true, notice: null });
       await save();
       const { draft, failed } = store.getState();
       if (failed || draft.text !== text || draft.state === "sending") {
-        store.setState({ sending: false });
+        store.setState({ preparing: false });
         return undefined;
       }
+      store.setState({ preparing: false, sending: true });
       return { text, revision: draft.revision };
     },
 

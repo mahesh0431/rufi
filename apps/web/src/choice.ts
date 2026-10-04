@@ -14,6 +14,8 @@ import { conversationsKey, queries, useConversations } from "./reads.ts";
 
 /** By person; absent until the core's choice is read. */
 const useChoices = create<Record<string, string | null>>(() => ({}));
+/** By person: a new conversation is being made; nothing can be sent. */
+const useStarting = create<Record<string, boolean>>(() => ({}));
 /** By person: how many times the person chose here. */
 const made = new Map<string, number>();
 
@@ -36,10 +38,25 @@ export function useChosen(personId: string): string | null | undefined {
   return local === undefined ? saved : local;
 }
 
+/** Whether a new conversation is being made for the person. */
+export const useStartingConversation = (personId: string) =>
+  useStarting((starting) => starting[personId] === true);
+
+export const startingConversation = (personId: string) =>
+  useStarting.getState()[personId] === true;
+
+/** One more of the person's choices; returns its number. */
+const next = (personId: string) => {
+  const n = (made.get(personId) ?? 0) + 1;
+  made.set(personId, n);
+  return n;
+};
+
 /** The person chose the conversation the chat shows. */
 export function choose(personId: string, conversationId: string): void {
+  useStarting.setState({ [personId]: false });
   if (useChoices.getState()[personId] === conversationId) return;
-  made.set(personId, (made.get(personId) ?? 0) + 1);
+  next(personId);
   useChoices.setState({ [personId]: conversationId });
   void inTurn(queries, `chosen/${personId}`, () =>
     request("PUT", `${peoplePath(personId)}/chosen`, { conversationId }),
@@ -53,19 +70,28 @@ const Created = Schema.Struct({ conversation: Conversation });
 
 /**
  * Starts a new conversation (the core creates it at once) and shows it,
- * unless the person chose another one while it was being made: then it is
- * only listed, and undefined.
+ * unless the person chose another one, or New again, while it was being
+ * made: then it is only listed, and undefined. Until then nothing can be
+ * sent from the chat, so nothing goes into the conversation before.
  */
 export async function startConversation(
   personId: string,
 ): Promise<Conversation | undefined> {
-  const before = made.get(personId) ?? 0;
-  const { conversation } = await read(
-    Created,
-    "POST",
-    `${peoplePath(personId)}/conversations`,
-    {},
-  );
+  const mine = next(personId);
+  useStarting.setState({ [personId]: true });
+  const current = () => made.get(personId) === mine;
+  let conversation: Conversation;
+  try {
+    ({ conversation } = await read(
+      Created,
+      "POST",
+      `${peoplePath(personId)}/conversations`,
+      {},
+    ));
+  } catch (error) {
+    if (current()) useStarting.setState({ [personId]: false });
+    throw error;
+  }
   // An older read of the list must not drop it.
   await queries.cancelQueries({ queryKey: conversationsKey(personId) });
   queries.setQueryData<typeof Conversations.Type>(
@@ -76,7 +102,7 @@ export async function startConversation(
         conversations: [conversation, ...list.conversations],
       },
   );
-  if ((made.get(personId) ?? 0) !== before) return undefined;
+  if (!current()) return undefined;
   choose(personId, conversation.id);
   return conversation;
 }
