@@ -19,6 +19,12 @@ const EMERGENCY: Record<string, { name: string; number: string }> = {
   NL: { name: "Netherlands", number: "112" },
 };
 
+/** Every region Rufi knows, by name, to choose from. */
+export const emergencyRegions = () =>
+  Object.entries(EMERGENCY)
+    .map(([region, known]) => ({ region, ...known }))
+    .sort((a, b) => a.name.localeCompare(b.name, "en"));
+
 export function emergencyFor(
   region: string | undefined,
 ): { region: string; name: string; number: string } | undefined {

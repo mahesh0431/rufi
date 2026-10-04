@@ -6,3 +6,5 @@ packages:
 # allowBuilds, and an unlisted one fails the install instead of being skipped.
 strictDepBuilds: true
 allowBuilds: {}
+minimumReleaseAgeExclude:
+  - lucide-react@1.52.0

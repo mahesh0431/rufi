@@ -4,6 +4,8 @@ Rufi's AI runs on your own ChatGPT plan. You connect Rufi to your ChatGPT accoun
 
 Today you do this with terminal commands. Rufi's browser app will replace them.
 
+These commands can't run while Rufi runs, because they use the same data folder. Stop Rufi first (Ctrl-C in the terminal where `pnpm start` runs), and run `pnpm start` again when you're done.
+
 ## Sign in
 
 1. Run `pnpm rufi signin`. Your browser opens on ChatGPT's sign-in page. If it doesn't open, use the link Rufi shows. With `--no-open`, Rufi only shows the link.

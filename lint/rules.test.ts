@@ -8,6 +8,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 const ROOT = join(import.meta.dirname, "..");
 const PROBES = join(ROOT, "apps/server/src/core/lint-probes");
+const WEB_PROBES = join(ROOT, "apps/web/src/lint-probes");
 
 const probes: Record<string, string> = {
   border: `import { Stopped } from "../../agent/runtime.ts";\nexport const a = Stopped;\n`,
@@ -28,6 +29,13 @@ const probes: Record<string, string> = {
   switchCase: `export function f(x: "a" | "b"): number {\n  switch (x) {\n    case "a":\n      return 1;\n  }\n  return 0;\n}\n`,
 };
 
+/** The screens' borders: the browser, the HTTP API and @rufi/contracts only. */
+const webProbes: Record<string, string> = {
+  webServer: `import { startCore } from "../../../server/src/server/core.ts";\nexport const a = startCore;\n`,
+  webNode: `import { readFile } from "node:fs/promises";\nexport const a = readFile;\n`,
+  webHooks: `import { useState } from "react";\nexport function A({ on }: { on: boolean }) {\n  if (on) useState(0);\n  return null;\n}\n`,
+};
+
 interface Diagnostic {
   code: string;
   filename: string;
@@ -38,23 +46,32 @@ async function lint(): Promise<Diagnostic[]> {
   for (const [name, text] of Object.entries(probes)) {
     await writeFile(join(PROBES, `${name}.ts`), text);
   }
+  await mkdir(WEB_PROBES, { recursive: true });
+  for (const [name, text] of Object.entries(webProbes)) {
+    await writeFile(join(WEB_PROBES, `${name}.tsx`), text);
+  }
   const result = await promisify(execFile)(
     "pnpm",
-    ["exec", "oxlint", "--type-aware", "-f", "json", PROBES],
+    ["exec", "oxlint", "--type-aware", "-f", "json", PROBES, WEB_PROBES],
     { cwd: ROOT, timeout: 60_000 },
   ).catch((error: unknown) => error as { stdout: string });
   return (JSON.parse(result.stdout) as { diagnostics: Diagnostic[] })
     .diagnostics;
 }
 
-afterAll(() => rm(PROBES, { recursive: true, force: true }));
+afterAll(async () => {
+  await rm(PROBES, { recursive: true, force: true });
+  await rm(WEB_PROBES, { recursive: true, force: true });
+});
 
 describe("lint", () => {
   it("refuses each probe with the rule meant for it", async () => {
     const found = await lint();
     const codes = (name: string) =>
       found
-        .filter((d) => d.filename.endsWith(`lint-probes/${name}.ts`))
+        .filter(
+          (d) => /lint-probes\/(\w+)\.tsx?$/.exec(d.filename)?.[1] === name,
+        )
         .map((d) => d.code);
     expect(codes("border")).toContain("eslint(no-restricted-imports)");
     expect(codes("serverBorder")).toContain("eslint(no-restricted-imports)");
@@ -70,6 +87,9 @@ describe("lint", () => {
     expect(codes("restParams")).toContain("eslint(prefer-rest-params)");
     expect(codes("spread")).toContain("eslint(prefer-spread)");
     expect(codes("nestedCatch")).toEqual([]);
+    expect(codes("webServer")).toContain("eslint(no-restricted-imports)");
+    expect(codes("webNode")).toContain("eslint(no-restricted-imports)");
+    expect(codes("webHooks")).toContain("react-hooks(rules-of-hooks)");
     expect(codes("switchCase")).toContain(
       "typescript(switch-exhaustiveness-check)",
     );

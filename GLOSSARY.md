@@ -2,7 +2,7 @@
 
 Your health record on your Mac: you keep your record, and an AI helps by reading it and proposing changes you approve. The record can hold more than one person; the screens for that come later. The same words are used on screen, in the docs, in the AI's instructions and in the code.
 
-Some words are for features still being built, such as the Emergency button. The help pages in [`docs/help/`](docs/help/index.md) say what works today.
+Some words are for features still being built, such as proposals. The help pages in [`docs/help/`](docs/help/index.md) say what works today.
 
 ## People
 
@@ -128,9 +128,9 @@ _Avoid_: handoff, summary, report
 A saved write-up of something the AI looked into for a person, with its sources.
 _Avoid_: note, article
 
-**Emergency button**:
-Always on screen; shows the local emergency number and what to do now, and works without the AI.
-_Avoid_: SOS, panic button, alert
+**Emergency region**:
+The region whose emergency number the AI gives when a message may describe an emergency. You choose it in Settings; with none chosen, the AI says to call your local emergency number and never guesses one.
+_Avoid_: country, locale
 
 **Emergency sheet**:
 A person's essentials (medicines, allergies, conditions, blood group, contacts) on one page to hand to someone, also without the AI.
@@ -147,8 +147,12 @@ Something Rufi offers the AI, such as reading a person's Overview. Tools are how
 _Avoid_: function, plugin, skill
 
 **Overview**:
-A short view of one person's record: who they are, how much is in it, and their current results as printed. The AI reads it through a tool; from the first screens it is also the first page you see.
+A short view of one person's record: who they are, how much is in it, and their current results as printed. The AI reads it through a tool, and it is the first page you see.
 _Avoid_: dashboard, summary
+
+**Help**:
+The pages that say what works in Rufi today and how to use it: in Rufi under Help, and in `docs/help/`.
+_Avoid_: manual, documentation
 
 **Sign in with ChatGPT**:
 How you connect Rufi to your ChatGPT account, in your browser, so the AI runs on your ChatGPT plan.

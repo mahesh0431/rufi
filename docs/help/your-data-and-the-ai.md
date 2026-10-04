@@ -14,6 +14,7 @@ Everything is in one data folder on your Mac. Today you choose it with the `RUFI
 | `logs/`            | Rufi's log (see below)                                                                                                                     |
 | `codex/`           | The AI's own files: its settings, its own copies of your conversations with what its tools returned, and the messages that wait for the AI |
 | `workspace/`       | The folder where the AI works                                                                                                              |
+| `core.json`        | There while Rufi runs: how `pnpm start` finds the running Rufi to open it again. Rufi removes it when it stops                             |
 | `rufi.lock`        | A folder that is there while Rufi or a Rufi command uses the data folder, so only one of them does at a time                               |
 | `credentials.lock` | A short-lived folder while Rufi changes or renews the sign-in                                                                              |
 

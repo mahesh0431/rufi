@@ -119,6 +119,69 @@ export const StreamLine = Schema.Union([
 ]);
 export type StreamLine = typeof StreamLine.Type;
 
+/** The page's tab proof, for the session's header. */
+export const SessionProof = Schema.Struct({ proof: Schema.String });
+
+export const Person = Schema.Struct({
+  id: Schema.String,
+  displayName: Schema.String,
+});
+export type Person = typeof Person.Type;
+
+export const People = Schema.Struct({ people: Schema.Array(Person) });
+
+/** A region whose emergency number Rufi knows. */
+export const Region = Schema.Struct({
+  region: Schema.String,
+  name: Schema.String,
+  number: Schema.String,
+});
+export type Region = typeof Region.Type;
+
+export const Settings = Schema.Struct({
+  /** The chosen region; null when none is chosen. */
+  emergencyRegion: Schema.NullOr(Schema.String),
+  emergency: Schema.NullOr(
+    Schema.Struct({ name: Schema.String, number: Schema.String }),
+  ),
+  /** The regions Rufi knows, to choose from. */
+  regions: Schema.Array(Region),
+});
+export type Settings = typeof Settings.Type;
+
+/** The ChatGPT sign-in, as the screens need it. */
+export const Status = Schema.Struct({
+  account: Schema.Literals(["signed_out", "signed_in", "no_plan_use"]),
+  email: Schema.NullOr(Schema.String),
+});
+export type Status = typeof Status.Type;
+
+/** One current result, exactly as printed. */
+export const OverviewResult = Schema.Struct({
+  test: Schema.String,
+  value: Schema.String,
+  unit: Schema.optionalKey(Schema.String),
+  range: Schema.optionalKey(Schema.String),
+  flag: Schema.optionalKey(Schema.String),
+  context: Schema.optionalKey(Schema.String),
+  /** The date at the precision known: "2026", "2026-08" or "2026-08-12". */
+  measured: Schema.optionalKey(Schema.String),
+  amended: Schema.optionalKey(Schema.Boolean),
+});
+export type OverviewResult = typeof OverviewResult.Type;
+
+/** A person's record at a glance (the same read as the AI's get_overview). */
+export const Overview = Schema.Struct({
+  person: Schema.String,
+  documents: Schema.Int,
+  reports: Schema.Int,
+  /** Current results; `latest_results` shows the newest of them. */
+  results: Schema.Int,
+  earlier_versions_kept: Schema.Int,
+  latest_results: Schema.Array(OverviewResult),
+});
+export type Overview = typeof Overview.Type;
+
 // --- What the screens send ---
 
 export const AddPerson = Schema.Struct({ displayName: Line(200) });

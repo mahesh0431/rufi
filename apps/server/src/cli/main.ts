@@ -3,7 +3,10 @@
 // each command gets only the parts it needs. Effect closes every part when the
 // command ends, fails or is stopped with Ctrl-C.
 import { execFile } from "node:child_process";
+import { access } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { setTimeout as sleep } from "node:timers/promises";
 import { NodeRuntime } from "@effect/platform-node";
@@ -26,9 +29,18 @@ import { forAgent } from "../core/tools/tools.ts";
 import { childEnvironment, Home, homeLayer } from "../platform/config.ts";
 import { holdRufiLock } from "../platform/files.ts";
 import { Secrets, secretsLayer } from "../platform/keychain.ts";
-import { errorCode, Logs, logsLayer, noEffectLogs } from "../platform/logs.ts";
+import {
+  diagnostics,
+  errorCode,
+  Logs,
+  logsLayer,
+  noEffectLogs,
+} from "../platform/logs.ts";
+import { runningLink, startCore } from "../server/core.ts";
 
 const USAGE = `Usage: pnpm rufi <command>
+  start [--no-open]   start Rufi and open it in your browser (Ctrl-C stops it);
+                      while it runs, open it again (pnpm start does both)
   signin [--no-open]  sign in with ChatGPT
   status              who is signed in
   signout             sign out and revoke the sign-in
@@ -84,6 +96,12 @@ const main = Effect.gen(function* () {
     case "help":
     case "--help":
       return yield* Console.log(USAGE);
+    case "start":
+      // No rufi.lock here: the core takes it for as long as it runs.
+      return yield* startCommand(!rest.includes("--no-open")).pipe(
+        Effect.scoped,
+        Effect.provide(Layer.mergeAll(homeLayer, secretsLayer)),
+      );
     case "signin":
       return yield* signinCommand(!rest.includes("--no-open")).pipe(
         Effect.provide(base),
@@ -188,6 +206,76 @@ const signoutCommand = Effect.gen(function* () {
     );
   }
 });
+
+/** The built screens, next to this package. */
+// A file path, decoded: a folder name with a space or an accent stays as it is.
+const SCREENS = fileURLToPath(new URL("../../../web/dist", import.meta.url));
+
+/**
+ * Starts Rufi and opens it in the browser, until Ctrl-C. When Rufi already
+ * runs with this data folder, opens a fresh link to it instead. With
+ * `open` false, only shows the link.
+ */
+const startCommand = (open: boolean) =>
+  Effect.gen(function* () {
+    const home = yield* Home;
+    const again = yield* run(() => runningLink(home));
+    if (again !== undefined) {
+      console.log("Rufi is already running. A new link to it:");
+      console.log(again);
+      if (open) openBrowser(again);
+      return;
+    }
+    yield* run(() =>
+      access(join(SCREENS, "index.html")).catch((error: unknown) => {
+        throw new Error(
+          "Rufi's screens aren't built. Run pnpm start: it builds them first.",
+          { cause: error },
+        );
+      }),
+    );
+    const deps = yield* chatGpt;
+    const { log } = diagnostics(home);
+    const file = yield* run(() => codexBinary());
+    const { version } = createRequire(import.meta.url)(
+      "../../package.json",
+    ) as {
+      version: string;
+    };
+    const core = yield* startCore({
+      home,
+      agent: (tools, host) =>
+        codexRuntime({
+          home,
+          command: { file, args: [] },
+          env: childEnvironment(),
+          token: (validForMs) => accessToken(deps, validForMs),
+          version,
+          tools,
+          host,
+          log,
+        }),
+      account: async () => {
+        const now = await status(deps);
+        return {
+          account: !now.signedIn
+            ? "signed_out"
+            : now.planUse
+              ? "signed_in"
+              : "no_plan_use",
+          email: now.email ?? null,
+        };
+      },
+      screens: SCREENS,
+      log,
+    });
+    const link = core.launchUrl();
+    console.log("Rufi is running. Its link (it works once):");
+    console.log(link);
+    console.log("Press Ctrl-C to stop Rufi.");
+    if (open) openBrowser(link);
+    return yield* Effect.never;
+  });
 
 /**
  * Asks one question in a new thread and streams the answer; nothing is saved

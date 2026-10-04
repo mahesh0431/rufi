@@ -1,7 +1,15 @@
 // The core as the screens will meet it: started in a scope on a fictional
 // data folder with the scripted Codex, and used over HTTP like a browser.
 import { request as httpRequest, type IncomingMessage } from "node:http";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -18,8 +26,14 @@ import {
 } from "../core/store/database.ts";
 import { holdRufiLock } from "../platform/files.ts";
 import { diagnostics } from "../platform/logs.ts";
-import { PROOF_HEADER } from "./api.ts";
-import { startCore, type Core, type CoreOptions } from "./core.ts";
+import { LAUNCHER_HEADER, PROOF_HEADER } from "./api.ts";
+import {
+  coreFile,
+  runningLink,
+  startCore,
+  type Core,
+  type CoreOptions,
+} from "./core.ts";
 
 const FAKE = join(import.meta.dirname, "../../tests/fake-codex.ts");
 
@@ -71,6 +85,7 @@ interface Reply {
   status: number;
   headers: IncomingMessage["headers"];
   body: Record<string, unknown>;
+  text: string;
 }
 
 /** One HTTP request, with every header as given (a browser's would differ). */
@@ -95,10 +110,13 @@ function call(
         res.setEncoding("utf8");
         res.on("data", (chunk: string) => (text += chunk));
         res.on("end", () => {
+          const json =
+            res.headers["content-type"]?.startsWith("application/json");
           resolve({
             status: res.statusCode ?? 0,
             headers: res.headers,
-            body: text ? (JSON.parse(text) as Record<string, unknown>) : {},
+            body: json ? (JSON.parse(text) as Record<string, unknown>) : {},
+            text,
           });
         });
       },
@@ -113,7 +131,10 @@ function call(
 
 /** A page's session: its cookie and its tab proof. */
 async function session(core: Core) {
-  const launch = new URL(core.launchUrl()).searchParams.get("launch") ?? "";
+  const launch =
+    new URLSearchParams(new URL(core.launchUrl()).hash.slice(1)).get(
+      "launch",
+    ) ?? "";
   const origin = `http://127.0.0.1:${String(core.port)}`;
   const swapped = await call(
     core.port,
@@ -630,6 +651,187 @@ describe("the local API", () => {
       fresh.hangUp();
     },
   );
+});
+
+describe("what the screens read", () => {
+  it("says whether the AI can be used, without a sign-in by default", async () => {
+    const core = await start();
+    const page = await session(core);
+    expect((await page.api("GET", "/api/status")).body).toEqual({
+      account: "signed_out",
+      email: null,
+    });
+    await stop();
+    const signedIn = await start({
+      account: () =>
+        Promise.resolve({ account: "signed_in", email: "asha@example.com" }),
+    });
+    const again = await session(signedIn);
+    expect((await again.api("GET", "/api/status")).body).toEqual({
+      account: "signed_in",
+      email: "asha@example.com",
+    });
+  });
+
+  it("lists the regions it knows; the chosen one gives the number", async () => {
+    const core = await start();
+    const page = await session(core);
+    const before = (await page.api("GET", "/api/settings")).body;
+    expect(before["emergencyRegion"]).toBeNull();
+    expect(before["emergency"]).toBeNull();
+    expect(before["regions"]).toContainEqual({
+      region: "IN",
+      name: "India",
+      number: "112",
+    });
+    const saved = await page.api("PUT", "/api/settings", {
+      emergencyRegion: "IN",
+    });
+    expect(saved.body["emergency"]).toEqual({ name: "India", number: "112" });
+    expect(
+      (await page.api("PUT", "/api/settings", { emergencyRegion: "XX" }))
+        .status,
+    ).toBe(400);
+    const cleared = await page.api("PUT", "/api/settings", {
+      emergencyRegion: null,
+    });
+    expect(cleared.body["emergency"]).toBeNull();
+  });
+});
+
+describe("opening Rufi again", () => {
+  it("keeps core.json for this user only while it runs", async () => {
+    const core = await start();
+    const file = coreFile(home);
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    const kept = JSON.parse(await readFile(file, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    expect(kept["port"]).toBe(core.port);
+    expect(typeof kept["launcher"]).toBe("string");
+    await stop();
+    await expect(stat(file)).rejects.toThrow("ENOENT");
+  });
+
+  it("gives a fresh link only for the data folder's secret", async () => {
+    const core = await start();
+    const origin = `http://127.0.0.1:${String(core.port)}`;
+    const link = await runningLink(home);
+    expect(link).toMatch(new RegExp(`^${origin}/#launch=[\\w-]{43}$`));
+    // The link opens a session, once.
+    const launch = new URLSearchParams(new URL(link ?? "").hash.slice(1)).get(
+      "launch",
+    );
+    const swapped = await call(
+      core.port,
+      "POST",
+      "/api/session",
+      { origin },
+      { launch },
+    );
+    expect(swapped.status).toBe(200);
+
+    const refused = (headers: Record<string, string>) =>
+      call(core.port, "POST", "/api/launch", { origin, ...headers });
+    expect((await refused({})).status).toBe(403);
+    expect((await refused({ [LAUNCHER_HEADER]: "guess" })).status).toBe(403);
+    // The secret alone isn't enough from another page.
+    const { launcher } = JSON.parse(await readFile(coreFile(home), "utf8")) as {
+      launcher: string;
+    };
+    expect(
+      (
+        await call(core.port, "POST", "/api/launch", {
+          origin: "http://evil.example",
+          [LAUNCHER_HEADER]: launcher,
+        })
+      ).status,
+    ).toBe(403);
+  });
+
+  it("finds no running Rufi when there is none, or only a crash's leftover", async () => {
+    expect(await runningLink(home)).toBeUndefined();
+    const core = await start();
+    const left = await readFile(coreFile(home), "utf8");
+    await stop();
+    // A crash leaves core.json behind; nothing answers on its port.
+    await writeFile(coreFile(home), left);
+    expect(JSON.parse(left)).toMatchObject({ port: core.port });
+    expect(await runningLink(home)).toBeUndefined();
+  });
+});
+
+describe("the screens", () => {
+  let folder: string;
+  let screens: string;
+
+  beforeEach(async () => {
+    // A space in the path, as in "My Projects".
+    folder = await mkdtemp(join(tmpdir(), "rufi screens-"));
+    screens = join(folder, "dist");
+    await mkdir(join(screens, "assets"), { recursive: true });
+    await writeFile(join(screens, "index.html"), "<!doctype html><p>Rufi");
+    await writeFile(join(screens, "assets", "app-1a2b.js"), "export {};");
+    // Next to the screens, not in them: never served.
+    await writeFile(join(folder, "secret.txt"), "not a screen");
+    // Links in the build that lead outside it.
+    await symlink(
+      join(folder, "secret.txt"),
+      join(screens, "assets", "out.txt"),
+    );
+    await symlink(folder, join(screens, "assets", "up"));
+  });
+  afterEach(async () => {
+    await rm(folder, { recursive: true, force: true });
+  });
+
+  it("serves the built files, and the app for every page path", async () => {
+    const core = await start({ screens });
+    const get = (path: string) => call(core.port, "GET", path);
+
+    const page = await get("/help/glossary");
+    expect(page.status).toBe(200);
+    expect(page.headers["content-type"]).toBe("text/html; charset=utf-8");
+    expect(page.headers["cache-control"]).toBe("no-cache");
+    expect(page.headers["content-security-policy"]).toContain(
+      "script-src 'self'",
+    );
+    expect(page.text).toContain("<p>Rufi");
+
+    const script = await get("/assets/app-1a2b.js");
+    expect(script.headers["content-type"]).toBe(
+      "text/javascript; charset=utf-8",
+    );
+    expect(script.headers["cache-control"]).toContain("immutable");
+
+    // A missing file stays missing; so does the API, and what's outside.
+    expect((await get("/assets/gone.js")).status).toBe(404);
+    expect((await get("/api/nothing")).status).toBe(401);
+    expect(
+      (await (await session(core)).api("GET", "/api/nothing")).status,
+    ).toBe(404);
+    expect((await get("/..%2Fsecret.txt")).status).toBe(404);
+    expect((await get("/assets/..%2F..%2Fsecret.txt")).status).toBe(404);
+    expect((await get("/%E0%A4%A")).status).toBe(404);
+    expect((await get("/assets/out.txt")).status).toBe(404);
+    expect((await get("/assets/up/secret.txt")).status).toBe(404);
+    expect((await get("/assets/app-1a2b.js/x.js")).status).toBe(404);
+  });
+
+  it("refuses an app page that is a link leading outside", async () => {
+    await rm(join(screens, "index.html"));
+    await symlink(join(folder, "secret.txt"), join(screens, "index.html"));
+    const core = await start({ screens });
+    for (const path of ["/", "/help/glossary", "/index.html"]) {
+      expect((await call(core.port, "GET", path)).status).toBe(404);
+    }
+  });
+
+  it("serves the API only, when it has no screens", async () => {
+    const core = await start();
+    expect((await call(core.port, "GET", "/")).status).toBe(404);
+  });
 });
 
 describe("Rufi's log", () => {

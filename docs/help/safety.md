@@ -16,7 +16,7 @@ What you do, and what you keep in your record, is your decision. If you tell the
 
 If your message may describe an emergency, such as chest pain, trouble breathing, signs of a stroke, severe bleeding, a possible overdose or thoughts of self-harm, the AI first tells you to call the emergency number now. Only then does it say anything else.
 
-When Rufi knows your region, the AI gives that region's number, for example 112 in India. Otherwise it tells you to call your local emergency number.
+When you chose your region (**Settings** › **Emergency region**), the AI gives that region's number, for example 112 in India. Otherwise it tells you to call your local emergency number. It never guesses a number.
 
 ## It won't help anyone get hurt
 

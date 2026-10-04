@@ -2,8 +2,10 @@
 // the conversations and the agent, and serves the local API on 127.0.0.1.
 // Each part is opened in a scope; closing it closes them all in reverse,
 // even when one of them fails.
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
+import { join } from "node:path";
+import type { Overview, Status } from "@rufi/contracts";
 import { serve, type ServerType } from "@hono/node-server";
 import { Effect } from "effect";
 import type { AgentHost, AgentRuntime, AgentTools } from "../agent/runtime.ts";
@@ -17,11 +19,11 @@ import {
 } from "../core/store/database.ts";
 import { getOverview } from "../core/tools/overview.ts";
 import { forAgent, toolsVersion } from "../core/tools/tools.ts";
-import { holdRufiLock } from "../platform/files.ts";
+import { holdRufiLock, readJson, writePrivateJson } from "../platform/files.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
-import { api } from "./api.ts";
+import { api, LAUNCHER_HEADER } from "./api.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
-import { sessions } from "./session.ts";
+import { secret, sessions } from "./session.ts";
 
 export interface CoreOptions {
   /** Rufi's data folder. */
@@ -33,6 +35,49 @@ export interface CoreOptions {
   log: Log;
   /** Updates a screen may fall behind by before its stream is closed. */
   behindMax?: number;
+  /** The ChatGPT sign-in; signed out when not given. */
+  account?: () => Promise<Status>;
+  /** The built screens' folder (apps/web/dist). */
+  screens?: string;
+}
+
+/** What `pnpm start` reads to reach the running Rufi; there while it runs. */
+export const coreFile = (home: string) => join(home, "core.json");
+
+/** How long `pnpm start` waits for a running Rufi to answer. */
+const REOPEN_MS = 3_000;
+
+/**
+ * A fresh link from the Rufi running with this data folder, or undefined
+ * when none answers (no core.json, or one a crash left behind).
+ */
+export async function runningLink(home: string): Promise<string | undefined> {
+  const found = (await readJson(coreFile(home))) as
+    | { port?: unknown; launcher?: unknown }
+    | undefined;
+  if (typeof found?.port !== "number" || typeof found.launcher !== "string") {
+    return undefined;
+  }
+  const origin = `http://127.0.0.1:${String(found.port)}`;
+  try {
+    const response = await fetch(`${origin}/api/launch`, {
+      method: "POST",
+      headers: { origin, [LAUNCHER_HEADER]: found.launcher },
+      signal: AbortSignal.timeout(REOPEN_MS),
+    });
+    if (!response.ok) return undefined;
+    const { url } = (await response.json()) as { url?: unknown };
+    return typeof url === "string" ? url : undefined;
+  } catch (error) {
+    // Nothing listens there any more: a crash left the file behind.
+    if (
+      error instanceof TypeError ||
+      (error as Error).name === "TimeoutError"
+    ) {
+      return undefined;
+    }
+    throw new Error("Couldn't reach the running Rufi", { cause: error });
+  }
 }
 
 export interface Core {
@@ -110,13 +155,23 @@ export const startCore = (options: CoreOptions) =>
 
     let port = 0;
     const access = sessions();
+    const launcher = secret();
+    // The token is in the fragment: the browser never sends it in a request.
+    const launchUrl = () =>
+      `http://127.0.0.1:${String(port)}/#launch=${access.launch()}`;
     const app = api({
       transcripts,
       chat,
       sessions: access,
       port: () => port,
-      overview: (personId) =>
-        Promise.resolve(getOverview.run({}, { store: reader, personId })),
+      overview: async (personId) =>
+        (await getOverview.run({}, { store: reader, personId })) as Overview,
+      account:
+        options.account ??
+        (() => Promise.resolve({ account: "signed_out", email: null })),
+      launcher,
+      launchUrl,
+      ...(options.screens !== undefined && { screens: options.screens }),
       log,
       ...(options.behindMax !== undefined && { behindMax: options.behindMax }),
     });
@@ -152,12 +207,11 @@ export const startCore = (options: CoreOptions) =>
         ),
     );
     port = (server.address() as AddressInfo).port;
+    yield* Effect.acquireRelease(
+      attempt(() => writePrivateJson(coreFile(home), { port, launcher })),
+      () => Effect.promise(() => rm(coreFile(home), { force: true })),
+    );
     log("core.started", { count: interrupted });
-    const core: Core = {
-      port,
-      launchUrl: () =>
-        `http://127.0.0.1:${String(port)}/?launch=${access.launch()}`,
-      chat,
-    };
+    const core: Core = { port, launchUrl, chat };
     return core;
   });
