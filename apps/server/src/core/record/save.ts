@@ -372,7 +372,13 @@ export async function saveChanges(
       })
       .execute();
   }
-  await checkAllergies(trx, where.personId);
+  if (
+    planned.some(
+      (c) => c.kind.name === "allergy" || c.kind.name === "none_known",
+    )
+  ) {
+    await checkAllergies(trx, where.personId);
+  }
   return {
     id,
     receipt: receiptLine(written),
@@ -520,7 +526,8 @@ async function write(
 
 /**
  * "No known allergies" is never current beside an allergy that may be
- * active, whichever of them the save changed.
+ * active, whichever of them the save changed. A save of other kinds isn't
+ * held up by them.
  */
 async function checkAllergies(trx: Transaction<Tables>, personId: string) {
   const statements = await trx

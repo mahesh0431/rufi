@@ -800,6 +800,25 @@ describe("the health rules", () => {
     expect(both.body.result.receipt).toBe(
       "Saved: added allergy Penicillin; removed no known allergies (as of 4 Oct 2026).",
     );
+    // A save of another kind isn't held up by them.
+    store.db.exec(
+      "INSERT INTO none_known (id, person_id, category) VALUES ('nk-old', 'asha', 'allergies')",
+    );
+    await say("I have a headache");
+    const other = await save(
+      [
+        {
+          kind: "symptom",
+          action: "add",
+          source: "I have a headache",
+          fields: { name: "Headache" },
+        },
+      ],
+      "call-5",
+    );
+    expect(other.ok).toBe(true);
+    store.db.exec("DELETE FROM none_known WHERE id = 'nk-old'");
+
     // And the statement can't come back beside it.
     const back = await save(
       [
