@@ -14,6 +14,7 @@ import {
   type ToolAnswer,
   type TurnEnd,
 } from "../runtime.ts";
+import type { Deadlines } from "./appserver.ts";
 import { checkExecutable } from "./binary.ts";
 import { codexRuntime } from "./codex.ts";
 import { activityOf, endOf } from "./events.ts";
@@ -63,17 +64,22 @@ const TOOLS: AgentTools = {
   ],
 };
 
-/**
- * Stop's deadlines when the fake never answers, so Rufi gives up soon. A
- * fake that answers gets requestMs, like every other request: a busy machine
- * can take longer than this to answer, and Rufi would end Codex.
+/*
+ * Timing: a busy CI machine can be slow by a second or more. So a deadline the
+ * fake meets (requestMs, Stop's) is 1 s or more, and a test that waits a
+ * deadline out sets it short (GIVE_UP, a turn's 300 ms). `until` waits far
+ * longer than both, and fails when it gives up. A test waits for what it
+ * needs, not a fixed time, except to check that nothing more happens or when
+ * nothing shows what it needs.
  */
+
+/** Stop's deadlines when the fake never answers, so Rufi gives up soon. */
 const GIVE_UP = { interruptAckMs: 300, interruptEndMs: 300 };
 
 function start(
   scenario: Scenario = {},
   tools?: AgentTools,
-  deadlines?: typeof GIVE_UP,
+  deadlines?: Partial<Deadlines>,
 ): AgentRuntime {
   runtime = codexRuntime({
     ...(tools && { tools }),
@@ -431,7 +437,7 @@ describe("a turn", () => {
   });
 
   it("stops a turn that runs past its deadline", async () => {
-    const thread = await ask(start(), "hang");
+    const thread = await ask(start({}, undefined, { turnMs: 300 }), "hang");
     expect(await ended(thread)).toEqual({
       status: "failed",
       reason: "timeout",
@@ -779,12 +785,14 @@ describe("Stop", () => {
     expect(await sent("thread/backgroundTerminals/clean")).toEqual([
       { threadId: thread },
     ]);
-    await sleep(100);
-    expect(
-      [programs?.command, programs?.child].filter(
-        (pid) => pid !== undefined && isRunning(pid),
+    // Ended, but the system may take a moment to clear them.
+    await until(() =>
+      Promise.resolve(
+        [programs?.command, programs?.child].every(
+          (pid) => pid === undefined || !isRunning(pid),
+        ),
       ),
-    ).toEqual([]);
+    );
     expect((await pids()).filter(isRunning)).toHaveLength(1);
   });
 
@@ -821,7 +829,10 @@ describe("Stop", () => {
     );
   });
 
-  async function runCommand(scenario: Scenario, deadlines?: typeof GIVE_UP) {
+  async function runCommand(
+    scenario: Scenario,
+    deadlines?: Partial<Deadlines>,
+  ) {
     const agent = start(scenario, undefined, deadlines);
     const thread = await ask(agent, "command");
     await until(async () => (await entries()).some((entry) => entry.child));
@@ -866,6 +877,8 @@ describe("Stop", () => {
 
   it("ends the commands Codex left when it crashes", async () => {
     const { thread, programs } = await runCommand({});
+    // Rufi notes the command's process group as it starts; nothing shows when
+    // that is done, so this one waits a fixed time.
     await sleep(200);
     const [codex] = await pids();
     if (codex !== undefined) process.kill(codex, "SIGKILL");
@@ -904,7 +917,7 @@ describe("Stop", () => {
       { id: "m-1", text: "Hello" },
       op.signal,
     );
-    await sleep(50);
+    await until(() => Promise.resolve(asked.length === 2));
     op.abort();
     gate.resolve(undefined);
     await expect(sending).rejects.toThrow("Stopped.");
@@ -1091,14 +1104,15 @@ describe("Rufi's tools", () => {
   });
 
   it("answers a tool that takes too long within the deadline", async () => {
+    let answered = false;
     toolAnswer = async () => {
       await sleep(2_000);
+      answered = true;
       return { ok: true, text: "late" };
     };
-    const begun = Date.now();
     const thread = await ask(start({ calls: [overview] }, TOOLS));
     expect(await ended(thread)).toEqual({ status: "completed" });
-    expect(Date.now() - begun).toBeLessThan(1_500);
+    expect(answered).toBe(false);
     expect(await replies()).toEqual([
       {
         contentItems: [
@@ -1249,7 +1263,9 @@ describe("Codex's items and endings in Rufi's words", () => {
 });
 
 async function until(ready: () => Promise<boolean>): Promise<void> {
-  for (let i = 0; i < 300 && !(await ready().catch(() => false)); i++) {
+  const end = Date.now() + 4_000;
+  while (!(await ready().catch(() => false))) {
+    if (Date.now() > end) throw new Error("timed out waiting");
     await sleep(10);
   }
 }
