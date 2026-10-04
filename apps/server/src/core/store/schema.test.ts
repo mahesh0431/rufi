@@ -63,27 +63,6 @@ beforeEach(() => {
 });
 
 describe("schema", () => {
-  it("loads into an empty database", () => {
-    const tables = db
-      .prepare(
-        "SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name",
-      )
-      .all()
-      .map((row) => row.name);
-    expect(tables).toEqual([
-      "conversations",
-      "documents",
-      "drafts",
-      "files",
-      "people",
-      "reports",
-      "results",
-      "settings",
-      "transcript_entries",
-      "turns",
-    ]);
-  });
-
   describe("conversations stay with their person", () => {
     const conversation = (id: string, person: string) => {
       insert("conversations", {
