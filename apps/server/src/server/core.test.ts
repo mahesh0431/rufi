@@ -428,6 +428,24 @@ describe("the local API", () => {
     ).toBe(404);
   });
 
+  it("takes a message at the limit and stores it whole", async () => {
+    const core = await start();
+    const page = await session(core);
+    const c = await conversation(page);
+    const text = `${"é".repeat(99_999)}x`;
+    expect(
+      (await page.api("POST", `${c.path}/messages`, { text })).status,
+    ).toBe(202);
+    await until(async () => {
+      const { body } = await page.api("GET", c.path);
+      const entries = body["entries"] as { kind: string; text: string }[];
+      return entries.some((e) => e.kind === "reply");
+    });
+    const { body } = await page.api("GET", c.path);
+    const entries = body["entries"] as { kind: string; text: string }[];
+    expect(entries.find((e) => e.kind === "message")?.text).toBe(text);
+  });
+
   it("refuses requests that don't match their contract", async () => {
     const core = await start();
     const page = await session(core);
@@ -435,17 +453,20 @@ describe("the local API", () => {
     expect(
       (await page.api("POST", `${c.path}/messages`, { text: "" })).status,
     ).toBe(400);
-    expect(
-      (
-        await page.api("POST", `${c.path}/messages`, {
-          text: "x".repeat(20_001),
-        })
-      ).status,
-    ).toBe(400);
-    expect(
-      (await page.api("PUT", "/api/settings", { emergencyRegion: "ZZ" }))
-        .status,
-    ).toBe(400);
+    const tooLong = await page.api("POST", `${c.path}/messages`, {
+      text: "x".repeat(100_001),
+    });
+    expect(tooLong.status).toBe(400);
+    expect(tooLong.body).toEqual({
+      error:
+        "A message needs some text, and can be at most 100,000 characters.",
+    });
+    // Only regions Rufi knows, not names every object has.
+    for (const emergencyRegion of ["ZZ", "toString"]) {
+      expect(
+        (await page.api("PUT", "/api/settings", { emergencyRegion })).status,
+      ).toBe(400);
+    }
   });
 
   it("keeps a draft per conversation, and one for a new conversation", async () => {

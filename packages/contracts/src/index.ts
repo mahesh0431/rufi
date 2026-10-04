@@ -3,7 +3,7 @@
 import { Schema } from "effect";
 
 /** The longest message or draft Rufi takes, in characters. */
-export const MAX_MESSAGE_CHARS = 20_000;
+export const MAX_MESSAGE_CHARS = 100_000;
 
 const Text = (max: number) => Schema.String.check(Schema.isMaxLength(max));
 const Line = (max: number) =>
@@ -16,6 +16,9 @@ const Id = Line(100);
 
 // --- What the screens get ---
 
+// TODO: drop the kind if it gets complicated. To an agent everything is a
+// tool call; the title and detail already say what it did. Keep this list
+// only while it stays small and each adapter can fill it in one line.
 export const ActivityKind = Schema.Literals([
   "tool",
   "command",
@@ -54,6 +57,7 @@ export const EndReason = Schema.Literals([
   "sign_in",
   "connection",
   "provider_failed",
+  "save_failed",
 ]);
 export type EndReason = typeof EndReason.Type;
 

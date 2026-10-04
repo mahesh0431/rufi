@@ -68,6 +68,8 @@ export function chat(deps: ChatDeps) {
   /** Messages already given their reply text, so a question starts a new paragraph. */
   const replied = new Set<string>();
   const waitingListeners = new Map<string, Set<() => void>>();
+  /** Turns with a part Rufi couldn't save: stopped, and ended as failed. */
+  const unsaved = new Set<string>();
 
   const host: AgentHost = {
     onEvent: (event) => {
@@ -76,6 +78,21 @@ export function chat(deps: ChatDeps) {
           log("chat.save_failed", {
             kind: event.type,
             error: errorCode(error),
+          });
+          // A transcript with a hole is never shown as a whole reply.
+          if (
+            event.type === "waitingChanged" ||
+            event.type === "turnEnded" ||
+            unsaved.has(event.turnId)
+          ) {
+            return;
+          }
+          unsaved.add(event.turnId);
+          agent.stop(event.threadId).catch((stopError: unknown) => {
+            log("chat.save_failed", {
+              kind: "stop",
+              error: errorCode(stopError),
+            });
           });
         }),
       );
@@ -109,6 +126,17 @@ export function chat(deps: ChatDeps) {
     const conversation = await transcripts.byThread(event.threadId);
     if (!conversation) {
       log("chat.unknown_thread", { kind: event.type });
+      return;
+    }
+    if (event.type !== "waitingChanged" && unsaved.has(event.turnId)) {
+      // What was saved stays as it is; nothing more of this reply is added.
+      if (event.type !== "turnEnded") return;
+      unsaved.delete(event.turnId);
+      await transcripts.endTurn(conversation, event.turnId, {
+        status: "failed",
+        reason: "save_failed",
+        text: "Rufi couldn't save all of this reply, so it stopped it.",
+      });
       return;
     }
     switch (event.type) {
@@ -257,7 +285,7 @@ export function chat(deps: ChatDeps) {
       try {
         await agent.resumeThread(threadId, threadSettings, signal);
         // What a crash kept Rufi from saving, from the agent's own record.
-        await fillGaps(conversation, threadId);
+        fillGaps(conversation, threadId);
         return threadId;
       } catch (error) {
         if (error instanceof Stopped) throw error;
@@ -293,7 +321,12 @@ export function chat(deps: ChatDeps) {
     return threadId;
   }
 
-  function fillGaps(conversation: ConversationRow, threadId: string) {
+  /**
+   * Saves the messages the thread ran that Rufi has not, in line with the
+   * events, so a message is never saved twice. A failure is logged; the
+   * thread goes on.
+   */
+  function fillGaps(conversation: ConversationRow, threadId: string): void {
     const fill = async () => {
       for (const message of await agent.startedMessages(threadId)) {
         if (await transcripts.hasMessage(message.id)) continue;
@@ -304,12 +337,9 @@ export function chat(deps: ChatDeps) {
         });
       }
     };
-    // In line with the events, so a message is never saved twice.
-    const filled = saving.then(fill);
-    saving = filled.catch((error: unknown) => {
+    saving = saving.then(fill).catch((error: unknown) => {
       log("chat.save_failed", { kind: "fill", error: errorCode(error) });
     });
-    return filled;
   }
 
   /** The conversation's thread, when it is the agent's (no new one is made). */
@@ -320,20 +350,14 @@ export function chat(deps: ChatDeps) {
     agent,
 
     /** The allowed models the provider offers now, and any allowlist problem. */
-    models: async (): Promise<{ models: Model[]; error?: string }> => {
-      const allowlist = await deps.allowlist();
-      const models = allowedModels(await agent.models(), allowlist.models);
-      return {
-        models,
-        ...(allowlist.error !== undefined && { error: allowlist.error }),
-      };
-    },
+    models: offered,
 
-    /** A new conversation on the first allowed model. */
+    /** A new conversation on the first allowed model the provider offers. */
     create: async (personId: string, title: string): Promise<Conversation> => {
-      const allowlist = await deps.allowlist();
-      const model = allowlist.models[0];
-      if (model === undefined) throw new ChatRefusal("No model is allowed.");
+      const model = (await offered()).models[0]?.id;
+      if (model === undefined) {
+        throw new ChatRefusal("None of the allowed models is offered now.");
+      }
       const row = await transcripts.createConversation(
         personId,
         title,
@@ -434,7 +458,7 @@ export function chat(deps: ChatDeps) {
               await settings(conversation),
               signal,
             );
-            await fillGaps(conversation, threadId);
+            fillGaps(conversation, threadId);
           }
           await agent.waiting.runNow(threadId, id, signal);
         }),
@@ -455,9 +479,11 @@ export function chat(deps: ChatDeps) {
      */
     selectModel: (conversation: ConversationRow, model: string) =>
       inLane(conversation, async (conversation) => {
-        const { models } = await deps.allowlist();
-        if (!models.includes(model)) {
-          throw new ChatRefusal("That model isn't allowed.");
+        const { models } = await offered();
+        if (!models.some((m) => m.id === model)) {
+          throw new ChatRefusal(
+            "That model isn't allowed or isn't offered now.",
+          );
         }
         const threadId = threadOf(conversation);
         if (threadId !== null) {
@@ -479,6 +505,15 @@ export function chat(deps: ChatDeps) {
       await saving;
     },
   };
+
+  async function offered(): Promise<{ models: Model[]; error?: string }> {
+    const allowlist = await deps.allowlist();
+    const models = allowedModels(await agent.models(), allowlist.models);
+    return {
+      models,
+      ...(allowlist.error !== undefined && { error: allowlist.error }),
+    };
+  }
 
   /** A change to the waiting messages of the conversation's thread. */
   async function withThread(

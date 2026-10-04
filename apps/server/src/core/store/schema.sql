@@ -93,7 +93,7 @@ CREATE TABLE turns (
   agent_turn_id TEXT NOT NULL, -- the agent's own id for it
   model TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'interrupted', 'failed')),
-  end_reason TEXT CHECK (end_reason IN ('stopped', 'timeout', 'usage_limit', 'rate_limit', 'sign_in', 'connection', 'provider_failed')),
+  end_reason TEXT CHECK (end_reason IN ('stopped', 'timeout', 'usage_limit', 'rate_limit', 'sign_in', 'connection', 'provider_failed', 'save_failed')),
   end_text TEXT,               -- why it didn't complete, for the screen
   resets_at TEXT,              -- a usage limit's reset time, when the provider gave one
   started_at TEXT NOT NULL,

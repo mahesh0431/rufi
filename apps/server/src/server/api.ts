@@ -5,6 +5,7 @@ import {
   AddPerson,
   CreateConversation,
   MessageText,
+  MAX_MESSAGE_CHARS,
   ReorderWaiting,
   SaveDraft,
   SaveSettings,
@@ -39,6 +40,8 @@ export interface ApiDeps {
 
 /** The header the page sends its tab proof in. */
 export const PROOF_HEADER = "x-rufi-proof";
+
+const MESSAGE_REFUSAL = `A message needs some text, and can be at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters.`;
 /** A stream says it's alive this often when nothing happens. */
 const PING_MS = 15_000;
 /** Updates a screen may fall behind by before its stream is closed; it reconnects. */
@@ -159,12 +162,13 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   const body = async <S extends Schema.Codec<unknown, unknown>>(
     c: Context,
     schema: S,
+    refusal = "That request isn't valid.",
   ): Promise<S["Type"]> => {
     const parsed = Schema.decodeUnknownResult(schema)(
       await c.req.json().catch(() => undefined),
     );
     if (Result.isFailure(parsed)) {
-      throw new HttpError(400, "That request isn't valid.");
+      throw new HttpError(400, refusal);
     }
     return parsed.success;
   };
@@ -241,12 +245,12 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   );
   app.post(`${one}/messages`, async (c) => {
     const found = await conversation(c);
-    const { text } = await body(c, MessageText);
+    const { text } = await body(c, MessageText, MESSAGE_REFUSAL);
     return c.json(await acting(() => chat.send(found, text)), 202);
   });
   app.post(`${one}/steer`, async (c) => {
     const found = await conversation(c);
-    const { text } = await body(c, MessageText);
+    const { text } = await body(c, MessageText, MESSAGE_REFUSAL);
     return c.json(await acting(() => chat.steer(found, text)));
   });
   app.post(`${one}/stop`, async (c) => {
@@ -274,7 +278,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   });
   app.put(`${one}/waiting/:waitingId`, async (c) => {
     const found = await conversation(c);
-    const { text } = await body(c, MessageText);
+    const { text } = await body(c, MessageText, MESSAGE_REFUSAL);
     await acting(() =>
       chat.waiting.edit(found, c.req.param("waitingId"), text),
     );

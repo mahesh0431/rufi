@@ -21,7 +21,9 @@ type EndReason =
   | "rate_limit"
   | "sign_in"
   | "connection"
-  | "provider_failed";
+  | "provider_failed"
+  /** Rufi couldn't save the reply, so it stopped it. */
+  | "save_failed";
 
 export interface TurnEnd {
   status: "completed" | "interrupted" | "failed";

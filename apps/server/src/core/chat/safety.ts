@@ -22,8 +22,10 @@ const EMERGENCY: Record<string, { name: string; number: string }> = {
 export function emergencyFor(
   region: string | undefined,
 ): { region: string; name: string; number: string } | undefined {
-  const known = region === undefined ? undefined : EMERGENCY[region];
-  return known && region !== undefined ? { region, ...known } : undefined;
+  if (region === undefined || !Object.hasOwn(EMERGENCY, region))
+    return undefined;
+  const known = EMERGENCY[region];
+  return known && { region, ...known };
 }
 
 /**

@@ -69,6 +69,7 @@ async function startChat(
     deadlines?: Partial<Deadlines>;
     /** How long Rufi's tools take. */
     toolMs?: number;
+    allowlist?: string[];
   } = {},
 ): Promise<Chat> {
   await chat?.close();
@@ -107,7 +108,7 @@ async function startChat(
         host,
         log,
       }),
-    allowlist: () => Promise.resolve({ models: ALLOWED }),
+    allowlist: () => Promise.resolve({ models: options.allowlist ?? ALLOWED }),
     tools: {
       version: "tools-1",
       instructions: "Read the record only through the rufi tools.",
@@ -447,7 +448,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
         "Run or delete the waiting messages before changing the model.",
       );
       await expect(chat?.selectModel(c, "gpt-5.5")).rejects.toThrow(
-        "That model isn't allowed.",
+        "That model isn't allowed or isn't offered now.",
       );
       expect((await conversation(c.id)).model).toBe("gpt-6.1-sol");
     },
@@ -514,6 +515,70 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
 });
 
 describe("the chat, on the scripted Codex", () => {
+  it("starts and changes to allowed models the provider offers only", async () => {
+    await startChat("fake", { allowlist: ["gpt-retired", "gpt-6-astra"] });
+    const c = await newConversation();
+    expect(c.model).toBe("gpt-6-astra");
+    await expect(chat?.selectModel(c, "gpt-retired")).rejects.toThrow(
+      "That model isn't allowed or isn't offered now.",
+    );
+    await startChat("fake", { allowlist: ["gpt-retired"] });
+    await expect(chat?.create("asha", "Fictional chat")).rejects.toThrow(
+      "None of the allowed models is offered now.",
+    );
+  });
+
+  it("goes on with a resumed thread when its history can't be read", async () => {
+    const options = {
+      scenario: { hang: ["thread/turns/list"] },
+      deadlines: { requestMs: 300 },
+    };
+    await startChat("fake", options);
+    const c = await newConversation();
+    await chat?.send(c, "first");
+    await ended(c.id);
+    const { threadId } = await conversation(c.id);
+    await startChat("fake", options); // Rufi restarts.
+    await chat?.send(await conversation(c.id), "hang");
+    await running(c.id);
+    // The same thread, and Stop reaches its reply.
+    expect((await conversation(c.id)).threadId).toBe(threadId);
+    await chat?.stop(await conversation(c.id));
+    await ended(c.id, 2);
+    expect((await transcript(c.id)).turns.at(-1)).toMatchObject({
+      status: "interrupted",
+      endReason: "stopped",
+    });
+  });
+
+  it("stops a reply it couldn't save in full, and ends it as failed", async () => {
+    await startChat("fake");
+    const c = await newConversation();
+    const appendReply = transcripts.appendReply;
+    let parts = 0;
+    transcripts.appendReply = (...args) =>
+      ++parts === 2
+        ? Promise.reject(new Error("disk full"))
+        : appendReply(...args);
+    await chat?.send(c, "drip");
+    await ended(c.id);
+    transcripts.appendReply = appendReply;
+    const { entries, turns } = await transcript(c.id);
+    // What was saved stays; nothing after the hole is added.
+    expect(entries.filter(([kind]) => kind === "reply")).toEqual([
+      ["reply", "ok:"],
+    ]);
+    expect(turns).toMatchObject([
+      {
+        status: "failed",
+        endReason: "save_failed",
+        endText: "Rufi couldn't save all of this reply, so it stopped it.",
+      },
+    ]);
+    const log = await readFile(join(home, "fake.jsonl"), "utf8");
+    expect(log).toContain('"method":"turn/interrupt"');
+  });
+
   it("writes the AI's question into its reply, also when the reply has no text", async () => {
     await startChat("fake", {
       scenario: {

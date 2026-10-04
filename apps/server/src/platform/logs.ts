@@ -94,6 +94,7 @@ const FIELDS: Record<string, (value: unknown) => boolean> = {
       "turnEnded",
       "waitingChanged",
       "fill",
+      "stop",
     ].includes(value),
 };
 
