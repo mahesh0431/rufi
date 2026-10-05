@@ -1,8 +1,8 @@
 # Rufi glossary
 
-Your health record on your Mac: you keep your record, and an AI helps by reading it and proposing changes you approve. The record can hold more than one person; the screens for that come later. The same words are used on screen, in the docs, in the AI's instructions and in the code.
+Your health record on your Mac: you keep your record, and an AI helps by reading it and saving the changes you agree to in the chat. The record can hold more than one person; the screens for that come later. The same words are used on screen, in the docs, in the AI's instructions and in the code.
 
-Some words are for features still being built, such as proposals. The help pages in [`docs/help/`](docs/help/index.md) say what works today.
+Some words are for features still being built, such as follow-ups and visit briefs. The help pages in [`docs/help/`](docs/help/index.md) say what works today.
 
 ## People
 
@@ -17,7 +17,7 @@ _Avoid_: patient, profile, member
 ## The record
 
 **Record**:
-Everything Rufi holds as true about one person: what the user entered or accepted.
+Everything Rufi holds as true about one person: what the user said yes to in the chat, and what came from their documents. Each record (a medicine use, prescription, symptom, condition, allergy, result, care event, "none known" statement or follow-up) keeps its source and its history; removing one takes it out of the current record and keeps its history.
 _Avoid_: chart, file, history
 
 **Document**:
@@ -41,32 +41,25 @@ A result the lab issued again, replacing an earlier version; its value or any ot
 _Avoid_: corrected, updated, overwritten
 
 **Source**:
-Where something came from, such as a document, a message in a conversation, the user typing it in, a record item or a research entry.
+Where something came from, such as a document, a message in a conversation, a record item or a research entry. A change saved from the chat rests on the user's own message in that conversation, and a date said in words ("last Monday") counts from when that message was sent.
 _Avoid_: origin, provenance
 
 ## Changes
 
-**Proposal**:
-A change to a person's record that the AI, or another app, wants to make. Nothing in the record changes until the user accepts it.
-_Avoid_: suggestion, pending change, draft
-
-**Card**:
-How a proposal is shown: person, action, old and new values, the date it takes effect, and its source, with Accept, Edit and Dismiss.
-_Avoid_: proposal card, confirmation
-
-**Stale proposal**:
-A proposal whose part of the record changed after it was made; it can't be accepted until it is reviewed again.
-
-**Change set**:
-Everything one acceptance changed in the record. Undo reverts a change set as a whole.
-_Avoid_: batch, transaction
+**Save**:
+One change to the record that the user agreed to in the chat: the AI's call to save it, then every record it changed, each with its before and after, and its receipt, all together or none. The same call again saves nothing new.
+_Avoid_: change set, batch, transaction, commit
 
 **Receipt**:
-The confirmation that a change set was saved, shown only after it was.
-_Avoid_: toast, success message
+What Rufi adds to the conversation for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words.
+_Avoid_: toast, success message, confirmation
+
+**Undo**:
+Saving the reverse of an earlier save, by chat: the user says "undo that", the AI says what will change back and anything that changed since, and saves it after the user says yes. The earlier save stays in the history.
+_Avoid_: revert, rollback
 
 **Needs you**:
-The list of what is waiting for the user for one person: proposals and documents to review.
+The list of what is waiting for the user for one person, such as documents to review.
 _Avoid_: inbox, notifications, tasks
 
 ## Conversations
@@ -90,7 +83,7 @@ _Avoid_: drawer, popup, sidebar
 A conversation at its own address, listed under Conversations in the sidebar. A small window opens the chat as a page.
 
 **Transcript**:
-Rufi's own stored copy of a conversation: your messages, one activity line for each thing the AI did, and the AI's replies, each saved before it is shown. Never the AI's tool outputs or its reasoning. Cards and receipts join it when they come.
+Rufi's own stored copy of a conversation: your messages, one activity line for each thing the AI did, the AI's replies and a receipt for each save, each saved before it is shown. Never the AI's tool outputs or its reasoning.
 _Avoid_: log, history
 
 **Activity**:
@@ -187,6 +180,6 @@ _Avoid_: history, transcript
 
 - **You** keep the **records** of one or more **people**.
 - A **document** can hold **reports**; a **report** has **results**. A **result** can also be typed in without a report.
-- A **proposal** belongs to one **person**; accepting it saves one **change set** and gives one **receipt**.
-- A **conversation** is about one **person** and can produce **proposals**, **follow-ups** and **research entries**.
+- A **save** changes one **person**'s **records**, rests on their messages as its **sources**, and gives one **receipt**; an **undo** is a new save.
+- A **conversation** is about one **person** and can produce **saves**, **follow-ups** and **research entries**.
 - A **conversation** has one **transcript**, one **draft**, a **model** and its **waiting messages**; a **steer** and each **activity** belong to one reply.

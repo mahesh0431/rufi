@@ -22,6 +22,6 @@ When you chose your region (**Settings** › **Emergency region**), the AI gives
 
 The AI doesn't help anyone harm themselves or someone else, for example with doses or methods, however the question is asked. It says it can't help with that and points to the emergency number or a doctor.
 
-## It says "saved" only when Rufi saved it
+## It asks before it saves, and says "saved" only when Rufi saved it
 
-The AI says that something was saved or changed in your record only when Rufi confirmed it. Today the AI can only read your record; it can't change it.
+The AI says what it will save and asks you first. It saves only after you say yes, and only what you said about yourself: nothing from a question, an "if" or someone else's news. It says that something was saved only when Rufi confirmed it, and Rufi shows its own receipt for each save. See [Changing your record](chat.md#changing-your-record).

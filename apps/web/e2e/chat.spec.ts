@@ -955,6 +955,102 @@ test("a reply stopped by the usage limit says when it resets", async ({
   );
 });
 
+test("a save to the record shows Rufi's receipt, also after a reload", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi, {
+    scenario: {
+      calls: [
+        {
+          namespace: "rufi",
+          tool: "save_changes",
+          arguments: {
+            changes: [
+              {
+                kind: "symptom",
+                action: "add",
+                source: "I have a headache",
+                fields: { name: "Headache" },
+              },
+            ],
+          },
+        },
+      ],
+    },
+  });
+  /** "Saved", then one line per change with the record's name in bold. */
+  const shown = async (scope: Page | Locator) => {
+    const receipt = log(scope).locator(".receipt");
+    await expect(receipt.locator("p strong")).toHaveText("Saved");
+    await expect(receipt.getByRole("listitem")).toHaveText([
+      "Added symptom Headache",
+    ]);
+    await expect(receipt.getByRole("listitem").locator("strong")).toHaveText(
+      "Headache",
+    );
+  };
+  await send(page, "I have a headache");
+  await shown(chat(page));
+  await expect(log(chat(page)).locator(".reply")).toHaveText(
+    "ok:I have a headache",
+  );
+  await accessible(page);
+  await page.reload();
+  await box(chat(page)).click();
+  await shown(chat(page));
+
+  // The conversation's own page shows it the same way.
+  await sidebar(page).getByRole("link", { name: "I have a headache" }).click();
+  await expect(chat(page)).toHaveCount(0);
+  await shown(page);
+  await accessible(page);
+});
+
+test("activity lines keep their sign beside a long detail; Rufi's own tool lines say only what they did", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi, {
+    scenario: {
+      calls: [
+        {
+          namespace: "rufi",
+          tool: "save_changes",
+          arguments: {
+            changes: [
+              {
+                kind: "symptom",
+                action: "add",
+                source: "I have a headache",
+                fields: { name: "Headache" },
+              },
+            ],
+          },
+        },
+        {
+          namespace: "elsewhere",
+          tool: "lookup",
+          arguments: { query: "headache ".repeat(40) },
+        },
+      ],
+    },
+  });
+  await send(page, "I have a headache");
+  await expect(log(chat(page)).locator(".reply")).toHaveText(
+    "ok:I have a headache",
+  );
+  const own = log(chat(page)).locator("p", { hasText: "Save to your record" });
+  await expect(own).toHaveText("done:Save to your record");
+  const other = log(chat(page)).locator("p", { hasText: "Used a tool" });
+  await expect(other).toContainText('{"query":"headache headache');
+  // The sign keeps its 13 px beside a detail longer than the line.
+  for (const line of [own, other]) {
+    const sign = await line.locator("svg").boundingBox();
+    expect(sign?.width).toBe(13);
+  }
+});
+
 test.describe("on the real Codex binary, with a local fake model", () => {
   test("a reply streams after Rufi's tool; Stop; a message waits; Steer", async ({
     page,

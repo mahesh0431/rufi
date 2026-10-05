@@ -35,11 +35,11 @@ export interface ChatDeps {
     version: string;
     /** How the AI uses them, after the safety instructions. */
     instructions: string;
-    /** A caller for one turn of one person's conversation. */
+    /** A caller for one turn of a conversation; the agent gives each call's id. */
     caller: (
-      personId: string,
-      conversationId: string,
-    ) => (name: string, input: unknown) => Promise<ToolAnswer>;
+      conversation: ConversationRow,
+      agentTurnId: string,
+    ) => (name: string, input: unknown, callId: string) => Promise<ToolAnswer>;
   };
   log: Log;
 }
@@ -66,7 +66,11 @@ export function chat(deps: ChatDeps) {
     string,
     {
       turnId: string;
-      call: (name: string, input: unknown) => Promise<ToolAnswer>;
+      call: (
+        name: string,
+        input: unknown,
+        callId: string,
+      ) => Promise<ToolAnswer>;
     }
   >();
   /** Messages already given their reply text, so a question starts a new paragraph. */
@@ -103,7 +107,10 @@ export function chat(deps: ChatDeps) {
         }),
       );
     },
-    callTool: async (threadId, turnId, name, input) => {
+    callTool: async (threadId, turnId, name, input, callId) => {
+      // What the agent did before the call is stored first: the user's
+      // message a save rests on, and the turn its receipt belongs to.
+      await saving;
       let caller = callers.get(threadId);
       if (caller?.turnId !== turnId) {
         const conversation = await transcripts.byThread(threadId);
@@ -118,11 +125,11 @@ export function chat(deps: ChatDeps) {
         }
         caller = {
           turnId,
-          call: deps.tools.caller(conversation.personId, conversation.id),
+          call: deps.tools.caller(conversation, turnId),
         };
         callers.set(threadId, caller);
       }
-      return caller.call(name, input);
+      return caller.call(name, input, callId);
     },
   };
   const agent = deps.agent(host);
@@ -552,14 +559,16 @@ export function chat(deps: ChatDeps) {
   }
 }
 
+const WHO = { user: "User", ai: "AI", rufi: "Rufi" } as const;
+
 /** What a new thread is told first: the note, then the last messages. */
 function newThreadContext(
-  earlier: readonly { from: "user" | "ai"; text: string }[],
+  earlier: readonly { from: "user" | "ai" | "rufi"; text: string }[],
   modelChanged: boolean,
 ): string {
   const note = `${modelChanged ? "The model changed and a new thread started." : "A new thread started."} Older history is available through read_conversation.`;
   const messages = earlier
-    .map(({ from, text }) => `${from === "user" ? "User" : "AI"}: ${text}`)
+    .map(({ from, text }) => `${WHO[from]}: ${text}`)
     .join("\n\n");
   return `${note}\n\nThe last messages of this conversation, oldest first:\n\n${messages}`;
 }

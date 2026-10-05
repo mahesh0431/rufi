@@ -2,6 +2,7 @@
 // types, so Codex now and an MCP host later are thin adapters over the same list.
 import { Result, Schema, SchemaIssue } from "effect";
 import { errorCode, type Log } from "../../platform/logs.ts";
+import type { Change, Saved } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
 
 /** What a tool gets from Rufi, never from the model. */
@@ -12,6 +13,15 @@ export interface ToolContext {
   personId: string | undefined;
   /** The conversation the AI is in, when it is in one; chosen by Rufi. */
   conversationId?: string | undefined;
+  /** The agent's id for this call, when it gave one. */
+  callId?: string | undefined;
+  /**
+   * Saves changes to the record with their receipt: only in Rufi's own
+   * chat, where the conversation and the user's messages are Rufi's.
+   */
+  save?:
+    | ((changes: readonly Change[], callId: string) => Promise<Saved>)
+    | undefined;
 }
 
 /** A tool's input: decoded without services, like JSON. */
@@ -33,8 +43,17 @@ export interface Tool<In extends Input = Input> {
   run: (input: In["Type"], context: ToolContext) => unknown;
 }
 
-/** A tool's answer that isn't a result, in words the model can act on. */
-export class Refusal extends Error {}
+/**
+ * A tool's answer that isn't a result, in words the model can act on, with
+ * each problem in its input.
+ */
+export class Refusal extends Error {
+  readonly issues: Issue[];
+  constructor(message: string, issues: Issue[] = []) {
+    super(message);
+    this.issues = issues;
+  }
+}
 
 /** Kept generic per tool, then stored in one list. */
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- one list of differently typed tools
@@ -47,7 +66,7 @@ export const NoInput = Schema.Record(
   Schema.Never.annotate({ message: "This tool takes no input; leave it out" }),
 );
 
-interface Issue {
+export interface Issue {
   path: string;
   got: string;
   fix: string;
@@ -72,7 +91,7 @@ export function toolCaller(
   tools: readonly Tool[],
   context: () => ToolContext,
   log: Log,
-): (name: string, input: unknown) => Promise<ToolAnswer> {
+): (name: string, input: unknown, callId?: string) => Promise<ToolAnswer> {
   let left = REJECTIONS_PER_TURN;
   const reject = (
     error: string,
@@ -94,7 +113,7 @@ export function toolCaller(
       }),
     };
   };
-  return async (name, input) => {
+  return async (name, input, callId) => {
     const tool = tools.find(
       (candidate) => candidate.name === name && candidate.callers !== "ui",
     );
@@ -113,10 +132,13 @@ export function toolCaller(
       );
     }
     try {
-      const result: unknown = await tool.run(parsed.success, context());
+      const result: unknown = await tool.run(parsed.success, {
+        ...context(),
+        callId,
+      });
       return { ok: true, text: JSON.stringify({ ok: true, result }) };
     } catch (error) {
-      if (error instanceof Refusal) return reject(error.message);
+      if (error instanceof Refusal) return reject(error.message, error.issues);
       // The model only learns it failed; the log gets the tool and the error's code.
       log("tool.failed", { tool: name, error: errorCode(error) });
       return {

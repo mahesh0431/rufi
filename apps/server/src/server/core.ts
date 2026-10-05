@@ -5,7 +5,7 @@
 import { mkdir, rm } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import type { Overview, Status } from "@rufi/contracts";
+import type { Status } from "@rufi/contracts";
 import { serve, type ServerType } from "@hono/node-server";
 import { Effect } from "effect";
 import type { AgentHost, AgentRuntime, AgentTools } from "../agent/runtime.ts";
@@ -17,8 +17,8 @@ import {
   openWritable,
   type Store,
 } from "../core/store/database.ts";
-import { getOverview } from "../core/tools/overview.ts";
-import { forAgent, toolsVersion } from "../core/tools/tools.ts";
+import { readOverview } from "../core/tools/overview.ts";
+import { chatCaller, forAgent, toolsVersion } from "../core/tools/tools.ts";
 import { holdRufiLock, readJson, writePrivateJson } from "../platform/files.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { api, LAUNCHER_HEADER } from "./api.ts";
@@ -143,11 +143,7 @@ export const startCore = (options: CoreOptions) =>
           tools: {
             version: toolsVersion(),
             instructions: tools.instructions,
-            caller: (personId, conversationId) =>
-              forAgent(
-                () => ({ store: reader, personId, conversationId }),
-                log,
-              ).forTurn(),
+            caller: chatCaller(reader, transcripts, log),
           },
           log,
         }),
@@ -166,8 +162,11 @@ export const startCore = (options: CoreOptions) =>
       chat,
       sessions: access,
       port: () => port,
-      overview: async (personId) =>
-        (await getOverview.run({}, { store: reader, personId })) as Overview,
+      overview: async (personId) => {
+        const overview = reader && (await readOverview(reader, personId));
+        if (!overview) throw new Error("The person isn't in the record.");
+        return overview;
+      },
       account:
         options.account ??
         (() => Promise.resolve({ account: "signed_out", email: null })),

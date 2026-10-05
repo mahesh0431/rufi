@@ -25,7 +25,7 @@ import {
   openWritable,
   type Store,
 } from "../core/store/database.ts";
-import { forAgent } from "../core/tools/tools.ts";
+import { chatCaller, forAgent } from "../core/tools/tools.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 
 const FAKE = join(import.meta.dirname, "../../tests/fake-codex.ts");
@@ -112,14 +112,11 @@ async function startChat(
     tools: {
       version: "tools-1",
       instructions: "Read the record only through the rufi tools.",
-      caller: (personId, conversationId) => {
-        const call = forAgent(
-          () => ({ store: reader, personId, conversationId }),
-          log,
-        ).forTurn();
-        return async (name, input) => {
+      caller: (conversation, turnId) => {
+        const call = chatCaller(reader, transcripts, log)(conversation, turnId);
+        return async (name, input, callId) => {
           await sleep(options.toolMs ?? 0);
-          return call(name, input);
+          return call(name, input, callId);
         };
       },
     },
@@ -162,6 +159,22 @@ function backendOf(name: Backend["name"]): Backend {
     },
   };
 }
+
+/** The AI saves a headache the user told it about. */
+const saveHeadache = {
+  namespace: "rufi",
+  tool: "save_changes",
+  arguments: {
+    changes: [
+      {
+        kind: "symptom",
+        action: "add",
+        source: "I have a headache",
+        fields: { name: "Headache" },
+      },
+    ],
+  },
+};
 
 const conversation = async (id: string): Promise<ConversationRow> => {
   const found = await transcripts.conversation("asha", id);
@@ -714,6 +727,66 @@ describe("the chat, on the scripted Codex", () => {
         .filter((e) => e.kind === "activity")
         .map((e) => e.status),
     ).toEqual(["stopped"]);
+  });
+
+  it("keeps a save that lands after Stop, with its receipt", async () => {
+    await startChat("fake", {
+      scenario: { calls: [saveHeadache] },
+      toolMs: 500,
+    });
+    const c = await newConversation();
+    await chat?.send(c, "hang: I have a headache");
+    await until(async () =>
+      (await transcript(c.id)).entries.some(([kind]) => kind === "activity"),
+    );
+    await chat?.stop(c);
+    await ended(c.id);
+    await until(async () =>
+      (await transcript(c.id)).entries.some(([kind]) => kind === "receipt"),
+    );
+    const { entries, turns } = await transcript(c.id);
+    expect(turns).toMatchObject([{ status: "interrupted" }]);
+    expect(entries.filter(([kind]) => kind === "receipt")).toEqual([
+      ["receipt", "**Saved**\n\n- Added symptom **Headache**"],
+    ]);
+    expect(store.db.prepare("SELECT name FROM symptoms").all()).toEqual([
+      { name: "Headache" },
+    ]);
+  });
+
+  it("saves after the message it rests on is stored, also when storing is slow", async () => {
+    await startChat("fake", { scenario: { calls: [saveHeadache] } });
+    const c = await newConversation();
+    const addMessage = transcripts.addMessage;
+    transcripts.addMessage = async (...args) => {
+      await sleep(300);
+      return addMessage(...args);
+    };
+    await chat?.send(c, "I have a headache");
+    await ended(c.id);
+    transcripts.addMessage = addMessage;
+    expect(
+      (await transcript(c.id)).entries.filter(
+        ([kind]) => kind === "message" || kind === "receipt",
+      ),
+    ).toEqual([
+      ["message", "I have a headache"],
+      ["receipt", "**Saved**\n\n- Added symptom **Headache**"],
+    ]);
+  });
+
+  it("gives a new thread Rufi's receipts with the last messages", async () => {
+    await startChat("fake", { scenario: { calls: [saveHeadache] } });
+    const c = await newConversation();
+    await chat?.send(c, "I have a headache");
+    await ended(c.id);
+    await chat?.selectModel(await conversation(c.id), "gpt-6-astra");
+    await startChat("fake");
+    await chat?.send(await conversation(c.id), "And now?");
+    await ended(c.id, 2);
+    expect((await backendOf("fake").contexts()).at(-1)).toContain(
+      "User: I have a headache\n\nRufi: **Saved**\n\n- Added symptom **Headache**\n\nAI: ok:I have a headache",
+    );
   });
 
   it("saves nothing of a reply after its Stop", async () => {

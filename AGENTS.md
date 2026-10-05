@@ -22,7 +22,7 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 - The AI's text is shown as Markdown only: no HTML, no images, and links only to http(s) pages, opened outside Rufi with no opener or referrer (`apps/web/src/transcript.tsx`).
 - In `apps/web`, a value that changes lives in a store, state or ref, never in a module-level `let` that components reassign: React Compiler 1.0 can read such a variable after a later reassignment.
 - One process owns the data folder at a time: the core holds `rufi.lock` for its whole life, and each terminal command holds it too. Sign-in and token renewal take `credentials.lock` inside it (always `rufi.lock` first). If `rufi.lock` is lost, the core stops writing at once.
-- Only the core writes the database. Rufi's tools read through their own read-only connection. A transcript change is stored first and shown from what was stored (`core/chat/transcript.ts`).
+- Only the core writes the database. Rufi's tools read through their own read-only connection; `save_changes` writes through the core's, in Rufi's chat only. A transcript change is stored first and shown from what was stored (`core/chat/transcript.ts`).
 - Rufi keeps no queue or retries of its own for messages: the agent's queue holds what waits, and its errors are shown as they are (ADR 0004). The one delivery state is the draft a send holds until the agent took or refused the message (`drafts.state`); a send Rufi stopped during is never sent again.
 - The chat's state has one owner each: a draft is the core's, and every save or send is checked against its revision and the send holding it; a conversation exists before its first message (Send never creates, chooses or navigates); the conversation on screen is the tab's own (`apps/web/src/choice.ts`), and the core's chosen conversation is only where the chat opens next time. Nothing is saved as a page closes.
 
@@ -39,6 +39,7 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 
 - Person‑owned rows carry `person_id`; references between them use composite `(person_id, id)` foreign keys, so the database rejects cross‑person links. File bytes are shared and carry no person.
 - Store values as printed and dates at the precision known; never overwrite printed fields.
+- The record changes only by a save (ADR 0005, `core/record`): one transaction with the records, each one's before and after, and the receipt built from what was stored. Records are never deleted (`removed`). A date keeps the user's words; code checks dates, sources and the health rules, never what the user meant.
 
 ## Data and privacy
 

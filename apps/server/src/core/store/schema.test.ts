@@ -289,6 +289,10 @@ describe("schema", () => {
       entered_at: now,
       replaces_id: null,
       group_label: null,
+      second_number: null,
+      measured_words: null,
+      source_entry_id: null,
+      removed: 0,
     };
 
     it("reads back every printed field unchanged", () => {

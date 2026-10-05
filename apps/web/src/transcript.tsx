@@ -1,7 +1,8 @@
 // A conversation's transcript as the core stored it: your messages, one line
-// per thing the AI did, the AI's replies as Markdown, and how a reply ended
-// when it didn't finish. Each entry reads only itself from the live store, so
-// a streaming reply re-renders alone.
+// per thing the AI did, the AI's replies as Markdown, Rufi's receipt for
+// each save to the record, and how a reply ended when it didn't finish. Each
+// entry reads only itself from the live store, so a streaming reply
+// re-renders alone.
 import { Link } from "@tanstack/react-router";
 import { Check, LoaderCircle, Square, X } from "lucide-react";
 import { useEffect, useRef } from "react";
@@ -30,20 +31,32 @@ const components: Components = {
     ),
 };
 
+/**
+ * Markdown shown safely. Rufi's receipt shows no links at all: a web address
+ * saved in a record is its text, not a link Rufi vouches for.
+ */
+function Marked({ text, links = true }: { text: string; links?: boolean }) {
+  return (
+    <Markdown
+      remarkPlugins={[remarkGfm]}
+      components={components}
+      disallowedElements={links ? ["img"] : ["img", "a"]}
+      unwrapDisallowed
+      skipHtml
+    >
+      {text}
+    </Markdown>
+  );
+}
+
 function Reply({ text, streaming }: { text: string; streaming: boolean }) {
   return (
     <div className="reply">
-      <Markdown
-        remarkPlugins={[remarkGfm]}
-        components={components}
-        disallowedElements={["img"]}
-        unwrapDisallowed
-        skipHtml
-      >
-        {/* While it streams, half-written Markdown is closed so it reads
-            right; a half-written link shows as its text. */}
-        {streaming ? remend(text, { linkMode: "text-only" }) : text}
-      </Markdown>
+      {/* While it streams, half-written Markdown is closed so it reads right;
+          a half-written link shows as its text. */}
+      <Marked
+        text={streaming ? remend(text, { linkMode: "text-only" }) : text}
+      />
     </div>
   );
 }
@@ -200,6 +213,19 @@ function EntryView({
           )}
           <p className="break-words whitespace-pre-wrap">{entry.text}</p>
         </div>
+      ) : entry.kind === "receipt" ? (
+        // Rufi's own receipt for a save, from what it saved: never the AI's
+        // words. The core writes it as Markdown with every value escaped.
+        <div className="flex items-start gap-1.5 rounded-lg border border-line bg-side px-3 py-2">
+          <Check
+            size={14}
+            className="mt-1 shrink-0 text-accent-ink"
+            aria-hidden
+          />
+          <div className="receipt min-w-0 break-words">
+            <Marked text={entry.text} links={false} />
+          </div>
+        </div>
       ) : entry.kind === "activity" ? (
         <p className="flex min-w-0 items-center gap-1.5 text-muted">
           <ActivityIcon status={entry.status} />
@@ -230,15 +256,16 @@ function ActivityIcon({
 }: {
   status: keyof typeof STATUS_WORDS | null;
 }) {
+  // The sign keeps its size beside a long detail.
   const icon =
     status === "running" ? (
-      <LoaderCircle size={13} className="animate-spin" aria-hidden />
+      <LoaderCircle size={13} className="shrink-0 animate-spin" aria-hidden />
     ) : status === "failed" ? (
-      <X size={13} aria-hidden />
+      <X size={13} className="shrink-0" aria-hidden />
     ) : status === "stopped" ? (
-      <Square size={11} aria-hidden />
+      <Square size={11} className="shrink-0" aria-hidden />
     ) : (
-      <Check size={13} aria-hidden />
+      <Check size={13} className="shrink-0" aria-hidden />
     );
   return (
     <>

@@ -282,7 +282,13 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       text: JSON.stringify({ ok: false, error: `${name} took too long.` }),
     };
     const answer = await Promise.race([
-      deps.host.callTool(call.threadId, call.turnId, name, call.arguments),
+      deps.host.callTool(
+        call.threadId,
+        call.turnId,
+        name,
+        call.arguments,
+        call.callId,
+      ),
       sleep(deadlines.toolMs, timedOut, { ref: false }),
     ]);
     if ("stopTurn" in answer && answer.stopTurn !== undefined) {
