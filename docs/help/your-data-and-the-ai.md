@@ -24,7 +24,7 @@ When Rufi creates your data folder, it makes it private to your Mac user account
 
 ## Your conversations
 
-Rufi keeps each conversation in `rufi.sqlite`: your messages, the AI's replies, one line for each thing the AI did, such as reading your record or searching the web, and a "Saved:" line for each change to your record. Rufi saves each part before it shows it, so what you see is what was saved.
+Rufi keeps each conversation in `rufi.sqlite`: your messages, the AI's replies, one line for each thing the AI did, such as reading your record or searching the web, and a receipt for each save to your record. Rufi saves each part before it shows it, so what you see is what was saved.
 
 For each change to your record, Rufi also keeps the record before and after it, and the message of yours it came from.
 

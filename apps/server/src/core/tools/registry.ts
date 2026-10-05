@@ -16,7 +16,7 @@ export interface ToolContext {
   /** The agent's id for this call, when it gave one. */
   callId?: string | undefined;
   /**
-   * Saves changes to the record with their receipt line: only in Rufi's own
+   * Saves changes to the record with their receipt: only in Rufi's own
    * chat, where the conversation and the user's messages are Rufi's.
    */
   save?:

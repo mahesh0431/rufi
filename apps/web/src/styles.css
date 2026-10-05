@@ -156,6 +156,15 @@ body {
   color: var(--color-muted);
 }
 
+/* Rufi's receipt for a save: "Saved", then one line per change. */
+.receipt p {
+  margin: 0 0 2px;
+}
+.receipt ul {
+  list-style: disc;
+  padding-left: 20px;
+}
+
 /* A text box that grows with its text: an invisible copy of the text sizes
    the grid cell the box shares with it. */
 .grow-box {

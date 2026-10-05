@@ -39,7 +39,7 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 
 - Person‑owned rows carry `person_id`; references between them use composite `(person_id, id)` foreign keys, so the database rejects cross‑person links. File bytes are shared and carry no person.
 - Store values as printed and dates at the precision known; never overwrite printed fields.
-- The record changes only by a save (ADR 0005, `core/record`): one transaction with the records, each one's before and after, and the receipt line built from what was stored. Records are never deleted (`removed`). A date keeps the user's words; code checks dates, sources and the health rules, never what the user meant.
+- The record changes only by a save (ADR 0005, `core/record`): one transaction with the records, each one's before and after, and the receipt built from what was stored. Records are never deleted (`removed`). A date keeps the user's words; code checks dates, sources and the health rules, never what the user meant.
 
 ## Data and privacy
 

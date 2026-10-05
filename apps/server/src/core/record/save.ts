@@ -1,7 +1,7 @@
 // A save to the record (docs/adr/0005): the AI's save_changes call, after
 // the user said yes in the chat. Every change is checked first; then the
 // save, each record's before and after, and nothing else, are written in the
-// caller's transaction, with the receipt line built from what was written.
+// caller's transaction, with the receipt built from what was written.
 // The same call again gives the same save; any problem saves nothing.
 import { Schema } from "effect";
 import { sql, type Transaction } from "kysely";
@@ -137,7 +137,7 @@ export class SaveRefused extends Error {
 export interface Saved {
   /** The save's id; its receipt is the transcript entry with the same id. */
   id: string;
-  /** The receipt line, from what was written. */
+  /** The receipt as Markdown, from what was written. */
   receipt: string;
   /** False when this call was saved before: nothing new was written. */
   fresh: boolean;
@@ -182,7 +182,7 @@ const describe = (value: unknown) => {
 
 /**
  * Checks `changes` and writes them in `trx`, or throws SaveRefused with
- * every problem. Run it in the transaction that adds the receipt line.
+ * every problem. Run it in the transaction that adds the receipt.
  */
 export async function saveChanges(
   trx: Transaction<Tables>,
@@ -384,7 +384,7 @@ export async function saveChanges(
   }
   return {
     id,
-    receipt: receiptLine(written, await linksOf(trx, where.personId, written)),
+    receipt: receiptText(written, await linksOf(trx, where.personId, written)),
     fresh: true,
     changes: written.map((w) => ({
       kind: w.kind.name,
@@ -709,16 +709,34 @@ function apart(then: string, now: string): [string, string] {
   return [tail(then), tail(now)];
 }
 
-/** One line for a save, from the records as written. */
-function receiptLine(written: readonly Written[], links: Links): string {
-  const parts = written.map(({ kind, action, before, after }) => {
+/**
+ * A value as literal Markdown text: on one line, and with every mark that
+ * could format it, link it or hide it as HTML escaped.
+ */
+const literal = (text: string) =>
+  text.replace(/\s*\n\s*/g, " ").replace(/[\\`*_[\]<>~|&!#]/g, "\\$&");
+
+/**
+ * The receipt for a save, from the records as written: a "Saved" heading,
+ * then one line per change in Markdown, with the record's name in bold and
+ * each value in italics. Every value is literal text.
+ */
+function receiptText(written: readonly Written[], links: Links): string {
+  const value = (text: string) =>
+    text === "not given" ? text : `*${literal(text)}*`;
+  const lines = written.map(({ kind, action, before, after }) => {
     // A statement's label says what it is: "no known allergies (as of …)".
     const name =
       kind.name === "none_known"
-        ? kind.label(after)
-        : `${kind.noun} ${kind.label(after)}`;
-    if (action === "remove") return `removed ${name}`;
-    if (action === "restore") return `restored ${name}`;
+        ? `**${literal(kind.label(after))}**`
+        : `${kind.noun} **${literal(kind.label(after))}**`;
+    const verb = {
+      add: "Added",
+      change: "Changed",
+      remove: "Removed",
+      restore: "Restored",
+    }[action];
+    if (action === "remove" || action === "restore") return `- ${verb} ${name}`;
     const details: string[] = [];
     for (const [key, field] of Object.entries(kind.fields)) {
       if (action === "add") {
@@ -726,7 +744,9 @@ function receiptLine(written: readonly Written[], links: Links): string {
         if (now === undefined || now === "unknown") continue;
         if (kind.inLabel.includes(key)) continue;
         details.push(
-          field.shown === "status" ? cut(now) : `${field.shown}: ${cut(now)}`,
+          field.shown === "status"
+            ? literal(cut(now))
+            : `${field.shown} ${value(cut(now))}`,
         );
         continue;
       }
@@ -741,10 +761,14 @@ function receiptLine(written: readonly Written[], links: Links): string {
         now = `${now} (${String(after["linked_id"])})`;
       }
       [then, now] = apart(then, now);
-      details.push(`${field.shown}: ${then} → ${now}`);
+      details.push(`${field.shown} ${value(then)} → ${value(now)}`);
     }
-    const said = details.length > 0 ? ` (${details.join(", ")})` : "";
-    return `${action === "add" ? "added" : "changed"} ${name}${said}`;
+    // An added record's fields are a list; a change's are separate changes.
+    const said =
+      details.length > 0
+        ? `: ${details.join(action === "add" ? ", " : "; ")}`
+        : "";
+    return `- ${verb} ${name}${said}`;
   });
-  return `Saved: ${parts.join("; ")}.`;
+  return `**Saved**\n\n${lines.join("\n")}`;
 }

@@ -955,7 +955,7 @@ test("a reply stopped by the usage limit says when it resets", async ({
   );
 });
 
-test("a save to the record shows Rufi's receipt line, also after a reload", async ({
+test("a save to the record shows Rufi's receipt, also after a reload", async ({
   page,
   rufi,
 }) => {
@@ -979,16 +979,32 @@ test("a save to the record shows Rufi's receipt line, also after a reload", asyn
       ],
     },
   });
+  /** "Saved", then one line per change with the record's name in bold. */
+  const shown = async (scope: Page | Locator) => {
+    const receipt = log(scope).locator(".receipt");
+    await expect(receipt.locator("p strong")).toHaveText("Saved");
+    await expect(receipt.getByRole("listitem")).toHaveText([
+      "Added symptom Headache",
+    ]);
+    await expect(receipt.getByRole("listitem").locator("strong")).toHaveText(
+      "Headache",
+    );
+  };
   await send(page, "I have a headache");
-  const receipt = log(chat(page)).getByText("Saved: added symptom Headache.");
-  await expect(receipt).toBeVisible();
+  await shown(chat(page));
   await expect(log(chat(page)).locator(".reply")).toHaveText(
     "ok:I have a headache",
   );
   await accessible(page);
   await page.reload();
   await box(chat(page)).click();
-  await expect(receipt).toBeVisible();
+  await shown(chat(page));
+
+  // The conversation's own page shows it the same way.
+  await sidebar(page).getByRole("link", { name: "I have a headache" }).click();
+  await expect(chat(page)).toHaveCount(0);
+  await shown(page);
+  await accessible(page);
 });
 
 test("activity lines keep their sign beside a long detail; Rufi's own tool lines say only what they did", async ({

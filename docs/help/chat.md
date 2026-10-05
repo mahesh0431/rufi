@@ -52,7 +52,7 @@ A message can have up to 10,000 characters. When the box has more, it says so, a
 - **Your messages**, on the right.
 - **The AI's replies**, which appear as the AI writes them. Replies can have lists and tables. Links in a reply open in your browser, outside Rufi. A reply never shows pictures.
 - **One line for each thing the AI did**, such as reading your Overview or running a command. A tick means it was done. Other signs mean it is running, it failed, or it stopped.
-- **"Saved:" lines**, with a tick, each time the AI saved something to your record. Rufi writes them. See [Changing your record](#changing-your-record).
+- **Receipts**, with a tick, each time the AI saved something to your record: "Saved", then one line for each change. Rufi writes them. See [Changing your record](#changing-your-record).
 - **How a reply ended**, when it didn't finish: for example "Stopped.", or that your ChatGPT plan's usage limit has been reached, with the time it resets.
 
 ## Changing your record
@@ -62,7 +62,14 @@ You change your record by telling the AI in the chat. Nothing changes until you 
 1. Tell the AI, for example "I stopped creatine because of a stomach upset".
 2. The AI reads your record, then says what it will save and asks you. Nothing is saved yet.
 3. Say yes to save it. If you say no, ask a question, or say "yes, but explain first", the AI saves nothing.
-4. The conversation shows a line with a tick that starts with "Saved:", for example "Saved: changed medicine use Creatine 5 g (status: current → stopped); added symptom Stomach upset." Rufi writes this line itself, from what it saved, not from the AI's words. If the line is different from what the AI told you, trust the line and tell the AI.
+4. The conversation shows a receipt with a tick: "Saved", then one line for each change, with the record's name in bold and each changed detail as old → new. For example:
+
+   > **Saved**
+   >
+   > - Changed medicine use **Creatine 5 g**: status _current_ → _stopped_
+   > - Added symptom **Stomach upset**
+
+   When a detail is long, its line shows the part around the change. Rufi writes the receipt itself, from what it saved, not from the AI's words. If the receipt is different from what the AI told you, trust the receipt and tell the AI.
 
 The AI can save medicines you take, prescriptions, symptoms, conditions, allergies, results such as your weight or blood pressure, visits, procedures and immunisations, "no known allergies", and follow-ups.
 
@@ -78,11 +85,11 @@ Your record isn't shown on a page yet, except your results on the Overview. Ask 
 
 ### Undo
 
-Say "undo that". The AI reads the save and your record as it is now. It tells you what it will change back, and anything that changed after that save, and asks you. Say yes, and the AI saves the reverse, with its own "Saved:" line. The first save stays in the history.
+Say "undo that". The AI reads the save and your record as it is now. It tells you what it will change back, and anything that changed after that save, and asks you. Say yes, and the AI saves the reverse, with its own receipt. The first save stays in the history.
 
 ### When a save and a stop meet
 
-If you stop the reply while the AI saves, the save can still finish. Then its "Saved:" line shows in the conversation, and the AI sees it the next time you write. Say "undo that" if you don't want it.
+If you stop the reply while the AI saves, the save can still finish. Then its receipt shows in the conversation, and the AI sees it the next time you write. Say "undo that" if you don't want it.
 
 ## While the AI replies
 

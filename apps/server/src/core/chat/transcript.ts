@@ -667,7 +667,7 @@ export function transcripts(
       }),
 
     /**
-     * A save to the record and its receipt line, in one transaction
+     * A save to the record and its receipt, in one transaction
      * (docs/adr/0005): `save` writes the record in it. The line is added
      * also when the reply has ended meanwhile (a Stop, a deadline): what is
      * saved is shown. The same call saved before adds no second line.
@@ -772,7 +772,7 @@ export function transcripts(
 
     /**
      * The last `count` messages (the user's, the AI's replies and Rufi's
-     * receipt lines) from replies that have ended, oldest first: what a new
+     * receipts) from replies that have ended, oldest first: what a new
      * thread starts with.
      */
     lastMessages: async (conversation: ConversationRow, count: number) => {

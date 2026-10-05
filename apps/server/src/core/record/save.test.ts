@@ -88,7 +88,17 @@ const rows = (sql: string) => store.db.prepare(sql).all();
 const receipts = () =>
   rows(
     "SELECT text, turn_id IS NOT NULL AS in_turn FROM transcript_entries WHERE kind = 'receipt' ORDER BY seq",
-  );
+  ) as { text: string; in_turn: number }[];
+/** A receipt as plain lines: without its Markdown marks, list dashes and escapes. */
+const lines = (receipt: unknown) =>
+  String(receipt)
+    .split("\n")
+    .map((line) =>
+      line
+        .replace(/^- /, "")
+        .replace(/\\(.)|\*/g, (_, kept?: string) => kept ?? ""),
+    )
+    .filter((line) => line !== "");
 /** Every column of the table unknown: what a record has before any field is given. */
 const blank = (table: string) =>
   Object.fromEntries(
@@ -115,14 +125,15 @@ interface KindCase {
   said: string;
   add: Record<string, unknown>;
   stored: Record<string, unknown>;
-  added: string;
+  /** The receipt's lines, as plain text. */
+  added: string[];
   change?: {
     said: string;
     fields: Record<string, unknown>;
     stored: Record<string, unknown>;
-    receipt: string;
+    receipt: string[];
   };
-  removed: string;
+  removed: string[];
 }
 
 const KIND_CASES: KindCase[] = [
@@ -145,16 +156,20 @@ const KIND_CASES: KindCase[] = [
       started: "2026-09-28",
       started_words: "last Monday",
     },
-    added:
-      'Saved: added medicine use Magnesium 200 mg (schedule: at night, current, start: 28 Sep 2026 ("last Monday")).',
+    added: [
+      "Saved",
+      'Added medicine use Magnesium 200 mg: schedule at night, current, start 28 Sep 2026 ("last Monday")',
+    ],
     change: {
       said: "Sorry, the magnesium is 400 mg",
       fields: { strength: "400 mg" },
       stored: { strength: "400 mg" },
-      receipt:
-        "Saved: changed medicine use Magnesium 400 mg (strength: 200 mg → 400 mg).",
+      receipt: [
+        "Saved",
+        "Changed medicine use Magnesium 400 mg: strength 200 mg → 400 mg",
+      ],
     },
-    removed: "Saved: removed medicine use Magnesium 400 mg.",
+    removed: ["Saved", "Removed medicine use Magnesium 400 mg"],
   },
   {
     kind: "prescription",
@@ -177,16 +192,20 @@ const KIND_CASES: KindCase[] = [
       issued: "2026-10-02",
       issued_words: "on 2 Oct",
     },
-    added:
-      'Saved: added prescription Amoxicillin 500 mg (schedule: three times a day, period: for 5 days, prescriber: Dr Rao, issued: 2 Oct 2026 ("on 2 Oct")).',
+    added: [
+      "Saved",
+      'Added prescription Amoxicillin 500 mg: schedule three times a day, period for 5 days, prescriber Dr Rao, issued 2 Oct 2026 ("on 2 Oct")',
+    ],
     change: {
       said: "It was Dr Mehta, not Dr Rao",
       fields: { prescriber: "Dr Mehta" },
       stored: { prescriber: "Dr Mehta" },
-      receipt:
-        "Saved: changed prescription Amoxicillin 500 mg (prescriber: Dr Rao → Dr Mehta).",
+      receipt: [
+        "Saved",
+        "Changed prescription Amoxicillin 500 mg: prescriber Dr Rao → Dr Mehta",
+      ],
     },
-    removed: "Saved: removed prescription Amoxicillin 500 mg.",
+    removed: ["Saved", "Removed prescription Amoxicillin 500 mg"],
   },
   {
     kind: "symptom",
@@ -205,15 +224,17 @@ const KIND_CASES: KindCase[] = [
       onset_words: "since yesterday",
       intermittent: 1,
     },
-    added:
-      'Saved: added symptom Headache (ongoing, onset: 3 Oct 2026 ("since yesterday"), comes and goes: yes).',
+    added: [
+      "Saved",
+      'Added symptom Headache: ongoing, onset 3 Oct 2026 ("since yesterday"), comes and goes yes',
+    ],
     change: {
       said: "The headache is gone now",
       fields: { status: "resolved" },
       stored: { status: "resolved" },
-      receipt: "Saved: changed symptom Headache (status: ongoing → resolved).",
+      receipt: ["Saved", "Changed symptom Headache: status ongoing → resolved"],
     },
-    removed: "Saved: removed symptom Headache.",
+    removed: ["Saved", "Removed symptom Headache"],
   },
   {
     kind: "condition",
@@ -231,16 +252,20 @@ const KIND_CASES: KindCase[] = [
       recognised: "2019",
       recognised_words: "in 2019",
     },
-    added:
-      'Saved: added condition Hypothyroidism (certainty: diagnosed, recognised: 2019 ("in 2019")).',
+    added: [
+      "Saved",
+      'Added condition Hypothyroidism: certainty diagnosed, recognised 2019 ("in 2019")',
+    ],
     change: {
       said: "The hypothyroidism is still ongoing",
       fields: { status: "ongoing" },
       stored: { status: "ongoing" },
-      receipt:
-        "Saved: changed condition Hypothyroidism (status: unknown → ongoing).",
+      receipt: [
+        "Saved",
+        "Changed condition Hypothyroidism: status unknown → ongoing",
+      ],
     },
-    removed: "Saved: removed condition Hypothyroidism.",
+    removed: ["Saved", "Removed condition Hypothyroidism"],
   },
   {
     kind: "allergy",
@@ -262,17 +287,21 @@ const KIND_CASES: KindCase[] = [
       reacted: "2015",
       reacted_words: "in 2015",
     },
-    added:
-      'Saved: added allergy Sulfa drugs (reaction: hives, active, certainty: confirmed, reaction date: 2015 ("in 2015")).',
+    added: [
+      "Saved",
+      'Added allergy Sulfa drugs: reaction hives, active, certainty confirmed, reaction date 2015 ("in 2015")',
+    ],
     change: {
       // An ended reaction is not an inactive allergy: the status stays.
       said: "The hives were in 2016 actually, and they ended long ago",
       fields: { reacted: { date: "2016", words: "in 2016" } },
       stored: { reacted: "2016", reacted_words: "in 2016", status: "active" },
-      receipt:
-        'Saved: changed allergy Sulfa drugs (reaction date: 2015 ("in 2015") → 2016 ("in 2016")).',
+      receipt: [
+        "Saved",
+        'Changed allergy Sulfa drugs: reaction date 2015 ("in 2015") → 2016 ("in 2016")',
+      ],
     },
-    removed: "Saved: removed allergy Sulfa drugs.",
+    removed: ["Saved", "Removed allergy Sulfa drugs"],
   },
   {
     kind: "result",
@@ -296,16 +325,20 @@ const KIND_CASES: KindCase[] = [
       measured_words: "this morning",
       entered_at: SUNDAY_10AM,
     },
-    added:
-      'Saved: added result Blood pressure 128/84 mmHg (measured: 4 Oct 2026 ("this morning")).',
+    added: [
+      "Saved",
+      'Added result Blood pressure 128/84 mmHg: measured 4 Oct 2026 ("this morning")',
+    ],
     change: {
       said: "Sorry, the blood pressure was 126/84",
       fields: { value: "126/84", number: 126 },
       stored: { value_text: "126/84", value_number: 126 },
-      receipt:
-        "Saved: changed result Blood pressure 126/84 mmHg (value: 128/84 → 126/84, number: 128 → 126).",
+      receipt: [
+        "Saved",
+        "Changed result Blood pressure 126/84 mmHg: value 128/84 → 126/84; number 128 → 126",
+      ],
     },
-    removed: "Saved: removed result Blood pressure 126/84 mmHg.",
+    removed: ["Saved", "Removed result Blood pressure 126/84 mmHg"],
   },
   {
     kind: "care_event",
@@ -324,16 +357,20 @@ const KIND_CASES: KindCase[] = [
       date: "2026-10-20",
       date_words: "on 20 Oct",
     },
-    added:
-      'Saved: added care event Dentist (type: visit, planned, date: 20 Oct 2026 ("on 20 Oct")).',
+    added: [
+      "Saved",
+      'Added care event Dentist: type visit, planned, date 20 Oct 2026 ("on 20 Oct")',
+    ],
     change: {
       said: "The dentist visit moved to 22 Oct",
       fields: { date: { date: "2026-10-22", words: "22 Oct" } },
       stored: { date: "2026-10-22", date_words: "22 Oct" },
-      receipt:
-        'Saved: changed care event Dentist (date: 20 Oct 2026 ("on 20 Oct") → 22 Oct 2026 ("22 Oct")).',
+      receipt: [
+        "Saved",
+        'Changed care event Dentist: date 20 Oct 2026 ("on 20 Oct") → 22 Oct 2026 ("22 Oct")',
+      ],
     },
-    removed: "Saved: removed care event Dentist.",
+    removed: ["Saved", "Removed care event Dentist"],
   },
   {
     kind: "none_known",
@@ -341,8 +378,8 @@ const KIND_CASES: KindCase[] = [
     said: "I have no allergies",
     add: { category: "allergies" },
     stored: { category: "allergies", asserted: "2026-10-04" },
-    added: "Saved: added no known allergies (as of 4 Oct 2026).",
-    removed: "Saved: removed no known allergies (as of 4 Oct 2026).",
+    added: ["Saved", "Added no known allergies (as of 4 Oct 2026)"],
+    removed: ["Saved", "Removed no known allergies (as of 4 Oct 2026)"],
   },
   {
     kind: "follow_up",
@@ -360,16 +397,20 @@ const KIND_CASES: KindCase[] = [
       linked_kind: "result",
       linked_id: "res-a1",
     },
-    added:
-      "Saved: added follow-up Recheck HbA1c (due: at the next visit, open, about: result HbA1c 6.8 %).",
+    added: [
+      "Saved",
+      "Added follow-up Recheck HbA1c: due at the next visit, open, about result HbA1c 6.8 %",
+    ],
     change: {
       said: "Done, the HbA1c recheck was 6.5%",
       fields: { status: "done", outcome: "HbA1c 6.5%" },
       stored: { status: "done", outcome: "HbA1c 6.5%" },
-      receipt:
-        "Saved: changed follow-up Recheck HbA1c (status: open → done, outcome: not given → HbA1c 6.5%).",
+      receipt: [
+        "Saved",
+        "Changed follow-up Recheck HbA1c: status open → done; outcome not given → HbA1c 6.5%",
+      ],
     },
-    removed: "Saved: removed follow-up Recheck HbA1c.",
+    removed: ["Saved", "Removed follow-up Recheck HbA1c"],
   },
 ];
 
@@ -382,7 +423,7 @@ describe("saving each kind of record", () => {
         { kind: c.kind, action: "add", source: c.said, fields: c.add },
       ]);
       expect(added.body).toMatchObject({ ok: true });
-      expect(added.body.result.receipt).toBe(c.added);
+      expect(lines(added.body.result.receipt)).toEqual(c.added);
       const id = added.body.result.changes[0]?.id ?? "";
       const first = row(c.table, id);
       expect(first).toEqual({
@@ -419,7 +460,7 @@ describe("saving each kind of record", () => {
           ],
           `call-${String(++calls)}`,
         );
-        expect(changed.body.result.receipt).toBe(c.change.receipt);
+        expect(lines(changed.body.result.receipt)).toEqual(c.change.receipt);
         expected.push(c.change.receipt);
         // The rest stays as it was.
         current = { ...first, ...c.change.stored, source_entry_id: again };
@@ -430,14 +471,14 @@ describe("saving each kind of record", () => {
         [{ kind: c.kind, action: "remove", id, source: c.said }],
         `call-${String(calls + 1)}`,
       );
-      expect(gone.body.result.receipt).toBe(c.removed);
+      expect(lines(gone.body.result.receipt)).toEqual(c.removed);
       expected.push(c.removed);
       const removed = { ...current, removed: 1, source_entry_id: source };
       expect(row(c.table, id)).toEqual(removed);
 
-      expect(receipts()).toEqual(
-        expected.map((text) => ({ text, in_turn: 1 })),
-      );
+      expect(
+        receipts().map(({ text, in_turn }) => [lines(text), in_turn]),
+      ).toEqual(expected.map((text) => [text, 1]));
       const history = (
         rows(
           `SELECT action, before, after FROM record_changes WHERE record_id = '${id}' ORDER BY rowid`,
@@ -478,9 +519,11 @@ describe("a save", () => {
         fields: { name: "Stomach upset" },
       },
     ]);
-    expect(saved.body.result.receipt).toBe(
-      "Saved: changed medicine use Creatine 5 g (status: current → stopped); added symptom Stomach upset.",
-    );
+    expect(lines(saved.body.result.receipt)).toEqual([
+      "Saved",
+      "Changed medicine use Creatine 5 g: status current → stopped",
+      "Added symptom Stomach upset",
+    ]);
     const symptom = saved.body.result.changes[1]?.id ?? "";
     expect(rows("SELECT * FROM operations")).toHaveLength(1);
 
@@ -499,9 +542,11 @@ describe("a save", () => {
       ],
       "call-2",
     );
-    expect(undone.body.result.receipt).toBe(
-      "Saved: changed medicine use Creatine 5 g (status: stopped → current); removed symptom Stomach upset.",
-    );
+    expect(lines(undone.body.result.receipt)).toEqual([
+      "Saved",
+      "Changed medicine use Creatine 5 g: status stopped → current",
+      "Removed symptom Stomach upset",
+    ]);
     expect(row("medicine_uses", "med-a2")).toEqual({
       ...before,
       source_entry_id: yes,
@@ -584,9 +629,11 @@ describe("a save", () => {
       ],
       "call-3",
     );
-    expect(changed.body.result.receipt).toBe(
-      "Saved: changed symptom Headache (details: …no vision changes; frequency once a week → …no vision changes; frequency every day); changed follow-up Discuss pain (about: symptom Headache → symptom Toothache).",
-    );
+    expect(lines(changed.body.result.receipt)).toEqual([
+      "Saved",
+      "Changed symptom Headache: details …no vision changes; frequency once a week → …no vision changes; frequency every day",
+      "Changed follow-up Discuss pain: about symptom Headache → symptom Toothache",
+    ]);
     // Two records with the same name are told apart by their ids.
     await say("No, the follow-up is about my back");
     const backs = await save(
@@ -614,10 +661,12 @@ describe("a save", () => {
       "call-5",
     );
     expect(backs.ok).toBe(true);
-    expect(receipts().at(-1)).toEqual({
-      text: `Saved: changed follow-up Discuss pain (about: symptom Back pain (${back ?? ""}) → symptom Back pain (${otherBack ?? ""})).`,
-      in_turn: 1,
-    });
+    const last = receipts().at(-1);
+    expect(last?.in_turn).toBe(1);
+    expect(lines(last?.text)).toEqual([
+      "Saved",
+      `Changed follow-up Discuss pain: about symptom Back pain (${back ?? ""}) → symptom Back pain (${otherBack ?? ""})`,
+    ]);
 
     // A change inside one long word, such as a link, still shows.
     const report = (version: number) =>
@@ -647,8 +696,29 @@ describe("a save", () => {
       ],
       "call-7",
     );
-    expect(url.body.result.receipt).toBe(
-      "Saved: changed symptom Back pain (details: …d63a5b5eeccf3ae761296?version=1 reviewed at next visit → …d63a5b5eeccf3ae761296?version=2 reviewed at next visit).",
+    expect(lines(url.body.result.receipt)).toEqual([
+      "Saved",
+      "Changed symptom Back pain: details …d63a5b5eeccf3ae761296?version=1 reviewed at next visit → …d63a5b5eeccf3ae761296?version=2 reviewed at next visit",
+    ]);
+  });
+
+  it("writes the receipt as Markdown in which the saved words stay as written", async () => {
+    const said =
+      "I take **Fish oil** [daily](https://fictional.example) <b>with food</b>\nsince 2019";
+    await say(said);
+    const saved = await save([
+      {
+        kind: "medicine_use",
+        action: "add",
+        source: "since 2019",
+        fields: {
+          name: "**Fish oil**",
+          schedule: "[daily](https://fictional.example) <b>with food</b>\nnow",
+        },
+      },
+    ]);
+    expect(saved.body.result.receipt).toBe(
+      "**Saved**\n\n- Added medicine use **\\*\\*Fish oil\\*\\***: schedule *\\[daily\\](https://fictional.example) \\<b\\>with food\\</b\\> now*",
     );
   });
 
@@ -950,9 +1020,11 @@ describe("the health rules", () => {
       ],
       "call-3",
     );
-    expect(both.body.result.receipt).toBe(
-      "Saved: added allergy Penicillin; removed no known allergies (as of 4 Oct 2026).",
-    );
+    expect(lines(both.body.result.receipt)).toEqual([
+      "Saved",
+      "Added allergy Penicillin",
+      "Removed no known allergies (as of 4 Oct 2026)",
+    ]);
     // A save of another kind isn't held up by them.
     store.db.exec(
       "INSERT INTO none_known (id, person_id, category) VALUES ('nk-old', 'asha', 'allergies')",
@@ -1262,7 +1334,7 @@ describe("the AI's view of the record", () => {
       {
         at: SUNDAY_10AM,
         receipt:
-          "Saved: changed medicine use Creatine 5 g (status: current → stopped).",
+          "**Saved**\n\n- Changed medicine use **Creatine 5 g**: status *current* → *stopped*",
         changes: [
           {
             kind: "medicine_use",

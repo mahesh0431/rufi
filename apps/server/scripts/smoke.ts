@@ -203,7 +203,7 @@ const medicine = (home: string, name: string) =>
 const receipts = (snapshot: Snapshot) =>
   snapshot.entries.filter((e) => e.kind === "receipt").length;
 
-/** Nothing was saved: no save and no receipt line. */
+/** Nothing was saved: no save and no receipt. */
 const nothingSaved = (home: string, snapshot: Snapshot) =>
   record(home).saves === 0 && receipts(snapshot) === 0;
 
@@ -299,7 +299,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       snapshot,
     };
   },
-  /** "Yes" saves it, with a receipt line and no invented start date. */
+  /** "Yes" saves it, with a receipt and no invented start date. */
   yes: async (api, home) => {
     const c = await conversation(api);
     await c.ask(MAGNESIUM);

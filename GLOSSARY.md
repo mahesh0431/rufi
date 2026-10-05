@@ -51,7 +51,7 @@ One change to the record that the user agreed to in the chat: the AI's call to s
 _Avoid_: change set, batch, transaction, commit
 
 **Receipt**:
-The "Saved:" line Rufi adds to the conversation for each save, written from what was saved, never from the AI's words.
+What Rufi adds to the conversation for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words.
 _Avoid_: toast, success message, confirmation
 
 **Undo**:

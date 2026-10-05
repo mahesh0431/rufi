@@ -729,7 +729,7 @@ describe("the chat, on the scripted Codex", () => {
     ).toEqual(["stopped"]);
   });
 
-  it("keeps a save that lands after Stop, with its receipt line", async () => {
+  it("keeps a save that lands after Stop, with its receipt", async () => {
     await startChat("fake", {
       scenario: { calls: [saveHeadache] },
       toolMs: 500,
@@ -747,7 +747,7 @@ describe("the chat, on the scripted Codex", () => {
     const { entries, turns } = await transcript(c.id);
     expect(turns).toMatchObject([{ status: "interrupted" }]);
     expect(entries.filter(([kind]) => kind === "receipt")).toEqual([
-      ["receipt", "Saved: added symptom Headache."],
+      ["receipt", "**Saved**\n\n- Added symptom **Headache**"],
     ]);
     expect(store.db.prepare("SELECT name FROM symptoms").all()).toEqual([
       { name: "Headache" },
@@ -771,11 +771,11 @@ describe("the chat, on the scripted Codex", () => {
       ),
     ).toEqual([
       ["message", "I have a headache"],
-      ["receipt", "Saved: added symptom Headache."],
+      ["receipt", "**Saved**\n\n- Added symptom **Headache**"],
     ]);
   });
 
-  it("gives a new thread Rufi's receipt lines with the last messages", async () => {
+  it("gives a new thread Rufi's receipts with the last messages", async () => {
     await startChat("fake", { scenario: { calls: [saveHeadache] } });
     const c = await newConversation();
     await chat?.send(c, "I have a headache");
@@ -785,7 +785,7 @@ describe("the chat, on the scripted Codex", () => {
     await chat?.send(await conversation(c.id), "And now?");
     await ended(c.id, 2);
     expect((await backendOf("fake").contexts()).at(-1)).toContain(
-      "User: I have a headache\n\nRufi: Saved: added symptom Headache.\n\nAI: ok:I have a headache",
+      "User: I have a headache\n\nRufi: **Saved**\n\n- Added symptom **Headache**\n\nAI: ok:I have a headache",
     );
   });
 

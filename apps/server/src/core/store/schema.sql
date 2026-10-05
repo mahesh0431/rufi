@@ -10,7 +10,7 @@
 --
 -- The record changes only through a save (docs/adr/0005): one transaction
 -- that writes the records, each record's before and after (record_changes)
--- and the save's receipt line in the transcript. A record is never deleted:
+-- and the save's receipt in the transcript. A record is never deleted:
 -- removing it sets removed, and its history stays. A record's source is the
 -- user's message its current values rest on; a date said in words keeps
 -- those words beside it (*_words), counted from that message's time.
