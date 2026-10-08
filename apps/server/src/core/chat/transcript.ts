@@ -3,14 +3,16 @@
 // the AI's reasoning and its replies, in order, and each call to Rufi's
 // tools. Every change is one transaction that moves the chat's revision
 // on, and is published to listeners only after it is stored.
-import type {
-  ActivityKind,
-  Chat,
-  Draft,
-  EndReason,
-  Entry,
-  Page,
-  Turn,
+import {
+  type ActivityKind,
+  type Chat,
+  DEFAULT_EFFORT,
+  type Draft,
+  type Effort,
+  type EndReason,
+  type Entry,
+  type Page,
+  type Turn,
 } from "@rufi/contracts";
 import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
@@ -74,12 +76,13 @@ const toEntry = (row: EntryRow, finished: boolean): Entry => ({
 });
 
 /** A chat as the screens get it, without its thread. */
-const shown = ({ model }: Chat): Chat => ({ model });
+const shown = ({ model, effort }: Chat): Chat => ({ model, effort });
 
 const toChat = (row: Selectable<Tables["chats"]>): ChatRow => ({
   id: row.id,
   personId: row.person_id,
   model: row.model,
+  effort: (row.effort as Effort | null) ?? DEFAULT_EFFORT,
   threadId: row.thread_id,
   threadProvider: row.thread_provider,
   threadModel: row.thread_model,
@@ -487,6 +490,7 @@ export function transcripts(
             id: uuid(),
             person_id: id,
             model: null,
+            effort: null,
             thread_id: null,
             thread_provider: null,
             thread_model: null,
@@ -547,6 +551,16 @@ export function transcripts(
         await trx
           .updateTable("chats")
           .set({ model })
+          .where("id", "=", chat.id)
+          .execute();
+        return { entries: [], turns: [], chat: true };
+      }),
+
+    setEffort: (chat: ChatRow, effort: Effort) =>
+      change(chat.id, async (trx) => {
+        await trx
+          .updateTable("chats")
+          .set({ effort })
           .where("id", "=", chat.id)
           .execute();
         return { entries: [], turns: [], chat: true };

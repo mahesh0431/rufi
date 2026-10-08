@@ -30,6 +30,7 @@ export interface Tables {
     id: string;
     person_id: string;
     model: string | null;
+    effort: string | null;
     thread_id: string | null;
     thread_provider: string | null;
     thread_model: string | null;

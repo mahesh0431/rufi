@@ -16,6 +16,7 @@ export interface FakeModel {
   /** Every request body Codex sent, in order. */
   requests: {
     input: { type?: string; role?: string; content?: { text?: string }[] }[];
+    reasoning?: { effort?: string };
   }[];
   close: () => Promise<void>;
 }

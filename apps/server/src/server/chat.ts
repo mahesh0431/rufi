@@ -1,7 +1,7 @@
 // The chat: joins the agent and Rufi's transcripts. What the agent does is
 // saved first and shown from what was saved; messages wait in the agent's own
 // queue, and Rufi saves each one when the agent starts it.
-import type { WaitingMessage } from "@rufi/contracts";
+import type { Effort, WaitingMessage } from "@rufi/contracts";
 import { v7 as uuid } from "uuid";
 import {
   Stopped,
@@ -389,7 +389,12 @@ export function chat(deps: ChatDeps) {
         const context = pendingContext.get(chat.id);
         await agent.send(
           threadId,
-          { id, text, ...(context !== undefined && { context }) },
+          {
+            id,
+            text,
+            effort: chat.effort,
+            ...(context !== undefined && { context }),
+          },
           signal,
         );
         pendingContext.delete(chat.id);
@@ -482,20 +487,18 @@ export function chat(deps: ChatDeps) {
             "That model isn't allowed or isn't offered now.",
           );
         }
-        const threadId = threadOf(chat);
-        // What the thread did is saved before the model changes.
-        await saving;
-        if (threadId !== null) {
-          if (agent.running(threadId)) {
-            throw new ChatRefusal("Stop the reply before changing the model.");
-          }
-          if ((await agent.waiting.list(threadId)).length > 0) {
-            throw new ChatRefusal(
-              "Run or delete the waiting messages before changing the model.",
-            );
-          }
-        }
+        await idle(chat, "the model");
         await transcripts.setModel(chat, model);
+      }),
+
+    /**
+     * Chooses the chat's effort, from its next reply on, in the same
+     * thread. Only when no reply runs and no message waits.
+     */
+    selectEffort: (chat: ChatRow, effort: Effort) =>
+      inLane(chat, async (chat) => {
+        await idle(chat, "the effort");
+        await transcripts.setEffort(chat, effort);
       }),
 
     /** Waits for what is being saved, then ends the agent. */
@@ -504,6 +507,24 @@ export function chat(deps: ChatDeps) {
       await saving;
     },
   };
+
+  /**
+   * Refuses to change `what` while a reply runs or a message waits; what
+   * the thread did is saved first.
+   */
+  async function idle(chat: ChatRow, what: string): Promise<void> {
+    const threadId = threadOf(chat);
+    await saving;
+    if (threadId === null) return;
+    if (agent.running(threadId)) {
+      throw new ChatRefusal(`Stop the reply before changing ${what}.`);
+    }
+    if ((await agent.waiting.list(threadId)).length > 0) {
+      throw new ChatRefusal(
+        `Run or delete the waiting messages before changing ${what}.`,
+      );
+    }
+  }
 
   async function offered(): Promise<{ models: Model[]; error?: string }> {
     const allowlist = await deps.allowlist();

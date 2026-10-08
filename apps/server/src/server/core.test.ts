@@ -772,6 +772,7 @@ describe("the local API", () => {
     expect((await page.say(c.path, "Is my TSH still high?")).status).toBe(202);
     expect((await page.api("GET", c.path)).body["chat"]).toEqual({
       model: "gpt-6-astra",
+      effort: "medium",
     });
 
     // Another person's model, chosen before their first message, stays.
@@ -780,6 +781,7 @@ describe("the local API", () => {
     await page.say(ravi, "Hello");
     expect((await page.api("GET", ravi)).body["chat"]).toEqual({
       model: "gpt-6.1-sol",
+      effort: "medium",
     });
   });
 
@@ -927,13 +929,15 @@ describe("the local API", () => {
     live.hangUp();
   });
 
-  it("tells an open stream when the chat's model changes", async () => {
+  it("tells an open stream when the chat's model or effort changes", async () => {
     const core = await start();
     const page = await session(core);
     const c = await chat(page);
     const live = stream(core.port, `${c.path}/stream`, page.headers);
     await until(() => live.lines.length > 0);
-    expect(live.lines[0]).toMatchObject({ chat: { model: null } });
+    expect(live.lines[0]).toMatchObject({
+      chat: { model: null, effort: "medium" },
+    });
     const changed = () =>
       live.lines.flatMap((line) =>
         line.type === "update" && line.chat ? [line.chat] : [],
@@ -941,7 +945,7 @@ describe("the local API", () => {
     await page.say(c.path, "Hello there");
     // The first message chooses the first allowed model.
     await until(() => changed().length === 1);
-    expect(changed()).toEqual([{ model: "gpt-6-astra" }]);
+    expect(changed()).toEqual([{ model: "gpt-6-astra", effort: "medium" }]);
     await until(async () =>
       (
         (await page.api("GET", c.path)).body["turns"] as { status: string }[]
@@ -949,7 +953,13 @@ describe("the local API", () => {
     );
     await page.api("PUT", `${c.path}/model`, { model: "gpt-6.1-sol" });
     await until(() => changed().length === 2);
-    expect(changed()[1]).toEqual({ model: "gpt-6.1-sol" });
+    expect(changed()[1]).toEqual({ model: "gpt-6.1-sol", effort: "medium" });
+    await page.api("PUT", `${c.path}/effort`, { effort: "high" });
+    await until(() => changed().length === 3);
+    expect(changed()[2]).toEqual({ model: "gpt-6.1-sol", effort: "high" });
+    expect(
+      await page.api("PUT", `${c.path}/effort`, { effort: "ultra" }),
+    ).toMatchObject({ status: 400 });
     live.hangUp();
   });
 

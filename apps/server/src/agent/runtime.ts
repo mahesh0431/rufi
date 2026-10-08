@@ -155,11 +155,12 @@ export interface AgentRuntime {
   /**
    * Sends a message. It runs now if nothing runs or waits, else it waits its
    * turn; a queue paused by Stop starts again, oldest first. `context` goes
-   * before the message (a new thread's earlier chat).
+   * before the message (a new thread's earlier chat). `effort` is how hard
+   * the AI thinks, from this reply on; without it, the thread keeps its own.
    */
   send: (
     threadId: string,
-    message: { id: string; text: string; context?: string },
+    message: { id: string; text: string; context?: string; effort?: string },
     signal?: AbortSignal,
   ) => Promise<void>;
   /** Passes a message into the running reply; returns that reply's turn id. */

@@ -61,6 +61,8 @@ interface Backend {
   name: "fake" | "real";
   /** The text each new thread's first message carried before the user's words. */
   contexts: () => Promise<string[]>;
+  /** The effort each reply ran with, in order. */
+  efforts: () => Promise<(string | null)[]>;
 }
 
 /** Starts the chat (again, as after a restart) on the backend. */
@@ -157,6 +159,20 @@ function backendOf(name: Backend["name"]): Backend {
             ? entry.received.params?.input
             : undefined;
         return input && input.length > 1 ? [input[0]?.text ?? ""] : [];
+      });
+    },
+    efforts: async () => {
+      if (name === "real") {
+        return (model?.requests ?? []).map(
+          (request) => request.reasoning?.effort ?? null,
+        );
+      }
+      const lines = (await readFile(join(home, "fake.jsonl"), "utf8"))
+        .trim()
+        .split("\n");
+      return lines.flatMap((line) => {
+        const entry = JSON.parse(line) as { turn?: string; effort?: string };
+        return entry.turn === undefined ? [] : [entry.effort ?? null];
       });
     },
   };
@@ -442,7 +458,27 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
-    "refuses a model change while a reply runs or a message waits",
+    "runs each reply with the chat's effort: a new effort applies from the next reply, in the same thread",
+    timeout,
+    async () => {
+      await startChat(name);
+      const c = await newChat();
+      await chat?.send(c, "first");
+      await ended(c.id, 1);
+      await chat?.selectEffort(await chatRow(c.id), "high");
+      await chat?.send(await chatRow(c.id), "second");
+      await ended(c.id, 2);
+      expect(await backend.efforts()).toEqual(["medium", "high"]);
+      // No new thread: no earlier messages handed over, no quiet line.
+      expect(await backend.contexts()).toEqual([]);
+      const { turns } = await transcript(c.id);
+      expect(turns.map((turn) => turn.afresh)).toEqual([false, false]);
+      expect((await chatRow(c.id)).effort).toBe("high");
+    },
+  );
+
+  it(
+    "refuses a model or effort change while a reply runs or a message waits",
     timeout,
     async () => {
       await startChat(name);
@@ -452,16 +488,23 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       await expect(chat?.selectModel(c, "gpt-6-astra")).rejects.toThrow(
         "Stop the reply before changing the model.",
       );
+      await expect(chat?.selectEffort(c, "low")).rejects.toThrow(
+        "Stop the reply before changing the effort.",
+      );
       await chat?.send(c, "B");
       await chat?.stop(c);
       await ended(c.id);
       await expect(chat?.selectModel(c, "gpt-6-astra")).rejects.toThrow(
         "Run or delete the waiting messages before changing the model.",
       );
+      await expect(chat?.selectEffort(c, "low")).rejects.toThrow(
+        "Run or delete the waiting messages before changing the effort.",
+      );
       await expect(chat?.selectModel(c, "gpt-5.5")).rejects.toThrow(
         "That model isn't allowed or isn't offered now.",
       );
       expect((await chatRow(c.id)).model).toBe("gpt-6.1-sol");
+      expect((await chatRow(c.id)).effort).toBe("medium");
     },
   );
 

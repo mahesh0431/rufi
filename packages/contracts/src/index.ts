@@ -119,10 +119,19 @@ export const Turn = Schema.Struct({
 });
 export type Turn = typeof Turn.Type;
 
+/** How hard the AI thinks for a reply: low is faster, high thinks longer. */
+export const Effort = Schema.Literals(["low", "medium", "high"]);
+export type Effort = typeof Effort.Type;
+
+/** A chat's effort until one is chosen for it. */
+export const DEFAULT_EFFORT: Effort = "medium";
+
 /** A person's one chat with Rufi's AI. */
 export const Chat = Schema.Struct({
   /** The model chosen for it; null: the first allowed one, when the first message goes. */
   model: Schema.NullOr(Schema.String),
+  /** The effort chosen for it, or the default. */
+  effort: Effort,
 });
 export type Chat = typeof Chat.Type;
 
@@ -349,3 +358,5 @@ export const FinishStep = Schema.Struct({
 });
 
 export const SelectModel = Schema.Struct({ model: Id });
+
+export const SelectEffort = Schema.Struct({ effort: Effort });
