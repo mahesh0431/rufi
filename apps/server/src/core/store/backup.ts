@@ -220,7 +220,12 @@ export async function listBackups(home: string): Promise<Backup[]> {
       continue;
     }
   }
-  return found.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  // Made at the same time: the later name (…-2 after …) is the newer.
+  return found.sort(
+    (a, b) =>
+      b.createdAt.getTime() - a.createdAt.getTime() ||
+      b.name.localeCompare(a.name, "en", { numeric: true }),
+  );
 }
 
 const day = (at: Date) =>
