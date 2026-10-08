@@ -35,6 +35,7 @@ import { Secrets, secretsLayer } from "../src/platform/keychain.ts";
 import { diagnostics } from "../src/platform/logs.ts";
 import { PROOF_HEADER } from "../src/server/api.ts";
 import { startCore, type Core } from "../src/server/core.ts";
+import { FAMILY } from "../tests/fixtures/golden.ts";
 
 const { values } = parseArgs({
   options: {
@@ -53,10 +54,6 @@ const signIn: ChatGptDeps = {
   issuer: "https://auth.openai.com",
   sleep: (ms) => sleep(ms),
 };
-const FAMILY = join(
-  import.meta.dirname,
-  "../tests/fixtures/fictional-family.sql",
-);
 
 interface Snapshot {
   entries: Entry[];

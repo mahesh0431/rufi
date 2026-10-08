@@ -189,6 +189,10 @@ _Avoid_: history, transcript
 The short steps a new data folder starts with: what Rufi is and isn't, what goes to the AI, your name, sign in with ChatGPT (or skip), and your emergency region (or skip). Rufi keeps each step done. Until it is done, the first run fills the window, and nothing else in Rufi can be reached.
 _Avoid_: onboarding, setup wizard
 
+**Demo folder**:
+A data folder of made-up people for trying Rufi, `~/Rufi-demo`, apart from yours. `pnpm demo` gives it the same test data each time and keeps only its sign-in.
+_Avoid_: sandbox, test account
+
 ## Keeping your data safe
 
 **Backup**:

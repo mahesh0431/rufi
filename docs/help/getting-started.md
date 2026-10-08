@@ -36,6 +36,25 @@ If something goes wrong:
 - If the app opened on the Rufi from `pnpm start` and that Rufi stops, the window says "Rufi can't be reached", as a tab does. Close the window with ⌘W, then click Rufi in the Dock: the app starts Rufi itself.
 - If Rufi ended before it could stop a reply (it stopped by itself, or the app had to end it), the reply is marked interrupted the next time Rufi starts. What it wrote so far is kept.
 
+## Try Rufi with test data
+
+To try Rufi without your own records, run `pnpm demo` in the Rufi folder. It opens the Rufi app, as `pnpm desktop` does, on its own demo folder, `~/Rufi-demo`. It never uses your data folder.
+
+Each time you run it, the demo folder starts again with the same test data:
+
+- A made-up family, Asha and Ravi Fictional, with their test results, medicines and an allergy.
+- The first run is done, and the emergency region is India.
+- A few days of Asha's chat with Rufi, with one change saved to her record and its receipt.
+
+Each time, everything that was in the demo folder is removed first: the record, its backups, the AI's earlier chats, and any file you put there yourself. Only the sign-in stays, so you sign in with ChatGPT once (see [Signing in with ChatGPT](signing-in.md#sign-in-in-rufi)), and the next demo is signed in.
+
+`pnpm demo` doesn't start, and changes nothing, when:
+
+- Rufi already runs on the demo folder. Quit that Rufi first.
+- `RUFI_HOME` is set to another folder. Unset it first.
+- `~/Rufi-demo` is a folder that `pnpm demo` didn't make, and it isn't empty. Move that folder away first.
+- `~/Rufi-demo`, or a file or folder directly in it, is a link to somewhere else. Move it away first.
+
 ## The first time
 
 In a new data folder, Rufi takes you through four short steps:

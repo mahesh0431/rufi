@@ -10,6 +10,7 @@ import { test as base } from "@playwright/test";
 import { Effect, Exit, Scope } from "effect";
 import type { Scenario } from "../../server/tests/fake-codex.ts";
 import { fakeModel, type FakeModel } from "../../server/tests/fake-model.ts";
+import { FAMILY, FIRST_RUN_DONE } from "../../server/tests/fixtures/golden.ts";
 import { codexBinary } from "../../server/src/agent/codex/binary.ts";
 import { codexRuntime } from "../../server/src/agent/codex/codex.ts";
 import {
@@ -20,7 +21,6 @@ import { startCore, type Core } from "../../server/src/server/core.ts";
 
 const SERVER = join(import.meta.dirname, "../../server");
 const FAKE = join(SERVER, "tests/fake-codex.ts");
-const FAMILY = join(SERVER, "tests/fixtures/fictional-family.sql");
 const SCREENS = join(import.meta.dirname, "../dist");
 
 export class Rufi {
@@ -49,10 +49,7 @@ export class Rufi {
     const store = openWritable(databasePath(this.home));
     try {
       store.db.exec(await readFile(FAMILY, "utf8"));
-      store.db.exec(`INSERT INTO settings (key, value) VALUES
-        ('first_run.understood', '2026-10-01T09:00:00Z'),
-        ('first_run.sign_in_skipped', '2026-10-01T09:00:00Z'),
-        ('first_run.done', '2026-10-01T09:00:00Z')`);
+      store.db.exec(FIRST_RUN_DONE);
       for (const statements of more) store.db.exec(statements);
     } finally {
       store.close();

@@ -11,6 +11,7 @@
     "test": "vitest run",
     "start": "pnpm --filter @rufi/web build && node apps/server/src/cli/main.ts start",
     "desktop": "pnpm --filter @rufi/web build && node apps/desktop/scripts/desktop.ts",
+    "demo": "pnpm --filter @rufi/web build && node apps/server/scripts/demo.ts",
     "rufi": "node apps/server/src/cli/main.ts",
     "codex:types": "node apps/server/scripts/codex-types.ts",
     "tools:json": "node apps/server/scripts/tools-json.ts",
