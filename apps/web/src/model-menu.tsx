@@ -52,7 +52,9 @@ export function ModelMenu({
   const path = chatPath(personId);
 
   return (
-    <Menu.Root>
+    // Not modal: a click outside closes the menu and reaches the page, so
+    // it closes the panel too.
+    <Menu.Root modal={false}>
       <Menu.Trigger
         aria-label={`Model and effort: ${name ?? "loading"}, ${effortName}`}
         className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[13px] whitespace-nowrap hover:bg-side data-[popup-open]:bg-side"

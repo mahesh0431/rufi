@@ -767,6 +767,16 @@ test("a click outside the panel steps back to the bar and keeps what you typed; 
   await expect(minimise).toHaveCount(0);
   await expect(box(chat(page))).toHaveValue("Half a thought");
   await expect(log(chat(page))).toHaveCount(0);
+
+  // With the menu open, one click outside closes both.
+  await box(chat(page)).click();
+  await chat(page)
+    .getByRole("button", { name: /^Model and effort: / })
+    .click();
+  await expect(page.getByRole("menu")).toBeVisible();
+  await page.getByRole("main").click({ position: { x: 20, y: 20 } });
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect(minimise).toHaveCount(0);
 });
 
 test("the bar is on the Overview only; Chat with Rufi opens the chat from any page", async ({

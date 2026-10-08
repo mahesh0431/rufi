@@ -278,6 +278,7 @@ export function chat(deps: ChatDeps) {
     return {
       // Set before a thread starts: the first message chooses one.
       model: chat.model ?? "",
+      effort: chat.effort,
       instructions: `${safetyInstructions(region)}\n\n${deps.tools.instructions}`,
     };
   }

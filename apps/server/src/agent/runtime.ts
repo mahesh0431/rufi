@@ -126,6 +126,11 @@ export interface ToolAnswer {
 /** What a thread starts with. The agent keeps it for the thread's life. */
 export interface ThreadSettings {
   model: string;
+  /**
+   * How hard the AI thinks, from the thread's first turn on, also those a
+   * resume starts by itself; without it, the agent's default.
+   */
+  effort?: string;
   /** Rufi's instructions: safety first, then how to use the tools. */
   instructions: string;
 }

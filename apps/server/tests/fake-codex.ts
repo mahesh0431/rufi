@@ -223,10 +223,14 @@ function dispatch(thread: Thread, entry?: Queued) {
 function complete(thread: Thread, turnId: string, status: string) {
   const turn = thread.history.find((t) => t.id === turnId);
   if (turn) turn.status = status;
-  persist();
-  if (thread.running?.turnId !== turnId) return;
+  if (thread.running?.turnId !== turnId) {
+    persist();
+    return;
+  }
   thread.running = undefined;
+  // Like Codex: a Stop pauses the queue, also across a restart.
   if (status === "interrupted") thread.paused = true;
+  persist();
   send({
     method: "turn/completed",
     params: { threadId: thread.id, turn: turnObject(turnId, status) },
@@ -476,6 +480,13 @@ function featureList() {
   }));
 }
 
+/** The effort a thread/start or thread/resume asks for in its config. */
+function configEffort(params: Record<string, unknown>): string | undefined {
+  const config = params["config"] as Record<string, unknown> | undefined;
+  const effort = config?.["model_reasoning_effort"];
+  return typeof effort === "string" ? effort : undefined;
+}
+
 function threadResponse(thread: Thread) {
   return {
     thread: {
@@ -486,6 +497,7 @@ function threadResponse(thread: Thread) {
       model: thread.model,
     },
     model: thread.model,
+    reasoningEffort: thread.effort ?? "medium",
     approvalPolicy: "never",
     sandbox: { type: "dangerFullAccess" },
   };
@@ -544,6 +556,7 @@ function handle(method: string, params: Record<string, unknown>): unknown {
         // Unique across fakes, as Codex's ids are.
         id: `thread-${String(process.pid)}-${String(++threadCount)}`,
         model: scenario.model ?? String(params["model"]),
+        effort: configEffort(params),
         queue: [],
         paused: false,
         running: undefined,
@@ -556,6 +569,8 @@ function handle(method: string, params: Record<string, unknown>): unknown {
     case "thread/resume": {
       const thread = threadOf(params);
       thread.model = scenario.model ?? String(params["model"]);
+      // Like Codex: resumed with a model, the effort is the config's again.
+      thread.effort = configEffort(params);
       // Like Codex: a resumed thread starts what waits, unless paused.
       if (!thread.paused) setImmediate(() => dispatch(thread));
       return threadResponse(thread);
