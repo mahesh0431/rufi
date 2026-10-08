@@ -17,7 +17,6 @@ import {
 import { join } from "node:path";
 import { backup, DatabaseSync } from "node:sqlite";
 import { Schema } from "effect";
-import { readJson, writePrivateJson } from "../../platform/files.ts";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import { databasePath, openReadOnly } from "./database.ts";
 
@@ -42,23 +41,30 @@ export class CheckFailed extends Error {}
 /** All pages in one step: one read of the database, so a save is in whole or not at all. */
 const ALL_PAGES = 2_147_483_647;
 
+/** SQLite's online copy: where a backup meets the disk. */
+type Copy = typeof backup;
+
 /**
  * Copies the database at `from` to `to`, a path where nothing is yet (the
  * copy replaces what is there), as one consistent read while Rufi keeps
  * writing, then checks the copy. The copy is a single file.
  */
-export async function copyDatabase(from: string, to: string): Promise<void> {
+export async function copyDatabase(
+  from: string,
+  to: string,
+  copy: Copy = backup,
+): Promise<void> {
   const source = new DatabaseSync(from, { readOnly: true });
   try {
-    await backup(source, to, { rate: ALL_PAGES });
+    await copy(source, to, { rate: ALL_PAGES });
   } finally {
     source.close();
   }
-  const copy = new DatabaseSync(to);
+  const made = new DatabaseSync(to);
   try {
-    copy.exec("PRAGMA journal_mode = DELETE");
+    made.exec("PRAGMA journal_mode = DELETE");
   } finally {
-    copy.close();
+    made.close();
   }
   checkDatabase(to);
 }
@@ -150,13 +156,17 @@ function nameFor(at: Date): string {
  * its name in `backups/`. A failed or stopped one leaves only staging,
  * which never counts.
  */
-export async function makeBackup(home: string, now: Date): Promise<Backup> {
+export async function makeBackup(
+  home: string,
+  now: Date,
+  copy: Copy = backup,
+): Promise<Backup> {
   const folder = backupsPath(home);
   await mkdir(folder, { recursive: true, mode: 0o700 });
   const staging = await mkdtemp(join(folder, STAGING));
   try {
     const database = join(staging, "rufi.sqlite");
-    await copyDatabase(databasePath(home), database);
+    await copyDatabase(databasePath(home), database, copy);
     const record: BackupRecord = {
       format: "rufi-backup",
       version: 1,
@@ -281,7 +291,7 @@ async function cleanStaging(home: string): Promise<void> {
 const SQLITE_FULL = 13;
 
 /** Why a backup failed, in the person's words. */
-export function failureReason(error: unknown): string {
+function failureReason(error: unknown): string {
   if (error instanceof CheckFailed) return "the copy didn't pass its check";
   const { code, errcode } = error as { code?: unknown; errcode?: unknown };
   if (code === "EACCES" || code === "EPERM" || code === "EROFS") {
@@ -297,29 +307,6 @@ export function failureReason(error: unknown): string {
   return `something went wrong (${errorCode(error)})`;
 }
 
-/**
- * The last failed try, kept in the data folder until a backup succeeds, so
- * a restart doesn't hide it. Not in `backups/`: that may be what fails.
- */
-const failurePath = (home: string) => join(home, "backup-failed.json");
-
-const Failure = Schema.Struct({ at: Schema.String, reason: Schema.String });
-
-async function readFailure(
-  home: string,
-  now: Date,
-): Promise<BackupStatus["failed"]> {
-  try {
-    const raw = await readJson(failurePath(home));
-    if (raw === undefined) return undefined;
-    const { at, reason } = Schema.decodeUnknownSync(Failure)(raw);
-    return { at: new Date(at), reason };
-  } catch {
-    // Never read as "no failure": the last try may not have worked.
-    return { at: now, reason: "Rufi can't tell whether the last try worked" };
-  }
-}
-
 export interface BackupStatus {
   last: Backup | undefined;
   /** The last failed attempt, when it is newer than the last good backup. */
@@ -331,96 +318,107 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
- * The running Rufi's backups: one at start when the newest is a day old or
- * there is none, then whenever the newest turns a day old (looked at every
- * hour, so a Mac that slept catches up). One backup at a time.
+ * The running Rufi's backups: one at every start, then whenever the newest
+ * turns a day old (looked at every hour, so a Mac that slept catches up).
+ * One backup at a time. The status lives in memory: after a restart, the
+ * start's own backup says whether backups work.
  */
 export function backupJob(
   home: string,
   log: Log,
-  options: { now?: () => Date } = {},
+  options: { now?: () => Date; copy?: Copy } = {},
 ) {
   const now = options.now ?? (() => new Date());
+  /** The start's work or a backup, which Back up now and the hourly look join. */
   let running: Promise<Backup> | undefined;
   /** The newest backup that passed its check when last looked at. */
   let last: Backup | undefined;
   let failed: BackupStatus["failed"];
+  /** The hourly look's check of the backups; a backup waits for it. */
+  let finding: Promise<void> | undefined;
   let timer: NodeJS.Timeout | undefined;
   let looking: Promise<void> | undefined;
 
-  const fail = async (error: unknown, reason = failureReason(error)) => {
+  const fail = (error: unknown, reason = failureReason(error)) => {
     failed = { at: now(), reason };
     log("backup.failed", { error: errorCode(error) });
-    await writePrivateJson(failurePath(home), {
-      at: failed.at.toISOString(),
-      reason,
-    }).catch(() => undefined);
   };
 
-  const backUp = (): Promise<Backup> => {
-    running ??= (async () => {
-      const started = Date.now();
-      try {
-        const made = await makeBackup(home, now());
-        last = made;
-        failed = undefined;
-        await rm(failurePath(home), { force: true });
-        log("backup.made", { ms: Date.now() - started });
-        await prune(home);
-        return made;
-      } catch (error) {
-        await fail(error);
-        throw error;
-      } finally {
-        running = undefined;
-      }
-    })();
+  const attempt = async (): Promise<Backup> => {
+    const started = Date.now();
+    try {
+      const made = await makeBackup(home, now(), options.copy);
+      last = made;
+      failed = undefined;
+      log("backup.made", { ms: Date.now() - started });
+      await prune(home);
+      return made;
+    } catch (error) {
+      fail(error);
+      throw error;
+    }
+  };
+
+  const run = (work: () => Promise<Backup>): Promise<Backup> => {
+    running ??= work().finally(() => {
+      running = undefined;
+    });
     return running;
   };
 
-  /** The newest backup that passes its check; one that doesn't is a failure. */
+  /** Finds the newest backup that passes its check; one that doesn't is a failure. */
   const findLast = async () => {
-    last = undefined;
-    for (const backup of await listBackups(home)) {
-      if (await usable(home, backup)) {
-        last = backup;
-        return;
+    try {
+      for (const backup of await listBackups(home)) {
+        if (await usable(home, backup)) {
+          last = backup;
+          return;
+        }
+        fail(new CheckFailed(backup.name), "a backup is damaged or incomplete");
       }
-      await fail(
-        new CheckFailed(backup.name),
-        "a backup is damaged or incomplete",
-      );
+      last = undefined;
+    } catch (error) {
+      fail(error);
     }
   };
 
   const whenDue = async () => {
-    try {
-      await findLast();
-    } catch (error) {
-      await fail(error);
-      return;
-    }
+    if (running) return;
+    finding = findLast();
+    await finding;
+    finding = undefined;
     if (last && now().getTime() - last.createdAt.getTime() < DAY_MS) return;
     // A failure is kept in the status and the log; the next look tries again.
-    await backUp().catch(() => undefined);
+    await run(attempt).catch(() => undefined);
   };
 
   return {
-    /** Cleans up after a stopped backup, makes one if due, and keeps looking. */
-    start: async () => {
-      await cleanStaging(home);
-      failed = await readFailure(home, now());
-      const look = () => {
+    /**
+     * Cleans up after a stopped backup, finds the last good one and makes a
+     * new one, in the background; then keeps looking every hour. Nothing
+     * here can stop Rufi from starting: a failure goes to the status.
+     */
+    start: () => {
+      run(async () => {
+        await cleanStaging(home).catch((error: unknown) => {
+          fail(error);
+        });
+        await findLast();
+        return attempt();
+      }).catch(() => undefined);
+      timer = setInterval(() => {
         looking ??= whenDue().finally(() => {
           looking = undefined;
         });
-      };
-      timer = setInterval(look, HOUR_MS);
+      }, HOUR_MS);
       timer.unref();
-      look();
     },
     /** A backup now, or the one already running. */
-    backUp,
+    backUp: () =>
+      run(async () => {
+        await finding;
+        return attempt();
+      }),
     status: (): BackupStatus => ({
       last,
       failed:

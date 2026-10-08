@@ -1,10 +1,10 @@
 # Backups and export
 
-Rufi makes a backup of your record each day, and you can take all your data out of Rufi as one file. This page says what a backup holds, how to restore one, and what an export holds.
+Rufi makes a backup of your record each time it starts and then each day, and you can take all your data out of Rufi as one file. This page says what a backup holds, how to restore one, and what an export holds.
 
 ## Backups
 
-While Rufi runs, it makes a backup when it starts and then once a day. If Rufi was closed for some days, it makes one when it starts again; it doesn't make up the days it missed.
+Rufi makes a backup each time it starts, and then once a day while it runs. If Rufi was closed for some days, it doesn't make up the days it missed. The backup at start runs in the background: you can use Rufi while it runs.
 
 A backup is a copy of your record: your people, their records with all their history, your conversations, your drafts and Rufi's settings. Rufi checks each backup before it keeps it. A backup that fails its check, or that Rufi stopped in the middle, never counts, and your last good backup stays.
 
@@ -23,7 +23,7 @@ The backups are in the `backups` folder in your data folder, one folder for each
 
 ### See your backups
 
-Open **Settings**. Under **Backups**, Rufi shows when it made the last good backup. If the last try failed, or a backup in the folder is damaged, Rufi says when and why, and when your last good backup is from. Rufi keeps showing a failed try, also after it starts again, until a backup works.
+Open **Settings**. Under **Backups**, Rufi shows when it made the last good backup. If the last try failed, or a backup in the folder is damaged, Rufi says when and why, and when your last good backup is from. After Rufi starts again, Settings shows the backup Rufi makes as it starts: while it runs, and then whether it worked. An older failure isn't shown again.
 
 To make a backup now, click **Back up now**.
 

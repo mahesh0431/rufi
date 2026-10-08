@@ -109,9 +109,22 @@ test.describe("first run", () => {
     rufi.account = { account: "signed_out", email: null };
     await rufi.start();
     await page.goto(rufi.link());
+    // Each step is titled Welcome, and the sidebar offers no conversation
+    // or Overview until the first run is done.
+    const title = page.getByRole("banner").getByRole("heading");
+    const welcoming = async () => {
+      await expect(title).toHaveText("Welcome");
+      await expect(
+        sidebar(page).getByRole("link", { name: "Overview" }),
+      ).toHaveCount(0);
+      await expect(
+        sidebar(page).getByRole("button", { name: "New conversation" }),
+      ).toHaveCount(0);
+    };
     await expect(
       page.getByRole("heading", { name: "Welcome to Rufi" }),
     ).toBeVisible();
+    await welcoming();
     await expect(page.getByRole("main")).toContainText(
       "What you ask, and the parts of your record the AI reads to answer, are sent to the AI in the cloud. Your record is kept on your Mac.",
     );
@@ -130,13 +143,15 @@ test.describe("first run", () => {
     await page.getByRole("button", { name: "Continue" }).click();
 
     await expect(
-      page.getByRole("heading", { name: "Sign in with ChatGPT" }),
+      page.getByRole("heading", { name: "Sign in with ChatGPT", level: 2 }),
     ).toBeVisible();
+    await welcoming();
     await accessible(page);
     await page.reload();
     await page.getByRole("button", { name: "Skip for now" }).click();
 
     const region = page.getByRole("combobox", { name: "Emergency region" });
+    await welcoming();
     await accessible(page);
     await page.reload();
     await region.selectOption("IN");
@@ -151,6 +166,10 @@ test.describe("first run", () => {
       ),
     ).toBeVisible();
     await expect(sidebar(page)).toContainText("Mira Fictional");
+    await expect(title).toHaveText("Overview");
+    await expect(
+      sidebar(page).getByRole("button", { name: "New conversation" }),
+    ).toBeVisible();
     await sidebar(page).getByRole("link", { name: "Settings" }).click();
     await expect(
       page.getByRole("combobox", { name: "Emergency region" }),
@@ -454,6 +473,8 @@ test("Settings backs up, says when a backup failed, and exports your data", asyn
   await expect(
     page.getByRole("button", { name: "Backing up…" }),
   ).toBeDisabled();
+  // Rufi is still finding its backups: it doesn't claim there are none.
+  await expect(page.getByText(/No backup yet/)).toHaveCount(0);
   await expect(page.getByText(/^Last backup at \d\d:\d\d on /)).toBeVisible();
   await expect(page.getByRole("button", { name: "Back up now" })).toBeEnabled();
   await accessible(page);

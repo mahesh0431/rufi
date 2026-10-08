@@ -134,7 +134,8 @@ export const startCore = (options: CoreOptions) =>
       Effect.sync(() => backupJob(home, log)),
       (job) => Effect.promise(() => job.close()),
     );
-    yield* attempt(() => backups.start());
+    // In the background: a backup never delays or stops the start.
+    backups.start();
     const interrupted = yield* attempt(() => transcripts.interruptRunning());
     // Sends Rufi stopped during: taken, or the text stays; never sent again.
     yield* attempt(() => transcripts.endStoppedSends());

@@ -187,7 +187,7 @@ _Avoid_: onboarding, setup wizard
 ## Keeping your data safe
 
 **Backup**:
-A checked copy of the record that Rufi makes each day in `backups/` in the data folder. It holds the record only: never the sign-in, the AI's own files, the log or the allowlist. It counts only after its check passes.
+A checked copy of the record that Rufi makes in `backups/` in the data folder when it starts and then each day. It holds the record only: never the sign-in, the AI's own files, the log or the allowlist. It counts only after its check passes.
 _Avoid_: snapshot, archive
 
 **Restore**:

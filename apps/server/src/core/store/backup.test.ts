@@ -11,15 +11,9 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import { beforeEach, describe, expect, it } from "vitest";
-import {
-  backupJob,
-  backupsPath,
-  failureReason,
-  listBackups,
-  makeBackup,
-} from "./backup.ts";
+import { backup, DatabaseSync } from "node:sqlite";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { backupJob, backupsPath, listBackups, makeBackup } from "./backup.ts";
 import { databasePath, openWritable } from "./database.ts";
 
 let home: string;
@@ -112,69 +106,143 @@ describe("a backup", () => {
   });
 });
 
+/** A copy that finds the disk full, as node:sqlite reports SQLITE_FULL. */
+const diskFull = () =>
+  Promise.reject(
+    Object.assign(new Error("database or disk is full"), {
+      code: "ERR_SQLITE_ERROR",
+      errcode: 13,
+      errstr: "database or disk is full",
+    }),
+  );
+
+const HOUR_MS = 60 * 60 * 1000;
+
+const until = async (ready: () => boolean) => {
+  for (let i = 0; !ready(); i++) {
+    if (i > 300) throw new Error("timed out waiting");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+};
+
 describe("the daily backup", () => {
-  it("makes one at start when there is none, and none when the newest is less than a day old", async () => {
-    let now = new Date(2026, 9, 8, 9, 0);
-    const job = backupJob(home, () => undefined, { now: () => now });
-    await job.start();
-    await job.close();
-    expect((await listBackups(home)).length).toBe(1);
-
-    now = new Date(2026, 9, 9, 8, 59);
-    const again = backupJob(home, () => undefined, { now: () => now });
-    await again.start();
-    await again.close();
-    expect((await listBackups(home)).length).toBe(1);
-
-    now = new Date(2026, 9, 9, 9, 0);
-    const later = backupJob(home, () => undefined, { now: () => now });
-    await later.start();
-    await later.close();
-    expect((await listBackups(home)).length).toBe(2);
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it("says why a backup failed, and keeps the last good one", async () => {
-    let now = new Date(2026, 9, 8, 9, 0);
-    const logged: string[] = [];
-    const job = backupJob(home, (event) => logged.push(event), {
-      now: () => now,
-    });
-    const good = await job.backUp();
-    now = new Date(2026, 9, 8, 9, 0, 30);
-    await chmod(backupsPath(home), 0o500);
-    try {
-      await expect(job.backUp()).rejects.toThrow();
-    } finally {
-      await chmod(backupsPath(home), 0o700);
-    }
-    const status = job.status();
-    expect(status.last?.name).toBe(good.name);
-    expect(status.failed).toEqual({
-      at: now,
-      reason: "the backups folder can't be written",
-    });
-    expect(logged).toEqual(["backup.made", "backup.failed"]);
+  it("makes one at every start, then when the newest is a day old", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    let now = new Date(2026, 9, 8, 9);
+    const first = backupJob(home, () => undefined, { now: () => now });
+    first.start();
+    await first.close();
+    expect(first.status().last?.createdAt).toEqual(now);
+
+    // Started again an hour later: a new backup, though one is recent.
+    now = new Date(2026, 9, 8, 10);
+    const job = backupJob(home, () => undefined, { now: () => now });
+    job.start();
+    await until(() => !job.status().running);
+    expect(job.status().last?.createdAt).toEqual(now);
+
+    // Then every hour: none while the newest is less than a day old.
+    now = new Date(2026, 9, 9, 9, 59);
+    vi.advanceTimersByTime(HOUR_MS);
     await job.close();
+    expect(job.status().last?.createdAt).toEqual(new Date(2026, 9, 8, 10));
 
-    // Rufi starts again while the folder still can't be written; the good
-    // backup is less than a day old, so it doesn't try again.
-    await chmod(backupsPath(home), 0o500);
-    const again = backupJob(home, () => undefined, {
-      now: () => new Date(2026, 9, 8, 9, 30),
+    const again = backupJob(home, () => undefined, { now: () => now });
+    again.start();
+    await until(() => !again.status().running);
+    now = new Date(2026, 9, 10, 9, 59);
+    vi.advanceTimersByTime(HOUR_MS);
+    await until(
+      () => again.status().last?.createdAt.getTime() === now.getTime(),
+    );
+    await again.close();
+  });
+
+  it("finds a full disk again after a restart, and the warning goes when a backup works", async () => {
+    let now = new Date(2026, 9, 8, 9);
+    const good = await backupJob(home, () => undefined, {
+      now: () => now,
+    }).backUp();
+
+    // The disk fills: Rufi can still start, but a copy doesn't fit.
+    now = new Date(2026, 9, 8, 9, 30);
+    const logged: string[] = [];
+    const full = backupJob(home, (event) => logged.push(event), {
+      now: () => now,
+      copy: diskFull,
     });
-    try {
-      await again.start();
-      await again.close();
-      expect(again.status().failed).toEqual({
-        at: now,
-        reason: "the backups folder can't be written",
-      });
-    } finally {
-      await chmod(backupsPath(home), 0o700);
-    }
+    full.start();
+    await full.close();
+    expect(full.status()).toEqual({
+      last: good,
+      failed: { at: now, reason: "the disk is full" },
+      running: false,
+    });
+    expect(logged).toEqual(["backup.failed"]);
 
-    await again.backUp();
-    expect(again.status().failed).toBeUndefined();
+    // Rufi starts again on the same full disk, with a good backup from less
+    // than a day ago.
+    now = new Date(2026, 9, 8, 10);
+    const restarted = backupJob(home, () => undefined, {
+      now: () => now,
+      copy: diskFull,
+    });
+    restarted.start();
+    await restarted.close();
+    expect(restarted.status().failed).toEqual({
+      at: now,
+      reason: "the disk is full",
+    });
+
+    // Space is freed.
+    now = new Date(2026, 9, 8, 10, 30);
+    const freed = backupJob(home, () => undefined, { now: () => now });
+    freed.start();
+    await freed.close();
+    expect(freed.status().failed).toBeUndefined();
+    expect(freed.status().last?.createdAt).toEqual(now);
+  });
+
+  it("shows the start's backup as running, with the last good one, and Back up now joins it", async () => {
+    let now = new Date(2026, 9, 8, 9);
+    const good = await backupJob(home, () => undefined, {
+      now: () => now,
+    }).backUp();
+
+    now = new Date(2026, 9, 8, 10);
+    const copying = Promise.withResolvers<undefined>();
+    const job = backupJob(home, () => undefined, {
+      now: () => now,
+      copy: async (...args) => {
+        await copying.promise;
+        return backup(...args);
+      },
+    });
+    job.start();
+    expect(job.status().running).toBe(true);
+    await until(() => job.status().last !== undefined);
+    expect(job.status()).toEqual({
+      last: good,
+      failed: undefined,
+      running: true,
+    });
+    const joined = job.backUp();
+    copying.resolve(undefined);
+    const made = await joined;
+    await job.close();
+    expect(made.createdAt).toEqual(now);
+    expect(job.status()).toEqual({
+      last: made,
+      failed: undefined,
+      running: false,
+    });
+    // One backup for the start and Back up now together; the start's
+    // replaced the earlier one of the same day.
+    expect(await listBackups(home)).toEqual([made]);
   });
 
   it("removes what a stopped backup left at the next start, and never counts it", async () => {
@@ -183,7 +251,7 @@ describe("the daily backup", () => {
     await writeFile(join(half, "rufi.sqlite"), "half a copy");
     expect(await listBackups(home)).toEqual([]);
     const job = backupJob(home, () => undefined);
-    await job.start();
+    job.start();
     await job.close();
     const names = await readdir(backupsPath(home));
     expect(names.some((name) => name.startsWith(".staging-"))).toBe(false);
@@ -245,7 +313,7 @@ describe("which backups the daily backup keeps", () => {
 });
 
 describe("a backup that is damaged or gone", () => {
-  it("doesn't count: the last good one is the newest that passes its check, it says so, and a new backup replaces it when due", async () => {
+  it("doesn't count: the last good one is the newest that passes its check, and it says so until a backup works", async () => {
     let now = new Date(2026, 8, 30, 23);
     const job = backupJob(home, () => undefined, { now: () => now });
     const good = await job.backUp();
@@ -258,32 +326,24 @@ describe("a backup that is damaged or gone", () => {
     await writeFile(file, bytes);
 
     now = new Date(2026, 9, 1, 11);
-    const later = backupJob(home, () => undefined, { now: () => now });
-    await later.start();
-    await later.close();
+    const copying = Promise.withResolvers<undefined>();
+    const later = backupJob(home, () => undefined, {
+      now: () => now,
+      copy: async (...args) => {
+        await copying.promise;
+        return backup(...args);
+      },
+    });
+    later.start();
+    await until(() => later.status().last !== undefined);
     expect(later.status()).toEqual({
       last: good,
       failed: { at: now, reason: "a backup is damaged or incomplete" },
-      running: false,
+      running: true,
     });
-    expect(await listBackups(home)).toHaveLength(2);
-
-    // A day after the good one, though the damaged one is newer.
-    now = new Date(2026, 9, 1, 23, 30);
-    const next = backupJob(home, () => undefined, { now: () => now });
-    await next.start();
-    await next.close();
-    const status = next.status();
-    expect(status.last?.createdAt).toEqual(now);
-    expect(status.failed).toBeUndefined();
+    copying.resolve(undefined);
+    await later.close();
+    expect(later.status().last?.createdAt).toEqual(now);
+    expect(later.status().failed).toBeUndefined();
   });
-});
-
-it("says the disk is full when SQLite finds it full", () => {
-  // As node:sqlite reports SQLITE_FULL (13) from a copy that ran out of space.
-  const full = Object.assign(new Error("database or disk is full"), {
-    code: "ERR_SQLITE_ERROR",
-    errcode: 13,
-  });
-  expect(failureReason(full)).toBe("the disk is full");
 });

@@ -34,7 +34,10 @@ const conversationOf = (pathname: string) => {
 export function Frame() {
   const connection = useConnection();
   const person = usePeople().data?.[0];
-  const welcomed = useFirstRun().data?.step === "done";
+  const step = useFirstRun().data?.step;
+  const welcomed = step === "done";
+  /** On the first run, which Home shows; known only once the core says so. */
+  const welcoming = step !== undefined && !welcomed;
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
@@ -53,16 +56,18 @@ export function Frame() {
           aria-label="Pages"
           className="mt-2 flex min-h-0 flex-1 flex-col gap-0.5"
         >
-          {person && (
+          {person && !welcoming && (
             <NewConversation
               personId={person.id}
               onPage={onConversation !== null}
             />
           )}
-          <Place to="/" icon={<House size={15} aria-hidden />}>
-            Overview
-          </Place>
-          {person ? (
+          {!welcoming && (
+            <Place to="/" icon={<House size={15} aria-hidden />}>
+              Overview
+            </Place>
+          )}
+          {person && !welcoming ? (
             <Conversations
               person={person}
               current={onConversation?.conversationId}
@@ -88,7 +93,8 @@ export function Frame() {
             {onConversation ? (
               <ConversationTitle {...onConversation} />
             ) : (
-              (TITLES[pathname.split("/")[1] ?? ""] ?? "Overview")
+              (TITLES[pathname.split("/")[1] ?? ""] ??
+              (welcoming ? "Welcome" : "Overview"))
             )}
           </h1>
         </header>

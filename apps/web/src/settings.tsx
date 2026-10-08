@@ -86,9 +86,9 @@ function BackupsSection() {
             <>
               <p>
                 {status.last
-                  ? `Last backup ${printedTime(status.last.createdAt)}.`
-                  : "No backup yet."}{" "}
-                Rufi makes one each day while it runs.
+                  ? `Last backup ${printedTime(status.last.createdAt)}. `
+                  : !status.running && "No backup yet. "}
+                Rufi makes one when it starts, then each day while it runs.
               </p>
               {status.failed && (
                 <p role="alert" className="text-accent-ink">

@@ -3,6 +3,7 @@
 import { spawn } from "node:child_process";
 import { request as httpRequest, type IncomingMessage } from "node:http";
 import {
+  chmod,
   mkdir,
   mkdtemp,
   readFile,
@@ -1409,6 +1410,23 @@ describe("backups and export over the API", () => {
     expect(exported.headers["content-disposition"]).toMatch(
       /^attachment; filename="rufi-export-\d{4}-\d{2}-\d{2}\.zip"$/,
     );
+  });
+
+  it("starts even when the backups folder can't be written, and says so in Settings", async () => {
+    const left = join(backupsPath(home), ".staging-abc123");
+    await mkdir(left, { recursive: true });
+    await chmod(backupsPath(home), 0o500);
+    try {
+      const page = await session(await start());
+      const backups = async () => (await page.api("GET", "/api/backups")).body;
+      await until(async () => (await backups())["running"] === false);
+      expect(await backups()).toMatchObject({
+        last: null,
+        failed: { reason: "the backups folder can't be written" },
+      });
+    } finally {
+      await chmod(backupsPath(home), 0o700);
+    }
   });
 
   it(
