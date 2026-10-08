@@ -427,7 +427,10 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
       </div>
     </div>
   ) : entry.kind === "activity" ? (
-    <p data-entry={id} className="flex min-w-0 items-center gap-1.5 text-muted">
+    <p
+      data-entry={id}
+      className="relative flex min-w-0 items-center gap-1.5 text-muted"
+    >
       <ActivityIcon status={entry.status} />
       <span className="shrink-0">{entry.text}</span>
       {entry.detail !== null && (

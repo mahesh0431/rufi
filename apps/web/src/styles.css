@@ -22,13 +22,6 @@ body,
   height: 100%;
 }
 
-/* Only the panes scroll. A scroll that runs past a pane's end mustn't
-   bounce the whole window. */
-html,
-body {
-  overscroll-behavior: none;
-}
-
 body {
   margin: 0;
   background: var(--color-page);
