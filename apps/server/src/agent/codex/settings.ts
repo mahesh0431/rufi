@@ -30,7 +30,7 @@ const SETTINGS = {
    * Rufi keeps the AI's reasoning summaries with the reply (docs/adr/0004);
    * Codex's models send none unless asked.
    */
-  model_reasoning_summary: "auto",
+  model_reasoning_summary: "detailed",
   features: {
     /** Rufi starts and ends app-server itself; nothing keeps running after it. */
     daemon_auto_start: false,

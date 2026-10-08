@@ -509,7 +509,7 @@ function handle(method: string, params: Record<string, unknown>): unknown {
         config: {
           model_provider: "openai_chatgpt_plan",
           model_reasoning_effort: "low",
-          model_reasoning_summary: "auto",
+          model_reasoning_summary: "detailed",
           ...scenario.config,
         },
       };

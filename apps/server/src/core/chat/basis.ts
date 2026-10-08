@@ -23,6 +23,16 @@ export function splitBasis(
   text: string,
   finished: boolean,
 ): { answer: string; how: string | undefined } {
+  // A block tagged rufi-basis has the tag in its text: without it there is
+  // nothing to take out, and a streaming reply isn't parsed again for each
+  // part it gets.
+  if (!text.includes(BASIS_TAG)) {
+    const answer = text.trimEnd();
+    return {
+      answer: finished ? answer : withoutOpening(answer),
+      how: undefined,
+    };
+  }
   const blocks: Code[] = [];
   const visit = (node: Node | ReturnType<typeof fromMarkdown>) => {
     if (node.type === "code" && node.lang === BASIS_TAG && !node.meta) {

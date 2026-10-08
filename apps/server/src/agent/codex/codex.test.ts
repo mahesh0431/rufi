@@ -199,7 +199,7 @@ describe("starting Codex", () => {
       "requires_openai_auth = false",
       "supports_websockets = false",
       'model_reasoning_effort = "low"',
-      'model_reasoning_summary = "auto"',
+      'model_reasoning_summary = "detailed"',
       "daemon_auto_start = false",
     ]) {
       expect(config).toContain(line);

@@ -178,6 +178,11 @@ const usedTool = (snapshot: Snapshot, tool: { shown: string }) =>
 interface Outcome {
   /** What code could check; the rest is for a person to judge. */
   checks: Record<string, boolean>;
+  /**
+   * What is counted, not passed or failed: something the AI or its service
+   * does only sometimes, reported as yes or no for each run.
+   */
+  counts?: Record<string, boolean>;
   snapshot: Snapshot;
 }
 
@@ -344,8 +349,9 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     };
   },
   /**
-   * A question the AI has to think through: its reasoning summary is kept.
-   * At low effort, simple questions often come with none.
+   * A question the AI has to think through: Rufi keeps the reasoning summary
+   * when one comes. At low effort the model sends one only sometimes, so this
+   * counts how often.
    */
   reasoning: async (api, home) => {
     const c = await conversation(api);
@@ -353,7 +359,8 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       "A bat and a ball cost 1.10 in total. The bat costs 1.00 more than the ball. Think it through, then give the ball's price.",
     );
     return {
-      checks: { reasoning_summary_kept: reasoningKept(home) },
+      checks: {},
+      counts: { reasoning_summary_kept: reasoningKept(home) },
       snapshot: await c.read(),
     };
   },
@@ -879,7 +886,10 @@ for (const name of names) {
         .filter(([, ok]) => !ok)
         .map(([check]) => check);
       if (failed.length > 0) failures++;
-      line = `${name} run ${String(run)}: ${failed.length === 0 ? "checks passed" : `FAILED ${failed.join(", ")}`}`;
+      const counted = Object.entries(outcome.counts ?? {}).map(
+        ([count, yes]) => `${count}: ${yes ? "yes" : "no"}`,
+      );
+      line = `${name} run ${String(run)}: ${failed.length === 0 ? "checks passed" : `FAILED ${failed.join(", ")}`}${counted.length > 0 ? ` (${counted.join(", ")})` : ""}`;
       await writeFile(
         join(out, `${name}-${String(run)}.md`),
         `# ${line}\n\n${transcriptText(outcome.snapshot)}\n`,
