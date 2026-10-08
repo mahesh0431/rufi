@@ -45,8 +45,8 @@ export function ModelMenu({
   const offered = models.data?.models ?? [];
   // With none chosen yet, the first one, which the first message takes.
   const current = chosen?.model ?? offered[0]?.id;
-  // Until the list comes: the chat's own model, or nothing in its place.
-  const name = offered.find((m) => m.id === current)?.name ?? current;
+  // Until the list comes, nothing in its place: a model's id never shows.
+  const name = offered.find((m) => m.id === current)?.name;
   const effort = chosen?.effort ?? DEFAULT_EFFORT;
   const effortName = EFFORTS.find((e) => e.id === effort)?.name ?? effort;
   const path = chatPath(personId);

@@ -279,7 +279,7 @@ test("signed out, the chat doesn't say it uses the ChatGPT plan", async ({
   ).toHaveCount(0);
 });
 
-test("the button for the model never says Model: before the list of models comes, it shows the chat's own model, or keeps its place", async ({
+test("the button for the model never says Model or a model's id: before the list of models comes, it keeps the name's place empty", async ({
   page,
   rufi,
 }) => {
@@ -298,7 +298,7 @@ test("the button for the model never says Model: before the list of models comes
   await page.getByRole("menuitemradio", { name: "GPT-6.1-Sol" }).click();
   await expect(choice).toHaveText("GPT-6.1-SolMedium");
 
-  // Reloaded while the list is slow: the chat's own model.
+  // Reloaded while the list is slow: still no name, and never the id.
   const again = Promise.withResolvers<undefined>();
   await page.unroute("**/api/models");
   await page.route("**/api/models", async (route) => {
@@ -306,7 +306,7 @@ test("the button for the model never says Model: before the list of models comes
     await route.continue();
   });
   await page.reload();
-  await expect(choice).toHaveText("gpt-6.1-solMedium");
+  await expect(choice).toHaveText("Medium");
   again.resolve(undefined);
   await expect(choice).toHaveText("GPT-6.1-SolMedium");
 });
