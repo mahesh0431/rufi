@@ -74,7 +74,7 @@ const toEntry = (row: EntryRow, finished: boolean): Entry => ({
 });
 
 /** A chat as the screens get it, without its thread. */
-export const shown = ({ model }: Chat): Chat => ({ model });
+const shown = ({ model }: Chat): Chat => ({ model });
 
 const toChat = (row: Selectable<Tables["chats"]>): ChatRow => ({
   id: row.id,
@@ -571,9 +571,11 @@ export function transcripts(
           const from = low;
           const { first } = await trx
             .selectFrom("transcript_entries")
-            .select((eb) => eb.fn.min("seq").as("first"))
+            .select((eb) => eb.fn.min<number | null>("seq").as("first"))
             .where("person_id", "=", chat.personId)
-            .where("turn_id", "in", (eb) =>
+            .where(
+              "turn_id",
+              "in",
               rows()
                 .select("turn_id")
                 .where("seq", ">=", from)
@@ -617,10 +619,11 @@ export function transcripts(
           .select("t.id")
           .where("t.person_id", "=", chat.personId)
           .where("t.chat_id", "=", chat.id)
-          .where(({ not, exists, selectFrom }) =>
-            not(
-              exists(
-                selectFrom("transcript_entries as e")
+          .where((eb) =>
+            eb.not(
+              eb.exists(
+                eb
+                  .selectFrom("transcript_entries as e")
                   .select("e.id")
                   .whereRef("e.person_id", "=", "t.person_id")
                   .whereRef("e.turn_id", "=", "t.id"),

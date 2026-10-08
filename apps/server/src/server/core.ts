@@ -1,5 +1,5 @@
 // The core: one long-lived process that holds rufi.lock, owns the database,
-// the chats and the agent, and serves the local API on 127.0.0.1.
+// each person's chat and the agent, and serves the local API on 127.0.0.1.
 // Each part is opened in a scope; closing it closes them all in reverse,
 // even when one of them fails.
 import { mkdir, rm } from "node:fs/promises";

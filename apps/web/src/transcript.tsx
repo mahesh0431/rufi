@@ -1,19 +1,22 @@
-// A chat's transcript as the core stored it: your messages, one line
-// per thing the AI did, the AI's replies as Markdown with Based on under each
+// The chat's transcript as the core stored it: your messages, one line per
+// thing the AI did, the AI's replies as Markdown with Based on under each
 // answer once it ended, Rufi's receipt for each save to the record, and how a
-// reply ended when it didn't finish. Each entry reads only itself from the
-// live store, so a streaming reply re-renders alone.
+// reply ended when it didn't finish. A line between days, and a quiet line
+// where the AI started afresh or compacted its memory. It opens at the latest
+// page; older pages load as you scroll up, and the view stays where it is.
+// Each entry reads only itself from the live store, so a streaming reply
+// re-renders alone.
 import { Link } from "@tanstack/react-router";
 import { Check, LoaderCircle, Square, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remend from "remend";
-import type { Read } from "@rufi/contracts";
+import type { Read, Turn } from "@rufi/contracts";
 import type { StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/shallow";
-import { printedTime } from "./dates.ts";
+import { dayLine, dayOf, printedTime } from "./dates.ts";
 import type { Live } from "./live.ts";
 import { isRunning } from "./transcript-state.ts";
 
@@ -50,9 +53,17 @@ function Marked({ text, links = true }: { text: string; links?: boolean }) {
   );
 }
 
-function Reply({ text, streaming }: { text: string; streaming: boolean }) {
+function Reply({
+  id,
+  text,
+  streaming,
+}: {
+  id: string;
+  text: string;
+  streaming: boolean;
+}) {
   return (
-    <div className="reply">
+    <div className="reply" data-entry={id}>
       {/* While it streams, half-written Markdown is closed so it reads right;
           a half-written link shows as its text. */}
       <Marked
@@ -62,59 +73,95 @@ function Reply({ text, streaming }: { text: string; streaming: boolean }) {
   );
 }
 
+/** Based on shows once a reply ended, when it has How or Used. */
+const based = (turn: Turn) =>
+  turn.status !== "running" && (turn.how !== null || turn.used.length > 0);
+/** A reply that ended without completing says how. */
+const cut = (turn: Turn) =>
+  turn.status !== "running" && turn.status !== "completed";
+
 /**
- * Ended turns with something for Based on, by the entry it comes after: the
- * turn's last reply, else its last entry.
+ * What the transcript shows, in order, each as a key: "d:" a day's line
+ * before an entry, "a:" the AI started afresh for a turn, "c:" a compaction
+ * it completed, "e:" an entry, "b:" a turn's Based on, "x:" how a turn
+ * ended. Keys, so the list draws again only when what it shows changes.
  */
-function bases(state: Live): Record<string, string> {
-  const after: Record<string, string> = {};
-  const reply = new Set<string>();
-  for (const id of state.order) {
-    const entry = state.entries[id];
-    const turnId = entry?.turnId;
-    if (!entry || !turnId) continue;
-    if (entry.kind === "reply") reply.add(turnId);
-    if (entry.kind === "reply" || !reply.has(turnId)) after[turnId] = id;
+function lines(state: Live): string[] {
+  const { order, entries } = state;
+  const first = new Map<string, string>();
+  const last = new Map<string, string>();
+  const lastReply = new Map<string, string>();
+  for (const id of order) {
+    const entry = entries[id];
+    if (!entry?.turnId) continue;
+    if (!first.has(entry.turnId)) first.set(entry.turnId, id);
+    last.set(entry.turnId, id);
+    if (entry.kind === "reply") lastReply.set(entry.turnId, id);
   }
-  const shown: Record<string, string> = {};
-  for (const turn of Object.values(state.turns)) {
-    if (turn.status === "running") continue;
-    if (turn.how === null && turn.used.length === 0) continue;
-    shown[turn.id] = after[turn.id] ?? "";
+  /** Lines before an entry, and after one ("": before them all). */
+  const before = new Map<string, string[]>();
+  const after = new Map<string, string[]>();
+  const add = (to: Map<string, string[]>, at: string, line: string) => {
+    to.set(at, [...(to.get(at) ?? []), line]);
+  };
+  const turns = Object.values(state.turns).toSorted((a, b) =>
+    a.startedAt < b.startedAt ? -1 : a.startedAt > b.startedAt ? 1 : 0,
+  );
+  for (const turn of turns) {
+    const opens = first.get(turn.id);
+    const closes = last.get(turn.id);
+    if (opens === undefined || closes === undefined) {
+      // Nothing of it was stored: its lines go where it started.
+      const at =
+        order.findLast(
+          (id) => (entries[id]?.createdAt ?? "") <= turn.startedAt,
+        ) ?? "";
+      if (turn.afresh) add(after, at, `a:${turn.id}`);
+      if (cut(turn)) add(after, at, `x:${turn.id}`);
+      continue;
+    }
+    if (turn.afresh) add(before, opens, `a:${turn.id}`);
+    if (based(turn)) {
+      add(after, lastReply.get(turn.id) ?? closes, `b:${turn.id}`);
+    }
+    if (cut(turn)) add(after, closes, `x:${turn.id}`);
+  }
+  const shown = [...(after.get("") ?? [])];
+  let day = "";
+  for (const id of order) {
+    const entry = entries[id];
+    if (!entry) continue;
+    const today = dayOf(entry.createdAt);
+    if (today !== day) shown.push(`d:${id}`);
+    day = today;
+    shown.push(...(before.get(id) ?? []));
+    if (entry.activity === "compaction") {
+      // Only a compaction the AI completed: one started or cut shows nothing.
+      if (entry.status === "done") shown.push(`c:${id}`);
+    } else shown.push(`e:${id}`);
+    shown.push(...(after.get(id) ?? []));
   }
   return shown;
 }
 
-/** Ended turns that didn't complete, by the last entry they come after. */
-function endings(state: Live): Record<string, string> {
-  const last: Record<string, string> = {};
-  for (const id of state.order) {
-    const turnId = state.entries[id]?.turnId;
-    if (turnId) last[turnId] = id;
-  }
-  const after: Record<string, string> = {};
-  for (const turn of Object.values(state.turns)) {
-    if (turn.status === "running" || turn.status === "completed") continue;
-    // A reply with nothing in the transcript ends at the bottom.
-    after[turn.id] = last[turn.id] ?? "";
-  }
-  return after;
-}
-
 export function TranscriptView({
   live,
+  onOlder,
   className,
   inner,
 }: {
   live: StoreApi<Live>;
+  /** Loads the page before what is shown. */
+  onOlder: () => void;
   /** The scrolling area's classes, and those of what it holds. */
   className?: string;
   inner?: string;
 }) {
-  const order = useStore(live, (state) => state.order);
+  const shown = useStore(live, useShallow(lines));
   const status = useStore(live, (state) => state.status);
-  const ends = useStore(live, useShallow(endings));
-  const based = useStore(live, useShallow(bases));
+  const empty = useStore(live, (state) => state.order.length === 0);
+  const before = useStore(live, (state) => state.before);
+  const older = useStore(live, (state) => state.older);
   const running = useStore(live, isRunning);
   const replying = useStore(live, (state) => {
     const last = state.entries[state.order.at(-1) ?? ""];
@@ -126,23 +173,25 @@ export function TranscriptView({
       )
     );
   });
-  const endsAfter = (id: string) =>
-    Object.entries(ends).flatMap(([turnId, after]) =>
-      after === id ? [turnId] : [],
-    );
-  const basedAfter = (id: string) =>
-    Object.entries(based).flatMap(([turnId, after]) =>
-      after === id ? [turnId] : [],
-    );
 
   // Follows the reply as it streams, unless you scrolled up to read.
   const scroller = useRef<HTMLDivElement>(null);
+  const log = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   useEffect(() => {
     const element = scroller.current;
     if (!element) return;
+    let followedTo = 0;
     const follow = () => {
-      if (pinned.current) element.scrollTop = element.scrollHeight;
+      if (!pinned.current) return;
+      // Scrolled up since, before the scroll was even reported: you read.
+      const end = element.scrollHeight - element.clientHeight;
+      if (element.scrollTop < Math.min(followedTo, end) - 1) {
+        pinned.current = false;
+        return;
+      }
+      element.scrollTop = element.scrollHeight;
+      followedTo = element.scrollTop;
     };
     follow();
     // New text, and a smaller view (waiting messages above the box).
@@ -160,10 +209,47 @@ export function TranscriptView({
     };
   }, []);
 
+  // Near the top, the page before loads; again after each one, until the
+  // view is full or the chat's start is there.
+  const top = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = top.current;
+    const root = scroller.current;
+    if (!element || !root || older !== "idle") return;
+    const seen = new IntersectionObserver(
+      (found) => {
+        if (found.some((one) => one.isIntersecting)) onOlder();
+      },
+      { root, rootMargin: "400px 0px 0px 0px" },
+    );
+    seen.observe(element);
+    return () => {
+      seen.disconnect();
+    };
+  }, [before, older, onOlder]);
+
+  // What you read stays where it is when a page comes in above it: the
+  // first entry is measured before, and the view moves by what was added.
+  const anchor = useRef<{ node: Element; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const root = scroller.current;
+    if (!root) return;
+    const topOf = (node: Element) =>
+      node.getBoundingClientRect().top -
+      root.getBoundingClientRect().top +
+      root.scrollTop;
+    const kept = anchor.current;
+    if (kept?.node.isConnected && !pinned.current) {
+      root.scrollTop += topOf(kept.node) - kept.top;
+    }
+    const node = log.current?.querySelector("[data-entry]");
+    anchor.current = node ? { node, top: topOf(node) } : null;
+  });
+
   return (
     <div
       ref={scroller}
-      className={className}
+      className={`${className ?? ""} [overflow-anchor:none]`}
       onScroll={(event) => {
         const element = event.currentTarget;
         pinned.current =
@@ -173,29 +259,43 @@ export function TranscriptView({
       <div className={inner}>
         {status === "missing" ? (
           <p className="text-muted">There is no chat here.</p>
-        ) : status === "open" && order.length === 0 ? (
+        ) : status === "open" && empty ? (
           <FirstMessage />
         ) : (
           <div
+            ref={log}
             role="log"
-            aria-label="Chat"
+            aria-label="Messages"
             aria-busy={running}
             className="flex flex-col gap-3"
           >
-            {order.map((id) => (
-              <EntryView
-                key={id}
-                live={live}
-                id={id}
-                ends={endsAfter(id)}
-                based={basedAfter(id)}
-              />
-            ))}
-            {basedAfter("").map((turnId) => (
-              <BasedOn key={turnId} live={live} turnId={turnId} />
-            ))}
-            {endsAfter("").map((turnId) => (
-              <Ending key={turnId} live={live} turnId={turnId} />
+            {before !== null && (
+              <div ref={top} className="min-h-px text-center text-muted">
+                {older === "loading" ? (
+                  <p className="flex items-center justify-center gap-1.5">
+                    <LoaderCircle
+                      size={13}
+                      className="animate-spin"
+                      aria-hidden
+                    />
+                    Loading earlier messages…
+                  </p>
+                ) : older === "failed" ? (
+                  <p role="alert">
+                    Rufi couldn't load earlier messages.{" "}
+                    <button
+                      type="button"
+                      onClick={onOlder}
+                      className="text-accent-ink underline"
+                    >
+                      Try again
+                    </button>
+                  </p>
+                ) : null}
+              </div>
+            )}
+            {shown.map((line) => (
+              <Line key={line} live={live} line={line} />
             ))}
             {replying && (
               <p className="flex items-center gap-1.5 text-muted">
@@ -211,7 +311,7 @@ export function TranscriptView({
 }
 
 /** Before your first message: what goes to OpenAI. */
-export function FirstMessage() {
+function FirstMessage() {
   return (
     <p className="text-muted">
       What you send, and the parts of your record the AI reads to answer, go to
@@ -227,63 +327,84 @@ export function FirstMessage() {
   );
 }
 
-function EntryView({
-  live,
-  id,
-  ends,
-  based,
-}: {
-  live: StoreApi<Live>;
-  id: string;
-  ends: string[];
-  based: string[];
-}) {
+function Line({ live, line }: { live: StoreApi<Live>; line: string }) {
+  const id = line.slice(2);
+  switch (line.slice(0, 2)) {
+    case "d:":
+      return <DayLine live={live} id={id} />;
+    case "a:":
+    case "c:":
+      return <QuietLine />;
+    case "b:":
+      return <BasedOn live={live} turnId={id} />;
+    case "x:":
+      return <Ending live={live} turnId={id} />;
+    default:
+      return <EntryView live={live} id={id} />;
+  }
+}
+
+/** The day of the entry it comes before: "Today", "Yesterday", "Thu 8 Oct". */
+function DayLine({ live, id }: { live: StoreApi<Live>; id: string }) {
+  const at = useStore(live, (state) => state.entries[id]?.createdAt);
+  // Today as the line first showed; a chat left open overnight keeps it.
+  const [now] = useState(() => new Date());
+  if (at === undefined) return null;
+  return (
+    <h2 className="flex items-center gap-3 text-xs font-normal text-muted before:h-px before:flex-1 before:bg-line after:h-px after:flex-1 after:bg-line">
+      {dayLine(at, now)}
+    </h2>
+  );
+}
+
+/** Where the AI started afresh, or compacted its memory of the chat. */
+function QuietLine() {
+  return (
+    <p className="text-center text-xs text-muted italic">
+      The AI started afresh here. It can still read earlier messages.
+    </p>
+  );
+}
+
+function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
   const entry = useStore(live, (state) => state.entries[id]);
   const streaming = useStore(
     live,
     (state) => state.turns[entry?.turnId ?? ""]?.status === "running",
   );
   if (!entry) return null;
-  return (
-    <>
-      {entry.kind === "message" || entry.kind === "steer" ? (
-        <div className="max-w-[85%] self-end rounded-2xl bg-accent-soft px-3.5 py-2">
-          {entry.kind === "steer" && (
-            <p className="text-xs text-accent-ink">Steer</p>
-          )}
-          <p className="break-words whitespace-pre-wrap">{entry.text}</p>
-        </div>
-      ) : entry.kind === "receipt" ? (
-        // Rufi's own receipt for a save, from what it saved: never the AI's
-        // words. The core writes it as Markdown with every value escaped.
-        <div className="flex items-start gap-1.5 rounded-lg border border-line bg-side px-3 py-2">
-          <Check
-            size={14}
-            className="mt-1 shrink-0 text-accent-ink"
-            aria-hidden
-          />
-          <div className="receipt min-w-0 break-words">
-            <Marked text={entry.text} links={false} />
-          </div>
-        </div>
-      ) : entry.kind === "activity" ? (
-        <p className="flex min-w-0 items-center gap-1.5 text-muted">
-          <ActivityIcon status={entry.status} />
-          <span className="shrink-0">{entry.text}</span>
-          {entry.detail !== null && (
-            <span className="truncate text-xs">{entry.detail}</span>
-          )}
-        </p>
-      ) : (
-        <Reply text={entry.text} streaming={streaming} />
+  return entry.kind === "message" || entry.kind === "steer" ? (
+    <div
+      data-entry={id}
+      className="max-w-[85%] self-end rounded-2xl bg-accent-soft px-3.5 py-2"
+    >
+      {entry.kind === "steer" && (
+        <p className="text-xs text-accent-ink">Steer</p>
       )}
-      {based.map((turnId) => (
-        <BasedOn key={turnId} live={live} turnId={turnId} />
-      ))}
-      {ends.map((turnId) => (
-        <Ending key={turnId} live={live} turnId={turnId} />
-      ))}
-    </>
+      <p className="break-words whitespace-pre-wrap">{entry.text}</p>
+    </div>
+  ) : entry.kind === "receipt" ? (
+    // Rufi's own receipt for a save, from what it saved: never the AI's
+    // words. The core writes it as Markdown with every value escaped.
+    <div
+      data-entry={id}
+      className="flex items-start gap-1.5 rounded-lg border border-line bg-side px-3 py-2"
+    >
+      <Check size={14} className="mt-1 shrink-0 text-accent-ink" aria-hidden />
+      <div className="receipt min-w-0 break-words">
+        <Marked text={entry.text} links={false} />
+      </div>
+    </div>
+  ) : entry.kind === "activity" ? (
+    <p data-entry={id} className="flex min-w-0 items-center gap-1.5 text-muted">
+      <ActivityIcon status={entry.status} />
+      <span className="shrink-0">{entry.text}</span>
+      {entry.detail !== null && (
+        <span className="truncate text-xs">{entry.detail}</span>
+      )}
+    </p>
+  ) : (
+    <Reply id={id} text={entry.text} streaming={streaming} />
   );
 }
 

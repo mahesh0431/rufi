@@ -1,6 +1,6 @@
 # Your data and the AI
 
-Rufi keeps your records on your Mac. This page says where they are, what the AI sends, what Rufi keeps of your conversations, and what Rufi writes in its log.
+Rufi keeps your records on your Mac. This page says where they are, what the AI sends, what Rufi keeps of your chat, and what Rufi writes in its log.
 
 ## Where your data lives
 
@@ -8,13 +8,13 @@ Everything is in one data folder on your Mac. Today you choose it with the `RUFI
 
 | In the data folder | What it is                                                                                                                                                                                       |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `rufi.sqlite`      | The record (people, documents, reports and results) and your conversations, with what the AI did in them (see below)                                                                             |
+| `rufi.sqlite`      | The record (people, documents, reports and results) and your chat, with what the AI did in it (see below)                                                                                        |
 | `installed.json`   | Says a record was made in this folder. If it is there and `rufi.sqlite` isn't, Rufi doesn't start: it never shows an empty record in place of yours                                              |
 | `backups/`         | Rufi's backups of `rufi.sqlite`, made when it starts and then each day. They never hold your sign-in, the AI's files, the log or `models.json` (see [Backups and export](backups-and-export.md)) |
 | `chatgpt.json`     | Your sign-in details, without secrets (see [Signing in with ChatGPT](signing-in.md))                                                                                                             |
-| `models.json`      | The AI models Rufi may use, in the order Rufi shows them; a new conversation uses the first one. It starts with the strongest ones, and you can edit the list                                    |
+| `models.json`      | The AI models Rufi may use, in the order Rufi shows them; the chat uses the first one until you choose another. It starts with the strongest ones, and you can edit the list                     |
 | `logs/`            | Rufi's log (see below)                                                                                                                                                                           |
-| `codex/`           | The AI's own files: its settings, its own copies of your conversations with what its tools returned, and the messages that wait for the AI                                                       |
+| `codex/`           | The AI's own files: its settings, its own copy of your chat with what its tools returned, and the messages that wait for the AI                                                                  |
 | `workspace/`       | The folder where the AI works                                                                                                                                                                    |
 | `core.json`        | There while Rufi runs: how `pnpm start` finds the running Rufi to open it again. Rufi removes it when it stops                                                                                   |
 | `rufi.lock`        | A folder that is there while Rufi or a Rufi command uses the data folder, so only one of them does at a time                                                                                     |
@@ -25,11 +25,11 @@ When Rufi creates your data folder, it makes it private to your Mac user account
 
 > **Note:** When you ask Rufi something, the AI reads the parts of your record it needs. That text goes to the AI service you signed in with (today OpenAI, through your ChatGPT plan) so it can answer. See [OpenAI's policies](https://openai.com/policies/) for how they handle it.
 
-When the AI reads your record, it gets only the records of the person the conversation is about: Rufi chooses the person, and the AI can't name another one. The AI can't read your conversations or Rufi's settings this way, and it can't change anything.
+When the AI reads your record, it gets only the records of the person whose chat it is: Rufi chooses the person, and the AI can't name another one. The AI can't read the chat or Rufi's settings this way, and it can't change anything.
 
-## Your conversations
+## Your chat
 
-Rufi keeps each conversation in `rufi.sqlite`: your messages, the AI's replies, one line for each thing the AI did, such as reading your record or searching the web, and a receipt for each save to your record. Rufi saves each part before it shows it, so what you see is what was saved.
+Rufi keeps your chat in `rufi.sqlite`: your messages, the AI's replies, one line for each thing the AI did, such as reading your record or searching the web, and a receipt for each save to your record. Rufi saves each part before it shows it, so what you see is what was saved.
 
 Rufi also keeps everything the AI did in a reply, so that an answer can be traced later:
 
@@ -37,11 +37,11 @@ Rufi also keeps everything the AI did in a reply, so that an answer can be trace
 - For each read or save with Rufi's own tools, what the AI asked and exactly what Rufi answered.
 - The AI's reasoning summaries: a short account of its thinking, when the AI service gives one. Rufi asks for them.
 
-You don't see these in Rufi yet, except as **Based on** under each answer. Rufi keeps them as long as the conversation. Work the AI gives to a sub-agent isn't kept.
+You don't see these in Rufi yet, except as **Based on** under each answer. Rufi keeps them as long as the chat. Work the AI gives to a sub-agent isn't kept.
 
 For each change to your record, Rufi also keeps the record before and after it, and the message of yours it came from.
 
-It also keeps what you typed in the chat but didn't send (a draft for each conversation), and which conversation to open the chat on for each person. Drafts stay on your Mac until you send them.
+It also keeps what you typed in the chat but didn't send (the chat's draft). Drafts stay on your Mac until you send them.
 
 The AI's own copies in `codex/` hold more, as long as the AI keeps them.
 

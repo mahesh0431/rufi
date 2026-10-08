@@ -1,5 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { greeting, printedDate, printedTime } from "./dates.ts";
+import { afterAll, describe, expect, it } from "vitest";
+import { dayLine, greeting, printedDate, printedTime } from "./dates.ts";
+
+// The Mac is in India here: its days start 5½ hours before UTC's.
+const TZ = process.env["TZ"];
+process.env["TZ"] = "Asia/Kolkata";
+afterAll(() => {
+  if (TZ === undefined) delete process.env["TZ"];
+  else process.env["TZ"] = TZ;
+});
 
 describe("dates", () => {
   it("prints a date at the precision known, and other text as it is", () => {
@@ -22,5 +30,20 @@ describe("dates", () => {
     expect(greeting(new Date(2026, 9, 4, 9))).toBe("Good morning");
     expect(greeting(new Date(2026, 9, 4, 12))).toBe("Good afternoon");
     expect(greeting(new Date(2026, 9, 4, 17))).toBe("Good evening");
+  });
+
+  it("names the chat's days in this Mac's time zone: Today, Yesterday, then the date", () => {
+    const now = new Date("2026-10-08T10:00:00+05:30");
+    // Still 7 Oct in UTC, but today on this Mac.
+    expect(dayLine("2026-10-07T19:00:00Z", now)).toBe("Today");
+    expect(dayLine("2026-10-07T23:59:00+05:30", now)).toBe("Yesterday");
+    expect(dayLine("2026-10-01T12:00:00+05:30", now)).toBe("Thu 1 Oct");
+    expect(dayLine("2025-12-31T12:00:00+05:30", now)).toBe("Wed 31 Dec 2025");
+    expect(
+      dayLine(
+        "2025-12-31T12:00:00+05:30",
+        new Date("2026-01-01T08:00:00+05:30"),
+      ),
+    ).toBe("Yesterday");
   });
 });

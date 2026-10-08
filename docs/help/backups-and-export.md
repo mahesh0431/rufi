@@ -6,7 +6,7 @@ Rufi makes a backup of your record each time it starts and then each day, and yo
 
 Rufi makes a backup each time it starts, and then once a day while it runs. If Rufi was closed for some days, it doesn't make up the days it missed. The backup at start runs in the background: you can use Rufi while it runs.
 
-A backup is a copy of your record: your people, their records with all their history, your conversations, your drafts and Rufi's settings. Rufi checks each backup before it keeps it. A backup that fails its check, or that Rufi stopped in the middle, never counts, and your last good backup stays.
+A backup is a copy of your record: your people, their records with all their history, your chat, your drafts and Rufi's settings. Rufi checks each backup before it keeps it. A backup that fails its check, or that Rufi stopped in the middle, never counts, and your last good backup stays.
 
 A backup doesn't hold:
 
@@ -58,13 +58,14 @@ The copy is a Rufi of its own: it can run next to the Rufi of your current data 
 What the restored copy has:
 
 - Everything that was in your record when the backup was made. Anything you added or changed after that isn't there. Anything you removed after that is back.
-- Your conversations and drafts. A reply that was running when the backup was made shows as interrupted. Nothing is sent by itself.
-- Messages that were waiting for the AI don't come back. Your next message starts the AI afresh with the conversation's last messages.
+- Your chat and drafts. A reply that was running when the backup was made shows as interrupted. Nothing is sent by itself.
+- Messages that were waiting for the AI don't come back. Your next message starts the AI afresh with the chat's last messages, and the chat shows a quiet line there.
 
 If Rufi refuses:
 
 - **The folder isn't empty:** choose a new folder. Rufi never restores over anything.
 - **The backup isn't as it was made, or is damaged:** choose an older backup.
+- **The backup is from an older Rufi:** this Rufi can't restore it, and nothing is changed. While Rufi is in early development, a backup made by an older Rufi may not restore in a newer one.
 - **Another Rufi uses the folder:** stop it, or choose another folder.
 
 Use the new folder only after the command says the backup is restored. If the command stopped before that (for example, you pressed Ctrl-C), delete the new folder and restore again. A restore that stopped while it copied leaves a `restoring` folder in the new folder, and Rufi won't start on it.
@@ -75,7 +76,7 @@ If `rufi.sqlite` is gone from a data folder that had a record, Rufi doesn't star
 
 ## Export your data
 
-An export is one zip file with everything in your record, your conversations and Rufi's settings, so that your data is never locked in Rufi.
+An export is one zip file with everything in your record, your chat and Rufi's settings, so that your data is never locked in Rufi.
 
 1. Open **Settings**.
 2. Under **Export**, click **Export my data**.

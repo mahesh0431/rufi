@@ -847,10 +847,9 @@ describe("a save", () => {
 
   it("refuses another person's record, and words the user didn't say in this chat", async () => {
     await say("Stop my atorvastatin");
-    await say(
-      "I have a toothache",
-      (await transcripts.chat("ravi")) as ChatRow,
-    );
+    const ravis = await transcripts.chat("ravi");
+    if (!ravis) throw new Error("no chat");
+    await say("I have a toothache", ravis);
     const before = written();
     const refused = await save([
       {

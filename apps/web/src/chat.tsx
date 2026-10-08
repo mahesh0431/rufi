@@ -1,12 +1,12 @@
-// The chat: one chat in three sizes, drawn with the same header,
-// transcript and box. The bar sits bottom right and continues the
-// chat you chose last; click it or press ⌘J and the panel opens over
-// the page, always the same size; Esc steps back to the bar. "Open as page"
-// shows the chat at its own address. A small window opens the page
+// The chat: the person's one chat with Rufi in three sizes, drawn with the
+// same header, transcript and box. The bar sits bottom right on every page;
+// click it or press ⌘J and the panel opens over the page, always the same
+// size; Esc steps back to the bar. "Open as page" shows the chat at its own
+// address, Chat with Rufi in the sidebar. A small window opens the page
 // instead of the panel.
 import { Menu } from "@base-ui/react/menu";
-import type { Chat, Person } from "@rufi/contracts";
-import { useNavigate, useRouter } from "@tanstack/react-router";
+import type { Person } from "@rufi/contracts";
+import { useNavigate } from "@tanstack/react-router";
 import { Check, ChevronDown, Maximize2, Minus } from "lucide-react";
 import {
   createContext,
@@ -22,102 +22,68 @@ import { create } from "zustand/react";
 import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
 import { Box } from "./box.tsx";
-import { choose, startChat, startingChat, useChosen } from "./choice.ts";
-import { chatPath, type Live, liveStore, messageOf, retain } from "./live.ts";
-import { useChats, useModels, useStatus } from "./reads.ts";
-import { FirstMessage, TranscriptView } from "./transcript.tsx";
+import {
+  chatPath,
+  type Live,
+  liveStore,
+  loadOlder,
+  messageOf,
+  retain,
+} from "./live.ts";
+import { useModels, useStatus } from "./reads.ts";
+import { TranscriptView } from "./transcript.tsx";
 
 /** Where the chat's menus open: inside the chat, beside its glass. */
 const Menus = createContext<RefObject<HTMLDivElement | null> | null>(null);
 
 /** Whether the chat panel is open over the page, and where focus was before. */
-const useChat = create<{ open: boolean; focusBefore: Element | null }>(() => ({
+const usePanel = create<{ open: boolean; focusBefore: Element | null }>(() => ({
   open: false,
   focusBefore: null,
 }));
 
 /** Opens the panel, remembering where focus goes back to. */
 const openPanel = () => {
-  if (useChat.getState().open) return;
-  useChat.setState({ open: true, focusBefore: document.activeElement });
+  if (usePanel.getState().open) return;
+  usePanel.setState({ open: true, focusBefore: document.activeElement });
 };
 
 /** Too small for the panel next to the page: the chat opens as the page. */
 const isSmall = () =>
   matchMedia("(max-width: 799px), (max-height: 499px)").matches;
 
-export const titleOf = (chat: Chat | null | undefined) =>
-  chat?.title ?? "New chat";
+/** The chat's name on screen. */
+export const CHAT_TITLE = "Chat with Rufi";
 
 /** The page of a person's chat. */
-const pageOf = (personId: string, chatId: string) =>
-  ({
-    to: "/people/$personId/chats/$chatId",
-    params: { personId, chatId },
-  }) as const;
+const chatPage = (personId: string) =>
+  ({ to: "/people/$personId/chat", params: { personId } }) as const;
 
-/** The live store of a chat, open while this view shows it. */
-function useLive(personId: string, chatId: string | null) {
-  useEffect(
-    () => (chatId === null ? undefined : retain(personId, chatId)),
-    [personId, chatId],
-  );
-  return chatId === null ? null : liveStore(personId, chatId);
+/** The live store of the person's chat, open while this view shows it. */
+function useLive(personId: string) {
+  useEffect(() => retain(personId), [personId]);
+  return liveStore(personId);
 }
 
-/**
- * "New chat": the core creates it at once, and the chat shows it, in
- * the panel or as its page; unless the person chose another one meanwhile.
- * Throws when it can't be created.
- */
-export function useNewChat(personId: string) {
-  const navigate = useNavigate();
-  const router = useRouter();
-  return async (onPage: boolean) => {
-    const from = router.state.location.href;
-    const started = await startChat(personId);
-    // Gone to another page meanwhile: the bar shows it, nothing more.
-    if (!started || router.state.location.href !== from) return;
-    if (onPage || isSmall()) {
-      void navigate(pageOf(personId, started.id));
-      return;
-    }
-    openPanel();
-  };
-}
-
-/** The bar and the panel, on every page but a chat's own. */
+/** The bar and the panel, on every page but the chat's own. */
 export function ChatDock({ person }: { person: Person }) {
-  const open = useChat((state) => state.open);
-  const list = useChats(person.id);
-  const chosen = useChosen(person.id);
-  const chatId = chosen ?? null;
-  const live = useLive(person.id, chatId);
+  const open = usePanel((state) => state.open);
+  const live = useLive(person.id);
   const navigate = useNavigate();
   const field = useRef<HTMLTextAreaElement | null>(null);
   const menus = useRef<HTMLDivElement | null>(null);
-  const start = useNewChat(person.id);
-  const [problem, setProblem] = useState<string | null>(null);
 
   const openChat = () => {
-    if (useChat.getState().open) return;
-    if (isSmall() && chatId !== null) {
-      void navigate(pageOf(person.id, chatId));
+    if (usePanel.getState().open) return;
+    if (isSmall()) {
+      void navigate(chatPage(person.id));
       return;
     }
     openPanel();
   };
-  /** With no chat yet, using the box starts one, once. */
-  const startHere = () => {
-    if (startingChat(person.id)) return;
-    setProblem(null);
-    start(false).catch((error: unknown) => {
-      setProblem(messageOf(error));
-    });
-  };
   const close = () => {
-    const back = useChat.getState().focusBefore;
-    useChat.setState({ open: false, focusBefore: null });
+    const back = usePanel.getState().focusBefore;
+    usePanel.setState({ open: false, focusBefore: null });
     if (
       back instanceof HTMLElement &&
       back.isConnected &&
@@ -137,7 +103,7 @@ export function ChatDock({ person }: { person: Person }) {
         return;
       }
       event.preventDefault();
-      if (useChat.getState().open) close();
+      if (usePanel.getState().open) close();
       else openChat();
     };
     addEventListener("keydown", onKey);
@@ -145,13 +111,11 @@ export function ChatDock({ person }: { person: Person }) {
       removeEventListener("keydown", onKey);
     };
   });
-  // The panel opens with the box ready for typing, also a new one's.
+  // The panel opens with the box ready for typing.
   useEffect(() => {
     if (open) field.current?.focus();
-  }, [open, chatId]);
+  }, [open]);
 
-  if (chosen === undefined) return null;
-  const title = titleOf(list.data?.chats.find((c) => c.id === chatId));
   return (
     <section aria-label="Chat">
       <Menus value={menus}>
@@ -175,22 +139,19 @@ export function ChatDock({ person }: { person: Person }) {
                 : "hidden group-focus-within:flex group-hover:flex"
             }
             person={person}
-            chatId={chatId}
-            title={title}
+            titled
             live={live}
             withModel={open}
             actions={
-              chatId !== null && (
-                <IconButton
-                  label="Open as page"
-                  onClick={() => {
-                    useChat.setState({ open: false });
-                    void navigate(pageOf(person.id, chatId));
-                  }}
-                >
-                  <Maximize2 size={14} aria-hidden />
-                </IconButton>
-              )
+              <IconButton
+                label="Open as page"
+                onClick={() => {
+                  usePanel.setState({ open: false });
+                  void navigate(chatPage(person.id));
+                }}
+              >
+                <Maximize2 size={14} aria-hidden />
+              </IconButton>
             }
             lead={
               open ? (
@@ -200,36 +161,21 @@ export function ChatDock({ person }: { person: Person }) {
               ) : null
             }
           />
-          {open &&
-            (live ? (
-              <TranscriptView
-                live={live}
-                className="flex-1 overflow-auto px-[18px] py-4"
-              />
-            ) : (
-              <div className="flex-1 px-[18px] py-4">
-                <FirstMessage />
-              </div>
-            ))}
+          {open && (
+            <TranscriptView
+              live={live}
+              onOlder={() => void loadOlder(person.id)}
+              className="flex-1 overflow-auto px-[18px] py-4"
+            />
+          )}
           <div className={open ? "border-t border-line" : undefined}>
-            {chatId !== null && live ? (
-              <Box
-                key={chatId}
-                person={person}
-                chatId={chatId}
-                live={live}
-                size={open ? "panel" : "bar"}
-                inputRef={field}
-                onOpen={openChat}
-              />
-            ) : (
-              <StartBox
-                inputRef={field}
-                person={person}
-                problem={problem}
-                onStart={startHere}
-              />
-            )}
+            <Box
+              person={person}
+              live={live}
+              size={open ? "panel" : "bar"}
+              inputRef={field}
+              onOpen={openChat}
+            />
           </div>
           <AiCanMakeMistakes />
         </div>
@@ -239,23 +185,15 @@ export function ChatDock({ person }: { person: Person }) {
   );
 }
 
-/** A chat at its own address; viewing it chooses it for the bar. */
-export function ChatPage({
-  person,
-  chatId,
-}: {
-  person: Person;
-  chatId: string;
-}) {
-  const live = liveStore(person.id, chatId);
+/** The chat at its own address. */
+export function ChatPage({ person }: { person: Person }) {
+  const live = useLive(person.id);
   const field = useRef<HTMLTextAreaElement | null>(null);
   const menus = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => retain(person.id, chatId), [person.id, chatId]);
   useEffect(() => {
-    choose(person.id, chatId);
     field.current?.focus();
-  }, [person.id, chatId]);
+  }, [person.id]);
   // ⌘J goes to the box.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -277,66 +215,21 @@ export function ChatPage({
         <Header
           className="flex px-5"
           person={person}
-          chatId={chatId}
-          title={null}
+          titled={false}
           live={live}
           withModel
         />
         <TranscriptView
           live={live}
+          onOlder={() => void loadOlder(person.id)}
           className="flex-1 overflow-auto"
           inner="mx-auto max-w-[760px] px-10 py-6"
         />
         <div className="mx-auto w-full max-w-[760px] px-10 pb-1">
-          <Box
-            key={chatId}
-            person={person}
-            chatId={chatId}
-            live={live}
-            size="page"
-            inputRef={field}
-          />
+          <Box person={person} live={live} size="page" inputRef={field} />
           <AiCanMakeMistakes />
         </div>
       </Menus>
-    </div>
-  );
-}
-
-/**
- * The bar with no chat yet: using its box starts one, and the box
- * of that chat takes its place.
- */
-function StartBox({
-  inputRef,
-  person,
-  problem,
-  onStart,
-}: {
-  inputRef: RefObject<HTMLTextAreaElement | null>;
-  person: Person;
-  problem: string | null;
-  onStart: () => void;
-}) {
-  return (
-    <div className="flex flex-col">
-      <div className="py-2.5 pr-2.5 pl-3.5">
-        <textarea
-          ref={inputRef}
-          rows={1}
-          readOnly
-          aria-label="Message to Rufi"
-          placeholder={`Ask or tell Rufi about ${person.displayName}…`}
-          onClick={onStart}
-          onFocus={onStart}
-          className="w-full resize-none overflow-hidden bg-transparent outline-none placeholder:text-muted"
-        />
-      </div>
-      {problem !== null && (
-        <p role="alert" className="px-3.5 pb-2 text-muted">
-          {problem}
-        </p>
-      )}
     </div>
   );
 }
@@ -350,15 +243,13 @@ function AiCanMakeMistakes() {
 }
 
 /**
- * The chat's header: the chat's switcher and the size buttons (bar
- * and panel), then, quietly, the model menu and the plan it uses (panel and
- * page).
+ * The chat's header: its name and the size buttons (bar and panel), then,
+ * quietly, the model menu and the plan it uses (panel and page).
  */
 function Header({
   className,
   person,
-  chatId,
-  title,
+  titled,
   live,
   withModel,
   lead,
@@ -366,10 +257,9 @@ function Header({
 }: {
   className: string;
   person: Person;
-  chatId: string | null;
-  /** The switcher's title; null on the page, whose title is the toolbar's. */
-  title: string | null;
-  live: StoreApi<Live> | null;
+  /** With its name; not on the page, whose name is the toolbar's. */
+  titled: boolean;
+  live: StoreApi<Live>;
   withModel: boolean;
   lead?: ReactNode;
   actions?: ReactNode;
@@ -379,28 +269,23 @@ function Header({
   const signedIn = useStatus().data?.account === "signed_in";
   return (
     <div className={`${className} flex-col`}>
-      {title !== null && (
+      {titled && (
         <div className="flex h-12 items-center gap-1.5 px-2.5">
           {lead}
-          <Switcher
-            person={person}
-            chatId={chatId}
-            title={title}
-            onProblem={setProblem}
-          />
+          <h2 className="truncate px-1.5 font-semibold">{CHAT_TITLE}</h2>
           <span className="flex-1" />
           {actions}
         </div>
       )}
-      {withModel && live && chatId !== null && (
+      {withModel && (
         <div
-          className={`flex items-center gap-0.5 px-3 pb-1.5 text-xs text-muted ${title === null ? "justify-end pt-2" : "-mt-2"}`}
+          className={`flex items-center gap-0.5 px-3 pb-1.5 text-xs text-muted ${titled ? "-mt-2" : "justify-end pt-2"}`}
         >
           <LiveModel
             live={live}
             onChange={(next) => {
               setProblem(null);
-              request("PUT", `${chatPath(person.id, chatId)}/model`, {
+              request("PUT", `${chatPath(person.id)}/model`, {
                 model: next,
               }).catch((error: unknown) => {
                 setProblem(messageOf(error));
@@ -499,72 +384,6 @@ function ModelMenu({
                 ))}
               </Menu.RadioGroup>
             )}
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
-  );
-}
-
-/** The person's chats, to continue another one or start a new one. */
-function Switcher({
-  person,
-  chatId,
-  title,
-  onProblem,
-}: {
-  person: Person;
-  chatId: string | null;
-  title: string;
-  onProblem: (problem: string | null) => void;
-}) {
-  const menus = useContext(Menus);
-  const start = useNewChat(person.id);
-  const chats = useChats(person.id).data?.chats ?? [];
-  return (
-    <Menu.Root>
-      <Menu.Trigger className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 font-semibold hover:bg-side">
-        <span className="max-w-72 truncate">{title}</span>
-        <ChevronDown size={13} className="shrink-0 text-muted" aria-hidden />
-      </Menu.Trigger>
-      <Menu.Portal container={menus}>
-        <Menu.Positioner sideOffset={6} align="start" className="z-30">
-          <Menu.Popup className={`${POPUP} max-h-80 overflow-auto`}>
-            <Menu.RadioGroup
-              value={chatId ?? ""}
-              onValueChange={(next: string) => {
-                choose(person.id, next);
-              }}
-            >
-              {chats.map((c) => (
-                <Menu.RadioItem
-                  key={c.id}
-                  value={c.id}
-                  closeOnClick
-                  className={ITEM}
-                >
-                  <span className="max-w-64 flex-1 truncate">{titleOf(c)}</span>
-                  <Menu.RadioItemIndicator>
-                    <Check size={13} aria-hidden />
-                  </Menu.RadioItemIndicator>
-                </Menu.RadioItem>
-              ))}
-            </Menu.RadioGroup>
-            {chats.length > 0 && (
-              <Menu.Separator className="my-1 h-px bg-line" />
-            )}
-            <Menu.Item
-              closeOnClick
-              className={ITEM}
-              onClick={() => {
-                onProblem(null);
-                start(false).catch((error: unknown) => {
-                  onProblem(messageOf(error));
-                });
-              }}
-            >
-              New chat
-            </Menu.Item>
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>

@@ -55,7 +55,7 @@ export const CHANGED = "Changed in another tab.";
  * Runs `run` after the earlier runs in the same `scope` have ended, however
  * they ended: TanStack Query runs a scope's mutations one after another.
  */
-export const inTurn = <T>(
+const inTurn = <T>(
   client: QueryClient,
   scope: string,
   run: () => Promise<T>,

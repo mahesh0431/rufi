@@ -118,7 +118,7 @@ test.describe("first run", () => {
         sidebar(page).getByRole("link", { name: "Overview" }),
       ).toHaveCount(0);
       await expect(
-        sidebar(page).getByRole("button", { name: "New chat" }),
+        sidebar(page).getByRole("link", { name: "Chat with Rufi" }),
       ).toHaveCount(0);
     };
     await expect(
@@ -167,9 +167,20 @@ test.describe("first run", () => {
     ).toBeVisible();
     await expect(sidebar(page)).toContainText("Mira Fictional");
     await expect(title).toHaveText("Overview");
-    await expect(
-      sidebar(page).getByRole("button", { name: "New chat" }),
-    ).toBeVisible();
+    // The person's chat was made with them: the bar works at once.
+    const bar = page.getByRole("region", { name: "Chat" });
+    await bar.getByRole("textbox", { name: "Message to Rufi" }).click();
+    await bar
+      .getByRole("textbox", { name: "Message to Rufi" })
+      .fill("Hello from the first page");
+    await bar.getByRole("textbox", { name: "Message to Rufi" }).press("Enter");
+    await expect(bar.locator(".reply")).toHaveText(
+      "ok:Hello from the first page",
+    );
+    await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
+    await expect(page.locator(".reply")).toHaveText(
+      "ok:Hello from the first page",
+    );
     await sidebar(page).getByRole("link", { name: "Settings" }).click();
     await expect(
       page.getByRole("combobox", { name: "Emergency region" }),
@@ -203,6 +214,32 @@ test.describe("first run", () => {
       page.getByRole("combobox", { name: "Emergency region" }),
     ).toBeVisible();
     await expect(sidebar(page)).not.toContainText("Not signed in");
+  });
+
+  test("offers the chat and Overview only once first run is known to be done", async ({
+    page,
+    rufi,
+  }) => {
+    await rufi.family();
+    await rufi.start();
+    const answer = Promise.withResolvers<undefined>();
+    await page.route("**/api/first-run", async (route) => {
+      await answer.promise;
+      await route.continue();
+    });
+    await page.goto(rufi.link());
+    await expect(sidebar(page)).toContainText("Asha Fictional");
+    await expect(sidebar(page).getByRole("link")).toHaveText([
+      "Help",
+      "Settings",
+    ]);
+    answer.resolve(undefined);
+    await expect(sidebar(page).getByRole("link")).toHaveText([
+      "Chat with Rufi",
+      "Overview",
+      "Help",
+      "Settings",
+    ]);
   });
 
   test("two tabs make one person", async ({ page, rufi, context }) => {

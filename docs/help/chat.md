@@ -1,14 +1,10 @@
 # Talking to Rufi
 
-The chat is where you talk with Rufi's AI about your record. It is one conversation that you can see in three sizes: the chat bar, the chat panel and the chat page. Rufi keeps every conversation, and what you typed but didn't send.
+The chat is where you talk with Rufi's AI about your record. You have one chat with Rufi, and you can see it in three sizes: the chat bar, the chat panel and the chat page. Rufi keeps the whole chat, and what you typed but didn't send. To talk about something new, just say so.
 
 ## The chat bar
 
-The chat bar is the box at the bottom right of every page. It says "Ask or tell Rufi about" and your name.
-
-The bar shows the conversation you chose last. Point at the bar, or move into it with Tab, to see which conversation it is. When you have no conversation yet, clicking the box starts one.
-
-Each browser tab keeps its own conversation open: a choice in one tab doesn't change another. When you open Rufi again, the bar shows the last choice Rufi saved. A choice made just before you close Rufi may not be remembered.
+The chat bar is the box at the bottom right of every page. It says "Ask or tell Rufi about" and your name. It is your chat, the same on every page and in every browser tab.
 
 Under the box, in every size of the chat, "AI can make mistakes. Check important info." reminds you to check what the AI says.
 
@@ -18,32 +14,32 @@ Click the bar, or press ⌘J, to open the chat panel over the page. The panel is
 
 At the top of the panel:
 
-- **The conversation's name.** Click it to choose another conversation, or **New conversation**.
+- **Chat with Rufi**, the chat's name.
 - **Minimise** (–) closes the panel. Esc does the same, and puts you back where you were. When a menu is open, Esc closes the menu first.
-- **Open as page** (the arrows) shows the conversation as a page.
+- **Open as page** (the arrows) shows the chat as a page.
 - **The model** that answers. When you are signed in, "Using ChatGPT plan" follows it, and **Manage usage** opens your ChatGPT plan's usage page in your browser.
 
 Press ⌘J again to close the panel.
 
 ## The chat page
 
-Each conversation has its own page, listed under **Conversations** in the sidebar. The page shows the same conversation as the panel, with the same box. When you open a conversation's page, the bar shows that conversation.
-
-In a small window, the chat opens as a page instead of the panel.
-
-## Starting a conversation
-
-Click **New conversation** in the sidebar, or choose it at the top of the panel. New conversation opens an empty conversation, listed as "New conversation". Until it opens, the box says "Starting a new conversation…" and you can't send from it. If you choose another conversation meanwhile, the new one is only listed. If you go to another page meanwhile, Rufi stays on that page, and the chat bar shows the new conversation. Its first message that Rufi takes gives it a name, in the panel, on the page and in the sidebar. An empty conversation stays in the list.
+Click **Chat with Rufi** in the sidebar to open your chat as a page. The page shows the same chat as the panel, with the same box. In a small window, the chat opens as a page instead of the panel.
 
 Before your first message, the chat says what goes to OpenAI. See [Your data and the AI](your-data-and-the-ai.md).
+
+## Reading back
+
+The chat opens at its latest messages. Scroll up to see older ones: Rufi loads them as you go, and what you read stays where it is on the screen. If Rufi can't load them, the chat says so: click **Try again**.
+
+A line between days says which day the messages under it are from: "Today", "Yesterday", then the day, such as "Thu 8 Oct", with the year when it isn't this year. The days are in your Mac's time zone.
 
 ## Sending a message
 
 Type in the box and press Enter, or click the send button. Shift-Enter starts a new line.
 
-When you send, Rufi first saves your text: the box says "Saving…". If you reload or close the page then, the text since the last "Saved" can be lost, and nothing is sent. Then, while Rufi sends your message, the box says "Sending…" and you can't change it. If another tab changed the text just before, nothing is sent and the box shows that tab's text. You can use another conversation meanwhile. The box clears when the AI has taken your message. If the AI can't take it, your text stays in the box with the reason.
+When you send, Rufi first saves your text: the box says "Saving…". If you reload or close the page then, the text since the last "Saved" can be lost, and nothing is sent. Then, while Rufi sends your message, the box says "Sending…" and you can't change it. If another tab changed the text just before, nothing is sent and the box shows that tab's text. You can go to another page meanwhile. The box clears when the AI has taken your message. If the AI can't take it, your text stays in the box with the reason.
 
-If you reload or close the page while the box says "Sending…", nothing is lost: when you come back, the box is empty if the AI took the message, still says "Sending…" until it knows, or shows your text again if the message hadn't left yet. If you stop the reply or Rufi stops during a send, or the AI doesn't answer it, Rufi keeps your text, but it may not know whether the AI got it: the box says so. Check the conversation before you send it again. Rufi never sends a message again by itself: send it again when you want to.
+If you reload or close the page while the box says "Sending…", nothing is lost: when you come back, the box is empty if the AI took the message, still says "Sending…" until it knows, or shows your text again if the message hadn't left yet. If you stop the reply or Rufi stops during a send, or the AI doesn't answer it, Rufi keeps your text, but it may not know whether the AI got it: the box says so. Check the chat before you send it again. Rufi never sends a message again by itself: send it again when you want to.
 
 A message can have up to 10,000 characters. When the box has more, it says so, and Rufi doesn't keep or send the text until you make it shorter.
 
@@ -55,6 +51,7 @@ A message can have up to 10,000 characters. When the box has more, it says so, a
 - **Based on**, a link under an answer once the reply has ended. It opens where the answer comes from. See [Where an answer comes from](#where-an-answer-comes-from).
 - **Receipts**, with a tick, each time the AI saved something to your record: "Saved", then one line for each change. Rufi writes them. See [Changing your record](#changing-your-record).
 - **How a reply ended**, when it didn't finish: for example "Stopped.", or that your ChatGPT plan's usage limit has been reached, with the time it resets.
+- **A quiet line**, "The AI started afresh here. It can still read earlier messages.", where the AI started again with a new memory of the chat: after you changed the model, when Rufi changed the AI's tools, when the AI's own copy of the chat was lost (for example after a restore), or where the AI compacted its memory of a long chat. From there, the AI has the chat's last messages, and it reads further back when it needs to. See [The AI's memory of the chat](#the-ais-memory-of-the-chat).
 
 ## Asking about your record
 
@@ -62,21 +59,21 @@ Ask the AI about your record in your own words, for example "What was my last Hb
 
 What the AI's reads can do:
 
-- **Only this person's record.** A read gets only the records of the person the conversation is about. It can't read another person's record, your conversations or Rufi's settings. Rufi chooses the person, not the AI.
+- **Only this person's record.** A read gets only the records of the person whose chat it is. It can't read another person's record, the chat or Rufi's settings. Rufi chooses the person, not the AI.
 - **Only read.** A read can't change anything.
 - **Removed records too.** Records you removed, and the earlier versions of amended results, are in a read too, marked as removed or replaced.
 - **Limits.** One read gives the AI at most 200 records and 32 KB of them, newest first. When there are more, Rufi tells the AI that the read was capped, and the AI reads fewer dates at a time or says in its answer what that means. A read that failed gives the AI an error, never an empty list.
 
-If your record changes while the AI answers, for example a save in another conversation, two of its reads can see the record before and after the change. Rufi keeps what each read got back with the conversation.
+If your record changes while the AI answers, for example because the AI saved something in the same reply, two of its reads can see the record before and after the change. Rufi keeps what each read got back with the chat.
 
 ## Where an answer comes from
 
 Under an answer, once the reply has ended, the **Based on** link opens two parts:
 
-- **How**: the AI's own words on where the answer comes from: your record, read in this reply or earlier in the conversation, the web, or general knowledge. It also says how the AI got the answer, for example which results it compared.
-- **Used**: which reads the AI made in that reply, and how each one ended: your Overview, your records of one kind (for example "Read your results in 2026 · 8 records"), a web search or a web page, a command. Rufi makes this list itself, not from the AI's words. What each read got back isn't shown here; Rufi keeps it with the conversation.
+- **How**: the AI's own words on where the answer comes from: your record, read in this reply or earlier in the chat, the web, or general knowledge. It also says how the AI got the answer, for example which results it compared.
+- **Used**: which reads the AI made in that reply, and how each one ended: your Overview, your records of one kind (for example "Read your results in 2026 · 8 records"), a web search or a web page, a command. Rufi makes this list itself, not from the AI's words. What each read got back isn't shown here; Rufi keeps it with the chat.
 
-Used is what the AI read, not proof that each read supports the answer. For the web, Rufi sees what was searched or opened, not the text of the page. When a read failed, stopped or was capped, its line says so. When the AI answers from something it read earlier in the conversation, Used is empty for that reply, and How says so. If How and Used don't agree, ask the AI.
+Used is what the AI read, not proof that each read supports the answer. For the web, Rufi sees what was searched or opened, not the text of the page. When a read failed, stopped or was capped, its line says so. When the AI answers from something it read earlier in the chat, Used is empty for that reply, and How says so. If How and Used don't agree, ask the AI.
 
 Anything that changes what an answer means, such as only two readings or a missing month, is in the answer itself, not only under Based on.
 
@@ -91,7 +88,7 @@ You change your record by telling the AI in the chat. Nothing changes until you 
 1. Tell the AI, for example "I stopped creatine because of a stomach upset".
 2. The AI reads your record, then says what it will save and asks you. Nothing is saved yet.
 3. Say yes to save it. If you say no, ask a question, or say "yes, but explain first", the AI saves nothing.
-4. The conversation shows a receipt with a tick: "Saved", then one line for each change, with the record's name in bold and each changed detail as old → new. For example:
+4. The chat shows a receipt with a tick: "Saved", then one line for each change, with the record's name in bold and each changed detail as old → new. For example:
 
    > **Saved**
    >
@@ -118,7 +115,7 @@ Say "undo that". The AI reads the save and your record as it is now. It tells yo
 
 ### When a save and a stop meet
 
-If you stop the reply while the AI saves, the save can still finish. Then its receipt shows in the conversation, and the AI sees it the next time you write. Say "undo that" if you don't want it.
+If you stop the reply while the AI saves, the save can still finish. Then its receipt shows in the chat, and the AI sees it the next time you write. Say "undo that" if you don't want it.
 
 ## While the AI replies
 
@@ -132,18 +129,24 @@ If you stop the reply while the AI saves, the save can still finish. Then its re
 
 After you stop a reply, waiting messages keep waiting. Send a message, or click **Run now** (the play sign) on one of them, to go on.
 
-**Steer.** To change the reply that is running, type in the box and click **Steer** instead of sending. Your text goes into that reply, and the AI takes it at its next step. The conversation shows it as your message, marked "Steer".
+**Steer.** To change the reply that is running, type in the box and click **Steer** instead of sending. Your text goes into that reply, and the AI takes it at its next step. The chat shows it as your message, marked "Steer".
 
 ## The model
 
-Each conversation has its own model. To change it, click the model's name in the panel or on the page, and choose another. A new conversation shows the first model in your list of models (`models.json`, see [Your data and the AI](your-data-and-the-ai.md)) that your ChatGPT plan offers now. In a new data folder, that is GPT-6-Astra. Choose another before your first message if you like. To make another model the first choice, put it first in the list.
+Your chat has one model at a time. To change it, click the model's name in the panel or on the page, and choose another. Before your first message, the chat shows the first model in your list of models (`models.json`, see [Your data and the AI](your-data-and-the-ai.md)) that your ChatGPT plan offers now. In a new data folder, that is GPT-6-Astra. Choose another before your first message if you like. To make another model the first choice, put it first in the list.
 
-You can't change the model while a reply runs or messages wait. Rufi says so: stop the reply, or run or delete the waiting messages, then change it. A new model starts the AI afresh with the conversation's last 10 messages.
+You can't change the model while a reply runs or messages wait. Rufi says so: stop the reply, or run or delete the waiting messages, then change it.
+
+## The AI's memory of the chat
+
+The AI keeps its own memory of the chat while you talk. When that memory gets long, the AI compacts it. Rufi starts the AI afresh only when it must: when you change the model, when Rufi's tools change, or when the AI's own copy of the chat is lost. Then the AI gets the chat's last 10 messages, and it can read further back in the chat when it needs to.
+
+Each place where the AI started afresh or compacted its memory shows the quiet line "The AI started afresh here. It can still read earlier messages." It shows above the first reply that really came from the new start: a model you chose but didn't use shows no line. If the AI finishes compacting while Rufi isn't running, that place shows no line.
 
 ## What you typed but didn't send
 
-Rufi saves what you type in the box as the conversation's draft, a moment after you stop typing, and at once when you go to another conversation or page. Under the box, "Saving…" turns into "Saved". A saved draft stays when you change the size of the chat, go to another page, reload the page or start Rufi again. Rufi never sends a draft by itself.
+Rufi saves what you type in the box as the chat's draft, a moment after you stop typing, and at once when you go to another page. Under the box, "Saving…" turns into "Saved". A saved draft stays when you change the size of the chat, go to another page, reload the page or start Rufi again. Rufi never sends a draft by itself.
 
-Wait for "Saved" before you reload, close the page or stop Rufi: what you typed in the last moment before can be lost. If a save fails, the box says "Not saved" with the reason, and your text stays in this tab, also when you go to another conversation and back. Click **Retry** to save it again.
+Wait for "Saved" before you reload, close the page or stop Rufi: what you typed in the last moment before can be lost. If a save fails, the box says "Not saved" with the reason, and your text stays in this tab, also when you go to another page and back. Click **Retry** to save it again.
 
-If you type in the same conversation in two browser tabs, the tab that saves or sends second shows "Changed in another tab" and the newer text, and sends nothing. Go on from there.
+If you type in the chat in two browser tabs, the tab that saves or sends second shows "Changed in another tab" and the newer text, and sends nothing. Go on from there.

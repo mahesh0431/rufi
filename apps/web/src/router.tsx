@@ -5,6 +5,7 @@ import {
   createRoute,
   createRouter,
   Link,
+  redirect,
   useLocation,
 } from "@tanstack/react-router";
 import { ChatPage } from "./chat.tsx";
@@ -51,9 +52,9 @@ const home = createRoute({
 
 const chat = createRoute({
   getParentRoute: () => root,
-  path: "/people/$personId/chats/$chatId",
+  path: "/people/$personId/chat",
   component: function Chat() {
-    const { personId, chatId } = chat.useParams();
+    const { personId } = chat.useParams();
     const people = usePeople();
     if (people.data === undefined) {
       return people.error ? (
@@ -66,9 +67,21 @@ const chat = createRoute({
     if (!person) {
       return <div className="px-6 py-8 text-muted">There is no page here.</div>;
     }
-    return (
-      <ChatPage key={`${personId}/${chatId}`} person={person} chatId={chatId} />
-    );
+    return <ChatPage key={personId} person={person} />;
+  },
+});
+
+// Addresses of the conversations Rufi once had lead to the person's chat.
+const conversation = createRoute({
+  getParentRoute: () => root,
+  path: "/people/$personId/conversations/$conversationId",
+  beforeLoad: ({ params }) => {
+    redirect({
+      to: "/people/$personId/chat",
+      params: { personId: params.personId },
+      replace: true,
+      throw: true,
+    });
   },
 });
 
@@ -115,6 +128,7 @@ export const router = createRouter({
   routeTree: root.addChildren([
     home,
     chat,
+    conversation,
     settings,
     signIn,
     helpIndex,
