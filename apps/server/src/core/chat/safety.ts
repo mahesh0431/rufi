@@ -51,6 +51,6 @@ export function safetyInstructions(region: string | undefined): string {
     known
       ? ""
       : `
-- The user hasn't chosen their emergency region in Rufi. You may also give an emergency number you know, from the web or your own knowledge, but then say that their region isn't set in Rufi and where the number comes from.`
+- The user hasn't chosen their emergency region in Rufi. When you tell them to call their local emergency number, also say that their region isn't set in Rufi. You may give an emergency number you know, from the web or your own knowledge; then say where the number comes from.`
   }`;
 }

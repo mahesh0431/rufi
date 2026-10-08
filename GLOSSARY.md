@@ -137,7 +137,7 @@ A saved write-up of something the AI looked into for a person, with its sources.
 _Avoid_: note, article
 
 **Emergency region**:
-The region whose emergency number the AI gives when a message may describe an emergency. You choose it in Settings. With none chosen, the AI says to call your local emergency number; if it also gives a number, it says that your region isn't set and where the number comes from.
+The region whose emergency number the AI gives when a message may describe an emergency. You choose it in Settings. With none chosen, the AI says to call your local emergency number and that your region isn't set; if it also gives a number, it says where the number comes from.
 _Avoid_: country, locale
 
 **Emergency sheet**:

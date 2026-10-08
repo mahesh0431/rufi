@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emergencyFor, safetyInstructions } from "./safety.ts";
 
-const NOT_SET =
-  "their region isn't set in Rufi and where the number comes from";
+const NOT_SET = "also say that their region isn't set in Rufi";
 
 describe("the emergency number", () => {
   it("is the local one for a region Rufi doesn't know, or none; the AI says the region isn't set", () => {

@@ -65,7 +65,7 @@ What the AI's queries can do:
 - **Only this person's record.** A query reads only the record of the person the conversation is about. It can't read another person's record, your conversations or Rufi's settings. Rufi chooses the person, not the AI.
 - **Only read.** A query can't change anything.
 - **Removed records too.** Records you removed, and the earlier versions of amended results, stay readable, marked as removed or replaced.
-- **Limits.** Rufi stops a query after 5 seconds, and gives the AI at most 200 rows and 32 KB of them. When a limit cuts what came back, Rufi tells the AI, and the AI says in its answer what that means. A query that failed or was stopped gives the AI no rows, never an empty answer.
+- **Limits.** Rufi stops a query after 5 seconds, and gives the AI at most 200 rows and 32 KB of them. When a limit cuts what came back, Rufi tells the AI, and the AI says in its answer what that means. A query that failed or was stopped gives the AI its error, never an empty list of rows.
 
 If your record changes while the AI answers, for example a save in another conversation, two of its reads can see the record before and after the change. Used shows what each read got back.
 
@@ -80,7 +80,7 @@ Used is what the AI read, not proof that each read supports the answer. For the 
 
 Anything that changes what an answer means, such as only two readings or a missing month, is in the answer itself, not only under Based on.
 
-Small talk, such as "thanks", has no Based on. While a reply runs, Based on isn't there yet. If you stop a reply, or Rufi closes during it, what the AI wrote so far stays, without How; Based on shows only what the AI had read.
+Small talk, such as "thanks", has no How, and no Based on when the AI read nothing. While a reply runs, Based on isn't there yet. If you stop a reply, or Rufi closes during it, what the AI wrote so far stays, without How; Based on shows only what the AI had read.
 
 The AI writes How at the end of its reply, and Rufi shows it under Based on, not in the answer. If the AI forgets it, the answer has no How.
 
