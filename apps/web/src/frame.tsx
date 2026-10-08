@@ -7,9 +7,18 @@ import { type ReactNode, useState } from "react";
 import { useConnection } from "./api.ts";
 import { ChatDock, titleOf, useNewConversation } from "./chat.tsx";
 import { messageOf } from "./live.ts";
-import { useConversations, usePeople, useStatus } from "./reads.ts";
+import {
+  useConversations,
+  useFirstRun,
+  usePeople,
+  useStatus,
+} from "./reads.ts";
 
-const TITLES: Record<string, string> = { settings: "Settings", help: "Help" };
+const TITLES: Record<string, string> = {
+  settings: "Settings",
+  help: "Help",
+  "sign-in": "Sign in with ChatGPT",
+};
 
 /** The person and conversation of a conversation page's address. */
 const conversationOf = (pathname: string) => {
@@ -25,6 +34,10 @@ const conversationOf = (pathname: string) => {
 export function Frame() {
   const connection = useConnection();
   const person = usePeople().data?.[0];
+  const step = useFirstRun().data?.step;
+  const welcomed = step === "done";
+  /** On the first run, which Home shows; known only once the core says so. */
+  const welcoming = step !== undefined && !welcomed;
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
@@ -43,16 +56,18 @@ export function Frame() {
           aria-label="Pages"
           className="mt-2 flex min-h-0 flex-1 flex-col gap-0.5"
         >
-          {person && (
+          {person && !welcoming && (
             <NewConversation
               personId={person.id}
               onPage={onConversation !== null}
             />
           )}
-          <Place to="/" icon={<House size={15} aria-hidden />}>
-            Overview
-          </Place>
-          {person ? (
+          {!welcoming && (
+            <Place to="/" icon={<House size={15} aria-hidden />}>
+              Overview
+            </Place>
+          )}
+          {person && !welcoming ? (
             <Conversations
               person={person}
               current={onConversation?.conversationId}
@@ -78,7 +93,8 @@ export function Frame() {
             {onConversation ? (
               <ConversationTitle {...onConversation} />
             ) : (
-              (TITLES[pathname.split("/")[1] ?? ""] ?? "Overview")
+              (TITLES[pathname.split("/")[1] ?? ""] ??
+              (welcoming ? "Welcome" : "Overview"))
             )}
           </h1>
         </header>
@@ -102,9 +118,10 @@ export function Frame() {
           )}
         </main>
       </div>
-      {person && connection !== "ended" && onConversation === null && (
-        <ChatDock person={person} />
-      )}
+      {person &&
+        welcomed &&
+        connection !== "ended" &&
+        onConversation === null && <ChatDock person={person} />}
     </div>
   );
 }
@@ -222,8 +239,7 @@ function Account() {
   if (account === undefined || account === "signed_in") return null;
   return (
     <Link
-      to="/help/$page"
-      params={{ page: "signing-in" }}
+      to="/sign-in"
       className="px-2 pt-2 text-xs text-accent-ink hover:underline"
     >
       {account === "signed_out"

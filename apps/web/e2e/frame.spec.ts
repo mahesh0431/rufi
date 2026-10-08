@@ -1,6 +1,9 @@
 // The frame on the real core: opening Rufi, first run, sign-in, Overview,
 // Settings and Help, and what the page does when the core is slow or gone.
+import { chmod, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
+import { strFromU8, unzipSync } from "fflate";
 import type { Page } from "@playwright/test";
 import { runningLink } from "../../server/src/server/core.ts";
 import { expect, test } from "./rufi.ts";
@@ -98,24 +101,135 @@ test.describe("opening Rufi", () => {
   });
 });
 
-test("first run asks your name and adds you", async ({ page, rufi }) => {
-  await rufi.start();
-  await page.goto(rufi.link());
-  const name = page.getByRole("textbox", { name: "What's your name?" });
-  await expect(name).toBeFocused();
-  await accessible(page);
+test.describe("first run", () => {
+  test("not a doctor, your name, sign-in or skip, the region; a reload continues where it was", async ({
+    page,
+    rufi,
+  }) => {
+    rufi.account = { account: "signed_out", email: null };
+    await rufi.start();
+    await page.goto(rufi.link());
+    // Each step is titled Welcome, and the sidebar offers no conversation
+    // or Overview until the first run is done.
+    const title = page.getByRole("banner").getByRole("heading");
+    const welcoming = async () => {
+      await expect(title).toHaveText("Welcome");
+      await expect(
+        sidebar(page).getByRole("link", { name: "Overview" }),
+      ).toHaveCount(0);
+      await expect(
+        sidebar(page).getByRole("button", { name: "New conversation" }),
+      ).toHaveCount(0);
+    };
+    await expect(
+      page.getByRole("heading", { name: "Welcome to Rufi" }),
+    ).toBeVisible();
+    await welcoming();
+    await expect(page.getByRole("main")).toContainText(
+      "What you ask, and the parts of your record the AI reads to answer, are sent to the AI in the cloud. Your record is kept on your Mac.",
+    );
+    await accessible(page);
+    const next = page.getByRole("button", { name: "Continue" });
+    await expect(next).toBeDisabled();
+    await page
+      .getByRole("checkbox", { name: "I understand Rufi is not a doctor" })
+      .check();
+    await next.click();
 
-  await name.fill("Mira Fictional");
-  await page.getByRole("button", { name: "Continue" }).click();
-  await expect(
-    page.getByRole("heading", { name: /, Mira Fictional$/ }),
-  ).toBeVisible();
-  await expect(
-    page.getByText(
-      "Your latest results will be shown here when your record has some.",
-    ),
-  ).toBeVisible();
-  await expect(sidebar(page)).toContainText("Mira Fictional");
+    const name = page.getByRole("textbox", { name: "What's your name?" });
+    await expect(name).toBeFocused();
+    await page.reload();
+    await name.fill("Mira Fictional");
+    await page.getByRole("button", { name: "Continue" }).click();
+
+    await expect(
+      page.getByRole("heading", { name: "Sign in with ChatGPT", level: 2 }),
+    ).toBeVisible();
+    await welcoming();
+    await accessible(page);
+    await page.reload();
+    await page.getByRole("button", { name: "Skip for now" }).click();
+
+    const region = page.getByRole("combobox", { name: "Emergency region" });
+    await welcoming();
+    await accessible(page);
+    await page.reload();
+    await region.selectOption("IN");
+    await page.getByRole("button", { name: "Continue" }).click();
+
+    await expect(
+      page.getByRole("heading", { name: /, Mira Fictional$/ }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        "Your latest results will be shown here when your record has some.",
+      ),
+    ).toBeVisible();
+    await expect(sidebar(page)).toContainText("Mira Fictional");
+    await expect(title).toHaveText("Overview");
+    await expect(
+      sidebar(page).getByRole("button", { name: "New conversation" }),
+    ).toBeVisible();
+    await sidebar(page).getByRole("link", { name: "Settings" }).click();
+    await expect(
+      page.getByRole("combobox", { name: "Emergency region" }),
+    ).toHaveValue("IN");
+  });
+
+  test("signs in with ChatGPT from the app", async ({ page, rufi }) => {
+    rufi.account = { account: "signed_out", email: null };
+    await rufi.start();
+    await page.goto(rufi.link());
+    await page
+      .getByRole("checkbox", { name: "I understand Rufi is not a doctor" })
+      .check();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page
+      .getByRole("textbox", { name: "What's your name?" })
+      .fill("Mira Fictional");
+    await page.getByRole("button", { name: "Continue" }).click();
+
+    await page.getByRole("button", { name: "Sign in with ChatGPT" }).click();
+    await expect(page.getByRole("status")).toContainText(
+      "Your browser opens ChatGPT's sign-in.",
+    );
+    await expect(
+      page.getByRole("link", { name: "open the sign-in page" }),
+    ).toHaveAttribute("href", "https://auth.example.com/authorize?fictional=1");
+    expect(rufi.signIns).toHaveLength(1);
+    rufi.signIns[0]?.resolve(undefined);
+
+    await expect(
+      page.getByRole("combobox", { name: "Emergency region" }),
+    ).toBeVisible();
+    await expect(sidebar(page)).not.toContainText("Not signed in");
+  });
+
+  test("two tabs make one person", async ({ page, rufi, context }) => {
+    await rufi.start();
+    await page.goto(rufi.link());
+    await page
+      .getByRole("checkbox", { name: "I understand Rufi is not a doctor" })
+      .check();
+    await page.getByRole("button", { name: "Continue" }).click();
+    const other = await context.newPage();
+    await other.goto(rufi.link());
+
+    await other
+      .getByRole("textbox", { name: "What's your name?" })
+      .fill("Mira F.");
+    await page
+      .getByRole("textbox", { name: "What's your name?" })
+      .fill("Mira Fictional");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(sidebar(page)).toContainText("Mira Fictional");
+    // The other tab still shows the form; its name isn't added.
+    await other.getByRole("button", { name: "Continue" }).click();
+    await expect(
+      other.getByRole("combobox", { name: "Emergency region" }),
+    ).toBeVisible();
+    await expect(sidebar(other)).toContainText("Mira Fictional");
+  });
 });
 
 test.describe("sign-in status", () => {
@@ -132,14 +246,19 @@ test.describe("sign-in status", () => {
     await expect(sidebar(page)).not.toContainText(/signed in|ChatGPT/);
   });
 
-  test("signed out links to how to sign in", async ({ page, rufi }) => {
+  test("signed out links to signing in", async ({ page, rufi }) => {
     rufi.account = { account: "signed_out", email: null };
+    await rufi.family();
     await rufi.start();
     await page.goto(rufi.link());
     await sidebar(page).getByRole("link", { name: "Not signed in" }).click();
     await expect(
-      page.getByRole("heading", { name: "Signing in with ChatGPT" }),
+      page.getByRole("heading", { name: "Sign in with ChatGPT" }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Sign in with ChatGPT" }),
+    ).toBeVisible();
+    await accessible(page);
   });
 
   test("signed in, but the plan can't be used", async ({ page, rufi }) => {
@@ -330,6 +449,86 @@ test("Settings keeps the emergency region the AI uses, and clears it", async ({
   await expect(region).toHaveValue("");
 });
 
+test("Settings backs up, says when a backup failed, and exports your data", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await page.goto(rufi.link());
+  // Settings opens while the backup Rufi makes as it starts still runs; the
+  // page follows it to its end by itself.
+  let first = true;
+  await page.route("**/api/backups", async (route) => {
+    if (!first || route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    first = false;
+    await route.fulfill({
+      json: { last: null, failed: null, running: true },
+    });
+  });
+  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  await expect(
+    page.getByRole("button", { name: "Backing up…" }),
+  ).toBeDisabled();
+  // Rufi is still finding its backups: it doesn't claim there are none.
+  await expect(page.getByText(/No backup yet/)).toHaveCount(0);
+  await expect(page.getByText(/^Last backup at \d\d:\d\d on /)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back up now" })).toBeEnabled();
+  await accessible(page);
+
+  await chmod(join(rufi.home, "backups"), 0o500);
+  try {
+    await page.getByRole("button", { name: "Back up now" }).click();
+    await expect(page.getByRole("alert")).toHaveText(
+      /^The last try failed at \d\d:\d\d on .+: the backups folder can't be written\. Your last good backup is from \d\d:\d\d on /,
+    );
+  } finally {
+    await chmod(join(rufi.home, "backups"), 0o700);
+  }
+  await page.getByRole("button", { name: "Back up now" }).click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export my data" }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toMatch(
+    /^rufi-export-\d{4}-\d{2}-\d{2}\.zip$/,
+  );
+  const files = unzipSync(await readFile(await file.path()));
+  const folder = file.suggestedFilename().replace(/\.zip$/, "");
+  expect(
+    strFromU8(files[`${folder}/json/people.json`] ?? new Uint8Array()),
+  ).toContain("Asha Fictional");
+  await expect(page.getByRole("status")).toHaveText(
+    `Exported ${file.suggestedFilename()}.`,
+  );
+});
+
+test("an export that doesn't come in time says so, and can be tried again", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await page.clock.install();
+  await page.goto(rufi.link());
+  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  // Rufi takes the request and never answers.
+  await page.route("**/api/export", () => undefined);
+  await page.getByRole("button", { name: "Export my data" }).click();
+  await expect(page.getByRole("button", { name: "Exporting…" })).toBeDisabled();
+  await page.clock.runFor(5 * 60_000);
+  await expect(page.getByRole("alert")).toHaveText(
+    "The export didn't come in time. Try again.",
+  );
+  await expect(
+    page.getByRole("button", { name: "Export my data" }),
+  ).toBeEnabled();
+});
+
 test.describe("Help", () => {
   test("pages, links between them, anchors and the glossary", async ({
     page,
@@ -357,10 +556,13 @@ test.describe("Help", () => {
 
     await page.goBack();
     await page.getByRole("link", { name: "Getting started" }).click();
-    await page.getByRole("link", { name: "how to sign in" }).click();
-    await expect(page).toHaveURL(/\/help\/signing-in#sign-in$/);
+    await page
+      .getByRole("link", { name: "Signing in with ChatGPT" })
+      .first()
+      .click();
+    await expect(page).toHaveURL(/\/help\/signing-in#sign-in-in-rufi$/);
     await expect(
-      page.getByRole("heading", { name: "Sign in", exact: true }),
+      page.getByRole("heading", { name: "Sign in in Rufi", exact: true }),
     ).toBeInViewport();
   });
 

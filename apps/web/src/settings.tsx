@@ -1,9 +1,12 @@
-// Settings: for now, the region whose emergency number the AI gives.
-import { type SaveSettings, Settings } from "@rufi/contracts";
+// Settings: the region whose emergency number the AI gives, backups, and
+// the export of your data.
+import { Backups, type SaveSettings, Settings } from "@rufi/contracts";
 import { useMutation } from "@tanstack/react-query";
-import { read } from "./api.ts";
-import { queries, useSettings } from "./reads.ts";
-import { Problem } from "./ui.tsx";
+import { DatabaseBackup, Download } from "lucide-react";
+import { download, read } from "./api.ts";
+import { printedTime } from "./dates.ts";
+import { queries, useBackups, useSettings } from "./reads.ts";
+import { Button, Problem } from "./ui.tsx";
 
 export function SettingsPage() {
   const settings = useSettings();
@@ -59,6 +62,99 @@ export function SettingsPage() {
           )
         )}
       </div>
+      <BackupsSection />
+      <ExportSection />
     </div>
+  );
+}
+
+function BackupsSection() {
+  const backups = useBackups();
+  const backUp = useMutation({
+    mutationFn: () => read(Backups, "POST", "/api/backups"),
+    onSuccess: (status) => queries.setQueryData(["backups"], status),
+  });
+  const status = backups.data;
+  return (
+    <>
+      <h2 className="mt-8 mb-2 px-0.5 font-semibold">Backups</h2>
+      <div className="flex flex-col gap-2 rounded-xl border border-line bg-white p-4">
+        {status === undefined && backups.error ? (
+          <Problem error={backups.error} retry={() => void backups.refetch()} />
+        ) : (
+          status && (
+            <>
+              <p>
+                {status.last
+                  ? `Last backup ${printedTime(status.last.createdAt)}. `
+                  : !status.running && "No backup yet. "}
+                Rufi makes one when it starts, then each day while it runs.
+              </p>
+              {status.failed && (
+                <p role="alert" className="text-accent-ink">
+                  The last try failed {printedTime(status.failed.at)}:{" "}
+                  {status.failed.reason}.{" "}
+                  {status.last
+                    ? `Your last good backup is from ${printedTime(status.last.createdAt).replace(/^at /, "")}.`
+                    : "There is no good backup yet."}
+                </p>
+              )}
+              <Button
+                className="self-start"
+                disabled={status.running || backUp.isPending}
+                onClick={() => {
+                  backUp.mutate();
+                }}
+              >
+                <DatabaseBackup size={15} aria-hidden />
+                {status.running || backUp.isPending
+                  ? "Backing up…"
+                  : "Back up now"}
+              </Button>
+              {backUp.error && (
+                <p role="alert" className="text-muted">
+                  {backUp.error.message}
+                </p>
+              )}
+            </>
+          )
+        )}
+      </div>
+    </>
+  );
+}
+
+function ExportSection() {
+  const exported = useMutation({ mutationFn: () => download("/api/export") });
+  return (
+    <>
+      <h2 className="mt-8 mb-2 px-0.5 font-semibold">Export</h2>
+      <div className="flex flex-col gap-2 rounded-xl border border-line bg-white p-4">
+        <p>
+          One zip with everything in your record, your conversations and Rufi's
+          settings.
+        </p>
+        <Button
+          className="self-start"
+          disabled={exported.isPending}
+          onClick={() => {
+            exported.mutate();
+          }}
+        >
+          <Download size={15} aria-hidden />
+          {exported.isPending ? "Exporting…" : "Export my data"}
+        </Button>
+        {exported.data && (
+          <p role="status" className="text-muted">
+            Exported {exported.data}.
+          </p>
+        )}
+        {exported.error && (
+          <p role="alert" className="text-muted">
+            {exported.error.message}
+          </p>
+        )}
+      </div>
+    </>
   );
 }

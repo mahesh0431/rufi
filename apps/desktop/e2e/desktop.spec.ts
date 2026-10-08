@@ -4,8 +4,10 @@
 // fails, new windows, and what the page can't do. Dock, menus, focus and the
 // looks are checked by hand on the Mac.
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
+import { unzipSync } from "fflate";
 import { holdRufiLock } from "../../server/src/platform/files.ts";
 import {
   alive,
@@ -17,9 +19,9 @@ import {
   test,
 } from "./app.ts";
 
-/** The first-run question: the page loaded and its session works. */
+/** The first run's welcome: the page loaded and its session works. */
 const working = (page: Page) =>
-  expect(page.getByLabel("What's your name?")).toBeVisible();
+  expect(page.getByRole("heading", { name: "Welcome to Rufi" })).toBeVisible();
 
 /** The app's only `rufi start`, which runs its Rufi. */
 async function core(desktop: Desktop, app: App): Promise<number> {
@@ -169,7 +171,7 @@ test.describe("stopping", () => {
           event.preventDefault();
         });
       });
-      await page.getByLabel("What's your name?").click();
+      await page.getByLabel("I understand Rufi is not a doctor").click();
 
       if (how === "⌘Q") {
         await app.electron.evaluate(({ app }) => {
@@ -305,6 +307,26 @@ test.describe("the page", () => {
       .poll(() => app.told)
       .toEqual([{ kind: "download", value: "cancelled" }]);
     expect(existsSync(saved)).toBe(false);
+  });
+
+  test("saves the export where the person chooses", async ({ desktop }) => {
+    const app = await desktop.launch();
+    const page = await app.electron.firstWindow();
+    await working(page);
+    await page.getByRole("link", { name: "Settings" }).click();
+    await page.getByRole("button", { name: "Export my data" }).click();
+    await expect(page.getByRole("status")).toContainText("Exported");
+    await expect.poll(() => app.told.map((t) => t.kind)).toEqual(["save"]);
+    const { name, path } = (app.told[0]?.value ?? {}) as {
+      name: string;
+      path: string;
+    };
+    expect(name).toMatch(/^rufi-export-\d{4}-\d{2}-\d{2}\.zip$/);
+    await expect.poll(() => existsSync(path)).toBe(true);
+    const files = unzipSync(await readFile(path));
+    expect(Object.keys(files)).toContain(
+      `${name.replace(/\.zip$/, "")}/README.md`,
+    );
   });
 
   test("keeps Rufi in the window and sends web links to the browser", async ({

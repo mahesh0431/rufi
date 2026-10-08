@@ -26,6 +26,11 @@ const SCREENS = join(import.meta.dirname, "../dist");
 export class Rufi {
   /** What the sign-in status says; tests may change it. */
   account: Status = { account: "signed_in", email: "asha@example.com" };
+  /**
+   * The sign-ins started from the screens, waiting for ChatGPT's answer;
+   * one that succeeds signs Rufi in. No browser opens.
+   */
+  readonly signIns: PromiseWithResolvers<undefined>[] = [];
   #scope: Scope.Closeable | undefined;
   #core: Core | undefined;
   #model: FakeModel | undefined;
@@ -36,11 +41,18 @@ export class Rufi {
     this.home = home;
   }
 
-  /** Adds the fictional family (and any more rows) to the data folder. */
+  /**
+   * Adds the fictional family (and any more rows) to the data folder, with
+   * the first run done.
+   */
   async family(...more: string[]): Promise<void> {
     const store = openWritable(databasePath(this.home));
     try {
       store.db.exec(await readFile(FAMILY, "utf8"));
+      store.db.exec(`INSERT INTO settings (key, value) VALUES
+        ('first_run.understood', '2026-10-01T09:00:00Z'),
+        ('first_run.sign_in_skipped', '2026-10-01T09:00:00Z'),
+        ('first_run.done', '2026-10-01T09:00:00Z')`);
       for (const statements of more) store.db.exec(statements);
     } finally {
       store.close();
@@ -87,6 +99,14 @@ export class Rufi {
           }),
         log: () => undefined,
         account: () => Promise.resolve(this.account),
+        signIn: async ({ showLink }) => {
+          showLink("https://auth.example.com/authorize?fictional=1");
+          const run = Promise.withResolvers<undefined>();
+          this.signIns.push(run);
+          await run.promise;
+          this.account = { account: "signed_in", email: "asha@example.com" };
+          return { email: "asha@example.com" };
+        },
         screens: SCREENS,
         ...(port !== undefined && { port }),
       }).pipe(Scope.provide(scope)),

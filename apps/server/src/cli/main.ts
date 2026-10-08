@@ -5,7 +5,7 @@
 import { execFile } from "node:child_process";
 import { access } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -25,6 +25,7 @@ import {
   RecordStore,
   recordLayer,
 } from "../core/store/database.ts";
+import { restore } from "../core/store/restore.ts";
 import { forAgent } from "../core/tools/tools.ts";
 import { childEnvironment, Home, homeLayer } from "../platform/config.ts";
 import { holdRufiLock } from "../platform/files.ts";
@@ -47,7 +48,9 @@ const USAGE = `Usage: pnpm rufi <command>
   signout             sign out and revoke the sign-in
   ask "question"      ask the AI and watch the answer stream (Ctrl-C stops it)
       [--person id]   whose record Rufi's tools read (not needed with one person)
-      [--debug]       also print Rufi's log lines`;
+      [--debug]       also print Rufi's log lines
+  restore <backup> <new folder>
+                      restore a backup into a new or empty folder (no RUFI_HOME needed)`;
 
 /** A promise-based step, with its error kept as it is. */
 const run = <A>(step: () => Promise<A>) =>
@@ -111,6 +114,13 @@ const main = Effect.gen(function* () {
       return yield* statusCommand.pipe(Effect.provide(base));
     case "signout":
       return yield* signoutCommand.pipe(Effect.provide(base));
+    case "restore": {
+      const [backup, target, ...more] = rest;
+      if (backup === undefined || target === undefined || more.length > 0) {
+        return yield* usageError;
+      }
+      return yield* restoreCommand(backup, target);
+    }
     case "ask": {
       const { values, positionals } = parseArgs({
         args: rest,
@@ -208,6 +218,28 @@ const signoutCommand = Effect.gen(function* () {
   }
 });
 
+/**
+ * Restores a backup into a new folder. Paths are the person's, from the
+ * folder they ran the command in (pnpm runs it from the checkout).
+ */
+const restoreCommand = (backup: string, target: string) =>
+  Effect.gen(function* () {
+    const from = process.env["INIT_CWD"] ?? process.cwd();
+    const folder = resolve(from, target);
+    const { createdAt } = yield* run(() =>
+      restore(resolve(from, backup), folder),
+    );
+    console.log(
+      `Restored the backup from ${new Date(createdAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })} into ${folder}.`,
+    );
+    console.log("It starts signed out. To open it, run:");
+    console.log(`RUFI_HOME=${shellQuoted(folder)} pnpm start`);
+  });
+
+/** A path as the shell takes it: in single quotes when it needs them. */
+const shellQuoted = (path: string) =>
+  /^[\w./~-]+$/.test(path) ? path : `'${path.replaceAll("'", "'\\''")}'`;
+
 /** The built screens, next to this package. */
 // A file path, decoded: a folder name with a space or an accent stays as it is.
 const SCREENS = fileURLToPath(new URL("../../../web/dist", import.meta.url));
@@ -260,6 +292,13 @@ const startCommand = (open: boolean) =>
           tools,
           host,
           log,
+        }),
+      signIn: ({ showLink }) =>
+        signIn(deps, {
+          showLink,
+          openBrowser: (link) => {
+            openBrowser(link);
+          },
         }),
       account: async () => {
         const now = await status(deps);

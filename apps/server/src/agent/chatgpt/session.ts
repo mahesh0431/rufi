@@ -71,7 +71,7 @@ async function accessTokenLocked(
   if (!registration || !credentials) {
     throw new ChatGptError(
       "not_signed_in",
-      "Not signed in. Run: pnpm rufi signin",
+      "Not signed in. Sign in with ChatGPT: in Rufi, or with pnpm rufi signin.",
     );
   }
   requirePlanUse(credentials);
@@ -101,7 +101,7 @@ async function accessTokenLocked(
       await clearCredentials(deps, registration.hostId);
       throw new ChatGptError(
         "sign_in_again",
-        "Your ChatGPT sign-in has ended. Run: pnpm rufi signin",
+        "Your ChatGPT sign-in has ended. Sign in again: in Rufi, or with pnpm rufi signin.",
       );
     }
     if (error === "invalid_client") {
@@ -121,7 +121,7 @@ async function accessTokenLocked(
     await clearCredentials(deps, registration.hostId);
     throw new ChatGptError(
       "sign_in_again",
-      "ChatGPT returned an unusable renewal. Run: pnpm rufi signin",
+      "ChatGPT returned an unusable renewal. Sign in again: in Rufi, or with pnpm rufi signin.",
     );
   }
   // A new id_token replaces the saved one only if it verifies; one for
@@ -138,7 +138,7 @@ async function accessTokenLocked(
     await clearCredentials(deps, registration.hostId);
     throw new ChatGptError(
       "sign_in_again",
-      "ChatGPT renewed the sign-in for a different account. Run: pnpm rufi signin",
+      "ChatGPT renewed the sign-in for a different account. Sign in again: in Rufi, or with pnpm rufi signin.",
     );
   }
   const idToken =
@@ -167,7 +167,7 @@ function requirePlanUse(credentials: Credentials): void {
   if (!hasPlanUse(credentials.scopes)) {
     throw new ChatGptError(
       "plan_use_off",
-      "ChatGPT plan use isn't allowed for Rufi. Run pnpm rufi signin to allow it.",
+      "ChatGPT plan use isn't allowed for Rufi. Sign in again (in Rufi, or with pnpm rufi signin) to allow it.",
     );
   }
 }

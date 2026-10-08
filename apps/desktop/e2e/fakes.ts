@@ -19,3 +19,12 @@ shell.openExternal = (url: string) => {
   told("browser", url);
   return Promise.resolve();
 };
+// The save dialog: saves in the test's temporary folder, under the name
+// Rufi proposed.
+dialog.showSaveDialogSync = (...args: unknown[]) => {
+  const { defaultPath } = args.at(-1) as { defaultPath?: string };
+  const name = (defaultPath ?? "").split("/").at(-1) ?? "";
+  const path = `${process.env["TMPDIR"] ?? "/tmp"}/${name}`;
+  told("save", { name, path });
+  return path;
+};

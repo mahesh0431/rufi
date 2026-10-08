@@ -35,7 +35,7 @@ import {
   messageOf,
   retain,
 } from "./live.ts";
-import { useConversations, useModels } from "./reads.ts";
+import { useConversations, useModels, useStatus } from "./reads.ts";
 import { FirstMessage, TranscriptView } from "./transcript.tsx";
 
 /** Where the chat's menus open: inside the chat, beside its glass. */
@@ -245,7 +245,7 @@ export function ChatDock({ person }: { person: Person }) {
               />
             )}
           </div>
-          <AiCanBeWrong />
+          <AiCanMakeMistakes />
         </div>
       </Menus>
       <div ref={menus} />
@@ -313,7 +313,7 @@ export function ConversationPage({
             size="page"
             inputRef={field}
           />
-          <AiCanBeWrong />
+          <AiCanMakeMistakes />
         </div>
       </Menus>
     </div>
@@ -358,10 +358,10 @@ function StartBox({
   );
 }
 
-function AiCanBeWrong() {
+function AiCanMakeMistakes() {
   return (
     <p className="pt-1 pb-2 text-center text-[11.5px] text-muted">
-      AI can be wrong
+      AI can make mistakes. Check important info.
     </p>
   );
 }
@@ -392,6 +392,8 @@ function Header({
   actions?: ReactNode;
 }) {
   const [problem, setProblem] = useState<string | null>(null);
+  // The plan is used only when signed in.
+  const signedIn = useStatus().data?.account === "signed_in";
   return (
     <div className={`${className} flex-col`}>
       {title !== null && (
@@ -424,17 +426,19 @@ function Header({
               });
             }}
           />
-          <span className="whitespace-nowrap">
-            · Using ChatGPT plan ·{" "}
-            <a
-              href="https://chatgpt.com/codex/settings/usage"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-            >
-              Manage usage
-            </a>
-          </span>
+          {signedIn && (
+            <span className="whitespace-nowrap">
+              · Using ChatGPT plan ·{" "}
+              <a
+                href="https://chatgpt.com/codex/settings/usage"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                Manage usage
+              </a>
+            </span>
+          )}
         </div>
       )}
       {problem !== null && (

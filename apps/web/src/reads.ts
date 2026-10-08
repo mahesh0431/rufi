@@ -1,7 +1,9 @@
 // What the screens read from the core, through one query cache. Each read is
 // checked against its contract.
 import {
+  Backups,
   Conversations,
+  FirstRun,
   Models,
   Overview,
   People,
@@ -41,6 +43,25 @@ export const useStatus = () =>
   useQuery({
     queryKey: ["status"],
     queryFn: () => read(Status, "GET", "/api/status"),
+  });
+
+/** The first step of the first run not done yet, kept by the core. */
+export const useFirstRun = () =>
+  useQuery({
+    queryKey: ["first-run"],
+    queryFn: () => read(FirstRun, "GET", "/api/first-run"),
+  });
+
+/**
+ * The last good backup and the last failed try. Rufi backs up by itself, so
+ * an open page asks again: often while one runs, then now and then.
+ */
+export const useBackups = () =>
+  useQuery({
+    queryKey: ["backups"],
+    queryFn: () => read(Backups, "GET", "/api/backups"),
+    refetchInterval: (query) =>
+      query.state.data?.running === true ? 1_000 : 60_000,
   });
 
 const OverviewAnswer = Schema.Struct({ overview: Overview });

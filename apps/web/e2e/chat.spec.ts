@@ -90,7 +90,9 @@ test("using the bar starts a conversation at once; the reply streams in and its 
     "placeholder",
     "Ask or tell Rufi about Asha Fictional…",
   );
-  await expect(chat(page).getByText("AI can be wrong")).toBeVisible();
+  await expect(
+    chat(page).getByText("AI can make mistakes. Check important info."),
+  ).toBeVisible();
   await accessible(page);
 
   // No conversation until you use the box; then it is there, unnamed, and
@@ -104,7 +106,9 @@ test("using the bar starts a conversation at once; the reply streams in and its 
   await expect(sidebar(page).getByRole("listitem")).toHaveText([
     "New conversation",
   ]);
-  await expect(chat(page).getByText("AI can be wrong")).toBeVisible();
+  await expect(
+    chat(page).getByText("AI can make mistakes. Check important info."),
+  ).toBeVisible();
   await expect(chat(page)).toContainText(
     "What you send, and the parts of your record the AI reads to answer, go to OpenAI",
   );
@@ -249,6 +253,22 @@ test("Steer passes your text into the running reply", async ({
   ).toHaveCount(0);
 });
 
+test("signed out, the chat doesn't say it uses the ChatGPT plan", async ({
+  page,
+  rufi,
+}) => {
+  rufi.account = { account: "signed_out", email: null };
+  await opened(page, rufi);
+  await box(chat(page)).click();
+  await expect(
+    chat(page).getByRole("button", { name: "Model: GPT-6-Astra" }),
+  ).toBeVisible();
+  await expect(chat(page)).not.toContainText("Using ChatGPT plan");
+  await expect(
+    chat(page).getByRole("link", { name: "Manage usage" }),
+  ).toHaveCount(0);
+});
+
 test("the model is chosen per conversation, and not while a reply runs", async ({
   page,
   rufi,
@@ -257,26 +277,26 @@ test("the model is chosen per conversation, and not while a reply runs", async (
   await box(chat(page)).click();
   const model = (name: string) =>
     chat(page).getByRole("button", { name: `Model: ${name}` });
-  await model("GPT-6.1-Sol").click();
-  await page.getByRole("menuitemradio", { name: "GPT-6-Astra" }).click();
-  await send(page, "Hello");
-  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
-  await expect(model("GPT-6-Astra")).toBeVisible();
-
-  await send(page, "hang");
   await model("GPT-6-Astra").click();
   await page.getByRole("menuitemradio", { name: "GPT-6.1-Sol" }).click();
+  await send(page, "Hello");
+  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
+  await expect(model("GPT-6.1-Sol")).toBeVisible();
+
+  await send(page, "hang");
+  await model("GPT-6.1-Sol").click();
+  await page.getByRole("menuitemradio", { name: "GPT-6-Astra" }).click();
   await expect(chat(page).getByRole("alert")).toHaveText(
     "Stop the reply before changing the model.",
   );
   await chat(page).getByRole("button", { name: "Stop" }).click();
   await expect(log(chat(page))).toContainText("Stopped.");
-  await model("GPT-6-Astra").click();
-  await page.getByRole("menuitemradio", { name: "GPT-6.1-Sol" }).click();
-  await expect(model("GPT-6.1-Sol")).toBeVisible();
+  await model("GPT-6.1-Sol").click();
+  await page.getByRole("menuitemradio", { name: "GPT-6-Astra" }).click();
+  await expect(model("GPT-6-Astra")).toBeVisible();
   await page.reload();
   await box(chat(page)).click();
-  await expect(model("GPT-6.1-Sol")).toBeVisible();
+  await expect(model("GPT-6-Astra")).toBeVisible();
 });
 
 test("a saved draft survives a reload and a restart, and is never sent by itself", async ({
@@ -915,7 +935,7 @@ test("⌘J opens the panel; Esc steps back and returns focus", async ({
   const minimise = chat(page).getByRole("button", { name: "Minimise" });
   await expect(minimise).toBeVisible();
   // In a menu, Esc closes the menu first.
-  await chat(page).getByRole("button", { name: "Model: GPT-6.1-Sol" }).click();
+  await chat(page).getByRole("button", { name: "Model: GPT-6-Astra" }).click();
   await expect(page.getByRole("menu")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("menu")).toHaveCount(0);

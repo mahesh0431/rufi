@@ -504,10 +504,17 @@ export function transcripts(
         .orderBy("display_name")
         .execute(),
 
-    addPerson: async (displayName: string) => {
-      const person = { id: uuid(), display_name: displayName };
-      await db.insertInto("people").values(person).execute();
-      return { id: person.id, displayName };
+    /**
+     * Adds the first person, as first run does; undefined when someone is
+     * already there. One statement, so two tabs never make two people.
+     */
+    addFirstPerson: async (displayName: string) => {
+      const id = uuid();
+      const { numAffectedRows } = await sql`
+        INSERT INTO people (id, display_name)
+        SELECT ${id}, ${displayName} WHERE NOT EXISTS (SELECT 1 FROM people)
+      `.execute(db);
+      return numAffectedRows === 1n ? { id, displayName } : undefined;
     },
 
     person: (id: string) =>

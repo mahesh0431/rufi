@@ -115,7 +115,7 @@ async function signInLocked(
       if (error === "invalid_grant") {
         throw new ChatGptError(
           "code_expired",
-          "The sign-in code expired or was already used. Run signin again.",
+          "The sign-in code expired or was already used. Sign in again.",
         );
       }
       throw new ChatGptError(
@@ -222,7 +222,7 @@ async function listenForCallback(
       send(
         response,
         400,
-        "This sign-in link didn't match. Go back to the terminal and start again.",
+        "This sign-in link didn't match. Go back to Rufi and start again.",
       );
       reject(
         new ChatGptError(
@@ -247,7 +247,7 @@ async function listenForCallback(
     send(
       response,
       200,
-      "Rufi received your sign-in. You can close this tab and go back to the terminal.",
+      "Rufi received your sign-in. You can close this tab and go back to Rufi.",
     );
     resolve(params);
   });
@@ -259,7 +259,7 @@ async function listenForCallback(
     reject(
       new ChatGptError(
         "timeout",
-        "Sign-in wasn't finished in time. Run signin again.",
+        "Sign-in wasn't finished in time. Sign in again.",
       ),
     );
   }, waitMs);
