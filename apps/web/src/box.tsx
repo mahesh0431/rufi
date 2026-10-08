@@ -1,5 +1,5 @@
-// The chat's box, one for each conversation, the same in every size: what
-// you type is the conversation's draft, kept by the core, and the box says
+// The chat's box, one for each chat, the same in every size: what
+// you type is the chat's draft, kept by the core, and the box says
 // whether it is saved. Enter sends; while a reply runs the message waits,
 // and Steer passes it into the reply instead. The box clears only when the
 // core took the message, and nothing is sent again by itself. The waiting
@@ -19,7 +19,7 @@ import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { ApiError, read, request } from "./api.ts";
-import { startingConversation, useStartingConversation } from "./choice.ts";
+import { startingChat, useStartingChat } from "./choice.ts";
 import {
   type BoxState,
   type DraftBox,
@@ -29,15 +29,15 @@ import {
   sending,
   tooLong,
 } from "./draft.ts";
-import { conversationPath, type Live, messageOf } from "./live.ts";
+import { chatPath, type Live, messageOf } from "./live.ts";
 import { queries } from "./reads.ts";
 import { isRunning } from "./transcript-state.ts";
 import { Button } from "./ui.tsx";
 
 const boxes = new Map<string, DraftBox>();
 
-function draftIo(personId: string, conversationId: string): DraftIo {
-  const path = `/api/people/${encodeURIComponent(personId)}/drafts/${encodeURIComponent(conversationId)}`;
+function draftIo(personId: string, chatId: string): DraftIo {
+  const path = `/api/people/${encodeURIComponent(personId)}/drafts/${encodeURIComponent(chatId)}`;
   return {
     load: () => read(Draft, "GET", path),
     save: async (text, revision) => {
@@ -53,16 +53,16 @@ function draftIo(personId: string, conversationId: string): DraftIo {
       }
     },
     client: queries,
-    scope: `draft/${personId}/${conversationId}`,
+    scope: `draft/${personId}/${chatId}`,
   };
 }
 
-/** The box of a conversation, the same in every size. */
-function boxFor(personId: string, conversationId: string): DraftBox {
-  const key = `${personId}/${conversationId}`;
+/** The box of a chat, the same in every size. */
+function boxFor(personId: string, chatId: string): DraftBox {
+  const key = `${personId}/${chatId}`;
   let box = boxes.get(key);
   if (!box) {
-    box = draftBox(draftIo(personId, conversationId));
+    box = draftBox(draftIo(personId, chatId));
     boxes.set(key, box);
   }
   return box;
@@ -85,18 +85,18 @@ function saveState(state: BoxState): string | null {
 }
 
 const UNKNOWN =
-  "Rufi doesn't know whether the AI got this message. Check the conversation before you send it again.";
+  "Rufi doesn't know whether the AI got this message. Check the chat before you send it again.";
 
 export function Box({
   person,
-  conversationId,
+  chatId,
   live,
   size,
   onOpen,
   inputRef,
 }: {
   person: Person;
-  conversationId: string;
+  chatId: string;
   live: StoreApi<Live>;
   size: "bar" | "panel" | "page";
   /** The bar: a click opens the chat. */
@@ -104,14 +104,14 @@ export function Box({
   /** The box's text field, for focus. */
   inputRef: RefObject<HTMLTextAreaElement | null>;
 }) {
-  const box = boxFor(person.id, conversationId);
+  const box = boxFor(person.id, chatId);
   const text = useStore(box.store, (state) => state.text);
   const loaded = useStore(box.store, (state) => state.loaded);
-  // New conversation is being made: nothing goes into this one meanwhile.
-  const starting = useStartingConversation(person.id);
+  // New chat is being made: nothing goes into this one meanwhile.
+  const starting = useStartingChat(person.id);
   const locked = useStore(box.store, held) || starting;
   const status = useStore(box.store, saveState);
-  const saved = starting ? "Starting a new conversation…" : status;
+  const saved = starting ? "Starting a new chat…" : status;
   const unknown = useStore(
     box.store,
     (state) => state.draft.state === "unknown",
@@ -126,7 +126,7 @@ export function Box({
   useEffect(() => () => void box.saveNow(), [box]);
 
   async function submit(steer: boolean) {
-    if (startingConversation(person.id)) return;
+    if (startingChat(person.id)) return;
     const taken = await box.take();
     if (!taken) return;
     const message = taken.text.trim();
@@ -139,7 +139,7 @@ export function Box({
       const sent = await read(
         Sent,
         "POST",
-        `${conversationPath(person.id, conversationId)}/${steer ? "steer" : "messages"}`,
+        `${chatPath(person.id, chatId)}/${steer ? "steer" : "messages"}`,
         { text: message, draft: taken.revision },
       );
       box.sent(sent.draft);
@@ -158,9 +158,7 @@ export function Box({
   }
 
   const stop = () =>
-    act(() =>
-      request("POST", `${conversationPath(person.id, conversationId)}/stop`),
-    );
+    act(() => request("POST", `${chatPath(person.id, chatId)}/stop`));
 
   return (
     <form
@@ -173,7 +171,7 @@ export function Box({
       {size !== "bar" && (
         <Waiting
           live={live}
-          path={conversationPath(person.id, conversationId)}
+          path={chatPath(person.id, chatId)}
           running={running}
           act={act}
         />

@@ -2,7 +2,7 @@
 // checked against its contract.
 import {
   Backups,
-  Conversations,
+  Chats,
   FirstRun,
   Models,
   Overview,
@@ -79,27 +79,24 @@ export const useOverview = (personId: string) =>
       ).overview,
   });
 
-export const conversationsKey = (personId: string) => [
-  "conversations",
-  personId,
-];
+export const chatsKey = (personId: string) => ["chats", personId];
 
-/** A person's conversations, and the one the core opens the chat on (choice.ts). */
-export const useConversations = (personId: string) =>
+/** A person's chats, and the one the core opens the chat on (choice.ts). */
+export const useChats = (personId: string) =>
   useQuery({
-    queryKey: conversationsKey(personId),
+    queryKey: chatsKey(personId),
     queryFn: async () => {
       return read(
-        Conversations,
+        Chats,
         "GET",
-        `/api/people/${encodeURIComponent(personId)}/conversations`,
+        `/api/people/${encodeURIComponent(personId)}/chats`,
       );
     },
     // A title another tab gave shows when you come back to this one.
     refetchOnWindowFocus: true,
   });
 
-/** The models a conversation can use; asks the AI, so it can fail. */
+/** The models a chat can use; asks the AI, so it can fail. */
 export const useModels = () =>
   useQuery({
     queryKey: ["models"],

@@ -1,4 +1,4 @@
-// read_conversation: earlier parts of the conversation the AI is in, for when
+// read_chat: earlier parts of the chat the AI is in, for when
 // a new thread started with only the last messages.
 import { Schema } from "effect";
 import { defineTool, Refusal } from "./registry.ts";
@@ -22,19 +22,19 @@ const Input = Schema.Struct({
   ),
 });
 
-export const readConversation = defineTool({
-  name: "read_conversation",
-  shown: "Read earlier in the conversation",
-  description: `Earlier parts of this conversation, newest first. Each entry's kind is "message" (the user's), "steer" (the user's, sent while you were replying), "reply" (yours), "activity" (one thing you did: a title and one short detail, never its output) or "receipt" (Rufi's line for a save to the record: what was saved). "at" is when it was written. At most ${String(PAGE_MAX)} entries a page; pass the page's next_before to read further back. Rufi chooses the conversation, not you.`,
+export const readChat = defineTool({
+  name: "read_chat",
+  shown: "Read earlier in the chat",
+  description: `Earlier parts of this chat, newest first. Each entry's kind is "message" (the user's), "steer" (the user's, sent while you were replying), "reply" (yours), "activity" (one thing you did: a title and one short detail, never its output) or "receipt" (Rufi's line for a save to the record: what was saved). "at" is when it was written. At most ${String(PAGE_MAX)} entries a page; pass the page's next_before to read further back. Rufi chooses the chat, not you.`,
   input: Input,
   callers: "model",
   readOnly: true,
   destructive: false,
   examples: [{}, { before: 41, limit: 20 }],
-  run: async (input, { store, personId, conversationId }) => {
-    if (!store || personId === undefined || conversationId === undefined) {
+  run: async (input, { store, personId, chatId }) => {
+    if (!store || personId === undefined || chatId === undefined) {
       throw new Refusal(
-        "This isn't a saved conversation, so it has nothing earlier to read.",
+        "This isn't a saved chat, so it has nothing earlier to read.",
       );
     }
     const limit = input.limit ?? 20;
@@ -50,7 +50,7 @@ export const readConversation = defineTool({
         "created_at",
       ])
       .where("person_id", "=", personId)
-      .where("conversation_id", "=", conversationId)
+      .where("chat_id", "=", chatId)
       // The AI's reasoning is kept for people to trace, not read back.
       .where("kind", "!=", "reasoning");
     if (input.before !== undefined)

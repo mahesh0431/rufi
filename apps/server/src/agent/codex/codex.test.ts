@@ -1271,7 +1271,7 @@ describe("Codex's items and endings in Rufi's words", () => {
     });
     expect(activityOf({ type: "contextCompaction", id: "c" }, false)).toEqual({
       activity: "other",
-      title: "Condensed the earlier conversation",
+      title: "Condensed the earlier chat",
       status: "running",
     });
     expect(

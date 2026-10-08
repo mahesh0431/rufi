@@ -15,7 +15,7 @@ const DateSaid = Schema.Struct({
   // Described before the check: a description after it isn't in the JSON schema.
   date: Schema.String.annotate({
     description:
-      "YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM in the user's local time, at the precision they gave: 'since 2019' is 2019. Count relative words from when the user sent the message (read_conversation shows it), not from now.",
+      "YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM in the user's local time, at the precision they gave: 'since 2019' is 2019. Count relative words from when the user sent the message (read_chat shows it), not from now.",
   }).check(Schema.makeFilter((text: string) => dateProblem(text))),
   words: Text(100).annotate({
     description:

@@ -7,7 +7,7 @@ import {
   Link,
   useLocation,
 } from "@tanstack/react-router";
-import { ConversationPage } from "./chat.tsx";
+import { ChatPage } from "./chat.tsx";
 import { FirstRun } from "./first-run.tsx";
 import { Frame } from "./frame.tsx";
 import { HelpPage } from "./help-page.tsx";
@@ -49,11 +49,11 @@ const home = createRoute({
   },
 });
 
-const conversation = createRoute({
+const chat = createRoute({
   getParentRoute: () => root,
-  path: "/people/$personId/conversations/$conversationId",
-  component: function Conversation() {
-    const { personId, conversationId } = conversation.useParams();
+  path: "/people/$personId/chats/$chatId",
+  component: function Chat() {
+    const { personId, chatId } = chat.useParams();
     const people = usePeople();
     if (people.data === undefined) {
       return people.error ? (
@@ -67,11 +67,7 @@ const conversation = createRoute({
       return <div className="px-6 py-8 text-muted">There is no page here.</div>;
     }
     return (
-      <ConversationPage
-        key={`${personId}/${conversationId}`}
-        person={person}
-        conversationId={conversationId}
-      />
+      <ChatPage key={`${personId}/${chatId}`} person={person} chatId={chatId} />
     );
   },
 });
@@ -118,7 +114,7 @@ const helpPage = createRoute({
 export const router = createRouter({
   routeTree: root.addChildren([
     home,
-    conversation,
+    chat,
     settings,
     signIn,
     helpIndex,

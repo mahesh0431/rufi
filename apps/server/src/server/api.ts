@@ -1,10 +1,10 @@
 // Rufi's local API: what the screens use. Only on 127.0.0.1, only with both
 // session proofs, and only for the person in the path: another person's
-// conversation is not found.
+// chat is not found.
 import {
   AddPerson,
-  ChooseConversation,
-  CreateConversation,
+  ChooseChat,
+  CreateChat,
   FinishStep,
   MessageText,
   MAX_MESSAGE_CHARS,
@@ -34,7 +34,7 @@ import type { BackupJob } from "../core/store/backup.ts";
 import {
   shown,
   type Change,
-  type ConversationRow,
+  type ChatRow,
   type Transcripts,
 } from "../core/chat/transcript.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
@@ -200,10 +200,10 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     if (!found) throw new HttpError(404, "Not found.");
     return found;
   };
-  const conversation = async (c: Context) => {
-    const found = await transcripts.conversation(
+  const chatOf = async (c: Context) => {
+    const found = await transcripts.chat(
       (await person(c)).id,
-      c.req.param("conversationId") ?? "",
+      c.req.param("chatId") ?? "",
     );
     if (!found) throw new HttpError(404, "Not found.");
     return found;
@@ -353,30 +353,30 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     c.json({ overview: await deps.overview((await person(c)).id) }),
   );
 
-  const base = "/api/people/:personId/conversations";
+  const base = "/api/people/:personId/chats";
   app.get(base, async (c) => {
     const { id } = await person(c);
     return c.json({
-      conversations: await transcripts.conversations(id),
+      chats: await transcripts.chats(id),
       chosen: await transcripts.chosen(id),
     });
   });
   app.post(base, async (c) => {
     const { id } = await person(c);
-    const { title } = await body(c, CreateConversation);
+    const { title } = await body(c, CreateChat);
     const created = await chat.create(id, title ?? null);
-    return c.json({ conversation: shown(created) }, 201);
+    return c.json({ chat: shown(created) }, 201);
   });
 
-  // The conversation the chat continues for the person.
+  // The chat the chat continues for the person.
   app.put("/api/people/:personId/chosen", async (c) => {
     const { id } = await person(c);
-    const { conversationId } = await body(c, ChooseConversation);
-    if (!(await transcripts.conversation(id, conversationId))) {
+    const { chatId } = await body(c, ChooseChat);
+    if (!(await transcripts.chat(id, chatId))) {
       throw new HttpError(404, "Not found.");
     }
-    await transcripts.choose(id, conversationId);
-    return c.json({ chosen: conversationId });
+    await transcripts.choose(id, chatId);
+    return c.json({ chosen: chatId });
   });
 
   /**
@@ -390,7 +390,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
    * message's id is the send's, so after a stop the transcript tells.
    */
   const fromBox = async (
-    found: ConversationRow,
+    found: ChatRow,
     text: string,
     revision: number,
     action: (id: string) => Promise<unknown>,
@@ -435,12 +435,12 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     return { id, draft };
   };
 
-  const one = `${base}/:conversationId`;
+  const one = `${base}/:chatId`;
   app.get(one, async (c) =>
-    c.json(await transcripts.snapshot(await conversation(c))),
+    c.json(await transcripts.snapshot(await chatOf(c))),
   );
   app.post(`${one}/messages`, async (c) => {
-    const found = await conversation(c);
+    const found = await chatOf(c);
     const { text, draft } = await body(c, SendMessage, MESSAGE_REFUSAL);
     const sent = await fromBox(found, text, draft, (id) =>
       chat.send(found, text, id),
@@ -448,7 +448,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     return c.json(sent, 202);
   });
   app.post(`${one}/steer`, async (c) => {
-    const found = await conversation(c);
+    const found = await chatOf(c);
     const { text, draft } = await body(c, SendMessage, MESSAGE_REFUSAL);
     const sent = await fromBox(found, text, draft, (id) =>
       chat.steer(found, text, id),
@@ -456,12 +456,12 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     return c.json(sent);
   });
   app.post(`${one}/stop`, async (c) => {
-    const found = await conversation(c);
+    const found = await chatOf(c);
     await acting(() => chat.stop(found));
     return c.json({ ok: true });
   });
   app.put(`${one}/model`, async (c) => {
-    const found = await conversation(c);
+    const found = await chatOf(c);
     const { model } = await body(c, SelectModel);
     await acting(() => chat.selectModel(found, model));
     return c.json({ model });
@@ -469,17 +469,17 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
 
   // The waiting messages are the agent's own list.
   app.get(`${one}/waiting`, async (c) => {
-    const found = await conversation(c);
+    const found = await chatOf(c);
     return c.json({ messages: await acting(() => chat.waiting.list(found)) });
   });
   app.put(`${one}/waiting`, async (c) => {
-    const found = await conversation(c);
+    const found = await chatOf(c);
     const { ids } = await body(c, ReorderWaiting);
     await acting(() => chat.waiting.reorder(found, [...ids]));
     return c.json({ ok: true });
   });
   app.put(`${one}/waiting/:waitingId`, async (c) => {
-    const found = await conversation(c);
+    const found = await chatOf(c);
     const { text } = await body(c, MessageText, MESSAGE_REFUSAL);
     await acting(() =>
       chat.waiting.edit(found, c.req.param("waitingId"), text),
@@ -487,24 +487,24 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     return c.json({ ok: true });
   });
   app.delete(`${one}/waiting/:waitingId`, async (c) => {
-    const found = await conversation(c);
+    const found = await chatOf(c);
     await acting(() => chat.waiting.remove(found, c.req.param("waitingId")));
     return c.json({ ok: true });
   });
   app.post(`${one}/waiting/:waitingId/run`, async (c) => {
-    const found = await conversation(c);
+    const found = await chatOf(c);
     await acting(() => chat.waiting.runNow(found, c.req.param("waitingId")));
     return c.json({ ok: true });
   });
 
-  // A draft per conversation.
-  const drafts = "/api/people/:personId/drafts/:conversationId";
+  // A draft per chat.
+  const drafts = "/api/people/:personId/drafts/:chatId";
   app.get(drafts, async (c) => {
-    const { personId, id } = await conversation(c);
+    const { personId, id } = await chatOf(c);
     return c.json(await transcripts.draft(personId, id));
   });
   app.put(drafts, async (c) => {
-    const { personId, id } = await conversation(c);
+    const { personId, id } = await chatOf(c);
     const { text, revision } = await body(c, SaveDraft);
     const { saved, draft } = await transcripts.saveDraft(
       personId,
@@ -526,7 +526,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
 
   // The live stream: a snapshot, then every stored change after it.
   app.get(`${one}/stream`, async (c) => {
-    const found = await conversation(c);
+    const found = await chatOf(c);
     const connection = c.env.outgoing;
     c.header("Content-Type", "application/x-ndjson; charset=utf-8");
     return stream(c, async (out) => {
@@ -552,7 +552,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
           revision: change.revision,
           entries: change.entries,
           turns: change.turns,
-          ...(change.conversation && { conversation: change.conversation }),
+          ...(change.chat && { chat: change.chat }),
         });
       });
       const unwatch = chat.waiting.subscribe(found.id, () => {

@@ -174,13 +174,13 @@ async function session(core: Pick<Core, "port" | "launchUrl">) {
     headers,
     api: (method: string, path: string, body?: unknown) =>
       call(core.port, method, path, headers, body),
-    /** Sends from a conversation's box, as the screens do: saves the draft, then sends it. */
+    /** Sends from a chat's box, as the screens do: saves the draft, then sends it. */
     say: async (
       path: string,
       text: string,
       kind: "messages" | "steer" = "messages",
     ) => {
-      const draft = path.replace("/conversations/", "/drafts/");
+      const draft = path.replace("/chats/", "/drafts/");
       const before = await call(core.port, "GET", draft, headers);
       const saved = await call(core.port, "PUT", draft, headers, {
         text,
@@ -299,18 +299,17 @@ async function until(
   }
 }
 
-/** A person with one conversation, through the API. */
-async function conversation(page: Awaited<ReturnType<typeof session>>) {
+/** A person with one chat, through the API. */
+async function chat(page: Awaited<ReturnType<typeof session>>) {
   const person = (
     await page.api("POST", "/api/people", { displayName: "Asha Fictional" })
   ).body["person"] as { id: string };
-  const created = (
-    await page.api("POST", `/api/people/${person.id}/conversations`, {})
-  ).body["conversation"] as { id: string };
+  const created = (await page.api("POST", `/api/people/${person.id}/chats`, {}))
+    .body["chat"] as { id: string };
   return {
     person: person.id,
     id: created.id,
-    path: `/api/people/${person.id}/conversations/${created.id}`,
+    path: `/api/people/${person.id}/chats/${created.id}`,
   };
 }
 
@@ -339,12 +338,12 @@ describe("the core", () => {
     const left = openWritable(databasePath(home));
     left.db.exec(`
       INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
-      INSERT INTO conversations (id, person_id, title, provider, model, created_at)
+      INSERT INTO chats (id, person_id, title, provider, model, created_at)
         VALUES ('c-1', 'asha', 'Fictional', 'codex', 'gpt-6.1-sol', '2026-10-04T10:00:00Z'),
                ('c-2', 'asha', 'Fictional', 'codex', 'gpt-6.1-sol', '2026-10-04T10:00:00Z');
-      INSERT INTO transcript_entries (id, person_id, conversation_id, seq, kind, text, revision, created_at, updated_at)
+      INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, revision, created_at, updated_at)
         VALUES ('m-1', 'asha', 'c-1', 1, 'message', 'Taken', 1, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');
-      INSERT INTO drafts (person_id, conversation_id, text, revision, state, attempt, updated_at)
+      INSERT INTO drafts (person_id, chat_id, text, revision, state, attempt, updated_at)
         VALUES ('asha', 'c-1', 'Taken', 2, 'sending', 'm-1', '2026-10-04T10:00:00Z'),
                ('asha', 'c-2', 'Not known', 2, 'sending', 'm-2', '2026-10-04T10:00:00Z');`);
     left.close();
@@ -362,17 +361,15 @@ describe("the core", () => {
     const left = openWritable(databasePath(home));
     left.db.exec(`
       INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
-      INSERT INTO conversations (id, person_id, title, provider, model, created_at)
+      INSERT INTO chats (id, person_id, title, provider, model, created_at)
         VALUES ('c-1', 'asha', 'Fictional', 'codex', 'gpt-6.1-sol', '2026-10-04T10:00:00Z');
-      INSERT INTO turns (id, person_id, conversation_id, agent_turn_id, model, status, started_at)
+      INSERT INTO turns (id, person_id, chat_id, agent_turn_id, model, status, started_at)
         VALUES ('t-1', 'asha', 'c-1', 'turn-1', 'gpt-6.1-sol', 'running', '2026-10-04T10:00:00Z');`);
     left.close();
     const core = await start();
     const page = await session(core);
     expect(
-      (await page.api("GET", "/api/people/asha/conversations/c-1")).body[
-        "turns"
-      ],
+      (await page.api("GET", "/api/people/asha/chats/c-1")).body["turns"],
     ).toMatchObject([
       {
         status: "interrupted",
@@ -507,21 +504,20 @@ describe("the local API", () => {
     expect(reply.headers["cache-control"]).toBe("no-store");
   });
 
-  it("finds a conversation only under its own person", async () => {
+  it("finds a chat only under its own person", async () => {
     const core = await start();
     const page = await session(core);
-    const c = await conversation(page);
+    const c = await chat(page);
     const ravi = addRavi();
     expect((await page.api("GET", c.path)).status).toBe(200);
     expect(
-      (await page.api("GET", `/api/people/${ravi.id}/conversations/${c.id}`))
-        .status,
+      (await page.api("GET", `/api/people/${ravi.id}/chats/${c.id}`)).status,
     ).toBe(404);
     expect(
       (
         await page.api(
           "POST",
-          `/api/people/${ravi.id}/conversations/${c.id}/messages`,
+          `/api/people/${ravi.id}/chats/${c.id}/messages`,
           { text: "Hi" },
         )
       ).status,
@@ -531,7 +527,7 @@ describe("the local API", () => {
   it("takes a message at the limit and stores it whole", async () => {
     const core = await start();
     const page = await session(core);
-    const c = await conversation(page);
+    const c = await chat(page);
     const text = `${"é".repeat(9_999)}x`;
     expect((await page.say(c.path, text)).status).toBe(202);
     await until(async () => {
@@ -547,7 +543,7 @@ describe("the local API", () => {
   it("refuses requests that don't match their contract", async () => {
     const core = await start();
     const page = await session(core);
-    const c = await conversation(page);
+    const c = await chat(page);
     expect(
       (await page.api("POST", `${c.path}/messages`, { text: "", draft: 0 }))
         .status,
@@ -568,13 +564,12 @@ describe("the local API", () => {
     }
   });
 
-  it("keeps a draft per conversation, and refuses a save based on an older revision", async () => {
+  it("keeps a draft per chat, and refuses a save based on an older revision", async () => {
     const core = await start();
     const page = await session(core);
-    const c = await conversation(page);
-    const other = (
-      await page.api("POST", `/api/people/${c.person}/conversations`, {})
-    ).body["conversation"] as { id: string };
+    const c = await chat(page);
+    const other = (await page.api("POST", `/api/people/${c.person}/chats`, {}))
+      .body["chat"] as { id: string };
     const draft = `/api/people/${c.person}/drafts/${c.id}`;
     expect((await page.api("GET", draft)).body).toEqual({
       text: "",
@@ -611,12 +606,12 @@ describe("the local API", () => {
   });
 
   it("holds the box's draft while it is sent: only its saved text goes, nobody changes or sends it meanwhile, and it empties once the agent took it", async () => {
-    // Codex takes a while to start the conversation's thread.
+    // Codex takes a while to start the chat's thread.
     const core = await start({
       agent: scripted({ slow: ["thread/start"], slowMs: 600 }),
     });
     const page = await session(core);
-    const c = await conversation(page);
+    const c = await chat(page);
     const draft = `/api/people/${c.person}/drafts/${c.id}`;
     const changed = (text: string, revision: number) => ({
       status: 409,
@@ -705,7 +700,7 @@ describe("the local API", () => {
       agent: scripted({ hang: ["thread/start"] }, { requestMs: 300 }),
     });
     const page = await session(core);
-    const c = await conversation(page);
+    const c = await chat(page);
     const failed = await page.say(c.path, "Hello");
     expect(failed.status).toBe(502);
     expect(failed.body["draft"]).toEqual({
@@ -730,7 +725,7 @@ describe("the local API", () => {
       agent: scripted({ slow: ["thread/queue/add"], slowMs: 650 }),
     });
     const page = await session(core);
-    const c = await conversation(page);
+    const c = await chat(page);
     const draft = `/api/people/${c.person}/drafts/${c.id}`;
     await page.say(c.path, "hang");
     await until(async () =>
@@ -759,7 +754,7 @@ describe("the local API", () => {
     ).toEqual(["Next question"]);
   });
 
-  it("creates a conversation at once, without the AI; its first message taken chooses the model and names it", async () => {
+  it("creates a chat at once, without the AI; its first message taken chooses the model and names it", async () => {
     // Codex doesn't answer the list of models: creating doesn't need it.
     let core = await start({ agent: scripted({ hang: ["model/list"] }) });
     let page = await session(core);
@@ -767,19 +762,19 @@ describe("the local API", () => {
       await page.api("POST", "/api/people", { displayName: "Asha Fictional" })
     ).body["person"] as { id: string };
     const people = `/api/people/${asha.id}`;
-    const create = await page.api("POST", `${people}/conversations`, {});
+    const create = await page.api("POST", `${people}/chats`, {});
     expect(create.status).toBe(201);
-    const created = create.body["conversation"] as { id: string };
+    const created = create.body["chat"] as { id: string };
     expect(created).toMatchObject({ title: null, model: null });
     await stop();
 
     core = await start();
     page = await session(core);
-    const path = `${people}/conversations/${created.id}`;
+    const path = `${people}/chats/${created.id}`;
     const text =
       "Is my **TSH** still high after the lab [amended](https://example.com/lab) it in August?\nAnd the Free T4?";
     expect((await page.say(path, text)).status).toBe(202);
-    expect((await page.api("GET", path)).body["conversation"]).toMatchObject({
+    expect((await page.api("GET", path)).body["chat"]).toMatchObject({
       title: "Is my TSH still high after the lab amended it in August?",
       model: "gpt-6-astra",
     });
@@ -787,16 +782,14 @@ describe("the local API", () => {
     // A model chosen before the first message stays; a long first line is
     // cut at a word; a later message keeps the title.
     const second = (
-      (await page.api("POST", `${people}/conversations`, {})).body[
-        "conversation"
-      ] as { id: string }
+      (await page.api("POST", `${people}/chats`, {})).body["chat"] as {
+        id: string;
+      }
     ).id;
-    const secondPath = `${people}/conversations/${second}`;
+    const secondPath = `${people}/chats/${second}`;
     await page.api("PUT", `${secondPath}/model`, { model: "gpt-6.1-sol" });
     await page.say(secondPath, `${"word ".repeat(20)}end`);
-    expect(
-      (await page.api("GET", secondPath)).body["conversation"],
-    ).toMatchObject({
+    expect((await page.api("GET", secondPath)).body["chat"]).toMatchObject({
       title: `${"word ".repeat(12).trimEnd()}…`,
       model: "gpt-6.1-sol",
     });
@@ -807,8 +800,7 @@ describe("the local API", () => {
     );
     await page.say(path, "Something else");
     expect(
-      ((await page.api("GET", path)).body["conversation"] as { title: string })
-        .title,
+      ((await page.api("GET", path)).body["chat"] as { title: string }).title,
     ).toBe("Is my TSH still high after the lab amended it in August?");
   });
 
@@ -837,7 +829,7 @@ describe("the local API", () => {
           port: Number(new URL(link ?? "").port),
           launchUrl: () => link ?? "",
         });
-        const c = await conversation(page);
+        const c = await chat(page);
         draft = `/api/people/${c.person}/drafts/${c.id}`;
         await page.api("PUT", draft, { text: "Outgoing text", revision: 0 });
         void page
@@ -874,21 +866,21 @@ describe("the local API", () => {
     },
   );
 
-  it("remembers the conversation to open the chat on, for that person only", async () => {
+  it("remembers the chat to open the chat on, for that person only", async () => {
     const core = await start();
     const page = await session(core);
-    const c = await conversation(page);
-    const list = `/api/people/${c.person}/conversations`;
+    const c = await chat(page);
+    const list = `/api/people/${c.person}/chats`;
     expect((await page.api("GET", list)).body["chosen"]).toBeNull();
     const chosen = `/api/people/${c.person}/chosen`;
-    await page.api("PUT", chosen, { conversationId: c.id });
+    await page.api("PUT", chosen, { chatId: c.id });
     expect((await page.api("GET", list)).body["chosen"]).toBe(c.id);
 
     const ravi = addRavi();
     expect(
       (
         await page.api("PUT", `/api/people/${ravi.id}/chosen`, {
-          conversationId: c.id,
+          chatId: c.id,
         })
       ).status,
     ).toBe(404);
@@ -916,7 +908,7 @@ describe("the local API", () => {
   it("shows the waiting messages and lets the person act on them", async () => {
     const core = await start();
     const page = await session(core);
-    const c = await conversation(page);
+    const c = await chat(page);
     expect((await page.say(c.path, "hang")).status).toBe(202);
     await until(
       async () =>
@@ -958,7 +950,7 @@ describe("the local API", () => {
   it("streams a snapshot, then every change after it, with no gap", async () => {
     const core = await start();
     const page = await session(core);
-    const c = await conversation(page);
+    const c = await chat(page);
     const live = stream(core.port, `${c.path}/stream`, page.headers);
     await until(() => live.lines.length > 0);
     expect(live.lines[0]).toMatchObject({
@@ -976,16 +968,16 @@ describe("the local API", () => {
     live.hangUp();
   });
 
-  it("tells an open stream when the conversation's title or model changes", async () => {
+  it("tells an open stream when the chat's title or model changes", async () => {
     const core = await start();
     const page = await session(core);
-    const c = await conversation(page);
+    const c = await chat(page);
     const live = stream(core.port, `${c.path}/stream`, page.headers);
     await until(() => live.lines.length > 0);
-    expect(live.lines[0]).toMatchObject({ conversation: { title: null } });
+    expect(live.lines[0]).toMatchObject({ chat: { title: null } });
     const changed = () =>
       live.lines.flatMap((line) =>
-        line.type === "update" && line.conversation ? [line.conversation] : [],
+        line.type === "update" && line.chat ? [line.chat] : [],
       );
     await page.say(c.path, "Hello there");
     // The first message chooses the first allowed model, then names it.
@@ -1011,7 +1003,7 @@ describe("the local API", () => {
   it("gives a screen that reconnects during a reply the text so far, then the rest", async () => {
     const core = await start();
     const page = await session(core);
-    const c = await conversation(page);
+    const c = await chat(page);
     const first = stream(core.port, `${c.path}/stream`, page.headers);
     await until(() => first.lines.length > 0);
     await page.say(c.path, "drip");
@@ -1034,7 +1026,7 @@ describe("the local API", () => {
     async () => {
       const core = await start({ behindMax: 20 });
       const page = await session(core);
-      const c = await conversation(page);
+      const c = await chat(page);
       const slow = stream(core.port, `${c.path}/stream`, page.headers);
       await until(() => slow.lines.length > 0);
       slow.pause();
@@ -1246,10 +1238,10 @@ describe("the screens", () => {
 });
 
 describe("Rufi's log", () => {
-  it("holds the core's events and none of the conversation", async () => {
+  it("holds the core's events and none of the chat", async () => {
     const core = await start({ log: diagnostics(home).log });
     const page = await session(core);
-    const c = await conversation(page);
+    const c = await chat(page);
     await page.say(c.path, "A fictional private worry");
     await until(
       async () =>
@@ -1434,7 +1426,7 @@ describe("backups and export over the API", () => {
     { timeout: 30_000 },
     async () => {
       const page = await session(await start());
-      const c = await conversation(page);
+      const c = await chat(page);
       await page.say(c.path, "Please remember my fictional cat Biscuit");
       await until(async () =>
         (
@@ -1447,7 +1439,7 @@ describe("backups and export over the API", () => {
           (await page.api("GET", c.path)).body["turns"] as { status: string }[]
         ).some((turn) => turn.status === "running"),
       );
-      const draft = c.path.replace("/conversations/", "/drafts/");
+      const draft = c.path.replace("/chats/", "/drafts/");
       const { revision } = (await page.api("GET", draft)).body;
       await page.api("PUT", draft, {
         text: "An unsent fictional note",
@@ -1481,7 +1473,7 @@ describe("backups and export over the API", () => {
         "An unsent fictional note",
       );
       // Nothing ran by itself; the next message starts a new thread (the copy
-      // has none of the AI's files), told the conversation's last messages.
+      // has none of the AI's files), told the chat's last messages.
       expect(
         (await restored.say(c.path, "What is my cat called?")).status,
       ).toBe(202);

@@ -109,7 +109,7 @@ test.describe("first run", () => {
     rufi.account = { account: "signed_out", email: null };
     await rufi.start();
     await page.goto(rufi.link());
-    // Each step is titled Welcome, and the sidebar offers no conversation
+    // Each step is titled Welcome, and the sidebar offers no chat
     // or Overview until the first run is done.
     const title = page.getByRole("banner").getByRole("heading");
     const welcoming = async () => {
@@ -118,7 +118,7 @@ test.describe("first run", () => {
         sidebar(page).getByRole("link", { name: "Overview" }),
       ).toHaveCount(0);
       await expect(
-        sidebar(page).getByRole("button", { name: "New conversation" }),
+        sidebar(page).getByRole("button", { name: "New chat" }),
       ).toHaveCount(0);
     };
     await expect(
@@ -168,7 +168,7 @@ test.describe("first run", () => {
     await expect(sidebar(page)).toContainText("Mira Fictional");
     await expect(title).toHaveText("Overview");
     await expect(
-      sidebar(page).getByRole("button", { name: "New conversation" }),
+      sidebar(page).getByRole("button", { name: "New chat" }),
     ).toBeVisible();
     await sidebar(page).getByRole("link", { name: "Settings" }).click();
     await expect(

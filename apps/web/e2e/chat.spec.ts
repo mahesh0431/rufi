@@ -42,8 +42,7 @@ test.afterEach(async ({ page }) => {
 const chat = (page: Page) => page.getByRole("region", { name: "Chat" });
 const box = (scope: Page | Locator) =>
   scope.getByRole("textbox", { name: "Message to Rufi" });
-const log = (scope: Page | Locator) =>
-  scope.getByRole("log", { name: "Conversation" });
+const log = (scope: Page | Locator) => scope.getByRole("log", { name: "Chat" });
 const sidebar = (page: Page) => page.getByRole("complementary");
 const toolbar = (page: Page) => page.getByRole("banner");
 
@@ -81,7 +80,7 @@ async function send(page: Page, text: string) {
   await expect(box(chat(page))).toHaveValue("");
 }
 
-test("using the bar starts a conversation at once; the reply streams in and its title shows everywhere", async ({
+test("using the bar starts a chat at once; the reply streams in and its title shows everywhere", async ({
   page,
   rufi,
 }) => {
@@ -95,7 +94,7 @@ test("using the bar starts a conversation at once; the reply streams in and its 
   ).toBeVisible();
   await accessible(page);
 
-  // No conversation until you use the box; then it is there, unnamed, and
+  // No chat until you use the box; then it is there, unnamed, and
   // the chat says what goes to OpenAI.
   await expect(sidebar(page).getByRole("link")).toHaveText([
     "Overview",
@@ -103,9 +102,7 @@ test("using the bar starts a conversation at once; the reply streams in and its 
     "Settings",
   ]);
   await box(chat(page)).click();
-  await expect(sidebar(page).getByRole("listitem")).toHaveText([
-    "New conversation",
-  ]);
+  await expect(sidebar(page).getByRole("listitem")).toHaveText(["New chat"]);
   await expect(
     chat(page).getByText("AI can make mistakes. Check important info."),
   ).toBeVisible();
@@ -134,7 +131,7 @@ test("using the bar starts a conversation at once; the reply streams in and its 
   await sidebar(page)
     .getByRole("link", { name: "drip: my thyroid results" })
     .click();
-  await expect(page).toHaveURL(/\/people\/asha\/conversations\/[\w-]+$/);
+  await expect(page).toHaveURL(/\/people\/asha\/chats\/[\w-]+$/);
   await expect(toolbar(page)).toHaveText("drip: my thyroid results");
   await expect(log(page).locator(".reply")).toHaveText("ok:drip");
   await expect(chat(page)).toHaveCount(0);
@@ -269,7 +266,7 @@ test("signed out, the chat doesn't say it uses the ChatGPT plan", async ({
   ).toHaveCount(0);
 });
 
-test("the model is chosen per conversation, and not while a reply runs", async ({
+test("the model is chosen per chat, and not while a reply runs", async ({
   page,
   rufi,
 }) => {
@@ -306,7 +303,7 @@ test("a saved draft survives a reload and a restart, and is never sent by itself
   await opened(page, rufi);
   await box(chat(page)).click();
   const text = "Questions for the visit on 14 Oct: is the TSH amended?";
-  // The conversation is made as the box is used; its own box then opens.
+  // The chat is made as the box is used; its own box then opens.
   await expect(box(chat(page))).toBeEditable();
   await box(chat(page)).pressSequentially(text);
   await expect(chat(page).getByRole("status")).toHaveText("Saved");
@@ -324,12 +321,12 @@ test("a saved draft survives a reload and a restart, and is never sent by itself
   await expect(log(chat(page))).toHaveCount(0);
 });
 
-test("a save that fails says so and keeps the text in the tab, also when you went to another conversation; Retry saves it", async ({
+test("a save that fails says so and keeps the text in the tab, also when you went to another chat; Retry saves it", async ({
   page,
   rufi,
 }) => {
   await opened(page, rufi);
-  await send(page, "First conversation");
+  await send(page, "First chat");
   // The core refuses every save for now, as when it can't keep anything.
   await page.route("**/drafts/*", (route) =>
     route.request().method() === "PUT"
@@ -342,15 +339,15 @@ test("a save that fails says so and keeps the text in the tab, also when you wen
   );
   await expect(chat(page).getByRole("alert")).toHaveText("Rufi couldn't save.");
 
-  // Typed, then off to a new conversation at once: its save fails too.
+  // Typed, then off to a new chat at once: its save fails too.
   await box(chat(page)).fill("Half a question, and more");
-  await sidebar(page).getByRole("button", { name: "New conversation" }).click();
+  await sidebar(page).getByRole("button", { name: "New chat" }).click();
   await expect(
-    chat(page).getByRole("button", { name: "New conversation" }),
+    chat(page).getByRole("button", { name: "New chat" }),
   ).toBeVisible();
-  await chat(page).getByRole("button", { name: "New conversation" }).click();
+  await chat(page).getByRole("button", { name: "New chat" }).click();
   await page
-    .getByRole("menuitemradio", { name: "First conversation", exact: true })
+    .getByRole("menuitemradio", { name: "First chat", exact: true })
     .click();
   await expect(box(chat(page))).toHaveValue("Half a question, and more");
   await expect(chat(page).getByRole("status")).toHaveText(
@@ -452,11 +449,11 @@ test("a reload while a message is on its way never puts it back in the box", asy
   await expect(box(chat(page))).toHaveValue("");
 });
 
-test("when Rufi stops during a send, the text stays and the box says to check the conversation", async ({
+test("when Rufi stops during a send, the text stays and the box says to check the chat", async ({
   page,
   rufi,
 }) => {
-  // Codex never starts the conversation's thread; then Rufi stops.
+  // Codex never starts the chat's thread; then Rufi stops.
   await opened(page, rufi, { scenario: { hang: ["thread/start"] } });
   await box(chat(page)).click();
   const posted = page.waitForRequest((request) =>
@@ -474,7 +471,7 @@ test("when Rufi stops during a send, the text stays and the box says to check th
   await box(chat(page)).click();
   await expect(box(chat(page))).toHaveValue("Questions before my visit");
   await expect(chat(page).getByRole("alert")).toHaveText(
-    "Rufi doesn't know whether the AI got this message. Check the conversation before you send it again.",
+    "Rufi doesn't know whether the AI got this message. Check the chat before you send it again.",
   );
   // Never sent again by itself; the person can edit it or send it.
   await expect(box(chat(page))).not.toHaveAttribute("readonly");
@@ -619,47 +616,43 @@ test("Markdown in a reply: tables and web links work; HTML, images and other lin
   expect(requests.filter((url) => url.includes("127.0.0.1:9"))).toEqual([]);
 });
 
-test("the chat continues the conversation you chose, after reopening Rufi", async ({
+test("the chat continues the chat you chose, after reopening Rufi", async ({
   page,
   rufi,
 }) => {
   await opened(page, rufi);
-  await send(page, "First conversation");
-  await sidebar(page).getByRole("button", { name: "New conversation" }).click();
+  await send(page, "First chat");
+  await sidebar(page).getByRole("button", { name: "New chat" }).click();
   await expect(
-    chat(page).getByRole("button", { name: "New conversation" }),
+    chat(page).getByRole("button", { name: "New chat" }),
   ).toBeVisible();
-  await send(page, "Second conversation");
+  await send(page, "Second chat");
   await expect(sidebar(page).getByRole("listitem")).toHaveText([
-    "Second conversation",
-    "First conversation",
+    "Second chat",
+    "First chat",
   ]);
 
-  await chat(page).getByRole("button", { name: "Second conversation" }).click();
+  await chat(page).getByRole("button", { name: "Second chat" }).click();
   await accessible(page);
-  await page.getByRole("menuitemradio", { name: "First conversation" }).click();
-  await expect(log(chat(page)).locator(".reply")).toHaveText(
-    "ok:First conversation",
-  );
+  await page.getByRole("menuitemradio", { name: "First chat" }).click();
+  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:First chat");
 
   await page.goto((await runningLink(rufi.home)) ?? "");
   await box(chat(page)).click();
   await expect(
-    chat(page).getByRole("button", { name: "First conversation" }),
+    chat(page).getByRole("button", { name: "First chat" }),
   ).toBeVisible();
-  await expect(log(chat(page)).locator(".reply")).toHaveText(
-    "ok:First conversation",
-  );
+  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:First chat");
 });
 
-test("the conversation you chose stays on screen whatever the core answers, and opens again next time", async ({
+test("the chat you chose stays on screen whatever the core answers, and opens again next time", async ({
   page,
   rufi,
 }) => {
   await opened(page, rufi);
-  await send(page, "First conversation");
-  await sidebar(page).getByRole("button", { name: "New conversation" }).click();
-  await send(page, "Second conversation");
+  await send(page, "First chat");
+  await sidebar(page).getByRole("button", { name: "New chat" }).click();
+  await send(page, "Second chat");
   const switcher = (title: string) =>
     chat(page).getByRole("button", { name: title, exact: true });
   const pick = async (from: string, to: string) => {
@@ -676,10 +669,10 @@ test("the conversation you chose stays on screen whatever the core answers, and 
     await letChoiceGo.promise;
     await route.continue();
   });
-  await pick("Second conversation", "First conversation");
+  await pick("Second chat", "First chat");
   await choosing.promise;
   const read = page.waitForResponse((response) =>
-    response.url().endsWith("/conversations"),
+    response.url().endsWith("/chats"),
   );
   // Coming back to the tab reads the list again.
   await page.evaluate(() => {
@@ -689,7 +682,7 @@ test("the conversation you chose stays on screen whatever the core answers, and 
   });
   await (await read).finished();
   await painted(page);
-  await expect(switcher("First conversation")).toBeVisible();
+  await expect(switcher("First chat")).toBeVisible();
   const chose = page.waitForResponse((r) => r.url().endsWith("/chosen"));
   letChoiceGo.resolve(undefined);
   await chose;
@@ -710,14 +703,14 @@ test("the conversation you chose stays on screen whatever the core answers, and 
   page.on("response", (response) => {
     if (response.url().endsWith("/chosen")) answered += 1;
   });
-  await pick("First conversation", "Second conversation");
+  await pick("First chat", "Second chat");
   await first.promise;
-  await pick("Second conversation", "First conversation");
+  await pick("Second chat", "First chat");
   letFirstGo.resolve(undefined);
   await expect.poll(() => answered).toBe(2);
   await page.goto((await runningLink(rufi.home)) ?? "");
   await box(chat(page)).click();
-  await expect(switcher("First conversation")).toBeVisible();
+  await expect(switcher("First chat")).toBeVisible();
   await page.unroute("**/chosen");
 
   // A choice that fails, answered after two later ones: the chat stays on
@@ -738,43 +731,42 @@ test("the conversation you chose stays on screen whatever the core answers, and 
   const answers = page.waitForResponse(
     (r) => r.url().endsWith("/chosen") && r.status() === 200,
   );
-  await pick("First conversation", "Second conversation");
+  await pick("First chat", "Second chat");
   await failing.promise;
-  await pick("Second conversation", "First conversation");
-  await pick("First conversation", "Second conversation");
+  await pick("Second chat", "First chat");
+  await pick("First chat", "Second chat");
   letFailGo.resolve(undefined);
   await answers;
   await painted(page);
-  await expect(switcher("Second conversation")).toBeVisible();
+  await expect(switcher("Second chat")).toBeVisible();
   await page.unroute("**/chosen");
 
-  // A new conversation the core makes slowly, while you choose another one:
+  // A new chat the core makes slowly, while you choose another one:
   // it is listed, and the chat stays where you went.
   const creating = Promise.withResolvers<undefined>();
   const letCreateGo = Promise.withResolvers<undefined>();
-  await page.route("**/conversations", async (route) => {
+  await page.route("**/chats", async (route) => {
     if (route.request().method() !== "POST") return route.continue();
     creating.resolve(undefined);
     await letCreateGo.promise;
     await route.continue();
   });
   const created = page.waitForResponse(
-    (r) =>
-      r.url().endsWith("/conversations") && r.request().method() === "POST",
+    (r) => r.url().endsWith("/chats") && r.request().method() === "POST",
   );
-  await sidebar(page).getByRole("button", { name: "New conversation" }).click();
+  await sidebar(page).getByRole("button", { name: "New chat" }).click();
   await creating.promise;
-  await pick("Second conversation", "First conversation");
+  await pick("Second chat", "First chat");
   letCreateGo.resolve(undefined);
   await created;
   await expect(sidebar(page).getByRole("listitem")).toHaveText([
-    "New conversation",
-    "Second conversation",
-    "First conversation",
+    "New chat",
+    "Second chat",
+    "First chat",
   ]);
   await painted(page);
-  await expect(switcher("First conversation")).toBeVisible();
-  await page.unroute("**/conversations");
+  await expect(switcher("First chat")).toBeVisible();
+  await page.unroute("**/chats");
 
   // A send doesn't wait for a choice still on its way to the core.
   const letLastGo = Promise.withResolvers<undefined>();
@@ -782,7 +774,7 @@ test("the conversation you chose stays on screen whatever the core answers, and 
     await letLastGo.promise;
     await route.continue();
   });
-  await pick("First conversation", "Second conversation");
+  await pick("First chat", "Second chat");
   await box(chat(page)).fill("Still here");
   await box(chat(page)).press("Enter");
   await expect(log(chat(page)).locator(".reply").last()).toHaveText(
@@ -793,10 +785,10 @@ test("the conversation you chose stays on screen whatever the core answers, and 
   await last;
   await page.goto((await runningLink(rufi.home)) ?? "");
   await box(chat(page)).click();
-  await expect(switcher("Second conversation")).toBeVisible();
+  await expect(switcher("Second chat")).toBeVisible();
 });
 
-test("while New conversation is being made, nothing can be sent into the one before, and a later move wins over it", async ({
+test("while New chat is being made, nothing can be sent into the one before, and a later move wins over it", async ({
   page,
   rufi,
 }) => {
@@ -805,7 +797,7 @@ test("while New conversation is being made, nothing can be sent into the one bef
   await expect(log(chat(page)).locator(".reply")).toHaveText(
     "ok:Previous context",
   );
-  // A saved draft that Enter would send into the conversation before.
+  // A saved draft that Enter would send into the chat before.
   await box(chat(page)).fill("Not for the old one");
   await expect(chat(page).getByRole("status")).toHaveText("Saved");
   let sends = 0;
@@ -814,35 +806,34 @@ test("while New conversation is being made, nothing can be sent into the one bef
   });
   const creating = Promise.withResolvers<undefined>();
   let release = Promise.withResolvers<undefined>();
-  await page.route("**/conversations", async (route) => {
+  await page.route("**/chats", async (route) => {
     if (route.request().method() !== "POST") return route.continue();
     creating.resolve(undefined);
     await release.promise;
     await route.continue();
   });
-  await sidebar(page).getByRole("button", { name: "New conversation" }).click();
+  await sidebar(page).getByRole("button", { name: "New chat" }).click();
   await creating.promise;
   await expect(chat(page).getByRole("status")).toHaveText(
-    "Starting a new conversation…",
+    "Starting a new chat…",
   );
   await expect(box(chat(page))).toHaveAttribute("readonly", "");
   await box(chat(page)).press("Enter");
   release.resolve(undefined);
   await expect(
-    chat(page).getByRole("button", { name: "New conversation", exact: true }),
+    chat(page).getByRole("button", { name: "New chat", exact: true }),
   ).toBeVisible();
   await expect(box(chat(page))).toBeEditable();
   expect(sends).toBe(0);
 
-  // From a conversation's page: you go to Settings before it is made.
+  // From a chat's page: you go to Settings before it is made.
   await sidebar(page).getByRole("link", { name: "Previous context" }).click();
-  await expect(page).toHaveURL(/\/conversations\//);
+  await expect(page).toHaveURL(/\/chats\//);
   release = Promise.withResolvers<undefined>();
   const made = page.waitForResponse(
-    (r) =>
-      r.url().endsWith("/conversations") && r.request().method() === "POST",
+    (r) => r.url().endsWith("/chats") && r.request().method() === "POST",
   );
-  await sidebar(page).getByRole("button", { name: "New conversation" }).click();
+  await sidebar(page).getByRole("button", { name: "New chat" }).click();
   await sidebar(page).getByRole("link", { name: "Settings" }).click();
   await expect(page).toHaveURL(/\/settings$/);
   release.resolve(undefined);
@@ -850,15 +841,14 @@ test("while New conversation is being made, nothing can be sent into the one bef
   await painted(page);
   await expect(page).toHaveURL(/\/settings$/);
 
-  // Back to the conversation it was started from, before it is made.
+  // Back to the chat it was started from, before it is made.
   await sidebar(page).getByRole("link", { name: "Previous context" }).click();
   const previous = page.url();
   release = Promise.withResolvers<undefined>();
   const again = page.waitForResponse(
-    (r) =>
-      r.url().endsWith("/conversations") && r.request().method() === "POST",
+    (r) => r.url().endsWith("/chats") && r.request().method() === "POST",
   );
-  await sidebar(page).getByRole("button", { name: "New conversation" }).click();
+  await sidebar(page).getByRole("button", { name: "New chat" }).click();
   await sidebar(page).getByRole("link", { name: "Settings" }).click();
   await expect(page).toHaveURL(/\/settings$/);
   await sidebar(page).getByRole("link", { name: "Previous context" }).click();
@@ -869,25 +859,25 @@ test("while New conversation is being made, nothing can be sent into the one bef
   await expect(page).toHaveURL(previous);
 });
 
-test("a send never moves the chat; back in its conversation, the box shows it held until it ends", async ({
+test("a send never moves the chat; back in its chat, the box shows it held until it ends", async ({
   page,
   rufi,
 }) => {
-  // Codex takes a while to start each conversation's thread.
+  // Codex takes a while to start each chat's thread.
   await opened(page, rufi, {
     scenario: { slow: ["thread/start"], slowMs: 1_000 },
   });
-  await send(page, "First conversation");
+  await send(page, "First chat");
   const switcher = (title: string) =>
     chat(page).getByRole("button", { name: title, exact: true });
   const pick = async (from: string, to: string) => {
     await switcher(from).click();
     await page.getByRole("menuitemradio", { name: to, exact: true }).click();
   };
-  await sidebar(page).getByRole("button", { name: "New conversation" }).click();
-  await expect(switcher("New conversation")).toBeVisible();
+  await sidebar(page).getByRole("button", { name: "New chat" }).click();
+  await expect(switcher("New chat")).toBeVisible();
 
-  // Send while the box's save is held back; you go to another conversation
+  // Send while the box's save is held back; you go to another chat
   // before it lands.
   const saving = Promise.withResolvers<undefined>();
   const letSaveGo = Promise.withResolvers<undefined>();
@@ -897,30 +887,28 @@ test("a send never moves the chat; back in its conversation, the box shows it he
     await letSaveGo.promise;
     await route.continue();
   });
-  await box(chat(page)).fill("Second conversation");
+  await box(chat(page)).fill("Second chat");
   const posted = page.waitForRequest((request) =>
     request.url().endsWith("/messages"),
   );
   await box(chat(page)).press("Enter");
   await saving.promise;
-  await pick("New conversation", "First conversation");
+  await pick("New chat", "First chat");
   letSaveGo.resolve(undefined);
   await posted;
   await page.unroute("**/drafts/*");
   await painted(page);
-  await expect(switcher("First conversation")).toBeVisible();
+  await expect(switcher("First chat")).toBeVisible();
 
   // Back while the send is still on its way: held, then empty to type in.
-  await pick("First conversation", "New conversation");
-  await expect(box(chat(page))).toHaveValue("Second conversation");
+  await pick("First chat", "New chat");
+  await expect(box(chat(page))).toHaveValue("Second chat");
   await expect(chat(page).getByRole("status")).toHaveText("Sending…");
   await expect(box(chat(page))).toHaveAttribute("readonly", "");
-  await expect(log(chat(page)).locator(".reply")).toHaveText(
-    "ok:Second conversation",
-  );
+  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Second chat");
   await expect(box(chat(page))).toHaveValue("");
   await expect(box(chat(page))).not.toHaveAttribute("readonly");
-  await expect(switcher("Second conversation")).toBeVisible();
+  await expect(switcher("Second chat")).toBeVisible();
 });
 
 test("⌘J opens the panel; Esc steps back and returns focus", async ({
@@ -949,9 +937,9 @@ test("a small window opens the chat as a page", async ({ page, rufi }) => {
   await page.setViewportSize({ width: 700, height: 700 });
   await opened(page, rufi);
   await box(chat(page)).click();
-  await expect(page).toHaveURL(/\/people\/asha\/conversations\/[\w-]{30,}$/);
+  await expect(page).toHaveURL(/\/people\/asha\/chats\/[\w-]{30,}$/);
   const at = page.url();
-  await expect(toolbar(page)).toHaveText("New conversation");
+  await expect(toolbar(page)).toHaveText("New chat");
   await box(page).fill("From a small window");
   await box(page).press("Enter");
   await expect(log(page).locator(".reply")).toHaveText(
@@ -1020,7 +1008,7 @@ test("a save to the record shows Rufi's receipt, also after a reload", async ({
   await box(chat(page)).click();
   await shown(chat(page));
 
-  // The conversation's own page shows it the same way.
+  // The chat's own page shows it the same way.
   await sidebar(page).getByRole("link", { name: "I have a headache" }).click();
   await expect(chat(page)).toHaveCount(0);
   await shown(page);

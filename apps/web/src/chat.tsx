@@ -1,11 +1,11 @@
-// The chat: one conversation in three sizes, drawn with the same header,
+// The chat: one chat in three sizes, drawn with the same header,
 // transcript and box. The bar sits bottom right and continues the
-// conversation you chose last; click it or press ⌘J and the panel opens over
+// chat you chose last; click it or press ⌘J and the panel opens over
 // the page, always the same size; Esc steps back to the bar. "Open as page"
-// shows the conversation at its own address. A small window opens the page
+// shows the chat at its own address. A small window opens the page
 // instead of the panel.
 import { Menu } from "@base-ui/react/menu";
-import type { Conversation, Person } from "@rufi/contracts";
+import type { Chat, Person } from "@rufi/contracts";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { Check, ChevronDown, Maximize2, Minus } from "lucide-react";
 import {
@@ -22,20 +22,9 @@ import { create } from "zustand/react";
 import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
 import { Box } from "./box.tsx";
-import {
-  choose,
-  startConversation,
-  startingConversation,
-  useChosen,
-} from "./choice.ts";
-import {
-  conversationPath,
-  type Live,
-  liveStore,
-  messageOf,
-  retain,
-} from "./live.ts";
-import { useConversations, useModels, useStatus } from "./reads.ts";
+import { choose, startChat, startingChat, useChosen } from "./choice.ts";
+import { chatPath, type Live, liveStore, messageOf, retain } from "./live.ts";
+import { useChats, useModels, useStatus } from "./reads.ts";
 import { FirstMessage, TranscriptView } from "./transcript.tsx";
 
 /** Where the chat's menus open: inside the chat, beside its glass. */
@@ -57,37 +46,36 @@ const openPanel = () => {
 const isSmall = () =>
   matchMedia("(max-width: 799px), (max-height: 499px)").matches;
 
-export const titleOf = (conversation: Conversation | null | undefined) =>
-  conversation?.title ?? "New conversation";
+export const titleOf = (chat: Chat | null | undefined) =>
+  chat?.title ?? "New chat";
 
-/** The page of a person's conversation. */
-const pageOf = (personId: string, conversationId: string) =>
+/** The page of a person's chat. */
+const pageOf = (personId: string, chatId: string) =>
   ({
-    to: "/people/$personId/conversations/$conversationId",
-    params: { personId, conversationId },
+    to: "/people/$personId/chats/$chatId",
+    params: { personId, chatId },
   }) as const;
 
-/** The live store of a conversation, open while this view shows it. */
-function useLive(personId: string, conversationId: string | null) {
+/** The live store of a chat, open while this view shows it. */
+function useLive(personId: string, chatId: string | null) {
   useEffect(
-    () =>
-      conversationId === null ? undefined : retain(personId, conversationId),
-    [personId, conversationId],
+    () => (chatId === null ? undefined : retain(personId, chatId)),
+    [personId, chatId],
   );
-  return conversationId === null ? null : liveStore(personId, conversationId);
+  return chatId === null ? null : liveStore(personId, chatId);
 }
 
 /**
- * "New conversation": the core creates it at once, and the chat shows it, in
+ * "New chat": the core creates it at once, and the chat shows it, in
  * the panel or as its page; unless the person chose another one meanwhile.
  * Throws when it can't be created.
  */
-export function useNewConversation(personId: string) {
+export function useNewChat(personId: string) {
   const navigate = useNavigate();
   const router = useRouter();
   return async (onPage: boolean) => {
     const from = router.state.location.href;
-    const started = await startConversation(personId);
+    const started = await startChat(personId);
     // Gone to another page meanwhile: the bar shows it, nothing more.
     if (!started || router.state.location.href !== from) return;
     if (onPage || isSmall()) {
@@ -98,30 +86,30 @@ export function useNewConversation(personId: string) {
   };
 }
 
-/** The bar and the panel, on every page but a conversation's own. */
+/** The bar and the panel, on every page but a chat's own. */
 export function ChatDock({ person }: { person: Person }) {
   const open = useChat((state) => state.open);
-  const list = useConversations(person.id);
+  const list = useChats(person.id);
   const chosen = useChosen(person.id);
-  const conversationId = chosen ?? null;
-  const live = useLive(person.id, conversationId);
+  const chatId = chosen ?? null;
+  const live = useLive(person.id, chatId);
   const navigate = useNavigate();
   const field = useRef<HTMLTextAreaElement | null>(null);
   const menus = useRef<HTMLDivElement | null>(null);
-  const start = useNewConversation(person.id);
+  const start = useNewChat(person.id);
   const [problem, setProblem] = useState<string | null>(null);
 
   const openChat = () => {
     if (useChat.getState().open) return;
-    if (isSmall() && conversationId !== null) {
-      void navigate(pageOf(person.id, conversationId));
+    if (isSmall() && chatId !== null) {
+      void navigate(pageOf(person.id, chatId));
       return;
     }
     openPanel();
   };
-  /** With no conversation yet, using the box starts one, once. */
+  /** With no chat yet, using the box starts one, once. */
   const startHere = () => {
-    if (startingConversation(person.id)) return;
+    if (startingChat(person.id)) return;
     setProblem(null);
     start(false).catch((error: unknown) => {
       setProblem(messageOf(error));
@@ -160,12 +148,10 @@ export function ChatDock({ person }: { person: Person }) {
   // The panel opens with the box ready for typing, also a new one's.
   useEffect(() => {
     if (open) field.current?.focus();
-  }, [open, conversationId]);
+  }, [open, chatId]);
 
   if (chosen === undefined) return null;
-  const title = titleOf(
-    list.data?.conversations.find((c) => c.id === conversationId),
-  );
+  const title = titleOf(list.data?.chats.find((c) => c.id === chatId));
   return (
     <section aria-label="Chat">
       <Menus value={menus}>
@@ -189,17 +175,17 @@ export function ChatDock({ person }: { person: Person }) {
                 : "hidden group-focus-within:flex group-hover:flex"
             }
             person={person}
-            conversationId={conversationId}
+            chatId={chatId}
             title={title}
             live={live}
             withModel={open}
             actions={
-              conversationId !== null && (
+              chatId !== null && (
                 <IconButton
                   label="Open as page"
                   onClick={() => {
                     useChat.setState({ open: false });
-                    void navigate(pageOf(person.id, conversationId));
+                    void navigate(pageOf(person.id, chatId));
                   }}
                 >
                   <Maximize2 size={14} aria-hidden />
@@ -226,11 +212,11 @@ export function ChatDock({ person }: { person: Person }) {
               </div>
             ))}
           <div className={open ? "border-t border-line" : undefined}>
-            {conversationId !== null && live ? (
+            {chatId !== null && live ? (
               <Box
-                key={conversationId}
+                key={chatId}
                 person={person}
-                conversationId={conversationId}
+                chatId={chatId}
                 live={live}
                 size={open ? "panel" : "bar"}
                 inputRef={field}
@@ -253,26 +239,23 @@ export function ChatDock({ person }: { person: Person }) {
   );
 }
 
-/** A conversation at its own address; viewing it chooses it for the bar. */
-export function ConversationPage({
+/** A chat at its own address; viewing it chooses it for the bar. */
+export function ChatPage({
   person,
-  conversationId,
+  chatId,
 }: {
   person: Person;
-  conversationId: string;
+  chatId: string;
 }) {
-  const live = liveStore(person.id, conversationId);
+  const live = liveStore(person.id, chatId);
   const field = useRef<HTMLTextAreaElement | null>(null);
   const menus = useRef<HTMLDivElement | null>(null);
 
-  useEffect(
-    () => retain(person.id, conversationId),
-    [person.id, conversationId],
-  );
+  useEffect(() => retain(person.id, chatId), [person.id, chatId]);
   useEffect(() => {
-    choose(person.id, conversationId);
+    choose(person.id, chatId);
     field.current?.focus();
-  }, [person.id, conversationId]);
+  }, [person.id, chatId]);
   // ⌘J goes to the box.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -294,7 +277,7 @@ export function ConversationPage({
         <Header
           className="flex px-5"
           person={person}
-          conversationId={conversationId}
+          chatId={chatId}
           title={null}
           live={live}
           withModel
@@ -306,9 +289,9 @@ export function ConversationPage({
         />
         <div className="mx-auto w-full max-w-[760px] px-10 pb-1">
           <Box
-            key={conversationId}
+            key={chatId}
             person={person}
-            conversationId={conversationId}
+            chatId={chatId}
             live={live}
             size="page"
             inputRef={field}
@@ -321,8 +304,8 @@ export function ConversationPage({
 }
 
 /**
- * The bar with no conversation yet: using its box starts one, and the box
- * of that conversation takes its place.
+ * The bar with no chat yet: using its box starts one, and the box
+ * of that chat takes its place.
  */
 function StartBox({
   inputRef,
@@ -367,14 +350,14 @@ function AiCanMakeMistakes() {
 }
 
 /**
- * The chat's header: the conversation's switcher and the size buttons (bar
+ * The chat's header: the chat's switcher and the size buttons (bar
  * and panel), then, quietly, the model menu and the plan it uses (panel and
  * page).
  */
 function Header({
   className,
   person,
-  conversationId,
+  chatId,
   title,
   live,
   withModel,
@@ -383,7 +366,7 @@ function Header({
 }: {
   className: string;
   person: Person;
-  conversationId: string | null;
+  chatId: string | null;
   /** The switcher's title; null on the page, whose title is the toolbar's. */
   title: string | null;
   live: StoreApi<Live> | null;
@@ -401,7 +384,7 @@ function Header({
           {lead}
           <Switcher
             person={person}
-            conversationId={conversationId}
+            chatId={chatId}
             title={title}
             onProblem={setProblem}
           />
@@ -409,7 +392,7 @@ function Header({
           {actions}
         </div>
       )}
-      {withModel && live && conversationId !== null && (
+      {withModel && live && chatId !== null && (
         <div
           className={`flex items-center gap-0.5 px-3 pb-1.5 text-xs text-muted ${title === null ? "justify-end pt-2" : "-mt-2"}`}
         >
@@ -417,11 +400,9 @@ function Header({
             live={live}
             onChange={(next) => {
               setProblem(null);
-              request(
-                "PUT",
-                `${conversationPath(person.id, conversationId)}/model`,
-                { model: next },
-              ).catch((error: unknown) => {
+              request("PUT", `${chatPath(person.id, chatId)}/model`, {
+                model: next,
+              }).catch((error: unknown) => {
                 setProblem(messageOf(error));
               });
             }}
@@ -457,10 +438,7 @@ function LiveModel({
   live: StoreApi<Live>;
   onChange: (model: string) => void;
 }) {
-  const model = useStore(
-    live,
-    (state) => state.conversation?.model ?? undefined,
-  );
+  const model = useStore(live, (state) => state.chat?.model ?? undefined);
   return <ModelMenu value={model} onChange={onChange} />;
 }
 
@@ -528,21 +506,21 @@ function ModelMenu({
   );
 }
 
-/** The person's conversations, to continue another one or start a new one. */
+/** The person's chats, to continue another one or start a new one. */
 function Switcher({
   person,
-  conversationId,
+  chatId,
   title,
   onProblem,
 }: {
   person: Person;
-  conversationId: string | null;
+  chatId: string | null;
   title: string;
   onProblem: (problem: string | null) => void;
 }) {
   const menus = useContext(Menus);
-  const start = useNewConversation(person.id);
-  const conversations = useConversations(person.id).data?.conversations ?? [];
+  const start = useNewChat(person.id);
+  const chats = useChats(person.id).data?.chats ?? [];
   return (
     <Menu.Root>
       <Menu.Trigger className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 font-semibold hover:bg-side">
@@ -553,12 +531,12 @@ function Switcher({
         <Menu.Positioner sideOffset={6} align="start" className="z-30">
           <Menu.Popup className={`${POPUP} max-h-80 overflow-auto`}>
             <Menu.RadioGroup
-              value={conversationId ?? ""}
+              value={chatId ?? ""}
               onValueChange={(next: string) => {
                 choose(person.id, next);
               }}
             >
-              {conversations.map((c) => (
+              {chats.map((c) => (
                 <Menu.RadioItem
                   key={c.id}
                   value={c.id}
@@ -572,7 +550,7 @@ function Switcher({
                 </Menu.RadioItem>
               ))}
             </Menu.RadioGroup>
-            {conversations.length > 0 && (
+            {chats.length > 0 && (
               <Menu.Separator className="my-1 h-px bg-line" />
             )}
             <Menu.Item
@@ -585,7 +563,7 @@ function Switcher({
                 });
               }}
             >
-              New conversation
+              New chat
             </Menu.Item>
           </Menu.Popup>
         </Menu.Positioner>

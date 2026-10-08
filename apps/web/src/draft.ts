@@ -1,4 +1,4 @@
-// The box's text, kept by the core as the conversation's draft. Saves go one
+// The box's text, kept by the core as the chat's draft. Saves go one
 // after another (one mutation scope per box), a moment after the typing
 // stops, and at once when the box leaves the screen; the box says Saving…,
 // Saved or Not saved (with Retry). Nothing is saved as the page closes, so

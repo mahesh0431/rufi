@@ -1,7 +1,7 @@
 // The agent adapter: Rufi talks to a coding agent through this, so the agent
 // behind it (Codex now) can change without the rest of Rufi changing. The
 // agent keeps its own threads and its own queue of waiting messages; Rufi
-// keeps the conversation (core/chat).
+// keeps the chat (core/chat).
 import { Effect } from "effect";
 
 /** What one line of activity is about. */
@@ -154,7 +154,7 @@ export interface AgentRuntime {
   /**
    * Sends a message. It runs now if nothing runs or waits, else it waits its
    * turn; a queue paused by Stop starts again, oldest first. `context` goes
-   * before the message (a new thread's earlier conversation).
+   * before the message (a new thread's earlier chat).
    */
   send: (
     threadId: string,

@@ -1,4 +1,4 @@
-// A conversation's transcript as the core stored it: your messages, one line
+// A chat's transcript as the core stored it: your messages, one line
 // per thing the AI did, the AI's replies as Markdown with Based on under each
 // answer once it ended, Rufi's receipt for each save to the record, and how a
 // reply ended when it didn't finish. Each entry reads only itself from the
@@ -172,13 +172,13 @@ export function TranscriptView({
     >
       <div className={inner}>
         {status === "missing" ? (
-          <p className="text-muted">There is no conversation here.</p>
+          <p className="text-muted">There is no chat here.</p>
         ) : status === "open" && order.length === 0 ? (
           <FirstMessage />
         ) : (
           <div
             role="log"
-            aria-label="Conversation"
+            aria-label="Chat"
             aria-busy={running}
             className="flex flex-col gap-3"
           >

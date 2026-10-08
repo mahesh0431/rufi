@@ -34,7 +34,7 @@ export const ActivityKind = Schema.Literals([
 ]);
 export type ActivityKind = typeof ActivityKind.Type;
 
-/** One item of a conversation's transcript, in order by `seq`. */
+/** One item of a chat's transcript, in order by `seq`. */
 export const Entry = Schema.Struct({
   id: Schema.String,
   seq: Schema.Int,
@@ -112,7 +112,7 @@ export const Turn = Schema.Struct({
 });
 export type Turn = typeof Turn.Type;
 
-export const Conversation = Schema.Struct({
+export const Chat = Schema.Struct({
   id: Schema.String,
   /** The first words of the first message Rufi took; null until then. */
   title: Schema.NullOr(Schema.String),
@@ -121,7 +121,7 @@ export const Conversation = Schema.Struct({
   model: Schema.NullOr(Schema.String),
   createdAt: Schema.String,
 });
-export type Conversation = typeof Conversation.Type;
+export type Chat = typeof Chat.Type;
 
 /** A message the AI holds until the running reply has ended. */
 export const WaitingMessage = Schema.Struct({
@@ -132,7 +132,7 @@ export const WaitingMessage = Schema.Struct({
 export type WaitingMessage = typeof WaitingMessage.Type;
 
 /**
- * One line of a conversation's live stream (NDJSON). It starts with a
+ * One line of a chat's live stream (NDJSON). It starts with a
  * snapshot; each update replaces entries and turns by id. A screen that falls
  * behind, or reconnects, gets a new snapshot.
  */
@@ -140,7 +140,7 @@ export const StreamLine = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("snapshot"),
     revision: Schema.Int,
-    conversation: Conversation,
+    chat: Chat,
     entries: Schema.Array(Entry),
     turns: Schema.Array(Turn),
   }),
@@ -149,8 +149,8 @@ export const StreamLine = Schema.Union([
     revision: Schema.Int,
     entries: Schema.Array(Entry),
     turns: Schema.Array(Turn),
-    /** The conversation, when its title or model changed. */
-    conversation: Schema.optionalKey(Conversation),
+    /** The chat, when its title or model changed. */
+    chat: Schema.optionalKey(Chat),
   }),
   /** The waiting messages changed; read them again. */
   Schema.Struct({ type: Schema.Literal("waiting") }),
@@ -159,10 +159,10 @@ export const StreamLine = Schema.Union([
 ]);
 export type StreamLine = typeof StreamLine.Type;
 
-/** A person's conversations, newest first, and the one the chat continues. */
-export const Conversations = Schema.Struct({
-  conversations: Schema.Array(Conversation),
-  /** The conversation to open the chat on: the last choice a tab saved. */
+/** A person's chats, newest first, and the one the chat continues. */
+export const Chats = Schema.Struct({
+  chats: Schema.Array(Chat),
+  /** The chat to open the chat on: the last choice a tab saved. */
   chosen: Schema.NullOr(Schema.String),
 });
 
@@ -171,7 +171,7 @@ export const WaitingMessages = Schema.Struct({
 });
 
 /**
- * The unsent text of a conversation's box. Its revision grows with every
+ * The unsent text of a chat's box. Its revision grows with every
  * change, so a save based on an older revision is refused. `sending`: a
  * send holds it until the agent took or refused the message, and it can't
  * be changed meanwhile; `unknown`: Rufi stopped during that send, so the
@@ -309,7 +309,7 @@ export const SaveSettings = Schema.Struct({
   emergencyRegion: Schema.NullOr(Line(10)),
 });
 
-export const CreateConversation = Schema.Struct({
+export const CreateChat = Schema.Struct({
   title: Schema.optionalKey(Line(200)),
 });
 
@@ -336,8 +336,8 @@ export const SaveDraft = Schema.Struct({
   revision: Schema.Int,
 });
 
-/** The conversation Rufi opens the chat on next time. */
-export const ChooseConversation = Schema.Struct({ conversationId: Id });
+/** The chat Rufi opens the chat on next time. */
+export const ChooseChat = Schema.Struct({ chatId: Id });
 
 export const ReorderWaiting = Schema.Struct({ ids: Schema.Array(Id) });
 

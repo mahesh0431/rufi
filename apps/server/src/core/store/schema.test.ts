@@ -63,9 +63,9 @@ beforeEach(() => {
 });
 
 describe("schema", () => {
-  describe("conversations stay with their person", () => {
-    const conversation = (id: string, person: string) => {
-      insert("conversations", {
+  describe("chats stay with their person", () => {
+    const chat = (id: string, person: string) => {
+      insert("chats", {
         id,
         person_id: person,
         title: "Fictional",
@@ -90,17 +90,17 @@ describe("schema", () => {
     };
 
     beforeEach(() => {
-      conversation("c-amma", "amma");
-      conversation("c-nanna", "nanna");
+      chat("c-amma", "amma");
+      chat("c-nanna", "nanna");
     });
 
-    it("rejects a turn, an entry, a draft or a chosen conversation for one person in another's conversation", () => {
+    it("rejects a turn, an entry, a draft or a chosen chat for one person in another's chat", () => {
       expect(() => {
         insert("turns", {
           ...turn,
           id: "t-x",
           person_id: "amma",
-          conversation_id: "c-nanna",
+          chat_id: "c-nanna",
         });
       }).toThrow("FOREIGN KEY constraint failed");
       expect(() => {
@@ -108,22 +108,22 @@ describe("schema", () => {
           ...entry,
           id: "e-x",
           person_id: "amma",
-          conversation_id: "c-nanna",
+          chat_id: "c-nanna",
         });
       }).toThrow("FOREIGN KEY constraint failed");
       expect(() => {
         insert("drafts", {
           person_id: "amma",
-          conversation_id: "c-nanna",
+          chat_id: "c-nanna",
           text: "x",
           revision: 1,
           updated_at: now,
         });
       }).toThrow("FOREIGN KEY constraint failed");
       expect(() => {
-        insert("chosen_conversations", {
+        insert("chosen_chats", {
           person_id: "amma",
-          conversation_id: "c-nanna",
+          chat_id: "c-nanna",
         });
       }).toThrow("FOREIGN KEY constraint failed");
     });
@@ -133,14 +133,14 @@ describe("schema", () => {
         ...turn,
         id: "t-nanna",
         person_id: "nanna",
-        conversation_id: "c-nanna",
+        chat_id: "c-nanna",
       });
       expect(() => {
         insert("transcript_entries", {
           ...entry,
           id: "e-x",
           person_id: "amma",
-          conversation_id: "c-amma",
+          chat_id: "c-amma",
           turn_id: "t-nanna",
         });
       }).toThrow("FOREIGN KEY constraint failed");
@@ -150,7 +150,7 @@ describe("schema", () => {
       const line = {
         ...entry,
         person_id: "amma",
-        conversation_id: "c-amma",
+        chat_id: "c-amma",
         kind: "activity",
       };
       expect(() => {
@@ -168,7 +168,7 @@ describe("schema", () => {
           id: "e-3",
           seq: 2,
           person_id: "amma",
-          conversation_id: "c-amma",
+          chat_id: "c-amma",
           status: "done",
         });
       }).toThrow("CHECK constraint failed");
@@ -177,7 +177,7 @@ describe("schema", () => {
     it("holds a draft for a send only with its message id", () => {
       const draft = {
         person_id: "amma",
-        conversation_id: "c-amma",
+        chat_id: "c-amma",
         text: "a",
         revision: 1,
         updated_at: now,

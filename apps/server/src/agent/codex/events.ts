@@ -151,7 +151,7 @@ export function activityOf(
     case "contextCompaction":
       return line(
         "other",
-        "Condensed the earlier conversation",
+        "Condensed the earlier chat",
         undefined,
         statusOf(undefined, ended),
       );
@@ -250,10 +250,7 @@ function failure(
     );
   }
   if (info === "contextWindowExceeded") {
-    return failed(
-      "provider_failed",
-      "The conversation is too long for the model.",
-    );
+    return failed("provider_failed", "The chat is too long for the model.");
   }
   return failed(
     "provider_failed",

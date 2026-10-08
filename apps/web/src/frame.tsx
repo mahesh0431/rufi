@@ -5,14 +5,9 @@ import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { CircleHelp, House, Settings, SquarePen } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useConnection } from "./api.ts";
-import { ChatDock, titleOf, useNewConversation } from "./chat.tsx";
+import { ChatDock, titleOf, useNewChat } from "./chat.tsx";
 import { messageOf } from "./live.ts";
-import {
-  useConversations,
-  useFirstRun,
-  usePeople,
-  useStatus,
-} from "./reads.ts";
+import { useChats, useFirstRun, usePeople, useStatus } from "./reads.ts";
 
 const TITLES: Record<string, string> = {
   settings: "Settings",
@@ -20,13 +15,13 @@ const TITLES: Record<string, string> = {
   "sign-in": "Sign in with ChatGPT",
 };
 
-/** The person and conversation of a conversation page's address. */
-const conversationOf = (pathname: string) => {
-  const match = /^\/people\/([^/]+)\/conversations\/([^/]+)$/.exec(pathname);
+/** The person and chat of a chat page's address. */
+const chatOf = (pathname: string) => {
+  const match = /^\/people\/([^/]+)\/chats\/([^/]+)$/.exec(pathname);
   return (
     match && {
       personId: decodeURIComponent(match[1] ?? ""),
-      conversationId: decodeURIComponent(match[2] ?? ""),
+      chatId: decodeURIComponent(match[2] ?? ""),
     }
   );
 };
@@ -41,7 +36,7 @@ export function Frame() {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
-  const onConversation = conversationOf(pathname);
+  const onChat = chatOf(pathname);
 
   return (
     <div className="flex h-full">
@@ -57,10 +52,7 @@ export function Frame() {
           className="mt-2 flex min-h-0 flex-1 flex-col gap-0.5"
         >
           {person && !welcoming && (
-            <NewConversation
-              personId={person.id}
-              onPage={onConversation !== null}
-            />
+            <NewChat personId={person.id} onPage={onChat !== null} />
           )}
           {!welcoming && (
             <Place to="/" icon={<House size={15} aria-hidden />}>
@@ -68,10 +60,7 @@ export function Frame() {
             </Place>
           )}
           {person && !welcoming ? (
-            <Conversations
-              person={person}
-              current={onConversation?.conversationId}
-            />
+            <Chats person={person} current={onChat?.chatId} />
           ) : (
             <div className="flex-1" />
           )}
@@ -90,8 +79,8 @@ export function Frame() {
           className="flex h-[52px] shrink-0 items-center border-b border-line bg-page/80 px-5 backdrop-blur"
         >
           <h1 className="truncate text-[15px] font-semibold">
-            {onConversation ? (
-              <ConversationTitle {...onConversation} />
+            {onChat ? (
+              <ChatTitle {...onChat} />
             ) : (
               (TITLES[pathname.split("/")[1] ?? ""] ??
               (welcoming ? "Welcome" : "Overview"))
@@ -118,22 +107,15 @@ export function Frame() {
           )}
         </main>
       </div>
-      {person &&
-        welcomed &&
-        connection !== "ended" &&
-        onConversation === null && <ChatDock person={person} />}
+      {person && welcomed && connection !== "ended" && onChat === null && (
+        <ChatDock person={person} />
+      )}
     </div>
   );
 }
 
-function NewConversation({
-  personId,
-  onPage,
-}: {
-  personId: string;
-  onPage: boolean;
-}) {
-  const start = useNewConversation(personId);
+function NewChat({ personId, onPage }: { personId: string; onPage: boolean }) {
+  const start = useNewChat(personId);
   const [problem, setProblem] = useState<string | null>(null);
   return (
     <>
@@ -148,7 +130,7 @@ function NewConversation({
         className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-white/60"
       >
         <SquarePen size={15} aria-hidden />
-        New conversation
+        New chat
       </button>
       {problem !== null && (
         <p role="alert" className="px-2 text-xs text-muted">
@@ -159,39 +141,39 @@ function NewConversation({
   );
 }
 
-/** The person's conversations, newest first, each at its own page. */
-function Conversations({
+/** The person's chats, newest first, each at its own page. */
+function Chats({
   person,
   current,
 }: {
   person: Person;
   current: string | undefined;
 }) {
-  const conversations = useConversations(person.id).data?.conversations ?? [];
+  const chats = useChats(person.id).data?.chats ?? [];
   return (
     <section
-      aria-labelledby="conversations"
+      aria-labelledby="chats"
       className="mt-3 flex min-h-0 flex-1 flex-col"
     >
-      {conversations.length > 0 && (
-        <h2 id="conversations" className="px-2 pb-1 text-xs text-muted">
-          Conversations
+      {chats.length > 0 && (
+        <h2 id="chats" className="px-2 pb-1 text-xs text-muted">
+          Chats
         </h2>
       )}
       <ul className="min-h-0 flex-1 overflow-auto">
-        {conversations.map((conversation) => (
-          <li key={conversation.id}>
+        {chats.map((chat) => (
+          <li key={chat.id}>
             <Link
-              to="/people/$personId/conversations/$conversationId"
-              params={{ personId: person.id, conversationId: conversation.id }}
-              aria-current={current === conversation.id ? "page" : undefined}
+              to="/people/$personId/chats/$chatId"
+              params={{ personId: person.id, chatId: chat.id }}
+              aria-current={current === chat.id ? "page" : undefined}
               className={
-                current === conversation.id
+                current === chat.id
                   ? "block truncate rounded-lg bg-accent-soft px-2 py-1.5 text-accent-ink"
                   : "block truncate rounded-lg px-2 py-1.5 hover:bg-white/60"
               }
             >
-              {titleOf(conversation)}
+              {titleOf(chat)}
             </Link>
           </li>
         ))}
@@ -200,15 +182,9 @@ function Conversations({
   );
 }
 
-function ConversationTitle({
-  personId,
-  conversationId,
-}: {
-  personId: string;
-  conversationId: string;
-}) {
-  const conversations = useConversations(personId).data?.conversations;
-  return <>{titleOf(conversations?.find((c) => c.id === conversationId))}</>;
+function ChatTitle({ personId, chatId }: { personId: string; chatId: string }) {
+  const chats = useChats(personId).data?.chats;
+  return <>{titleOf(chats?.find((c) => c.id === chatId))}</>;
 }
 
 function Place({

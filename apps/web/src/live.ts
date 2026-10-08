@@ -1,11 +1,11 @@
-// One live store per open conversation: the stream's snapshot, then each
+// One live store per open chat: the stream's snapshot, then each
 // update applied by id, and the waiting messages read again when they change.
 // Entries are kept by id, so a streaming reply re-renders only itself. The
-// stream closes when nothing shows the conversation; when it drops, it
+// stream closes when nothing shows the chat; when it drops, it
 // connects again and starts from a new snapshot. It never sends anything.
 import {
-  type Conversation,
-  Conversations,
+  type Chat,
+  Chats,
   StreamLine,
   type WaitingMessage,
   WaitingMessages,
@@ -13,19 +13,19 @@ import {
 import { Schema } from "effect";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { ApiError, read, stream } from "./api.ts";
-import { conversationsKey, queries } from "./reads.ts";
+import { chatsKey, queries } from "./reads.ts";
 import { apply, type Transcript } from "./transcript-state.ts";
 
 export interface Live extends Transcript {
-  /** loading: before the first snapshot; missing: no such conversation. */
+  /** loading: before the first snapshot; missing: no such chat. */
   status: "loading" | "open" | "missing";
   waiting: readonly WaitingMessage[];
   /** Why the waiting messages couldn't be read, in the core's words. */
   waitingError: string | null;
 }
 
-export const conversationPath = (personId: string, conversationId: string) =>
-  `/api/people/${encodeURIComponent(personId)}/conversations/${encodeURIComponent(conversationId)}`;
+export const chatPath = (personId: string, chatId: string) =>
+  `/api/people/${encodeURIComponent(personId)}/chats/${encodeURIComponent(chatId)}`;
 
 /** How long a store stays open after the last view leaves (bar to page). */
 const LINGER_MS = 1_000;
@@ -43,16 +43,16 @@ interface Opened {
 const opened = new Map<string, Opened>();
 
 /**
- * The live store of a conversation. A view that shows it holds its stream
+ * The live store of a chat. A view that shows it holds its stream
  * open from an effect: `useEffect(() => retain(personId, id), [personId, id])`.
  */
-export function liveStore(personId: string, conversationId: string) {
-  return open(personId, conversationId).store;
+export function liveStore(personId: string, chatId: string) {
+  return open(personId, chatId).store;
 }
 
-/** Holds the conversation's stream open; the returned function lets it go. */
-export function retain(personId: string, conversationId: string): () => void {
-  const entry = open(personId, conversationId);
+/** Holds the chat's stream open; the returned function lets it go. */
+export function retain(personId: string, chatId: string): () => void {
+  const entry = open(personId, chatId);
   entry.views += 1;
   clearTimeout(entry.linger);
   entry.start();
@@ -62,20 +62,19 @@ export function retain(personId: string, conversationId: string): () => void {
     entry.linger = setTimeout(() => {
       if (entry.views > 0) return;
       entry.close();
-      opened.delete(key(personId, conversationId));
+      opened.delete(key(personId, chatId));
     }, LINGER_MS);
   };
 }
 
-const key = (personId: string, conversationId: string) =>
-  `${personId}/${conversationId}`;
+const key = (personId: string, chatId: string) => `${personId}/${chatId}`;
 
-function open(personId: string, conversationId: string): Opened {
-  const found = opened.get(key(personId, conversationId));
+function open(personId: string, chatId: string): Opened {
+  const found = opened.get(key(personId, chatId));
   if (found) return found;
   const store = createStore<Live>(() => ({
     status: "loading",
-    conversation: null,
+    chat: null,
     entries: {},
     order: [],
     turns: {},
@@ -83,7 +82,7 @@ function open(personId: string, conversationId: string): Opened {
     waitingError: null,
   }));
   const stop = new AbortController();
-  const path = conversationPath(personId, conversationId);
+  const path = chatPath(personId, chatId);
 
   // Each change starts a read; only the last one started is shown, so an
   // older answer that comes late never replaces a newer one.
@@ -115,8 +114,8 @@ function open(personId: string, conversationId: string): Opened {
     const next = apply(before, line);
     store.setState({ ...next, status: "open" });
     if (line.type === "snapshot") void readWaiting();
-    if (line.type === "update" && line.conversation) {
-      showConversation(personId, line.conversation);
+    if (line.type === "update" && line.chat) {
+      showChat(personId, line.chat);
     }
     // A reply that ended for the sign-in: the sidebar says so.
     if (line.turns.some((turn) => turn.endReason === "sign_in")) {
@@ -156,27 +155,23 @@ function open(personId: string, conversationId: string): Opened {
       stop.abort();
     },
   };
-  opened.set(key(personId, conversationId), entry);
+  opened.set(key(personId, chatId), entry);
   return entry;
 }
 
-/** A conversation's new title or model, in the sidebar and the page title. */
-function showConversation(personId: string, conversation: Conversation) {
+/** A chat's new title or model, in the sidebar and the page title. */
+function showChat(personId: string, chat: Chat) {
   // An older read of the list, still on its way, must not undo this.
-  void queries
-    .cancelQueries({ queryKey: conversationsKey(personId) })
-    .then(() => {
-      queries.setQueryData<typeof Conversations.Type>(
-        conversationsKey(personId),
-        (list) =>
-          list && {
-            ...list,
-            conversations: list.conversations.map((c) =>
-              c.id === conversation.id ? conversation : c,
-            ),
-          },
-      );
-    });
+  void queries.cancelQueries({ queryKey: chatsKey(personId) }).then(() => {
+    queries.setQueryData<typeof Chats.Type>(
+      chatsKey(personId),
+      (list) =>
+        list && {
+          ...list,
+          chats: list.chats.map((c) => (c.id === chat.id ? chat : c)),
+        },
+    );
+  });
 }
 
 /** A failure in words for the person: the core's own, or a plain one. */

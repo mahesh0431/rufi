@@ -634,7 +634,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   async function open(threadId: string): Promise<AppServer> {
     const app = await ready();
     if (!loaded.has(threadId)) {
-      throw new Error("Open the conversation's thread first.");
+      throw new Error("Open the chat's thread first.");
     }
     return app;
   }

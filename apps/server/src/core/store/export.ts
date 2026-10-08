@@ -1,4 +1,4 @@
-// Export: everything in the record, conversations and settings, as one zip
+// Export: everything in the record, chats and settings, as one zip
 // a person can open without Rufi. Every table as JSON (exact) and CSV (for a
 // spreadsheet), with a README. Made from one fixed copy of the database, so
 // a save is in it whole or not at all, and read back against that copy
@@ -137,7 +137,7 @@ const README = (
 ) => `# Your Rufi data
 
 Exported from Rufi on ${createdAt}. This is everything in your record, your
-conversations and Rufi's settings, as Rufi stored it.
+chats and Rufi's settings, as Rufi stored it.
 
 - \`json/\`: one file per table. Each file holds the table's name, its
   columns, and its rows, each row an object of column and value. A value

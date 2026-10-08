@@ -1,9 +1,9 @@
-// A conversation's transcript as the screens hold it, and how each line of
+// A chat's transcript as the screens hold it, and how each line of
 // its live stream changes it.
-import type { Conversation, Entry, StreamLine, Turn } from "@rufi/contracts";
+import type { Chat, Entry, StreamLine, Turn } from "@rufi/contracts";
 
 export interface Transcript {
-  conversation: Conversation | null;
+  chat: Chat | null;
   entries: Readonly<Record<string, Entry>>;
   /** Entry ids in transcript order. */
   order: readonly string[];
@@ -18,7 +18,7 @@ export interface Transcript {
 export function apply(state: Transcript, line: StreamLine): Transcript {
   if (line.type === "snapshot") {
     return {
-      conversation: line.conversation,
+      chat: line.chat,
       entries: byId(line.entries),
       order: inOrder(line.entries),
       turns: byId(line.turns),
@@ -28,7 +28,7 @@ export function apply(state: Transcript, line: StreamLine): Transcript {
   const entries = { ...state.entries, ...byId(line.entries) };
   const added = line.entries.some((entry) => !(entry.id in state.entries));
   return {
-    conversation: line.conversation ?? state.conversation,
+    chat: line.chat ?? state.chat,
     entries,
     order: added ? inOrder(Object.values(entries)) : state.order,
     turns: { ...state.turns, ...byId(line.turns) },
@@ -40,6 +40,6 @@ const byId = <T extends { id: string }>(items: readonly T[]) =>
 const inOrder = (entries: readonly Entry[]) =>
   [...entries].sort((a, b) => a.seq - b.seq).map((entry) => entry.id);
 
-/** Whether a reply is running in the conversation. */
+/** Whether a reply is running in the chat. */
 export const isRunning = (state: Transcript) =>
   Object.values(state.turns).some((turn) => turn.status === "running");

@@ -54,7 +54,7 @@ function changeOf(kind: Kind) {
       Schema.isMaxLength(1_000),
     ).annotate({
       description:
-        "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one).",
+        "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one).",
     }),
     fields: Schema.optionalKey(
       Schema.Struct(fields).annotate({
@@ -146,7 +146,7 @@ export interface Saved {
 
 interface Where {
   personId: string;
-  conversationId: string;
+  chatId: string;
   /** The agent's id for the call. */
   callId: string;
   now: string;
@@ -193,7 +193,7 @@ export async function saveChanges(
   const earlier = await trx
     .selectFrom("operations")
     .select(["id", "request"])
-    .where("conversation_id", "=", where.conversationId)
+    .where("chat_id", "=", where.chatId)
     .where("call_id", "=", where.callId)
     .executeTakeFirst();
   if (earlier) {
@@ -209,7 +209,7 @@ export async function saveChanges(
     .selectFrom("transcript_entries")
     .select(["id", "text", "created_at"])
     .where("person_id", "=", where.personId)
-    .where("conversation_id", "=", where.conversationId)
+    .where("chat_id", "=", where.chatId)
     .where("kind", "in", ["message", "steer"])
     .orderBy("seq", "desc")
     .execute();
@@ -241,7 +241,7 @@ export async function saveChanges(
       problem(
         `${at}.source`,
         change.source,
-        "No message of the user's in this conversation has these words. Copy the user's own words exactly from the message this change rests on.",
+        "No message of the user's in this chat has these words. Copy the user's own words exactly from the message this change rests on.",
       );
       continue;
     }
@@ -345,7 +345,7 @@ export async function saveChanges(
     .values({
       id,
       person_id: where.personId,
-      conversation_id: where.conversationId,
+      chat_id: where.chatId,
       call_id: where.callId,
       request,
       created_at: where.now,

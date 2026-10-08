@@ -27,7 +27,7 @@ const turn = (status: Turn["status"]): Turn => ({
   how: null,
   used: [],
 });
-const conversation = {
+const chat = {
   id: "c1",
   title: null,
   provider: "codex",
@@ -35,25 +35,25 @@ const conversation = {
   createdAt: at,
 };
 const empty: Transcript = {
-  conversation: null,
+  chat: null,
   entries: {},
   order: [],
   turns: {},
 };
 
-describe("a conversation's live stream", () => {
+describe("a chat's live stream", () => {
   it("shows a snapshot as it is, also over what was shown before a reconnect", () => {
     const before = apply(empty, {
       type: "snapshot",
       revision: 3,
-      conversation,
+      chat,
       entries: [entry("a", 1, "Hel"), entry("b", 2, "gone")],
       turns: [turn("running")],
     });
     const after = apply(before, {
       type: "snapshot",
       revision: 9,
-      conversation,
+      chat,
       entries: [entry("c", 3, "third"), entry("a", 1, "Hello")],
       turns: [turn("completed")],
     });
@@ -69,7 +69,7 @@ describe("a conversation's live stream", () => {
     const shown = apply(empty, {
       type: "snapshot",
       revision: 1,
-      conversation,
+      chat,
       entries: [entry("a", 1, "Question"), entry("b", 2, "o")],
       turns: [turn("running")],
     });
@@ -98,7 +98,7 @@ describe("a conversation's live stream", () => {
     const shown = apply(empty, {
       type: "snapshot",
       revision: 0,
-      conversation,
+      chat,
       entries: [],
       turns: [],
     });
@@ -107,15 +107,15 @@ describe("a conversation's live stream", () => {
       revision: 1,
       entries: [],
       turns: [],
-      conversation: { ...conversation, title: "Thyroid results" },
+      chat: { ...chat, title: "Thyroid results" },
     });
-    expect(titled.conversation?.title).toBe("Thyroid results");
+    expect(titled.chat?.title).toBe("Thyroid results");
     const later = apply(titled, {
       type: "update",
       revision: 2,
       entries: [entry("a", 1, "Hi")],
       turns: [],
     });
-    expect(later.conversation?.title).toBe("Thyroid results");
+    expect(later.chat?.title).toBe("Thyroid results");
   });
 });
