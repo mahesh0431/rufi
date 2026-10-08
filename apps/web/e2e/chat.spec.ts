@@ -1031,14 +1031,18 @@ test("Based on, under an answer once it ended, opens How and Used; small talk ha
   await expect(log(chat(page)).locator(".reply")).toHaveText(
     "ok:Your last HbA1c",
   );
+  // The activity line and Used name the read in the same plain words.
+  await expect(log(chat(page))).toContainText("Read your results in Aug 2026");
   await expect(basedOn).toHaveCount(1);
-  await basedOn.click();
+  // A link that opens from the keyboard too.
+  await basedOn.focus();
+  await page.keyboard.press("Enter");
   const opened1 = log(chat(page)).locator("details[open]");
   await expect(
     opened1.getByText("From your record, read now.", { exact: true }),
   ).toBeVisible();
   await expect(opened1.getByRole("listitem")).toHaveText([
-    "Read your recordsresults from 2026-08 to 2026-085 records",
+    "Read your results in Aug 2026 · 5 records",
     "Ran a commandls",
   ]);
   await accessible(page);

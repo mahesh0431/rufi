@@ -31,8 +31,11 @@ export interface Tool<In extends Input = Input> {
   name: string;
   /** Written for the model; every limit the tool enforces is stated here. */
   description: string;
-  /** What a person sees when the AI uses it, in plain words. */
-  shown: string;
+  /**
+   * What a person sees when the AI uses it, in plain words; from what the
+   * AI sent when the words depend on it ("Read your results in 2026").
+   */
+  shown: string | ((input: unknown) => string);
   input: In;
   /** Who may call it; maps to MCP Apps' `visibility` later. */
   callers: "model" | "ui" | "both";
@@ -54,6 +57,10 @@ export class Refusal extends Error {
     this.issues = issues;
   }
 }
+
+/** A tool's words for one call, from what the AI sent. */
+export const shownFor = (tool: Tool, input: unknown) =>
+  typeof tool.shown === "string" ? tool.shown : tool.shown(input);
 
 /** Kept generic per tool, then stored in one list. */
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- one list of differently typed tools

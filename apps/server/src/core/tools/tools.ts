@@ -6,6 +6,7 @@ import { saveChanges } from "./save.ts";
 import { getRecords } from "./records.ts";
 import {
   inputSchema,
+  shownFor,
   toolCaller,
   type Tool,
   type ToolContext,
@@ -55,7 +56,7 @@ export function forAgent(context: () => ToolContext, log: Log) {
     specs: tools.map((tool) => ({
       name: tool.name,
       description: tool.description,
-      shown: tool.shown,
+      shown: (input: unknown) => shownFor(tool, input),
       inputSchema: inputSchema(tool),
     })),
     instructions: TOOL_INSTRUCTIONS,

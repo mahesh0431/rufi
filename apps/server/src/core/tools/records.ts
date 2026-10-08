@@ -4,7 +4,7 @@
 // be read. The AI counts, compares and finds trends in the records itself.
 import { Schema } from "effect";
 import { sql } from "kysely";
-import { dateProblem } from "../record/dates.ts";
+import { dateProblem, shownDate } from "../record/dates.ts";
 import { fieldsOf } from "../record/read.ts";
 import { KINDS, kindNamed, type Kind, type Row } from "../record/kinds.ts";
 import { defineTool, Refusal } from "./registry.ts";
@@ -42,30 +42,62 @@ const Input = Schema.Struct({
 /** Each kind with the field its dates are compared with. */
 const datedBy = KINDS.map((kind) => `${kind.name} by ${kind.dated}`).join(", ");
 
-/** A kind's records in plain words: "medicine uses", "allergies". */
-const plural = (kind: Kind) =>
-  kind.noun.endsWith("y") ? `${kind.noun.slice(0, -1)}ies` : `${kind.noun}s`;
+/** The period a read's dates open: from "2026-01-01" starts 2026. */
+function opened(date: string): string {
+  let start = date;
+  while (/^\d{4}(-\d{2})*-01$/.test(start)) start = start.slice(0, -3);
+  return start;
+}
 
-/** What a read asked for, in plain words: "results from 2024 to 2026-03". */
-export function asked(
-  kind: string | null,
-  from: string | null,
-  to: string | null,
-): string | null {
-  const named = kind === null ? undefined : kindNamed(kind);
-  if (!named) return null;
-  return [
-    plural(named),
-    from !== null && `from ${from}`,
-    to !== null && `to ${to}`,
-  ]
-    .filter((part) => part !== false)
-    .join(" ");
+/** The period a read's dates close: to "2026-12-31" ends 2026. */
+function closed(date: string): string {
+  let end = date;
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(end);
+  // Day 0 of the next month is the last day of this one.
+  if (
+    day &&
+    Number(day[3]) ===
+      new Date(Date.UTC(Number(day[1]), Number(day[2]), 0)).getUTCDate()
+  ) {
+    end = end.slice(0, 7);
+  }
+  if (/^\d{4}-12$/.test(end)) end = end.slice(0, 4);
+  return end;
+}
+
+/** A read's dates in words: "in 2026", "since Mar 2024", "from 2024 to 8 Oct 2026". */
+function period(from: string | undefined, to: string | undefined) {
+  if (from !== undefined && to !== undefined) {
+    const start = opened(from);
+    if (start === closed(to)) {
+      return `${start.length > 7 ? "on" : "in"} ${shownDate(start)}`;
+    }
+    return `from ${shownDate(from)} to ${shownDate(to)}`;
+  }
+  if (from !== undefined) return `since ${shownDate(from)}`;
+  if (to !== undefined) return `up to ${shownDate(to)}`;
+  return undefined;
+}
+
+/** A date the AI sent, when it is one. */
+const dateIn = (value: unknown) =>
+  typeof value === "string" && dateProblem(value) === undefined
+    ? value
+    : undefined;
+
+/** A read in plain words, from what the AI sent: "Read your results in 2026". */
+function shown(input: unknown): string {
+  const sent = (input ?? {}) as Record<string, unknown>;
+  const kind =
+    typeof sent["kind"] === "string" ? kindNamed(sent["kind"]) : undefined;
+  if (!kind) return "Read your records";
+  const when = period(dateIn(sent["from"]), dateIn(sent["to"]));
+  return `Read your ${kind.nouns}${when === undefined ? "" : ` ${when}`}`;
 }
 
 export const getRecords = defineTool({
   name: "get_records",
-  shown: "Read your records",
+  shown,
   description: `The active person's records of one kind (${names.join(", ")}), as stored: each with its id and fields as save_changes takes them, also the records removed from the record ("removed": true) and results replaced by an amended one ("replaced_by": the amended result's id). Newest first, undated last. With from or to, only records dated in that period: ${datedBy}. A record dated at a lower precision is read when its year or month overlaps the period ("2026" is in from 2026-03); a record with no date is read only without from and to. At most ${String(LIMITS.records)} records and ${String(LIMITS.bytes / 1000)} KB of records (as UTF-8 JSON) come back. When a cap leaves records out, the answer says "complete": false and "capped": narrow the dates and read again. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.`,
   input: Input,
   callers: "model",

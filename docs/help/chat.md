@@ -74,7 +74,7 @@ If your record changes while the AI answers, for example a save in another conve
 Under an answer, once the reply has ended, the **Based on** link opens two parts:
 
 - **How**: the AI's own words on where the answer comes from: your record, read in this reply or earlier in the conversation, the web, or general knowledge. It also says how the AI got the answer, for example which results it compared.
-- **Used**: which reads the AI made in that reply, and how each one ended: your Overview, your records of one kind (with the dates and the number of records), a web search or a web page, a command. Rufi makes this list itself, not from the AI's words. What each read got back isn't shown here; Rufi keeps it with the conversation.
+- **Used**: which reads the AI made in that reply, and how each one ended: your Overview, your records of one kind (for example "Read your results in 2026 · 8 records"), a web search or a web page, a command. Rufi makes this list itself, not from the AI's words. What each read got back isn't shown here; Rufi keeps it with the conversation.
 
 Used is what the AI read, not proof that each read supports the answer. For the web, Rufi sees what was searched or opened, not the text of the page. When a read failed, stopped or was capped, its line says so. When the AI answers from something it read earlier in the conversation, Used is empty for that reply, and How says so. If How and Used don't agree, ask the AI.
 

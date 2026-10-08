@@ -786,6 +786,11 @@ describe("the chat, on the scripted Codex", () => {
     await chat?.send(await conversation(c.id), "quiet thanks");
     await ended(c.id, 2);
     const { entries, turns } = await transcript(c.id);
+    // The activity line names the read in the same words as Used.
+    expect(entries).toContainEqual([
+      "activity",
+      "Read your results since 2024",
+    ]);
     expect(entries.filter(([kind]) => kind === "reply")).toEqual([
       ["reply", "ok:Your HbA1c"],
       ["reply", "ok:quiet thanks"],
@@ -804,8 +809,8 @@ describe("the chat, on the scripted Codex", () => {
         "From the record, read now.",
         [
           {
-            title: "Read your records",
-            detail: "results from 2024",
+            title: "Read your results since 2024",
+            detail: null,
             outcome: "done",
             note: "0 records",
           },
@@ -1032,8 +1037,8 @@ describe("the chat, on the scripted Codex", () => {
         how: null,
         used: [
           {
-            title: "Read your records",
-            detail: "results to 2026-08",
+            title: "Read your results up to Aug 2026",
+            detail: null,
             outcome: "failed",
             note: "Rufi couldn't run get_records.",
           },

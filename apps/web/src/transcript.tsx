@@ -328,7 +328,8 @@ function BasedOn({ live, turnId }: { live: StoreApi<Live>; turnId: string }) {
   if (!turn) return null;
   return (
     <details className="based-on text-muted">
-      <summary className="w-fit cursor-pointer text-accent-ink underline">
+      {/* A plain link: no disclosure triangle; still a button for the keyboard. */}
+      <summary className="w-fit cursor-pointer list-none text-accent-ink underline [&::-webkit-details-marker]:hidden">
         Based on
       </summary>
       <div className="mt-1.5 flex flex-col gap-2 rounded-lg border border-line bg-side px-3 py-2">
@@ -356,7 +357,11 @@ function BasedOn({ live, turnId }: { live: StoreApi<Live>; turnId: string }) {
   );
 }
 
-/** One read: what, which records or which address, and what came back or why not. */
+/**
+ * One read on one line, what and what came back or why not ("Read your
+ * results in 2026 · 8 records"), and the command, search words or address
+ * under it.
+ */
 function UsedLine({ read }: { read: Read }) {
   const said =
     read.note ??
@@ -368,10 +373,10 @@ function UsedLine({ read }: { read: Read }) {
   return (
     <li className="min-w-0">
       <span className="text-ink">{read.title}</span>
+      {said !== null && <span> · {said}</span>}
       {read.detail !== null && (
         <span className="block font-mono text-xs break-all">{read.detail}</span>
       )}
-      {said !== null && <span className="block text-xs">{said}</span>}
     </li>
   );
 }

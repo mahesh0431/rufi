@@ -108,8 +108,8 @@ export interface AgentTools {
   specs: readonly {
     name: string;
     description: string;
-    /** What a person sees when the AI uses it, in plain words. */
-    shown: string;
+    /** What a person sees when the AI uses it, in plain words, from what the AI sent. */
+    shown: (input: unknown) => string;
     inputSchema: Record<string, unknown>;
   }[];
 }

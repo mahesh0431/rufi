@@ -58,7 +58,7 @@ const TOOLS: AgentTools = {
     {
       name: "get_overview",
       description: "The record at a glance.",
-      shown: "Read your overview",
+      shown: () => "Read your overview",
       inputSchema: { type: "object", properties: {} },
     },
   ],
@@ -1309,7 +1309,7 @@ describe("Codex's items and endings in Rufi's words", () => {
             {
               name: "save_changes",
               description: "Saves changes.",
-              shown: "Save to your record",
+              shown: () => "Save to your record",
               inputSchema: {},
             },
           ],

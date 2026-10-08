@@ -208,9 +208,7 @@ async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
       "call_id",
       "tool",
       "ok",
-      sql<string | null>`json_extract(input, '$.kind')`.as("kind"),
-      sql<string | null>`json_extract(input, '$.from')`.as("from"),
-      sql<string | null>`json_extract(input, '$.to')`.as("to"),
+      "input",
       sql<number | null>`json_extract(answer, '$.result.returned')`.as(
         "returned",
       ),

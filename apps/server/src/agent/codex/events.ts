@@ -78,7 +78,7 @@ export function activityOf(
       // Rufi's own tools say what they did; their input stays out of the
       // line (a save shows its own receipt). Any other shows its arguments.
       return rufi
-        ? line("tool", rufi.shown, undefined, status)
+        ? line("tool", rufi.shown(item.arguments), undefined, status)
         : line("tool", "Used a tool", argumentsOf(item.arguments), status);
     }
     case "mcpToolCall":

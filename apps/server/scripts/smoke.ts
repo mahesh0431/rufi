@@ -28,7 +28,7 @@ import {
 } from "../src/core/store/database.ts";
 import { readConversation } from "../src/core/tools/conversation.ts";
 import { getOverview } from "../src/core/tools/overview.ts";
-import { getRecords } from "../src/core/tools/records.ts";
+import { shownFor, type Tool } from "../src/core/tools/registry.ts";
 import { childEnvironment, rufiHome } from "../src/platform/config.ts";
 import { Secrets, secretsLayer } from "../src/platform/keychain.ts";
 import { diagnostics } from "../src/platform/logs.ts";
@@ -172,8 +172,10 @@ const lastReply = (snapshot: Snapshot) =>
     .map((e) => e.text)
     .join("\n\n");
 /** The tool's activity line, in the words the person sees. */
-const usedTool = (snapshot: Snapshot, tool: { shown: string }) =>
-  snapshot.entries.some((e) => e.kind === "activity" && e.text === tool.shown);
+const usedTool = (snapshot: Snapshot, tool: Tool) =>
+  snapshot.entries.some(
+    (e) => e.kind === "activity" && e.text === shownFor(tool, {}),
+  );
 
 interface Outcome {
   /** What code could check; the rest is for a person to judge. */
@@ -391,7 +393,8 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         mentions_the_2024_value: /7\.9/.test(lastReply(snapshot)),
         how_present: basis(snapshot).how !== null,
         used_shows_the_read: basis(snapshot).used.some(
-          (read) => read.title === getRecords.shown && read.note !== null,
+          (read) =>
+            read.title.startsWith("Read your results") && read.note !== null,
         ),
       },
       snapshot,

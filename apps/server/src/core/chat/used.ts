@@ -3,7 +3,7 @@
 // record come from Rufi's own record of each call to its tools, so they are
 // exact whatever the agent reports; the rest from the reply's activity lines.
 import type { Read } from "@rufi/contracts";
-import { asked } from "../tools/records.ts";
+import { shownFor } from "../tools/registry.ts";
 import { TOOLS } from "../tools/tools.ts";
 
 /** A call to one of Rufi's tools, as tool_calls keeps it (its JSON read in SQL). */
@@ -11,10 +11,8 @@ export interface Call {
   call_id: string;
   tool: string;
   ok: number;
-  /** What a read of records asked for, when the AI sent it. */
-  kind: string | null;
-  from: string | null;
-  to: string | null;
+  /** What the AI sent (JSON). */
+  input: string;
   /** From the answer: records given back, whether all of them, the error. */
   returned: number | null;
   complete: number | null;
@@ -63,10 +61,8 @@ function fromCall(call: Call): Read | undefined {
   const tool = TOOLS.find((candidate) => candidate.name === call.tool);
   // A save, or a call to no tool at all: nothing was read.
   if (!tool?.readOnly) return undefined;
-  const read = {
-    title: tool.shown,
-    detail: asked(call.kind, call.from, call.to),
-  };
+  // The same words as the call's activity line: "Read your results in 2026".
+  const read = { title: shownFor(tool, sent(call.input)), detail: null };
   if (call.ok === 0) return { ...read, outcome: "failed", note: call.error };
   const count =
     call.returned === null
@@ -76,10 +72,19 @@ function fromCall(call: Call): Read | undefined {
     return {
       ...read,
       outcome: "capped",
-      note: `${count ?? "Some records"}; capped: narrow the dates`,
+      note: `${count ?? "Some records"} · capped: narrow the dates`,
     };
   }
   return { ...read, outcome: "done", note: count };
+}
+
+/** What the AI sent, or nothing when it wasn't JSON. */
+function sent(input: string): unknown {
+  try {
+    return JSON.parse(input);
+  } catch {
+    return undefined;
+  }
 }
 
 function fromLine(line: Line): Read {
