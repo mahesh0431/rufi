@@ -2,6 +2,7 @@
 // set and the sign-in's registration stays; a folder that isn't the demo
 // folder, one reached through a link, or one Rufi runs on, is left as it was.
 import {
+  link,
   mkdir,
   mkdtemp,
   readdir,
@@ -215,6 +216,37 @@ describe("pnpm demo's reset", () => {
       `${join(folder, "backups")} is a link`,
     );
     expect(await readdir(outside)).toEqual(["must-survive.txt"]);
+  });
+
+  it("refuses a demo folder reached through a linked parent, and leaves the folder it points to", async () => {
+    const home = join(root, "home");
+    await mkdir(home);
+    const inHome = demoFolder(home);
+    await resetDemo(inHome, {}, TODAY);
+    const moved = join(root, "moved-home");
+    await rename(home, moved);
+    await symlink(moved, home);
+    await writeFile(
+      join(moved, "Rufi-demo", "must-survive.txt"),
+      "someone's file",
+    );
+    const before = await contents(moved);
+
+    await expect(resetDemo(inHome, {}, TODAY)).rejects.toThrow(
+      `${inHome} isn't a demo folder that pnpm demo made`,
+    );
+    expect(await contents(moved)).toEqual(before);
+  });
+
+  it("writes its mark without writing through a file left at a temporary name", async () => {
+    await resetDemo(folder, {}, TODAY);
+    const outside = join(root, "outside.txt");
+    await writeFile(outside, "someone's file");
+    await link(outside, join(folder, `demo.json.${String(process.pid)}.tmp`));
+
+    await resetDemo(folder, {}, TODAY);
+
+    expect(await readFile(outside, "utf8")).toBe("someone's file");
   });
 
   it("removes a link deeper in the demo folder without following it", async () => {

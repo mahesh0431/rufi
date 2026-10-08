@@ -1,12 +1,22 @@
 // The demo folder: Rufi's data folder for `pnpm demo`, apart from every
 // other. Each run resets it to the golden data set and keeps only its
 // ChatGPT sign-in, so you sign in once.
-import { lstat, mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import {
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { openRecord } from "../src/core/store/install.ts";
-import { holdRufiLock, writePrivateJson } from "../src/platform/files.ts";
+import { holdRufiLock } from "../src/platform/files.ts";
 import { writeGolden } from "../tests/fixtures/golden.ts";
 
 /** The demo folder: in your home folder, not in a checkout, so every worktree shares its sign-in. */
@@ -14,7 +24,9 @@ export const demoFolder = (home = homedir()) => join(home, "Rufi-demo");
 
 /**
  * Says a folder is a demo folder, so a reset never clears another one: a
- * file with exactly this content, which only a reset writes.
+ * file with exactly this content, which only a reset writes. It names the
+ * folder's real path, so the same folder reached through a moved and linked
+ * parent isn't it.
  */
 const MARK = "demo.json";
 const markFor = (folder: string) => ({ kind: "rufi-demo-folder", folder });
@@ -51,7 +63,7 @@ export async function resetDemo(
   });
   try {
     await checkDemo(folder);
-    await writePrivateJson(join(folder, MARK), markFor(folder));
+    await writeMark(folder);
     // rm removes a link deeper inside without following it.
     for (const name of await readdir(folder)) {
       if (!KEPT.has(name)) {
@@ -108,12 +120,26 @@ async function marked(folder: string): Promise<boolean> {
   if (!(await lstat(path).catch(missing))?.isFile()) return false;
   try {
     const found: unknown = JSON.parse(await readFile(path, "utf8"));
-    return isDeepStrictEqual(found, markFor(folder));
+    return isDeepStrictEqual(found, markFor(await realpath(folder)));
   } catch (error) {
     // Not JSON: not the mark.
     if (error instanceof SyntaxError) return false;
     throw error;
   }
+}
+
+/**
+ * Writes the mark through a new file of its own, then moves it in place, so
+ * no file already in the folder is written through.
+ */
+async function writeMark(folder: string): Promise<void> {
+  const temp = join(folder, `${MARK}.${randomUUID()}.tmp`);
+  const mark = markFor(await realpath(folder));
+  await writeFile(temp, `${JSON.stringify(mark, null, 2)}\n`, {
+    flag: "wx",
+    mode: 0o600,
+  });
+  await rename(temp, join(folder, MARK));
 }
 
 /** Undefined for a path that isn't there; any other failure stands. */
