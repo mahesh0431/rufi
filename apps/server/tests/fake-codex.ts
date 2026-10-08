@@ -214,7 +214,13 @@ function dispatch(thread: Thread, entry?: Queued) {
   )}`;
   thread.running = { turnId, steers: [], interrupted: false };
   record({ turn: turnId, effort: thread.effort ?? null });
-  thread.history.push({ id: turnId, status: "inProgress", messages: [next] });
+  // Like Codex: the message is in its record once it is recorded, a moment
+  // after the turn starts (`userMessageMs`); ended before, it is lost.
+  thread.history.push({
+    id: turnId,
+    status: "inProgress",
+    messages: scenario.userMessageMs ? [] : [next],
+  });
   changed(thread);
   setImmediate(() => void runTurn(thread, turnId, next));
   return turnObject(turnId, "inProgress");
@@ -269,12 +275,10 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   if (scenario.userMessageMs) {
     await sleep(scenario.userMessageMs);
     // Like Codex: interrupted before it recorded the message, it drops it.
-    if (thread.running?.turnId !== turnId) {
-      const turn = thread.history.find((t) => t.id === turnId);
-      if (turn) turn.messages = [];
-      persist();
-      return;
-    }
+    if (thread.running?.turnId !== turnId) return;
+    const turn = thread.history.find((t) => t.id === turnId);
+    if (turn) turn.messages = [entry];
+    persist();
   }
   event("item/started", { item: userItem(entry) });
   const calls = text.includes("quiet") ? [] : (scenario.calls ?? []);
