@@ -107,14 +107,17 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
     "What you send, and the parts of your record the AI reads to answer, go to OpenAI",
   );
   await accessible(page);
-  // The plan it uses, under the model and effort.
+  // The plan it uses, quietly under the box, never only in a menu.
+  await expect(chat(page)).toContainText(
+    "Using ChatGPT plan · Manage usage · AI can make mistakes. Check important info.",
+  );
+  await expect(
+    chat(page).getByRole("link", { name: "Manage usage" }),
+  ).toHaveAttribute("target", "_blank");
   await chat(page)
     .getByRole("button", { name: "Model and effort: GPT-6-Astra, Medium" })
     .click();
-  await expect(page.getByRole("menu")).toContainText("Using ChatGPT plan");
-  await expect(
-    page.getByRole("menuitem", { name: "Manage usage" }),
-  ).toHaveAttribute("target", "_blank");
+  await expect(page.getByRole("menu")).not.toContainText("Using ChatGPT plan");
   await page.keyboard.press("Escape");
 
   await box(chat(page)).fill("drip: my thyroid results");
@@ -263,15 +266,49 @@ test("signed out, the chat doesn't say it uses the ChatGPT plan", async ({
 }) => {
   rufi.account = { account: "signed_out", email: null };
   await opened(page, rufi);
+  // The bar, then the panel.
+  await expect(chat(page)).toContainText(
+    "AI can make mistakes. Check important info.",
+  );
+  await expect(chat(page)).not.toContainText("Using ChatGPT plan");
   await box(chat(page)).click();
-  await chat(page)
-    .getByRole("button", { name: "Model and effort: GPT-6-Astra, Medium" })
-    .click();
-  await expect(page.getByRole("menu")).toContainText("Effort");
-  await expect(page.getByRole("menu")).not.toContainText("Using ChatGPT plan");
+  await expect(chat(page)).toContainText("What you send");
+  await expect(chat(page)).not.toContainText("Using ChatGPT plan");
   await expect(
-    page.getByRole("menuitem", { name: "Manage usage" }),
+    chat(page).getByRole("link", { name: "Manage usage" }),
   ).toHaveCount(0);
+});
+
+test("the button for the model never says Model: before the list of models comes, it shows the chat's own model, or keeps its place", async ({
+  page,
+  rufi,
+}) => {
+  const held = Promise.withResolvers<undefined>();
+  await page.route("**/api/models", async (route) => {
+    await held.promise;
+    await route.continue();
+  });
+  await opened(page, rufi);
+  const choice = chat(page).getByRole("button", { name: /^Model and effort/ });
+  // A new chat has no model of its own yet.
+  await expect(choice).toHaveText("Medium");
+  held.resolve(undefined);
+  await expect(choice).toHaveText("GPT-6-AstraMedium");
+  await choice.click();
+  await page.getByRole("menuitemradio", { name: "GPT-6.1-Sol" }).click();
+  await expect(choice).toHaveText("GPT-6.1-SolMedium");
+
+  // Reloaded while the list is slow: the chat's own model.
+  const again = Promise.withResolvers<undefined>();
+  await page.unroute("**/api/models");
+  await page.route("**/api/models", async (route) => {
+    await again.promise;
+    await route.continue();
+  });
+  await page.reload();
+  await expect(choice).toHaveText("gpt-6.1-solMedium");
+  again.resolve(undefined);
+  await expect(choice).toHaveText("GPT-6.1-SolMedium");
 });
 
 test("the model and effort are chosen in the box, also in the bar, and kept for the chat; a new effort doesn't start the AI afresh; neither changes while a reply runs", async ({

@@ -6,7 +6,7 @@ The chat is where you talk with Rufi's AI about your record. You have one chat w
 
 The chat bar is the box at the bottom right of the Overview. It says "Ask or tell Rufi about" and your name, and shows the model and effort that answer, such as "GPT-6-Astra Medium". It is your chat, the same as the panel and the page, and the same in every browser tab. Help and Settings have no chat bar: to talk to Rufi from there, click **Chat with Rufi** in the sidebar.
 
-Under the box, in every size of the chat, "AI can make mistakes. Check important info." reminds you to check what the AI says.
+Under the box, in every size of the chat, "AI can make mistakes. Check important info." reminds you to check what the AI says. When you are signed in, "Using ChatGPT plan" comes before it, and **Manage usage** opens your ChatGPT plan's usage page in your browser.
 
 ## The chat panel
 
@@ -134,7 +134,7 @@ After you stop a reply, waiting messages keep waiting. Send a message, or click 
 
 ## The model and effort
 
-The model and effort that answer show in the box, next to the send button, in every size of the chat: for example "GPT-6-Astra Medium". Click them to open one menu with both. When you are signed in, the menu also says "Using ChatGPT plan", and **Manage usage** opens your ChatGPT plan's usage page in your browser.
+The model and effort that answer show in the box, next to the send button, in every size of the chat: for example "GPT-6-Astra Medium". Click them to open one menu with both.
 
 **The model.** Your chat has one model at a time. To change it, choose another in the menu: a tick shows the one that answers now. Before your first message, the chat shows the first model in your list of models (`models.json`, see [Your data and the AI](your-data-and-the-ai.md)) that your ChatGPT plan offers now. In a new data folder, that is GPT-6-Astra. Choose another before your first message if you like. To make another model the first choice, put it first in the list.
 

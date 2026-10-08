@@ -12,6 +12,7 @@ import { create } from "zustand/react";
 import { Box } from "./box.tsx";
 import { liveStore, loadOlder, retain } from "./live.ts";
 import { Menus } from "./model-menu.tsx";
+import { useStatus } from "./reads.ts";
 import { TranscriptView } from "./transcript.tsx";
 
 /** Whether the chat panel is open over the page, and where focus was before. */
@@ -216,9 +217,25 @@ export function ChatPage({ person }: { person: Person }) {
   );
 }
 
+/** Under the box: the plan the chat uses, when signed in, and a reminder. */
 function AiCanMakeMistakes() {
+  const signedIn = useStatus().data?.account === "signed_in";
   return (
     <p className="pt-1 pb-2 text-center text-[11.5px] text-muted">
+      {signedIn && (
+        <>
+          Using ChatGPT plan ·{" "}
+          <a
+            href="https://chatgpt.com/codex/settings/usage"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline"
+          >
+            Manage usage
+          </a>{" "}
+          ·{" "}
+        </>
+      )}
       AI can make mistakes. Check important info.
     </p>
   );

@@ -10,7 +10,7 @@ import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
 import { chatPath, type Live } from "./live.ts";
-import { useModels, useStatus } from "./reads.ts";
+import { useModels } from "./reads.ts";
 
 /** Where the chat's menus open: inside the chat, beside its glass. */
 export const Menus = createContext<RefObject<HTMLDivElement | null> | null>(
@@ -42,13 +42,11 @@ export function ModelMenu({
   const menus = useContext(Menus);
   const models = useModels();
   const chosen = useStore(live, (state) => state.chat);
-  // The plan is used only when signed in.
-  const signedIn = useStatus().data?.account === "signed_in";
   const offered = models.data?.models ?? [];
   // With none chosen yet, the first one, which the first message takes.
   const current = chosen?.model ?? offered[0]?.id;
-  const name =
-    offered.find((m) => m.id === current)?.name ?? current ?? "Model";
+  // Until the list comes: the chat's own model, or nothing in its place.
+  const name = offered.find((m) => m.id === current)?.name ?? current;
   const effort = chosen?.effort ?? DEFAULT_EFFORT;
   const effortName = EFFORTS.find((e) => e.id === effort)?.name ?? effort;
   const path = chatPath(personId);
@@ -56,10 +54,10 @@ export function ModelMenu({
   return (
     <Menu.Root>
       <Menu.Trigger
-        aria-label={`Model and effort: ${name}, ${effortName}`}
+        aria-label={`Model and effort: ${name ?? "loading"}, ${effortName}`}
         className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[13px] whitespace-nowrap hover:bg-side data-[popup-open]:bg-side"
       >
-        {name}
+        {name ?? <span className="inline-block w-[5.5rem]" />}
         <span className="text-muted">{effortName}</span>
         <ChevronDown size={14} className="text-muted" aria-hidden />
       </Menu.Trigger>
@@ -127,22 +125,6 @@ export function ModelMenu({
                 thinks longer.
               </p>
             </Menu.Group>
-            {signedIn && (
-              <>
-                <Menu.Separator className="my-1 h-px bg-line" />
-                <p className="px-2 py-1 text-xs text-muted">
-                  Using ChatGPT plan ·{" "}
-                  <Menu.LinkItem
-                    href="https://chatgpt.com/codex/settings/usage"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline outline-none data-[highlighted]:text-ink"
-                  >
-                    Manage usage
-                  </Menu.LinkItem>
-                </p>
-              </>
-            )}
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>
