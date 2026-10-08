@@ -391,7 +391,11 @@ test.describe("when Rufi is slow or away", () => {
     await rufi.start();
     await page.clock.install();
     await page.route("**/api/people", () => undefined);
+    // The clock moves only once the page has asked: until its session is
+    // started, it asks nothing.
+    const asked = page.waitForRequest("**/api/people");
     await page.goto(rufi.link());
+    await asked;
     await expect(page.getByRole("status")).toHaveCount(0);
     await page.clock.runFor(15_000);
     await expect(page.getByRole("status")).toContainText(
@@ -412,6 +416,7 @@ test.describe("when Rufi is slow or away", () => {
       const real = globalThis.fetch;
       globalThis.fetch = (input, init) => {
         if (input !== "/api/people") return real(input, init);
+        document.documentElement.dataset["asked"] = "people";
         const body = new ReadableStream({
           start(controller) {
             controller.enqueue(new TextEncoder().encode('{"people":['));
@@ -424,6 +429,9 @@ test.describe("when Rufi is slow or away", () => {
       };
     });
     await page.goto(rufi.link());
+    // The clock moves only once the page has asked: until its session is
+    // started, it asks nothing.
+    await expect(page.locator("html")).toHaveAttribute("data-asked", "people");
     await page.clock.runFor(15_000);
     await expect(page.getByRole("status")).toContainText(
       "Rufi can't be reached.",
