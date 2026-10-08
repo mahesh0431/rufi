@@ -257,26 +257,26 @@ test("the model is chosen per conversation, and not while a reply runs", async (
   await box(chat(page)).click();
   const model = (name: string) =>
     chat(page).getByRole("button", { name: `Model: ${name}` });
-  await model("GPT-6.1-Sol").click();
-  await page.getByRole("menuitemradio", { name: "GPT-6-Astra" }).click();
-  await send(page, "Hello");
-  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
-  await expect(model("GPT-6-Astra")).toBeVisible();
-
-  await send(page, "hang");
   await model("GPT-6-Astra").click();
   await page.getByRole("menuitemradio", { name: "GPT-6.1-Sol" }).click();
+  await send(page, "Hello");
+  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
+  await expect(model("GPT-6.1-Sol")).toBeVisible();
+
+  await send(page, "hang");
+  await model("GPT-6.1-Sol").click();
+  await page.getByRole("menuitemradio", { name: "GPT-6-Astra" }).click();
   await expect(chat(page).getByRole("alert")).toHaveText(
     "Stop the reply before changing the model.",
   );
   await chat(page).getByRole("button", { name: "Stop" }).click();
   await expect(log(chat(page))).toContainText("Stopped.");
-  await model("GPT-6-Astra").click();
-  await page.getByRole("menuitemradio", { name: "GPT-6.1-Sol" }).click();
-  await expect(model("GPT-6.1-Sol")).toBeVisible();
+  await model("GPT-6.1-Sol").click();
+  await page.getByRole("menuitemradio", { name: "GPT-6-Astra" }).click();
+  await expect(model("GPT-6-Astra")).toBeVisible();
   await page.reload();
   await box(chat(page)).click();
-  await expect(model("GPT-6.1-Sol")).toBeVisible();
+  await expect(model("GPT-6-Astra")).toBeVisible();
 });
 
 test("a saved draft survives a reload and a restart, and is never sent by itself", async ({
@@ -915,7 +915,7 @@ test("⌘J opens the panel; Esc steps back and returns focus", async ({
   const minimise = chat(page).getByRole("button", { name: "Minimise" });
   await expect(minimise).toBeVisible();
   // In a menu, Esc closes the menu first.
-  await chat(page).getByRole("button", { name: "Model: GPT-6.1-Sol" }).click();
+  await chat(page).getByRole("button", { name: "Model: GPT-6-Astra" }).click();
   await expect(page.getByRole("menu")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("menu")).toHaveCount(0);

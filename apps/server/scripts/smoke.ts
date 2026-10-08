@@ -21,6 +21,7 @@ import type { ChatGptDeps } from "../src/agent/chatgpt/openai.ts";
 import { accessToken } from "../src/agent/chatgpt/session.ts";
 import { codexBinary } from "../src/agent/codex/binary.ts";
 import { codexRuntime } from "../src/agent/codex/codex.ts";
+import { DEFAULT_ALLOWLIST } from "../src/core/chat/models.ts";
 import {
   databasePath,
   openReadOnly,
@@ -782,14 +783,14 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     for (const fruit of ["apple", "pear", "plum", "fig", "kiwi"]) {
       await c.ask(`Reply with one word: the colour of a ${fruit}.`);
     }
-    await api("PUT", `${c.path}/model`, { model: "gpt-6-astra" });
+    await api("PUT", `${c.path}/model`, { model: "gpt-6.1-sol" });
     await c.ask("What is my fictional cat called?");
     const snapshot = await c.read();
     return {
       checks: {
         used_read_conversation: usedTool(snapshot, readConversation),
         says_biscuit: /biscuit/i.test(lastReply(snapshot)),
-        new_model: snapshot.turns.at(-1)?.model === "gpt-6-astra",
+        new_model: snapshot.turns.at(-1)?.model === "gpt-6.1-sol",
       },
       snapshot,
     };
@@ -890,6 +891,9 @@ for (const name of names) {
       )(await page(core), home);
       const failed = Object.entries({
         every_turn_answered: everyTurnAnswered(outcome.snapshot),
+        // The set tests the model a new conversation gets by default.
+        on_default_model:
+          outcome.snapshot.turns[0]?.model === DEFAULT_ALLOWLIST[0],
         ...outcome.checks,
       })
         .filter(([, ok]) => !ok)

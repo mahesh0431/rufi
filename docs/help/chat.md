@@ -136,7 +136,7 @@ After you stop a reply, waiting messages keep waiting. Send a message, or click 
 
 ## The model
 
-Each conversation has its own model. To change it, click the model's name in the panel or on the page, and choose another. A new conversation shows the first model it can use; choose another before your first message if you like.
+Each conversation has its own model. To change it, click the model's name in the panel or on the page, and choose another. A new conversation shows the first model in your list of models (`models.json`, see [Your data and the AI](your-data-and-the-ai.md)) that your ChatGPT plan offers now. In a new data folder, that is GPT-6-Astra. Choose another before your first message if you like. To make another model the first choice, put it first in the list.
 
 You can't change the model while a reply runs or messages wait. Rufi says so: stop the reply, or run or delete the waiting messages, then change it. A new model starts the AI afresh with the conversation's last 10 messages.
 

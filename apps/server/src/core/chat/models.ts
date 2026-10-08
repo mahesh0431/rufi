@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { Result, Schema } from "effect";
 import { readJson, writePrivateJson } from "../../platform/files.ts";
 
-/** The strongest models today, strongest first; the first is the default. */
-export const DEFAULT_ALLOWLIST = ["gpt-6.1-sol", "gpt-6-astra"];
+/** The strongest models today; the first is the default for a new conversation. */
+export const DEFAULT_ALLOWLIST = ["gpt-6-astra", "gpt-6.1-sol"];
 
 const File = Schema.Struct({
   models: Schema.Array(

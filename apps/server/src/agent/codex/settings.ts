@@ -24,8 +24,8 @@ supports_websockets = false`;
 
 /** Rufi's choices on top of Codex's defaults, each with its reason. */
 const SETTINGS = {
-  /** PLAN.md §3.1: low effort for chat, for faster replies. */
-  model_reasoning_effort: "low",
+  /** Medium effort for chat: better answers matter more than the speed of low. */
+  model_reasoning_effort: "medium",
   /**
    * Rufi keeps the AI's reasoning summaries with the reply (docs/adr/0004);
    * Codex's models send none unless asked.

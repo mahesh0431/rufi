@@ -198,7 +198,7 @@ describe("starting Codex", () => {
       'wire_api = "responses"',
       "requires_openai_auth = false",
       "supports_websockets = false",
-      'model_reasoning_effort = "low"',
+      'model_reasoning_effort = "medium"',
       'model_reasoning_summary = "detailed"',
       "daemon_auto_start = false",
     ]) {

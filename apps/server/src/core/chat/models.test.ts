@@ -18,7 +18,7 @@ describe("the model allowlist", () => {
     expect(
       JSON.parse(await readFile(join(home, "models.json"), "utf8")),
     ).toEqual({
-      models: ["gpt-6.1-sol", "gpt-6-astra"],
+      models: ["gpt-6-astra", "gpt-6.1-sol"],
     });
   });
 

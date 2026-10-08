@@ -765,7 +765,7 @@ describe("the local API", () => {
     expect((await page.say(path, text)).status).toBe(202);
     expect((await page.api("GET", path)).body["conversation"]).toMatchObject({
       title: "Is my TSH still high after the lab amended it in August?",
-      model: "gpt-6.1-sol",
+      model: "gpt-6-astra",
     });
 
     // A model chosen before the first message stays; a long first line is
@@ -776,13 +776,13 @@ describe("the local API", () => {
       ] as { id: string }
     ).id;
     const secondPath = `${people}/conversations/${second}`;
-    await page.api("PUT", `${secondPath}/model`, { model: "gpt-6-astra" });
+    await page.api("PUT", `${secondPath}/model`, { model: "gpt-6.1-sol" });
     await page.say(secondPath, `${"word ".repeat(20)}end`);
     expect(
       (await page.api("GET", secondPath)).body["conversation"],
     ).toMatchObject({
       title: `${"word ".repeat(12).trimEnd()}…`,
-      model: "gpt-6-astra",
+      model: "gpt-6.1-sol",
     });
     await until(async () =>
       (
@@ -885,8 +885,8 @@ describe("the local API", () => {
     const page = await session(core);
     expect((await page.api("GET", "/api/models")).body).toEqual({
       models: [
-        { id: "gpt-6.1-sol", name: "GPT-6.1-Sol" },
         { id: "gpt-6-astra", name: "GPT-6-Astra" },
+        { id: "gpt-6.1-sol", name: "GPT-6.1-Sol" },
       ],
       allowlistError: null,
     });
@@ -922,7 +922,7 @@ describe("the local API", () => {
     ).toBe(200);
     expect((await page.say(c.path, "faster", "steer")).status).toBe(200);
     expect(
-      (await page.api("PUT", `${c.path}/model`, { model: "gpt-6-astra" }))
+      (await page.api("PUT", `${c.path}/model`, { model: "gpt-6.1-sol" }))
         .status,
     ).toBe(409);
     expect((await page.api("POST", `${c.path}/stop`)).status).toBe(200);
@@ -977,19 +977,19 @@ describe("the local API", () => {
     // The first message chooses the first allowed model, then names it.
     await until(() => changed().length === 2);
     expect(changed()).toMatchObject([
-      { title: null, model: "gpt-6.1-sol" },
-      { title: "Hello there", model: "gpt-6.1-sol" },
+      { title: null, model: "gpt-6-astra" },
+      { title: "Hello there", model: "gpt-6-astra" },
     ]);
     await until(async () =>
       (
         (await page.api("GET", c.path)).body["turns"] as { status: string }[]
       ).every((turn) => turn.status === "completed"),
     );
-    await page.api("PUT", `${c.path}/model`, { model: "gpt-6-astra" });
+    await page.api("PUT", `${c.path}/model`, { model: "gpt-6.1-sol" });
     await until(() => changed().length === 3);
     expect(changed()[2]).toMatchObject({
       title: "Hello there",
-      model: "gpt-6-astra",
+      model: "gpt-6.1-sol",
     });
     live.hangUp();
   });
