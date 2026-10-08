@@ -8,7 +8,14 @@
 // re-renders alone.
 import { Link } from "@tanstack/react-router";
 import { Check, LoaderCircle, Square, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  createContext,
+  use,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remend from "remend";
@@ -163,6 +170,8 @@ export function TranscriptView({
   const before = useStore(live, (state) => state.before);
   const older = useStore(live, (state) => state.older);
   const running = useStore(live, isRunning);
+  const opening = useStore(live, (state) => state.window);
+  const now = useToday();
   const replying = useStore(live, (state) => {
     const last = state.entries[state.order.at(-1) ?? ""];
     return (
@@ -230,7 +239,9 @@ export function TranscriptView({
 
   // What you read stays where it is when a page comes in above it: the
   // first entry is measured before, and the view moves by what was added.
+  // A new latest page (a reconnect) opens at its end, as the chat opens.
   const anchor = useRef<{ node: Element; top: number } | null>(null);
+  const opened = useRef(opening);
   useLayoutEffect(() => {
     const root = scroller.current;
     if (!root) return;
@@ -239,7 +250,11 @@ export function TranscriptView({
       root.getBoundingClientRect().top +
       root.scrollTop;
     const kept = anchor.current;
-    if (kept?.node.isConnected && !pinned.current) {
+    if (opened.current !== opening) {
+      opened.current = opening;
+      pinned.current = true;
+      root.scrollTop = root.scrollHeight;
+    } else if (kept?.node.isConnected && !pinned.current) {
       root.scrollTop += topOf(kept.node) - kept.top;
     }
     const node = log.current?.querySelector("[data-entry]");
@@ -294,9 +309,11 @@ export function TranscriptView({
                 ) : null}
               </div>
             )}
-            {shown.map((line) => (
-              <Line key={line} live={live} line={line} />
-            ))}
+            <Today value={now}>
+              {shown.map((line) => (
+                <Line key={line} live={live} line={line} />
+              ))}
+            </Today>
             {replying && (
               <p className="flex items-center gap-1.5 text-muted">
                 <LoaderCircle size={13} className="animate-spin" aria-hidden />
@@ -344,11 +361,41 @@ function Line({ live, line }: { live: StoreApi<Live>; line: string }) {
   }
 }
 
+/** Now, for the day lines: one value for all of them. */
+const Today = createContext(new Date(0));
+
+/**
+ * Now, read again at midnight and when the window gets focus (after the Mac
+ * slept past midnight); it changes only when the day does.
+ */
+function useToday(): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const check = () => {
+      const next = new Date();
+      setNow((was) =>
+        dayOf(was.toISOString()) === dayOf(next.toISOString()) ? was : next,
+      );
+      const midnight = new Date(next);
+      midnight.setHours(24, 0, 0, 0);
+      clearTimeout(timer);
+      timer = setTimeout(check, midnight.getTime() - next.getTime());
+    };
+    check();
+    globalThis.addEventListener("focus", check);
+    return () => {
+      clearTimeout(timer);
+      globalThis.removeEventListener("focus", check);
+    };
+  }, []);
+  return now;
+}
+
 /** The day of the entry it comes before: "Today", "Yesterday", "Thu 8 Oct". */
 function DayLine({ live, id }: { live: StoreApi<Live>; id: string }) {
   const at = useStore(live, (state) => state.entries[id]?.createdAt);
-  // Today as the line first showed; a chat left open overnight keeps it.
-  const [now] = useState(() => new Date());
+  const now = use(Today);
   if (at === undefined) return null;
   return (
     <h2 className="flex items-center gap-3 text-xs font-normal text-muted before:h-px before:flex-1 before:bg-line after:h-px after:flex-1 after:bg-line">

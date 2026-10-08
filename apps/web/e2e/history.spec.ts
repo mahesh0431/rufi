@@ -187,3 +187,83 @@ test("an older page that can't be loaded says so, and Try again loads it", async
   await log(page).getByRole("button", { name: "Try again" }).click();
   await expect(questions(page).first()).toHaveText("Fictional question 141");
 });
+
+test("after the connection drops while you read higher up, the chat opens at the latest reply again; a page asked for before is dropped", async ({
+  page,
+  rufi,
+}) => {
+  // The connection can be dropped, as a sleeping Mac or a network change
+  // drops it.
+  await page.addInitScript(() => {
+    const drops: AbortController[] = [];
+    const fetched = globalThis.fetch;
+    globalThis.fetch = (input, init) => {
+      if (!(typeof input === "string" && input.endsWith("/stream"))) {
+        return fetched(input, init);
+      }
+      const drop = new AbortController();
+      drops.push(drop);
+      const signals = [drop.signal, init?.signal].filter((one) => !!one);
+      return fetched(input, { ...init, signal: AbortSignal.any(signals) });
+    };
+    Object.assign(globalThis, {
+      dropStream: () => {
+        for (const drop of drops.splice(0)) drop.abort();
+      },
+    });
+  });
+  await page.clock.setFixedTime(NOW);
+  await rufi.family(longChat());
+  await rufi.start();
+  await openChat(page, rufi);
+  // An older page is on its way while you read at the top.
+  const held = Promise.withResolvers<undefined>();
+  let asked = 0;
+  await page.route("**/chat?before=*", async (route) => {
+    asked += 1;
+    const response = await route.fetch();
+    await held.promise;
+    await route.fulfill({ response });
+  });
+  await scroller(page).evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await expect(log(page)).toContainText("Loading earlier messages…");
+
+  // The connection drops, and Rufi connects again.
+  const again = page.waitForResponse("**/chat/stream");
+  await page.evaluate(() => {
+    (globalThis as unknown as { dropStream: () => void }).dropStream();
+  });
+  await again;
+
+  // The latest reply shows, and no older page is asked for until you
+  // scroll up again.
+  await expect(log(page).getByText("Fictional answer 200")).toBeInViewport();
+  await expect(log(page)).not.toContainText("Loading earlier messages…");
+  // The page asked for before changes nothing when it comes.
+  held.resolve(undefined);
+  await page.waitForTimeout(300);
+  expect(asked).toBe(1);
+  await expect(questions(page).first()).toHaveText("Fictional question 171");
+  await expect(log(page).getByText("Fictional answer 200")).toBeInViewport();
+});
+
+test("a day line says what day it is now: at midnight, and when you come back to Rufi after the Mac slept", async ({
+  page,
+  rufi,
+}) => {
+  await page.clock.install({ time: new Date("2026-10-08T23:59:00+05:30") });
+  await rufi.family(longChat());
+  await rufi.start();
+  await openChat(page, rufi);
+  const days = log(page).getByRole("heading");
+  await expect(days).toHaveText(["Today"]);
+  // Rufi stays open past midnight.
+  await page.clock.runFor(2 * 60_000);
+  await expect(days).toHaveText(["Yesterday"]);
+  // The Mac sleeps through the next midnight, and you come back to Rufi.
+  await page.clock.setSystemTime(new Date("2026-10-10T09:00:00+05:30"));
+  await page.evaluate(() => globalThis.dispatchEvent(new Event("focus")));
+  await expect(days).toHaveText(["Thu 8 Oct"]);
+});
