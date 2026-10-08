@@ -25,7 +25,7 @@ const ELECTRON = createRequire(join(APP, "package.json"))("electron") as string;
  * a test watches ended.
  */
 interface Told {
-  kind: "dialog" | "browser" | "download";
+  kind: "dialog" | "browser" | "download" | "save";
   value: unknown;
 }
 
@@ -65,7 +65,7 @@ export class Desktop {
     const told: Told[] = [];
     const lines = createInterface({ input: child.stdout });
     lines.on("line", (line) => {
-      const said = /^rufi-test (dialog|browser|download) (.*)$/.exec(line);
+      const said = /^rufi-test (dialog|browser|download|save) (.*)$/.exec(line);
       if (said) {
         told.push({
           kind: said[1] as Told["kind"],

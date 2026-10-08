@@ -90,7 +90,9 @@ test("using the bar starts a conversation at once; the reply streams in and its 
     "placeholder",
     "Ask or tell Rufi about Asha Fictional…",
   );
-  await expect(chat(page).getByText("AI can be wrong")).toBeVisible();
+  await expect(
+    chat(page).getByText("AI can make mistakes. Check important info."),
+  ).toBeVisible();
   await accessible(page);
 
   // No conversation until you use the box; then it is there, unnamed, and
@@ -104,7 +106,9 @@ test("using the bar starts a conversation at once; the reply streams in and its 
   await expect(sidebar(page).getByRole("listitem")).toHaveText([
     "New conversation",
   ]);
-  await expect(chat(page).getByText("AI can be wrong")).toBeVisible();
+  await expect(
+    chat(page).getByText("AI can make mistakes. Check important info."),
+  ).toBeVisible();
   await expect(chat(page)).toContainText(
     "What you send, and the parts of your record the AI reads to answer, go to OpenAI",
   );
@@ -246,6 +250,22 @@ test("Steer passes your text into the running reply", async ({
   );
   await expect(
     chat(page).getByRole("region", { name: "Waiting messages" }),
+  ).toHaveCount(0);
+});
+
+test("signed out, the chat doesn't say it uses the ChatGPT plan", async ({
+  page,
+  rufi,
+}) => {
+  rufi.account = { account: "signed_out", email: null };
+  await opened(page, rufi);
+  await box(chat(page)).click();
+  await expect(
+    chat(page).getByRole("button", { name: "Model: GPT-6-Astra" }),
+  ).toBeVisible();
+  await expect(chat(page)).not.toContainText("Using ChatGPT plan");
+  await expect(
+    chat(page).getByRole("link", { name: "Manage usage" }),
   ).toHaveCount(0);
 });
 

@@ -9,6 +9,8 @@ Rufi runs on your Mac and opens in your browser, or as an app in its own window.
 
 The link works once, for 5 minutes. When the page opens, Rufi removes the link from the address bar. The tab stays open when you reload it.
 
+If the record is missing from a data folder that had one, Rufi doesn't start: it says so, and doesn't show an empty record in place of yours. See [Backups and export](backups-and-export.md#if-your-record-is-missing).
+
 ## Open Rufi again
 
 While Rufi runs, run `pnpm start` again in another terminal. It doesn't start a second Rufi: it opens a new link to the Rufi that runs. Use it to open Rufi in a new tab, or after you closed the tab.
@@ -36,18 +38,25 @@ If something goes wrong:
 
 ## The first time
 
-When nobody is in the data folder yet, Rufi asks "What's your name?" and adds you.
+In a new data folder, Rufi takes you through four short steps:
+
+1. **Welcome.** Rufi says what goes to the AI: what you ask, and the parts of your record the AI reads to answer, are sent to the AI in the cloud. Your record is kept on your Mac. Tick "I understand Rufi is not a doctor", then click **Continue**.
+2. **Your name.** Rufi adds you to the record.
+3. **Sign in with ChatGPT.** See [Signing in with ChatGPT](signing-in.md#sign-in-in-rufi). To do it later, click **Skip for now**: your record works without the AI.
+4. **Your emergency region,** for the number the AI gives in an emergency. Choose it and click **Continue**, or click **Skip**. You can change it in Settings.
+
+Rufi keeps each step you finished. If you reload the page, close it or open Rufi in another tab, you go on from the first step not done. Two tabs never add two people.
 
 ## What you see
 
 - **The sidebar:** your name, **New conversation**, **Overview**, then your **Conversations**, and at the bottom **Help** and **Settings**. When the AI can't be used, a line under them says why.
 - **The chat bar:** the box at the bottom right, where you talk to Rufi. See [Talking to Rufi](chat.md).
 - **Overview:** your latest results, as the lab printed them: the test, the value and unit, the lab's range, the lab's note and when it was measured. "Amended" means that the lab corrected the result. When there are more results than Overview shows, it says so.
-- **Settings:** your emergency region. When a message may describe an emergency, the AI gives this region's number; with no region, it says to call your local emergency number. See [What Rufi's AI will and won't do](safety.md#in-an-emergency-it-tells-you-to-call-for-help-first).
+- **Settings:** your emergency region. When a message may describe an emergency, the AI gives this region's number; with no region, it says to call your local emergency number. See [What Rufi's AI will and won't do](safety.md#in-an-emergency-it-tells-you-to-call-for-help-first). Settings also shows your backups and exports your data: see [Backups and export](backups-and-export.md).
 - **Help:** these pages.
 
 The other pages come in later steps.
 
 ## If you're not signed in
 
-The sidebar says "Not signed in" or "ChatGPT plan can't be used". Overview, your conversations, Settings and Help still work; only the AI needs the sign-in to answer. To sign in, stop Rufi and follow [how to sign in](signing-in.md#sign-in).
+The sidebar says "Not signed in" or "ChatGPT plan can't be used". Overview, your conversations, Settings and Help still work; only the AI needs the sign-in to answer. Click that line to sign in (see [Signing in with ChatGPT](signing-in.md#sign-in-in-rufi)).

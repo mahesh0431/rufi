@@ -33,6 +33,10 @@ const EVENTS = new Set([
   "core.started",
   "core.lock_lost",
   "api.failed",
+  "backup.made",
+  "backup.failed",
+  "export.failed",
+  "signin.failed",
 ] as const);
 
 export type LogEvent = typeof EVENTS extends Set<infer E> ? E : never;

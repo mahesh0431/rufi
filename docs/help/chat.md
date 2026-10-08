@@ -10,7 +10,7 @@ The bar shows the conversation you chose last. Point at the bar, or move into it
 
 Each browser tab keeps its own conversation open: a choice in one tab doesn't change another. When you open Rufi again, the bar shows the last choice Rufi saved. A choice made just before you close Rufi may not be remembered.
 
-Under the box, in every size of the chat, "AI can be wrong" reminds you to check what the AI says.
+Under the box, in every size of the chat, "AI can make mistakes. Check important info." reminds you to check what the AI says.
 
 ## The chat panel
 
@@ -21,7 +21,7 @@ At the top of the panel:
 - **The conversation's name.** Click it to choose another conversation, or **New conversation**.
 - **Minimise** (–) closes the panel. Esc does the same, and puts you back where you were. When a menu is open, Esc closes the menu first.
 - **Open as page** (the arrows) shows the conversation as a page.
-- **The model** that answers, with "Using ChatGPT plan". **Manage usage** opens your ChatGPT plan's usage page in your browser.
+- **The model** that answers. When you are signed in, "Using ChatGPT plan" follows it, and **Manage usage** opens your ChatGPT plan's usage page in your browser.
 
 Press ⌘J again to close the panel.
 

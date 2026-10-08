@@ -242,6 +242,37 @@ export const Status = Schema.Struct({
 });
 export type Status = typeof Status.Type;
 
+/** How a sign-in from the screens goes: waiting has the link once it is known. */
+export const SignInState = Schema.Struct({
+  state: Schema.Literals(["idle", "waiting", "done", "failed"]),
+  link: Schema.NullOr(Schema.String),
+  error: Schema.NullOr(Schema.String),
+});
+export type SignInState = typeof SignInState.Type;
+
+/** The last good backup, and the last failed try when it is newer. */
+export const Backups = Schema.Struct({
+  last: Schema.NullOr(
+    Schema.Struct({ name: Schema.String, createdAt: Schema.String }),
+  ),
+  failed: Schema.NullOr(
+    Schema.Struct({ at: Schema.String, reason: Schema.String }),
+  ),
+  running: Schema.Boolean,
+});
+export type Backups = typeof Backups.Type;
+
+/** The first step of the first run not done yet, or done. */
+export const FirstRunStep = Schema.Literals([
+  "welcome",
+  "name",
+  "sign_in",
+  "region",
+  "done",
+]);
+export const FirstRun = Schema.Struct({ step: FirstRunStep });
+export type FirstRun = typeof FirstRun.Type;
+
 /** One current result, exactly as printed. */
 export const OverviewResult = Schema.Struct({
   id: Schema.String,
@@ -309,5 +340,13 @@ export const SaveDraft = Schema.Struct({
 export const ChooseConversation = Schema.Struct({ conversationId: Id });
 
 export const ReorderWaiting = Schema.Struct({ ids: Schema.Array(Id) });
+
+/**
+ * A first-run step done: welcome (ticked "not a doctor"), sign_in (skipped),
+ * region (saved or skipped).
+ */
+export const FinishStep = Schema.Struct({
+  step: Schema.Literals(["welcome", "sign_in", "region"]),
+});
 
 export const SelectModel = Schema.Struct({ model: Id });

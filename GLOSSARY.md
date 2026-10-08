@@ -115,11 +115,11 @@ A message you started and haven't sent, one for each conversation, saved while y
 _Avoid_: note, unsent
 
 **Model**:
-The version of the AI that answers, such as GPT-6.1-Sol, chosen for each conversation from the allowlist. A new model starts the AI afresh with the conversation's last 10 messages; it can read further back.
+The version of the AI that answers, such as GPT-6-Astra, chosen for each conversation from the allowlist. A new model starts the AI afresh with the conversation's last 10 messages; it can read further back.
 _Avoid_: engine, brain
 
 **Allowlist**:
-The models Rufi may use: `models.json` in the data folder. It starts with the strongest models, and you can edit it.
+The models Rufi may use: `models.json` in the data folder. A new conversation uses the first one. It starts with the strongest models, GPT-6-Astra first, and you can edit it.
 _Avoid_: whitelist
 
 ## Coming back to things
@@ -179,6 +179,24 @@ Your Mac's store for secrets. Rufi keeps the sign-in itself there, never in the 
 **Log**:
 Rufi's diagnostic file, `logs/rufi.log` in the data folder: fixed events with checked details, never your words or health text.
 _Avoid_: history, transcript
+
+**First run**:
+The short steps a new data folder starts with: what Rufi is and isn't, what goes to the AI, your name, sign in with ChatGPT (or skip), and your emergency region (or skip). Rufi keeps each step done.
+_Avoid_: onboarding, setup wizard
+
+## Keeping your data safe
+
+**Backup**:
+A checked copy of the record that Rufi makes each day in `backups/` in the data folder. It holds the record only: never the sign-in, the AI's own files, the log or the allowlist. It counts only after its check passes.
+_Avoid_: snapshot, archive
+
+**Restore**:
+Putting a backup into a new, empty folder, with `pnpm rufi restore`. It never changes the current data folder or overwrites anything; the copy starts signed out.
+_Avoid_: recover, roll back
+
+**Export**:
+One zip with everything in the record, the conversations and Rufi's settings, as JSON and CSV with a README, so your data is never locked in Rufi. Not a backup: Rufi can't restore from it.
+_Avoid_: download, dump
 
 ## Relationships
 

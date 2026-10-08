@@ -262,3 +262,46 @@ export async function read<S extends Schema.Codec<unknown, unknown>>(
 ): Promise<S["Type"]> {
   return Schema.decodeUnknownSync(schema)(await request(method, path, body));
 }
+
+/**
+ * Downloads a file the core makes: fetched with the tab's proof, then saved
+ * through the browser (the Rufi app asks where). Gives the file's name.
+ */
+export async function download(path: string): Promise<string> {
+  await session;
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      headers: headersFor(undefined),
+      signal: ending.signal,
+    });
+  } catch (error) {
+    if (!ending.signal.aborted) setConnection("offline");
+    throw new ApiError(0, "Rufi can't be reached.", undefined, {
+      cause: error,
+    });
+  }
+  if (response.status === 401) {
+    setConnection("ended");
+    throw new ApiError(401, "Open Rufi again from the terminal.");
+  }
+  setConnection("ok");
+  if (!response.ok) {
+    const json = parseJson(await response.text());
+    throw new ApiError(response.status, refusal(json), json);
+  }
+  const name =
+    /filename="([^"]+)"/.exec(
+      response.headers.get("content-disposition") ?? "",
+    )?.[1] ?? "rufi-export.zip";
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  // The browser has the file once the click is handled.
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 60_000);
+  return name;
+}

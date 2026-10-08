@@ -1,22 +1,42 @@
 // A Rufi window: the screens from the core's own origin, as a browser loads
 // them, with nothing of Node or Electron in the page. Every setting that
 // guards the page is set here on purpose, not left to Electron's defaults.
-import { BrowserWindow, type Session, shell } from "electron";
+import { join } from "node:path";
+import { app, BrowserWindow, dialog, type Session, shell } from "electron";
 
 /** What the screens look for to know they are in the app (apps/web main.tsx). */
 const MARK = "RufiApp";
 
 /**
  * The window's session: in memory only, so nothing of the page is kept on
- * disk; no permission, no download, and a user agent with the app's mark.
+ * disk; no permission, and a user agent with the app's mark. The only
+ * download is a file the page itself made (a blob of its own origin, such as
+ * the export), saved where the person chooses.
  */
 export function lockDown(session: Session): void {
   session.setPermissionRequestHandler((_contents, _permission, answer) => {
     answer(false);
   });
   session.setPermissionCheckHandler(() => false);
-  session.on("will-download", (event) => {
-    event.preventDefault();
+  session.on("will-download", (event, item, contents) => {
+    const url = item.getURL();
+    const page = URL.parse(contents.getURL())?.origin;
+    if (
+      !url.startsWith("blob:") ||
+      page === undefined ||
+      URL.parse(url.slice("blob:".length))?.origin !== page
+    ) {
+      event.preventDefault();
+      return;
+    }
+    const window = BrowserWindow.fromWebContents(contents);
+    const options = {
+      defaultPath: join(app.getPath("downloads"), item.getFilename()),
+    };
+    const path =
+      window === null ? undefined : dialog.showSaveDialogSync(window, options);
+    if (path === undefined) item.cancel();
+    else item.setSavePath(path);
   });
   session.setUserAgent(`${session.getUserAgent()} ${MARK}`);
 }

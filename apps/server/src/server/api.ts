@@ -5,6 +5,7 @@ import {
   AddPerson,
   ChooseConversation,
   CreateConversation,
+  FinishStep,
   MessageText,
   MAX_MESSAGE_CHARS,
   ReorderWaiting,
@@ -12,7 +13,9 @@ import {
   SaveSettings,
   SelectModel,
   SendMessage,
+  type Backups,
   type Draft,
+  type FirstRun,
   type Overview,
   type Settings,
   type Status,
@@ -27,6 +30,7 @@ import { stream } from "hono/streaming";
 import { v7 as uuid } from "uuid";
 import { Stopped } from "../agent/runtime.ts";
 import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
+import type { BackupJob } from "../core/store/backup.ts";
 import {
   shown,
   type Change,
@@ -37,6 +41,7 @@ import { errorCode, type Log } from "../platform/logs.ts";
 import { ChatRefusal, type Chat } from "./chat.ts";
 import { screen } from "./screens.ts";
 import { sameSecret, type Sessions } from "./session.ts";
+import type { SignInFlow } from "./signin.ts";
 
 export interface ApiDeps {
   transcripts: Transcripts;
@@ -48,6 +53,11 @@ export interface ApiDeps {
   overview: (personId: string) => Promise<Overview>;
   /** The ChatGPT sign-in, read when asked. */
   account: () => Promise<Status>;
+  /** Signing in from the screens. */
+  signIn: SignInFlow;
+  backups: BackupJob;
+  /** The export, made when asked: the zip and its file name. */
+  exportZip: () => Promise<{ name: string; bytes: Uint8Array }>;
   /** The secret `pnpm start` shows to get a fresh link while Rufi runs. */
   launcher: string;
   /** A fresh single-use link that opens Rufi. */
@@ -81,7 +91,7 @@ const FORWARDING = [
 ];
 
 class HttpError extends Error {
-  readonly status: 400 | 401 | 403 | 404 | 409 | 413 | 502;
+  readonly status: 400 | 401 | 403 | 404 | 409 | 413 | 500 | 502;
   /** More of the answer, beside the error. */
   readonly more: Record<string, unknown>;
   constructor(
@@ -242,9 +252,47 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.get("/api/people", async (c) =>
     c.json({ people: await transcripts.people() }),
   );
+  // First run makes the first person; more people come with family.
   app.post("/api/people", async (c) => {
     const { displayName } = await body(c, AddPerson);
-    return c.json({ person: await transcripts.addPerson(displayName) }, 201);
+    const person = await transcripts.addFirstPerson(displayName);
+    if (!person) {
+      throw new HttpError(409, "Someone is already in this record.");
+    }
+    return c.json({ person }, 201);
+  });
+
+  // First run: what is done is kept here, so a reload or another tab
+  // continues at the first step not done.
+  const FIRST_RUN = {
+    welcome: "first_run.understood",
+    sign_in: "first_run.sign_in_skipped",
+    region: "first_run.done",
+  } as const;
+  const firstRun = async (): Promise<FirstRun> => {
+    if (!(await transcripts.setting(FIRST_RUN.welcome))) {
+      return { step: "welcome" };
+    }
+    if ((await transcripts.people()).length === 0) return { step: "name" };
+    if (
+      (await deps.account()).account === "signed_out" &&
+      !(await transcripts.setting(FIRST_RUN.sign_in))
+    ) {
+      return { step: "sign_in" };
+    }
+    if (!(await transcripts.setting(FIRST_RUN.region))) {
+      return { step: "region" };
+    }
+    return { step: "done" };
+  };
+  app.get("/api/first-run", async (c) => c.json(await firstRun()));
+  app.post("/api/first-run", async (c) => {
+    const { step } = await body(c, FinishStep);
+    // The first time a step was done stands.
+    if (!(await transcripts.setting(FIRST_RUN[step]))) {
+      await transcripts.saveSetting(FIRST_RUN[step], new Date().toISOString());
+    }
+    return c.json(await firstRun());
   });
 
   app.get("/api/settings", async (c) => c.json(await emergency()));
@@ -258,6 +306,44 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   });
 
   app.get("/api/status", async (c) => c.json(await deps.account()));
+
+  app.get("/api/signin", (c) => c.json(deps.signIn.state()));
+  app.post("/api/signin", (c) => c.json(deps.signIn.start()));
+
+  const backups = async (): Promise<Backups> => {
+    const { last, failed, running } = await deps.backups.status();
+    return {
+      last: last
+        ? { name: last.name, createdAt: last.createdAt.toISOString() }
+        : null,
+      failed: failed
+        ? { at: failed.at.toISOString(), reason: failed.reason }
+        : null,
+      running,
+    };
+  };
+  app.get("/api/backups", async (c) => c.json(await backups()));
+  // Back up now: answers when it is done; a failure shows in the status.
+  app.post("/api/backups", async (c) => {
+    await deps.backups.backUp().catch(() => undefined);
+    return c.json(await backups());
+  });
+
+  app.get("/api/export", async (c) => {
+    let made: { name: string; bytes: Uint8Array };
+    try {
+      made = await deps.exportZip();
+    } catch (error) {
+      deps.log("export.failed", { error: errorCode(error) });
+      throw new HttpError(
+        500,
+        "Rufi couldn't make the export. Try again; if it fails again, make a backup and see Help.",
+      );
+    }
+    c.header("Content-Type", "application/zip");
+    c.header("Content-Disposition", `attachment; filename="${made.name}"`);
+    return c.body(new Uint8Array(made.bytes));
+  });
 
   app.get("/api/models", async (c) => {
     const { models, error } = await acting(() => chat.models());

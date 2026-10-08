@@ -1,7 +1,9 @@
 // What the screens read from the core, through one query cache. Each read is
 // checked against its contract.
 import {
+  Backups,
   Conversations,
+  FirstRun,
   Models,
   Overview,
   People,
@@ -41,6 +43,20 @@ export const useStatus = () =>
   useQuery({
     queryKey: ["status"],
     queryFn: () => read(Status, "GET", "/api/status"),
+  });
+
+/** The first step of the first run not done yet, kept by the core. */
+export const useFirstRun = () =>
+  useQuery({
+    queryKey: ["first-run"],
+    queryFn: () => read(FirstRun, "GET", "/api/first-run"),
+  });
+
+/** The last good backup and the last failed try. */
+export const useBackups = () =>
+  useQuery({
+    queryKey: ["backups"],
+    queryFn: () => read(Backups, "GET", "/api/backups"),
   });
 
 const OverviewAnswer = Schema.Struct({ overview: Overview });

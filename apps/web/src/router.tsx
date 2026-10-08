@@ -12,8 +12,9 @@ import { FirstRun } from "./first-run.tsx";
 import { Frame } from "./frame.tsx";
 import { HelpPage } from "./help-page.tsx";
 import { OverviewPage } from "./overview.tsx";
-import { usePeople } from "./reads.ts";
+import { useFirstRun, usePeople } from "./reads.ts";
 import { SettingsPage } from "./settings.tsx";
+import { SignIn } from "./signin.tsx";
 import { Problem } from "./ui.tsx";
 
 const root = createRootRoute({ component: Frame });
@@ -23,16 +24,28 @@ const home = createRoute({
   path: "/",
   component: function Home() {
     const people = usePeople();
-    if (people.data === undefined && people.error) {
+    const firstRun = useFirstRun();
+    const failed = people.error ?? firstRun.error;
+    if ((people.data === undefined || firstRun.data === undefined) && failed) {
       return (
         <div className="px-6 py-8">
-          <Problem error={people.error} retry={() => void people.refetch()} />
+          <Problem
+            error={failed}
+            retry={() => {
+              void people.refetch();
+              void firstRun.refetch();
+            }}
+          />
         </div>
       );
     }
-    if (people.data === undefined) return null;
+    if (people.data === undefined || firstRun.data === undefined) return null;
     const person = people.data[0];
-    return person ? <OverviewPage person={person} /> : <FirstRun />;
+    return person && firstRun.data.step === "done" ? (
+      <OverviewPage person={person} />
+    ) : (
+      <FirstRun />
+    );
   },
 });
 
@@ -69,6 +82,18 @@ const settings = createRoute({
   component: SettingsPage,
 });
 
+const signIn = createRoute({
+  getParentRoute: () => root,
+  path: "/sign-in",
+  component: function SignInPage() {
+    return (
+      <div className="mx-auto max-w-[620px] px-6 py-8">
+        <SignIn />
+      </div>
+    );
+  },
+});
+
 function useHash() {
   return useLocation({ select: (location) => location.hash });
 }
@@ -95,6 +120,7 @@ export const router = createRouter({
     home,
     conversation,
     settings,
+    signIn,
     helpIndex,
     helpPage,
   ]),

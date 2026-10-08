@@ -25,6 +25,8 @@ import {
   openReadOnly,
   openWritable,
 } from "../core/store/database.ts";
+import { backupsPath } from "../core/store/backup.ts";
+import { restore } from "../core/store/restore.ts";
 import { holdRufiLock } from "../platform/files.ts";
 import { diagnostics } from "../platform/logs.ts";
 import { LAUNCHER_HEADER, PROOF_HEADER } from "./api.ts";
@@ -35,6 +37,7 @@ import {
   type Core,
   type CoreOptions,
 } from "./core.ts";
+import type { SignIn } from "./signin.ts";
 
 const FAKE = join(import.meta.dirname, "../../tests/fake-codex.ts");
 
@@ -128,6 +131,22 @@ function call(
       req.end(JSON.stringify(body));
     } else req.end();
   });
+}
+
+/**
+ * A second person, written straight into the record: first run adds only the
+ * first one, and more people come with family.
+ */
+function addRavi(): { id: string } {
+  const store = openWritable(databasePath(home));
+  try {
+    store.db.exec(
+      "INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional')",
+    );
+  } finally {
+    store.close();
+  }
+  return { id: "ravi" };
 }
 
 /** A page's session: its cookie and its tab proof. */
@@ -491,11 +510,7 @@ describe("the local API", () => {
     const core = await start();
     const page = await session(core);
     const c = await conversation(page);
-    const ravi = (
-      await page.api("POST", "/api/people", { displayName: "Ravi Fictional" })
-    ).body["person"] as {
-      id: string;
-    };
+    const ravi = addRavi();
     expect((await page.api("GET", c.path)).status).toBe(200);
     expect(
       (await page.api("GET", `/api/people/${ravi.id}/conversations/${c.id}`))
@@ -868,9 +883,7 @@ describe("the local API", () => {
     await page.api("PUT", chosen, { conversationId: c.id });
     expect((await page.api("GET", list)).body["chosen"]).toBe(c.id);
 
-    const ravi = (
-      await page.api("POST", "/api/people", { displayName: "Ravi Fictional" })
-    ).body["person"] as { id: string };
+    const ravi = addRavi();
     expect(
       (
         await page.api("PUT", `/api/people/${ravi.id}/chosen`, {
@@ -1247,4 +1260,220 @@ describe("Rufi's log", () => {
     expect(file).toContain('"event":"core.started"');
     expect(file).not.toContain("private worry");
   });
+});
+
+describe("never starting over", () => {
+  it("won't start empty when the record is lost, and points to restore", async () => {
+    await start();
+    await stop();
+    for (const name of ["rufi.sqlite", "rufi.sqlite-wal", "rufi.sqlite-shm"]) {
+      await rm(join(home, name), { force: true });
+    }
+    await expect(start()).rejects.toThrow("Rufi's record is missing from");
+    await expect(stat(databasePath(home))).rejects.toThrow();
+  });
+
+  it("won't open a folder whose restore didn't finish", async () => {
+    await mkdir(join(home, "restoring"));
+    await expect(start()).rejects.toThrow("didn't finish");
+    await expect(stat(databasePath(home))).rejects.toThrow();
+  });
+
+  it.each([
+    { folder: "a new folder", prepare: () => Promise.resolve(), people: 0 },
+    {
+      folder: "a folder with only a sign-in",
+      prepare: () => writeFile(join(home, "chatgpt.json"), "{}"),
+      people: 0,
+    },
+    {
+      folder: "a folder from before the marker",
+      prepare: () => {
+        const store = openWritable(databasePath(home));
+        store.db.exec(
+          "INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional')",
+        );
+        store.close();
+        return Promise.resolve();
+      },
+      people: 1,
+    },
+  ])("opens $folder and marks it", async ({ prepare, people }) => {
+    await prepare();
+    const page = await session(await start());
+    expect((await page.api("GET", "/api/people")).body["people"]).toHaveLength(
+      people,
+    );
+    await stop();
+    await rm(databasePath(home));
+    await expect(start()).rejects.toThrow("Rufi's record is missing from");
+  });
+});
+
+describe("first run", () => {
+  it("goes through its steps, kept by the core, and makes one person from two tabs", async () => {
+    const core = await start();
+    const page = await session(core);
+    const second = await session(core);
+    const step = async () =>
+      (await page.api("GET", "/api/first-run")).body["step"];
+    expect(await step()).toBe("welcome");
+    expect(
+      (await page.api("POST", "/api/first-run", { step: "welcome" })).body,
+    ).toEqual({ step: "name" });
+
+    const both = await Promise.all([
+      page.api("POST", "/api/people", { displayName: "Asha Fictional" }),
+      second.api("POST", "/api/people", { displayName: "Asha F." }),
+    ]);
+    expect(both.map((r) => r.status).sort((a, b) => a - b)).toEqual([201, 409]);
+    expect((await page.api("GET", "/api/people")).body["people"]).toHaveLength(
+      1,
+    );
+
+    // Signed out: the sign-in step, until it is skipped.
+    expect(await second.api("GET", "/api/first-run")).toMatchObject({
+      body: { step: "sign_in" },
+    });
+    await second.api("POST", "/api/first-run", { step: "sign_in" });
+    expect(await step()).toBe("region");
+    await page.api("POST", "/api/first-run", { step: "region" });
+    expect(await step()).toBe("done");
+  });
+
+  it("skips the sign-in step when Rufi is already signed in", async () => {
+    const page = await session(
+      await start({
+        account: () =>
+          Promise.resolve({ account: "signed_in", email: "asha@example.com" }),
+      }),
+    );
+    await page.api("POST", "/api/first-run", { step: "welcome" });
+    await page.api("POST", "/api/people", { displayName: "Asha Fictional" });
+    expect((await page.api("GET", "/api/first-run")).body["step"]).toBe(
+      "region",
+    );
+  });
+});
+
+describe("signing in from the screens", () => {
+  it("opens one sign-in at a time, gives its link, and says when it is done or why it failed", async () => {
+    const runs: PromiseWithResolvers<{ email: string | undefined }>[] = [];
+    const signIn: SignIn = ({ showLink }) => {
+      showLink("https://auth.example.com/authorize?fictional=1");
+      const run = Promise.withResolvers<{ email: string | undefined }>();
+      runs.push(run);
+      return run.promise;
+    };
+    const page = await session(await start({ signIn }));
+    const state = async () => (await page.api("GET", "/api/signin")).body;
+    expect(await state()).toEqual({ state: "idle", link: null, error: null });
+
+    await page.api("POST", "/api/signin");
+    await page.api("POST", "/api/signin");
+    expect(runs).toHaveLength(1);
+    expect(await state()).toEqual({
+      state: "waiting",
+      link: "https://auth.example.com/authorize?fictional=1",
+      error: null,
+    });
+    runs[0]?.reject(
+      new Error("Sign-in wasn't finished in time. Sign in again."),
+    );
+    await until(async () => (await state())["state"] === "failed");
+    expect((await state())["error"]).toBe(
+      "Sign-in wasn't finished in time. Sign in again.",
+    );
+
+    await page.api("POST", "/api/signin");
+    runs[1]?.resolve({ email: "asha@example.com" });
+    await until(async () => (await state())["state"] === "done");
+  });
+});
+
+describe("backups and export over the API", () => {
+  it("makes a backup at start, another on Back up now, and gives the export as a zip", async () => {
+    const page = await session(await start());
+    const backups = async () => (await page.api("GET", "/api/backups")).body;
+    await until(async () => (await backups())["last"] !== null);
+    const first = (await backups())["last"] as { name: string };
+    const now = (await page.api("POST", "/api/backups")).body;
+    expect(now).toMatchObject({ failed: null, running: false });
+    expect((now["last"] as { name: string }).name).not.toBe(first.name);
+
+    const exported = await page.api("GET", "/api/export");
+    expect(exported.status).toBe(200);
+    expect(exported.headers["content-type"]).toBe("application/zip");
+    expect(exported.headers["content-disposition"]).toMatch(
+      /^attachment; filename="rufi-export-\d{4}-\d{2}-\d{2}\.zip"$/,
+    );
+  });
+
+  it(
+    "restores a backup made during a reply: drafts and history are there, the reply shows interrupted, and the next message starts the AI afresh",
+    { timeout: 30_000 },
+    async () => {
+      const page = await session(await start());
+      const c = await conversation(page);
+      await page.say(c.path, "Please remember my fictional cat Biscuit");
+      await until(async () =>
+        (
+          (await page.api("GET", c.path)).body["turns"] as { status: string }[]
+        ).every((turn) => turn.status === "completed"),
+      );
+      await page.say(c.path, "hang");
+      await until(async () =>
+        (
+          (await page.api("GET", c.path)).body["turns"] as { status: string }[]
+        ).some((turn) => turn.status === "running"),
+      );
+      const draft = c.path.replace("/conversations/", "/drafts/");
+      const { revision } = (await page.api("GET", draft)).body;
+      await page.api("PUT", draft, {
+        text: "An unsent fictional note",
+        revision,
+      });
+      const made = (await page.api("POST", "/api/backups")).body["last"] as {
+        name: string;
+      };
+      await stop();
+
+      const backup = join(backupsPath(home), made.name);
+      home = await mkdtemp(join(tmpdir(), "rufi-restored-"));
+      await rm(home, { recursive: true });
+      await restore(backup, home);
+      // Codex's turn ids are unique; the scripted one numbers them from what
+      // it knew, so it is told of two earlier turns to start at a new id.
+      const restored = await session(
+        await start({
+          agent: scripted({ threads: { earlier: { history: ["a", "b"] } } }),
+        }),
+      );
+
+      const snapshot = (await restored.api("GET", c.path)).body as {
+        turns: { status: string }[];
+      };
+      expect(snapshot.turns.map((t) => t.status)).toEqual([
+        "completed",
+        "interrupted",
+      ]);
+      expect((await restored.api("GET", draft)).body["text"]).toBe(
+        "An unsent fictional note",
+      );
+      // Nothing ran by itself; the next message starts a new thread (the copy
+      // has none of the AI's files), told the conversation's last messages.
+      expect(
+        (await restored.say(c.path, "What is my cat called?")).status,
+      ).toBe(202);
+      await until(
+        async () =>
+          (
+            (await restored.api("GET", c.path)).body["turns"] as {
+              status: string;
+            }[]
+          ).at(2)?.status === "completed",
+      );
+      expect(logged).toContain("chat.resume_failed");
+    },
+  );
 });

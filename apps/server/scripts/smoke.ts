@@ -355,8 +355,8 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   },
   /**
    * A question the AI has to think through: Rufi keeps the reasoning summary
-   * when one comes. At low effort the model sends one only sometimes, so this
-   * counts how often.
+   * when one comes. The model sends one only sometimes, so this counts how
+   * often.
    */
   reasoning: async (api, home) => {
     const c = await conversation(api);

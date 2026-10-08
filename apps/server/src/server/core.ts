@@ -11,12 +11,14 @@ import { Effect } from "effect";
 import type { AgentHost, AgentRuntime, AgentTools } from "../agent/runtime.ts";
 import { allowlistFile } from "../core/chat/models.ts";
 import { transcripts as openTranscripts } from "../core/chat/transcript.ts";
+import { backupJob } from "../core/store/backup.ts";
 import {
   databasePath,
   openReadOnly,
-  openWritable,
   type Store,
 } from "../core/store/database.ts";
+import { cleanExportStaging, exportZip } from "../core/store/export.ts";
+import { openRecord } from "../core/store/install.ts";
 import { readOverview } from "../core/tools/overview.ts";
 import { chatCaller, forAgent, toolsVersion } from "../core/tools/tools.ts";
 import { holdRufiLock, readJson, writePrivateJson } from "../platform/files.ts";
@@ -24,6 +26,7 @@ import { errorCode, type Log } from "../platform/logs.ts";
 import { api, LAUNCHER_HEADER } from "./api.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 import { secret, sessions } from "./session.ts";
+import { signInFlow, type SignIn } from "./signin.ts";
 
 export interface CoreOptions {
   /** Rufi's data folder. */
@@ -37,6 +40,8 @@ export interface CoreOptions {
   behindMax?: number;
   /** The ChatGPT sign-in; signed out when not given. */
   account?: () => Promise<Status>;
+  /** Signs in with ChatGPT from the screens; not offered when not given. */
+  signIn?: SignIn;
   /** The built screens' folder (apps/web/dist). */
   screens?: string;
 }
@@ -111,7 +116,7 @@ export const startCore = (options: CoreOptions) =>
       (release) => Effect.promise(() => release().catch(() => undefined)),
     );
     const writer = yield* Effect.acquireRelease(
-      attempt(() => openWritable(databasePath(home))),
+      attempt(() => openRecord(home)),
       (store) =>
         Effect.sync(() => {
           if (store.db.isOpen) store.close();
@@ -124,6 +129,12 @@ export const startCore = (options: CoreOptions) =>
       (store) => Effect.sync(() => store?.close()),
     );
     const transcripts = openTranscripts(writer);
+    yield* attempt(() => cleanExportStaging(home));
+    const backups = yield* Effect.acquireRelease(
+      Effect.sync(() => backupJob(home, log)),
+      (job) => Effect.promise(() => job.close()),
+    );
+    yield* attempt(() => backups.start());
     const interrupted = yield* attempt(() => transcripts.interruptRunning());
     // Sends Rufi stopped during: taken, or the text stays; never sent again.
     yield* attempt(() => transcripts.endStoppedSends());
@@ -170,6 +181,9 @@ export const startCore = (options: CoreOptions) =>
       account:
         options.account ??
         (() => Promise.resolve({ account: "signed_out", email: null })),
+      backups,
+      exportZip: () => exportZip(home, new Date()),
+      signIn: signInFlow(options.signIn, log),
       launcher,
       launchUrl,
       ...(options.screens !== undefined && { screens: options.screens }),
