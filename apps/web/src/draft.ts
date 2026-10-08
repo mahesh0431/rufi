@@ -6,7 +6,7 @@
 // older revision is refused (another tab saved first) and the box shows the
 // newer text. A save whose answer didn't come may still have been kept: the
 // next save asks the core first, and goes on from it if it was. A send saves
-// first ("Saving…"); then the core holds the draft ("Sending…") until the
+// first, quietly; then the core holds the draft ("Sending…") until the
 // agent took the message (the draft empties) or refused it, and nobody can
 // change it meanwhile, in this tab or another. A box that finds its draft
 // held waits until the send has ended. Nothing here sends a message again.

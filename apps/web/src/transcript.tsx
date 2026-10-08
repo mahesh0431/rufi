@@ -172,16 +172,6 @@ export function TranscriptView({
   const running = useStore(live, isRunning);
   const opening = useStore(live, (state) => state.window);
   const now = useToday();
-  const replying = useStore(live, (state) => {
-    const last = state.entries[state.order.at(-1) ?? ""];
-    return (
-      isRunning(state) &&
-      !(
-        last?.kind === "reply" &&
-        state.turns[last.turnId ?? ""]?.status === "running"
-      )
-    );
-  });
 
   // Follows the reply as it streams, unless you scrolled up to read.
   const scroller = useRef<HTMLDivElement>(null);
@@ -314,12 +304,6 @@ export function TranscriptView({
                 <Line key={line} live={live} line={line} />
               ))}
             </Today>
-            {replying && (
-              <p className="flex items-center gap-1.5 text-muted">
-                <LoaderCircle size={13} className="animate-spin" aria-hidden />
-                Replying…
-              </p>
-            )}
           </div>
         )}
       </div>
