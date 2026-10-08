@@ -328,7 +328,7 @@ const SEEDS: Record<string, string> = {
 
 const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   /** A reply streams and completes; the latest results come from get_overview. */
-  latest_results: async (api, home) => {
+  latest_results: async (api) => {
     const c = await conversation(api);
     await c.ask("What are my latest results?");
     const snapshot = await c.read();
@@ -339,9 +339,22 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         mentions_hba1c: /hba1c/i.test(lastReply(snapshot)),
         how_present: basis(snapshot).how !== null,
         used_shows_the_read: basis(snapshot).used.length > 0,
-        reasoning_summary_kept: reasoningKept(home),
       },
       snapshot,
+    };
+  },
+  /**
+   * A question the AI has to think through: its reasoning summary is kept.
+   * At low effort, simple questions often come with none.
+   */
+  reasoning: async (api, home) => {
+    const c = await conversation(api);
+    await c.ask(
+      "A bat and a ball cost 1.10 in total. The bat costs 1.00 more than the ball. Think it through, then give the ball's price.",
+    );
+    return {
+      checks: { reasoning_summary_kept: reasoningKept(home) },
+      snapshot: await c.read(),
     };
   },
   /** "What was my last HbA1c?" is Asha's value, with what was read under it. */
@@ -494,11 +507,14 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     const cut = queried(home).some((call) =>
       call.answer.includes('"complete":false'),
     );
+    const reply = lastReply(snapshot);
+    // 250 readings here and the fixture's one: all of them, or it says not.
+    const shown = (reply.match(/^\|.*\d.*\|\s*$/gm) ?? []).length;
     return {
       checks: {
         a_query_was_cut: cut,
-        answer_mentions_it:
-          cut && /200|not all|only|more|limit|cut/i.test(lastReply(snapshot)),
+        all_shown_or_says_not:
+          shown === 251 || /200|not all|only|more|limit|cut/i.test(reply),
       },
       snapshot,
     };
