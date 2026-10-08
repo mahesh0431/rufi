@@ -58,25 +58,25 @@ A message can have up to 10,000 characters. When the box has more, it says so, a
 
 ## Asking about your record
 
-Ask the AI about your record in your own words, for example "What was my last HbA1c?", "How many times did I have a headache this year?" or "How has my HbA1c changed since I started creatine?". The AI reads your Overview. For anything more, such as earlier results, counts, dates, or one kind of data beside another, it queries your record.
+Ask the AI about your record in your own words, for example "What was my last HbA1c?", "How many times did I have a headache this year?" or "How has my HbA1c changed since I started creatine?". The AI reads your Overview. For anything more, such as earlier results, counts or dates, it reads one kind of record, such as your results or your symptoms, all of them or between two dates. The AI does the counting and the comparing itself.
 
-What the AI's queries can do:
+What the AI's reads can do:
 
-- **Only this person's record.** A query reads only the record of the person the conversation is about. It can't read another person's record, your conversations or Rufi's settings. Rufi chooses the person, not the AI.
-- **Only read.** A query can't change anything.
-- **Removed records too.** Records you removed, and the earlier versions of amended results, stay readable, marked as removed or replaced.
-- **Limits.** Rufi stops a query after 5 seconds, and gives the AI at most 200 rows and 32 KB of them. When a limit cuts what came back, Rufi tells the AI, and the AI says in its answer what that means. A query that failed or was stopped gives the AI its error, never an empty list of rows.
+- **Only this person's record.** A read gets only the records of the person the conversation is about. It can't read another person's record, your conversations or Rufi's settings. Rufi chooses the person, not the AI.
+- **Only read.** A read can't change anything.
+- **Removed records too.** Records you removed, and the earlier versions of amended results, are in a read too, marked as removed or replaced.
+- **Limits.** One read gives the AI at most 200 records and 32 KB of them, newest first. When there are more, Rufi tells the AI that the read was capped, and the AI reads fewer dates at a time or says in its answer what that means. A read that failed gives the AI an error, never an empty list.
 
-If your record changes while the AI answers, for example a save in another conversation, two of its reads can see the record before and after the change. Used shows what each read got back.
+If your record changes while the AI answers, for example a save in another conversation, two of its reads can see the record before and after the change. Rufi keeps what each read got back with the conversation.
 
 ## Where an answer comes from
 
 Under an answer, once the reply has ended, the **Based on** link opens two parts:
 
 - **How**: the AI's own words on where the answer comes from: your record, read in this reply or earlier in the conversation, the web, or general knowledge. It also says how the AI got the answer, for example which results it compared.
-- **Used**: what Rufi saw the AI read in that reply, one line for each read: a query on your record with the number of rows it gave back, your Overview, a web search or a web page, a command. Rufi makes this list itself, not from the AI's words.
+- **Used**: which reads the AI made in that reply, and how each one ended: your Overview, your records of one kind (with the dates and the number of records), a web search or a web page, a command. Rufi makes this list itself, not from the AI's words. What each read got back isn't shown here; Rufi keeps it with the conversation.
 
-Used is what the AI read, not proof that each read supports the answer. For the web, Rufi sees what was searched or opened, not the text of the page. When a read failed, stopped or was cut by a limit, its line says so. When the AI answers from something it read earlier in the conversation, Used is empty for that reply, and How says so. If How and Used don't agree, ask the AI.
+Used is what the AI read, not proof that each read supports the answer. For the web, Rufi sees what was searched or opened, not the text of the page. When a read failed, stopped or was capped, its line says so. When the AI answers from something it read earlier in the conversation, Used is empty for that reply, and How says so. If How and Used don't agree, ask the AI.
 
 Anything that changes what an answer means, such as only two readings or a missing month, is in the answer itself, not only under Based on.
 

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readConversation } from "./conversation.ts";
 import { getOverview } from "./overview.ts";
 import { saveChanges } from "./save.ts";
-import { runSql } from "./sql.ts";
+import { getRecords } from "./records.ts";
 import {
   inputSchema,
   toolCaller,
@@ -17,7 +17,7 @@ import type { Store } from "../store/database.ts";
 
 export const TOOLS: readonly Tool[] = [
   getOverview,
-  runSql,
+  getRecords,
   readConversation,
   saveChanges,
 ];
@@ -26,11 +26,11 @@ export const TOOLS: readonly Tool[] = [
 const NAMESPACE = "rufi";
 
 /** PLAN.md §3.5: tools are the only way in to the record; docs/adr/0005. */
-const TOOL_INSTRUCTIONS = `The user's health record lives in Rufi. Read it only through the rufi tools, and change it only with rufi.save_changes. Never open, copy or query Rufi's database or files any other way: no code, shell or other SQL.
+const TOOL_INSTRUCTIONS = `The user's health record lives in Rufi. Read it only through the rufi tools, and change it only with rufi.save_changes. Never open, copy or query Rufi's database or files directly, by code, SQL or shell.
 Rufi's chat shows your replies as Markdown. Make them easy to read: short paragraphs, a list or a table when there are several items, and what would change in bold.
 Answering from the record:
-- get_overview shows the record at a glance. For anything more, such as a value over time, earlier or removed records, counts, dates, or one kind of data against another, query the record with run_sql. Let SQL count, group and compare rather than reading many rows.
-- Answer from what you read, in this reply or earlier in this conversation. When a read failed, was stopped or was cut by a limit, say in the answer what that means for it.
+- get_overview shows the record at a glance. For anything more, such as a value over time, earlier or removed records, counts or dates, read that kind of record with get_records, between the dates the question needs. Count, compare and find trends in the records yourself.
+- Answer from what you read, in this reply or earlier in this conversation. When a read failed, say so in the answer. When a read was capped, narrow the dates and read the rest, or say in the answer what the missing records mean for it.
 - Reading numbers: connect different kinds of data freely, but keep one test in one unit inside one trend. A missing day is missing, not zero. A printed "<5" stays "<5", never 5. When two things happen together, say they happen together, not that one causes the other.
 - Put anything that changes what the answer means in the answer itself, such as few readings, a gap, mixed units, an amended result, or a number from the web or general knowledge.
 Where an answer comes from:

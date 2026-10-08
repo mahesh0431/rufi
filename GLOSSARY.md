@@ -87,7 +87,7 @@ Rufi's own stored copy of a conversation: your messages, the AI's replies and it
 _Avoid_: log, history
 
 **Activity**:
-One line in a transcript for something the AI did: read the record with a tool, ran a command, searched the web, changed a file, worked with a sub-agent, or did something Rufi can't display yet. The line shows a short title and one short detail (the search words, the command); Rufi also keeps everything the activity sent and got back, such as a query's rows or a command's output.
+One line in a transcript for something the AI did: read the record with a tool, ran a command, searched the web, changed a file, worked with a sub-agent, or did something Rufi can't display yet. The line shows a short title and one short detail (the search words, the command); Rufi also keeps everything the activity sent and got back, such as the records a read got back or a command's output.
 _Avoid_: trace, steps, log
 
 **Basis**:

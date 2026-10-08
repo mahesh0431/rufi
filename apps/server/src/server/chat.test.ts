@@ -769,8 +769,8 @@ describe("the chat, on the scripted Codex", () => {
         calls: [
           {
             namespace: "rufi",
-            tool: "run_sql",
-            arguments: { sql: "SELECT * FROM results" },
+            tool: "get_records",
+            arguments: { kind: "result", from: "2024" },
           },
         ],
       },
@@ -804,10 +804,10 @@ describe("the chat, on the scripted Codex", () => {
         "From the record, read now.",
         [
           {
-            title: "Query your record",
-            detail: "SELECT * FROM results",
+            title: "Read your records",
+            detail: "results from 2024",
             outcome: "done",
-            note: "0 rows",
+            note: "0 records",
           },
           { title: "Ran a command", detail: "ls", outcome: "done", note: null },
         ],
@@ -823,7 +823,10 @@ describe("the chat, on the scripted Codex", () => {
       },
     });
     const c = await newConversation();
-    transcripts.recordToolCall = () => Promise.reject(new Error("disk full"));
+    // The store itself refuses the write, as a full disk would.
+    store.db.exec(
+      "CREATE TEMP TRIGGER full BEFORE INSERT ON tool_calls BEGIN SELECT RAISE(ABORT, 'database or disk is full'); END",
+    );
     await chat?.send(c, "hang");
     await ended(c.id);
     expect((await transcript(c.id)).turns).toMatchObject([
@@ -1004,11 +1007,14 @@ describe("the chat, on the scripted Codex", () => {
     await transcripts.startTurn(c, "t-1", "gpt-6.1-sol");
     await transcripts.recordToolCall(c, "t-1", {
       callId: "call-1",
-      tool: "run_sql",
-      input: { sql: "SELECT 1" },
+      tool: "get_records",
+      input: { kind: "result", to: "2026-08" },
       answer: {
         ok: false,
-        text: JSON.stringify({ ok: false, error: "The query failed: boom." }),
+        text: JSON.stringify({
+          ok: false,
+          error: "Rufi couldn't run get_records.",
+        }),
       },
       startedAt: "2026-10-08T10:00:00Z",
     });
@@ -1026,10 +1032,10 @@ describe("the chat, on the scripted Codex", () => {
         how: null,
         used: [
           {
-            title: "Query your record",
-            detail: "SELECT 1",
+            title: "Read your records",
+            detail: "results to 2026-08",
             outcome: "failed",
-            note: "The query failed: boom.",
+            note: "Rufi couldn't run get_records.",
           },
         ],
       },

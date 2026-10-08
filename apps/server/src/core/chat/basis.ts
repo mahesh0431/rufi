@@ -55,19 +55,38 @@ export function splitBasis(
     const end = block.position?.end.offset ?? start;
     answer = answer.slice(0, start) + answer.slice(end);
   }
-  answer = answer.trimEnd();
+  answer = withoutMarkers(answer.trimEnd());
   if (!finished) answer = withoutOpening(answer);
   const how = blocks.at(-1)?.value.trim();
   return { answer, how: how === "" ? undefined : how };
 }
 
 /**
- * The text without a last line that may be the start of a rufi-basis fence:
- * backticks or tildes, then nothing or the start of the tag.
+ * The quote and list markers a line can start with: "> ", "- ", "1. "; a
+ * list marker is followed by a space, so "---" is none.
+ */
+const MARKERS = String.raw`(?:[ \t]*(?:>|(?:[-*+]|\d{1,9}[.)])(?=[ \t]|$)))*[ \t]*`;
+const OPENING = new RegExp(`^${MARKERS}(\`+|~+)(.*)$`);
+const MARKERS_ONLY = new RegExp(`^${MARKERS}$`);
+
+/**
+ * The text without a last line that may be the start of a rufi-basis fence,
+ * also in a quote or a list: backticks or tildes, then nothing or the start
+ * of the tag.
  */
 function withoutOpening(text: string): string {
   const cut = text.lastIndexOf("\n") + 1;
-  const last = /^ {0,3}(`+|~+)(.*)$/.exec(text.slice(cut));
+  const last = OPENING.exec(text.slice(cut));
   if (!last || !BASIS_TAG.startsWith((last[2] ?? "").trim())) return text;
-  return text.slice(0, cut).trimEnd();
+  return withoutMarkers(text.slice(0, cut).trimEnd());
+}
+
+/** The text without last lines left with only a quote or list marker, where a block was. */
+function withoutMarkers(text: string): string {
+  let rest = text;
+  for (;;) {
+    const cut = rest.lastIndexOf("\n") + 1;
+    if (cut === 0 || !MARKERS_ONLY.test(rest.slice(cut))) return rest;
+    rest = rest.slice(0, cut).trimEnd();
+  }
 }

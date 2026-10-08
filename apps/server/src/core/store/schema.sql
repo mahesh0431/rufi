@@ -295,7 +295,7 @@ CREATE TABLE tool_calls (
   conversation_id TEXT NOT NULL,
   turn_id TEXT NOT NULL,       -- the reply it belongs to
   call_id TEXT NOT NULL,       -- the agent's id for the call: its activity line's agent_item_id
-  tool TEXT NOT NULL,          -- 'get_overview', 'run_sql'...
+  tool TEXT NOT NULL,          -- 'get_overview', 'get_records'...
   input TEXT NOT NULL,         -- what the AI sent (JSON)
   answer TEXT NOT NULL,        -- exactly what the AI got back (JSON)
   ok INTEGER NOT NULL CHECK (ok IN (0, 1)),

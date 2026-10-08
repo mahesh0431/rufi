@@ -75,17 +75,17 @@ export type EndReason = typeof EndReason.Type;
  * sub-agent. What was read, not proof that it supports the answer.
  */
 export const Read = Schema.Struct({
-  /** What was read, in plain words: "Query your record", "Searched the web". */
+  /** What was read, in plain words: "Read your records", "Searched the web". */
   title: Schema.String,
-  /** The query, the search words, the page or the command. */
+  /** Which records and dates, the search words, the page or the command. */
   detail: Schema.NullOr(Schema.String),
   /**
-   * done; cut: a limit cut what came back; failed: nothing came back;
+   * done; capped: a cap left some out; failed: nothing came back;
    * stopped: it ended unfinished; unknown: the AI's agent didn't say what
    * came back.
    */
-  outcome: Schema.Literals(["done", "cut", "failed", "stopped", "unknown"]),
-  /** What came back, or why not, in Rufi's words: "12 rows", the error. */
+  outcome: Schema.Literals(["done", "capped", "failed", "stopped", "unknown"]),
+  /** What came back, or why not, in Rufi's words: "12 records", the error. */
   note: Schema.NullOr(Schema.String),
 });
 export type Read = typeof Read.Type;

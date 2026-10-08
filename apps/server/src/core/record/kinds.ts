@@ -12,12 +12,11 @@ const Long = Text(1_000).annotate({ identifier: "LongText" });
 
 /** A date as the user said it: the date the AI worked out, and their words. */
 const DateSaid = Schema.Struct({
-  date: Schema.String.check(
-    Schema.makeFilter((text: string) => dateProblem(text)),
-  ).annotate({
+  // Described before the check: a description after it isn't in the JSON schema.
+  date: Schema.String.annotate({
     description:
       "YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM in the user's local time, at the precision they gave: 'since 2019' is 2019. Count relative words from when the user sent the message (read_conversation shows it), not from now.",
-  }),
+  }).check(Schema.makeFilter((text: string) => dateProblem(text))),
   words: Text(100).annotate({
     description:
       "The user's own words for this date, copied from the source message: 'last Monday', 'since 2019', '28 Sep'.",
@@ -64,6 +63,8 @@ export interface Kind {
   inLabel: readonly string[];
   /** Set by Rufi, never the AI: the day the user said it. */
   asserted?: true;
+  /** The field get_records' from and to are compared with ("asserted" for Rufi's own date). */
+  dated: string;
 }
 
 const text = (column: string, shown = column): Field => ({
@@ -128,6 +129,7 @@ export const KINDS: readonly Kind[] = [
     },
     label: (row) => join(row["name"], row["strength"]),
     inLabel: ["name", "strength"],
+    dated: "started",
   },
   {
     name: "prescription",
@@ -145,6 +147,7 @@ export const KINDS: readonly Kind[] = [
     },
     label: (row) => join(row["item"], row["strength"]),
     inLabel: ["item", "strength"],
+    dated: "issued",
   },
   {
     name: "symptom",
@@ -167,6 +170,7 @@ export const KINDS: readonly Kind[] = [
     },
     label: (row) => join(row["name"]),
     inLabel: ["name"],
+    dated: "onset",
   },
   {
     name: "condition",
@@ -182,6 +186,7 @@ export const KINDS: readonly Kind[] = [
     },
     label: (row) => join(row["name"]),
     inLabel: ["name"],
+    dated: "recognised",
   },
   {
     name: "allergy",
@@ -196,6 +201,7 @@ export const KINDS: readonly Kind[] = [
     },
     label: (row) => join(row["substance"]),
     inLabel: ["substance"],
+    dated: "reacted",
     asserted: true,
   },
   {
@@ -221,6 +227,7 @@ export const KINDS: readonly Kind[] = [
     label: (row) => join(row["test_name"], row["value_text"], row["unit"]),
     // The printed value already shows its numbers.
     inLabel: ["test", "value", "unit", "number", "second_number"],
+    dated: "measured",
   },
   {
     name: "care_event",
@@ -241,6 +248,7 @@ export const KINDS: readonly Kind[] = [
     },
     label: (row) => join(row["name"]),
     inLabel: ["name"],
+    dated: "date",
   },
   {
     name: "none_known",
@@ -252,6 +260,7 @@ export const KINDS: readonly Kind[] = [
     label: (row) =>
       `no known ${String(row["category"])}${typeof row["asserted"] === "string" ? ` (as of ${shownDate(row["asserted"])})` : ""}`,
     inLabel: ["category"],
+    dated: "asserted",
     asserted: true,
   },
   {
@@ -288,6 +297,7 @@ export const KINDS: readonly Kind[] = [
     },
     label: (row) => join(row["title"]),
     inLabel: ["title"],
+    dated: "due",
   },
 ];
 

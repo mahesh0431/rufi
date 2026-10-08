@@ -28,7 +28,7 @@ import {
 } from "../src/core/store/database.ts";
 import { readConversation } from "../src/core/tools/conversation.ts";
 import { getOverview } from "../src/core/tools/overview.ts";
-import { runSql } from "../src/core/tools/sql.ts";
+import { getRecords } from "../src/core/tools/records.ts";
 import { childEnvironment, rufiHome } from "../src/platform/config.ts";
 import { Secrets, secretsLayer } from "../src/platform/keychain.ts";
 import { diagnostics } from "../src/platform/logs.ts";
@@ -260,15 +260,17 @@ function calls(home: string) {
   store.close();
   return rows;
 }
-const queried = (home: string) =>
-  calls(home).filter((call) => call.tool === "run_sql" && call.ok === 1);
+/** Reads of records by get_records that came back. */
+const recordReads = (home: string) =>
+  calls(home).filter((call) => call.tool === "get_records" && call.ok === 1);
 /** Reads of the record or the conversation by Rufi's tools. */
 const readsRecord = (home: string) =>
   calls(home).some((call) => call.tool !== "save_changes");
 
 /**
  * Fictional rows a case adds to the family before the core starts. Results
- * newer than the old HbA1c fill the overview's 20, so older ones need SQL.
+ * newer than the old HbA1c fill the overview's 20, so older ones need
+ * get_records.
  */
 const day = (start: string, n: number) =>
   new Date(Date.parse(start) + n * 86_400_000).toISOString().slice(0, 10);
@@ -378,18 +380,18 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       snapshot,
     };
   },
-  /** A trend needs results the overview doesn't show: a query reads them. */
+  /** A trend needs results the overview doesn't show: get_records reads them. */
   trend: async (api, home) => {
     const c = await conversation(api);
     await c.ask("How has my HbA1c changed since 2024?");
     const snapshot = await c.read();
     return {
       checks: {
-        ran_a_query: queried(home).length > 0,
+        read_records: recordReads(home).length > 0,
         mentions_the_2024_value: /7\.9/.test(lastReply(snapshot)),
         how_present: basis(snapshot).how !== null,
-        used_shows_a_query: basis(snapshot).used.some(
-          (read) => read.title === runSql.shown && read.note !== null,
+        used_shows_the_read: basis(snapshot).used.some(
+          (read) => read.title === getRecords.shown && read.note !== null,
         ),
       },
       snapshot,
@@ -504,14 +506,14 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       snapshot,
     };
   },
-  /** A query cut at the row limit: the answer says it isn't all. */
+  /** A read over the cap: Used says capped, and the answer has them all or says not. */
   capped: async (api, home) => {
     const c = await conversation(api);
     await c.ask(
       "Show me every glucose reading I have, each with its date, in one table.",
     );
     const snapshot = await c.read();
-    const cut = queried(home).some((call) =>
+    const capped = recordReads(home).some((call) =>
       call.answer.includes('"complete":false'),
     );
     const reply = lastReply(snapshot);
@@ -519,9 +521,13 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     const shown = (reply.match(/^\|.*\d.*\|\s*$/gm) ?? []).length;
     return {
       checks: {
-        a_query_was_cut: cut,
+        a_read_was_capped: capped,
+        used_says_capped: basis(snapshot).used.some(
+          (read) => read.outcome === "capped",
+        ),
         all_shown_or_says_not:
-          shown === 251 || /200|not all|only|more|limit|cut/i.test(reply),
+          shown === 251 ||
+          /200|not all|only|more|limit|cap|narrow/i.test(reply),
       },
       snapshot,
     };

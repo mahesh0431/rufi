@@ -356,7 +356,7 @@ function BasedOn({ live, turnId }: { live: StoreApi<Live>; turnId: string }) {
   );
 }
 
-/** One read: what, its query or address, and what came back or why not. */
+/** One read: what, which records or which address, and what came back or why not. */
 function UsedLine({ read }: { read: Read }) {
   const said =
     read.note ??

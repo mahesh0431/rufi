@@ -73,6 +73,29 @@ describe("splitting a reply into its answer and How", () => {
     }
   });
 
+  it("shows no half block or empty marker in a quote or a list, finished or not", () => {
+    const answer = "Your last HbA1c was 6.8 %.";
+    for (const [cut, finished] of [
+      [`> ${FENCE}rufi-ba`, false],
+      [`- ${FENCE}rufi-basis`, false],
+      [`1. ${FENCE}`, false],
+      [`> - ${FENCE}rufi`, false],
+      [`> ${FENCE}rufi-basis\n> From your rec`, false],
+      [`- ${FENCE}rufi-basis\n  From your rec`, false],
+      [`> ${FENCE}rufi-basis\n> From your record.\n> ${FENCE}`, true],
+      [`1. ${FENCE}rufi-basis\n   From your record.\n   ${FENCE}`, true],
+    ] as const) {
+      expect(splitBasis(`${answer}\n\n${cut}`, finished).answer).toBe(answer);
+    }
+  });
+
+  it("keeps a rule or a list before the block", () => {
+    const answer = "- one\n- two\n\n---";
+    expect(splitBasis(`${answer}\n\n${block("How.")}`, true).answer).toBe(
+      answer,
+    );
+  });
+
   it("keeps a line that only looks like a fence once the reply finished", () => {
     expect(splitBasis("Answer.\n\n``", true).answer).toBe("Answer.\n\n``");
   });

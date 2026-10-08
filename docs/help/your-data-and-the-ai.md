@@ -22,7 +22,7 @@ When Rufi creates your data folder, it makes it private to your Mac user account
 
 > **Note:** When you ask Rufi something, the AI reads the parts of your record it needs. That text goes to the AI service you signed in with (today OpenAI, through your ChatGPT plan) so it can answer. See [OpenAI's policies](https://openai.com/policies/) for how they handle it.
 
-When the AI queries your record, the query sees only the record of the person the conversation is about. For each query, Rufi copies that person's record into a separate database, and the query runs there. It can't see another person's record, your conversations or Rufi's settings, and it can't change anything.
+When the AI reads your record, it gets only the records of the person the conversation is about: Rufi chooses the person, and the AI can't name another one. The AI can't read your conversations or Rufi's settings this way, and it can't change anything.
 
 ## Your conversations
 
@@ -30,7 +30,7 @@ Rufi keeps each conversation in `rufi.sqlite`: your messages, the AI's replies, 
 
 Rufi also keeps everything the AI did in a reply, so that an answer can be traced later:
 
-- For each thing the AI did, everything it sent and got back, as the AI service gave it: for example a query and its rows, a command and its output, or the words of a web search.
+- For each thing the AI did, everything it sent and got back, as the AI service gave it: for example a read of your records and what it got back, a command and its output, or the words of a web search.
 - For each read or save with Rufi's own tools, what the AI asked and exactly what Rufi answered.
 - The AI's reasoning summaries: a short account of its thinking, when the AI service gives one. Rufi asks for them.
 

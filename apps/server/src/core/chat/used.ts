@@ -3,6 +3,7 @@
 // record come from Rufi's own record of each call to its tools, so they are
 // exact whatever the agent reports; the rest from the reply's activity lines.
 import type { Read } from "@rufi/contracts";
+import { asked } from "../tools/records.ts";
 import { TOOLS } from "../tools/tools.ts";
 
 /** A call to one of Rufi's tools, as tool_calls keeps it (its JSON read in SQL). */
@@ -10,12 +11,13 @@ export interface Call {
   call_id: string;
   tool: string;
   ok: number;
-  /** The query, when the AI sent one. */
-  sql: string | null;
-  /** From the answer: rows given back, whether all of them, why not, the error. */
-  rows: number | null;
+  /** What a read of records asked for, when the AI sent it. */
+  kind: string | null;
+  from: string | null;
+  to: string | null;
+  /** From the answer: records given back, whether all of them, the error. */
+  returned: number | null;
   complete: number | null;
-  cut: string | null;
   error: string | null;
 }
 
@@ -61,17 +63,23 @@ function fromCall(call: Call): Read | undefined {
   const tool = TOOLS.find((candidate) => candidate.name === call.tool);
   // A save, or a call to no tool at all: nothing was read.
   if (!tool?.readOnly) return undefined;
-  const read = { title: tool.shown, detail: call.sql };
-  if (call.ok === 0) return { ...read, outcome: "failed", note: call.error };
-  if (call.complete === 0) return { ...read, outcome: "cut", note: call.cut };
-  return {
-    ...read,
-    outcome: "done",
-    note:
-      call.rows === null
-        ? null
-        : `${String(call.rows)} ${call.rows === 1 ? "row" : "rows"}`,
+  const read = {
+    title: tool.shown,
+    detail: asked(call.kind, call.from, call.to),
   };
+  if (call.ok === 0) return { ...read, outcome: "failed", note: call.error };
+  const count =
+    call.returned === null
+      ? null
+      : `${String(call.returned)} ${call.returned === 1 ? "record" : "records"}`;
+  if (call.complete === 0) {
+    return {
+      ...read,
+      outcome: "capped",
+      note: `${count ?? "Some records"}; capped: narrow the dates`,
+    };
+  }
+  return { ...read, outcome: "done", note: count };
 }
 
 function fromLine(line: Line): Read {

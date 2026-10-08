@@ -55,12 +55,6 @@ export class Refusal extends Error {
   }
 }
 
-/**
- * A tool that ran but couldn't do what was asked, such as a query that
- * failed or was stopped: the model gets the words, and it isn't a rejection.
- */
-export class Failure extends Error {}
-
 /** Kept generic per tool, then stored in one list. */
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- one list of differently typed tools
 export const defineTool = <In extends Input>(tool: Tool<In>): Tool =>
@@ -91,8 +85,7 @@ export const REJECTIONS_PER_TURN = 3;
 
 /**
  * A caller for one turn. Bad input, an unknown tool and a refusal each come
- * back as the error envelope and use up one of the turn's rejections; a
- * failure comes back with its words only.
+ * back as the error envelope and use up one of the turn's rejections.
  */
 export function toolCaller(
   tools: readonly Tool[],
@@ -146,12 +139,6 @@ export function toolCaller(
       return { ok: true, text: JSON.stringify({ ok: true, result }) };
     } catch (error) {
       if (error instanceof Refusal) return reject(error.message, error.issues);
-      if (error instanceof Failure) {
-        return {
-          ok: false,
-          text: JSON.stringify({ ok: false, error: error.message }),
-        };
-      }
       // The model only learns it failed; the log gets the tool and the error's code.
       log("tool.failed", { tool: name, error: errorCode(error) });
       return {

@@ -1016,10 +1016,8 @@ test("Based on, under an answer once it ended, opens How and Used; small talk ha
       calls: [
         {
           namespace: "rufi",
-          tool: "run_sql",
-          arguments: {
-            sql: "SELECT value_text FROM results WHERE test_name = 'HbA1c'",
-          },
+          tool: "get_records",
+          arguments: { kind: "result", from: "2026-08", to: "2026-08" },
         },
       ],
     },
@@ -1040,7 +1038,7 @@ test("Based on, under an answer once it ended, opens How and Used; small talk ha
     opened1.getByText("From your record, read now.", { exact: true }),
   ).toBeVisible();
   await expect(opened1.getByRole("listitem")).toHaveText([
-    "Query your recordSELECT value_text FROM results WHERE test_name = 'HbA1c'1 row",
+    "Read your recordsresults from 2026-08 to 2026-085 records",
     "Ran a commandls",
   ]);
   await accessible(page);
