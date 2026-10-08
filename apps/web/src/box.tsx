@@ -1,9 +1,9 @@
-// The chat's box, one for each conversation, the same in every size: what
-// you type is the conversation's draft, kept by the core, and the box says
-// whether it is saved. Enter sends; while a reply runs the message waits,
+// The chat's box, the same in every size: what you type is the chat's
+// draft, kept by the core, saved quietly; the box says only when it couldn't
+// be. Enter sends; while a reply runs the box says so, the message waits,
 // and Steer passes it into the reply instead. The box clears only when the
-// core took the message, and nothing is sent again by itself. The waiting
-// messages show above it.
+// core took the message, and nothing is sent again by itself. The model and
+// effort are chosen beside Send; the waiting messages show above the box.
 import {
   Draft,
   DraftChanged,
@@ -14,12 +14,19 @@ import {
   type WaitingMessage,
 } from "@rufi/contracts";
 import { Schema } from "effect";
-import { ArrowDown, ArrowUp, Pencil, Play, Square, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  LoaderCircle,
+  Pencil,
+  Play,
+  Square,
+  Trash2,
+} from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { ApiError, read, request } from "./api.ts";
-import { startingConversation, useStartingConversation } from "./choice.ts";
 import {
   type BoxState,
   type DraftBox,
@@ -29,15 +36,16 @@ import {
   sending,
   tooLong,
 } from "./draft.ts";
-import { conversationPath, type Live, messageOf } from "./live.ts";
+import { chatPath, type Live, messageOf } from "./live.ts";
+import { ModelMenu } from "./model-menu.tsx";
 import { queries } from "./reads.ts";
 import { isRunning } from "./transcript-state.ts";
 import { Button } from "./ui.tsx";
 
 const boxes = new Map<string, DraftBox>();
 
-function draftIo(personId: string, conversationId: string): DraftIo {
-  const path = `/api/people/${encodeURIComponent(personId)}/drafts/${encodeURIComponent(conversationId)}`;
+function draftIo(personId: string): DraftIo {
+  const path = `${chatPath(personId)}/draft`;
   return {
     load: () => read(Draft, "GET", path),
     save: async (text, revision) => {
@@ -53,17 +61,16 @@ function draftIo(personId: string, conversationId: string): DraftIo {
       }
     },
     client: queries,
-    scope: `draft/${personId}/${conversationId}`,
+    scope: `draft/${personId}`,
   };
 }
 
-/** The box of a conversation, the same in every size. */
-function boxFor(personId: string, conversationId: string): DraftBox {
-  const key = `${personId}/${conversationId}`;
-  let box = boxes.get(key);
+/** The box of a person's chat, the same in every size. */
+function boxFor(personId: string): DraftBox {
+  let box = boxes.get(personId);
   if (!box) {
-    box = draftBox(draftIo(personId, conversationId));
-    boxes.set(key, box);
+    box = draftBox(draftIo(personId));
+    boxes.set(personId, box);
   }
   return box;
 }
@@ -76,27 +83,27 @@ const draftIn = (error: unknown) => {
   return kept._tag === "Some" ? kept.value.draft : undefined;
 };
 
-/** Whether the box's text is kept, in a word. */
+/**
+ * What the box says under it: a send on its way, or a draft that couldn't be
+ * saved. Saves are quiet, also Send's own: the box is read-only meanwhile.
+ */
 function saveState(state: BoxState): string | null {
   if (sending(state)) return "Sending…";
   if (state.failed) return "Not saved";
-  if (state.text !== state.draft.text) return "Saving…";
-  return state.text === "" ? null : "Saved";
+  return null;
 }
 
 const UNKNOWN =
-  "Rufi doesn't know whether the AI got this message. Check the conversation before you send it again.";
+  "Rufi doesn't know whether the AI got this message. Check the chat before you send it again.";
 
 export function Box({
   person,
-  conversationId,
   live,
   size,
   onOpen,
   inputRef,
 }: {
   person: Person;
-  conversationId: string;
   live: StoreApi<Live>;
   size: "bar" | "panel" | "page";
   /** The bar: a click opens the chat. */
@@ -104,14 +111,11 @@ export function Box({
   /** The box's text field, for focus. */
   inputRef: RefObject<HTMLTextAreaElement | null>;
 }) {
-  const box = boxFor(person.id, conversationId);
+  const box = boxFor(person.id);
   const text = useStore(box.store, (state) => state.text);
   const loaded = useStore(box.store, (state) => state.loaded);
-  // New conversation is being made: nothing goes into this one meanwhile.
-  const starting = useStartingConversation(person.id);
-  const locked = useStore(box.store, held) || starting;
-  const status = useStore(box.store, saveState);
-  const saved = starting ? "Starting a new conversation…" : status;
+  const locked = useStore(box.store, held);
+  const saved = useStore(box.store, saveState);
   const unknown = useStore(
     box.store,
     (state) => state.draft.state === "unknown",
@@ -126,7 +130,6 @@ export function Box({
   useEffect(() => () => void box.saveNow(), [box]);
 
   async function submit(steer: boolean) {
-    if (startingConversation(person.id)) return;
     const taken = await box.take();
     if (!taken) return;
     const message = taken.text.trim();
@@ -139,7 +142,7 @@ export function Box({
       const sent = await read(
         Sent,
         "POST",
-        `${conversationPath(person.id, conversationId)}/${steer ? "steer" : "messages"}`,
+        `${chatPath(person.id)}/${steer ? "steer" : "messages"}`,
         { text: message, draft: taken.revision },
       );
       box.sent(sent.draft);
@@ -157,10 +160,67 @@ export function Box({
     }
   }
 
-  const stop = () =>
-    act(() =>
-      request("POST", `${conversationPath(person.id, conversationId)}/stop`),
-    );
+  const stop = () => act(() => request("POST", `${chatPath(person.id)}/stop`));
+
+  // The box grows with its text up to a few lines, then scrolls.
+  const field = (
+    <div
+      className="grow-box max-h-40 min-w-0 flex-1 self-center overflow-auto"
+      data-text={text}
+    >
+      <textarea
+        ref={inputRef}
+        rows={1}
+        aria-label="Message to Rufi"
+        placeholder={
+          running
+            ? "Type to queue your next message…"
+            : `Ask or tell Rufi about ${person.displayName}…`
+        }
+        value={text}
+        readOnly={!loaded || locked}
+        onClick={onOpen}
+        onChange={(event) => {
+          box.type(event.target.value);
+        }}
+        onKeyDown={(event) => {
+          if (
+            event.key === "Enter" &&
+            !event.shiftKey &&
+            !event.nativeEvent.isComposing
+          ) {
+            event.preventDefault();
+            if (hasText) {
+              onOpen?.();
+              void submit(false);
+            }
+          }
+        }}
+        className="resize-none overflow-hidden bg-transparent outline-none placeholder:text-muted"
+      />
+    </div>
+  );
+  const choice = <ModelMenu live={live} personId={person.id} act={act} />;
+  const sendButton = (
+    <button
+      type="submit"
+      aria-label={running ? "Send (waits for the reply)" : "Send"}
+      disabled={!hasText || locked}
+      className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-white disabled:bg-muted/40"
+    >
+      <ArrowUp size={16} aria-hidden />
+    </button>
+  );
+  const stopButton = (
+    <button
+      type="button"
+      aria-label="Stop"
+      onClick={() => void stop()}
+      className="grid size-8 shrink-0 place-items-center rounded-full bg-ink text-white"
+    >
+      <Square size={12} fill="currentColor" aria-hidden />
+    </button>
+  );
 
   return (
     <form
@@ -173,89 +233,54 @@ export function Box({
       {size !== "bar" && (
         <Waiting
           live={live}
-          path={conversationPath(person.id, conversationId)}
+          path={chatPath(person.id)}
           running={running}
           act={act}
         />
       )}
-      <div
-        className={
-          size === "page"
-            ? "flex items-end gap-2 rounded-2xl border border-line bg-white py-2 pr-2 pl-3.5 shadow-sm"
-            : "flex items-end gap-2 py-2.5 pr-2.5 pl-3.5"
-        }
-      >
-        {/* The box grows with its text up to a few lines, then scrolls. */}
-        <div
-          className="grow-box max-h-40 min-w-0 flex-1 self-center overflow-auto"
-          data-text={text}
-        >
-          <textarea
-            ref={inputRef}
-            rows={1}
-            aria-label="Message to Rufi"
-            placeholder={`Ask or tell Rufi about ${person.displayName}…`}
-            value={text}
-            readOnly={!loaded || locked}
-            onClick={onOpen}
-            onChange={(event) => {
-              box.type(event.target.value);
-            }}
-            onKeyDown={(event) => {
-              if (
-                event.key === "Enter" &&
-                !event.shiftKey &&
-                !event.nativeEvent.isComposing
-              ) {
-                event.preventDefault();
-                if (hasText) {
-                  onOpen?.();
-                  void submit(false);
-                }
-              }
-            }}
-            className="resize-none overflow-hidden bg-transparent outline-none placeholder:text-muted"
-          />
+      {size === "bar" ? (
+        <div className="flex items-center gap-1.5 py-1.5 pr-1.5 pl-4">
+          {running ? (
+            <button
+              type="button"
+              onClick={onOpen}
+              className="min-w-0 flex-1 text-left"
+            >
+              <Answering live={live} />
+            </button>
+          ) : (
+            field
+          )}
+          {choice}
+          {running ? stopButton : sendButton}
         </div>
-        {size === "bar" && running && (
-          <span className="self-center rounded-full bg-side px-2.5 py-0.5 text-xs text-muted">
-            Replying…
-          </span>
-        )}
-        {running && hasText && (
-          <Button
-            look="plain"
-            className="py-1"
-            title="Pass this into the reply that is running"
-            disabled={locked}
-            onClick={() => {
-              void submit(true);
-            }}
-          >
-            Steer
-          </Button>
-        )}
-        {(!running || hasText) && (
-          <button
-            type="submit"
-            aria-label={running ? "Send (waits for the reply)" : "Send"}
-            disabled={!hasText || locked}
-            className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-white disabled:bg-muted/40"
-          >
-            <ArrowUp size={16} aria-hidden />
-          </button>
-        )}
-        {running && (
-          <button
-            type="button"
-            aria-label="Stop"
-            onClick={() => void stop()}
-            className="grid size-8 shrink-0 place-items-center rounded-full bg-ink text-white"
-          >
-            <Square size={12} fill="currentColor" aria-hidden />
-          </button>
-        )}
-      </div>
+      ) : (
+        <div
+          className={`rounded-2xl border border-line bg-white px-3.5 pt-2.5 pb-1.5 ${size === "page" ? "shadow-sm" : ""}`}
+        >
+          <div className="flex">{field}</div>
+          <div className="mt-1 flex items-center gap-1.5">
+            {running && <Answering live={live} />}
+            <span className="flex-1" />
+            {running && hasText && (
+              <Button
+                look="plain"
+                className="py-1"
+                title="Pass this into the reply that is running"
+                disabled={locked}
+                onClick={() => {
+                  void submit(true);
+                }}
+              >
+                Steer
+              </Button>
+            )}
+            {choice}
+            {(!running || hasText) && sendButton}
+            {running && stopButton}
+          </div>
+        </div>
+      )}
       {saved !== null && (
         <p
           role="status"
@@ -287,6 +312,35 @@ export function Box({
 }
 
 /** The messages that wait for the running reply, or for you after a Stop. */
+/** While a reply runs: how long Rufi has been answering, counting up. */
+function Answering({ live }: { live: StoreApi<Live> }) {
+  const started = useStore(
+    live,
+    (state) =>
+      Object.values(state.turns).find((turn) => turn.status === "running")
+        ?.startedAt,
+  );
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const tick = setInterval(() => {
+      setNow(Date.now());
+    }, 1_000);
+    return () => {
+      clearInterval(tick);
+    };
+  }, []);
+  const seconds =
+    started === undefined
+      ? 0
+      : Math.max(0, Math.floor((now - Date.parse(started)) / 1_000));
+  return (
+    <span className="flex items-center gap-2 text-[13px] whitespace-nowrap text-muted">
+      <LoaderCircle size={14} className="animate-spin" aria-hidden />
+      Rufi is answering · {seconds}s
+    </span>
+  );
+}
+
 function Waiting({
   live,
   path,

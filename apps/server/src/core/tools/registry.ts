@@ -9,15 +9,15 @@ import type { Store } from "../store/database.ts";
 export interface ToolContext {
   /** The record, or undefined when Rufi has none yet. */
   store: Store | undefined;
-  /** The active person; chosen by Rufi (CLI flag, or the conversation's). */
+  /** The active person; chosen by Rufi (CLI flag, or the chat's). */
   personId: string | undefined;
-  /** The conversation the AI is in, when it is in one; chosen by Rufi. */
-  conversationId?: string | undefined;
+  /** The chat the AI is in, when it is in one; chosen by Rufi. */
+  chatId?: string | undefined;
   /** The agent's id for this call, when it gave one. */
   callId?: string | undefined;
   /**
    * Saves changes to the record with their receipt: only in Rufi's own
-   * chat, where the conversation and the user's messages are Rufi's.
+   * chat, where the chat and the user's messages are Rufi's.
    */
   save?:
     | ((changes: readonly Change[], callId: string) => Promise<Saved>)

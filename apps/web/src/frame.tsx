@@ -1,18 +1,19 @@
-// The frame around every page: the sidebar, the toolbar, the chat, and
-// what the connection to Rufi is doing. It stays when a page fails.
-import type { Person } from "@rufi/contracts";
-import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { CircleHelp, House, Settings, SquarePen } from "lucide-react";
-import { type ReactNode, useState } from "react";
-import { useConnection } from "./api.ts";
-import { ChatDock, titleOf, useNewConversation } from "./chat.tsx";
-import { messageOf } from "./live.ts";
+// The frame around every page: the sidebar, the toolbar, the chat bar on the
+// Overview, and what the connection to Rufi is doing. It stays when a page
+// fails. Until first run is known to be done, it shows first run only, over
+// the whole window, whatever the address.
 import {
-  useConversations,
-  useFirstRun,
-  usePeople,
-  useStatus,
-} from "./reads.ts";
+  Link,
+  Outlet,
+  useNavigate,
+  useRouterState,
+} from "@tanstack/react-router";
+import { CircleHelp, House, MessageCircle, Settings } from "lucide-react";
+import { type ReactNode, useEffect } from "react";
+import { useConnection } from "./api.ts";
+import { CHAT_TITLE, ChatDock } from "./chat.tsx";
+import { FirstRun } from "./first-run.tsx";
+import { useFirstRun, usePeople, useStatus } from "./reads.ts";
 
 const TITLES: Record<string, string> = {
   settings: "Settings",
@@ -20,29 +21,38 @@ const TITLES: Record<string, string> = {
   "sign-in": "Sign in with ChatGPT",
 };
 
-/** The person and conversation of a conversation page's address. */
-const conversationOf = (pathname: string) => {
-  const match = /^\/people\/([^/]+)\/conversations\/([^/]+)$/.exec(pathname);
-  return (
-    match && {
-      personId: decodeURIComponent(match[1] ?? ""),
-      conversationId: decodeURIComponent(match[2] ?? ""),
-    }
-  );
-};
+/** Whether the address is a person's chat page. */
+const isChatPage = (pathname: string) =>
+  /^\/people\/[^/]+\/chat$/.test(pathname);
 
 export function Frame() {
   const connection = useConnection();
   const person = usePeople().data?.[0];
   const step = useFirstRun().data?.step;
+  /** First run is done: known only once the core says so. */
   const welcomed = step === "done";
-  /** On the first run, which Home shows; known only once the core says so. */
-  const welcoming = step !== undefined && !welcomed;
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
-  const onConversation = conversationOf(pathname);
+  const onChat = isChatPage(pathname);
+  // During first run, another page's address leads home, where Rufi opens
+  // once first run is done.
+  const navigate = useNavigate();
+  const elsewhere = step !== undefined && !welcomed && pathname !== "/";
+  useEffect(() => {
+    if (elsewhere) void navigate({ to: "/", replace: true });
+  }, [elsewhere, navigate]);
 
+  if (!welcomed) {
+    return (
+      <div className="flex h-full flex-col bg-page">
+        <Offline shown={connection === "offline"} />
+        <main className="flex-1 overflow-auto">
+          {connection === "ended" ? <Ended alone /> : <FirstRun />}
+        </main>
+      </div>
+    );
+  }
   return (
     <div className="flex h-full">
       <aside
@@ -56,25 +66,21 @@ export function Frame() {
           aria-label="Pages"
           className="mt-2 flex min-h-0 flex-1 flex-col gap-0.5"
         >
-          {person && !welcoming && (
-            <NewConversation
-              personId={person.id}
-              onPage={onConversation !== null}
-            />
+          {person && (
+            <Link
+              to="/people/$personId/chat"
+              params={{ personId: person.id }}
+              className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-white/60"
+              activeProps={{ className: "bg-accent-soft text-accent-ink" }}
+            >
+              <MessageCircle size={15} aria-hidden />
+              {CHAT_TITLE}
+            </Link>
           )}
-          {!welcoming && (
-            <Place to="/" icon={<House size={15} aria-hidden />}>
-              Overview
-            </Place>
-          )}
-          {person && !welcoming ? (
-            <Conversations
-              person={person}
-              current={onConversation?.conversationId}
-            />
-          ) : (
-            <div className="flex-1" />
-          )}
+          <Place to="/" icon={<House size={15} aria-hidden />}>
+            Overview
+          </Place>
+          <div className="flex-1" />
           <Place to="/help" icon={<CircleHelp size={15} aria-hidden />}>
             Help
           </Place>
@@ -90,125 +96,45 @@ export function Frame() {
           className="flex h-[52px] shrink-0 items-center border-b border-line bg-page/80 px-5 backdrop-blur"
         >
           <h1 className="truncate text-[15px] font-semibold">
-            {onConversation ? (
-              <ConversationTitle {...onConversation} />
-            ) : (
-              (TITLES[pathname.split("/")[1] ?? ""] ??
-              (welcoming ? "Welcome" : "Overview"))
-            )}
+            {onChat
+              ? CHAT_TITLE
+              : (TITLES[pathname.split("/")[1] ?? ""] ?? "Overview")}
           </h1>
         </header>
-        {connection === "offline" && (
-          <p role="status" className="bg-accent-soft px-5 py-2 text-accent-ink">
-            Rufi can't be reached. If you stopped it, run{" "}
-            <code className="font-mono">pnpm start</code> and use its new link.
-          </p>
-        )}
+        <Offline shown={connection === "offline"} />
         <main className="flex-1 overflow-auto">
-          {connection === "ended" ? (
-            <div role="alert" className="mx-auto mt-24 max-w-sm">
-              <h2 className="text-xl font-semibold">This session has ended</h2>
-              <p className="mt-2 text-muted">
-                Open Rufi again from the terminal: run{" "}
-                <code className="font-mono">pnpm start</code>.
-              </p>
-            </div>
-          ) : (
-            <Outlet />
-          )}
+          {connection === "ended" ? <Ended alone={false} /> : <Outlet />}
         </main>
       </div>
-      {person &&
-        welcomed &&
-        connection !== "ended" &&
-        onConversation === null && <ChatDock person={person} />}
+      {person && connection !== "ended" && pathname === "/" && (
+        <ChatDock person={person} />
+      )}
     </div>
   );
 }
 
-function NewConversation({
-  personId,
-  onPage,
-}: {
-  personId: string;
-  onPage: boolean;
-}) {
-  const start = useNewConversation(personId);
-  const [problem, setProblem] = useState<string | null>(null);
+function Offline({ shown }: { shown: boolean }) {
+  if (!shown) return null;
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => {
-          setProblem(null);
-          start(onPage).catch((error: unknown) => {
-            setProblem(messageOf(error));
-          });
-        }}
-        className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-white/60"
-      >
-        <SquarePen size={15} aria-hidden />
-        New conversation
-      </button>
-      {problem !== null && (
-        <p role="alert" className="px-2 text-xs text-muted">
-          {problem}
-        </p>
-      )}
-    </>
+    <p role="status" className="bg-accent-soft px-5 py-2 text-accent-ink">
+      Rufi can't be reached. If you stopped it, run{" "}
+      <code className="font-mono">pnpm start</code> and use its new link.
+    </p>
   );
 }
 
-/** The person's conversations, newest first, each at its own page. */
-function Conversations({
-  person,
-  current,
-}: {
-  person: Person;
-  current: string | undefined;
-}) {
-  const conversations = useConversations(person.id).data?.conversations ?? [];
+/** The session is over; `alone`: no toolbar above it, so its title leads. */
+function Ended({ alone }: { alone: boolean }) {
+  const Title = alone ? "h1" : "h2";
   return (
-    <section
-      aria-labelledby="conversations"
-      className="mt-3 flex min-h-0 flex-1 flex-col"
-    >
-      {conversations.length > 0 && (
-        <h2 id="conversations" className="px-2 pb-1 text-xs text-muted">
-          Conversations
-        </h2>
-      )}
-      <ul className="min-h-0 flex-1 overflow-auto">
-        {conversations.map((conversation) => (
-          <li key={conversation.id}>
-            <Link
-              to="/people/$personId/conversations/$conversationId"
-              params={{ personId: person.id, conversationId: conversation.id }}
-              aria-current={current === conversation.id ? "page" : undefined}
-              className={
-                current === conversation.id
-                  ? "block truncate rounded-lg bg-accent-soft px-2 py-1.5 text-accent-ink"
-                  : "block truncate rounded-lg px-2 py-1.5 hover:bg-white/60"
-              }
-            >
-              {titleOf(conversation)}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </section>
+    <div role="alert" className="mx-auto mt-24 max-w-sm">
+      <Title className="text-xl font-semibold">This session has ended</Title>
+      <p className="mt-2 text-muted">
+        Open Rufi again from the terminal: run{" "}
+        <code className="font-mono">pnpm start</code>.
+      </p>
+    </div>
   );
-}
-
-function ConversationTitle({
-  personId,
-  conversationId,
-}: {
-  personId: string;
-  conversationId: string;
-}) {
-  const conversations = useConversations(personId).data?.conversations;
-  return <>{titleOf(conversations?.find((c) => c.id === conversationId))}</>;
 }
 
 function Place({

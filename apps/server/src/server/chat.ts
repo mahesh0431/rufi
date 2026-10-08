@@ -1,7 +1,7 @@
 // The chat: joins the agent and Rufi's transcripts. What the agent does is
 // saved first and shown from what was saved; messages wait in the agent's own
 // queue, and Rufi saves each one when the agent starts it.
-import type { WaitingMessage } from "@rufi/contracts";
+import type { Effort, WaitingMessage } from "@rufi/contracts";
 import { v7 as uuid } from "uuid";
 import {
   Stopped,
@@ -15,11 +15,7 @@ import {
 import type { Allowlist } from "../core/chat/models.ts";
 import { allowedModels } from "../core/chat/models.ts";
 import { safetyInstructions } from "../core/chat/safety.ts";
-import {
-  titleFrom,
-  type ConversationRow,
-  type Transcripts,
-} from "../core/chat/transcript.ts";
+import type { ChatRow, Transcripts } from "../core/chat/transcript.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 
 /** How many earlier messages a new thread starts with. */
@@ -35,9 +31,9 @@ export interface ChatDeps {
     version: string;
     /** How the AI uses them, after the safety instructions. */
     instructions: string;
-    /** A caller for one turn of a conversation; the agent gives each call's id. */
+    /** A caller for one turn of a chat; the agent gives each call's id. */
     caller: (
-      conversation: ConversationRow,
+      chat: ChatRow,
       agentTurnId: string,
     ) => (name: string, input: unknown, callId: string) => Promise<ToolAnswer>;
   };
@@ -53,20 +49,20 @@ export function chat(deps: ChatDeps) {
   const { transcripts, log } = deps;
   /** Saves agent events one at a time, in the order they came. */
   let saving: Promise<void> = Promise.resolve();
-  /** One action at a time per conversation (send, steer, run now). */
+  /** One action at a time per chat (send, steer, run now). */
   const lanes = new Map<string, Promise<unknown>>();
   /** Actions under way, so Stop can end them while they get ready. */
   const acting = new Map<string, Set<AbortController>>();
-  /** A new thread's earlier conversation, until its first message is sent. */
+  /** A new thread's earlier chat, until its first message is sent. */
   const pendingContext = new Map<string, string>();
   /** Steers sent, so their message is saved as a steer; by message id. */
   const steers = new Map<string, string>(); // message id -> thread id
-  /** Each running turn's tool caller and conversation, by thread. */
+  /** Each running turn's tool caller and chat, by thread. */
   const callers = new Map<
     string,
     {
       turnId: string;
-      conversation: ConversationRow;
+      chat: ChatRow;
       call: (
         name: string,
         input: unknown,
@@ -111,20 +107,20 @@ export function chat(deps: ChatDeps) {
       await saving;
       let caller = callers.get(threadId);
       if (caller?.turnId !== turnId) {
-        const conversation = await transcripts.byThread(threadId);
-        if (!conversation) {
+        const chat = await transcripts.byThread(threadId);
+        if (!chat) {
           return {
             ok: false,
             text: JSON.stringify({
               ok: false,
-              error: "No conversation is open.",
+              error: "No chat is open.",
             }),
           };
         }
         caller = {
           turnId,
-          conversation,
-          call: deps.tools.caller(conversation, turnId),
+          chat,
+          call: deps.tools.caller(chat, turnId),
         };
         callers.set(threadId, caller);
       }
@@ -132,7 +128,7 @@ export function chat(deps: ChatDeps) {
       const answer = await caller.call(name, input, callId);
       // Kept before the AI has it: Used must show every read the AI got.
       try {
-        await transcripts.recordToolCall(caller.conversation, turnId, {
+        await transcripts.recordToolCall(caller.chat, turnId, {
           callId,
           tool: name,
           input,
@@ -157,8 +153,8 @@ export function chat(deps: ChatDeps) {
 
   /** Stores one agent event; listeners see it once stored. */
   async function save(event: AgentEvent): Promise<void> {
-    const conversation = await transcripts.byThread(event.threadId);
-    if (!conversation) {
+    const chat = await transcripts.byThread(event.threadId);
+    if (!chat) {
       log("chat.unknown_thread", { kind: event.type });
       return;
     }
@@ -166,7 +162,7 @@ export function chat(deps: ChatDeps) {
       // What was saved stays as it is; nothing more of this reply is added.
       if (event.type !== "turnEnded") return;
       unsaved.delete(event.turnId);
-      await transcripts.endTurn(conversation, event.turnId, {
+      await transcripts.endTurn(chat, event.turnId, {
         status: "failed",
         reason: "save_failed",
         text: "Rufi couldn't save all of this reply, so it stopped it.",
@@ -175,15 +171,14 @@ export function chat(deps: ChatDeps) {
     }
     switch (event.type) {
       case "turnStarted":
-        await transcripts.startTurn(
-          conversation,
-          event.turnId,
-          conversation.threadModel ?? conversation.model ?? "",
-        );
+        await transcripts.startTurn(chat, event.turnId, {
+          id: event.threadId,
+          model: chat.threadModel ?? chat.model ?? "",
+        });
         return;
       case "message": {
         const steer = steers.delete(event.id);
-        await transcripts.addMessage(conversation, {
+        await transcripts.addMessage(chat, {
           id: event.id,
           kind: steer ? "steer" : "message",
           text: event.text,
@@ -194,7 +189,7 @@ export function chat(deps: ChatDeps) {
       case "text":
         replied.add(event.itemId);
         await transcripts.appendReply(
-          conversation,
+          chat,
           event.turnId,
           event.itemId,
           event.delta,
@@ -205,38 +200,23 @@ export function chat(deps: ChatDeps) {
         const options = event.options.map((option) => `\n- ${option}`).join("");
         const text = `${replied.has(event.itemId) ? "\n\n" : ""}**${event.title}**${options}`;
         replied.add(event.itemId);
-        await transcripts.appendReply(
-          conversation,
-          event.turnId,
-          event.itemId,
-          text,
-        );
+        await transcripts.appendReply(chat, event.turnId, event.itemId, text);
         return;
       }
       case "activity":
-        await transcripts.setActivity(
-          conversation,
-          event.turnId,
-          event.itemId,
-          {
-            activity: event.activity,
-            title: event.title,
-            ...(event.detail !== undefined && { detail: event.detail }),
-            status: event.status,
-            ...(event.details !== undefined && { details: event.details }),
-          },
-        );
+        await transcripts.setActivity(chat, event.turnId, event.itemId, {
+          activity: event.activity,
+          title: event.title,
+          ...(event.detail !== undefined && { detail: event.detail }),
+          status: event.status,
+          ...(event.details !== undefined && { details: event.details }),
+        });
         return;
       case "reasoning":
-        await transcripts.addReasoning(
-          conversation,
-          event.turnId,
-          event.itemId,
-          {
-            summary: event.summary,
-            details: event.details,
-          },
-        );
+        await transcripts.addReasoning(chat, event.turnId, event.itemId, {
+          summary: event.summary,
+          details: event.details,
+        });
         return;
       case "turnEnded":
         if (callers.get(event.threadId)?.turnId === event.turnId) {
@@ -245,10 +225,10 @@ export function chat(deps: ChatDeps) {
         for (const [id, threadId] of steers) {
           if (threadId === event.threadId) steers.delete(id);
         }
-        await transcripts.endTurn(conversation, event.turnId, event.end);
+        await transcripts.endTurn(chat, event.turnId, event.end);
         return;
       case "waitingChanged":
-        for (const listener of waitingListeners.get(conversation.id) ?? []) {
+        for (const listener of waitingListeners.get(chat.id) ?? []) {
           listener();
         }
         return;
@@ -256,83 +236,77 @@ export function chat(deps: ChatDeps) {
   }
 
   /**
-   * The conversation as stored now: an earlier action may have given it a
+   * The chat as stored now: an earlier action may have given it a
    * new thread or model since the request read it.
    */
-  async function latest(
-    conversation: ConversationRow,
-  ): Promise<ConversationRow> {
-    const row = await transcripts.conversation(
-      conversation.personId,
-      conversation.id,
-    );
-    if (!row) throw new ChatRefusal("That conversation isn't there any more.");
+  async function latest(chat: ChatRow): Promise<ChatRow> {
+    const row = await transcripts.chat(chat.personId);
+    if (!row) throw new ChatRefusal("That chat isn't there any more.");
     return row;
   }
 
   /**
-   * Runs `action` after the conversation's earlier actions, on the
-   * conversation as stored then; Stop can end it.
+   * Runs `action` after the chat's earlier actions, on the
+   * chat as stored then; Stop can end it.
    */
   function inLane<T>(
-    conversation: ConversationRow,
-    action: (fresh: ConversationRow, signal: AbortSignal) => Promise<T>,
+    chat: ChatRow,
+    action: (fresh: ChatRow, signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
     const op = new AbortController();
-    const ops = acting.get(conversation.id) ?? new Set();
+    const ops = acting.get(chat.id) ?? new Set();
     ops.add(op);
-    acting.set(conversation.id, ops);
-    const previous = lanes.get(conversation.id) ?? Promise.resolve();
+    acting.set(chat.id, ops);
+    const previous = lanes.get(chat.id) ?? Promise.resolve();
     const run = previous
       .catch(() => undefined)
       .then(async () => {
-        const fresh = await latest(conversation);
+        const fresh = await latest(chat);
         if (op.signal.aborted) throw new Stopped();
         return action(fresh, op.signal);
       })
       .finally(() => {
         ops.delete(op);
-        if (lanes.get(conversation.id) === run) lanes.delete(conversation.id);
+        if (lanes.get(chat.id) === run) lanes.delete(chat.id);
       });
-    lanes.set(conversation.id, run);
+    lanes.set(chat.id, run);
     return run;
   }
 
-  async function settings(
-    conversation: ConversationRow,
-  ): Promise<ThreadSettings> {
+  async function settings(chat: ChatRow): Promise<ThreadSettings> {
     const region = await transcripts.setting("emergency_region");
     return {
       // Set before a thread starts: the first message chooses one.
-      model: conversation.model ?? "",
+      model: chat.model ?? "",
+      effort: chat.effort,
       instructions: `${safetyInstructions(region)}\n\n${deps.tools.instructions}`,
     };
   }
 
-  /** Whether the conversation's thread can go on: same agent, model and tools. */
-  const current = (conversation: ConversationRow) =>
-    conversation.threadId !== null &&
-    conversation.threadProvider === agent.provider &&
-    conversation.threadModel === conversation.model &&
-    conversation.threadTools === deps.tools.version;
+  /** Whether the chat's thread can go on: same agent, model and tools. */
+  const current = (chat: ChatRow) =>
+    chat.threadId !== null &&
+    chat.threadProvider === agent.provider &&
+    chat.threadModel === chat.model &&
+    chat.threadTools === deps.tools.version;
 
   /**
-   * The conversation's thread, open in the agent. A thread is picked up again
+   * The chat's thread, open in the agent. A thread is picked up again
    * only here, when the person acts; a new one starts when it's missing, can't
    * be resumed, or the agent, model or tools changed.
    */
   async function threadFor(
-    conversation: ConversationRow,
+    chat: ChatRow,
     signal: AbortSignal,
   ): Promise<string> {
-    const threadSettings = await settings(conversation);
-    if (current(conversation) && conversation.threadId !== null) {
-      const threadId = conversation.threadId;
+    const threadSettings = await settings(chat);
+    if (current(chat) && chat.threadId !== null) {
+      const threadId = chat.threadId;
       if (agent.loaded(threadId)) return threadId;
       try {
         await agent.resumeThread(threadId, threadSettings, signal);
         // What a crash kept Rufi from saving, from the agent's own record.
-        fillGaps(conversation, threadId);
+        fillGaps(chat, threadId);
         return threadId;
       } catch (error) {
         if (error instanceof Stopped) throw error;
@@ -340,33 +314,26 @@ export function chat(deps: ChatDeps) {
       }
     }
     // The old thread's events are saved first: once the pointer moves, they
-    // can't find the conversation, and the new thread's seed needs them.
+    // can't find the chat, and the new thread's seed needs them.
     await saving;
     const modelChanged =
-      conversation.threadModel !== null &&
-      conversation.threadModel !== conversation.model;
+      chat.threadModel !== null && chat.threadModel !== chat.model;
     const { threadId, model } = await agent.startThread(threadSettings, signal);
-    await transcripts.setThread(conversation, {
+    await transcripts.setThread(chat, {
       id: threadId,
       provider: agent.provider,
       model,
       tools: deps.tools.version,
     });
-    conversation.threadId = threadId;
-    conversation.threadProvider = agent.provider;
-    conversation.threadModel = model;
-    conversation.threadTools = deps.tools.version;
-    const earlier = await transcripts.lastMessages(
-      conversation,
-      NEW_THREAD_MESSAGES,
-    );
+    chat.threadId = threadId;
+    chat.threadProvider = agent.provider;
+    chat.threadModel = model;
+    chat.threadTools = deps.tools.version;
+    const earlier = await transcripts.lastMessages(chat, NEW_THREAD_MESSAGES);
     if (earlier.length > 0) {
-      pendingContext.set(
-        conversation.id,
-        newThreadContext(earlier, modelChanged),
-      );
+      pendingContext.set(chat.id, newThreadContext(earlier, modelChanged));
     } else {
-      pendingContext.delete(conversation.id);
+      pendingContext.delete(chat.id);
     }
     return threadId;
   }
@@ -376,11 +343,11 @@ export function chat(deps: ChatDeps) {
    * events, so a message is never saved twice. A failure is logged; the
    * thread goes on.
    */
-  function fillGaps(conversation: ConversationRow, threadId: string): void {
+  function fillGaps(chat: ChatRow, threadId: string): void {
     const fill = async () => {
       for (const message of await agent.startedMessages(threadId)) {
         if (await transcripts.hasMessage(message.id)) continue;
-        await transcripts.addMessage(conversation, {
+        await transcripts.addMessage(chat, {
           id: message.id,
           kind: "message",
           text: message.text,
@@ -392,9 +359,8 @@ export function chat(deps: ChatDeps) {
     });
   }
 
-  /** The conversation's thread, when it is the agent's (no new one is made). */
-  const threadOf = (conversation: ConversationRow) =>
-    current(conversation) ? conversation.threadId : null;
+  /** The chat's thread, when it is the agent's (no new one is made). */
+  const threadOf = (chat: ChatRow) => (current(chat) ? chat.threadId : null);
 
   return {
     agent,
@@ -403,56 +369,43 @@ export function chat(deps: ChatDeps) {
     models: offered,
 
     /**
-     * A new conversation, at once: nothing is asked of the agent. Its first
-     * message chooses the model, unless one is chosen before.
-     */
-    create: (personId: string, title: string | null) =>
-      transcripts.createConversation(personId, title, agent.provider, null),
-
-    /**
      * Sends a message, by the id Rufi gives it (the send's own, from a box):
      * it runs now, or waits its
      * turn in the agent's queue. It enters the transcript when the agent
      * starts it.
      */
-    send: (conversation: ConversationRow, text: string, id: string = uuid()) =>
-      inLane(conversation, async (stored, signal) => {
-        let conversation = stored;
-        if (conversation.model === null) {
+    send: (chat: ChatRow, text: string, id: string = uuid()) =>
+      inLane(chat, async (stored, signal) => {
+        let chat = stored;
+        if (chat.model === null) {
           const { models } = await offered();
           const first = models[0]?.id;
           if (first === undefined) {
             throw new ChatRefusal("None of the allowed models is offered now.");
           }
-          await transcripts.setModel(conversation, first);
-          conversation = { ...conversation, model: first };
+          await transcripts.setModel(chat, first);
+          chat = { ...chat, model: first };
         }
-        const threadId = await threadFor(conversation, signal);
-        const context = pendingContext.get(conversation.id);
+        const threadId = await threadFor(chat, signal);
+        const context = pendingContext.get(chat.id);
         await agent.send(
           threadId,
-          { id, text, ...(context !== undefined && { context }) },
+          {
+            id,
+            text,
+            effort: chat.effort,
+            ...(context !== undefined && { context }),
+          },
           signal,
         );
-        pendingContext.delete(conversation.id);
-        if (conversation.title === null) {
-          // The message is taken: a title that can't be saved doesn't undo that.
-          await transcripts
-            .setTitle(conversation, titleFrom(text))
-            .catch((error: unknown) => {
-              log("chat.save_failed", {
-                kind: "title",
-                error: errorCode(error),
-              });
-            });
-        }
+        pendingContext.delete(chat.id);
         return { id };
       }),
 
     /** Passes a message into the running reply; saved as a steer. */
-    steer: (conversation: ConversationRow, text: string, id: string = uuid()) =>
-      inLane(conversation, async (conversation) => {
-        const threadId = threadOf(conversation);
+    steer: (chat: ChatRow, text: string, id: string = uuid()) =>
+      inLane(chat, async (chat) => {
+        const threadId = threadOf(chat);
         if (threadId === null || !agent.running(threadId)) {
           throw new ChatRefusal("No reply is running to steer.");
         }
@@ -466,7 +419,7 @@ export function chat(deps: ChatDeps) {
         }
         // In line with the events: the agent may have shown it already.
         const saved = saving.then(() =>
-          transcripts.addMessage(conversation, {
+          transcripts.addMessage(chat, {
             id,
             kind: "steer",
             text,
@@ -482,85 +435,71 @@ export function chat(deps: ChatDeps) {
       }),
 
     /** Stops the running reply, or a send still getting ready. Waiting messages wait. */
-    stop: async (conversation: ConversationRow) => {
-      for (const op of acting.get(conversation.id) ?? []) op.abort();
-      const threadId = threadOf(await latest(conversation));
+    stop: async (chat: ChatRow) => {
+      for (const op of acting.get(chat.id) ?? []) op.abort();
+      const threadId = threadOf(await latest(chat));
       if (threadId !== null) await agent.stop(threadId);
     },
 
     waiting: {
-      list: async (
-        conversation: ConversationRow,
-      ): Promise<WaitingMessage[]> => {
-        const threadId = threadOf(await latest(conversation));
+      list: async (chat: ChatRow): Promise<WaitingMessage[]> => {
+        const threadId = threadOf(await latest(chat));
         return threadId === null ? [] : agent.waiting.list(threadId);
       },
-      edit: (conversation: ConversationRow, id: string, text: string) =>
-        withThread(conversation, (threadId) =>
-          agent.waiting.edit(threadId, id, text),
-        ),
-      remove: (conversation: ConversationRow, id: string) =>
-        withThread(conversation, (threadId) =>
-          agent.waiting.remove(threadId, id),
-        ),
-      reorder: (conversation: ConversationRow, ids: string[]) =>
-        withThread(conversation, (threadId) =>
-          agent.waiting.reorder(threadId, ids),
-        ),
+      edit: (chat: ChatRow, id: string, text: string) =>
+        withThread(chat, (threadId) => agent.waiting.edit(threadId, id, text)),
+      remove: (chat: ChatRow, id: string) =>
+        withThread(chat, (threadId) => agent.waiting.remove(threadId, id)),
+      reorder: (chat: ChatRow, ids: string[]) =>
+        withThread(chat, (threadId) => agent.waiting.reorder(threadId, ids)),
       /** Runs one now; this is the person acting, so the thread is picked up. */
-      runNow: (conversation: ConversationRow, id: string) =>
-        inLane(conversation, async (conversation, signal) => {
-          const threadId = threadOf(conversation);
+      runNow: (chat: ChatRow, id: string) =>
+        inLane(chat, async (chat, signal) => {
+          const threadId = threadOf(chat);
           if (threadId === null) {
             throw new ChatRefusal("That message isn't waiting any more.");
           }
           if (!agent.loaded(threadId)) {
-            await agent.resumeThread(
-              threadId,
-              await settings(conversation),
-              signal,
-            );
-            fillGaps(conversation, threadId);
+            await agent.resumeThread(threadId, await settings(chat), signal);
+            fillGaps(chat, threadId);
           }
           await agent.waiting.runNow(threadId, id, signal);
         }),
-      subscribe: (conversationId: string, listener: () => void) => {
-        const set = waitingListeners.get(conversationId) ?? new Set();
+      subscribe: (chatId: string, listener: () => void) => {
+        const set = waitingListeners.get(chatId) ?? new Set();
         set.add(listener);
-        waitingListeners.set(conversationId, set);
+        waitingListeners.set(chatId, set);
         return () => {
           set.delete(listener);
-          if (set.size === 0) waitingListeners.delete(conversationId);
+          if (set.size === 0) waitingListeners.delete(chatId);
         };
       },
     },
 
     /**
-     * Chooses the conversation's model. Only when no reply runs and no
+     * Chooses the chat's model. Only when no reply runs and no
      * message waits: the new model comes with a new thread.
      */
-    selectModel: (conversation: ConversationRow, model: string) =>
-      inLane(conversation, async (conversation) => {
+    selectModel: (chat: ChatRow, model: string) =>
+      inLane(chat, async (chat) => {
         const { models } = await offered();
         if (!models.some((m) => m.id === model)) {
           throw new ChatRefusal(
             "That model isn't allowed or isn't offered now.",
           );
         }
-        const threadId = threadOf(conversation);
-        // What the thread did is saved before the model changes.
-        await saving;
-        if (threadId !== null) {
-          if (agent.running(threadId)) {
-            throw new ChatRefusal("Stop the reply before changing the model.");
-          }
-          if ((await agent.waiting.list(threadId)).length > 0) {
-            throw new ChatRefusal(
-              "Run or delete the waiting messages before changing the model.",
-            );
-          }
-        }
-        await transcripts.setModel(conversation, model);
+        await idle(chat, "the model");
+        await transcripts.setModel(chat, model);
+      }),
+
+    /**
+     * Chooses the chat's effort, from its next reply on, in the same
+     * thread. Only when no reply runs and no message waits.
+     */
+    selectEffort: (chat: ChatRow, effort: Effort) =>
+      inLane(chat, async (chat) => {
+        await idle(chat, "the effort");
+        await transcripts.setEffort(chat, effort);
       }),
 
     /** Waits for what is being saved, then ends the agent. */
@@ -569,6 +508,24 @@ export function chat(deps: ChatDeps) {
       await saving;
     },
   };
+
+  /**
+   * Refuses to change `what` while a reply runs or a message waits; what
+   * the thread did is saved first.
+   */
+  async function idle(chat: ChatRow, what: string): Promise<void> {
+    const threadId = threadOf(chat);
+    await saving;
+    if (threadId === null) return;
+    if (agent.running(threadId)) {
+      throw new ChatRefusal(`Stop the reply before changing ${what}.`);
+    }
+    if ((await agent.waiting.list(threadId)).length > 0) {
+      throw new ChatRefusal(
+        `Run or delete the waiting messages before changing ${what}.`,
+      );
+    }
+  }
 
   async function offered(): Promise<{ models: Model[]; error?: string }> {
     const allowlist = await deps.allowlist();
@@ -579,12 +536,12 @@ export function chat(deps: ChatDeps) {
     };
   }
 
-  /** A change to the waiting messages of the conversation's thread. */
+  /** A change to the waiting messages of the chat's thread. */
   async function withThread(
-    conversation: ConversationRow,
+    chat: ChatRow,
     change: (threadId: string) => Promise<void>,
   ): Promise<void> {
-    const threadId = threadOf(await latest(conversation));
+    const threadId = threadOf(await latest(chat));
     if (threadId === null) {
       throw new ChatRefusal("That message isn't waiting any more.");
     }
@@ -603,12 +560,12 @@ function newThreadContext(
   }[],
   modelChanged: boolean,
 ): string {
-  const note = `${modelChanged ? "The model changed and a new thread started." : "A new thread started."} Older history is available through read_conversation.`;
+  const note = `${modelChanged ? "The model changed and a new thread started." : "A new thread started."} Older history is available through read_chat.`;
   const messages = earlier
     .map(
       ({ from, text, unfinished }) =>
         `${WHO[from]}${unfinished ? " (this reply didn't finish)" : ""}: ${text}`,
     )
     .join("\n\n");
-  return `${note}\n\nThe last messages of this conversation, oldest first:\n\n${messages}`;
+  return `${note}\n\nThe last messages of this chat, oldest first:\n\n${messages}`;
 }

@@ -26,9 +26,17 @@ export interface Tables {
     source_entry_id: string | null;
     removed: number;
   };
-  chosen_conversations: {
+  chats: {
+    id: string;
     person_id: string;
-    conversation_id: string;
+    model: string | null;
+    effort: string | null;
+    thread_id: string | null;
+    thread_provider: string | null;
+    thread_model: string | null;
+    thread_tools: string | null;
+    revision: number;
+    created_at: string;
   };
   conditions: {
     id: string;
@@ -44,19 +52,6 @@ export interface Tables {
     source_entry_id: string | null;
     removed: number;
   };
-  conversations: {
-    id: string;
-    person_id: string;
-    title: string | null;
-    provider: string;
-    model: string | null;
-    thread_id: string | null;
-    thread_provider: string | null;
-    thread_model: string | null;
-    thread_tools: string | null;
-    revision: number;
-    created_at: string;
-  };
   documents: {
     id: string;
     person_id: string;
@@ -66,7 +61,7 @@ export interface Tables {
   };
   drafts: {
     person_id: string;
-    conversation_id: string;
+    chat_id: string;
     text: string;
     revision: number;
     state: string;
@@ -120,7 +115,7 @@ export interface Tables {
   operations: {
     id: string;
     person_id: string;
-    conversation_id: string;
+    chat_id: string;
     call_id: string;
     request: string;
     created_at: string;
@@ -206,7 +201,7 @@ export interface Tables {
   tool_calls: {
     id: string;
     person_id: string;
-    conversation_id: string;
+    chat_id: string;
     turn_id: string;
     call_id: string;
     tool: string;
@@ -219,7 +214,7 @@ export interface Tables {
   transcript_entries: {
     id: string;
     person_id: string;
-    conversation_id: string;
+    chat_id: string;
     seq: number;
     turn_id: string | null;
     kind: string;
@@ -236,8 +231,9 @@ export interface Tables {
   turns: {
     id: string;
     person_id: string;
-    conversation_id: string;
+    chat_id: string;
     agent_turn_id: string;
+    thread_id: string;
     model: string;
     status: string;
     end_reason: string | null;

@@ -16,7 +16,7 @@ import type { Deadlines } from "../agent/codex/appserver.ts";
 import type { AgentHost } from "../agent/runtime.ts";
 import {
   transcripts as openTranscripts,
-  type ConversationRow,
+  type ChatRow,
   type Transcripts,
 } from "../core/chat/transcript.ts";
 import {
@@ -41,9 +41,11 @@ let tokenGate: Promise<void> | undefined;
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), "rufi-chat-"));
   store = openWritable(databasePath(home));
-  store.db.exec(
-    "INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional')",
-  );
+  store.db.exec(`
+    INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
+    INSERT INTO chats (id, person_id, created_at)
+      VALUES ('c-asha', 'asha', '2026-10-01T09:00:00Z');
+  `);
   transcripts = openTranscripts(store);
   tokenGate = undefined;
 });
@@ -59,6 +61,8 @@ interface Backend {
   name: "fake" | "real";
   /** The text each new thread's first message carried before the user's words. */
   contexts: () => Promise<string[]>;
+  /** The effort each reply ran with, in order. */
+  efforts: () => Promise<(string | null)[]>;
 }
 
 /** Starts the chat (again, as after a restart) on the backend. */
@@ -112,8 +116,8 @@ async function startChat(
     tools: {
       version: "tools-1",
       instructions: "Read the record only through the rufi tools.",
-      caller: (conversation, turnId) => {
-        const call = chatCaller(reader, transcripts, log)(conversation, turnId);
+      caller: (chat, turnId) => {
+        const call = chatCaller(reader, transcripts, log)(chat, turnId);
         return async (name, input, callId) => {
           await sleep(options.toolMs ?? 0);
           return call(name, input, callId);
@@ -157,6 +161,20 @@ function backendOf(name: Backend["name"]): Backend {
         return input && input.length > 1 ? [input[0]?.text ?? ""] : [];
       });
     },
+    efforts: async () => {
+      if (name === "real") {
+        return (model?.requests ?? []).map(
+          (request) => request.reasoning?.effort ?? null,
+        );
+      }
+      const lines = (await readFile(join(home, "fake.jsonl"), "utf8"))
+        .trim()
+        .split("\n");
+      return lines.flatMap((line) => {
+        const entry = JSON.parse(line) as { turn?: string; effort?: string };
+        return entry.turn === undefined ? [] : [entry.effort ?? null];
+      });
+    },
   };
 }
 
@@ -176,21 +194,18 @@ const saveHeadache = {
   },
 };
 
-const conversation = async (id: string): Promise<ConversationRow> => {
-  const found = await transcripts.conversation("asha", id);
-  if (!found) throw new Error("no conversation");
+/** Asha's chat, as stored now. */
+const chatRow = async (_id?: string): Promise<ChatRow> => {
+  const found = await transcripts.chat("asha");
+  if (!found) throw new Error("no chat");
   return found;
 };
 
-async function newConversation(): Promise<ConversationRow> {
-  if (!chat) throw new Error("no chat");
-  const { id } = await chat.create("asha", "Fictional chat");
-  return conversation(id);
-}
+const newChat = () => chatRow();
 
 /** The transcript as [kind, text] pairs, and the turns' statuses. */
 async function transcript(id: string) {
-  const snapshot = await transcripts.snapshot(await conversation(id));
+  const snapshot = await transcripts.page(await chatRow(id));
   return {
     entries: snapshot.entries.map((e: Entry) => [e.kind, e.text]),
     turns: snapshot.turns,
@@ -227,15 +242,13 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
 
   it("stores each part of a reply before it is shown", timeout, async () => {
     await startChat(name);
-    const c = await newConversation();
+    const c = await newChat();
     const shown: Entry[] = [];
     let unsaved = 0;
     transcripts.subscribe(c.id, (change) => {
       // What is shown is already in the database, exactly so.
       const rows = store.db
-        .prepare(
-          "SELECT id, text FROM transcript_entries WHERE conversation_id = ?",
-        )
+        .prepare("SELECT id, text FROM transcript_entries WHERE chat_id = ?")
         .all(c.id) as { id: string; text: string }[];
       for (const entry of change.entries) {
         if (rows.find((row) => row.id === entry.id)?.text !== entry.text)
@@ -262,7 +275,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     timeout,
     async () => {
       await startChat(name);
-      const c = await newConversation();
+      const c = await newChat();
       await chat?.send(c, "hang");
       await running(c.id);
       await chat?.send(c, "B");
@@ -299,9 +312,9 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     timeout,
     async () => {
       await startChat(name);
-      const c = await newConversation();
-      // Two requests, each with the conversation as it read it.
-      const again = await conversation(c.id);
+      const c = await newChat();
+      // Two requests, each with the chat as it read it.
+      const again = await chatRow(c.id);
       await Promise.all([chat?.send(c, "slow first"), chat?.send(again, "B")]);
       await ended(c.id, 2);
       const { entries, turns } = await transcript(c.id);
@@ -318,11 +331,11 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
-    "sends with the new model when the model changed after the request read the conversation",
+    "sends with the new model when the model changed after the request read the chat",
     timeout,
     async () => {
       await startChat(name);
-      const c = await newConversation();
+      const c = await newChat();
       await Promise.all([
         chat?.selectModel(c, "gpt-6-astra"),
         chat?.send(c, "Hello"),
@@ -339,7 +352,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     timeout,
     async () => {
       await startChat(name);
-      const c = await newConversation();
+      const c = await newChat();
       await chat?.send(c, "hang");
       await running(c.id);
       await chat?.send(c, "B");
@@ -365,7 +378,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     timeout,
     async () => {
       await startChat(name);
-      const c = await newConversation();
+      const c = await newChat();
       await chat?.send(c, "slow");
       await running(c.id);
       await chat?.steer(c, "shorter please");
@@ -384,7 +397,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     timeout,
     async () => {
       await startChat(name);
-      const c = await newConversation();
+      const c = await newChat();
       const gate = Promise.withResolvers<undefined>();
       tokenGate = gate.promise;
       const sending = chat?.send(c, "Hello");
@@ -399,7 +412,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
 
   it("stops a reply that runs past its deadline", timeout, async () => {
     await startChat(name, { deadlines: { turnMs: 2_000 } });
-    const c = await newConversation();
+    const c = await newChat();
     await chat?.send(c, "hang");
     await ended(c.id);
     expect((await transcript(c.id)).turns[0]).toMatchObject({
@@ -414,20 +427,20 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     timeout,
     async () => {
       await startChat(name);
-      const c = await newConversation();
+      const c = await newChat();
       for (let i = 1; i <= 6; i++) {
         await chat?.send(c, `message ${String(i)}`);
         await ended(c.id, i);
       }
       await chat?.selectModel(c, "gpt-6-astra");
-      const changed = await conversation(c.id);
+      const changed = await chatRow(c.id);
       await chat?.send(changed, "after the switch");
       await ended(c.id, 7);
       const [context] = await backend.contexts();
       expect(context).toBe(
         [
-          "The model changed and a new thread started. Older history is available through read_conversation.",
-          "The last messages of this conversation, oldest first:",
+          "The model changed and a new thread started. Older history is available through read_chat.",
+          "The last messages of this chat, oldest first:",
           ...[2, 3, 4, 5, 6].flatMap((i) => [
             `User: message ${String(i)}`,
             `AI: ok:message ${String(i)}`,
@@ -445,15 +458,61 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
-    "refuses a model change while a reply runs or a message waits",
+    "runs each reply with the chat's effort: a new effort applies from the next reply, in the same thread",
     timeout,
     async () => {
       await startChat(name);
-      const c = await newConversation();
+      const c = await newChat();
+      await chat?.send(c, "first");
+      await ended(c.id, 1);
+      await chat?.selectEffort(await chatRow(c.id), "high");
+      await chat?.send(await chatRow(c.id), "second");
+      await ended(c.id, 2);
+      expect(await backend.efforts()).toEqual(["medium", "high"]);
+      // No new thread: no earlier messages handed over, no quiet line.
+      expect(await backend.contexts()).toEqual([]);
+      const { turns } = await transcript(c.id);
+      expect(turns.map((turn) => turn.afresh)).toEqual([false, false]);
+      expect((await chatRow(c.id)).effort).toBe("high");
+    },
+  );
+
+  it(
+    "after a restart, a waiting message runs with the chat's effort",
+    timeout,
+    async () => {
+      await startChat(name);
+      await chat?.selectEffort(await newChat(), "high");
+      const c = await chatRow();
+      await chat?.send(c, "hang");
+      await running(c.id);
+      await until(async () => (await backend.efforts()).length === 1);
+      await chat?.send(c, "queued next");
+      await chat?.stop(c);
+      await ended(c.id);
+      const [waiting] = (await chat?.waiting.list(c)) ?? [];
+      if (!waiting) throw new Error("nothing waits");
+      // Rufi starts again; the person runs what waited.
+      await startChat(name);
+      await chat?.waiting.runNow(await chatRow(), waiting.id);
+      await ended(c.id, 2);
+      expect(await backend.efforts()).toEqual(["high", "high"]);
+    },
+  );
+
+  it(
+    "refuses a model or effort change while a reply runs or a message waits",
+    timeout,
+    async () => {
+      await startChat(name);
+      const c = await newChat();
       await chat?.send(c, "hang");
       await running(c.id);
       await expect(chat?.selectModel(c, "gpt-6-astra")).rejects.toThrow(
         "Stop the reply before changing the model.",
+      );
+      await expect(chat?.selectEffort(c, "low")).rejects.toThrow(
+        "Stop the reply before changing the effort.",
       );
       await chat?.send(c, "B");
       await chat?.stop(c);
@@ -461,10 +520,14 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       await expect(chat?.selectModel(c, "gpt-6-astra")).rejects.toThrow(
         "Run or delete the waiting messages before changing the model.",
       );
+      await expect(chat?.selectEffort(c, "low")).rejects.toThrow(
+        "Run or delete the waiting messages before changing the effort.",
+      );
       await expect(chat?.selectModel(c, "gpt-5.5")).rejects.toThrow(
         "That model isn't allowed or isn't offered now.",
       );
-      expect((await conversation(c.id)).model).toBe("gpt-6.1-sol");
+      expect((await chatRow(c.id)).model).toBe("gpt-6.1-sol");
+      expect((await chatRow(c.id)).effort).toBe("medium");
     },
   );
 
@@ -472,10 +535,18 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     "after a restart runs nothing until the person acts; then what waited runs first",
     timeout,
     async () => {
-      await startChat(name);
-      const c = await newConversation();
+      // The scripted Codex records a message a moment after its turn starts,
+      // as Codex does.
+      await startChat(name, { scenario: { userMessageMs: 300 } });
+      const c = await newChat();
       await chat?.send(c, "hang");
-      await running(c.id);
+      // The agent has recorded the message (Rufi stores it then): a restart
+      // before that loses it, in the agent too.
+      await until(async () =>
+        (await transcript(c.id)).entries.some(
+          ([kind, text]) => kind === "message" && text === "hang",
+        ),
+      );
       await chat?.send(c, "B");
       await startChat(name); // Rufi restarts.
       expect((await transcript(c.id)).turns).toMatchObject([
@@ -484,11 +555,9 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       await sleep(1_000);
       expect((await transcript(c.id)).turns).toHaveLength(1);
       expect(
-        (await chat?.waiting.list(await conversation(c.id)))?.map(
-          (w) => w.text,
-        ),
+        (await chat?.waiting.list(await chatRow(c.id)))?.map((w) => w.text),
       ).toEqual(["B"]);
-      await chat?.send(await conversation(c.id), "C");
+      await chat?.send(await chatRow(c.id), "C");
       await ended(c.id, 3);
       expect(
         (await transcript(c.id)).entries
@@ -503,7 +572,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     timeout,
     async () => {
       await startChat(name);
-      const c = await newConversation();
+      const c = await newChat();
       await chat?.send(c, "first");
       await ended(c.id);
       await startChat(name); // Rufi restarts.
@@ -516,13 +585,10 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
         await gate.promise;
         return read(threadId);
       };
-      await chat?.send(await conversation(c.id), "after restart");
+      await chat?.send(await chatRow(c.id), "after restart");
       await sleep(1_000);
-      const switching = chat?.selectModel(
-        await conversation(c.id),
-        "gpt-6-astra",
-      );
-      const sending = chat?.send(await conversation(c.id), "after the switch");
+      const switching = chat?.selectModel(await chatRow(c.id), "gpt-6-astra");
+      const sending = chat?.send(await chatRow(c.id), "after the switch");
       await sleep(300);
       gate.resolve(undefined);
       await Promise.all([switching, sending]);
@@ -550,7 +616,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     timeout,
     async () => {
       await startChat(name);
-      const c = await newConversation();
+      const c = await newChat();
       // Rufi "crashes" between the agent starting the message and saving it.
       const addMessage = transcripts.addMessage;
       transcripts.addMessage = () => Promise.reject(new Error("crash"));
@@ -561,10 +627,10 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
         (await transcript(c.id)).entries.filter(([kind]) => kind === "message"),
       ).toEqual([]);
       await startChat(name);
-      await chat?.send(await conversation(c.id), "second");
+      await chat?.send(await chatRow(c.id), "second");
       await ended(c.id, 2);
       await startChat(name);
-      await chat?.send(await conversation(c.id), "third");
+      await chat?.send(await chatRow(c.id), "third");
       await ended(c.id, 3);
       expect(
         (await transcript(c.id)).entries
@@ -576,17 +642,54 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
 });
 
 describe("the chat, on the scripted Codex", () => {
+  it("sends nothing when Stop comes while the effort is being set", async () => {
+    await startChat("fake", {
+      scenario: { slow: ["thread/settings/update"], slowMs: 250 },
+    });
+    const c = await newChat();
+    await chat?.send(c, "first");
+    await ended(c.id);
+    // A new effort for the thread that runs: it is set before the message.
+    await chat?.selectEffort(await chatRow(), "high");
+    const sent = chat
+      ?.send(await chatRow(), "Not after Stop")
+      .catch((error: unknown) => error);
+    const received = async () =>
+      (await readFile(join(home, "fake.jsonl"), "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as { received?: { method?: string } })
+        .map((line) => line.received?.method);
+    await until(async () =>
+      (await received()).includes("thread/settings/update"),
+    );
+    await chat?.stop(await chatRow());
+    await sent;
+    await sleep(400);
+    expect(
+      (await received()).filter((method) => method === "thread/queue/add"),
+    ).toHaveLength(1);
+  });
+
   it("starts and changes to allowed models the provider offers only", async () => {
     await startChat("fake", { allowlist: ["gpt-retired", "gpt-6-astra"] });
-    const c = await newConversation();
+    const c = await newChat();
     expect(c.model).toBeNull();
     await chat?.send(c, "Hello");
-    expect((await conversation(c.id)).model).toBe("gpt-6-astra");
+    expect((await chatRow(c.id)).model).toBe("gpt-6-astra");
     await expect(chat?.selectModel(c, "gpt-retired")).rejects.toThrow(
       "That model isn't allowed or isn't offered now.",
     );
+    // A chat with no model yet, when none of the allowed ones is offered.
     await startChat("fake", { allowlist: ["gpt-retired"] });
-    await expect(chat?.send(await newConversation(), "Hello")).rejects.toThrow(
+    store.db.exec(`
+      INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
+      INSERT INTO chats (id, person_id, created_at)
+        VALUES ('c-ravi', 'ravi', '2026-10-01T09:00:00Z');
+    `);
+    const ravis = await transcripts.chat("ravi");
+    if (!ravis) throw new Error("no chat");
+    await expect(chat?.send(ravis, "Hello")).rejects.toThrow(
       "None of the allowed models is offered now.",
     );
   });
@@ -597,16 +700,16 @@ describe("the chat, on the scripted Codex", () => {
       deadlines: { requestMs: 300 },
     };
     await startChat("fake", options);
-    const c = await newConversation();
+    const c = await newChat();
     await chat?.send(c, "first");
     await ended(c.id);
-    const { threadId } = await conversation(c.id);
+    const { threadId } = await chatRow(c.id);
     await startChat("fake", options); // Rufi restarts.
-    await chat?.send(await conversation(c.id), "hang");
+    await chat?.send(await chatRow(c.id), "hang");
     await running(c.id);
     // The same thread, and Stop reaches its reply.
-    expect((await conversation(c.id)).threadId).toBe(threadId);
-    await chat?.stop(await conversation(c.id));
+    expect((await chatRow(c.id)).threadId).toBe(threadId);
+    await chat?.stop(await chatRow(c.id));
     await ended(c.id, 2);
     expect((await transcript(c.id)).turns.at(-1)).toMatchObject({
       status: "interrupted",
@@ -616,7 +719,7 @@ describe("the chat, on the scripted Codex", () => {
 
   it("stops a reply it couldn't save in full, and ends it as failed", async () => {
     await startChat("fake");
-    const c = await newConversation();
+    const c = await newChat();
     const appendReply = transcripts.appendReply;
     let parts = 0;
     transcripts.appendReply = (...args) =>
@@ -644,7 +747,7 @@ describe("the chat, on the scripted Codex", () => {
 
   it("fails only the reply it couldn't save, also when the next one already runs", async () => {
     await startChat("fake");
-    const c = await newConversation();
+    const c = await newChat();
     const appendReply = transcripts.appendReply;
     let parts = 0;
     transcripts.appendReply = async (...args) => {
@@ -675,7 +778,7 @@ describe("the chat, on the scripted Codex", () => {
         },
       },
     });
-    const c = await newConversation();
+    const c = await newChat();
     await chat?.send(c, "Show results");
     await ended(c.id);
     expect(
@@ -693,7 +796,7 @@ describe("the chat, on the scripted Codex", () => {
         reasoning: ["**Reading the record**"],
       },
     });
-    const c = await newConversation();
+    const c = await newChat();
     await chat?.send(c, "What's new?");
     await ended(c.id);
     const { all, turns } = await transcript(c.id);
@@ -775,7 +878,7 @@ describe("the chat, on the scripted Codex", () => {
         ],
       },
     });
-    const c = await newConversation();
+    const c = await newChat();
     const shown: Entry[] = [];
     transcripts.subscribe(c.id, (change) => shown.push(...change.entries));
     const asked =
@@ -783,7 +886,7 @@ describe("the chat, on the scripted Codex", () => {
     await chat?.send(c, asked);
     await ended(c.id);
     // Small talk: the AI reads nothing and writes no block.
-    await chat?.send(await conversation(c.id), "quiet thanks");
+    await chat?.send(await chatRow(c.id), "quiet thanks");
     await ended(c.id, 2);
     const { entries, turns } = await transcript(c.id);
     // The activity line names the read in the same words as Used.
@@ -827,7 +930,7 @@ describe("the chat, on the scripted Codex", () => {
         calls: [{ namespace: "rufi", tool: "get_overview", arguments: {} }],
       },
     });
-    const c = await newConversation();
+    const c = await newChat();
     // The store itself refuses the write, as a full disk would.
     store.db.exec(
       "CREATE TEMP TRIGGER full BEFORE INSERT ON tool_calls BEGIN SELECT RAISE(ABORT, 'database or disk is full'); END",
@@ -852,7 +955,7 @@ describe("the chat, on the scripted Codex", () => {
       },
       toolMs: 500,
     });
-    const c = await newConversation();
+    const c = await newChat();
     await chat?.send(c, "hang");
     await until(async () =>
       (await transcript(c.id)).entries.some(([kind]) => kind === "activity"),
@@ -872,7 +975,7 @@ describe("the chat, on the scripted Codex", () => {
       scenario: { calls: [saveHeadache] },
       toolMs: 500,
     });
-    const c = await newConversation();
+    const c = await newChat();
     await chat?.send(c, "hang: I have a headache");
     await until(async () =>
       (await transcript(c.id)).entries.some(([kind]) => kind === "activity"),
@@ -894,7 +997,7 @@ describe("the chat, on the scripted Codex", () => {
 
   it("saves after the message it rests on is stored, also when storing is slow", async () => {
     await startChat("fake", { scenario: { calls: [saveHeadache] } });
-    const c = await newConversation();
+    const c = await newChat();
     const addMessage = transcripts.addMessage;
     transcripts.addMessage = async (...args) => {
       await sleep(300);
@@ -915,12 +1018,12 @@ describe("the chat, on the scripted Codex", () => {
 
   it("gives a new thread Rufi's receipts with the last messages", async () => {
     await startChat("fake", { scenario: { calls: [saveHeadache] } });
-    const c = await newConversation();
+    const c = await newChat();
     await chat?.send(c, "I have a headache");
     await ended(c.id);
-    await chat?.selectModel(await conversation(c.id), "gpt-6-astra");
+    await chat?.selectModel(await chatRow(c.id), "gpt-6-astra");
     await startChat("fake");
-    await chat?.send(await conversation(c.id), "And now?");
+    await chat?.send(await chatRow(c.id), "And now?");
     await ended(c.id, 2);
     expect((await backendOf("fake").contexts()).at(-1)).toContain(
       "User: I have a headache\n\nRufi: **Saved**\n\n- Added symptom **Headache**\n\nAI: ok:I have a headache",
@@ -929,7 +1032,7 @@ describe("the chat, on the scripted Codex", () => {
 
   it("saves nothing of a reply after its Stop", async () => {
     await startChat("fake", { scenario: { late: true } });
-    const c = await newConversation();
+    const c = await newChat();
     await chat?.send(c, "hang");
     await running(c.id);
     await chat?.stop(c);
@@ -940,9 +1043,54 @@ describe("the chat, on the scripted Codex", () => {
     );
   });
 
+  it("marks only the first reply on a new thread as afresh: a model chosen and not used, or a send stopped before it began, marks nothing", async () => {
+    await startChat("fake", {
+      scenario: { slow: ["thread/start"], slowMs: 300 },
+    });
+    const c = await newChat();
+    await chat?.send(c, "first");
+    await ended(c.id, 1);
+    // Chosen and changed back before a message: the thread goes on.
+    await chat?.selectModel(c, "gpt-6-astra");
+    await chat?.selectModel(c, "gpt-6.1-sol");
+    await chat?.send(await chatRow(), "second");
+    await ended(c.id, 2);
+    // A new model; the first send to its new thread is stopped while the
+    // thread starts, before the message leaves. (Stopped during the add, it
+    // would wait in the queue and run with the next send.)
+    await chat?.selectModel(c, "gpt-6-astra");
+    const stopped = chat?.send(await chatRow(), "never sent");
+    await sleep(100);
+    await chat?.stop(await chatRow());
+    await expect(stopped).rejects.toThrow();
+    await chat?.send(await chatRow(), "third");
+    await ended(c.id, 3);
+    await chat?.send(await chatRow(), "fourth");
+    await ended(c.id, 4);
+    // The stopped message never reached the AI.
+    const { entries, turns } = await transcript(c.id);
+    expect(
+      entries.filter(([kind]) => kind === "message").map(([, text]) => text),
+    ).toEqual(["first", "second", "third", "fourth"]);
+    expect(turns.map((t) => t.afresh)).toEqual([false, false, true, false]);
+  });
+
+  it("keeps the AI's compaction of its memory, done once Codex completed it", async () => {
+    await startChat("fake", { scenario: { compaction: true } });
+    const c = await newChat();
+    await chat?.send(c, "Hello");
+    await ended(c.id);
+    const compacted = (await transcript(c.id)).all.filter(
+      (entry) => entry.activity === "compaction",
+    );
+    expect(compacted).toMatchObject([
+      { text: "Compacted its memory of the chat", status: "done" },
+    ]);
+  });
+
   it("saves a usage limit's end reason and reset time", async () => {
     await startChat("fake", { scenario: { resetsAt: 1_791_000_000 } });
-    const c = await newConversation();
+    const c = await newChat();
     await chat?.send(c, "please fail");
     await ended(c.id);
     expect((await transcript(c.id)).turns[0]).toMatchObject({
@@ -955,7 +1103,7 @@ describe("the chat, on the scripted Codex", () => {
   it("gives a new thread the model, the safety instructions first, and the tools' rules", async () => {
     await transcripts.saveSetting("emergency_region", "IN");
     await startChat("fake");
-    const c = await newConversation();
+    const c = await newChat();
     await chat?.send(c, "Hello");
     await ended(c.id);
     const log = await readFile(join(home, "fake.jsonl"), "utf8");
@@ -977,18 +1125,18 @@ describe("the chat, on the scripted Codex", () => {
 
   it("never reuses another agent's thread", async () => {
     await startChat("fake");
-    const c = await newConversation();
+    const c = await newChat();
     await transcripts.setThread(c, {
       id: "theirs-1",
       provider: "claude",
       model: "gpt-6.1-sol",
       tools: "tools-1",
     });
-    await chat?.send(await conversation(c.id), "Hello");
+    await chat?.send(await chatRow(c.id), "Hello");
     await ended(c.id);
     const log = await readFile(join(home, "fake.jsonl"), "utf8");
     expect(log).not.toContain("theirs-1");
-    expect((await conversation(c.id)).threadProvider).toBe("codex");
+    expect((await chatRow(c.id)).threadProvider).toBe("codex");
   });
 
   it("shows the agent's errors as they are", async () => {
@@ -996,20 +1144,18 @@ describe("the chat, on the scripted Codex", () => {
       scenario: { hang: ["thread/start"] },
       deadlines: { requestMs: 300 },
     });
-    const c = await newConversation();
+    const c = await newChat();
     await expect(chat?.send(c, "Hello")).rejects.toThrow(
       "Codex didn't answer thread/start within 0.3 s.",
     );
   });
 
   it("shows a cut reply's answer without How or half a block, with what it had read, and passes it on marked", async () => {
-    const c = await transcripts.createConversation(
-      "asha",
-      "Cut",
-      "codex",
-      "gpt-6.1-sol",
-    );
-    await transcripts.startTurn(c, "t-1", "gpt-6.1-sol");
+    const c = await newChat();
+    await transcripts.startTurn(c, "t-1", {
+      id: "thread-cut",
+      model: "gpt-6.1-sol",
+    });
     await transcripts.recordToolCall(c, "t-1", {
       callId: "call-1",
       tool: "get_records",
@@ -1050,7 +1196,7 @@ describe("the chat, on the scripted Codex", () => {
     ]);
     // A new thread hears it as unfinished.
     await startChat("fake");
-    await chat?.send(await conversation(c.id), "And?");
+    await chat?.send(await chatRow(c.id), "And?");
     await ended(c.id, 2);
     expect((await backendOf("fake").contexts()).at(-1)).toContain(
       "AI (this reply didn't finish): Your HbA1c was 6.8 %.",
@@ -1058,13 +1204,11 @@ describe("the chat, on the scripted Codex", () => {
   });
 
   it("keeps a reply's text when a crash cuts it, and marks it interrupted", async () => {
-    const c = await transcripts.createConversation(
-      "asha",
-      "Cut",
-      "codex",
-      "gpt-6.1-sol",
-    );
-    await transcripts.startTurn(c, "t-1", "gpt-6.1-sol");
+    const c = await newChat();
+    await transcripts.startTurn(c, "t-1", {
+      id: "thread-cut",
+      model: "gpt-6.1-sol",
+    });
     await transcripts.appendReply(c, "t-1", "item-1", "Half a rep");
     await transcripts.setActivity(c, "t-1", "item-2", {
       activity: "command",

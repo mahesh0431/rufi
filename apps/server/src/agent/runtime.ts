@@ -1,7 +1,7 @@
 // The agent adapter: Rufi talks to a coding agent through this, so the agent
 // behind it (Codex now) can change without the rest of Rufi changing. The
 // agent keeps its own threads and its own queue of waiting messages; Rufi
-// keeps the conversation (core/chat).
+// keeps the chat (core/chat).
 import { Effect } from "effect";
 
 /** What one line of activity is about. */
@@ -11,6 +11,7 @@ export type ActivityKind =
   | "web_search"
   | "file_change"
   | "sub_agent"
+  | "compaction"
   | "other";
 
 /** Why a reply didn't complete, as a screen can act on it. */
@@ -125,6 +126,11 @@ export interface ToolAnswer {
 /** What a thread starts with. The agent keeps it for the thread's life. */
 export interface ThreadSettings {
   model: string;
+  /**
+   * How hard the AI thinks, from the thread's first turn on, also those a
+   * resume starts by itself; without it, the agent's default.
+   */
+  effort?: string;
   /** Rufi's instructions: safety first, then how to use the tools. */
   instructions: string;
 }
@@ -154,11 +160,12 @@ export interface AgentRuntime {
   /**
    * Sends a message. It runs now if nothing runs or waits, else it waits its
    * turn; a queue paused by Stop starts again, oldest first. `context` goes
-   * before the message (a new thread's earlier conversation).
+   * before the message (a new thread's earlier chat). `effort` is how hard
+   * the AI thinks, from this reply on; without it, the thread keeps its own.
    */
   send: (
     threadId: string,
-    message: { id: string; text: string; context?: string },
+    message: { id: string; text: string; context?: string; effort?: string },
     signal?: AbortSignal,
   ) => Promise<void>;
   /** Passes a message into the running reply; returns that reply's turn id. */

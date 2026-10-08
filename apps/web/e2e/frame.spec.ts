@@ -109,17 +109,17 @@ test.describe("first run", () => {
     rufi.account = { account: "signed_out", email: null };
     await rufi.start();
     await page.goto(rufi.link());
-    // Each step is titled Welcome, and the sidebar offers no conversation
-    // or Overview until the first run is done.
+    // Each step fills the window: no sidebar, toolbar or chat, and no
+    // link to anything else, until the first run is done.
     const title = page.getByRole("banner").getByRole("heading");
     const welcoming = async () => {
-      await expect(title).toHaveText("Welcome");
+      await expect(page.getByRole("main").getByRole("heading")).toBeVisible();
+      await expect(sidebar(page)).toHaveCount(0);
+      await expect(page.getByRole("banner")).toHaveCount(0);
       await expect(
-        sidebar(page).getByRole("link", { name: "Overview" }),
+        page.getByRole("region", { name: "Chat", exact: true }),
       ).toHaveCount(0);
-      await expect(
-        sidebar(page).getByRole("button", { name: "New conversation" }),
-      ).toHaveCount(0);
+      await expect(page.getByRole("link")).toHaveCount(0);
     };
     await expect(
       page.getByRole("heading", { name: "Welcome to Rufi" }),
@@ -143,11 +143,16 @@ test.describe("first run", () => {
     await page.getByRole("button", { name: "Continue" }).click();
 
     await expect(
-      page.getByRole("heading", { name: "Sign in with ChatGPT", level: 2 }),
+      page.getByRole("heading", { name: "Sign in with ChatGPT", level: 1 }),
     ).toBeVisible();
     await welcoming();
     await accessible(page);
-    await page.reload();
+    // Another page's address shows the step too.
+    await page.goto(new URL("/settings", page.url()).href);
+    await expect(
+      page.getByRole("heading", { name: "Sign in with ChatGPT", level: 1 }),
+    ).toBeVisible();
+    await welcoming();
     await page.getByRole("button", { name: "Skip for now" }).click();
 
     const region = page.getByRole("combobox", { name: "Emergency region" });
@@ -167,9 +172,20 @@ test.describe("first run", () => {
     ).toBeVisible();
     await expect(sidebar(page)).toContainText("Mira Fictional");
     await expect(title).toHaveText("Overview");
-    await expect(
-      sidebar(page).getByRole("button", { name: "New conversation" }),
-    ).toBeVisible();
+    // The person's chat was made with them: the bar works at once.
+    const bar = page.getByRole("region", { name: "Chat" });
+    await bar.getByRole("textbox", { name: "Message to Rufi" }).click();
+    await bar
+      .getByRole("textbox", { name: "Message to Rufi" })
+      .fill("Hello from the first page");
+    await bar.getByRole("textbox", { name: "Message to Rufi" }).press("Enter");
+    await expect(bar.locator(".reply")).toHaveText(
+      "ok:Hello from the first page",
+    );
+    await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
+    await expect(page.locator(".reply")).toHaveText(
+      "ok:Hello from the first page",
+    );
     await sidebar(page).getByRole("link", { name: "Settings" }).click();
     await expect(
       page.getByRole("combobox", { name: "Emergency region" }),
@@ -199,10 +215,38 @@ test.describe("first run", () => {
     expect(rufi.signIns).toHaveLength(1);
     rufi.signIns[0]?.resolve(undefined);
 
-    await expect(
-      page.getByRole("combobox", { name: "Emergency region" }),
-    ).toBeVisible();
+    await page
+      .getByRole("combobox", { name: "Emergency region" })
+      .selectOption("IN");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(sidebar(page)).toContainText("Mira Fictional");
     await expect(sidebar(page)).not.toContainText("Not signed in");
+  });
+
+  test("shows nothing of the app until first run is known to be done", async ({
+    page,
+    rufi,
+  }) => {
+    await rufi.family();
+    await rufi.start();
+    const answer = Promise.withResolvers<undefined>();
+    await page.route("**/api/first-run", async (route) => {
+      await answer.promise;
+      await route.continue();
+    });
+    await page.goto(rufi.link());
+    await expect.poll(() => page.getByRole("link").count()).toBe(0);
+    await expect(sidebar(page)).toHaveCount(0);
+    await expect(
+      page.getByRole("region", { name: "Chat", exact: true }),
+    ).toHaveCount(0);
+    answer.resolve(undefined);
+    await expect(sidebar(page).getByRole("link")).toHaveText([
+      "Chat with Rufi",
+      "Overview",
+      "Help",
+      "Settings",
+    ]);
   });
 
   test("two tabs make one person", async ({ page, rufi, context }) => {
@@ -222,18 +266,21 @@ test.describe("first run", () => {
       .getByRole("textbox", { name: "What's your name?" })
       .fill("Mira Fictional");
     await page.getByRole("button", { name: "Continue" }).click();
-    await expect(sidebar(page)).toContainText("Mira Fictional");
+    await expect(
+      page.getByRole("combobox", { name: "Emergency region" }),
+    ).toBeVisible();
     // The other tab still shows the form; its name isn't added.
     await other.getByRole("button", { name: "Continue" }).click();
-    await expect(
-      other.getByRole("combobox", { name: "Emergency region" }),
-    ).toBeVisible();
+    const region = other.getByRole("combobox", { name: "Emergency region" });
+    await region.selectOption("IN");
+    await other.getByRole("button", { name: "Continue" }).click();
     await expect(sidebar(other)).toContainText("Mira Fictional");
   });
 });
 
 test.describe("sign-in status", () => {
   test("signed in: nothing to say", async ({ page, rufi }) => {
+    await rufi.family();
     await rufi.start();
     const status = page.waitForResponse((response) =>
       response.url().endsWith("/api/status"),
@@ -263,6 +310,7 @@ test.describe("sign-in status", () => {
 
   test("signed in, but the plan can't be used", async ({ page, rufi }) => {
     rufi.account = { account: "no_plan_use", email: "asha@example.com" };
+    await rufi.family();
     await rufi.start();
     await page.goto(rufi.link());
     await expect(
@@ -335,20 +383,6 @@ test.describe("Overview", () => {
 });
 
 test.describe("when Rufi is slow or away", () => {
-  test("the frame shows while the link is still being opened", async ({
-    page,
-    rufi,
-  }) => {
-    await rufi.start();
-    // The core never answers the swap.
-    await page.route("**/api/session", () => undefined);
-    await page.goto(rufi.link());
-    await sidebar(page).getByRole("link", { name: "Help" }).click();
-    await expect(
-      page.getByRole("heading", { name: "Rufi help", level: 1 }),
-    ).toBeVisible();
-  });
-
   test("a read that never answers shows Rufi as offline", async ({
     page,
     rufi,
@@ -357,7 +391,11 @@ test.describe("when Rufi is slow or away", () => {
     await rufi.start();
     await page.clock.install();
     await page.route("**/api/people", () => undefined);
+    // The clock moves only once the page has asked: until its session is
+    // started, it asks nothing.
+    const asked = page.waitForRequest("**/api/people");
     await page.goto(rufi.link());
+    await asked;
     await expect(page.getByRole("status")).toHaveCount(0);
     await page.clock.runFor(15_000);
     await expect(page.getByRole("status")).toContainText(
@@ -378,6 +416,7 @@ test.describe("when Rufi is slow or away", () => {
       const real = globalThis.fetch;
       globalThis.fetch = (input, init) => {
         if (input !== "/api/people") return real(input, init);
+        document.documentElement.dataset["asked"] = "people";
         const body = new ReadableStream({
           start(controller) {
             controller.enqueue(new TextEncoder().encode('{"people":['));
@@ -390,6 +429,9 @@ test.describe("when Rufi is slow or away", () => {
       };
     });
     await page.goto(rufi.link());
+    // The clock moves only once the page has asked: until its session is
+    // started, it asks nothing.
+    await expect(page.locator("html")).toHaveAttribute("data-asked", "people");
     await page.clock.runFor(15_000);
     await expect(page.getByRole("status")).toContainText(
       "Rufi can't be reached.",
@@ -428,7 +470,8 @@ test("Settings keeps the emergency region the AI uses, and clears it", async ({
   page,
   rufi,
 }) => {
-  await rufi.start(); // before first run, too
+  await rufi.family();
+  await rufi.start();
   await page.goto(rufi.link());
   await sidebar(page).getByRole("link", { name: "Settings" }).click();
   const region = page.getByRole("combobox", { name: "Emergency region" });
@@ -534,6 +577,7 @@ test.describe("Help", () => {
     page,
     rufi,
   }) => {
+    await rufi.family();
     await rufi.start();
     await page.goto(rufi.link());
     await sidebar(page).getByRole("link", { name: "Help" }).click();
@@ -567,6 +611,7 @@ test.describe("Help", () => {
   });
 
   test("web links open outside Rufi", async ({ page, rufi }) => {
+    await rufi.family();
     await rufi.start();
     await page.goto(rufi.link());
     await page.goto(new URL("/help/your-data-and-the-ai", page.url()).href);

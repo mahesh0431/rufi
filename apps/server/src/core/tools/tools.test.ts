@@ -477,30 +477,29 @@ describe("get_records", () => {
 const left = (text: string) =>
   (JSON.parse(text) as { rejections_left: number }).rejections_left;
 
-describe("read_conversation", () => {
-  /** Two conversations of Asha's and one of Ravi's, 30 entries each. */
-  const conversations = [
-    ["c-asha", "asha"],
-    ["c-asha-2", "asha"],
-    ["c-ravi", "ravi"],
-  ]
-    .map(
-      ([id, person]) =>
-        `INSERT INTO conversations (id, person_id, title, provider, model, created_at) VALUES ('${id ?? ""}', '${person ?? ""}', 'Fictional', 'codex', 'gpt-6.1-sol', '2026-10-01T10:00:00Z');` +
+describe("read_chat", () => {
+  /** Asha's chat and Ravi's, 30 entries each. */
+  const chats =
+    "UPDATE chats SET id = 'c-' || person_id;" +
+    [
+      ["c-asha", "asha"],
+      ["c-ravi", "ravi"],
+    ]
+      .map(([id, person]) =>
         Array.from({ length: 30 }, (_, i) => {
           const kind =
             ["message", "reply", "activity", "steer"][i % 4] ?? "message";
           const activity =
             kind === "activity" ? "'command', 'done'" : "NULL, NULL";
-          return `INSERT INTO transcript_entries (id, person_id, conversation_id, seq, kind, text, activity, status, detail, revision, created_at, updated_at) VALUES ('${id ?? ""}-${String(i + 1)}', '${person ?? ""}', '${id ?? ""}', ${String(i + 1)}, '${kind}', '${id ?? ""} entry ${String(i + 1)}', ${activity}, ${kind === "activity" ? "'ls'" : "NULL"}, 1, '2026-10-01T10:00:00Z', '2026-10-01T10:00:00Z');`;
+          return `INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, activity, status, detail, revision, created_at, updated_at) VALUES ('${id ?? ""}-${String(i + 1)}', '${person ?? ""}', '${id ?? ""}', ${String(i + 1)}, '${kind}', '${id ?? ""} entry ${String(i + 1)}', ${activity}, ${kind === "activity" ? "'ls'" : "NULL"}, 1, '2026-10-01T10:00:00Z', '2026-10-01T10:00:00Z');`;
         }).join(""),
-    )
-    .join("");
+      )
+      .join("");
 
-  it("pages back through the conversation, newest first", async () => {
-    const store = makeDatabase(family, conversations);
-    const context = { store, personId: "asha", conversationId: "c-asha" };
-    const first = await call(context, "read_conversation", { limit: 4 });
+  it("pages back through the chat, newest first", async () => {
+    const store = makeDatabase(family, chats);
+    const context = { store, personId: "asha", chatId: "c-asha" };
+    const first = await call(context, "read_chat", { limit: 4 });
     expect(first.body).toEqual({
       ok: true,
       result: {
@@ -534,7 +533,7 @@ describe("read_conversation", () => {
         next_before: 27,
       },
     });
-    const last = await call(context, "read_conversation", { before: 3 });
+    const last = await call(context, "read_chat", { before: 3 });
     expect(
       (last.body["result"] as { entries: { position: number }[] }).entries.map(
         (e) => e.position,
@@ -543,38 +542,27 @@ describe("read_conversation", () => {
     expect(last.body["result"]).not.toHaveProperty("next_before");
   });
 
-  it("reads only the conversation Rufi chose, never another person's", async () => {
-    const store = makeDatabase(family, conversations);
+  it("reads only the chat Rufi chose, never another person's", async () => {
+    const store = makeDatabase(family, chats);
     const { body } = await call(
-      { store, personId: "asha", conversationId: "c-ravi" },
-      "read_conversation",
+      { store, personId: "asha", chatId: "c-ravi" },
+      "read_chat",
       {},
     );
     expect(body).toEqual({ ok: true, result: { entries: [] } });
-    const own = await call(
-      { store, personId: "asha", conversationId: "c-asha-2" },
-      "read_conversation",
-      {},
-    );
-    expect(JSON.stringify(own.body)).not.toContain("c-asha entry");
-    expect(JSON.stringify(own.body)).not.toContain("c-ravi");
   });
 
-  it("refuses outside a saved conversation, and a page too big", async () => {
-    const store = makeDatabase(family, conversations);
+  it("refuses outside Rufi's chat, and a page too big", async () => {
+    const store = makeDatabase(family, chats);
     expect(
-      (await call({ store, personId: "asha" }, "read_conversation", {})).body[
-        "error"
-      ],
-    ).toBe(
-      "This isn't a saved conversation, so it has nothing earlier to read.",
-    );
+      (await call({ store, personId: "asha" }, "read_chat", {})).body["error"],
+    ).toBe("This isn't Rufi's chat, so it has nothing earlier to read.");
     const { body } = await call(
-      { store, personId: "asha", conversationId: "c-asha" },
-      "read_conversation",
+      { store, personId: "asha", chatId: "c-asha" },
+      "read_chat",
       { limit: 51 },
     );
-    expect(body["error"]).toBe("The input for read_conversation isn't valid.");
+    expect(body["error"]).toBe("The input for read_chat isn't valid.");
   });
 });
 
@@ -621,7 +609,7 @@ describe("the error envelope", () => {
       "rm_rf",
     );
     expect(body["error"]).toBe(
-      "There is no tool called rm_rf. Rufi's tools: get_overview, get_records, read_conversation, save_changes.",
+      "There is no tool called rm_rf. Rufi's tools: get_overview, get_records, read_chat, save_changes.",
     );
   });
 

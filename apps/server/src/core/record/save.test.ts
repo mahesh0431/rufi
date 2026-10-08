@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   transcripts as openTranscripts,
-  type ConversationRow,
+  type ChatRow,
   type Transcripts,
 } from "../chat/transcript.ts";
 import {
@@ -36,7 +36,7 @@ let path: string;
 let store: Store;
 let reader: Store;
 let transcripts: Transcripts;
-let conversation: ConversationRow;
+let chat: ChatRow;
 let clock: string;
 let said = 0;
 
@@ -47,24 +47,22 @@ beforeEach(async () => {
   reader = openReadOnly(path) as Store;
   clock = SUNDAY_10AM;
   transcripts = openTranscripts(store, () => clock);
-  conversation = await transcripts.createConversation(
-    "asha",
-    "Fictional",
-    "codex",
-    "gpt-6.1-sol",
-  );
-  await transcripts.startTurn(conversation, "t-1", "gpt-6.1-sol");
+  chat = (await transcripts.chat("asha")) as ChatRow;
+  await transcripts.startTurn(chat, "t-1", {
+    id: "thread-1",
+    model: "gpt-6.1-sol",
+  });
 });
 
-/** The user says it in the conversation; returns the message's id. */
-async function say(text: string, to = conversation): Promise<string> {
+/** The user says it in the chat; returns the message's id. */
+async function say(text: string, to = chat): Promise<string> {
   const id = `msg-${String(++said)}`;
   await transcripts.addMessage(to, { id, kind: "message", text });
   return id;
 }
 
-/** The AI calls save_changes in the conversation's turn. */
-async function save(changes: unknown[], callId = "call-1", to = conversation) {
+/** The AI calls save_changes in the chat's turn. */
+async function save(changes: unknown[], callId = "call-1", to = chat) {
   const answer = await chatCaller(
     reader,
     transcripts,
@@ -116,7 +114,7 @@ const written = () => ({
   receipts: receipts(),
   medicines: rows("SELECT * FROM medicine_uses ORDER BY id"),
   symptoms: rows("SELECT * FROM symptoms"),
-  revision: row("conversations", conversation.id)["revision"],
+  revision: row("chats", chat.id)["revision"],
 });
 
 interface KindCase {
@@ -847,22 +845,11 @@ describe("a save", () => {
     expect(rows("SELECT * FROM symptoms")).toHaveLength(1);
   });
 
-  it("refuses another person's record, and words the user didn't say in this conversation", async () => {
+  it("refuses another person's record, and words the user didn't say in this chat", async () => {
     await say("Stop my atorvastatin");
-    const ravis = await transcripts.createConversation(
-      "ravi",
-      "Ravi's",
-      "codex",
-      "gpt-6.1-sol",
-    );
+    const ravis = await transcripts.chat("ravi");
+    if (!ravis) throw new Error("no chat");
     await say("I have a toothache", ravis);
-    const other = await transcripts.createConversation(
-      "asha",
-      "Another",
-      "codex",
-      "gpt-6.1-sol",
-    );
-    await say("I have a backache", other);
     const before = written();
     const refused = await save([
       {
@@ -881,12 +868,6 @@ describe("a save", () => {
       {
         kind: "symptom",
         action: "add",
-        source: "I have a backache",
-        fields: { name: "Backache" },
-      },
-      {
-        kind: "symptom",
-        action: "add",
         source: "the AI's own idea",
         fields: { name: "Fatigue" },
       },
@@ -897,10 +878,10 @@ describe("a save", () => {
         got: '"med-r1"',
         fix: "No medicine use with this id is in this person's record.",
       },
-      ...[1, 2, 3].map((i) => ({
+      ...[1, 2].map((i) => ({
         path: `changes.${String(i)}.source`,
         got: expect.any(String) as string,
-        fix: "No message of the user's in this conversation has these words. Copy the user's own words exactly from the message this change rests on.",
+        fix: "No message of the user's in this chat has these words. Copy the user's own words exactly from the message this change rests on.",
       })),
     ]);
     expect(row("medicine_uses", "med-r1")["status"]).toBe("current");
@@ -1361,7 +1342,7 @@ describe("a crash during a save", () => {
         [
           join(import.meta.dirname, "../../../tests/save-process.ts"),
           path,
-          conversation.id,
+          chat.id,
           when,
         ],
         { stdio: "inherit" },

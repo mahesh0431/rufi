@@ -56,6 +56,9 @@ export function openWritable(path: string): Store {
   return checked(db, path);
 }
 
+/** A database made by another schema: an older Rufi's, reset until dogfood. */
+export class OlderRufi extends Error {}
+
 /** Turns on foreign keys and refuses a database made by another schema. */
 function checked(db: DatabaseSync, path: string): Store {
   try {
@@ -65,8 +68,8 @@ function checked(db: DatabaseSync, path: string): Store {
     const same = describe(db) === describe(expected);
     expected.close();
     if (!same) {
-      throw new Error(
-        `${path} was made by an older Rufi. It's test data until dogfood: delete it and start again.`,
+      throw new OlderRufi(
+        `${path} was made by an older Rufi. It's test data until dogfood: delete it and installed.json beside it, and start again.`,
       );
     }
   } catch (error) {

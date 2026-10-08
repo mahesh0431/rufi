@@ -223,14 +223,15 @@ CREATE TABLE settings (
   value TEXT NOT NULL
 ) STRICT;
 
--- Conversations and their transcripts are Rufi's own (docs/adr/0004). The
--- agent's thread is only a pointer: a new one can start at any time.
-CREATE TABLE conversations (
-  id TEXT PRIMARY KEY,         -- UUIDv7
-  person_id TEXT NOT NULL REFERENCES people (id),
-  title TEXT,                  -- the first words of the first message Rufi took; null until then
-  provider TEXT NOT NULL,      -- the agent chosen for it: 'codex'
+-- Each person's one chat with Rufi's AI, made in the same transaction as the
+-- person (transcripts.addFirstPerson). Chats and their transcripts are
+-- Rufi's own (docs/adr/0004). The agent's thread is only a pointer: a new
+-- one can start at any time.
+CREATE TABLE chats (
+  id TEXT PRIMARY KEY,
+  person_id TEXT NOT NULL UNIQUE REFERENCES people (id), -- one chat per person
   model TEXT,                  -- the model chosen for it; null: the first allowed one, set when the first message goes
+  effort TEXT CHECK (effort IN ('low', 'medium', 'high')), -- how hard the AI thinks, chosen for it; null: Rufi's default
   thread_id TEXT,              -- the agent's thread; none until the first message
   thread_provider TEXT,        -- whose thread it is, so another agent never reuses it
   thread_model TEXT,           -- the model the thread started with
@@ -244,8 +245,9 @@ CREATE TABLE conversations (
 CREATE TABLE turns (
   id TEXT PRIMARY KEY,         -- UUIDv7
   person_id TEXT NOT NULL,
-  conversation_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
   agent_turn_id TEXT NOT NULL, -- the agent's own id for it
+  thread_id TEXT NOT NULL,     -- the agent's thread it ran on: a turn on another thread than the one before started afresh
   model TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'interrupted', 'failed')),
   end_reason TEXT CHECK (end_reason IN ('stopped', 'timeout', 'usage_limit', 'rate_limit', 'sign_in', 'connection', 'provider_failed', 'save_failed')),
@@ -254,32 +256,32 @@ CREATE TABLE turns (
   started_at TEXT NOT NULL,
   ended_at TEXT,
   UNIQUE (person_id, id),
-  UNIQUE (conversation_id, agent_turn_id),
-  FOREIGN KEY (person_id, conversation_id) REFERENCES conversations (person_id, id)
+  UNIQUE (chat_id, agent_turn_id),
+  FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id)
 ) STRICT;
 
--- A conversation's transcript, in order: your messages (steers marked), one
+-- A chat's transcript, in order: your messages (steers marked), one
 -- line per thing the agent did with everything it sent and got back, the
 -- agent's reasoning and its replies. Stored before anyone is shown it.
 CREATE TABLE transcript_entries (
   id TEXT PRIMARY KEY,         -- UUIDv7; a message keeps the id the agent got with it
   person_id TEXT NOT NULL,
-  conversation_id TEXT NOT NULL,
-  seq INTEGER NOT NULL,        -- 1, 2, 3... in the conversation
+  chat_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,        -- 1, 2, 3... in the chat
   turn_id TEXT,                -- the reply it belongs to
   kind TEXT NOT NULL CHECK (kind IN ('message', 'steer', 'activity', 'reply', 'reasoning', 'receipt')),
   text TEXT NOT NULL,          -- the message or the reply as it came; an activity's short title; the reasoning's summary; a receipt's line
-  activity TEXT CHECK (activity IN ('tool', 'command', 'web_search', 'file_change', 'sub_agent', 'other')),
+  activity TEXT CHECK (activity IN ('tool', 'command', 'web_search', 'file_change', 'sub_agent', 'compaction', 'other')),
   detail TEXT,                 -- an activity's one short detail: the query, the search words, the command
   details TEXT,                -- an activity's or reasoning's everything, as the agent gave it (JSON); null: the agent gave nothing
   status TEXT CHECK (status IN ('running', 'done', 'failed', 'stopped')),
   agent_item_id TEXT,          -- the agent's id for a reply or an activity, to update it
-  revision INTEGER NOT NULL,   -- the conversation's revision when it last changed
+  revision INTEGER NOT NULL,   -- the chat's revision when it last changed
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE (person_id, id),
-  UNIQUE (conversation_id, seq),
-  FOREIGN KEY (person_id, conversation_id) REFERENCES conversations (person_id, id),
+  UNIQUE (chat_id, seq),
+  FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
   FOREIGN KEY (person_id, turn_id) REFERENCES turns (person_id, id),
   -- An activity line has its kind and status; nothing else has either.
   CHECK ((kind = 'activity') = (activity IS NOT NULL) AND (kind = 'activity') = (status IS NOT NULL)),
@@ -292,7 +294,7 @@ CREATE TABLE transcript_entries (
 CREATE TABLE tool_calls (
   id TEXT PRIMARY KEY,         -- UUIDv7
   person_id TEXT NOT NULL,
-  conversation_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
   turn_id TEXT NOT NULL,       -- the reply it belongs to
   call_id TEXT NOT NULL,       -- the agent's id for the call: its activity line's agent_item_id
   tool TEXT NOT NULL,          -- 'get_overview', 'get_records'...
@@ -302,49 +304,40 @@ CREATE TABLE tool_calls (
   started_at TEXT NOT NULL,
   ended_at TEXT NOT NULL,
   UNIQUE (person_id, id),
-  FOREIGN KEY (person_id, conversation_id) REFERENCES conversations (person_id, id),
+  FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
   FOREIGN KEY (person_id, turn_id) REFERENCES turns (person_id, id)
 ) STRICT;
 
--- One unsent message per conversation. Rufi never sends a draft by itself.
+-- One unsent message per chat. Rufi never sends a draft by itself.
 -- A send holds the draft (state 'sending', its message id in attempt) until
 -- the agent took the message (the draft is emptied) or refused it (the
 -- text is back); nobody can change it meanwhile. 'unknown': Rufi stopped
 -- during that send, so the text stays, and nobody knows if the agent has it.
 CREATE TABLE drafts (
   person_id TEXT NOT NULL REFERENCES people (id),
-  conversation_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
   text TEXT NOT NULL,          -- may be empty: the row stays so its revision keeps growing
   revision INTEGER NOT NULL,   -- grows with every change; a save or send based on an older one is refused
   state TEXT NOT NULL DEFAULT 'editable' CHECK (state IN ('editable', 'sending', 'unknown')),
   attempt TEXT,                -- the id of the message a send holds it for (the id the agent gets)
   updated_at TEXT NOT NULL,
-  PRIMARY KEY (person_id, conversation_id),
-  FOREIGN KEY (person_id, conversation_id) REFERENCES conversations (person_id, id),
+  PRIMARY KEY (person_id, chat_id),
+  FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
   CHECK ((state = 'sending') = (attempt IS NOT NULL))
 ) STRICT;
 
--- The conversation Rufi opens the chat on for each person, the next time it
--- opens: the last choice a tab saved. Each open tab keeps its own. No row:
--- none yet.
-CREATE TABLE chosen_conversations (
-  person_id TEXT PRIMARY KEY REFERENCES people (id),
-  conversation_id TEXT NOT NULL,
-  FOREIGN KEY (person_id, conversation_id) REFERENCES conversations (person_id, id)
-) STRICT;
-
 -- One save to the record, made by the AI's call to save_changes in a
--- conversation. Its receipt is the transcript entry with the same id.
+-- chat. Its receipt is the transcript entry with the same id.
 CREATE TABLE operations (
   id TEXT PRIMARY KEY,         -- UUIDv7
   person_id TEXT NOT NULL,
-  conversation_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
   call_id TEXT NOT NULL,       -- the agent's id for the call: the same call again is the same save
   request TEXT NOT NULL,       -- the changes as the AI sent them (JSON)
   created_at TEXT NOT NULL,
   UNIQUE (person_id, id),
-  UNIQUE (conversation_id, call_id),
-  FOREIGN KEY (person_id, conversation_id) REFERENCES conversations (person_id, id)
+  UNIQUE (chat_id, call_id),
+  FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id)
 ) STRICT;
 
 -- Each record a save changed: the whole row before and after (JSON), so it
@@ -369,8 +362,7 @@ CREATE INDEX reports_by_document ON reports (person_id, document_id);
 CREATE INDEX results_by_report ON results (person_id, report_id);
 CREATE INDEX results_by_test ON results (person_id, test_name, unit, measured_at);
 CREATE INDEX results_by_replaced ON results (person_id, replaces_id); -- current results leave out replaced ones
-CREATE INDEX conversations_by_person ON conversations (person_id, created_at);
-CREATE INDEX turns_by_conversation ON turns (person_id, conversation_id, started_at);
+CREATE INDEX turns_by_chat ON turns (person_id, chat_id, started_at);
 CREATE INDEX turns_by_status ON turns (status); -- running turns, found at start
 CREATE INDEX entries_by_turn ON transcript_entries (person_id, turn_id);
 CREATE INDEX tool_calls_by_turn ON tool_calls (person_id, turn_id);

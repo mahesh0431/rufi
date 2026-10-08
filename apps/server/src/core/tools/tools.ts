@@ -1,6 +1,6 @@
 // Every Rufi tool, and what the agent is told about them.
 import { createHash } from "node:crypto";
-import { readConversation } from "./conversation.ts";
+import { readChat } from "./chat.ts";
 import { getOverview } from "./overview.ts";
 import { saveChanges } from "./save.ts";
 import { getRecords } from "./records.ts";
@@ -12,14 +12,14 @@ import {
   type ToolContext,
 } from "./registry.ts";
 import type { Log } from "../../platform/logs.ts";
-import type { ConversationRow, Transcripts } from "../chat/transcript.ts";
+import type { ChatRow, Transcripts } from "../chat/transcript.ts";
 import { saveChanges as saveToRecord } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
 
 export const TOOLS: readonly Tool[] = [
   getOverview,
   getRecords,
-  readConversation,
+  readChat,
   saveChanges,
 ];
 
@@ -31,11 +31,11 @@ const TOOL_INSTRUCTIONS = `The user's health record lives in Rufi. Read it only 
 Rufi's chat shows your replies as Markdown. Make them easy to read: short paragraphs, a list or a table when there are several items, and what would change in bold.
 Answering from the record:
 - get_overview shows the record at a glance. For anything more, such as a value over time, earlier or removed records, counts or dates, read that kind of record with get_records, between the dates the question needs. Count, compare and find trends in the records yourself.
-- Answer from what you read, in this reply or earlier in this conversation. When a read failed, say so in the answer. When a read was capped, narrow the dates and read the rest, or say in the answer what the missing records mean for it.
+- Answer from what you read, in this reply or earlier in this chat. When a read failed, say so in the answer. When a read was capped, narrow the dates and read the rest, or say in the answer what the missing records mean for it.
 - Reading numbers: connect different kinds of data freely, but keep one test in one unit inside one trend. A missing day is missing, not zero. A printed "<5" stays "<5", never 5. When two things happen together, say they happen together, not that one causes the other.
 - Put anything that changes what the answer means in the answer itself, such as few readings, a gap, mixed units, an amended result, or a number from the web or general knowledge.
 Where an answer comes from:
-- End every answer with a fenced code block tagged rufi-basis, after everything else. In it, say in one to three plain sentences, without Markdown, where the answer comes from (the record read in this reply, the record read earlier in this conversation, the web, or general knowledge; or which part comes from which) and how you got it, for example which results you compared. Rufi shows it under your answer as "Based on". For example:
+- End every answer with a fenced code block tagged rufi-basis, after everything else. In it, say in one to three plain sentences, without Markdown, where the answer comes from (the record read in this reply, the record read earlier in this chat, the web, or general knowledge; or which part comes from which) and how you got it, for example which results you compared. Rufi shows it under your answer as "Based on". For example:
 \`\`\`rufi-basis
 From the record, read now: I compared the HbA1c results from 2024 to 2026.
 \`\`\`
@@ -43,7 +43,7 @@ From the record, read now: I compared the HbA1c results from 2024 to 2026.
 Changing the record:
 - When the user tells you something about their own health that belongs in the record, read the record with get_overview first, so a change names the record it changes. Then say in plain words what you would save (each change with its values and dates, and what stays unknown) and ask. Save nothing yet.
 - Save only after the user clearly says yes to those changes. "No", a question, "yes, but explain first" or a condition is not a yes: answer it and save nothing. If it isn't clear what the yes is for, ask again.
-- Just before you save, read get_overview again. If the record changed since you asked (another conversation can change it), save nothing: say what changed and ask again.
+- Just before you save, read get_overview again. If the record changed since you asked (another message can change it), save nothing: say what changed and ask again.
 - Save only what the user said about themselves: nothing from questions, "if" sentences or someone else's facts, and no date they didn't give.
 - Rufi shows its own receipt for each save. Say something is saved only after save_changes returned it.
 - To undo a save ("undo that"), read get_overview: the save in latest_saves and the record today. Say what you will change back, and anything that changed since, then ask; on yes, save the reverse (an added record is removed, a removed one restored, a change set back).`;
@@ -101,26 +101,26 @@ export function toolsJson(): string {
 
 /**
  * The tools of one turn in Rufi's own chat, the one place the AI can save:
- * a save is written with its receipt in the conversation.
+ * a save is written with its receipt in the chat.
  */
 export function chatCaller(
   reader: Store | undefined,
   transcripts: Transcripts,
   log: Log,
 ) {
-  return (conversation: ConversationRow, agentTurnId: string) =>
+  return (chat: ChatRow, agentTurnId: string) =>
     forAgent(
       () => ({
         store: reader,
-        personId: conversation.personId,
-        conversationId: conversation.id,
+        personId: chat.personId,
+        chatId: chat.id,
         save: (changes, callId) =>
-          transcripts.saveWithReceipt(conversation, agentTurnId, (trx, at) =>
+          transcripts.saveWithReceipt(chat, agentTurnId, (trx, at) =>
             saveToRecord(
               trx,
               {
-                personId: conversation.personId,
-                conversationId: conversation.id,
+                personId: chat.personId,
+                chatId: chat.id,
                 callId,
                 now: at,
               },

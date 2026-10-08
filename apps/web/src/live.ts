@@ -1,11 +1,11 @@
-// One live store per open conversation: the stream's snapshot, then each
-// update applied by id, and the waiting messages read again when they change.
-// Entries are kept by id, so a streaming reply re-renders only itself. The
-// stream closes when nothing shows the conversation; when it drops, it
-// connects again and starts from a new snapshot. It never sends anything.
+// One live store per open chat: the stream's latest page, then each update
+// applied by id, the older pages loaded as the person scrolls up, and the
+// waiting messages read again when they change. Entries are kept by id, so a
+// streaming reply re-renders only itself. The stream closes when nothing
+// shows the chat; when it drops, it connects again and starts from the
+// latest page. It never sends anything.
 import {
-  type Conversation,
-  Conversations,
+  Page,
   StreamLine,
   type WaitingMessage,
   WaitingMessages,
@@ -13,19 +13,27 @@ import {
 import { Schema } from "effect";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { ApiError, read, stream } from "./api.ts";
-import { conversationsKey, queries } from "./reads.ts";
-import { apply, type Transcript } from "./transcript-state.ts";
+import { queries } from "./reads.ts";
+import {
+  addOlder,
+  apply,
+  emptyTranscript,
+  type Transcript,
+} from "./transcript-state.ts";
 
 export interface Live extends Transcript {
-  /** loading: before the first snapshot; missing: no such conversation. */
+  /** loading: before the first snapshot; missing: no such person. */
   status: "loading" | "open" | "missing";
+  /** Loading an older page, or why it couldn't be loaded. */
+  older: "idle" | "loading" | "failed";
   waiting: readonly WaitingMessage[];
   /** Why the waiting messages couldn't be read, in the core's words. */
   waitingError: string | null;
 }
 
-export const conversationPath = (personId: string, conversationId: string) =>
-  `/api/people/${encodeURIComponent(personId)}/conversations/${encodeURIComponent(conversationId)}`;
+/** The person's chat in the local API. */
+export const chatPath = (personId: string) =>
+  `/api/people/${encodeURIComponent(personId)}/chat`;
 
 /** How long a store stays open after the last view leaves (bar to page). */
 const LINGER_MS = 1_000;
@@ -38,21 +46,22 @@ interface Opened {
   /** Starts the stream, once. */
   start: () => void;
   close: () => void;
+  loadOlder: () => Promise<void>;
   linger?: ReturnType<typeof setTimeout>;
 }
 const opened = new Map<string, Opened>();
 
 /**
- * The live store of a conversation. A view that shows it holds its stream
- * open from an effect: `useEffect(() => retain(personId, id), [personId, id])`.
+ * The live store of a person's chat. A view that shows it holds its stream
+ * open from an effect: `useEffect(() => retain(personId), [personId])`.
  */
-export function liveStore(personId: string, conversationId: string) {
-  return open(personId, conversationId).store;
+export function liveStore(personId: string) {
+  return open(personId).store;
 }
 
-/** Holds the conversation's stream open; the returned function lets it go. */
-export function retain(personId: string, conversationId: string): () => void {
-  const entry = open(personId, conversationId);
+/** Holds the chat's stream open; the returned function lets it go. */
+export function retain(personId: string): () => void {
+  const entry = open(personId);
   entry.views += 1;
   clearTimeout(entry.linger);
   entry.start();
@@ -62,28 +71,26 @@ export function retain(personId: string, conversationId: string): () => void {
     entry.linger = setTimeout(() => {
       if (entry.views > 0) return;
       entry.close();
-      opened.delete(key(personId, conversationId));
+      opened.delete(personId);
     }, LINGER_MS);
   };
 }
 
-const key = (personId: string, conversationId: string) =>
-  `${personId}/${conversationId}`;
+/** Loads the page before what the chat shows, unless one is on its way. */
+export const loadOlder = (personId: string) => open(personId).loadOlder();
 
-function open(personId: string, conversationId: string): Opened {
-  const found = opened.get(key(personId, conversationId));
+function open(personId: string): Opened {
+  const found = opened.get(personId);
   if (found) return found;
   const store = createStore<Live>(() => ({
+    ...emptyTranscript,
     status: "loading",
-    conversation: null,
-    entries: {},
-    order: [],
-    turns: {},
+    older: "idle",
     waiting: [],
     waitingError: null,
   }));
   const stop = new AbortController();
-  const path = conversationPath(personId, conversationId);
+  const path = chatPath(personId);
 
   // Each change starts a read; only the last one started is shown, so an
   // older answer that comes late never replaces a newer one.
@@ -111,16 +118,33 @@ function open(personId: string, conversationId: string): Opened {
       void readWaiting();
       return;
     }
-    const before = store.getState();
-    const next = apply(before, line);
-    store.setState({ ...next, status: "open" });
-    if (line.type === "snapshot") void readWaiting();
-    if (line.type === "update" && line.conversation) {
-      showConversation(personId, line.conversation);
-    }
+    const next = apply(store.getState(), line);
+    if (line.type === "snapshot") {
+      // A reconnect: the latest page only; an older page on its way is dropped.
+      store.setState({ ...next, status: "open", older: "idle" });
+      void readWaiting();
+    } else store.setState({ ...next, status: "open" });
     // A reply that ended for the sign-in: the sidebar says so.
     if (line.turns.some((turn) => turn.endReason === "sign_in")) {
       void queries.invalidateQueries({ queryKey: ["status"] });
+    }
+  };
+
+  const loadOlder = async () => {
+    const { before, older, window } = store.getState();
+    if (before === null || older === "loading") return;
+    store.setState({ older: "loading" });
+    try {
+      const page = await read(Page, "GET", `${path}?before=${String(before)}`);
+      if (store.getState().window !== window) return;
+      store.setState({
+        ...addOlder(store.getState(), page, window),
+        older: "idle",
+      });
+    } catch {
+      if (store.getState().window === window) {
+        store.setState({ older: "failed" });
+      }
     }
   };
 
@@ -155,28 +179,10 @@ function open(personId: string, conversationId: string): Opened {
     close: () => {
       stop.abort();
     },
+    loadOlder,
   };
-  opened.set(key(personId, conversationId), entry);
+  opened.set(personId, entry);
   return entry;
-}
-
-/** A conversation's new title or model, in the sidebar and the page title. */
-function showConversation(personId: string, conversation: Conversation) {
-  // An older read of the list, still on its way, must not undo this.
-  void queries
-    .cancelQueries({ queryKey: conversationsKey(personId) })
-    .then(() => {
-      queries.setQueryData<typeof Conversations.Type>(
-        conversationsKey(personId),
-        (list) =>
-          list && {
-            ...list,
-            conversations: list.conversations.map((c) =>
-              c.id === conversation.id ? conversation : c,
-            ),
-          },
-      );
-    });
 }
 
 /** A failure in words for the person: the core's own, or a plain one. */

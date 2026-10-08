@@ -66,8 +66,8 @@
       ]
     },
     {
-      "name": "rufi.read_conversation",
-      "description": "Earlier parts of this conversation, newest first. Each entry's kind is \"message\" (the user's), \"steer\" (the user's, sent while you were replying), \"reply\" (yours), \"activity\" (one thing you did: a title and one short detail, never its output) or \"receipt\" (Rufi's line for a save to the record: what was saved). \"at\" is when it was written. At most 50 entries a page; pass the page's next_before to read further back. Rufi chooses the conversation, not you.",
+      "name": "rufi.read_chat",
+      "description": "Earlier parts of this chat, newest first. Each entry's kind is \"message\" (the user's), \"steer\" (the user's, sent while you were replying), \"reply\" (yours), \"activity\" (one thing you did: a title and one short detail, never its output) or \"receipt\" (Rufi's line for a save to the record: what was saved). \"at\" is when it was written. At most 50 entries a page; pass the page's next_before to read further back. Rufi chooses the chat, not you.",
       "callers": "model",
       "readOnly": true,
       "destructive": false,
@@ -98,7 +98,7 @@
     },
     {
       "name": "rufi.save_changes",
-      "description": "Saves changes to the active person's record, all or nothing, after the user clearly said yes to exactly these changes in this conversation. Each change is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history) or restore a removed one; ids come from get_overview. Give only what the user said: a field they didn't give stays out, and a date needs their own words from the source message. source is the user's own words the change rests on, copied from their message. At most 20 changes. Rufi refuses a save with any problem and says each one; nothing is saved then. On success Rufi adds its own receipt to the conversation and returns it; the same call again returns the same receipt. Never say something was saved without this tool's answer.",
+      "description": "Saves changes to the active person's record, all or nothing, after the user clearly said yes to exactly these changes in this chat. Each change is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history) or restore a removed one; ids come from get_overview. Give only what the user said: a field they didn't give stays out, and a date needs their own words from the source message. source is the user's own words the change rests on, copied from their message. At most 20 changes. Rufi refuses a save with any problem and says each one; nothing is saved then. On success Rufi adds its own receipt to the chat and returns it; the same call again returns the same receipt. Never say something was saved without this tool's answer.",
       "callers": "model",
       "readOnly": false,
       "destructive": false,
@@ -138,7 +138,7 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 1000,
-                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one)."
+                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one)."
                     },
                     "fields": {
                       "type": "object",
@@ -267,7 +267,7 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 1000,
-                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one)."
+                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one)."
                     },
                     "fields": {
                       "type": "object",
@@ -386,7 +386,7 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 1000,
-                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one)."
+                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one)."
                     },
                     "fields": {
                       "type": "object",
@@ -503,7 +503,7 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 1000,
-                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one)."
+                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one)."
                     },
                     "fields": {
                       "type": "object",
@@ -598,7 +598,7 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 1000,
-                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one)."
+                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one)."
                     },
                     "fields": {
                       "type": "object",
@@ -683,7 +683,7 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 1000,
-                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one)."
+                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one)."
                     },
                     "fields": {
                       "type": "object",
@@ -831,7 +831,7 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 1000,
-                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one)."
+                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one)."
                     },
                     "fields": {
                       "type": "object",
@@ -927,7 +927,7 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 1000,
-                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one)."
+                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one)."
                     },
                     "fields": {
                       "type": "object",
@@ -983,7 +983,7 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 1000,
-                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this conversation (a sentence or part of one)."
+                      "description": "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one)."
                     },
                     "fields": {
                       "type": "object",
@@ -1094,7 +1094,7 @@
             "properties": {
               "date": {
                 "type": "string",
-                "description": "YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM in the user's local time, at the precision they gave: 'since 2019' is 2019. Count relative words from when the user sent the message (read_conversation shows it), not from now."
+                "description": "YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM in the user's local time, at the precision they gave: 'since 2019' is 2019. Count relative words from when the user sent the message (read_chat shows it), not from now."
               },
               "words": {
                 "type": "string",

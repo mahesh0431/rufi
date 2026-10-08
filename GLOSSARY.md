@@ -41,7 +41,7 @@ A result the lab issued again, replacing an earlier version; its value or any ot
 _Avoid_: corrected, updated, overwritten
 
 **Source**:
-Where something came from, such as a document, a message in a conversation, a record item or a research entry. A change saved from the chat rests on the user's own message in that conversation, and a date said in words ("last Monday") counts from when that message was sent.
+Where something came from, such as a document, a message in the chat, a record item or a research entry. A change saved from the chat rests on the user's own message in the chat, and a date said in words ("last Monday") counts from when that message was sent.
 _Avoid_: origin, provenance
 
 ## Changes
@@ -51,7 +51,7 @@ One change to the record that the user agreed to in the chat: the AI's call to s
 _Avoid_: change set, batch, transaction, commit
 
 **Receipt**:
-What Rufi adds to the conversation for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words.
+What Rufi adds to the chat for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words.
 _Avoid_: toast, success message, confirmation
 
 **Undo**:
@@ -62,36 +62,37 @@ _Avoid_: revert, rollback
 The list of what is waiting for the user for one person, such as documents to review.
 _Avoid_: inbox, notifications, tasks
 
-## Conversations
-
-**Conversation**:
-An exchange between the user and Rufi's AI about one person, kept by Rufi. **New conversation** creates it at once; its name is the first words of its first message the AI took, "New conversation" until then.
-_Avoid_: thread, session
+## The chat
 
 **Chat**:
-Where the user talks with Rufi's AI: one conversation, shown in three sizes (the chat bar, the chat panel and the chat page) with the same box.
+Each person's one conversation with Rufi's AI, kept by Rufi and made with the person. It shows in three sizes (the chat bar, the chat panel and the chat page) with the same box. To talk about something new, the user just says so.
+_Avoid_: conversation, thread, session
 
 **Chat bar**:
-The box at the bottom right of every page. It shows the conversation the user chose last for the person in this tab; with none yet, using it starts one.
+The box at the bottom right of the Overview, a pill with the model and effort and Send: the person's chat, the same in every browser tab. While a reply runs, it says "Rufi is answering" with Stop. Other pages reach the chat with **Chat with Rufi** in the sidebar.
 _Avoid_: composer, input
 
 **Chat panel**:
-The chat opened over the page from the chat bar (or with ⌘J), always the same size. Esc closes it.
+The chat opened over the page from the chat bar (or with ⌘J), always the same size, with a thin top bar: – back to the bar, and the arrows to the chat page. –, Esc or a click outside it closes it back to the bar; what was typed stays as the draft.
 _Avoid_: drawer, popup, sidebar
 
 **Chat page**:
-A conversation at its own address, listed under Conversations in the sidebar. A small window opens the chat as a page.
+The chat at its own address, opened with **Chat with Rufi** in the sidebar. A small window opens the chat as a page.
 
 **Transcript**:
-Rufi's own stored copy of a conversation: your messages, the AI's replies and its reasoning, a receipt for each save, and one activity line for each thing the AI did, with everything that activity sent and got back. Each part is saved before it is shown; the reasoning and what each activity sent and got back aren't shown yet.
+Rufi's own stored copy of the chat: your messages, the AI's replies and its reasoning, a receipt for each save, and one activity line for each thing the AI did, with everything that activity sent and got back. Each part is saved before it is shown; the reasoning and what each activity sent and got back aren't shown yet. The chat shows its latest page first, and older pages as the user scrolls up, with a line between days and a quiet line where the AI **started afresh**; Rufi works out both lines from the transcript when it shows it.
 _Avoid_: log, history
+
+**Started afresh**:
+Where the AI began a new memory of the chat (after a new model, new tools or a lost thread, with the chat's last 10 messages) or compacted its own memory of a long chat. The chat shows a quiet line there: "The AI started afresh here. It can still read earlier messages."
+_Avoid_: reset, new session, new conversation
 
 **Activity**:
 One line in a transcript for something the AI did: read the record with a tool, ran a command, searched the web, changed a file, worked with a sub-agent, or did something Rufi can't display yet. The line shows a short title and one short detail (the search words, the command); Rufi also keeps everything the activity sent and got back, such as the records a read got back or a command's output.
 _Avoid_: trace, steps, log
 
 **Basis**:
-What an answer rests on, shown as **Based on** under the answer once the reply has ended. **How** is the AI's own words on where the answer comes from (your record, read in this reply or earlier in the conversation, the web, or general knowledge) and how it got there; **Used** is what Rufi saw the AI read in that reply, built by Rufi. Small talk has none.
+What an answer rests on, shown as **Based on** under the answer once the reply has ended. **How** is the AI's own words on where the answer comes from (your record, read in this reply or earlier in the chat, the web, or general knowledge) and how it got there; **Used** is what Rufi saw the AI read in that reply, built by Rufi. Small talk has none.
 _Avoid_: reason, rationale, citation; "reasoning" is the AI's thinking, and a **source** is what a record rests on
 
 **Steer**:
@@ -111,15 +112,19 @@ A reply that didn't finish because you stopped it or Rufi closed. What it wrote 
 _Avoid_: cancelled, aborted
 
 **Draft**:
-A message you started and haven't sent, one for each conversation, saved while you type ("Saved" under the box). While a send holds it, nobody can change it. Rufi never sends a draft by itself.
+The message you started in the chat and haven't sent, saved quietly while you type; only a save that failed shows under the box ("Not saved"). While a send holds it, nobody can change it. Rufi never sends a draft by itself.
 _Avoid_: note, unsent
 
 **Model**:
-The version of the AI that answers, such as GPT-6-Astra, chosen for each conversation from the allowlist. A new model starts the AI afresh with the conversation's last 10 messages; it can read further back.
+The version of the AI that answers, such as GPT-6-Astra, chosen for the chat from the allowlist, with its **effort**, in the box. A new model starts the AI afresh with the chat's last 10 messages; it can read further back.
 _Avoid_: engine, brain
 
+**Effort**:
+How hard the AI thinks before it answers: Low, Medium or High, chosen for the chat with the model. Medium until the user chooses another. A new effort applies from the next reply; the AI doesn't start afresh.
+_Avoid_: reasoning level, thinking mode
+
 **Allowlist**:
-The models Rufi may use: `models.json` in the data folder. A new conversation uses the first one. It starts with the strongest models, GPT-6-Astra first, and you can edit it.
+The models Rufi may use: `models.json` in the data folder. The chat uses the first one until the user chooses another. It starts with the strongest models, GPT-6-Astra first, and you can edit it.
 _Avoid_: whitelist
 
 ## Coming back to things
@@ -181,7 +186,7 @@ Rufi's diagnostic file, `logs/rufi.log` in the data folder: fixed events with ch
 _Avoid_: history, transcript
 
 **First run**:
-The short steps a new data folder starts with: what Rufi is and isn't, what goes to the AI, your name, sign in with ChatGPT (or skip), and your emergency region (or skip). Rufi keeps each step done.
+The short steps a new data folder starts with: what Rufi is and isn't, what goes to the AI, your name, sign in with ChatGPT (or skip), and your emergency region (or skip). Rufi keeps each step done. Until it is done, the first run fills the window, and nothing else in Rufi can be reached.
 _Avoid_: onboarding, setup wizard
 
 ## Keeping your data safe
@@ -195,7 +200,7 @@ Putting a backup into a new, empty folder, with `pnpm rufi restore`. It never ch
 _Avoid_: recover, roll back
 
 **Export**:
-One zip with everything in the record, the conversations and Rufi's settings, as JSON and CSV with a README, so your data is never locked in Rufi. Not a backup: Rufi can't restore from it.
+One zip with everything in the record, the chat and Rufi's settings, as JSON and CSV with a README, so your data is never locked in Rufi. Not a backup: Rufi can't restore from it.
 _Avoid_: download, dump
 
 ## Relationships
@@ -203,6 +208,6 @@ _Avoid_: download, dump
 - **You** keep the **records** of one or more **people**.
 - A **document** can hold **reports**; a **report** has **results**. A **result** can also be typed in without a report.
 - A **save** changes one **person**'s **records**, rests on their messages as its **sources**, and gives one **receipt**; an **undo** is a new save.
-- A **conversation** is about one **person** and can produce **saves**, **follow-ups** and **research entries**.
-- A **conversation** has one **transcript**, one **draft**, a **model** and its **waiting messages**; a **steer** and each **activity** belong to one reply.
+- A **person** has one **chat**, made with them; it can produce **saves**, **follow-ups** and **research entries**.
+- The **chat** has one **transcript**, one **draft**, a **model** and its **waiting messages**; a **steer** and each **activity** belong to one reply.
 - An answer's **basis** belongs to its reply: How from the AI's words, Used from that reply's own **activity**.

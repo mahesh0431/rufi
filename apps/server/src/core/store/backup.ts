@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { backup, DatabaseSync } from "node:sqlite";
 import { Schema } from "effect";
 import { errorCode, type Log } from "../../platform/logs.ts";
-import { databasePath, openReadOnly } from "./database.ts";
+import { databasePath, OlderRufi, openReadOnly } from "./database.ts";
 
 export const backupsPath = (home: string) => join(home, "backups");
 
@@ -75,9 +75,12 @@ export function checkDatabase(path: string): void {
   try {
     store = openReadOnly(path);
   } catch (error) {
-    throw new CheckFailed("The copy of the record can't be opened.", {
-      cause: error,
-    });
+    throw new CheckFailed(
+      error instanceof OlderRufi
+        ? "The backup is from an older Rufi, which this one can't use."
+        : "The copy of the record can't be opened.",
+      { cause: error },
+    );
   }
   if (!store) throw new CheckFailed("The copy of the record isn't there.");
   try {

@@ -36,6 +36,7 @@ import type { ThreadBackgroundTerminalsListResponse } from "./protocol/v2/Thread
 import type { ThreadQueueListResponse } from "./protocol/v2/ThreadQueueListResponse.ts";
 import type { ThreadReadResponse } from "./protocol/v2/ThreadReadResponse.ts";
 import type { ThreadResumeResponse } from "./protocol/v2/ThreadResumeResponse.ts";
+import type { ThreadSettingsUpdateParams } from "./protocol/v2/ThreadSettingsUpdateParams.ts";
 import type { ThreadStartResponse } from "./protocol/v2/ThreadStartResponse.ts";
 import type { ThreadTurnsListResponse } from "./protocol/v2/ThreadTurnsListResponse.ts";
 import type { TurnCompletedNotification } from "./protocol/v2/TurnCompletedNotification.ts";
@@ -111,6 +112,8 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   const paused = new Map<string, boolean>();
   /** Threads where a Stop came during a resume: a reply it starts is stopped. */
   const stopNext = new Set<string>();
+  /** The effort Rufi set on each thread in the current app-server. */
+  const efforts = new Map<string, string>();
   let limits: RateLimitSnapshot | undefined;
   let tracking: NodeJS.Timeout | undefined;
 
@@ -160,6 +163,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         if (!server || server.running()) return;
         server = undefined;
         loaded.clear();
+        efforts.clear();
         endAll({
           status: "failed",
           reason: "provider_failed",
@@ -179,6 +183,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     const old = server;
     server = undefined;
     loaded.clear();
+    efforts.clear();
     await old?.stop();
     endAll({
       status: "failed",
@@ -218,6 +223,12 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     approvalPolicy: "never",
     sandbox: "danger-full-access",
     developerInstructions: settings.instructions,
+    // Resumed with a model, Codex takes the effort from its config again,
+    // not the thread's own: it is given here, before the resume runs
+    // anything that waits.
+    ...(settings.effort !== undefined && {
+      config: { model_reasoning_effort: settings.effort },
+    }),
   });
 
   function check(
@@ -227,6 +238,12 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     const problems: string[] = [];
     if (response.model !== settings.model) {
       problems.push(`the model is ${response.model}`);
+    }
+    if (
+      settings.effort !== undefined &&
+      response.reasoningEffort !== settings.effort
+    ) {
+      problems.push(`the effort is ${String(response.reasoningEffort)}`);
     }
     if (response.approvalPolicy !== "never") {
       problems.push("it asks for approvals");
@@ -534,6 +551,9 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     signal: AbortSignal | undefined,
     run: () => Promise<T>,
   ): Promise<T> {
+    // Stopped already (while the effort was set, say): nothing leaves.
+    // A listener added now would never hear that Stop.
+    if (signal?.aborted) throw new Stopped();
     const onStop = () => {
       const reply = turns.get(threadId);
       if (reply) void stopTurn(reply);
@@ -634,7 +654,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   async function open(threadId: string): Promise<AppServer> {
     const app = await ready();
     if (!loaded.has(threadId)) {
-      throw new Error("Open the conversation's thread first.");
+      throw new Error("Open the chat's thread first.");
     }
     return app;
   }
@@ -673,6 +693,9 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       loaded.add(response.thread.id);
       paused.set(response.thread.id, false);
       check(response, settings);
+      if (settings.effort !== undefined) {
+        efforts.set(response.thread.id, settings.effort);
+      }
       return { threadId: response.thread.id, model: response.model };
     },
 
@@ -680,6 +703,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       const app = await ready(signal);
       stopNext.delete(threadId);
       paused.delete(threadId);
+      efforts.delete(threadId);
       // Codex may start what waits as it resumes: the person asked for that.
       const response = await mayStart(threadId, signal, async () => {
         const resumed = await request<ThreadResumeResponse>(
@@ -693,6 +717,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       const running =
         response.thread.status.type === "active" || turns.has(threadId);
       check(response, settings);
+      if (settings.effort !== undefined) efforts.set(threadId, settings.effort);
       return { model: response.model, running };
     },
 
@@ -708,6 +733,18 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         ...(message.context === undefined ? [] : [textInput(message.context)]),
         textInput(message.text),
       ];
+      // A queued message has no effort of its own: the thread's, for the
+      // turns after, is set first.
+      if (
+        message.effort !== undefined &&
+        efforts.get(threadId) !== message.effort
+      ) {
+        await request(app, "thread/settings/update", {
+          threadId,
+          effort: message.effort,
+        } satisfies ThreadSettingsUpdateParams);
+        efforts.set(threadId, message.effort);
+      }
       await mayStart(threadId, signal, async () => {
         await request(app, "thread/queue/add", {
           threadId,

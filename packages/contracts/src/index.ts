@@ -30,11 +30,13 @@ export const ActivityKind = Schema.Literals([
   "web_search",
   "file_change",
   "sub_agent",
+  /** The AI compacted its memory of the chat (shown only once done). */
+  "compaction",
   "other",
 ]);
 export type ActivityKind = typeof ActivityKind.Type;
 
-/** One item of a conversation's transcript, in order by `seq`. */
+/** One item of a chat's transcript, in order by `seq`. */
 export const Entry = Schema.Struct({
   id: Schema.String,
   seq: Schema.Int,
@@ -103,6 +105,11 @@ export const Turn = Schema.Struct({
   startedAt: Schema.String,
   endedAt: Schema.NullOr(Schema.String),
   /**
+   * The AI started afresh for this reply: it ran on another agent thread
+   * than the reply before it (a model or tool change, a lost thread).
+   */
+  afresh: Schema.Boolean,
+  /**
    * How, from the reply's last rufi-basis block: where the answer comes
    * from, in the AI's words. Only once the reply completed.
    */
@@ -112,16 +119,37 @@ export const Turn = Schema.Struct({
 });
 export type Turn = typeof Turn.Type;
 
-export const Conversation = Schema.Struct({
-  id: Schema.String,
-  /** The first words of the first message Rufi took; null until then. */
-  title: Schema.NullOr(Schema.String),
-  provider: Schema.String,
+/** How hard the AI thinks for a reply: low is faster, high thinks longer. */
+export const Effort = Schema.Literals(["low", "medium", "high"]);
+export type Effort = typeof Effort.Type;
+
+/** A chat's effort until one is chosen for it. */
+export const DEFAULT_EFFORT: Effort = "medium";
+
+/** A person's one chat with Rufi's AI. */
+export const Chat = Schema.Struct({
   /** The model chosen for it; null: the first allowed one, when the first message goes. */
   model: Schema.NullOr(Schema.String),
-  createdAt: Schema.String,
+  /** The effort chosen for it, or the default. */
+  effort: Effort,
 });
-export type Conversation = typeof Conversation.Type;
+export type Chat = typeof Chat.Type;
+
+/**
+ * A page of the chat's transcript, in order, with each of its turns whole:
+ * the latest one when the chat opens, then older ones as the person scrolls
+ * up. `revision` is the chat's when it was read.
+ */
+const PageFields = {
+  revision: Schema.Int,
+  chat: Chat,
+  entries: Schema.Array(Entry),
+  turns: Schema.Array(Turn),
+  /** The next older page holds the entries before this seq; null: none. */
+  before: Schema.NullOr(Schema.Int),
+};
+export const Page = Schema.Struct(PageFields);
+export type Page = typeof Page.Type;
 
 /** A message the AI holds until the running reply has ended. */
 export const WaitingMessage = Schema.Struct({
@@ -132,25 +160,19 @@ export const WaitingMessage = Schema.Struct({
 export type WaitingMessage = typeof WaitingMessage.Type;
 
 /**
- * One line of a conversation's live stream (NDJSON). It starts with a
- * snapshot; each update replaces entries and turns by id. A screen that falls
- * behind, or reconnects, gets a new snapshot.
+ * One line of the chat's live stream (NDJSON). It starts with the latest
+ * page; each update replaces entries and turns by id. A screen that falls
+ * behind, or reconnects, gets a new latest page.
  */
 export const StreamLine = Schema.Union([
-  Schema.Struct({
-    type: Schema.Literal("snapshot"),
-    revision: Schema.Int,
-    conversation: Conversation,
-    entries: Schema.Array(Entry),
-    turns: Schema.Array(Turn),
-  }),
+  Schema.Struct({ type: Schema.Literal("snapshot"), ...PageFields }),
   Schema.Struct({
     type: Schema.Literal("update"),
     revision: Schema.Int,
     entries: Schema.Array(Entry),
     turns: Schema.Array(Turn),
-    /** The conversation, when its title or model changed. */
-    conversation: Schema.optionalKey(Conversation),
+    /** The chat, when its model changed. */
+    chat: Schema.optionalKey(Chat),
   }),
   /** The waiting messages changed; read them again. */
   Schema.Struct({ type: Schema.Literal("waiting") }),
@@ -159,19 +181,12 @@ export const StreamLine = Schema.Union([
 ]);
 export type StreamLine = typeof StreamLine.Type;
 
-/** A person's conversations, newest first, and the one the chat continues. */
-export const Conversations = Schema.Struct({
-  conversations: Schema.Array(Conversation),
-  /** The conversation to open the chat on: the last choice a tab saved. */
-  chosen: Schema.NullOr(Schema.String),
-});
-
 export const WaitingMessages = Schema.Struct({
   messages: Schema.Array(WaitingMessage),
 });
 
 /**
- * The unsent text of a conversation's box. Its revision grows with every
+ * The unsent text of a chat's box. Its revision grows with every
  * change, so a save based on an older revision is refused. `sending`: a
  * send holds it until the agent took or refused the message, and it can't
  * be changed meanwhile; `unknown`: Rufi stopped during that send, so the
@@ -309,10 +324,6 @@ export const SaveSettings = Schema.Struct({
   emergencyRegion: Schema.NullOr(Line(10)),
 });
 
-export const CreateConversation = Schema.Struct({
-  title: Schema.optionalKey(Line(200)),
-});
-
 const Message = Schema.String.check(
   Schema.isTrimmed(),
   Schema.isMinLength(1),
@@ -336,9 +347,6 @@ export const SaveDraft = Schema.Struct({
   revision: Schema.Int,
 });
 
-/** The conversation Rufi opens the chat on next time. */
-export const ChooseConversation = Schema.Struct({ conversationId: Id });
-
 export const ReorderWaiting = Schema.Struct({ ids: Schema.Array(Id) });
 
 /**
@@ -350,3 +358,5 @@ export const FinishStep = Schema.Struct({
 });
 
 export const SelectModel = Schema.Struct({ model: Id });
+
+export const SelectEffort = Schema.Struct({ effort: Effort });

@@ -44,7 +44,7 @@ export function helpLink(
   return name in HELP ? { kind: "page", page: name, anchor } : undefined;
 }
 
-/** A heading's anchor, as the help pages link to it: "Your conversations" → "your-conversations". */
+/** A heading's anchor, as the help pages link to it: "Your chat" → "your-chat". */
 export function slug(text: string): string {
   return text
     .toLowerCase()

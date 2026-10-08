@@ -66,6 +66,8 @@ export interface Scenario {
   };
   /** The summary parts of a reasoning item the turn has before its answer. */
   reasoning?: string[];
+  /** Codex compacts the thread's context during the turn, before answering. */
+  compaction?: boolean;
   /** Tool calls the model makes during a turn, before answering. */
   calls?: { namespace: string | null; tool: string; arguments: unknown }[];
   /** A usage-limit snapshot sent before a failed turn. */
@@ -110,6 +112,8 @@ interface Queued {
 interface Thread {
   id: string;
   model: string;
+  /** The effort its next turns run with; none: the config's. */
+  effort?: string;
   queue: Queued[];
   paused: boolean;
   running:
@@ -209,7 +213,14 @@ function dispatch(thread: Thread, entry?: Queued) {
     [...threads.values()].reduce((n, t) => n + t.history.length, 0) + 1,
   )}`;
   thread.running = { turnId, steers: [], interrupted: false };
-  thread.history.push({ id: turnId, status: "inProgress", messages: [next] });
+  record({ turn: turnId, effort: thread.effort ?? null });
+  // Like Codex: the message is in its record once it is recorded, a moment
+  // after the turn starts (`userMessageMs`); ended before, it is lost.
+  thread.history.push({
+    id: turnId,
+    status: "inProgress",
+    messages: scenario.userMessageMs ? [] : [next],
+  });
   changed(thread);
   setImmediate(() => void runTurn(thread, turnId, next));
   return turnObject(turnId, "inProgress");
@@ -218,10 +229,14 @@ function dispatch(thread: Thread, entry?: Queued) {
 function complete(thread: Thread, turnId: string, status: string) {
   const turn = thread.history.find((t) => t.id === turnId);
   if (turn) turn.status = status;
-  persist();
-  if (thread.running?.turnId !== turnId) return;
+  if (thread.running?.turnId !== turnId) {
+    persist();
+    return;
+  }
   thread.running = undefined;
+  // Like Codex: a Stop pauses the queue, also across a restart.
   if (status === "interrupted") thread.paused = true;
+  persist();
   send({
     method: "turn/completed",
     params: { threadId: thread.id, turn: turnObject(turnId, status) },
@@ -260,12 +275,10 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   if (scenario.userMessageMs) {
     await sleep(scenario.userMessageMs);
     // Like Codex: interrupted before it recorded the message, it drops it.
-    if (thread.running?.turnId !== turnId) {
-      const turn = thread.history.find((t) => t.id === turnId);
-      if (turn) turn.messages = [];
-      persist();
-      return;
-    }
+    if (thread.running?.turnId !== turnId) return;
+    const turn = thread.history.find((t) => t.id === turnId);
+    if (turn) turn.messages = [entry];
+    persist();
   }
   event("item/started", { item: userItem(entry) });
   const calls = text.includes("quiet") ? [] : (scenario.calls ?? []);
@@ -314,6 +327,13 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
         content: [],
       },
     });
+  }
+  if (scenario.compaction) {
+    // As Codex 0.159.3 does: the item starts, and completes once the
+    // thread's history is replaced.
+    const item = { id: "item-compact", type: "contextCompaction" };
+    event("item/started", { item });
+    event("item/completed", { item });
   }
   if (text.includes("hang")) return;
   if (text.includes("partial")) {
@@ -464,6 +484,13 @@ function featureList() {
   }));
 }
 
+/** The effort a thread/start or thread/resume asks for in its config. */
+function configEffort(params: Record<string, unknown>): string | undefined {
+  const config = params["config"] as Record<string, unknown> | undefined;
+  const effort = config?.["model_reasoning_effort"];
+  return typeof effort === "string" ? effort : undefined;
+}
+
 function threadResponse(thread: Thread) {
   return {
     thread: {
@@ -474,6 +501,7 @@ function threadResponse(thread: Thread) {
       model: thread.model,
     },
     model: thread.model,
+    reasoningEffort: thread.effort ?? "medium",
     approvalPolicy: "never",
     sandbox: { type: "dangerFullAccess" },
   };
@@ -532,6 +560,7 @@ function handle(method: string, params: Record<string, unknown>): unknown {
         // Unique across fakes, as Codex's ids are.
         id: `thread-${String(process.pid)}-${String(++threadCount)}`,
         model: scenario.model ?? String(params["model"]),
+        effort: configEffort(params),
         queue: [],
         paused: false,
         running: undefined,
@@ -544,12 +573,21 @@ function handle(method: string, params: Record<string, unknown>): unknown {
     case "thread/resume": {
       const thread = threadOf(params);
       thread.model = scenario.model ?? String(params["model"]);
+      // Like Codex: resumed with a model, the effort is the config's again.
+      thread.effort = configEffort(params);
       // Like Codex: a resumed thread starts what waits, unless paused.
       if (!thread.paused) setImmediate(() => dispatch(thread));
       return threadResponse(thread);
     }
     case "thread/read":
       return threadResponse(threadOf(params));
+    case "thread/settings/update": {
+      const thread = threadOf(params);
+      if (typeof params["effort"] === "string")
+        thread.effort = params["effort"];
+      persist();
+      return {};
+    }
     case "thread/queue/add": {
       const thread = threadOf(params);
       if (thread.queue.length >= 100) throw new Error("queue is full");

@@ -5,14 +5,14 @@ import {
   createRoute,
   createRouter,
   Link,
+  redirect,
   useLocation,
 } from "@tanstack/react-router";
-import { ConversationPage } from "./chat.tsx";
-import { FirstRun } from "./first-run.tsx";
+import { ChatPage } from "./chat.tsx";
 import { Frame } from "./frame.tsx";
 import { HelpPage } from "./help-page.tsx";
 import { OverviewPage } from "./overview.tsx";
-import { useFirstRun, usePeople } from "./reads.ts";
+import { usePeople } from "./reads.ts";
 import { SettingsPage } from "./settings.tsx";
 import { SignIn } from "./signin.tsx";
 import { Problem } from "./ui.tsx";
@@ -22,38 +22,26 @@ const root = createRootRoute({ component: Frame });
 const home = createRoute({
   getParentRoute: () => root,
   path: "/",
+  // First run, until it is done, is the frame's.
   component: function Home() {
     const people = usePeople();
-    const firstRun = useFirstRun();
-    const failed = people.error ?? firstRun.error;
-    if ((people.data === undefined || firstRun.data === undefined) && failed) {
-      return (
+    if (people.data === undefined) {
+      return people.error ? (
         <div className="px-6 py-8">
-          <Problem
-            error={failed}
-            retry={() => {
-              void people.refetch();
-              void firstRun.refetch();
-            }}
-          />
+          <Problem error={people.error} retry={() => void people.refetch()} />
         </div>
-      );
+      ) : null;
     }
-    if (people.data === undefined || firstRun.data === undefined) return null;
     const person = people.data[0];
-    return person && firstRun.data.step === "done" ? (
-      <OverviewPage person={person} />
-    ) : (
-      <FirstRun />
-    );
+    return person ? <OverviewPage person={person} /> : null;
   },
 });
 
-const conversation = createRoute({
+const chat = createRoute({
   getParentRoute: () => root,
-  path: "/people/$personId/conversations/$conversationId",
-  component: function Conversation() {
-    const { personId, conversationId } = conversation.useParams();
+  path: "/people/$personId/chat",
+  component: function Chat() {
+    const { personId } = chat.useParams();
     const people = usePeople();
     if (people.data === undefined) {
       return people.error ? (
@@ -66,13 +54,21 @@ const conversation = createRoute({
     if (!person) {
       return <div className="px-6 py-8 text-muted">There is no page here.</div>;
     }
-    return (
-      <ConversationPage
-        key={`${personId}/${conversationId}`}
-        person={person}
-        conversationId={conversationId}
-      />
-    );
+    return <ChatPage key={personId} person={person} />;
+  },
+});
+
+// Addresses of the conversations Rufi once had lead to the person's chat.
+const conversation = createRoute({
+  getParentRoute: () => root,
+  path: "/people/$personId/conversations/$conversationId",
+  beforeLoad: ({ params }) => {
+    redirect({
+      to: "/people/$personId/chat",
+      params: { personId: params.personId },
+      replace: true,
+      throw: true,
+    });
   },
 });
 
@@ -118,6 +114,7 @@ const helpPage = createRoute({
 export const router = createRouter({
   routeTree: root.addChildren([
     home,
+    chat,
     conversation,
     settings,
     signIn,

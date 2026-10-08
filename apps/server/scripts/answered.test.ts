@@ -11,6 +11,7 @@ const turn = (id: string, status: Turn["status"]): Turn => ({
   resetsAt: null,
   startedAt: "2026-10-05T00:00:00Z",
   endedAt: status === "running" ? null : "2026-10-05T00:00:05Z",
+  afresh: false,
   how: null,
   used: [],
 });

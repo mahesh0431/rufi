@@ -329,7 +329,7 @@ const startCommand = (open: boolean) =>
 
 /**
  * Asks one question in a new thread and streams the answer; nothing is saved
- * in Rufi's conversations. Ctrl-C stops the reply. Rufi's tools read the
+ * in Rufi's chats. Ctrl-C stops the reply. Rufi's tools read the
  * record for `person`.
  */
 const askCommand = (question: string, person: string | undefined) =>

@@ -89,6 +89,27 @@ describe("restore", () => {
       },
       refusal: "isn't as it was made",
     },
+    {
+      case: "a backup from an older Rufi",
+      prepare: async () => {
+        // A copy as an older Rufi made it: its tables aren't this one's.
+        const file = join(backup, "rufi.sqlite");
+        const older = new DatabaseSync(file);
+        older.exec("CREATE TABLE chosen_conversations (person_id TEXT)");
+        older.close();
+        const record = JSON.parse(
+          await readFile(join(backup, "backup.json"), "utf8"),
+        ) as { database: { bytes: number; sha256: string } };
+        const bytes = await readFile(file);
+        record.database.bytes = bytes.length;
+        record.database.sha256 = createHash("sha256")
+          .update(bytes)
+          .digest("hex");
+        await writeFile(join(backup, "backup.json"), JSON.stringify(record));
+      },
+      refusal:
+        "Rufi didn't restore it. The backup is from an older Rufi, which this one can't use.",
+    },
   ])("refuses $case and changes nothing", async ({ prepare, refusal }) => {
     const target = join(root, "restored");
     const release = await prepare(target);

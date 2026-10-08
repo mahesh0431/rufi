@@ -1270,8 +1270,8 @@ describe("Codex's items and endings in Rufi's words", () => {
       status: "done",
     });
     expect(activityOf({ type: "contextCompaction", id: "c" }, false)).toEqual({
-      activity: "other",
-      title: "Condensed the earlier conversation",
+      activity: "compaction",
+      title: "Compacted its memory of the chat",
       status: "running",
     });
     expect(
