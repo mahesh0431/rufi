@@ -109,17 +109,17 @@ test.describe("first run", () => {
     rufi.account = { account: "signed_out", email: null };
     await rufi.start();
     await page.goto(rufi.link());
-    // Each step is titled Welcome, and the sidebar offers no chat
-    // or Overview until the first run is done.
+    // Each step fills the window: no sidebar, toolbar or chat, and no
+    // link to anything else, until the first run is done.
     const title = page.getByRole("banner").getByRole("heading");
     const welcoming = async () => {
-      await expect(title).toHaveText("Welcome");
+      await expect(page.getByRole("main").getByRole("heading")).toBeVisible();
+      await expect(sidebar(page)).toHaveCount(0);
+      await expect(page.getByRole("banner")).toHaveCount(0);
       await expect(
-        sidebar(page).getByRole("link", { name: "Overview" }),
+        page.getByRole("region", { name: "Chat", exact: true }),
       ).toHaveCount(0);
-      await expect(
-        sidebar(page).getByRole("link", { name: "Chat with Rufi" }),
-      ).toHaveCount(0);
+      await expect(page.getByRole("link")).toHaveCount(0);
     };
     await expect(
       page.getByRole("heading", { name: "Welcome to Rufi" }),
@@ -143,11 +143,16 @@ test.describe("first run", () => {
     await page.getByRole("button", { name: "Continue" }).click();
 
     await expect(
-      page.getByRole("heading", { name: "Sign in with ChatGPT", level: 2 }),
+      page.getByRole("heading", { name: "Sign in with ChatGPT", level: 1 }),
     ).toBeVisible();
     await welcoming();
     await accessible(page);
-    await page.reload();
+    // Another page's address shows the step too.
+    await page.goto(new URL("/settings", page.url()).href);
+    await expect(
+      page.getByRole("heading", { name: "Sign in with ChatGPT", level: 1 }),
+    ).toBeVisible();
+    await welcoming();
     await page.getByRole("button", { name: "Skip for now" }).click();
 
     const region = page.getByRole("combobox", { name: "Emergency region" });
@@ -210,13 +215,15 @@ test.describe("first run", () => {
     expect(rufi.signIns).toHaveLength(1);
     rufi.signIns[0]?.resolve(undefined);
 
-    await expect(
-      page.getByRole("combobox", { name: "Emergency region" }),
-    ).toBeVisible();
+    await page
+      .getByRole("combobox", { name: "Emergency region" })
+      .selectOption("IN");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(sidebar(page)).toContainText("Mira Fictional");
     await expect(sidebar(page)).not.toContainText("Not signed in");
   });
 
-  test("offers the chat and Overview only once first run is known to be done", async ({
+  test("shows nothing of the app until first run is known to be done", async ({
     page,
     rufi,
   }) => {
@@ -228,11 +235,11 @@ test.describe("first run", () => {
       await route.continue();
     });
     await page.goto(rufi.link());
-    await expect(sidebar(page)).toContainText("Asha Fictional");
-    await expect(sidebar(page).getByRole("link")).toHaveText([
-      "Help",
-      "Settings",
-    ]);
+    await expect.poll(() => page.getByRole("link").count()).toBe(0);
+    await expect(sidebar(page)).toHaveCount(0);
+    await expect(
+      page.getByRole("region", { name: "Chat", exact: true }),
+    ).toHaveCount(0);
     answer.resolve(undefined);
     await expect(sidebar(page).getByRole("link")).toHaveText([
       "Chat with Rufi",
@@ -259,18 +266,21 @@ test.describe("first run", () => {
       .getByRole("textbox", { name: "What's your name?" })
       .fill("Mira Fictional");
     await page.getByRole("button", { name: "Continue" }).click();
-    await expect(sidebar(page)).toContainText("Mira Fictional");
+    await expect(
+      page.getByRole("combobox", { name: "Emergency region" }),
+    ).toBeVisible();
     // The other tab still shows the form; its name isn't added.
     await other.getByRole("button", { name: "Continue" }).click();
-    await expect(
-      other.getByRole("combobox", { name: "Emergency region" }),
-    ).toBeVisible();
+    const region = other.getByRole("combobox", { name: "Emergency region" });
+    await region.selectOption("IN");
+    await other.getByRole("button", { name: "Continue" }).click();
     await expect(sidebar(other)).toContainText("Mira Fictional");
   });
 });
 
 test.describe("sign-in status", () => {
   test("signed in: nothing to say", async ({ page, rufi }) => {
+    await rufi.family();
     await rufi.start();
     const status = page.waitForResponse((response) =>
       response.url().endsWith("/api/status"),
@@ -300,6 +310,7 @@ test.describe("sign-in status", () => {
 
   test("signed in, but the plan can't be used", async ({ page, rufi }) => {
     rufi.account = { account: "no_plan_use", email: "asha@example.com" };
+    await rufi.family();
     await rufi.start();
     await page.goto(rufi.link());
     await expect(
@@ -372,20 +383,6 @@ test.describe("Overview", () => {
 });
 
 test.describe("when Rufi is slow or away", () => {
-  test("the frame shows while the link is still being opened", async ({
-    page,
-    rufi,
-  }) => {
-    await rufi.start();
-    // The core never answers the swap.
-    await page.route("**/api/session", () => undefined);
-    await page.goto(rufi.link());
-    await sidebar(page).getByRole("link", { name: "Help" }).click();
-    await expect(
-      page.getByRole("heading", { name: "Rufi help", level: 1 }),
-    ).toBeVisible();
-  });
-
   test("a read that never answers shows Rufi as offline", async ({
     page,
     rufi,
@@ -465,7 +462,8 @@ test("Settings keeps the emergency region the AI uses, and clears it", async ({
   page,
   rufi,
 }) => {
-  await rufi.start(); // before first run, too
+  await rufi.family();
+  await rufi.start();
   await page.goto(rufi.link());
   await sidebar(page).getByRole("link", { name: "Settings" }).click();
   const region = page.getByRole("combobox", { name: "Emergency region" });
@@ -571,6 +569,7 @@ test.describe("Help", () => {
     page,
     rufi,
   }) => {
+    await rufi.family();
     await rufi.start();
     await page.goto(rufi.link());
     await sidebar(page).getByRole("link", { name: "Help" }).click();
@@ -604,6 +603,7 @@ test.describe("Help", () => {
   });
 
   test("web links open outside Rufi", async ({ page, rufi }) => {
+    await rufi.family();
     await rufi.start();
     await page.goto(rufi.link());
     await page.goto(new URL("/help/your-data-and-the-ai", page.url()).href);

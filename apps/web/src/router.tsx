@@ -9,11 +9,10 @@ import {
   useLocation,
 } from "@tanstack/react-router";
 import { ChatPage } from "./chat.tsx";
-import { FirstRun } from "./first-run.tsx";
 import { Frame } from "./frame.tsx";
 import { HelpPage } from "./help-page.tsx";
 import { OverviewPage } from "./overview.tsx";
-import { useFirstRun, usePeople } from "./reads.ts";
+import { usePeople } from "./reads.ts";
 import { SettingsPage } from "./settings.tsx";
 import { SignIn } from "./signin.tsx";
 import { Problem } from "./ui.tsx";
@@ -23,30 +22,18 @@ const root = createRootRoute({ component: Frame });
 const home = createRoute({
   getParentRoute: () => root,
   path: "/",
+  // First run, until it is done, is the frame's.
   component: function Home() {
     const people = usePeople();
-    const firstRun = useFirstRun();
-    const failed = people.error ?? firstRun.error;
-    if ((people.data === undefined || firstRun.data === undefined) && failed) {
-      return (
+    if (people.data === undefined) {
+      return people.error ? (
         <div className="px-6 py-8">
-          <Problem
-            error={failed}
-            retry={() => {
-              void people.refetch();
-              void firstRun.refetch();
-            }}
-          />
+          <Problem error={people.error} retry={() => void people.refetch()} />
         </div>
-      );
+      ) : null;
     }
-    if (people.data === undefined || firstRun.data === undefined) return null;
     const person = people.data[0];
-    return person && firstRun.data.step === "done" ? (
-      <OverviewPage person={person} />
-    ) : (
-      <FirstRun />
-    );
+    return person ? <OverviewPage person={person} /> : null;
   },
 });
 

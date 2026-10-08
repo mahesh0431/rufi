@@ -60,9 +60,9 @@ function Step({ title, children }: { title: string; children: ReactNode }) {
       aria-labelledby="step"
       className="mx-auto mt-24 flex max-w-md flex-col gap-3 px-6"
     >
-      <h2 id="step" className="text-xl font-semibold">
+      <h1 id="step" className="text-xl font-semibold">
         {title}
-      </h2>
+      </h1>
       {children}
     </section>
   );

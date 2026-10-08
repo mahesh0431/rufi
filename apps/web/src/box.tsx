@@ -73,12 +73,15 @@ const draftIn = (error: unknown) => {
   return kept._tag === "Some" ? kept.value.draft : undefined;
 };
 
-/** Whether the box's text is kept, in a word. */
+/**
+ * What the box says under it: a send on its way, or a draft that couldn't be
+ * saved. Saves as you type are silent.
+ */
 function saveState(state: BoxState): string | null {
   if (sending(state)) return "Sending…";
   if (state.failed) return "Not saved";
-  if (state.text !== state.draft.text) return "Saving…";
-  return state.text === "" ? null : "Saved";
+  if (state.preparing) return "Saving…";
+  return null;
 }
 
 const UNKNOWN =

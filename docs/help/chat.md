@@ -4,7 +4,7 @@ The chat is where you talk with Rufi's AI about your record. You have one chat w
 
 ## The chat bar
 
-The chat bar is the box at the bottom right of every page. It says "Ask or tell Rufi about" and your name. It is your chat, the same on every page and in every browser tab.
+The chat bar is the box at the bottom right of the Overview. It says "Ask or tell Rufi about" and your name. It is your chat, the same as the panel and the page, and the same in every browser tab. Help and Settings have no chat bar: to talk to Rufi from there, click **Chat with Rufi** in the sidebar.
 
 Under the box, in every size of the chat, "AI can make mistakes. Check important info." reminds you to check what the AI says.
 
@@ -19,11 +19,11 @@ At the top of the panel:
 - **Open as page** (the arrows) shows the chat as a page.
 - **The model** that answers. When you are signed in, "Using ChatGPT plan" follows it, and **Manage usage** opens your ChatGPT plan's usage page in your browser.
 
-Press ⌘J again to close the panel.
+Press ⌘J again, or click anywhere outside the panel, to close it. What you typed stays in the box.
 
 ## The chat page
 
-Click **Chat with Rufi** in the sidebar to open your chat as a page. The page shows the same chat as the panel, with the same box. In a small window, the chat opens as a page instead of the panel.
+Click **Chat with Rufi** in the sidebar, on any page, to open your chat as a page. The page shows the same chat as the panel, with the same box. In a small window, the chat opens as a page instead of the panel.
 
 Before your first message, the chat says what goes to OpenAI. See [Your data and the AI](your-data-and-the-ai.md).
 
@@ -37,7 +37,7 @@ A line between days says which day the messages under it are from: "Today", "Yes
 
 Type in the box and press Enter, or click the send button. Shift-Enter starts a new line.
 
-When you send, Rufi first saves your text: the box says "Saving…". If you reload or close the page then, the text since the last "Saved" can be lost, and nothing is sent. Then, while Rufi sends your message, the box says "Sending…" and you can't change it. If another tab changed the text just before, nothing is sent and the box shows that tab's text. You can go to another page meanwhile. The box clears when the AI has taken your message. If the AI can't take it, your text stays in the box with the reason.
+When you send, Rufi first saves your text: the box says "Saving…". If you reload or close the page then, what you typed since the last save can be lost, and nothing is sent. Then, while Rufi sends your message, the box says "Sending…" and you can't change it. If another tab changed the text just before, nothing is sent and the box shows that tab's text. You can go to another page meanwhile. The box clears when the AI has taken your message. If the AI can't take it, your text stays in the box with the reason.
 
 If you reload or close the page while the box says "Sending…", nothing is lost: when you come back, the box is empty if the AI took the message, still says "Sending…" until it knows, or shows your text again if the message hadn't left yet. If you stop the reply or Rufi stops during a send, or the AI doesn't answer it, Rufi keeps your text, but it may not know whether the AI got it: the box says so. Check the chat before you send it again. Rufi never sends a message again by itself: send it again when you want to.
 
@@ -145,8 +145,8 @@ Each place where the AI started afresh or compacted its memory shows the quiet l
 
 ## What you typed but didn't send
 
-Rufi saves what you type in the box as the chat's draft, a moment after you stop typing, and at once when you go to another page. Under the box, "Saving…" turns into "Saved". A saved draft stays when you change the size of the chat, go to another page, reload the page or start Rufi again. Rufi never sends a draft by itself.
+Rufi saves what you type in the box as the chat's draft, a moment after you stop typing, and at once when you go to another page. It does this quietly: nothing shows under the box. A saved draft stays when you change the size of the chat, go to another page, reload the page or start Rufi again. Rufi never sends a draft by itself.
 
-Wait for "Saved" before you reload, close the page or stop Rufi: what you typed in the last moment before can be lost. If a save fails, the box says "Not saved" with the reason, and your text stays in this tab, also when you go to another page and back. Click **Retry** to save it again.
+Wait a moment after you stop typing before you reload, close the page or stop Rufi: what you typed in the last moment before can be lost. If a save fails, the box says "Not saved" with the reason, and your text stays in this tab, also when you go to another page and back. Click **Retry** to save it again.
 
 If you type in the chat in two browser tabs, the tab that saves or sends second shows "Changed in another tab" and the newer text, and sends nothing. Go on from there.

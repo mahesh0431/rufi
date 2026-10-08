@@ -1,7 +1,7 @@
 // The chat: the person's one chat with Rufi in three sizes, drawn with the
-// same header, transcript and box. The bar sits bottom right on every page;
-// click it or press ⌘J and the panel opens over the page, always the same
-// size; Esc steps back to the bar. "Open as page" shows the chat at its own
+// same header, transcript and box. The bar sits bottom right on the
+// Overview; click it or press ⌘J and the panel opens over the page, always
+// the same size; Esc or a click outside it steps back to the bar. "Open as page" shows the chat at its own
 // address, Chat with Rufi in the sidebar. A small window opens the page
 // instead of the panel.
 import { Menu } from "@base-ui/react/menu";
@@ -65,13 +65,14 @@ function useLive(personId: string) {
   return liveStore(personId);
 }
 
-/** The bar and the panel, on every page but the chat's own. */
+/** The bar and the panel, on the Overview. */
 export function ChatDock({ person }: { person: Person }) {
   const open = usePanel((state) => state.open);
   const live = useLive(person.id);
   const navigate = useNavigate();
   const field = useRef<HTMLTextAreaElement | null>(null);
   const menus = useRef<HTMLDivElement | null>(null);
+  const dock = useRef<HTMLElement | null>(null);
 
   const openChat = () => {
     if (usePanel.getState().open) return;
@@ -115,9 +116,23 @@ export function ChatDock({ person }: { person: Person }) {
   useEffect(() => {
     if (open) field.current?.focus();
   }, [open]);
+  // A click outside the panel and its menus steps back to the bar; focus
+  // goes where the click put it.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && dock.current?.contains(event.target))
+        return;
+      usePanel.setState({ open: false, focusBefore: null });
+    };
+    addEventListener("pointerdown", onDown);
+    return () => {
+      removeEventListener("pointerdown", onDown);
+    };
+  }, [open]);
 
   return (
-    <section aria-label="Chat">
+    <section ref={dock} aria-label="Chat">
       <Menus value={menus}>
         <div
           onKeyDown={(event) => {

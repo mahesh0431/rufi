@@ -4,10 +4,14 @@
 // fails, new windows, and what the page can't do. Dock, menus, focus and the
 // looks are checked by hand on the Mac.
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { unzipSync } from "fflate";
+import {
+  databasePath,
+  openWritable,
+} from "../../server/src/core/store/database.ts";
 import { holdRufiLock } from "../../server/src/platform/files.ts";
 import {
   alive,
@@ -310,9 +314,15 @@ test.describe("the page", () => {
   });
 
   test("saves the export where the person chooses", async ({ desktop }) => {
+    // Settings is there once the first run is done.
+    await mkdir(desktop.home, { recursive: true });
+    const store = openWritable(databasePath(desktop.home));
+    store.db.exec(
+      "INSERT INTO settings (key, value) VALUES ('first_run.done', '2026-10-01T09:00:00Z')",
+    );
+    store.close();
     const app = await desktop.launch();
     const page = await app.electron.firstWindow();
-    await working(page);
     await page.getByRole("link", { name: "Settings" }).click();
     await page.getByRole("button", { name: "Export my data" }).click();
     await expect(page.getByRole("status")).toContainText("Exported");

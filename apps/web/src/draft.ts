@@ -1,8 +1,8 @@
 // The box's text, kept by the core as the chat's draft. Saves go one
 // after another (one mutation scope per box), a moment after the typing
-// stops, and at once when the box leaves the screen; the box says Saving…,
-// Saved or Not saved (with Retry). Nothing is saved as the page closes, so
-// what was typed since the last Saved can be lost then. A save based on an
+// stops, and at once when the box leaves the screen, silently; the box says
+// only Not saved (with Retry). Nothing is saved as the page closes, so what
+// was typed since the last save can be lost then. A save based on an
 // older revision is refused (another tab saved first) and the box shows the
 // newer text. A save whose answer didn't come may still have been kept: the
 // next save asks the core first, and goes on from it if it was. A send saves

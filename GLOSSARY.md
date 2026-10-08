@@ -69,11 +69,11 @@ Each person's one conversation with Rufi's AI, kept by Rufi and made with the pe
 _Avoid_: conversation, thread, session
 
 **Chat bar**:
-The box at the bottom right of every page: the person's chat, the same in every browser tab.
+The box at the bottom right of the Overview: the person's chat, the same in every browser tab. Other pages reach the chat with **Chat with Rufi** in the sidebar.
 _Avoid_: composer, input
 
 **Chat panel**:
-The chat opened over the page from the chat bar (or with ⌘J), always the same size. Esc closes it.
+The chat opened over the page from the chat bar (or with ⌘J), always the same size. Esc or a click outside it closes it back to the bar; what was typed stays as the draft.
 _Avoid_: drawer, popup, sidebar
 
 **Chat page**:
@@ -112,7 +112,7 @@ A reply that didn't finish because you stopped it or Rufi closed. What it wrote 
 _Avoid_: cancelled, aborted
 
 **Draft**:
-The message you started in the chat and haven't sent, saved while you type ("Saved" under the box). While a send holds it, nobody can change it. Rufi never sends a draft by itself.
+The message you started in the chat and haven't sent, saved quietly while you type; only a save that failed shows under the box ("Not saved"). While a send holds it, nobody can change it. Rufi never sends a draft by itself.
 _Avoid_: note, unsent
 
 **Model**:
@@ -182,7 +182,7 @@ Rufi's diagnostic file, `logs/rufi.log` in the data folder: fixed events with ch
 _Avoid_: history, transcript
 
 **First run**:
-The short steps a new data folder starts with: what Rufi is and isn't, what goes to the AI, your name, sign in with ChatGPT (or skip), and your emergency region (or skip). Rufi keeps each step done.
+The short steps a new data folder starts with: what Rufi is and isn't, what goes to the AI, your name, sign in with ChatGPT (or skip), and your emergency region (or skip). Rufi keeps each step done. Until it is done, the first run fills the window, and nothing else in Rufi can be reached.
 _Avoid_: onboarding, setup wizard
 
 ## Keeping your data safe

@@ -1,10 +1,18 @@
-// The frame around every page: the sidebar, the toolbar, the chat, and
-// what the connection to Rufi is doing. It stays when a page fails.
-import { Link, Outlet, useRouterState } from "@tanstack/react-router";
+// The frame around every page: the sidebar, the toolbar, the chat bar on the
+// Overview, and what the connection to Rufi is doing. It stays when a page
+// fails. Until first run is known to be done, it shows first run only, over
+// the whole window, whatever the address.
+import {
+  Link,
+  Outlet,
+  useNavigate,
+  useRouterState,
+} from "@tanstack/react-router";
 import { CircleHelp, House, MessageCircle, Settings } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { useConnection } from "./api.ts";
 import { CHAT_TITLE, ChatDock } from "./chat.tsx";
+import { FirstRun } from "./first-run.tsx";
 import { useFirstRun, usePeople, useStatus } from "./reads.ts";
 
 const TITLES: Record<string, string> = {
@@ -23,13 +31,28 @@ export function Frame() {
   const step = useFirstRun().data?.step;
   /** First run is done: known only once the core says so. */
   const welcomed = step === "done";
-  /** On the first run, which Home shows; known only once the core says so. */
-  const welcoming = step !== undefined && !welcomed;
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
   const onChat = isChatPage(pathname);
+  // During first run, another page's address leads home, where Rufi opens
+  // once first run is done.
+  const navigate = useNavigate();
+  const elsewhere = step !== undefined && !welcomed && pathname !== "/";
+  useEffect(() => {
+    if (elsewhere) void navigate({ to: "/", replace: true });
+  }, [elsewhere, navigate]);
 
+  if (!welcomed) {
+    return (
+      <div className="flex h-full flex-col bg-page">
+        <Offline shown={connection === "offline"} />
+        <main className="flex-1 overflow-auto">
+          {connection === "ended" ? <Ended alone /> : <FirstRun />}
+        </main>
+      </div>
+    );
+  }
   return (
     <div className="flex h-full">
       <aside
@@ -43,8 +66,7 @@ export function Frame() {
           aria-label="Pages"
           className="mt-2 flex min-h-0 flex-1 flex-col gap-0.5"
         >
-          {/* Only once first run is done, also while that is being read. */}
-          {person && welcomed && (
+          {person && (
             <Link
               to="/people/$personId/chat"
               params={{ personId: person.id }}
@@ -55,11 +77,9 @@ export function Frame() {
               {CHAT_TITLE}
             </Link>
           )}
-          {welcomed && (
-            <Place to="/" icon={<House size={15} aria-hidden />}>
-              Overview
-            </Place>
-          )}
+          <Place to="/" icon={<House size={15} aria-hidden />}>
+            Overview
+          </Place>
           <div className="flex-1" />
           <Place to="/help" icon={<CircleHelp size={15} aria-hidden />}>
             Help
@@ -78,33 +98,41 @@ export function Frame() {
           <h1 className="truncate text-[15px] font-semibold">
             {onChat
               ? CHAT_TITLE
-              : (TITLES[pathname.split("/")[1] ?? ""] ??
-                (welcoming ? "Welcome" : "Overview"))}
+              : (TITLES[pathname.split("/")[1] ?? ""] ?? "Overview")}
           </h1>
         </header>
-        {connection === "offline" && (
-          <p role="status" className="bg-accent-soft px-5 py-2 text-accent-ink">
-            Rufi can't be reached. If you stopped it, run{" "}
-            <code className="font-mono">pnpm start</code> and use its new link.
-          </p>
-        )}
+        <Offline shown={connection === "offline"} />
         <main className="flex-1 overflow-auto">
-          {connection === "ended" ? (
-            <div role="alert" className="mx-auto mt-24 max-w-sm">
-              <h2 className="text-xl font-semibold">This session has ended</h2>
-              <p className="mt-2 text-muted">
-                Open Rufi again from the terminal: run{" "}
-                <code className="font-mono">pnpm start</code>.
-              </p>
-            </div>
-          ) : (
-            <Outlet />
-          )}
+          {connection === "ended" ? <Ended alone={false} /> : <Outlet />}
         </main>
       </div>
-      {person && welcomed && connection !== "ended" && !onChat && (
+      {person && connection !== "ended" && pathname === "/" && (
         <ChatDock person={person} />
       )}
+    </div>
+  );
+}
+
+function Offline({ shown }: { shown: boolean }) {
+  if (!shown) return null;
+  return (
+    <p role="status" className="bg-accent-soft px-5 py-2 text-accent-ink">
+      Rufi can't be reached. If you stopped it, run{" "}
+      <code className="font-mono">pnpm start</code> and use its new link.
+    </p>
+  );
+}
+
+/** The session is over; `alone`: no toolbar above it, so its title leads. */
+function Ended({ alone }: { alone: boolean }) {
+  const Title = alone ? "h1" : "h2";
+  return (
+    <div role="alert" className="mx-auto mt-24 max-w-sm">
+      <Title className="text-xl font-semibold">This session has ended</Title>
+      <p className="mt-2 text-muted">
+        Open Rufi again from the terminal: run{" "}
+        <code className="font-mono">pnpm start</code>.
+      </p>
     </div>
   );
 }
