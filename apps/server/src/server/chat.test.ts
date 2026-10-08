@@ -535,10 +535,18 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     "after a restart runs nothing until the person acts; then what waited runs first",
     timeout,
     async () => {
-      await startChat(name);
+      // The scripted Codex records a message a moment after its turn starts,
+      // as Codex does.
+      await startChat(name, { scenario: { userMessageMs: 300 } });
       const c = await newChat();
       await chat?.send(c, "hang");
-      await running(c.id);
+      // The agent has recorded the message (Rufi stores it then): a restart
+      // before that loses it, in the agent too.
+      await until(async () =>
+        (await transcript(c.id)).entries.some(
+          ([kind, text]) => kind === "message" && text === "hang",
+        ),
+      );
       await chat?.send(c, "B");
       await startChat(name); // Rufi restarts.
       expect((await transcript(c.id)).turns).toMatchObject([
