@@ -223,13 +223,12 @@ CREATE TABLE settings (
   value TEXT NOT NULL
 ) STRICT;
 
--- Chats and their transcripts are Rufi's own (docs/adr/0004). The
--- agent's thread is only a pointer: a new one can start at any time.
+-- Each person's one chat with Rufi's AI. Chats and their transcripts are
+-- Rufi's own (docs/adr/0004). The agent's thread is only a pointer: a new
+-- one can start at any time.
 CREATE TABLE chats (
-  id TEXT PRIMARY KEY,         -- UUIDv7
-  person_id TEXT NOT NULL REFERENCES people (id),
-  title TEXT,                  -- the first words of the first message Rufi took; null until then
-  provider TEXT NOT NULL,      -- the agent chosen for it: 'codex'
+  id TEXT PRIMARY KEY,
+  person_id TEXT NOT NULL UNIQUE REFERENCES people (id), -- one chat per person
   model TEXT,                  -- the model chosen for it; null: the first allowed one, set when the first message goes
   thread_id TEXT,              -- the agent's thread; none until the first message
   thread_provider TEXT,        -- whose thread it is, so another agent never reuses it
@@ -240,12 +239,21 @@ CREATE TABLE chats (
   UNIQUE (person_id, id)
 ) STRICT;
 
+-- A person's chat is made with them, in the same statement: no person is
+-- ever without one, whoever adds them.
+CREATE TRIGGER chat_with_person AFTER INSERT ON people
+BEGIN
+  INSERT INTO chats (id, person_id, created_at)
+  VALUES (lower(hex(randomblob(16))), NEW.id, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+END;
+
 -- One per reply the agent ran. Final once it has ended.
 CREATE TABLE turns (
   id TEXT PRIMARY KEY,         -- UUIDv7
   person_id TEXT NOT NULL,
   chat_id TEXT NOT NULL,
   agent_turn_id TEXT NOT NULL, -- the agent's own id for it
+  thread_id TEXT NOT NULL,     -- the agent's thread it ran on: a turn on another thread than the one before started afresh
   model TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'interrupted', 'failed')),
   end_reason TEXT CHECK (end_reason IN ('stopped', 'timeout', 'usage_limit', 'rate_limit', 'sign_in', 'connection', 'provider_failed', 'save_failed')),
@@ -269,7 +277,7 @@ CREATE TABLE transcript_entries (
   turn_id TEXT,                -- the reply it belongs to
   kind TEXT NOT NULL CHECK (kind IN ('message', 'steer', 'activity', 'reply', 'reasoning', 'receipt')),
   text TEXT NOT NULL,          -- the message or the reply as it came; an activity's short title; the reasoning's summary; a receipt's line
-  activity TEXT CHECK (activity IN ('tool', 'command', 'web_search', 'file_change', 'sub_agent', 'other')),
+  activity TEXT CHECK (activity IN ('tool', 'command', 'web_search', 'file_change', 'sub_agent', 'compaction', 'other')),
   detail TEXT,                 -- an activity's one short detail: the query, the search words, the command
   details TEXT,                -- an activity's or reasoning's everything, as the agent gave it (JSON); null: the agent gave nothing
   status TEXT CHECK (status IN ('running', 'done', 'failed', 'stopped')),
@@ -324,15 +332,6 @@ CREATE TABLE drafts (
   CHECK ((state = 'sending') = (attempt IS NOT NULL))
 ) STRICT;
 
--- The chat Rufi opens the chat on for each person, the next time it
--- opens: the last choice a tab saved. Each open tab keeps its own. No row:
--- none yet.
-CREATE TABLE chosen_chats (
-  person_id TEXT PRIMARY KEY REFERENCES people (id),
-  chat_id TEXT NOT NULL,
-  FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id)
-) STRICT;
-
 -- One save to the record, made by the AI's call to save_changes in a
 -- chat. Its receipt is the transcript entry with the same id.
 CREATE TABLE operations (
@@ -369,7 +368,6 @@ CREATE INDEX reports_by_document ON reports (person_id, document_id);
 CREATE INDEX results_by_report ON results (person_id, report_id);
 CREATE INDEX results_by_test ON results (person_id, test_name, unit, measured_at);
 CREATE INDEX results_by_replaced ON results (person_id, replaces_id); -- current results leave out replaced ones
-CREATE INDEX chats_by_person ON chats (person_id, created_at);
 CREATE INDEX turns_by_chat ON turns (person_id, chat_id, started_at);
 CREATE INDEX turns_by_status ON turns (status); -- running turns, found at start
 CREATE INDEX entries_by_turn ON transcript_entries (person_id, turn_id);

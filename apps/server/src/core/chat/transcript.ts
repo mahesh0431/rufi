@@ -1,20 +1,17 @@
-// Rufi's chats and their transcripts (docs/adr/0004): what the user
+// Each person's chat and its transcript (docs/adr/0004): what the user
 // said, one line per thing the AI did with everything it sent and got back,
 // the AI's reasoning and its replies, in order, and each call to Rufi's
-// tools. Every change is one transaction that moves the chat's
-// revision on, and is published to listeners only after it is stored.
+// tools. Every change is one transaction that moves the chat's revision
+// on, and is published to listeners only after it is stored.
 import type {
   ActivityKind,
   Chat,
   Draft,
   EndReason,
   Entry,
+  Page,
   Turn,
 } from "@rufi/contracts";
-import { fromMarkdown } from "mdast-util-from-markdown";
-import { gfmFromMarkdown } from "mdast-util-gfm";
-import { toString } from "mdast-util-to-string";
-import { gfm } from "micromark-extension-gfm";
 import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
 import type { Saved } from "../record/save.ts";
@@ -23,8 +20,9 @@ import { usedOf } from "./used.ts";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 
-/** A chat with the agent thread it points at. */
+/** A person's chat with the agent thread it points at. */
 export interface ChatRow extends Chat {
+  id: string;
   personId: string;
   threadId: string | null;
   threadProvider: string | null;
@@ -38,15 +36,8 @@ export interface Change {
   revision: number;
   entries: Entry[];
   turns: Turn[];
-  /** The chat, when its title or model changed. */
+  /** The chat, when its model changed. */
   chat?: Chat;
-}
-
-export interface Snapshot {
-  revision: number;
-  chat: Chat;
-  entries: Entry[];
-  turns: Turn[];
 }
 
 export interface TurnEnding {
@@ -58,42 +49,13 @@ export interface TurnEnding {
 
 type Db = Kysely<Tables> | Transaction<Tables>;
 
-/** The longest title Rufi makes from a message, in characters. */
-const TITLE_MAX = 60;
-
 /**
- * A chat's title from its first message: the first line with words,
- * as plain text without its Markdown marks, cut at a word to at most
- * TITLE_MAX characters.
+ * Transcript rows in one page, at most, before it is widened to whole
+ * turns: the latest page opens the chat, and each older one is read as the
+ * person scrolls up.
  */
-export function titleFrom(message: string): string {
-  let line = "";
-  for (const raw of message.split("\n")) {
-    line = plain(raw);
-    if (line !== "") break;
-  }
-  // Only marks, no words: the marks it is.
-  if (line === "") {
-    line = (message.trim().split("\n")[0] ?? "").replace(/\s+/g, " ").trim();
-  }
-  if (line.length <= TITLE_MAX) return line;
-  const cut = line.slice(0, TITLE_MAX - 1);
-  // Cut at the last whole word; a word longer than the title is cut in it.
-  const end = line[cut.length] === " " ? cut.length : cut.lastIndexOf(" ");
-  return `${(end > 0 ? cut.slice(0, end) : cut).trimEnd()}…`;
-}
+export const PAGE_ROWS = 60;
 
-/** One line of Markdown as the words it shows, on one line. */
-const plain = (line: string) =>
-  toString(
-    fromMarkdown(line, {
-      extensions: [gfm()],
-      mdastExtensions: [gfmFromMarkdown()],
-    }),
-    { includeHtml: false },
-  )
-    .replace(/\s+/g, " ")
-    .trim();
 type EntryRow = Selectable<Tables["transcript_entries"]>;
 type TurnRow = Selectable<Tables["turns"]>;
 
@@ -111,33 +73,13 @@ const toEntry = (row: EntryRow, finished: boolean): Entry => ({
   updatedAt: row.updated_at,
 });
 
-const toTurn = (row: TurnRow): Omit<Turn, "how" | "used"> => ({
-  id: row.id,
-  model: row.model,
-  status: row.status as Turn["status"],
-  endReason: row.end_reason as Turn["endReason"],
-  endText: row.end_text,
-  resetsAt: row.resets_at,
-  startedAt: row.started_at,
-  endedAt: row.ended_at,
-});
-
 /** A chat as the screens get it, without its thread. */
-export const shown = ({
-  id,
-  title,
-  provider,
-  model,
-  createdAt,
-}: Chat): Chat => ({ id, title, provider, model, createdAt });
+export const shown = ({ model }: Chat): Chat => ({ model });
 
 const toChat = (row: Selectable<Tables["chats"]>): ChatRow => ({
   id: row.id,
   personId: row.person_id,
-  title: row.title,
-  provider: row.provider,
   model: row.model,
-  createdAt: row.created_at,
   threadId: row.thread_id,
   threadProvider: row.thread_provider,
   threadModel: row.thread_model,
@@ -176,12 +118,44 @@ async function entriesOut(trx: Db, rows: EntryRow[]): Promise<Entry[]> {
 
 /**
  * Turns as the screens get them, each with its Based on built from its own
- * entries and calls: How from its replies once it completed, and Used.
+ * entries and calls: How from its replies once it completed, and Used. A
+ * turn on another agent thread than the turn before it started afresh;
+ * the chat's first turn didn't.
  */
 async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
   const first = rows[0];
   if (!first) return [];
   const ids = rows.map((row) => row.id);
+  const before = new Map(
+    (
+      await trx
+        .selectFrom("turns as t")
+        .select((eb) => [
+          "t.id",
+          eb
+            .selectFrom("turns as p")
+            .select("p.thread_id")
+            .whereRef("p.person_id", "=", "t.person_id")
+            .whereRef("p.chat_id", "=", "t.chat_id")
+            .where((p) =>
+              p.or([
+                p("p.started_at", "<", p.ref("t.started_at")),
+                p.and([
+                  p("p.started_at", "=", p.ref("t.started_at")),
+                  p("p.id", "<", p.ref("t.id")),
+                ]),
+              ]),
+            )
+            .orderBy("p.started_at", "desc")
+            .orderBy("p.id", "desc")
+            .limit(1)
+            .as("thread_before"),
+        ])
+        .where("t.person_id", "=", first.person_id)
+        .where("t.id", "in", ids)
+        .execute()
+    ).map((row) => [row.id, row.thread_before]),
+  );
   const entries = await trx
     .selectFrom("transcript_entries")
     .select([
@@ -229,8 +203,17 @@ async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
             .map((entry) => splitBasis(entry.text, true).how)
             .findLast((found) => found !== undefined)
         : undefined;
+    const threadBefore = before.get(row.id) ?? null;
     return {
-      ...toTurn(row),
+      id: row.id,
+      model: row.model,
+      status: row.status as Turn["status"],
+      endReason: row.end_reason as Turn["endReason"],
+      endText: row.end_text,
+      resetsAt: row.resets_at,
+      startedAt: row.started_at,
+      endedAt: row.ended_at,
+      afresh: threadBefore !== null && threadBefore !== row.thread_id,
       how: how ?? null,
       used: usedOf(
         own.filter((entry) => entry.kind === "activity"),
@@ -466,21 +449,6 @@ export function transcripts(
     })) as Draft;
   }
 
-  /** Chooses the chat Rufi opens the chat on next time. */
-  async function chooseIn(
-    trx: Transaction<Tables>,
-    personId: string,
-    chatId: string,
-  ): Promise<void> {
-    await trx
-      .insertInto("chosen_chats")
-      .values({ person_id: personId, chat_id: chatId })
-      .onConflict((oc) =>
-        oc.column("person_id").doUpdateSet({ chat_id: chatId }),
-      )
-      .execute();
-  }
-
   return {
     subscribe(chatId: string, listener: (change: Change) => void): () => void {
       const set = listeners.get(chatId) ?? new Set();
@@ -500,8 +468,9 @@ export function transcripts(
         .execute(),
 
     /**
-     * Adds the first person, as first run does; undefined when someone is
-     * already there. One statement, so two tabs never make two people.
+     * Adds the first person, as first run does, and with them their chat
+     * (schema.sql); undefined when someone is already there. One statement,
+     * so two tabs never make two people or two chats.
      */
     addFirstPerson: async (displayName: string) => {
       const id = uuid();
@@ -519,24 +488,12 @@ export function transcripts(
         .where("id", "=", id)
         .executeTakeFirst(),
 
-    chats: async (personId: string): Promise<Chat[]> =>
-      (
-        await db
-          .selectFrom("chats")
-          .selectAll()
-          .where("person_id", "=", personId)
-          .orderBy("created_at", "desc")
-          .orderBy("id", "desc")
-          .execute()
-      ).map((row) => shown(toChat(row))),
-
-    /** One of the person's chats; another person's is not found. */
-    chat: async (personId: string, id: string) => {
+    /** The person's chat; undefined for no such person. */
+    chat: async (personId: string) => {
       const row = await db
         .selectFrom("chats")
         .selectAll()
         .where("person_id", "=", personId)
-        .where("id", "=", id)
         .executeTakeFirst();
       return row && toChat(row);
     },
@@ -549,30 +506,6 @@ export function transcripts(
         .where("thread_id", "=", threadId)
         .executeTakeFirst();
       return row && toChat(row);
-    },
-
-    /** A new chat; with no model, the first message chooses one. */
-    createChat: async (
-      personId: string,
-      title: string | null,
-      provider: string,
-      model: string | null,
-    ): Promise<ChatRow> => {
-      const row = {
-        id: uuid(),
-        person_id: personId,
-        title,
-        provider,
-        model,
-        thread_id: null,
-        thread_provider: null,
-        thread_model: null,
-        thread_tools: null,
-        revision: 0,
-        created_at: now(),
-      };
-      await db.insertInto("chats").values(row).execute();
-      return toChat(row);
     },
 
     /** The thread the chat now uses, and what it started with. */
@@ -602,52 +535,135 @@ export function transcripts(
         return { entries: [], turns: [], chat: true };
       }),
 
-    /** Titles a chat that has no title yet; a title is never replaced. */
-    setTitle: (chat: ChatRow, title: string) =>
-      change(chat.id, async (trx) => {
-        const titled = await trx
-          .updateTable("chats")
-          .set({ title })
-          .where("id", "=", chat.id)
-          .where("title", "is", null)
-          .returning("id")
-          .executeTakeFirst();
-        return titled && { entries: [], turns: [], chat: true };
-      }),
-
-    /** The whole transcript and its revision, read in one go. */
-    snapshot: (chat: ChatRow): Promise<Snapshot> =>
+    /**
+     * A page of the transcript and the chat's revision, read in one go: the
+     * latest rows, or those before `before` (a seq), widened down so that
+     * each turn in it is whole. It holds every entry in its range, also one
+     * of no turn (a message recovered after a crash), and the turns with no
+     * entry that started in its time, so pages never skip or repeat
+     * anything. Its `before` is where the next older page ends; null: it
+     * starts the chat.
+     */
+    page: (chat: ChatRow, before?: number): Promise<Page> =>
       db.transaction().execute(async (trx) => {
-        // As stored now: its title or model may have changed since it was read.
+        // As stored now: its model may have changed since it was read.
         const row = await trx
           .selectFrom("chats")
           .selectAll()
           .where("id", "=", chat.id)
           .executeTakeFirstOrThrow();
-        const entries = await trx
-          .selectFrom("transcript_entries")
-          .selectAll()
-          .where("person_id", "=", chat.personId)
-          .where("chat_id", "=", chat.id)
-          .orderBy("seq")
-          .execute();
-        const turns = await trx
-          .selectFrom("turns")
-          .selectAll()
-          .where("person_id", "=", chat.personId)
-          .where("chat_id", "=", chat.id)
-          .orderBy("started_at")
-          .execute();
+        const rows = () => {
+          const all = trx
+            .selectFrom("transcript_entries")
+            .where("person_id", "=", chat.personId)
+            .where("chat_id", "=", chat.id);
+          return before === undefined ? all : all.where("seq", "<", before);
+        };
+        let low = (
+          await rows()
+            .select("seq")
+            .orderBy("seq", "desc")
+            .limit(PAGE_ROWS)
+            .execute()
+        ).at(-1)?.seq;
+        // Down to the first entry of each turn in it, until none is cut.
+        while (low !== undefined) {
+          const from = low;
+          const { first } = await trx
+            .selectFrom("transcript_entries")
+            .select((eb) => eb.fn.min("seq").as("first"))
+            .where("person_id", "=", chat.personId)
+            .where("turn_id", "in", (eb) =>
+              rows()
+                .select("turn_id")
+                .where("seq", ">=", from)
+                .where("turn_id", "is not", null),
+            )
+            .executeTakeFirstOrThrow();
+          if (first === null || first >= low) break;
+          low = first;
+        }
+        const entries =
+          low === undefined
+            ? []
+            : await rows()
+                .selectAll()
+                .where("seq", ">=", low)
+                .orderBy("seq")
+                .execute();
+        const older =
+          low !== undefined &&
+          (await rows()
+            .select("seq")
+            .where("seq", "<", low)
+            .executeTakeFirst()) !== undefined;
+        // A turn with no entry belongs to the page of its time: from this
+        // page's first entry (or the start) to the newer page's first.
+        const since = older ? entries[0]?.created_at : undefined;
+        const until =
+          before === undefined
+            ? undefined
+            : (
+                await trx
+                  .selectFrom("transcript_entries")
+                  .select("created_at")
+                  .where("chat_id", "=", chat.id)
+                  .where("seq", ">=", before)
+                  .orderBy("seq")
+                  .executeTakeFirst()
+              )?.created_at;
+        let empty = trx
+          .selectFrom("turns as t")
+          .select("t.id")
+          .where("t.person_id", "=", chat.personId)
+          .where("t.chat_id", "=", chat.id)
+          .where(({ not, exists, selectFrom }) =>
+            not(
+              exists(
+                selectFrom("transcript_entries as e")
+                  .select("e.id")
+                  .whereRef("e.person_id", "=", "t.person_id")
+                  .whereRef("e.turn_id", "=", "t.id"),
+              ),
+            ),
+          );
+        if (since !== undefined)
+          empty = empty.where("t.started_at", ">=", since);
+        if (until !== undefined)
+          empty = empty.where("t.started_at", "<", until);
+        const ids = [
+          ...new Set(entries.flatMap((entry) => entry.turn_id ?? [])),
+          ...(await empty.execute()).map((turn) => turn.id),
+        ];
+        const turns =
+          ids.length === 0
+            ? []
+            : await trx
+                .selectFrom("turns")
+                .selectAll()
+                .where("person_id", "=", chat.personId)
+                .where("id", "in", ids)
+                .orderBy("started_at")
+                .orderBy("id")
+                .execute();
         return {
           revision: row.revision,
           chat: shown(toChat(row)),
           entries: await entriesOut(trx, entries),
           turns: await turnsOut(trx, turns),
+          before: older ? (low ?? null) : null,
         };
       }),
 
-    /** A reply the agent started, with the model it runs on. Once per agent turn. */
-    startTurn: (chat: ChatRow, agentTurnId: string, model: string) =>
+    /**
+     * A reply the agent started, with the thread and model it runs on. Once
+     * per agent turn.
+     */
+    startTurn: (
+      chat: ChatRow,
+      agentTurnId: string,
+      thread: { id: string; model: string },
+    ) =>
       change(chat.id, async (trx) => {
         if (await turnOf(trx, chat.id, agentTurnId)) return undefined;
         const id = uuid();
@@ -658,7 +674,8 @@ export function transcripts(
             person_id: chat.personId,
             chat_id: chat.id,
             agent_turn_id: agentTurnId,
-            model,
+            thread_id: thread.id,
+            model: thread.model,
             status: "running",
             end_reason: null,
             end_text: null,
@@ -1110,20 +1127,6 @@ export function transcripts(
       }
       return held.length;
     },
-
-    /** The chat Rufi opens the chat on for the person; null: none yet. */
-    chosen: async (personId: string) =>
-      (
-        await db
-          .selectFrom("chosen_chats")
-          .select("chat_id")
-          .where("person_id", "=", personId)
-          .executeTakeFirst()
-      )?.chat_id ?? null,
-
-    /** Chooses the chat Rufi opens the chat on next time. */
-    choose: (personId: string, chatId: string) =>
-      db.transaction().execute((trx) => chooseIn(trx, personId, chatId)),
 
     setting: async (key: string) =>
       (

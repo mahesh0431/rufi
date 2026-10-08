@@ -15,11 +15,7 @@ import {
 import type { Allowlist } from "../core/chat/models.ts";
 import { allowedModels } from "../core/chat/models.ts";
 import { safetyInstructions } from "../core/chat/safety.ts";
-import {
-  titleFrom,
-  type ChatRow,
-  type Transcripts,
-} from "../core/chat/transcript.ts";
+import type { ChatRow, Transcripts } from "../core/chat/transcript.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 
 /** How many earlier messages a new thread starts with. */
@@ -175,11 +171,10 @@ export function chat(deps: ChatDeps) {
     }
     switch (event.type) {
       case "turnStarted":
-        await transcripts.startTurn(
-          chat,
-          event.turnId,
-          chat.threadModel ?? chat.model ?? "",
-        );
+        await transcripts.startTurn(chat, event.turnId, {
+          id: event.threadId,
+          model: chat.threadModel ?? chat.model ?? "",
+        });
         return;
       case "message": {
         const steer = steers.delete(event.id);
@@ -245,7 +240,7 @@ export function chat(deps: ChatDeps) {
    * new thread or model since the request read it.
    */
   async function latest(chat: ChatRow): Promise<ChatRow> {
-    const row = await transcripts.chat(chat.personId, chat.id);
+    const row = await transcripts.chat(chat.personId);
     if (!row) throw new ChatRefusal("That chat isn't there any more.");
     return row;
   }
@@ -373,13 +368,6 @@ export function chat(deps: ChatDeps) {
     models: offered,
 
     /**
-     * A new chat, at once: nothing is asked of the agent. Its first
-     * message chooses the model, unless one is chosen before.
-     */
-    create: (personId: string, title: string | null) =>
-      transcripts.createChat(personId, title, agent.provider, null),
-
-    /**
      * Sends a message, by the id Rufi gives it (the send's own, from a box):
      * it runs now, or waits its
      * turn in the agent's queue. It enters the transcript when the agent
@@ -405,17 +393,6 @@ export function chat(deps: ChatDeps) {
           signal,
         );
         pendingContext.delete(chat.id);
-        if (chat.title === null) {
-          // The message is taken: a title that can't be saved doesn't undo that.
-          await transcripts
-            .setTitle(chat, titleFrom(text))
-            .catch((error: unknown) => {
-              log("chat.save_failed", {
-                kind: "title",
-                error: errorCode(error),
-              });
-            });
-        }
         return { id };
       }),
 

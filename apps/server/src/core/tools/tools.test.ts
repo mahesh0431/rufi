@@ -478,15 +478,14 @@ const left = (text: string) =>
   (JSON.parse(text) as { rejections_left: number }).rejections_left;
 
 describe("read_chat", () => {
-  /** Two chats of Asha's and one of Ravi's, 30 entries each. */
-  const chats = [
-    ["c-asha", "asha"],
-    ["c-asha-2", "asha"],
-    ["c-ravi", "ravi"],
-  ]
-    .map(
-      ([id, person]) =>
-        `INSERT INTO chats (id, person_id, title, provider, model, created_at) VALUES ('${id ?? ""}', '${person ?? ""}', 'Fictional', 'codex', 'gpt-6.1-sol', '2026-10-01T10:00:00Z');` +
+  /** Asha's chat and Ravi's, 30 entries each. */
+  const chats =
+    "UPDATE chats SET id = 'c-' || person_id;" +
+    [
+      ["c-asha", "asha"],
+      ["c-ravi", "ravi"],
+    ]
+      .map(([id, person]) =>
         Array.from({ length: 30 }, (_, i) => {
           const kind =
             ["message", "reply", "activity", "steer"][i % 4] ?? "message";
@@ -494,8 +493,8 @@ describe("read_chat", () => {
             kind === "activity" ? "'command', 'done'" : "NULL, NULL";
           return `INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, activity, status, detail, revision, created_at, updated_at) VALUES ('${id ?? ""}-${String(i + 1)}', '${person ?? ""}', '${id ?? ""}', ${String(i + 1)}, '${kind}', '${id ?? ""} entry ${String(i + 1)}', ${activity}, ${kind === "activity" ? "'ls'" : "NULL"}, 1, '2026-10-01T10:00:00Z', '2026-10-01T10:00:00Z');`;
         }).join(""),
-    )
-    .join("");
+      )
+      .join("");
 
   it("pages back through the chat, newest first", async () => {
     const store = makeDatabase(family, chats);
@@ -551,20 +550,13 @@ describe("read_chat", () => {
       {},
     );
     expect(body).toEqual({ ok: true, result: { entries: [] } });
-    const own = await call(
-      { store, personId: "asha", chatId: "c-asha-2" },
-      "read_chat",
-      {},
-    );
-    expect(JSON.stringify(own.body)).not.toContain("c-asha entry");
-    expect(JSON.stringify(own.body)).not.toContain("c-ravi");
   });
 
-  it("refuses outside a saved chat, and a page too big", async () => {
+  it("refuses outside Rufi's chat, and a page too big", async () => {
     const store = makeDatabase(family, chats);
     expect(
       (await call({ store, personId: "asha" }, "read_chat", {})).body["error"],
-    ).toBe("This isn't a saved chat, so it has nothing earlier to read.");
+    ).toBe("This isn't Rufi's chat, so it has nothing earlier to read.");
     const { body } = await call(
       { store, personId: "asha", chatId: "c-asha" },
       "read_chat",

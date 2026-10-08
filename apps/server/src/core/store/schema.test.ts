@@ -64,18 +64,9 @@ beforeEach(() => {
 
 describe("schema", () => {
   describe("chats stay with their person", () => {
-    const chat = (id: string, person: string) => {
-      insert("chats", {
-        id,
-        person_id: person,
-        title: "Fictional",
-        provider: "codex",
-        model: "gpt-6.1-sol",
-        created_at: now,
-      });
-    };
     const turn = {
       agent_turn_id: "t",
+      thread_id: "thread-1",
       model: "gpt-6.1-sol",
       status: "running",
       started_at: now,
@@ -89,12 +80,28 @@ describe("schema", () => {
       updated_at: now,
     };
 
+    // Each person's chat, made with them, named here for the tests.
     beforeEach(() => {
-      chat("c-amma", "amma");
-      chat("c-nanna", "nanna");
+      db.exec("UPDATE chats SET id = 'c-' || person_id");
     });
 
-    it("rejects a turn, an entry, a draft or a chosen chat for one person in another's chat", () => {
+    it("gives each person one chat, made with them, and never a second", () => {
+      insert("people", { id: "ammamma", display_name: "Ammamma" });
+      expect(
+        db
+          .prepare("SELECT person_id, revision FROM chats ORDER BY person_id")
+          .all(),
+      ).toEqual([
+        { person_id: "amma", revision: 0 },
+        { person_id: "ammamma", revision: 0 },
+        { person_id: "nanna", revision: 0 },
+      ]);
+      expect(() => {
+        insert("chats", { id: "c-2", person_id: "amma", created_at: now });
+      }).toThrow("UNIQUE constraint failed: chats.person_id");
+    });
+
+    it("rejects a turn, an entry or a draft for one person in another's chat", () => {
       expect(() => {
         insert("turns", {
           ...turn,
@@ -118,12 +125,6 @@ describe("schema", () => {
           text: "x",
           revision: 1,
           updated_at: now,
-        });
-      }).toThrow("FOREIGN KEY constraint failed");
-      expect(() => {
-        insert("chosen_chats", {
-          person_id: "amma",
-          chat_id: "c-nanna",
         });
       }).toThrow("FOREIGN KEY constraint failed");
     });

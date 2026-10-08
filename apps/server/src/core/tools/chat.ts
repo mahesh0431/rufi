@@ -34,7 +34,7 @@ export const readChat = defineTool({
   run: async (input, { store, personId, chatId }) => {
     if (!store || personId === undefined || chatId === undefined) {
       throw new Refusal(
-        "This isn't a saved chat, so it has nothing earlier to read.",
+        "This isn't Rufi's chat, so it has nothing earlier to read.",
       );
     }
     const limit = input.limit ?? 20;

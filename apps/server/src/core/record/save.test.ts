@@ -47,13 +47,11 @@ beforeEach(async () => {
   reader = openReadOnly(path) as Store;
   clock = SUNDAY_10AM;
   transcripts = openTranscripts(store, () => clock);
-  chat = await transcripts.createChat(
-    "asha",
-    "Fictional",
-    "codex",
-    "gpt-6.1-sol",
-  );
-  await transcripts.startTurn(chat, "t-1", "gpt-6.1-sol");
+  chat = (await transcripts.chat("asha")) as ChatRow;
+  await transcripts.startTurn(chat, "t-1", {
+    id: "thread-1",
+    model: "gpt-6.1-sol",
+  });
 });
 
 /** The user says it in the chat; returns the message's id. */
@@ -849,20 +847,10 @@ describe("a save", () => {
 
   it("refuses another person's record, and words the user didn't say in this chat", async () => {
     await say("Stop my atorvastatin");
-    const ravis = await transcripts.createChat(
-      "ravi",
-      "Ravi's",
-      "codex",
-      "gpt-6.1-sol",
+    await say(
+      "I have a toothache",
+      (await transcripts.chat("ravi")) as ChatRow,
     );
-    await say("I have a toothache", ravis);
-    const other = await transcripts.createChat(
-      "asha",
-      "Another",
-      "codex",
-      "gpt-6.1-sol",
-    );
-    await say("I have a backache", other);
     const before = written();
     const refused = await save([
       {
@@ -881,12 +869,6 @@ describe("a save", () => {
       {
         kind: "symptom",
         action: "add",
-        source: "I have a backache",
-        fields: { name: "Backache" },
-      },
-      {
-        kind: "symptom",
-        action: "add",
         source: "the AI's own idea",
         fields: { name: "Fatigue" },
       },
@@ -897,7 +879,7 @@ describe("a save", () => {
         got: '"med-r1"',
         fix: "No medicine use with this id is in this person's record.",
       },
-      ...[1, 2, 3].map((i) => ({
+      ...[1, 2].map((i) => ({
         path: `changes.${String(i)}.source`,
         got: expect.any(String) as string,
         fix: "No message of the user's in this chat has these words. Copy the user's own words exactly from the message this change rests on.",

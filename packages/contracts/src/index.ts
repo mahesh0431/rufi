@@ -30,6 +30,8 @@ export const ActivityKind = Schema.Literals([
   "web_search",
   "file_change",
   "sub_agent",
+  /** The AI compacted its memory of the chat (shown only once done). */
+  "compaction",
   "other",
 ]);
 export type ActivityKind = typeof ActivityKind.Type;
@@ -103,6 +105,11 @@ export const Turn = Schema.Struct({
   startedAt: Schema.String,
   endedAt: Schema.NullOr(Schema.String),
   /**
+   * The AI started afresh for this reply: it ran on another agent thread
+   * than the reply before it (a model or tool change, a lost thread).
+   */
+  afresh: Schema.Boolean,
+  /**
    * How, from the reply's last rufi-basis block: where the answer comes
    * from, in the AI's words. Only once the reply completed.
    */
@@ -112,16 +119,28 @@ export const Turn = Schema.Struct({
 });
 export type Turn = typeof Turn.Type;
 
+/** A person's one chat with Rufi's AI. */
 export const Chat = Schema.Struct({
-  id: Schema.String,
-  /** The first words of the first message Rufi took; null until then. */
-  title: Schema.NullOr(Schema.String),
-  provider: Schema.String,
   /** The model chosen for it; null: the first allowed one, when the first message goes. */
   model: Schema.NullOr(Schema.String),
-  createdAt: Schema.String,
 });
 export type Chat = typeof Chat.Type;
+
+/**
+ * A page of the chat's transcript, in order, with each of its turns whole:
+ * the latest one when the chat opens, then older ones as the person scrolls
+ * up. `revision` is the chat's when it was read.
+ */
+const PageFields = {
+  revision: Schema.Int,
+  chat: Chat,
+  entries: Schema.Array(Entry),
+  turns: Schema.Array(Turn),
+  /** The next older page holds the entries before this seq; null: none. */
+  before: Schema.NullOr(Schema.Int),
+};
+export const Page = Schema.Struct(PageFields);
+export type Page = typeof Page.Type;
 
 /** A message the AI holds until the running reply has ended. */
 export const WaitingMessage = Schema.Struct({
@@ -132,24 +151,18 @@ export const WaitingMessage = Schema.Struct({
 export type WaitingMessage = typeof WaitingMessage.Type;
 
 /**
- * One line of a chat's live stream (NDJSON). It starts with a
- * snapshot; each update replaces entries and turns by id. A screen that falls
- * behind, or reconnects, gets a new snapshot.
+ * One line of the chat's live stream (NDJSON). It starts with the latest
+ * page; each update replaces entries and turns by id. A screen that falls
+ * behind, or reconnects, gets a new latest page.
  */
 export const StreamLine = Schema.Union([
-  Schema.Struct({
-    type: Schema.Literal("snapshot"),
-    revision: Schema.Int,
-    chat: Chat,
-    entries: Schema.Array(Entry),
-    turns: Schema.Array(Turn),
-  }),
+  Schema.Struct({ type: Schema.Literal("snapshot"), ...PageFields }),
   Schema.Struct({
     type: Schema.Literal("update"),
     revision: Schema.Int,
     entries: Schema.Array(Entry),
     turns: Schema.Array(Turn),
-    /** The chat, when its title or model changed. */
+    /** The chat, when its model changed. */
     chat: Schema.optionalKey(Chat),
   }),
   /** The waiting messages changed; read them again. */
@@ -158,13 +171,6 @@ export const StreamLine = Schema.Union([
   Schema.Struct({ type: Schema.Literal("ping") }),
 ]);
 export type StreamLine = typeof StreamLine.Type;
-
-/** A person's chats, newest first, and the one the chat continues. */
-export const Chats = Schema.Struct({
-  chats: Schema.Array(Chat),
-  /** The chat to open the chat on: the last choice a tab saved. */
-  chosen: Schema.NullOr(Schema.String),
-});
 
 export const WaitingMessages = Schema.Struct({
   messages: Schema.Array(WaitingMessage),
@@ -309,10 +315,6 @@ export const SaveSettings = Schema.Struct({
   emergencyRegion: Schema.NullOr(Line(10)),
 });
 
-export const CreateChat = Schema.Struct({
-  title: Schema.optionalKey(Line(200)),
-});
-
 const Message = Schema.String.check(
   Schema.isTrimmed(),
   Schema.isMinLength(1),
@@ -335,9 +337,6 @@ export const SaveDraft = Schema.Struct({
   text: Text(MAX_MESSAGE_CHARS),
   revision: Schema.Int,
 });
-
-/** The chat Rufi opens the chat on next time. */
-export const ChooseChat = Schema.Struct({ chatId: Id });
 
 export const ReorderWaiting = Schema.Struct({ ids: Schema.Array(Id) });
 

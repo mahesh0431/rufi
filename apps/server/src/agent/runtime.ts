@@ -11,6 +11,7 @@ export type ActivityKind =
   | "web_search"
   | "file_change"
   | "sub_agent"
+  | "compaction"
   | "other";
 
 /** Why a reply didn't complete, as a screen can act on it. */

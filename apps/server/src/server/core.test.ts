@@ -180,7 +180,7 @@ async function session(core: Pick<Core, "port" | "launchUrl">) {
       text: string,
       kind: "messages" | "steer" = "messages",
     ) => {
-      const draft = path.replace("/chats/", "/drafts/");
+      const draft = `${path}/draft`;
       const before = await call(core.port, "GET", draft, headers);
       const saved = await call(core.port, "PUT", draft, headers, {
         text,
@@ -299,18 +299,13 @@ async function until(
   }
 }
 
-/** A person with one chat, through the API. */
+/** A person, through the API, and their chat. */
 async function chat(page: Awaited<ReturnType<typeof session>>) {
   const person = (
     await page.api("POST", "/api/people", { displayName: "Asha Fictional" })
   ).body["person"] as { id: string };
-  const created = (await page.api("POST", `/api/people/${person.id}/chats`, {}))
-    .body["chat"] as { id: string };
-  return {
-    person: person.id,
-    id: created.id,
-    path: `/api/people/${person.id}/chats/${created.id}`,
-  };
+  const path = `/api/people/${person.id}/chat`;
+  return { person: person.id, path, draft: `${path}/draft` };
 }
 
 describe("the core", () => {
@@ -337,21 +332,19 @@ describe("the core", () => {
     // started the first one's message (m-1), and nobody knows of the second.
     const left = openWritable(databasePath(home));
     left.db.exec(`
-      INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
-      INSERT INTO chats (id, person_id, title, provider, model, created_at)
-        VALUES ('c-1', 'asha', 'Fictional', 'codex', 'gpt-6.1-sol', '2026-10-04T10:00:00Z'),
-               ('c-2', 'asha', 'Fictional', 'codex', 'gpt-6.1-sol', '2026-10-04T10:00:00Z');
+      INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional'), ('ravi', 'Ravi Fictional');
       INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, revision, created_at, updated_at)
-        VALUES ('m-1', 'asha', 'c-1', 1, 'message', 'Taken', 1, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');
+        SELECT 'm-1', 'asha', id, 1, 'message', 'Taken', 1, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z' FROM chats WHERE person_id = 'asha';
       INSERT INTO drafts (person_id, chat_id, text, revision, state, attempt, updated_at)
-        VALUES ('asha', 'c-1', 'Taken', 2, 'sending', 'm-1', '2026-10-04T10:00:00Z'),
-               ('asha', 'c-2', 'Not known', 2, 'sending', 'm-2', '2026-10-04T10:00:00Z');`);
+        SELECT person_id, id, 'Taken', 2, 'sending', 'm-1', '2026-10-04T10:00:00Z' FROM chats WHERE person_id = 'asha';
+      INSERT INTO drafts (person_id, chat_id, text, revision, state, attempt, updated_at)
+        SELECT person_id, id, 'Not known', 2, 'sending', 'm-2', '2026-10-04T10:00:00Z' FROM chats WHERE person_id = 'ravi';`);
     left.close();
     const page = await session(await start());
-    expect((await page.api("GET", "/api/people/asha/drafts/c-1")).body).toEqual(
+    expect((await page.api("GET", "/api/people/asha/chat/draft")).body).toEqual(
       { text: "", revision: 3, state: "editable" },
     );
-    expect((await page.api("GET", "/api/people/asha/drafts/c-2")).body).toEqual(
+    expect((await page.api("GET", "/api/people/ravi/chat/draft")).body).toEqual(
       { text: "Not known", revision: 3, state: "unknown" },
     );
   });
@@ -361,15 +354,13 @@ describe("the core", () => {
     const left = openWritable(databasePath(home));
     left.db.exec(`
       INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
-      INSERT INTO chats (id, person_id, title, provider, model, created_at)
-        VALUES ('c-1', 'asha', 'Fictional', 'codex', 'gpt-6.1-sol', '2026-10-04T10:00:00Z');
-      INSERT INTO turns (id, person_id, chat_id, agent_turn_id, model, status, started_at)
-        VALUES ('t-1', 'asha', 'c-1', 'turn-1', 'gpt-6.1-sol', 'running', '2026-10-04T10:00:00Z');`);
+      INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at)
+        SELECT 't-1', 'asha', id, 'turn-1', 'thread-1', 'gpt-6.1-sol', 'running', '2026-10-04T10:00:00Z' FROM chats;`);
     left.close();
     const core = await start();
     const page = await session(core);
     expect(
-      (await page.api("GET", "/api/people/asha/chats/c-1")).body["turns"],
+      (await page.api("GET", "/api/people/asha/chat")).body["turns"],
     ).toMatchObject([
       {
         status: "interrupted",
@@ -504,22 +495,24 @@ describe("the local API", () => {
     expect(reply.headers["cache-control"]).toBe("no-store");
   });
 
-  it("finds a chat only under its own person", async () => {
+  it("reaches only the chat of the person in the path", async () => {
     const core = await start();
     const page = await session(core);
     const c = await chat(page);
     const ravi = addRavi();
-    expect((await page.api("GET", c.path)).status).toBe(200);
-    expect(
-      (await page.api("GET", `/api/people/${ravi.id}/chats/${c.id}`)).status,
-    ).toBe(404);
+    await page.say(c.path, "Asha's fictional message");
+    const ravis = `/api/people/${ravi.id}/chat`;
+    expect((await page.api("GET", ravis)).body["entries"]).toEqual([]);
+    expect((await page.api("GET", `${ravis}/draft`)).body).toMatchObject({
+      text: "",
+    });
+    expect((await page.api("GET", "/api/people/nobody/chat")).status).toBe(404);
     expect(
       (
-        await page.api(
-          "POST",
-          `/api/people/${ravi.id}/chats/${c.id}/messages`,
-          { text: "Hi" },
-        )
+        await page.api("POST", "/api/people/nobody/chat/messages", {
+          text: "Hi",
+          draft: 0,
+        })
       ).status,
     ).toBe(404);
   });
@@ -556,6 +549,11 @@ describe("the local API", () => {
     expect(tooLong.body).toEqual({
       error: "A message needs some text, and can be at most 10,000 characters.",
     });
+    for (const before of ["0", "-1", "1.5", "x", ""]) {
+      expect((await page.api("GET", `${c.path}?before=${before}`)).status).toBe(
+        400,
+      );
+    }
     // Only regions Rufi knows, not names every object has.
     for (const emergencyRegion of ["ZZ", "toString"]) {
       expect(
@@ -564,13 +562,12 @@ describe("the local API", () => {
     }
   });
 
-  it("keeps a draft per chat, and refuses a save based on an older revision", async () => {
+  it("keeps the chat's draft, and refuses a save based on an older revision", async () => {
     const core = await start();
     const page = await session(core);
     const c = await chat(page);
-    const other = (await page.api("POST", `/api/people/${c.person}/chats`, {}))
-      .body["chat"] as { id: string };
-    const draft = `/api/people/${c.person}/drafts/${c.id}`;
+    const ravi = addRavi();
+    const draft = c.draft;
     expect((await page.api("GET", draft)).body).toEqual({
       text: "",
       revision: 0,
@@ -580,7 +577,7 @@ describe("the local API", () => {
       (await page.api("PUT", draft, { text: "Start", revision: 0 })).body,
     ).toEqual({ text: "Start", revision: 1, state: "editable" });
     await page.api("PUT", draft, { text: "Start here", revision: 1 });
-    await page.api("PUT", `/api/people/${c.person}/drafts/${other.id}`, {
+    await page.api("PUT", `/api/people/${ravi.id}/chat/draft`, {
       text: "Half written",
       revision: 0,
     });
@@ -612,7 +609,7 @@ describe("the local API", () => {
     });
     const page = await session(core);
     const c = await chat(page);
-    const draft = `/api/people/${c.person}/drafts/${c.id}`;
+    const draft = c.draft;
     const changed = (text: string, revision: number) => ({
       status: 409,
       body: {
@@ -711,7 +708,7 @@ describe("the local API", () => {
     // The person can go on from it: edit, or send it again themselves.
     expect(
       (
-        await page.api("PUT", `/api/people/${c.person}/drafts/${c.id}`, {
+        await page.api("PUT", c.draft, {
           text: "Hello again",
           revision: 3,
         })
@@ -726,7 +723,7 @@ describe("the local API", () => {
     });
     const page = await session(core);
     const c = await chat(page);
-    const draft = `/api/people/${c.person}/drafts/${c.id}`;
+    const draft = c.draft;
     await page.say(c.path, "hang");
     await until(async () =>
       (
@@ -754,54 +751,31 @@ describe("the local API", () => {
     ).toEqual(["Next question"]);
   });
 
-  it("creates a chat at once, without the AI; its first message taken chooses the model and names it", async () => {
-    // Codex doesn't answer the list of models: creating doesn't need it.
+  it("makes the person's chat with them, without the AI; its first message chooses the model, unless one was chosen", async () => {
+    // Codex doesn't answer the list of models: the chat doesn't need it.
     let core = await start({ agent: scripted({ hang: ["model/list"] }) });
     let page = await session(core);
-    const asha = (
-      await page.api("POST", "/api/people", { displayName: "Asha Fictional" })
-    ).body["person"] as { id: string };
-    const people = `/api/people/${asha.id}`;
-    const create = await page.api("POST", `${people}/chats`, {});
-    expect(create.status).toBe(201);
-    const created = create.body["chat"] as { id: string };
-    expect(created).toMatchObject({ title: null, model: null });
+    const c = await chat(page);
+    expect(await page.api("GET", c.path)).toMatchObject({
+      status: 200,
+      body: { chat: { model: null }, entries: [], turns: [], before: null },
+    });
     await stop();
 
     core = await start();
     page = await session(core);
-    const path = `${people}/chats/${created.id}`;
-    const text =
-      "Is my **TSH** still high after the lab [amended](https://example.com/lab) it in August?\nAnd the Free T4?";
-    expect((await page.say(path, text)).status).toBe(202);
-    expect((await page.api("GET", path)).body["chat"]).toMatchObject({
-      title: "Is my TSH still high after the lab amended it in August?",
+    expect((await page.say(c.path, "Is my TSH still high?")).status).toBe(202);
+    expect((await page.api("GET", c.path)).body["chat"]).toEqual({
       model: "gpt-6-astra",
     });
 
-    // A model chosen before the first message stays; a long first line is
-    // cut at a word; a later message keeps the title.
-    const second = (
-      (await page.api("POST", `${people}/chats`, {})).body["chat"] as {
-        id: string;
-      }
-    ).id;
-    const secondPath = `${people}/chats/${second}`;
-    await page.api("PUT", `${secondPath}/model`, { model: "gpt-6.1-sol" });
-    await page.say(secondPath, `${"word ".repeat(20)}end`);
-    expect((await page.api("GET", secondPath)).body["chat"]).toMatchObject({
-      title: `${"word ".repeat(12).trimEnd()}…`,
+    // Another person's model, chosen before their first message, stays.
+    const ravi = `/api/people/${addRavi().id}/chat`;
+    await page.api("PUT", `${ravi}/model`, { model: "gpt-6.1-sol" });
+    await page.say(ravi, "Hello");
+    expect((await page.api("GET", ravi)).body["chat"]).toEqual({
       model: "gpt-6.1-sol",
     });
-    await until(async () =>
-      (
-        (await page.api("GET", path)).body["turns"] as { status: string }[]
-      ).every((turn) => turn.status !== "running"),
-    );
-    await page.say(path, "Something else");
-    expect(
-      ((await page.api("GET", path)).body["chat"] as { title: string }).title,
-    ).toBe("Is my TSH still high after the lab amended it in August?");
   });
 
   it(
@@ -830,7 +804,7 @@ describe("the local API", () => {
           launchUrl: () => link ?? "",
         });
         const c = await chat(page);
-        draft = `/api/people/${c.person}/drafts/${c.id}`;
+        draft = c.draft;
         await page.api("PUT", draft, { text: "Outgoing text", revision: 0 });
         void page
           .api("POST", `${c.path}/messages`, {
@@ -865,26 +839,6 @@ describe("the local API", () => {
       });
     },
   );
-
-  it("remembers the chat to open the chat on, for that person only", async () => {
-    const core = await start();
-    const page = await session(core);
-    const c = await chat(page);
-    const list = `/api/people/${c.person}/chats`;
-    expect((await page.api("GET", list)).body["chosen"]).toBeNull();
-    const chosen = `/api/people/${c.person}/chosen`;
-    await page.api("PUT", chosen, { chatId: c.id });
-    expect((await page.api("GET", list)).body["chosen"]).toBe(c.id);
-
-    const ravi = addRavi();
-    expect(
-      (
-        await page.api("PUT", `/api/people/${ravi.id}/chosen`, {
-          chatId: c.id,
-        })
-      ).status,
-    ).toBe(404);
-  });
 
   it("offers the allowed models, and says when the allowlist is broken", async () => {
     const core = await start();
@@ -968,35 +922,29 @@ describe("the local API", () => {
     live.hangUp();
   });
 
-  it("tells an open stream when the chat's title or model changes", async () => {
+  it("tells an open stream when the chat's model changes", async () => {
     const core = await start();
     const page = await session(core);
     const c = await chat(page);
     const live = stream(core.port, `${c.path}/stream`, page.headers);
     await until(() => live.lines.length > 0);
-    expect(live.lines[0]).toMatchObject({ chat: { title: null } });
+    expect(live.lines[0]).toMatchObject({ chat: { model: null } });
     const changed = () =>
       live.lines.flatMap((line) =>
         line.type === "update" && line.chat ? [line.chat] : [],
       );
     await page.say(c.path, "Hello there");
-    // The first message chooses the first allowed model, then names it.
-    await until(() => changed().length === 2);
-    expect(changed()).toMatchObject([
-      { title: null, model: "gpt-6-astra" },
-      { title: "Hello there", model: "gpt-6-astra" },
-    ]);
+    // The first message chooses the first allowed model.
+    await until(() => changed().length === 1);
+    expect(changed()).toEqual([{ model: "gpt-6-astra" }]);
     await until(async () =>
       (
         (await page.api("GET", c.path)).body["turns"] as { status: string }[]
       ).every((turn) => turn.status === "completed"),
     );
     await page.api("PUT", `${c.path}/model`, { model: "gpt-6.1-sol" });
-    await until(() => changed().length === 3);
-    expect(changed()[2]).toMatchObject({
-      title: "Hello there",
-      model: "gpt-6.1-sol",
-    });
+    await until(() => changed().length === 2);
+    expect(changed()[1]).toEqual({ model: "gpt-6.1-sol" });
     live.hangUp();
   });
 
@@ -1304,7 +1252,7 @@ describe("never starting over", () => {
 });
 
 describe("first run", () => {
-  it("goes through its steps, kept by the core, and makes one person from two tabs", async () => {
+  it("goes through its steps, kept by the core, and makes one person with one chat from two tabs", async () => {
     const core = await start();
     const page = await session(core);
     const second = await session(core);
@@ -1320,9 +1268,13 @@ describe("first run", () => {
       second.api("POST", "/api/people", { displayName: "Asha F." }),
     ]);
     expect(both.map((r) => r.status).sort((a, b) => a - b)).toEqual([201, 409]);
-    expect((await page.api("GET", "/api/people")).body["people"]).toHaveLength(
-      1,
-    );
+    const people = (await page.api("GET", "/api/people")).body["people"] as {
+      id: string;
+    }[];
+    expect(people).toHaveLength(1);
+    expect(
+      (await page.api("GET", `/api/people/${people[0]?.id ?? ""}/chat`)).body,
+    ).toMatchObject({ entries: [], before: null });
 
     // Signed out: the sign-in step, until it is skipped.
     expect(await second.api("GET", "/api/first-run")).toMatchObject({
@@ -1439,7 +1391,7 @@ describe("backups and export over the API", () => {
           (await page.api("GET", c.path)).body["turns"] as { status: string }[]
         ).some((turn) => turn.status === "running"),
       );
-      const draft = c.path.replace("/chats/", "/drafts/");
+      const draft = c.draft;
       const { revision } = (await page.api("GET", draft)).body;
       await page.api("PUT", draft, {
         text: "An unsent fictional note",
@@ -1486,6 +1438,14 @@ describe("backups and export over the API", () => {
           ).at(2)?.status === "completed",
       );
       expect(logged).toContain("chat.resume_failed");
+      // The chat shows where the AI started afresh.
+      expect(
+        (
+          (await restored.api("GET", c.path)).body["turns"] as {
+            afresh: boolean;
+          }[]
+        ).map((turn) => turn.afresh),
+      ).toEqual([false, false, true]);
     },
   );
 });

@@ -176,21 +176,18 @@ const saveHeadache = {
   },
 };
 
-const chatRow = async (id: string): Promise<ChatRow> => {
-  const found = await transcripts.chat("asha", id);
+/** Asha's chat, as stored now. */
+const chatRow = async (_id?: string): Promise<ChatRow> => {
+  const found = await transcripts.chat("asha");
   if (!found) throw new Error("no chat");
   return found;
 };
 
-async function newChat(): Promise<ChatRow> {
-  if (!chat) throw new Error("no chat");
-  const { id } = await chat.create("asha", "Fictional chat");
-  return chatRow(id);
-}
+const newChat = () => chatRow();
 
 /** The transcript as [kind, text] pairs, and the turns' statuses. */
 async function transcript(id: string) {
-  const snapshot = await transcripts.snapshot(await chatRow(id));
+  const snapshot = await transcripts.page(await chatRow(id));
   return {
     entries: snapshot.entries.map((e: Entry) => [e.kind, e.text]),
     turns: snapshot.turns,
@@ -578,8 +575,14 @@ describe("the chat, on the scripted Codex", () => {
     await expect(chat?.selectModel(c, "gpt-retired")).rejects.toThrow(
       "That model isn't allowed or isn't offered now.",
     );
+    // A chat with no model yet, when none of the allowed ones is offered.
     await startChat("fake", { allowlist: ["gpt-retired"] });
-    await expect(chat?.send(await newChat(), "Hello")).rejects.toThrow(
+    store.db.exec(
+      "INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional')",
+    );
+    const ravis = await transcripts.chat("ravi");
+    if (!ravis) throw new Error("no chat");
+    await expect(chat?.send(ravis, "Hello")).rejects.toThrow(
       "None of the allowed models is offered now.",
     );
   });
@@ -933,6 +936,49 @@ describe("the chat, on the scripted Codex", () => {
     );
   });
 
+  it("marks only the first reply on a new thread as afresh: a model chosen and not used, or a send stopped before it began, marks nothing", async () => {
+    await startChat("fake", {
+      scenario: { slow: ["thread/queue/add"], slowMs: 300 },
+    });
+    const c = await newChat();
+    await chat?.send(c, "first");
+    await ended(c.id, 1);
+    // Chosen and changed back before a message: the thread goes on.
+    await chat?.selectModel(c, "gpt-6-astra");
+    await chat?.selectModel(c, "gpt-6.1-sol");
+    await chat?.send(await chatRow(), "second");
+    await ended(c.id, 2);
+    // A new model; the first send to its new thread is stopped on its way.
+    await chat?.selectModel(c, "gpt-6-astra");
+    const stopped = chat?.send(await chatRow(), "never sent");
+    await sleep(100);
+    await chat?.stop(await chatRow());
+    await expect(stopped).rejects.toThrow();
+    await chat?.send(await chatRow(), "third");
+    await ended(c.id, 3);
+    await chat?.send(await chatRow(), "fourth");
+    await ended(c.id, 4);
+    expect((await transcript(c.id)).turns.map((t) => t.afresh)).toEqual([
+      false,
+      false,
+      true,
+      false,
+    ]);
+  });
+
+  it("keeps the AI's compaction of its memory, done once Codex completed it", async () => {
+    await startChat("fake", { scenario: { compaction: true } });
+    const c = await newChat();
+    await chat?.send(c, "Hello");
+    await ended(c.id);
+    const compacted = (await transcript(c.id)).all.filter(
+      (entry) => entry.activity === "compaction",
+    );
+    expect(compacted).toMatchObject([
+      { text: "Compacted its memory of the chat", status: "done" },
+    ]);
+  });
+
   it("saves a usage limit's end reason and reset time", async () => {
     await startChat("fake", { scenario: { resetsAt: 1_791_000_000 } });
     const c = await newChat();
@@ -996,13 +1042,11 @@ describe("the chat, on the scripted Codex", () => {
   });
 
   it("shows a cut reply's answer without How or half a block, with what it had read, and passes it on marked", async () => {
-    const c = await transcripts.createChat(
-      "asha",
-      "Cut",
-      "codex",
-      "gpt-6.1-sol",
-    );
-    await transcripts.startTurn(c, "t-1", "gpt-6.1-sol");
+    const c = await newChat();
+    await transcripts.startTurn(c, "t-1", {
+      id: "thread-cut",
+      model: "gpt-6.1-sol",
+    });
     await transcripts.recordToolCall(c, "t-1", {
       callId: "call-1",
       tool: "get_records",
@@ -1051,13 +1095,11 @@ describe("the chat, on the scripted Codex", () => {
   });
 
   it("keeps a reply's text when a crash cuts it, and marks it interrupted", async () => {
-    const c = await transcripts.createChat(
-      "asha",
-      "Cut",
-      "codex",
-      "gpt-6.1-sol",
-    );
-    await transcripts.startTurn(c, "t-1", "gpt-6.1-sol");
+    const c = await newChat();
+    await transcripts.startTurn(c, "t-1", {
+      id: "thread-cut",
+      model: "gpt-6.1-sol",
+    });
     await transcripts.appendReply(c, "t-1", "item-1", "Half a rep");
     await transcripts.setActivity(c, "t-1", "item-2", {
       activity: "command",

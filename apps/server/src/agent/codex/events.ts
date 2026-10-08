@@ -150,8 +150,8 @@ export function activityOf(
       );
     case "contextCompaction":
       return line(
-        "other",
-        "Condensed the earlier chat",
+        "compaction",
+        "Compacted its memory of the chat",
         undefined,
         statusOf(undefined, ended),
       );

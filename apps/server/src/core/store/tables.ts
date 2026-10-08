@@ -29,8 +29,6 @@ export interface Tables {
   chats: {
     id: string;
     person_id: string;
-    title: string | null;
-    provider: string;
     model: string | null;
     thread_id: string | null;
     thread_provider: string | null;
@@ -38,10 +36,6 @@ export interface Tables {
     thread_tools: string | null;
     revision: number;
     created_at: string;
-  };
-  chosen_chats: {
-    person_id: string;
-    chat_id: string;
   };
   conditions: {
     id: string;
@@ -238,6 +232,7 @@ export interface Tables {
     person_id: string;
     chat_id: string;
     agent_turn_id: string;
+    thread_id: string;
     model: string;
     status: string;
     end_reason: string | null;

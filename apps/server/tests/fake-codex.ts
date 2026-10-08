@@ -66,6 +66,8 @@ export interface Scenario {
   };
   /** The summary parts of a reasoning item the turn has before its answer. */
   reasoning?: string[];
+  /** Codex compacts the thread's context during the turn, before answering. */
+  compaction?: boolean;
   /** Tool calls the model makes during a turn, before answering. */
   calls?: { namespace: string | null; tool: string; arguments: unknown }[];
   /** A usage-limit snapshot sent before a failed turn. */
@@ -314,6 +316,13 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
         content: [],
       },
     });
+  }
+  if (scenario.compaction) {
+    // As Codex 0.159.3 does: the item starts, and completes once the
+    // thread's history is replaced.
+    const item = { id: "item-compact", type: "contextCompaction" };
+    event("item/started", { item });
+    event("item/completed", { item });
   }
   if (text.includes("hang")) return;
   if (text.includes("partial")) {

@@ -29,7 +29,7 @@ const row = await store.query
   .select("person_id")
   .where("id", "=", chatId)
   .executeTakeFirstOrThrow();
-const chat = await transcripts.chat(row.person_id, chatId);
+const chat = await transcripts.chat(row.person_id);
 if (!chat) throw new Error("no chat");
 await chatCaller(openReadOnly(path), transcripts, () => undefined)(chat, "t-1")(
   "save_changes",
