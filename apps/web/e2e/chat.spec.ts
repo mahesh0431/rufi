@@ -279,6 +279,35 @@ test("signed out, the chat doesn't say it uses the ChatGPT plan", async ({
   ).toHaveCount(0);
 });
 
+test("signed out, the model's button has no empty place for a name, and its menu signs in", async ({
+  page,
+  rufi,
+}) => {
+  rufi.account = { account: "signed_out", email: null };
+  // The core can't list the models without the sign-in.
+  await page.route("**/api/models", (route) =>
+    route.fulfill({
+      status: 409,
+      json: {
+        error:
+          "Not signed in. Sign in with ChatGPT: in Rufi, or with pnpm rufi signin.",
+      },
+    }),
+  );
+  await opened(page, rufi);
+  const choice = chat(page).getByRole("button", { name: /^Model and effort/ });
+  await expect(choice).toHaveText("Medium");
+  expect((await choice.boundingBox())?.width ?? 0).toBeLessThan(110);
+  await box(chat(page)).click();
+  await choice.click();
+  await expect(page.getByRole("menu")).not.toContainText("pnpm");
+  await page.getByRole("menuitem", { name: "Sign in with ChatGPT" }).click();
+  await expect(page).toHaveURL(/\/sign-in$/);
+  await expect(
+    page.getByRole("button", { name: "Sign in with ChatGPT" }),
+  ).toBeVisible();
+});
+
 test("the button for the model never says Model or a model's id: before the list of models comes, it keeps the name's place empty", async ({
   page,
   rufi,
