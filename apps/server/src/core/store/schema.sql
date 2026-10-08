@@ -223,7 +223,8 @@ CREATE TABLE settings (
   value TEXT NOT NULL
 ) STRICT;
 
--- Each person's one chat with Rufi's AI. Chats and their transcripts are
+-- Each person's one chat with Rufi's AI, made in the same transaction as the
+-- person (transcripts.addFirstPerson). Chats and their transcripts are
 -- Rufi's own (docs/adr/0004). The agent's thread is only a pointer: a new
 -- one can start at any time.
 CREATE TABLE chats (
@@ -238,14 +239,6 @@ CREATE TABLE chats (
   created_at TEXT NOT NULL,
   UNIQUE (person_id, id)
 ) STRICT;
-
--- A person's chat is made with them, in the same statement: no person is
--- ever without one, whoever adds them.
-CREATE TRIGGER chat_with_person AFTER INSERT ON people
-BEGIN
-  INSERT INTO chats (id, person_id, created_at)
-  VALUES (lower(hex(randomblob(16))), NEW.id, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
-END;
 
 -- One per reply the agent ran. Final once it has ended.
 CREATE TABLE turns (

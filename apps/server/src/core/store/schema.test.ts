@@ -80,22 +80,13 @@ describe("schema", () => {
       updated_at: now,
     };
 
-    // Each person's chat, made with them, named here for the tests.
+    // Each person's chat.
     beforeEach(() => {
-      db.exec("UPDATE chats SET id = 'c-' || person_id");
+      insert("chats", { id: "c-amma", person_id: "amma", created_at: now });
+      insert("chats", { id: "c-nanna", person_id: "nanna", created_at: now });
     });
 
-    it("gives each person one chat, made with them, and never a second", () => {
-      insert("people", { id: "ammamma", display_name: "Ammamma" });
-      expect(
-        db
-          .prepare("SELECT person_id, revision FROM chats ORDER BY person_id")
-          .all(),
-      ).toEqual([
-        { person_id: "amma", revision: 0 },
-        { person_id: "ammamma", revision: 0 },
-        { person_id: "nanna", revision: 0 },
-      ]);
+    it("never gives a person a second chat", () => {
       expect(() => {
         insert("chats", { id: "c-2", person_id: "amma", created_at: now });
       }).toThrow("UNIQUE constraint failed: chats.person_id");

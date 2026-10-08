@@ -6,6 +6,10 @@ INSERT INTO people (id, display_name) VALUES
   ('asha', 'Asha Fictional'),
   ('ravi', 'Ravi Fictional');
 
+INSERT INTO chats (id, person_id, created_at) VALUES
+  ('c-asha', 'asha', '2026-10-01T09:00:00Z'),
+  ('c-ravi', 'ravi', '2026-10-01T09:00:00Z');
+
 INSERT INTO files (id, size, media_type, created_at) VALUES
   ('f1c710a1', 182344, 'application/pdf', '2026-08-13T09:00:00Z'),
   ('f1c710a2', 95112, 'image/jpeg', '2026-09-02T18:30:00Z'),

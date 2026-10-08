@@ -468,18 +468,35 @@ export function transcripts(
         .execute(),
 
     /**
-     * Adds the first person, as first run does, and with them their chat
-     * (schema.sql); undefined when someone is already there. One statement,
-     * so two tabs never make two people or two chats.
+     * Adds the first person, as first run does, and with them their chat, in
+     * one transaction; undefined when someone is already there. The person
+     * is added only when there is none, so two tabs never make two people or
+     * two chats.
      */
-    addFirstPerson: async (displayName: string) => {
-      const id = uuid();
-      const { numAffectedRows } = await sql`
-        INSERT INTO people (id, display_name)
-        SELECT ${id}, ${displayName} WHERE NOT EXISTS (SELECT 1 FROM people)
-      `.execute(db);
-      return numAffectedRows === 1n ? { id, displayName } : undefined;
-    },
+    addFirstPerson: (displayName: string) =>
+      db.transaction().execute(async (trx) => {
+        const id = uuid();
+        const { numAffectedRows } = await sql`
+          INSERT INTO people (id, display_name)
+          SELECT ${id}, ${displayName} WHERE NOT EXISTS (SELECT 1 FROM people)
+        `.execute(trx);
+        if (numAffectedRows !== 1n) return undefined;
+        await trx
+          .insertInto("chats")
+          .values({
+            id: uuid(),
+            person_id: id,
+            model: null,
+            thread_id: null,
+            thread_provider: null,
+            thread_model: null,
+            thread_tools: null,
+            revision: 0,
+            created_at: now(),
+          })
+          .execute();
+        return { id, displayName };
+      }),
 
     person: (id: string) =>
       db

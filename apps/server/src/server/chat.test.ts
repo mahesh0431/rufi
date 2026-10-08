@@ -41,9 +41,11 @@ let tokenGate: Promise<void> | undefined;
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), "rufi-chat-"));
   store = openWritable(databasePath(home));
-  store.db.exec(
-    "INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional')",
-  );
+  store.db.exec(`
+    INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
+    INSERT INTO chats (id, person_id, created_at)
+      VALUES ('c-asha', 'asha', '2026-10-01T09:00:00Z');
+  `);
   transcripts = openTranscripts(store);
   tokenGate = undefined;
 });
@@ -577,9 +579,11 @@ describe("the chat, on the scripted Codex", () => {
     );
     // A chat with no model yet, when none of the allowed ones is offered.
     await startChat("fake", { allowlist: ["gpt-retired"] });
-    store.db.exec(
-      "INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional')",
-    );
+    store.db.exec(`
+      INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
+      INSERT INTO chats (id, person_id, created_at)
+        VALUES ('c-ravi', 'ravi', '2026-10-01T09:00:00Z');
+    `);
     const ravis = await transcripts.chat("ravi");
     if (!ravis) throw new Error("no chat");
     await expect(chat?.send(ravis, "Hello")).rejects.toThrow(

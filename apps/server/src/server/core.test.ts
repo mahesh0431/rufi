@@ -135,15 +135,17 @@ function call(
 }
 
 /**
- * A second person, written straight into the record: first run adds only the
+ * A second person and their chat, written straight into the record: first run adds only the
  * first one, and more people come with family.
  */
 function addRavi(): { id: string } {
   const store = openWritable(databasePath(home));
   try {
-    store.db.exec(
-      "INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional')",
-    );
+    store.db.exec(`
+      INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
+      INSERT INTO chats (id, person_id, created_at)
+        VALUES ('c-ravi', 'ravi', '2026-10-04T09:00:00Z');
+    `);
   } finally {
     store.close();
   }
@@ -333,6 +335,8 @@ describe("the core", () => {
     const left = openWritable(databasePath(home));
     left.db.exec(`
       INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional'), ('ravi', 'Ravi Fictional');
+      INSERT INTO chats (id, person_id, created_at) VALUES
+        ('c-asha', 'asha', '2026-10-04T09:00:00Z'), ('c-ravi', 'ravi', '2026-10-04T09:00:00Z');
       INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, revision, created_at, updated_at)
         SELECT 'm-1', 'asha', id, 1, 'message', 'Taken', 1, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z' FROM chats WHERE person_id = 'asha';
       INSERT INTO drafts (person_id, chat_id, text, revision, state, attempt, updated_at)
@@ -354,6 +358,7 @@ describe("the core", () => {
     const left = openWritable(databasePath(home));
     left.db.exec(`
       INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
+      INSERT INTO chats (id, person_id, created_at) VALUES ('c-asha', 'asha', '2026-10-04T09:00:00Z');
       INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at)
         SELECT 't-1', 'asha', id, 'turn-1', 'thread-1', 'gpt-6.1-sol', 'running', '2026-10-04T10:00:00Z' FROM chats;`);
     left.close();

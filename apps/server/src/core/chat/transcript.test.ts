@@ -25,9 +25,11 @@ beforeEach(async () => {
   const store = openWritable(
     databasePath(await mkdtemp(join(tmpdir(), "rufi-pages-"))),
   );
-  store.db.exec(
-    "INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional')",
-  );
+  store.db.exec(`
+    INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
+    INSERT INTO chats (id, person_id, created_at)
+      VALUES ('c-asha', 'asha', '2026-10-01T08:00:00Z');
+  `);
   minute = 0;
   transcripts = openTranscripts(store, clock);
   chat = (await transcripts.chat("asha")) as ChatRow;
