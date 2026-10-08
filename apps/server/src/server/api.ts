@@ -9,6 +9,7 @@ import {
   ReorderWaiting,
   SaveDraft,
   SaveSettings,
+  SelectEffort,
   SelectModel,
   SendMessage,
   type Backups,
@@ -441,6 +442,12 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     const { model } = await body(c, SelectModel);
     await acting(() => chat.selectModel(found, model));
     return c.json({ model });
+  });
+  app.put(`${one}/effort`, async (c) => {
+    const found = await chatOf(c);
+    const { effort } = await body(c, SelectEffort);
+    await acting(() => chat.selectEffort(found, effort));
+    return c.json({ effort });
   });
 
   // The waiting messages are the agent's own list.

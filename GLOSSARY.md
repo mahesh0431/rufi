@@ -69,11 +69,11 @@ Each person's one conversation with Rufi's AI, kept by Rufi and made with the pe
 _Avoid_: conversation, thread, session
 
 **Chat bar**:
-The box at the bottom right of the Overview: the person's chat, the same in every browser tab. Other pages reach the chat with **Chat with Rufi** in the sidebar.
+The box at the bottom right of the Overview, a pill with the model and effort and Send: the person's chat, the same in every browser tab. While a reply runs, it says "Rufi is answering" with Stop. Other pages reach the chat with **Chat with Rufi** in the sidebar.
 _Avoid_: composer, input
 
 **Chat panel**:
-The chat opened over the page from the chat bar (or with ⌘J), always the same size. Esc or a click outside it closes it back to the bar; what was typed stays as the draft.
+The chat opened over the page from the chat bar (or with ⌘J), always the same size, with a thin top bar: – back to the bar, and the arrows to the chat page. –, Esc or a click outside it closes it back to the bar; what was typed stays as the draft.
 _Avoid_: drawer, popup, sidebar
 
 **Chat page**:
@@ -116,8 +116,12 @@ The message you started in the chat and haven't sent, saved quietly while you ty
 _Avoid_: note, unsent
 
 **Model**:
-The version of the AI that answers, such as GPT-6-Astra, chosen for the chat from the allowlist. A new model starts the AI afresh with the chat's last 10 messages; it can read further back.
+The version of the AI that answers, such as GPT-6-Astra, chosen for the chat from the allowlist, with its **effort**, in the box. A new model starts the AI afresh with the chat's last 10 messages; it can read further back.
 _Avoid_: engine, brain
+
+**Effort**:
+How hard the AI thinks before it answers: Low, Medium or High, chosen for the chat with the model. Medium until the user chooses another. A new effort applies from the next reply; the AI doesn't start afresh.
+_Avoid_: reasoning level, thinking mode
 
 **Allowlist**:
 The models Rufi may use: `models.json` in the data folder. The chat uses the first one until the user chooses another. It starts with the strongest models, GPT-6-Astra first, and you can edit it.

@@ -36,6 +36,7 @@ import type { ThreadBackgroundTerminalsListResponse } from "./protocol/v2/Thread
 import type { ThreadQueueListResponse } from "./protocol/v2/ThreadQueueListResponse.ts";
 import type { ThreadReadResponse } from "./protocol/v2/ThreadReadResponse.ts";
 import type { ThreadResumeResponse } from "./protocol/v2/ThreadResumeResponse.ts";
+import type { ThreadSettingsUpdateParams } from "./protocol/v2/ThreadSettingsUpdateParams.ts";
 import type { ThreadStartResponse } from "./protocol/v2/ThreadStartResponse.ts";
 import type { ThreadTurnsListResponse } from "./protocol/v2/ThreadTurnsListResponse.ts";
 import type { TurnCompletedNotification } from "./protocol/v2/TurnCompletedNotification.ts";
@@ -111,6 +112,8 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   const paused = new Map<string, boolean>();
   /** Threads where a Stop came during a resume: a reply it starts is stopped. */
   const stopNext = new Set<string>();
+  /** The effort Rufi set on each thread in the current app-server. */
+  const efforts = new Map<string, string>();
   let limits: RateLimitSnapshot | undefined;
   let tracking: NodeJS.Timeout | undefined;
 
@@ -160,6 +163,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         if (!server || server.running()) return;
         server = undefined;
         loaded.clear();
+        efforts.clear();
         endAll({
           status: "failed",
           reason: "provider_failed",
@@ -179,6 +183,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     const old = server;
     server = undefined;
     loaded.clear();
+    efforts.clear();
     await old?.stop();
     endAll({
       status: "failed",
@@ -680,6 +685,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       const app = await ready(signal);
       stopNext.delete(threadId);
       paused.delete(threadId);
+      efforts.delete(threadId);
       // Codex may start what waits as it resumes: the person asked for that.
       const response = await mayStart(threadId, signal, async () => {
         const resumed = await request<ThreadResumeResponse>(
@@ -708,6 +714,18 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         ...(message.context === undefined ? [] : [textInput(message.context)]),
         textInput(message.text),
       ];
+      // A queued message has no effort of its own: the thread's, for the
+      // turns after, is set first.
+      if (
+        message.effort !== undefined &&
+        efforts.get(threadId) !== message.effort
+      ) {
+        await request(app, "thread/settings/update", {
+          threadId,
+          effort: message.effort,
+        } satisfies ThreadSettingsUpdateParams);
+        efforts.set(threadId, message.effort);
+      }
       await mayStart(threadId, signal, async () => {
         await request(app, "thread/queue/add", {
           threadId,

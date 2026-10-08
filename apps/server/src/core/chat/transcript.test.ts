@@ -179,7 +179,7 @@ describe("the chat's pages", () => {
   it("are empty for a new chat", async () => {
     expect(await transcripts.page(chat)).toEqual({
       revision: 0,
-      chat: { model: null },
+      chat: { model: null, effort: "medium" },
       entries: [],
       turns: [],
       before: null,

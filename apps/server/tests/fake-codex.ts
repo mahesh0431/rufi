@@ -112,6 +112,8 @@ interface Queued {
 interface Thread {
   id: string;
   model: string;
+  /** The effort its next turns run with; none: the config's. */
+  effort?: string;
   queue: Queued[];
   paused: boolean;
   running:
@@ -211,6 +213,7 @@ function dispatch(thread: Thread, entry?: Queued) {
     [...threads.values()].reduce((n, t) => n + t.history.length, 0) + 1,
   )}`;
   thread.running = { turnId, steers: [], interrupted: false };
+  record({ turn: turnId, effort: thread.effort ?? null });
   thread.history.push({ id: turnId, status: "inProgress", messages: [next] });
   changed(thread);
   setImmediate(() => void runTurn(thread, turnId, next));
@@ -559,6 +562,13 @@ function handle(method: string, params: Record<string, unknown>): unknown {
     }
     case "thread/read":
       return threadResponse(threadOf(params));
+    case "thread/settings/update": {
+      const thread = threadOf(params);
+      if (typeof params["effort"] === "string")
+        thread.effort = params["effort"];
+      persist();
+      return {};
+    }
     case "thread/queue/add": {
       const thread = threadOf(params);
       if (thread.queue.length >= 100) throw new Error("queue is full");
