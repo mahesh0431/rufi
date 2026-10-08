@@ -223,6 +223,12 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     approvalPolicy: "never",
     sandbox: "danger-full-access",
     developerInstructions: settings.instructions,
+    // Resumed with a model, Codex takes the effort from its config again,
+    // not the thread's own: it is given here, before the resume runs
+    // anything that waits.
+    ...(settings.effort !== undefined && {
+      config: { model_reasoning_effort: settings.effort },
+    }),
   });
 
   function check(
@@ -232,6 +238,12 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     const problems: string[] = [];
     if (response.model !== settings.model) {
       problems.push(`the model is ${response.model}`);
+    }
+    if (
+      settings.effort !== undefined &&
+      response.reasoningEffort !== settings.effort
+    ) {
+      problems.push(`the effort is ${String(response.reasoningEffort)}`);
     }
     if (response.approvalPolicy !== "never") {
       problems.push("it asks for approvals");
@@ -539,6 +551,9 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     signal: AbortSignal | undefined,
     run: () => Promise<T>,
   ): Promise<T> {
+    // Stopped already (while the effort was set, say): nothing leaves.
+    // A listener added now would never hear that Stop.
+    if (signal?.aborted) throw new Stopped();
     const onStop = () => {
       const reply = turns.get(threadId);
       if (reply) void stopTurn(reply);
@@ -678,6 +693,9 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       loaded.add(response.thread.id);
       paused.set(response.thread.id, false);
       check(response, settings);
+      if (settings.effort !== undefined) {
+        efforts.set(response.thread.id, settings.effort);
+      }
       return { threadId: response.thread.id, model: response.model };
     },
 
@@ -699,6 +717,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       const running =
         response.thread.status.type === "active" || turns.has(threadId);
       check(response, settings);
+      if (settings.effort !== undefined) efforts.set(threadId, settings.effort);
       return { model: response.model, running };
     },
 

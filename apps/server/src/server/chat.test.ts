@@ -478,6 +478,29 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
+    "after a restart, a waiting message runs with the chat's effort",
+    timeout,
+    async () => {
+      await startChat(name);
+      await chat?.selectEffort(await newChat(), "high");
+      const c = await chatRow();
+      await chat?.send(c, "hang");
+      await running(c.id);
+      await until(async () => (await backend.efforts()).length === 1);
+      await chat?.send(c, "queued next");
+      await chat?.stop(c);
+      await ended(c.id);
+      const [waiting] = (await chat?.waiting.list(c)) ?? [];
+      if (!waiting) throw new Error("nothing waits");
+      // Rufi starts again; the person runs what waited.
+      await startChat(name);
+      await chat?.waiting.runNow(await chatRow(), waiting.id);
+      await ended(c.id, 2);
+      expect(await backend.efforts()).toEqual(["high", "high"]);
+    },
+  );
+
+  it(
     "refuses a model or effort change while a reply runs or a message waits",
     timeout,
     async () => {
@@ -611,6 +634,35 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
 });
 
 describe("the chat, on the scripted Codex", () => {
+  it("sends nothing when Stop comes while the effort is being set", async () => {
+    await startChat("fake", {
+      scenario: { slow: ["thread/settings/update"], slowMs: 250 },
+    });
+    const c = await newChat();
+    await chat?.send(c, "first");
+    await ended(c.id);
+    // A new effort for the thread that runs: it is set before the message.
+    await chat?.selectEffort(await chatRow(), "high");
+    const sent = chat
+      ?.send(await chatRow(), "Not after Stop")
+      .catch((error: unknown) => error);
+    const received = async () =>
+      (await readFile(join(home, "fake.jsonl"), "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as { received?: { method?: string } })
+        .map((line) => line.received?.method);
+    await until(async () =>
+      (await received()).includes("thread/settings/update"),
+    );
+    await chat?.stop(await chatRow());
+    await sent;
+    await sleep(400);
+    expect(
+      (await received()).filter((method) => method === "thread/queue/add"),
+    ).toHaveLength(1);
+  });
+
   it("starts and changes to allowed models the provider offers only", async () => {
     await startChat("fake", { allowlist: ["gpt-retired", "gpt-6-astra"] });
     const c = await newChat();

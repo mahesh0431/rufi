@@ -134,7 +134,7 @@ After you stop a reply, waiting messages keep waiting. Send a message, or click 
 
 ## The model and effort
 
-The model and effort that answer show in the box, next to the send button, in every size of the chat: for example "GPT-6-Astra Medium". Click them to open one menu with both.
+The model and effort that answer show in the box, next to the send button, in every size of the chat: for example "GPT-6-Astra Medium". Click them to open one menu with both. When you aren't signed in, the menu can't list the models: click **Sign in with ChatGPT** in it to sign in.
 
 **The model.** Your chat has one model at a time. To change it, choose another in the menu: a tick shows the one that answers now. Before your first message, the chat shows the first model in your list of models (`models.json`, see [Your data and the AI](your-data-and-the-ai.md)) that your ChatGPT plan offers now. In a new data folder, that is GPT-6-Astra. Choose another before your first message if you like. To make another model the first choice, put it first in the list.
 
