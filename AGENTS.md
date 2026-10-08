@@ -8,12 +8,14 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 - If the AI decides it, a live AI test covers it (real AI, fictional data), reported as passes out of runs. The live smoke set (`pnpm smoke`, the test sign-in in `RUFI_HOME`) runs each case three times; run it when the agent, its instructions or Rufi's tools change.
 - An agent adapter passes the same contract tests as the others: `server/chat.test.ts` runs on the scripted fake Codex and on the real Codex binary against a local fake model, offline.
 - No mocking the AI's judgement in code tests. No test modes in `src`: fakes are injected at the composition root.
+- Every test meets the `tdd` skill's bar. Always keep: live safety tests, person scope, nothing private in logs, `schema.sql`, `tools.json`, the Codex protocol types, Stop and clean-up.
 - The screens are tested in Chromium with Playwright (`apps/web/e2e/`) on the real core with the built screens, the scripted fake Codex and a fictional data folder, with axe on each screen and no CSP refusal; a short chat smoke runs the real Codex binary on the local fake model.
 - The Rufi app is tested with Playwright's Electron support (`apps/desktop/e2e/`) on the real `rufi start`, a fictional data folder per test, signed out; `e2e/fakes.ts` (loaded with `-r`) stands in for the Mac's message box and the browser. No test link names a scheme the Mac itself opens (`mailto:`, a made-up one): its alert can stop Electron from starting until someone closes it. CI runs them under a virtual display. Dock, menus, focus and the looks are checked by hand on the Mac.
 
 ## Code
 
 - **Effect v4 only; never v3 APIs** (lint refuses v3 package names). Effect for the parts that open, close, wait or fail; plain TypeScript elsewhere (ADR 0002).
+- Check Codex protocol claims against `protocol/` and the `openai/codex` source at the pinned tag; most of the app-server is undocumented.
 - Every external call has a deadline. Errors keep their `cause`. No empty `catch`, and a comment is not handling.
 - Logs hold fixed events and checked fields only (`platform/logs.ts`): a new event or field is added there. Never prompts, replies, health text, tokens or error messages.
 - Folders in `apps/server/src`: `platform` (Mac things) uses no other folder; `core` (record, tools, transcripts) and `agent` (sign-in, Codex) use only `platform`; `server` (the chat and the local API) joins `core` and `agent`; `cli` joins them all. Lint checks these borders. API shapes live in `packages/contracts` (Effect Schema).
@@ -28,12 +30,9 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 
 ## Docs
 
-- Three places: `docs/help/` for people (the in-app help and the website use these files as they are), `GLOSSARY.md` for everyone, `AGENTS.md` and `docs/adr/` for developers.
-- A change to behaviour, commands or settings updates its help page in the same pull request; the step's plan names the pages, or says why none change.
-- A help page says what a person sees and can rely on, never module, table, protocol or library names (those go in an ADR). It comes with its feature, never before it.
-- Help format: the first heading is the title and the first paragraph the summary; `docs/help/index.md` gives the order. Plain Markdown and tables: relative `.md` links, local images, no front matter, HTML, MDX, admonitions or Mermaid. Fictional data only, and never a real account's email.
-- Use the words in `GLOSSARY.md` everywhere: screens, docs, the AI's instructions and code. A new concept, or a changed meaning, updates the glossary in the same pull request.
-- Write an ADR in `docs/adr/` only when a decision is hard to reverse, surprising without its reason, and a real choice between options; a paragraph is enough. Update the existing ADR rather than adding a near-copy.
+- Three places: `docs/help/` for people (also the in-app help and the website, as they are), `GLOSSARY.md` for everyone, `AGENTS.md` and `docs/adr/` for developers; otherwise the `project-docs` skill.
+- A change to behaviour, commands or settings updates its help page and the glossary in the same pull request; the step's plan names the pages, or says why none change.
+- Use the glossary's words everywhere: screens, docs, the AI's instructions and code.
 
 ## Data model
 
