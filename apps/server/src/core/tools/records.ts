@@ -85,6 +85,8 @@ export const getRecords = defineTool({
     const kind = kindNamed(input.kind) as Kind;
     const field = kind.fields[kind.dated];
     const date = sql.ref(`r.${field?.column ?? kind.dated}`);
+    // A calendar date, not 'next_visit' or none.
+    const calendar = sql`${date} GLOB '[0-9][0-9][0-9][0-9]*'`;
     // A date at the precision both have: "2026" overlaps from 2026-03.
     const atBoth = (bound: string) =>
       sql`substr(${date}, 1, min(length(${date}), ${bound.length}))`;
@@ -99,11 +101,11 @@ export const getRecords = defineTool({
       ${
         input.from === undefined && input.to === undefined
           ? sql``
-          : sql`AND ${date} GLOB '[0-9][0-9][0-9][0-9]*'`
+          : sql`AND ${calendar}`
       }
       ${input.from === undefined ? sql`` : sql`AND ${atBoth(input.from)} >= substr(${input.from}, 1, length(${date}))`}
       ${input.to === undefined ? sql`` : sql`AND ${atBoth(input.to)} <= substr(${input.to}, 1, length(${date}))`}
-      ORDER BY ${date} IS NULL, ${date} DESC, r.rowid DESC
+      ORDER BY ${calendar} DESC, ${date} IS NULL, ${date} DESC, r.rowid DESC
       LIMIT ${LIMITS.records + 1}`.execute(store.query);
     const records: Record<string, unknown>[] = [];
     let bytes = 0;

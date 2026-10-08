@@ -90,10 +90,17 @@ describe("splitting a reply into its answer and How", () => {
   });
 
   it("keeps a rule or a list before the block", () => {
-    const answer = "- one\n- two\n\n---";
-    expect(splitBasis(`${answer}\n\n${block("How.")}`, true).answer).toBe(
-      answer,
-    );
+    for (const answer of [
+      "- one\n- two\n\n---",
+      "Answer.\n\n* * *",
+      "Answer.\n\n- - -",
+      "Answer.\n\n***",
+      "Answer.\n\n> * * *",
+    ]) {
+      expect(splitBasis(`${answer}\n\n${block("How.")}`, true).answer).toBe(
+        answer,
+      );
+    }
   });
 
   it("keeps a line that only looks like a fence once the reply finished", () => {

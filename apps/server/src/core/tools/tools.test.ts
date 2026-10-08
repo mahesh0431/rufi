@@ -321,7 +321,14 @@ describe("get_records", () => {
   });
 
   it("reads between two dates, a date at a lower precision when it overlaps, never an undated one", async () => {
-    const store = makeDatabase(family);
+    const store = makeDatabase(
+      family,
+      `INSERT INTO follow_ups (id, person_id, title, due) VALUES
+        ('fu-next', 'asha', 'Ask about the TSH', 'next_visit'),
+        ('fu-none', 'asha', 'Book an eye test', NULL),
+        ('fu-nov', 'asha', 'Repeat HbA1c', '2026-11'),
+        ('fu-oct', 'asha', 'Thyroid review', '2026-10-20')`,
+    );
     const between = async (from?: string, to?: string) =>
       ids(
         await records(store, {
@@ -345,6 +352,17 @@ describe("get_records", () => {
     expect(
       ids(await records(store, { kind: "medicine_use", from: "2025" })),
     ).toEqual(["med-a2"]);
+    // A follow-up due at the next visit has no calendar date: after the
+    // dated ones, before the undated, and never in a read between dates.
+    expect(ids(await records(store, { kind: "follow_up" }))).toEqual([
+      "fu-nov",
+      "fu-oct",
+      "fu-next",
+      "fu-none",
+    ]);
+    expect(
+      ids(await records(store, { kind: "follow_up", from: "2026" })),
+    ).toEqual(["fu-nov", "fu-oct"]);
     const { ok, body } = await records(store, {
       kind: "result",
       from: "last May",

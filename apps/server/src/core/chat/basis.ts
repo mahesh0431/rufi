@@ -68,6 +68,8 @@ export function splitBasis(
 const MARKERS = String.raw`(?:[ \t]*(?:>|(?:[-*+]|\d{1,9}[.)])(?=[ \t]|$)))*[ \t]*`;
 const OPENING = new RegExp(`^${MARKERS}(\`+|~+)(.*)$`);
 const MARKERS_ONLY = new RegExp(`^${MARKERS}$`);
+/** A divider ("* * *", "- - -"), also in a quote: never a leftover marker. */
+const RULE = /^(?:[ \t]*>)*[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 
 /**
  * The text without a last line that may be the start of a rufi-basis fence,
@@ -86,7 +88,8 @@ function withoutMarkers(text: string): string {
   let rest = text;
   for (;;) {
     const cut = rest.lastIndexOf("\n") + 1;
-    if (cut === 0 || !MARKERS_ONLY.test(rest.slice(cut))) return rest;
+    const last = rest.slice(cut);
+    if (cut === 0 || !MARKERS_ONLY.test(last) || RULE.test(last)) return rest;
     rest = rest.slice(0, cut).trimEnd();
   }
 }
