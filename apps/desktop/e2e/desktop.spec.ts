@@ -63,6 +63,83 @@ async function commandW(app: App): Promise<void> {
   expect(closed).toBe(true);
 }
 
+test("scrolling a chat with activity keeps the sidebar and composer in the window", async ({
+  desktop,
+}) => {
+  await mkdir(desktop.home, { recursive: true });
+  const store = openWritable(databasePath(desktop.home));
+  try {
+    store.db.exec(`
+      INSERT INTO settings (key, value) VALUES ('first_run.done', '2026-10-01T09:00:00Z');
+      INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
+      INSERT INTO chats (id, person_id, revision, created_at) VALUES ('chat', 'asha', 1, '2026-10-01T09:00:00Z');
+      INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at, ended_at)
+      VALUES ('turn', 'asha', 'chat', 'turn', 'thread', 'gpt-6-astra', 'completed', '2026-10-01T09:00:00Z', '2026-10-01T09:00:01Z');
+    `);
+    // A saved activity below a long message: its accessible status must
+    // stay inside the transcript's scrolling area too.
+    const insert = store.db.prepare(`
+      INSERT INTO transcript_entries (id, person_id, chat_id, seq, turn_id, kind, text, activity, status, revision, created_at, updated_at)
+      VALUES (?, 'asha', 'chat', ?, 'turn', ?, ?, ?, ?, 1, '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z')
+    `);
+    insert.run(
+      "message",
+      1,
+      "message",
+      "Fictional question\n".repeat(80),
+      null,
+      null,
+    );
+    insert.run("activity", 2, "activity", "Read your overview", "tool", "done");
+    insert.run("reply", 3, "reply", "Fictional answer", null, null);
+  } finally {
+    store.close();
+  }
+  const app = await desktop.launch();
+  const page = await app.electron.firstWindow();
+  await page.getByRole("link", { name: "Chat with Rufi" }).click();
+  const messages = page.getByRole("log", { name: "Messages" });
+  await expect(messages).toContainText("Fictional answer");
+  const scroller = messages.locator("xpath=../..");
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+
+  for (const delta of [1500, -500, 1500, 1500]) {
+    await scroller.hover();
+    await page.mouse.wheel(0, delta);
+    await page.waitForTimeout(100);
+    expect(
+      await scroller.evaluate((element) => {
+        const scrolled = [];
+        for (
+          let parent = element.parentElement;
+          parent;
+          parent = parent.parentElement
+        ) {
+          if (parent.scrollTop !== 0) {
+            scrolled.push({
+              tag: parent.tagName,
+              id: parent.id,
+              scrollTop: parent.scrollTop,
+            });
+          }
+        }
+        return scrolled;
+      }),
+    ).toEqual([]);
+    expect((await page.getByRole("complementary").boundingBox())?.y).toBe(0);
+  }
+  await page.keyboard.press("ControlOrMeta+j");
+  const box = page.getByRole("textbox", { name: "Message to Rufi" });
+  await expect(box).toBeFocused();
+  const bounds = await box.boundingBox();
+  expect(bounds?.y).toBeGreaterThan(0);
+  expect((bounds?.y ?? 0) + (bounds?.height ?? 0)).toBeLessThan(
+    await page.evaluate(() => innerHeight),
+  );
+});
+
 test.describe("starting", () => {
   test("opens on the Rufi it starts", async ({ desktop }) => {
     const app = await desktop.launch();

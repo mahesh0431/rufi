@@ -1045,7 +1045,7 @@ describe("the chat, on the scripted Codex", () => {
 
   it("marks only the first reply on a new thread as afresh: a model chosen and not used, or a send stopped before it began, marks nothing", async () => {
     await startChat("fake", {
-      scenario: { slow: ["thread/queue/add"], slowMs: 300 },
+      scenario: { slow: ["thread/start"], slowMs: 300 },
     });
     const c = await newChat();
     await chat?.send(c, "first");
@@ -1055,7 +1055,9 @@ describe("the chat, on the scripted Codex", () => {
     await chat?.selectModel(c, "gpt-6.1-sol");
     await chat?.send(await chatRow(), "second");
     await ended(c.id, 2);
-    // A new model; the first send to its new thread is stopped on its way.
+    // A new model; the first send to its new thread is stopped while the
+    // thread starts, before the message leaves. (Stopped during the add, it
+    // would wait in the queue and run with the next send.)
     await chat?.selectModel(c, "gpt-6-astra");
     const stopped = chat?.send(await chatRow(), "never sent");
     await sleep(100);
@@ -1065,12 +1067,12 @@ describe("the chat, on the scripted Codex", () => {
     await ended(c.id, 3);
     await chat?.send(await chatRow(), "fourth");
     await ended(c.id, 4);
-    expect((await transcript(c.id)).turns.map((t) => t.afresh)).toEqual([
-      false,
-      false,
-      true,
-      false,
-    ]);
+    // The stopped message never reached the AI.
+    const { entries, turns } = await transcript(c.id);
+    expect(
+      entries.filter(([kind]) => kind === "message").map(([, text]) => text),
+    ).toEqual(["first", "second", "third", "fourth"]);
+    expect(turns.map((t) => t.afresh)).toEqual([false, false, true, false]);
   });
 
   it("keeps the AI's compaction of its memory, done once Codex completed it", async () => {
