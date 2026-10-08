@@ -329,11 +329,19 @@ test("a save that fails says so and keeps the text in the tab, also on the chat'
   );
   await expect(chat(page).getByRole("alert")).toHaveText("Rufi couldn't save.");
 
-  // Typed, then off to the chat's page at once: its save fails too, and
-  // the page's box has the text.
-  await box(chat(page)).fill("Half a question, and more");
+  // Off to the chat's page: its box has the text, still not saved, and
+  // what is typed there fails to save too.
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
-  await expect(box(page)).toHaveValue("Half a question, and more");
+  await expect(box(page)).toHaveValue("Half a question");
+  await expect(page.getByRole("status")).toHaveText(/^Not saved\s*Retry$/);
+  const refused = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/chat/draft") &&
+      response.request().method() === "PUT" &&
+      (response.request().postData() ?? "").includes("and more"),
+  );
+  await box(page).fill("Half a question, and more");
+  await refused;
   await expect(page.getByRole("status")).toHaveText(/^Not saved\s*Retry$/);
 
   await page.unroute("**/chat/draft");
