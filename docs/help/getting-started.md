@@ -46,13 +46,14 @@ Each time you run it, the demo folder starts again with the same test data:
 - The first run is done, and the emergency region is India.
 - A few days of Asha's chat with Rufi, with one change saved to her record and its receipt.
 
-Everything from the last demo is removed: the record, its backups and the AI's earlier chats. Only the sign-in stays, so you sign in with ChatGPT once (see [Signing in with ChatGPT](signing-in.md#sign-in-in-rufi)), and the next demo is signed in.
+Each time, everything that was in the demo folder is removed first: the record, its backups, the AI's earlier chats, and any file you put there yourself. Only the sign-in stays, so you sign in with ChatGPT once (see [Signing in with ChatGPT](signing-in.md#sign-in-in-rufi)), and the next demo is signed in.
 
 `pnpm demo` doesn't start, and changes nothing, when:
 
 - Rufi already runs on the demo folder. Quit that Rufi first.
 - `RUFI_HOME` is set to another folder. Unset it first.
-- `~/Rufi-demo` holds files that `pnpm demo` didn't put there. Move that folder away first.
+- `~/Rufi-demo` is a folder that `pnpm demo` didn't make, and it isn't empty. Move that folder away first.
+- `~/Rufi-demo`, or a file or folder directly in it, is a link to somewhere else. Move it away first.
 
 ## The first time
 

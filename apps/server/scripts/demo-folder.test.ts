@@ -1,7 +1,15 @@
 // The demo reset on real files: the record is replaced with the golden data
 // set and the sign-in's registration stays; a folder that isn't the demo
-// folder, or one Rufi runs on, is left as it was.
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+// folder, one reached through a link, or one Rufi runs on, is left as it was.
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rename,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -35,6 +43,20 @@ async function used() {
     await writeFile(join(folder, made, "left.txt"), "from the last run");
   }
   await writeFile(join(folder, "models.json"), '{"models":["fictional"]}');
+}
+
+/** Every file in a folder, by its path inside it, with its text. */
+async function contents(home: string): Promise<Record<string, string>> {
+  const found: Record<string, string> = {};
+  for (const entry of await readdir(home, {
+    recursive: true,
+    withFileTypes: true,
+  })) {
+    if (!entry.isFile()) continue;
+    const path = join(entry.parentPath, entry.name);
+    found[path.slice(home.length + 1)] = await readFile(path, "latin1");
+  }
+  return found;
 }
 
 const people = (home: string) => {
@@ -135,17 +157,77 @@ describe("pnpm demo's reset", () => {
     expect(await readdir(root)).toEqual([]);
   });
 
-  it("refuses a folder that holds files but isn't a demo folder, and leaves them", async () => {
-    await mkdir(folder);
-    await writeFile(join(folder, "rufi.sqlite"), "someone's record");
+  it.each([
+    ["no mark", undefined],
+    ["a demo.json of something else", "{}"],
+    [
+      "the mark of another folder",
+      '{"kind":"rufi-demo-folder","folder":"/elsewhere/Rufi-demo"}',
+    ],
+  ])(
+    "refuses a folder that holds files with %s, and leaves them",
+    async (_case, mark) => {
+      await mkdir(folder);
+      await writeFile(join(folder, "must-survive.txt"), "someone's file");
+      if (mark !== undefined) await writeFile(join(folder, "demo.json"), mark);
+      const before = await contents(folder);
+
+      await expect(resetDemo(folder, {}, TODAY)).rejects.toThrow(
+        `${folder} isn't a demo folder that pnpm demo made`,
+      );
+      expect(await contents(folder)).toEqual(before);
+    },
+  );
+
+  it("refuses a demo folder that is a link, and leaves the folder it points to", async () => {
+    await resetDemo(folder, {}, TODAY);
+    const moved = join(root, "elsewhere");
+    await rename(folder, moved);
+    await writeFile(join(moved, "must-survive.txt"), "someone's file");
+    await symlink(moved, folder);
+    const before = await contents(moved);
 
     await expect(resetDemo(folder, {}, TODAY)).rejects.toThrow(
-      `${folder} isn't a demo folder`,
+      `${folder} is a link`,
     );
-    expect(await readdir(folder)).toEqual(["rufi.sqlite"]);
-    expect(await readFile(join(folder, "rufi.sqlite"), "utf8")).toBe(
-      "someone's record",
+    expect(await contents(moved)).toEqual(before);
+  });
+
+  it("refuses a link to an empty folder, and marks nothing there", async () => {
+    const empty = join(root, "empty");
+    await mkdir(empty);
+    await symlink(empty, folder);
+
+    await expect(resetDemo(folder, {}, TODAY)).rejects.toThrow(
+      `${folder} is a link`,
     );
+    expect(await readdir(empty)).toEqual([]);
+  });
+
+  it("refuses a demo folder holding a link in place of its own files, and leaves what it points to", async () => {
+    await resetDemo(folder, {}, TODAY);
+    const outside = join(root, "outside");
+    await mkdir(outside);
+    await writeFile(join(outside, "must-survive.txt"), "someone's file");
+    await symlink(outside, join(folder, "backups"));
+
+    await expect(resetDemo(folder, {}, TODAY)).rejects.toThrow(
+      `${join(folder, "backups")} is a link`,
+    );
+    expect(await readdir(outside)).toEqual(["must-survive.txt"]);
+  });
+
+  it("removes a link deeper in the demo folder without following it", async () => {
+    await resetDemo(folder, {}, TODAY);
+    const outside = join(root, "outside.txt");
+    await writeFile(outside, "someone's file");
+    await mkdir(join(folder, "logs"));
+    await symlink(outside, join(folder, "logs", "rufi.log"));
+
+    await resetDemo(folder, {}, TODAY);
+
+    expect(await readdir(folder)).not.toContain("logs");
+    expect(await readFile(outside, "utf8")).toBe("someone's file");
   });
 
   it("refuses while Rufi runs on the demo folder, and leaves its record", async () => {
