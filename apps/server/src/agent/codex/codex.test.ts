@@ -199,6 +199,7 @@ describe("starting Codex", () => {
       "requires_openai_auth = false",
       "supports_websockets = false",
       'model_reasoning_effort = "low"',
+      'model_reasoning_summary = "auto"',
       "daemon_auto_start = false",
     ]) {
       expect(config).toContain(line);
@@ -244,6 +245,12 @@ describe("starting Codex", () => {
         SETTINGS,
       ),
     ).rejects.toThrow("model_reasoning_effort is high");
+    // Without it, Codex's models send no reasoning summary to keep.
+    await expect(
+      start({ config: { model_reasoning_summary: null } }).startThread(
+        SETTINGS,
+      ),
+    ).rejects.toThrow("model_reasoning_summary is null");
     // Codex would drop Rufi's tools without a word.
     await expect(
       start({ capabilities: { namespaceTools: false } }).startThread(SETTINGS),
@@ -298,6 +305,16 @@ describe("a turn", () => {
         title: "Ran a command",
         detail: "ls",
         status: "done",
+        // Everything Codex gave, as it came.
+        details: {
+          id: "item-ls",
+          type: "commandExecution",
+          command: "ls",
+          status: "completed",
+          aggregatedOutput: "notes.txt\n",
+          exitCode: 0,
+          durationMs: 4,
+        },
       },
       {
         type: "activity",
@@ -307,6 +324,7 @@ describe("a turn", () => {
         title: "The AI did something Rufi can't display",
         detail: "teleport",
         status: "done",
+        details: { id: "item-tp", type: "teleport" },
       },
       { type: "turnEnded", turnId: "turn-1", end: { status: "completed" } },
     ]);
@@ -317,6 +335,28 @@ describe("a turn", () => {
     expect(
       diagnostics.some((d) => String(d.method).startsWith("brand/new")),
     ).toBe(true);
+  });
+
+  it("passes on the AI's reasoning summary, with everything Codex gave", async () => {
+    const thread = await ask(
+      start({ reasoning: ["**Reading**", "The user said hello."] }),
+      "Hello",
+    );
+    await ended(thread);
+    expect(seen(thread).filter((e) => e.type === "reasoning")).toEqual([
+      {
+        type: "reasoning",
+        turnId: "turn-1",
+        itemId: "item-think",
+        summary: "**Reading**\n\nThe user said hello.",
+        details: {
+          id: "item-think",
+          type: "reasoning",
+          summary: ["**Reading**", "The user said hello."],
+          content: [],
+        },
+      },
+    ]);
   });
 
   it("starts a thread with the model, full access, Rufi's instructions and tools", async () => {
@@ -902,6 +942,13 @@ describe("Stop", () => {
         title: "Ran a command",
         detail: "sleep 301",
         status: "running",
+        // What Codex gave as it started; the end would replace it.
+        details: {
+          id: "item-cmd",
+          type: "commandExecution",
+          command: "sleep 301",
+          status: "inProgress",
+        },
       },
     ]);
   });
@@ -1202,6 +1249,24 @@ describe("Codex's items and endings in Rufi's words", () => {
       activity: "web_search",
       title: "Searched the web",
       detail: "HbA1c",
+      status: "done",
+    });
+    // A page the AI opened is named by its address.
+    expect(
+      activityOf(
+        {
+          type: "webSearch",
+          id: "p",
+          query: "open https://example.org/hba1c",
+          action: { type: "openPage", url: "https://example.org/hba1c" },
+          results: null,
+        },
+        true,
+      ),
+    ).toEqual({
+      activity: "web_search",
+      title: "Opened a web page",
+      detail: "https://example.org/hba1c",
       status: "done",
     });
     expect(activityOf({ type: "contextCompaction", id: "c" }, false)).toEqual({

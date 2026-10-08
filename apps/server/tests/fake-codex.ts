@@ -5,7 +5,8 @@
 // thread/queue/start. What a turn does is chosen by its message's text, the
 // same words the fake model uses for the real Codex (tests/fake-model.ts):
 // "hang" never ends, "partial" writes "ok:part" and then never ends, "slow"
-// answers after 300 ms, "fail" fails, "command"
+// answers after 300 ms, "fail" fails, "quiet" makes no tool call and runs no
+// command, "command"
 // starts a long command ("background command": and the turn ends while it
 // runs), "drip" streams its answer in five parts 100 ms
 // apart, "long" streams 200 parts of 1,000 characters, and anything else
@@ -63,6 +64,8 @@ export interface Scenario {
     text: string;
     questions?: { title: string; options: string[] | null }[];
   };
+  /** The summary parts of a reasoning item the turn has before its answer. */
+  reasoning?: string[];
   /** Tool calls the model makes during a turn, before answering. */
   calls?: { namespace: string | null; tool: string; arguments: unknown }[];
   /** A usage-limit snapshot sent before a failed turn. */
@@ -265,7 +268,8 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     }
   }
   event("item/started", { item: userItem(entry) });
-  for (const [i, call] of (scenario.calls ?? []).entries()) {
+  const calls = text.includes("quiet") ? [] : (scenario.calls ?? []);
+  for (const [i, call] of calls.entries()) {
     // Like Codex: the item starts, then Rufi is asked to run it.
     const item = {
       id: `call-${String(i)}`,
@@ -299,6 +303,16 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     record({
       answered: request.method,
       reply: await askRufi(request.method, request.params),
+    });
+  }
+  if (scenario.reasoning) {
+    event("item/completed", {
+      item: {
+        id: "item-think",
+        type: "reasoning",
+        summary: scenario.reasoning,
+        content: [],
+      },
     });
   }
   if (text.includes("hang")) return;
@@ -387,14 +401,18 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     event("item/started", { item: userItem(steer) });
     answer(thread, turnId, `item-steer-${String(i)}`, `ok:${textOf(steer)}`);
   }
-  event("item/completed", {
-    item: {
-      id: "item-ls",
-      type: "commandExecution",
-      command: "ls",
-      status: "completed",
-    },
-  });
+  if (!text.includes("quiet"))
+    event("item/completed", {
+      item: {
+        id: "item-ls",
+        type: "commandExecution",
+        command: "ls",
+        status: "completed",
+        aggregatedOutput: "notes.txt\n",
+        exitCode: 0,
+        durationMs: 4,
+      },
+    });
   event("item/completed", { item: { id: "item-tp", type: "teleport" } });
   if (scenario.unstreamed) {
     event("item/completed", {
@@ -491,6 +509,7 @@ function handle(method: string, params: Record<string, unknown>): unknown {
         config: {
           model_provider: "openai_chatgpt_plan",
           model_reasoning_effort: "low",
+          model_reasoning_summary: "auto",
           ...scenario.config,
         },
       };

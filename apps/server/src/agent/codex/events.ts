@@ -96,13 +96,23 @@ export function activityOf(
         statusOf(item.status, ended),
       );
     case "webSearch":
-      // The words may only be known once the search has finished.
-      return line(
-        "web_search",
-        "Searched the web",
-        item.query,
-        statusOf(undefined, ended),
-      );
+      // The words or the page may only be known once it has finished.
+      return item.action?.type === "openPage" ||
+        item.action?.type === "findInPage"
+        ? line(
+            "web_search",
+            item.action.type === "openPage"
+              ? "Opened a web page"
+              : "Searched in a web page",
+            item.action.url ?? item.query,
+            statusOf(undefined, ended),
+          )
+        : line(
+            "web_search",
+            "Searched the web",
+            item.query,
+            statusOf(undefined, ended),
+          );
     case "fileChange":
       return line(
         "file_change",

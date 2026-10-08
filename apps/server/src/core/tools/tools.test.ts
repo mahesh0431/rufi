@@ -21,6 +21,7 @@ import {
   toolCaller,
   type ToolContext,
 } from "./registry.ts";
+import { LIMITS } from "./sql.ts";
 import { forAgent, TOOLS, toolsJson } from "./tools.ts";
 import type { Log } from "../../platform/logs.ts";
 
@@ -224,6 +225,139 @@ describe("get_overview", () => {
   });
 });
 
+describe("run_sql", () => {
+  const query = (store: Store, sql: string, personId = "asha") =>
+    call({ store, personId }, "run_sql", { sql });
+
+  it("sees only the active person's record", async () => {
+    const store = makeDatabase(family);
+    expect((await query(store, "SELECT * FROM people")).body).toEqual({
+      ok: true,
+      result: {
+        columns: ["id", "display_name"],
+        rows: [["asha", "Asha Fictional"]],
+        rows_returned: 1,
+        complete: true,
+      },
+    });
+    const owners = `SELECT 'results', person_id FROM results UNION SELECT 'documents', person_id FROM documents UNION SELECT 'medicine_uses', person_id FROM medicine_uses UNION SELECT 'allergies', person_id FROM allergies UNION SELECT 'files', id FROM files`;
+    expect((await query(store, owners, "ravi")).body["result"]).toMatchObject({
+      rows: [
+        ["allergies", "ravi"],
+        ["documents", "ravi"],
+        ["files", "f1c710a3"],
+        ["medicine_uses", "ravi"],
+        ["results", "ravi"],
+      ],
+    });
+  });
+
+  it("can't reach the conversations, the settings or another database", async () => {
+    const store = makeDatabase(
+      family,
+      "INSERT INTO settings (key, value) VALUES ('emergency_region', 'IN')",
+    );
+    for (const [sql, error] of [
+      ["SELECT * FROM settings", "The query failed: no such table: settings"],
+      [
+        "SELECT * FROM transcript_entries",
+        "The query failed: no such table: transcript_entries",
+      ],
+      [
+        `ATTACH '${path}' AS whole`,
+        "Rufi refused the query: Only reading is allowed",
+      ],
+    ] as const) {
+      const { ok, body } = await query(store, sql);
+      expect(ok).toBe(false);
+      expect(String(body["error"])).toContain(error);
+      expect(body).not.toHaveProperty("result");
+    }
+  });
+
+  it("only reads: a change, a pragma or a second statement is refused, without using up the turn's rejections", async () => {
+    const store = makeDatabase(family);
+    const caller = forAgent(
+      () => ({ store, personId: "asha" }),
+      record,
+    ).forTurn();
+    for (const sql of [
+      "DELETE FROM results",
+      "UPDATE medicine_uses SET status = 'stopped'",
+      "INSERT INTO allergies (id, person_id, substance) VALUES ('x', 'asha', 'Dust')",
+      "DROP TABLE results",
+      "PRAGMA query_only = OFF",
+      "SELECT 1; DELETE FROM results",
+    ]) {
+      const answer = await caller("run_sql", { sql });
+      expect(answer.ok).toBe(false);
+      expect(answer.stopTurn).toBeUndefined();
+      const { error } = JSON.parse(answer.text) as { error: string };
+      expect(error).toMatch(/^Rufi refused the query: .* Nothing was read\.$/);
+    }
+    const still = await caller("run_sql", {
+      sql: "SELECT count(*) FROM results",
+    });
+    expect(JSON.parse(still.text)).toMatchObject({ result: { rows: [[8]] } });
+  });
+
+  it("reads removed and amended records too", async () => {
+    const store = makeDatabase(
+      family,
+      "UPDATE medicine_uses SET removed = 1 WHERE id = 'med-a2'",
+    );
+    const { body } = await query(
+      store,
+      "SELECT id, removed, replaces_id FROM results WHERE test_name = 'TSH' UNION ALL SELECT id, removed, NULL FROM medicine_uses WHERE removed = 1 ORDER BY id",
+    );
+    expect(body["result"]).toMatchObject({
+      rows: [
+        ["med-a2", 1, null],
+        ["res-a4", 0, null],
+        ["res-a5", 0, "res-a4"],
+      ],
+    });
+  });
+
+  it(`says when more than ${String(LIMITS.rows)} rows matched: exactly ${String(LIMITS.rows)} are complete`, async () => {
+    const store = makeDatabase(family);
+    const count = (n: number) =>
+      query(
+        store,
+        `WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM c WHERE n < ${String(n)}) SELECT n FROM c`,
+      );
+    expect((await count(LIMITS.rows)).body["result"]).toMatchObject({
+      rows_returned: LIMITS.rows,
+      complete: true,
+    });
+    const cut = (await count(LIMITS.rows + 1)).body["result"] as Record<
+      string,
+      unknown
+    >;
+    expect(cut).toMatchObject({
+      rows_returned: LIMITS.rows,
+      complete: false,
+      cut: `More than ${String(LIMITS.rows)} rows matched; these are the first ${String(LIMITS.rows)}.`,
+    });
+    expect((cut["rows"] as unknown[]).at(-1)).toEqual([LIMITS.rows]);
+  });
+
+  it(`says when the rows are more than ${String(LIMITS.bytes / 1000)} KB, also for one huge value`, async () => {
+    const store = makeDatabase(family);
+    const { body } = await query(
+      store,
+      `SELECT 'small' UNION ALL SELECT printf('%.*c', ${String(LIMITS.bytes)}, 'x')`,
+    );
+    expect(body["result"]).toEqual({
+      columns: ["'small'"],
+      rows: [["small"]],
+      rows_returned: 1,
+      complete: false,
+      cut: `The rows that matched are more than ${String(LIMITS.bytes / 1000)} KB; these are the first 1.`,
+    });
+  });
+});
+
 const left = (text: string) =>
   (JSON.parse(text) as { rejections_left: number }).rejections_left;
 
@@ -371,7 +505,7 @@ describe("the error envelope", () => {
       "rm_rf",
     );
     expect(body["error"]).toBe(
-      "There is no tool called rm_rf. Rufi's tools: get_overview, read_conversation, save_changes.",
+      "There is no tool called rm_rf. Rufi's tools: get_overview, run_sql, read_conversation, save_changes.",
     );
   });
 

@@ -41,7 +41,10 @@ export const Entry = Schema.Struct({
   /** The reply it belongs to. */
   turnId: Schema.NullOr(Schema.String),
   kind: Schema.Literals(["message", "steer", "activity", "reply", "receipt"]),
-  /** The message or the reply; an activity's short title; a receipt's line. */
+  /**
+   * The message; the reply's answer (without its rufi-basis blocks, which
+   * the turn's How holds); an activity's short title; a receipt's line.
+   */
   text: Schema.String,
   activity: Schema.NullOr(ActivityKind),
   /** An activity's one short detail: the query, the search words, the command. */
@@ -66,6 +69,27 @@ export const EndReason = Schema.Literals([
 ]);
 export type EndReason = typeof EndReason.Type;
 
+/**
+ * One thing Rufi saw the AI read in a reply, for Based on's Used: a read of
+ * the record by one of Rufi's tools, a web search or page, a command, a
+ * sub-agent. What was read, not proof that it supports the answer.
+ */
+export const Read = Schema.Struct({
+  /** What was read, in plain words: "Query your record", "Searched the web". */
+  title: Schema.String,
+  /** The query, the search words, the page or the command. */
+  detail: Schema.NullOr(Schema.String),
+  /**
+   * done; cut: a limit cut what came back; failed: nothing came back;
+   * stopped: it ended unfinished; unknown: the AI's agent didn't say what
+   * came back.
+   */
+  outcome: Schema.Literals(["done", "cut", "failed", "stopped", "unknown"]),
+  /** What came back, or why not, in Rufi's words: "12 rows", the error. */
+  note: Schema.NullOr(Schema.String),
+});
+export type Read = typeof Read.Type;
+
 /** One reply the AI ran: how it went, and how it ended. */
 export const Turn = Schema.Struct({
   id: Schema.String,
@@ -78,6 +102,13 @@ export const Turn = Schema.Struct({
   resetsAt: Schema.NullOr(Schema.String),
   startedAt: Schema.String,
   endedAt: Schema.NullOr(Schema.String),
+  /**
+   * How, from the reply's last rufi-basis block: where the answer comes
+   * from, in the AI's words. Only once the reply completed.
+   */
+  how: Schema.NullOr(Schema.String),
+  /** Used: what Rufi saw the AI read in this reply, in order. */
+  used: Schema.Array(Read),
 });
 export type Turn = typeof Turn.Type;
 

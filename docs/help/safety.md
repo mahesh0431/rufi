@@ -16,7 +16,18 @@ What you do, and what you keep in your record, is your decision. If you tell the
 
 If your message may describe an emergency, such as chest pain, trouble breathing, signs of a stroke, severe bleeding, a possible overdose or thoughts of self-harm, the AI first tells you to call the emergency number now. Only then does it say anything else.
 
-When you chose your region (**Settings** › **Emergency region**), the AI gives that region's number, for example 112 in India. Otherwise it tells you to call your local emergency number. It never guesses a number.
+When you chose your region (**Settings** › **Emergency region**), the AI gives that region's number, for example 112 in India. Otherwise it tells you to call your local emergency number. It may also give a number it knows, from the web or its own knowledge; then it says that your region isn't set in Rufi and where the number comes from. Choose your region, so that the AI gives your region's number.
+
+## It reads numbers carefully
+
+The AI connects different parts of your record, for example your sleep and your glucose: that is what it is for. When it works with numbers, it:
+
+- keeps one test in one unit in a trend,
+- treats a missing day as missing, not as zero,
+- keeps a value such as "<5" as printed, never as 5,
+- says that two things happen together, not that one causes the other.
+
+Anything that changes what an answer means, such as only two readings, a gap or a value from the web, is in the answer itself. Under each answer, **Based on** shows where it comes from. See [Where an answer comes from](chat.md#where-an-answer-comes-from).
 
 ## It won't help anyone get hurt
 

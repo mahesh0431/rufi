@@ -1,13 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { emergencyFor, safetyInstructions } from "./safety.ts";
 
+const NOT_SET =
+  "their region isn't set in Rufi and where the number comes from";
+
 describe("the emergency number", () => {
-  it("is the local one for a region Rufi doesn't know, or none", () => {
+  it("is the local one for a region Rufi doesn't know, or none; the AI says the region isn't set", () => {
     for (const region of [undefined, "ZZ", "toString", "constructor"]) {
       expect(emergencyFor(region)).toBeUndefined();
-      expect(safetyInstructions(region)).toContain(
-        "call their local emergency number now",
-      );
+      const told = safetyInstructions(region);
+      expect(told).toContain("call their local emergency number now");
+      expect(told).toContain(NOT_SET);
     }
+  });
+
+  it("is the region's own when it is set, with nothing about a missing region", () => {
+    const told = safetyInstructions("IN");
+    expect(told).toContain("call 112 (the emergency number in India) now");
+    expect(told).not.toContain(NOT_SET);
   });
 });

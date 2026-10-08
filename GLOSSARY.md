@@ -83,12 +83,16 @@ _Avoid_: drawer, popup, sidebar
 A conversation at its own address, listed under Conversations in the sidebar. A small window opens the chat as a page.
 
 **Transcript**:
-Rufi's own stored copy of a conversation: your messages, one activity line for each thing the AI did, the AI's replies and a receipt for each save, each saved before it is shown. Never the AI's tool outputs or its reasoning.
+Rufi's own stored copy of a conversation: your messages, the AI's replies and its reasoning, a receipt for each save, and one activity line for each thing the AI did, with everything that activity sent and got back. Each part is saved before it is shown; the reasoning and what each activity sent and got back aren't shown yet.
 _Avoid_: log, history
 
 **Activity**:
-One line in a transcript for something the AI did: read the record with a tool, ran a command, searched the web, changed a file, worked with a sub-agent, or did something Rufi can't display yet. It has a short title and one short detail (the search words, the command), never the output.
+One line in a transcript for something the AI did: read the record with a tool, ran a command, searched the web, changed a file, worked with a sub-agent, or did something Rufi can't display yet. The line shows a short title and one short detail (the search words, the command); Rufi also keeps everything the activity sent and got back, such as a query's rows or a command's output.
 _Avoid_: trace, steps, log
+
+**Basis**:
+What an answer rests on, shown as **Based on** under the answer once the reply has ended. **How** is the AI's own words on where the answer comes from (your record, read in this reply or earlier in the conversation, the web, or general knowledge) and how it got there; **Used** is what Rufi saw the AI read in that reply, built by Rufi. Small talk has none.
+_Avoid_: reason, rationale, citation; "reasoning" is the AI's thinking, and a **source** is what a record rests on
 
 **Steer**:
 A message sent while the AI is replying, passed into that reply. The AI takes it at its next step, after what it is writing now, so it can change course. The transcript keeps it as your message, marked as a steer.
@@ -133,7 +137,7 @@ A saved write-up of something the AI looked into for a person, with its sources.
 _Avoid_: note, article
 
 **Emergency region**:
-The region whose emergency number the AI gives when a message may describe an emergency. You choose it in Settings; with none chosen, the AI says to call your local emergency number and never guesses one.
+The region whose emergency number the AI gives when a message may describe an emergency. You choose it in Settings. With none chosen, the AI says to call your local emergency number; if it also gives a number, it says that your region isn't set and where the number comes from.
 _Avoid_: country, locale
 
 **Emergency sheet**:
@@ -183,3 +187,4 @@ _Avoid_: history, transcript
 - A **save** changes one **person**'s **records**, rests on their messages as its **sources**, and gives one **receipt**; an **undo** is a new save.
 - A **conversation** is about one **person** and can produce **saves**, **follow-ups** and **research entries**.
 - A **conversation** has one **transcript**, one **draft**, a **model** and its **waiting messages**; a **steer** and each **activity** belong to one reply.
+- An answer's **basis** belongs to its reply: How from the AI's words, Used from that reply's own **activity**.

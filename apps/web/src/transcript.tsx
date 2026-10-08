@@ -1,14 +1,15 @@
 // A conversation's transcript as the core stored it: your messages, one line
-// per thing the AI did, the AI's replies as Markdown, Rufi's receipt for
-// each save to the record, and how a reply ended when it didn't finish. Each
-// entry reads only itself from the live store, so a streaming reply
-// re-renders alone.
+// per thing the AI did, the AI's replies as Markdown with Based on under each
+// answer once it ended, Rufi's receipt for each save to the record, and how a
+// reply ended when it didn't finish. Each entry reads only itself from the
+// live store, so a streaming reply re-renders alone.
 import { Link } from "@tanstack/react-router";
 import { Check, LoaderCircle, Square, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remend from "remend";
+import type { Read } from "@rufi/contracts";
 import type { StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/shallow";
@@ -61,6 +62,29 @@ function Reply({ text, streaming }: { text: string; streaming: boolean }) {
   );
 }
 
+/**
+ * Ended turns with something for Based on, by the entry it comes after: the
+ * turn's last reply, else its last entry.
+ */
+function bases(state: Live): Record<string, string> {
+  const after: Record<string, string> = {};
+  const reply = new Set<string>();
+  for (const id of state.order) {
+    const entry = state.entries[id];
+    const turnId = entry?.turnId;
+    if (!entry || !turnId) continue;
+    if (entry.kind === "reply") reply.add(turnId);
+    if (entry.kind === "reply" || !reply.has(turnId)) after[turnId] = id;
+  }
+  const shown: Record<string, string> = {};
+  for (const turn of Object.values(state.turns)) {
+    if (turn.status === "running") continue;
+    if (turn.how === null && turn.used.length === 0) continue;
+    shown[turn.id] = after[turn.id] ?? "";
+  }
+  return shown;
+}
+
 /** Ended turns that didn't complete, by the last entry they come after. */
 function endings(state: Live): Record<string, string> {
   const last: Record<string, string> = {};
@@ -90,6 +114,7 @@ export function TranscriptView({
   const order = useStore(live, (state) => state.order);
   const status = useStore(live, (state) => state.status);
   const ends = useStore(live, useShallow(endings));
+  const based = useStore(live, useShallow(bases));
   const running = useStore(live, isRunning);
   const replying = useStore(live, (state) => {
     const last = state.entries[state.order.at(-1) ?? ""];
@@ -103,6 +128,10 @@ export function TranscriptView({
   });
   const endsAfter = (id: string) =>
     Object.entries(ends).flatMap(([turnId, after]) =>
+      after === id ? [turnId] : [],
+    );
+  const basedAfter = (id: string) =>
+    Object.entries(based).flatMap(([turnId, after]) =>
       after === id ? [turnId] : [],
     );
 
@@ -154,7 +183,16 @@ export function TranscriptView({
             className="flex flex-col gap-3"
           >
             {order.map((id) => (
-              <EntryView key={id} live={live} id={id} ends={endsAfter(id)} />
+              <EntryView
+                key={id}
+                live={live}
+                id={id}
+                ends={endsAfter(id)}
+                based={basedAfter(id)}
+              />
+            ))}
+            {basedAfter("").map((turnId) => (
+              <BasedOn key={turnId} live={live} turnId={turnId} />
             ))}
             {endsAfter("").map((turnId) => (
               <Ending key={turnId} live={live} turnId={turnId} />
@@ -193,10 +231,12 @@ function EntryView({
   live,
   id,
   ends,
+  based,
 }: {
   live: StoreApi<Live>;
   id: string;
   ends: string[];
+  based: string[];
 }) {
   const entry = useStore(live, (state) => state.entries[id]);
   const streaming = useStore(
@@ -237,6 +277,9 @@ function EntryView({
       ) : (
         <Reply text={entry.text} streaming={streaming} />
       )}
+      {based.map((turnId) => (
+        <BasedOn key={turnId} live={live} turnId={turnId} />
+      ))}
       {ends.map((turnId) => (
         <Ending key={turnId} live={live} turnId={turnId} />
       ))}
@@ -272,6 +315,64 @@ function ActivityIcon({
       {icon}
       <span className="sr-only">{status && STATUS_WORDS[status]}:</span>
     </>
+  );
+}
+
+/**
+ * Based on, under an answer once its reply ended: How, the AI's own words
+ * on where the answer comes from, and Used, what Rufi saw it read. Closed
+ * until opened.
+ */
+function BasedOn({ live, turnId }: { live: StoreApi<Live>; turnId: string }) {
+  const turn = useStore(live, (state) => state.turns[turnId]);
+  if (!turn) return null;
+  return (
+    <details className="based-on text-muted">
+      <summary className="w-fit cursor-pointer text-accent-ink underline">
+        Based on
+      </summary>
+      <div className="mt-1.5 flex flex-col gap-2 rounded-lg border border-line bg-side px-3 py-2">
+        {turn.how !== null && (
+          <div>
+            <p className="text-xs font-medium text-ink">How</p>
+            <p className="break-words whitespace-pre-wrap text-ink">
+              {turn.how}
+            </p>
+          </div>
+        )}
+        {turn.used.length > 0 && (
+          <div>
+            <p className="text-xs font-medium text-ink">Used</p>
+            <ul className="flex flex-col gap-1">
+              {turn.used.map((read, i) => (
+                // A reply's reads only grow, in order.
+                <UsedLine key={i} read={read} />
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
+/** One read: what, its query or address, and what came back or why not. */
+function UsedLine({ read }: { read: Read }) {
+  const said =
+    read.note ??
+    (read.outcome === "failed"
+      ? "It failed."
+      : read.outcome === "stopped"
+        ? "It stopped before it finished."
+        : null);
+  return (
+    <li className="min-w-0">
+      <span className="text-ink">{read.title}</span>
+      {read.detail !== null && (
+        <span className="block font-mono text-xs break-all">{read.detail}</span>
+      )}
+      {said !== null && <span className="block text-xs">{said}</span>}
+    </li>
   );
 }
 

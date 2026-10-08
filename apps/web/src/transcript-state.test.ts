@@ -24,6 +24,8 @@ const turn = (status: Turn["status"]): Turn => ({
   resetsAt: null,
   startedAt: at,
   endedAt: null,
+  how: null,
+  used: [],
 });
 const conversation = {
   id: "c1",

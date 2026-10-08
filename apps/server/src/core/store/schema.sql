@@ -259,18 +259,19 @@ CREATE TABLE turns (
 ) STRICT;
 
 -- A conversation's transcript, in order: your messages (steers marked), one
--- line per thing the agent did, and its replies. Stored before anyone is
--- shown it. Never tool outputs or reasoning.
+-- line per thing the agent did with everything it sent and got back, the
+-- agent's reasoning and its replies. Stored before anyone is shown it.
 CREATE TABLE transcript_entries (
   id TEXT PRIMARY KEY,         -- UUIDv7; a message keeps the id the agent got with it
   person_id TEXT NOT NULL,
   conversation_id TEXT NOT NULL,
   seq INTEGER NOT NULL,        -- 1, 2, 3... in the conversation
   turn_id TEXT,                -- the reply it belongs to
-  kind TEXT NOT NULL CHECK (kind IN ('message', 'steer', 'activity', 'reply', 'receipt')),
-  text TEXT NOT NULL,          -- the message or the reply; an activity's short title; a receipt's line
+  kind TEXT NOT NULL CHECK (kind IN ('message', 'steer', 'activity', 'reply', 'reasoning', 'receipt')),
+  text TEXT NOT NULL,          -- the message or the reply as it came; an activity's short title; the reasoning's summary; a receipt's line
   activity TEXT CHECK (activity IN ('tool', 'command', 'web_search', 'file_change', 'sub_agent', 'other')),
   detail TEXT,                 -- an activity's one short detail: the query, the search words, the command
+  details TEXT,                -- an activity's or reasoning's everything, as the agent gave it (JSON); null: the agent gave nothing
   status TEXT CHECK (status IN ('running', 'done', 'failed', 'stopped')),
   agent_item_id TEXT,          -- the agent's id for a reply or an activity, to update it
   revision INTEGER NOT NULL,   -- the conversation's revision when it last changed
@@ -281,7 +282,28 @@ CREATE TABLE transcript_entries (
   FOREIGN KEY (person_id, conversation_id) REFERENCES conversations (person_id, id),
   FOREIGN KEY (person_id, turn_id) REFERENCES turns (person_id, id),
   -- An activity line has its kind and status; nothing else has either.
-  CHECK ((kind = 'activity') = (activity IS NOT NULL) AND (kind = 'activity') = (status IS NOT NULL))
+  CHECK ((kind = 'activity') = (activity IS NOT NULL) AND (kind = 'activity') = (status IS NOT NULL)),
+  CHECK (details IS NULL OR kind IN ('activity', 'reasoning'))
+) STRICT;
+
+-- Each call the AI made to one of Rufi's own tools, kept by Rufi as it
+-- answered: what the AI sent and exactly what it got back. A reply's Used
+-- (what it read) is built from these and its activity lines.
+CREATE TABLE tool_calls (
+  id TEXT PRIMARY KEY,         -- UUIDv7
+  person_id TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  turn_id TEXT NOT NULL,       -- the reply it belongs to
+  call_id TEXT NOT NULL,       -- the agent's id for the call: its activity line's agent_item_id
+  tool TEXT NOT NULL,          -- 'get_overview', 'run_sql'...
+  input TEXT NOT NULL,         -- what the AI sent (JSON)
+  answer TEXT NOT NULL,        -- exactly what the AI got back (JSON)
+  ok INTEGER NOT NULL CHECK (ok IN (0, 1)),
+  started_at TEXT NOT NULL,
+  ended_at TEXT NOT NULL,
+  UNIQUE (person_id, id),
+  FOREIGN KEY (person_id, conversation_id) REFERENCES conversations (person_id, id),
+  FOREIGN KEY (person_id, turn_id) REFERENCES turns (person_id, id)
 ) STRICT;
 
 -- One unsent message per conversation. Rufi never sends a draft by itself.
@@ -351,5 +373,6 @@ CREATE INDEX conversations_by_person ON conversations (person_id, created_at);
 CREATE INDEX turns_by_conversation ON turns (person_id, conversation_id, started_at);
 CREATE INDEX turns_by_status ON turns (status); -- running turns, found at start
 CREATE INDEX entries_by_turn ON transcript_entries (person_id, turn_id);
+CREATE INDEX tool_calls_by_turn ON tool_calls (person_id, turn_id);
 CREATE INDEX operations_by_person ON operations (person_id, created_at);
 CREATE INDEX changes_by_record ON record_changes (person_id, record_id);

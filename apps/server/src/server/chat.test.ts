@@ -686,25 +686,155 @@ describe("the chat, on the scripted Codex", () => {
     ]);
   });
 
-  it("saves one activity line per thing the AI did, in order, without outputs", async () => {
+  it("keeps everything each activity sent and got back, the AI's reasoning, and each call to Rufi's tools as answered", async () => {
+    await startChat("fake", {
+      scenario: {
+        calls: [{ namespace: "rufi", tool: "get_overview", arguments: {} }],
+        reasoning: ["**Reading the record**"],
+      },
+    });
+    const c = await newConversation();
+    await chat?.send(c, "What's new?");
+    await ended(c.id);
+    const { all, turns } = await transcript(c.id);
+    // The screens get the lines, never the reasoning.
+    expect(
+      all
+        .filter((e) => e.kind !== "message" && e.kind !== "reply")
+        .map((e) => [e.activity, e.text, e.detail, e.status]),
+    ).toEqual([
+      ["tool", "Read your overview", null, "done"],
+      ["command", "Ran a command", "ls", "done"],
+      ["other", "The AI did something Rufi can't display", "teleport", "done"],
+    ]);
+    const kept = store.db
+      .prepare(
+        "SELECT kind, text, details FROM transcript_entries WHERE kind IN ('activity', 'reasoning') ORDER BY seq",
+      )
+      .all()
+      .map((row): unknown[] => [
+        row["kind"],
+        row["text"],
+        JSON.parse(String(row["details"])),
+      ]);
+    expect(kept).toMatchObject([
+      [
+        "activity",
+        "Read your overview",
+        { type: "dynamicToolCall", tool: "get_overview" },
+      ],
+      [
+        "reasoning",
+        "**Reading the record**",
+        { summary: ["**Reading the record**"] },
+      ],
+      [
+        "activity",
+        "Ran a command",
+        { aggregatedOutput: "notes.txt\n", exitCode: 0 },
+      ],
+      [
+        "activity",
+        "The AI did something Rufi can't display",
+        { type: "teleport" },
+      ],
+    ]);
+    const [call] = store.db
+      .prepare("SELECT tool, input, answer, ok, turn_id FROM tool_calls")
+      .all();
+    expect(call).toMatchObject({
+      tool: "get_overview",
+      input: "{}",
+      ok: 1,
+      turn_id: turns[0]?.id,
+    });
+    expect(JSON.parse(String(call?.["answer"]))).toMatchObject({
+      ok: true,
+      result: { person: "Asha Fictional" },
+    });
+    expect(turns[0]?.used).toEqual([
+      {
+        title: "Read your overview",
+        detail: null,
+        outcome: "done",
+        note: null,
+      },
+      { title: "Ran a command", detail: "ls", outcome: "done", note: null },
+    ]);
+  });
+
+  it("shows How only from a completed reply, and each reply's Used is its own", async () => {
+    await startChat("fake", {
+      scenario: {
+        calls: [
+          {
+            namespace: "rufi",
+            tool: "run_sql",
+            arguments: { sql: "SELECT * FROM results" },
+          },
+        ],
+      },
+    });
+    const c = await newConversation();
+    const shown: Entry[] = [];
+    transcripts.subscribe(c.id, (change) => shown.push(...change.entries));
+    const asked =
+      "Your HbA1c\n\n```rufi-basis\nFrom the record, read now.\n```";
+    await chat?.send(c, asked);
+    await ended(c.id);
+    // Small talk: the AI reads nothing and writes no block.
+    await chat?.send(await conversation(c.id), "quiet thanks");
+    await ended(c.id, 2);
+    const { entries, turns } = await transcript(c.id);
+    expect(entries.filter(([kind]) => kind === "reply")).toEqual([
+      ["reply", "ok:Your HbA1c"],
+      ["reply", "ok:quiet thanks"],
+    ]);
+    // Not even while it streamed.
+    expect(
+      shown.some((e) => e.kind === "reply" && e.text.includes("rufi-basis")),
+    ).toBe(false);
+    expect(
+      store.db
+        .prepare("SELECT text FROM transcript_entries WHERE kind = 'reply'")
+        .all()[0],
+    ).toEqual({ text: `ok:${asked}` });
+    expect(turns.map((t) => [t.how, t.used])).toEqual([
+      [
+        "From the record, read now.",
+        [
+          {
+            title: "Query your record",
+            detail: "SELECT * FROM results",
+            outcome: "done",
+            note: "0 rows",
+          },
+          { title: "Ran a command", detail: "ls", outcome: "done", note: null },
+        ],
+      ],
+      [null, []],
+    ]);
+  });
+
+  it("stops a reply when Rufi can't keep a call to its tools, and tells the AI", async () => {
     await startChat("fake", {
       scenario: {
         calls: [{ namespace: "rufi", tool: "get_overview", arguments: {} }],
       },
     });
     const c = await newConversation();
-    await chat?.send(c, "What's new?");
+    transcripts.recordToolCall = () => Promise.reject(new Error("disk full"));
+    await chat?.send(c, "hang");
     await ended(c.id);
-    const lines = (await transcript(c.id)).all
-      .filter((e) => e.kind === "activity")
-      .map((e) => [e.activity, e.text, e.detail, e.status]);
-    expect(lines).toEqual([
-      ["tool", "Read your overview", null, "done"],
-      ["command", "Ran a command", "ls", "done"],
-      ["other", "The AI did something Rufi can't display", "teleport", "done"],
+    expect((await transcript(c.id)).turns).toMatchObject([
+      { status: "failed", endReason: "save_failed" },
     ]);
-    const columns = store.db.prepare("SELECT * FROM transcript_entries").all();
-    expect(JSON.stringify(columns)).not.toContain("Asha Fictional");
+    const answered = (await readFile(join(home, "fake.jsonl"), "utf8"))
+      .split("\n")
+      .filter((line) => line.includes('"answered":"item/tool/call"'));
+    expect(answered).toHaveLength(1);
+    expect(answered[0]).toContain("Rufi couldn't keep this call");
+    expect(answered[0]).not.toContain("Asha Fictional");
   });
 
   it("keeps a tool's late result out: the activity is stopped, not done", async () => {
@@ -861,6 +991,58 @@ describe("the chat, on the scripted Codex", () => {
     const c = await newConversation();
     await expect(chat?.send(c, "Hello")).rejects.toThrow(
       "Codex didn't answer thread/start within 0.3 s.",
+    );
+  });
+
+  it("shows a cut reply's answer without How or half a block, with what it had read, and passes it on marked", async () => {
+    const c = await transcripts.createConversation(
+      "asha",
+      "Cut",
+      "codex",
+      "gpt-6.1-sol",
+    );
+    await transcripts.startTurn(c, "t-1", "gpt-6.1-sol");
+    await transcripts.recordToolCall(c, "t-1", {
+      callId: "call-1",
+      tool: "run_sql",
+      input: { sql: "SELECT 1" },
+      answer: {
+        ok: false,
+        text: JSON.stringify({ ok: false, error: "The query failed: boom." }),
+      },
+      startedAt: "2026-10-08T10:00:00Z",
+    });
+    await transcripts.appendReply(
+      c,
+      "t-1",
+      "item-1",
+      "Your HbA1c was 6.8 %.\n\n```rufi-basis\nFrom the rec",
+    );
+    await openTranscripts(store).interruptRunning();
+    const { entries, turns } = await transcript(c.id);
+    expect(entries).toEqual([["reply", "Your HbA1c was 6.8 %."]]);
+    expect(turns).toMatchObject([
+      {
+        how: null,
+        used: [
+          {
+            title: "Query your record",
+            detail: "SELECT 1",
+            outcome: "failed",
+            note: "The query failed: boom.",
+          },
+        ],
+      },
+    ]);
+    expect(await transcripts.lastMessages(c, 10)).toEqual([
+      { from: "ai", text: "Your HbA1c was 6.8 %.", unfinished: true },
+    ]);
+    // A new thread hears it as unfinished.
+    await startChat("fake");
+    await chat?.send(await conversation(c.id), "And?");
+    await ended(c.id, 2);
+    expect((await backendOf("fake").contexts()).at(-1)).toContain(
+      "AI (this reply didn't finish): Your HbA1c was 6.8 %.",
     );
   });
 

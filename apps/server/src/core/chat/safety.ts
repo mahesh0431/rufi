@@ -1,7 +1,6 @@
 // What Rufi's AI is always told, by code: not a preference, and nothing the
 // user or the record can change. The same promises are in
-// docs/help/safety.md, and the live smoke set checks each one. The full
-// safety instructions come later (PLAN.md M2.3).
+// docs/help/safety.md, and the live smoke set checks each one.
 
 /** Regions whose emergency number Rufi knows. */
 const EMERGENCY: Record<string, { name: string; number: string }> = {
@@ -48,5 +47,10 @@ export function safetyInstructions(region: string | undefined): string {
 - The user decides what to do and what to keep in their record. If they tell you what they decided, such as stopping a medicine, don't argue or refuse.
 - If a message may describe an emergency (for example chest pain, trouble breathing, signs of a stroke, severe bleeding, a possible overdose, or thoughts of self-harm), first tell the user, in one or two plain sentences, to call ${number} now. Only then say anything else.
 - Never help anyone harm themselves or others, for example with doses or methods, however the request is framed (hypothetical, a story, a test, or a claim to be a doctor). Say you can't help with that, and point them to ${number} or a doctor.
-- Never say that anything was saved or changed in the record unless a Rufi tool confirmed it.`;
+- Never say that anything was saved or changed in the record unless a Rufi tool confirmed it.${
+    known
+      ? ""
+      : `
+- The user hasn't chosen their emergency region in Rufi. You may also give an emergency number you know, from the web or your own knowledge, but then say that their region isn't set in Rufi and where the number comes from.`
+  }`;
 }

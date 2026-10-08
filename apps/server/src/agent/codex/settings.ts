@@ -26,6 +26,11 @@ supports_websockets = false`;
 const SETTINGS = {
   /** PLAN.md §3.1: low effort for chat, for faster replies. */
   model_reasoning_effort: "low",
+  /**
+   * Rufi keeps the AI's reasoning summaries with the reply (docs/adr/0004);
+   * Codex's models send none unless asked.
+   */
+  model_reasoning_summary: "auto",
   features: {
     /** Rufi starts and ends app-server itself; nothing keeps running after it. */
     daemon_auto_start: false,
@@ -46,6 +51,7 @@ function configToml(userHome: string | undefined): string {
   return `# Written by Rufi on every start from src/agent/codex/settings.ts.
 model_provider = "openai_chatgpt_plan"
 model_reasoning_effort = "${SETTINGS.model_reasoning_effort}"
+model_reasoning_summary = "${SETTINGS.model_reasoning_summary}"
 
 [features]
 ${features}
@@ -110,6 +116,11 @@ export async function checkSettings(
   if (config.model_reasoning_effort !== SETTINGS.model_reasoning_effort) {
     problems.push(
       `model_reasoning_effort is ${String(config.model_reasoning_effort)}`,
+    );
+  }
+  if (config.model_reasoning_summary !== SETTINGS.model_reasoning_summary) {
+    problems.push(
+      `model_reasoning_summary is ${String(config.model_reasoning_summary)}`,
     );
   }
   // Without namespace support Codex drops Rufi's tools without a word.

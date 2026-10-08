@@ -52,8 +52,37 @@ A message can have up to 10,000 characters. When the box has more, it says so, a
 - **Your messages**, on the right.
 - **The AI's replies**, which appear as the AI writes them. Replies can have lists and tables. Links in a reply open in your browser, outside Rufi. A reply never shows pictures.
 - **One line for each thing the AI did**, such as reading your Overview or running a command. A tick means it was done. Other signs mean it is running, it failed, or it stopped.
+- **Based on**, a link under an answer once the reply has ended. It opens where the answer comes from. See [Where an answer comes from](#where-an-answer-comes-from).
 - **Receipts**, with a tick, each time the AI saved something to your record: "Saved", then one line for each change. Rufi writes them. See [Changing your record](#changing-your-record).
 - **How a reply ended**, when it didn't finish: for example "Stopped.", or that your ChatGPT plan's usage limit has been reached, with the time it resets.
+
+## Asking about your record
+
+Ask the AI about your record in your own words, for example "What was my last HbA1c?", "How many times did I have a headache this year?" or "How has my HbA1c changed since I started creatine?". The AI reads your Overview. For anything more, such as earlier results, counts, dates, or one kind of data beside another, it queries your record.
+
+What the AI's queries can do:
+
+- **Only this person's record.** A query reads only the record of the person the conversation is about. It can't read another person's record, your conversations or Rufi's settings. Rufi chooses the person, not the AI.
+- **Only read.** A query can't change anything.
+- **Removed records too.** Records you removed, and the earlier versions of amended results, stay readable, marked as removed or replaced.
+- **Limits.** Rufi stops a query after 5 seconds, and gives the AI at most 200 rows and 32 KB of them. When a limit cuts what came back, Rufi tells the AI, and the AI says in its answer what that means. A query that failed or was stopped gives the AI no rows, never an empty answer.
+
+If your record changes while the AI answers, for example a save in another conversation, two of its reads can see the record before and after the change. Used shows what each read got back.
+
+## Where an answer comes from
+
+Under an answer, once the reply has ended, the **Based on** link opens two parts:
+
+- **How**: the AI's own words on where the answer comes from: your record, read in this reply or earlier in the conversation, the web, or general knowledge. It also says how the AI got the answer, for example which results it compared.
+- **Used**: what Rufi saw the AI read in that reply, one line for each read: a query on your record with the number of rows it gave back, your Overview, a web search or a web page, a command. Rufi makes this list itself, not from the AI's words.
+
+Used is what the AI read, not proof that each read supports the answer. For the web, Rufi sees what was searched or opened, not the text of the page. When a read failed, stopped or was cut by a limit, its line says so. When the AI answers from something it read earlier in the conversation, Used is empty for that reply, and How says so. If How and Used don't agree, ask the AI.
+
+Anything that changes what an answer means, such as only two readings or a missing month, is in the answer itself, not only under Based on.
+
+Small talk, such as "thanks", has no Based on. While a reply runs, Based on isn't there yet. If you stop a reply, or Rufi closes during it, what the AI wrote so far stays, without How; Based on shows only what the AI had read.
+
+The AI writes How at the end of its reply, and Rufi shows it under Based on, not in the answer. If the AI forgets it, the answer has no How.
 
 ## Changing your record
 

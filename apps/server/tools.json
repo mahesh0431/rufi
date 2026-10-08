@@ -16,6 +16,33 @@
       ]
     },
     {
+      "name": "rufi.run_sql",
+      "description": "Runs one read-only SQLite query on the active person's record and returns its rows. The database holds only this person's record, nothing else: no other person, no conversations, no settings. Tables and columns: people(id, display_name); files(id, size, media_type, created_at); documents(id, person_id, file_id, original_name, added_at); reports(id, person_id, document_id, issuer, collected); results(id, person_id, report_id, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id, group_label, second_number, measured_words, source_entry_id, removed); medicine_uses(id, person_id, name, strength, amount, schedule, route, purpose, status, started, started_words, ended, ended_words, source_entry_id, removed); prescriptions(id, person_id, item, strength, amount, route, schedule, period, prescriber, issued, issued_words, source_entry_id, removed); symptoms(id, person_id, name, status, onset, onset_words, ended, ended_words, severity, location, intermittent, details, source_entry_id, removed); conditions(id, person_id, name, certainty, status, recognised, recognised_words, resolved, resolved_words, details, source_entry_id, removed); allergies(id, person_id, substance, reaction, status, certainty, asserted, reacted, reacted_words, source_entry_id, removed); care_events(id, person_id, type, name, status, date, date_words, provider, details, source_entry_id, removed); none_known(id, person_id, category, asserted, source_entry_id, removed); follow_ups(id, person_id, title, due, due_words, status, outcome, linked_kind, linked_id, source_entry_id, removed); operations(id, person_id, conversation_id, call_id, request, created_at); record_changes(operation_id, seq, person_id, kind, record_id, action, before, after, source_entry_id). Each table's definition, with what its columns mean, is in sqlite_schema (SELECT sql FROM sqlite_schema WHERE name = 'results'). Values are as printed: value_text is the printed value (\"<5\" stays \"<5\"), value_number its plain number when there is one, comparator \"<\" or \">\" when one was printed. Dates are text at the precision known: \"2026\", \"2026-08\" or \"2026-08-12\". A row with removed = 1 was removed from the record and is kept as history. A result with replaces_id amends the result it names: the current results are those not removed and not replaced by a result that isn't removed. operations and record_changes are the saves: each changed record's whole row before and after (JSON), and when (operations.created_at). One statement, reading only; nothing can be changed. Limits: at most 200 rows and 32 KB of rows (as UTF-8 JSON) come back, and the query is stopped after 5 seconds. When a limit cuts the rows, the answer says \"complete\": false and why: count, group and filter in SQL instead. A query that fails or is stopped returns no rows, only the error. Rufi chooses the person, not you.",
+      "callers": "model",
+      "readOnly": true,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sql": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000,
+            "description": "One SQLite SELECT (or WITH … SELECT) statement, at most 10000 characters."
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "sql": "SELECT test_name, value_text, unit, measured_at FROM results WHERE test_name = 'HbA1c' AND removed = 0 ORDER BY measured_at"
+        }
+      ]
+    },
+    {
       "name": "rufi.read_conversation",
       "description": "Earlier parts of this conversation, newest first. Each entry's kind is \"message\" (the user's), \"steer\" (the user's, sent while you were replying), \"reply\" (yours), \"activity\" (one thing you did: a title and one short detail, never its output) or \"receipt\" (Rufi's line for a save to the record: what was saved). \"at\" is when it was written. At most 50 entries a page; pass the page's next_before to read further back. Rufi chooses the conversation, not you.",
       "callers": "model",
