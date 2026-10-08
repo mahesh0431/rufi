@@ -1357,12 +1357,8 @@ describe("backups and export over the API", () => {
   it("makes a backup at start, another on Back up now, and gives the export as a zip", async () => {
     const page = await session(await start());
     const backups = async () => (await page.api("GET", "/api/backups")).body;
-    // The start's backup is done, also its clean-up: Back up now would join
-    // a backup still running.
-    await until(async () => {
-      const status = await backups();
-      return status["last"] !== null && status["running"] === false;
-    });
+    // The start's backup ends with pruning; Back up now joins it until then.
+    await until(async () => (await backups())["running"] === false);
     const first = (await backups())["last"] as { name: string };
     const now = (await page.api("POST", "/api/backups")).body;
     expect(now).toMatchObject({ failed: null, running: false });
