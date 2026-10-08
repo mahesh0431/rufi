@@ -262,6 +262,20 @@ describe("the daily backup", () => {
 const names = async () => (await readdir(backupsPath(home))).sort();
 
 describe("which backups the daily backup keeps", () => {
+  it("gives two backups made in the same second their own names, and keeps the newer", async () => {
+    const at = new Date(2026, 9, 8, 15, 38, 18);
+    const job = backupJob(home, () => undefined, { now: () => at });
+    const first = await job.backUp();
+    const second = await job.backUp();
+    await job.close();
+    expect([first.name, second.name]).toEqual([
+      "2026-10-08-153818",
+      "2026-10-08-153818-2",
+    ]);
+    expect(await names()).toEqual(["2026-10-08-153818-2"]);
+    expect(job.status().last).toEqual(second);
+  });
+
   it("keeps the newest of each of the last 7 days and 4 weeks that had one, and removes nothing when a backup fails", async () => {
     let now = new Date(2026, 8, 1, 12);
     const job = backupJob(home, () => undefined, { now: () => now });
