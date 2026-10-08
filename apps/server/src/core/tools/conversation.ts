@@ -50,7 +50,9 @@ export const readConversation = defineTool({
         "created_at",
       ])
       .where("person_id", "=", personId)
-      .where("conversation_id", "=", conversationId);
+      .where("conversation_id", "=", conversationId)
+      // The AI's reasoning is kept for people to trace, not read back.
+      .where("kind", "!=", "reasoning");
     if (input.before !== undefined)
       query = query.where("seq", "<", input.before);
     const rows = await query

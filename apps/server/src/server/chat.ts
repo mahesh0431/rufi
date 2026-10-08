@@ -61,11 +61,12 @@ export function chat(deps: ChatDeps) {
   const pendingContext = new Map<string, string>();
   /** Steers sent, so their message is saved as a steer; by message id. */
   const steers = new Map<string, string>(); // message id -> thread id
-  /** Each running turn's tool caller, by thread. */
+  /** Each running turn's tool caller and conversation, by thread. */
   const callers = new Map<
     string,
     {
       turnId: string;
+      conversation: ConversationRow;
       call: (
         name: string,
         input: unknown,
@@ -79,6 +80,15 @@ export function chat(deps: ChatDeps) {
   /** Turns with a part Rufi couldn't save: stopped, and ended as failed. */
   const unsaved = new Set<string>();
 
+  /** A part of the turn wasn't saved: nothing more of it is, and it stops. */
+  function lost(threadId: string, turnId: string): void {
+    if (unsaved.has(turnId)) return;
+    unsaved.add(turnId);
+    agent.stop(threadId, turnId).catch((stopError: unknown) => {
+      log("chat.save_failed", { kind: "stop", error: errorCode(stopError) });
+    });
+  }
+
   const host: AgentHost = {
     onEvent: (event) => {
       saving = saving.then(() =>
@@ -88,22 +98,10 @@ export function chat(deps: ChatDeps) {
             error: errorCode(error),
           });
           // A transcript with a hole is never shown as a whole reply.
-          if (
-            event.type === "waitingChanged" ||
-            event.type === "turnEnded" ||
-            unsaved.has(event.turnId)
-          ) {
+          if (event.type === "waitingChanged" || event.type === "turnEnded") {
             return;
           }
-          unsaved.add(event.turnId);
-          agent
-            .stop(event.threadId, event.turnId)
-            .catch((stopError: unknown) => {
-              log("chat.save_failed", {
-                kind: "stop",
-                error: errorCode(stopError),
-              });
-            });
+          lost(event.threadId, event.turnId);
         }),
       );
     },
@@ -125,11 +123,34 @@ export function chat(deps: ChatDeps) {
         }
         caller = {
           turnId,
+          conversation,
           call: deps.tools.caller(conversation, turnId),
         };
         callers.set(threadId, caller);
       }
-      return caller.call(name, input, callId);
+      const startedAt = transcripts.now();
+      const answer = await caller.call(name, input, callId);
+      // Kept before the AI has it: Used must show every read the AI got.
+      try {
+        await transcripts.recordToolCall(caller.conversation, turnId, {
+          callId,
+          tool: name,
+          input,
+          answer,
+          startedAt,
+        });
+      } catch (error) {
+        log("chat.save_failed", { kind: "tool_call", error: errorCode(error) });
+        lost(threadId, turnId);
+        return {
+          ok: false,
+          text: JSON.stringify({
+            ok: false,
+            error: "Rufi couldn't keep this call, so it stopped the reply.",
+          }),
+        };
+      }
+      return answer;
     },
   };
   const agent = deps.agent(host);
@@ -202,6 +223,18 @@ export function chat(deps: ChatDeps) {
             title: event.title,
             ...(event.detail !== undefined && { detail: event.detail }),
             status: event.status,
+            ...(event.details !== undefined && { details: event.details }),
+          },
+        );
+        return;
+      case "reasoning":
+        await transcripts.addReasoning(
+          conversation,
+          event.turnId,
+          event.itemId,
+          {
+            summary: event.summary,
+            details: event.details,
           },
         );
         return;
@@ -563,12 +596,19 @@ const WHO = { user: "User", ai: "AI", rufi: "Rufi" } as const;
 
 /** What a new thread is told first: the note, then the last messages. */
 function newThreadContext(
-  earlier: readonly { from: "user" | "ai" | "rufi"; text: string }[],
+  earlier: readonly {
+    from: "user" | "ai" | "rufi";
+    text: string;
+    unfinished?: boolean;
+  }[],
   modelChanged: boolean,
 ): string {
   const note = `${modelChanged ? "The model changed and a new thread started." : "A new thread started."} Older history is available through read_conversation.`;
   const messages = earlier
-    .map(({ from, text }) => `${WHO[from]}: ${text}`)
+    .map(
+      ({ from, text, unfinished }) =>
+        `${WHO[from]}${unfinished ? " (this reply didn't finish)" : ""}: ${text}`,
+    )
     .join("\n\n");
   return `${note}\n\nThe last messages of this conversation, oldest first:\n\n${messages}`;
 }

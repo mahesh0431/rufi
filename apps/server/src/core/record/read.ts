@@ -37,7 +37,11 @@ function given(field: Field, row: Row): unknown {
 }
 
 /** The fields a record has, by the names save_changes uses. */
-function fieldsOf(kind: Kind, row: Row, only?: (name: string) => boolean) {
+export function fieldsOf(
+  kind: Kind,
+  row: Row,
+  only?: (name: string) => boolean,
+) {
   const fields: Record<string, unknown> = {};
   for (const [name, field] of Object.entries(kind.fields)) {
     if (only && !only(name)) continue;

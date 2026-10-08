@@ -3,8 +3,10 @@ import { createHash } from "node:crypto";
 import { readConversation } from "./conversation.ts";
 import { getOverview } from "./overview.ts";
 import { saveChanges } from "./save.ts";
+import { getRecords } from "./records.ts";
 import {
   inputSchema,
+  shownFor,
   toolCaller,
   type Tool,
   type ToolContext,
@@ -16,6 +18,7 @@ import type { Store } from "../store/database.ts";
 
 export const TOOLS: readonly Tool[] = [
   getOverview,
+  getRecords,
   readConversation,
   saveChanges,
 ];
@@ -25,7 +28,18 @@ const NAMESPACE = "rufi";
 
 /** PLAN.md §3.5: tools are the only way in to the record; docs/adr/0005. */
 const TOOL_INSTRUCTIONS = `The user's health record lives in Rufi. Read it only through the rufi tools, and change it only with rufi.save_changes. Never open, copy or query Rufi's database or files directly, by code, SQL or shell.
-Rufi's chat shows your replies as Markdown. Make them easy to read: short paragraphs, a list when there are several items, and what would change in bold.
+Rufi's chat shows your replies as Markdown. Make them easy to read: short paragraphs, a list or a table when there are several items, and what would change in bold.
+Answering from the record:
+- get_overview shows the record at a glance. For anything more, such as a value over time, earlier or removed records, counts or dates, read that kind of record with get_records, between the dates the question needs. Count, compare and find trends in the records yourself.
+- Answer from what you read, in this reply or earlier in this conversation. When a read failed, say so in the answer. When a read was capped, narrow the dates and read the rest, or say in the answer what the missing records mean for it.
+- Reading numbers: connect different kinds of data freely, but keep one test in one unit inside one trend. A missing day is missing, not zero. A printed "<5" stays "<5", never 5. When two things happen together, say they happen together, not that one causes the other.
+- Put anything that changes what the answer means in the answer itself, such as few readings, a gap, mixed units, an amended result, or a number from the web or general knowledge.
+Where an answer comes from:
+- End every answer with a fenced code block tagged rufi-basis, after everything else. In it, say in one to three plain sentences, without Markdown, where the answer comes from (the record read in this reply, the record read earlier in this conversation, the web, or general knowledge; or which part comes from which) and how you got it, for example which results you compared. Rufi shows it under your answer as "Based on". For example:
+\`\`\`rufi-basis
+From the record, read now: I compared the HbA1c results from 2024 to 2026.
+\`\`\`
+- Small talk, such as "thanks", needs no rufi-basis block.
 Changing the record:
 - When the user tells you something about their own health that belongs in the record, read the record with get_overview first, so a change names the record it changes. Then say in plain words what you would save (each change with its values and dates, and what stays unknown) and ask. Save nothing yet.
 - Save only after the user clearly says yes to those changes. "No", a question, "yes, but explain first" or a condition is not a yes: answer it and save nothing. If it isn't clear what the yes is for, ask again.
@@ -42,7 +56,7 @@ export function forAgent(context: () => ToolContext, log: Log) {
     specs: tools.map((tool) => ({
       name: tool.name,
       description: tool.description,
-      shown: tool.shown,
+      shown: (input: unknown) => shownFor(tool, input),
       inputSchema: inputSchema(tool),
     })),
     instructions: TOOL_INSTRUCTIONS,

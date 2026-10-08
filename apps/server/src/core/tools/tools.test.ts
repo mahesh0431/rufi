@@ -21,6 +21,7 @@ import {
   toolCaller,
   type ToolContext,
 } from "./registry.ts";
+import { LIMITS } from "./records.ts";
 import { forAgent, TOOLS, toolsJson } from "./tools.ts";
 import type { Log } from "../../platform/logs.ts";
 
@@ -224,6 +225,255 @@ describe("get_overview", () => {
   });
 });
 
+describe("get_records", () => {
+  const records = (
+    store: Store,
+    input: Record<string, unknown>,
+    personId = "asha",
+  ) => call({ store, personId }, "get_records", input);
+  const ids = (answer: { body: Record<string, unknown> }) =>
+    (answer.body["result"] as { records: { id: string }[] }).records.map(
+      (found) => found.id,
+    );
+
+  it("reads only the active person's records, from either side", async () => {
+    const store = makeDatabase(family);
+    expect(ids(await records(store, { kind: "result" }, "ravi"))).toEqual([
+      "res-r2",
+      "res-r1",
+    ]);
+    expect(ids(await records(store, { kind: "allergy" }, "ravi"))).toEqual([
+      "all-r1",
+    ]);
+    const asha = await records(store, { kind: "allergy" });
+    expect(asha.body).toEqual({
+      ok: true,
+      result: { kind: "allergy", records: [], returned: 0, complete: true },
+    });
+    expect(ids(await records(store, { kind: "medicine_use" }))).not.toContain(
+      "med-r1",
+    );
+  });
+
+  it("takes no person from the AI", async () => {
+    const store = makeDatabase(family);
+    const { ok, body } = await records(store, {
+      kind: "result",
+      person: "ravi",
+    });
+    expect(ok).toBe(false);
+    expect(body).not.toHaveProperty("result");
+    expect(JSON.stringify(body)).not.toContain("LDL");
+  });
+
+  it("gives records as stored, newest first, removed and replaced ones marked", async () => {
+    const store = makeDatabase(
+      family,
+      "UPDATE results SET removed = 1 WHERE id = 'res-a2'",
+    );
+    const { body } = await records(store, { kind: "result" });
+    const result = body["result"] as { records: Record<string, unknown>[] };
+    expect(result).toMatchObject({ returned: 8, complete: true });
+    expect(result.records.map((found) => found["id"])).toEqual([
+      "res-a6",
+      "res-a5",
+      "res-a4",
+      "res-a3",
+      "res-a2",
+      "res-a1",
+      "res-a7",
+      "res-a8",
+    ]);
+    expect(result.records.slice(1, 5)).toEqual([
+      {
+        id: "res-a5",
+        test: "TSH",
+        value: "4.6",
+        number: 4.6,
+        unit: "mIU/L",
+        range: "0.4 - 4.0",
+        flag: "High",
+        measured: { date: "2026-08-12" },
+        replaces: "res-a4",
+      },
+      {
+        id: "res-a4",
+        test: "TSH",
+        value: "2.1",
+        number: 2.1,
+        unit: "mIU/L",
+        range: "0.4 - 4.0",
+        measured: { date: "2026-08-12" },
+        replaced_by: "res-a5",
+      },
+      {
+        id: "res-a3",
+        test: "CRP",
+        value: "<5",
+        comparator: "<",
+        number: 5,
+        unit: "mg/L",
+        range: "<10",
+        measured: { date: "2026-08-12" },
+      },
+      expect.objectContaining({ id: "res-a2", removed: true }),
+    ]);
+  });
+
+  it("reads between two dates, a date at a lower precision when it overlaps, never an undated one", async () => {
+    const store = makeDatabase(
+      family,
+      `INSERT INTO follow_ups (id, person_id, title, due) VALUES
+        ('fu-next', 'asha', 'Ask about the TSH', 'next_visit'),
+        ('fu-none', 'asha', 'Book an eye test', NULL),
+        ('fu-nov', 'asha', 'Repeat HbA1c', '2026-11'),
+        ('fu-oct', 'asha', 'Thyroid review', '2026-10-20')`,
+    );
+    const between = async (from?: string, to?: string) =>
+      ids(
+        await records(store, {
+          kind: "result",
+          ...(from !== undefined && { from }),
+          ...(to !== undefined && { to }),
+        }),
+      );
+    // A month bound takes the days in it.
+    expect(await between("2026-08", "2026-08")).toEqual([
+      "res-a5",
+      "res-a4",
+      "res-a3",
+      "res-a2",
+      "res-a1",
+    ]);
+    // Vitamin D is dated May 2026: in from mid-May, not in up to April.
+    expect(await between("2026-05-15", "2026-06")).toEqual(["res-a7"]);
+    expect(await between(undefined, "2026-04")).toEqual([]);
+    expect(await between("2026")).not.toContain("res-a8");
+    expect(
+      ids(await records(store, { kind: "medicine_use", from: "2025" })),
+    ).toEqual(["med-a2"]);
+    // A follow-up due at the next visit has no calendar date: after the
+    // dated ones, before the undated, and never in a read between dates.
+    expect(ids(await records(store, { kind: "follow_up" }))).toEqual([
+      "fu-nov",
+      "fu-oct",
+      "fu-next",
+      "fu-none",
+    ]);
+    expect(
+      ids(await records(store, { kind: "follow_up", from: "2026" })),
+    ).toEqual(["fu-nov", "fu-oct"]);
+    const { ok, body } = await records(store, {
+      kind: "result",
+      from: "last May",
+    });
+    expect(ok).toBe(false);
+    expect(JSON.stringify(body)).toContain("YYYY");
+  });
+
+  it(`says when more than ${String(LIMITS.records)} records matched: exactly ${String(LIMITS.records)} are complete`, async () => {
+    const glucose = (n: number) =>
+      Array.from({ length: n }, (_, i) => {
+        const day = new Date(Date.UTC(2025, 0, 1 + i))
+          .toISOString()
+          .slice(0, 10);
+        return `('g${String(i)}', 'asha', NULL, 'Glucose', '5.${String(i % 10)}', NULL, NULL, 'mmol/L', NULL, NULL, NULL, '${day}', '2026-01-01T00:00:00Z', NULL)`;
+      }).join(",");
+    const insert = (n: number) =>
+      `DELETE FROM results WHERE person_id = 'asha'; INSERT INTO results (id, person_id, report_id, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id) VALUES ${glucose(n)}`;
+    const exactly = makeDatabase(family, insert(LIMITS.records));
+    expect(
+      (await records(exactly, { kind: "result" })).body["result"],
+    ).toMatchObject({ returned: LIMITS.records, complete: true });
+    expect(
+      (await records(exactly, { kind: "result" })).body["result"],
+    ).not.toHaveProperty("capped");
+    exactly.close();
+
+    path = databasePath(await mkdtemp(join(tmpdir(), "rufi-tools-")));
+    const more = makeDatabase(family, insert(LIMITS.records + 1));
+    const capped = await records(more, { kind: "result" });
+    expect(capped.body["result"]).toMatchObject({
+      returned: LIMITS.records,
+      complete: false,
+      capped: `Narrow the dates: more records matched than the ${String(LIMITS.records)} records that come back at most. These are the newest ${String(LIMITS.records)}.`,
+    });
+    // The newest first: the oldest one is the one left out, and a narrower read gets it.
+    expect(ids(capped)).not.toContain("g0");
+    expect(
+      ids(await records(more, { kind: "result", to: "2025-01-01" })),
+    ).toEqual(["g0"]);
+  });
+
+  it(`says when the records are more than ${String(LIMITS.bytes / 1000)} KB`, async () => {
+    const long = "x".repeat(1_000);
+    const symptoms = Array.from(
+      { length: 40 },
+      (_, i) =>
+        `('s${String(i).padStart(2, "0")}', 'asha', 'Headache', 'resolved', '2026-01-${String(1 + (i % 28)).padStart(2, "0")}', '${long}')`,
+    ).join(",");
+    const store = makeDatabase(
+      family,
+      `INSERT INTO symptoms (id, person_id, name, status, onset, details) VALUES ${symptoms}`,
+    );
+    const result = (await records(store, { kind: "symptom" })).body[
+      "result"
+    ] as { returned: number; capped: string };
+    expect(result).toMatchObject({ complete: false });
+    expect(result.returned).toBeGreaterThan(0);
+    expect(result.returned).toBeLessThan(40);
+    expect(result.capped).toBe(
+      `Narrow the dates: more records matched than the ${String(LIMITS.bytes / 1000)} KB that come back at most. These are the newest ${String(result.returned)}.`,
+    );
+  });
+
+  it("names each read in plain words, with its dates", () => {
+    const { specs } = forAgent(
+      () => ({ store: undefined, personId: undefined }),
+      record,
+    );
+    const shown = specs.find((spec) => spec.name === "get_records")?.shown;
+    expect(
+      [
+        { kind: "result" },
+        { kind: "symptom", from: "2026", to: "2026" },
+        { kind: "symptom", from: "2026-01-01", to: "2026-12-31" },
+        { kind: "result", from: "2026-08", to: "2026-08-31" },
+        { kind: "result", from: "2026-08-12", to: "2026-08-12" },
+        { kind: "medicine_use", from: "2024-03" },
+        { kind: "allergy", to: "2025" },
+        { kind: "care_event", from: "2024", to: "2026-10-08" },
+        { kind: "rash" },
+        "not an object",
+      ].map((input) => shown?.(input)),
+    ).toEqual([
+      "Read your results",
+      "Read your symptoms in 2026",
+      "Read your symptoms in 2026",
+      "Read your results in Aug 2026",
+      "Read your results on 12 Aug 2026",
+      "Read your medicine uses since Mar 2024",
+      "Read your allergies up to 2025",
+      "Read your care events from 2024 to 8 Oct 2026",
+      "Read your records",
+      "Read your records",
+    ]);
+  });
+
+  it("answers a read that fails with an error, never with no records", async () => {
+    const store = makeDatabase(family);
+    const writer = new DatabaseSync(path);
+    writer.exec("DROP TABLE symptoms");
+    writer.close();
+    const { ok, body } = await records(store, { kind: "symptom" });
+    expect(ok).toBe(false);
+    expect(body).toEqual({
+      ok: false,
+      error: "Rufi couldn't run get_records.",
+    });
+  });
+});
+
 const left = (text: string) =>
   (JSON.parse(text) as { rejections_left: number }).rejections_left;
 
@@ -371,7 +621,7 @@ describe("the error envelope", () => {
       "rm_rf",
     );
     expect(body["error"]).toBe(
-      "There is no tool called rm_rf. Rufi's tools: get_overview, read_conversation, save_changes.",
+      "There is no tool called rm_rf. Rufi's tools: get_overview, get_records, read_conversation, save_changes.",
     );
   });
 
@@ -498,6 +748,26 @@ describe("tools.json", () => {
         ).toBe(true);
       }
     }
+  });
+
+  it("tells the model the date format wherever it gives a date", () => {
+    const { tools } = JSON.parse(toolsJson()) as {
+      tools: { name: string; inputSchema: Record<string, unknown> }[];
+    };
+    const input = (name: string) =>
+      tools.find((tool) => tool.name === `rufi.${name}`)?.inputSchema as {
+        properties: Record<string, { description?: string }>;
+        $defs: Record<
+          string,
+          { properties: Record<string, { description?: string }> }
+        >;
+      };
+    const records = input("get_records").properties;
+    expect(records["from"]?.description).toContain("YYYY-MM-DD");
+    expect(records["to"]?.description).toContain("YYYY-MM-DD");
+    expect(
+      input("save_changes").$defs["DateSaid"]?.properties["date"]?.description,
+    ).toContain("YYYY-MM-DD");
   });
 });
 

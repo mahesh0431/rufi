@@ -8,7 +8,7 @@ Everything is in one data folder on your Mac. Today you choose it with the `RUFI
 
 | In the data folder | What it is                                                                                                                                 |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `rufi.sqlite`      | The record (people, documents, reports and results) and your conversations (see below)                                                     |
+| `rufi.sqlite`      | The record (people, documents, reports and results) and your conversations, with what the AI did in them (see below)                       |
 | `chatgpt.json`     | Your sign-in details, without secrets (see [Signing in with ChatGPT](signing-in.md))                                                       |
 | `models.json`      | The AI models Rufi may use. It starts with the strongest ones, and you can edit the list                                                   |
 | `logs/`            | Rufi's log (see below)                                                                                                                     |
@@ -22,15 +22,25 @@ When Rufi creates your data folder, it makes it private to your Mac user account
 
 > **Note:** When you ask Rufi something, the AI reads the parts of your record it needs. That text goes to the AI service you signed in with (today OpenAI, through your ChatGPT plan) so it can answer. See [OpenAI's policies](https://openai.com/policies/) for how they handle it.
 
+When the AI reads your record, it gets only the records of the person the conversation is about: Rufi chooses the person, and the AI can't name another one. The AI can't read your conversations or Rufi's settings this way, and it can't change anything.
+
 ## Your conversations
 
 Rufi keeps each conversation in `rufi.sqlite`: your messages, the AI's replies, one line for each thing the AI did, such as reading your record or searching the web, and a receipt for each save to your record. Rufi saves each part before it shows it, so what you see is what was saved.
+
+Rufi also keeps everything the AI did in a reply, so that an answer can be traced later:
+
+- For each thing the AI did, everything it sent and got back, as the AI service gave it: for example a read of your records and what it got back, a command and its output, or the words of a web search.
+- For each read or save with Rufi's own tools, what the AI asked and exactly what Rufi answered.
+- The AI's reasoning summaries: a short account of its thinking, when the AI service gives one. Rufi asks for them.
+
+You don't see these in Rufi yet, except as **Based on** under each answer. Rufi keeps them as long as the conversation. Work the AI gives to a sub-agent isn't kept.
 
 For each change to your record, Rufi also keeps the record before and after it, and the message of yours it came from.
 
 It also keeps what you typed in the chat but didn't send (a draft for each conversation), and which conversation to open the chat on for each person. Drafts stay on your Mac until you send them.
 
-Rufi doesn't keep the AI's tool outputs or its reasoning. The AI's own copies in `codex/` hold more, as long as the AI keeps them.
+The AI's own copies in `codex/` hold more, as long as the AI keeps them.
 
 ## What Rufi logs
 

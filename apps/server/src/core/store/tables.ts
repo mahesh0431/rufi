@@ -203,6 +203,19 @@ export interface Tables {
     source_entry_id: string | null;
     removed: number;
   };
+  tool_calls: {
+    id: string;
+    person_id: string;
+    conversation_id: string;
+    turn_id: string;
+    call_id: string;
+    tool: string;
+    input: string;
+    answer: string;
+    ok: number;
+    started_at: string;
+    ended_at: string;
+  };
   transcript_entries: {
     id: string;
     person_id: string;
@@ -213,6 +226,7 @@ export interface Tables {
     text: string;
     activity: string | null;
     detail: string | null;
+    details: string | null;
     status: string | null;
     agent_item_id: string | null;
     revision: number;

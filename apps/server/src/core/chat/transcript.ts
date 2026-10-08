@@ -1,7 +1,8 @@
 // Rufi's conversations and their transcripts (docs/adr/0004): what the user
-// said, one line per thing the AI did, and the AI's replies, in order. Every
-// change is one transaction that moves the conversation's revision on, and is
-// published to listeners only after it is stored.
+// said, one line per thing the AI did with everything it sent and got back,
+// the AI's reasoning and its replies, in order, and each call to Rufi's
+// tools. Every change is one transaction that moves the conversation's
+// revision on, and is published to listeners only after it is stored.
 import type {
   ActivityKind,
   Conversation,
@@ -17,6 +18,8 @@ import { gfm } from "micromark-extension-gfm";
 import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
 import type { Saved } from "../record/save.ts";
+import { splitBasis } from "./basis.ts";
+import { usedOf } from "./used.ts";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 
@@ -94,12 +97,13 @@ const plain = (line: string) =>
 type EntryRow = Selectable<Tables["transcript_entries"]>;
 type TurnRow = Selectable<Tables["turns"]>;
 
-const toEntry = (row: EntryRow): Entry => ({
+/** An entry as the screens get it; a reply shows its answer (docs/adr/0007). */
+const toEntry = (row: EntryRow, finished: boolean): Entry => ({
   id: row.id,
   seq: row.seq,
   turnId: row.turn_id,
   kind: row.kind as Entry["kind"],
-  text: row.text,
+  text: row.kind === "reply" ? splitBasis(row.text, finished).answer : row.text,
   activity: row.activity as Entry["activity"],
   detail: row.detail,
   status: row.status as Entry["status"],
@@ -107,7 +111,7 @@ const toEntry = (row: EntryRow): Entry => ({
   updatedAt: row.updated_at,
 });
 
-const toTurn = (row: TurnRow): Turn => ({
+const toTurn = (row: TurnRow): Omit<Turn, "how" | "used"> => ({
   id: row.id,
   model: row.model,
   status: row.status as Turn["status"],
@@ -141,6 +145,102 @@ const toConversation = (
   threadModel: row.thread_model,
   threadTools: row.thread_tools,
 });
+
+/**
+ * Entries as the screens get them: the AI's reasoning stays in the
+ * database, and a reply is split by whether its turn completed.
+ */
+async function entriesOut(trx: Db, rows: EntryRow[]): Promise<Entry[]> {
+  const shown = rows.filter((row) => row.kind !== "reasoning");
+  const replyTurns = [
+    ...new Set(
+      shown.flatMap((row) =>
+        row.kind === "reply" && row.turn_id !== null ? [row.turn_id] : [],
+      ),
+    ),
+  ];
+  const completed = new Set(
+    replyTurns.length === 0
+      ? []
+      : (
+          await trx
+            .selectFrom("turns")
+            .select("id")
+            .where("id", "in", replyTurns)
+            .where("status", "=", "completed")
+            .execute()
+        ).map((turn) => turn.id),
+  );
+  return shown.map((row) =>
+    toEntry(row, row.turn_id !== null && completed.has(row.turn_id)),
+  );
+}
+
+/**
+ * Turns as the screens get them, each with its Based on built from its own
+ * entries and calls: How from its replies once it completed, and Used.
+ */
+async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
+  const first = rows[0];
+  if (!first) return [];
+  const ids = rows.map((row) => row.id);
+  const entries = await trx
+    .selectFrom("transcript_entries")
+    .select([
+      "turn_id",
+      "kind",
+      "text",
+      "activity",
+      "detail",
+      "status",
+      "agent_item_id",
+      sql<number>`details IS NOT NULL`.as("captured"),
+    ])
+    .where("person_id", "=", first.person_id)
+    .where("turn_id", "in", ids)
+    .where("kind", "in", ["reply", "activity"])
+    .orderBy("seq")
+    .execute();
+  const calls = await trx
+    .selectFrom("tool_calls")
+    .select([
+      "turn_id",
+      "call_id",
+      "tool",
+      "ok",
+      "input",
+      sql<number | null>`json_extract(answer, '$.result.returned')`.as(
+        "returned",
+      ),
+      sql<number | null>`json_extract(answer, '$.result.complete')`.as(
+        "complete",
+      ),
+      sql<string | null>`json_extract(answer, '$.error')`.as("error"),
+    ])
+    .where("person_id", "=", first.person_id)
+    .where("turn_id", "in", ids)
+    .orderBy("started_at")
+    .orderBy("id")
+    .execute();
+  return rows.map((row) => {
+    const own = entries.filter((entry) => entry.turn_id === row.id);
+    const how =
+      row.status === "completed"
+        ? own
+            .filter((entry) => entry.kind === "reply")
+            .map((entry) => splitBasis(entry.text, true).how)
+            .findLast((found) => found !== undefined)
+        : undefined;
+    return {
+      ...toTurn(row),
+      how: how ?? null,
+      used: usedOf(
+        own.filter((entry) => entry.kind === "activity"),
+        calls.filter((call) => call.turn_id === row.id),
+      ),
+    };
+  });
+}
 
 export type Transcripts = ReturnType<typeof transcripts>;
 
@@ -209,8 +309,8 @@ export function transcripts(
       return {
         conversationId,
         revision,
-        entries: entries.map(toEntry),
-        turns: turns.map(toTurn),
+        entries: await entriesOut(trx, entries),
+        turns: await turnsOut(trx, turns),
         ...(conversation && {
           conversation: shown(toConversation(conversation)),
         }),
@@ -259,12 +359,13 @@ export function transcripts(
     entry: {
       id?: string;
       turnId: string | null;
-      kind: Entry["kind"];
+      kind: Entry["kind"] | "reasoning";
       text: string;
       activity?: ActivityKind;
       detail?: string;
       status?: NonNullable<Entry["status"]>;
       agentItemId?: string;
+      details?: string;
     },
   ): Promise<string> {
     const id = entry.id ?? uuid();
@@ -281,6 +382,7 @@ export function transcripts(
         text: entry.text,
         activity: entry.activity ?? null,
         detail: entry.detail ?? null,
+        details: entry.details ?? null,
         status: entry.status ?? null,
         agent_item_id: entry.agentItemId ?? null,
         revision,
@@ -537,8 +639,8 @@ export function transcripts(
         return {
           revision: row.revision,
           conversation: shown(toConversation(row)),
-          entries: entries.map(toEntry),
-          turns: turns.map(toTurn),
+          entries: await entriesOut(trx, entries),
+          turns: await turnsOut(trx, turns),
         };
       }),
 
@@ -570,7 +672,10 @@ export function transcripts(
         return { entries: [], turns: [id] };
       }),
 
-    /** A reply ended: final from now on. Its unfinished activity is stopped. */
+    /**
+     * A reply ended: final from now on. Its unfinished activity is stopped,
+     * and its replies are sent again, now split as an ended reply.
+     */
     endTurn: (
       conversation: ConversationRow,
       agentTurnId: string,
@@ -598,7 +703,17 @@ export function transcripts(
           .where("status", "=", "running")
           .returning("id")
           .execute();
-        return { entries: stopped.map((row) => row.id), turns: [turn.id] };
+        const replies = await trx
+          .selectFrom("transcript_entries")
+          .select("id")
+          .where("person_id", "=", turn.person_id)
+          .where("turn_id", "=", turn.id)
+          .where("kind", "=", "reply")
+          .execute();
+        return {
+          entries: [...stopped, ...replies].map((row) => row.id),
+          turns: [turn.id],
+        };
       }),
 
     /**
@@ -693,7 +808,11 @@ export function transcripts(
       return saved as Saved;
     },
 
-    /** One thing the agent did: added when it starts, updated when it ends. */
+    /**
+     * One thing the agent did: added when it starts, updated when it ends.
+     * `details`, everything the agent gave about it, replaces what it gave
+     * before.
+     */
     setActivity: (
       conversation: ConversationRow,
       agentTurnId: string,
@@ -703,12 +822,17 @@ export function transcripts(
         title: string;
         detail?: string;
         status: "running" | "done" | "failed";
+        details?: unknown;
       },
     ) =>
       change(conversation.id, async (trx, revision) => {
         const turn = await turnOf(trx, conversation.id, agentTurnId);
         if (turn?.status !== "running") return undefined;
         const line = await itemOf(trx, turn, itemId, "activity");
+        const details =
+          activity.details === undefined
+            ? undefined
+            : JSON.stringify(activity.details);
         if (!line) {
           const id = await insertEntry(trx, conversation, revision, {
             turnId: turn.id,
@@ -718,6 +842,7 @@ export function transcripts(
             ...(activity.detail !== undefined && { detail: activity.detail }),
             status: activity.status,
             agentItemId: itemId,
+            ...(details !== undefined && { details }),
           });
           return { entries: [id], turns: [] };
         }
@@ -727,6 +852,7 @@ export function transcripts(
             text: activity.title,
             activity: activity.activity,
             detail: activity.detail ?? line.detail,
+            details: details ?? line.details,
             status: activity.status,
             revision,
             updated_at: now(),
@@ -735,6 +861,72 @@ export function transcripts(
           .execute();
         return { entries: [line.id], turns: [] };
       }),
+
+    /**
+     * The AI's reasoning for a step, kept and never shown yet: its summary,
+     * and everything the agent gave. Once per agent item.
+     */
+    addReasoning: (
+      conversation: ConversationRow,
+      agentTurnId: string,
+      itemId: string,
+      reasoning: { summary: string; details: unknown },
+    ) =>
+      change(conversation.id, async (trx, revision) => {
+        const turn = await turnOf(trx, conversation.id, agentTurnId);
+        if (turn?.status !== "running") return undefined;
+        if (await itemOf(trx, turn, itemId, "reasoning")) return undefined;
+        const id = await insertEntry(trx, conversation, revision, {
+          turnId: turn.id,
+          kind: "reasoning",
+          text: reasoning.summary,
+          agentItemId: itemId,
+          details: JSON.stringify(reasoning.details),
+        });
+        return { entries: [id], turns: [] };
+      }),
+
+    /**
+     * A call the AI made to one of Rufi's tools, with what it sent and
+     * exactly what it got back, kept before the AI gets the answer. Also
+     * after the reply ended (a save that finished after a Stop). The turn
+     * is sent again, with its Used.
+     */
+    recordToolCall: (
+      conversation: ConversationRow,
+      agentTurnId: string,
+      call: {
+        callId: string;
+        tool: string;
+        input: unknown;
+        answer: { ok: boolean; text: string };
+        startedAt: string;
+      },
+    ) =>
+      change(conversation.id, async (trx) => {
+        const turn = await turnOf(trx, conversation.id, agentTurnId);
+        if (!turn) throw new Error("The call's reply isn't saved.");
+        await trx
+          .insertInto("tool_calls")
+          .values({
+            id: uuid(),
+            person_id: turn.person_id,
+            conversation_id: conversation.id,
+            turn_id: turn.id,
+            call_id: call.callId,
+            tool: call.tool,
+            input: JSON.stringify(call.input ?? null),
+            answer: call.answer.text,
+            ok: call.answer.ok ? 1 : 0,
+            started_at: call.startedAt,
+            ended_at: now(),
+          })
+          .execute();
+        return { entries: [], turns: [turn.id] };
+      }),
+
+    /** When it is now, as the transcript writes times. */
+    now,
 
     /**
      * After a crash or a hard stop: replies still running were cut off. They
@@ -773,7 +965,9 @@ export function transcripts(
     /**
      * The last `count` messages (the user's, the AI's replies and Rufi's
      * receipts) from replies that have ended, oldest first: what a new
-     * thread starts with.
+     * thread starts with. A reply that completed is as it came, with its
+     * rufi-basis block, so the new thread sees the convention; one that
+     * didn't is its answer only, marked unfinished.
      */
     lastMessages: async (conversation: ConversationRow, count: number) => {
       const rows = await db
@@ -783,7 +977,7 @@ export function transcripts(
             .onRef("t.person_id", "=", "e.person_id")
             .onRef("t.id", "=", "e.turn_id"),
         )
-        .select(["e.kind", "e.text"])
+        .select(["e.kind", "e.text", "t.status"])
         .where("e.person_id", "=", conversation.personId)
         .where("e.conversation_id", "=", conversation.id)
         .where("e.kind", "in", ["message", "steer", "reply", "receipt"])
@@ -793,15 +987,21 @@ export function transcripts(
         .orderBy("e.seq", "desc")
         .limit(count)
         .execute();
-      return rows.reverse().map((row) => ({
-        from:
-          row.kind === "reply"
-            ? ("ai" as const)
-            : row.kind === "receipt"
-              ? ("rufi" as const)
-              : ("user" as const),
-        text: row.text,
-      }));
+      return rows.reverse().map((row) => {
+        if (row.kind !== "reply") {
+          return {
+            from:
+              row.kind === "receipt" ? ("rufi" as const) : ("user" as const),
+            text: row.text,
+          };
+        }
+        const finished = row.status === "completed";
+        return {
+          from: "ai" as const,
+          text: finished ? row.text : splitBasis(row.text, false).answer,
+          ...(!finished && { unfinished: true }),
+        };
+      });
     },
 
     /** Whether a message was saved, by the id the agent got. */

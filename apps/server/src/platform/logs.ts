@@ -91,6 +91,8 @@ const FIELDS: Record<string, (value: unknown) => boolean> = {
       "text",
       "question",
       "activity",
+      "reasoning",
+      "tool_call",
       "turnEnded",
       "waitingChanged",
       "fill",

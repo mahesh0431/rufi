@@ -16,6 +16,56 @@
       ]
     },
     {
+      "name": "rufi.get_records",
+      "description": "The active person's records of one kind (medicine_use, prescription, symptom, condition, allergy, result, care_event, none_known, follow_up), as stored: each with its id and fields as save_changes takes them, also the records removed from the record (\"removed\": true) and results replaced by an amended one (\"replaced_by\": the amended result's id). Newest first, undated last. With from or to, only records dated in that period: medicine_use by started, prescription by issued, symptom by onset, condition by recognised, allergy by reacted, result by measured, care_event by date, none_known by asserted, follow_up by due. A record dated at a lower precision is read when its year or month overlaps the period (\"2026\" is in from 2026-03); a record with no date is read only without from and to. At most 200 records and 32 KB of records (as UTF-8 JSON) come back. When a cap leaves records out, the answer says \"complete\": false and \"capped\": narrow the dates and read again. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.",
+      "callers": "model",
+      "readOnly": true,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "medicine_use",
+              "prescription",
+              "symptom",
+              "condition",
+              "allergy",
+              "result",
+              "care_event",
+              "none_known",
+              "follow_up"
+            ],
+            "description": "The kind of record, as save_changes names it."
+          },
+          "from": {
+            "type": "string",
+            "description": "The earliest date to read, YYYY, YYYY-MM or YYYY-MM-DD; leave it out for no start."
+          },
+          "to": {
+            "type": "string",
+            "description": "The latest date to read, YYYY, YYYY-MM or YYYY-MM-DD; leave it out for no end."
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "kind": "result",
+          "from": "2024"
+        },
+        {
+          "kind": "symptom",
+          "from": "2026-01",
+          "to": "2026-06"
+        }
+      ]
+    },
+    {
       "name": "rufi.read_conversation",
       "description": "Earlier parts of this conversation, newest first. Each entry's kind is \"message\" (the user's), \"steer\" (the user's, sent while you were replying), \"reply\" (yours), \"activity\" (one thing you did: a title and one short detail, never its output) or \"receipt\" (Rufi's line for a save to the record: what was saved). \"at\" is when it was written. At most 50 entries a page; pass the page's next_before to read further back. Rufi chooses the conversation, not you.",
       "callers": "model",
@@ -1043,7 +1093,8 @@
             "type": "object",
             "properties": {
               "date": {
-                "type": "string"
+                "type": "string",
+                "description": "YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM in the user's local time, at the precision they gave: 'since 2019' is 2019. Count relative words from when the user sent the message (read_conversation shows it), not from now."
               },
               "words": {
                 "type": "string",

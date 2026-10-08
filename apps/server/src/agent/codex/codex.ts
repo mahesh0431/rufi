@@ -414,6 +414,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
             turnId,
             itemId: item.id,
             ...activity,
+            details: item,
           });
         }
         return;
@@ -451,6 +452,17 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           }
           return;
         }
+        if (item.type === "reasoning") {
+          emit({
+            type: "reasoning",
+            threadId,
+            turnId,
+            itemId: item.id,
+            summary: item.summary.join("\n\n"),
+            details: item,
+          });
+          return;
+        }
         const activity = activityOf(item, true, deps.tools);
         if (activity) {
           emit({
@@ -459,6 +471,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
             turnId,
             itemId: item.id,
             ...activity,
+            details: item,
           });
         }
         return;

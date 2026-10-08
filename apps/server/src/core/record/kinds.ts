@@ -12,12 +12,11 @@ const Long = Text(1_000).annotate({ identifier: "LongText" });
 
 /** A date as the user said it: the date the AI worked out, and their words. */
 const DateSaid = Schema.Struct({
-  date: Schema.String.check(
-    Schema.makeFilter((text: string) => dateProblem(text)),
-  ).annotate({
+  // Described before the check: a description after it isn't in the JSON schema.
+  date: Schema.String.annotate({
     description:
       "YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM in the user's local time, at the precision they gave: 'since 2019' is 2019. Count relative words from when the user sent the message (read_conversation shows it), not from now.",
-  }),
+  }).check(Schema.makeFilter((text: string) => dateProblem(text))),
   words: Text(100).annotate({
     description:
       "The user's own words for this date, copied from the source message: 'last Monday', 'since 2019', '28 Sep'.",
@@ -54,8 +53,9 @@ export interface Kind {
   /** The name the AI uses. */
   name: string;
   table: string;
-  /** Its words for a person. */
+  /** Its words for a person: one, and several. */
   noun: string;
+  nouns: string;
   /** Fields by the name the AI uses. */
   fields: Record<string, Field>;
   /** What a receipt calls one, from its row. */
@@ -64,6 +64,8 @@ export interface Kind {
   inLabel: readonly string[];
   /** Set by Rufi, never the AI: the day the user said it. */
   asserted?: true;
+  /** The field get_records' from and to are compared with ("asserted" for Rufi's own date). */
+  dated: string;
 }
 
 const text = (column: string, shown = column): Field => ({
@@ -109,6 +111,7 @@ export const KINDS: readonly Kind[] = [
     name: "medicine_use",
     table: "medicine_uses",
     noun: "medicine use",
+    nouns: "medicine uses",
     fields: {
       name: required(text("name")),
       strength: text("strength"),
@@ -128,11 +131,13 @@ export const KINDS: readonly Kind[] = [
     },
     label: (row) => join(row["name"], row["strength"]),
     inLabel: ["name", "strength"],
+    dated: "started",
   },
   {
     name: "prescription",
     table: "prescriptions",
     noun: "prescription",
+    nouns: "prescriptions",
     fields: {
       item: required(text("item")),
       strength: text("strength"),
@@ -145,11 +150,13 @@ export const KINDS: readonly Kind[] = [
     },
     label: (row) => join(row["item"], row["strength"]),
     inLabel: ["item", "strength"],
+    dated: "issued",
   },
   {
     name: "symptom",
     table: "symptoms",
     noun: "symptom",
+    nouns: "symptoms",
     fields: {
       name: required(text("name")),
       status: state("status", ["ongoing", "resolved", "unknown"]),
@@ -167,11 +174,13 @@ export const KINDS: readonly Kind[] = [
     },
     label: (row) => join(row["name"]),
     inLabel: ["name"],
+    dated: "onset",
   },
   {
     name: "condition",
     table: "conditions",
     noun: "condition",
+    nouns: "conditions",
     fields: {
       name: required(text("name")),
       certainty: state("certainty", ["suspected", "diagnosed", "unknown"]),
@@ -182,11 +191,13 @@ export const KINDS: readonly Kind[] = [
     },
     label: (row) => join(row["name"]),
     inLabel: ["name"],
+    dated: "recognised",
   },
   {
     name: "allergy",
     table: "allergies",
     noun: "allergy",
+    nouns: "allergies",
     fields: {
       substance: required(text("substance")),
       reaction: text("reaction"),
@@ -196,12 +207,14 @@ export const KINDS: readonly Kind[] = [
     },
     label: (row) => join(row["substance"]),
     inLabel: ["substance"],
+    dated: "reacted",
     asserted: true,
   },
   {
     name: "result",
     table: "results",
     noun: "result",
+    nouns: "results",
     fields: {
       test: required(text("test_name", "test")),
       value: required(text("value_text", "value")),
@@ -221,11 +234,13 @@ export const KINDS: readonly Kind[] = [
     label: (row) => join(row["test_name"], row["value_text"], row["unit"]),
     // The printed value already shows its numbers.
     inLabel: ["test", "value", "unit", "number", "second_number"],
+    dated: "measured",
   },
   {
     name: "care_event",
     table: "care_events",
     noun: "care event",
+    nouns: "care events",
     fields: {
       type: required(choice("type", ["visit", "procedure", "immunisation"])),
       name: required(text("name")),
@@ -241,23 +256,27 @@ export const KINDS: readonly Kind[] = [
     },
     label: (row) => join(row["name"]),
     inLabel: ["name"],
+    dated: "date",
   },
   {
     name: "none_known",
     table: "none_known",
     noun: "statement",
+    nouns: "“none known” statements",
     fields: {
       category: required(choice("category", ["allergies"])),
     },
     label: (row) =>
       `no known ${String(row["category"])}${typeof row["asserted"] === "string" ? ` (as of ${shownDate(row["asserted"])})` : ""}`,
     inLabel: ["category"],
+    dated: "asserted",
     asserted: true,
   },
   {
     name: "follow_up",
     table: "follow_ups",
     noun: "follow-up",
+    nouns: "follow-ups",
     fields: {
       title: required(text("title")),
       due: {
@@ -288,6 +307,7 @@ export const KINDS: readonly Kind[] = [
     },
     label: (row) => join(row["title"]),
     inLabel: ["title"],
+    dated: "due",
   },
 ];
 

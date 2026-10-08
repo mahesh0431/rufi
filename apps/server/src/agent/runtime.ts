@@ -49,7 +49,11 @@ export type AgentEvent = { threadId: string } & (
       title: string;
       options: string[];
     }
-  /** One thing the agent did, when it starts and again when it ends. */
+  /**
+   * One thing the agent did, when it starts and again when it ends.
+   * `details` is everything the agent gave about it so far (what it sent and
+   * got back), as it came; plain JSON, in the agent's own shape.
+   */
   | {
       type: "activity";
       turnId: string;
@@ -58,6 +62,18 @@ export type AgentEvent = { threadId: string } & (
       title: string;
       detail?: string;
       status: "running" | "done" | "failed";
+      details?: unknown;
+    }
+  /**
+   * The agent's reasoning for a step, once it is whole: the summary it gave
+   * (empty when none), and everything it gave as it came (plain JSON).
+   */
+  | {
+      type: "reasoning";
+      turnId: string;
+      itemId: string;
+      summary: string;
+      details: unknown;
     }
   | { type: "turnEnded"; turnId: string; end: TurnEnd }
   /** The waiting messages changed; read them again. */
@@ -92,8 +108,8 @@ export interface AgentTools {
   specs: readonly {
     name: string;
     description: string;
-    /** What a person sees when the AI uses it, in plain words. */
-    shown: string;
+    /** What a person sees when the AI uses it, in plain words, from what the AI sent. */
+    shown: (input: unknown) => string;
     inputSchema: Record<string, unknown>;
   }[];
 }
