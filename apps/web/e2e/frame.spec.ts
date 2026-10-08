@@ -437,9 +437,25 @@ test("Settings backs up, says when a backup failed, and exports your data", asyn
   await rufi.family();
   await rufi.start();
   await page.goto(rufi.link());
+  // Settings opens while the backup Rufi makes as it starts still runs; the
+  // page follows it to its end by itself.
+  let first = true;
+  await page.route("**/api/backups", async (route) => {
+    if (!first || route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    first = false;
+    await route.fulfill({
+      json: { last: null, failed: null, running: true },
+    });
+  });
   await sidebar(page).getByRole("link", { name: "Settings" }).click();
-  // Rufi makes one as it starts.
+  await expect(
+    page.getByRole("button", { name: "Backing up…" }),
+  ).toBeDisabled();
   await expect(page.getByText(/^Last backup at \d\d:\d\d on /)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back up now" })).toBeEnabled();
   await accessible(page);
 
   await chmod(join(rufi.home, "backups"), 0o500);
@@ -468,6 +484,28 @@ test("Settings backs up, says when a backup failed, and exports your data", asyn
   await expect(page.getByRole("status")).toHaveText(
     `Exported ${file.suggestedFilename()}.`,
   );
+});
+
+test("an export that doesn't come in time says so, and can be tried again", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await page.clock.install();
+  await page.goto(rufi.link());
+  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  // Rufi takes the request and never answers.
+  await page.route("**/api/export", () => undefined);
+  await page.getByRole("button", { name: "Export my data" }).click();
+  await expect(page.getByRole("button", { name: "Exporting…" })).toBeDisabled();
+  await page.clock.runFor(5 * 60_000);
+  await expect(page.getByRole("alert")).toHaveText(
+    "The export didn't come in time. Try again.",
+  );
+  await expect(
+    page.getByRole("button", { name: "Export my data" }),
+  ).toBeEnabled();
 });
 
 test.describe("Help", () => {

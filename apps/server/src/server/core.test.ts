@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { StreamLine } from "@rufi/contracts";
+import type { Status, StreamLine } from "@rufi/contracts";
 import { Effect, Exit, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { codexRuntime } from "../agent/codex/codex.ts";
@@ -1341,18 +1341,20 @@ describe("first run", () => {
     expect(await step()).toBe("done");
   });
 
-  it("skips the sign-in step when Rufi is already signed in", async () => {
+  it("skips the sign-in step when Rufi is already signed in, and stays done after signing out", async () => {
+    let account: Status = { account: "signed_in", email: "asha@example.com" };
     const page = await session(
-      await start({
-        account: () =>
-          Promise.resolve({ account: "signed_in", email: "asha@example.com" }),
-      }),
+      await start({ account: () => Promise.resolve(account) }),
     );
     await page.api("POST", "/api/first-run", { step: "welcome" });
     await page.api("POST", "/api/people", { displayName: "Asha Fictional" });
     expect((await page.api("GET", "/api/first-run")).body["step"]).toBe(
       "region",
     );
+    await page.api("POST", "/api/first-run", { step: "region" });
+
+    account = { account: "signed_out", email: null };
+    expect((await page.api("GET", "/api/first-run")).body["step"]).toBe("done");
   });
 });
 

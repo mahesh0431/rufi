@@ -1,7 +1,14 @@
 // Backups on real database files: what a backup holds, that a save is in it
 // whole or not at all, which ones are kept, and what the daily job does
 // when a backup fails or was stopped.
-import { chmod, mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -9,10 +16,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   backupJob,
   backupsPath,
+  failureReason,
   listBackups,
   makeBackup,
-  toKeep,
-  type Backup,
 } from "./backup.ts";
 import { databasePath, openWritable } from "./database.ts";
 
@@ -106,49 +112,6 @@ describe("a backup", () => {
   });
 });
 
-const at = (day: number, hour = 12) => new Date(2026, 8, day, hour);
-const backup = (date: Date): Backup => ({
-  name: `${String(date.getMonth() + 1)}-${String(date.getDate())}-${String(date.getHours())}`,
-  createdAt: date,
-});
-
-describe("which backups are kept", () => {
-  it("keeps the newest of each of the last 7 days and of the last 4 weeks that had one", () => {
-    // September 2026: Mondays on the 7th, 14th, 21st and 28th. Rufi ran on
-    // these days (twice on the 29th); it was closed 10th–19th, and the 24th
-    // failed, so it has none.
-    const made = [
-      ...[1, 2, 3, 4, 5, 6, 8, 9, 20, 21, 22, 23, 25, 26, 27, 28, 30].map((d) =>
-        backup(at(d)),
-      ),
-      backup(at(29, 9)),
-      backup(at(29, 18)),
-    ];
-    expect([...toKeep(made)].sort()).toEqual(
-      [
-        // The last 7 days that had one; the 29th's newest only.
-        "9-30-12",
-        "9-29-18",
-        "9-28-12",
-        "9-27-12",
-        "9-26-12",
-        "9-25-12",
-        "9-23-12",
-        // The newest of the last 4 weeks that had one: from the 28th (the
-        // 30th, kept above), the 21st (the 27th, kept above), the 14th (only
-        // Sunday the 20th) and the 7th (the 9th). Not 31 Aug's week.
-        "9-20-12",
-        "9-9-12",
-      ].sort(),
-    );
-  });
-
-  it("never drops the last good backups however long Rufi was closed", () => {
-    const made = [backup(at(1)), backup(at(2))];
-    expect([...toKeep(made)].sort()).toEqual(["9-1-12", "9-2-12"]);
-  });
-});
-
 describe("the daily backup", () => {
   it("makes one at start when there is none, and none when the newest is less than a day old", async () => {
     let now = new Date(2026, 9, 8, 9, 0);
@@ -171,30 +134,47 @@ describe("the daily backup", () => {
   });
 
   it("says why a backup failed, and keeps the last good one", async () => {
-    let now = new Date(2026, 9, 1, 9, 0);
+    let now = new Date(2026, 9, 8, 9, 0);
     const logged: string[] = [];
     const job = backupJob(home, (event) => logged.push(event), {
       now: () => now,
     });
     const good = await job.backUp();
-    now = new Date(2026, 9, 8, 9, 0);
+    now = new Date(2026, 9, 8, 9, 0, 30);
     await chmod(backupsPath(home), 0o500);
     try {
       await expect(job.backUp()).rejects.toThrow();
     } finally {
       await chmod(backupsPath(home), 0o700);
     }
-    const status = await job.status();
+    const status = job.status();
     expect(status.last?.name).toBe(good.name);
     expect(status.failed).toEqual({
       at: now,
       reason: "the backups folder can't be written",
     });
     expect(logged).toEqual(["backup.made", "backup.failed"]);
-
-    await job.backUp();
-    expect((await job.status()).failed).toBeUndefined();
     await job.close();
+
+    // Rufi starts again while the folder still can't be written; the good
+    // backup is less than a day old, so it doesn't try again.
+    await chmod(backupsPath(home), 0o500);
+    const again = backupJob(home, () => undefined, {
+      now: () => new Date(2026, 9, 8, 9, 30),
+    });
+    try {
+      await again.start();
+      await again.close();
+      expect(again.status().failed).toEqual({
+        at: now,
+        reason: "the backups folder can't be written",
+      });
+    } finally {
+      await chmod(backupsPath(home), 0o700);
+    }
+
+    await again.backUp();
+    expect(again.status().failed).toBeUndefined();
   });
 
   it("removes what a stopped backup left at the next start, and never counts it", async () => {
@@ -209,4 +189,101 @@ describe("the daily backup", () => {
     expect(names.some((name) => name.startsWith(".staging-"))).toBe(false);
     expect(names).toHaveLength(1);
   });
+});
+
+const names = async () => (await readdir(backupsPath(home))).sort();
+
+describe("which backups the daily backup keeps", () => {
+  it("keeps the newest of each of the last 7 days and 4 weeks that had one, and removes nothing when a backup fails", async () => {
+    let now = new Date(2026, 8, 1, 12);
+    const job = backupJob(home, () => undefined, { now: () => now });
+    // September 2026: Mondays on the 7th, 14th, 21st and 28th. Rufi ran on
+    // these days (twice on the 29th); it was closed 10th–19th; the backup
+    // on the 24th failed.
+    const days = [1, 2, 3, 4, 5, 6, 8, 9, 20, 21, 22, 23, 24, 25, 26, 27, 28];
+    for (const day of days) {
+      now = new Date(2026, 8, day, 12);
+      if (day !== 24) {
+        await job.backUp();
+        continue;
+      }
+      const before = await names();
+      await chmod(backupsPath(home), 0o500);
+      try {
+        await expect(job.backUp()).rejects.toThrow();
+      } finally {
+        await chmod(backupsPath(home), 0o700);
+      }
+      expect(await names()).toEqual(before);
+    }
+    for (const at of [
+      new Date(2026, 8, 29, 9),
+      new Date(2026, 8, 29, 18),
+      new Date(2026, 8, 30, 12),
+    ]) {
+      now = at;
+      await job.backUp();
+    }
+    await job.close();
+
+    expect(await names()).toEqual([
+      // The newest of each of the last 4 weeks that had one: the weeks from
+      // the 7th (the 9th) and the 14th (only Sunday the 20th); the 21st's
+      // and 28th's newest are among the days below.
+      "2026-09-09-120000",
+      "2026-09-20-120000",
+      // The last 7 days that had one; the 29th's newest only.
+      "2026-09-23-120000",
+      "2026-09-25-120000",
+      "2026-09-26-120000",
+      "2026-09-27-120000",
+      "2026-09-28-120000",
+      "2026-09-29-180000",
+      "2026-09-30-120000",
+    ]);
+  });
+});
+
+describe("a backup that is damaged or gone", () => {
+  it("doesn't count: the last good one is the newest that passes its check, it says so, and a new backup replaces it when due", async () => {
+    let now = new Date(2026, 8, 30, 23);
+    const job = backupJob(home, () => undefined, { now: () => now });
+    const good = await job.backUp();
+    now = new Date(2026, 9, 1, 1);
+    const damaged = await job.backUp();
+    await job.close();
+    const file = join(backupsPath(home), damaged.name, "rufi.sqlite");
+    const bytes = await readFile(file);
+    bytes.writeUInt8(bytes.readUInt8(100) ^ 0xff, 100);
+    await writeFile(file, bytes);
+
+    now = new Date(2026, 9, 1, 11);
+    const later = backupJob(home, () => undefined, { now: () => now });
+    await later.start();
+    await later.close();
+    expect(later.status()).toEqual({
+      last: good,
+      failed: { at: now, reason: "a backup is damaged or incomplete" },
+      running: false,
+    });
+    expect(await listBackups(home)).toHaveLength(2);
+
+    // A day after the good one, though the damaged one is newer.
+    now = new Date(2026, 9, 1, 23, 30);
+    const next = backupJob(home, () => undefined, { now: () => now });
+    await next.start();
+    await next.close();
+    const status = next.status();
+    expect(status.last?.createdAt).toEqual(now);
+    expect(status.failed).toBeUndefined();
+  });
+});
+
+it("says the disk is full when SQLite finds it full", () => {
+  // As node:sqlite reports SQLITE_FULL (13) from a copy that ran out of space.
+  const full = Object.assign(new Error("database or disk is full"), {
+    code: "ERR_SQLITE_ERROR",
+    errcode: 13,
+  });
+  expect(failureReason(full)).toBe("the disk is full");
 });

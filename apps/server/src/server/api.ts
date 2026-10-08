@@ -270,6 +270,8 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     region: "first_run.done",
   } as const;
   const firstRun = async (): Promise<FirstRun> => {
+    // Once done, it stays done: signing in later is the sidebar's job.
+    if (await transcripts.setting(FIRST_RUN.region)) return { step: "done" };
     if (!(await transcripts.setting(FIRST_RUN.welcome))) {
       return { step: "welcome" };
     }
@@ -280,10 +282,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     ) {
       return { step: "sign_in" };
     }
-    if (!(await transcripts.setting(FIRST_RUN.region))) {
-      return { step: "region" };
-    }
-    return { step: "done" };
+    return { step: "region" };
   };
   app.get("/api/first-run", async (c) => c.json(await firstRun()));
   app.post("/api/first-run", async (c) => {
@@ -310,8 +309,8 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.get("/api/signin", (c) => c.json(deps.signIn.state()));
   app.post("/api/signin", (c) => c.json(deps.signIn.start()));
 
-  const backups = async (): Promise<Backups> => {
-    const { last, failed, running } = await deps.backups.status();
+  const backups = (): Backups => {
+    const { last, failed, running } = deps.backups.status();
     return {
       last: last
         ? { name: last.name, createdAt: last.createdAt.toISOString() }
@@ -322,11 +321,11 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       running,
     };
   };
-  app.get("/api/backups", async (c) => c.json(await backups()));
+  app.get("/api/backups", (c) => c.json(backups()));
   // Back up now: answers when it is done; a failure shows in the status.
   app.post("/api/backups", async (c) => {
     await deps.backups.backUp().catch(() => undefined);
-    return c.json(await backups());
+    return c.json(backups());
   });
 
   app.get("/api/export", async (c) => {

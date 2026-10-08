@@ -17,6 +17,7 @@ import {
 import { join } from "node:path";
 import { backup, DatabaseSync } from "node:sqlite";
 import { Schema } from "effect";
+import { readJson, writePrivateJson } from "../../platform/files.ts";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import { databasePath, openReadOnly } from "./database.ts";
 
@@ -223,7 +224,7 @@ const week = (at: Date) => {
  * and of each of the last 4 weeks that had one. Days without a backup don't
  * count, so a long closure never removes the last good ones.
  */
-export function toKeep(backups: readonly Backup[]): Set<string> {
+function toKeep(backups: readonly Backup[]): Set<string> {
   const newest = [...backups].sort(
     (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
   );
@@ -244,9 +245,22 @@ export function toKeep(backups: readonly Backup[]): Set<string> {
   return keep;
 }
 
-/** Removes the backups no longer kept. Called only after a new one passed its check. */
+/** Whether a backup passes its check now. */
+const usable = (home: string, { name }: Backup) =>
+  verifyBackup(join(backupsPath(home), name)).then(
+    () => true,
+    () => false,
+  );
+
+/**
+ * Removes the backups no longer kept. Called only after a new one passed its
+ * check. Only backups that pass theirs count; a damaged one is left alone.
+ */
 async function prune(home: string): Promise<void> {
-  const backups = await listBackups(home);
+  const backups: Backup[] = [];
+  for (const backup of await listBackups(home)) {
+    if (await usable(home, backup)) backups.push(backup);
+  }
   const keep = toKeep(backups);
   for (const { name } of backups) {
     if (!keep.has(name)) {
@@ -263,15 +277,47 @@ async function cleanStaging(home: string): Promise<void> {
   }
 }
 
+/** SQLite's result code for a full disk or database. */
+const SQLITE_FULL = 13;
+
 /** Why a backup failed, in the person's words. */
-function reasonOf(error: unknown): string {
+export function failureReason(error: unknown): string {
   if (error instanceof CheckFailed) return "the copy didn't pass its check";
-  const code = (error as NodeJS.ErrnoException).code;
+  const { code, errcode } = error as { code?: unknown; errcode?: unknown };
   if (code === "EACCES" || code === "EPERM" || code === "EROFS") {
     return "the backups folder can't be written";
   }
-  if (code === "ENOSPC") return "the disk is full";
+  // An extended SQLite code keeps the primary one in its low byte.
+  if (
+    code === "ENOSPC" ||
+    (typeof errcode === "number" && (errcode & 0xff) === SQLITE_FULL)
+  ) {
+    return "the disk is full";
+  }
   return `something went wrong (${errorCode(error)})`;
+}
+
+/**
+ * The last failed try, kept in the data folder until a backup succeeds, so
+ * a restart doesn't hide it. Not in `backups/`: that may be what fails.
+ */
+const failurePath = (home: string) => join(home, "backup-failed.json");
+
+const Failure = Schema.Struct({ at: Schema.String, reason: Schema.String });
+
+async function readFailure(
+  home: string,
+  now: Date,
+): Promise<BackupStatus["failed"]> {
+  try {
+    const raw = await readJson(failurePath(home));
+    if (raw === undefined) return undefined;
+    const { at, reason } = Schema.decodeUnknownSync(Failure)(raw);
+    return { at: new Date(at), reason };
+  } catch {
+    // Never read as "no failure": the last try may not have worked.
+    return { at: now, reason: "Rufi can't tell whether the last try worked" };
+  }
 }
 
 export interface BackupStatus {
@@ -296,22 +342,34 @@ export function backupJob(
 ) {
   const now = options.now ?? (() => new Date());
   let running: Promise<Backup> | undefined;
+  /** The newest backup that passed its check when last looked at. */
+  let last: Backup | undefined;
   let failed: BackupStatus["failed"];
   let timer: NodeJS.Timeout | undefined;
   let looking: Promise<void> | undefined;
+
+  const fail = async (error: unknown, reason = failureReason(error)) => {
+    failed = { at: now(), reason };
+    log("backup.failed", { error: errorCode(error) });
+    await writePrivateJson(failurePath(home), {
+      at: failed.at.toISOString(),
+      reason,
+    }).catch(() => undefined);
+  };
 
   const backUp = (): Promise<Backup> => {
     running ??= (async () => {
       const started = Date.now();
       try {
         const made = await makeBackup(home, now());
+        last = made;
         failed = undefined;
+        await rm(failurePath(home), { force: true });
         log("backup.made", { ms: Date.now() - started });
         await prune(home);
         return made;
       } catch (error) {
-        failed = { at: now(), reason: reasonOf(error) };
-        log("backup.failed", { error: errorCode(error) });
+        await fail(error);
         throw error;
       } finally {
         running = undefined;
@@ -320,18 +378,29 @@ export function backupJob(
     return running;
   };
 
+  /** The newest backup that passes its check; one that doesn't is a failure. */
+  const findLast = async () => {
+    last = undefined;
+    for (const backup of await listBackups(home)) {
+      if (await usable(home, backup)) {
+        last = backup;
+        return;
+      }
+      await fail(
+        new CheckFailed(backup.name),
+        "a backup is damaged or incomplete",
+      );
+    }
+  };
+
   const whenDue = async () => {
-    let newest: Backup | undefined;
     try {
-      [newest] = await listBackups(home);
+      await findLast();
     } catch (error) {
-      failed = { at: now(), reason: reasonOf(error) };
-      log("backup.failed", { error: errorCode(error) });
+      await fail(error);
       return;
     }
-    if (newest && now().getTime() - newest.createdAt.getTime() < DAY_MS) {
-      return;
-    }
+    if (last && now().getTime() - last.createdAt.getTime() < DAY_MS) return;
     // A failure is kept in the status and the log; the next look tries again.
     await backUp().catch(() => undefined);
   };
@@ -340,6 +409,7 @@ export function backupJob(
     /** Cleans up after a stopped backup, makes one if due, and keeps looking. */
     start: async () => {
       await cleanStaging(home);
+      failed = await readFailure(home, now());
       const look = () => {
         looking ??= whenDue().finally(() => {
           looking = undefined;
@@ -351,15 +421,12 @@ export function backupJob(
     },
     /** A backup now, or the one already running. */
     backUp,
-    status: async (): Promise<BackupStatus> => {
-      const [last] = await listBackups(home);
-      return {
-        last,
-        failed:
-          failed && (!last || failed.at > last.createdAt) ? failed : undefined,
-        running: running !== undefined,
-      };
-    },
+    status: (): BackupStatus => ({
+      last,
+      failed:
+        failed && (!last || failed.at > last.createdAt) ? failed : undefined,
+      running: running !== undefined,
+    }),
     /** Stops looking, and waits for a look or a backup under way. */
     close: async () => {
       clearInterval(timer);

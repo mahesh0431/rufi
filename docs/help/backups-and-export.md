@@ -23,7 +23,7 @@ The backups are in the `backups` folder in your data folder, one folder for each
 
 ### See your backups
 
-Open **Settings**. Under **Backups**, Rufi shows when it made the last backup. If the last try failed, Rufi says when and why, and when your last good backup is from.
+Open **Settings**. Under **Backups**, Rufi shows when it made the last good backup. If the last try failed, or a backup in the folder is damaged, Rufi says when and why, and when your last good backup is from. Rufi keeps showing a failed try, also after it starts again, until a backup works.
 
 To make a backup now, click **Back up now**.
 
@@ -67,7 +67,7 @@ If Rufi refuses:
 - **The backup isn't as it was made, or is damaged:** choose an older backup.
 - **Another Rufi uses the folder:** stop it, or choose another folder.
 
-If a restore stops before it finishes (for example, you pressed Ctrl-C), the new folder has a `restoring` folder in it, and Rufi won't start on it. Delete the new folder and restore again.
+Use the new folder only after the command says the backup is restored. If the command stopped before that (for example, you pressed Ctrl-C), delete the new folder and restore again. A restore that stopped while it copied leaves a `restoring` folder in the new folder, and Rufi won't start on it.
 
 ## If your record is missing
 
