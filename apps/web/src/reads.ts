@@ -10,6 +10,7 @@ import {
   Settings,
   Status,
 } from "@rufi/contracts";
+import { BriefPage } from "@rufi/contracts/briefs";
 import { Documents } from "@rufi/contracts/documents";
 import { Schema } from "effect";
 import { QueryClient, useQuery } from "@tanstack/react-query";
@@ -117,4 +118,18 @@ export const useDocuments = (personId: string) =>
           `/api/people/${encodeURIComponent(personId)}/documents`,
         )
       ).documents,
+  });
+
+/** A visit brief of the person's, with its Sources as Rufi built them. */
+export const useBrief = (personId: string, briefId: string) =>
+  useQuery({
+    queryKey: ["brief", personId, briefId],
+    queryFn: async () =>
+      (
+        await read(
+          BriefPage,
+          "GET",
+          `/api/people/${encodeURIComponent(personId)}/briefs/${encodeURIComponent(briefId)}`,
+        )
+      ).brief,
   });

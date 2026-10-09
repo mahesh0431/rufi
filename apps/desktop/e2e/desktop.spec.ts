@@ -383,7 +383,7 @@ test("the window takes the appearance chosen in Rufi, also as it first shows aft
 });
 
 test.describe("the page", () => {
-  test("has nothing of Node or Electron and asks for nothing", async ({
+  test("has nothing of Node or Electron, and may only write the clipboard", async ({
     desktop,
   }) => {
     const app = await desktop.launch();
@@ -406,6 +406,16 @@ test.describe("the page", () => {
         (await navigator.permissions.query({ name: "geolocation" })).state,
       ]),
     ).toEqual(["denied", "denied"]);
+    // Copy works; reading what else is on the clipboard doesn't.
+    expect(
+      await page.evaluate(async () => {
+        await navigator.clipboard.writeText("Fictional brief");
+        return navigator.clipboard.readText().then(
+          () => "read",
+          (error: unknown) => (error as Error).name,
+        );
+      }),
+    ).toBe("NotAllowedError");
   });
 
   test("saves no download", async ({ desktop }) => {

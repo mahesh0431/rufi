@@ -20,17 +20,23 @@ const PDF_VIEWER = "chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai";
 /** What the screens look for to know they are in the app (apps/web main.tsx). */
 const MARK = "RufiApp";
 
+/** Writing text to the clipboard, for a page's Copy; reading it stays refused. */
+const WRITE_CLIPBOARD = "clipboard-sanitized-write";
+
 /**
  * The window's session: in memory only, so nothing of the page is kept on
- * disk; no permission, and a user agent with the app's mark. The only
+ * disk; no permission but writing text to the clipboard, and a user agent
+ * with the app's mark. The only
  * download is a file the page itself made (a blob of its own origin, such as
  * the export), saved where the person chooses.
  */
 export function lockDown(session: Session): void {
-  session.setPermissionRequestHandler((_contents, _permission, answer) => {
-    answer(false);
+  session.setPermissionRequestHandler((_contents, permission, answer) => {
+    answer(permission === WRITE_CLIPBOARD);
   });
-  session.setPermissionCheckHandler(() => false);
+  session.setPermissionCheckHandler(
+    (_contents, permission) => permission === WRITE_CLIPBOARD,
+  );
   session.on("will-download", (event, item, contents) => {
     const url = item.getURL();
     const page = URL.parse(contents.getURL())?.origin;

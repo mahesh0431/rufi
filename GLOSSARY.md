@@ -142,7 +142,7 @@ Something to come back to: what, for whom, when (a date, a rough date, "at the n
 _Avoid_: reminder, task, to-do
 
 **Visit brief**:
-A dated summary made for a doctor's visit.
+A dated summary the AI writes for a doctor's visit from the saved record only, with the records it rests on as its sources. It never changes; when a later save changes the record, its page says so.
 _Avoid_: handoff, summary, report
 
 **Research entry**:

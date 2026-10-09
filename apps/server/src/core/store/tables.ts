@@ -13,6 +13,17 @@ export interface Tables {
     source_entry_id: string | null;
     removed: number;
   };
+  briefs: {
+    id: string;
+    person_id: string;
+    chat_id: string;
+    turn_id: string | null;
+    call_id: string;
+    markdown: string;
+    record_version: number;
+    cited: string;
+    created_at: string;
+  };
   care_events: {
     id: string;
     person_id: string;
