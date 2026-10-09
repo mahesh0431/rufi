@@ -362,7 +362,9 @@ test("the window takes the appearance chosen in Rufi, also as it first shows aft
   const reopened = await again.electron.firstWindow();
   await working(reopened);
   expect(
-    await again.electron.evaluate(() => Reflect.get(globalThis, "shownIn")),
+    await again.electron.evaluate(
+      () => (globalThis as { shownIn?: string }).shownIn,
+    ),
   ).toBe("dark");
   expect(
     await reopened.evaluate(() => document.documentElement.dataset["theme"]),
