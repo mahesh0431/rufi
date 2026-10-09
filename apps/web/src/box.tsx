@@ -206,7 +206,7 @@ export function Box({
       type="submit"
       aria-label={running ? "Send (waits for the reply)" : "Send"}
       disabled={!hasText || locked}
-      className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-white disabled:bg-muted/40"
+      className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-on-accent disabled:bg-muted/40"
     >
       <ArrowUp size={16} aria-hidden />
     </button>
@@ -216,7 +216,7 @@ export function Box({
       type="button"
       aria-label="Stop"
       onClick={() => void stop()}
-      className="grid size-8 shrink-0 place-items-center rounded-full bg-ink text-white"
+      className="grid size-8 shrink-0 place-items-center rounded-full bg-ink text-page"
     >
       <Square size={12} fill="currentColor" aria-hidden />
     </button>
@@ -256,7 +256,7 @@ export function Box({
         </div>
       ) : (
         <div
-          className={`rounded-2xl border border-line bg-white px-3.5 pt-2.5 pb-1.5 ${size === "page" ? "shadow-sm" : ""}`}
+          className={`rounded-2xl border border-line bg-surface px-3.5 pt-2.5 pb-1.5 ${size === "page" ? "shadow-sm" : ""}`}
         >
           <div className="flex">{field}</div>
           <div className="mt-1 flex items-center gap-1.5">
@@ -391,7 +391,7 @@ function Waiting({
                   onChange={(event) => {
                     setEditing({ id: message.id, text: event.target.value });
                   }}
-                  className="rounded-lg border border-line bg-white px-2 py-1"
+                  className="rounded-lg border border-line bg-surface px-2 py-1"
                 />
                 <div className="flex gap-1">
                   <Button

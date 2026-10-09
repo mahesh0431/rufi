@@ -1,0 +1,64 @@
+/* Rufi's colours: every colour on every screen comes from these tokens.
+   A theme is one block of their values; the page takes the theme named by
+   <html data-theme>, set before it paints (public/theme.js). To add a theme,
+   add a block like the dark one.
+
+   The agreed look (review of 2 Oct): calm greys, the light blue accent only
+   for selection and the one main action. No clinical colour (no red, amber
+   or green that means something about a health value). Text keeps WCAG AA
+   contrast in every theme. */
+
+/* Light: a light page, a light grey sidebar, white rounded groups. */
+:root {
+  color-scheme: light;
+  --page: #f5f7fa; /* the page behind everything */
+  --side: #eef1f5; /* the sidebar, and soft fills: code, activity, hover */
+  --surface: #ffffff; /* groups, fields and floating panels on the page */
+  --line: #e3e6eb; /* borders and dividers */
+  --ink: #1d2329; /* text */
+  --muted: #5f6873; /* quieter text and icons */
+  --accent: #2563eb; /* the one main action, and selection marks */
+  --accent-hover: #1d4ed8; /* the main action under the pointer */
+  --on-accent: #ffffff; /* text and icons on the accent */
+  --accent-soft: #e3edfc; /* what is selected, and the person's own messages */
+  --accent-ink: #1d4ed8; /* links and selected text */
+  --edge: rgb(0 0 0 / 0.06); /* the hairline around floating panels */
+  --shade: rgb(0 0 0 / 0.1); /* the shadow under floating panels */
+}
+
+/* Dark: the same layout in dark greys; groups are a step lighter than the
+   page, and the accent is a little lighter so it stands out. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #191c20;
+  --side: #22262b;
+  --surface: #262a30;
+  --line: #363c43;
+  --ink: #e4e8ec;
+  --muted: #9ba4ae;
+  --accent: #2f6fe6;
+  --accent-hover: #2459c4;
+  --on-accent: #ffffff;
+  --accent-soft: #1e3250;
+  --accent-ink: #93b8fa;
+  --edge: rgb(255 255 255 / 0.08);
+  --shade: rgb(0 0 0 / 0.45);
+}
+
+/* The tokens as Tailwind names (bg-page, text-ink, shadow-float, …).
+   Tailwind's own palette is off, so a colour can only come from here. */
+@theme inline {
+  --color-*: initial;
+  --color-page: var(--page);
+  --color-side: var(--side);
+  --color-surface: var(--surface);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-on-accent: var(--on-accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --shadow-float: 0 0 0 1px var(--edge), 0 8px 28px var(--shade);
+}

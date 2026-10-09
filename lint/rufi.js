@@ -49,7 +49,39 @@ const noLostCause = {
   },
 };
 
+// Colours come only from the theme tokens (apps/web/src/themes.css): no
+// Tailwind palette class, hex value or colour function in the code.
+const RAW_COLOUR =
+  /\b(?:bg|text|border|ring|outline|fill|stroke|from|via|to|shadow|divide|placeholder|decoration|caret|accent)-(?:white|black|(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3})\b|#(?:[\da-f]{8}|[\da-f]{6}|[\da-f]{3,4})\b|(?<![a-z])(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(/i;
+
+const noRawColour = {
+  meta: { type: "problem" },
+  create(context) {
+    const check = (node, text) => {
+      if (typeof text === "string" && RAW_COLOUR.test(text)) {
+        context.report({
+          node,
+          message:
+            "Use a theme token (bg-surface, text-ink, …; apps/web/src/themes.css), not a raw colour.",
+        });
+      }
+    };
+    return {
+      Literal(node) {
+        check(node, node.value);
+      },
+      TemplateElement(node) {
+        check(node, node.value.cooked);
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "rufi" },
-  rules: { "no-silent-catch": noSilentCatch, "no-lost-cause": noLostCause },
+  rules: {
+    "no-silent-catch": noSilentCatch,
+    "no-lost-cause": noLostCause,
+    "no-raw-colour": noRawColour,
+  },
 };

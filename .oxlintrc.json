@@ -720,6 +720,17 @@
           }
         ]
       }
+    },
+    {
+      "files": [
+        "apps/web/src/**/*.ts",
+        "apps/web/src/**/*.tsx",
+        "apps/desktop/src/**/*.ts"
+      ],
+      "excludeFiles": ["**/*.test.ts"],
+      "rules": {
+        "rufi/no-raw-colour": "error"
+      }
     }
   ],
   "jsPlugins": ["./lint/rufi.js"]

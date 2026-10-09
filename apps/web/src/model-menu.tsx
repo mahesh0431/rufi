@@ -25,7 +25,7 @@ const EFFORTS: readonly { id: Effort; name: string }[] = [
 ];
 
 const POPUP =
-  "z-30 w-72 rounded-xl bg-white/95 p-1.5 shadow-[0_0_0_1px_rgba(0,0,0,.06),0_8px_28px_rgba(0,0,0,.12)] backdrop-blur-xl outline-none";
+  "z-30 w-72 rounded-xl bg-surface/95 p-1.5 shadow-float backdrop-blur-xl outline-none";
 const LABEL = "px-2 pt-1.5 pb-1 text-xs text-muted";
 const ITEM =
   "flex cursor-default items-center gap-2 rounded-lg px-2 py-1.5 outline-none select-none data-[highlighted]:bg-side";
@@ -131,7 +131,7 @@ export function ModelMenu({
                     key={e.id}
                     value={e.id}
                     closeOnClick
-                    className="flex-1 cursor-default rounded-lg py-1 text-center text-muted outline-none select-none data-[checked]:bg-white data-[checked]:text-ink data-[checked]:shadow-sm data-[highlighted]:text-ink"
+                    className="flex-1 cursor-default rounded-lg py-1 text-center text-muted outline-none select-none data-[checked]:bg-surface data-[checked]:text-ink data-[checked]:shadow-sm data-[highlighted]:text-ink"
                   >
                     {e.name}
                   </Menu.RadioItem>

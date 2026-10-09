@@ -21,7 +21,7 @@ export function SettingsPage() {
   return (
     <div className="mx-auto max-w-[620px] px-6 py-8">
       <h2 className="mb-2 px-0.5 font-semibold">Emergency</h2>
-      <div className="rounded-xl border border-line bg-white p-4">
+      <div className="rounded-xl border border-line bg-surface p-4">
         {settings.data === undefined && settings.error ? (
           <Problem
             error={settings.error}
@@ -40,7 +40,7 @@ export function SettingsPage() {
                 onChange={(event) => {
                   save.mutate(event.target.value || null);
                 }}
-                className="w-64 rounded-lg border border-line bg-white px-2 py-1.5"
+                className="w-64 rounded-lg border border-line bg-surface px-2 py-1.5"
               >
                 <option value="">Not set</option>
                 {settings.data.regions.map((region) => (
@@ -78,7 +78,7 @@ function BackupsSection() {
   return (
     <>
       <h2 className="mt-8 mb-2 px-0.5 font-semibold">Backups</h2>
-      <div className="flex flex-col gap-2 rounded-xl border border-line bg-white p-4">
+      <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
         {status === undefined && backups.error ? (
           <Problem error={backups.error} retry={() => void backups.refetch()} />
         ) : (
@@ -129,7 +129,7 @@ function ExportSection() {
   return (
     <>
       <h2 className="mt-8 mb-2 px-0.5 font-semibold">Export</h2>
-      <div className="flex flex-col gap-2 rounded-xl border border-line bg-white p-4">
+      <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
         <p>
           One zip with everything in your record, your chat and Rufi's settings.
         </p>
