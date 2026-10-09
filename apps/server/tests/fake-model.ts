@@ -7,21 +7,53 @@
 // leaves a program in the background) and Codex waits for it, "background
 // command" runs the same command and the reply ends while it runs, and
 // anything else answers "ok:<text>". No sign-in and no AI.
+// With a `script`, it answers each request with the script's next step
+// instead (a call of a direct tool, or text), reporting the step's tokens as
+// the usage, so a test can drive a whole sub-agent turn and force a
+// compaction. Codex's own compaction request is always answered with a
+// summary and takes no step.
 import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+
+export interface ModelRequest {
+  instructions?: string;
+  input: {
+    type?: string;
+    role?: string;
+    content?: { type?: string; text?: string; image_url?: string }[];
+    output?: string | { type?: string; text?: string; image_url?: string }[];
+    tools?: unknown[];
+  }[];
+  tools?: unknown[];
+  reasoning?: { effort?: string };
+}
+
+/** One scripted answer: a call of one of the thread's direct tools, or text. */
+export type Step = (
+  | { call: { namespace?: string; name: string; arguments: unknown } }
+  /** JavaScript for Codex's `exec` tool, on a model that has it. */
+  | { exec: string }
+  | { text: string }
+) & {
+  /** The usage the answer reports; over Codex's limit, it compacts. */
+  tokens?: number;
+};
 
 export interface FakeModel {
   /** The base URL for Codex's provider setting. */
   url: string;
   /** Every request body Codex sent, in order. */
-  requests: {
-    input: { type?: string; role?: string; content?: { text?: string }[] }[];
-    reasoning?: { effort?: string };
-  }[];
+  requests: ModelRequest[];
   close: () => Promise<void>;
 }
 
-export async function fakeModel(): Promise<FakeModel> {
+/** The prompt Codex sends to have the thread summarised (0.159.3). */
+const COMPACTION = "You are performing a CONTEXT CHECKPOINT COMPACTION";
+
+export async function fakeModel(
+  options: { script?: readonly Step[] } = {},
+): Promise<FakeModel> {
+  const script = [...(options.script ?? [])];
   const requests: FakeModel["requests"] = [];
   const open = new Set<ServerResponse>();
   const server = createServer((request, response) => {
@@ -51,22 +83,75 @@ export async function fakeModel(): Promise<FakeModel> {
       };
       const id = `resp-${String(requests.length)}`;
       event({ type: "response.created", response: { id } } as { type: string });
-      const completed = () => {
+      const completed = (tokens = 2) => {
         event({
           type: "response.completed",
           response: {
             id,
             usage: {
-              input_tokens: 1,
+              input_tokens: tokens - 1,
               input_tokens_details: null,
               output_tokens: 1,
               output_tokens_details: null,
-              total_tokens: 2,
+              total_tokens: tokens,
             },
           },
         } as { type: string });
         response.end();
       };
+      const say = (text: string, tokens?: number) => {
+        const item = {
+          type: "message",
+          role: "assistant",
+          id: `msg-${String(requests.length)}`,
+          content: [{ type: "output_text", text }],
+        };
+        for (const type of [
+          "response.output_item.added",
+          "response.output_item.done",
+        ]) {
+          event({ type, item } as { type: string });
+        }
+        completed(tokens);
+      };
+      if (options.script) {
+        if (last.startsWith(COMPACTION)) {
+          say("Summary: the reading so far.");
+          return;
+        }
+        const step = script.shift() ?? { text: "done" };
+        if ("text" in step) {
+          say(step.text, step.tokens);
+          return;
+        }
+        const call =
+          "exec" in step
+            ? {
+                type: "custom_tool_call",
+                id: `ctc-${String(requests.length)}`,
+                call_id: `call-${String(requests.length)}`,
+                name: "exec",
+                input: step.exec,
+              }
+            : {
+                type: "function_call",
+                id: `fc-${String(requests.length)}`,
+                call_id: `call-${String(requests.length)}`,
+                name: step.call.name,
+                ...(step.call.namespace !== undefined && {
+                  namespace: step.call.namespace,
+                }),
+                arguments: JSON.stringify(step.call.arguments),
+              };
+        for (const type of [
+          "response.output_item.added",
+          "response.output_item.done",
+        ]) {
+          event({ type, item: call } as { type: string });
+        }
+        completed(step.tokens);
+        return;
+      }
       if (last.includes("overview") && !answered) {
         const call = {
           type: "custom_tool_call",

@@ -3,6 +3,7 @@
 import { Result, Schema, SchemaIssue } from "effect";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import type { BriefInput, Made } from "../briefs/briefs.ts";
+import type { Pages } from "../documents/pages.ts";
 import type { Change, Saved } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
 
@@ -16,6 +17,8 @@ export interface ToolContext {
   chatId?: string | undefined;
   /** The agent's id for this call, when it gave one. */
   callId?: string | undefined;
+  /** The person's document pages as the AI sees them. */
+  pages?: Pages | undefined;
   /**
    * Saves changes to the record with their receipt: only in Rufi's own
    * chat, where the chat and the user's messages are Rufi's.
@@ -82,11 +85,23 @@ export interface Issue {
   fix: string;
 }
 
+/** A tool's result with an image for the model beside it (a document page). */
+export class WithImage {
+  readonly result: unknown;
+  readonly image: { mediaType: string; bytes: Uint8Array };
+  constructor(result: unknown, image: WithImage["image"]) {
+    this.result = result;
+    this.image = image;
+  }
+}
+
 /** One answer for the agent; `stopTurn` says Rufi should end the turn. */
 export interface ToolAnswer {
   ok: boolean;
   /** JSON, for the model. */
   text: string;
+  /** Images the model sees after the text, as data: URLs. Never stored. */
+  images?: readonly string[];
   stopTurn?: string;
 }
 
@@ -95,14 +110,15 @@ export const REJECTIONS_PER_TURN = 3;
 
 /**
  * A caller for one turn. Bad input, an unknown tool and a refusal each come
- * back as the error envelope and use up one of the turn's rejections.
+ * back as the error envelope and use up one of the turn's `rejections`.
  */
 export function toolCaller(
   tools: readonly Tool[],
   context: () => ToolContext,
   log: Log,
+  rejections = REJECTIONS_PER_TURN,
 ): (name: string, input: unknown, callId?: string) => Promise<ToolAnswer> {
-  let left = REJECTIONS_PER_TURN;
+  let left = rejections;
   const reject = (
     error: string,
     issues: Issue[] = [],
@@ -146,6 +162,16 @@ export function toolCaller(
         ...context(),
         callId,
       });
+      if (result instanceof WithImage) {
+        const { mediaType, bytes } = result.image;
+        return {
+          ok: true,
+          text: JSON.stringify({ ok: true, result: result.result }),
+          images: [
+            `data:${mediaType};base64,${Buffer.from(bytes).toString("base64")}`,
+          ],
+        };
+      }
       return { ok: true, text: JSON.stringify({ ok: true, result }) };
     } catch (error) {
       if (error instanceof Refusal) return reject(error.message, error.issues);

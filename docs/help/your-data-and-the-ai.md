@@ -11,7 +11,7 @@ Everything is in one data folder on your Mac. Today you choose it with the `RUFI
 | `rufi.sqlite`      | The record (people, documents, reports and results) and your chat, with what the AI did in it (see below)                                                                                                           |
 | `installed.json`   | Says a record was made in this folder. If it is there and `rufi.sqlite` isn't, Rufi doesn't start: it never shows an empty record in place of yours                                                                 |
 | `files/`           | Your documents, exactly as you added them (see [Documents](documents.md))                                                                                                                                           |
-| `cache/`           | Copies Rufi makes again when they are missing, such as the JPEG copy that shows a HEIC photo                                                                                                                        |
+| `cache/`           | Copies Rufi makes again when they are missing: the JPEG copy that shows a HEIC photo, and the pages of your PDFs drawn as images for the AI (see below)                                                             |
 | `backups/`         | Rufi's backups of `rufi.sqlite` and your documents, made when it starts and then each day. They never hold your sign-in, the AI's files, the log or `models.json` (see [Backups and export](backups-and-export.md)) |
 | `chatgpt.json`     | Your sign-in details, without secrets (see [Signing in with ChatGPT](signing-in.md))                                                                                                                                |
 | `models.json`      | The AI models Rufi may use, in the order Rufi shows them; the chat uses the first one until you choose another. It starts with the strongest ones, and you can edit the list                                        |
@@ -29,6 +29,17 @@ When Rufi creates your data folder, it makes it private to your Mac user account
 
 When the AI reads your record, it gets only the records of the person whose chat it is: Rufi chooses the person, and the AI can't name another one. The AI can't read the chat or Rufi's settings this way, and it can't change anything.
 
+## The pages the AI looks at
+
+When you ask about a document in the chat, the AI can look at its pages, one at a time, the way you would:
+
+- **A PDF page:** Rufi draws the page as an image and gives it with the page's own text, when the PDF has text (a scanned PDF has none). Links and anything else in the PDF that would act on its own are left out.
+- **A photo:** the photo as you added it. A HEIC photo goes as its JPEG copy, because the AI can't open HEIC.
+
+Each page the AI looks at goes to the AI service you signed in with, like the parts of your record it reads. The AI can look only at the documents of the person whose chat it is, and only through Rufi: it can't open the files in your data folder. Looking at a page changes nothing; documents aren't part of your record until you save from them.
+
+Rufi keeps the drawn PDF pages in `cache/` and draws a page again when its copy is missing; they aren't in your backups or your export.
+
 ## Your chat
 
 Rufi keeps your chat in `rufi.sqlite`: your messages, the AI's replies, one line for each thing the AI did, such as reading your record or searching the web, and a receipt for each save to your record. Rufi saves each part before it shows it, so what you see is what was saved.
@@ -36,7 +47,7 @@ Rufi keeps your chat in `rufi.sqlite`: your messages, the AI's replies, one line
 Rufi also keeps everything the AI did in a reply, so that an answer can be traced later:
 
 - For each thing the AI did, everything it sent and got back, as the AI service gave it: for example a read of your records and what it got back, a command and its output, or the words of a web search.
-- For each read or save with Rufi's own tools, what the AI asked and exactly what Rufi answered.
+- For each read or save with Rufi's own tools, what the AI asked and exactly what Rufi answered, except the page images it looked at: Rufi keeps which page it was, not the image.
 - The AI's reasoning summaries: a short account of its thinking, when the AI service gives one. Rufi asks for them.
 
 You don't see these in Rufi yet, except as **Based on** under each answer. Rufi keeps them as long as the chat. Work the AI gives to a sub-agent isn't kept.
@@ -45,7 +56,7 @@ For each change to your record, Rufi also keeps the record before and after it, 
 
 It also keeps what you typed in the chat but didn't send (the chat's draft). Drafts stay on your Mac until you send them.
 
-The AI's own copies in `codex/` hold more, as long as the AI keeps them.
+The AI's own copies in `codex/` hold more, as long as the AI keeps them, also the page images the AI looked at.
 
 ## What Rufi logs
 

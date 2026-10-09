@@ -2,13 +2,30 @@
 // up the chat: what it is by its content, a PDF's pages (pdf.js), a photo
 // decoded once to know it opens, and a HEIC's display copy as JPEG
 // (heic-decode, which applies the photo's own orientation; Rufi adds no
-// rotation). Run by inspect.ts.
+// rotation). It also draws one PDF page for the AI, with the page's own text.
+// Run by inspect.ts.
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { parentPort, workerData } from "node:worker_threads";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { fileTypeFromBuffer } from "file-type";
 import decodeHeic from "heic-decode";
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-import type { Inspected } from "./inspect.ts";
+import { AnnotationMode, getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import type { Drawn, Inspected, Task } from "./inspect.ts";
+
+/**
+ * A drawn page's longer side, in pixels. Measured on fictional pages (10 Oct
+ * 2026): a dense A4 lab table of 45 rows at 8.5 pt draws in about 100 ms as
+ * a 1131 × 1600 PNG of about 250 KB, its smallest print about 16 px high;
+ * 1200 px makes that print 12 px, and 2000 px adds time and bytes the AI
+ * doesn't use (it scales a page down to about 768 × 1086 at high detail).
+ */
+const PAGE_PIXELS = 1600;
+
+/** pdf.js's fonts for PDFs that don't embed theirs, and its character maps. */
+const PDFJS = dirname(
+  createRequire(import.meta.url).resolve("pdfjs-dist/package.json"),
+);
 
 /** What file-type names, and what Rufi keeps it as. */
 const ACCEPTED: Record<string, Extract<Inspected, { ok: true }>["mediaType"]> =
@@ -69,8 +86,70 @@ async function look(bytes: Uint8Array): Promise<Inspected> {
   return { ok: true, mediaType, pages: 1, display };
 }
 
-const answer = await look(workerData as Uint8Array);
-parentPort?.postMessage(
-  answer,
-  answer.ok && answer.display ? [answer.display.buffer as ArrayBuffer] : [],
-);
+/**
+ * Draws one PDF page at PAGE_PIXELS and takes its text: plain, in the order
+ * the PDF gives it (its reading order), no positions. No scripts, no forms
+ * and no annotations: links and a PDF's own actions are ignored.
+ */
+async function drawPage(bytes: Uint8Array, number: number): Promise<Drawn> {
+  const task = getDocument({
+    data: bytes.slice(),
+    enableXfa: false,
+    verbosity: 0,
+    standardFontDataUrl: `${join(PDFJS, "standard_fonts")}/`,
+    cMapUrl: `${join(PDFJS, "cmaps")}/`,
+    cMapPacked: true,
+  });
+  try {
+    const pdf = await task.promise;
+    const page = await pdf.getPage(number);
+    const whole = page.getViewport({ scale: 1 });
+    const viewport = page.getViewport({
+      scale: PAGE_PIXELS / Math.max(whole.width, whole.height),
+    });
+    const canvas = createCanvas(
+      Math.round(viewport.width),
+      Math.round(viewport.height),
+    );
+    const context = canvas.getContext("2d");
+    // A page is drawn on white, as printed.
+    context.fillStyle = "white";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({
+      canvas: canvas as unknown as HTMLCanvasElement,
+      canvasContext: context as unknown as CanvasRenderingContext2D,
+      viewport,
+      annotationMode: AnnotationMode.DISABLE,
+    }).promise;
+    const content = await page.getTextContent();
+    const text = content.items
+      .map((item) =>
+        "str" in item ? item.str + (item.hasEOL ? "\n" : "") : "",
+      )
+      .join("")
+      .trim();
+    return {
+      ok: true,
+      png: new Uint8Array(await canvas.encode("png")),
+      text: text === "" ? undefined : text,
+    };
+  } catch {
+    // The page doesn't draw: that is the answer, not an error.
+    return { ok: false, reason: "broken" };
+  } finally {
+    await task.destroy();
+  }
+}
+
+const asked = workerData as Task;
+const answer: Inspected | Drawn =
+  asked.task === "inspect"
+    ? await look(asked.bytes)
+    : await drawPage(asked.bytes, asked.page);
+const bytes =
+  "display" in answer
+    ? answer.display
+    : "png" in answer
+      ? answer.png
+      : undefined;
+parentPort?.postMessage(answer, bytes ? [bytes.buffer as ArrayBuffer] : []);

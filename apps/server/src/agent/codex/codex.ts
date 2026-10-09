@@ -13,6 +13,7 @@ import {
   type AgentTools,
   type Model,
   type ThreadSettings,
+  type ToolAnswer,
   type TurnEnd,
 } from "../runtime.ts";
 import {
@@ -35,6 +36,7 @@ import type { ModelListResponse } from "./protocol/v2/ModelListResponse.ts";
 import type { RateLimitSnapshot } from "./protocol/v2/RateLimitSnapshot.ts";
 import type { ThreadBackgroundTerminalsListResponse } from "./protocol/v2/ThreadBackgroundTerminalsListResponse.ts";
 import type { ThreadResumeResponse } from "./protocol/v2/ThreadResumeResponse.ts";
+import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
 import type { ThreadStartResponse } from "./protocol/v2/ThreadStartResponse.ts";
 import type { ThreadTurnsListResponse } from "./protocol/v2/ThreadTurnsListResponse.ts";
 import type { TurnCompletedNotification } from "./protocol/v2/TurnCompletedNotification.ts";
@@ -269,8 +271,18 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   async function callTool(
     call: DynamicToolCallParams,
   ): Promise<DynamicToolCallResponse> {
-    const reply = (ok: boolean, text: string): DynamicToolCallResponse => ({
-      contentItems: [{ type: "inputText", text }],
+    const reply = (
+      ok: boolean,
+      text: string,
+      images: readonly string[] = [],
+    ): DynamicToolCallResponse => ({
+      contentItems: [
+        { type: "inputText", text },
+        ...images.map((imageUrl) => ({
+          type: "inputImage" as const,
+          imageUrl,
+        })),
+      ],
       success: ok,
     });
     const running = turns.get(call.threadId);
@@ -284,7 +296,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       call.namespace === deps.tools?.namespace
         ? call.tool
         : `${call.namespace ?? ""}.${call.tool}`;
-    const timedOut = {
+    const timedOut: ToolAnswer = {
       ok: false,
       text: JSON.stringify({ ok: false, error: `${name} took too long.` }),
     };
@@ -302,7 +314,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       running.end ??= { status: "failed", text: answer.stopTurn };
       void stopTurn(running);
     }
-    return reply(answer.ok, answer.text);
+    return reply(answer.ok, answer.text, answer.images);
   }
 
   function onNotification(method: string, params: unknown): void {
@@ -471,7 +483,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
             turnId,
             itemId: item.id,
             ...activity,
-            details: item,
+            details: withoutImages(item),
           });
         }
         return;
@@ -805,8 +817,24 @@ function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   });
 }
 
+/**
+ * A tool call as Rufi keeps it: a page image the AI was given is left out
+ * (it is a copy of the document's page, and large).
+ */
+function withoutImages(item: ThreadItem): ThreadItem {
+  if (item.type !== "dynamicToolCall" || !item.contentItems) return item;
+  return {
+    ...item,
+    contentItems: item.contentItems.map((content) =>
+      content.type === "inputImage"
+        ? { ...content, imageUrl: "(a page image, not kept)" }
+        : content,
+    ),
+  };
+}
+
 /** Rufi's tools in Codex's shape: one namespace. */
-function dynamicTools(tools: AgentTools): DynamicToolSpec[] {
+export function dynamicTools(tools: AgentTools): DynamicToolSpec[] {
   if (tools.specs.length === 0) return [];
   return [
     {

@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
+import { getDocuments } from "./documents.ts";
 import { getOverview } from "./overview.ts";
 import { saveChanges } from "./save.ts";
 import { getRecords } from "./records.ts";
@@ -16,12 +17,14 @@ import {
 import type { Log } from "../../platform/logs.ts";
 import type { ChatRow, Transcripts } from "../chat/transcript.ts";
 import { createBrief as makeBrief } from "../briefs/briefs.ts";
+import type { Pages } from "../documents/pages.ts";
 import { saveChanges as saveToRecord } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
 
 export const TOOLS: readonly Tool[] = [
   getOverview,
   getRecords,
+  getDocuments,
   readChat,
   saveChanges,
   createBrief,
@@ -124,6 +127,7 @@ export function chatCaller(
   reader: Store | undefined,
   transcripts: Transcripts,
   log: Log,
+  pages?: Pages,
 ) {
   return (chat: ChatRow, agentTurnId: string, origin: "person" | "rufi") =>
     forAgent(
@@ -131,6 +135,7 @@ export function chatCaller(
         store: reader,
         personId: chat.personId,
         chatId: chat.id,
+        pages,
         save: (changes, callId) =>
           origin === "rufi"
             ? Promise.reject(new Refusal(EVENT_TURN))
