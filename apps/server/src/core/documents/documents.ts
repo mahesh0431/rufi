@@ -5,7 +5,6 @@
 // order they were added; a PDF is always a document of its own. The same
 // content for the same person is never added twice.
 import { createHash } from "node:crypto";
-import { access, readFile } from "node:fs/promises";
 import type {
   Added,
   DocumentFile,
@@ -15,6 +14,7 @@ import type {
 import { v7 as uuid } from "uuid";
 import type { Store } from "../store/database.ts";
 import { inspect, type Inspected } from "./inspect.ts";
+import { displayCopy } from "./pages.ts";
 import {
   displayPath,
   isFileId,
@@ -47,12 +47,6 @@ interface Looked extends NewFile {
   /** A HEIC's display copy. */
   display: Uint8Array | undefined;
 }
-
-const exists = (path: string) =>
-  access(path).then(
-    () => true,
-    () => false,
-  );
 
 const isPhoto = (file: Looked) => file.mediaType !== "application/pdf";
 
@@ -263,15 +257,9 @@ export function documents(
           mediaType: found.media_type,
         };
       }
-      const path = displayPath(home, fileId);
-      if (!(await exists(path))) {
-        const made = await inspect(await readFile(originalPath(home, fileId)));
-        if (!made.ok || !made.display) {
-          throw new Error("The photo's display copy couldn't be made.");
-        }
-        await keepDisplay(home, fileId, made.display);
-      }
-      return { path, mediaType: "image/jpeg" };
+      // Made again when it's missing.
+      await displayCopy(home, fileId);
+      return { path: displayPath(home, fileId), mediaType: "image/jpeg" };
     },
   };
 }

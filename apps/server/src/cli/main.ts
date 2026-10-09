@@ -19,6 +19,7 @@ import { codexBinary } from "../agent/codex/binary.ts";
 import { codexRuntime } from "../agent/codex/codex.ts";
 import { agentCall, type AgentEvent, type TurnEnd } from "../agent/runtime.ts";
 import { allowlistFile } from "../core/chat/models.ts";
+import { pages } from "../core/documents/pages.ts";
 import { safetyInstructions } from "../core/chat/safety.ts";
 import {
   onlyPersonId,
@@ -339,7 +340,8 @@ const askCommand = (question: string, person: string | undefined) =>
     const store = yield* RecordStore;
     const personId =
       person ?? (store ? yield* run(() => onlyPersonId(store)) : undefined);
-    const tools = forAgent(() => ({ store, personId }), log);
+    const pagesOf = store && pages(store, deps.home);
+    const tools = forAgent(() => ({ store, personId, pages: pagesOf }), log);
     const { models } = yield* run(() => allowlistFile(deps.home).read());
     const file = yield* run(() => codexBinary());
     const { version } = createRequire(import.meta.url)(

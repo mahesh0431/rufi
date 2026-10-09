@@ -26,6 +26,8 @@ const EVENTS = new Set([
   "codex.commands_left",
   "codex.interrupt_failed",
   "tool.failed",
+  "subagent.ended",
+  "subagent.unexpected",
   "turn.ended",
   "chat.unknown_thread",
   "chat.save_failed",
@@ -81,6 +83,9 @@ const FIELDS: Record<string, (value: unknown) => boolean> = {
     value === "not_json_rpc" ||
     value === "reply_to_no_request" ||
     value === "cleanup_after_exit_failed",
+  // A Codex thread item's type ("commandExecution"), as the binary sends it.
+  item: (value) =>
+    typeof value === "string" && /^[a-z][a-zA-Z]{0,40}$/.test(value),
   status: (value) =>
     value === "completed" || value === "failed" || value === "interrupted",
   code: isCode,

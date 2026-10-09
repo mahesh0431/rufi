@@ -22,6 +22,7 @@ import {
 import { cleanExportStaging, exportZip } from "../core/store/export.ts";
 import { openRecord } from "../core/store/install.ts";
 import { readOverview } from "../core/tools/overview.ts";
+import { pages } from "../core/documents/pages.ts";
 import { chatCaller, forAgent, toolsVersion } from "../core/tools/tools.ts";
 import { holdRufiLock, readJson, writePrivateJson } from "../platform/files.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
@@ -164,7 +165,12 @@ export const startCore = (options: CoreOptions) =>
           tools: {
             version: toolsVersion(),
             instructions: tools.instructions,
-            caller: chatCaller(reader, transcripts, log),
+            caller: chatCaller(
+              reader,
+              transcripts,
+              log,
+              reader && pages(reader, home),
+            ),
           },
           log,
         }),

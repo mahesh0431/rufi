@@ -1,6 +1,7 @@
 // Every Rufi tool, and what the agent is told about them.
 import { createHash } from "node:crypto";
 import { readChat } from "./chat.ts";
+import { getDocuments } from "./documents.ts";
 import { getOverview } from "./overview.ts";
 import { saveChanges } from "./save.ts";
 import { getRecords } from "./records.ts";
@@ -13,12 +14,14 @@ import {
 } from "./registry.ts";
 import type { Log } from "../../platform/logs.ts";
 import type { ChatRow, Transcripts } from "../chat/transcript.ts";
+import type { Pages } from "../documents/pages.ts";
 import { saveChanges as saveToRecord } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
 
 export const TOOLS: readonly Tool[] = [
   getOverview,
   getRecords,
+  getDocuments,
   readChat,
   saveChanges,
 ];
@@ -107,6 +110,7 @@ export function chatCaller(
   reader: Store | undefined,
   transcripts: Transcripts,
   log: Log,
+  pages?: Pages,
 ) {
   return (chat: ChatRow, agentTurnId: string) =>
     forAgent(
@@ -114,6 +118,7 @@ export function chatCaller(
         store: reader,
         personId: chat.personId,
         chatId: chat.id,
+        pages,
         save: (changes, callId) =>
           transcripts.saveWithReceipt(chat, agentTurnId, (trx, at) =>
             saveToRecord(

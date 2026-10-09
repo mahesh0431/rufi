@@ -1,7 +1,8 @@
 // Where the bytes of documents live in the data folder. An original is kept
 // in files/<sha256> exactly as it came, written and synced before any row
 // points to it. A display copy (HEIC → JPEG) is a cache in cache/display/:
-// made again when missing, never backed up.
+// made again when missing, never backed up; so are pages drawn for the AI,
+// in cache/pages/.
 import { constants } from "node:fs";
 import { copyFile, mkdir, open, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -12,6 +13,11 @@ export const originalPath = (home: string, id: string) =>
   join(filesPath(home), id);
 export const displayPath = (home: string, id: string) =>
   join(home, "cache", "display", `${id}.jpg`);
+/** A PDF page drawn for the AI, and its text: a cache like display copies. */
+export const pagePath = (home: string, id: string, page: number) =>
+  join(home, "cache", "pages", id, `${String(page)}.png`);
+export const pageTextPath = (home: string, id: string, page: number) =>
+  join(home, "cache", "pages", id, `${String(page)}.json`);
 
 /** A file id is the sha256 of its bytes, in hex: nothing else is a path. */
 export const isFileId = (id: string) => /^[0-9a-f]{64}$/.test(id);
@@ -46,9 +52,13 @@ async function writeSynced(path: string, bytes: Uint8Array): Promise<void> {
 export const keepOriginal = (home: string, id: string, bytes: Uint8Array) =>
   writeSynced(originalPath(home, id), bytes);
 
-/** Keeps a display copy; it's a cache, so it needs no sync of its own. */
+/** Keeps a display copy. */
 export const keepDisplay = (home: string, id: string, bytes: Uint8Array) =>
   writeSynced(displayPath(home, id), bytes);
+
+/** Keeps a file in the cache, whole or not at all. */
+export const keepCached = (path: string, bytes: Uint8Array) =>
+  writeSynced(path, bytes);
 
 /** A file in `from` that isn't there, or isn't the bytes its id names. */
 export class OriginalMissing extends Error {}

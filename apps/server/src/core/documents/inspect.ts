@@ -1,5 +1,6 @@
-// What a file is, looked at in a worker thread of its own (inspect-worker.ts)
-// with a deadline: the worker is ended when it passes.
+// What a file is, and a page drawn for the AI, each worked out in a worker
+// thread of its own (inspect-worker.ts) with a deadline: the worker is ended
+// when it passes.
 import { Worker } from "node:worker_threads";
 
 export type Inspected =
@@ -22,22 +23,34 @@ export type Inspected =
       reason: "not_accepted" | "broken" | "locked" | "slow";
     };
 
+/** A PDF page drawn as an image, with the page's own text when it has some. */
+export type Drawn =
+  | {
+      ok: true;
+      png: Uint8Array;
+      /** Plain, in reading order; undefined when the page has no text (a scan). */
+      text: string | undefined;
+    }
+  | { ok: false; reason: "broken" | "slow" };
+
+/** What the worker is asked: look at a whole file, or draw one PDF page. */
+export type Task =
+  | { task: "inspect"; bytes: Uint8Array }
+  | { task: "draw"; bytes: Uint8Array; page: number };
+
 /** How long one file may take: a long PDF or a big photo, with room to spare. */
 const DEADLINE_MS = 60_000;
 
-export function inspect(
-  bytes: Uint8Array,
-  deadlineMs = DEADLINE_MS,
-): Promise<Inspected> {
+function inWorker<T>(task: Task, slow: T, deadlineMs: number): Promise<T> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("inspect-worker.ts", import.meta.url), {
-      workerData: bytes,
+      workerData: task,
     });
     const timer = setTimeout(() => {
       void worker.terminate();
-      resolve({ ok: false, reason: "slow" });
+      resolve(slow);
     }, deadlineMs);
-    worker.once("message", (answer: Inspected) => {
+    worker.once("message", (answer: T) => {
       clearTimeout(timer);
       void worker.terminate();
       resolve(answer);
@@ -53,3 +66,25 @@ export function inspect(
     });
   });
 }
+
+export const inspect = (
+  bytes: Uint8Array,
+  deadlineMs = DEADLINE_MS,
+): Promise<Inspected> =>
+  inWorker(
+    { task: "inspect", bytes },
+    { ok: false, reason: "slow" },
+    deadlineMs,
+  );
+
+/** Draws page `page` (1, 2, 3...) of a PDF; see PAGE_PIXELS in the worker. */
+export const draw = (
+  bytes: Uint8Array,
+  page: number,
+  deadlineMs = DEADLINE_MS,
+): Promise<Drawn> =>
+  inWorker(
+    { task: "draw", bytes, page },
+    { ok: false, reason: "slow" },
+    deadlineMs,
+  );
