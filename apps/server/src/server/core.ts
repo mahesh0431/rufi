@@ -44,6 +44,8 @@ export interface CoreOptions {
   signIn?: SignIn;
   /** The built screens' folder (apps/web/dist). */
   screens?: string;
+  /** The time the chat stamps on what it stores; the Mac's clock when not given. */
+  now?: () => string;
 }
 
 /** What `pnpm start` reads to reach the running Rufi; there while it runs. */
@@ -128,7 +130,7 @@ export const startCore = (options: CoreOptions) =>
       attempt(() => openReadOnly(databasePath(home))),
       (store) => Effect.sync(() => store?.close()),
     );
-    const transcripts = openTranscripts(writer);
+    const transcripts = openTranscripts(writer, options.now);
     yield* attempt(() => cleanExportStaging(home));
     const backups = yield* Effect.acquireRelease(
       Effect.sync(() => backupJob(home, log)),
