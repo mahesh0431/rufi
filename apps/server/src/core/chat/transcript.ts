@@ -75,7 +75,21 @@ const toEntry = (row: EntryRow, finished: boolean): Entry => ({
   status: row.status as Entry["status"],
   createdAt: row.created_at,
   updatedAt: row.updated_at,
+  ...(row.kind === "event" && linkOf(row.details)),
 });
+
+/** An event's link to its document, from its facts. */
+function linkOf(details: string | null): Pick<Entry, "link"> {
+  const facts = (
+    JSON.parse(details ?? "{}") as {
+      facts?: { document?: unknown; action?: unknown };
+    }
+  ).facts;
+  return typeof facts?.document === "string" &&
+    (facts.action === "open" || facts.action === "retry")
+    ? { link: { document: facts.document, action: facts.action } }
+    : {};
+}
 
 /** A chat as the screens get it, without its thread. */
 const shown = ({ model, effort }: Chat): Chat => ({ model, effort });

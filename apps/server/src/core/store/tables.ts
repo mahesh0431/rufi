@@ -80,6 +80,9 @@ export interface Tables {
     entry: string | null;
     entry_job_id: string | null;
     entry_at: string | null;
+    entry_checks: string | null;
+    state: string | null;
+    state_why: string | null;
   };
   documents: {
     id: string;
@@ -89,6 +92,22 @@ export interface Tables {
     kind: string | null;
     date: string | null;
     reader_note: string | null;
+    version: number;
+  };
+  draft_items: {
+    id: string;
+    person_id: string;
+    document_id: string;
+    page: number;
+    seq: number;
+    job_id: string;
+    kind: string;
+    version: number;
+    status: string;
+    fields: string;
+    original: string;
+    unsure: string;
+    created_at: string;
   };
   drafts: {
     person_id: string;
@@ -123,6 +142,15 @@ export interface Tables {
     state: string;
     attempt: number;
     targets: string;
+    waiting: string | null;
+    wait_until: string | null;
+    retried: number;
+    started_at: string | null;
+    run_at: string | null;
+    ended_at: string | null;
+    error: string | null;
+    usage: string | null;
+    reader: string | null;
     created_at: string;
   };
   medicine_uses: {

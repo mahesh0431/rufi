@@ -38,8 +38,9 @@ CREATE TABLE documents (
   added_at TEXT NOT NULL,
   added_from TEXT NOT NULL CHECK (added_from IN ('documents_page')),
   kind TEXT CHECK (kind IN ('lab_report', 'prescription', 'letter', 'other')), -- as read; null until read
-  date TEXT,             -- the document's date as read (precision date); null until read
+  date TEXT,             -- the document's date as read (precision date), when every page agrees; null until read
   reader_note TEXT,      -- the reader's one note for the whole document, rewritten by the reader
+  version INTEGER NOT NULL DEFAULT 0, -- rises whenever its draft items change (a reading, a retry)
   UNIQUE (person_id, id)
 ) STRICT;
 
@@ -57,16 +58,23 @@ CREATE TABLE document_pages (
   entry TEXT,
   entry_job_id TEXT,
   entry_at TEXT,
+  entry_checks TEXT,           -- Rufi's checks of the entry (JSON): they flag, never change it
+  -- What the page is once a reading that targeted it finished: its entry's
+  -- outcome, or not_looked_at when it had none; null while it waits.
+  state TEXT CHECK (state IN ('read', 'nothing_here', 'unreadable', 'not_looked_at')),
+  state_why TEXT,              -- why it is unreadable
   PRIMARY KEY (person_id, document_id, position),
   UNIQUE (person_id, file_id, page_in_file),
   FOREIGN KEY (person_id, document_id) REFERENCES documents (person_id, id),
   FOREIGN KEY (person_id, entry_job_id) REFERENCES jobs (person_id, id)
 ) STRICT;
 
--- Background work for a person, one row per job. A reading targets some of
--- its document's pages (all of them first; a retry only the failed ones), and
--- each run of it is a new attempt: save_page accepts entries only from the
--- running job's current attempt, for its target pages.
+-- Background work for a person, one row per job, run one at a time. A
+-- reading targets some of its document's pages (all of them first; a retry
+-- only the failed ones), and each run of it is a new attempt: save_page
+-- accepts entries only from the running job's current attempt, for its
+-- target pages. A run Rufi stopped for a restart is queued again; only a
+-- reader turn that completed normally finishes the job.
 CREATE TABLE jobs (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL,
@@ -75,9 +83,42 @@ CREATE TABLE jobs (
   state TEXT NOT NULL CHECK (state IN ('queued', 'running', 'done', 'failed')),
   attempt INTEGER NOT NULL DEFAULT 0, -- 1, 2, 3... as runs start
   targets TEXT NOT NULL,               -- JSON array of page positions
+  waiting TEXT CHECK (waiting IN ('sign_in', 'usage_limit')), -- a queued job that waits for this before it runs
+  wait_until TEXT,                     -- a usage limit's reset time
+  retried INTEGER NOT NULL DEFAULT 0,  -- 1 once its one automatic retry is used
+  started_at TEXT,                     -- its first real start: the chat's start line
+  run_at TEXT,                         -- the current run's start
+  ended_at TEXT,
+  error TEXT,                          -- why it failed, in words for the person
+  usage TEXT,                          -- its runs' AI use as the agent reported it, summed (JSON)
+  reader TEXT,                         -- the reader version of its last run (JSON)
   created_at TEXT NOT NULL,
   UNIQUE (person_id, id),
   FOREIGN KEY (person_id, document_id) REFERENCES documents (person_id, id)
+) STRICT;
+
+-- What a reading found and the person hasn't saved yet: one row per item,
+-- never part of the record (no answer, Overview or trend counts it). Made
+-- from a job's notebook entries when the job finishes, at version 1. The
+-- reader's fields are kept as they came (original); a fix changes fields
+-- and raises the version.
+CREATE TABLE draft_items (
+  id TEXT PRIMARY KEY,         -- UUIDv7
+  person_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  page INTEGER NOT NULL,       -- the page's position in the document
+  seq INTEGER NOT NULL,        -- its order on the page
+  job_id TEXT NOT NULL,        -- the reading that made it
+  kind TEXT NOT NULL CHECK (kind IN ('lab_result')),
+  version INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'saved', 'dismissed')),
+  fields TEXT NOT NULL,        -- the item's fields now (JSON, as printed)
+  original TEXT NOT NULL,      -- the reader's fields, never changed (JSON)
+  unsure TEXT NOT NULL DEFAULT '[]', -- why it may be wrong: the reader's words and Rufi's checks (JSON)
+  created_at TEXT NOT NULL,
+  UNIQUE (person_id, id),
+  FOREIGN KEY (person_id, document_id, page) REFERENCES document_pages (person_id, document_id, position),
+  FOREIGN KEY (person_id, job_id) REFERENCES jobs (person_id, id)
 ) STRICT;
 
 CREATE TABLE reports (
@@ -427,6 +468,8 @@ CREATE TABLE record_changes (
 ) STRICT;
 
 CREATE INDEX documents_by_added ON documents (person_id, added_at);
+CREATE INDEX jobs_by_state ON jobs (state, created_at);
+CREATE INDEX jobs_by_document ON jobs (person_id, document_id, created_at);
 CREATE INDEX reports_by_document ON reports (person_id, document_id);
 CREATE INDEX results_by_report ON results (person_id, report_id);
 CREATE INDEX results_by_test ON results (person_id, test_name, unit, measured_at);

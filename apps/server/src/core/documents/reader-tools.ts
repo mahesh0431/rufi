@@ -14,7 +14,7 @@ import {
   WithImage,
   type Tool,
 } from "../tools/registry.ts";
-import { Entry, Note, type Notebook, type Run } from "./notebook.ts";
+import { check, Entry, Note, type Notebook, type Run } from "./notebook.ts";
 import type { Pages } from "./pages.ts";
 
 const Page = Schema.Int.check(Schema.isGreaterThan(0)).annotate({
@@ -28,6 +28,8 @@ const Page = Schema.Int.check(Schema.isGreaterThan(0)).annotate({
 const READER_REJECTIONS = 10;
 
 function readerTools(run: Run, pages: Pages, book: Notebook): readonly Tool[] {
+  /** Each page's own text as get_page last showed it, for save_page's checks. */
+  const texts = new Map<number, string | undefined>();
   const getPage = defineTool({
     name: "get_page",
     description:
@@ -48,6 +50,7 @@ function readerTools(run: Run, pages: Pages, book: Notebook): readonly Tool[] {
         );
       }
       run.lookedAt.add(page);
+      texts.set(page, view.ok ? view.text : undefined);
       const about = {
         page,
         of: view.pages,
@@ -70,7 +73,7 @@ function readerTools(run: Run, pages: Pages, book: Notebook): readonly Tool[] {
   const savePage = defineTool({
     name: "save_page",
     description:
-      "Save a page's entry in your notebook: what the page says, with every result as printed. Saving a page again replaces its entry. `note` is your one note for the whole document; give it whole when it changes, or leave it out to keep it. Save every page you were asked to read, also an empty one.",
+      "Save a page's entry in your notebook: what the page says, with every result as printed. Saving a page again replaces its entry. `note` is your one note for the whole document; give it whole when it changes, or leave it out to keep it. Save every page you were asked to read, also an empty one. Rufi checks the entry and tells you what it flagged.",
     shown: "Saved a page",
     input: Schema.Struct({
       page: Page,
@@ -99,7 +102,19 @@ function readerTools(run: Run, pages: Pages, book: Notebook): readonly Tool[] {
         note: "Collected date is on page 1.",
       },
     ],
-    run: ({ page, entry, note }) => book.save(run, page, entry, note),
+    run: async ({ page, entry, note }) => {
+      const checks = check(entry, texts.get(page));
+      const progress = await book.save(run, page, entry, note, checks);
+      if (!checks.incomplete && checks.items.length === 0) return progress;
+      return {
+        ...progress,
+        checks: {
+          ...checks,
+          about:
+            "Rufi's checks flagged this page. Look at it again and save it again if you misread something; otherwise leave it: flagged items show as unsure.",
+        },
+      };
+    },
   });
 
   return [getPage, savePage];

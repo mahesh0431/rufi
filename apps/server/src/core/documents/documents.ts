@@ -15,6 +15,7 @@ import { v7 as uuid } from "uuid";
 import type { Store } from "../store/database.ts";
 import { inspect, type Inspected } from "./inspect.ts";
 import { displayCopy } from "./pages.ts";
+import type { Readings } from "./reading.ts";
 import {
   displayPath,
   isFileId,
@@ -54,6 +55,8 @@ export function documents(
   store: Store,
   home: string,
   now: () => string = () => new Date().toISOString(),
+  /** Reads what is added, after the person's yes; nothing is read without it. */
+  reads?: Readings,
 ) {
   const db = store.query;
 
@@ -146,6 +149,7 @@ export function documents(
               person_id: personId,
               added_at: at,
               added_from: "documents_page",
+              version: 0,
             })
             .execute();
           let position = 0;
@@ -164,8 +168,10 @@ export function documents(
                 .execute();
             }
           }
+          await reads?.queueNew(trx, personId, documentId);
         }
       });
+      if (added.length > 0) reads?.changed(personId);
       for (const { name, id } of repeats) {
         const index = groups.findIndex((g) => g.some((f) => f.id === id));
         already.push({ name, documentId: added[index] ?? "" });
@@ -197,17 +203,29 @@ export function documents(
         .orderBy("d.id", "desc")
         .orderBy("p.position")
         .execute();
+      const statuses = await reads?.statuses(personId);
       type File = { -readonly [K in keyof DocumentFile]: DocumentFile[K] };
       const list: (Omit<DocumentSummary, "files"> & { files: File[] })[] = [];
       for (const row of rows) {
         let document = list.at(-1);
         if (document?.id !== row.id) {
+          const reading = statuses?.get(row.id);
           document = {
             id: row.id,
             addedAt: row.added_at,
             kind: row.kind as DocumentSummary["kind"],
             date: row.date,
-            status: "not_read",
+            status: reading?.status ?? "not_read",
+            reading: reading
+              ? {
+                  saved: reading.saved,
+                  of: reading.of,
+                  results: reading.results,
+                  toCheck: reading.toCheck,
+                  canRetry: reading.canRetry,
+                  error: reading.error,
+                }
+              : null,
             files: [],
           };
           list.push(document);

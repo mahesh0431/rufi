@@ -67,7 +67,7 @@
     },
     {
       "name": "rufi.get_documents",
-      "description": "The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its files and pages, and its status (\"not_read\": not read yet). With document: its pages. With document and page: that page as an image, with the page's own text when the PDF has some (use it for exact characters); a photo or a scan is the image alone. At most 50 documents or 100 pages come back; when there are more, the answer has \"next\": pass it as after to read on. Documents are not the record: nothing in them counts as saved. Rufi chooses the person, not you.",
+      "description": "The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its files and pages, and its reading's status: \"not_read\" (not read yet: it waits for the user's yes or their Read it), \"reading\" (Rufi's reader is reading it now; its items come when it ends), \"done\" or \"failed\". With document: its pages (each with what the reader found: its state, its facts such as dates, lab and the name printed on it, and its issues) and its draft items: what the reader read, each with its id, version, page and fields exactly as printed, and why it may be unsure. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page as an image, with the page's own text when the PDF has some (use it for exact characters); a photo or a scan is the image alone. At most 50 documents, 100 pages or 100 draft items come back; when there are more, the answer has \"next\": pass it as after to read on. Rufi chooses the person, not you.",
       "callers": "model",
       "readOnly": true,
       "destructive": false,
@@ -1192,6 +1192,31 @@
               }
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "rufi.retry_reading",
+      "description": "Reads a document again where its reading failed, when the user asks you to: a reading that failed continues where it stopped; a finished reading reads only its pages that couldn't be read or weren't looked at, and never changes the draft items already read. Only in a message from the user, never in a turn a Rufi event started. The reading runs in the background; its line comes in the chat when it ends.",
+      "callers": "model",
+      "readOnly": false,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "string",
+            "description": "The document's id, from get_documents."
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "document": "01a12345-0000-7000-8000-000000000000"
         }
       ]
     }

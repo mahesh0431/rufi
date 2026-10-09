@@ -65,6 +65,13 @@ export const Entry = Schema.Struct({
   ),
   createdAt: Schema.String,
   updatedAt: Schema.String,
+  /** An event's way to its document: open its reading, or read it again. */
+  link: Schema.optionalKey(
+    Schema.Struct({
+      document: Schema.String,
+      action: Schema.Literals(["open", "retry"]),
+    }),
+  ),
 });
 export type Entry = typeof Entry.Type;
 
@@ -211,6 +218,8 @@ export const StreamLine = Schema.Union([
   }),
   /** The queue changed; read it again. */
   Schema.Struct({ type: Schema.Literal("queue") }),
+  /** The person's documents or their readings changed; read them again. */
+  Schema.Struct({ type: Schema.Literal("documents") }),
   /** Nothing happened for a while; the stream is still open. */
   Schema.Struct({ type: Schema.Literal("ping") }),
 ]);
@@ -267,6 +276,11 @@ export const Settings = Schema.Struct({
   ),
   /** The regions Rufi knows, to choose from. */
   regions: Schema.Array(Region),
+  /**
+   * The person's yes to send a document's pages to the AI to read them:
+   * yes, no, or null when not asked yet.
+   */
+  readDocuments: Schema.NullOr(Schema.Literals(["yes", "no"])),
 });
 export type Settings = typeof Settings.Type;
 
@@ -344,6 +358,8 @@ export const SaveSettings = Schema.Struct({
   appearance: Schema.optionalKey(Appearance),
   /** A region code Rufi knows, such as "IN"; null clears it. */
   emergencyRegion: Schema.optionalKey(Schema.NullOr(Line(10))),
+  /** Read documents with the AI, or not. */
+  readDocuments: Schema.optionalKey(Schema.Literals(["yes", "no"])),
 });
 
 const Message = Schema.String.check(
