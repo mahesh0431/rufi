@@ -59,7 +59,7 @@ Each time, everything that was in the demo folder is removed first: the record, 
 
 In a new data folder, Rufi takes you through four short steps:
 
-1. **Welcome.** Rufi says what goes to the AI: what you ask, and the parts of your record the AI reads to answer, are sent to the AI in the cloud. Your record is kept on your Mac. Tick "I understand Rufi is not a doctor", then click **Continue**.
+1. **Welcome.** Rufi says what goes to the AI: what you ask, and the parts of your record the AI reads to answer, are sent to the AI in the cloud. Your record is kept on your Mac. Tick "I understand Rufi is not a doctor", then click **Continue**. Here you can also choose how Rufi looks: **System**, **Light** or **Dark** (see [How Rufi looks](#how-rufi-looks)).
 2. **Your name.** Rufi adds you to the record.
 3. **Sign in with ChatGPT.** See [Signing in with ChatGPT](signing-in.md#sign-in-in-rufi). To do it later, click **Skip for now**: your record works without the AI.
 4. **Your emergency region,** for the number the AI gives in an emergency. Choose it and click **Continue**, or click **Skip**. You can change it in Settings.
@@ -73,10 +73,19 @@ Rufi keeps each step you finished. If you reload the page, close it or open Rufi
 - **The sidebar:** your name, **Chat with Rufi**, **Overview**, and at the bottom **Help** and **Settings**. When the AI can't be used, a line under them says why.
 - **The chat bar:** the box at the bottom right of the Overview, where you talk to Rufi. It is your one chat with Rufi, the same as Chat with Rufi in the sidebar. See [Talking to Rufi](chat.md).
 - **Overview:** your latest results, as the lab printed them: the test, the value and unit, the lab's range, the lab's note and when it was measured. "Amended" means that the lab corrected the result. When there are more results than Overview shows, it says so.
-- **Settings:** your emergency region. When a message may describe an emergency, the AI gives this region's number; with no region, it says to call your local emergency number. See [What Rufi's AI will and won't do](safety.md#in-an-emergency-it-tells-you-to-call-for-help-first). Settings also shows your backups and exports your data: see [Backups and export](backups-and-export.md).
+- **Settings:** how Rufi looks, and your emergency region. When a message may describe an emergency, the AI gives this region's number; with no region, it says to call your local emergency number. See [What Rufi's AI will and won't do](safety.md#in-an-emergency-it-tells-you-to-call-for-help-first). Settings also shows your backups and exports your data: see [Backups and export](backups-and-export.md).
 - **Help:** these pages.
 
 The other pages come in later steps.
+
+## How Rufi looks
+
+Rufi has a light look and a dark look. Choose one in **Settings** › **Appearance**, or on the welcome step:
+
+- **System** (the start): Rufi follows your Mac's light or dark appearance, also when the Mac changes it.
+- **Light** or **Dark:** Rufi stays so, whatever the Mac uses.
+
+Your choice shows at once in the Rufi windows or tabs that are open in the same app or browser. A Rufi page open somewhere else, such as the Rufi app when you chose in your browser, shows it when you reload that page. Rufi keeps your choice when it starts again. In the Rufi app, the window around the page, with its sidebar, takes the same look.
 
 ## If you're not signed in
 

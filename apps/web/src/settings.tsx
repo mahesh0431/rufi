@@ -1,26 +1,33 @@
-// Settings: the region whose emergency number the AI gives, backups, and
-// the export of your data.
-import { Backups, type SaveSettings, Settings } from "@rufi/contracts";
+// Settings: how Rufi looks, the region whose emergency number the AI gives,
+// backups, and the export of your data.
+import { Backups } from "@rufi/contracts";
 import { useMutation } from "@tanstack/react-query";
 import { DatabaseBackup, Download } from "lucide-react";
 import { download, read } from "./api.ts";
+import { AppearanceChoice } from "./appearance.tsx";
 import { printedTime } from "./dates.ts";
-import { queries, useBackups, useSettings } from "./reads.ts";
+import { queries, saveSettings, useBackups, useSettings } from "./reads.ts";
 import { Button, Problem } from "./ui.tsx";
 
 export function SettingsPage() {
   const settings = useSettings();
   const save = useMutation({
     mutationFn: (emergencyRegion: string | null) =>
-      read(Settings, "PUT", "/api/settings", {
-        emergencyRegion,
-      } satisfies typeof SaveSettings.Type),
-    onSuccess: (saved) => queries.setQueryData(["settings"], saved),
+      saveSettings({ emergencyRegion }),
   });
 
   return (
     <div className="mx-auto max-w-[620px] px-6 py-8">
-      <h2 className="mb-2 px-0.5 font-semibold">Emergency</h2>
+      <h2 id="appearance" className="mb-2 px-0.5 font-semibold">
+        Appearance
+      </h2>
+      <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
+        <AppearanceChoice labelledBy="appearance" />
+        <p className="text-muted">
+          System follows your Mac's light or dark appearance.
+        </p>
+      </div>
+      <h2 className="mt-8 mb-2 px-0.5 font-semibold">Emergency</h2>
       <div className="rounded-xl border border-line bg-surface p-4">
         {settings.data === undefined && settings.error ? (
           <Problem

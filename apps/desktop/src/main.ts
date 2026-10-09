@@ -15,7 +15,7 @@ import {
   session as sessions,
 } from "electron";
 import { core, CoreError } from "./core.ts";
-import { lockDown, openWindow } from "./window.ts";
+import { followAppearance, lockDown, openWindow } from "./window.ts";
 
 const ICON = fileURLToPath(new URL("../assets/rufi-mark.png", import.meta.url));
 
@@ -66,10 +66,12 @@ if (!app.requestSingleInstanceLock()) {
     app.quit();
   });
   void app.whenReady().then(() => {
-    nativeTheme.themeSource = "system"; // the screens follow it too (themes.css)
+    // The system's, until Rufi's first page names the chosen one.
+    nativeTheme.themeSource = "system";
     app.dock?.setIcon(ICON);
     Menu.setApplicationMenu(menu());
     lockDown(sessions.fromPartition("rufi"));
+    followAppearance(sessions.fromPartition("rufi"));
     show();
   });
 }

@@ -327,6 +327,56 @@ test.describe("stopping", () => {
   });
 });
 
+test("the window takes the appearance chosen in Rufi, also as it first shows after a restart", async ({
+  desktop,
+}) => {
+  const app = await desktop.launch();
+  const page = await app.electron.firstWindow();
+  await working(page);
+  const source = (opened: App) =>
+    opened.electron.evaluate(({ nativeTheme }) => nativeTheme.themeSource);
+  expect(await source(app)).toBe("system");
+  const appearance = page.getByRole("radiogroup", { name: "Appearance" });
+  for (const [label, chosen] of [
+    ["Light", "light"],
+    ["Dark", "dark"],
+  ] as const) {
+    await appearance.getByRole("radio", { name: label }).check();
+    await expect.poll(() => source(app)).toBe(chosen);
+  }
+  await app.electron.evaluate(({ app }) => {
+    app.quit();
+  });
+  await app.exited;
+
+  const again = await desktop.launch();
+  // The Mac's appearance of the window as it first shows.
+  await again.electron.evaluate(({ app, nativeTheme }) => {
+    app.on("browser-window-created", (_event, window) => {
+      // The window shows when it is ready (window.ts).
+      window.once("ready-to-show", () => {
+        Object.assign(globalThis, { shownIn: nativeTheme.themeSource });
+      });
+    });
+  });
+  const reopened = await again.electron.firstWindow();
+  await working(reopened);
+  expect(
+    await again.electron.evaluate(
+      () => (globalThis as { shownIn?: string }).shownIn,
+    ),
+  ).toBe("dark");
+  expect(
+    await reopened.evaluate(() => document.documentElement.dataset["theme"]),
+  ).toBe("dark");
+
+  await reopened
+    .getByRole("radiogroup", { name: "Appearance" })
+    .getByRole("radio", { name: "System" })
+    .check();
+  await expect.poll(() => source(again)).toBe("system");
+});
+
 test.describe("the page", () => {
   test("has nothing of Node or Electron and asks for nothing", async ({
     desktop,
