@@ -16,6 +16,7 @@ import {
 import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
 import type { Saved } from "../record/save.ts";
+import { addRow } from "./queue.ts";
 import { splitBasis } from "./basis.ts";
 import { usedOf } from "./used.ts";
 import type { Store } from "../store/database.ts";
@@ -29,6 +30,8 @@ export interface ChatRow extends Chat {
   threadProvider: string | null;
   threadModel: string | null;
   threadTools: string | null;
+  /** Nothing goes to the AI until the person sends (core/chat/queue.ts). */
+  paused: "stopped" | "restarted" | null;
 }
 
 /** What one write changed, for the live stream. */
@@ -86,6 +89,7 @@ const toChat = (row: Selectable<Tables["chats"]>): ChatRow => ({
   threadProvider: row.thread_provider,
   threadModel: row.thread_model,
   threadTools: row.thread_tools,
+  paused: row.paused as ChatRow["paused"],
 });
 
 /**
@@ -376,6 +380,60 @@ export function transcripts(
     return id;
   }
 
+  /** The queue's rows of a hand-over not yet marked sent. */
+  const handedOver = (trx: Db, chat: ChatRow, handOver: string) =>
+    trx
+      .selectFrom("chat_queue")
+      .select(["id", "origin", "text"])
+      .where("person_id", "=", chat.personId)
+      .where("chat_id", "=", chat.id)
+      .where("sent_as", "=", handOver)
+      .where("state", "in", ["handing_over", "not_sure"])
+      .orderBy("position")
+      .execute();
+
+  /** Marks handed-over rows sent; the person's message enters the transcript. */
+  async function sent(
+    trx: Transaction<Tables>,
+    chat: ChatRow,
+    revision: number,
+    rows: { id: string; origin: string; text: string }[],
+    turnId: string | null,
+  ): Promise<string[]> {
+    if (rows.length === 0) return [];
+    await trx
+      .updateTable("chat_queue")
+      .set({ state: "sent", turn_id: turnId, updated_at: now() })
+      .where(
+        "id",
+        "in",
+        rows.map((row) => row.id),
+      )
+      .execute();
+    const entries: string[] = [];
+    for (const row of rows) {
+      if (row.origin !== "person") continue;
+      if (
+        await trx
+          .selectFrom("transcript_entries")
+          .select("id")
+          .where("id", "=", row.id)
+          .executeTakeFirst()
+      ) {
+        continue;
+      }
+      entries.push(
+        await insertEntry(trx, chat, revision, {
+          id: row.id,
+          turnId,
+          kind: "message",
+          text: row.text,
+        }),
+      );
+    }
+    return entries;
+  }
+
   return {
     subscribe(chatId: string, listener: (change: Change) => void): () => void {
       const set = listeners.get(chatId) ?? new Set();
@@ -615,15 +673,21 @@ export function transcripts(
 
     /**
      * A reply the agent started, with the thread and model it runs on. Once
-     * per agent turn.
+     * per agent turn. `handOver` is the id of the queue's rows Rufi handed
+     * over for it: in the same transaction they are sent, the person's
+     * message enters the transcript by its row's id, and the turn takes its
+     * origin from them (a Rufi event's turn can only read).
      */
     startTurn: (
       chat: ChatRow,
       agentTurnId: string,
       thread: { id: string; model: string },
+      handOver?: string,
     ) =>
-      change(chat.id, async (trx) => {
+      change(chat.id, async (trx, revision) => {
         if (await turnOf(trx, chat.id, agentTurnId)) return undefined;
+        const rows =
+          handOver === undefined ? [] : await handedOver(trx, chat, handOver);
         const id = uuid();
         await trx
           .insertInto("turns")
@@ -634,6 +698,10 @@ export function transcripts(
             agent_turn_id: agentTurnId,
             thread_id: thread.id,
             model: thread.model,
+            origin:
+              rows.length > 0 && rows.every((row) => row.origin === "rufi")
+                ? "rufi"
+                : "person",
             status: "running",
             end_reason: null,
             end_text: null,
@@ -642,7 +710,80 @@ export function transcripts(
             ended_at: null,
           })
           .execute();
-        return { entries: [], turns: [id] };
+        const entries = await sent(trx, chat, revision, rows, id);
+        return { entries, turns: [id] };
+      }),
+
+    /**
+     * Rows Rufi handed over that a crash kept from being marked sent, found
+     * in the agent's own record by `handOver`: sent now, with the person's
+     * message. True when `handOver` is the queue's (filled now or before),
+     * so it is never saved as a message of its own.
+     */
+    fillHandOver: async (chat: ChatRow, handOver: string) => {
+      let found = false;
+      await change(chat.id, async (trx, revision) => {
+        found =
+          (await trx
+            .selectFrom("chat_queue")
+            .select("id")
+            .where("person_id", "=", chat.personId)
+            .where((eb) =>
+              eb.or([eb("id", "=", handOver), eb("sent_as", "=", handOver)]),
+            )
+            .executeTakeFirst()) !== undefined;
+        const rows = await handedOver(trx, chat, handOver);
+        if (rows.length === 0) return undefined;
+        return {
+          entries: await sent(trx, chat, revision, rows, null),
+          turns: [],
+        };
+      });
+      return found;
+    },
+
+    /** Who started a turn: a Rufi event's turn can only read. */
+    origin: async (chat: ChatRow, agentTurnId: string) =>
+      ((await turnOf(db, chat.id, agentTurnId))?.origin ?? "person") as
+        | "person"
+        | "rufi",
+
+    /**
+     * A Rufi event: its outcome (`write`, the producer's own), the line in
+     * the chat and, when it asks the AI, its note in the queue, all in one
+     * transaction.
+     */
+    addEvent: (
+      chat: ChatRow,
+      event: {
+        kind: string;
+        line: string;
+        facts?: unknown;
+        /** Rufi's note for the AI, when the AI should hear of it. */
+        ask?: string;
+      },
+      write?: (trx: Transaction<Tables>) => Promise<void>,
+    ) =>
+      change(chat.id, async (trx, revision) => {
+        await write?.(trx);
+        const id = await insertEntry(trx, chat, revision, {
+          turnId: null,
+          kind: "event",
+          text: event.line,
+          details: JSON.stringify({
+            kind: event.kind,
+            facts: event.facts ?? null,
+          }),
+        });
+        if (event.ask !== undefined) {
+          await addRow(
+            trx,
+            chat,
+            { id: uuid(), origin: "rufi", text: event.ask, eventId: id },
+            now(),
+          );
+        }
+        return { entries: [id], turns: [] };
       }),
 
     /**
@@ -932,8 +1073,8 @@ export function transcripts(
     },
 
     /**
-     * The last `count` messages (the user's, the AI's replies and Rufi's
-     * receipts) from replies that have ended, oldest first: what a new
+     * The last `count` messages (the user's, the AI's replies, Rufi's
+     * receipts and events) from replies that have ended, oldest first: what a new
      * thread starts with. A reply that completed is as it came, with its
      * rufi-basis block, so the new thread sees the convention; one that
      * didn't is its answer only, marked unfinished.
@@ -949,7 +1090,13 @@ export function transcripts(
         .select(["e.kind", "e.text", "t.status"])
         .where("e.person_id", "=", chat.personId)
         .where("e.chat_id", "=", chat.id)
-        .where("e.kind", "in", ["message", "steer", "reply", "receipt"])
+        .where("e.kind", "in", [
+          "message",
+          "steer",
+          "reply",
+          "receipt",
+          "event",
+        ])
         .where((eb) =>
           eb.or([eb("t.status", "is", null), eb("t.status", "!=", "running")]),
         )
@@ -960,7 +1107,9 @@ export function transcripts(
         if (row.kind !== "reply") {
           return {
             from:
-              row.kind === "receipt" ? ("rufi" as const) : ("user" as const),
+              row.kind === "receipt" || row.kind === "event"
+                ? ("rufi" as const)
+                : ("user" as const),
             text: row.text,
           };
         }

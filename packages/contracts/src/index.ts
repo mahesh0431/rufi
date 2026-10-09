@@ -42,10 +42,19 @@ export const Entry = Schema.Struct({
   seq: Schema.Int,
   /** The reply it belongs to. */
   turnId: Schema.NullOr(Schema.String),
-  kind: Schema.Literals(["message", "steer", "activity", "reply", "receipt"]),
+  /** event: Rufi's own factual line about something that happened, never the person's words. */
+  kind: Schema.Literals([
+    "message",
+    "steer",
+    "activity",
+    "reply",
+    "receipt",
+    "event",
+  ]),
   /**
    * The message; the reply's answer (without its rufi-basis blocks, which
-   * the turn's How holds); an activity's short title; a receipt's line.
+   * the turn's How holds); an activity's short title; a receipt's or an
+   * event's line.
    */
   text: Schema.String,
   activity: Schema.NullOr(ActivityKind),
@@ -151,13 +160,39 @@ const PageFields = {
 export const Page = Schema.Struct(PageFields);
 export type Page = typeof Page.Type;
 
-/** A message the AI holds until the running reply has ended. */
-export const WaitingMessage = Schema.Struct({
+/**
+ * One row of the chat's queue: a message of the person's, or Rufi's note
+ * for the AI about an event (its text is the event's line). waiting: it
+ * goes in turn, unless held; handing_over: Rufi is giving it to the AI;
+ * not_sure: Rufi stopped while handing it over, so nobody knows whether
+ * the AI got it, and it is never sent again by itself.
+ */
+export const QueueItem = Schema.Struct({
   id: Schema.String,
-  messageId: Schema.String,
+  origin: Schema.Literals(["person", "rufi"]),
   text: Schema.String,
+  state: Schema.Literals(["waiting", "handing_over", "not_sure"]),
+  /**
+   * Why a waiting row doesn't go by itself: paused (an event that rides
+   * with the person's next message), signed_out, restored (from a backup),
+   * failed (the AI refused it; heldText says why).
+   */
+  held: Schema.NullOr(
+    Schema.Literals(["paused", "signed_out", "restored", "failed"]),
+  ),
+  heldText: Schema.NullOr(Schema.String),
 });
-export type WaitingMessage = typeof WaitingMessage.Type;
+export type QueueItem = typeof QueueItem.Type;
+
+/**
+ * What waits, in order, and why nothing goes until the person sends:
+ * stopped (Stop) or restarted (Rufi started again with rows waiting).
+ */
+export const Queue = Schema.Struct({
+  items: Schema.Array(QueueItem),
+  paused: Schema.NullOr(Schema.Literals(["stopped", "restarted"])),
+});
+export type Queue = typeof Queue.Type;
 
 /**
  * One line of the chat's live stream (NDJSON). It starts with the latest
@@ -174,37 +209,19 @@ export const StreamLine = Schema.Union([
     /** The chat, when its model changed. */
     chat: Schema.optionalKey(Chat),
   }),
-  /** The waiting messages changed; read them again. */
-  Schema.Struct({ type: Schema.Literal("waiting") }),
+  /** The queue changed; read it again. */
+  Schema.Struct({ type: Schema.Literal("queue") }),
   /** Nothing happened for a while; the stream is still open. */
   Schema.Struct({ type: Schema.Literal("ping") }),
 ]);
 export type StreamLine = typeof StreamLine.Type;
 
-export const WaitingMessages = Schema.Struct({
-  messages: Schema.Array(WaitingMessage),
-});
-
-/**
- * The unsent text of a chat's box; the last save wins. `sending`: a send
- * holds it until the agent took or refused the message, and it can't be
- * changed meanwhile; `unknown`: Rufi stopped during that send, so the text
- * stays and nobody knows whether the agent has it.
- */
-export const Draft = Schema.Struct({
-  text: Schema.String,
-  state: Schema.Literals(["editable", "sending", "unknown"]),
-});
+/** The unsent text of a chat's box; the last save wins. */
+export const Draft = Schema.Struct({ text: Schema.String });
 export type Draft = typeof Draft.Type;
 
-/** A message the core took, and the box's draft after it. */
+/** A message the core took into the queue, and the box's draft after it. */
 export const Sent = Schema.Struct({ id: Schema.String, draft: Draft });
-
-/**
- * A save or send the core didn't do (a send holds the draft), or a send that
- * failed: the draft as it is now.
- */
-export const NotDone = Schema.Struct({ draft: Draft });
 
 export const Model = Schema.Struct({ id: Schema.String, name: Schema.String });
 export type Model = typeof Model.Type;
@@ -339,16 +356,19 @@ const Message = Schema.String.check(
 export const MessageText = Schema.Struct({ text: Message });
 
 /**
- * A message from the box: sent or steered in. The core keeps it as the
- * draft and holds it until the agent took the message (emptied) or refused
- * it; while another send holds the draft, it is refused (409).
+ * A message from the box, sent into the queue or steered into the running
+ * reply. `id` is the send's own: the same send again (a retry) finds the
+ * message it made and never makes a second one.
  */
-export const SendMessage = Schema.Struct({ text: Message });
+export const SendMessage = Schema.Struct({
+  id: Schema.String.check(Schema.isUUID()),
+  text: Message,
+});
 
 /** The box's text, saved over the draft unless a send holds it. */
 export const SaveDraft = Schema.Struct({ text: Text(MAX_MESSAGE_CHARS) });
 
-export const ReorderWaiting = Schema.Struct({ ids: Schema.Array(Id) });
+export const ReorderQueue = Schema.Struct({ ids: Schema.Array(Id) });
 
 /**
  * A first-run step done: welcome (ticked "not a doctor"), sign_in (skipped),

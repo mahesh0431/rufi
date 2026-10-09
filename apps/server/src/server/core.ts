@@ -11,6 +11,7 @@ import { Effect } from "effect";
 import type { AgentHost, AgentRuntime, AgentTools } from "../agent/runtime.ts";
 import { allowlistFile } from "../core/chat/models.ts";
 import { drafts as openDrafts } from "../core/chat/drafts.ts";
+import { chatQueue } from "../core/chat/queue.ts";
 import { transcripts as openTranscripts } from "../core/chat/transcript.ts";
 import { documents } from "../core/documents/documents.ts";
 import { backupJob } from "../core/store/backup.ts";
@@ -26,7 +27,7 @@ import { chatCaller, forAgent, toolsVersion } from "../core/tools/tools.ts";
 import { holdRufiLock, readJson, writePrivateJson } from "../platform/files.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { api, LAUNCHER_HEADER } from "./api.ts";
-import { ChatRefusal, chat as openChat, type Chat } from "./chat.ts";
+import { chat as openChat, type Chat } from "./chat.ts";
 import { secret, sessions } from "./session.ts";
 import { signInFlow, type SignIn } from "./signin.ts";
 
@@ -133,11 +134,8 @@ export const startCore = (options: CoreOptions) =>
       (store) => Effect.sync(() => store?.close()),
     );
     const transcripts = openTranscripts(writer, options.now);
-    const drafts = openDrafts(
-      writer,
-      (error) => error instanceof ChatRefusal,
-      options.now,
-    );
+    const drafts = openDrafts(writer, options.now);
+    const queue = chatQueue(writer, options.now);
     yield* attempt(() => cleanExportStaging(home));
     const backups = yield* Effect.acquireRelease(
       Effect.sync(() => backupJob(home, log)),
@@ -146,15 +144,21 @@ export const startCore = (options: CoreOptions) =>
     // In the background: a backup never delays or stops the start.
     backups.start();
     const interrupted = yield* attempt(() => transcripts.interruptRunning());
-    // Sends Rufi stopped during: taken, or the text stays; never sent again.
-    yield* attempt(() => drafts.endStopped());
+    // Hand-overs Rufi stopped during are not sure, never sent again; what
+    // waits goes when the person sends.
+    yield* attempt(() => queue.endStopped());
 
     const tools = forAgent(() => ({ store: reader, personId: undefined }), log);
     const allowlist = allowlistFile(home);
+    const account =
+      options.account ??
+      (() => Promise.resolve<Status>({ account: "signed_out", email: null }));
     const chat = yield* Effect.acquireRelease(
       Effect.sync(() =>
         openChat({
           transcripts,
+          queue,
+          signedIn: async () => (await account()).account === "signed_in",
           agent: (host) =>
             options.agent(
               { namespace: tools.namespace, specs: tools.specs },
@@ -189,9 +193,7 @@ export const startCore = (options: CoreOptions) =>
         if (!overview) throw new Error("The person isn't in the record.");
         return overview;
       },
-      account:
-        options.account ??
-        (() => Promise.resolve({ account: "signed_out", email: null })),
+      account,
       backups,
       exportZip: () => exportZip(home, new Date()),
       documents: documents(writer, home, options.now),

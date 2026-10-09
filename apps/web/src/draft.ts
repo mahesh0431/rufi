@@ -3,13 +3,13 @@
 // typing stops, and at once when the box leaves the screen, silently; the
 // box says only Not saved (with Retry). The last save wins: two tabs typing
 // at once replace each other's text. Nothing is saved as the page closes,
-// so what was typed since the last save can be lost then. A send saves
-// first, quietly; then the core keeps the text and holds the draft
-// ("Sending…") until the agent took the message (the draft empties) or
-// refused it, and nobody can change it meanwhile, in this tab or another. A
-// box that finds its draft held follows it until the send has ended.
-// Nothing here sends a message again.
-import { Draft, MAX_MESSAGE_CHARS, NotDone, Sent } from "@rufi/contracts";
+// so what was typed since the last save can be lost then. A send goes after
+// the box's earlier saves, by an id of its own: the core moves the text into
+// the queue and empties the draft in one step. When its answer is lost, the
+// tab keeps the id and text through reloads, so an explicit retry uses the
+// same id and the core never takes it twice. Autosaves skip that text.
+// Nothing here sends a message by itself.
+import { Draft, MAX_MESSAGE_CHARS, Sent } from "@rufi/contracts";
 import type { QueryClient } from "@tanstack/react-query";
 import { Schema } from "effect";
 import { createStore } from "zustand/vanilla";
@@ -17,7 +17,7 @@ import { createStore } from "zustand/vanilla";
 export interface DraftApi {
   /**
    * One request to the chat's API: the core's JSON answer, or an error with
-   * the core's answer as its `body`.
+   * the core's answer as its `body` when it answered.
    */
   call: (
     method: "GET" | "PUT" | "POST",
@@ -27,6 +27,10 @@ export interface DraftApi {
   /** The queries' client, and this box's name: its saves run in turn. */
   client: QueryClient;
   scope: string;
+  /** A new id for a send. */
+  newId?: () => string;
+  /** This tab's storage: an unresolved send survives a reload. */
+  storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
 }
 
 export interface BoxState {
@@ -35,9 +39,7 @@ export interface BoxState {
   draft: Draft;
   /** The draft is read: until then the box can't be typed in. */
   loaded: boolean;
-  /** Send is saving the text first: the box can't change meanwhile. */
-  preparing: boolean;
-  /** A message from this box is on its way; the core holds its text. */
+  /** A send is on its way: the box can't change meanwhile. */
   sending: boolean;
   /** The last save failed: the text is only in this tab. */
   failed: boolean;
@@ -49,7 +51,7 @@ export type DraftBox = ReturnType<typeof draftBox>;
 
 /** How long after the last key the box saves. */
 const PAUSE_MS = 400;
-/** How often a box reads a draft it couldn't read, or a send holds. */
+/** How often a box reads a draft it couldn't read. */
 const WAIT_MS = 1_000;
 
 /**
@@ -67,89 +69,92 @@ const inTurn = <T>(
     .execute(undefined);
 
 /** A send has the text: the box can't be changed. */
-export const held = (state: BoxState) => state.preparing || sending(state);
+export const held = (state: BoxState) => state.sending;
 
-/** The core holds the text for a send. */
-export const sending = (state: BoxState) =>
-  state.sending || state.draft.state === "sending";
-
-/** The draft in the core's refusal, when it has one. */
-const draftIn = (error: unknown) => {
-  const body =
-    typeof error === "object" && error !== null && "body" in error
-      ? error.body
-      : undefined;
-  const found = Schema.decodeUnknownOption(NotDone)(body);
-  return found._tag === "Some" ? found.value.draft : undefined;
-};
+/** Whether the core answered the request that failed (it refused it). */
+const answered = (error: unknown) =>
+  typeof error === "object" &&
+  error !== null &&
+  "body" in error &&
+  error.body !== undefined;
 
 export function draftBox(api: DraftApi) {
+  const newId = api.newId ?? (() => crypto.randomUUID());
+  const sendKey = `rufi/send/${api.scope}`;
   const store = createStore<BoxState>(() => ({
     text: "",
-    draft: { text: "", state: "editable" },
+    draft: { text: "" },
     loaded: false,
-    preparing: false,
     sending: false,
     failed: false,
     notice: null,
   }));
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let following = false;
+  /** A send whose answer was lost: the same text again keeps its id. */
+  let unanswered: { id: string; text: string } | undefined;
 
-  /** The draft as the core has it now, shown as it is. */
-  const show = (draft: Draft, notice: string | null = null) => {
-    store.setState({ draft, text: draft.text, failed: false, notice });
-    if (draft.state === "sending") void follow();
-  };
-
-  /** Reads the draft until it is read and no send holds it. */
-  async function follow(): Promise<void> {
-    if (following) return;
-    following = true;
-    let missed = false;
+  /** Keeps the send's identity before it goes; if storage fails, it doesn't go. */
+  function remember(send: { id: string; text: string }): boolean {
     try {
-      for (;;) {
-        try {
-          const draft = Schema.decodeUnknownSync(Draft)(
-            await api.call("GET", "draft"),
-          );
-          store.setState({
-            draft,
-            text: draft.text,
-            loaded: true,
-            ...(missed && { notice: null }),
-          });
-          if (draft.state !== "sending") return;
-          missed = false;
-        } catch (error) {
-          // Said in the box; asked again in a moment.
-          missed = true;
-          store.setState({ notice: messageOf(error) });
-        }
-        await new Promise((resolve) => setTimeout(resolve, WAIT_MS));
-      }
-    } finally {
-      following = false;
+      api.storage?.setItem(sendKey, JSON.stringify(send));
+      unanswered = send;
+      return true;
+    } catch (error) {
+      store.setState({ sending: false, notice: messageOf(error) });
+      return false;
     }
   }
 
-  void follow();
+  function forget(): void {
+    api.storage?.removeItem(sendKey);
+    unanswered = undefined;
+  }
+
+  /** Reads the draft until it is read. */
+  async function load(): Promise<void> {
+    for (;;) {
+      try {
+        const saved = api.storage?.getItem(sendKey);
+        unanswered = saved
+          ? Schema.decodeUnknownSync(
+              Schema.Struct({ id: Schema.String, text: Schema.String }),
+            )(JSON.parse(saved))
+          : undefined;
+        const draft = Schema.decodeUnknownSync(Draft)(
+          await api.call("GET", "draft"),
+        );
+        store.setState({
+          draft,
+          text: unanswered?.text ?? draft.text,
+          loaded: true,
+          notice: null,
+        });
+        return;
+      } catch (error) {
+        // Said in the box; asked again in a moment.
+        store.setState({ notice: messageOf(error) });
+      }
+      await new Promise((resolve) => setTimeout(resolve, WAIT_MS));
+    }
+  }
+
+  void load();
 
   const later = () => {
     clearTimeout(timer);
     timer = setTimeout(() => void save(), PAUSE_MS);
   };
 
-  /**
-   * Saves the text if it changed, or the last save failed, after this box's
-   * earlier saves. A send holding the draft refuses it: the box shows it.
-   */
+  /** Saves the text if it changed, or the last save failed, after this box's earlier saves. */
   function save(): Promise<void> {
     clearTimeout(timer);
     return inTurn(api.client, api.scope, async () => {
       const state = store.getState();
       const { text } = state;
-      if (!state.loaded || sending(state) || tooLong(text)) return;
+      if (!state.loaded || state.sending || tooLong(text)) return;
+      if (unanswered?.text === text.trim()) return;
+      // Saving different text replaces the uncertain send with a new draft.
+      forget();
       if (text === state.draft.text && !state.failed) return;
       try {
         const draft = Schema.decodeUnknownSync(Draft)(
@@ -157,9 +162,7 @@ export function draftBox(api: DraftApi) {
         );
         store.setState({ draft, failed: false, notice: null });
       } catch (error) {
-        const holding = draftIn(error);
-        if (holding) show(holding);
-        else store.setState({ failed: true, notice: messageOf(error) });
+        store.setState({ failed: true, notice: messageOf(error) });
       }
     });
   }
@@ -170,7 +173,7 @@ export function draftBox(api: DraftApi) {
     /** The person typed. */
     type(text: string): void {
       const state = store.getState();
-      if (!state.loaded || held(state)) return;
+      if (!state.loaded || state.sending) return;
       store.setState({ text, notice: null });
       later();
     },
@@ -179,37 +182,38 @@ export function draftBox(api: DraftApi) {
     saveNow: save,
 
     /**
-     * Sends the text, or steers it into the running reply, once the core
-     * keeps it as the draft. Nothing is sent when it couldn't be saved.
+     * Sends the text into the queue, or steers it into the running reply.
+     * The box empties when the core took it; a refusal leaves the text with
+     * the reason.
      */
     async submit(steer: boolean): Promise<void> {
       const state = store.getState();
-      const { text } = state;
-      if (!state.loaded || held(state) || tooLong(text) || text.trim() === "") {
+      const text = state.text.trim();
+      if (!state.loaded || state.sending || tooLong(text) || text === "") {
         return;
       }
-      store.setState({ preparing: true, notice: null });
-      await save();
-      const { draft, failed } = store.getState();
-      if (failed || draft.state === "sending") {
-        store.setState({ preparing: false });
-        return;
-      }
-      store.setState({ preparing: false, sending: true });
-      try {
-        const sent = Schema.decodeUnknownSync(Sent)(
-          await api.call("POST", steer ? "steer" : "messages", {
-            text: text.trim(),
-          }),
-        );
-        store.setState({ sending: false });
-        show(sent.draft);
-      } catch (error) {
-        store.setState({ sending: false });
-        // Without the core's answer the send may still hold the draft: the
-        // box follows it until a read says how it ended.
-        show(draftIn(error) ?? { text, state: "sending" }, messageOf(error));
-      }
+      clearTimeout(timer);
+      store.setState({ sending: true, notice: null });
+      // A steer is never sent twice: a lost answer's text gets a new id.
+      const id = !steer && unanswered?.text === text ? unanswered.id : newId();
+      await inTurn(api.client, api.scope, async () => {
+        try {
+          if (!steer && !remember({ id, text })) return;
+          const sent = Schema.decodeUnknownSync(Sent)(
+            await api.call("POST", steer ? "steer" : "messages", { id, text }),
+          );
+          forget();
+          store.setState({
+            sending: false,
+            draft: sent.draft,
+            text: sent.draft.text,
+            failed: false,
+          });
+        } catch (error) {
+          if (answered(error) || steer) forget();
+          store.setState({ sending: false, notice: messageOf(error) });
+        }
+      });
     },
   };
 }

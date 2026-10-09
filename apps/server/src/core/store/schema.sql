@@ -254,6 +254,7 @@ CREATE TABLE chats (
   thread_provider TEXT,        -- whose thread it is, so another agent never reuses it
   thread_model TEXT,           -- the model the thread started with
   thread_tools TEXT,           -- the tool set it started with (a thread keeps its tools)
+  paused TEXT CHECK (paused IN ('stopped', 'restarted')), -- nothing goes to the AI until the person sends: after a Stop, or Rufi started again with messages waiting
   revision INTEGER NOT NULL DEFAULT 0, -- grows with every change to the transcript
   created_at TEXT NOT NULL,
   UNIQUE (person_id, id)
@@ -267,6 +268,7 @@ CREATE TABLE turns (
   agent_turn_id TEXT NOT NULL, -- the agent's own id for it
   thread_id TEXT NOT NULL,     -- the agent's thread it ran on: a turn on another thread than the one before started afresh
   model TEXT NOT NULL,
+  origin TEXT NOT NULL DEFAULT 'person' CHECK (origin IN ('person', 'rufi')), -- who started it: a Rufi event's turn can only read
   status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'interrupted', 'failed')),
   end_reason TEXT CHECK (end_reason IN ('stopped', 'timeout', 'usage_limit', 'rate_limit', 'sign_in', 'connection', 'provider_failed', 'save_failed')),
   end_text TEXT,               -- why it didn't complete, for the screen
@@ -280,18 +282,20 @@ CREATE TABLE turns (
 
 -- A chat's transcript, in order: your messages (steers marked), one
 -- line per thing the agent did with everything it sent and got back, the
--- agent's reasoning and its replies. Stored before anyone is shown it.
+-- agent's reasoning and its replies, Rufi's receipts and Rufi's events
+-- (its own factual lines, never the person's words). Stored before anyone
+-- is shown it.
 CREATE TABLE transcript_entries (
   id TEXT PRIMARY KEY,         -- UUIDv7; a message keeps the id the agent got with it
   person_id TEXT NOT NULL,
   chat_id TEXT NOT NULL,
   seq INTEGER NOT NULL,        -- 1, 2, 3... in the chat
   turn_id TEXT,                -- the reply it belongs to
-  kind TEXT NOT NULL CHECK (kind IN ('message', 'steer', 'activity', 'reply', 'reasoning', 'receipt')),
-  text TEXT NOT NULL,          -- the message or the reply as it came; an activity's short title; the reasoning's summary; a receipt's line
+  kind TEXT NOT NULL CHECK (kind IN ('message', 'steer', 'activity', 'reply', 'reasoning', 'receipt', 'event')),
+  text TEXT NOT NULL,          -- the message or the reply as it came; an activity's short title; the reasoning's summary; a receipt's or an event's line
   activity TEXT CHECK (activity IN ('tool', 'command', 'web_search', 'file_change', 'sub_agent', 'compaction', 'other')),
   detail TEXT,                 -- an activity's one short detail: the query, the search words, the command
-  details TEXT,                -- an activity's or reasoning's everything, as the agent gave it (JSON); null: the agent gave nothing
+  details TEXT,                -- an activity's or reasoning's everything, as the agent gave it (JSON); an event's kind and facts (JSON); null: none
   status TEXT CHECK (status IN ('running', 'done', 'failed', 'stopped')),
   agent_item_id TEXT,          -- the agent's id for a reply or an activity, to update it
   revision INTEGER NOT NULL,   -- the chat's revision when it last changed
@@ -303,7 +307,7 @@ CREATE TABLE transcript_entries (
   FOREIGN KEY (person_id, turn_id) REFERENCES turns (person_id, id),
   -- An activity line has its kind and status; nothing else has either.
   CHECK ((kind = 'activity') = (activity IS NOT NULL) AND (kind = 'activity') = (status IS NOT NULL)),
-  CHECK (details IS NULL OR kind IN ('activity', 'reasoning'))
+  CHECK (details IS NULL OR kind IN ('activity', 'reasoning', 'event'))
 ) STRICT;
 
 -- Each call the AI made to one of Rufi's own tools, kept by Rufi as it
@@ -327,21 +331,44 @@ CREATE TABLE tool_calls (
 ) STRICT;
 
 -- One unsent message per chat; the last save wins. Rufi never sends a draft
--- by itself. A send holds the draft (state 'sending', its message id in
--- attempt) until the agent took the message (the draft is emptied) or
--- refused it (the text is back); nobody can change it meanwhile. 'unknown':
--- Rufi stopped during that send, so the text stays, and nobody knows if the
--- agent has it.
+-- by itself: a send moves the text into the queue and empties the draft in
+-- one transaction.
 CREATE TABLE drafts (
   person_id TEXT NOT NULL REFERENCES people (id),
   chat_id TEXT NOT NULL,
   text TEXT NOT NULL,          -- may be empty
-  state TEXT NOT NULL DEFAULT 'editable' CHECK (state IN ('editable', 'sending', 'unknown')),
-  attempt TEXT,                -- the id of the message a send holds it for (the id the agent gets)
   updated_at TEXT NOT NULL,
   PRIMARY KEY (person_id, chat_id),
+  FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id)
+) STRICT;
+
+-- What waits to go to the AI, Rufi's own (docs/adr/0004): the person's
+-- messages and Rufi's events that ask the AI. Rufi hands the AI one turn's
+-- rows at a time, claimed here before it calls the AI, and never hands a
+-- row over twice. 'handing_over' when Rufi stops becomes 'not_sure': shown,
+-- never sent again by itself.
+CREATE TABLE chat_queue (
+  id TEXT PRIMARY KEY,         -- UUIDv7, given by the send: the acceptance identity; a person's message keeps it in the transcript
+  person_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('person', 'rufi')),
+  text TEXT NOT NULL,          -- the person's message, or Rufi's note for the AI
+  refs TEXT NOT NULL DEFAULT '[]', -- references sent with it (JSON)
+  event_id TEXT,               -- a Rufi event's line in the transcript
+  position INTEGER NOT NULL,   -- order among the waiting rows
+  state TEXT NOT NULL DEFAULT 'waiting' CHECK (state IN ('waiting', 'handing_over', 'sent', 'not_sure', 'removed')),
+  held TEXT CHECK (held IN ('paused', 'signed_out', 'restored', 'failed')), -- a waiting row Rufi doesn't hand over by itself, and why: an event that came while the chat was paused rides with the person's next message
+  held_text TEXT,              -- why a hand-over failed, in words for the person
+  sent_as TEXT,                -- the id the AI got the hand-over under (the rows of one turn share it)
+  turn_id TEXT,                -- the turn that used it
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (person_id, id),
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
-  CHECK ((state = 'sending') = (attempt IS NOT NULL))
+  FOREIGN KEY (person_id, event_id) REFERENCES transcript_entries (person_id, id),
+  FOREIGN KEY (person_id, turn_id) REFERENCES turns (person_id, id),
+  CHECK ((origin = 'rufi') = (event_id IS NOT NULL)),
+  CHECK (held IS NULL OR state = 'waiting')
 ) STRICT;
 
 -- One save to the record, made by the AI's call to save_changes in a
@@ -383,6 +410,7 @@ CREATE INDEX results_by_replaced ON results (person_id, replaces_id); -- current
 CREATE INDEX turns_by_chat ON turns (person_id, chat_id, started_at);
 CREATE INDEX turns_by_status ON turns (status); -- running turns, found at start
 CREATE INDEX entries_by_turn ON transcript_entries (person_id, turn_id);
+CREATE INDEX queue_by_chat ON chat_queue (person_id, chat_id, state, position);
 CREATE INDEX tool_calls_by_turn ON tool_calls (person_id, turn_id);
 CREATE INDEX operations_by_person ON operations (person_id, created_at);
 CREATE INDEX changes_by_record ON record_changes (person_id, record_id);

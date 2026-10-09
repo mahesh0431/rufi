@@ -1,13 +1,14 @@
 // The chat's transcript as the core stored it: your messages, one line per
 // thing the AI did, the AI's replies as Markdown with Based on under each
-// answer once it ended, Rufi's receipt for each save to the record, and how a
+// answer once it ended, Rufi's receipt for each save to the record, Rufi's
+// own event lines (never your words), and how a
 // reply ended when it didn't finish. A line between days, and a quiet line
 // where the AI started afresh or compacted its memory. It opens at the latest
 // page; older pages load as you scroll up, and the view stays where it is.
 // Each entry reads only itself from the live store, so a streaming reply
 // re-renders alone.
 import { Link } from "@tanstack/react-router";
-import { Check, LoaderCircle, Square, X } from "lucide-react";
+import { Bell, Check, LoaderCircle, Square, X } from "lucide-react";
 import {
   createContext,
   use,
@@ -424,6 +425,18 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
       <Check size={14} className="mt-1 shrink-0 text-accent-ink" aria-hidden />
       <div className="receipt min-w-0 break-words">
         <Marked text={entry.text} links={false} />
+      </div>
+    </div>
+  ) : entry.kind === "event" ? (
+    // Rufi's own line about something that happened: never your words.
+    <div
+      data-entry={id}
+      className="flex items-start gap-2 rounded-lg border border-line bg-side px-3 py-2"
+    >
+      <Bell size={14} className="mt-1 shrink-0 text-muted" aria-hidden />
+      <div className="min-w-0 break-words">
+        <p className="text-xs text-muted">Rufi</p>
+        <p className="whitespace-pre-wrap">{entry.text}</p>
       </div>
     </div>
   ) : entry.kind === "activity" ? (

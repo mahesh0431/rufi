@@ -206,7 +206,7 @@ describe("the pinned Codex", () => {
       });
       await agent.send(threadId, {
         id: "m-1",
-        text: "What are my latest results?",
+        input: ["What are my latest results?"],
       });
       await ended.promise;
       // On this route the model gets one JavaScript tool, `exec`, and Rufi's
@@ -336,7 +336,7 @@ describe.each(["fake", "real"] as const)(
             DEADLINES.requestMs,
           );
           await rpc.request(
-            "thread/queue/add",
+            "turn/start",
             {
               threadId: thread.id,
               input: [{ type: "text", text: message, text_elements: [] }],
