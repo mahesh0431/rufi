@@ -569,8 +569,8 @@ test("a quick send whose answer was lost keeps its id through Help and reload: t
   await expect(box(page)).toHaveValue("");
 
   // Replacing or clearing the uncertain send makes a new draft, kept on reload.
-  await page.clock.pauseAt(clockTime + 20_000);
-  for (const replacement of ["", "A different question"]) {
+  for (const [i, replacement] of ["", "A different question"].entries()) {
+    await page.clock.pauseAt(clockTime + 20_000 * (i + 1));
     lost = false;
     await box(page).fill("Another question");
     await box(page).press("Enter");
@@ -579,6 +579,8 @@ test("a quick send whose answer was lost keeps its id through Help and reload: t
     await box(page).fill(replacement);
     await page.clock.runFor(400);
     await edited;
+    // The page's own timers run again after the reload.
+    await page.clock.resume();
     await page.reload();
     await expect(box(page)).toHaveValue(replacement);
   }
