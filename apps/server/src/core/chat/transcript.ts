@@ -7,7 +7,6 @@ import {
   type ActivityKind,
   type Chat,
   DEFAULT_EFFORT,
-  type Draft,
   type Effort,
   type EndReason,
   type Entry,
@@ -375,81 +374,6 @@ export function transcripts(
       })
       .execute();
     return id;
-  }
-
-  const draftRow = (trx: Db, personId: string, chatId: string) =>
-    trx
-      .selectFrom("drafts")
-      .select(["text", "revision", "state", "attempt"])
-      .where("person_id", "=", personId)
-      .where("chat_id", "=", chatId)
-      .executeTakeFirst();
-
-  const toDraft = (
-    row: { text: string; revision: number; state: string } | undefined,
-  ): Draft =>
-    row
-      ? {
-          text: row.text,
-          revision: row.revision,
-          state: row.state as Draft["state"],
-        }
-      : { text: "", revision: 0, state: "editable" };
-
-  /**
-   * Changes a draft when it is at `revision`, moving its revision on.
-   * Refused: undefined.
-   */
-  async function writeDraft(
-    trx: Transaction<Tables>,
-    personId: string,
-    chatId: string,
-    revision: number,
-    next: { text: string; state: Draft["state"]; attempt: string | null },
-  ): Promise<Draft | undefined> {
-    const row = await draftRow(trx, personId, chatId);
-    if (toDraft(row).revision !== revision) return undefined;
-    const draft = {
-      text: next.text,
-      revision: revision + 1,
-      state: next.state,
-    };
-    const values = { ...next, revision: draft.revision, updated_at: now() };
-    if (row === undefined) {
-      await trx
-        .insertInto("drafts")
-        .values({
-          person_id: personId,
-          chat_id: chatId,
-          ...values,
-        })
-        .execute();
-    } else {
-      await trx
-        .updateTable("drafts")
-        .set(values)
-        .where("person_id", "=", personId)
-        .where("chat_id", "=", chatId)
-        .execute();
-    }
-    return draft;
-  }
-
-  /** Ends the send that holds the draft (by its message id), if it still does. */
-  async function endSend(
-    trx: Transaction<Tables>,
-    personId: string,
-    chatId: string,
-    attempt: string,
-    outcome: "taken" | "refused" | "unknown",
-  ): Promise<Draft> {
-    const row = await draftRow(trx, personId, chatId);
-    if (row?.attempt !== attempt) return toDraft(row);
-    return (await writeDraft(trx, personId, chatId, row.revision, {
-      text: outcome === "taken" ? "" : row.text,
-      state: outcome === "unknown" ? "unknown" : "editable",
-      attempt: null,
-    })) as Draft;
   }
 
   return {
@@ -1056,111 +980,6 @@ export function transcripts(
         .select("id")
         .where("id", "=", id)
         .executeTakeFirst()) !== undefined,
-
-    draft: async (personId: string, chatId: string) =>
-      toDraft(await draftRow(db, personId, chatId)),
-
-    /**
-     * Saves the box's text when the draft is still at `revision` (the one
-     * the box last saw) and no send holds it; otherwise it is refused, with
-     * the draft as it is now.
-     */
-    saveDraft: (
-      personId: string,
-      chatId: string,
-      text: string,
-      revision: number,
-    ): Promise<{ saved: boolean; draft: Draft }> =>
-      db.transaction().execute(async (trx) => {
-        const current = toDraft(await draftRow(trx, personId, chatId));
-        const saved =
-          current.state === "sending"
-            ? undefined
-            : await writeDraft(trx, personId, chatId, revision, {
-                text,
-                state: "editable",
-                attempt: null,
-              });
-        return saved
-          ? { saved: true, draft: saved }
-          : { saved: false, draft: current };
-      }),
-
-    /**
-     * A send holds the draft for its message (`attempt`, the id the agent
-     * gets): only when the draft is at `revision`, holds `text` and no
-     * other send holds it. Nothing can change the draft until the send ends.
-     */
-    holdForSend: (
-      personId: string,
-      chatId: string,
-      text: string,
-      revision: number,
-      attempt: string,
-    ): Promise<{ held: boolean; draft: Draft }> =>
-      db.transaction().execute(async (trx) => {
-        const current = toDraft(await draftRow(trx, personId, chatId));
-        const held =
-          current.state !== "sending" && current.text.trim() === text
-            ? await writeDraft(trx, personId, chatId, revision, {
-                text: current.text,
-                state: "sending",
-                attempt,
-              })
-            : undefined;
-        return held
-          ? { held: true, draft: held }
-          : { held: false, draft: current };
-      }),
-
-    /**
-     * The send that holds the draft ended: taken, the draft is emptied;
-     * refused, its text is back to edit; unknown, the text stays and the
-     * person is told to check the chat.
-     */
-    endSend: (
-      personId: string,
-      chatId: string,
-      attempt: string,
-      outcome: "taken" | "refused" | "unknown",
-    ): Promise<Draft> =>
-      db
-        .transaction()
-        .execute((trx) => endSend(trx, personId, chatId, attempt, outcome)),
-
-    /**
-     * When Rufi starts: sends that held a draft as Rufi stopped have ended.
-     * One whose message is in the transcript was taken; otherwise nobody
-     * knows, and the text stays. Never sent again. Returns how many.
-     */
-    endStoppedSends: async (): Promise<number> => {
-      const held = await db
-        .selectFrom("drafts")
-        .select(["person_id", "chat_id", "attempt"])
-        .where("state", "=", "sending")
-        .execute();
-      for (const row of held) {
-        const attempt = row.attempt ?? "";
-        const taken = await db
-          .selectFrom("transcript_entries")
-          .select("id")
-          .where("person_id", "=", row.person_id)
-          .where("id", "=", attempt)
-          .executeTakeFirst();
-        await db
-          .transaction()
-          .execute((trx) =>
-            endSend(
-              trx,
-              row.person_id,
-              row.chat_id,
-              attempt,
-              taken ? "taken" : "unknown",
-            ),
-          );
-      }
-      return held.length;
-    },
 
     setting: async (key: string) =>
       (

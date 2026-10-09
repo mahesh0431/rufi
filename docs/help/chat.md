@@ -36,7 +36,7 @@ A line between days says which day the messages under it are from: "Today", "Yes
 
 Type in the box and press Enter, or click the send button. Shift-Enter starts a new line.
 
-When you send, Rufi first saves your text, and you can't change it for that moment. If you reload or close the page then, what you typed since the last save can be lost, and nothing is sent. Then, while Rufi sends your message, the box says "Sending…" and you can't change it. If another tab changed the text just before, nothing is sent and the box shows that tab's text. You can go to another page meanwhile. The box clears when the AI has taken your message. If the AI can't take it, your text stays in the box with the reason.
+When you send, Rufi first saves your text, and you can't change it for that moment. If you reload or close the page then, what you typed since the last save can be lost, and nothing is sent. Then, while Rufi sends your message, the box says "Sending…" and you can't change it, in this tab or another. Rufi sends the text in this box, also when another tab saved other text just before. You can go to another page meanwhile. The box clears when the AI has taken your message. If the AI can't take it, your text stays in the box with the reason.
 
 If you reload or close the page while the box says "Sending…", nothing is lost: when you come back, the box is empty if the AI took the message, still says "Sending…" until it knows, or shows your text again if the message hadn't left yet. If you stop the reply or Rufi stops during a send, or the AI doesn't answer it, Rufi keeps your text, but it may not know whether the AI got it: the box says so. Check the chat before you send it again. Rufi never sends a message again by itself: send it again when you want to.
 
@@ -154,4 +154,4 @@ Rufi saves what you type in the box as the chat's draft, a moment after you stop
 
 Wait a moment after you stop typing before you reload, close the page or stop Rufi: what you typed in the last moment before can be lost. If a save fails, the box says "Not saved" with the reason, and your text stays in this tab, also when you go to another page and back. Click **Retry** to save it again.
 
-If you type in the chat in two browser tabs, the tab that saves or sends second shows "Changed in another tab" and the newer text, and sends nothing. Go on from there.
+If you type in the chat in two browser tabs at once, the last save wins: each tab saves its text over the other's, and a tab shows the other's text only when you reload it. Type in one tab at a time. While one tab sends a message, the other says "Sending…" when you type in it, and you can't change the text until the AI has taken the message.

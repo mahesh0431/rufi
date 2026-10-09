@@ -637,7 +637,7 @@ test("a failed send keeps your text and says why; nothing is sent again by itsel
   );
 });
 
-test("two tabs: the reply streams in both; a draft changed in one shows in the other, which can't change it while it is sent", async ({
+test("two tabs: the reply streams in both; the last save wins; while one sends, the other can't change the text", async ({
   context,
   page,
   rufi,
@@ -652,19 +652,17 @@ test("two tabs: the reply streams in both; a draft changed in one shows in the o
   await box(chat(other)).click();
   await expect(log(chat(other)).locator(".reply")).toHaveText("ok:Hello");
 
-  const saved = page.waitForResponse(
-    (response) =>
-      response.url().endsWith("/chat/draft") &&
-      response.request().method() === "PUT" &&
-      response.status() === 200,
-  );
+  // Each tab saves over the other, and says nothing.
+  const first = kept(page, "Typed in the first tab");
   await box(chat(page)).fill("Typed in the first tab");
-  await saved;
-  await box(chat(other)).fill("x");
-  await expect(chat(other).getByRole("alert")).toHaveText(
-    "Changed in another tab.",
-  );
-  await expect(box(chat(other))).toHaveValue("Typed in the first tab");
+  await first;
+  const second = kept(other, "Typed in the second tab");
+  await box(chat(other)).fill("Typed in the second tab");
+  await second;
+  await expect(chat(other).getByRole("alert")).toHaveCount(0);
+  await page.reload();
+  await box(chat(page)).click();
+  await expect(box(chat(page))).toHaveValue("Typed in the second tab");
 
   // While the first tab sends it, the other can't change it, and shows it
   // held until the AI took it.
@@ -677,10 +675,10 @@ test("two tabs: the reply streams in both; a draft changed in one shows in the o
   await box(chat(other)).press("End");
   await box(chat(other)).pressSequentially("!");
   await expect(chat(other).getByRole("status")).toHaveText("Sending…");
-  await expect(box(chat(other))).toHaveValue("Typed in the first tab");
+  await expect(box(chat(other))).toHaveValue("Typed in the second tab");
   await expect(box(chat(other))).toHaveAttribute("readonly", "");
   await expect(log(chat(other)).locator(".reply").last()).toHaveText(
-    "ok:Typed in the first tab",
+    "ok:Typed in the second tab",
   );
   await expect(box(chat(other))).toHaveValue("");
   await expect(box(chat(other))).not.toHaveAttribute("readonly");

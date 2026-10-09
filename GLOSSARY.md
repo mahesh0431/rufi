@@ -112,7 +112,7 @@ A reply that didn't finish because you stopped it or Rufi closed. What it wrote 
 _Avoid_: cancelled, aborted
 
 **Draft**:
-The message you started in the chat and haven't sent, saved quietly while you type; only a save that failed shows under the box ("Not saved"). While a send holds it, nobody can change it. Rufi never sends a draft by itself.
+The message you started in the chat and haven't sent, saved quietly while you type; only a save that failed shows under the box ("Not saved"). The last save wins: two tabs typing at once replace each other's text. While a send holds it, nobody can change it. Rufi never sends a draft by itself.
 _Avoid_: note, unsent
 
 **Model**:
