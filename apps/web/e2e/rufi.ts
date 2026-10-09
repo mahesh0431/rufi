@@ -59,10 +59,16 @@ export class Rufi {
   /**
    * Starts the core: on `port` to stand in for a restart of the same Rufi;
    * the scripted Codex plays `scenario`; `codex: "real"` runs the real Codex
-   * binary on a local fake model instead.
+   * binary on a local fake model instead; `now` is the core's clock, for a
+   * test whose page has a fixed clock too.
    */
   async start(
-    options: { port?: number; scenario?: Scenario; codex?: "real" } = {},
+    options: {
+      port?: number;
+      scenario?: Scenario;
+      codex?: "real";
+      now?: () => string;
+    } = {},
   ): Promise<Core> {
     const { port } = options;
     if (options.codex === "real") this.#model ??= await fakeModel();
@@ -106,6 +112,7 @@ export class Rufi {
         },
         screens: SCREENS,
         ...(port !== undefined && { port }),
+        ...(options.now !== undefined && { now: options.now }),
       }).pipe(Scope.provide(scope)),
     );
     return this.#core;
