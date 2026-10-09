@@ -149,6 +149,14 @@ async function withDocuments(): Promise<string[]> {
   }
 }
 
+/** Changes one byte of the file at `path`, keeping its size. */
+async function flipOneByte(path: string) {
+  const bytes = await readFile(path);
+  const at = Math.floor(bytes.length / 2);
+  bytes[at] = (bytes[at] ?? 0) ^ 1;
+  await writeFile(path, bytes);
+}
+
 describe("a backup's original files", () => {
   it("holds every original exactly as it came, and no display copy", async () => {
     const ids = await withDocuments();
@@ -171,7 +179,8 @@ describe("a backup's original files", () => {
 
   it.each([
     ["missing", (path: string) => rm(path)],
-    ["changed", (path: string) => writeFile(path, "not the original")],
+    // The same size, one byte other: only the hash finds it.
+    ["changed", (path: string) => flipOneByte(path)],
   ])(
     "fails visibly when an original is %s, and the last good backup stays",
     async (_how, spoil) => {

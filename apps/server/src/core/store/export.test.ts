@@ -53,6 +53,14 @@ async function withDocuments(): Promise<string[]> {
   }
 }
 
+/** Changes one byte of the file at `path`, keeping its size. */
+async function flipOneByte(path: string) {
+  const bytes = await readFile(path);
+  const at = Math.floor(bytes.length / 2);
+  bytes[at] = (bytes[at] ?? 0) ^ 1;
+  await writeFile(path, bytes);
+}
+
 describe("the export's original files", () => {
   it("holds every original exactly as it came, named by its hash and type", async () => {
     const [heic = "", pdf = ""] = await withDocuments();
@@ -70,14 +78,21 @@ describe("the export's original files", () => {
     ).toHaveLength(2);
   });
 
-  it("fails when an original is missing, rather than leave it out", async () => {
-    const [id = ""] = await withDocuments();
-    await rm(join(filesPath(home), id));
+  it.each([
+    ["missing", (path: string) => rm(path), "is missing"],
+    // The same size, one byte other: only the hash finds it.
+    ["changed", (path: string) => flipOneByte(path), "has changed"],
+  ])(
+    "fails when an original is %s, rather than leave it out",
+    async (_how, spoil, says) => {
+      const [id = ""] = await withDocuments();
+      await spoil(join(filesPath(home), id));
 
-    await expect(exportZip(home, NOW)).rejects.toThrow(
-      `The document file ${id} is missing.`,
-    );
-  });
+      await expect(exportZip(home, NOW)).rejects.toThrow(
+        `The document file ${id} ${says}.`,
+      );
+    },
+  );
 });
 
 describe("the export", () => {

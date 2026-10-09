@@ -47,7 +47,7 @@ To show one kind only, choose it in the list at the top left.
 
 Click a document's name. Rufi opens the original over the page:
 
-- A PDF opens in the built-in PDF viewer, where you can go through its pages, zoom and search.
+- A PDF opens in the built-in PDF viewer, where you can go through its pages and zoom.
 - Photos show one under the other, in the order of the pages. A HEIC photo shows through a JPEG copy that Rufi made when you added it; if that copy is missing, Rufi makes it again and says **Preparing the photo…** meanwhile.
 
 A link inside a PDF doesn't open: Rufi's window always stays in Rufi.

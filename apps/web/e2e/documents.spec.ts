@@ -43,10 +43,10 @@ test.afterEach(async ({ page }) => {
   ).toEqual([]);
 });
 
-/** A file for the picker, from the fixtures, under `name`. */
-const fixture = async (file: string, name = file) => ({
+/** A file for the picker, from the fixtures, under `name` and `mimeType`. */
+const fixture = async (file: string, name = file, mimeType = "") => ({
   name,
-  mimeType: "",
+  mimeType,
   buffer: await readFile(join(FIXTURES, file)),
 });
 
@@ -81,7 +81,8 @@ test("adds photos as one document in the order chosen, and a PDF as its own", as
   await accessible(page);
 
   await picker(page).setInputFiles([
-    await fixture("sideways.heic", "IMG_1.heic"),
+    // A photo by its content, though its name and type say PDF.
+    await fixture("sideways.heic", "IMG_1.pdf", "application/pdf"),
     await fixture("thyroid-recheck.jpg", "IMG_2.jpg"),
     await fixture("ravi-lipid-panel.pdf", "lipid.pdf"),
   ]);
@@ -93,7 +94,7 @@ test("adds photos as one document in the order chosen, and a PDF as its own", as
   await dialog.getByRole("button", { name: "Move IMG_2.jpg" }).press("ArrowUp");
   await expect(dialog.getByRole("listitem")).toHaveText([
     /IMG_2\.jpg\s*page 1/,
-    /IMG_1\.heic\s*page 2/,
+    /IMG_1\.pdf\s*page 2/,
     /lipid\.pdf\s*own document/,
   ]);
   await dialog.getByRole("button", { name: "Add 2 documents" }).click();

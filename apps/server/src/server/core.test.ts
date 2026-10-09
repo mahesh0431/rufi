@@ -614,7 +614,13 @@ describe("the local API", () => {
     expect(sent.status).toBe(202);
     expect(sent.body["draft"]).toEqual({ text: "", state: "editable" });
 
-    // Refused: the text is back to edit, and the answer says why.
+    // Once the reply is done, a steer is refused: the text is back to edit,
+    // and the answer says why.
+    await until(async () =>
+      (
+        (await page.api("GET", c.path)).body["turns"] as { status: string }[]
+      ).some((turn) => turn.status === "completed"),
+    );
     expect(await page.say(c.path, "Only the latest", "steer")).toMatchObject({
       status: 409,
       body: {
@@ -622,11 +628,6 @@ describe("the local API", () => {
         draft: { text: "Only the latest", state: "editable" },
       },
     });
-    await until(async () =>
-      (
-        (await page.api("GET", c.path)).body["turns"] as { status: string }[]
-      ).some((turn) => turn.status === "completed"),
-    );
     const said = (
       (await page.api("GET", c.path)).body["entries"] as {
         kind: string;

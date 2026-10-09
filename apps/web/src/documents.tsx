@@ -44,9 +44,46 @@ const KIND_NAMES: Record<DocumentKind, string> = {
 /** What the file picker offers; Rufi itself goes by the content. */
 const ACCEPT = ".pdf,.jpg,.jpeg,.png,.heic,.heif,application/pdf,image/*";
 
-/** A photo by what the browser says, or its name: a hint for grouping. */
-const isPhoto = (file: File) =>
-  file.type.startsWith("image/") || /\.(jpe?g|png|hei[cf])$/i.test(file.name);
+/** A chosen file and what its first bytes say it is. */
+interface Chosen {
+  file: File;
+  kind: "pdf" | "jpeg" | "png" | "heic" | "other";
+}
+
+const HEIC_BRANDS = new Set([
+  "heic",
+  "heix",
+  "hevc",
+  "hevx",
+  "heim",
+  "heis",
+  "mif1",
+  "msf1",
+]);
+
+/**
+ * What a file is by its first bytes, not its name or the browser's type: a
+ * hint for grouping photos. The core looks at the whole file and decides.
+ */
+async function look(file: File): Promise<Chosen> {
+  const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+  const text = (from: number, to: number) =>
+    String.fromCharCode(...head.subarray(from, to));
+  const kind =
+    text(0, 5) === "%PDF-"
+      ? "pdf"
+      : head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff
+        ? "jpeg"
+        : text(0, 8) === "\x89PNG\r\n\x1a\n"
+          ? "png"
+          : text(4, 8) === "ftyp" && HEIC_BRANDS.has(text(8, 12))
+            ? "heic"
+            : "other";
+  return { file, kind };
+}
+
+const isPhoto = ({ kind }: Chosen) =>
+  kind === "jpeg" || kind === "png" || kind === "heic";
 
 const isHeic = (type: string) => type === "image/heic" || type === "image/heif";
 
@@ -54,7 +91,7 @@ export function DocumentsPage({ person }: { person: Person }) {
   const documents = useDocuments(person.id);
   const [kind, setKind] = useState<DocumentKind | "all">("all");
   /** Files picked with two or more photos, waiting for Add. */
-  const [picked, setPicked] = useState<File[] | undefined>(undefined);
+  const [picked, setPicked] = useState<Chosen[] | undefined>(undefined);
   const [dragging, setDragging] = useState(false);
   const [open, setOpen] = useState<DocumentSummary | undefined>(undefined);
   const picker = useRef<HTMLInputElement | null>(null);
@@ -75,10 +112,11 @@ export function DocumentsPage({ person }: { person: Person }) {
   });
 
   /** Files chosen or dropped: added now, or first grouped when 2+ are photos. */
-  const choose = (files: File[]) => {
+  const choose = async (files: File[]) => {
     if (files.length === 0) return;
     add.reset();
-    if (files.filter(isPhoto).length >= 2) setPicked(files);
+    const chosen = await Promise.all(files.map(look));
+    if (chosen.filter(isPhoto).length >= 2) setPicked(chosen);
     else add.mutate({ files, together: true });
   };
 
@@ -101,7 +139,7 @@ export function DocumentsPage({ person }: { person: Person }) {
         if (!event.dataTransfer.types.includes("Files")) return;
         event.preventDefault();
         setDragging(false);
-        choose([...event.dataTransfer.files]);
+        void choose([...event.dataTransfer.files]);
       }}
     >
       <div className="mb-3 flex items-center gap-2.5">
@@ -137,7 +175,7 @@ export function DocumentsPage({ person }: { person: Person }) {
           aria-label="Choose documents"
           className="hidden"
           onChange={(event) => {
-            choose([...(event.target.files ?? [])]);
+            void choose([...(event.target.files ?? [])]);
             event.target.value = "";
           }}
         />
@@ -173,7 +211,7 @@ export function DocumentsPage({ person }: { person: Person }) {
       )}
       {picked && (
         <AddDialog
-          files={picked}
+          chosen={picked}
           close={() => {
             setPicked(undefined);
           }}
@@ -360,15 +398,15 @@ const BACKDROP = "fixed inset-0 z-40 bg-ink/25";
 
 /** Before adding two or more photos: one document or several, and their order. */
 function AddDialog({
-  files,
+  chosen,
   close,
   add,
 }: {
-  files: File[];
+  chosen: Chosen[];
   close: () => void;
   add: (files: File[], together: boolean) => void;
 }) {
-  const [order, setOrder] = useState(files);
+  const [order, setOrder] = useState(chosen);
   const [together, setTogether] = useState(true);
   const [dragged, setDragged] = useState<number | undefined>(undefined);
   const photos = order.filter(isPhoto);
@@ -407,7 +445,7 @@ function AddDialog({
             {order.map((file, index) => (
               <li
                 // The file itself, so its handle keeps focus as it moves.
-                key={files.indexOf(file)}
+                key={chosen.indexOf(file)}
                 draggable
                 onDragStart={() => {
                   setDragged(index);
@@ -426,7 +464,7 @@ function AddDialog({
               >
                 <button
                   type="button"
-                  aria-label={`Move ${file.name}`}
+                  aria-label={`Move ${file.file.name}`}
                   className="cursor-grab rounded text-muted"
                   onKeyDown={(event: KeyboardEvent) => {
                     if (event.key === "ArrowUp") move(index, index - 1);
@@ -438,7 +476,9 @@ function AddDialog({
                   <GripVertical size={16} aria-hidden />
                 </button>
                 <Thumb file={file} />
-                <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                <span className="min-w-0 flex-1 truncate">
+                  {file.file.name}
+                </span>
                 <span className="shrink-0 text-muted">
                   {together && isPhoto(file)
                     ? `page ${String(photos.indexOf(file) + 1)}`
@@ -474,7 +514,10 @@ function AddDialog({
             <Button
               look="main"
               onClick={() => {
-                add(order, together);
+                add(
+                  order.map(({ file }) => file),
+                  together,
+                );
               }}
             >
               Add {count} {count === 1 ? "document" : "documents"}
@@ -487,11 +530,9 @@ function AddDialog({
 }
 
 /** A small picture of a photo the browser can show; a label otherwise. */
-function Thumb({ file }: { file: File }) {
-  const shows = /^image\/(jpeg|png)$/.test(file.type);
-  const label = isPhoto(file)
-    ? (/\.(\w+)$/.exec(file.name)?.[1]?.toUpperCase() ?? "Photo")
-    : "PDF";
+function Thumb({ file: { file, kind } }: { file: Chosen }) {
+  const shows = kind === "jpeg" || kind === "png";
+  const label = kind === "other" ? "File" : kind.toUpperCase();
   return (
     <span className="flex h-11 w-[34px] shrink-0 items-center justify-center overflow-hidden rounded border border-line bg-side text-[10px] text-muted">
       {shows ? (
