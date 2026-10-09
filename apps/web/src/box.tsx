@@ -216,7 +216,7 @@ export function Box({
       type="button"
       aria-label="Stop"
       onClick={() => void stop()}
-      className="grid size-8 shrink-0 place-items-center rounded-full bg-ink text-page"
+      className="grid size-8 shrink-0 place-items-center rounded-full bg-ink text-surface"
     >
       <Square size={12} fill="currentColor" aria-hidden />
     </button>
