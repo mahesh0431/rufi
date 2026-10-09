@@ -70,7 +70,7 @@ export function Frame() {
             <Link
               to="/people/$personId/chat"
               params={{ personId: person.id }}
-              className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-white/60"
+              className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-surface/60"
               activeProps={{ className: "bg-accent-soft text-accent-ink" }}
             >
               <MessageCircle size={15} aria-hidden />
@@ -150,7 +150,7 @@ function Place({
     <Link
       to={to}
       activeOptions={{ exact: to === "/" }}
-      className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-white/60"
+      className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-surface/60"
       activeProps={{ className: "bg-accent-soft text-accent-ink" }}
     >
       {icon}

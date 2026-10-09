@@ -44,7 +44,7 @@ function Results({
         Latest results{" "}
         <span className="font-normal text-muted">as printed by the lab</span>
       </h2>
-      <div className="rounded-xl border border-line bg-white px-3">
+      <div className="rounded-xl border border-line bg-surface px-3">
         <table className="w-full border-collapse">
           <thead>
             <tr className="text-left text-xs text-muted">

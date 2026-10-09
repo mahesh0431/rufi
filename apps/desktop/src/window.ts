@@ -62,6 +62,9 @@ export function openWindow(
     titleBarStyle: "hidden",
     trafficLightPosition: { x: 18, y: 18 },
     vibrancy: "sidebar",
+    // Clear: until the page paints, the window shows that material, in the
+    // system's appearance, as the page will be (not a colour of the theme).
+    // oxlint-disable-next-line rufi/no-raw-colour
     backgroundColor: "#00000000",
     webPreferences: {
       session,

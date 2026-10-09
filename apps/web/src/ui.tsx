@@ -8,8 +8,8 @@ const button = cva(
   {
     variants: {
       look: {
-        main: "bg-accent text-white hover:bg-accent-ink",
-        plain: "border border-line bg-white hover:bg-page",
+        main: "bg-accent text-on-accent hover:bg-accent-hover",
+        plain: "border border-line bg-surface hover:bg-page",
         quiet: "hover:bg-side",
       },
     },

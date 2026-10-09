@@ -101,6 +101,41 @@ test.describe("opening Rufi", () => {
   });
 });
 
+test("follows the Mac's light or dark appearance, also when it changes while Rufi is open; readable in the dark", async ({
+  page,
+  rufi,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await rufi.family();
+  await rufi.start();
+  await page.goto(rufi.link());
+  await expect(page.getByText("Latest results")).toBeVisible();
+  const theme = () =>
+    page.evaluate(() => document.documentElement.dataset["theme"]);
+  const background = () =>
+    page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  expect(await theme()).toBe("dark");
+  const dark = await background();
+  await accessible(page);
+
+  // The chat with a reply, and a help page with code and a table.
+  const chat = page.getByRole("region", { name: "Chat" });
+  const box = chat.getByRole("textbox", { name: "Message to Rufi" });
+  await box.click();
+  await box.fill("Hello in the dark");
+  await box.press("Enter");
+  await expect(chat.locator(".reply")).toHaveText("ok:Hello in the dark");
+  await accessible(page);
+  await page.keyboard.press("Escape");
+  await page.goto(new URL("/help/backups-and-export", page.url()).href);
+  await expect(page.locator(".prose table")).toBeVisible();
+  await accessible(page);
+
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect.poll(theme).toBe("light");
+  expect(await background()).not.toBe(dark);
+});
+
 test.describe("first run", () => {
   test("not a doctor, your name, sign-in or skip, the region; a reload continues where it was", async ({
     page,

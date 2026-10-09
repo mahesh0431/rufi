@@ -66,7 +66,7 @@ if (!app.requestSingleInstanceLock()) {
     app.quit();
   });
   void app.whenReady().then(() => {
-    nativeTheme.themeSource = "light"; // the screens are light only
+    nativeTheme.themeSource = "system"; // the screens follow it too (themes.css)
     app.dock?.setIcon(ICON);
     Menu.setApplicationMenu(menu());
     lockDown(sessions.fromPartition("rufi"));

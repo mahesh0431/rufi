@@ -122,7 +122,7 @@ export function ChatDock({ person }: { person: Person }) {
           }}
           className={
             open
-              ? "fixed right-5 bottom-5 z-20 flex h-[min(660px,calc(100vh-40px))] w-[500px] flex-col overflow-hidden rounded-[20px] bg-white/95 shadow-[0_0_0_1px_rgba(0,0,0,.06),0_8px_28px_rgba(0,0,0,.10)] backdrop-blur-xl"
+              ? "fixed right-5 bottom-5 z-20 flex h-[min(660px,calc(100vh-40px))] w-[500px] flex-col overflow-hidden rounded-[20px] bg-surface/95 shadow-float backdrop-blur-xl"
               : "fixed right-5 bottom-5 z-20 flex w-[480px] max-w-[calc(100vw-280px)] flex-col"
           }
         >
@@ -156,7 +156,7 @@ export function ChatDock({ person }: { person: Person }) {
             className={
               open
                 ? "px-3 pt-1"
-                : "rounded-full bg-white/95 shadow-[0_0_0_1px_rgba(0,0,0,.06),0_8px_28px_rgba(0,0,0,.10)] backdrop-blur-xl"
+                : "rounded-full bg-surface/95 shadow-float backdrop-blur-xl"
             }
           >
             <Box

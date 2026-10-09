@@ -1,19 +1,9 @@
 @import "tailwindcss";
+@import "./themes.css";
 
-/* The agreed look (review of 2 Oct): a light page, a light grey sidebar,
-   white rounded groups, the system font at 13px, light blue only for
-   selection and the one main action. No clinical colour. */
 @theme {
   --font-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
-  --color-page: #f5f7fa;
-  --color-side: #eef1f5;
-  --color-line: #e3e6eb;
-  --color-ink: #1d2329;
-  --color-muted: #5f6873;
-  --color-accent: #2563eb;
-  --color-accent-soft: #e3edfc;
-  --color-accent-ink: #1d4ed8;
 }
 
 html,
@@ -24,8 +14,8 @@ body,
 
 body {
   margin: 0;
-  background: var(--color-page);
-  color: var(--color-ink);
+  background: var(--page);
+  color: var(--ink);
   font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.5;
@@ -63,13 +53,13 @@ body {
   padding-left: 20px;
 }
 .prose a {
-  color: var(--color-accent-ink);
+  color: var(--accent-ink);
   text-decoration: underline;
 }
 .prose code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
-  background: var(--color-side);
+  background: var(--side);
   padding: 1px 4px;
   border-radius: 4px;
 }
@@ -79,15 +69,15 @@ body {
 }
 .prose th,
 .prose td {
-  border-bottom: 1px solid var(--color-line);
+  border-bottom: 1px solid var(--line);
   padding: 6px 8px;
   text-align: left;
   vertical-align: top;
 }
 .prose blockquote {
-  border-left: 3px solid var(--color-line);
+  border-left: 3px solid var(--line);
   padding-left: 12px;
-  color: var(--color-muted);
+  color: var(--muted);
 }
 
 /* The AI's replies: Markdown at the chat's size. */
@@ -119,19 +109,19 @@ body {
   padding-left: 20px;
 }
 .reply a {
-  color: var(--color-accent-ink);
+  color: var(--accent-ink);
   text-decoration: underline;
 }
 .reply code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
-  background: var(--color-side);
+  background: var(--side);
   padding: 1px 4px;
   border-radius: 4px;
 }
 .reply pre {
   overflow-x: auto;
-  background: var(--color-side);
+  background: var(--side);
   padding: 8px 10px;
   border-radius: 8px;
 }
@@ -145,15 +135,15 @@ body {
 }
 .reply th,
 .reply td {
-  border-bottom: 1px solid var(--color-line);
+  border-bottom: 1px solid var(--line);
   padding: 4px 8px;
   text-align: left;
   vertical-align: top;
 }
 .reply blockquote {
-  border-left: 3px solid var(--color-line);
+  border-left: 3px solid var(--line);
   padding-left: 10px;
-  color: var(--color-muted);
+  color: var(--muted);
 }
 
 /* Rufi's receipt for a save: "Saved", then one line per change. */

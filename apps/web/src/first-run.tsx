@@ -145,7 +145,7 @@ function YourName() {
         onChange={(event) => {
           setName(event.target.value);
         }}
-        className="rounded-lg border border-line bg-white px-3 py-2"
+        className="rounded-lg border border-line bg-surface px-3 py-2"
       />
       {add.error && (
         <p role="alert" className="text-muted">
@@ -196,7 +196,7 @@ function EmergencyRegion() {
           onChange={(event) => {
             setRegion(event.target.value);
           }}
-          className="w-64 rounded-lg border border-line bg-white px-2 py-1.5"
+          className="w-64 rounded-lg border border-line bg-surface px-2 py-1.5"
         >
           <option value="">Not set</option>
           {settings.data?.regions.map((r) => (

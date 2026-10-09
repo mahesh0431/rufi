@@ -34,12 +34,17 @@ const probes: Record<string, string> = {
 const webProbes: Record<string, string> = {
   webServer: `import { startCore } from "../../../server/src/server/core.ts";\nexport const a = startCore;\n`,
   webNode: `import { readFile } from "node:fs/promises";\nexport const a = readFile;\n`,
+  webColour: `export const a = "rounded-xl bg-white/95 text-white";\n`,
+  webShadow: `export const a = \`shadow-[0_8px_28px_rgba(0,0,0,.1)] \${"p-2"}\`;\n`,
+  // Permitted: a link's fragment is not a colour.
+  webFragment: `export const a = "/help/getting-started#add";\n`,
   webHooks: `import { useState } from "react";\nexport function A({ on }: { on: boolean }) {\n  if (on) useState(0);\n  return null;\n}\n`,
 };
 
 /** The app's border: neither the core's code nor the screens'. */
 const desktopProbes: Record<string, string> = {
   desktopServer: `import { startCore } from "../../../server/src/server/core.ts";\nexport const a = startCore;\n`,
+  desktopColour: `export const a = { backgroundColor: "#f5f7fa" };\n`,
   desktopWeb: `import { router } from "../../../web/src/router.tsx";\nexport const a = router;\n`,
 };
 
@@ -112,6 +117,10 @@ describe("lint", () => {
     expect(codes("webNode")).toContain("eslint(no-restricted-imports)");
     expect(codes("desktopServer")).toContain("eslint(no-restricted-imports)");
     expect(codes("desktopWeb")).toContain("eslint(no-restricted-imports)");
+    expect(codes("webColour")).toContain("rufi(no-raw-colour)");
+    expect(codes("webShadow")).toContain("rufi(no-raw-colour)");
+    expect(codes("webFragment")).toEqual([]);
+    expect(codes("desktopColour")).toContain("rufi(no-raw-colour)");
     expect(codes("webHooks")).toContain("react-hooks(rules-of-hooks)");
     expect(codes("switchCase")).toContain(
       "typescript(switch-exhaustiveness-check)",
