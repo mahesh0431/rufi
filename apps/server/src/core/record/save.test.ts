@@ -1166,7 +1166,96 @@ describe("the health rules", () => {
       "call-5",
     );
     expect(back.body.issues[0]?.fix).toBe(
-      "The result it amends was amended again since: amend the newest version instead.",
+      "This save would leave more than one current amendment of this result. Ask the user which value is right, then save only that amendment; remove any other current amendment in the same save.",
+    );
+  });
+
+  describe("one current amendment of a result", () => {
+    const source = "The lab amended my HbA1c";
+    const add = (value: string) => ({
+      kind: "result",
+      action: "add",
+      source,
+      fields: { test: "HbA1c", value, unit: "%", replaces: "res-a1" },
+    });
+    const change = (action: string, id: string) => ({
+      kind: "result",
+      action,
+      id,
+      source,
+    });
+    let first: string;
+    let second: string;
+    beforeEach(async () => {
+      await say(source);
+      const a = await save([add("6.6")], "first");
+      expect(a.ok).toBe(true);
+      first = a.body.result.changes[0]?.id ?? "";
+      expect((await save([change("remove", first)], "remove-first")).ok).toBe(
+        true,
+      );
+      const b = await save([add("6.5")], "second");
+      expect(b.ok).toBe(true);
+      second = b.body.result.changes[0]?.id ?? "";
+      expect((await save([change("remove", second)], "remove-second")).ok).toBe(
+        true,
+      );
+    });
+    const resultRows = () => rows("SELECT * FROM results ORDER BY id");
+
+    it.each(["add/add", "restore/add", "add/restore", "restore/restore"])(
+      "refuses %s together, with a specific reason and nothing saved",
+      async (actions) => {
+        const before = { ...written(), results: resultRows() };
+        const changes = actions
+          .split("/")
+          .map((action, i) =>
+            action === "add"
+              ? add(i === 0 ? "6.4" : "6.3")
+              : change("restore", i === 0 ? first : second),
+          );
+        const answer = await save(changes, "conflicting");
+        expect(answer.ok).toBe(false);
+        expect(answer.body.issues).toEqual([
+          {
+            path: "changes",
+            got: "res-a1",
+            fix: "This save would leave more than one current amendment of this result. Ask the user which value is right, then save only that amendment; remove any other current amendment in the same save.",
+          },
+        ]);
+        expect({ ...written(), results: resultRows() }).toEqual(before);
+      },
+    );
+
+    it.each(["remove/add", "add/remove", "remove/restore", "restore/remove"])(
+      "allows %s together, with one current amendment and one receipt",
+      async (actions) => {
+        expect((await save([change("restore", first)], "current")).ok).toBe(
+          true,
+        );
+        const before = receipts().length;
+        const answer = await save(
+          actions
+            .split("/")
+            .map((action) =>
+              action === "add"
+                ? add("6.4")
+                : change(action, action === "remove" ? first : second),
+            ),
+          "replace-current",
+        );
+        expect(answer.ok).toBe(true);
+        const current = rows(
+          "SELECT value_text FROM results WHERE replaces_id = 'res-a1' AND removed = 0",
+        );
+        expect(current).toEqual([
+          { value_text: actions.includes("add") ? "6.4" : "6.5" },
+        ]);
+        expect(row("results", "res-a1")["value_text"]).toBe("6.8");
+        expect(row("results", first)["removed"]).toBe(1);
+        expect(receipts()).toHaveLength(before + 1);
+        expect(answer.body.result.changes).toHaveLength(2);
+      },
     );
   });
 

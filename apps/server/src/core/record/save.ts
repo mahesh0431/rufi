@@ -262,8 +262,7 @@ export async function saveChanges(
       touched.set(key, index);
       before = await recordOf(trx, kind, where.personId, id);
       const wrong = before
-        ? (stateProblem(kind, change.action, before) ??
-          (await amendedSince(trx, kind, change.action, before)))
+        ? stateProblem(kind, change.action, before)
         : `No ${kind.noun} with this id is in this person's record.`;
       if (wrong) {
         problem(`${at}.id`, id, wrong);
@@ -375,6 +374,7 @@ export async function saveChanges(
       })
       .execute();
   }
+  await checkAmendments(trx, where.personId, written);
   if (
     planned.some(
       (c) => c.kind.name === "allergy" || c.kind.name === "none_known",
@@ -444,29 +444,42 @@ function stateProblem(
   return undefined;
 }
 
-/**
- * Why a removed amendment can't come back: the result it amends was amended
- * again since, and two versions would be current.
- */
-async function amendedSince(
+/** Checks the final state, so removing and replacing can be in either order. */
+async function checkAmendments(
   trx: Transaction<Tables>,
-  kind: Kind,
-  action: Action,
-  row: Row,
-): Promise<string | undefined> {
-  if (kind.name !== "result" || action !== "restore") return undefined;
-  if (typeof row["replaces_id"] !== "string") return undefined;
-  const other = await trx
+  personId: string,
+  written: readonly Written[],
+): Promise<void> {
+  const parents = [
+    ...new Set(
+      written.flatMap(({ kind, after }) =>
+        kind.name === "result" && typeof after["replaces_id"] === "string"
+          ? [after["replaces_id"]]
+          : [],
+      ),
+    ),
+  ];
+  if (parents.length === 0) return;
+  const conflicts = await trx
     .selectFrom("results")
-    .select("id")
-    .where("person_id", "=", String(row["person_id"]))
-    .where("replaces_id", "=", row["replaces_id"])
+    .select("replaces_id")
+    .where("person_id", "=", personId)
+    .where("replaces_id", "in", parents)
     .where("removed", "=", 0)
-    .where("id", "!=", String(row["id"]))
-    .executeTakeFirst();
-  return other
-    ? "The result it amends was amended again since: amend the newest version instead."
-    : undefined;
+    .groupBy("replaces_id")
+    .having((eb) => eb.fn.countAll(), ">", 1)
+    .orderBy("replaces_id")
+    .execute();
+  if (conflicts.length > 0) {
+    throw new SaveRefused(
+      "Nothing was saved.",
+      conflicts.map(({ replaces_id }) => ({
+        path: "changes",
+        got: String(replaces_id),
+        fix: "This save would leave more than one current amendment of this result. Ask the user which value is right, then save only that amendment; remove any other current amendment in the same save.",
+      })),
+    );
+  }
 }
 
 /** Why a result can't be amended by a new one. */
@@ -479,17 +492,7 @@ async function replacedProblem(
   const row = await recordOf(trx, kind, personId, id);
   if (!row) return "No result with this id is in this person's record.";
   if (row["removed"] === 1) return "That result is removed.";
-  // An amendment that was removed no longer replaces it.
-  const newer = await trx
-    .selectFrom("results")
-    .select("id")
-    .where("person_id", "=", personId)
-    .where("replaces_id", "=", id)
-    .where("removed", "=", 0)
-    .executeTakeFirst();
-  return newer
-    ? "That result was already amended: amend the newest version."
-    : undefined;
+  return undefined;
 }
 
 /** The date the user said, when the value is one. */
