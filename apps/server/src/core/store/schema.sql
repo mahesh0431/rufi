@@ -308,16 +308,16 @@ CREATE TABLE tool_calls (
   FOREIGN KEY (person_id, turn_id) REFERENCES turns (person_id, id)
 ) STRICT;
 
--- One unsent message per chat. Rufi never sends a draft by itself.
--- A send holds the draft (state 'sending', its message id in attempt) until
--- the agent took the message (the draft is emptied) or refused it (the
--- text is back); nobody can change it meanwhile. 'unknown': Rufi stopped
--- during that send, so the text stays, and nobody knows if the agent has it.
+-- One unsent message per chat; the last save wins. Rufi never sends a draft
+-- by itself. A send holds the draft (state 'sending', its message id in
+-- attempt) until the agent took the message (the draft is emptied) or
+-- refused it (the text is back); nobody can change it meanwhile. 'unknown':
+-- Rufi stopped during that send, so the text stays, and nobody knows if the
+-- agent has it.
 CREATE TABLE drafts (
   person_id TEXT NOT NULL REFERENCES people (id),
   chat_id TEXT NOT NULL,
-  text TEXT NOT NULL,          -- may be empty: the row stays so its revision keeps growing
-  revision INTEGER NOT NULL,   -- grows with every change; a save or send based on an older one is refused
+  text TEXT NOT NULL,          -- may be empty
   state TEXT NOT NULL DEFAULT 'editable' CHECK (state IN ('editable', 'sending', 'unknown')),
   attempt TEXT,                -- the id of the message a send holds it for (the id the agent gets)
   updated_at TEXT NOT NULL,

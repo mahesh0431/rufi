@@ -154,9 +154,8 @@ function chat(api: Api) {
   };
   /** As the box does: saves the text as the draft, then sends it. */
   const fromBox = async (action: "messages" | "steer", text: string) => {
-    const { revision } = await api("GET", draft);
-    const saved = await api("PUT", draft, { text, revision });
-    await api("POST", `${path}/${action}`, { text, draft: saved["revision"] });
+    await api("PUT", draft, { text });
+    await api("POST", `${path}/${action}`, { text });
   };
   let sent = 0;
   return {

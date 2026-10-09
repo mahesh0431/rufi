@@ -63,7 +63,6 @@ export interface Tables {
     person_id: string;
     chat_id: string;
     text: string;
-    revision: number;
     state: string;
     attempt: string | null;
     updated_at: string;

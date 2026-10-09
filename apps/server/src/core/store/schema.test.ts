@@ -114,7 +114,6 @@ describe("schema", () => {
           person_id: "amma",
           chat_id: "c-nanna",
           text: "x",
-          revision: 1,
           updated_at: now,
         });
       }).toThrow("FOREIGN KEY constraint failed");
@@ -171,7 +170,6 @@ describe("schema", () => {
         person_id: "amma",
         chat_id: "c-amma",
         text: "a",
-        revision: 1,
         updated_at: now,
       };
       expect(() => {

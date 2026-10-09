@@ -5,15 +5,10 @@
 // core took the message, and nothing is sent again by itself. The model and
 // effort are chosen beside Send; the waiting messages show above the box.
 import {
-  Draft,
-  DraftChanged,
   MAX_MESSAGE_CHARS,
-  NotSent,
   type Person,
-  Sent,
   type WaitingMessage,
 } from "@rufi/contracts";
-import { Schema } from "effect";
 import {
   ArrowDown,
   ArrowUp,
@@ -26,11 +21,10 @@ import {
 import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
-import { ApiError, read, request } from "./api.ts";
+import { request } from "./api.ts";
 import {
   type BoxState,
   type DraftBox,
-  type DraftIo,
   draftBox,
   held,
   sending,
@@ -44,44 +38,20 @@ import { Button } from "./ui.tsx";
 
 const boxes = new Map<string, DraftBox>();
 
-function draftIo(personId: string): DraftIo {
-  const path = `${chatPath(personId)}/draft`;
-  return {
-    load: () => read(Draft, "GET", path),
-    save: async (text, revision) => {
-      try {
-        const draft = await read(Draft, "PUT", path, { text, revision });
-        return { saved: true, draft };
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 409) {
-          const { draft } = Schema.decodeUnknownSync(DraftChanged)(error.body);
-          return { saved: false, draft };
-        }
-        throw error;
-      }
-    },
-    client: queries,
-    scope: `draft/${personId}`,
-  };
-}
-
 /** The box of a person's chat, the same in every size. */
 function boxFor(personId: string): DraftBox {
   let box = boxes.get(personId);
   if (!box) {
-    box = draftBox(draftIo(personId));
+    const path = chatPath(personId);
+    box = draftBox({
+      call: (method, to, body) => request(method, `${path}/${to}`, body),
+      client: queries,
+      scope: `draft/${personId}`,
+    });
     boxes.set(personId, box);
   }
   return box;
 }
-
-/** The draft in a refusal's answer, when it has one. */
-const draftIn = (error: unknown) => {
-  const kept = Schema.decodeUnknownOption(NotSent)(
-    error instanceof ApiError ? error.body : undefined,
-  );
-  return kept._tag === "Some" ? kept.value.draft : undefined;
-};
 
 /**
  * What the box says under it: a send on its way, or a draft that couldn't be
@@ -129,27 +99,10 @@ export function Box({
   // Leaving the screen, the box saves at once what isn't saved yet.
   useEffect(() => () => void box.saveNow(), [box]);
 
-  async function submit(steer: boolean) {
-    const taken = await box.take();
-    if (!taken) return;
-    const message = taken.text.trim();
-    if (message === "") {
-      box.sent(box.store.getState().draft);
-      return;
-    }
+  const submit = (steer: boolean) => {
     setProblem(null);
-    try {
-      const sent = await read(
-        Sent,
-        "POST",
-        `${chatPath(person.id)}/${steer ? "steer" : "messages"}`,
-        { text: message, draft: taken.revision },
-      );
-      box.sent(sent.draft);
-    } catch (error) {
-      box.failed(messageOf(error), draftIn(error));
-    }
-  }
+    void box.submit(steer);
+  };
 
   async function act(action: () => Promise<unknown>) {
     setProblem(null);
@@ -192,7 +145,7 @@ export function Box({
             event.preventDefault();
             if (hasText) {
               onOpen?.();
-              void submit(false);
+              submit(false);
             }
           }
         }}
@@ -227,7 +180,7 @@ export function Box({
       className={size === "page" ? "flex flex-col gap-2" : "flex flex-col"}
       onSubmit={(event) => {
         event.preventDefault();
-        void submit(false);
+        submit(false);
       }}
     >
       {size !== "bar" && (
@@ -269,7 +222,7 @@ export function Box({
                 title="Pass this into the reply that is running"
                 disabled={locked}
                 onClick={() => {
-                  void submit(true);
+                  submit(true);
                 }}
               >
                 Steer
