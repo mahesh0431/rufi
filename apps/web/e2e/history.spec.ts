@@ -85,7 +85,8 @@ test("a long chat opens at its latest page; older pages load as you scroll up, i
 }) => {
   await page.clock.setFixedTime(NOW);
   await rufi.family(longChat());
-  await rufi.start();
+  // The core stamps the new message on the same day as the page's clock.
+  await rufi.start({ now: () => NOW.toISOString() });
   await openChat(page, rufi);
   // One page: the latest replies only.
   await expect(questions(page).first()).toHaveText("Fictional question 171");
