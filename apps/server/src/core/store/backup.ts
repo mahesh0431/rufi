@@ -1,9 +1,7 @@
 // Backups of the record: a copy of the database made while Rufi keeps
-// working, checked before it counts, kept in `backups/` in the data folder.
-// A backup holds the database only, never the sign-in, the AI's files, logs
-// or locks (docs/adr/0008). The running Rufi makes one a day.
-import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
+// working, with every original file it names, checked before it counts,
+// kept in `backups/` in the data folder. Never the sign-in, the AI's files,
+// logs, locks or caches (docs/adr/0008). The running Rufi makes one a day.
 import {
   mkdir,
   mkdtemp,
@@ -17,6 +15,13 @@ import {
 import { join } from "node:path";
 import { backup, DatabaseSync } from "node:sqlite";
 import { Schema } from "effect";
+import {
+  checkOriginal,
+  copyOriginal,
+  filesPath,
+  OriginalMissing,
+} from "../documents/originals.ts";
+import { sha256 } from "../../platform/files.ts";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import { databasePath, OlderRufi, openReadOnly } from "./database.ts";
 
@@ -99,16 +104,26 @@ export function checkDatabase(path: string): void {
   }
 }
 
-export async function sha256(path: string): Promise<string> {
-  const hash = createHash("sha256");
-  for await (const chunk of createReadStream(path))
-    hash.update(chunk as Buffer);
-  return hash.digest("hex");
+/** The original files a copy of the database names: id and size. */
+export function filesIn(database: string): { id: string; size: number }[] {
+  const db = new DatabaseSync(database, { readOnly: true });
+  try {
+    return db
+      .prepare("SELECT id, size FROM files ORDER BY id")
+      .all()
+      .map((row) => ({ id: String(row["id"]), size: Number(row["size"]) }));
+  } finally {
+    db.close();
+  }
 }
 
 /**
  * Checks a backup folder: its record is readable, its database is the one
- * the record names (size and hash), and the database passes its checks.
+ * the record names (size and hash), the database passes its checks, and
+ * every original it names is in `files/` with its size. Each original's
+ * hash was checked when the backup was made, and is checked again by a
+ * restore; reading them all on every look would read every document each
+ * hour.
  */
 export async function verifyBackup(folder: string): Promise<BackupRecord> {
   let record: BackupRecord;
@@ -135,6 +150,9 @@ export async function verifyBackup(folder: string): Promise<BackupRecord> {
     );
   }
   checkDatabase(database);
+  for (const { id, size } of filesIn(database)) {
+    await checkOriginal(join(folder, "files"), id, size, false);
+  }
   return record;
 }
 
@@ -170,6 +188,10 @@ export async function makeBackup(
   try {
     const database = join(staging, "rufi.sqlite");
     await copyDatabase(databasePath(home), database, copy);
+    await mkdir(join(staging, "files"), { mode: 0o700 });
+    for (const { id, size } of filesIn(database)) {
+      await copyOriginal(filesPath(home), join(staging, "files"), id, size);
+    }
     const record: BackupRecord = {
       format: "rufi-backup",
       version: 1,
@@ -300,6 +322,9 @@ const SQLITE_FULL = 13;
 
 /** Why a backup failed, in the person's words. */
 function failureReason(error: unknown): string {
+  if (error instanceof OriginalMissing) {
+    return "a document file is missing or changed";
+  }
   if (error instanceof CheckFailed) return "the copy didn't pass its check";
   const { code, errcode } = error as { code?: unknown; errcode?: unknown };
   if (code === "EACCES" || code === "EPERM" || code === "EROFS") {

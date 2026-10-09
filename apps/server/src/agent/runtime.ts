@@ -164,7 +164,10 @@ export interface AgentRuntime {
     message: { id: string; input: string[]; effort?: string },
     signal?: AbortSignal,
   ) => Promise<void>;
-  /** Passes a message into the running reply; returns that reply's turn id. */
+  /**
+   * Passes a message into the running reply; returns that reply's turn id.
+   * Throws NotSent when no reply runs or the agent refused it.
+   */
   steer: (
     threadId: string,
     message: { id: string; text: string },

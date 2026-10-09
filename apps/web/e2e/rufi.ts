@@ -10,7 +10,11 @@ import { test as base } from "@playwright/test";
 import { Effect, Exit, Scope } from "effect";
 import type { Scenario } from "../../server/tests/fake-codex.ts";
 import { fakeModel, type FakeModel } from "../../server/tests/fake-model.ts";
-import { FAMILY, FIRST_RUN_DONE } from "../../server/tests/fixtures/golden.ts";
+import {
+  FAMILY,
+  familyFiles,
+  FIRST_RUN_DONE,
+} from "../../server/tests/fixtures/golden.ts";
 import { codexBinary } from "../../server/src/agent/codex/binary.ts";
 import { codexRuntime } from "../../server/src/agent/codex/codex.ts";
 import {
@@ -49,6 +53,7 @@ export class Rufi {
     const store = openWritable(databasePath(this.home));
     try {
       store.db.exec(await readFile(FAMILY, "utf8"));
+      await familyFiles(this.home);
       store.db.exec(FIRST_RUN_DONE);
       for (const statements of more) store.db.exec(statements);
     } finally {

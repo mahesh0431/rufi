@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./app": "./src/app.ts"
+    "./app": "./src/app.ts",
+    "./documents": "./src/documents.ts"
   },
   "dependencies": {
     "effect": "4.0.0"

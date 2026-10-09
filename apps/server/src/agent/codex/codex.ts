@@ -716,15 +716,23 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       const app = await open(threadId);
       const running = turns.get(threadId);
       if (!running || running.stopping) {
-        throw new Error("No reply is running to steer.");
+        throw new NotSent("No reply is running to steer.");
       }
-      const { turnId } = await request<TurnSteerResponse>(app, "turn/steer", {
-        threadId,
-        expectedTurnId: running.turnId,
-        clientUserMessageId: message.id,
-        input: [textInput(message.text)],
-      });
-      return { turnId };
+      try {
+        const { turnId } = await request<TurnSteerResponse>(app, "turn/steer", {
+          threadId,
+          expectedTurnId: running.turnId,
+          clientUserMessageId: message.id,
+          input: [textInput(message.text)],
+        });
+        return { turnId };
+      } catch (error) {
+        // Codex answered no: the reply ended before Rufi heard of it.
+        if (error instanceof RpcError) {
+          throw new NotSent(error.message, { cause: error });
+        }
+        throw error;
+      }
     },
 
     stop: async (threadId, turnId) => {

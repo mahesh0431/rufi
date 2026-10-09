@@ -624,7 +624,19 @@ describe("starting a reply", () => {
     });
     await expect(
       agent.steer(thread, { id: "s-2", text: "late" }),
-    ).rejects.toThrow("No reply is running to steer.");
+    ).rejects.toBeInstanceOf(NotSent);
+  });
+
+  it("refuses a steer as not sent while the reply is stopping", async () => {
+    const agent = start({ ignoreInterrupt: true }, undefined, GIVE_UP);
+    const thread = await ask(agent, "hang");
+    await until(() => Promise.resolve(agent.running(thread)));
+    const stopping = agent.stop(thread);
+    expect(agent.running(thread)).toBe(true);
+    await expect(
+      agent.steer(thread, { id: "s-1", text: "late" }),
+    ).rejects.toBeInstanceOf(NotSent);
+    await stopping;
   });
 
   it("lists the messages a thread ran, with Rufi's ids", async () => {

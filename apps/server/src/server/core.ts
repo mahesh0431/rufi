@@ -13,6 +13,7 @@ import { allowlistFile } from "../core/chat/models.ts";
 import { drafts as openDrafts } from "../core/chat/drafts.ts";
 import { chatQueue } from "../core/chat/queue.ts";
 import { transcripts as openTranscripts } from "../core/chat/transcript.ts";
+import { documents } from "../core/documents/documents.ts";
 import { backupJob } from "../core/store/backup.ts";
 import {
   databasePath,
@@ -195,6 +196,7 @@ export const startCore = (options: CoreOptions) =>
       account,
       backups,
       exportZip: () => exportZip(home, new Date()),
+      documents: documents(writer, home, options.now),
       signIn: signInFlow(options.signIn, log),
       launcher,
       launchUrl,

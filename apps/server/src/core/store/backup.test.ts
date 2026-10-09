@@ -7,12 +7,15 @@ import {
   mkdtemp,
   readdir,
   readFile,
+  rm,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { backup, DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { documents } from "../documents/documents.ts";
+import { filesPath } from "../documents/originals.ts";
 import { backupJob, backupsPath, listBackups, makeBackup } from "./backup.ts";
 import { databasePath, openWritable } from "./database.ts";
 
@@ -49,6 +52,7 @@ describe("a backup", () => {
     const folder = join(backupsPath(home), made.name);
     expect((await readdir(folder)).sort()).toEqual([
       "backup.json",
+      "files",
       "rufi.sqlite",
     ]);
     expect(people(join(folder, "rufi.sqlite"))).toEqual([
@@ -124,6 +128,80 @@ const until = async (ready: () => boolean) => {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 };
+
+const FIXTURES = join(import.meta.dirname, "../../../tests/fixtures/documents");
+
+/** Asha with a PDF and a HEIC photo; their file ids. */
+async function withDocuments(): Promise<string[]> {
+  const store = openWritable(databasePath(home));
+  try {
+    store.db.exec(
+      "INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional')",
+    );
+    const docs = documents(store, home);
+    for (const name of ["sunrise-labs-august.pdf", "sideways.heic"]) {
+      const bytes = new Uint8Array(await readFile(join(FIXTURES, name)));
+      await docs.add("asha", [{ name, bytes }], true);
+    }
+    return (await docs.list("asha")).flatMap((d) => d.files.map((f) => f.id));
+  } finally {
+    store.close();
+  }
+}
+
+/** Changes one byte of the file at `path`, keeping its size. */
+async function flipOneByte(path: string) {
+  const bytes = await readFile(path);
+  const at = Math.floor(bytes.length / 2);
+  bytes[at] = (bytes[at] ?? 0) ^ 1;
+  await writeFile(path, bytes);
+}
+
+describe("a backup's original files", () => {
+  it("holds every original exactly as it came, and no display copy", async () => {
+    const ids = await withDocuments();
+
+    const made = await makeBackup(home, new Date(2026, 9, 8, 9));
+
+    const folder = join(backupsPath(home), made.name);
+    expect((await readdir(join(folder, "files"))).sort()).toEqual(ids.sort());
+    for (const id of ids) {
+      expect(await readFile(join(folder, "files", id))).toEqual(
+        await readFile(join(filesPath(home), id)),
+      );
+    }
+    expect((await readdir(folder)).sort()).toEqual([
+      "backup.json",
+      "files",
+      "rufi.sqlite",
+    ]);
+  });
+
+  it.each([
+    ["missing", (path: string) => rm(path)],
+    // The same size, one byte other: only the hash finds it.
+    ["changed", (path: string) => flipOneByte(path)],
+  ])(
+    "fails visibly when an original is %s, and the last good backup stays",
+    async (_how, spoil) => {
+      const [id = ""] = await withDocuments();
+      let now = new Date(2026, 9, 8, 9);
+      const good = await makeBackup(home, now);
+      await spoil(join(filesPath(home), id));
+
+      now = new Date(2026, 9, 8, 10);
+      const job = backupJob(home, () => undefined, { now: () => now });
+      await expect(job.backUp()).rejects.toThrow();
+
+      expect(job.status()).toEqual({
+        last: undefined,
+        failed: { at: now, reason: "a document file is missing or changed" },
+        running: false,
+      });
+      expect(await listBackups(home)).toEqual([good]);
+    },
+  );
+});
 
 describe("the daily backup", () => {
   afterEach(() => {

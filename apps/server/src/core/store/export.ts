@@ -1,13 +1,15 @@
 // Export: everything in the record, the chat and settings, as one zip
 // a person can open without Rufi. Every table as JSON (exact) and CSV (for a
-// spreadsheet), with a README. Made from one fixed copy of the database, so
+// spreadsheet), every original document file as it came, with a README. Made from one fixed copy of the database, so
 // a save is in it whole or not at all, and read back against that copy
 // before it is given out. Never the sign-in, the AI's files or logs: they
 // aren't in the database.
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+import { filesPath, OriginalMissing } from "../documents/originals.ts";
 import { CheckFailed, copyDatabase } from "./backup.ts";
 import { databasePath } from "./database.ts";
 
@@ -137,7 +139,7 @@ const README = (
 ) => `# Your Rufi data
 
 Exported from Rufi on ${createdAt}. This is everything in your record, your
-chat and Rufi's settings, as Rufi stored it.
+chat, your documents and Rufi's settings, as Rufi stored it.
 
 - \`json/\`: one file per table. Each file holds the table's name, its
   columns, and its rows, each row an object of column and value. A value
@@ -149,14 +151,17 @@ chat and Rufi's settings, as Rufi stored it.
   with CRLF.
 - \`export.json\`: the export's format and version, and each table's columns
   and number of rows.
+- \`files/\`: your original documents (PDFs and photos), exactly as you
+  added them. Each is named by its SHA-256 hash, as in the \`files\` table,
+  with an extension for its type. \`document_pages\` says which document
+  and page each file is, and the name it had when you added it.
 
 Dates and times are as Rufi stored them: ISO 8601, times in UTC; a date you
 gave in your own words keeps those words next to it.
 
 Not in this export: your ChatGPT sign-in, the AI's working files, Rufi's
-log, and the list of AI models (\`models.json\`). Your original documents
-(PDFs, photos) aren't in Rufi yet; when they are, they come in the export
-too.
+log, the list of AI models (\`models.json\`), and the JPEG copies Rufi
+makes to show HEIC photos.
 
 The tables (${String(tables.length)}):
 
@@ -166,6 +171,24 @@ The folder name is \`${folder}\`.
 `;
 
 const two = (n: number) => String(n).padStart(2, "0");
+
+const EXTENSIONS: Record<string, string> = {
+  "application/pdf": "pdf",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/heic": "heic",
+  "image/heif": "heif",
+};
+
+/** An original's name in the export: its id and an extension for its type. */
+function exportName(table: Table, row: Value[]): string {
+  const id = String(row[table.columns.indexOf("id")]);
+  const type = String(row[table.columns.indexOf("media_type")]);
+  return `files/${id}.${EXTENSIONS[type] ?? "bin"}`;
+}
+
+const hashOf = (bytes: Uint8Array) =>
+  createHash("sha256").update(bytes).digest("hex");
 
 /**
  * The export as zip bytes and its file name. Made from one fixed copy of the
@@ -182,7 +205,7 @@ export async function exportZip(
     await copyDatabase(databasePath(home), copy);
     const tables = readTables(copy);
     const createdAt = now.toISOString();
-    const files: Record<string, Uint8Array> = {
+    const files: Record<string, Uint8Array | [Uint8Array, { level: 0 }]> = {
       [`${folder}/README.md`]: strToU8(README(folder, createdAt, tables)),
       [`${folder}/export.json`]: strToU8(
         `${JSON.stringify(
@@ -202,6 +225,25 @@ export async function exportZip(
         )}\n`,
       ),
     };
+    const originals = tables.find((t) => t.name === "files");
+    for (const row of originals?.rows ?? []) {
+      const id = String(row[0]);
+      const bytes = await readFile(join(filesPath(home), id)).catch(
+        (error: unknown) => {
+          throw new OriginalMissing(`The document file ${id} is missing.`, {
+            cause: error,
+          });
+        },
+      );
+      if (hashOf(bytes) !== id) {
+        throw new OriginalMissing(`The document file ${id} has changed.`);
+      }
+      // Already compressed (PDFs, photos): stored as they are.
+      files[`${folder}/${exportName(originals as Table, row)}`] = [
+        bytes,
+        { level: 0 },
+      ];
+    }
     for (const table of tables) {
       files[`${folder}/json/${table.name}.json`] = strToU8(
         `${JSON.stringify(
@@ -238,6 +280,7 @@ function checkExport(
   tables: readonly Table[],
 ): void {
   const files = unzipSync(bytes);
+  const originals = tables.find((t) => t.name === "files");
   const expected = new Set([
     `${folder}/README.md`,
     `${folder}/export.json`,
@@ -245,6 +288,9 @@ function checkExport(
       `${folder}/json/${t.name}.json`,
       `${folder}/csv/${t.name}.csv`,
     ]),
+    ...(originals?.rows ?? []).map(
+      (row) => `${folder}/${exportName(originals as Table, row)}`,
+    ),
   ]);
   const names = Object.keys(files);
   if (names.length !== expected.size || names.some((n) => !expected.has(n))) {
@@ -252,6 +298,12 @@ function checkExport(
   }
   const text = (name: string) =>
     strFromU8(files[`${folder}/${name}`] ?? new Uint8Array());
+  for (const row of originals?.rows ?? []) {
+    const name = exportName(originals as Table, row);
+    if (hashOf(files[`${folder}/${name}`] ?? new Uint8Array()) !== row[0]) {
+      throw new CheckFailed(`The export's ${name} differs from the original.`);
+    }
+  }
   for (const table of tables) {
     const json = JSON.parse(text(`json/${table.name}.json`)) as {
       columns: string[];

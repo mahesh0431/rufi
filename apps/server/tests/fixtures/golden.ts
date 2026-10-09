@@ -5,7 +5,7 @@
 // the tools, as the chat calls them), so it is stored as a real chat is, and
 // a change to those rules shows here as a failed seed. Every name and value
 // is made up.
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { v7 as uuid } from "uuid";
 import { DEFAULT_ALLOWLIST } from "../../src/core/chat/models.ts";
@@ -15,11 +15,34 @@ import {
   openReadOnly,
   type Store,
 } from "../../src/core/store/database.ts";
+import { originalPath } from "../../src/core/documents/originals.ts";
 import { shownDate } from "../../src/core/record/dates.ts";
+import { sha256 } from "../../src/platform/files.ts";
 import { shownFor } from "../../src/core/tools/registry.ts";
 import { chatCaller, TOOLS } from "../../src/core/tools/tools.ts";
 
 export const FAMILY = join(import.meta.dirname, "fictional-family.sql");
+
+/** The family's document files (fictional), which FAMILY's rows name by hash. */
+const FAMILY_FILES = [
+  "sunrise-labs-august.pdf",
+  "thyroid-recheck.jpg",
+  "ravi-lipid-panel.pdf",
+].map((name) => join(import.meta.dirname, "documents", name));
+
+/** Puts the family's document files in the data folder, as Rufi keeps them. */
+export async function familyFiles(home: string): Promise<void> {
+  await mkdir(join(home, "files"), { recursive: true, mode: 0o700 });
+  for (const file of FAMILY_FILES) {
+    await writeFile(
+      originalPath(home, await sha256(file)),
+      await readFile(file),
+      {
+        mode: 0o600,
+      },
+    );
+  }
+}
 
 /** First run, finished on 1 Oct 2026. */
 export const FIRST_RUN_DONE = `INSERT INTO settings (key, value) VALUES
@@ -37,6 +60,7 @@ export async function writeGolden(
   today: Date,
 ): Promise<void> {
   store.db.exec(await readFile(FAMILY, "utf8"));
+  await familyFiles(home);
   store.db.exec(FIRST_RUN_DONE);
   store.db.exec(
     "INSERT INTO settings (key, value) VALUES ('emergency_region', 'IN');",

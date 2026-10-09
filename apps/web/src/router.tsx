@@ -9,6 +9,7 @@ import {
   useLocation,
 } from "@tanstack/react-router";
 import { ChatPage } from "./chat.tsx";
+import { DocumentsPage } from "./documents.tsx";
 import { Frame } from "./frame.tsx";
 import { HelpPage } from "./help-page.tsx";
 import { OverviewPage } from "./overview.tsx";
@@ -55,6 +56,27 @@ const chat = createRoute({
       return <div className="px-6 py-8 text-muted">There is no page here.</div>;
     }
     return <ChatPage key={personId} person={person} />;
+  },
+});
+
+const documents = createRoute({
+  getParentRoute: () => root,
+  path: "/people/$personId/documents",
+  component: function Documents() {
+    const { personId } = documents.useParams();
+    const people = usePeople();
+    if (people.data === undefined) {
+      return people.error ? (
+        <div className="px-6 py-8">
+          <Problem error={people.error} retry={() => void people.refetch()} />
+        </div>
+      ) : null;
+    }
+    const person = people.data.find((p) => p.id === personId);
+    if (!person) {
+      return <div className="px-6 py-8 text-muted">There is no page here.</div>;
+    }
+    return <DocumentsPage key={personId} person={person} />;
   },
 });
 
@@ -115,6 +137,7 @@ export const router = createRouter({
   routeTree: root.addChildren([
     home,
     chat,
+    documents,
     conversation,
     settings,
     signIn,

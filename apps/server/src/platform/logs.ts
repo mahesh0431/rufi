@@ -38,6 +38,7 @@ const EVENTS = new Set([
   "backup.made",
   "backup.failed",
   "export.failed",
+  "documents.added",
   "signin.failed",
 ] as const);
 

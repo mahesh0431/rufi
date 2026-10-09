@@ -533,7 +533,9 @@ export function chat(deps: ChatDeps) {
           ({ turnId } = await agent.steer(threadId, { id, text }));
         } catch (error) {
           steers.delete(id);
-          if (!agent.running(threadId)) throw new ChatRefusal(STEER_ENDED);
+          if (error instanceof NotSent || !agent.running(threadId)) {
+            throw new ChatRefusal(STEER_ENDED);
+          }
           throw error;
         }
         // In line with the events: the agent may have shown it already.

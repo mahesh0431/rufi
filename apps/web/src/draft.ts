@@ -93,17 +93,21 @@ export function draftBox(api: DraftApi) {
   /** A send whose answer was lost: the same text again keeps its id. */
   let unanswered: { id: string; text: string } | undefined;
 
-  /** Keep the identity before sending; if storage fails, don't send. */
-  function remember(send: typeof unanswered): boolean {
+  /** Keeps the send's identity before it goes; if storage fails, it doesn't go. */
+  function remember(send: { id: string; text: string }): boolean {
     try {
-      if (send) api.storage?.setItem(sendKey, JSON.stringify(send));
-      else api.storage?.removeItem(sendKey);
+      api.storage?.setItem(sendKey, JSON.stringify(send));
       unanswered = send;
       return true;
     } catch (error) {
       store.setState({ sending: false, notice: messageOf(error) });
       return false;
     }
+  }
+
+  function forget(): void {
+    api.storage?.removeItem(sendKey);
+    unanswered = undefined;
   }
 
   /** Reads the draft until it is read. */
@@ -150,7 +154,7 @@ export function draftBox(api: DraftApi) {
       if (!state.loaded || state.sending || tooLong(text)) return;
       if (unanswered?.text === text.trim()) return;
       // Saving different text replaces the uncertain send with a new draft.
-      if (unanswered && !remember(undefined)) return;
+      forget();
       if (text === state.draft.text && !state.failed) return;
       try {
         const draft = Schema.decodeUnknownSync(Draft)(
@@ -198,7 +202,7 @@ export function draftBox(api: DraftApi) {
           const sent = Schema.decodeUnknownSync(Sent)(
             await api.call("POST", steer ? "steer" : "messages", { id, text }),
           );
-          if (!remember(undefined)) return;
+          forget();
           store.setState({
             sending: false,
             draft: sent.draft,
@@ -206,7 +210,7 @@ export function draftBox(api: DraftApi) {
             failed: false,
           });
         } catch (error) {
-          if ((answered(error) || steer) && !remember(undefined)) return;
+          if (answered(error) || steer) forget();
           store.setState({ sending: false, notice: messageOf(error) });
         }
       });
