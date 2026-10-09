@@ -54,6 +54,14 @@ export interface SubAgentDeps {
   log?: Log;
 }
 
+/**
+ * The models a sub-agent may run on: those the pinned Codex gives Rufi's
+ * tools to directly. Its other models are code-mode only: Codex adds `exec`
+ * and other tools of its own, and an `exec` call shows no item Rufi could
+ * refuse (lockdown evidence, 10 Oct 2026).
+ */
+const DIRECT_MODELS = new Set(["gpt-5.5"]);
+
 /** A token must outlast the whole turn, plus this margin. */
 const TOKEN_MARGIN_MS = 5 * 60_000;
 
@@ -90,14 +98,12 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
   const log = deps.log ?? (() => undefined);
 
   return async (task: SubAgentTask, signal?: AbortSignal) => {
-    // On the pinned Codex, only this model uses the direct two-tool route.
-    // Code-mode models can run exec without emitting a guarded ThreadItem.
-    if (task.model !== "gpt-5.5") {
+    if (!DIRECT_MODELS.has(task.model)) {
       return {
         end: {
           status: "failed",
           reason: "provider_failed",
-          text: "Rufi's reader requires gpt-5.5.",
+          text: `Rufi's sub-agents run only on ${[...DIRECT_MODELS].join(", ")}.`,
         },
         compactions: 0,
       };
@@ -151,16 +157,6 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
         contentItems: [{ type: "inputText", text }],
         success: false,
       });
-      // Codex 0.159.3 names a call made from code (its `exec` tool) exec-…:
-      // the model then has a JavaScript tool besides Rufi's.
-      if (call.callId.startsWith("exec-")) {
-        log("subagent.unexpected", { item: "exec" });
-        stop({
-          status: "failed",
-          reason: "provider_failed",
-          text: "The AI reached Rufi's tools through code, which Rufi didn't allow, so Rufi stopped it.",
-        });
-      }
       if (
         call.threadId !== threadId ||
         call.turnId !== turnId ||

@@ -427,23 +427,18 @@ describe("the reader on the pinned Codex", () => {
     expect(stored().notes.every((n) => n["reader_note"] === null)).toBe(true);
   }, 120_000);
 
-  it("refuses a model with standalone exec before a turn starts", async () => {
+  it("refuses a code-mode model, whose exec Rufi couldn't see, before a turn starts", async () => {
     const run = job([1, 2]);
     const { outcome, answers } = await read(
       run,
-      [
-        {
-          exec: "text('An extra tool ran without a nested Rufi call.')",
-        },
-        { text: "Done." },
-      ],
+      [{ text: "Done." }],
       undefined,
       "gpt-6.1-sol",
     );
     expect(outcome.end).toEqual({
       status: "failed",
       reason: "provider_failed",
-      text: "Rufi's reader requires gpt-5.5.",
+      text: "Rufi's sub-agents run only on gpt-5.5.",
     });
     expect(model?.requests).toEqual([]);
     expect(answers).toEqual([]);
