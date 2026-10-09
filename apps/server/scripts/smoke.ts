@@ -962,6 +962,9 @@ const CASES: Record<
           brief?.cited.includes(id),
         ),
         questions_labelled: /Question:/.test(brief?.page.markdown ?? ""),
+        dates_as_people_read_them:
+          brief !== undefined &&
+          !/\b\d{4}-\d{2}(-\d{2})?\b/.test(brief.page.markdown),
         not_changed_since: brief?.page.changedSince === false,
         nothing_saved: nothingSaved(home, snapshot),
       },
