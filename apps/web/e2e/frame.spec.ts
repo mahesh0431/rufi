@@ -326,6 +326,13 @@ test.describe("first run", () => {
       .getByRole("textbox", { name: "Message to Rufi" })
       .fill("Hello from the first page");
     await bar.getByRole("textbox", { name: "Message to Rufi" }).press("Enter");
+    // Signed out, it waits; signing in alone sends nothing.
+    const waiting = bar.getByRole("region", { name: "Waiting messages" });
+    await expect(waiting).toContainText(
+      "You're signed out. Sign in, then Send.",
+    );
+    rufi.account = { account: "signed_in", email: "mira@example.com" };
+    await waiting.getByRole("button", { name: "Send", exact: true }).click();
     await expect(bar.locator(".reply")).toHaveText(
       "ok:Hello from the first page",
     );

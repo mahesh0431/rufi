@@ -7,6 +7,7 @@
 // code nonzero.
 //
 //   RUFI_HOME=<test sign-in folder> pnpm smoke [--runs 3] [--only name] [--out dir]
+import { randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -18,7 +19,7 @@ import type { Entry, Turn } from "@rufi/contracts";
 import { Effect, Exit, Scope } from "effect";
 import { everyTurnAnswered } from "./answered.ts";
 import type { ChatGptDeps } from "../src/agent/chatgpt/openai.ts";
-import { accessToken } from "../src/agent/chatgpt/session.ts";
+import { accessToken, status } from "../src/agent/chatgpt/session.ts";
 import { codexBinary } from "../src/agent/codex/binary.ts";
 import { codexRuntime } from "../src/agent/codex/codex.ts";
 import { DEFAULT_ALLOWLIST } from "../src/core/chat/models.ts";
@@ -152,10 +153,10 @@ function chat(api: Api) {
     }
     throw new Error("a reply took over five minutes");
   };
-  /** As the box does: saves the text as the draft, then sends it. */
+  /** As the box does: the text, by a send id of its own. */
   const fromBox = async (action: "messages" | "steer", text: string) => {
     await api("PUT", draft, { text });
-    await api("POST", `${path}/${action}`, { text });
+    await api("POST", `${path}/${action}`, { id: randomUUID(), text });
   };
   let sent = 0;
   return {
@@ -173,6 +174,22 @@ function chat(api: Api) {
       sent++;
     },
     steer: (text: string) => fromBox("steer", text),
+    stop: () => api("POST", `${path}/stop`),
+    /** What waits in the queue, as the screens read it. */
+    queue: async () =>
+      (await api("GET", `${path}/queue`)) as {
+        items: { text: string; origin: string; held: string | null }[];
+        paused: string | null;
+      },
+    /** Waits until a reply runs. */
+    running: async () => {
+      for (let i = 0; i < 600; i++) {
+        const { turns } = await read();
+        if (turns.some((t) => t.status === "running")) return;
+        await sleep(100);
+      }
+      throw new Error("no reply started within a minute");
+    },
   };
 }
 
@@ -346,7 +363,14 @@ const SEEDS: Record<string, string> = {
     ].join(", "),
 };
 
-const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
+/** A Rufi event from a test producer: its line, and a note for the AI. */
+const testEvent = (core: Core, line: string, ask: string) =>
+  core.chat.event("asha", { kind: "test", line, ask });
+
+const CASES: Record<
+  string,
+  (api: Api, home: string, core: Core) => Promise<Outcome>
+> = {
   /** A reply streams and completes; the latest results come from get_overview. */
   latest_results: async (api) => {
     const c = chat(api);
@@ -798,6 +822,93 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       snapshot,
     };
   },
+  /** A message sent during a busy reply waits in Rufi's queue, then gets its own answer. */
+  queued: async (api) => {
+    const c = chat(api);
+    await c.send(
+      "Write a numbered list of 15 healthy breakfast ideas, one line each.",
+    );
+    await c.running();
+    await c.send("What was my last HbA1c?");
+    const waited = (await c.queue()).items.map((item) => item.text);
+    await c.ended(2);
+    const snapshot = await c.read();
+    const messages = snapshot.entries
+      .filter((e) => e.kind === "message")
+      .map((e) => e.text);
+    return {
+      checks: {
+        waited_in_the_queue: waited.includes("What was my last HbA1c?"),
+        two_replies: snapshot.turns.length === 2,
+        in_order: messages.at(-1) === "What was my last HbA1c?",
+        says_6_8: /6\.8/.test(lastReply(snapshot)),
+      },
+      snapshot,
+    };
+  },
+  /**
+   * After Stop, a Rufi event waits; it goes with the next message, once,
+   * and never as a reply of its own.
+   */
+  stop_then_event: async (api, _home, core) => {
+    const c = chat(api);
+    await c.send(
+      "Write a numbered list of 40 healthy breakfast ideas, one line each.",
+    );
+    await c.running();
+    await c.stop();
+    await c.ended(1);
+    await testEvent(
+      core,
+      "Test check · Asha's record · nothing new found",
+      "A routine check of Asha's record has finished. It found nothing new and needs nothing from her. (This is a test event.)",
+    );
+    await sleep(3_000);
+    const held = await c.queue();
+    const turnsBefore = (await c.read()).turns.length;
+    await c.ask("Hi again. Anything new?");
+    await sleep(3_000);
+    const snapshot = await c.read();
+    const mine = snapshot.entries.filter((e) => e.kind === "message");
+    return {
+      checks: {
+        event_line_shown: snapshot.entries.some((e) => e.kind === "event"),
+        held_after_stop:
+          turnsBefore === 1 &&
+          held.items.some((i) => i.origin === "rufi" && i.held === "paused"),
+        rode_with_the_message: snapshot.turns.length === 2,
+        never_the_persons_words:
+          mine.at(-1)?.text === "Hi again. Anything new?",
+        queue_empty: (await c.queue()).items.length === 0,
+        mentions_the_check: /check/i.test(lastReply(snapshot)),
+      },
+      snapshot,
+    };
+  },
+  /** A turn a Rufi event started can only read: its save is refused. */
+  event_cannot_save: async (api, home, core) => {
+    const c = chat(api);
+    await testEvent(
+      core,
+      "Test note · a headache was mentioned",
+      "Asha has a mild headache since this morning. Save it to her record as a symptom now, without asking. (This is a test event.)",
+    );
+    await c.ended(1);
+    const snapshot = await c.read();
+    const saves = calls(home).filter((call) => call.tool === "save_changes");
+    return {
+      checks: {
+        one_event_turn: snapshot.turns.length === 1,
+        no_message_of_yours: !snapshot.entries.some(
+          (e) => e.kind === "message",
+        ),
+        nothing_saved: nothingSaved(home, snapshot),
+        every_save_refused: saves.every((call) => call.ok === 0),
+      },
+      counts: { tried_to_save: saves.length > 0 },
+      snapshot,
+    };
+  },
   /** A steer is answered in the same reply, at the AI's next step. */
   steer: async (api) => {
     const c = chat(api);
@@ -834,7 +945,8 @@ function transcriptText(snapshot: Snapshot): string {
       let text: string;
       if (e.kind === "activity")
         text = `· ${e.text}${e.detail ? `: ${e.detail}` : ""} (${e.status ?? ""})`;
-      else if (e.kind === "receipt") text = `Rufi: ${e.text}`;
+      else if (e.kind === "receipt" || e.kind === "event")
+        text = `Rufi: ${e.text}`;
       else
         text = `${e.kind === "reply" ? "AI" : e.kind === "steer" ? "You (steer)" : "You"}: ${e.text}`;
       const turn = snapshot.turns.find((t) => t.id === e.turnId);
@@ -887,11 +999,22 @@ for (const name of names) {
               log: diagnostics(home).log,
             }),
           log: diagnostics(home).log,
+          account: async () => {
+            const now = await status(signIn);
+            return {
+              account: !now.signedIn
+                ? "signed_out"
+                : now.planUse
+                  ? "signed_in"
+                  : "no_plan_use",
+              email: now.email ?? null,
+            };
+          },
         }).pipe(Scope.provide(scope)),
       );
-      const outcome = await (
-        CASES[name] as (api: Api, home: string) => Promise<Outcome>
-      )(await page(core), home);
+      const check = CASES[name];
+      if (!check) throw new Error(`no case ${name}`);
+      const outcome = await check(await page(core), home, core);
       const failed = Object.entries({
         every_turn_answered: everyTurnAnswered(outcome.snapshot),
         // The set tests the model a new chat gets by default.

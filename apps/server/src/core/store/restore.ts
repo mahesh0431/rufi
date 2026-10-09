@@ -12,6 +12,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { holdRufiLock } from "../../platform/files.ts";
 import { CheckFailed, checkDatabase, sha256, verifyBackup } from "./backup.ts";
 import { databasePath } from "./database.ts";
@@ -65,6 +66,7 @@ export async function restore(
       );
     }
     checkDatabase(staged);
+    holdQueue(staged);
     if (lock.lost) {
       throw new Error(
         `Rufi lost its lock on ${target} during the restore. Delete that folder and restore again.`,
@@ -81,5 +83,24 @@ export async function restore(
     return { createdAt: record.createdAt };
   } finally {
     await release().catch(() => undefined);
+  }
+}
+
+/**
+ * Nothing from the past runs by itself: what waited to go to the AI comes
+ * back held, for the person to send again or remove, and a hand-over the
+ * backup caught midway is not sure (core/chat/queue.ts).
+ */
+function holdQueue(path: string): void {
+  const db = new DatabaseSync(path);
+  try {
+    db.exec(`
+      BEGIN;
+      UPDATE chat_queue SET state = 'not_sure' WHERE state = 'handing_over';
+      UPDATE chat_queue SET held = 'restored', held_text = NULL WHERE state = 'waiting';
+      COMMIT;
+    `);
+  } finally {
+    db.close();
   }
 }

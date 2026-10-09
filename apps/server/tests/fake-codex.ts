@@ -1,8 +1,7 @@
 // A scripted stand-in for `codex app-server --listen stdio://`, run as a real
 // child process so tests exercise Rufi's process, JSON-RPC and cleanup code.
-// It keeps Codex's queue as Codex 0.159.2 does: a message starts when nothing
-// runs, waits otherwise, and the queue pauses after an interrupt until
-// thread/queue/start. What a turn does is chosen by its message's text, the
+// turn/start starts a turn, or steers the running one, as Codex 0.159.3
+// does. What a turn does is chosen by its message's text, the
 // same words the fake model uses for the real Codex (tests/fake-model.ts):
 // "hang" never ends, "partial" writes "ok:part" and then never ends, "slow"
 // answers after 300 ms, "fail" fails, "quiet" makes no tool call and runs no
@@ -33,8 +32,6 @@ export interface Scenario {
   slowMs?: number;
   /** Methods the fake takes at once but answers after `slowMs`. */
   answerLate?: string[];
-  /** How long Codex takes to start a message by itself (at once). */
-  startMs?: number;
   /** How long after a turn starts Codex shows the user's message (at once). */
   userMessageMs?: number;
   /** Feature flags as Codex reports them, over what config.toml asked for. */
@@ -73,10 +70,7 @@ export interface Scenario {
   /** A usage-limit snapshot sent before a failed turn. */
   resetsAt?: number;
   /** Threads the fake knows from before, as a restarted Codex would. */
-  threads?: Record<
-    string,
-    { queue?: string[]; paused?: boolean; history?: string[] }
-  >;
+  threads?: Record<string, { history?: string[] }>;
 }
 
 const scenario = JSON.parse(process.env["FAKE_CODEX"] ?? "{}") as Scenario;
@@ -114,8 +108,6 @@ interface Thread {
   model: string;
   /** The effort its next turns run with; none: the config's. */
   effort?: string;
-  queue: Queued[];
-  paused: boolean;
   running:
     | { turnId: string; steers: Queued[]; interrupted: boolean }
     | undefined;
@@ -123,9 +115,8 @@ interface Thread {
   history: { id: string; status: string; messages: Queued[] }[];
 }
 const threads = new Map<string, Thread>();
-// Like Codex, threads and their queues outlive the process: a restarted fake
-// finds them in CODEX_HOME. A reply that was running when it was killed is
-// interrupted, and the queue is not paused.
+// Like Codex, threads outlive the process: a restarted fake finds them in
+// CODEX_HOME. A reply that was running when it was killed is interrupted.
 const STATE = join(process.env["CODEX_HOME"] ?? ".", "fake-threads.json");
 if (existsSync(STATE)) {
   for (const thread of JSON.parse(readFileSync(STATE, "utf8")) as Thread[]) {
@@ -157,10 +148,6 @@ for (const [id, known] of Object.entries(scenario.threads ?? {})) {
   threads.set(id, {
     id,
     model: scenario.model ?? "gpt-6.1-sol",
-    queue: (known.queue ?? []).map((text, i) =>
-      queued(`waiting-${String(i)}`, text),
-    ),
-    paused: known.paused ?? false,
     running: undefined,
     history: (known.history ?? []).map((text, i) => ({
       id: `old-${String(i)}`,
@@ -196,18 +183,8 @@ const userItem = (entry: Queued) => ({
   content: entry.input,
 });
 
-function changed(thread: Thread) {
-  persist();
-  send({ method: "thread/queue/changed", params: { threadId: thread.id } });
-}
-
-/** Starts the head of the queue (or `entry`) when nothing runs. */
-function dispatch(thread: Thread, entry?: Queued) {
-  if (thread.running) return;
-  const next = entry ?? thread.queue[0];
-  if (!next) return;
-  thread.queue = thread.queue.filter((q) => q !== next);
-  thread.paused = false;
+/** Starts a turn for `next`; nothing runs. */
+function dispatch(thread: Thread, next: Queued) {
   // Numbered across every thread and restart, so never used twice.
   const turnId = `turn-${String(
     [...threads.values()].reduce((n, t) => n + t.history.length, 0) + 1,
@@ -221,7 +198,7 @@ function dispatch(thread: Thread, entry?: Queued) {
     status: "inProgress",
     messages: scenario.userMessageMs ? [] : [next],
   });
-  changed(thread);
+  persist();
   setImmediate(() => void runTurn(thread, turnId, next));
   return turnObject(turnId, "inProgress");
 }
@@ -234,15 +211,11 @@ function complete(thread: Thread, turnId: string, status: string) {
     return;
   }
   thread.running = undefined;
-  // Like Codex: a Stop pauses the queue, also across a restart.
-  if (status === "interrupted") thread.paused = true;
   persist();
   send({
     method: "turn/completed",
     params: { threadId: thread.id, turn: turnObject(turnId, status) },
   });
-  // Like Codex: the next waiting message starts, unless a Stop paused the queue.
-  if (!thread.paused) setImmediate(() => dispatch(thread));
 }
 
 async function runTurn(thread: Thread, turnId: string, entry: Queued) {
@@ -561,8 +534,6 @@ function handle(method: string, params: Record<string, unknown>): unknown {
         id: `thread-${String(process.pid)}-${String(++threadCount)}`,
         model: scenario.model ?? String(params["model"]),
         effort: configEffort(params),
-        queue: [],
-        paused: false,
         running: undefined,
         history: [],
       };
@@ -575,75 +546,26 @@ function handle(method: string, params: Record<string, unknown>): unknown {
       thread.model = scenario.model ?? String(params["model"]);
       // Like Codex: resumed with a model, the effort is the config's again.
       thread.effort = configEffort(params);
-      // Like Codex: a resumed thread starts what waits, unless paused.
-      if (!thread.paused) setImmediate(() => dispatch(thread));
       return threadResponse(thread);
     }
     case "thread/read":
       return threadResponse(threadOf(params));
-    case "thread/settings/update": {
+    case "turn/start": {
       const thread = threadOf(params);
-      if (typeof params["effort"] === "string")
-        thread.effort = params["effort"];
-      persist();
-      return {};
-    }
-    case "thread/queue/add": {
-      const thread = threadOf(params);
-      if (thread.queue.length >= 100) throw new Error("queue is full");
       const entry: Queued = {
         id: `q-${String(++queuedCount)}`,
         input: params["input"] as Queued["input"],
         clientUserMessageId: String(params["clientUserMessageId"]),
       };
-      thread.queue.push(entry);
-      changed(thread);
-      // Like Codex, it starts only while the queue isn't paused.
-      const start = () => {
-        if (!thread.paused) dispatch(thread);
-      };
-      if (scenario.startMs) setTimeout(start, scenario.startMs);
-      else setImmediate(start);
-      return { queuedSubmission: entry };
-    }
-    case "thread/queue/list":
-      return { data: threadOf(params).queue, nextCursor: null };
-    case "thread/queue/start": {
-      const thread = threadOf(params);
-      if (thread.running) throw new Error("thread is busy");
-      const id = params["queuedSubmissionId"];
-      const entry = id
-        ? thread.queue.find((q) => q.id === id)
-        : thread.queue[0];
-      if (!entry) throw new Error("queue is empty");
+      // Like Codex: into a running turn it steers.
+      if (thread.running) {
+        thread.running.steers.push(entry);
+        return { turn: turnObject(thread.running.turnId, "inProgress") };
+      }
+      // Like Codex: the effort holds for this turn and the ones after.
+      if (typeof params["effort"] === "string")
+        thread.effort = params["effort"];
       return { turn: dispatch(thread, entry) };
-    }
-    case "thread/queue/update": {
-      const thread = threadOf(params);
-      const entry = thread.queue.find(
-        (q) => q.id === params["queuedSubmissionId"],
-      );
-      if (!entry) throw new Error("not found");
-      entry.input = params["input"] as Queued["input"];
-      changed(thread);
-      return {};
-    }
-    case "thread/queue/delete": {
-      const thread = threadOf(params);
-      thread.queue = thread.queue.filter(
-        (q) => q.id !== params["queuedSubmissionId"],
-      );
-      changed(thread);
-      return {};
-    }
-    case "thread/queue/reorder": {
-      const thread = threadOf(params);
-      const ids = params["queuedSubmissionIds"] as string[];
-      thread.queue = ids.flatMap((id) =>
-        thread.queue.filter((q) => q.id === id),
-      );
-      changed(thread);
-      return {};
     }
     case "thread/turns/list": {
       const thread = threadOf(params);

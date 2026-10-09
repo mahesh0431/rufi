@@ -1,20 +1,20 @@
 // The chat's box, the same in every size: what you type is the chat's
 // draft, kept by the core, saved quietly; the box says only when it couldn't
-// be. Enter sends; while a reply runs the box says so, the message waits,
-// and Steer passes it into the reply instead. The box clears only when the
-// core took the message, and nothing is sent again by itself. The model and
-// effort are chosen beside Send; the waiting messages show above the box.
+// be. Enter sends into Rufi's queue; while a reply runs the box says so, the
+// message waits, and Steer passes it into the reply instead. The box clears
+// only when the core took the message, and nothing is sent again by itself.
+// The model and effort are chosen beside Send; what waits shows above the
+// box.
 import {
   MAX_MESSAGE_CHARS,
   type Person,
-  type WaitingMessage,
+  type QueueItem,
 } from "@rufi/contracts";
 import {
   ArrowDown,
   ArrowUp,
   LoaderCircle,
   Pencil,
-  Play,
   Square,
   Trash2,
 } from "lucide-react";
@@ -22,14 +22,7 @@ import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
-import {
-  type BoxState,
-  type DraftBox,
-  draftBox,
-  held,
-  sending,
-  tooLong,
-} from "./draft.ts";
+import { type BoxState, type DraftBox, draftBox, tooLong } from "./draft.ts";
 import { chatPath, type Live, messageOf } from "./live.ts";
 import { ModelMenu } from "./model-menu.tsx";
 import { queries } from "./reads.ts";
@@ -55,16 +48,13 @@ function boxFor(personId: string): DraftBox {
 
 /**
  * What the box says under it: a send on its way, or a draft that couldn't be
- * saved. Saves are quiet, also Send's own: the box is read-only meanwhile.
+ * saved. Saves are quiet: the box says nothing then.
  */
 function saveState(state: BoxState): string | null {
-  if (sending(state)) return "Sending…";
+  if (state.sending) return "Sending…";
   if (state.failed) return "Not saved";
   return null;
 }
-
-const UNKNOWN =
-  "Rufi doesn't know whether the AI got this message. Check the chat before you send it again.";
 
 export function Box({
   person,
@@ -84,12 +74,8 @@ export function Box({
   const box = boxFor(person.id);
   const text = useStore(box.store, (state) => state.text);
   const loaded = useStore(box.store, (state) => state.loaded);
-  const locked = useStore(box.store, held);
+  const locked = useStore(box.store, (state) => state.sending);
   const saved = useStore(box.store, saveState);
-  const unknown = useStore(
-    box.store,
-    (state) => state.draft.state === "unknown",
-  );
   const notice = useStore(box.store, (state) => state.notice);
   const running = useStore(live, isRunning);
   const [problem, setProblem] = useState<string | null>(null);
@@ -184,7 +170,7 @@ export function Box({
       }}
     >
       {size !== "bar" && (
-        <Waiting
+        <QueueView
           live={live}
           path={chatPath(person.id)}
           running={running}
@@ -251,20 +237,17 @@ export function Box({
           )}
         </p>
       )}
-      {(notice || problem || long || unknown) && (
+      {(notice || problem || long) && (
         <p role="alert" className="px-3.5 pb-2 text-muted">
           {long
             ? `Too long to keep or send: at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters, and this is ${text.length.toLocaleString("en")}.`
-            : [notice ?? problem, unknown ? UNKNOWN : null]
-                .filter(Boolean)
-                .join(" ")}
+            : (notice ?? problem)}
         </p>
       )}
     </form>
   );
 }
 
-/** The messages that wait for the running reply, or for you after a Stop. */
 /** While a reply runs: how long Rufi has been answering, counting up. */
 function Answering({ live }: { live: StoreApi<Live> }) {
   const started = useStore(
@@ -294,7 +277,33 @@ function Answering({ live }: { live: StoreApi<Live> }) {
   );
 }
 
-function Waiting({
+/** Why a row doesn't go by itself, in words for the person. */
+function whyHeld(item: QueueItem): string | null {
+  if (item.state === "not_sure") {
+    return "Not sure this reached the AI. Check the chat before you send it again.";
+  }
+  if (item.state === "handing_over") return "Sending…";
+  switch (item.held) {
+    case "paused":
+    case "signed_out":
+      return item.origin === "rufi"
+        ? "Goes to the AI with your next message."
+        : "You're signed out. Sign in, then Send.";
+    case "restored":
+      return "From a backup: it waited when the backup was made.";
+    case "failed":
+      return item.heldText;
+    case null:
+      return null;
+  }
+}
+
+/**
+ * What waits to go to the AI: your messages and Rufi's notes, in order. A
+ * waiting message can be edited, moved or removed; a held one says why,
+ * and goes only when you Send it.
+ */
+function QueueView({
   live,
   path,
   running,
@@ -305,127 +314,192 @@ function Waiting({
   running: boolean;
   act: (action: () => Promise<unknown>) => Promise<void>;
 }) {
-  const waiting = useStore(live, (state) => state.waiting);
-  const error = useStore(live, (state) => state.waitingError);
+  const { items, paused } = useStore(live, (state) => state.queue);
+  const error = useStore(live, (state) => state.queueError);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(
     null,
   );
-  if (waiting.length === 0 && error === null) return null;
-  const ids = waiting.map((message) => message.id);
-  const move = (index: number, by: -1 | 1) => {
+  if (items.length === 0 && error === null) return null;
+  const waiting = items.filter((item) => item.state === "waiting");
+  const ids = waiting.map((item) => item.id);
+  const move = (id: string, by: -1 | 1) => {
     const next = [...ids];
-    const [moved] = next.splice(index, 1);
-    if (moved === undefined) return;
-    next.splice(index + by, 0, moved);
-    void act(() => request("PUT", `${path}/waiting`, { ids: next }));
+    const index = next.indexOf(id);
+    next.splice(index, 1);
+    next.splice(index + by, 0, id);
+    void act(() => request("PUT", `${path}/queue`, { ids: next }));
   };
-  const one = (message: WaitingMessage) =>
-    `${path}/waiting/${encodeURIComponent(message.id)}`;
+  const one = (item: QueueItem) =>
+    `${path}/queue/${encodeURIComponent(item.id)}`;
+  const send = (item: QueueItem) =>
+    void act(() => request("POST", `${one(item)}/send`));
+  // What goes on when you say: the first row that only waits for the pause.
+  const first = waiting.find(
+    (item) => item.held === null || item.held === "paused",
+  );
+  const heading = running
+    ? "Waiting · these go in order after the reply"
+    : paused === "stopped"
+      ? "Stopped · these go when you send a message"
+      : paused === "restarted"
+        ? "Rufi restarted · these go when you send a message"
+        : items.some((item) => item.state !== "waiting" || item.held !== null)
+          ? "Not sent · Rufi sends these only when you say"
+          : "Waiting";
 
   return (
     <section
       aria-label="Waiting messages"
       className="border-b border-line px-3.5 py-2"
     >
-      <h3 className="text-xs text-muted">
-        {running
-          ? "Waiting: these run in order after the reply."
-          : "Waiting: send a message or run one to go on."}
+      <h3 className="flex items-center gap-2 text-xs font-normal text-muted">
+        <span className="flex-1">{heading}</span>
+        {!running && paused !== null && first && (
+          <TextButton
+            onClick={() => {
+              send(first);
+            }}
+          >
+            Send now
+          </TextButton>
+        )}
       </h3>
       {error !== null && <p className="text-muted">{error}</p>}
       <ol className="mt-1 flex flex-col gap-1">
-        {waiting.map((message, index) => (
-          <li key={message.id} className="flex items-start gap-1.5">
-            {editing?.id === message.id ? (
-              <div className="flex flex-1 flex-col gap-1">
-                <textarea
-                  aria-label="Waiting message"
-                  value={editing.text}
-                  onChange={(event) => {
-                    setEditing({ id: message.id, text: event.target.value });
-                  }}
-                  className="rounded-lg border border-line bg-surface px-2 py-1"
-                />
-                <div className="flex gap-1">
-                  <Button
-                    look="main"
-                    className="py-0.5"
-                    disabled={editing.text.trim() === ""}
-                    onClick={() => {
-                      const text = editing.text.trim();
-                      setEditing(null);
-                      void act(() => request("PUT", one(message), { text }));
+        {items.map((item) => {
+          const why = whyHeld(item);
+          const index = ids.indexOf(item.id);
+          const isWaiting = item.state === "waiting";
+          const free =
+            isWaiting && (item.held === null || item.held === "paused");
+          return (
+            <li key={item.id} className="flex items-start gap-1.5">
+              {editing?.id === item.id ? (
+                <div className="flex flex-1 flex-col gap-1">
+                  <textarea
+                    aria-label="Waiting message"
+                    value={editing.text}
+                    onChange={(event) => {
+                      setEditing({ id: item.id, text: event.target.value });
                     }}
-                  >
-                    Save
-                  </Button>
-                  <Button
-                    className="py-0.5"
-                    onClick={() => {
-                      setEditing(null);
-                    }}
-                  >
-                    Cancel
-                  </Button>
+                    className="rounded-lg border border-line bg-surface px-2 py-1"
+                  />
+                  <div className="flex gap-1">
+                    <Button
+                      look="main"
+                      className="py-0.5"
+                      disabled={editing.text.trim() === ""}
+                      onClick={() => {
+                        const text = editing.text.trim();
+                        setEditing(null);
+                        void act(() => request("PUT", one(item), { text }));
+                      }}
+                    >
+                      Save
+                    </Button>
+                    <Button
+                      className="py-0.5"
+                      onClick={() => {
+                        setEditing(null);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <>
-                <p className="line-clamp-2 flex-1 break-words whitespace-pre-wrap">
-                  {message.text}
-                </p>
-                {!running && (
-                  <Icon
-                    label="Run now"
-                    onClick={() =>
-                      void act(() => request("POST", `${one(message)}/run`))
-                    }
+              ) : (
+                <>
+                  <p
+                    className={`min-w-0 flex-1 break-words whitespace-pre-wrap ${item.origin === "rufi" ? "text-muted" : ""}`}
                   >
-                    <Play size={13} aria-hidden />
-                  </Icon>
-                )}
-                {index > 0 && (
-                  <Icon
-                    label="Move up"
-                    onClick={() => {
-                      move(index, -1);
-                    }}
-                  >
-                    <ArrowUp size={13} aria-hidden />
-                  </Icon>
-                )}
-                {index < waiting.length - 1 && (
-                  <Icon
-                    label="Move down"
-                    onClick={() => {
-                      move(index, 1);
-                    }}
-                  >
-                    <ArrowDown size={13} aria-hidden />
-                  </Icon>
-                )}
-                <Icon
-                  label="Edit"
-                  onClick={() => {
-                    setEditing({ id: message.id, text: message.text });
-                  }}
-                >
-                  <Pencil size={13} aria-hidden />
-                </Icon>
-                <Icon
-                  label="Delete"
-                  onClick={() =>
-                    void act(() => request("DELETE", one(message)))
-                  }
-                >
-                  <Trash2 size={13} aria-hidden />
-                </Icon>
-              </>
-            )}
-          </li>
-        ))}
+                    <span className="line-clamp-2">
+                      {item.origin === "rufi"
+                        ? `Rufi's note: ${item.text}`
+                        : item.text}
+                    </span>
+                    {why !== null && (
+                      <span className="block text-xs text-muted">{why}</span>
+                    )}
+                  </p>
+                  {item.origin === "rufi" && (
+                    <span className="rounded-full border border-line px-1.5 text-[11px] text-muted">
+                      Rufi
+                    </span>
+                  )}
+                  {(item.state === "not_sure" || (isWaiting && !free)) && (
+                    <TextButton
+                      onClick={() => {
+                        send(item);
+                      }}
+                    >
+                      {item.state === "not_sure" ? "Send again" : "Send"}
+                    </TextButton>
+                  )}
+                  {free && index > 0 && (
+                    <Icon
+                      label="Move up"
+                      onClick={() => {
+                        move(item.id, -1);
+                      }}
+                    >
+                      <ArrowUp size={13} aria-hidden />
+                    </Icon>
+                  )}
+                  {free && index >= 0 && index < ids.length - 1 && (
+                    <Icon
+                      label="Move down"
+                      onClick={() => {
+                        move(item.id, 1);
+                      }}
+                    >
+                      <ArrowDown size={13} aria-hidden />
+                    </Icon>
+                  )}
+                  {isWaiting && item.origin === "person" && (
+                    <Icon
+                      label="Edit"
+                      onClick={() => {
+                        setEditing({ id: item.id, text: item.text });
+                      }}
+                    >
+                      <Pencil size={13} aria-hidden />
+                    </Icon>
+                  )}
+                  {item.state !== "handing_over" && (
+                    <Icon
+                      label="Remove"
+                      onClick={() =>
+                        void act(() => request("DELETE", one(item)))
+                      }
+                    >
+                      <Trash2 size={13} aria-hidden />
+                    </Icon>
+                  )}
+                </>
+              )}
+            </li>
+          );
+        })}
       </ol>
     </section>
+  );
+}
+
+function TextButton({
+  onClick,
+  children,
+}: {
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="shrink-0 rounded-md px-1 py-0.5 text-xs whitespace-nowrap text-accent-ink hover:bg-accent-soft"
+    >
+      {children}
+    </button>
   );
 }
 

@@ -1,15 +1,10 @@
 // One live store per open chat: the stream's latest page, then each update
 // applied by id, the older pages loaded as the person scrolls up, and the
-// waiting messages read again when they change. Entries are kept by id, so a
+// queue read again when it changes. Entries are kept by id, so a
 // streaming reply re-renders only itself. The stream closes when nothing
 // shows the chat; when it drops, it connects again and starts from the
 // latest page. It never sends anything.
-import {
-  Page,
-  StreamLine,
-  type WaitingMessage,
-  WaitingMessages,
-} from "@rufi/contracts";
+import { Page, Queue, StreamLine } from "@rufi/contracts";
 import { Schema } from "effect";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { ApiError, read, stream } from "./api.ts";
@@ -26,9 +21,10 @@ export interface Live extends Transcript {
   status: "loading" | "open" | "missing";
   /** Loading an older page, or why it couldn't be loaded. */
   older: "idle" | "loading" | "failed";
-  waiting: readonly WaitingMessage[];
-  /** Why the waiting messages couldn't be read, in the core's words. */
-  waitingError: string | null;
+  /** What waits to go to the AI, and why the chat is paused. */
+  queue: Queue;
+  /** Why the queue couldn't be read, in the core's words. */
+  queueError: string | null;
 }
 
 /** The person's chat in the local API. */
@@ -86,8 +82,8 @@ function open(personId: string): Opened {
     ...emptyTranscript,
     status: "loading",
     older: "idle",
-    waiting: [],
-    waitingError: null,
+    queue: { items: [], paused: null },
+    queueError: null,
   }));
   const stop = new AbortController();
   const path = chatPath(personId);
@@ -95,34 +91,28 @@ function open(personId: string): Opened {
   // Each change starts a read; only the last one started is shown, so an
   // older answer that comes late never replaces a newer one.
   let reads = 0;
-  const readWaiting = async () => {
+  const readQueue = async () => {
     const mine = (reads += 1);
     try {
-      const { messages } = await read(
-        WaitingMessages,
-        "GET",
-        `${path}/waiting`,
-      );
-      if (mine === reads) {
-        store.setState({ waiting: messages, waitingError: null });
-      }
+      const queue = await read(Queue, "GET", `${path}/queue`);
+      if (mine === reads) store.setState({ queue, queueError: null });
     } catch (error) {
-      if (mine === reads) store.setState({ waitingError: messageOf(error) });
+      if (mine === reads) store.setState({ queueError: messageOf(error) });
     }
   };
 
   const onLine = (raw: unknown) => {
     const line = Schema.decodeUnknownSync(StreamLine)(raw);
     if (line.type === "ping") return;
-    if (line.type === "waiting") {
-      void readWaiting();
+    if (line.type === "queue") {
+      void readQueue();
       return;
     }
     const next = apply(store.getState(), line);
     if (line.type === "snapshot") {
       // A reconnect: the latest page only; an older page on its way is dropped.
       store.setState({ ...next, status: "open", older: "idle" });
-      void readWaiting();
+      void readQueue();
     } else store.setState({ ...next, status: "open" });
     // A reply that ended for the sign-in: the sidebar says so.
     if (line.turns.some((turn) => turn.endReason === "sign_in")) {

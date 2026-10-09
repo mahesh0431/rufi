@@ -29,5 +29,7 @@ await Effect.runPromise(
         host,
       }),
     log: () => undefined,
+    account: () =>
+      Promise.resolve({ account: "signed_in", email: "asha@example.com" }),
   }).pipe(Scope.provide(scope)),
 );

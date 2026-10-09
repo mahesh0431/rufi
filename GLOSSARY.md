@@ -99,12 +99,20 @@ _Avoid_: reason, rationale, citation; "reasoning" is the AI's thinking, and a **
 A message sent while the AI is replying, passed into that reply. The AI takes it at its next step, after what it is writing now, so it can change course. The transcript keeps it as your message, marked as a steer.
 _Avoid_: nudge, interrupt
 
+**Queue**:
+What waits to go to the AI, kept by Rufi with the chat: your messages and Rufi's notes about **Rufi events**. Rufi gives the AI one turn's worth at a time, and never the same message twice. It survives a restart and a model change. Shown above the box as the **waiting messages**.
+_Avoid_: inbox, outbox
+
 **Waiting messages**:
-Messages sent while the AI is replying. They wait, then run in order after the reply. You can edit, reorder or delete them, or run one now. After a Stop they keep waiting until you send a message or run one now. The code calls them the queue.
+What the queue holds, shown above the box. Your messages sent while the AI replies wait, then go in order after the reply; you can edit, reorder or remove them. A held one says why (you're signed out, it came from a backup, the AI couldn't take it, or Rufi isn't sure it reached the AI) and goes only when you send it. After a Stop, or when Rufi starts again with messages waiting, they wait until you send a message or click **Send now**.
 _Avoid_: backlog, pending messages
 
+**Rufi event**:
+Rufi's own note that something happened outside your chat, such as a reading that finished: a line in the chat, and sometimes a note for the AI. It is never your words, a request or your yes: a reply it starts can only read, never save. After a Stop, its note goes with your next message.
+_Avoid_: notification, system message
+
 **Stop**:
-Ends the AI's reply now, with anything it started. What it wrote so far is kept; waiting messages keep waiting.
+Ends the AI's reply now, with anything it started. What it wrote so far is kept; nothing more goes to the AI until you send a message.
 _Avoid_: cancel, abort
 
 **Interrupted**:
@@ -112,7 +120,7 @@ A reply that didn't finish because you stopped it or Rufi closed. What it wrote 
 _Avoid_: cancelled, aborted
 
 **Draft**:
-The message you started in the chat and haven't sent, saved quietly while you type; only a save that failed shows under the box ("Not saved"). The last save wins: two tabs typing at once replace each other's text. While a send holds it, nobody can change it. Rufi never sends a draft by itself.
+The message you started in the chat and haven't sent, saved quietly while you type; only a save that failed shows under the box ("Not saved"). The last save wins: two tabs typing at once replace each other's text. A send moves it into the queue and empties the box, in one step. Rufi never sends a draft by itself.
 _Avoid_: note, unsent
 
 **Model**:
@@ -213,5 +221,6 @@ _Avoid_: download, dump
 - A **document** can hold **reports**; a **report** has **results**. A **result** can also be typed in without a report.
 - A **save** changes one **person**'s **records**, rests on their messages as its **sources**, and gives one **receipt**; an **undo** is a new save.
 - A **person** has one **chat**, made with them; it can produce **saves**, **follow-ups** and **research entries**.
-- The **chat** has one **transcript**, one **draft**, a **model** and its **waiting messages**; a **steer** and each **activity** belong to one reply.
+- A **chat** has one **queue**: your messages and the notes of **Rufi events** wait there for the AI.
+- The **chat** has one **transcript**, one **draft** and a **model**; a **steer** and each **activity** belong to one reply.
 - An answer's **basis** belongs to its reply: How from the AI's words, Used from that reply's own **activity**.

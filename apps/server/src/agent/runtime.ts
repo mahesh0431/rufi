@@ -1,7 +1,7 @@
 // The agent adapter: Rufi talks to a coding agent through this, so the agent
 // behind it (Codex now) can change without the rest of Rufi changing. The
-// agent keeps its own threads and its own queue of waiting messages; Rufi
-// keeps the chat (core/chat).
+// agent keeps its own threads; Rufi keeps the chat and what waits to go to
+// the AI (core/chat), and starts one turn at a time.
 import { Effect } from "effect";
 
 /** What one line of activity is about. */
@@ -77,8 +77,6 @@ export type AgentEvent = { threadId: string } & (
       details: unknown;
     }
   | { type: "turnEnded"; turnId: string; end: TurnEnd }
-  /** The waiting messages changed; read them again. */
-  | { type: "waitingChanged" }
 );
 
 /** A Stop that came while Rufi was getting ready to send. */
@@ -88,14 +86,11 @@ export class Stopped extends Error {
   }
 }
 
-/** A message the agent holds until the running reply has ended. */
-export interface WaitingMessage {
-  /** The agent's id for the waiting entry. */
-  id: string;
-  /** The id Rufi gave the message. */
-  messageId: string;
-  text: string;
-}
+/**
+ * A message the agent surely didn't get: Rufi never asked it, or the agent
+ * refused it. Any other failure of a send leaves it unknown.
+ */
+export class NotSent extends Error {}
 
 export interface Model {
   id: string;
@@ -145,8 +140,8 @@ export interface AgentRuntime {
     signal?: AbortSignal,
   ) => Promise<{ threadId: string; model: string }>;
   /**
-   * Picks an existing thread up again. The agent may start what waits in its
-   * queue as it does; `running` says a reply is running after it.
+   * Picks an existing thread up again; `running` says a reply is running in
+   * it. It starts nothing.
    */
   resumeThread: (
     threadId: string,
@@ -158,14 +153,15 @@ export interface AgentRuntime {
   /** Whether a reply is running in the thread now. */
   running: (threadId: string) => boolean;
   /**
-   * Sends a message. It runs now if nothing runs or waits, else it waits its
-   * turn; a queue paused by Stop starts again, oldest first. `context` goes
-   * before the message (a new thread's earlier chat). `effort` is how hard
-   * the AI thinks, from this reply on; without it, the thread keeps its own.
+   * Starts a reply to `input` (its parts in order: a new thread's earlier
+   * chat, Rufi's notes, the person's message), by the id Rufi gives it. Only
+   * when no reply runs. `effort` is how hard the AI thinks, from this reply
+   * on; without it, the thread keeps its own. Throws NotSent when the agent
+   * surely didn't get it.
    */
   send: (
     threadId: string,
-    message: { id: string; text: string; context?: string; effort?: string },
+    message: { id: string; input: string[]; effort?: string },
     signal?: AbortSignal,
   ) => Promise<void>;
   /** Passes a message into the running reply; returns that reply's turn id. */
@@ -173,26 +169,11 @@ export interface AgentRuntime {
     threadId: string,
     message: { id: string; text: string },
   ) => Promise<{ turnId: string }>;
-  /**
-   * Stops the running reply (only when it is `turnId`, if given) and what it
-   * started; waiting messages wait.
-   */
+  /** Stops the running reply (only when it is `turnId`, if given) and what it started. */
   stop: (threadId: string, turnId?: string) => Promise<void>;
-  waiting: {
-    list: (threadId: string) => Promise<WaitingMessage[]>;
-    edit: (threadId: string, id: string, text: string) => Promise<void>;
-    remove: (threadId: string, id: string) => Promise<void>;
-    reorder: (threadId: string, ids: string[]) => Promise<void>;
-    /** Runs one waiting message now; those after it follow in order. */
-    runNow: (
-      threadId: string,
-      id: string,
-      signal?: AbortSignal,
-    ) => Promise<void>;
-  };
   /**
-   * The user's messages the thread has run, oldest first, with the ids Rufi
-   * gave them: to fill what a crash kept Rufi from saving.
+   * The messages the thread has run, oldest first, with the ids Rufi gave
+   * them: to fill what a crash kept Rufi from saving.
    */
   startedMessages: (
     threadId: string,
