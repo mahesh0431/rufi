@@ -1016,7 +1016,13 @@ for (const name of names) {
       if (!check) throw new Error(`no case ${name}`);
       const outcome = await check(await page(core), home, core);
       const failed = Object.entries({
-        every_turn_answered: everyTurnAnswered(outcome.snapshot),
+        // A reply the case itself stopped has no answer to check.
+        every_turn_answered: everyTurnAnswered({
+          ...outcome.snapshot,
+          turns: outcome.snapshot.turns.filter(
+            (turn) => turn.endReason !== "stopped",
+          ),
+        }),
         // The set tests the model a new chat gets by default.
         on_default_model:
           outcome.snapshot.turns[0]?.model === DEFAULT_ALLOWLIST[0],

@@ -532,6 +532,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       const c = await newChat();
       await say(c, "hang");
       await running(c.id);
+      await until(async () => (await backend.efforts()).length === 1);
       await expect(chat?.selectModel(c, "gpt-6-astra")).rejects.toThrow(
         "Stop the reply before changing the model.",
       );
