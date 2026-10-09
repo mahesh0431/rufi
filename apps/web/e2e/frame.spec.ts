@@ -193,6 +193,54 @@ test("Settings chooses light, dark or the Mac's; every open tab changes at once,
   await expect.poll(theme(page)).toBe("light");
 });
 
+test("a settings read from before a save never undoes the look just chosen", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await page.goto(rufi.link());
+  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  const appearance = page.getByRole("radiogroup", { name: "Appearance" });
+  await appearance.getByRole("radio", { name: "Dark" }).check();
+  await expect.poll(theme(page)).toBe("dark");
+
+  // Another tab changed a setting: this one reads them again, and the
+  // answer (Dark) is slow to arrive.
+  const held: (() => Promise<void>)[] = [];
+  await page.route("**/api/settings", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const response = await route.fetch();
+    held.push(() => route.fulfill({ response }));
+  });
+  await page.evaluate(() => {
+    new BroadcastChannel("rufi.settings").postMessage("changed");
+  });
+  await expect.poll(() => held.length).toBe(1);
+
+  const saved = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/settings") &&
+      response.request().method() === "PUT",
+  );
+  await appearance.getByRole("radio", { name: "Light" }).check();
+  expect((await saved).ok()).toBe(true);
+  const late = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/settings") &&
+      response.request().method() === "GET",
+  );
+  await held[0]?.();
+  await late;
+  // The page has handled the late answer.
+  await page.evaluate(
+    () =>
+      new Promise((done) => requestAnimationFrame(() => setTimeout(done, 100))),
+  );
+  expect(await theme(page)()).toBe("light");
+  await expect(appearance.getByRole("radio", { name: "Light" })).toBeChecked();
+});
+
 test.describe("first run", () => {
   test("not a doctor, your name, sign-in or skip, the region; a reload continues where it was", async ({
     page,

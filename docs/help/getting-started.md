@@ -85,7 +85,7 @@ Rufi has a light look and a dark look. Choose one in **Settings** › **Appearan
 - **System** (the start): Rufi follows your Mac's light or dark appearance, also when the Mac changes it.
 - **Light** or **Dark:** Rufi stays so, whatever the Mac uses.
 
-Your choice shows at once, in every Rufi window and tab that is open, and Rufi keeps it when it starts again. In the Rufi app, the window around the page, with its sidebar, takes the same look.
+Your choice shows at once in the Rufi windows or tabs that are open in the same app or browser. A Rufi page open somewhere else, such as the Rufi app when you chose in your browser, shows it when you reload that page. Rufi keeps your choice when it starts again. In the Rufi app, the window around the page, with its sidebar, takes the same look.
 
 ## If you're not signed in
 

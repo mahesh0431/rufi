@@ -50,6 +50,8 @@ export async function saveSettings(
   changes: typeof SaveSettings.Type,
 ): Promise<Settings> {
   const saved = await read(Settings, "PUT", "/api/settings", changes);
+  // A read sent before this save would answer with older settings: dropped.
+  await queries.cancelQueries({ queryKey: ["settings"] });
   queries.setQueryData(["settings"], saved);
   settingsChanged.postMessage("changed");
   return saved;
