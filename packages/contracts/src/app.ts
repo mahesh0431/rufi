@@ -3,6 +3,13 @@
 // terminal). Each side decodes what it receives with these schemas.
 import { Schema } from "effect";
 
+/**
+ * The header that carries the chosen appearance (system, light or dark) on
+ * the pages the core serves and on its settings: the app's windows take it,
+ * so the Mac's material around the page matches the page.
+ */
+export const APPEARANCE_HEADER = "x-rufi-appearance";
+
 /** What `rufi start` tells the app. */
 export const ToApp = Schema.Union([
   /** It started Rufi and runs it until the channel closes. */

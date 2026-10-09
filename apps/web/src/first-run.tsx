@@ -1,19 +1,18 @@
 // The first run, for a new data folder: what Rufi is and isn't, what goes to
-// the AI, your name, sign-in, the emergency region. The core keeps what is
+// the AI, and how Rufi looks; your name, sign-in, the emergency region. The core keeps what is
 // done, so a reload or another tab continues at the first step not done.
 import {
   type AddPerson,
   type FinishStep,
   FirstRun as FirstRunAnswer,
-  type SaveSettings,
   Person,
-  Settings,
 } from "@rufi/contracts";
 import { useMutation } from "@tanstack/react-query";
 import { Schema } from "effect";
 import { type ReactNode, useState } from "react";
 import { ApiError, read } from "./api.ts";
-import { queries, useFirstRun, useSettings } from "./reads.ts";
+import { AppearanceChoice } from "./appearance.tsx";
+import { queries, saveSettings, useFirstRun, useSettings } from "./reads.ts";
 import { SignIn } from "./signin.tsx";
 import { Button, Problem } from "./ui.tsx";
 
@@ -87,6 +86,7 @@ function Welcome() {
         />
         I understand Rufi is not a doctor
       </label>
+      <AppearanceChoice />
       {done.error && (
         <p role="alert" className="text-muted">
           {done.error.message}
@@ -169,14 +169,7 @@ function EmergencyRegion() {
   const [region, setRegion] = useState("");
   const done = useMutation({
     mutationFn: async (chosen: string | null) => {
-      if (chosen !== null) {
-        queries.setQueryData(
-          ["settings"],
-          await read(Settings, "PUT", "/api/settings", {
-            emergencyRegion: chosen,
-          } satisfies typeof SaveSettings.Type),
-        );
-      }
+      if (chosen !== null) await saveSettings({ emergencyRegion: chosen });
       await finish("region");
     },
   });

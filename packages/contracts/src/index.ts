@@ -239,7 +239,15 @@ export const Region = Schema.Struct({
 });
 export type Region = typeof Region.Type;
 
+/**
+ * How Rufi looks: system follows the Mac's light or dark appearance; light
+ * and dark stay so.
+ */
+export const Appearance = Schema.Literals(["system", "light", "dark"]);
+export type Appearance = typeof Appearance.Type;
+
 export const Settings = Schema.Struct({
+  appearance: Appearance,
   /** The chosen region; null when none is chosen. */
   emergencyRegion: Schema.NullOr(Schema.String),
   emergency: Schema.NullOr(
@@ -319,9 +327,11 @@ export type Overview = typeof Overview.Type;
 
 export const AddPerson = Schema.Struct({ displayName: Line(200) });
 
+/** The settings to change; the others stay as they are. */
 export const SaveSettings = Schema.Struct({
+  appearance: Schema.optionalKey(Appearance),
   /** A region code Rufi knows, such as "IN"; null clears it. */
-  emergencyRegion: Schema.NullOr(Line(10)),
+  emergencyRegion: Schema.optionalKey(Schema.NullOr(Line(10))),
 });
 
 const Message = Schema.String.check(

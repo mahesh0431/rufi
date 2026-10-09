@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Status, StreamLine } from "@rufi/contracts";
+import { APPEARANCE_HEADER } from "@rufi/contracts/app";
 import { Effect, Exit, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { codexRuntime } from "../agent/codex/codex.ts";
@@ -1063,6 +1064,31 @@ describe("what the screens read", () => {
     });
     expect(cleared.body["emergency"]).toBeNull();
   });
+
+  it("keeps the appearance apart from the region; system until one is chosen", async () => {
+    const core = await start();
+    const page = await session(core);
+    expect((await page.api("GET", "/api/settings")).body["appearance"]).toBe(
+      "system",
+    );
+    await page.api("PUT", "/api/settings", { emergencyRegion: "IN" });
+    const dark = await page.api("PUT", "/api/settings", {
+      appearance: "dark",
+    });
+    expect(dark.body).toMatchObject({
+      appearance: "dark",
+      emergencyRegion: "IN",
+    });
+    await page.api("PUT", "/api/settings", { emergencyRegion: null });
+    expect((await page.api("GET", "/api/settings")).body["appearance"]).toBe(
+      "dark",
+    );
+    for (const appearance of ["blue", null, "toString"]) {
+      expect(
+        (await page.api("PUT", "/api/settings", { appearance })).status,
+      ).toBe(400);
+    }
+  });
 });
 
 describe("opening Rufi again", () => {
@@ -1137,7 +1163,10 @@ describe("the screens", () => {
     folder = await mkdtemp(join(tmpdir(), "rufi screens-"));
     screens = join(folder, "dist");
     await mkdir(join(screens, "assets"), { recursive: true });
-    await writeFile(join(screens, "index.html"), "<!doctype html><p>Rufi");
+    await writeFile(
+      join(screens, "index.html"),
+      '<!doctype html><html lang="en"><p>Rufi',
+    );
     await writeFile(join(screens, "assets", "app-1a2b.js"), "export {};");
     // Next to the screens, not in them: never served.
     await writeFile(join(folder, "secret.txt"), "not a screen");
@@ -1183,6 +1212,41 @@ describe("the screens", () => {
     expect((await get("/assets/out.txt")).status).toBe(404);
     expect((await get("/assets/up/secret.txt")).status).toBe(404);
     expect((await get("/assets/app-1a2b.js/x.js")).status).toBe(404);
+  });
+
+  it("serves the page in the chosen appearance, for the app's window too, also after a restart", async () => {
+    let core = await start({ screens });
+    const appearance = async (path: string) => {
+      const page = await call(core.port, "GET", path);
+      return {
+        page: /<html[^>]* data-appearance="(\w+)"/.exec(page.text)?.[1],
+        app: page.headers[APPEARANCE_HEADER],
+      };
+    };
+    expect(await appearance("/")).toEqual({ page: "system", app: "system" });
+
+    const changed = await (
+      await session(core)
+    ).api("PUT", "/api/settings", { appearance: "dark" });
+    expect(changed.headers[APPEARANCE_HEADER]).toBe("dark");
+    for (const path of ["/", "/help/glossary", "/index.html"]) {
+      expect(await appearance(path)).toEqual({ page: "dark", app: "dark" });
+    }
+    // Only pages: the scripts are the same for everyone.
+    expect(
+      (await call(core.port, "GET", "/assets/app-1a2b.js")).headers[
+        APPEARANCE_HEADER
+      ],
+    ).toBeUndefined();
+
+    await stop();
+    core = await start({ screens });
+    expect(await appearance("/")).toEqual({ page: "dark", app: "dark" });
+    expect(
+      (await (await session(core)).api("GET", "/api/settings")).headers[
+        APPEARANCE_HEADER
+      ],
+    ).toBe("dark");
   });
 
   it("refuses an app page that is a link leading outside", async () => {

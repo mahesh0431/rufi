@@ -1,6 +1,7 @@
 // What the screens read from the core, through one query cache. Each read is
 // checked against its contract.
 import {
+  type SaveSettings,
   Backups,
   FirstRun,
   Models,
@@ -37,6 +38,22 @@ export const useSettings = () =>
     queryKey: ["settings"],
     queryFn: () => read(Settings, "GET", "/api/settings"),
   });
+
+/** The other open pages of this browser or app, told when a setting changes. */
+const settingsChanged = new BroadcastChannel("rufi.settings");
+settingsChanged.addEventListener("message", () => {
+  void queries.invalidateQueries({ queryKey: ["settings"] });
+});
+
+/** Changes settings: this page and every other open one show the change. */
+export async function saveSettings(
+  changes: typeof SaveSettings.Type,
+): Promise<Settings> {
+  const saved = await read(Settings, "PUT", "/api/settings", changes);
+  queries.setQueryData(["settings"], saved);
+  settingsChanged.postMessage("changed");
+  return saved;
+}
 
 export const useStatus = () =>
   useQuery({

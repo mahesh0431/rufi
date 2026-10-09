@@ -3,6 +3,7 @@
 // chat, and only theirs is found.
 import {
   AddPerson,
+  Appearance,
   FinishStep,
   MessageText,
   MAX_MESSAGE_CHARS,
@@ -20,7 +21,8 @@ import {
   type Status,
   type StreamLine,
 } from "@rufi/contracts";
-import { Result, Schema } from "effect";
+import { APPEARANCE_HEADER } from "@rufi/contracts/app";
+import { Option, Result, Schema } from "effect";
 import type { HttpBindings } from "@hono/node-server";
 import { Hono, type Context, type Next } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -232,9 +234,17 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       throw answerOf(error);
     }
   };
-  const emergency = async (): Promise<Settings> => {
+  /** The chosen appearance; system until one is chosen. */
+  const appearance = async (): Promise<Appearance> =>
+    Schema.decodeUnknownOption(Appearance)(
+      await transcripts.setting("appearance"),
+    ).pipe(Option.getOrElse(() => "system" as const));
+  const settings = async (c: Context): Promise<Settings> => {
     const known = emergencyFor(await transcripts.setting("emergency_region"));
+    const chosen = await appearance();
+    c.header(APPEARANCE_HEADER, chosen);
     return {
+      appearance: chosen,
       emergencyRegion: known?.region ?? null,
       emergency: known ? { name: known.name, number: known.number } : null,
       regions: emergencyRegions(),
@@ -286,14 +296,20 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     return c.json(await firstRun());
   });
 
-  app.get("/api/settings", async (c) => c.json(await emergency()));
+  app.get("/api/settings", async (c) => c.json(await settings(c)));
   app.put("/api/settings", async (c) => {
-    const { emergencyRegion } = await body(c, SaveSettings);
-    if (emergencyRegion !== null && !emergencyFor(emergencyRegion)) {
+    const changed = await body(c, SaveSettings);
+    const region = changed.emergencyRegion;
+    if (region !== undefined && region !== null && !emergencyFor(region)) {
       throw new HttpError(400, "Rufi doesn't know that region yet.");
     }
-    await transcripts.saveSetting("emergency_region", emergencyRegion);
-    return c.json(await emergency());
+    if (region !== undefined) {
+      await transcripts.saveSetting("emergency_region", region);
+    }
+    if (changed.appearance !== undefined) {
+      await transcripts.saveSetting("appearance", changed.appearance);
+    }
+    return c.json(await settings(c));
   });
 
   app.get("/api/status", async (c) => c.json(await deps.account()));
@@ -590,6 +606,17 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       "Cache-Control",
       found.immutable ? "public, max-age=31536000, immutable" : "no-cache",
     );
+    if (found.type.startsWith("text/html")) {
+      // The page carries the chosen appearance, so public/theme.js paints it
+      // first time, and the app's window takes it from the header.
+      const chosen = await appearance();
+      c.header(APPEARANCE_HEADER, chosen);
+      return c.body(
+        found.body
+          .toString("utf8")
+          .replace("<html", `<html data-appearance="${chosen}"`),
+      );
+    }
     return c.body(new Uint8Array(found.body));
   });
 

@@ -11,6 +11,7 @@ import {
 import { CircleHelp, House, MessageCircle, Settings } from "lucide-react";
 import { type ReactNode, useEffect } from "react";
 import { useConnection } from "./api.ts";
+import { useAppearance } from "./appearance.tsx";
 import { CHAT_TITLE, ChatDock } from "./chat.tsx";
 import { FirstRun } from "./first-run.tsx";
 import { useFirstRun, usePeople, useStatus } from "./reads.ts";
@@ -26,6 +27,7 @@ const isChatPage = (pathname: string) =>
   /^\/people\/[^/]+\/chat$/.test(pathname);
 
 export function Frame() {
+  useAppearance();
   const connection = useConnection();
   const person = usePeople().data?.[0];
   const step = useFirstRun().data?.step;

@@ -16,6 +16,10 @@ async function accessible(page: Page) {
 
 const sidebar = (page: Page) => page.getByRole("complementary");
 
+/** The theme the page shows now: light or dark. */
+const theme = (page: Page) => () =>
+  page.evaluate(() => document.documentElement.dataset["theme"]);
+
 test.describe("opening Rufi", () => {
   test("the link opens the Overview and leaves the address bar", async ({
     page,
@@ -110,11 +114,9 @@ test("follows the Mac's light or dark appearance, also when it changes while Ruf
   await rufi.start();
   await page.goto(rufi.link());
   await expect(page.getByText("Latest results")).toBeVisible();
-  const theme = () =>
-    page.evaluate(() => document.documentElement.dataset["theme"]);
   const background = () =>
     page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  expect(await theme()).toBe("dark");
+  expect(await theme(page)()).toBe("dark");
   const dark = await background();
   await accessible(page);
 
@@ -132,8 +134,63 @@ test("follows the Mac's light or dark appearance, also when it changes while Ruf
   await accessible(page);
 
   await page.emulateMedia({ colorScheme: "light" });
-  await expect.poll(theme).toBe("light");
+  await expect.poll(theme(page)).toBe("light");
   expect(await background()).not.toBe(dark);
+});
+
+test("Settings chooses light, dark or the Mac's; every open tab changes at once, and a new tab or a restart starts in it", async ({
+  context,
+  page,
+  rufi,
+}) => {
+  // The theme each page shows in its first frame, before anything paints.
+  await context.addInitScript(() => {
+    requestAnimationFrame(() => {
+      sessionStorage.setItem(
+        "first-frame",
+        document.documentElement.dataset["theme"] ?? "",
+      );
+    });
+  });
+  const firstFrame = (tab: Page) =>
+    tab.evaluate(() => sessionStorage.getItem("first-frame"));
+  await rufi.family();
+  const { port } = await rufi.start();
+  await page.goto(rufi.link());
+  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  const appearance = page.getByRole("radiogroup", { name: "Appearance" });
+  await expect(appearance.getByRole("radio", { name: "System" })).toBeChecked();
+  expect(await theme(page)()).toBe("light");
+  const other = await context.newPage();
+  await other.goto((await runningLink(rufi.home)) ?? "");
+  await expect(other.getByText("Latest results")).toBeVisible();
+
+  await appearance.getByRole("radio", { name: "Dark" }).check();
+  await expect.poll(theme(page)).toBe("dark");
+  await expect.poll(theme(other)).toBe("dark");
+  await accessible(page);
+  const fresh = await context.newPage();
+  await fresh.goto((await runningLink(rufi.home)) ?? "");
+  await expect(fresh.getByText("Latest results")).toBeVisible();
+  expect(await firstFrame(fresh)).toBe("dark");
+
+  await rufi.stop();
+  await rufi.start({ port });
+  await page.goto(rufi.link());
+  await expect(page.getByText("Latest results")).toBeVisible();
+  expect(await firstFrame(page)).toBe("dark");
+
+  // Light stays light on a dark Mac; System follows the Mac again.
+  await page.emulateMedia({ colorScheme: "dark" });
+  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  await expect(appearance.getByRole("radio", { name: "Dark" })).toBeChecked();
+  await appearance.getByRole("radio", { name: "Light" }).check();
+  await expect.poll(theme(page)).toBe("light");
+  await accessible(page);
+  await appearance.getByRole("radio", { name: "System" }).check();
+  await expect.poll(theme(page)).toBe("dark");
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect.poll(theme(page)).toBe("light");
 });
 
 test.describe("first run", () => {
@@ -163,6 +220,13 @@ test.describe("first run", () => {
     await expect(page.getByRole("main")).toContainText(
       "What you ask, and the parts of your record the AI reads to answer, are sent to the AI in the cloud. Your record is kept on your Mac.",
     );
+    await accessible(page);
+    // The look can be chosen here too, and stays chosen.
+    await page
+      .getByRole("radiogroup", { name: "Appearance" })
+      .getByRole("radio", { name: "Dark" })
+      .check();
+    await expect.poll(theme(page)).toBe("dark");
     await accessible(page);
     const next = page.getByRole("button", { name: "Continue" });
     await expect(next).toBeDisabled();
@@ -225,6 +289,7 @@ test.describe("first run", () => {
     await expect(
       page.getByRole("combobox", { name: "Emergency region" }),
     ).toHaveValue("IN");
+    await expect(page.getByRole("radio", { name: "Dark" })).toBeChecked();
   });
 
   test("signs in with ChatGPT from the app", async ({ page, rufi }) => {

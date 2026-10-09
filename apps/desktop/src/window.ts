@@ -2,7 +2,17 @@
 // them, with nothing of Node or Electron in the page. Every setting that
 // guards the page is set here on purpose, not left to Electron's defaults.
 import { join } from "node:path";
-import { app, BrowserWindow, dialog, type Session, shell } from "electron";
+import { Appearance } from "@rufi/contracts";
+import { APPEARANCE_HEADER } from "@rufi/contracts/app";
+import { Schema } from "effect";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  nativeTheme,
+  type Session,
+  shell,
+} from "electron";
 
 /** What the screens look for to know they are in the app (apps/web main.tsx). */
 const MARK = "RufiApp";
@@ -42,6 +52,26 @@ export function lockDown(session: Session): void {
 }
 
 /**
+ * The Mac's appearance of every window (its material, and the system's
+ * appearance the page sees) follows the one chosen in Rufi, which the core
+ * names on each page and on its settings (APPEARANCE_HEADER). The first page
+ * of a window says it before the window shows.
+ */
+export function followAppearance(session: Session): void {
+  const decode = Schema.decodeUnknownOption(Appearance);
+  session.webRequest.onHeadersReceived((details, answer) => {
+    if (URL.parse(details.url)?.hostname === "127.0.0.1") {
+      const named = Object.entries(details.responseHeaders ?? {}).find(
+        ([name]) => name.toLowerCase() === APPEARANCE_HEADER,
+      )?.[1][0];
+      const chosen = decode(named);
+      if (chosen._tag === "Some") nativeTheme.themeSource = chosen.value;
+    }
+    answer({});
+  });
+}
+
+/**
  * Opens a window on `link` (a launch link, checked by core.ts). `failed`
  * hears when the page can't be loaded or stops working.
  */
@@ -63,7 +93,8 @@ export function openWindow(
     trafficLightPosition: { x: 18, y: 18 },
     vibrancy: "sidebar",
     // Clear: until the page paints, the window shows that material, in the
-    // system's appearance, as the page will be (not a colour of the theme).
+    // appearance chosen in Rufi, as the page will be (not a colour of the
+    // theme; followAppearance).
     // oxlint-disable-next-line rufi/no-raw-colour
     backgroundColor: "#00000000",
     webPreferences: {
