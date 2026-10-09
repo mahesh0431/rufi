@@ -248,7 +248,6 @@ export function reader(deps: ReaderDeps) {
           delay = Math.min(delay, Date.parse(at) - Date.now());
         }
       } catch (error) {
-        if (stop.signal.aborted) return;
         log("reader.failed", { error: errorCode(error) });
         delay = ERROR_MS;
       }

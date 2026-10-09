@@ -18,6 +18,7 @@ Everything is in one data folder on your Mac. Today you choose it with the `RUFI
 | `logs/`            | Rufi's log (see below)                                                                                                                                                                                              |
 | `codex/`           | The AI's own files: its settings, its own copy of your chat with what its tools returned, and the messages that wait for the AI                                                                                     |
 | `workspace/`       | The folder where the AI works                                                                                                                                                                                       |
+| `sub-agents/`      | The settings and the empty working folder of Rufi's document reader (see below); it holds no document                                                                                                               |
 | `core.json`        | There while Rufi runs: how `pnpm start` finds the running Rufi to open it again. Rufi removes it when it stops                                                                                                      |
 | `rufi.lock`        | A folder that is there while Rufi or a Rufi command uses the data folder, so only one of them does at a time                                                                                                        |
 | `credentials.lock` | A short-lived folder while Rufi changes or renews the sign-in                                                                                                                                                       |
@@ -39,6 +40,18 @@ When you ask about a document in the chat, the AI can look at its pages, one at 
 Each page the AI looks at goes to the AI service you signed in with, like the parts of your record it reads. The AI can look only at the documents of the person whose chat it is, and only through Rufi: it can't open the files in your data folder. Looking at a page changes nothing; documents aren't part of your record until you save from them.
 
 Rufi keeps the drawn PDF pages in `cache/` and draws a page again when its copy is missing; they aren't in your backups or your export.
+
+## Reading your documents
+
+Rufi reads each document you add with its own reader (see [Documents](documents.md#how-rufi-reads-a-document)), only after your yes. Being signed in isn't that yes: Rufi asks once, and **Settings** → **Documents** → **Read documents with the AI** changes it. Nothing goes to any other service, and when the AI can't be reached, Rufi doesn't fall back to another one: the reading waits or fails, and says so.
+
+The reader sends the document's pages to the AI service you signed in with, the same way as above. It is a separate AI that Rufi starts for that one document:
+
+- It gets only Rufi's instructions for reading, the list of the document's pages and its own notes: none of your chat or your record.
+- It can do two things only, both through Rufi: look at a page of that document, and save what the page says in its notebook. It has no files, no commands and no internet, and it can't start other work.
+- Its thread isn't saved by the AI. Rufi keeps its notebook (what each page says) and its draft items in `rufi.sqlite`, with the reader's version and how much of your plan the reading used.
+
+Draft items aren't your record until you save them. They are in your backups and your export (the `draft_items` table), apart from your record.
 
 ## Your chat
 

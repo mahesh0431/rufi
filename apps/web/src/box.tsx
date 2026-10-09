@@ -24,6 +24,7 @@ import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
 import { type BoxState, type DraftBox, draftBox, tooLong } from "./draft.ts";
 import { chatPath, type Live, messageOf } from "./live.ts";
+import { ReadCard, ReaderStrip } from "./reading.tsx";
 import { ModelMenu } from "./model-menu.tsx";
 import { queries } from "./reads.ts";
 import { isRunning } from "./transcript-state.ts";
@@ -170,6 +171,8 @@ export function Box({
         submit(false);
       }}
     >
+      {size !== "bar" && <ReadCard person={person} />}
+      {size !== "bar" && <ReaderStrip personId={person.id} />}
       {size !== "bar" && (
         <QueueView
           live={live}

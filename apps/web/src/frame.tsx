@@ -19,6 +19,7 @@ import { type ReactNode, useEffect } from "react";
 import { useConnection } from "./api.ts";
 import { useAppearance } from "./appearance.tsx";
 import { CHAT_TITLE, ChatDock } from "./chat.tsx";
+import { ReadingSheet } from "./reading.tsx";
 import { FirstRun } from "./first-run.tsx";
 import { useFirstRun, usePeople, useStatus } from "./reads.ts";
 
@@ -134,6 +135,7 @@ export function Frame() {
       {person && connection !== "ended" && pathname === "/" && (
         <ChatDock person={person} />
       )}
+      <ReadingSheet />
     </div>
   );
 }

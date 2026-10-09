@@ -168,14 +168,13 @@ export const getDocuments = defineTool({
     }
 
     // Pages first, then draft items, each in parts: "pages:N", "items:N".
-    const [part, at] =
+    const parsed =
       input.after === undefined
-        ? ["first", 0]
-        : (/^(pages|items):(\d{1,9})$/.exec(input.after)?.slice(1) ?? []);
+        ? ["first", "0"]
+        : /^(pages|items):(\d{1,9})$/.exec(input.after)?.slice(1);
+    if (!parsed) throw new Refusal("That `after` isn't from this document.");
+    const [part, at] = parsed;
     const from = Number(at);
-    if (part === undefined || !Number.isInteger(from)) {
-      throw new Refusal("That `after` isn't from this document.");
-    }
     const status = (await readings(store).statuses(personId)).get(document.id);
     const counted = await db
       .selectFrom("draft_items")

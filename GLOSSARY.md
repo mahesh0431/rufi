@@ -24,6 +24,18 @@ _Avoid_: chart, file, history
 What the user added for a person in one go: one PDF, or photos added together, such as a lab report photographed page by page. Its pages are the PDF's pages or the photos, in order. Rufi keeps each original file exactly as it came, and the same content only once per person.
 _Avoid_: upload, attachment
 
+**Reading**:
+Rufi reading one document in the background with its reader, after your yes: one page at a time, then a line in the chat when it ends. Only a reading that finished makes draft items; one that stopped continues with **Retry**, or by itself after Rufi starts again.
+_Avoid_: import, scan, parsing, extraction
+
+**Reader**:
+The AI that does a reading: a separate AI that Rufi starts for one document, with only two tools (look at a page, save what the page says) and no access to your record, chat, files or the internet. It copies what is printed; it never judges or saves to the record.
+_Avoid_: parser, OCR, extractor
+
+**Draft item**:
+One thing a reading found, such as a result, kept exactly as printed and waiting for you: not part of your record, so it counts in no answer, Overview or trend until you save it. The reader's own values are kept beside any change. It points to its document and page, and may be marked unsure.
+_Avoid_: pending result, unconfirmed record, extracted row
+
 **Report**:
 A lab or clinic report read from a document: who issued it and when the sample was collected.
 _Avoid_: lab sheet, test report
@@ -219,6 +231,7 @@ _Avoid_: download, dump
 
 - **You** keep the **records** of one or more **people**.
 - A **document** can hold **reports**; a **report** has **results**. A **result** can also be typed in without a report.
+- A **reading** of a **document** makes **draft items**; they become **results** only when you save them. Its end is a **Rufi event** in the person's **chat**.
 - A **save** changes one **person**'s **records**, rests on their messages as its **sources**, and gives one **receipt**; an **undo** is a new save.
 - A **person** has one **chat**, made with them; it can produce **saves**, **follow-ups** and **research entries**.
 - A **chat** has one **queue**: your messages and the notes of **Rufi events** wait there for the AI.

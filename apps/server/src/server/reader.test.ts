@@ -449,9 +449,10 @@ describe("a restart or a failure", () => {
 
   it("retries once by itself for a passing reason, then fails visibly", async () => {
     await reads.setConsent("yes");
-    const lost = async () => ({
-      end: { status: "failed" as const, reason: "connection" as const },
-    });
+    const lost = () =>
+      Promise.resolve({
+        end: { status: "failed" as const, reason: "connection" as const },
+      });
     const { runs, reader: running } = startReader([lost, lost]);
     await addReport();
     await until(() => job()?.["state"] === "failed");
@@ -466,13 +467,14 @@ describe("a restart or a failure", () => {
     await reads.setConsent("yes");
     signedIn = false;
     const { runs, reader: running } = startReader([
-      async () => ({
-        end: {
-          status: "failed",
-          reason: "usage_limit",
-          resetsAt: "2026-10-10T14:30:00.000Z",
-        },
-      }),
+      () =>
+        Promise.resolve({
+          end: {
+            status: "failed" as const,
+            reason: "usage_limit" as const,
+            resetsAt: "2026-10-10T14:30:00.000Z",
+          },
+        }),
     ]);
     await addReport();
     await until(() => job()?.["waiting"] === "sign_in");

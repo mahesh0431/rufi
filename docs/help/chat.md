@@ -153,7 +153,7 @@ A held message says why under it, and goes only when you click **Send** (or **Se
 
 ## Rufi's lines
 
-Some things happen outside your chat. Rufi tells you with its own line in the chat. For example, once Rufi reads documents, a line such as "Lab report · 12 Aug · 42 results read · 1 to check" says that a reading has finished. Rufi writes these lines, not the AI, and they are never your words.
+Some things happen outside your chat. Rufi tells you with its own line in the chat. For example, "Reading thyrocare-aug.pdf · 5 pages" says that Rufi started to read a document, and "Lab report · 12 Aug · 42 results read · 1 to check · Open" that the reading has finished; **Open** shows what was read (see [Documents](documents.md#how-rufi-reads-a-document)). Rufi writes these lines, not the AI, and they are never your words. Readings at work show above the box, in the reader strip.
 
 When the AI should know too, Rufi gives it a note:
 

@@ -514,10 +514,11 @@ export function readings(
           .selectFrom("documents as d")
           .select("d.id")
           .where("d.person_id", "=", personId)
-          .where(({ not, exists, selectFrom }) =>
-            not(
-              exists(
-                selectFrom("jobs as j")
+          .where((eb) =>
+            eb.not(
+              eb.exists(
+                eb
+                  .selectFrom("jobs as j")
                   .select("j.id")
                   .whereRef("j.person_id", "=", "d.person_id")
                   .whereRef("j.document_id", "=", "d.id"),
@@ -635,9 +636,9 @@ export function readings(
       const job = jobs.find((j) => j.waitUntil === null || j.waitUntil <= at);
       const wake = jobs
         .map((j) => j.waitUntil)
-        .filter((w) => w !== null && w > at)
-        .sort()[0];
-      return { job, ...{ wake: wake ?? undefined } };
+        .filter((w): w is string => w !== null && w > at)
+        .sort((a, b) => a.localeCompare(b))[0];
+      return { job, wake };
     },
 
     /** Whether every target of the job has an entry from it. */

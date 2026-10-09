@@ -17,6 +17,8 @@ import {
 } from "./transcript-state.ts";
 
 export interface Live extends Transcript {
+  /** Whose chat it is. */
+  personId: string;
   /** loading: before the first snapshot; missing: no such person. */
   status: "loading" | "open" | "missing";
   /** Loading an older page, or why it couldn't be loaded. */
@@ -80,6 +82,7 @@ function open(personId: string): Opened {
   if (found) return found;
   const store = createStore<Live>(() => ({
     ...emptyTranscript,
+    personId,
     status: "loading",
     older: "idle",
     queue: { items: [], paused: null },
@@ -87,6 +90,12 @@ function open(personId: string): Opened {
   }));
   const stop = new AbortController();
   const path = chatPath(personId);
+  /** The person's documents and readings changed: what shows them reads again. */
+  const documentsChanged = () => {
+    for (const key of ["readings", "documents", "reading"]) {
+      void queries.invalidateQueries({ queryKey: [key, personId] });
+    }
+  };
 
   // Each change starts a read; only the last one started is shown, so an
   // older answer that comes late never replaces a newer one.
@@ -108,11 +117,16 @@ function open(personId: string): Opened {
       void readQueue();
       return;
     }
+    if (line.type === "documents") {
+      documentsChanged();
+      return;
+    }
     const next = apply(store.getState(), line);
     if (line.type === "snapshot") {
       // A reconnect: the latest page only; an older page on its way is dropped.
       store.setState({ ...next, status: "open", older: "idle" });
       void readQueue();
+      documentsChanged();
     } else store.setState({ ...next, status: "open" });
     // A reply that ended for the sign-in: the sidebar says so.
     if (line.turns.some((turn) => turn.endReason === "sign_in")) {

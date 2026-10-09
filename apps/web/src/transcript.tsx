@@ -20,12 +20,13 @@ import {
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remend from "remend";
-import type { Read, Turn } from "@rufi/contracts";
+import type { Entry, Read, Turn } from "@rufi/contracts";
 import type { StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/shallow";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import type { Live } from "./live.ts";
+import { openReading, RetryButton, TextButton } from "./reading.tsx";
 import { isRunning } from "./transcript-state.ts";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no images,
@@ -436,7 +437,15 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
       <Bell size={14} className="mt-1 shrink-0 text-muted" aria-hidden />
       <div className="min-w-0 break-words">
         <p className="text-xs text-muted">Rufi</p>
-        <p className="whitespace-pre-wrap">{entry.text}</p>
+        <p className="whitespace-pre-wrap">
+          {entry.text}
+          {entry.link && (
+            <>
+              {" · "}
+              <EventLink live={live} link={entry.link} />
+            </>
+          )}
+        </p>
       </div>
     </div>
   ) : entry.kind === "activity" ? (
@@ -452,6 +461,28 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
     </p>
   ) : (
     <Reply id={id} text={entry.text} streaming={streaming} />
+  );
+}
+
+/** An event's way to its document: Open its reading, or Retry it. */
+function EventLink({
+  live,
+  link,
+}: {
+  live: StoreApi<Live>;
+  link: NonNullable<Entry["link"]>;
+}) {
+  const personId = useStore(live, (state) => state.personId);
+  return link.action === "retry" ? (
+    <RetryButton personId={personId} documentId={link.document} />
+  ) : (
+    <TextButton
+      onClick={() => {
+        openReading(personId, link.document);
+      }}
+    >
+      Open
+    </TextButton>
   );
 }
 
