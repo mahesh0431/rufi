@@ -177,23 +177,12 @@ async function session(core: Pick<Core, "port" | "launchUrl">) {
     headers,
     api: (method: string, path: string, body?: unknown) =>
       call(core.port, method, path, headers, body),
-    /** Sends from a chat's box, as the screens do: saves the draft, then sends it. */
-    say: async (
+    /** Sends a box's text: the core keeps it as the draft while it sends. */
+    say: (
       path: string,
       text: string,
       kind: "messages" | "steer" = "messages",
-    ) => {
-      const draft = `${path}/draft`;
-      const before = await call(core.port, "GET", draft, headers);
-      const saved = await call(core.port, "PUT", draft, headers, {
-        text,
-        revision: before.body["revision"],
-      });
-      return call(core.port, "POST", `${path}/${kind}`, headers, {
-        text,
-        draft: saved.body["revision"],
-      });
-    },
+    ) => call(core.port, "POST", `${path}/${kind}`, headers, { text }),
   };
 }
 
@@ -340,17 +329,17 @@ describe("the core", () => {
         ('c-asha', 'asha', '2026-10-04T09:00:00Z'), ('c-ravi', 'ravi', '2026-10-04T09:00:00Z');
       INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, revision, created_at, updated_at)
         SELECT 'm-1', 'asha', id, 1, 'message', 'Taken', 1, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z' FROM chats WHERE person_id = 'asha';
-      INSERT INTO drafts (person_id, chat_id, text, revision, state, attempt, updated_at)
-        SELECT person_id, id, 'Taken', 2, 'sending', 'm-1', '2026-10-04T10:00:00Z' FROM chats WHERE person_id = 'asha';
-      INSERT INTO drafts (person_id, chat_id, text, revision, state, attempt, updated_at)
-        SELECT person_id, id, 'Not known', 2, 'sending', 'm-2', '2026-10-04T10:00:00Z' FROM chats WHERE person_id = 'ravi';`);
+      INSERT INTO drafts (person_id, chat_id, text, state, attempt, updated_at)
+        SELECT person_id, id, 'Taken', 'sending', 'm-1', '2026-10-04T10:00:00Z' FROM chats WHERE person_id = 'asha';
+      INSERT INTO drafts (person_id, chat_id, text, state, attempt, updated_at)
+        SELECT person_id, id, 'Not known', 'sending', 'm-2', '2026-10-04T10:00:00Z' FROM chats WHERE person_id = 'ravi';`);
     left.close();
     const page = await session(await start());
     expect((await page.api("GET", "/api/people/asha/chat/draft")).body).toEqual(
-      { text: "", revision: 3, state: "editable" },
+      { text: "", state: "editable" },
     );
     expect((await page.api("GET", "/api/people/ravi/chat/draft")).body).toEqual(
-      { text: "Not known", revision: 3, state: "unknown" },
+      { text: "Not known", state: "unknown" },
     );
   });
 
@@ -517,7 +506,6 @@ describe("the local API", () => {
       (
         await page.api("POST", "/api/people/nobody/chat/messages", {
           text: "Hi",
-          draft: 0,
         })
       ).status,
     ).toBe(404);
@@ -544,12 +532,10 @@ describe("the local API", () => {
     const page = await session(core);
     const c = await chat(page);
     expect(
-      (await page.api("POST", `${c.path}/messages`, { text: "", draft: 0 }))
-        .status,
+      (await page.api("POST", `${c.path}/messages`, { text: "" })).status,
     ).toBe(400);
     const tooLong = await page.api("POST", `${c.path}/messages`, {
       text: "x".repeat(10_001),
-      draft: 0,
     });
     expect(tooLong.status).toBe(400);
     expect(tooLong.body).toEqual({
@@ -568,7 +554,7 @@ describe("the local API", () => {
     }
   });
 
-  it("keeps the chat's draft, and refuses a save based on an older revision", async () => {
+  it("keeps each person's chat draft; the last save wins", async () => {
     const core = await start();
     const page = await session(core);
     const c = await chat(page);
@@ -576,39 +562,27 @@ describe("the local API", () => {
     const draft = c.draft;
     expect((await page.api("GET", draft)).body).toEqual({
       text: "",
-      revision: 0,
+      state: "editable",
+    });
+    expect((await page.api("PUT", draft, { text: "Start" })).body).toEqual({
+      text: "Start",
+      state: "editable",
+    });
+    await page.api("PUT", `/api/people/${ravi.id}/chat/draft`, {
+      text: "Half written",
+    });
+    // Another tab saves over it.
+    await page.api("PUT", draft, { text: "From the other tab" });
+    expect((await page.api("GET", draft)).body).toEqual({
+      text: "From the other tab",
       state: "editable",
     });
     expect(
-      (await page.api("PUT", draft, { text: "Start", revision: 0 })).body,
-    ).toEqual({ text: "Start", revision: 1, state: "editable" });
-    await page.api("PUT", draft, { text: "Start here", revision: 1 });
-    await page.api("PUT", `/api/people/${ravi.id}/chat/draft`, {
-      text: "Half written",
-      revision: 0,
-    });
-    expect((await page.api("GET", draft)).body).toMatchObject({
-      text: "Start here",
-      revision: 2,
-    });
-    // Another tab, still at revision 1: refused, with the draft as it is now.
-    expect(
-      await page.api("PUT", draft, { text: "Older text", revision: 1 }),
-    ).toMatchObject({
-      status: 409,
-      body: {
-        error: "Changed in another tab.",
-        draft: { text: "Start here", revision: 2, state: "editable" },
-      },
-    });
-    // Emptied, a draft keeps its revision moving.
-    await page.api("PUT", draft, { text: "", revision: 2 });
-    expect(
-      (await page.api("PUT", draft, { text: "x", revision: 2 })).status,
-    ).toBe(409);
+      (await page.api("GET", `/api/people/${ravi.id}/chat/draft`)).body,
+    ).toMatchObject({ text: "Half written" });
   });
 
-  it("holds the box's draft while it is sent: only its saved text goes, nobody changes or sends it meanwhile, and it empties once the agent took it", async () => {
+  it("holds the box's draft while it is sent: the text sent is the draft, nobody changes or sends it meanwhile, and it empties once the agent took it", async () => {
     // Codex takes a while to start the chat's thread.
     const core = await start({
       agent: scripted({ slow: ["thread/start"], slowMs: 600 }),
@@ -616,23 +590,9 @@ describe("the local API", () => {
     const page = await session(core);
     const c = await chat(page);
     const draft = c.draft;
-    const changed = (text: string, revision: number) => ({
-      status: 409,
-      body: {
-        error: "Changed in another tab.",
-        draft: { text, revision, state: "editable" },
-      },
-    });
-    // Text the core doesn't keep as the draft is never sent.
-    expect(
-      await page.api("POST", `${c.path}/messages`, { text: "First", draft: 0 }),
-    ).toMatchObject(changed("", 0));
-
-    await page.api("PUT", draft, { text: "First\n", revision: 0 });
-    const sending = page.api("POST", `${c.path}/messages`, {
-      text: "First",
-      draft: 1,
-    });
+    // Another tab saved last: the send's text replaces it, and is held.
+    await page.api("PUT", draft, { text: "Other tab" });
+    const sending = page.say(c.path, "First");
     await until(
       async () => (await page.api("GET", draft)).body["state"] === "sending",
     );
@@ -640,49 +600,26 @@ describe("the local API", () => {
       status: 409,
       body: {
         error: "This message is being sent.",
-        draft: { text: "First\n", revision: 2, state: "sending" },
+        draft: { text: "First", state: "sending" },
       },
     };
-    // Another tab, at the latest revision: it can't change it or send it.
+    // Another tab can't change it or send.
     expect(
-      await page.api("PUT", draft, { text: "Other tab", revision: 2 }),
+      await page.api("PUT", draft, { text: "Other tab again" }),
     ).toMatchObject(held);
-    expect(
-      await page.api("POST", `${c.path}/messages`, { text: "First", draft: 2 }),
-    ).toMatchObject(held);
+    expect(await page.say(c.path, "Second")).toMatchObject(held);
     const sent = await sending;
     expect(sent.status).toBe(202);
-    expect(sent.body["draft"]).toEqual({
-      text: "",
-      revision: 3,
-      state: "editable",
-    });
+    expect(sent.body["draft"]).toEqual({ text: "", state: "editable" });
 
     // Refused: the text is back to edit, and the answer says why.
-    await page.api("PUT", draft, { text: "Only the latest", revision: 3 });
-    expect(
-      await page.api("POST", `${c.path}/steer`, {
-        text: "Only the latest",
-        draft: 4,
-      }),
-    ).toMatchObject({
+    expect(await page.say(c.path, "Only the latest", "steer")).toMatchObject({
       status: 409,
       body: {
         error: "No reply is running to steer.",
-        draft: { text: "Only the latest", revision: 6, state: "editable" },
+        draft: { text: "Only the latest", state: "editable" },
       },
     });
-
-    // The box saved at revision 7; another tab saved after it: nothing is
-    // sent, and the box gets that tab's text.
-    await page.api("PUT", draft, { text: "Second", revision: 6 });
-    await page.api("PUT", draft, { text: "Other tab", revision: 7 });
-    expect(
-      await page.api("POST", `${c.path}/messages`, {
-        text: "Second",
-        draft: 7,
-      }),
-    ).toMatchObject(changed("Other tab", 8));
     await until(async () =>
       (
         (await page.api("GET", c.path)).body["turns"] as { status: string }[]
@@ -706,20 +643,11 @@ describe("the local API", () => {
     const c = await chat(page);
     const failed = await page.say(c.path, "Hello");
     expect(failed.status).toBe(502);
-    expect(failed.body["draft"]).toEqual({
-      text: "Hello",
-      revision: 3,
-      state: "unknown",
-    });
+    expect(failed.body["draft"]).toEqual({ text: "Hello", state: "unknown" });
     // The person can go on from it: edit, or send it again themselves.
     expect(
-      (
-        await page.api("PUT", c.draft, {
-          text: "Hello again",
-          revision: 3,
-        })
-      ).body,
-    ).toEqual({ text: "Hello again", revision: 4, state: "editable" });
+      (await page.api("PUT", c.draft, { text: "Hello again" })).body,
+    ).toEqual({ text: "Hello again", state: "editable" });
   });
 
   it("keeps the text as unknown when Stop comes while the agent takes the message, which may already wait", async () => {
@@ -813,25 +741,14 @@ describe("the local API", () => {
         });
         const c = await chat(page);
         draft = c.draft;
-        await page.api("PUT", draft, { text: "Outgoing text", revision: 0 });
-        void page
-          .api("POST", `${c.path}/messages`, {
-            text: "Outgoing text",
-            draft: 1,
-          })
-          .catch(() => undefined);
+        void page.say(c.path, "Outgoing text").catch(() => undefined);
         await until(
           async () =>
             (await page.api("GET", draft)).body["state"] === "sending",
         );
-        // Another tab saves at the latest revision while the agent starts.
+        // Another tab saves while the agent starts.
         expect(
-          (
-            await page.api("PUT", draft, {
-              text: "Other tab text",
-              revision: 2,
-            })
-          ).status,
+          (await page.api("PUT", draft, { text: "Other tab text" })).status,
         ).toBe(409);
       } finally {
         child.kill("SIGKILL");
@@ -842,7 +759,6 @@ describe("the local API", () => {
       const page = await session(await start());
       expect((await page.api("GET", draft)).body).toEqual({
         text: "Outgoing text",
-        revision: 3,
         state: "unknown",
       });
     },
@@ -1471,12 +1387,7 @@ describe("backups and export over the API", () => {
           (await page.api("GET", c.path)).body["turns"] as { status: string }[]
         ).some((turn) => turn.status === "running"),
       );
-      const draft = c.draft;
-      const { revision } = (await page.api("GET", draft)).body;
-      await page.api("PUT", draft, {
-        text: "An unsent fictional note",
-        revision,
-      });
+      await page.api("PUT", c.draft, { text: "An unsent fictional note" });
       const made = (await page.api("POST", "/api/backups")).body["last"] as {
         name: string;
       };
@@ -1501,7 +1412,7 @@ describe("backups and export over the API", () => {
         "completed",
         "interrupted",
       ]);
-      expect((await restored.api("GET", draft)).body["text"]).toBe(
+      expect((await restored.api("GET", c.draft)).body["text"]).toBe(
         "An unsent fictional note",
       );
       // Nothing ran by itself; the next message starts a new thread (the copy

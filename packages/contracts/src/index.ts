@@ -186,30 +186,25 @@ export const WaitingMessages = Schema.Struct({
 });
 
 /**
- * The unsent text of a chat's box. Its revision grows with every
- * change, so a save based on an older revision is refused. `sending`: a
- * send holds it until the agent took or refused the message, and it can't
- * be changed meanwhile; `unknown`: Rufi stopped during that send, so the
- * text stays and nobody knows whether the agent has it.
+ * The unsent text of a chat's box; the last save wins. `sending`: a send
+ * holds it until the agent took or refused the message, and it can't be
+ * changed meanwhile; `unknown`: Rufi stopped during that send, so the text
+ * stays and nobody knows whether the agent has it.
  */
 export const Draft = Schema.Struct({
   text: Schema.String,
-  revision: Schema.Int,
   state: Schema.Literals(["editable", "sending", "unknown"]),
 });
 export type Draft = typeof Draft.Type;
 
-/**
- * A refused save or send: the draft changed meanwhile (another tab), or a
- * send holds it.
- */
-export const DraftChanged = Schema.Struct({ draft: Draft });
-
 /** A message the core took, and the box's draft after it. */
 export const Sent = Schema.Struct({ id: Schema.String, draft: Draft });
 
-/** A message the core didn't send: the box's draft, which keeps it. */
-export const NotSent = Schema.Struct({ draft: Draft });
+/**
+ * A save or send the core didn't do (a send holds the draft), or a send that
+ * failed: the draft as it is now.
+ */
+export const NotDone = Schema.Struct({ draft: Draft });
 
 export const Model = Schema.Struct({ id: Schema.String, name: Schema.String });
 export type Model = typeof Model.Type;
@@ -344,18 +339,14 @@ const Message = Schema.String.check(
 export const MessageText = Schema.Struct({ text: Message });
 
 /**
- * A message from the box: sent or steered in. `draft` is the revision the
- * box saved this text at: the core sends only the text it keeps as the
- * draft at that revision (else 409 with the draft as it is), and holds the
- * draft until the agent took the message (emptied) or refused it.
+ * A message from the box: sent or steered in. The core keeps it as the
+ * draft and holds it until the agent took the message (emptied) or refused
+ * it; while another send holds the draft, it is refused (409).
  */
-export const SendMessage = Schema.Struct({ text: Message, draft: Schema.Int });
+export const SendMessage = Schema.Struct({ text: Message });
 
-/** The box's text, based on the draft's revision as the box last saw it. */
-export const SaveDraft = Schema.Struct({
-  text: Text(MAX_MESSAGE_CHARS),
-  revision: Schema.Int,
-});
+/** The box's text, saved over the draft unless a send holds it. */
+export const SaveDraft = Schema.Struct({ text: Text(MAX_MESSAGE_CHARS) });
 
 export const ReorderWaiting = Schema.Struct({ ids: Schema.Array(Id) });
 

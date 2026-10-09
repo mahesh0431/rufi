@@ -10,6 +10,7 @@ import { serve, type ServerType } from "@hono/node-server";
 import { Effect } from "effect";
 import type { AgentHost, AgentRuntime, AgentTools } from "../agent/runtime.ts";
 import { allowlistFile } from "../core/chat/models.ts";
+import { drafts as openDrafts } from "../core/chat/drafts.ts";
 import { transcripts as openTranscripts } from "../core/chat/transcript.ts";
 import { backupJob } from "../core/store/backup.ts";
 import {
@@ -24,7 +25,7 @@ import { chatCaller, forAgent, toolsVersion } from "../core/tools/tools.ts";
 import { holdRufiLock, readJson, writePrivateJson } from "../platform/files.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { api, LAUNCHER_HEADER } from "./api.ts";
-import { chat as openChat, type Chat } from "./chat.ts";
+import { ChatRefusal, chat as openChat, type Chat } from "./chat.ts";
 import { secret, sessions } from "./session.ts";
 import { signInFlow, type SignIn } from "./signin.ts";
 
@@ -131,6 +132,11 @@ export const startCore = (options: CoreOptions) =>
       (store) => Effect.sync(() => store?.close()),
     );
     const transcripts = openTranscripts(writer, options.now);
+    const drafts = openDrafts(
+      writer,
+      (error) => error instanceof ChatRefusal,
+      options.now,
+    );
     yield* attempt(() => cleanExportStaging(home));
     const backups = yield* Effect.acquireRelease(
       Effect.sync(() => backupJob(home, log)),
@@ -140,7 +146,7 @@ export const startCore = (options: CoreOptions) =>
     backups.start();
     const interrupted = yield* attempt(() => transcripts.interruptRunning());
     // Sends Rufi stopped during: taken, or the text stays; never sent again.
-    yield* attempt(() => transcripts.endStoppedSends());
+    yield* attempt(() => drafts.endStopped());
 
     const tools = forAgent(() => ({ store: reader, personId: undefined }), log);
     const allowlist = allowlistFile(home);
@@ -173,6 +179,7 @@ export const startCore = (options: CoreOptions) =>
       `http://127.0.0.1:${String(port)}/#launch=${access.launch()}`;
     const app = api({
       transcripts,
+      drafts,
       chat,
       sessions: access,
       port: () => port,

@@ -1,26 +1,29 @@
-// The box's text, kept by the core as the chat's draft. Saves go one
-// after another (one mutation scope per box), a moment after the typing
-// stops, and at once when the box leaves the screen, silently; the box says
-// only Not saved (with Retry). Nothing is saved as the page closes, so what
-// was typed since the last save can be lost then. A save based on an
-// older revision is refused (another tab saved first) and the box shows the
-// newer text. A save whose answer didn't come may still have been kept: the
-// next save asks the core first, and goes on from it if it was. A send saves
-// first, quietly; then the core holds the draft ("Sending…") until the
-// agent took the message (the draft empties) or refused it, and nobody can
-// change it meanwhile, in this tab or another. A box that finds its draft
-// held waits until the send has ended. Nothing here sends a message again.
-import { type Draft, MAX_MESSAGE_CHARS } from "@rufi/contracts";
+// The box's text, kept by the core as the chat's draft, and its send. Saves
+// go one after another (one mutation scope per box), a moment after the
+// typing stops, and at once when the box leaves the screen, silently; the
+// box says only Not saved (with Retry). The last save wins: two tabs typing
+// at once replace each other's text. Nothing is saved as the page closes,
+// so what was typed since the last save can be lost then. A send saves
+// first, quietly; then the core keeps the text and holds the draft
+// ("Sending…") until the agent took the message (the draft empties) or
+// refused it, and nobody can change it meanwhile, in this tab or another. A
+// box that finds its draft held follows it until the send has ended.
+// Nothing here sends a message again.
+import { Draft, MAX_MESSAGE_CHARS, NotDone, Sent } from "@rufi/contracts";
 import type { QueryClient } from "@tanstack/react-query";
+import { Schema } from "effect";
 import { createStore } from "zustand/vanilla";
 
-export interface DraftIo {
-  load: () => Promise<Draft>;
-  /** Saves `text` on `revision`; a refusal gives the draft as it is now. */
-  save: (
-    text: string,
-    revision: number,
-  ) => Promise<{ saved: boolean; draft: Draft }>;
+export interface DraftApi {
+  /**
+   * One request to the chat's API: the core's JSON answer, or an error with
+   * the core's answer as its `body`.
+   */
+  call: (
+    method: "GET" | "PUT" | "POST",
+    path: "draft" | "messages" | "steer",
+    body?: unknown,
+  ) => Promise<unknown>;
   /** The queries' client, and this box's name: its saves run in turn. */
   client: QueryClient;
   scope: string;
@@ -38,7 +41,7 @@ export interface BoxState {
   sending: boolean;
   /** The last save failed: the text is only in this tab. */
   failed: boolean;
-  /** What the person should know: another tab's change, a failure. */
+  /** What the person should know: why a read, save or send failed. */
   notice: string | null;
 }
 
@@ -46,10 +49,8 @@ export type DraftBox = ReturnType<typeof draftBox>;
 
 /** How long after the last key the box saves. */
 const PAUSE_MS = 400;
-/** How often a box whose draft a send holds asks whether it has ended. */
+/** How often a box reads a draft it couldn't read, or a send holds. */
 const WAIT_MS = 1_000;
-
-export const CHANGED = "Changed in another tab.";
 
 /**
  * Runs `run` after the earlier runs in the same `scope` have ended, however
@@ -72,10 +73,20 @@ export const held = (state: BoxState) => state.preparing || sending(state);
 export const sending = (state: BoxState) =>
   state.sending || state.draft.state === "sending";
 
-export function draftBox(io: DraftIo) {
+/** The draft in the core's refusal, when it has one. */
+const draftIn = (error: unknown) => {
+  const body =
+    typeof error === "object" && error !== null && "body" in error
+      ? error.body
+      : undefined;
+  const found = Schema.decodeUnknownOption(NotDone)(body);
+  return found._tag === "Some" ? found.value.draft : undefined;
+};
+
+export function draftBox(api: DraftApi) {
   const store = createStore<BoxState>(() => ({
     text: "",
-    draft: { text: "", revision: 0, state: "editable" },
+    draft: { text: "", state: "editable" },
     loaded: false,
     preparing: false,
     sending: false,
@@ -83,48 +94,46 @@ export function draftBox(io: DraftIo) {
     notice: null,
   }));
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let waiting = false;
-  /** The text of the last save, when its answer didn't come. */
-  let unanswered: string | undefined;
+  let following = false;
 
   /** The draft as the core has it now, shown as it is. */
   const show = (draft: Draft, notice: string | null = null) => {
     store.setState({ draft, text: draft.text, failed: false, notice });
-    if (draft.state === "sending") void wait();
+    if (draft.state === "sending") void follow();
   };
 
-  /** Reads the draft again until no send holds it. */
-  async function wait(): Promise<void> {
-    if (waiting) return;
-    waiting = true;
+  /** Reads the draft until it is read and no send holds it. */
+  async function follow(): Promise<void> {
+    if (following) return;
+    following = true;
+    let missed = false;
     try {
       for (;;) {
         try {
-          const draft = await io.load();
-          store.setState({ draft, text: draft.text });
+          const draft = Schema.decodeUnknownSync(Draft)(
+            await api.call("GET", "draft"),
+          );
+          store.setState({
+            draft,
+            text: draft.text,
+            loaded: true,
+            ...(missed && { notice: null }),
+          });
+          if (draft.state !== "sending") return;
+          missed = false;
         } catch (error) {
           // Said in the box; asked again in a moment.
+          missed = true;
           store.setState({ notice: messageOf(error) });
         }
-        if (store.getState().draft.state !== "sending") return;
         await new Promise((resolve) => setTimeout(resolve, WAIT_MS));
       }
     } finally {
-      waiting = false;
+      following = false;
     }
   }
 
-  io.load().then(
-    (draft) => {
-      store.setState({ loaded: true });
-      show(draft);
-    },
-    (error: unknown) => {
-      // The box opens empty: a save then is refused if a draft exists, and
-      // shows it.
-      store.setState({ loaded: true, notice: messageOf(error) });
-    },
-  );
+  void follow();
 
   const later = () => {
     clearTimeout(timer);
@@ -132,63 +141,25 @@ export function draftBox(io: DraftIo) {
   };
 
   /**
-   * After a save whose answer didn't come: the draft as the core has it.
-   * It kept that save: the box goes on from it, with what was typed since.
-   * It didn't: nothing changes. Another tab changed it: its text shows.
-   * False when the box can't save now.
+   * Saves the text if it changed, or the last save failed, after this box's
+   * earlier saves. A send holding the draft refuses it: the box shows it.
    */
-  async function settle(): Promise<boolean> {
-    let now: Draft;
-    try {
-      now = await io.load();
-    } catch (error) {
-      store.setState({ failed: true, notice: messageOf(error) });
-      return false;
-    }
-    const attempted = unanswered;
-    unanswered = undefined;
-    const { draft } = store.getState();
-    if (now.revision === draft.revision) return true;
-    if (
-      now.revision === draft.revision + 1 &&
-      now.state === "editable" &&
-      now.text === attempted
-    ) {
-      store.setState({ draft: now });
-      return true;
-    }
-    show(now, now.state === "sending" ? null : CHANGED);
-    return false;
-  }
-
-  /** Saves the text if it changed, after this box's earlier saves. */
   function save(): Promise<void> {
     clearTimeout(timer);
-    return inTurn(io.client, io.scope, async () => {
-      if (unanswered !== undefined && !(await settle())) return;
+    return inTurn(api.client, api.scope, async () => {
       const state = store.getState();
-      const { text, draft } = state;
-      if (!state.loaded || draft.state === "sending" || tooLong(text)) {
-        return;
-      }
-      if (text === draft.text) {
-        // Kept after all: the failure's reason is old news.
-        if (state.failed) store.setState({ failed: false, notice: null });
-        return;
-      }
+      const { text } = state;
+      if (!state.loaded || sending(state) || tooLong(text)) return;
+      if (text === state.draft.text && !state.failed) return;
       try {
-        const answer = await io.save(text, draft.revision);
-        if (!answer.saved) {
-          show(answer.draft, answer.draft.state === "sending" ? null : CHANGED);
-          return;
-        }
-        store.setState({ draft: answer.draft, failed: false, notice: null });
-        // Typed meanwhile: that is saved next.
-        if (store.getState().text !== text) later();
+        const draft = Schema.decodeUnknownSync(Draft)(
+          await api.call("PUT", "draft", { text }),
+        );
+        store.setState({ draft, failed: false, notice: null });
       } catch (error) {
-        // The core may have kept it: the next save asks first.
-        unanswered = text;
-        store.setState({ failed: true, notice: messageOf(error) });
+        const holding = draftIn(error);
+        if (holding) show(holding);
+        else store.setState({ failed: true, notice: messageOf(error) });
       }
     });
   }
@@ -208,40 +179,37 @@ export function draftBox(io: DraftIo) {
     saveNow: save,
 
     /**
-     * Takes the text for a send once the core keeps it as the draft, with
-     * its revision. Undefined when it couldn't be saved, or another tab's
-     * text replaced it: nothing is sent.
+     * Sends the text, or steers it into the running reply, once the core
+     * keeps it as the draft. Nothing is sent when it couldn't be saved.
      */
-    async take(): Promise<{ text: string; revision: number } | undefined> {
+    async submit(steer: boolean): Promise<void> {
       const state = store.getState();
-      if (!state.loaded || held(state) || tooLong(state.text)) return undefined;
       const { text } = state;
+      if (!state.loaded || held(state) || tooLong(text) || text.trim() === "") {
+        return;
+      }
       store.setState({ preparing: true, notice: null });
       await save();
       const { draft, failed } = store.getState();
-      if (failed || draft.text !== text || draft.state === "sending") {
+      if (failed || draft.state === "sending") {
         store.setState({ preparing: false });
-        return undefined;
+        return;
       }
       store.setState({ preparing: false, sending: true });
-      return { text, revision: draft.revision };
-    },
-
-    /** The core took the message; the box shows the draft it kept. */
-    sent(draft: Draft): void {
-      store.setState({ sending: false });
-      show(draft);
-    },
-
-    /**
-     * The message wasn't sent, or the box doesn't know: with the draft as the
-     * core has it, the box goes on from it; without, it reads it again (the
-     * send may still hold it).
-     */
-    failed(notice: string, draft?: Draft): void {
-      const { draft: before } = store.getState();
-      store.setState({ sending: false });
-      show(draft ?? { ...before, state: "sending" }, notice);
+      try {
+        const sent = Schema.decodeUnknownSync(Sent)(
+          await api.call("POST", steer ? "steer" : "messages", {
+            text: text.trim(),
+          }),
+        );
+        store.setState({ sending: false });
+        show(sent.draft);
+      } catch (error) {
+        store.setState({ sending: false });
+        // Without the core's answer the send may still hold the draft: the
+        // box follows it until a read says how it ended.
+        show(draftIn(error) ?? { text, state: "sending" }, messageOf(error));
+      }
     },
   };
 }
