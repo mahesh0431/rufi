@@ -8,7 +8,13 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { CircleHelp, House, MessageCircle, Settings } from "lucide-react";
+import {
+  CircleHelp,
+  FileText,
+  House,
+  MessageCircle,
+  Settings,
+} from "lucide-react";
 import { type ReactNode, useEffect } from "react";
 import { useConnection } from "./api.ts";
 import { useAppearance } from "./appearance.tsx";
@@ -25,6 +31,10 @@ const TITLES: Record<string, string> = {
 /** Whether the address is a person's chat page. */
 const isChatPage = (pathname: string) =>
   /^\/people\/[^/]+\/chat$/.test(pathname);
+
+/** Whether the address is a person's Documents page. */
+const isDocumentsPage = (pathname: string) =>
+  /^\/people\/[^/]+\/documents$/.test(pathname);
 
 export function Frame() {
   useAppearance();
@@ -82,6 +92,17 @@ export function Frame() {
           <Place to="/" icon={<House size={15} aria-hidden />}>
             Overview
           </Place>
+          {person && (
+            <Link
+              to="/people/$personId/documents"
+              params={{ personId: person.id }}
+              className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-surface/60"
+              activeProps={{ className: "bg-accent-soft text-accent-ink" }}
+            >
+              <FileText size={15} aria-hidden />
+              Documents
+            </Link>
+          )}
           <div className="flex-1" />
           <Place to="/help" icon={<CircleHelp size={15} aria-hidden />}>
             Help
@@ -100,7 +121,9 @@ export function Frame() {
           <h1 className="truncate text-[15px] font-semibold">
             {onChat
               ? CHAT_TITLE
-              : (TITLES[pathname.split("/")[1] ?? ""] ?? "Overview")}
+              : isDocumentsPage(pathname)
+                ? "Documents"
+                : (TITLES[pathname.split("/")[1] ?? ""] ?? "Overview")}
           </h1>
         </header>
         <Offline shown={connection === "offline"} />

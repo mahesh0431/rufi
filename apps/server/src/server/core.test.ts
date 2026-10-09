@@ -1,6 +1,7 @@
 // The core as the screens will meet it: started in a scope on a fictional
 // data folder with the scripted Codex, and used over HTTP like a browser.
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { request as httpRequest, type IncomingMessage } from "node:http";
 import {
   chmod,
@@ -18,6 +19,7 @@ import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Status, StreamLine } from "@rufi/contracts";
 import { APPEARANCE_HEADER } from "@rufi/contracts/app";
+import { createCanvas } from "@napi-rs/canvas";
 import { Effect, Exit, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { codexRuntime } from "../agent/codex/codex.ts";
@@ -612,7 +614,13 @@ describe("the local API", () => {
     expect(sent.status).toBe(202);
     expect(sent.body["draft"]).toEqual({ text: "", state: "editable" });
 
-    // Refused: the text is back to edit, and the answer says why.
+    // Once the reply is done, a steer is refused: the text is back to edit,
+    // and the answer says why.
+    await until(async () =>
+      (
+        (await page.api("GET", c.path)).body["turns"] as { status: string }[]
+      ).some((turn) => turn.status === "completed"),
+    );
     expect(await page.say(c.path, "Only the latest", "steer")).toMatchObject({
       status: 409,
       body: {
@@ -620,11 +628,6 @@ describe("the local API", () => {
         draft: { text: "Only the latest", state: "editable" },
       },
     });
-    await until(async () =>
-      (
-        (await page.api("GET", c.path)).body["turns"] as { status: string }[]
-      ).some((turn) => turn.status === "completed"),
-    );
     const said = (
       (await page.api("GET", c.path)).body["entries"] as {
         kind: string;
@@ -1330,6 +1333,121 @@ describe("signing in from the screens", () => {
     await page.api("POST", "/api/signin");
     runs[1]?.resolve({ email: "asha@example.com" });
     await until(async () => (await state())["state"] === "done");
+  });
+});
+
+describe("documents over the API", () => {
+  const FIXTURES = join(import.meta.dirname, "../../tests/fixtures/documents");
+  const fixture = async (name: string) =>
+    new File([await readFile(join(FIXTURES, name))], name);
+
+  /** Adds `files` as the Documents page does: one form, in order. */
+  const add = async (
+    core: Core,
+    page: Awaited<ReturnType<typeof session>>,
+    person: string,
+    files: File[],
+    together = true,
+  ) => {
+    const form = new FormData();
+    for (const file of files) form.append("file", file);
+    form.append("together", together ? "yes" : "no");
+    const answer = await fetch(
+      `http://127.0.0.1:${String(core.port)}/api/people/${person}/documents`,
+      { method: "POST", headers: page.headers, body: form },
+    );
+    return { status: answer.status, body: (await answer.json()) as unknown };
+  };
+
+  it("adds documents for the person in the path, and shows each file only to them", async () => {
+    const core = await start();
+    const page = await session(core);
+    const { person } = await chat(page);
+    const ravi = addRavi();
+
+    const added = await add(core, page, person, [
+      await fixture("sunrise-labs-august.pdf"),
+      await fixture("thyroid-recheck.jpg"),
+      await fixture("sideways.heic"),
+    ]);
+
+    expect(added).toEqual({
+      status: 201,
+      body: { added: [expect.any(String), expect.any(String)], already: [] },
+    });
+    const listed = (await page.api("GET", `/api/people/${person}/documents`))
+      .body["documents"] as { id: string; files: { id: string }[] }[];
+    expect(listed.map((d) => d.files.length).sort((a, b) => a - b)).toEqual([
+      1, 2,
+    ]);
+    const pdf = listed.find((d) => d.files.length === 1);
+    const photos = listed.find((d) => d.files.length === 2);
+    const file = (person: string, document = pdf) =>
+      `/api/people/${person}/documents/${document?.id ?? ""}/files/${document?.files[0]?.id ?? ""}`;
+    const shown = await fetch(
+      `http://127.0.0.1:${String(core.port)}${file(person)}`,
+      { headers: page.headers },
+    );
+    expect(shown.headers.get("content-type")).toBe("application/pdf");
+    expect(Buffer.from(await shown.arrayBuffer())).toEqual(
+      await readFile(join(FIXTURES, "sunrise-labs-august.pdf")),
+    );
+    const heic = `/api/people/${person}/documents/${photos?.id ?? ""}/files/${photos?.files[1]?.id ?? ""}/display`;
+    expect((await page.api("GET", heic)).headers["content-type"]).toBe(
+      "image/jpeg",
+    );
+
+    expect(
+      (await page.api("GET", `/api/people/${ravi.id}/documents`)).body,
+    ).toEqual({
+      documents: [],
+    });
+    expect((await page.api("GET", file(ravi.id))).status).toBe(404);
+    expect((await page.api("GET", file("nobody"))).status).toBe(404);
+    expect(logged).toContain("documents.added");
+  });
+
+  it("takes a photo larger than any other request may be", async () => {
+    const core = await start();
+    const page = await session(core);
+    const { person } = await chat(page);
+    // A fictional photo of noise: about 3 MB as PNG, over the 1 MB of others.
+    const canvas = createCanvas(1000, 1000);
+    const context = canvas.getContext("2d");
+    const noise = context.createImageData(1000, 1000);
+    noise.data.set(randomBytes(noise.data.length));
+    for (let i = 3; i < noise.data.length; i += 4) noise.data[i] = 255;
+    context.putImageData(noise, 0, 0);
+    const photo = await canvas.encode("png");
+    expect(photo.byteLength).toBeGreaterThan(1024 * 1024);
+
+    const added = await add(core, page, person, [
+      new File([new Uint8Array(photo)], "big.png"),
+    ]);
+
+    expect(added.status).toBe(201);
+  });
+
+  it("refuses a file that isn't a document in one sentence, and adds nothing", async () => {
+    const core = await start();
+    const page = await session(core);
+    const { person } = await chat(page);
+
+    const refused = await add(core, page, person, [
+      await fixture("thyroid-recheck.jpg"),
+      new File(["Fictional notes"], "notes.docx"),
+    ]);
+
+    expect(refused).toEqual({
+      status: 400,
+      body: {
+        error:
+          "notes.docx isn't a PDF, JPEG, PNG or HEIC photo. Nothing was added. Remove it and add the others again.",
+      },
+    });
+    expect(
+      (await page.api("GET", `/api/people/${person}/documents`)).body,
+    ).toEqual({ documents: [] });
   });
 });
 

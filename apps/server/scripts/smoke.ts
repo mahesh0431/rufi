@@ -35,7 +35,7 @@ import { Secrets, secretsLayer } from "../src/platform/keychain.ts";
 import { diagnostics } from "../src/platform/logs.ts";
 import { PROOF_HEADER } from "../src/server/api.ts";
 import { startCore, type Core } from "../src/server/core.ts";
-import { FAMILY } from "../tests/fixtures/golden.ts";
+import { FAMILY, familyFiles } from "../tests/fixtures/golden.ts";
 
 const { values } = parseArgs({
   options: {
@@ -866,6 +866,7 @@ for (const name of names) {
     const home = await mkdtemp(join(tmpdir(), "rufi-smoke-"));
     const store = openWritable(databasePath(home));
     store.db.exec(await readFile(FAMILY, "utf8"));
+    await familyFiles(home);
     const seed = SEEDS[name];
     if (seed !== undefined) store.db.exec(seed);
     store.close();

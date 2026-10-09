@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import lockfile from "proper-lockfile";
@@ -21,6 +23,14 @@ export async function writePrivateJson(
   const temp = `${path}.${String(process.pid)}.tmp`;
   await writeFile(temp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
   await rename(temp, path);
+}
+
+/** The sha256 of a file's bytes, in hex. */
+export async function sha256(path: string): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path))
+    hash.update(chunk as Buffer);
+  return hash.digest("hex");
 }
 
 class BusyError extends Error {}

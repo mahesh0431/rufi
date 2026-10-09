@@ -81,6 +81,7 @@ describe("pnpm demo's reset", () => {
     expect((await readdir(folder)).sort()).toEqual([
       "chatgpt.json",
       "demo.json",
+      "files",
       "installed.json",
       "rufi.sqlite",
     ]);

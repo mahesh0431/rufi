@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, it } from "vitest";
 import { holdRufiLock } from "../../platform/files.ts";
+import { documents } from "../documents/documents.ts";
 import { backupsPath, makeBackup } from "./backup.ts";
 import { databasePath, openWritable } from "./database.ts";
 import { restore } from "./restore.ts";
@@ -38,7 +39,59 @@ const fingerprint = async (folder: string) => {
   return hash.digest("hex");
 };
 
+const FIXTURES = join(import.meta.dirname, "../../../tests/fixtures/documents");
+
+/** A backup of Asha with a PDF; the PDF's file id. */
+async function backupWithDocument(): Promise<{ folder: string; id: string }> {
+  const home = join(root, "with-document");
+  await mkdir(home);
+  const store = openWritable(databasePath(home));
+  store.db.exec(
+    "INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional')",
+  );
+  const name = "sunrise-labs-august.pdf";
+  const docs = documents(store, home);
+  await docs.add(
+    "asha",
+    [{ name, bytes: new Uint8Array(await readFile(join(FIXTURES, name))) }],
+    true,
+  );
+  const id = (await docs.list("asha"))[0]?.files[0]?.id ?? "";
+  store.close();
+  const made = await makeBackup(home, new Date("2026-10-08T09:14:03Z"));
+  return { folder: join(backupsPath(home), made.name), id };
+}
+
 describe("restore", () => {
+  it("brings every original back, checked", async () => {
+    const { folder, id } = await backupWithDocument();
+    const target = join(root, "restored");
+
+    await restore(folder, target);
+
+    expect(await readdir(join(target, "files"))).toEqual([id]);
+    expect(await readFile(join(target, "files", id))).toEqual(
+      await readFile(join(FIXTURES, "sunrise-labs-august.pdf")),
+    );
+  });
+
+  it("refuses a backup whose original has changed, and Rufi won't open the half-restored folder", async () => {
+    const { folder, id } = await backupWithDocument();
+    const original = await readFile(join(folder, "files", id));
+    // The same size, other bytes: only the hash finds it.
+    await writeFile(
+      join(folder, "files", id),
+      original.map((b) => b ^ 1),
+    );
+    const target = join(root, "restored");
+
+    await expect(restore(folder, target)).rejects.toThrow(
+      "A document file in the backup is missing or changed.",
+    );
+
+    expect(await readdir(target)).toEqual(["restoring"]);
+  });
+
   it("puts the backup's record into a new folder, signed out, and leaves the backup as it was", async () => {
     const before = await fingerprint(backup);
     const target = join(root, "restored");
@@ -48,6 +101,7 @@ describe("restore", () => {
     });
 
     expect((await readdir(target)).sort()).toEqual([
+      "files",
       "installed.json",
       "rufi.sqlite",
     ]);
@@ -127,6 +181,7 @@ describe("restore", () => {
     ]);
     expect(both.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
     expect((await readdir(target)).sort()).toEqual([
+      "files",
       "installed.json",
       "rufi.sqlite",
     ]);

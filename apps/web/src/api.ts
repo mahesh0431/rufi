@@ -264,41 +264,40 @@ export async function read<S extends Schema.Codec<unknown, unknown>>(
 }
 
 /**
- * How long an export may take, answer and file included: the core copies
- * and checks the whole record first, so longer than an ordinary request.
+ * How long a file may take to come or go, answer and file included: an
+ * export copies and checks the whole record first, and an add of documents
+ * sends every file and has each one looked at.
  */
-const DOWNLOAD_MS = 5 * 60_000;
+const FILE_MS = 5 * 60_000;
 
 /**
- * Downloads a file the core makes: fetched with the tab's proof, then saved
- * through the browser (the Rufi app asks where). Gives the file's name.
+ * A request with a file in it or in its answer, with the tab's proof and a
+ * longer deadline. Gives the answer, read to its end as a blob.
  */
-export async function download(path: string): Promise<string> {
+async function withFile(
+  path: string,
+  init: RequestInit,
+  slow = "That took too long. Try again.",
+): Promise<{ response: Response; file: Blob }> {
   await session;
   // A timer, not AbortSignal.timeout, so a test's clock can drive it.
   const late = new AbortController();
   const timer = setTimeout(() => {
     late.abort();
-  }, DOWNLOAD_MS);
+  }, FILE_MS);
   try {
     let response: Response;
     let file: Blob;
     try {
       response = await fetch(path, {
+        ...init,
         headers: headersFor(undefined),
         signal: AbortSignal.any([ending.signal, late.signal]),
       });
       file = await response.blob();
     } catch (error) {
       if (late.signal.aborted) {
-        throw new ApiError(
-          0,
-          "The export didn't come in time. Try again.",
-          undefined,
-          {
-            cause: error,
-          },
-        );
+        throw new ApiError(0, slow, undefined, { cause: error });
       }
       if (!ending.signal.aborted) setConnection("offline");
       throw new ApiError(0, "Rufi can't be reached.", undefined, {
@@ -314,21 +313,49 @@ export async function download(path: string): Promise<string> {
       const json = parseJson(await file.text());
       throw new ApiError(response.status, refusal(json), json);
     }
-    const name =
-      /filename="([^"]+)"/.exec(
-        response.headers.get("content-disposition") ?? "",
-      )?.[1] ?? "rufi-export.zip";
-    const url = URL.createObjectURL(file);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = name;
-    link.click();
-    // The browser has the file once the click is handled.
-    setTimeout(() => {
-      URL.revokeObjectURL(url);
-    }, 60_000);
-    return name;
+    return { response, file };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Downloads a file the core makes: fetched with the tab's proof, then saved
+ * through the browser (the Rufi app asks where). Gives the file's name.
+ */
+export async function download(path: string): Promise<string> {
+  const { response, file } = await withFile(
+    path,
+    {},
+    "The export didn't come in time. Try again.",
+  );
+  const name =
+    /filename="([^"]+)"/.exec(
+      response.headers.get("content-disposition") ?? "",
+    )?.[1] ?? "rufi-export.zip";
+  const url = URL.createObjectURL(file);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  // The browser has the file once the click is handled.
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 60_000);
+  return name;
+}
+
+/** A file the core keeps, such as a document's original, to show. */
+export async function fetchFile(path: string): Promise<Blob> {
+  return (await withFile(path, {})).file;
+}
+
+/** Sends files as a form; the answer must match a contract. */
+export async function upload<S extends Schema.Codec<unknown, unknown>>(
+  schema: S,
+  path: string,
+  form: FormData,
+): Promise<S["Type"]> {
+  const { file } = await withFile(path, { method: "POST", body: form });
+  return Schema.decodeUnknownSync(schema)(parseJson(await file.text()));
 }

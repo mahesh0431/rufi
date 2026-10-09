@@ -37,6 +37,7 @@ it("restores into a new folder named from where the person is, and prints how to
   const restored = join(folder, "Restored Rufi");
   expect(out).toContain(`RUFI_HOME='${restored}' pnpm start`);
   expect((await readdir(restored)).sort()).toEqual([
+    "files",
     "installed.json",
     "rufi.sqlite",
   ]);

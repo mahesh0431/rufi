@@ -52,12 +52,21 @@ export interface Tables {
     source_entry_id: string | null;
     removed: number;
   };
+  document_pages: {
+    person_id: string;
+    document_id: string;
+    position: number;
+    file_id: string;
+    page_in_file: number;
+    file_name: string;
+  };
   documents: {
     id: string;
     person_id: string;
-    file_id: string;
-    original_name: string;
     added_at: string;
+    added_from: string;
+    kind: string | null;
+    date: string | null;
   };
   drafts: {
     person_id: string;
