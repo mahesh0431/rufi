@@ -6,7 +6,8 @@
 // so what was typed since the last save can be lost then. A send goes after
 // the box's earlier saves, by an id of its own: the core moves the text into
 // the queue and empties the draft in one step. When its answer is lost, the
-// same text sent again keeps that id, so the core never takes it twice.
+// tab keeps the id and text through reloads, so an explicit retry uses the
+// same id and the core never takes it twice. Autosaves skip that text.
 // Nothing here sends a message by itself.
 import { Draft, MAX_MESSAGE_CHARS, Sent } from "@rufi/contracts";
 import type { QueryClient } from "@tanstack/react-query";
@@ -28,6 +29,8 @@ export interface DraftApi {
   scope: string;
   /** A new id for a send. */
   newId?: () => string;
+  /** This tab's storage: an unresolved send survives a reload. */
+  storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
 }
 
 export interface BoxState {
@@ -77,6 +80,7 @@ const answered = (error: unknown) =>
 
 export function draftBox(api: DraftApi) {
   const newId = api.newId ?? (() => crypto.randomUUID());
+  const sendKey = `rufi/send/${api.scope}`;
   const store = createStore<BoxState>(() => ({
     text: "",
     draft: { text: "" },
@@ -89,14 +93,38 @@ export function draftBox(api: DraftApi) {
   /** A send whose answer was lost: the same text again keeps its id. */
   let unanswered: { id: string; text: string } | undefined;
 
+  /** Keep the identity before sending; if storage fails, don't send. */
+  function remember(send: typeof unanswered): boolean {
+    try {
+      if (send) api.storage?.setItem(sendKey, JSON.stringify(send));
+      else api.storage?.removeItem(sendKey);
+      unanswered = send;
+      return true;
+    } catch (error) {
+      store.setState({ sending: false, notice: messageOf(error) });
+      return false;
+    }
+  }
+
   /** Reads the draft until it is read. */
   async function load(): Promise<void> {
     for (;;) {
       try {
+        const saved = api.storage?.getItem(sendKey);
+        unanswered = saved
+          ? Schema.decodeUnknownSync(
+              Schema.Struct({ id: Schema.String, text: Schema.String }),
+            )(JSON.parse(saved))
+          : undefined;
         const draft = Schema.decodeUnknownSync(Draft)(
           await api.call("GET", "draft"),
         );
-        store.setState({ draft, text: draft.text, loaded: true, notice: null });
+        store.setState({
+          draft,
+          text: unanswered?.text ?? draft.text,
+          loaded: true,
+          notice: null,
+        });
         return;
       } catch (error) {
         // Said in the box; asked again in a moment.
@@ -120,6 +148,9 @@ export function draftBox(api: DraftApi) {
       const state = store.getState();
       const { text } = state;
       if (!state.loaded || state.sending || tooLong(text)) return;
+      if (unanswered?.text === text.trim()) return;
+      // Saving different text replaces the uncertain send with a new draft.
+      if (unanswered && !remember(undefined)) return;
       if (text === state.draft.text && !state.failed) return;
       try {
         const draft = Schema.decodeUnknownSync(Draft)(
@@ -163,10 +194,11 @@ export function draftBox(api: DraftApi) {
       const id = !steer && unanswered?.text === text ? unanswered.id : newId();
       await inTurn(api.client, api.scope, async () => {
         try {
+          if (!steer && !remember({ id, text })) return;
           const sent = Schema.decodeUnknownSync(Sent)(
             await api.call("POST", steer ? "steer" : "messages", { id, text }),
           );
-          unanswered = undefined;
+          if (!remember(undefined)) return;
           store.setState({
             sending: false,
             draft: sent.draft,
@@ -174,7 +206,7 @@ export function draftBox(api: DraftApi) {
             failed: false,
           });
         } catch (error) {
-          unanswered = answered(error) || steer ? undefined : { id, text };
+          if ((answered(error) || steer) && !remember(undefined)) return;
           store.setState({ sending: false, notice: messageOf(error) });
         }
       });

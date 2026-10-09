@@ -40,6 +40,7 @@ function boxFor(personId: string): DraftBox {
       call: (method, to, body) => request(method, `${path}/${to}`, body),
       client: queries,
       scope: `draft/${personId}`,
+      storage: sessionStorage,
     });
     boxes.set(personId, box);
   }

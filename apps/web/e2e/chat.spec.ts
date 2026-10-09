@@ -4,6 +4,8 @@
 // the AI's Markdown may and may not do. Each test checks that the strict CSP
 // refused nothing the screens need.
 import { AxeBuilder } from "@axe-core/playwright";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { Locator, Page } from "@playwright/test";
 import { runningLink } from "../../server/src/server/core.ts";
 import { expect, test, type Rufi } from "./rufi.ts";
@@ -502,15 +504,22 @@ test("a save whose answer is lost keeps what you typed after it", async ({
   await expect(box(chat(page))).toHaveValue("Start of question, and more");
 });
 
-test("a send whose answer was lost is sent again by the same id: the AI gets it once", async ({
+test("a quick send whose answer was lost keeps its id through Help and reload: the AI gets it once", async ({
   page,
   rufi,
 }) => {
   await opened(page, rufi);
   await box(chat(page)).click();
+  await expect(box(chat(page))).toBeEditable();
+  // Send before the 400 ms draft save, without depending on machine speed.
+  const clockTime = Date.now();
+  await page.clock.install({ time: clockTime });
+  await page.clock.pauseAt(clockTime + 10_000);
   // The core takes the first send, but its answer never reaches the page.
   let lost = false;
+  const ids: string[] = [];
   await page.route("**/messages", async (route) => {
+    ids.push((route.request().postDataJSON() as { id: string }).id);
     if (lost) return route.continue();
     lost = true;
     await route.fetch();
@@ -522,14 +531,56 @@ test("a send whose answer was lost is sent again by the same id: the AI gets it 
     "Rufi can't be reached.",
   );
   await expect(box(chat(page))).toHaveValue("Questions for the visit");
-  await box(chat(page)).press("Enter");
-  await expect(box(chat(page))).toHaveValue("");
-  await expect(log(chat(page)).locator(".reply").last()).toHaveText(
+  await page.clock.resume();
+  await expect(log(chat(page)).locator(".reply")).toHaveText(
+    "ok:Questions for the visit",
+  );
+  // Leaving the box must not autosave this accepted send as a fresh draft.
+  await sidebar(page).getByRole("link", { name: "Help", exact: true }).click();
+  await expect(toolbar(page)).toHaveText("Help");
+  await page.reload();
+  const draftRead = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/chat/draft") &&
+      response.request().method() === "GET",
+  );
+  await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
+  expect(await (await draftRead).json()).toEqual({ text: "" });
+  await expect(box(page)).toHaveValue("Questions for the visit");
+  await expect(log(page).locator(".reply")).toHaveCount(1);
+  expect(ids).toHaveLength(1); // Reload never retries by itself.
+  const accepted = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/messages") &&
+      response.request().method() === "POST",
+  );
+  await box(page).press("Enter");
+  await accepted;
+  await expect(box(page)).toHaveValue("");
+  expect(ids).toEqual([ids[0], ids[0]]);
+  await expect(log(page).locator(".reply")).toHaveText(
     "ok:Questions for the visit",
   );
   await expect(
-    log(chat(page)).getByText("Questions for the visit", { exact: true }),
+    log(page).getByText("Questions for the visit", { exact: true }),
   ).toHaveCount(1);
+  await page.reload();
+  await expect(box(page)).toHaveValue("");
+
+  // Replacing or clearing the uncertain send makes a new draft, kept on reload.
+  await page.clock.pauseAt(clockTime + 20_000);
+  for (const replacement of ["", "A different question"]) {
+    lost = false;
+    await box(page).fill("Another question");
+    await box(page).press("Enter");
+    await expect(page.getByRole("alert")).toHaveText("Rufi can't be reached.");
+    const edited = replacement === "" ? undefined : kept(page, replacement);
+    await box(page).fill(replacement);
+    await page.clock.runFor(400);
+    await edited;
+    await page.reload();
+    await expect(box(page)).toHaveValue(replacement);
+  }
 });
 
 test("when Rufi stops while it hands a message to the AI, the message is not sure, and is never sent again by itself", async ({
@@ -541,6 +592,24 @@ test("when Rufi stops while it hands a message to the AI, the message is not sur
   await send(page, "Questions before my visit");
   const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
   await expect(waiting).toContainText("Sending…");
+  // Claiming a row precedes preparation: wait until Codex has the request.
+  await expect
+    .poll(async () => {
+      const received = await readFile(
+        join(rufi.home, "fake-codex.jsonl"),
+        "utf8",
+      ).catch((error: unknown) => {
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "ENOENT"
+        )
+          return "";
+        throw error;
+      });
+      return received;
+    })
+    .toContain('"method":"turn/start"');
   await page.goto("about:blank");
   const { port } = rufi.core;
   await rufi.stop();
