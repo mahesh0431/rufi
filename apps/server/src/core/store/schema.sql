@@ -20,22 +20,40 @@ CREATE TABLE people (
   display_name TEXT NOT NULL
 ) STRICT;
 
--- Deduplicated original bytes, shared across people.
+-- Original bytes, exactly as they came, shared across people. The bytes are
+-- in files/<id> in the data folder, written and synced before any row points
+-- to them; a row is only added with a document page that uses it.
 CREATE TABLE files (
   id TEXT PRIMARY KEY,   -- sha256 of the bytes, hex
   size INTEGER NOT NULL,
-  media_type TEXT NOT NULL,
+  media_type TEXT NOT NULL CHECK (media_type IN ('application/pdf', 'image/jpeg', 'image/png', 'image/heic', 'image/heif')),
   created_at TEXT NOT NULL
 ) STRICT;
 
+-- What the user added for a person: one PDF, or one or more photos added
+-- together. Its pages point to the files.
 CREATE TABLE documents (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL REFERENCES people (id),
-  file_id TEXT NOT NULL REFERENCES files (id),
-  original_name TEXT NOT NULL,
   added_at TEXT NOT NULL,
-  UNIQUE (person_id, id),
-  UNIQUE (person_id, file_id) -- the same bytes for the same person reuse the document
+  added_from TEXT NOT NULL CHECK (added_from IN ('documents_page')),
+  kind TEXT CHECK (kind IN ('lab_report', 'prescription', 'letter', 'other')), -- as read; null until read
+  date TEXT,             -- the document's date as read (precision date); null until read
+  UNIQUE (person_id, id)
+) STRICT;
+
+-- A document's pages in order: a page of a PDF, or a whole photo (page 1).
+-- The same content belongs to at most one document per person.
+CREATE TABLE document_pages (
+  person_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  position INTEGER NOT NULL,   -- 1, 2, 3... in the document
+  file_id TEXT NOT NULL REFERENCES files (id),
+  page_in_file INTEGER NOT NULL, -- 1, 2, 3... in the file
+  file_name TEXT NOT NULL,     -- the file's name as it was added
+  PRIMARY KEY (person_id, document_id, position),
+  UNIQUE (person_id, file_id, page_in_file),
+  FOREIGN KEY (person_id, document_id) REFERENCES documents (person_id, id)
 ) STRICT;
 
 CREATE TABLE reports (
@@ -357,7 +375,7 @@ CREATE TABLE record_changes (
   FOREIGN KEY (person_id, source_entry_id) REFERENCES transcript_entries (person_id, id)
 ) STRICT;
 
-CREATE INDEX documents_by_file ON documents (file_id);
+CREATE INDEX documents_by_added ON documents (person_id, added_at);
 CREATE INDEX reports_by_document ON reports (person_id, document_id);
 CREATE INDEX results_by_report ON results (person_id, report_id);
 CREATE INDEX results_by_test ON results (person_id, test_name, unit, measured_at);

@@ -21,15 +21,19 @@ import {
   type StreamLine,
 } from "@rufi/contracts";
 import { APPEARANCE_HEADER } from "@rufi/contracts/app";
+import { readFile } from "node:fs/promises";
 import { Option, Result, Schema } from "effect";
 import type { HttpBindings } from "@hono/node-server";
 import { Hono, type Context, type Next } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { except } from "hono/combine";
 import { getCookie, setCookie } from "hono/cookie";
 import { stream } from "hono/streaming";
 import { Stopped } from "../agent/runtime.ts";
 import type { Drafts } from "../core/chat/drafts.ts";
 import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
+import { NotADocument, type Documents } from "../core/documents/documents.ts";
+import { OriginalMissing } from "../core/documents/originals.ts";
 import type { BackupJob } from "../core/store/backup.ts";
 import type { Change, ChatRow, Transcripts } from "../core/chat/transcript.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
@@ -54,6 +58,8 @@ export interface ApiDeps {
   backups: BackupJob;
   /** The export, made when asked: the zip and its file name. */
   exportZip: () => Promise<{ name: string; bytes: Uint8Array }>;
+  /** Each person's documents. */
+  documents: Documents;
   /** The secret `pnpm start` shows to get a fresh link while Rufi runs. */
   launcher: string;
   /** A fresh single-use link that opens Rufi. */
@@ -70,6 +76,26 @@ export const PROOF_HEADER = "x-rufi-proof";
 /** The header `pnpm start` sends the launcher secret in. */
 export const LAUNCHER_HEADER = "x-rufi-launcher";
 
+/** The most one add of documents may hold: many photos, or a long PDF. */
+const MAX_ADD_BYTES = 256 * 1024 * 1024;
+/** The address documents are added at; it takes files, so a larger body. */
+const ADD_PATH = /^\/api\/people\/[^/]+\/documents$/;
+
+/** Why a file wasn't added, in one sentence. */
+function notAdded({ file, reason }: NotADocument): string {
+  const nothing = "Nothing was added.";
+  switch (reason) {
+    case "not_accepted":
+      return `${file} isn't a PDF, JPEG, PNG or HEIC photo. ${nothing} Remove it and add the others again.`;
+    case "broken":
+      return `${file} is damaged and can't be opened. ${nothing} Remove it and add the others again.`;
+    case "locked":
+      return `${file} is protected with a password, so Rufi can't open it. ${nothing} Save a copy without the password and add that.`;
+    case "slow":
+      return `${file} took too long to open. ${nothing} Try again.`;
+  }
+}
+
 const MESSAGE_REFUSAL = `A message needs some text, and can be at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters.`;
 /** A stream says it's alive this often when nothing happens. */
 const PING_MS = 15_000;
@@ -77,7 +103,7 @@ const PING_MS = 15_000;
 const BEHIND_MAX = 1_000;
 
 const CSP =
-  "default-src 'self'; img-src 'self' data: blob:; connect-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+  "default-src 'self'; img-src 'self' data: blob:; frame-src blob:; connect-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 const FORWARDING = [
   "forwarded",
   "x-forwarded-for",
@@ -141,14 +167,25 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     }
     await next();
   });
+  const limit = (maxSize: number, refusal: string) =>
+    bodyLimit({
+      maxSize,
+      onError: () => {
+        throw new HttpError(413, refusal);
+      },
+    });
+  const requests = limit(1024 * 1024, "That request is too large.");
+  const adds = limit(
+    MAX_ADD_BYTES,
+    "Those files are too large to add at once (256 MB at most). Add fewer at a time.",
+  );
+  // An add of documents has its own, larger limit (below).
   app.use(
     "/api/*",
-    bodyLimit({
-      maxSize: 1024 * 1024,
-      onError: () => {
-        throw new HttpError(413, "That request is too large.");
-      },
-    }),
+    except(
+      (c) => c.req.method === "POST" && ADD_PATH.test(c.req.path),
+      requests,
+    ),
   );
 
   app.post("/api/session", async (c) => {
@@ -344,7 +381,9 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       deps.log("export.failed", { error: errorCode(error) });
       throw new HttpError(
         500,
-        "Rufi couldn't make the export. Try again; if it fails again, make a backup and see Help.",
+        error instanceof OriginalMissing
+          ? "Rufi couldn't make the export: a document file is missing or changed. See Help: Backups and export."
+          : "Rufi couldn't make the export. Try again; if it fails again, make a backup and see Help.",
       );
     }
     c.header("Content-Type", "application/zip");
@@ -360,6 +399,67 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.get("/api/people/:personId/overview", async (c) =>
     c.json({ overview: await deps.overview((await person(c)).id) }),
   );
+
+  // A person's documents: the list, adding files, and a file's bytes to show.
+  const documentsPath = "/api/people/:personId/documents";
+  app.get(documentsPath, async (c) =>
+    c.json({ documents: await deps.documents.list((await person(c)).id) }),
+  );
+  app.post(documentsPath, adds, async (c) => {
+    const found = await person(c);
+    const form = await c.req.formData().catch(() => undefined);
+    const files = (form?.getAll("file") ?? []).filter(
+      (file) => file instanceof File,
+    );
+    if (files.length === 0) {
+      throw new HttpError(400, "Choose at least one file to add.");
+    }
+    const started = Date.now();
+    try {
+      const added = await deps.documents.add(
+        found.id,
+        await Promise.all(
+          files.map(async (file) => ({
+            name: file.name || "Unnamed file",
+            bytes: new Uint8Array(await file.arrayBuffer()),
+          })),
+        ),
+        form?.get("together") === "yes",
+      );
+      deps.log("documents.added", {
+        count: added.added.length,
+        ms: Date.now() - started,
+      });
+      return c.json(added, 201);
+    } catch (error) {
+      if (error instanceof NotADocument) {
+        throw new HttpError(400, notAdded(error));
+      }
+      throw error;
+    }
+  });
+  /** A file of a document as it came, or a HEIC's JPEG copy (`display`). */
+  const fileOf = async (c: Context, display: boolean) => {
+    const found = await deps.documents.file(
+      (await person(c)).id,
+      c.req.param("documentId") ?? "",
+      c.req.param("fileId") ?? "",
+      display,
+    );
+    if (!found) throw new HttpError(404, "Not found.");
+    const bytes = await readFile(found.path).catch((error: unknown) => {
+      deps.log("api.failed", { error: errorCode(error) });
+      throw new HttpError(
+        500,
+        "This document's file is missing from your data folder. See Help: Backups and export.",
+      );
+    });
+    c.header("Content-Type", found.mediaType);
+    return c.body(new Uint8Array(bytes));
+  };
+  const filePath = `${documentsPath}/:documentId/files/:fileId`;
+  app.get(filePath, (c) => fileOf(c, false));
+  app.get(`${filePath}/display`, (c) => fileOf(c, true));
 
   const HELD = "This message is being sent.";
   /**

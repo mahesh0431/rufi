@@ -392,6 +392,7 @@ test.describe("first run", () => {
     await expect(sidebar(page).getByRole("link")).toHaveText([
       "Chat with Rufi",
       "Overview",
+      "Documents",
       "Help",
       "Settings",
     ]);

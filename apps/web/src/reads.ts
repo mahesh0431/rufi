@@ -10,6 +10,7 @@ import {
   Settings,
   Status,
 } from "@rufi/contracts";
+import { Documents } from "@rufi/contracts/documents";
 import { Schema } from "effect";
 import { QueryClient, useQuery } from "@tanstack/react-query";
 import { read } from "./api.ts";
@@ -102,4 +103,18 @@ export const useModels = () =>
   useQuery({
     queryKey: ["models"],
     queryFn: () => read(Models, "GET", "/api/models"),
+  });
+
+/** A person's documents, newest first. */
+export const useDocuments = (personId: string) =>
+  useQuery({
+    queryKey: ["documents", personId],
+    queryFn: async () =>
+      (
+        await read(
+          Documents,
+          "GET",
+          `/api/people/${encodeURIComponent(personId)}/documents`,
+        )
+      ).documents,
   });

@@ -14,6 +14,11 @@ import {
 } from "../../server/src/core/store/database.ts";
 import { holdRufiLock } from "../../server/src/platform/files.ts";
 import {
+  FAMILY,
+  familyFiles,
+  FIRST_RUN_DONE,
+} from "../../server/tests/fixtures/golden.ts";
+import {
   alive,
   type App,
   type Desktop,
@@ -567,4 +572,59 @@ test.describe("the page", () => {
     expect(page.url()).toBe(home);
     await working(page);
   });
+});
+
+test("shows a document's PDF in the built-in viewer; a link in it leaves the window in Rufi", async ({
+  desktop,
+}) => {
+  await mkdir(desktop.home, { recursive: true });
+  const store = openWritable(databasePath(desktop.home));
+  store.db.exec(await readFile(FAMILY, "utf8"));
+  store.db.exec(FIRST_RUN_DONE);
+  store.close();
+  await familyFiles(desktop.home);
+  const app = await desktop.launch();
+  const page = await app.electron.firstWindow();
+  await page.getByRole("link", { name: "Documents" }).click();
+  await page.getByRole("button", { name: "Sunrise Labs August.pdf" }).click();
+  await expect(page.getByTitle("Sunrise Labs August.pdf")).toBeVisible();
+  // The viewer has read the PDF when it shows the PDF's own title.
+  const viewer = () =>
+    page
+      .frames()
+      .find((frame) => frame.url().startsWith("chrome-extension://"));
+  await expect
+    .poll(() => viewer()?.evaluate(() => document.title))
+    .toBe("Fictional lab report");
+  const documents = page.url();
+
+  // The window's navigations from here on, to know the click below
+  // reached the PDF's link.
+  await app.electron.evaluate(({ BrowserWindow }) => {
+    const tried: string[] = [];
+    (globalThis as { tried?: string[] }).tried = tried;
+    BrowserWindow.getAllWindows()[0]?.webContents.on(
+      "did-start-navigation",
+      (event) => {
+        tried.push(event.url);
+      },
+    );
+  });
+  // The PDF's "Verify at https://example.com/verify" link, where the viewer
+  // draws page 1 in the window's first size.
+  await page.mouse.click(560, 322);
+
+  // The link tries to take the window away; the window stays in Rufi and
+  // the browser isn't asked, as for any link a frame follows.
+  await expect
+    .poll(() =>
+      app.electron.evaluate(() => (globalThis as { tried?: string[] }).tried),
+    )
+    .toEqual(["https://example.com/verify"]);
+  expect(page.url()).toBe(documents);
+  expect(app.told).toEqual([]);
+  // Esc goes to the PDF viewer while it has the focus; × closes the popup.
+  await page.getByRole("button", { name: "Close" }).click();
+  await page.getByRole("link", { name: "Chat with Rufi" }).click();
+  await expect(page).toHaveURL(/\/people\/asha\/chat$/);
 });

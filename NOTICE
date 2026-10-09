@@ -7,3 +7,24 @@ Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 Rufi is not a medical device. It is provided "AS IS", without warranties or
 conditions of any kind, as described in the License.
+
+Third-party software under the GNU LGPL
+---------------------------------------
+
+Rufi shows HEIC photos through heic-decode (ISC licence), which includes
+libheif-js 1.23.5: libheif 1.23 and its HEVC decoder libde265 1.0.15,
+built to WebAssembly. libheif and libde265 are licensed under the GNU
+Lesser General Public License, version 3 (LGPL-3.0). Their licence texts,
+with the GNU General Public License, version 3, that the LGPL refers to,
+are in licenses/libheif.txt.
+
+- libheif: https://github.com/strukturag/libheif (the 1.23 release that
+  libheif-js 1.23.5's install script names)
+- libde265: https://github.com/strukturag/libde265 (tag v1.0.15)
+- libheif-js, the WebAssembly build: https://github.com/catdad-experiments/libheif-js
+  (tag v1.23.5)
+
+Rufi doesn't change these libraries. They stay their own package
+(node_modules/libheif-js), outside Rufi's code, loaded at run time, so you
+can replace them with another build of the same interface: put your build
+in that package's place, keeping its file names.

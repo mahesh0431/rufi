@@ -17,6 +17,20 @@ function insert(
   ).run(...Object.values(row));
 }
 
+const page = (
+  person: string,
+  document: string,
+  position: number,
+  file: string,
+) => ({
+  person_id: person,
+  document_id: document,
+  position,
+  file_id: file,
+  page_in_file: 1,
+  file_name: "lipid-panel.pdf",
+});
+
 // Two fictional people, each with one document and one report.
 beforeEach(() => {
   db = new DatabaseSync(":memory:");
@@ -36,20 +50,18 @@ beforeEach(() => {
     media_type: "image/jpeg",
     created_at: now,
   });
-  insert("documents", {
-    id: "doc-amma",
-    person_id: "amma",
-    file_id: "sha-a",
-    original_name: "lipid-panel.pdf",
-    added_at: now,
-  });
-  insert("documents", {
-    id: "doc-nanna",
-    person_id: "nanna",
-    file_id: "sha-n",
-    original_name: "IMG_2041.jpg",
-    added_at: now,
-  });
+  for (const [person, file] of [
+    ["amma", "sha-a"],
+    ["nanna", "sha-n"],
+  ] as const) {
+    insert("documents", {
+      id: `doc-${person}`,
+      person_id: person,
+      added_at: now,
+      added_from: "documents_page",
+    });
+    insert("document_pages", page(person, `doc-${person}`, 1, file));
+  }
   insert("reports", {
     id: "rep-amma",
     person_id: "amma",
@@ -241,24 +253,27 @@ describe("schema", () => {
     });
 
     it("lets two people hold the same file, but not one person twice", () => {
-      insert("documents", {
-        id: "doc-shared",
-        person_id: "nanna",
-        file_id: "sha-a",
-        original_name: "lipid-panel.pdf",
-        added_at: now,
-      });
-      expect(() => {
+      const second = (person: string, id: string) => {
         insert("documents", {
-          id: "doc-again",
-          person_id: "amma",
-          file_id: "sha-a",
-          original_name: "copy.pdf",
+          id,
+          person_id: person,
           added_at: now,
+          added_from: "documents_page",
         });
+        insert("document_pages", page(person, id, 1, "sha-a"));
+      };
+      second("nanna", "doc-shared");
+      expect(() => {
+        second("amma", "doc-again");
       }).toThrow(
-        "UNIQUE constraint failed: documents.person_id, documents.file_id",
+        "UNIQUE constraint failed: document_pages.person_id, document_pages.file_id, document_pages.page_in_file",
       );
+    });
+
+    it("rejects a page for one person in another person's document", () => {
+      expect(() => {
+        insert("document_pages", page("nanna", "doc-amma", 2, "sha-a"));
+      }).toThrow("FOREIGN KEY constraint failed");
     });
   });
 

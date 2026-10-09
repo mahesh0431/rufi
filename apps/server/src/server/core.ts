@@ -12,6 +12,7 @@ import type { AgentHost, AgentRuntime, AgentTools } from "../agent/runtime.ts";
 import { allowlistFile } from "../core/chat/models.ts";
 import { drafts as openDrafts } from "../core/chat/drafts.ts";
 import { transcripts as openTranscripts } from "../core/chat/transcript.ts";
+import { documents } from "../core/documents/documents.ts";
 import { backupJob } from "../core/store/backup.ts";
 import {
   databasePath,
@@ -193,6 +194,7 @@ export const startCore = (options: CoreOptions) =>
         (() => Promise.resolve({ account: "signed_out", email: null })),
       backups,
       exportZip: () => exportZip(home, new Date()),
+      documents: documents(writer, home, options.now),
       signIn: signInFlow(options.signIn, log),
       launcher,
       launchUrl,

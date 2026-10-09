@@ -10,15 +10,22 @@ INSERT INTO chats (id, person_id, created_at) VALUES
   ('c-asha', 'asha', '2026-10-01T09:00:00Z'),
   ('c-ravi', 'ravi', '2026-10-01T09:00:00Z');
 
+-- The files' bytes are in tests/fixtures/documents (golden.ts copies them).
 INSERT INTO files (id, size, media_type, created_at) VALUES
-  ('f1c710a1', 182344, 'application/pdf', '2026-08-13T09:00:00Z'),
-  ('f1c710a2', 95112, 'image/jpeg', '2026-09-02T18:30:00Z'),
-  ('f1c710a3', 120400, 'application/pdf', '2026-07-01T08:00:00Z');
+  ('7f4a70ccb858d23ee1cce44693bc2c009abb14604f0f3dbd48470639d6928b54', 17196, 'application/pdf', '2026-08-13T09:00:00Z'),
+  ('151e4196f9224a081cc4fadd0edb7687b5eba4a5cb46451fa96db4b4c921b666', 14435, 'image/jpeg', '2026-09-02T18:30:00Z'),
+  ('f7d7c195033e1719e2c191970b14e52478e02faf51f1d61e57b517674fbc9c45', 16150, 'application/pdf', '2026-07-01T08:00:00Z');
 
-INSERT INTO documents (id, person_id, file_id, original_name, added_at) VALUES
-  ('doc-asha-aug', 'asha', 'f1c710a1', 'Sunrise Labs August.pdf', '2026-08-13T09:00:00Z'),
-  ('doc-asha-sep', 'asha', 'f1c710a2', 'thyroid recheck.jpg', '2026-09-02T18:30:00Z'),
-  ('doc-ravi-jul', 'ravi', 'f1c710a3', 'Ravi lipid panel.pdf', '2026-07-01T08:00:00Z');
+INSERT INTO documents (id, person_id, added_at, added_from) VALUES
+  ('doc-asha-aug', 'asha', '2026-08-13T09:00:00Z', 'documents_page'),
+  ('doc-asha-sep', 'asha', '2026-09-02T18:30:00Z', 'documents_page'),
+  ('doc-ravi-jul', 'ravi', '2026-07-01T08:00:00Z', 'documents_page');
+
+INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name) VALUES
+  ('asha', 'doc-asha-aug', 1, '7f4a70ccb858d23ee1cce44693bc2c009abb14604f0f3dbd48470639d6928b54', 1, 'Sunrise Labs August.pdf'),
+  ('asha', 'doc-asha-aug', 2, '7f4a70ccb858d23ee1cce44693bc2c009abb14604f0f3dbd48470639d6928b54', 2, 'Sunrise Labs August.pdf'),
+  ('asha', 'doc-asha-sep', 1, '151e4196f9224a081cc4fadd0edb7687b5eba4a5cb46451fa96db4b4c921b666', 1, 'thyroid recheck.jpg'),
+  ('ravi', 'doc-ravi-jul', 1, 'f7d7c195033e1719e2c191970b14e52478e02faf51f1d61e57b517674fbc9c45', 1, 'Ravi lipid panel.pdf');
 
 INSERT INTO reports (id, person_id, document_id, issuer, collected) VALUES
   ('rep-asha-aug', 'asha', 'doc-asha-aug', 'Sunrise Labs', '2026-08-12'),

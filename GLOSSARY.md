@@ -21,7 +21,7 @@ Everything Rufi holds as true about one person: what the user said yes to in the
 _Avoid_: chart, file, history
 
 **Document**:
-An original file the user added for a person, such as a lab report PDF or a photo of a prescription, kept exactly as it came.
+What the user added for a person in one go: one PDF, or photos added together, such as a lab report photographed page by page. Its pages are the PDF's pages or the photos, in order. Rufi keeps each original file exactly as it came, and the same content only once per person.
 _Avoid_: upload, attachment
 
 **Report**:
@@ -196,7 +196,7 @@ _Avoid_: sandbox, test account
 ## Keeping your data safe
 
 **Backup**:
-A checked copy of the record that Rufi makes in `backups/` in the data folder when it starts and then each day. It holds the record only: never the sign-in, the AI's own files, the log or the allowlist. It counts only after its check passes.
+A checked copy of the record and every document's original file that Rufi makes in `backups/` in the data folder when it starts and then each day. Never the sign-in, the AI's own files, the log or the allowlist. It counts only after its check passes.
 _Avoid_: snapshot, archive
 
 **Restore**:
@@ -204,7 +204,7 @@ Putting a backup into a new, empty folder, with `pnpm rufi restore`. It never ch
 _Avoid_: recover, roll back
 
 **Export**:
-One zip with everything in the record, the chat and Rufi's settings, as JSON and CSV with a README, so your data is never locked in Rufi. Not a backup: Rufi can't restore from it.
+One zip with everything in the record, the chat and Rufi's settings, as JSON and CSV with a README, and every document's original file, so your data is never locked in Rufi. Not a backup: Rufi can't restore from it.
 _Avoid_: download, dump
 
 ## Relationships

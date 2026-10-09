@@ -54,6 +54,13 @@ export function printedTime(iso: string): string {
   return `at ${pad(at.getHours())}:${pad(at.getMinutes())} on ${String(at.getDate())} ${MONTHS[at.getMonth()] ?? ""} ${String(at.getFullYear())}`;
 }
 
+/** An ISO time's day as "4 Oct 2026", in this Mac's time zone. */
+export function printedDay(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  return `${String(at.getDate())} ${MONTHS[at.getMonth()] ?? ""} ${String(at.getFullYear())}`;
+}
+
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /** The day of an ISO time in this Mac's time zone, to tell days apart. */

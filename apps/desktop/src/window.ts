@@ -14,6 +14,9 @@ import {
   shell,
 } from "electron";
 
+/** Chromium's built-in PDF viewer, which Electron runs as an extension. */
+const PDF_VIEWER = "chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai";
+
 /** What the screens look for to know they are in the app (apps/web main.tsx). */
 const MARK = "RufiApp";
 
@@ -108,6 +111,8 @@ export function openWindow(
       allowRunningInsecureContent: false,
       webviewTag: false,
       navigateOnDragDrop: false,
+      // The built-in PDF viewer, for a document's original (no other plugin).
+      plugins: true,
       devTools: true,
     },
   });
@@ -126,10 +131,13 @@ export function openWindow(
     if (contents.mainFrame.frames.length === 0) toBrowser(url);
     return { action: "deny" };
   });
-  // Only Rufi's own pages, in any frame. A link away goes to the browser
-  // when the page itself follows it, not a frame inside it.
+  // Only Rufi's own pages, in any frame, and the built-in PDF viewer inside
+  // a frame (a document's original in its popup). A link away goes to the
+  // browser when the page itself follows it, not a frame inside it.
   contents.on("will-frame-navigate", (event) => {
     if (ours(event.url)) return;
+    // An extension's address has no origin of its own: compared as text.
+    if (!event.isMainFrame && event.url.startsWith(`${PDF_VIEWER}/`)) return;
     event.preventDefault();
     if (
       event.isMainFrame &&
