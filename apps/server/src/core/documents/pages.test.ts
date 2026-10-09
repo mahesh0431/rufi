@@ -206,20 +206,52 @@ describe("get_documents", () => {
     expect(new Set(ids).size).toBe(total);
   });
 
-  it("shows a document's pages, and a page as an image with its text", async () => {
+  it("continues a document's 101 pages once each, and shows a page image with its text", async () => {
     const [id = ""] = await add(
       "asha",
       await fixture("sunrise-labs-august.pdf"),
     );
+    // Page rows alone exercise continuation; no large fixture PDF is needed.
+    const file = store.db
+      .prepare(
+        "SELECT file_id FROM document_pages WHERE document_id = ? AND position = 1",
+      )
+      .get(id)?.["file_id"] as string;
+    const insert = store.db.prepare(`INSERT INTO document_pages
+      (person_id, document_id, position, file_id, page_in_file, file_name)
+      VALUES ('asha', ?, ?, ?, ?, 'sunrise-labs-august.pdf')`);
+    for (let position = 3; position <= 101; position++)
+      insert.run(id, position, file, position);
 
     const document = await call({ personId: "asha" }, { document: id });
-    expect(document.body["result"]).toMatchObject({
+    const first = document.body["result"] as {
+      pages: { page: number }[];
+      next?: string;
+    };
+    expect(first).toMatchObject({
       document: { id, status: "not_read" },
-      pages: [
-        { page: 1, file: "sunrise-labs-august.pdf", page_in_file: 1 },
-        { page: 2, file: "sunrise-labs-august.pdf", page_in_file: 2 },
-      ],
+      next: "100",
     });
+    expect(first.pages).toHaveLength(100);
+    expect(first.pages.slice(0, 2)).toEqual([
+      { page: 1, file: "sunrise-labs-august.pdf", page_in_file: 1 },
+      { page: 2, file: "sunrise-labs-august.pdf", page_in_file: 2 },
+    ]);
+    const rest = await call(
+      { personId: "asha" },
+      { document: id, after: first.next },
+    );
+    const last = rest.body["result"] as {
+      pages: { page: number }[];
+      next?: string;
+    };
+    expect(last.pages).toEqual([
+      { page: 101, file: "sunrise-labs-august.pdf", page_in_file: 101 },
+    ]);
+    expect(last.next).toBeUndefined();
+    expect([...first.pages, ...last.pages].map((p) => p.page)).toEqual(
+      Array.from({ length: 101 }, (_, i) => i + 1),
+    );
 
     const page = await call({ personId: "asha" }, { document: id, page: 1 });
     expect(page.body).toEqual({
@@ -227,7 +259,7 @@ describe("get_documents", () => {
       result: {
         document: id,
         page: 1,
-        of: 2,
+        of: 101,
         file: "sunrise-labs-august.pdf",
         text: expect.stringContaining("page 1") as unknown,
       },

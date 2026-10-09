@@ -19,6 +19,8 @@ import {
   type ChatRow,
   type Transcripts,
 } from "../core/chat/transcript.ts";
+import { documents } from "../core/documents/documents.ts";
+import { pages } from "../core/documents/pages.ts";
 import {
   databasePath,
   openReadOnly,
@@ -117,7 +119,12 @@ async function startChat(
       version: "tools-1",
       instructions: "Read the record only through the rufi tools.",
       caller: (chat, turnId) => {
-        const call = chatCaller(reader, transcripts, log)(chat, turnId);
+        const call = chatCaller(
+          reader,
+          transcripts,
+          log,
+          reader && pages(reader, home),
+        )(chat, turnId);
         return async (name, input, callId) => {
           await sleep(options.toolMs ?? 0);
           return call(name, input, callId);
@@ -640,6 +647,67 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     },
   );
 });
+
+it(
+  "gives a page image to the code-mode chat without keeping its bytes in calls or activity",
+  { timeout: 60_000 },
+  async () => {
+    const bytes = await readFile(
+      join(
+        import.meta.dirname,
+        "../../tests/fixtures/documents/thyroid-recheck.jpg",
+      ),
+    );
+    const [documentId = ""] = (
+      await documents(store, home).add(
+        "asha",
+        [{ name: "Fictional thyroid.jpg", bytes: new Uint8Array(bytes) }],
+        false,
+      )
+    ).added;
+    const imageUrl = `data:image/jpeg;base64,${bytes.toString("base64")}`;
+    model = await fakeModel({
+      script: [
+        {
+          exec: `const result = await tools.rufi__get_documents({document: ${JSON.stringify(documentId)}, page: 1}); image(result.split('\\n')[1]);`,
+        },
+        { text: "Done." },
+      ],
+    });
+    await startChat("real");
+    const c = await newChat();
+    await chat?.send(c, "Look at the fictional document's first page.");
+    await ended(c.id);
+    const output = model.requests.at(-1)?.input.at(-1)?.output;
+    expect(output).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "input_image", image_url: imageUrl }),
+      ]),
+    );
+    const calls = store.db
+      .prepare("SELECT * FROM tool_calls WHERE chat_id = ?")
+      .all(c.id);
+    expect(calls).toMatchObject([{ tool: "get_documents", ok: 1 }]);
+    const snapshot = await transcript(c.id);
+    expect(snapshot.turns).toMatchObject([
+      { status: "completed", model: "gpt-6.1-sol" },
+    ]);
+    expect(
+      snapshot.all.filter((entry) => entry.activity === "tool"),
+    ).toMatchObject([
+      { text: "Looked at page 1 of a document", status: "done" },
+    ]);
+    // Both stored forms and the activity a person can read must omit the payload.
+    const persisted = store.db
+      .prepare("SELECT * FROM transcript_entries WHERE chat_id = ?")
+      .all(c.id);
+    for (const value of [calls, persisted, snapshot.all]) {
+      const kept = JSON.stringify(value);
+      expect(kept).not.toContain("data:image/");
+      expect(kept).not.toContain(bytes.toString("base64"));
+    }
+  },
+);
 
 describe("the chat, on the scripted Codex", () => {
   it("sends nothing when Stop comes while the effort is being set", async () => {

@@ -4,7 +4,13 @@
 // every request Codex sends the model and fails on any tool but get_page and
 // save_page, also after a compaction; it checks a page image reaches the
 // model, and that the tools' binding and the notebook's write boundary hold.
-import { mkdir, mkdtemp, readFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -42,7 +48,7 @@ let documentId: string;
 let jobId: string;
 
 beforeEach(async () => {
-  root = await mkdtemp(join(tmpdir(), "rufi-subagent-"));
+  root = await realpath(await mkdtemp(join(tmpdir(), "rufi-subagent-")));
   await mkdir(join(root, "user-home"));
   store = openWritable(databasePath(root));
   store.db.exec(`INSERT INTO people (id, display_name) VALUES
@@ -110,6 +116,7 @@ async function read(
   script: Step[],
   before?: (call: number) => void,
   readerModel = MODEL,
+  config: readonly string[] = [],
 ): Promise<{ outcome: SubAgentOutcome; answers: unknown[] }> {
   model = await fakeModel({ script });
   const reader = forReader(
@@ -127,6 +134,7 @@ async function read(
       args: [
         "-c",
         `model_providers.openai_chatgpt_plan.base_url="${model.url}"`,
+        ...config.flatMap((value) => ["-c", value]),
       ],
     },
     env: { PATH: process.env["PATH"] ?? "", HOME: join(root, "user-home") },
@@ -187,27 +195,99 @@ const entry = (value: string) => ({
 });
 
 describe("the reader on the pinned Codex", () => {
+  it.each([
+    [
+      "enabled MCP servers",
+      `mcp_servers.fixture.command=${JSON.stringify(process.execPath)}`,
+    ],
+    [
+      "developer instructions",
+      'developer_instructions="Ambient fictional instructions."',
+    ],
+    [
+      "base instructions",
+      'instructions="Ambient fictional base instructions."',
+    ],
+    [
+      "compaction instructions",
+      'compact_prompt="Ambient fictional compaction instructions."',
+    ],
+    ["plan tool", "tools.update_plan.enabled=true"],
+    ["clock tool", "features.current_time_reminder=true"],
+  ])(
+    "refuses ambient %s before a turn starts",
+    async (_name, config) => {
+      const { outcome, answers } = await read(
+        job([1]),
+        [{ text: "Done." }],
+        undefined,
+        MODEL,
+        [config],
+      );
+      expect(outcome.end).toMatchObject({
+        status: "failed",
+        reason: "provider_failed",
+      });
+      expect(outcome.end.text).toContain("reader configuration");
+      expect(model?.requests).toEqual([]);
+      expect(answers).toEqual([]);
+    },
+    120_000,
+  );
+
+  it("checks the effective ambient configuration at the reader's cwd", async () => {
+    const cwd = join(root, "sub-agents", "workspace");
+    await mkdir(join(cwd, ".codex"), { recursive: true });
+    await writeFile(
+      join(cwd, ".codex", "config.toml"),
+      'developer_instructions="Fictional project instructions."\n',
+    );
+    const { outcome } = await read(
+      job([1]),
+      [{ text: "Done." }],
+      undefined,
+      MODEL,
+      [`projects={${JSON.stringify(cwd)}={trust_level="trusted"}}`],
+    );
+    expect(outcome.end).toMatchObject({
+      status: "failed",
+      reason: "provider_failed",
+    });
+    expect(outcome.end.text).toContain("reader configuration");
+    expect(model?.requests).toEqual([]);
+  }, 120_000);
+
   it("can call only get_page and save_page, sees the page image, and its tools hold", async () => {
     const run = job([1, 2]);
     const before = stored();
-    const { outcome, answers } = await read(run, [
-      call("save_page", { page: 1, entry: entry("13.2") }),
-      call("get_page", { page: 1 }),
-      call("get_page", { page: 9 }),
-      call("get_page", { page: 1, document: "another" }),
-      call("save_page", { page: 1, entry: { outcome: "read" } }),
-      // Refusals so far changed nothing.
-      call("save_page", {
-        page: 1,
-        entry: entry("13.2"),
-        note: "Dates on page 1.",
-      }),
-      // The answer to this save reports usage over the limit: Codex compacts.
-      call("save_page", { page: 1, entry: entry("13.4") }, OVER_LIMIT),
-      call("save_page", { page: 1, entry: entry("13.5") }),
-      call("get_page", { page: 1 }),
-      { text: "Done." },
-    ]);
+    const { outcome, answers } = await read(
+      run,
+      [
+        call("save_page", { page: 1, entry: entry("13.2") }),
+        call("get_page", { page: 1 }),
+        call("get_page", { page: 9 }),
+        call("get_page", { page: 1, document: "another" }),
+        call("save_page", { page: 1, entry: { outcome: "read" } }),
+        // Refusals so far changed nothing.
+        call("save_page", {
+          page: 1,
+          entry: entry("13.2"),
+          note: "Dates on page 1.",
+        }),
+        // The answer to this save reports usage over the limit: Codex compacts.
+        call("save_page", { page: 1, entry: entry("13.4") }, OVER_LIMIT),
+        call("save_page", { page: 1, entry: entry("13.5") }),
+        call("get_page", { page: 1 }),
+        { text: "Done." },
+      ],
+      undefined,
+      MODEL,
+      [
+        `mcp_servers.fixture.command=${JSON.stringify(process.execPath)}`,
+        "mcp_servers.fixture.enabled=false",
+        "tools.update_plan.enabled=false",
+      ],
+    );
 
     expect(outcome.end).toEqual({ status: "completed" });
     expect(outcome.compactions).toBe(1);
@@ -347,13 +427,13 @@ describe("the reader on the pinned Codex", () => {
     expect(stored().notes.every((n) => n["reader_note"] === null)).toBe(true);
   }, 120_000);
 
-  it("stops a turn that reaches the tools through code, as on a model with Codex's exec tool", async () => {
+  it("refuses a model with standalone exec before a turn starts", async () => {
     const run = job([1, 2]);
     const { outcome, answers } = await read(
       run,
       [
         {
-          exec: "text(await tools.rufi__save_page({ page: 1, entry: { outcome: 'nothing_here', items: [] } }))",
+          exec: "text('An extra tool ran without a nested Rufi call.')",
         },
         { text: "Done." },
       ],
@@ -363,8 +443,9 @@ describe("the reader on the pinned Codex", () => {
     expect(outcome.end).toEqual({
       status: "failed",
       reason: "provider_failed",
-      text: "The AI reached Rufi's tools through code, which Rufi didn't allow, so Rufi stopped it.",
+      text: "Rufi's reader requires gpt-5.5.",
     });
+    expect(model?.requests).toEqual([]);
     expect(answers).toEqual([]);
     expect(stored().pages.every((p) => p["entry"] === null)).toBe(true);
   }, 120_000);

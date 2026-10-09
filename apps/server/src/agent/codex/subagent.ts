@@ -27,6 +27,8 @@ import {
 } from "./appserver.ts";
 import { dynamicTools } from "./codex.ts";
 import { endOf } from "./events.ts";
+import type { ConfigReadResponse } from "./protocol/v2/ConfigReadResponse.ts";
+import type { ConfigRequirementsReadResponse } from "./protocol/v2/ConfigRequirementsReadResponse.ts";
 import type { DynamicToolCallParams } from "./protocol/v2/DynamicToolCallParams.ts";
 import type { DynamicToolCallResponse } from "./protocol/v2/DynamicToolCallResponse.ts";
 import type { ItemCompletedNotification } from "./protocol/v2/ItemCompletedNotification.ts";
@@ -88,6 +90,18 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
   const log = deps.log ?? (() => undefined);
 
   return async (task: SubAgentTask, signal?: AbortSignal) => {
+    // On the pinned Codex, only this model uses the direct two-tool route.
+    // Code-mode models can run exec without emitting a guarded ThreadItem.
+    if (task.model !== "gpt-5.5") {
+      return {
+        end: {
+          status: "failed",
+          reason: "provider_failed",
+          text: "Rufi's reader requires gpt-5.5.",
+        },
+        compactions: 0,
+      };
+    }
     const started = Date.now();
     const paths = await prepareCodexHome(
       join(deps.home, "sub-agents"),
@@ -266,6 +280,32 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
           );
         },
       });
+      // A separate CODEX_HOME still inherits system/managed configuration.
+      // Ask Codex for the layers the reader's cwd will actually load, rather
+      // than parsing files or relying only on its instruction-file list.
+      const config = await app.rpc.request<ConfigReadResponse>(
+        "config/read",
+        { cwd: paths.workspace, includeLayers: true },
+        deadlines.requestMs,
+      );
+      const { requirements } =
+        await app.rpc.request<ConfigRequirementsReadResponse>(
+          "configRequirements/read",
+          {},
+          deadlines.requestMs,
+        );
+      const additions = checkConfig(config);
+      if (requirements?.additionalDeveloperInstructions) {
+        additions.push("managed developer instructions");
+      }
+      if (requirements?.hooks) additions.push("managed hooks");
+      if (additions.length > 0) {
+        return outcome({
+          status: "failed",
+          reason: "provider_failed",
+          text: `Codex's reader configuration has unsupported additions: ${additions.join("; ")}.`,
+        });
+      }
       const params: ThreadStartParams = {
         model: task.model,
         cwd: paths.workspace,
@@ -274,6 +314,7 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
         ephemeral: true,
         environments: [],
         baseInstructions: task.instructions,
+        developerInstructions: "",
         config: { ...LOCKED_CONFIG, model_reasoning_effort: task.effort },
         dynamicTools: dynamicTools(task.tools),
       };
@@ -324,6 +365,61 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
       return { end, compactions, ...(usage && { usage }) };
     }
   };
+}
+
+/** Additions that the locked thread settings alone do not exclude. */
+function checkConfig({ config, layers }: ConfigReadResponse): string[] {
+  const problems: string[] = [];
+  const table = (value: unknown): Record<string, unknown> =>
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const servers = table(config["mcp_servers"]);
+  if (
+    Object.values(servers).some((server) => table(server)["enabled"] !== false)
+  ) {
+    problems.push("enabled MCP servers");
+  }
+  for (const key of [
+    "instructions",
+    "developer_instructions",
+    "model_instructions_file",
+    "compact_prompt",
+    "experimental_compact_prompt_file",
+    "model_catalog_json",
+    "profile",
+  ]) {
+    if (config[key]) problems.push(key);
+  }
+  // The pinned API's typed `tools` projection drops update_plan. Its layers
+  // keep it, highest precedence first; ignore layers Codex disabled.
+  const plan = layers
+    ?.filter((layer) => !layer.disabledReason)
+    .map(
+      (layer) =>
+        table(table(table(layer.config)["tools"])["update_plan"])["enabled"],
+    )
+    .find((enabled) => enabled !== undefined);
+  if (layers === null) problems.push("configuration layers unavailable");
+  if (plan === true) {
+    problems.push("tools.update_plan");
+  }
+  const features = table(config["features"]);
+  for (const key of [
+    "current_time_reminder",
+    "sleep_tool",
+    "token_budget",
+    "deferred_executor",
+    "send_message_to_user_async",
+    "image_generation",
+  ]) {
+    const value = features[key];
+    if (value === true || table(value)["enabled"] === true) {
+      problems.push(`features.${key}`);
+    }
+  }
+  if (Object.keys(table(config["hooks"])).length > 0) problems.push("hooks");
+  return problems;
 }
 
 /** What in Codex's answer to thread/start isn't what Rufi asked for. */
