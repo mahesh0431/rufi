@@ -39,6 +39,7 @@ CREATE TABLE documents (
   added_from TEXT NOT NULL CHECK (added_from IN ('documents_page')),
   kind TEXT CHECK (kind IN ('lab_report', 'prescription', 'letter', 'other')), -- as read; null until read
   date TEXT,             -- the document's date as read (precision date); null until read
+  reader_note TEXT,      -- the reader's one note for the whole document, rewritten by the reader
   UNIQUE (person_id, id)
 ) STRICT;
 
@@ -51,8 +52,31 @@ CREATE TABLE document_pages (
   file_id TEXT NOT NULL REFERENCES files (id),
   page_in_file INTEGER NOT NULL, -- 1, 2, 3... in the file
   file_name TEXT NOT NULL,     -- the file's name as it was added
+  -- The reader's notebook: this page's entry (JSON, as save_page checked it)
+  -- and the job that saved it. A later save_page for the page replaces it.
+  entry TEXT,
+  entry_job_id TEXT,
+  entry_at TEXT,
   PRIMARY KEY (person_id, document_id, position),
   UNIQUE (person_id, file_id, page_in_file),
+  FOREIGN KEY (person_id, document_id) REFERENCES documents (person_id, id),
+  FOREIGN KEY (person_id, entry_job_id) REFERENCES jobs (person_id, id)
+) STRICT;
+
+-- Background work for a person, one row per job. A reading targets some of
+-- its document's pages (all of them first; a retry only the failed ones), and
+-- each run of it is a new attempt: save_page accepts entries only from the
+-- running job's current attempt, for its target pages.
+CREATE TABLE jobs (
+  id TEXT PRIMARY KEY,
+  person_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('document_read')),
+  document_id TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('queued', 'running', 'done', 'failed')),
+  attempt INTEGER NOT NULL DEFAULT 0, -- 1, 2, 3... as runs start
+  targets TEXT NOT NULL,               -- JSON array of page positions
+  created_at TEXT NOT NULL,
+  UNIQUE (person_id, id),
   FOREIGN KEY (person_id, document_id) REFERENCES documents (person_id, id)
 ) STRICT;
 

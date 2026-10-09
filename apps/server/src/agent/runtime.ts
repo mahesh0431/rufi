@@ -115,6 +115,8 @@ export interface ToolAnswer {
   ok: boolean;
   /** JSON, for the model. */
   text: string;
+  /** Images the model sees after the text, as data: URLs. */
+  images?: readonly string[];
   stopTurn?: string;
 }
 
@@ -240,3 +242,51 @@ export const agentCall = <A>(
       ]);
     });
   });
+
+/**
+ * A Rufi sub-agent's one task: a locked-down AI thread that Rufi starts for
+ * background work (a document's reader). It sees only its own instructions,
+ * its input and exactly the tools it is given; it has no chat history, no
+ * workspace and no network, and saves nothing of its own.
+ */
+export interface SubAgentTask {
+  model: string;
+  effort: string;
+  /** Its whole instructions: they replace the agent's own, not add to them. */
+  instructions: string;
+  /** Its one message: what to do. */
+  input: string;
+  tools: AgentTools;
+  /** Runs one of its tools; the task's owner binds them to their data. */
+  callTool: (
+    name: string,
+    input: unknown,
+    callId: string,
+  ) => Promise<ToolAnswer>;
+  /** The agent summarised the thread: what the sub-agent saw before is gone. */
+  onCompaction: () => void;
+  /** How long the whole turn may take. */
+  deadlineMs: number;
+}
+
+/** How a sub-agent's turn ended, as Rufi saw it. */
+export interface SubAgentOutcome {
+  /** Only `completed` means the turn ended normally. */
+  end: TurnEnd;
+  /** How often the agent summarised the thread during the turn. */
+  compactions: number;
+  /** The turn's tokens, as the agent reported them last. */
+  usage?: {
+    inputTokens: number;
+    cachedInputTokens: number;
+    outputTokens: number;
+    reasoningOutputTokens: number;
+    totalTokens: number;
+  };
+}
+
+/** Runs one sub-agent task to its end; a Stop (signal) interrupts it. */
+export type RunSubAgent = (
+  task: SubAgentTask,
+  signal?: AbortSignal,
+) => Promise<SubAgentOutcome>;

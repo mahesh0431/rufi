@@ -77,6 +77,9 @@ export interface Tables {
     file_id: string;
     page_in_file: number;
     file_name: string;
+    entry: string | null;
+    entry_job_id: string | null;
+    entry_at: string | null;
   };
   documents: {
     id: string;
@@ -85,6 +88,7 @@ export interface Tables {
     added_from: string;
     kind: string | null;
     date: string | null;
+    reader_note: string | null;
   };
   drafts: {
     person_id: string;
@@ -110,6 +114,16 @@ export interface Tables {
     linked_id: string | null;
     source_entry_id: string | null;
     removed: number;
+  };
+  jobs: {
+    id: string;
+    person_id: string;
+    kind: string;
+    document_id: string;
+    state: string;
+    attempt: number;
+    targets: string;
+    created_at: string;
   };
   medicine_uses: {
     id: string;

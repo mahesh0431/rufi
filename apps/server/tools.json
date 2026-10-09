@@ -66,6 +66,42 @@
       ]
     },
     {
+      "name": "rufi.get_documents",
+      "description": "The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its files and pages, and its status (\"not_read\": not read yet). With document: its pages. With document and page: that page as an image, with the page's own text when the PDF has some (use it for exact characters); a photo or a scan is the image alone. At most 50 documents or 100 pages come back; when there are more, the answer has \"next\": pass it as after to read on. Documents are not the record: nothing in them counts as saved. Rufi chooses the person, not you.",
+      "callers": "model",
+      "readOnly": true,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "string",
+            "description": "A document's id, from the list. Leave it out for the list."
+          },
+          "page": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "description": "A page of that document, 1, 2, 3...: you get the page's image and its own text when it has some."
+          },
+          "after": {
+            "type": "string",
+            "description": "The `next` of the previous answer, to read on."
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        {},
+        {
+          "document": "01a12345-0000-7000-8000-000000000000"
+        },
+        {
+          "document": "01a12345-0000-7000-8000-000000000000",
+          "page": 1
+        }
+      ]
+    },
+    {
       "name": "rufi.read_chat",
       "description": "Earlier parts of this chat, newest first. Each entry's kind is \"message\" (the user's), \"steer\" (the user's, sent while you were replying), \"reply\" (yours), \"activity\" (one thing you did: a title and one short detail, never its output), \"receipt\" (Rufi's line for a save to the record: what was saved) or \"event\" (Rufi's own line about something that happened, never the user's words). \"at\" is when it was written. At most 50 entries a page; pass the page's next_before to read further back. Rufi chooses the chat, not you.",
       "callers": "model",

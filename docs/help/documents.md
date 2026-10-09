@@ -2,7 +2,7 @@
 
 You can add lab reports and other documents to Rufi as PDFs or photos. Rufi keeps each original exactly as it came, so you can always look at it again. This page says how to add documents, what Rufi does with photos taken together, and how to look at an original.
 
-Rufi doesn't read your documents yet: each one shows **Not read yet**.
+Rufi doesn't read your documents by itself yet: each one shows **Not read yet**. You can ask the AI about a document in the chat, and it looks at the pages it needs (see [Your data and the AI](your-data-and-the-ai.md#the-pages-the-ai-looks-at)).
 
 ## Add documents
 
