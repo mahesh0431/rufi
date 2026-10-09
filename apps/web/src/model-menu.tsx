@@ -25,7 +25,7 @@ const EFFORTS: readonly { id: Effort; name: string }[] = [
 ];
 
 const POPUP =
-  "z-30 w-72 rounded-xl bg-surface/95 p-1.5 shadow-float backdrop-blur-xl outline-none";
+  "z-30 w-72 rounded-xl bg-surface/95 p-1.5 shadow-menu backdrop-blur-xl outline-none";
 const LABEL = "px-2 pt-1.5 pb-1 text-xs text-muted";
 const ITEM =
   "flex cursor-default items-center gap-2 rounded-lg px-2 py-1.5 outline-none select-none data-[highlighted]:bg-side";

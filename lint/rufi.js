@@ -50,9 +50,10 @@ const noLostCause = {
 };
 
 // Colours come only from the theme tokens (apps/web/src/themes.css): no
-// Tailwind palette class, hex value or colour function in the code.
+// Tailwind palette class, hex value or colour function in the code. A link's
+// fragment (/help/page#add) is not a hex value.
 const RAW_COLOUR =
-  /\b(?:bg|text|border|ring|outline|fill|stroke|from|via|to|shadow|divide|placeholder|decoration|caret|accent)-(?:white|black|(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3})\b|#(?:[\da-f]{8}|[\da-f]{6}|[\da-f]{3,4})\b|(?<![a-z])(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(/i;
+  /\b(?:bg|text|border|ring|outline|fill|stroke|from|via|to|shadow|divide|placeholder|decoration|caret|accent)-(?:white|black|(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3})\b|(?<![\w/])#(?:[\da-f]{8}|[\da-f]{6}|[\da-f]{3,4})\b|(?<![a-z])(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(/i;
 
 const noRawColour = {
   meta: { type: "problem" },

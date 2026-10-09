@@ -23,7 +23,10 @@
   --accent-soft: #e3edfc; /* what is selected, and the person's own messages */
   --accent-ink: #1d4ed8; /* links and selected text */
   --edge: rgb(0 0 0 / 0.06); /* the hairline around floating panels */
-  --shade: rgb(0 0 0 / 0.1); /* the shadow under floating panels */
+  --shade: rgb(
+    0 0 0 / 0.1
+  ); /* the shadow under floating panels and raised parts */
+  --shade-menu: rgb(0 0 0 / 0.12); /* the shadow under menus, over the panels */
 }
 
 /* Dark: the same layout in dark greys; groups are a step lighter than the
@@ -40,15 +43,21 @@
   --accent-hover: #2459c4;
   --on-accent: #ffffff;
   --accent-soft: #1e3250;
-  --accent-ink: #93b8fa;
+  --accent-ink: #adc9fc; /* AA on the Mac's dark sidebar material too */
   --edge: rgb(255 255 255 / 0.08);
   --shade: rgb(0 0 0 / 0.45);
+  --shade-menu: rgb(0 0 0 / 0.5);
 }
 
 /* The tokens as Tailwind names (bg-page, text-ink, shadow-float, …).
-   Tailwind's own palette is off, so a colour can only come from here. */
+   Tailwind's own colours and shadows are off, so they can only come from
+   here. */
 @theme inline {
   --color-*: initial;
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+  --text-shadow-*: initial;
   --color-page: var(--page);
   --color-side: var(--side);
   --color-surface: var(--surface);
@@ -60,5 +69,7 @@
   --color-on-accent: var(--on-accent);
   --color-accent-soft: var(--accent-soft);
   --color-accent-ink: var(--accent-ink);
+  --shadow-sm: 0 1px 3px 0 var(--shade), 0 1px 2px -1px var(--shade);
   --shadow-float: 0 0 0 1px var(--edge), 0 8px 28px var(--shade);
+  --shadow-menu: 0 0 0 1px var(--edge), 0 8px 28px var(--shade-menu);
 }
