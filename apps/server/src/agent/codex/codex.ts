@@ -1,9 +1,11 @@
 // The Codex implementation of AgentRuntime: one app-server for every thread,
-// full access as PLAN.md §4 sets it, and Codex's own queue for messages that
-// wait. A new app-server starts when the access token changes and no reply is
+// full access as PLAN.md §4 sets it. Rufi starts each reply with turn/start
+// when none runs; Codex's own queue is not used (Rufi keeps what waits). A
+// new app-server starts when the access token changes and no reply is
 // running.
 import { setTimeout as sleep } from "node:timers/promises";
 import {
+  NotSent,
   Stopped,
   type AgentEvent,
   type AgentHost,
@@ -13,7 +15,6 @@ import {
   type ThreadSettings,
   type ToolAnswer,
   type TurnEnd,
-  type WaitingMessage,
 } from "../runtime.ts";
 import {
   DEADLINES,
@@ -34,14 +35,12 @@ import type { ItemStartedNotification } from "./protocol/v2/ItemStartedNotificat
 import type { ModelListResponse } from "./protocol/v2/ModelListResponse.ts";
 import type { RateLimitSnapshot } from "./protocol/v2/RateLimitSnapshot.ts";
 import type { ThreadBackgroundTerminalsListResponse } from "./protocol/v2/ThreadBackgroundTerminalsListResponse.ts";
-import type { ThreadQueueListResponse } from "./protocol/v2/ThreadQueueListResponse.ts";
-import type { ThreadReadResponse } from "./protocol/v2/ThreadReadResponse.ts";
 import type { ThreadResumeResponse } from "./protocol/v2/ThreadResumeResponse.ts";
-import type { ThreadSettingsUpdateParams } from "./protocol/v2/ThreadSettingsUpdateParams.ts";
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
 import type { ThreadStartResponse } from "./protocol/v2/ThreadStartResponse.ts";
 import type { ThreadTurnsListResponse } from "./protocol/v2/ThreadTurnsListResponse.ts";
 import type { TurnCompletedNotification } from "./protocol/v2/TurnCompletedNotification.ts";
+import type { TurnStartParams } from "./protocol/v2/TurnStartParams.ts";
 import type { TurnSteerResponse } from "./protocol/v2/TurnSteerResponse.ts";
 import type { TurnStartedNotification } from "./protocol/v2/TurnStartedNotification.ts";
 import type { UserInput } from "./protocol/v2/UserInput.ts";
@@ -107,15 +106,8 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   let workspace = "";
   const loaded = new Set<string>(); // threads open in the current app-server
   const turns = new Map<string, Running>(); // the running turn of each thread
-  /**
-   * Whether a thread's queue is paused (its last turn was interrupted), when
-   * Rufi has seen it; unknown after a resume.
-   */
-  const paused = new Map<string, boolean>();
-  /** Threads where a Stop came during a resume: a reply it starts is stopped. */
+  /** Threads where a Stop came during a send: the reply it starts is stopped. */
   const stopNext = new Set<string>();
-  /** The effort Rufi set on each thread in the current app-server. */
-  const efforts = new Map<string, string>();
   let limits: RateLimitSnapshot | undefined;
   let tracking: NodeJS.Timeout | undefined;
 
@@ -165,7 +157,6 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         if (!server || server.running()) return;
         server = undefined;
         loaded.clear();
-        efforts.clear();
         endAll({
           status: "failed",
           reason: "provider_failed",
@@ -185,7 +176,6 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     const old = server;
     server = undefined;
     loaded.clear();
-    efforts.clear();
     await old?.stop();
     endAll({
       status: "failed",
@@ -336,11 +326,6 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           ...(params as AccountRateLimitsUpdatedNotification).rateLimits,
         };
         return;
-      case "thread/queue/changed":
-        if (typeof threadId === "string") {
-          emit({ type: "waitingChanged", threadId });
-        }
-        return;
       case "turn/started": {
         const { turn } = params as TurnStartedNotification;
         if (typeof threadId === "string") started(threadId, turn.id);
@@ -360,7 +345,6 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     }
     if (method === "turn/completed") {
       const { turn } = params as TurnCompletedNotification;
-      paused.set(running.threadId, turn.status === "interrupted");
       // Nothing after a Stop was kept, so a stopped reply isn't whole even
       // when Codex finished it first.
       const stopped = running.stopping && turn.status === "completed";
@@ -406,7 +390,6 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       }, deadlines.turnMs),
     };
     turns.set(threadId, running);
-    paused.set(threadId, false);
     tracking ??= setInterval(() => void track(), TRACK_EVERY_MS);
     emit({ type: "turnStarted", threadId, turnId });
     if (stopNext.delete(threadId)) void stopTurn(running);
@@ -643,25 +626,6 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     await shutDown();
   }
 
-  /** Every waiting message of a thread, in order, following Codex's pages. */
-  async function waitingList(
-    app: AppServer,
-    threadId: string,
-  ): Promise<ThreadQueueListResponse["data"]> {
-    const all: ThreadQueueListResponse["data"] = [];
-    let cursor: string | null = null;
-    do {
-      const page: ThreadQueueListResponse = await request(
-        app,
-        "thread/queue/list",
-        { threadId, cursor },
-      );
-      all.push(...page.data);
-      cursor = page.nextCursor;
-    } while (cursor);
-    return all;
-  }
-
   /** Codex with the thread open in it; Rufi opens threads only when asked. */
   async function open(threadId: string): Promise<AppServer> {
     const app = await ready();
@@ -703,33 +667,24 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         signal,
       );
       loaded.add(response.thread.id);
-      paused.set(response.thread.id, false);
       check(response, settings);
-      if (settings.effort !== undefined) {
-        efforts.set(response.thread.id, settings.effort);
-      }
       return { threadId: response.thread.id, model: response.model };
     },
 
     resumeThread: async (threadId, settings, signal) => {
       const app = await ready(signal);
-      stopNext.delete(threadId);
-      paused.delete(threadId);
-      efforts.delete(threadId);
-      // Codex may start what waits as it resumes: the person asked for that.
-      const response = await mayStart(threadId, signal, async () => {
-        const resumed = await request<ThreadResumeResponse>(
-          app,
-          "thread/resume",
-          { threadId, excludeTurns: true, ...settingsFor(settings) },
-        );
-        loaded.add(threadId);
-        return resumed;
-      });
+      const response = await abortable(
+        request<ThreadResumeResponse>(app, "thread/resume", {
+          threadId,
+          excludeTurns: true,
+          ...settingsFor(settings),
+        }),
+        signal,
+      );
+      loaded.add(threadId);
       const running =
         response.thread.status.type === "active" || turns.has(threadId);
       check(response, settings);
-      if (settings.effort !== undefined) efforts.set(threadId, settings.effort);
       return { model: response.model, running };
     },
 
@@ -738,51 +693,32 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     running: (threadId) => turns.has(threadId),
 
     send: async (threadId, message, signal) => {
-      const app = await open(threadId);
-      if (signal?.aborted) throw new Stopped();
-      stopNext.delete(threadId);
-      const input = [
-        ...(message.context === undefined ? [] : [textInput(message.context)]),
-        textInput(message.text),
-      ];
-      // A queued message has no effort of its own: the thread's, for the
-      // turns after, is set first.
-      if (
-        message.effort !== undefined &&
-        efforts.get(threadId) !== message.effort
-      ) {
-        await request(app, "thread/settings/update", {
-          threadId,
-          effort: message.effort,
-        } satisfies ThreadSettingsUpdateParams);
-        efforts.set(threadId, message.effort);
+      let app: AppServer;
+      try {
+        app = await open(threadId);
+      } catch (error) {
+        throw new NotSent(errorText(error), { cause: error });
       }
+      if (signal?.aborted)
+        throw new NotSent("Stopped.", { cause: new Stopped() });
+      // turn/start into a running reply would steer it: never.
+      if (turns.has(threadId)) {
+        throw new NotSent("A reply is running in this chat.");
+      }
+      stopNext.delete(threadId);
       await mayStart(threadId, signal, async () => {
-        await request(app, "thread/queue/add", {
-          threadId,
-          input,
-          clientUserMessageId: message.id,
-        });
-        // A Stop during the add: the message waits, and nothing runs.
-        if (signal?.aborted) return;
-        // Codex starts it by itself unless a Stop paused the queue.
-        if (turns.has(threadId) || paused.get(threadId) === false) return;
-        // Start the queue. When Codex has already started the message, or
-        // another reply, that's what was wanted.
         try {
-          await request(app, "thread/queue/start", { threadId });
+          await request(app, "turn/start", {
+            threadId,
+            input: message.input.map(textInput),
+            clientUserMessageId: message.id,
+            ...(message.effort !== undefined && { effort: message.effort }),
+          } satisfies TurnStartParams);
         } catch (error) {
-          if (turns.has(threadId)) return;
-          const waiting = await waitingList(app, threadId);
-          if (!waiting.some((w) => w.clientUserMessageId === message.id)) {
-            return;
+          // Codex answered no: it didn't take the message.
+          if (error instanceof RpcError) {
+            throw new NotSent(error.message, { cause: error });
           }
-          const { thread } = await request<ThreadReadResponse>(
-            app,
-            "thread/read",
-            { threadId, includeTurns: false },
-          );
-          if (thread.status.type === "active") return;
           throw error;
         }
       });
@@ -792,15 +728,23 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       const app = await open(threadId);
       const running = turns.get(threadId);
       if (!running || running.stopping) {
-        throw new Error("No reply is running to steer.");
+        throw new NotSent("No reply is running to steer.");
       }
-      const { turnId } = await request<TurnSteerResponse>(app, "turn/steer", {
-        threadId,
-        expectedTurnId: running.turnId,
-        clientUserMessageId: message.id,
-        input: [textInput(message.text)],
-      });
-      return { turnId };
+      try {
+        const { turnId } = await request<TurnSteerResponse>(app, "turn/steer", {
+          threadId,
+          expectedTurnId: running.turnId,
+          clientUserMessageId: message.id,
+          input: [textInput(message.text)],
+        });
+        return { turnId };
+      } catch (error) {
+        // Codex answered no: the reply ended before Rufi heard of it.
+        if (error instanceof RpcError) {
+          throw new NotSent(error.message, { cause: error });
+        }
+        throw error;
+      }
     },
 
     stop: async (threadId, turnId) => {
@@ -808,58 +752,6 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       if (running && (turnId === undefined || running.turnId === turnId)) {
         await stopTurn(running);
       }
-    },
-
-    waiting: {
-      list: async (threadId) => {
-        const app = await ready();
-        return (await waitingList(app, threadId)).map(
-          (entry): WaitingMessage => ({
-            id: entry.id,
-            messageId: entry.clientUserMessageId,
-            text: messageText(entry.input),
-          }),
-        );
-      },
-      edit: async (threadId, id, text) => {
-        const app = await ready();
-        const entry = (await waitingList(app, threadId)).find(
-          (w) => w.id === id,
-        );
-        if (!entry) throw new Error("That message isn't waiting any more.");
-        // Rufi's context before the message stays as it was.
-        const input = [...entry.input];
-        const last = input.findLastIndex((part) => part.type === "text");
-        input.splice(last < 0 ? input.length : last, 1, textInput(text));
-        await request(app, "thread/queue/update", {
-          threadId,
-          queuedSubmissionId: id,
-          input,
-        });
-      },
-      remove: async (threadId, id) => {
-        await request(await ready(), "thread/queue/delete", {
-          threadId,
-          queuedSubmissionId: id,
-        });
-      },
-      reorder: async (threadId, ids) => {
-        await request(await ready(), "thread/queue/reorder", {
-          threadId,
-          queuedSubmissionIds: ids,
-        });
-      },
-      runNow: async (threadId, id, signal) => {
-        const app = await open(threadId);
-        if (signal?.aborted) throw new Stopped();
-        stopNext.delete(threadId);
-        await mayStart(threadId, signal, () =>
-          request(app, "thread/queue/start", {
-            threadId,
-            queuedSubmissionId: id,
-          }),
-        );
-      },
     },
 
     startedMessages: async (threadId) => {
@@ -906,6 +798,9 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     },
   };
 }
+
+const errorText = (error: unknown) =>
+  error instanceof Error ? error.message : "Codex couldn't take the message.";
 
 /** Waits for `promise`, or until `signal` aborts: then it's a Stop. */
 function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {

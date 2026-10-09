@@ -26,6 +26,23 @@ export interface Tables {
     source_entry_id: string | null;
     removed: number;
   };
+  chat_queue: {
+    id: string;
+    person_id: string;
+    chat_id: string;
+    origin: string;
+    text: string;
+    refs: string;
+    event_id: string | null;
+    position: number;
+    state: string;
+    held: string | null;
+    held_text: string | null;
+    sent_as: string | null;
+    turn_id: string | null;
+    created_at: string;
+    updated_at: string;
+  };
   chats: {
     id: string;
     person_id: string;
@@ -35,6 +52,7 @@ export interface Tables {
     thread_provider: string | null;
     thread_model: string | null;
     thread_tools: string | null;
+    paused: string | null;
     revision: number;
     created_at: string;
   };
@@ -76,8 +94,6 @@ export interface Tables {
     person_id: string;
     chat_id: string;
     text: string;
-    state: string;
-    attempt: string | null;
     updated_at: string;
   };
   files: {
@@ -257,6 +273,7 @@ export interface Tables {
     agent_turn_id: string;
     thread_id: string;
     model: string;
+    origin: string;
     status: string;
     end_reason: string | null;
     end_text: string | null;

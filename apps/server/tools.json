@@ -103,7 +103,7 @@
     },
     {
       "name": "rufi.read_chat",
-      "description": "Earlier parts of this chat, newest first. Each entry's kind is \"message\" (the user's), \"steer\" (the user's, sent while you were replying), \"reply\" (yours), \"activity\" (one thing you did: a title and one short detail, never its output) or \"receipt\" (Rufi's line for a save to the record: what was saved). \"at\" is when it was written. At most 50 entries a page; pass the page's next_before to read further back. Rufi chooses the chat, not you.",
+      "description": "Earlier parts of this chat, newest first. Each entry's kind is \"message\" (the user's), \"steer\" (the user's, sent while you were replying), \"reply\" (yours), \"activity\" (one thing you did: a title and one short detail, never its output), \"receipt\" (Rufi's line for a save to the record: what was saved) or \"event\" (Rufi's own line about something that happened, never the user's words). \"at\" is when it was written. At most 50 entries a page; pass the page's next_before to read further back. Rufi chooses the chat, not you.",
       "callers": "model",
       "readOnly": true,
       "destructive": false,

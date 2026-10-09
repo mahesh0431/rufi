@@ -390,7 +390,11 @@ const askCommand = (question: string, person: string | undefined) =>
           op.signal,
         );
         threadId = thread.threadId;
-        await agent.send(threadId, { id: uuid(), text: question }, op.signal);
+        await agent.send(
+          threadId,
+          { id: uuid(), input: [question] },
+          op.signal,
+        );
         return ended.promise;
       },
       async () => {

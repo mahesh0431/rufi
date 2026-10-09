@@ -4,6 +4,8 @@
 // the AI's Markdown may and may not do. Each test checks that the strict CSP
 // refused nothing the screens need.
 import { AxeBuilder } from "@axe-core/playwright";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { Locator, Page } from "@playwright/test";
 import { runningLink } from "../../server/src/server/core.ts";
 import { expect, test, type Rufi } from "./rufi.ts";
@@ -165,7 +167,7 @@ test("Stop keeps what the reply wrote so far", async ({ page, rufi }) => {
   await expect(chat(page).getByRole("button", { name: "Stop" })).toHaveCount(0);
 });
 
-test("messages sent during a reply wait: edit, reorder, delete, and run one after a Stop", async ({
+test("messages sent during a reply wait: edit, reorder, remove, and send one after a Stop", async ({
   page,
   rufi,
 }) => {
@@ -188,21 +190,23 @@ test("messages sent during a reply wait: edit, reorder, delete, and run one afte
     .fill("Second, edited");
   await waiting.getByRole("button", { name: "Save" }).click();
   await expect(items).toHaveText(["Third", "Second, edited"]);
-  await items.nth(0).getByRole("button", { name: "Delete" }).click();
+  await items.nth(0).getByRole("button", { name: "Remove" }).click();
   await expect(items).toHaveText(["Second, edited"]);
 
-  // After a Stop they keep waiting, until you run one.
+  // After a Stop they keep waiting, until you send.
   await chat(page).getByRole("button", { name: "Stop" }).click();
   await expect(log(chat(page))).toContainText("Stopped.");
-  await expect(waiting).toContainText("send a message or run one to go on");
-  await items.getByRole("button", { name: "Run now" }).click();
+  await expect(waiting).toContainText(
+    "Stopped · these go when you send a message",
+  );
+  await waiting.getByRole("button", { name: "Send now" }).click();
   await expect(log(chat(page)).locator(".reply").last()).toHaveText(
     "ok:Second, edited",
   );
   await expect(waiting).toHaveCount(0);
 });
 
-test("an older read of the waiting messages never undoes a newer change", async ({
+test("an older read of the queue never undoes a newer change", async ({
   page,
   rufi,
 }) => {
@@ -217,7 +221,7 @@ test("an older read of the waiting messages never undoes a newer change", async 
   const read = Promise.withResolvers<undefined>();
   const release = Promise.withResolvers<undefined>();
   let held = false;
-  await page.route("**/waiting", async (route) => {
+  await page.route("**/chat/queue", async (route) => {
     if (route.request().method() !== "GET" || held) return route.continue();
     held = true;
     const response = await route.fetch();
@@ -236,7 +240,7 @@ test("an older read of the waiting messages never undoes a newer change", async 
 
   const late = page.waitForResponse(
     (response) =>
-      response.url().endsWith("/waiting") &&
+      response.url().endsWith("/chat/queue") &&
       response.request().method() === "GET",
   );
   release.resolve(undefined);
@@ -501,92 +505,161 @@ test("a save whose answer is lost keeps what you typed after it", async ({
   await expect(box(chat(page))).toHaveValue("Start of question, and more");
 });
 
-test("Send's own save is quiet, and the box is read-only meanwhile; a reload then loses only that unsaved text", async ({
+test("a quick send whose answer was lost keeps its id through Help and reload: the AI gets it once", async ({
   page,
   rufi,
 }) => {
   await opened(page, rufi);
   await box(chat(page)).click();
   await expect(box(chat(page))).toBeEditable();
-  const saving = Promise.withResolvers<undefined>();
-  const release = Promise.withResolvers<undefined>();
-  await page.route("**/chat/draft", async (route) => {
-    if (route.request().method() !== "PUT") return route.continue();
-    saving.resolve(undefined);
-    await release.promise;
-    await route.continue().catch(() => undefined);
+  // Send before the 400 ms draft save, without depending on machine speed.
+  const clockTime = Date.now();
+  await page.clock.install({ time: clockTime });
+  await page.clock.pauseAt(clockTime + 10_000);
+  // The core takes the first send, but its answer never reaches the page.
+  let lost = false;
+  const ids: string[] = [];
+  await page.route("**/messages", async (route) => {
+    ids.push((route.request().postDataJSON() as { id: string }).id);
+    if (lost) return route.continue();
+    lost = true;
+    await route.fetch();
+    await route.abort();
   });
-  await box(chat(page)).fill("Message clicked Send");
-  await box(chat(page)).press("Enter");
-  await saving.promise;
-  await expect(box(chat(page))).toHaveAttribute("readonly", "");
-  await expect(chat(page).getByRole("status")).toHaveCount(0);
-  await page.reload();
-  release.resolve(undefined);
-  await page.unroute("**/chat/draft");
-  await box(chat(page)).click();
-  await expect(box(chat(page))).toBeEditable();
-  await expect(box(chat(page))).toHaveValue("");
-  // Nothing was sent: the chat still has no message.
-  await expect(chat(page)).toContainText(
-    "What you send, and the parts of your record the AI reads to answer",
-  );
-});
-
-test("a reload while a message is on its way never puts it back in the box", async ({
-  page,
-  rufi,
-}) => {
-  await opened(page, rufi, {
-    scenario: { slow: ["thread/queue/add"], slowMs: 2_000 },
-  });
-  await send(page, "Hello");
-  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
-
-  // Reloaded before the AI took it: the box shows it held, then empty.
-  const posted = page.waitForRequest((request) =>
-    request.url().endsWith("/messages"),
-  );
   await box(chat(page)).fill("Questions for the visit");
   await box(chat(page)).press("Enter");
-  await posted;
-  await page.reload();
-  await box(chat(page)).click();
-  await expect(chat(page).getByRole("status")).toHaveText("Sending…");
-  await expect(box(chat(page))).toHaveAttribute("readonly", "");
-  await expect(log(chat(page)).locator(".reply").last()).toHaveText(
+  await expect(chat(page).getByRole("alert")).toHaveText(
+    "Rufi can't be reached.",
+  );
+  await expect(box(chat(page))).toHaveValue("Questions for the visit");
+  await page.clock.resume();
+  await expect(log(chat(page)).locator(".reply")).toHaveText(
     "ok:Questions for the visit",
   );
-  await expect(box(chat(page))).toHaveValue("");
+  // Leaving the box must not autosave this accepted send as a fresh draft.
+  await sidebar(page).getByRole("link", { name: "Help", exact: true }).click();
+  await expect(toolbar(page)).toHaveText("Help");
+  await page.reload();
+  const draftRead = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/chat/draft") &&
+      response.request().method() === "GET",
+  );
+  await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
+  expect(await (await draftRead).json()).toEqual({ text: "" });
+  await expect(box(page)).toHaveValue("Questions for the visit");
+  await expect(log(page).locator(".reply")).toHaveCount(1);
+  expect(ids).toHaveLength(1); // Reload never retries by itself.
+  const accepted = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/messages") &&
+      response.request().method() === "POST",
+  );
+  await box(page).press("Enter");
+  await accepted;
+  await expect(box(page)).toHaveValue("");
+  expect(ids).toEqual([ids[0], ids[0]]);
+  await expect(log(page).locator(".reply")).toHaveText(
+    "ok:Questions for the visit",
+  );
+  await expect(
+    log(page).getByText("Questions for the visit", { exact: true }),
+  ).toHaveCount(1);
+  await page.reload();
+  await expect(box(page)).toHaveValue("");
+
+  // Replacing or clearing the uncertain send makes a new draft, kept on reload.
+  for (const [i, replacement] of ["", "A different question"].entries()) {
+    await page.clock.pauseAt(clockTime + 20_000 * (i + 1));
+    lost = false;
+    await box(page).fill("Another question");
+    await box(page).press("Enter");
+    await expect(page.getByRole("alert")).toHaveText("Rufi can't be reached.");
+    const edited = replacement === "" ? undefined : kept(page, replacement);
+    await box(page).fill(replacement);
+    await page.clock.runFor(400);
+    await edited;
+    // The page's own timers run again after the reload.
+    await page.clock.resume();
+    await page.reload();
+    await expect(box(page)).toHaveValue(replacement);
+  }
 });
 
-test("when Rufi stops during a send, the text stays and the box says to check the chat", async ({
+test("when Rufi stops while it hands a message to the AI, the message is not sure, and is never sent again by itself", async ({
   page,
   rufi,
 }) => {
-  // Codex never starts the chat's thread; then Rufi stops.
-  await opened(page, rufi, { scenario: { hang: ["thread/start"] } });
-  await box(chat(page)).click();
-  const posted = page.waitForRequest((request) =>
-    request.url().endsWith("/messages"),
-  );
-  await box(chat(page)).fill("Questions before my visit");
-  await box(chat(page)).press("Enter");
-  await posted;
-  await expect(chat(page).getByRole("status")).toHaveText("Sending…");
+  // Codex never answers the start of the reply; then Rufi stops.
+  await opened(page, rufi, { scenario: { hang: ["turn/start"] } });
+  await send(page, "Questions before my visit");
+  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
+  await expect(waiting).toContainText("Sending…");
+  // Claiming a row precedes preparation: wait until Codex has the request.
+  await expect
+    .poll(async () => {
+      const received = await readFile(
+        join(rufi.home, "fake-codex.jsonl"),
+        "utf8",
+      ).catch((error: unknown) => {
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "ENOENT"
+        )
+          return "";
+        throw error;
+      });
+      return received;
+    })
+    .toContain('"method":"turn/start"');
   await page.goto("about:blank");
   const { port } = rufi.core;
   await rufi.stop();
   await rufi.start({ port });
   await page.goto(rufi.link());
   await box(chat(page)).click();
-  await expect(box(chat(page))).toHaveValue("Questions before my visit");
-  await expect(chat(page).getByRole("alert")).toHaveText(
-    "Rufi doesn't know whether the AI got this message. Check the chat before you send it again.",
+  await expect(waiting).toContainText(
+    "Not sure this reached the AI. Check the chat before you send it again.",
   );
-  // Never sent again by itself; the person can edit it or send it.
-  await expect(box(chat(page))).not.toHaveAttribute("readonly");
+  await expect(
+    waiting.getByRole("button", { name: "Send again" }),
+  ).toBeVisible();
+  await expect(box(chat(page))).toHaveValue("");
   await expect(log(chat(page))).toHaveCount(0);
+  await accessible(page);
+});
+
+test("a Rufi event shows as Rufi's line; after a Stop its note waits and goes with your next message", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family(`
+    UPDATE chats SET paused = 'stopped' WHERE id = 'c-asha';
+    INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, details, revision, created_at, updated_at)
+      VALUES ('e-1', 'asha', 'c-asha', 1, 'event', 'Lab report · 12 Aug · 42 results read · 1 to check', '{"kind":"test"}', 1, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');
+    INSERT INTO chat_queue (id, person_id, chat_id, origin, text, event_id, position, held, created_at, updated_at)
+      VALUES ('q-e1', 'asha', 'c-asha', 'rufi', 'A lab report was read; one value is unsure.', 'e-1', 1, 'paused', '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');`);
+  await rufi.start();
+  await page.goto(rufi.link());
+  await box(chat(page)).click();
+  await expect(log(chat(page))).toContainText(
+    "RufiLab report · 12 Aug · 42 results read · 1 to check",
+  );
+  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
+  await expect(waiting).toContainText(
+    "Stopped · these go when you send a message",
+  );
+  await expect(waiting).toContainText(
+    "Rufi's note: Lab report · 12 Aug · 42 results read · 1 to check",
+  );
+  await expect(waiting).toContainText("Goes to the AI with your next message.");
+  await accessible(page);
+  await send(page, "What's new?");
+  await expect(log(chat(page)).locator(".reply").last()).toHaveText(
+    "ok:What's new?",
+  );
+  await expect(waiting).toHaveCount(0);
 });
 
 test("a draft longer than Rufi takes says so, and isn't kept or sent", async ({
@@ -638,15 +711,12 @@ test("a failed send keeps your text and says why; nothing is sent again by itsel
   );
 });
 
-test("two tabs: the reply streams in both; the last save wins; while one sends, the other can't change the text", async ({
+test("two tabs: the reply streams in both; the last save wins", async ({
   context,
   page,
   rufi,
 }) => {
-  // Codex takes a while to take each message.
-  await opened(page, rufi, {
-    scenario: { slow: ["thread/queue/add"], slowMs: 1_500 },
-  });
+  await opened(page, rufi);
   await send(page, "Hello");
   const other = await context.newPage();
   await other.goto((await runningLink(rufi.home)) ?? "");
@@ -664,25 +734,10 @@ test("two tabs: the reply streams in both; the last save wins; while one sends, 
   await page.reload();
   await box(chat(page)).click();
   await expect(box(chat(page))).toHaveValue("Typed in the second tab");
-
-  // While the first tab sends it, the other can't change it, and shows it
-  // held until the AI took it.
-  const posted = page.waitForRequest((request) =>
-    request.url().endsWith("/messages"),
-  );
   await box(chat(page)).press("Enter");
-  await posted;
-  await expect(chat(page).getByRole("status")).toHaveText("Sending…");
-  await box(chat(other)).press("End");
-  await box(chat(other)).pressSequentially("!");
-  await expect(chat(other).getByRole("status")).toHaveText("Sending…");
-  await expect(box(chat(other))).toHaveValue("Typed in the second tab");
-  await expect(box(chat(other))).toHaveAttribute("readonly", "");
   await expect(log(chat(other)).locator(".reply").last()).toHaveText(
     "ok:Typed in the second tab",
   );
-  await expect(box(chat(other))).toHaveValue("");
-  await expect(box(chat(other))).not.toHaveAttribute("readonly");
 });
 
 test("Markdown in a reply: tables and web links work; HTML, images and other links do nothing", async ({

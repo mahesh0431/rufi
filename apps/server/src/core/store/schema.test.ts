@@ -177,20 +177,27 @@ describe("schema", () => {
       }).toThrow("CHECK constraint failed");
     });
 
-    it("holds a draft for a send only with its message id", () => {
-      const draft = {
+    it("keeps the queue's rows whole: Rufi's with its line, held only while waiting, never another person's chat", () => {
+      const row = {
+        id: "q-1",
         person_id: "amma",
         chat_id: "c-amma",
+        origin: "person",
         text: "a",
+        position: 1,
+        created_at: now,
         updated_at: now,
       };
       expect(() => {
-        insert("drafts", { ...draft, state: "sending" });
+        insert("chat_queue", { ...row, origin: "rufi" });
       }).toThrow("CHECK constraint failed");
       expect(() => {
-        insert("drafts", { ...draft, attempt: "m-1" });
+        insert("chat_queue", { ...row, state: "sent", held: "restored" });
       }).toThrow("CHECK constraint failed");
-      insert("drafts", { ...draft, state: "sending", attempt: "m-1" });
+      expect(() => {
+        insert("chat_queue", { ...row, person_id: "nanna" });
+      }).toThrow("FOREIGN KEY constraint failed");
+      insert("chat_queue", { ...row, held: "restored" });
     });
   });
 

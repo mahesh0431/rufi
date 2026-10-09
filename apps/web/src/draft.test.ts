@@ -3,7 +3,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type DraftApi, draftBox, held } from "./draft.ts";
 
-const editable = (text: string): Draft => ({ text, state: "editable" });
+const editable = (text: string): Draft => ({ text });
 
 /** The core's refusal, as the API gives it: its words and its answer. */
 const refusal = (error: string, draft?: Draft) =>
@@ -17,6 +17,7 @@ const refusal = (error: string, draft?: Draft) =>
  * waits until the test answers it.
  */
 function core(...reads: (Draft | Error)[]) {
+  let ids = 0;
   const asked: {
     method: string;
     path: string;
@@ -41,6 +42,7 @@ function core(...reads: (Draft | Error)[]) {
       defaultOptions: { mutations: { networkMode: "always" } },
     }),
     scope: "draft/test",
+    newId: () => `id-${String(++ids)}`,
   };
   const saves = () => asked.filter((call) => call.method === "PUT");
   const sends = () => asked.filter((call) => call.method === "POST");
@@ -126,124 +128,62 @@ describe("the box's draft", () => {
     expect(box.store.getState()).toMatchObject({ failed: false, notice: null });
   });
 
-  it("sends only the text the core keeps: it saves first, and the box can't change until the core answers", async () => {
+  it("sends after the box's earlier saves, by an id of its own; the box can't change until the core answers, and empties when it took the text", async () => {
     const { api, saves, sends } = core();
     const box = draftBox(api);
     await settle();
+    box.type("Hello");
+    await vi.advanceTimersByTimeAsync(400);
     box.type("Hello\n");
     const sending = box.submit(false);
-    // Saved at once, not a moment later; nothing is sent before it's kept.
     await settle();
-    expect(saves().map((save) => save.body)).toEqual([{ text: "Hello\n" }]);
-    box.type("Hello!");
+    // The earlier save goes first.
     expect(sends()).toHaveLength(0);
-    saves()[0]?.answer(editable("Hello\n"));
+    saves()[0]?.answer(editable("Hello"));
     await settle();
     expect(sends().map(({ path, body }) => ({ path, body }))).toEqual([
-      { path: "messages", body: { text: "Hello" } },
+      { path: "messages", body: { id: "id-1", text: "Hello" } },
     ]);
+    box.type("Hello!");
     expect(held(box.store.getState())).toBe(true);
     expect(box.store.getState().text).toBe("Hello\n");
 
-    sends()[0]?.answer({ id: "m-1", draft: editable("") });
+    sends()[0]?.answer({ id: "id-1", draft: editable("") });
     await sending;
     expect(box.store.getState()).toMatchObject({ text: "", sending: false });
     expect(held(box.store.getState())).toBe(false);
   });
 
-  it("sends nothing when the text can't be saved", async () => {
-    const { api, saves, sends } = core();
-    const box = draftBox(api);
-    await settle();
-    box.type("Mine");
-    const sending = box.submit(true);
-    await settle();
-    saves()[0]?.fail(new Error("Rufi can't be reached."));
-    await sending;
-    expect(sends()).toHaveLength(0);
-    expect(box.store.getState()).toMatchObject({
-      text: "Mine",
-      sending: false,
-      failed: true,
-    });
-  });
-
-  it("can't be typed in while a send holds the draft, and goes on once it has ended", async () => {
-    const holding: Draft = { text: "Sent elsewhere", state: "sending" };
-    const { api, saves } = core(holding, holding, editable(""));
-    const box = draftBox(api);
-    await settle();
-    expect(held(box.store.getState())).toBe(true);
-    box.type("x");
-    expect(box.store.getState().text).toBe("Sent elsewhere");
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(held(box.store.getState())).toBe(true);
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(box.store.getState().text).toBe("");
-    expect(held(box.store.getState())).toBe(false);
-    box.type("Next");
-    await vi.advanceTimersByTimeAsync(400);
-    expect(saves()[0]?.body).toEqual({ text: "Next" });
-  });
-
-  it("finds a save held by another tab's send: shows that text, held, until the send has ended", async () => {
-    const holding: Draft = { text: "From the other tab", state: "sending" };
-    const { api, saves } = core(editable(""), holding, editable(""));
-    const box = draftBox(api);
-    await settle();
-    box.type("Mine");
-    await vi.advanceTimersByTimeAsync(400);
-    saves()[0]?.fail(refusal("This message is being sent.", holding));
-    await settle();
-    expect(box.store.getState()).toMatchObject({
-      text: "From the other tab",
-      failed: false,
-    });
-    expect(held(box.store.getState())).toBe(true);
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(held(box.store.getState())).toBe(false);
-  });
-
-  it("after a failed send, goes on from the draft the core has with the reason; without the core's answer, waits until a read says how it ended", async () => {
-    const { api, saves, sends } = core(
-      editable(""),
-      { text: "Again", state: "sending" },
-      { text: "Again", state: "unknown" },
-    );
+  it("keeps the text with the reason when the core refuses; sends a message whose answer was lost again by the same id, so it is taken once", async () => {
+    const { api, sends } = core();
     const box = draftBox(api);
     await settle();
     box.type("Keep this");
-    const first = box.submit(false);
+    const steered = box.submit(true);
     await settle();
-    saves()[0]?.answer(editable("Keep this"));
-    await settle();
-    sends()[0]?.fail(
-      refusal("No reply is running to steer.", editable("Keep this")),
-    );
-    await first;
+    sends()[0]?.fail(refusal("The reply had ended."));
+    await steered;
     expect(box.store.getState()).toMatchObject({
       text: "Keep this",
       sending: false,
-      notice: "No reply is running to steer.",
+      notice: "The reply had ended.",
     });
-    expect(held(box.store.getState())).toBe(false);
 
-    // No answer from the core: the send may still hold the draft.
-    box.type("Again");
-    const again = box.submit(false);
-    await settle();
-    saves()[1]?.answer(editable("Again"));
+    // No answer from the core: it may have taken it.
+    const first = box.submit(false);
     await settle();
     sends()[1]?.fail(new Error("Rufi can't be reached."));
+    await first;
+    expect(box.store.getState().text).toBe("Keep this");
+    const again = box.submit(false);
+    await settle();
+    sends()[2]?.answer({ id: "id-2", draft: editable("") });
     await again;
-    expect(held(box.store.getState())).toBe(true);
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(box.store.getState()).toMatchObject({
-      text: "Again",
-      draft: { state: "unknown" },
-      notice: "Rufi can't be reached.",
-    });
-    expect(held(box.store.getState())).toBe(false);
-    expect(sends()).toHaveLength(2);
+    expect(sends().map(({ body }) => body)).toEqual([
+      { id: "id-1", text: "Keep this" },
+      { id: "id-2", text: "Keep this" },
+      { id: "id-2", text: "Keep this" },
+    ]);
+    expect(box.store.getState().text).toBe("");
   });
 });

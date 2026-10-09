@@ -36,9 +36,11 @@ A line between days says which day the messages under it are from: "Today", "Yes
 
 Type in the box and press Enter, or click the send button. Shift-Enter starts a new line.
 
-When you send, Rufi first saves your text, and you can't change it for that moment. If you reload or close the page then, what you typed since the last save can be lost, and nothing is sent. Then, while Rufi sends your message, the box says "Sending…" and you can't change it, in this tab or another. Rufi sends the text in this box, also when another tab saved other text just before. You can go to another page meanwhile. The box clears when the AI has taken your message. If the AI can't take it, your text stays in the box with the reason.
+When you send, Rufi takes your message into its queue and empties the box, in one step. While it does, the box says "Sending…" for a moment and you can't change it. Rufi sends the text in this box, also when another tab saved other text just before. Then the message goes to the AI: at once when nothing else runs, or in its turn (see [Waiting messages](#waiting-messages)). It shows in the chat when the AI starts on it.
 
-If you reload or close the page while the box says "Sending…", nothing is lost: when you come back, the box is empty if the AI took the message, still says "Sending…" until it knows, or shows your text again if the message hadn't left yet. If you stop the reply or Rufi stops during a send, or the AI doesn't answer it, Rufi keeps your text, but it may not know whether the AI got it: the box says so. Check the chat before you send it again. Rufi never sends a message again by itself: send it again when you want to.
+If Rufi can't be reached when you send, your text stays in the box with the reason, also when you leave the chat or reload the page in this tab. Press Enter again: if Rufi did take the first one, it knows this is the same message and doesn't take it twice.
+
+Rufi never sends a message again by itself. If something goes wrong after Rufi took your message, the message shows above the box with the reason, and you choose: **Send** it (again) or **Remove** it.
 
 A message can have up to 10,000 characters. When the box has more, it says so, and Rufi doesn't keep or send the text until you make it shorter.
 
@@ -49,6 +51,7 @@ A message can have up to 10,000 characters. When the box has more, it says so, a
 - **One line for each thing the AI did**, such as reading your Overview or running a command. A tick means it was done. Other signs mean it is running, it failed, or it stopped.
 - **Based on**, a link under an answer once the reply has ended. It opens where the answer comes from. See [Where an answer comes from](#where-an-answer-comes-from).
 - **Receipts**, with a tick, each time the AI saved something to your record: "Saved", then one line for each change. Rufi writes them. See [Changing your record](#changing-your-record).
+- **Rufi's lines**, with a bell and "Rufi" above them, when something happened outside the chat. Rufi writes them, never the AI, and they are never your words. See [Rufi's lines](#rufis-lines).
 - **How a reply ended**, when it didn't finish: for example "Stopped.", or that your ChatGPT plan's usage limit has been reached, with the time it resets.
 - **A quiet line**, "The AI started afresh here. It can still read earlier messages.", where the AI started again with a new memory of the chat: after you changed the model, when Rufi changed the AI's tools, when the AI's own copy of the chat was lost (for example after a restore), or where the AI compacted its memory of a long chat. From there, the AI has the chat's last messages, and it reads further back when it needs to. See [The AI's memory of the chat](#the-ais-memory-of-the-chat).
 
@@ -122,15 +125,41 @@ While the AI replies, the box and the chat bar say "Rufi is answering" and how m
 
 **Stop.** The stop button (the square, where the send button was) ends the reply now, in every size of the chat. What the AI wrote so far stays.
 
-**Waiting messages.** While the AI replies, the box says "Type to queue your next message…". When you send a message then, the message waits, and runs after the reply. Waiting messages show above the box. For each one you can:
+**Stop.** After a Stop, nothing more goes to the AI until you send a message. Rufi keeps this also when you reload or Rufi starts again.
+
+**Steer.** To change the reply that is running, type in the box and click **Steer** instead of sending. Your text goes into that reply, and the AI takes it at its next step. The chat shows it as your message, marked "Steer". If the reply ended just before, the box says "The reply had ended, so this wasn't passed into it. Send it as a new message." Your text stays in the box.
+
+## Waiting messages
+
+While the AI replies, the box says "Type to queue your next message…". When you send a message then, it waits in Rufi's queue, and goes to the AI after the reply, in order. What waits shows above the box, also after a reload, a restart of Rufi, or a change of model. For each of your waiting messages you can:
 
 - **Edit** it (the pencil), then **Save**.
 - **Move up** or **Move down**, to change the order.
-- **Delete** it (the bin).
+- **Remove** it (the bin). It never goes to the AI.
 
-After you stop a reply, waiting messages keep waiting. Send a message, or click **Run now** (the play sign) on one of them, to go on.
+The line above them says what happens next:
 
-**Steer.** To change the reply that is running, type in the box and click **Steer** instead of sending. Your text goes into that reply, and the AI takes it at its next step. The chat shows it as your message, marked "Steer".
+- **Waiting · these go in order after the reply**: they go by themselves.
+- **Stopped · these go when you send a message**: you stopped a reply. Send a message, or click **Send now**, to go on. They go first, in order, then your new message.
+- **Rufi restarted · these go when you send a message**: Rufi started again while messages waited. Nothing goes by itself after a restart: send a message, or click **Send now**.
+- **Not sent · Rufi sends these only when you say**: some messages are held, as below.
+
+A held message says why under it, and goes only when you click **Send** (or **Send again**) on it:
+
+- **"Not sure this reached the AI."** Rufi stopped, or the AI didn't answer, while Rufi gave it the message. The AI may have it. Check the chat before you send it again. After this, nothing more goes to the AI until you send a message.
+- **"You're signed out. Sign in, then Send."** Signing in alone sends nothing.
+- **"From a backup: it waited when the backup was made."** After a restore, nothing from the past goes to the AI by itself.
+- **The AI's reason**, when the AI couldn't take it, for example when none of your allowed models is offered.
+
+## Rufi's lines
+
+Some things happen outside your chat. Rufi tells you with its own line in the chat. For example, once Rufi reads documents, a line such as "Lab report · 12 Aug · 42 results read · 1 to check" says that a reading has finished. Rufi writes these lines, not the AI, and they are never your words.
+
+When the AI should know too, Rufi gives it a note:
+
+- **When nothing runs**, the AI gets the note at once, in a short reply of its own. In that reply the AI can only read your record: it can explain or ask, but it can't save anything. Only your own messages can save.
+- **When a reply runs**, the note waits until the reply has ended. Notes that wait together go to the AI together, in one reply.
+- **After a Stop, or when you're signed out**, the note waits above the box as "Rufi's note", marked **Rufi**, with "Goes to the AI with your next message." It goes once, with your next message, never as a reply of its own later. **Remove** it if the AI doesn't need it.
 
 ## The model and effort
 
@@ -140,7 +169,7 @@ The model and effort that answer show in the box, next to the send button, in ev
 
 **The effort** is how hard the AI thinks before it answers: Low is faster, Medium gives careful answers at a good speed, and High thinks longer. Your chat starts at Medium. A new effort applies from the next reply, and the AI doesn't start afresh.
 
-Rufi keeps the model and effort for your chat. You can't change them while a reply runs or messages wait. Rufi says so: stop the reply, or run or delete the waiting messages, then change them.
+Rufi keeps the model and effort for your chat. You can't change them while a reply runs. Rufi says so: stop the reply, then change them. Messages that wait go to the new model.
 
 ## The AI's memory of the chat
 
@@ -154,4 +183,4 @@ Rufi saves what you type in the box as the chat's draft, a moment after you stop
 
 Wait a moment after you stop typing before you reload, close the page or stop Rufi: what you typed in the last moment before can be lost. If a save fails, the box says "Not saved" with the reason, and your text stays in this tab, also when you go to another page and back. Click **Retry** to save it again.
 
-If you type in the chat in two browser tabs at once, the last save wins: each tab saves its text over the other's, and a tab shows the other's text only when you reload it. Type in one tab at a time. While one tab sends a message, the other says "Sending…" when you type in it, and you can't change the text until the AI has taken the message.
+If you type in the chat in two browser tabs at once, the last save wins: each tab saves its text over the other's, and a tab shows the other's text only when you reload it. Type in one tab at a time.

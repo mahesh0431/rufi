@@ -8,6 +8,7 @@ import type { Scenario } from "../../../tests/fake-codex.ts";
 import { childEnvironment } from "../../platform/config.ts";
 import {
   agentCall,
+  NotSent,
   type AgentEvent,
   type AgentRuntime,
   type AgentTools,
@@ -172,7 +173,7 @@ async function ended(threadId: string, n = 1): Promise<TurnEnd> {
 /** A new thread with one message sent; returns the thread's id. */
 async function ask(agent: AgentRuntime, text = "How are you?") {
   const { threadId } = await agent.startThread(SETTINGS);
-  await agent.send(threadId, { id: `m-${text}`, text });
+  await agent.send(threadId, { id: `m-${text}`, input: [text] });
   return threadId;
 }
 
@@ -291,8 +292,6 @@ describe("a turn", () => {
     const thread = await ask(start(), "Hello");
     expect(await ended(thread)).toEqual({ status: "completed" });
     expect(seen(thread)).toEqual([
-      { type: "waitingChanged" },
-      { type: "waitingChanged" },
       { type: "turnStarted", turnId: "turn-1" },
       { type: "message", turnId: "turn-1", id: "m-Hello", text: "Hello" },
       { type: "text", turnId: "turn-1", itemId: "item-1", delta: "ok:" },
@@ -387,16 +386,16 @@ describe("a turn", () => {
     ]);
   });
 
-  it("sends the message with Rufi's id, and the new thread's context before it", async () => {
+  it("starts a reply with Rufi's id, its parts in order and the effort", async () => {
     const agent = start();
     const { threadId } = await agent.startThread(SETTINGS);
     await agent.send(threadId, {
       id: "m-1",
-      text: "Hi",
-      context: "Earlier: hello",
+      input: ["Earlier: hello", "Hi"],
+      effort: "high",
     });
     await ended(threadId);
-    expect(await sent("thread/queue/add")).toEqual([
+    expect(await sent("turn/start")).toEqual([
       {
         threadId,
         clientUserMessageId: "m-1",
@@ -404,15 +403,12 @@ describe("a turn", () => {
           { type: "text", text: "Earlier: hello", text_elements: [] },
           { type: "text", text: "Hi", text_elements: [] },
         ],
+        effort: "high",
       },
     ]);
-    // The message is the user's words only.
-    expect(seen(threadId)).toContainEqual({
-      type: "message",
-      turnId: "turn-1",
-      id: "m-1",
-      text: "Hi",
-    });
+    expect(seen(threadId)).toContainEqual(
+      expect.objectContaining({ type: "message", turnId: "turn-1", id: "m-1" }),
+    );
   });
 
   it("ignores events from an earlier turn on the same thread", async () => {
@@ -525,141 +521,67 @@ describe("a turn", () => {
   });
 });
 
-describe("Codex's queue", () => {
-  it("holds a message sent while a reply runs, and starts it after", async () => {
-    const agent = start();
-    const thread = await ask(agent, "slow first");
-    await until(() => Promise.resolve(agent.running(thread)));
-    await agent.send(thread, { id: "m-2", text: "second" });
-    expect(await agent.waiting.list(thread)).toEqual([
-      { id: "q-2", messageId: "m-2", text: "second" },
-    ]);
-    await ended(thread, 2);
-    expect(
-      seen(thread)
-        .filter((e) => e.type === "message")
-        .map((e) => e.id),
-    ).toEqual(["m-slow first", "m-2"]);
-    // Codex started both by itself: nothing was paused.
-    expect(await sent("thread/queue/start")).toEqual([]);
-  });
-
-  it("starts a message at once after Stop when nothing waits", async () => {
+describe("starting a reply", () => {
+  it("never starts a reply while one runs, so it never steers it by mistake", async () => {
     const agent = start();
     const thread = await ask(agent, "hang");
     await until(() => Promise.resolve(agent.running(thread)));
-    await agent.stop(thread);
-    await ended(thread);
-    await agent.send(thread, { id: "m-2", text: "again" });
-    expect(await ended(thread, 2)).toEqual({ status: "completed" });
+    await expect(
+      agent.send(thread, { id: "m-2", input: ["second"] }),
+    ).rejects.toBeInstanceOf(NotSent);
+    expect(await sent("turn/start")).toHaveLength(1);
   });
 
-  it("keeps a message waiting when Stop comes while a paused queue takes it", async () => {
-    const agent = start({ slow: ["thread/queue/add"] });
-    const thread = await ask(agent, "hang");
-    await until(() => Promise.resolve(agent.running(thread)));
-    await agent.stop(thread);
-    await ended(thread);
-    const op = new AbortController();
-    const sending = agent.send(thread, { id: "m-b", text: "B" }, op.signal);
-    await until(async () => (await sent("thread/queue/add")).length === 2);
-    op.abort();
-    await expect(sending).rejects.toThrow("Stopped.");
-    await sleep(50);
-    expect(await sent("thread/queue/start")).toEqual([]);
-    expect(agent.running(thread)).toBe(false);
-    expect((await agent.waiting.list(thread)).map((w) => w.messageId)).toEqual([
-      "m-b",
-    ]);
+  it("says when the message surely didn't reach Codex, and not when Codex didn't answer", async () => {
+    const refusing = start({ threads: { "old-1": {} } });
+    await refusing.resumeThread("old-1", SETTINGS);
+    await expect(
+      refusing.send("no-such-thread", { id: "m-1", input: ["Hi"] }),
+    ).rejects.toBeInstanceOf(NotSent);
+    await runtime?.close();
+    const silent = start({ hang: ["turn/start"] });
+    const { threadId } = await silent.startThread(SETTINGS);
+    const sending = silent.send(threadId, { id: "m-2", input: ["Hi"] });
+    await expect(sending).rejects.toThrow("didn't answer turn/start");
+    await expect(sending).rejects.not.toBeInstanceOf(NotSent);
   });
 
-  it("stops a message Codex started by itself when Stop came while it was added", async () => {
-    const agent = start({ slow: ["thread/queue/add"] });
+  it("stops the reply Codex starts when Stop came while it was asked", async () => {
+    const agent = start({ slow: ["turn/start"] });
     const { threadId } = await agent.startThread(SETTINGS);
     const op = new AbortController();
     const sending = agent.send(
       threadId,
-      { id: "m-a", text: "hang" },
+      { id: "m-a", input: ["hang"] },
       op.signal,
     );
-    await until(async () => (await sent("thread/queue/add")).length === 1);
+    await until(async () => (await sent("turn/start")).length === 1);
     op.abort();
     await expect(sending).rejects.toThrow("Stopped.");
     expect(await ended(threadId)).toMatchObject({ status: "interrupted" });
   });
 
-  it("stops a message Codex takes after its request timed out, when Stop came meanwhile", async () => {
-    // Codex takes the add only after Rufi gave up waiting for it.
-    const agent = start({ slow: ["thread/queue/add"], slowMs: 1_500 });
+  it("stops a reply Codex starts after its request timed out, when Stop came meanwhile", async () => {
+    // Codex takes the request only after Rufi gave up waiting for it.
+    const agent = start({ slow: ["turn/start"], slowMs: 1_500 });
     const { threadId } = await agent.startThread(SETTINGS);
     const op = new AbortController();
     const sending = agent.send(
       threadId,
-      { id: "m-a", text: "hang" },
+      { id: "m-a", input: ["hang"] },
       op.signal,
     );
-    await until(async () => (await sent("thread/queue/add")).length === 1);
+    await until(async () => (await sent("turn/start")).length === 1);
     op.abort();
     await expect(sending).rejects.toThrow("Stopped.");
     expect(await ended(threadId)).toMatchObject({ status: "interrupted" });
-  });
-
-  it("stops a waiting message Codex starts after Run Now timed out, when Stop came meanwhile", async () => {
-    const agent = start({ slow: ["thread/queue/start"], slowMs: 1_500 });
-    const thread = await ask(agent, "hang");
-    await until(() => Promise.resolve(agent.running(thread)));
-    await agent.send(thread, { id: "m-b", text: "hang again" });
-    await agent.stop(thread);
-    await ended(thread);
-    const [b] = await agent.waiting.list(thread);
-    const op = new AbortController();
-    const running = agent.waiting.runNow(thread, b?.id ?? "", op.signal);
-    await until(async () => (await sent("thread/queue/start")).length === 1);
-    op.abort();
-    await expect(running).rejects.toThrow("Stopped.");
-    expect(await ended(thread, 2)).toMatchObject({ status: "interrupted" });
-  });
-
-  it("stops at once a message Codex starts before it answers, when Stop came meanwhile", async () => {
-    // Codex starts the message, then answers the add.
-    const agent = start({
-      answerLate: ["thread/queue/add"],
-      slowMs: 300,
-      startMs: 100,
-    });
-    const { threadId } = await agent.startThread(SETTINGS);
-    const op = new AbortController();
-    const sending = agent.send(
-      threadId,
-      { id: "m-a", text: "Hello" },
-      op.signal,
-    );
-    await until(async () => (await sent("thread/queue/add")).length === 1);
-    op.abort();
-    await expect(sending).rejects.toThrow("Stopped.");
-    expect(await ended(threadId)).toMatchObject({ status: "interrupted" });
-    expect(seen(threadId).filter((e) => e.type === "text")).toEqual([]);
-  });
-
-  it("stops what a resume starts after the resume timed out, when Stop came meanwhile", async () => {
-    const agent = start({
-      threads: { "old-1": { queue: ["hang"] } },
-      slow: ["thread/resume"],
-      slowMs: 1_500,
-    });
-    const op = new AbortController();
-    const resuming = agent.resumeThread("old-1", SETTINGS, op.signal);
-    await until(async () => (await sent("thread/resume")).length > 0);
-    op.abort();
-    await expect(resuming).rejects.toThrow("Stopped.");
-    expect(await ended("old-1")).toMatchObject({ status: "interrupted" });
   });
 
   it("keeps the person's message when Stop came before Codex showed it", async () => {
     // Interrupted before it records the message, Codex would drop it.
     const agent = start({ userMessageMs: 100 });
     const { threadId } = await agent.startThread(SETTINGS);
-    await agent.send(threadId, { id: "m-a", text: "hang" });
+    await agent.send(threadId, { id: "m-a", input: ["hang"] });
     await until(() => Promise.resolve(agent.running(threadId)));
     const stopping = agent.stop(threadId);
     await ended(threadId);
@@ -684,56 +606,6 @@ describe("Codex's queue", () => {
     expect(await ended(thread)).toMatchObject({ status: "interrupted" });
   });
 
-  it("stops a waiting message run now when Stop came while it started", async () => {
-    const agent = start({ slow: ["thread/queue/start"] });
-    const thread = await ask(agent, "hang");
-    await until(() => Promise.resolve(agent.running(thread)));
-    await agent.send(thread, { id: "m-b", text: "hang again" });
-    await agent.stop(thread);
-    await ended(thread);
-    const [b] = await agent.waiting.list(thread);
-    const op = new AbortController();
-    const running = agent.waiting.runNow(thread, b?.id ?? "", op.signal);
-    await until(async () => (await sent("thread/queue/start")).length === 1);
-    op.abort();
-    await expect(running).rejects.toThrow("Stopped.");
-    expect(await ended(thread, 2)).toMatchObject({ status: "interrupted" });
-  });
-
-  it("edits, reorders and deletes waiting messages, keeping Rufi's context", async () => {
-    const agent = start();
-    const { threadId } = await agent.startThread(SETTINGS);
-    await agent.send(threadId, { id: "m-a", text: "hang" });
-    await until(() => Promise.resolve(agent.running(threadId)));
-    await agent.send(threadId, {
-      id: "m-b",
-      text: "B",
-      context: "Earlier: A.",
-    });
-    await agent.send(threadId, { id: "m-c", text: "C" });
-    const [b, c] = await agent.waiting.list(threadId);
-    await agent.waiting.edit(threadId, b?.id ?? "", "B, edited");
-    expect(await sent("thread/queue/update")).toEqual([
-      {
-        threadId,
-        queuedSubmissionId: b?.id,
-        input: [
-          { type: "text", text: "Earlier: A.", text_elements: [] },
-          { type: "text", text: "B, edited", text_elements: [] },
-        ],
-      },
-    ]);
-    await agent.waiting.reorder(threadId, [c?.id ?? "", b?.id ?? ""]);
-    expect(await agent.waiting.list(threadId)).toEqual([
-      { id: c?.id, messageId: "m-c", text: "C" },
-      { id: b?.id, messageId: "m-b", text: "B, edited" },
-    ]);
-    await agent.waiting.remove(threadId, c?.id ?? "");
-    expect(
-      (await agent.waiting.list(threadId)).map((w) => w.messageId),
-    ).toEqual(["m-b"]);
-  });
-
   it("passes a steer into the running reply, with Rufi's id", async () => {
     const agent = start();
     const thread = await ask(agent, "slow");
@@ -752,14 +624,26 @@ describe("Codex's queue", () => {
     });
     await expect(
       agent.steer(thread, { id: "s-2", text: "late" }),
-    ).rejects.toThrow("No reply is running to steer.");
+    ).rejects.toBeInstanceOf(NotSent);
+  });
+
+  it("refuses a steer as not sent while the reply is stopping", async () => {
+    const agent = start({ ignoreInterrupt: true }, undefined, GIVE_UP);
+    const thread = await ask(agent, "hang");
+    await until(() => Promise.resolve(agent.running(thread)));
+    const stopping = agent.stop(thread);
+    expect(agent.running(thread)).toBe(true);
+    await expect(
+      agent.steer(thread, { id: "s-1", text: "late" }),
+    ).rejects.toBeInstanceOf(NotSent);
+    await stopping;
   });
 
   it("lists the messages a thread ran, with Rufi's ids", async () => {
     const agent = start();
     const thread = await ask(agent, "first");
     await ended(thread);
-    await agent.send(thread, { id: "m-2", text: "second" });
+    await agent.send(thread, { id: "m-2", input: ["second"] });
     await ended(thread, 2);
     await expect(agent.startedMessages(thread)).resolves.toEqual([
       { id: "m-first", text: "first" },
@@ -776,10 +660,11 @@ describe("Codex's queue", () => {
     expect(await sent("thread/turns/list")).toHaveLength(3);
   });
 
-  it("resumes a thread with the settings, and may start what waited", async () => {
-    const agent = start({ threads: { "old-1": { queue: ["left waiting"] } } });
-    await expect(agent.resumeThread("old-1", SETTINGS)).resolves.toMatchObject({
+  it("resumes a thread with the settings", async () => {
+    const agent = start({ threads: { "old-1": {} } });
+    await expect(agent.resumeThread("old-1", SETTINGS)).resolves.toEqual({
       model: "gpt-6.1-sol",
+      running: false,
     });
     expect(await sent("thread/resume")).toEqual([
       {
@@ -792,21 +677,6 @@ describe("Codex's queue", () => {
         developerInstructions: "Be careful.",
       },
     ]);
-    expect(await ended("old-1")).toEqual({ status: "completed" });
-  });
-
-  it("stops a reply a resume started when Stop came during the resume", async () => {
-    const agent = start({
-      threads: { "old-1": { queue: ["hang"] } },
-      slow: ["thread/resume"],
-    });
-    const op = new AbortController();
-    const resuming = agent.resumeThread("old-1", SETTINGS, op.signal);
-    await until(async () => (await sent("thread/resume")).length > 0);
-    op.abort();
-    await expect(resuming).rejects.toThrow("Stopped.");
-    // Codex starts the waiting reply only after its answer; it is stopped too.
-    expect(await ended("old-1")).toMatchObject({ status: "interrupted" });
   });
 });
 
@@ -961,14 +831,14 @@ describe("Stop", () => {
     const op = new AbortController();
     const sending = agent.send(
       threadId,
-      { id: "m-1", text: "Hello" },
+      { id: "m-1", input: ["Hello"] },
       op.signal,
     );
     await until(() => Promise.resolve(asked.length === 2));
     op.abort();
     gate.resolve(undefined);
     await expect(sending).rejects.toThrow("Stopped.");
-    expect(await sent("thread/queue/add")).toEqual([]);
+    expect(await sent("turn/start")).toEqual([]);
   });
 
   it("stops waiting for Codex to start at once, and closing ends it", async () => {
@@ -1086,7 +956,7 @@ describe("token renewal", () => {
     const agent = start();
     const thread = await ask(agent, "first");
     await ended(thread);
-    await agent.send(thread, { id: "m-2", text: "second" });
+    await agent.send(thread, { id: "m-2", input: ["second"] });
     await ended(thread, 2);
     expect(await pids()).toHaveLength(1);
   });

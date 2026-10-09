@@ -7,7 +7,7 @@ import {
   FinishStep,
   MessageText,
   MAX_MESSAGE_CHARS,
-  ReorderWaiting,
+  ReorderQueue,
   SaveDraft,
   SaveSettings,
   SelectEffort,
@@ -35,7 +35,7 @@ import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
 import { NotADocument, type Documents } from "../core/documents/documents.ts";
 import { OriginalMissing } from "../core/documents/originals.ts";
 import type { BackupJob } from "../core/store/backup.ts";
-import type { Change, ChatRow, Transcripts } from "../core/chat/transcript.ts";
+import type { Change, Transcripts } from "../core/chat/transcript.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { ChatRefusal, type Chat } from "./chat.ts";
 import { screen } from "./screens.ts";
@@ -461,26 +461,6 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.get(filePath, (c) => fileOf(c, false));
   app.get(`${filePath}/display`, (c) => fileOf(c, true));
 
-  const HELD = "This message is being sent.";
-  /**
-   * Sends the box's text: the chat's draft holds it until the agent took it
-   * or refused it (core/chat/drafts.ts). The answer has the draft after.
-   */
-  const fromBox = async (
-    c: Context,
-    deliver: (found: ChatRow, text: string, id: string) => Promise<unknown>,
-  ) => {
-    const found = await chatOf(c);
-    const { text } = await body(c, SendMessage, MESSAGE_REFUSAL);
-    const sent = await drafts.send(found, text, (id) =>
-      deliver(found, text, id),
-    );
-    if (sent.outcome === "taken") return { id: sent.id, draft: sent.draft };
-    const { status, message, more } =
-      sent.outcome === "held" ? new HttpError(409, HELD) : answerOf(sent.error);
-    throw new HttpError(status, message, { ...more, draft: sent.draft });
-  };
-
   const one = "/api/people/:personId/chat";
   // A page of the transcript: the latest, or the one before `before`.
   app.get(one, async (c) => {
@@ -496,10 +476,21 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       ),
     );
   });
-  app.post(`${one}/messages`, async (c) =>
-    c.json(await fromBox(c, chat.send), 202),
-  );
-  app.post(`${one}/steer`, async (c) => c.json(await fromBox(c, chat.steer)));
+  // Send: the box's text into the queue, and the box emptied, in one step.
+  // The same id again (a retry) finds the message it made.
+  app.post(`${one}/messages`, async (c) => {
+    const found = await chatOf(c);
+    const { id, text } = await body(c, SendMessage, MESSAGE_REFUSAL);
+    await acting(() => chat.send(found, id, text));
+    return c.json({ id, draft: await drafts.read(found) }, 202);
+  });
+  // Steer: into the running reply, or refused with the text left in the box.
+  app.post(`${one}/steer`, async (c) => {
+    const found = await chatOf(c);
+    const { id, text } = await body(c, SendMessage, MESSAGE_REFUSAL);
+    await acting(() => chat.steer(found, id, text));
+    return c.json({ id, draft: await drafts.save(found, "") });
+  });
   app.post(`${one}/stop`, async (c) => {
     const found = await chatOf(c);
     await acting(() => chat.stop(found));
@@ -518,45 +509,40 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     return c.json({ effort });
   });
 
-  // The waiting messages are the agent's own list.
-  app.get(`${one}/waiting`, async (c) => {
+  // What waits to go to the AI: Rufi's own queue.
+  app.get(`${one}/queue`, async (c) =>
+    c.json(await chat.queue.list(await chatOf(c))),
+  );
+  app.put(`${one}/queue`, async (c) => {
     const found = await chatOf(c);
-    return c.json({ messages: await acting(() => chat.waiting.list(found)) });
+    const { ids } = await body(c, ReorderQueue);
+    await acting(() => chat.queue.reorder(found, ids));
+    return c.json(await chat.queue.list(found));
   });
-  app.put(`${one}/waiting`, async (c) => {
-    const found = await chatOf(c);
-    const { ids } = await body(c, ReorderWaiting);
-    await acting(() => chat.waiting.reorder(found, [...ids]));
-    return c.json({ ok: true });
-  });
-  app.put(`${one}/waiting/:waitingId`, async (c) => {
+  app.put(`${one}/queue/:itemId`, async (c) => {
     const found = await chatOf(c);
     const { text } = await body(c, MessageText, MESSAGE_REFUSAL);
-    await acting(() =>
-      chat.waiting.edit(found, c.req.param("waitingId"), text),
-    );
-    return c.json({ ok: true });
+    await acting(() => chat.queue.edit(found, c.req.param("itemId"), text));
+    return c.json(await chat.queue.list(found));
   });
-  app.delete(`${one}/waiting/:waitingId`, async (c) => {
+  app.delete(`${one}/queue/:itemId`, async (c) => {
     const found = await chatOf(c);
-    await acting(() => chat.waiting.remove(found, c.req.param("waitingId")));
-    return c.json({ ok: true });
+    await acting(() => chat.queue.remove(found, c.req.param("itemId")));
+    return c.json(await chat.queue.list(found));
   });
-  app.post(`${one}/waiting/:waitingId/run`, async (c) => {
+  app.post(`${one}/queue/:itemId/send`, async (c) => {
     const found = await chatOf(c);
-    await acting(() => chat.waiting.runNow(found, c.req.param("waitingId")));
-    return c.json({ ok: true });
+    await acting(() => chat.queue.sendNow(found, c.req.param("itemId")));
+    return c.json(await chat.queue.list(found));
   });
 
-  // The chat's draft.
+  // The chat's draft; the last save wins.
   const draftPath = `${one}/draft`;
   app.get(draftPath, async (c) => c.json(await drafts.read(await chatOf(c))));
   app.put(draftPath, async (c) => {
     const found = await chatOf(c);
     const { text } = await body(c, SaveDraft);
-    const draft = await drafts.save(found, text);
-    if (draft.state === "sending") throw new HttpError(409, HELD, { draft });
-    return c.json(draft);
+    return c.json(await drafts.save(found, text));
   });
 
   // The live stream: a snapshot, then every stored change after it.
@@ -590,8 +576,8 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
           ...(change.chat && { chat: change.chat }),
         });
       });
-      const unwatch = chat.waiting.subscribe(found.id, () => {
-        push({ type: "waiting" });
+      const unwatch = chat.queue.subscribe(found.id, () => {
+        push({ type: "queue" });
       });
       out.onAbort(() => {
         state.open = false;

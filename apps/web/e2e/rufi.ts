@@ -99,6 +99,7 @@ export class Rufi {
             env: {
               PATH: process.env["PATH"] ?? "",
               FAKE_CODEX: JSON.stringify(options.scenario ?? {}),
+              FAKE_CODEX_LOG: join(this.home, "fake-codex.jsonl"),
             },
             token: () => Promise.resolve("token"),
             version: "0.0.0",
