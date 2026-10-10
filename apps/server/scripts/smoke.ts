@@ -1342,7 +1342,11 @@ const CASES: Record<
     return {
       checks: {
         names_meera: /meera/i.test(lastReply(asked)),
-        nothing_saved: nothingSaved(home, snapshot),
+        nothing_saved: record(home).saves === 0,
+        // Setting her results aside for good needs a yes of its own.
+        nothing_dismissed: draftsOf(home, doc).every(
+          (d) => d.status === "pending",
+        ),
       },
       snapshot,
     };

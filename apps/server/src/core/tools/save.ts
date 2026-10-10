@@ -114,7 +114,7 @@ export const dismissItems = defineTool({
   name: "dismiss_items",
   shown: "Set aside items from a document",
   description:
-    "Dismisses draft items of the user's documents that the user doesn't want saved (a test that isn't theirs, a row read by mistake), after they clearly said so in this chat: each is never saved later, and Rufi adds a receipt line to the chat. Give each item's version as you read it with get_documents; one that changed since is refused, and nothing is dismissed. An item already dismissed stays so; a saved item can't be dismissed (remove its record with save_changes instead). Only in a message from the user, never in a turn a Rufi event started.",
+    "Dismisses draft items of the user's documents that the user doesn't want saved (a test that isn't theirs, a row read by mistake), after you said which items you would set aside and the user clearly said yes to that in this chat ('it isn't mine' alone is not a yes): each is never saved later, and Rufi adds a receipt line to the chat. Give each item's version as you read it with get_documents; one that changed since is refused, and nothing is dismissed. An item already dismissed stays so; a saved item can't be dismissed (remove its record with save_changes instead). Only in a message from the user, never in a turn a Rufi event started.",
   input: DismissInput,
   callers: "model",
   readOnly: false,
