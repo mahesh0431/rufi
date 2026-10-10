@@ -927,6 +927,41 @@ test("a save to the record shows Rufi's receipt, also after a reload", async ({
   await accessible(page);
 });
 
+test("a save from the chat bar on Overview shows there at once, without leaving the page", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi, {
+    scenario: {
+      calls: [
+        {
+          namespace: "rufi",
+          tool: "save_changes",
+          arguments: {
+            changes: [
+              {
+                kind: "result",
+                action: "remove",
+                id: "res-a3",
+                source: "Remove the CRP result",
+              },
+            ],
+          },
+        },
+      ],
+    },
+  });
+  const crp = page
+    .getByRole("main")
+    .getByRole("cell", { name: "CRP", exact: true });
+  await expect(crp).toBeVisible();
+  await box(chat(page)).fill("Remove the CRP result");
+  await box(chat(page)).press("Enter");
+  await expect(log(chat(page)).locator(".receipt")).toContainText("CRP");
+  await page.keyboard.press("Escape");
+  await expect(crp).toHaveCount(0);
+});
+
 test("Based on, under an answer once it ended, opens How and Used; small talk has none; a stopped reply has no How", async ({
   page,
   rufi,
