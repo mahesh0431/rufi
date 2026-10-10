@@ -88,8 +88,7 @@ export async function recentSaves(store: Store, personId: string) {
     )
     .select(["o.id", "o.created_at", "e.text"])
     .where("o.person_id", "=", personId)
-    .orderBy("o.created_at", "desc")
-    .orderBy("o.id", "desc")
+    .orderBy("o.seq", "desc")
     .limit(SAVES_SHOWN)
     .execute();
   const shown = [];
@@ -193,12 +192,12 @@ export async function recordVersions(
         .selectFrom("operations")
         .select("id")
         .where("person_id", "=", personId)
-        .orderBy(sql.ref("operations.rowid"))
+        .orderBy("seq")
         .limit(asOf),
     );
   }
-  // Insertion order is save order, even if the Mac's clock moves back.
-  const changes = await history.orderBy(sql.ref("o.rowid")).execute();
+  // In the order of saves, even if the Mac's clock moved back.
+  const changes = await history.orderBy("o.seq").execute();
   // Oldest first: the last one a record has wins.
   for (const change of changes) {
     const key = `${change.kind}:${change.record_id}`;

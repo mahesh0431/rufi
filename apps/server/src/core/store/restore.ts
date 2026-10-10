@@ -20,14 +20,16 @@ import { copyOriginal, OriginalMissing } from "../documents/originals.ts";
 import { CheckFailed, checkDatabase, filesIn, verifyBackup } from "./backup.ts";
 import { databasePath } from "./database.ts";
 import { markerPath, restoringPath } from "./install.ts";
+import { migrate } from "./migrations.ts";
 
 /**
  * Restores the backup in `backup` into `target`, a folder that doesn't
  * exist yet or is empty. Holds the new folder's lock throughout, so neither
  * a second restore nor Rufi can use it meanwhile. The database and every
  * original are copied into `restoring/` and checked (each original by its
- * hash), then put in place with the marker; `restoring/` goes last, so a
- * stopped restore leaves it, and Rufi won't open the folder.
+ * hash), and a backup from an older Rufi is upgraded there; then it is put
+ * in place with the marker; `restoring/` goes last, so a stopped restore
+ * leaves it, and Rufi won't open the folder.
  */
 export async function restore(
   backup: string,
@@ -70,6 +72,8 @@ export async function restore(
       );
     }
     checkDatabase(staged);
+    // Only the new folder's copy is upgraded; the backup stays as it is.
+    migrate(staged);
     holdQueue(staged);
     const files = join(staging, "files");
     await mkdir(files, { mode: 0o700 });

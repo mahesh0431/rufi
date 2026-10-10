@@ -23,9 +23,17 @@ import {
 } from "../documents/originals.ts";
 import { sha256 } from "../../platform/files.ts";
 import { errorCode, type Log } from "../../platform/logs.ts";
-import { databasePath, OlderRufi, openReadOnly } from "./database.ts";
+import { databasePath } from "./database.ts";
+import { checkProblem, inspect } from "./migrations.ts";
 
 export const backupsPath = (home: string) => join(home, "backups");
+
+/**
+ * The backups made just before an upgrade, kept apart: the daily backups'
+ * pruning never removes them, and Rufi doesn't count them as the last one.
+ */
+export const upgradeBackupsPath = (home: string) =>
+  join(backupsPath(home), "before-upgrade");
 
 /** A backup's own small record, next to its copy of the database. */
 const BackupRecord = Schema.Struct({
@@ -74,33 +82,34 @@ export async function copyDatabase(
   checkDatabase(to);
 }
 
-/** The database opens as Rufi's, and SQLite's integrity and foreign-key checks pass. */
+/**
+ * The database is a record of this Rufi's version or an older one it can
+ * upgrade, and SQLite's integrity and foreign-key checks pass. Reads only:
+ * an older one stays as it is.
+ */
 export function checkDatabase(path: string): void {
-  let store;
+  let db;
   try {
-    store = openReadOnly(path);
+    db = new DatabaseSync(path, { readOnly: true });
   } catch (error) {
-    throw new CheckFailed(
-      error instanceof OlderRufi
-        ? "The backup is from an older Rufi, which this one can't use."
-        : "The copy of the record can't be opened.",
-      { cause: error },
-    );
+    throw new CheckFailed("The copy of the record can't be opened.", {
+      cause: error,
+    });
   }
-  if (!store) throw new CheckFailed("The copy of the record isn't there.");
   try {
-    const integrity = store.db.prepare("PRAGMA integrity_check").all();
-    if (
-      integrity.length !== 1 ||
-      (integrity[0] as { integrity_check?: unknown }).integrity_check !== "ok"
-    ) {
-      throw new CheckFailed("The copy of the record is damaged.");
+    const found = inspect(db);
+    if (found.state === "newer") {
+      throw new CheckFailed(
+        "The backup is from a newer Rufi, which this one can't use.",
+      );
     }
-    if (store.db.prepare("PRAGMA foreign_key_check").all().length > 0) {
-      throw new CheckFailed("The copy of the record has broken links.");
+    if (found.state !== "current" && found.state !== "older") {
+      throw new CheckFailed("The copy of the record isn't one Rufi knows.");
     }
+    const problem = checkProblem(db);
+    if (problem) throw new CheckFailed(`The copy of the record is ${problem}.`);
   } finally {
-    store.close();
+    db.close();
   }
 }
 
@@ -174,15 +183,17 @@ function nameFor(at: Date): string {
 /**
  * Makes a backup: copies the database into a new private staging folder,
  * checks it, writes its record, checks it all again, and only then gives it
- * its name in `backups/`. A failed or stopped one leaves only staging,
- * which never counts.
+ * its name in `folder` (`backups/` unless given). A failed or stopped one
+ * leaves only staging, which never counts.
  */
 export async function makeBackup(
   home: string,
   now: Date,
-  copy: Copy = backup,
+  {
+    copy = backup,
+    folder = backupsPath(home),
+  }: { copy?: Copy; folder?: string } = {},
 ): Promise<Backup> {
-  const folder = backupsPath(home);
   await mkdir(folder, { recursive: true, mode: 0o700 });
   const staging = await mkdtemp(join(folder, STAGING));
   try {
@@ -311,9 +322,11 @@ async function prune(home: string): Promise<void> {
 
 /** Removes what a stopped backup left. Only while Rufi holds the data folder. */
 async function cleanStaging(home: string): Promise<void> {
-  const names = await readdir(backupsPath(home)).catch(() => []);
-  for (const name of names.filter((n) => n.startsWith(STAGING))) {
-    await rm(join(backupsPath(home), name), { recursive: true, force: true });
+  for (const folder of [backupsPath(home), upgradeBackupsPath(home)]) {
+    const names = await readdir(folder).catch(() => []);
+    for (const name of names.filter((n) => n.startsWith(STAGING))) {
+      await rm(join(folder, name), { recursive: true, force: true });
+    }
   }
 }
 
@@ -380,7 +393,11 @@ export function backupJob(
   const attempt = async (): Promise<Backup> => {
     const started = Date.now();
     try {
-      const made = await makeBackup(home, now(), options.copy);
+      const made = await makeBackup(
+        home,
+        now(),
+        options.copy && { copy: options.copy },
+      );
       last = made;
       failed = undefined;
       log("backup.made", { ms: Date.now() - started });

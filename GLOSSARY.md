@@ -223,6 +223,10 @@ _Avoid_: sandbox, test account
 A checked copy of the record and every document's original file that Rufi makes in `backups/` in the data folder when it starts and then each day. Never the sign-in, the AI's own files, the log or the allowlist. It counts only after its check passes.
 _Avoid_: snapshot, archive
 
+**Upgrade**:
+What Rufi does at start when a new Rufi stores the record in a new way: a checked backup of the record as it was, in `backups/before-upgrade`, then the whole change in one step, or none of it. A record or backup from a newer Rufi is never opened or changed.
+_Avoid_: migrate, update (for the record)
+
 **Restore**:
 Putting a backup into a new, empty folder, with `pnpm rufi restore`. It never changes the current data folder or overwrites anything; the copy starts signed out.
 _Avoid_: recover, roll back

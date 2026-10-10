@@ -296,7 +296,7 @@ async function rowAt(
       .executeTakeFirst();
     return change && (JSON.parse(change.after) as Row);
   }
-  const first = await changes.orderBy(sql.ref("o.rowid")).executeTakeFirst();
+  const first = await changes.orderBy("o.seq").executeTakeFirst();
   if (first)
     return first.before ? (JSON.parse(first.before) as Row) : undefined;
   return recordOf(query, kind, personId, cited.id);
@@ -339,9 +339,9 @@ async function sourceOf(
   const upTo =
     version === null
       ? sql<number>`0`
-      : sql<number>`(SELECT rowid FROM operations WHERE id = ${version})`;
+      : sql<number>`(SELECT seq FROM operations WHERE id = ${version})`;
   const order = (operation: "s.operation_id" | "s.removed_by") =>
-    sql<number>`(SELECT rowid FROM operations WHERE id = ${sql.ref(operation)})`;
+    sql<number>`(SELECT seq FROM operations WHERE id = ${sql.ref(operation)})`;
   const sources = await query
     .selectFrom("record_sources as s")
     .leftJoin("document_pages as p", (join) =>
@@ -365,6 +365,7 @@ async function sourceOf(
     .where(
       sql<boolean>`(s.removed_by IS NULL OR ${order("s.removed_by")} > ${upTo})`,
     )
+    .orderBy(sql`${order("s.operation_id")} NULLS FIRST`)
     .orderBy(sql.ref("s.rowid"))
     .execute();
   const reportId = row["report_id"];
