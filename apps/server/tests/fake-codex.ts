@@ -67,6 +67,8 @@ export interface Scenario {
   compaction?: boolean;
   /** Tool calls the model makes during a turn, before answering. */
   calls?: { namespace: string | null; tool: string; arguments: unknown }[];
+  /** Tool calls by turn, oldest first, for each thread. */
+  callsByTurn?: NonNullable<Scenario["calls"]>[];
   /** A usage-limit snapshot sent before a failed turn. */
   resetsAt?: number;
   /** Threads the fake knows from before, as a restarted Codex would. */
@@ -254,7 +256,10 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     persist();
   }
   event("item/started", { item: userItem(entry) });
-  const calls = text.includes("quiet") ? [] : (scenario.calls ?? []);
+  const turnIndex = thread.history.findIndex((turn) => turn.id === turnId);
+  const calls = text.includes("quiet")
+    ? []
+    : (scenario.callsByTurn?.[turnIndex] ?? scenario.calls ?? []);
   for (const [i, call] of calls.entries()) {
     // Like Codex: the item starts, then Rufi is asked to run it.
     const item = {

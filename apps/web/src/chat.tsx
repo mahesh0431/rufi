@@ -147,6 +147,7 @@ export function ChatDock({ person }: { person: Person }) {
               </div>
               <TranscriptView
                 live={live}
+                personId={person.id}
                 onOlder={() => void loadOlder(person.id)}
                 className="flex-1 overflow-auto px-[18px] py-4"
               />
@@ -204,6 +205,7 @@ export function ChatPage({ person }: { person: Person }) {
       <Menus value={menus}>
         <TranscriptView
           live={live}
+          personId={person.id}
           onOlder={() => void loadOlder(person.id)}
           className="flex-1 overflow-auto"
           inner="mx-auto max-w-[760px] px-10 py-6"

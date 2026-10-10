@@ -32,6 +32,10 @@ const TITLES: Record<string, string> = {
 const isChatPage = (pathname: string) =>
   /^\/people\/[^/]+\/chat$/.test(pathname);
 
+/** Whether the address is one of a person's visit briefs. */
+const isBriefPage = (pathname: string) =>
+  /^\/people\/[^/]+\/briefs\/[^/]+$/.test(pathname);
+
 /** Whether the address is a person's Documents page. */
 const isDocumentsPage = (pathname: string) =>
   /^\/people\/[^/]+\/documents$/.test(pathname);
@@ -123,7 +127,9 @@ export function Frame() {
               ? CHAT_TITLE
               : isDocumentsPage(pathname)
                 ? "Documents"
-                : (TITLES[pathname.split("/")[1] ?? ""] ?? "Overview")}
+                : isBriefPage(pathname)
+                  ? "Visit brief"
+                  : (TITLES[pathname.split("/")[1] ?? ""] ?? "Overview")}
           </h1>
         </header>
         <Offline shown={connection === "offline"} />

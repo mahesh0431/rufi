@@ -2,6 +2,7 @@
 // types, so Codex now and an MCP host later are thin adapters over the same list.
 import { Result, Schema, SchemaIssue } from "effect";
 import { errorCode, type Log } from "../../platform/logs.ts";
+import type { BriefInput, Made } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
 import type { Change, Saved } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
@@ -25,6 +26,8 @@ export interface ToolContext {
   save?:
     | ((changes: readonly Change[], callId: string) => Promise<Saved>)
     | undefined;
+  /** Makes a visit brief with its line: only in Rufi's own chat. */
+  brief?: ((input: BriefInput, callId: string) => Promise<Made>) | undefined;
 }
 
 /** A tool's input: decoded without services, like JSON. */

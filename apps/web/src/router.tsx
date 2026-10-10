@@ -8,6 +8,7 @@ import {
   redirect,
   useLocation,
 } from "@tanstack/react-router";
+import { BriefPage } from "./brief.tsx";
 import { ChatPage } from "./chat.tsx";
 import { DocumentsPage } from "./documents.tsx";
 import { Frame } from "./frame.tsx";
@@ -80,6 +81,27 @@ const documents = createRoute({
   },
 });
 
+const brief = createRoute({
+  getParentRoute: () => root,
+  path: "/people/$personId/briefs/$briefId",
+  component: function Brief() {
+    const { personId, briefId } = brief.useParams();
+    const people = usePeople();
+    if (people.data === undefined) {
+      return people.error ? (
+        <div className="px-6 py-8">
+          <Problem error={people.error} retry={() => void people.refetch()} />
+        </div>
+      ) : null;
+    }
+    const person = people.data.find((p) => p.id === personId);
+    if (!person) {
+      return <div className="px-6 py-8 text-muted">There is no page here.</div>;
+    }
+    return <BriefPage key={briefId} person={person} briefId={briefId} />;
+  },
+});
+
 // Addresses of the conversations Rufi once had lead to the person's chat.
 const conversation = createRoute({
   getParentRoute: () => root,
@@ -138,6 +160,7 @@ export const router = createRouter({
     home,
     chat,
     documents,
+    brief,
     conversation,
     settings,
     signIn,

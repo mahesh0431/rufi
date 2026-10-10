@@ -2,7 +2,7 @@
   "tools": [
     {
       "name": "rufi.get_overview",
-      "description": "The active person's health record in Rufi at a glance: their name, how many documents and reports they have, their current test results exactly as printed (id, test, value, unit, reference range, flag, method or context, measured date at the precision known), their other records by kind (medicine uses, prescriptions, symptoms, conditions, allergies, care events, \"none known\" statements, follow-ups; each with its id and fields as save_changes takes them), and their latest saves with what each changed. At most 20 results, newest measured first, undated last; at most 50 records of a kind, newest first; the latest 5 saves, newest first. An amended result replaces the one it corrects and says \"amended\": true. Removed records aren't shown. Takes no input: Rufi chooses the person, not you.",
+      "description": "The active person's health record in Rufi at a glance: their name, how many documents and reports they have, their current test results exactly as printed (id, test, value, unit, reference range, flag, method or context, measured date at the precision known), their other records by kind (medicine uses, prescriptions, symptoms, conditions, allergies, care events, \"none known\" statements, follow-ups; each with its id and fields as save_changes takes them), their latest saves with what each changed, and record_version: a number every save raises, which create_brief takes. At most 20 results, newest measured first, undated last; at most 50 records of a kind, newest first; the latest 5 saves, newest first. An amended result replaces the one it corrects and says \"amended\": true. Removed records aren't shown. Takes no input: Rufi chooses the person, not you.",
       "callers": "both",
       "readOnly": true,
       "destructive": false,
@@ -103,7 +103,7 @@
     },
     {
       "name": "rufi.read_chat",
-      "description": "Earlier parts of this chat, newest first. Each entry's kind is \"message\" (the user's), \"steer\" (the user's, sent while you were replying), \"reply\" (yours), \"activity\" (one thing you did: a title and one short detail, never its output), \"receipt\" (Rufi's line for a save to the record: what was saved) or \"event\" (Rufi's own line about something that happened, never the user's words). \"at\" is when it was written. At most 50 entries a page; pass the page's next_before to read further back. Rufi chooses the chat, not you.",
+      "description": "Earlier parts of this chat, newest first. Each entry's kind is \"message\" (the user's), \"steer\" (the user's, sent while you were replying), \"reply\" (yours), \"activity\" (one thing you did: a title and one short detail, never its output), \"receipt\" (Rufi's line for a save to the record: what was saved), \"event\" (Rufi's own line about something that happened, never the user's words) or \"brief\" (Rufi's line for a visit brief made with create_brief). \"at\" is when it was written. At most 50 entries a page; pass the page's next_before to read further back. Rufi chooses the chat, not you.",
       "callers": "model",
       "readOnly": true,
       "destructive": false,
@@ -1190,6 +1190,87 @@
               "fields": {
                 "name": "Stomach upset"
               }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "rufi.create_brief",
+      "description": "Saves a visit brief for the active person: a dated page Rufi shows with a Copy button, and a line in this chat that opens it. Before you read the record for the brief, take record_version from get_overview, and give it here unchanged. Write the brief from saved records only, and give in cited every record its facts come from (kind and id, at least one); Rufi lists them under the brief as its Sources. Name the facts in plain words in the brief: no ids, footnotes or citation marks. Rufi refuses a record that wasn't saved in this person's record at record_version, or was removed then; nothing is made then. The same call again returns the same brief. The brief never changes once made; for a changed record, make a new one.",
+      "callers": "model",
+      "readOnly": false,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "markdown": {
+            "type": "string",
+            "description": "The brief in Markdown: short sections, every fact from a record you cite, questions labelled as questions. No links or images.",
+            "minLength": 1
+          },
+          "record_version": {
+            "type": "integer",
+            "description": "The record_version get_overview gave you before you read the record for this brief.",
+            "minimum": 0
+          },
+          "cited": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "medicine_use",
+                    "prescription",
+                    "symptom",
+                    "condition",
+                    "allergy",
+                    "result",
+                    "care_event",
+                    "none_known",
+                    "follow_up"
+                  ],
+                  "description": "The record's kind, as get_records names it."
+                },
+                "id": {
+                  "type": "string",
+                  "description": "The record's id, from get_overview or get_records.",
+                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              },
+              "required": [
+                "kind",
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Every saved record the brief's facts come from, at least one.",
+            "minItems": 1
+          }
+        },
+        "required": [
+          "markdown",
+          "record_version",
+          "cited"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "markdown": "## For the visit on Friday 16 Oct\n\n### Current medicines\n- Metformin 500 mg, twice a day\n\n### Recent results\n- HbA1c 6.8 % (lab range 4.0 - 5.6, marked High), 12 Aug 2026\n\n### Questions to ask\n- Question: Is the HbA1c a reason to change the Metformin?",
+          "record_version": 3,
+          "cited": [
+            {
+              "kind": "medicine_use",
+              "id": "0199a0f2-7c1e-7d3a-9b1e-3f5c2a1d4e6f"
+            },
+            {
+              "kind": "result",
+              "id": "0199a0f2-8a41-7b2c-8e0d-6c4b1f9a2e3d"
             }
           ]
         }

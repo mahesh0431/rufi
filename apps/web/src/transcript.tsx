@@ -1,14 +1,14 @@
 // The chat's transcript as the core stored it: your messages, one line per
 // thing the AI did, the AI's replies as Markdown with Based on under each
 // answer once it ended, Rufi's receipt for each save to the record, Rufi's
-// own event lines (never your words), and how a
-// reply ended when it didn't finish. A line between days, and a quiet line
+// own event lines (never your words), the line of each visit brief, which
+// opens it, and how a reply ended when it didn't finish. A line between days, and a quiet line
 // where the AI started afresh or compacted its memory. It opens at the latest
 // page; older pages load as you scroll up, and the view stays where it is.
 // Each entry reads only itself from the live store, so a streaming reply
 // re-renders alone.
 import { Link } from "@tanstack/react-router";
-import { Bell, Check, LoaderCircle, Square, X } from "lucide-react";
+import { Bell, Check, FileText, LoaderCircle, Square, X } from "lucide-react";
 import {
   createContext,
   use,
@@ -47,7 +47,13 @@ const components: Components = {
  * Markdown shown safely. Rufi's receipt shows no links at all: a web address
  * saved in a record is its text, not a link Rufi vouches for.
  */
-function Marked({ text, links = true }: { text: string; links?: boolean }) {
+export function Marked({
+  text,
+  links = true,
+}: {
+  text: string;
+  links?: boolean;
+}) {
   return (
     <Markdown
       remarkPlugins={[remarkGfm]}
@@ -154,11 +160,14 @@ function lines(state: Live): string[] {
 
 export function TranscriptView({
   live,
+  personId,
   onOlder,
   className,
   inner,
 }: {
   live: StoreApi<Live>;
+  /** Whose chat it is, for the links its lines open. */
+  personId: string;
   /** Loads the page before what is shown. */
   onOlder: () => void;
   /** The scrolling area's classes, and those of what it holds. */
@@ -300,11 +309,13 @@ export function TranscriptView({
                 ) : null}
               </div>
             )}
-            <Today value={now}>
-              {shown.map((line) => (
-                <Line key={line} live={live} line={line} />
-              ))}
-            </Today>
+            <Whose value={personId}>
+              <Today value={now}>
+                {shown.map((line) => (
+                  <Line key={line} live={live} line={line} />
+                ))}
+              </Today>
+            </Whose>
           </div>
         )}
       </div>
@@ -345,6 +356,9 @@ function Line({ live, line }: { live: StoreApi<Live>; line: string }) {
       return <EntryView live={live} id={id} />;
   }
 }
+
+/** Whose chat it is, for the lines that open a page of theirs. */
+const Whose = createContext("");
 
 /** Now, for the day lines: one value for all of them. */
 const Today = createContext(new Date(0));
@@ -439,6 +453,8 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
         <p className="whitespace-pre-wrap">{entry.text}</p>
       </div>
     </div>
+  ) : entry.kind === "brief" ? (
+    <BriefLine id={id} text={entry.text} />
   ) : entry.kind === "activity" ? (
     <p
       data-entry={id}
@@ -452,6 +468,31 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
     </p>
   ) : (
     <Reply id={id} text={entry.text} streaming={streaming} />
+  );
+}
+
+/** Rufi's line for a visit brief the AI made, which opens it. */
+function BriefLine({ id, text }: { id: string; text: string }) {
+  const personId = use(Whose);
+  return (
+    <div
+      data-entry={id}
+      className="flex items-center gap-2.5 rounded-lg border border-line bg-side px-3 py-2"
+    >
+      <FileText size={16} className="shrink-0 text-accent-ink" aria-hidden />
+      <div className="min-w-0 flex-1 break-words">
+        <p className="text-xs text-muted">Rufi</p>
+        <p>{text}</p>
+      </div>
+      <Link
+        to="/people/$personId/briefs/$briefId"
+        params={{ personId, briefId: id }}
+        aria-label={`Open ${text}`}
+        className="shrink-0 rounded-lg border border-line bg-surface px-2.5 py-0.5 font-medium text-accent-ink hover:bg-page"
+      >
+        Open
+      </Link>
+    </div>
   );
 }
 

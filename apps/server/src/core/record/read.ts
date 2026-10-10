@@ -2,7 +2,8 @@
 // each kind, and the latest saves with what each changed, so the AI can
 // find a record to change and save the reverse of a save.
 import type { Store } from "../store/database.ts";
-import { sql } from "kysely";
+import type { Tables } from "../store/tables.ts";
+import { sql, type Kysely } from "kysely";
 import {
   KINDS,
   kindNamed,
@@ -137,4 +138,71 @@ export async function recentSaves(store: Store, personId: string) {
     });
   }
   return shown;
+}
+
+type Reads = Kysely<Tables>;
+
+/**
+ * The person's record version: how many saves their record has had. Every
+ * save raises it, so a brief made from an older version knows the record
+ * changed since.
+ */
+export async function recordVersion(query: Reads, personId: string) {
+  const { n } = await query
+    .selectFrom("operations")
+    .select((eb) => eb.fn.countAll<number>().as("n"))
+    .where("person_id", "=", personId)
+    .executeTakeFirstOrThrow();
+  return n;
+}
+
+/**
+ * Each record's version: the id of the last save that changed it, or null
+ * when no save has (a record from before Rufi kept saves). With asOf,
+ * only the person's first asOf saves count. Keyed "kind:id".
+ */
+export async function recordVersions(
+  query: Reads,
+  personId: string,
+  records: readonly { kind: string; id: string }[],
+  asOf?: number,
+): Promise<Map<string, string | null>> {
+  const versions = new Map<string, string | null>(
+    records.map(({ kind, id }) => [`${kind}:${id}`, null]),
+  );
+  if (records.length === 0) return versions;
+  let history = query
+    .selectFrom("record_changes as c")
+    .innerJoin("operations as o", (join) =>
+      join
+        .onRef("o.person_id", "=", "c.person_id")
+        .onRef("o.id", "=", "c.operation_id"),
+    )
+    .select(["c.kind", "c.record_id", "c.operation_id"])
+    .where("c.person_id", "=", personId)
+    .where(
+      "c.record_id",
+      "in",
+      records.map(({ id }) => id),
+    );
+  if (asOf !== undefined) {
+    history = history.where(
+      "o.id",
+      "in",
+      query
+        .selectFrom("operations")
+        .select("id")
+        .where("person_id", "=", personId)
+        .orderBy(sql.ref("operations.rowid"))
+        .limit(asOf),
+    );
+  }
+  // Insertion order is save order, even if the Mac's clock moves back.
+  const changes = await history.orderBy(sql.ref("o.rowid")).execute();
+  // Oldest first: the last one a record has wins.
+  for (const change of changes) {
+    const key = `${change.kind}:${change.record_id}`;
+    if (versions.has(key)) versions.set(key, change.operation_id);
+  }
+  return versions;
 }
