@@ -65,6 +65,7 @@ describe("adding documents", () => {
         kind: null,
         date: null,
         status: "not_read",
+        reading: null,
         files: [
           {
             id: "7f4a70ccb858d23ee1cce44693bc2c009abb14604f0f3dbd48470639d6928b54",

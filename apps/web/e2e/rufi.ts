@@ -6,6 +6,7 @@ import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Status } from "@rufi/contracts";
+import type { RunSubAgent } from "../../server/src/agent/runtime.ts";
 import { test as base } from "@playwright/test";
 import { Effect, Exit, Scope } from "effect";
 import type { Scenario } from "../../server/tests/fake-codex.ts";
@@ -73,6 +74,8 @@ export class Rufi {
       scenario?: Scenario;
       codex?: "real";
       now?: () => string;
+      /** The document reader (tests/fake-reader.ts); without it, readings wait. */
+      reader?: RunSubAgent;
     } = {},
   ): Promise<Core> {
     const { port } = options;
@@ -117,6 +120,7 @@ export class Rufi {
           return { email: "asha@example.com" };
         },
         screens: SCREENS,
+        ...(options.reader !== undefined && { reader: options.reader }),
         ...(port !== undefined && { port }),
         ...(options.now !== undefined && { now: options.now }),
       }).pipe(Scope.provide(scope)),

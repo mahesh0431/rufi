@@ -230,7 +230,7 @@ describe("get_documents", () => {
     };
     expect(first).toMatchObject({
       document: { id, status: "not_read" },
-      next: "100",
+      next: "pages:100",
     });
     expect(first.pages).toHaveLength(100);
     expect(first.pages.slice(0, 2)).toEqual([

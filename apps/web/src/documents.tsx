@@ -26,6 +26,13 @@ import {
 import { fetchFile, upload } from "./api.ts";
 import { printedDate, printedDay } from "./dates.ts";
 import { queries, useDocuments } from "./reads.ts";
+import {
+  openReading,
+  ReadCard,
+  ReadItButton,
+  RetryButton,
+  TextButton,
+} from "./reading.tsx";
 import { Button, Problem } from "./ui.tsx";
 
 const KINDS: readonly { id: DocumentKind; name: string }[] = [
@@ -181,6 +188,9 @@ export function DocumentsPage({ person }: { person: Person }) {
         />
       </div>
 
+      <div className="-mx-3">
+        <ReadCard person={person} />
+      </div>
       <Outcome
         added={add.data}
         error={add.error}
@@ -201,7 +211,7 @@ export function DocumentsPage({ person }: { person: Person }) {
           No {KINDS.find((k) => k.id === kind)?.name.toLowerCase()} yet.
         </p>
       ) : (
-        <List documents={shown} open={setOpen} />
+        <List personId={person.id} documents={shown} open={setOpen} />
       )}
 
       {dragging && (
@@ -320,10 +330,57 @@ function describe(document: DocumentSummary): { name: string; more: string } {
   return { name: first?.name ?? "Document", more };
 }
 
+/** A document's reading, in words, with what can be done about it. */
+function Status({
+  personId,
+  document,
+}: {
+  personId: string;
+  document: DocumentSummary;
+}) {
+  const reading = document.reading;
+  const words =
+    document.status === "not_read" || reading === null
+      ? "Not read yet"
+      : document.status === "reading"
+        ? `Reading · saved ${String(reading.saved)} of ${String(reading.of)}`
+        : document.status === "failed"
+          ? `Failed · saved ${String(reading.saved)} of ${String(reading.of)}`
+          : reading.results === 0
+            ? reading.canRetry
+              ? "To check"
+              : "Nothing to save"
+            : `To check · ${reading.results === 1 ? "1 result" : `${String(reading.results)} results`}`;
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      <span className="rounded-full bg-side px-2 py-px text-xs text-muted">
+        {words}
+      </span>
+      {document.status === "not_read" && (
+        <ReadItButton personId={personId} document={document} />
+      )}
+      {reading?.canRetry === true && (
+        <RetryButton personId={personId} documentId={document.id} />
+      )}
+      {document.status !== "not_read" && (
+        <TextButton
+          onClick={() => {
+            openReading(personId, document.id);
+          }}
+        >
+          Open
+        </TextButton>
+      )}
+    </span>
+  );
+}
+
 function List({
+  personId,
   documents,
   open,
 }: {
+  personId: string;
   documents: readonly DocumentSummary[];
   open: (document: DocumentSummary) => void;
 }) {
@@ -374,9 +431,7 @@ function List({
                   </td>
                   <td className="py-2.5">{printedDay(document.addedAt)}</td>
                   <td className="py-2.5">
-                    <span className="rounded-full bg-side px-2 py-px text-xs text-muted">
-                      Not read yet
-                    </span>
+                    <Status personId={personId} document={document} />
                   </td>
                 </tr>
               );

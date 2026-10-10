@@ -71,6 +71,8 @@ export interface Scenario {
   callsByTurn?: NonNullable<Scenario["calls"]>[];
   /** A usage-limit snapshot sent before a failed turn. */
   resetsAt?: number;
+  /** Sparse account rate-limit updates following that snapshot. */
+  rateLimitUpdates?: Record<string, unknown>[];
   /** Threads the fake knows from before, as a restarted Codex would. */
   threads?: Record<string, { history?: string[] }>;
 }
@@ -110,6 +112,8 @@ interface Thread {
   model: string;
   /** The effort its next turns run with; none: the config's. */
   effort?: string;
+  ephemeral?: boolean;
+  sandbox?: string;
   running:
     | { turnId: string; steers: Queued[]; interrupted: boolean }
     | undefined;
@@ -362,6 +366,9 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
         },
       });
     }
+    for (const rateLimits of scenario.rateLimitUpdates ?? []) {
+      send({ method: "account/rateLimits/updated", params: { rateLimits } });
+    }
     complete(thread, turnId, "failed");
     return;
   }
@@ -477,11 +484,16 @@ function threadResponse(thread: Thread) {
         ? { type: "active", activeFlags: [] }
         : { type: "idle" },
       model: thread.model,
+      ephemeral: thread.ephemeral ?? false,
     },
+    instructionSources: [],
     model: thread.model,
     reasoningEffort: thread.effort ?? "medium",
     approvalPolicy: "never",
-    sandbox: { type: "dangerFullAccess" },
+    sandbox:
+      thread.sandbox === "read-only"
+        ? { type: "readOnly", networkAccess: false }
+        : { type: "dangerFullAccess" },
   };
 }
 
@@ -519,6 +531,8 @@ function handle(method: string, params: Record<string, unknown>): unknown {
           ...scenario.config,
         },
       };
+    case "configRequirements/read":
+      return { requirements: null };
     case "model/list":
       // Two pages, so Rufi has to follow the cursor.
       return params["cursor"]
@@ -539,6 +553,8 @@ function handle(method: string, params: Record<string, unknown>): unknown {
         id: `thread-${String(process.pid)}-${String(++threadCount)}`,
         model: scenario.model ?? String(params["model"]),
         effort: configEffort(params),
+        ephemeral: params["ephemeral"] === true,
+        sandbox: String(params["sandbox"]),
         running: undefined,
         history: [],
       };

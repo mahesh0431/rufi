@@ -1,5 +1,6 @@
 // Settings: how Rufi looks, the region whose emergency number the AI gives,
-// backups, and the export of your data.
+// reading documents with the AI, backups, and the export of your data.
+import { Switch } from "@base-ui/react/switch";
 import { Backups } from "@rufi/contracts";
 import { useMutation } from "@tanstack/react-query";
 import { DatabaseBackup, Download } from "lucide-react";
@@ -69,9 +70,52 @@ export function SettingsPage() {
           )
         )}
       </div>
+      <DocumentsSection />
       <BackupsSection />
       <ExportSection />
     </div>
+  );
+}
+
+/** The person's yes to send a document's pages to the AI to read them. */
+function DocumentsSection() {
+  const settings = useSettings();
+  const save = useMutation({
+    mutationFn: (on: boolean) =>
+      saveSettings({ readDocuments: on ? "yes" : "no" }),
+  });
+  const on = settings.data?.readDocuments === "yes";
+  return (
+    <>
+      <h2 className="mt-8 mb-2 px-0.5 font-semibold">Documents</h2>
+      <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
+        <label className="flex items-start gap-3">
+          <Switch.Root
+            checked={on}
+            disabled={settings.data === undefined || save.isPending}
+            onCheckedChange={(next) => {
+              save.mutate(next);
+            }}
+            className="relative mt-0.5 h-[18px] w-8 shrink-0 rounded-full bg-line outline-offset-2 data-[checked]:bg-accent"
+          >
+            <Switch.Thumb className="block size-3.5 translate-x-0.5 rounded-full bg-on-accent transition-transform data-[checked]:translate-x-4" />
+          </Switch.Root>
+          <span>
+            <span className="font-medium">Read documents with the AI</span>
+            <span className="block text-muted">
+              Rufi sends a document's pages to the AI you signed in with, to
+              read them. Nothing goes to any other service. Off: nothing new is
+              read; a reading that runs finishes.
+            </span>
+          </span>
+        </label>
+        {save.error && (
+          <p role="alert" className="text-muted">
+            {save.error.message}
+          </p>
+        )}
+      </div>
+    </>
   );
 }
 

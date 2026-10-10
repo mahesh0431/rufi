@@ -34,6 +34,9 @@ import { Stopped } from "../agent/runtime.ts";
 import type { Drafts } from "../core/chat/drafts.ts";
 import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
 import { NotADocument, type Documents } from "../core/documents/documents.ts";
+import { NeedsYes, type Readings } from "../core/documents/reading.ts";
+import { Refusal } from "../core/tools/registry.ts";
+import { ReadIt } from "@rufi/contracts/documents";
 import { OriginalMissing } from "../core/documents/originals.ts";
 import type { BackupJob } from "../core/store/backup.ts";
 import type { Change, Transcripts } from "../core/chat/transcript.ts";
@@ -63,6 +66,8 @@ export interface ApiDeps {
   exportZip: () => Promise<{ name: string; bytes: Uint8Array }>;
   /** Each person's documents. */
   documents: Documents;
+  /** Their readings: what waits and runs, and each one's work. */
+  readings: Readings;
   /** The secret `pnpm start` shows to get a fresh link while Rufi runs. */
   launcher: string;
   /** A fresh single-use link that opens Rufi. */
@@ -288,6 +293,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       emergencyRegion: known?.region ?? null,
       emergency: known ? { name: known.name, number: known.number } : null,
       regions: emergencyRegions(),
+      readDocuments: await deps.readings.consent(),
     };
   };
 
@@ -348,6 +354,9 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     }
     if (changed.appearance !== undefined) {
       await transcripts.saveSetting("appearance", changed.appearance);
+    }
+    if (changed.readDocuments !== undefined) {
+      await deps.readings.setConsent(changed.readDocuments);
     }
     return c.json(await settings(c));
   });
@@ -469,6 +478,54 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     c.header("Content-Type", found.mediaType);
     return c.body(new Uint8Array(bytes));
   };
+  /** A reading's refusal (no yes, nothing to retry) as the answer shows it. */
+  const reading = async <T>(action: () => Promise<T>): Promise<T> => {
+    try {
+      return await action();
+    } catch (error) {
+      if (error instanceof NeedsYes) {
+        throw new HttpError(409, error.message, { needsYes: true });
+      }
+      if (error instanceof Refusal) throw new HttpError(409, error.message);
+      throw error;
+    }
+  };
+  // Read documents not read yet: all of the person's (the yes card), or one.
+  app.post(`${documentsPath}/read`, async (c) => {
+    const found = await person(c);
+    const { yes } = await body(c, ReadIt);
+    const queued = await reading(() =>
+      deps.readings.readIt(found.id, undefined, yes),
+    );
+    return c.json({ queued });
+  });
+  app.post(`${documentsPath}/:documentId/read`, async (c) => {
+    const found = await person(c);
+    const { yes } = await body(c, ReadIt);
+    const queued = await reading(() =>
+      deps.readings.readIt(found.id, c.req.param("documentId"), yes),
+    );
+    return c.json({ queued });
+  });
+  app.post(`${documentsPath}/:documentId/retry`, async (c) => {
+    const found = await person(c);
+    const pages = await reading(() =>
+      deps.readings.retry(found.id, c.req.param("documentId")),
+    );
+    return c.json({ pages });
+  });
+  // What waits and runs, for the strip; one reading's work, for Open.
+  app.get("/api/people/:personId/readings", async (c) =>
+    c.json({ readings: await deps.readings.strip((await person(c)).id) }),
+  );
+  app.get(`${documentsPath}/:documentId/reading`, async (c) => {
+    const found = await deps.readings.view(
+      (await person(c)).id,
+      c.req.param("documentId"),
+    );
+    if (!found) throw new HttpError(404, "Not found.");
+    return c.json(found);
+  });
   const filePath = `${documentsPath}/:documentId/files/:fileId`;
   app.get(filePath, (c) => fileOf(c, false));
   app.get(`${filePath}/display`, (c) => fileOf(c, true));
@@ -591,6 +648,9 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       const unwatch = chat.queue.subscribe(found.id, () => {
         push({ type: "queue" });
       });
+      const unread = deps.readings.subscribe(found.personId, () => {
+        push({ type: "documents" });
+      });
       out.onAbort(() => {
         state.open = false;
         wake?.();
@@ -624,6 +684,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       } finally {
         unsubscribe();
         unwatch();
+        unread();
       }
     });
   });

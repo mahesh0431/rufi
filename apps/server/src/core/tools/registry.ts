@@ -26,6 +26,11 @@ export interface ToolContext {
   save?:
     | ((changes: readonly Change[], callId: string) => Promise<Saved>)
     | undefined;
+  /**
+   * Reads a document's failed pages again, at the person's request: only
+   * in Rufi's own chat, in a turn the person started.
+   */
+  retryReading?: ((documentId: string) => Promise<number[]>) | undefined;
   /** Makes a visit brief with its line: only in Rufi's own chat. */
   brief?: ((input: BriefInput, callId: string) => Promise<Made>) | undefined;
 }

@@ -106,10 +106,12 @@ export const useModels = () =>
     queryFn: () => read(Models, "GET", "/api/models"),
   });
 
-/** A person's documents, newest first. */
+/** A person's documents, newest first; looked at again while one is read. */
 export const useDocuments = (personId: string) =>
   useQuery({
     queryKey: ["documents", personId],
+    refetchInterval: (query) =>
+      query.state.data?.some((d) => d.status === "reading") ? 3_000 : false,
     queryFn: async () =>
       (
         await read(

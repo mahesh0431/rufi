@@ -28,6 +28,8 @@ const EVENTS = new Set([
   "tool.failed",
   "subagent.ended",
   "subagent.unexpected",
+  "reader.ended",
+  "reader.failed",
   "turn.ended",
   "chat.unknown_thread",
   "chat.save_failed",

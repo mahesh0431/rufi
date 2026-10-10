@@ -21,6 +21,14 @@ const Printed = (description: string) =>
 const PrintedDate = Schema.Struct({
   label: Text(100, "The words printed with the date: 'Collected', 'Reported'."),
   date: Text(100, "The date exactly as printed: '14/08/2026 08:10'."),
+  iso: Schema.optionalKey(
+    Schema.String.check(Schema.isPattern(/^\d{4}(-\d{2}(-\d{2})?)?$/)).annotate(
+      {
+        description:
+          "The same date as YYYY-MM-DD (or YYYY-MM, YYYY), only when the order of day and month is certain; leave it out when it isn't.",
+      },
+    ),
+  ),
 });
 
 /** One result read from a page, in Rufi's result fields, as printed. */
@@ -73,7 +81,12 @@ export const Entry = Schema.Struct({
       kind: Schema.optionalKey(
         Schema.Literals(["lab_report", "prescription", "letter", "other"]),
       ),
-      dates: Schema.optionalKey(Schema.Array(PrintedDate)),
+      dates: Schema.optionalKey(
+        Schema.Array(PrintedDate).annotate({
+          description:
+            "Every date printed on the page with its label; the sample's collection date first when there is one.",
+        }),
+      ),
       issuer: Printed("The lab or clinic"),
       name: Printed("The patient's name on the page"),
       report_number: Printed("The report number"),
@@ -99,6 +112,77 @@ export type Entry = typeof Entry.Type;
 
 /** The note for the whole document, written again whole when it changes. */
 export const Note = Text(2_000, "Your one short note for the whole document.");
+
+/**
+ * Rufi's checks of a saved entry. They only flag: the entry stays as the
+ * reader saved it, and a flagged item shows as unsure.
+ */
+export interface Checks {
+  /** The reader saw more or fewer rows than it saved items. */
+  incomplete?: { rows_seen: number; items: number };
+  /** Items (1, 2, 3... on the page) that may be wrong, and why. */
+  items: { item: number; why: string }[];
+}
+
+/** Text compared loosely: case and spacing don't count. */
+const loose = (text: string) => text.toLowerCase().replace(/\s+/g, " ").trim();
+
+/** Whether `number` is a reading of the first number printed in `printed`. */
+function numberMatches(printed: string, number: number): boolean {
+  const found = /(-?)(\d[\d.,]*)/.exec(printed.replace(/\s/g, ""));
+  if (!found) return false;
+  const sign = found[1] === "-" ? -1 : 1;
+  const raw = (found[2] ?? "").replace(/[.,]$/, "");
+  // "4,6" is 4.6; "1,200" is 1200 (or 1.2); "1.20" is 1.2; "1.234,5" is 1234.5.
+  const readings = [raw.replace(",", ".")];
+  if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(raw))
+    readings.push(raw.replace(/,/g, ""));
+  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(raw)) {
+    readings.push(raw.replace(/\./g, "").replace(",", "."));
+  }
+  return readings.some((reading) => sign * Number(reading) === number);
+}
+
+/**
+ * Rufi's checks of a page's entry: a row count that differs from the items
+ * (an earlier result beside a row doesn't count),
+ * a number that isn't its printed value, and, on a page with the PDF's own
+ * text, a printed value that isn't in that text.
+ */
+export function check(entry: Entry, text: string | undefined): Checks {
+  const checks: Checks = { items: [] };
+  // A row's earlier result is an item of its own, not a row.
+  const rows = entry.items.filter((item) => item.column !== "earlier").length;
+  if (entry.rows_seen !== undefined && entry.rows_seen !== rows) {
+    checks.incomplete = { rows_seen: entry.rows_seen, items: rows };
+  }
+  const pageText = text === undefined ? undefined : loose(text);
+  const bare = pageText?.replace(/ /g, "");
+  for (const [index, item] of entry.items.entries()) {
+    const why: string[] = [];
+    if (
+      item.value_number !== undefined &&
+      !numberMatches(item.value_text, item.value_number)
+    ) {
+      why.push(
+        `its number ${String(item.value_number)} isn't the printed value "${item.value_text}"`,
+      );
+    }
+    const value = loose(item.value_text);
+    if (
+      pageText !== undefined &&
+      bare !== undefined &&
+      pageText.trim() !== "" &&
+      !pageText.includes(value) &&
+      !bare.includes(value.replace(/ /g, ""))
+    ) {
+      why.push(`"${item.value_text}" isn't in the page's own text`);
+    }
+    if (why.length > 0)
+      checks.items.push({ item: index + 1, why: why.join("; ") });
+  }
+  return checks;
+}
 
 /**
  * One run of a job: the reader thread Rufi started for it, bound by code to
@@ -188,6 +272,7 @@ export function notebook(
       position: number,
       entry: Entry,
       note: string | undefined,
+      checks: Checks = { items: [] },
     ) => {
       if (run.closed)
         throw new Refusal("This reading has ended; nothing more is saved.");
@@ -219,7 +304,9 @@ export function notebook(
           .set({
             entry: JSON.stringify(entry),
             entry_job_id: run.jobId,
+            entry_attempt: run.attempt,
             entry_at: now(),
+            entry_checks: JSON.stringify(checks),
           })
           .where("person_id", "=", run.personId)
           .where("document_id", "=", run.documentId)

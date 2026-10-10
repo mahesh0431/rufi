@@ -8,13 +8,20 @@ import { join } from "node:path";
 import type { Status } from "@rufi/contracts";
 import { serve, type ServerType } from "@hono/node-server";
 import { Effect } from "effect";
-import type { AgentHost, AgentRuntime, AgentTools } from "../agent/runtime.ts";
+import type {
+  AgentHost,
+  AgentRuntime,
+  AgentTools,
+  RunSubAgent,
+} from "../agent/runtime.ts";
 import { readBrief } from "../core/briefs/briefs.ts";
 import { allowlistFile } from "../core/chat/models.ts";
 import { drafts as openDrafts } from "../core/chat/drafts.ts";
 import { chatQueue } from "../core/chat/queue.ts";
 import { transcripts as openTranscripts } from "../core/chat/transcript.ts";
 import { documents } from "../core/documents/documents.ts";
+import { notebook } from "../core/documents/notebook.ts";
+import { readings as openReadings } from "../core/documents/reading.ts";
 import { backupJob } from "../core/store/backup.ts";
 import {
   databasePath,
@@ -30,6 +37,7 @@ import { holdRufiLock, readJson, writePrivateJson } from "../platform/files.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { api, LAUNCHER_HEADER } from "./api.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
+import { reader as openReader } from "./reader.ts";
 import { secret, sessions } from "./session.ts";
 import { signInFlow, type SignIn } from "./signin.ts";
 
@@ -38,6 +46,8 @@ export interface CoreOptions {
   home: string;
   /** Makes the agent, with Rufi's tools and the host its events go to. */
   agent: (tools: AgentTools, host: AgentHost) => AgentRuntime;
+  /** Runs the document reader; without it, readings wait. */
+  reader?: RunSubAgent;
   /** 0 (the default) picks a free port. */
   port?: number;
   log: Log;
@@ -138,6 +148,7 @@ export const startCore = (options: CoreOptions) =>
     const transcripts = openTranscripts(writer, options.now);
     const drafts = openDrafts(writer, options.now);
     const queue = chatQueue(writer, options.now);
+    const readings = openReadings(writer, options.now);
     yield* attempt(() => cleanExportStaging(home));
     const backups = yield* Effect.acquireRelease(
       Effect.sync(() => backupJob(home, log)),
@@ -149,6 +160,8 @@ export const startCore = (options: CoreOptions) =>
     // Hand-overs Rufi stopped during are not sure, never sent again; what
     // waits goes when the person sends.
     yield* attempt(() => queue.endStopped());
+    // Readings Rufi stopped in the middle continue from their notebook.
+    yield* attempt(() => readings.recover());
 
     const tools = forAgent(() => ({ store: reader, personId: undefined }), log);
     const allowlist = allowlistFile(home);
@@ -175,11 +188,32 @@ export const startCore = (options: CoreOptions) =>
               transcripts,
               log,
               reader && pages(reader, home),
+              (personId, documentId) => readings.retry(personId, documentId),
             ),
           },
           log,
         }),
       ),
+      (opened) => Effect.promise(() => opened.close()),
+    );
+
+    // The document reader: one reading at a time, in the background.
+    const pageService = pages(reader ?? writer, home);
+    yield* Effect.acquireRelease(
+      Effect.sync(() => {
+        const opened = openReader({
+          readings,
+          book: notebook(writer, options.now),
+          pages: pageService,
+          event: chat.event,
+          run: options.reader,
+          signedIn: async () => (await account()).account === "signed_in",
+          log,
+        });
+        readings.watch(opened.poke);
+        opened.start();
+        return opened;
+      }),
       (opened) => Effect.promise(() => opened.close()),
     );
 
@@ -205,7 +239,8 @@ export const startCore = (options: CoreOptions) =>
       account,
       backups,
       exportZip: () => exportZip(home, new Date()),
-      documents: documents(writer, home, options.now),
+      documents: documents(writer, home, options.now, readings),
+      readings,
       signIn: signInFlow(options.signIn, log),
       launcher,
       launchUrl,

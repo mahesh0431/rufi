@@ -39,6 +39,7 @@ import {
   noEffectLogs,
 } from "../platform/logs.ts";
 import { runningLink, startCore } from "../server/core.ts";
+import { subAgentRunner } from "../agent/codex/subagent.ts";
 import { appChannel, closeAppChannel } from "./app.ts";
 
 const USAGE = `Usage: pnpm rufi <command>
@@ -294,6 +295,14 @@ const startCommand = (open: boolean) =>
           host,
           log,
         }),
+      reader: subAgentRunner({
+        home,
+        command: { file, args: [] },
+        env: childEnvironment(),
+        token: (validForMs) => accessToken(deps, validForMs),
+        version,
+        log,
+      }),
       signIn: ({ showLink }) =>
         signIn(deps, {
           showLink,
