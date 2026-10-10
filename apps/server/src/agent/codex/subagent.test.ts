@@ -677,3 +677,63 @@ describe("the reader's provider outcomes", () => {
     120_000,
   );
 });
+
+describe("the reader's turn when Codex's lines come together", () => {
+  // Codex's answer to turn/start, turn/started and the turn's first lines
+  // can arrive in one read: the turn is still the reader's.
+  const run = (scenario: Scenario, input: string, callTool: () => void) =>
+    subAgentRunner({
+      home: root,
+      command: {
+        file: process.execPath,
+        args: [join(import.meta.dirname, "../../../tests/fake-codex.ts")],
+      },
+      env: {
+        PATH: process.env["PATH"] ?? "",
+        FAKE_CODEX: JSON.stringify({ ...scenario, together: true }),
+      },
+      token: () => Promise.resolve("not-a-real-token"),
+      version: "0.0.0",
+    })({
+      model: MODEL,
+      effort: "low",
+      instructions: INSTRUCTIONS,
+      input,
+      tools: { namespace: "rufi", specs: [] },
+      callTool: () => {
+        callTool();
+        return Promise.resolve({ ok: true, text: "{}" });
+      },
+      onCompaction: () => undefined,
+      // Well under the test's own timeout: an end missed waits for this.
+      deadlineMs: 20_000,
+    });
+
+  it("runs the turn's first tool call", async () => {
+    let called = 0;
+    const outcome = await run(
+      {
+        bare: true,
+        calls: [
+          { namespace: "rufi", tool: "get_page", arguments: { page: 1 } },
+        ],
+      },
+      INPUT,
+      () => called++,
+    );
+    expect(outcome.end, outcome.end.text).toMatchObject({
+      status: "completed",
+    });
+    expect(called).toBe(1);
+  }, 120_000);
+
+  it("ends at once on a usage limit, with its reset time", async () => {
+    const outcome = await run({ resetsAt: 1_791_617_700 }, "fail", () => {
+      throw new Error("No tool call expected.");
+    });
+    expect(outcome.end).toMatchObject({
+      reason: "usage_limit",
+      resetsAt: "2026-10-10T07:35:00.000Z",
+    });
+  }, 120_000);
+});
