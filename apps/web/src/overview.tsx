@@ -6,6 +6,7 @@ import type { RecentChange, Tile } from "@rufi/contracts/record";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { dayLine, greeting, printedDate, printedTime, today } from "./dates.ts";
+import { whenDue } from "./follow-ups.tsx";
 import { KIND_TITLES } from "./record.tsx";
 import { useOverview } from "./reads.ts";
 import { Receipt } from "./transcript.tsx";
@@ -31,7 +32,8 @@ export function OverviewPage({ person }: { person: Person }) {
         )
       ) : (
         <>
-          {data.needsYou.documents.length > 0 && (
+          {(data.needsYou.documents.length > 0 ||
+            data.needsYou.followUps.length > 0) && (
             <section aria-labelledby="needs-you" className="mb-6">
               <h2 id="needs-you" className="mb-2 px-0.5 font-semibold">
                 Needs you
@@ -63,6 +65,35 @@ export function OverviewPage({ person }: { person: Person }) {
                       to="/people/$personId/documents/$documentId"
                       params={{ personId: person.id, documentId: document.id }}
                       aria-label={`Open ${document.name}`}
+                      className="rounded-md px-1 text-accent-ink hover:bg-accent-soft"
+                    >
+                      Open
+                    </Link>
+                  </li>
+                ))}
+                {data.needsYou.followUps.map(({ state, followUp }) => (
+                  <li
+                    key={followUp.id}
+                    className="flex items-center gap-2.5 border-t border-line px-3 py-2 first:border-t-0"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="font-semibold">{followUp.title}</span>{" "}
+                      <span className="text-muted">
+                        · {state === "coming_up" && "coming up, "}
+                        {lower(
+                          whenDue(
+                            state,
+                            followUp.due,
+                            new Date(overview.dataUpdatedAt),
+                          ).replace(" · ", ", "),
+                        )}
+                      </span>
+                    </span>
+                    <Link
+                      to="/people/$personId/follow-ups"
+                      params={{ personId: person.id }}
+                      search={{ open: followUp.id }}
+                      aria-label={`Open ${followUp.title}`}
                       className="rounded-md px-1 text-accent-ink hover:bg-accent-soft"
                     >
                       Open
@@ -101,6 +132,9 @@ export function OverviewPage({ person }: { person: Person }) {
     </div>
   );
 }
+
+/** Words that follow a dot: "Due this month" → "due this month". */
+const lower = (words: string) => words.charAt(0).toLowerCase() + words.slice(1);
 
 const plural = (n: number, one: string, many: string) =>
   `${String(n)} ${n === 1 ? one : many}`;

@@ -418,6 +418,8 @@ const SEEDS: Record<string, string> = {
       result("cr-may", "Creatinine", "1.02", "mg/dL", "2026-05-10"),
       result("hb-dup", "HbA1c", "5.6", "%", "2026-08-25"),
     ].join(", "),
+  follow_up_done: `INSERT INTO follow_ups (id, person_id, title, due, due_words, linked_kind, linked_id) VALUES
+    ('fu-hba1c', 'asha', 'Recheck HbA1c', '2026-10', 'in October', 'result', 'res-a1');`,
   analysis:
     RESULTS +
     [
@@ -559,6 +561,28 @@ function resultsNow(home: string) {
       page: number | null;
     }[],
   }));
+}
+
+/** Asha's follow-ups, as stored now. */
+function followUps(home: string) {
+  const store = openReadOnly(databasePath(home));
+  if (!store) throw new Error("no database");
+  const rows = store.db
+    .prepare(
+      "SELECT id, title, due, due_words, status, outcome, linked_kind, linked_id FROM follow_ups WHERE person_id = 'asha' AND removed = 0 ORDER BY rowid",
+    )
+    .all() as {
+    id: string;
+    title: string;
+    due: string | null;
+    due_words: string | null;
+    status: string;
+    outcome: string | null;
+    linked_kind: string | null;
+    linked_id: string | null;
+  }[];
+  store.close();
+  return rows;
 }
 
 /** Results with a page of this document among their sources. */
@@ -1119,6 +1143,77 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
             .join(),
         three_results_from_the_page: fromDocument(home, doc).length === 3,
         one_receipt: receipts(snapshot) === 1,
+      },
+      snapshot,
+    };
+  },
+  /**
+   * A report that says "repeat in 3 months": the AI sees it on the page,
+   * suggests a follow-up and saves it only on a yes that names the month
+   * (the date rests on the user's words), due as a month (collected 8 Sep
+   * 2026: December).
+   */
+  follow_up_suggested: async (api, home) => {
+    const c = chat(api);
+    const doc = await readReport(api, home, "hba1c_repeat", "sunrise-sep.pdf");
+    await c.say("What does this report say? Don't save anything yet.", [
+      chipOf("document", doc),
+    ]);
+    const suggested = await c.read();
+    const before = followUps(home).length;
+    await c.say("Yes, add it for December.");
+    const snapshot = await c.read();
+    const saved = followUps(home);
+    return {
+      checks: {
+        suggests_a_follow_up: /follow.?up|remind/i.test(replyOf(suggested)),
+        nothing_before_yes: before === 0,
+        one_follow_up: saved.length === 1,
+        due_december_as_a_month: saved[0]?.due === "2026-12",
+        open: saved[0]?.status === "open",
+      },
+      snapshot,
+    };
+  },
+  /** "In December" stays a month: due all of December, never a made-up day. */
+  follow_up_rough_date: async (api, home) => {
+    const c = chat(api);
+    await c.ask("Remind me to book an eye check-up in December.");
+    const asked_first = followUps(home).length === 0;
+    await yesIfAsked(c, home, "Yes, add it.");
+    const snapshot = await c.read();
+    const saved = followUps(home);
+    return {
+      checks: {
+        asked_first,
+        one_follow_up: saved.length === 1,
+        due_december:
+          saved[0]?.due === `${String(new Date().getFullYear())}-12`,
+        kept_the_words: /december/i.test(saved[0]?.due_words ?? ""),
+      },
+      snapshot,
+    };
+  },
+  /**
+   * "Done, it was 6.5": the new result is saved, and the follow-up is done
+   * with its outcome, linked to that result.
+   */
+  follow_up_done: async (api, home) => {
+    const c = chat(api);
+    await c.ask("I did my HbA1c recheck today. It was 6.5%.");
+    await yesIfAsked(c, home);
+    const snapshot = await c.read();
+    const result = resultsNow(home).find(
+      (r) => r.test_name === "HbA1c" && r.value_text === "6.5",
+    );
+    const done = followUps(home).find((f) => f.id === "fu-hba1c");
+    return {
+      checks: {
+        result_saved: result !== undefined,
+        follow_up_done: done?.status === "done",
+        outcome_given: (done?.outcome ?? "") !== "",
+        linked_to_the_new_result:
+          done?.linked_kind === "result" && done.linked_id === result?.id,
       },
       snapshot,
     };

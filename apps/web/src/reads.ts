@@ -12,6 +12,7 @@ import {
 import { BriefPage } from "@rufi/contracts/briefs";
 import { Documents } from "@rufi/contracts/documents";
 import {
+  FollowUps,
   type PageKind,
   Overview,
   RecordDetail,
@@ -19,7 +20,12 @@ import {
   Series,
 } from "@rufi/contracts/record";
 import { Schema } from "effect";
-import { QueryClient, useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import {
+  focusManager,
+  QueryClient,
+  useInfiniteQuery,
+  useQuery,
+} from "@tanstack/react-query";
 import { read } from "./api.ts";
 
 export const queries = new QueryClient({
@@ -96,18 +102,50 @@ const OverviewAnswer = Schema.Struct({ overview: Overview });
 const personPath = (personId: string) =>
   `/api/people/${encodeURIComponent(personId)}`;
 
+// A window that comes back to the front reads again (the queries that ask
+// for it: Overview and Follow-ups). TanStack Query hears only that the page
+// became visible; a page can stay visible behind another window, so the
+// window's focus counts too.
+focusManager.setEventListener((handleFocus) => {
+  const listener = () => {
+    handleFocus();
+  };
+  window.addEventListener("visibilitychange", listener);
+  window.addEventListener("focus", listener);
+  return () => {
+    window.removeEventListener("visibilitychange", listener);
+    window.removeEventListener("focus", listener);
+  };
+});
+
+/**
+ * How often a page that depends on the clock (Needs you, Follow-ups) reads
+ * again while it shows, so it crosses midnight within a minute.
+ */
+const CLOCK_MS = 60_000;
+
 /**
  * The person's Overview: what needs them, their record as tiles, the latest
- * saves. Read again when the window shows again, since Needs you depends on
- * the day.
+ * saves. Read again each minute while it shows, and when the window shows
+ * again, since Needs you depends on the day.
  */
 export const useOverview = (personId: string) =>
   useQuery({
     queryKey: ["overview", personId],
     refetchOnWindowFocus: true,
+    refetchInterval: CLOCK_MS,
     queryFn: async () =>
       (await read(OverviewAnswer, "GET", `${personPath(personId)}/overview`))
         .overview,
+  });
+
+/** The person's follow-ups by when they are due, read again as Overview is. */
+export const useFollowUps = (personId: string) =>
+  useQuery({
+    queryKey: ["follow-ups", personId],
+    refetchOnWindowFocus: true,
+    refetchInterval: CLOCK_MS,
+    queryFn: () => read(FollowUps, "GET", `${personPath(personId)}/follow-ups`),
   });
 
 /** A kind's page of the person's record: groups, newest first, more as asked. */

@@ -10,6 +10,17 @@ import { Schema } from "effect";
  */
 export const APPEARANCE_HEADER = "x-rufi-appearance";
 
+/**
+ * One person's follow-ups that just became due or overdue, as counts: the
+ * app shows them as a Mac notice. No title or name ever goes in one.
+ */
+export const PersonNotices = Schema.Struct({
+  personId: Schema.String,
+  due: Schema.Int,
+  overdue: Schema.Int,
+});
+export type PersonNotices = typeof PersonNotices.Type;
+
 /** What `rufi start` tells the app. */
 export const ToApp = Schema.Union([
   /** It started Rufi and runs it until the channel closes. */
@@ -20,9 +31,20 @@ export const ToApp = Schema.Union([
   Schema.Struct({ type: Schema.Literal("failed"), message: Schema.String }),
   /** A fresh link, the answer to the app's "link". */
   Schema.Struct({ type: Schema.Literal("link"), url: Schema.String }),
+  /** The answer to the app's "claim-notices": the people to tell, if any. */
+  Schema.Struct({
+    type: Schema.Literal("notices"),
+    people: Schema.Array(PersonNotices),
+  }),
 ]);
 export type ToApp = typeof ToApp.Type;
 
-/** What the app asks an owned Rufi: a fresh link, for a new window. */
-export const FromApp = Schema.Struct({ type: Schema.Literal("link") });
+/**
+ * What the app asks an owned Rufi: a fresh link, for a new window; or the
+ * follow-up notices due now (docs/adr/0012), which Rufi marks as told.
+ */
+export const FromApp = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("link") }),
+  Schema.Struct({ type: Schema.Literal("claim-notices") }),
+]);
 export type FromApp = typeof FromApp.Type;

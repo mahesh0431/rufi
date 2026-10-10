@@ -10,6 +10,7 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import {
+  CalendarClock,
   CircleHelp,
   FileText,
   House,
@@ -52,6 +53,10 @@ const personAt = (pathname: string) => {
   const id = /^\/people\/([^/]+)/.exec(pathname)?.[1];
   return id === undefined ? undefined : decodeURIComponent(id);
 };
+
+/** Whether the address is a person's Follow-ups. */
+const isFollowUpsPage = (pathname: string) =>
+  /^\/people\/[^/]+\/follow-ups$/.test(pathname);
 
 /** Whether the address is a person's Documents page, or one document's. */
 const isDocumentsPage = (pathname: string) =>
@@ -124,6 +129,7 @@ export function Frame() {
             Overview
           </Place>
           {person && <RecordNav person={person} />}
+          {person && <FollowUpsNav person={person} />}
           {person && (
             <Link
               to="/people/$personId/documents"
@@ -155,11 +161,13 @@ export function Frame() {
               ? CHAT_TITLE
               : kind !== undefined
                 ? KIND_TITLES[kind]
-                : isDocumentsPage(pathname)
-                  ? "Documents"
-                  : isBriefPage(pathname)
-                    ? "Visit brief"
-                    : (TITLES[pathname.split("/")[1] ?? ""] ?? "Overview")}
+                : isFollowUpsPage(pathname)
+                  ? "Follow-ups"
+                  : isDocumentsPage(pathname)
+                    ? "Documents"
+                    : isBriefPage(pathname)
+                      ? "Visit brief"
+                      : (TITLES[pathname.split("/")[1] ?? ""] ?? "Overview")}
           </h1>
         </header>
         <Offline shown={connection === "offline"} />
@@ -172,6 +180,25 @@ export function Frame() {
       )}
       <ReadingSheet />
     </div>
+  );
+}
+
+/** Follow-ups, with how many are open; apart from the record, as things to do. */
+function FollowUpsNav({ person }: { person: Person }) {
+  const open = useOverview(person.id).data?.openFollowUps ?? 0;
+  return (
+    <Link
+      to="/people/$personId/follow-ups"
+      params={{ personId: person.id }}
+      className="mt-3 flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-surface/60"
+      activeProps={{ className: "bg-accent-soft text-accent-ink" }}
+    >
+      <CalendarClock size={15} aria-hidden />
+      Follow-ups
+      {open > 0 && (
+        <span className="ml-auto text-muted tabular-nums">{open}</span>
+      )}
+    </Link>
   );
 }
 

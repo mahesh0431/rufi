@@ -424,6 +424,7 @@ test.describe("first run", () => {
       "Allergies",
       "Symptoms",
       "Care events",
+      "Follow-ups",
       "Documents",
       "Help",
       "Settings",

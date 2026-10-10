@@ -97,7 +97,7 @@ interface Cells {
 }
 
 /** A row's cells; `groupDate`: the group's date, not shown again on its rows. */
-function cellsOf(row: RecordRow, groupDate?: string): Cells {
+export function cellsOf(row: RecordRow, groupDate?: string): Cells {
   switch (row.kind) {
     case "result": {
       // Its own date (and time) only when its group's doesn't say it.
@@ -186,7 +186,7 @@ function cellsOf(row: RecordRow, groupDate?: string): Cells {
 }
 
 /** A row as a chip in the chat box. */
-const chipOf = (row: RecordRow): BoxChip => ({
+export const chipOf = (row: RecordRow): BoxChip => ({
   pointer: { type: "record", kind: row.kind, id: row.id },
   label: cellsOf(row).title,
   detail: `${NOUNS[row.kind]} in your record`,
@@ -206,15 +206,27 @@ function groupHeading(group: RecordGroup) {
   return { name: "Typed in the chat", detail: `${when} · ${count}` };
 }
 
+/** A row's element id, to bring it into view. */
+export const rowElementId = (kind: string, id: string) => `row-${kind}-${id}`;
+
+/**
+ * A kind's page; `opened`: the id of a row to open and bring into view (a
+ * follow-up's About links here), read on page by page until it is there.
+ */
 export function RecordPage({
   person,
   kind,
+  opened,
 }: {
   person: Person;
   kind: PageKind;
+  opened?: string;
 }) {
   const pages = useRecordPages(person.id, kind);
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(
+    opened === undefined ? null : `${kind}:${opened}`,
+  );
+  const sought = useRef(opened);
   const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
   const [problem, setProblem] = useState<string | null>(null);
   const showChat = useShowChat(person.id);
@@ -238,6 +250,26 @@ export function RecordPage({
       seen.disconnect();
     };
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  // The row asked for: more pages until it is loaded, then into view, once.
+  const loaded = pages.data?.pages;
+  useEffect(() => {
+    const id = sought.current;
+    if (id === undefined || loaded === undefined) return;
+    const there = loaded.some((page) =>
+      page.groups.some((group) => group.rows.some((row) => row.id === id)),
+    );
+    if (there) {
+      sought.current = undefined;
+      document
+        .getElementById(rowElementId(kind, id))
+        ?.scrollIntoView({ block: "center" });
+    } else if (!hasNextPage) {
+      sought.current = undefined;
+    } else if (!isFetchingNextPage) {
+      void fetchNextPage();
+    }
+  }, [loaded, kind, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const addToChat = (rows: readonly RecordRow[]) => {
     if (boxFor(person.id).append("", rows.map(chipOf))) {
@@ -403,7 +435,10 @@ function RowView({
   const cells = cellsOf(row, groupDate);
   const result = cells.value !== undefined;
   return (
-    <li className="border-t border-line first:border-t-0">
+    <li
+      id={rowElementId(row.kind, row.id)}
+      className="border-t border-line first:border-t-0"
+    >
       <div
         className={`group grid items-center gap-2 px-3 py-2 ${result ? "grid-cols-[20px_1.2fr_1fr_0.9fr_1fr_0.9fr_auto]" : "grid-cols-[20px_1.4fr_1fr_0.8fr_1fr_auto]"} ${open || ticked ? "bg-accent-soft" : "hover:bg-side"}`}
       >
@@ -473,7 +508,13 @@ const ACTIONS: Record<RecordChange["action"], string> = {
   unlink: "A source taken off",
 };
 
-function RowDetail({ personId, row }: { personId: string; row: RecordRow }) {
+export function RowDetail({
+  personId,
+  row,
+}: {
+  personId: string;
+  row: RecordRow;
+}) {
   const detail = useRecordDetail(personId, row.kind, row.id);
   if (detail.data === undefined) {
     return detail.error ? (

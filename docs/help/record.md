@@ -6,12 +6,13 @@ Rufi shows your whole record: Overview at a glance, and a page for each kind of 
 
 Overview is the first page you see. It has three parts, in this order:
 
-1. **Needs you:** documents that wait for you:
+1. **Needs you:** documents that wait for you, then follow-ups that are overdue, due now or coming up in the next 30 days:
    - a document that was read, with results not saved yet, says how many it has and how many to check;
    - a document with pages that couldn't be read says "couldn't be read · try a clearer scan". Add a clearer scan or photo, or click **Retry** on its page;
-   - a document whose reading couldn't finish says so.
+   - a document whose reading couldn't finish says so;
+   - a follow-up says when it is due, for example "overdue, was due Sep 2026" (see [Follow-ups](follow-ups.md)).
 
-   Click **Open** to go to the document's page (see [Documents](documents.md)). A document read with nothing to save isn't here. When nothing waits, this part isn't shown.
+   Click **Open** to go to the document's page (see [Documents](documents.md)), or to that follow-up on Follow-ups. A document read with nothing to save isn't here. When nothing waits, this part isn't shown.
 
 2. **Your record:** one tile for each kind of record, with its count and a short summary. Click a tile to open that kind's page. A kind with nothing in it says **None yet**.
 3. **Recent changes:** your last 5 saves and undos, newest first. Click one to see its receipt, the same as in the chat.
@@ -63,4 +64,4 @@ To ask about several records, tick their boxes, then click **Add 2 to chat** (wi
 
 ## When your record changes
 
-When a save or an undo happens in the chat, Overview, the sidebar's counts and the open pages show it at once, in every Rufi window and tab. When a reading of a document ends or fails, **Needs you** shows it. When you come back to a Rufi window, Overview reads your record again.
+When a save or an undo happens in the chat, Overview, the sidebar's counts and the open pages show it at once, in every Rufi window and tab. When a reading of a document ends or fails, **Needs you** shows it. When you come back to a Rufi window, Overview reads your record again. While it shows, it also reads again each minute, so Needs you shows the new day after midnight.

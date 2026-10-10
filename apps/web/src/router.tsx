@@ -12,6 +12,7 @@ import { BriefPage } from "./brief.tsx";
 import { ChatPage } from "./chat.tsx";
 import { DocumentPage } from "./document-page.tsx";
 import { DocumentsPage } from "./documents.tsx";
+import { FollowUpsPage } from "./follow-ups.tsx";
 import { Frame } from "./frame.tsx";
 import { HelpPage } from "./help-page.tsx";
 import { OverviewPage } from "./overview.tsx";
@@ -106,11 +107,17 @@ const document = createRoute({
   },
 });
 
+/** `?open=<id>`: the row to open and bring into view. */
+const openSearch = (search: Record<string, unknown>): { open?: string } =>
+  typeof search["open"] === "string" ? { open: search["open"] } : {};
+
 const record = createRoute({
   getParentRoute: () => root,
   path: "/people/$personId/record/$kind",
+  validateSearch: openSearch,
   component: function Record() {
     const { personId, kind } = record.useParams();
+    const { open } = record.useSearch();
     const people = usePeople();
     if (people.data === undefined) {
       return people.error ? (
@@ -124,7 +131,41 @@ const record = createRoute({
       return <div className="px-6 py-8 text-muted">There is no page here.</div>;
     }
     return (
-      <RecordPage key={`${personId}/${kind}`} person={person} kind={kind} />
+      <RecordPage
+        key={`${personId}/${kind}/${open ?? ""}`}
+        person={person}
+        kind={kind}
+        {...(open !== undefined && { opened: open })}
+      />
+    );
+  },
+});
+
+const followUps = createRoute({
+  getParentRoute: () => root,
+  path: "/people/$personId/follow-ups",
+  validateSearch: openSearch,
+  component: function FollowUps() {
+    const { personId } = followUps.useParams();
+    const { open } = followUps.useSearch();
+    const people = usePeople();
+    if (people.data === undefined) {
+      return people.error ? (
+        <div className="px-6 py-8">
+          <Problem error={people.error} retry={() => void people.refetch()} />
+        </div>
+      ) : null;
+    }
+    const person = people.data.find((p) => p.id === personId);
+    if (!person) {
+      return <div className="px-6 py-8 text-muted">There is no page here.</div>;
+    }
+    return (
+      <FollowUpsPage
+        key={`${personId}/${open ?? ""}`}
+        person={person}
+        {...(open !== undefined && { opened: open })}
+      />
     );
   },
 });
@@ -210,6 +251,7 @@ export const router = createRouter({
     documents,
     document,
     record,
+    followUps,
     brief,
     conversation,
     settings,

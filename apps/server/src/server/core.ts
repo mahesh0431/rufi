@@ -6,6 +6,7 @@ import { mkdir, rm } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import type { Status } from "@rufi/contracts";
+import type { PersonNotices } from "@rufi/contracts/app";
 import { serve, type ServerType } from "@hono/node-server";
 import { Effect } from "effect";
 import type {
@@ -31,6 +32,7 @@ import {
 } from "../core/store/database.ts";
 import { cleanExportStaging, exportZip } from "../core/store/export.ts";
 import { openRecord } from "../core/store/install.ts";
+import { claimNotices } from "../core/record/notices.ts";
 import { recordViews, waiting } from "../core/record/views.ts";
 import { pages } from "../core/documents/pages.ts";
 import { chatCaller, forAgent, toolsVersion } from "../core/tools/tools.ts";
@@ -60,7 +62,10 @@ export interface CoreOptions {
   signIn?: SignIn;
   /** The built screens' folder (apps/web/dist). */
   screens?: string;
-  /** The time the chat stamps on what it stores; the Mac's clock when not given. */
+  /**
+   * The time the chat stamps on what it stores, and when follow-ups are
+   * due; the Mac's clock when not given.
+   */
   now?: () => string;
 }
 
@@ -108,6 +113,8 @@ export interface Core {
   /** A link that opens Rufi in a browser; each call gives a new single-use one. */
   launchUrl: () => string;
   chat: Chat;
+  /** Takes the follow-up notices due now, for the Rufi app (docs/adr/0012). */
+  claimNotices: () => Promise<readonly PersonNotices[]>;
 }
 
 const attempt = <A>(step: () => Promise<A> | A) =>
@@ -225,7 +232,10 @@ export const startCore = (options: CoreOptions) =>
     // The token is in the fragment: the browser never sends it in a request.
     const launchUrl = () =>
       `http://127.0.0.1:${String(port)}/#launch=${access.launch()}`;
-    const record = recordViews(reader ?? writer);
+    // The Mac's local time, for when follow-ups are due.
+    const clock = () =>
+      options.now === undefined ? new Date() : new Date(options.now());
+    const record = recordViews(reader ?? writer, clock);
     const personDocuments = documents(writer, home, options.now, readings);
     const app = api({
       transcripts,
@@ -239,6 +249,7 @@ export const startCore = (options: CoreOptions) =>
         return {
           ...overview,
           needsYou: {
+            ...overview.needsYou,
             documents: waiting(await personDocuments.list(personId)),
           },
         };
@@ -297,6 +308,11 @@ export const startCore = (options: CoreOptions) =>
       () => Effect.promise(() => rm(coreFile(home), { force: true })),
     );
     log("core.started", { count: interrupted });
-    const core: Core = { port, launchUrl, chat };
+    const core: Core = {
+      port,
+      launchUrl,
+      chat,
+      claimNotices: () => claimNotices(writer.query, clock()),
+    };
     return core;
   });

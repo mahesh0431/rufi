@@ -332,6 +332,85 @@ test.describe("stopping", () => {
   });
 });
 
+test.describe("follow-up notices", () => {
+  /** Asha, with a follow-up that was due last year. */
+  async function overdue(desktop: Desktop): Promise<void> {
+    await mkdir(desktop.home, { recursive: true });
+    const store = openWritable(databasePath(desktop.home));
+    store.db.exec(await readFile(FAMILY, "utf8"));
+    store.db.exec(FIRST_RUN_DONE);
+    store.db
+      .prepare(
+        "INSERT INTO follow_ups (id, person_id, title, due) VALUES ('f-hba1c', 'asha', 'Recheck HbA1c', ?)",
+      )
+      .run(String(new Date().getFullYear() - 1));
+    store.close();
+    await familyFiles(desktop.home);
+  }
+
+  /** Clicks the app's last notice. */
+  const click = (app: App) =>
+    app.electron.evaluate(() => {
+      (globalThis as { notices?: Electron.Notification[] }).notices
+        ?.at(-1)
+        ?.emit("click");
+    });
+
+  test("tells a follow-up due when Rufi starts, by count only; its click brings the window to Follow-ups", async ({
+    desktop,
+  }) => {
+    await overdue(desktop);
+    const app = await desktop.launch();
+    const page = await app.electron.firstWindow();
+    await page.getByRole("link", { name: "Documents" }).click();
+
+    await expect
+      .poll(() => app.told)
+      .toEqual([
+        {
+          kind: "notice",
+          value: { title: "Rufi", body: "1 follow-up is overdue" },
+        },
+      ]);
+    await click(app);
+
+    await expect(page).toHaveURL(
+      /^http:\/\/127\.0\.0\.1:\d+\/people\/asha\/follow-ups$/,
+    );
+    // In the same session, the page reads Asha's follow-ups.
+    await expect(page.getByRole("region", { name: /^Overdue/ })).toContainText(
+      "Recheck HbA1c",
+    );
+  });
+
+  test("a click with no window open opens one on Follow-ups", async ({
+    desktop,
+  }) => {
+    await overdue(desktop);
+    const app = await desktop.launch();
+    await app.electron.firstWindow();
+    await expect.poll(() => app.told.length).toBe(1);
+    await commandW(app);
+    await expect
+      .poll(() =>
+        app.electron.evaluate(
+          ({ BrowserWindow }) => BrowserWindow.getAllWindows().length,
+        ),
+      )
+      .toBe(0);
+
+    const opened = app.electron.waitForEvent("window");
+    await click(app);
+
+    const page = await opened;
+    await expect(page).toHaveURL(/\/people\/asha\/follow-ups$/);
+    // In the same session, the page reads Asha's follow-ups.
+    await expect(page.getByRole("region", { name: /^Overdue/ })).toContainText(
+      "Recheck HbA1c",
+    );
+  });
+});
+
 test("the window takes the appearance chosen in Rufi, also as it first shows after a restart", async ({
   desktop,
 }) => {

@@ -299,6 +299,19 @@ CREATE TABLE follow_ups (
   UNIQUE (person_id, id)
 ) STRICT;
 
+-- The notices Rufi gave for follow-ups (docs/adr/0012): for each one, the
+-- due it was for and the last state told (due, then overdue). Operational
+-- state, not the record: no save writes it and no history keeps it. Only
+-- the notice claim (core/record/notices.ts) writes it.
+CREATE TABLE follow_up_notices (
+  person_id TEXT NOT NULL,
+  follow_up_id TEXT NOT NULL,
+  due TEXT NOT NULL,           -- the follow-up's due when the notice was given
+  state TEXT NOT NULL CHECK (state IN ('due', 'overdue')),
+  PRIMARY KEY (person_id, follow_up_id),
+  FOREIGN KEY (person_id, follow_up_id) REFERENCES follow_ups (person_id, id)
+) STRICT;
+
 -- Rufi-wide settings, such as the emergency region. One row per key.
 CREATE TABLE settings (
   key TEXT PRIMARY KEY,
@@ -536,4 +549,4 @@ CREATE INDEX sources_by_record ON record_sources (person_id, record_id);
 CREATE INDEX drafts_by_document ON draft_items (person_id, document_id, page, seq);
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;
