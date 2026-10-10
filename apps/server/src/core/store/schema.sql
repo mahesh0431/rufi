@@ -58,6 +58,7 @@ CREATE TABLE document_pages (
   -- and the job that saved it. A later save_page for the page replaces it.
   entry TEXT,
   entry_job_id TEXT,
+  entry_attempt INTEGER,      -- run that saved it; 0 if that run failed
   entry_at TEXT,
   entry_checks TEXT,           -- Rufi's checks of the entry (JSON): they flag, never change it
   -- What the page is once a reading that targeted it finished: its entry's

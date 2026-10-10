@@ -124,3 +124,45 @@ test("Not now keeps the document not read; its Read it asks again", async ({
   await page.getByRole("link", { name: "Settings" }).click();
   await expect(page.getByRole("switch")).toBeChecked();
 });
+
+test("keeps unreadable pages to check and reserves Nothing to save for a completed empty reading", async ({
+  page,
+  rufi,
+}) => {
+  const reader = scriptedReader([
+    async (turn) => {
+      await turn.look(1);
+      await turn.save(1, {
+        outcome: "unreadable",
+        why: "The print is blurred.",
+        items: [],
+      });
+      await turn.look(2);
+      await turn.save(2, { outcome: "nothing_here", items: [] });
+      return undefined;
+    },
+    async (turn) => {
+      await turn.look(1);
+      await turn.save(1, {
+        outcome: "read",
+        facts: { kind: "letter" },
+        items: [],
+      });
+      return undefined;
+    },
+  ]);
+  await start(page, rufi, reader);
+  await page
+    .getByRole("region", { name: "Read documents with the AI" })
+    .getByRole("button", { name: "Read it" })
+    .click();
+  const status = page
+    .getByRole("row", { name: /sunrise-labs-august.pdf/ })
+    .getByRole("cell")
+    .last();
+  await expect(status).toContainText("To check");
+  await expect(status).not.toContainText("Nothing to save");
+  await status.getByRole("button", { name: "Retry" }).click();
+  await expect(status).toContainText("Nothing to save");
+  await expect(status.getByRole("button", { name: "Retry" })).toBeHidden();
+});

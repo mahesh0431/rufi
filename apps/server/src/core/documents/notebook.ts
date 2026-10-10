@@ -304,6 +304,7 @@ export function notebook(
           .set({
             entry: JSON.stringify(entry),
             entry_job_id: run.jobId,
+            entry_attempt: run.attempt,
             entry_at: now(),
             entry_checks: JSON.stringify(checks),
           })

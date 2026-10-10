@@ -119,19 +119,11 @@ function agreed<T>(values: readonly (T | undefined)[]): T | undefined {
   return stated.every((v) => v === first) ? first : undefined;
 }
 
-/** Whether a printed name could be the person's: the words of one hold the other's. */
+/** Only case and whitespace differences count as an equal printed name. */
 function sameName(printed: string, person: string): boolean {
-  const words = (text: string) =>
-    new Set(
-      text
-        .toLowerCase()
-        .split(/[^\p{L}]+/u)
-        .filter((w) => w.length > 1),
-    );
-  const a = words(printed);
-  const b = words(person);
-  if (a.size === 0) return true;
-  return [...a].every((w) => b.has(w)) || [...b].every((w) => a.has(w));
+  const normalize = (text: string) =>
+    text.trim().replace(/\s+/gu, " ").toLowerCase();
+  return normalize(printed) === normalize(person);
 }
 
 /** A page's first printed date: the collection date when there is one. */
@@ -282,10 +274,10 @@ export function readings(
     const all = pages
       .filter((p) => p.entry && (p.state !== null || targets.has(p.position)))
       .map((p) => JSON.parse(p.entry ?? "{}") as Entry);
-    const results = entries.reduce(
-      (n, e) => n + (e.entry.outcome === "read" ? e.entry.items.length : 0),
-      0,
+    const items = entries.flatMap((e) =>
+      e.entry.outcome === "read" ? e.entry.items : [],
     );
+    const results = items.filter((item) => item.column !== "earlier").length;
     const unsureItems = entries.flatMap(({ position, entry, checks }) =>
       entry.outcome !== "read"
         ? []
@@ -394,7 +386,7 @@ export function readings(
       needs.length === 0
         ? undefined
         : [
-            `A document reading finished: ${name} (document ${run.documentId}), ${plural(results, "draft item")} read, not saved.`,
+            `A document reading finished: ${name} (document ${run.documentId}), ${plural(items.length, "draft item")} read, not saved.`,
             "What needs the user:",
             ...needs.map((n) => `- ${n}`),
             "Read the document with get_documents if you need to, then tell the user in a few lines and ask what it needs. Don't save anything.",
@@ -440,6 +432,17 @@ export function readings(
       closed: false,
     };
   };
+
+  /** Keep failed-run entries for Retry, but never finish from them alone. */
+  const markFailedEntries = (trx: Trx, run: Run) =>
+    trx
+      .updateTable("document_pages")
+      .set({ entry_attempt: 0 })
+      .where("person_id", "=", run.personId)
+      .where("document_id", "=", run.documentId)
+      .where("entry_job_id", "=", run.jobId)
+      .where("entry_attempt", "=", run.attempt)
+      .execute();
 
   return {
     consent,
@@ -644,7 +647,7 @@ export function readings(
       return { job, wake };
     },
 
-    /** Whether every target of the job has an entry from it. */
+    /** Whether every target has an entry from a run not recorded as failed. */
     allSaved: async (job: Job) => {
       const rows = await db
         .selectFrom("document_pages")
@@ -652,6 +655,7 @@ export function readings(
         .where("person_id", "=", job.personId)
         .where("document_id", "=", job.documentId)
         .where("entry_job_id", "=", job.id)
+        .where("entry_attempt", ">", 0)
         .execute();
       const saved = new Set(rows.map((r) => r.position));
       return job.targets.every((t) => saved.has(t));
@@ -745,21 +749,24 @@ export function readings(
         | { waiting: "usage_limit"; until: string }
         | { retry: true },
     ) => {
-      await db
-        .updateTable("jobs")
-        .set(
-          "retry" in how
-            ? { state: "queued", retried: 1 }
-            : {
-                state: "queued",
-                waiting: how.waiting,
-                wait_until: how.until ?? null,
-              },
-        )
-        .where("id", "=", run.jobId)
-        .where("state", "=", "running")
-        .where("attempt", "=", run.attempt)
-        .execute();
+      await db.transaction().execute(async (trx) => {
+        await markFailedEntries(trx, run);
+        await trx
+          .updateTable("jobs")
+          .set(
+            "retry" in how
+              ? { state: "queued", retried: 1 }
+              : {
+                  state: "queued",
+                  waiting: how.waiting,
+                  wait_until: how.until ?? null,
+                },
+          )
+          .where("id", "=", run.jobId)
+          .where("state", "=", "running")
+          .where("attempt", "=", run.attempt)
+          .execute();
+      });
       changed(run.personId);
     },
 
@@ -782,6 +789,7 @@ export function readings(
      * job failed, its entries kept, no drafts.
      */
     fail: async (trx: Trx, run: Run, error: string) => {
+      await markFailedEntries(trx, run);
       const ended = await trx
         .updateTable("jobs")
         .set({ state: "failed", error, ended_at: now() })
