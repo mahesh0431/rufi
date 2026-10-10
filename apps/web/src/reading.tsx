@@ -83,7 +83,7 @@ function stateOf(reading: ReadingNow, elapsed: string): string {
   if (reading.state === "running") {
     return [
       ...(reading.again ? ["reading again"] : []),
-      `saved ${String(reading.saved)} of ${String(reading.of)}`,
+      `read ${String(reading.saved)} of ${String(reading.of)}`,
       elapsed,
     ].join(" · ");
   }
@@ -96,7 +96,7 @@ function stateOf(reading: ReadingNow, elapsed: string): string {
         : "waiting for the usage limit";
     case null:
       return reading.again
-        ? `waiting to read again · saved ${String(reading.saved)} of ${String(reading.of)}`
+        ? `waiting to read again · read ${String(reading.saved)} of ${String(reading.of)}`
         : "waiting";
   }
 }
@@ -264,11 +264,11 @@ function Sheet({
       : reading.status === "reading"
         ? [
             "reading",
-            `saved ${String(reading.saved)} of ${String(reading.of)}`,
+            `read ${String(reading.saved)} of ${String(reading.of)}`,
             ...(elapsed ? [elapsed] : []),
           ].join(" · ")
         : reading.status === "failed"
-          ? `failed · ${reading.error ?? "it stopped"} · saved ${String(reading.saved)} of ${String(reading.of)}`
+          ? `failed · ${reading.error ?? "it stopped"} · read ${String(reading.saved)} of ${String(reading.of)}`
           : reading.status === "done"
             ? "read"
             : "not read yet";
@@ -373,7 +373,7 @@ function PageWork({
     ? OUTCOME[page.state]
     : entry
       ? `${OUTCOME[entry.outcome]} so far`
-      : "not saved yet";
+      : "not read yet";
   const facts = entry?.facts;
   const summary = [
     outcome,
@@ -406,7 +406,7 @@ function PageWork({
       {entry && <EntryTable entry={entry} flagged={flagged} />}
       {checks?.incomplete && (
         <p className="border-t border-line px-2.5 py-1 text-xs text-muted">
-          The reader counted {checks.incomplete.rows_seen} rows and saved{" "}
+          The reader counted {checks.incomplete.rows_seen} rows and read{" "}
           {checks.incomplete.items}.
         </p>
       )}

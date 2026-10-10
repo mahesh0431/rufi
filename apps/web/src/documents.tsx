@@ -334,9 +334,9 @@ function Status({
     document.status === "not_read" || reading === null
       ? "Not read yet"
       : document.status === "reading"
-        ? `Reading · saved ${String(reading.saved)} of ${String(reading.of)}`
+        ? `Reading · read ${String(reading.saved)} of ${String(reading.of)}`
         : document.status === "failed"
-          ? `Failed · saved ${String(reading.saved)} of ${String(reading.of)}`
+          ? `Failed · read ${String(reading.saved)} of ${String(reading.of)}`
           : reading.results === 0
             ? reading.canRetry
               ? "To check"
