@@ -59,7 +59,9 @@ async function opened(
   await rufi.family();
   await rufi.start(options);
   await page.goto(rufi.link());
-  await expect(page.getByText("Latest results")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Your record" }),
+  ).toBeVisible();
 }
 
 /** The core's answer to a save of the draft that holds `text`. */
@@ -95,6 +97,13 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   await expect(sidebar(page).getByRole("link")).toHaveText([
     "Chat with Rufi",
     "Overview",
+    "Results7",
+    "Medicines2",
+    "Prescriptions",
+    "Conditions",
+    "Allergies",
+    "Symptoms",
+    "Care events",
     "Documents",
     "Help",
     "Settings",
@@ -927,41 +936,6 @@ test("a save to the record shows Rufi's receipt, also after a reload", async ({
   await accessible(page);
 });
 
-test("a save from the chat bar on Overview shows there at once, without leaving the page", async ({
-  page,
-  rufi,
-}) => {
-  await opened(page, rufi, {
-    scenario: {
-      calls: [
-        {
-          namespace: "rufi",
-          tool: "save_changes",
-          arguments: {
-            changes: [
-              {
-                kind: "result",
-                action: "remove",
-                id: "res-a3",
-                source: "Remove the CRP result",
-              },
-            ],
-          },
-        },
-      ],
-    },
-  });
-  const crp = page
-    .getByRole("main")
-    .getByRole("cell", { name: "CRP", exact: true });
-  await expect(crp).toBeVisible();
-  await box(chat(page)).fill("Remove the CRP result");
-  await box(chat(page)).press("Enter");
-  await expect(log(chat(page)).locator(".receipt")).toContainText("CRP");
-  await page.keyboard.press("Escape");
-  await expect(crp).toHaveCount(0);
-});
-
 test("a save made in another window while this one's connection was down shows on Overview once it connects again", async ({
   page,
   rufi,
@@ -1007,10 +981,11 @@ test("a save made in another window while this one's connection was down shows o
       ],
     },
   });
-  const crp = page
-    .getByRole("main")
-    .getByRole("cell", { name: "CRP", exact: true });
-  await expect(crp).toBeVisible();
+  const results = (count: number) =>
+    page
+      .getByRole("main")
+      .getByRole("link", { name: new RegExp(`^Results ${String(count)}`) });
+  await expect(results(7)).toBeVisible();
   // The stream drops, and its reconnect waits until the other window saved.
   const down = Promise.withResolvers<undefined>();
   await page.route("**/chat/stream", async (route) => {
@@ -1028,7 +1003,7 @@ test("a save made in another window while this one's connection was down shows o
   await expect(log(chat(other)).locator(".receipt")).toContainText("CRP");
 
   down.resolve(undefined);
-  await expect(crp).toHaveCount(0);
+  await expect(results(6)).toBeVisible();
 });
 
 test("Based on, under an answer once it ended, opens How and Used; small talk has none; a stopped reply has no How", async ({

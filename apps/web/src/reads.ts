@@ -5,15 +5,21 @@ import {
   Backups,
   FirstRun,
   Models,
-  Overview,
   People,
   Settings,
   Status,
 } from "@rufi/contracts";
 import { BriefPage } from "@rufi/contracts/briefs";
 import { Documents } from "@rufi/contracts/documents";
+import {
+  type PageKind,
+  Overview,
+  RecordDetail,
+  RecordPage,
+  Series,
+} from "@rufi/contracts/record";
 import { Schema } from "effect";
-import { QueryClient, useQuery } from "@tanstack/react-query";
+import { QueryClient, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { read } from "./api.ts";
 
 export const queries = new QueryClient({
@@ -86,17 +92,60 @@ export const useBackups = () =>
 
 const OverviewAnswer = Schema.Struct({ overview: Overview });
 
+/** The person's path in the local API. */
+const personPath = (personId: string) =>
+  `/api/people/${encodeURIComponent(personId)}`;
+
+/**
+ * The person's Overview: what needs them, their record as tiles, the latest
+ * saves. Read again when the window shows again, since Needs you depends on
+ * the day.
+ */
 export const useOverview = (personId: string) =>
   useQuery({
     queryKey: ["overview", personId],
+    refetchOnWindowFocus: true,
     queryFn: async () =>
-      (
-        await read(
-          OverviewAnswer,
-          "GET",
-          `/api/people/${encodeURIComponent(personId)}/overview`,
-        )
-      ).overview,
+      (await read(OverviewAnswer, "GET", `${personPath(personId)}/overview`))
+        .overview,
+  });
+
+/** A kind's page of the person's record: groups, newest first, more as asked. */
+export const useRecordPages = (personId: string, kind: PageKind) =>
+  useInfiniteQuery({
+    queryKey: ["record", personId, kind],
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last: RecordPage) => last.next ?? undefined,
+    queryFn: ({ pageParam }) =>
+      read(
+        RecordPage,
+        "GET",
+        `${personPath(personId)}/record/${kind}${pageParam === undefined ? "" : `?after=${encodeURIComponent(pageParam)}`}`,
+      ),
+  });
+
+/** One record opened: its sources, its history and its versions. */
+export const useRecordDetail = (personId: string, kind: string, id: string) =>
+  useQuery({
+    queryKey: ["record", personId, kind, id],
+    queryFn: () =>
+      read(
+        RecordDetail,
+        "GET",
+        `${personPath(personId)}/record/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`,
+      ),
+  });
+
+/** A test's current values in one unit (none: the values without a unit). */
+export const useSeries = (personId: string, test: string, unit?: string) =>
+  useQuery({
+    queryKey: ["series", personId, test, unit ?? null],
+    queryFn: () =>
+      read(
+        Series,
+        "GET",
+        `${personPath(personId)}/series?${new URLSearchParams({ test, ...(unit !== undefined && { unit }) }).toString()}`,
+      ),
   });
 
 /** The models a chat can use; asks the AI, so it can fail. */

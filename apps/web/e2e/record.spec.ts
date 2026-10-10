@@ -1,0 +1,174 @@
+// The record's screens on the real core: Overview's tiles and a kind's page
+// read again when a save lands, in every open window, whichever page it
+// shows; Needs you when a reading ends, with no save. The strict CSP refuses nothing, and each screen passes axe.
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { AxeBuilder } from "@axe-core/playwright";
+import type { Page } from "@playwright/test";
+import { readPage, scriptedReader } from "../../server/tests/fake-reader.ts";
+import { expect, test } from "./rufi.ts";
+
+async function accessible(page: Page) {
+  const { violations } = await new AxeBuilder({ page }).analyze();
+  expect(violations.map((violation) => violation.id)).toEqual([]);
+}
+
+const sidebar = (page: Page) => page.getByRole("complementary");
+const chat = (page: Page) => page.getByRole("region", { name: "Chat" });
+const box = (page: Page) =>
+  chat(page).getByRole("textbox", { name: "Message to Rufi" });
+
+test("a save in one window refreshes Overview's tiles there and a kind's page in another", async ({
+  page,
+  rufi,
+  context,
+}) => {
+  await rufi.family();
+  await rufi.start({
+    scenario: {
+      calls: [
+        {
+          namespace: "rufi",
+          tool: "save_changes",
+          arguments: {
+            changes: [
+              {
+                kind: "result",
+                action: "remove",
+                id: "res-a3",
+                source: "Remove the CRP result",
+              },
+            ],
+          },
+        },
+      ],
+    },
+  });
+  // One window on the Results page, with no chat on it.
+  const results = await context.newPage();
+  await results.goto(rufi.link());
+  await sidebar(results)
+    .getByRole("link", { name: /^Results/ })
+    .click();
+  const crp = results.getByRole("button", { name: "CRP <5 mg/L" });
+  await expect(crp).toBeVisible();
+  await expect(
+    results.getByRole("region", {
+      name: "Sunrise Labs · 12 Aug 2026 · 3 results",
+    }),
+  ).toBeVisible();
+  await accessible(results);
+
+  // The other on Overview: the save goes from its chat bar.
+  await page.goto(rufi.link());
+  const tile = page.getByRole("main").getByRole("link", { name: /^Results 7/ });
+  await expect(tile).toBeVisible();
+  await accessible(page);
+  await box(page).fill("Remove the CRP result");
+  await box(page).press("Enter");
+  await expect(chat(page).locator(".receipt")).toContainText("CRP");
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("main").getByRole("link", { name: /^Results 6/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Recent changes" }),
+  ).toContainText("Removed result CRP");
+  // The Results page in the other window read again by itself.
+  await expect(crp).toHaveCount(0);
+  await expect(
+    results.getByRole("region", {
+      name: "Sunrise Labs · 12 Aug 2026 · 2 results",
+    }),
+  ).toBeVisible();
+});
+
+test("the Results page shows results as the lab printed them, by report, and more as you scroll", async ({
+  page,
+  rufi,
+}) => {
+  // Twelve more reports, so the page has more than one read.
+  const reports = Array.from({ length: 12 }, (_, n) => {
+    const month = String(n + 1).padStart(2, "0");
+    return `INSERT INTO reports (id, person_id, document_id, issuer, collected) VALUES ('rep-${month}', 'asha', 'doc-asha-aug', 'Lakeside Clinic', '2025-${month}-05');
+      INSERT INTO results (id, person_id, report_id, test_name, value_text, measured_at, entered_at) VALUES ('res-${month}', 'asha', 'rep-${month}', 'Ferritin', '${String(30 + n)}', '2025-${month}-05', '2026-10-01T10:00:00Z');`;
+  });
+  await rufi.family(...reports);
+  await rufi.start();
+  await page.goto(rufi.link());
+  await sidebar(page)
+    .getByRole("link", { name: /^Results/ })
+    .click();
+  const row = (name: string) =>
+    page
+      .getByRole("listitem")
+      .filter({ has: page.getByRole("button", { name }) });
+  await expect(row("HbA1c 6.8 %")).toContainText("4.0 - 5.6High");
+  await expect(row("Glucose 118 mg/dL")).toContainText("High · Fasting");
+  // The amended TSH is in the report that amended it, with its own date.
+  await expect(
+    page
+      .getByRole("region", { name: "Sunrise Labs · 1 Sep 2026 · 2 results" })
+      .getByRole("listitem")
+      .filter({ hasText: "TSH" }),
+  ).toContainText("TSH 4.6 mIU/L amended0.4 - 4.0High12 Aug 2026");
+  // A month typed in the chat stays a month; no date stays empty.
+  await expect(
+    page.getByRole("region", {
+      name: "Typed in the chat · May 2026 · 1 result",
+    }),
+  ).toContainText("Vitamin D 22 ng/mL");
+  // The oldest reports come when the end of the page shows.
+  const oldest = page.getByRole("region", {
+    name: "Lakeside Clinic · 5 Jan 2025 · 1 result",
+  });
+  await expect(oldest).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Show more" })
+    .scrollIntoViewIfNeeded();
+  await expect(oldest).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "No date · 1 result" }),
+  ).toContainText("Blood group B positive");
+  await accessible(page);
+});
+
+test("a reading that ends, with nothing saved, shows in Needs you on an open Overview", async ({
+  page,
+  rufi,
+  context,
+}) => {
+  const reader = scriptedReader([
+    async (turn) => {
+      await turn.look(1);
+      await turn.save(1, readPage());
+      return undefined;
+    },
+  ]);
+  await rufi.family();
+  await rufi.start({ reader: reader.run });
+  await page.goto(rufi.link());
+  await expect(
+    page.getByRole("heading", { name: "Your record" }),
+  ).toBeVisible();
+  await expect(page.getByRole("region", { name: "Needs you" })).toHaveCount(0);
+
+  // Another window adds a report; this one stays on Overview.
+  const other = await context.newPage();
+  await other.goto(rufi.link());
+  await sidebar(other).getByRole("link", { name: "Documents" }).click();
+  await other.getByLabel("Choose documents").setInputFiles({
+    name: "lotus-labs.pdf",
+    mimeType: "application/pdf",
+    buffer: await readFile(
+      join(
+        import.meta.dirname,
+        "../../server/tests/fixtures/documents/ravi-lipid-panel.pdf",
+      ),
+    ),
+  });
+  await expect(page.getByRole("region", { name: "Needs you" })).toContainText(
+    /lotus-labs\.pdf · \d+ results? read, not saved/,
+  );
+  await accessible(page);
+});

@@ -53,7 +53,7 @@ export const getOverview = defineTool({
  * The start of get_overview: the person's name, counts and current results.
  * Undefined when the person isn't in Rufi.
  */
-export async function readOverview(store: Store, personId: string) {
+async function readOverview(store: Store, personId: string) {
   const { query } = store;
   const person = await query
     .selectFrom("people")

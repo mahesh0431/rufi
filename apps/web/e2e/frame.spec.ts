@@ -38,7 +38,9 @@ test.describe("opening Rufi", () => {
 
     // Reloading keeps the tab's session.
     await page.reload();
-    await expect(page.getByText("Latest results")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Your record" }),
+    ).toBeVisible();
   });
 
   test("a link works once; a fresh one opens a second tab", async ({
@@ -50,7 +52,9 @@ test.describe("opening Rufi", () => {
     await rufi.start();
     const link = rufi.link();
     await page.goto(link);
-    await expect(page.getByText("Latest results")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Your record" }),
+    ).toBeVisible();
 
     const reused = await context.newPage();
     await reused.goto(link);
@@ -63,7 +67,9 @@ test.describe("opening Rufi", () => {
     expect(fresh).toBeDefined();
     const second = await context.newPage();
     await second.goto(fresh ?? "");
-    await expect(second.getByText("Latest results")).toBeVisible();
+    await expect(
+      second.getByRole("heading", { name: "Your record" }),
+    ).toBeVisible();
   });
 
   test("without a link there is no session", async ({ page, rufi }) => {
@@ -84,7 +90,9 @@ test.describe("opening Rufi", () => {
     await rufi.family();
     const { port } = await rufi.start();
     await page.goto(rufi.link());
-    await expect(page.getByText("Latest results")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Your record" }),
+    ).toBeVisible();
 
     await rufi.stop();
     await sidebar(page).getByRole("link", { name: "Settings" }).click();
@@ -93,14 +101,18 @@ test.describe("opening Rufi", () => {
     );
     // What the page had read stays.
     await sidebar(page).getByRole("link", { name: "Overview" }).click();
-    await expect(page.getByText("Latest results")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Your record" }),
+    ).toBeVisible();
 
     await rufi.start({ port });
     await expect(
       page.getByRole("heading", { name: "This session has ended" }),
     ).toBeVisible();
     await page.goto(rufi.link());
-    await expect(page.getByText("Latest results")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Your record" }),
+    ).toBeVisible();
   });
 });
 
@@ -112,7 +124,9 @@ test("follows the Mac's light or dark appearance, also when it changes while Ruf
   await rufi.family();
   await rufi.start();
   await page.goto(rufi.link());
-  await expect(page.getByText("Latest results")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Your record" }),
+  ).toBeVisible();
   const background = () =>
     page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(await theme(page)()).toBe("dark");
@@ -162,7 +176,9 @@ test("Settings chooses light, dark or the Mac's; every open tab changes at once,
   expect(await theme(page)()).toBe("light");
   const other = await context.newPage();
   await other.goto((await runningLink(rufi.home)) ?? "");
-  await expect(other.getByText("Latest results")).toBeVisible();
+  await expect(
+    other.getByRole("heading", { name: "Your record" }),
+  ).toBeVisible();
 
   await appearance.getByRole("radio", { name: "Dark" }).check();
   await expect.poll(theme(page)).toBe("dark");
@@ -170,13 +186,17 @@ test("Settings chooses light, dark or the Mac's; every open tab changes at once,
   await accessible(page);
   const fresh = await context.newPage();
   await fresh.goto((await runningLink(rufi.home)) ?? "");
-  await expect(fresh.getByText("Latest results")).toBeVisible();
+  await expect(
+    fresh.getByRole("heading", { name: "Your record" }),
+  ).toBeVisible();
   expect(await firstFrame(fresh)).toBe("dark");
 
   await rufi.stop();
   await rufi.start({ port });
   await page.goto(rufi.link());
-  await expect(page.getByText("Latest results")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Your record" }),
+  ).toBeVisible();
   expect(await firstFrame(page)).toBe("dark");
 
   // Light stays light on a dark Mac; System follows the Mac again.
@@ -311,10 +331,9 @@ test.describe("first run", () => {
     await expect(
       page.getByRole("heading", { name: /, Mira Fictional$/ }),
     ).toBeVisible();
+    // A new record: every kind's tile is there, empty.
     await expect(
-      page.getByText(
-        "Your latest results will be shown here when your record has some.",
-      ),
+      page.getByRole("main").getByRole("link", { name: "Results None yet" }),
     ).toBeVisible();
     await expect(sidebar(page)).toContainText("Mira Fictional");
     await expect(title).toHaveText("Overview");
@@ -398,6 +417,13 @@ test.describe("first run", () => {
     await expect(sidebar(page).getByRole("link")).toHaveText([
       "Chat with Rufi",
       "Overview",
+      "Results7",
+      "Medicines2",
+      "Prescriptions",
+      "Conditions",
+      "Allergies",
+      "Symptoms",
+      "Care events",
       "Documents",
       "Help",
       "Settings",
@@ -512,43 +538,6 @@ test.describe("sign-in status", () => {
 });
 
 test.describe("Overview", () => {
-  test("shows results as the lab printed them", async ({ page, rufi }) => {
-    await rufi.family();
-    await rufi.start();
-    await page.goto(rufi.link());
-    const row = (test: string) =>
-      page
-        .getByRole("row")
-        .filter({ has: page.getByRole("cell", { name: test }) });
-    await expect(row("HbA1c")).toContainText("6.8 %4.0 - 5.6High12 Aug 2026");
-    await expect(row("Glucose")).toContainText("12 Aug 2026 · Fasting");
-    await expect(row("TSH amended")).toContainText("4.6 mIU/L");
-    // A partial date stays partial; no date stays empty.
-    await expect(row("Vitamin D")).toContainText("May 2026");
-    await expect(row("Blood group")).toHaveText(
-      "Blood groupB positive+ Add to chat",
-    );
-    await expect(page.getByText(/Showing the newest/)).toHaveCount(0);
-  });
-
-  test("says when it shows only the newest results", async ({ page, rufi }) => {
-    const more = Array.from(
-      { length: 20 },
-      (_, index) =>
-        `('res-x${String(index)}', 'asha', NULL, 'Test ${String(index)}', '1', NULL, 1, NULL, NULL, NULL, NULL, '2026-09-20', '2026-09-20T10:00:00Z', NULL)`,
-    );
-    await rufi.family(
-      `INSERT INTO results (id, person_id, report_id, test_name, value_text, comparator, value_number,
-         unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id)
-       VALUES ${more.join(",\n")};`,
-    );
-    await rufi.start();
-    await page.goto(rufi.link());
-    await expect(
-      page.getByText("Showing the newest 20 of 27 results."),
-    ).toBeVisible();
-  });
-
   test("a page that fails leaves the frame working", async ({ page, rufi }) => {
     await rufi.family();
     await rufi.start();
@@ -572,7 +561,9 @@ test.describe("Overview", () => {
 
     await page.unroute("**/overview");
     await page.getByRole("button", { name: "Try again" }).click();
-    await expect(page.getByText("Latest results")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Your record" }),
+    ).toBeVisible();
   });
 });
 
@@ -640,7 +631,9 @@ test.describe("when Rufi is slow or away", () => {
     await rufi.start();
     await page.clock.install();
     await page.goto(rufi.link());
-    await expect(page.getByText("Latest results")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Your record" }),
+    ).toBeVisible();
 
     await page.route("**/api/**", (route) => route.abort());
     await sidebar(page).getByRole("link", { name: "Settings" }).click();

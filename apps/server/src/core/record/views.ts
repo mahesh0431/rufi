@@ -23,6 +23,7 @@ import type { DocumentSummary } from "@rufi/contracts/documents";
 import { RecordRow } from "@rufi/contracts/record";
 import { Schema } from "effect";
 import { sql, type Kysely, type RawBuilder } from "kysely";
+import { documentName } from "../documents/reading.ts";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 import { kindNamed, type Kind, type Row } from "./kinds.ts";
@@ -31,7 +32,7 @@ import { changed, fieldsOf, isCurrent } from "./read.ts";
 /** Groups on one page: reports are big, other kinds' groups are one row. */
 const GROUPS_PER_PAGE = { result: 10, other: 30 };
 /** Latest saves on Overview. */
-export const RECENT_SHOWN = 5;
+const RECENT_SHOWN = 5;
 /** Names a tile shows at most. */
 const NAMES_SHOWN = 3;
 
@@ -529,7 +530,7 @@ export function waiting(
   documents: readonly DocumentSummary[],
 ): WaitingDocument[] {
   return documents.flatMap((document): WaitingDocument[] => {
-    const name = document.files.map((file) => file.name).join(", ");
+    const name = documentName(document.files.map((file) => file.name));
     const reading = document.reading;
     if (document.status === "failed") {
       return [
