@@ -34,6 +34,7 @@ _Avoid_: parser, OCR, extractor
 
 **Draft item**:
 One thing a reading found, such as a result, kept exactly as printed and waiting for you: not part of your record, so it counts in no answer, Overview or trend until you save it. The reader's own values are kept beside any change. It points to its document and page, and may be marked unsure.
+When another tab changed it first, your fix keeps those current values in fields you didn't edit.
 _Avoid_: pending result, unconfirmed record, extracted row
 
 **Report**:
@@ -133,6 +134,7 @@ _Avoid_: cancelled, aborted
 
 **Draft**:
 The message you started in the chat and haven't sent, saved quietly while you type; only a save that failed shows under the box ("Not saved"). The last save wins: two tabs typing at once replace each other's text. A send moves it into the queue and empties the box, in one step. Rufi never sends a draft by itself.
+If a send's answer is lost, the box keeps its text for your retry. Another page can't add words to it until you resolve that send in the chat.
 _Avoid_: note, unsent
 
 **Model**:

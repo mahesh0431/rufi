@@ -94,7 +94,7 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
   await expect(items).toContainText("The reader read: value 2.1");
   await expect(items).toContainText("fixed by you");
 
-  // Another tab fixes it first: this tab's fix is refused with the value now.
+  // Another tab fixes it first, including a field this person didn't edit.
   await items.getByRole("button", { name: "Fix" }).click();
   await form.getByLabel("Value").fill("2.9");
   const documentPage = page.url();
@@ -105,6 +105,7 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
   await otherItems.getByRole("button", { name: "Platelet count" }).click();
   await otherItems.getByRole("button", { name: "Fix" }).click();
   await other.getByLabel("Value").fill("2.8");
+  await other.getByLabel("Range").fill("2.0-4.0");
   await other.getByRole("button", { name: "Save fix" }).click();
   await expect(otherItems).toContainText("2.8 lakh/µL");
   await other.close();
@@ -114,10 +115,29 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
     "This result changed in another tab. Its value is now 2.8 lakh/µL. Your fix wasn't saved. Look at the page, then save your fix again or cancel.",
   );
   await expect(form.getByLabel("Value")).toHaveValue("2.9");
+  await expect(form.getByLabel("Range")).toHaveValue("2.0-4.0");
   await accessible(page);
+
+  // A later refusal replaces the stale notice and keeps the person's text.
+  await form.getByLabel("Value").fill("");
   await form.getByRole("button", { name: "Save my fix over it" }).click();
+  await expect(form.getByRole("alert")).toHaveText(
+    "A result needs its test name and value.",
+  );
+  await expect(form.getByLabel("Value")).toHaveValue("");
+  await form.getByLabel("Value").fill("2.9");
+  const retry = page.waitForRequest(
+    (request) => request.url().endsWith("/fix") && request.method() === "POST",
+  );
+  await form.getByRole("button", { name: "Save fix", exact: true }).click();
+  expect(((await retry).postDataJSON() as { fields: unknown }).fields).toEqual({
+    value_text: "2.9",
+  });
   await expect(form).toHaveCount(0);
   await expect(items).toContainText("2.9 lakh/µL");
+  await expect(
+    items.getByRole("cell", { name: "2.0-4.0", exact: true }),
+  ).toBeVisible();
 
   // Save these in the chat: after what the box holds; the person sends.
   await page.getByRole("link", { name: "Chat with Rufi" }).click();
@@ -129,4 +149,34 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
   await expect(box).toHaveValue(
     /^What changed since March\?\n\nSave these 3 results from "sunrise-labs-august\.pdf" \(document [0-9a-f-]+\)\.$/,
   );
+
+  // A lost send's answer blocks appending, including after a reload.
+  const submitted: { id: string; text: string }[] = [];
+  await page.route("**/messages", async (route) => {
+    submitted.push(
+      route.request().postDataJSON() as { id: string; text: string },
+    );
+    if (submitted.length > 1) return route.continue();
+    await route.fetch();
+    await route.abort();
+  });
+  await box.press("Enter");
+  await expect(page.getByRole("alert")).toHaveText("Rufi can't be reached.");
+  await page.goBack();
+  const unresolved = page.getByRole("button", {
+    name: "Retry the message in the chat first",
+  });
+  await expect(unresolved).toBeDisabled();
+  await page.reload();
+  await expect(unresolved).toBeDisabled();
+  expect(submitted).toHaveLength(1);
+  await page.getByRole("link", { name: "Chat with Rufi" }).click();
+  await expect(box).toHaveValue(submitted[0]?.text ?? "");
+  await box.press("Enter");
+  await expect(box).toHaveValue("");
+  expect(submitted).toEqual([submitted[0], submitted[0]]);
+  await page.goto(documentPage);
+  await expect(
+    page.getByRole("button", { name: "Save these in the chat" }),
+  ).toBeEnabled();
 });

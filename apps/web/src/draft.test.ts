@@ -189,6 +189,57 @@ describe("the box's draft", () => {
 });
 
 describe("adding to the box from another page", () => {
+  it("refuses to append to an unresolved send, also after reload; retry keeps its id and text", async () => {
+    const stored = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        stored.set(key, value);
+      },
+      removeItem: (key: string) => {
+        stored.delete(key);
+      },
+    };
+    const first = core(editable("Save my earlier report"));
+    first.api.storage = storage;
+    const box = draftBox(first.api);
+    await settle();
+    const sending = box.submit(false);
+    await settle();
+    first.sends()[0]?.fail(new Error("Rufi can't be reached."));
+    await sending;
+
+    expect(box.append("Save these 2 results.")).toBe(false);
+    await settle();
+    expect(box.store.getState().text).toBe("Save my earlier report");
+    expect(first.saves()).toHaveLength(0);
+
+    const next = core(editable(""));
+    next.api.storage = storage;
+    // A new send would have a different id: only the stored id can retry it.
+    next.api.newId = () => "id-2";
+    const reloaded = draftBox(next.api);
+    await settle();
+    expect(reloaded.append("Save these 2 results.")).toBe(false);
+    await settle();
+    expect(reloaded.store.getState().text).toBe("Save my earlier report");
+    expect(next.saves()).toHaveLength(0);
+
+    const retry = reloaded.submit(false);
+    await settle();
+    expect(next.sends()[0]?.body).toEqual({
+      id: "id-1",
+      text: "Save my earlier report",
+    });
+    next.sends()[0]?.answer({ id: "id-1", draft: editable("") });
+    await retry;
+    expect(reloaded.append("Save these 2 results.")).toBe(true);
+    await settle();
+    expect(next.saves()[0]?.body).toEqual({ text: "Save these 2 results." });
+    next.saves()[0]?.answer(editable("Save these 2 results."));
+    await settle();
+  });
+
   it("puts the text after what the box holds and saves it; refuses while a send holds the box", async () => {
     const { api, saves, sends } = core(editable("What changed since March?"));
     const box = draftBox(api);

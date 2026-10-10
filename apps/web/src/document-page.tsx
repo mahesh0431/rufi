@@ -483,7 +483,8 @@ function Row({
 /**
  * The fix of one item, made on the version it opened with. Refused because
  * another tab fixed it first: the form says so with the value now, keeps
- * the person's text, and a second Save is made on the new version.
+ * the person's edits, and takes untouched fields from the new version.
+ * A second Save sends only those edits on that version.
  */
 function FixForm({
   personId,
@@ -530,8 +531,20 @@ function FixForm({
             )
           : undefined;
       if (current?._tag === "Some") {
-        setRefused(current.value.current);
-        setBase(current.value.current);
+        const latest = current.value.current;
+        setValues((previous) => {
+          const next = { ...previous };
+          for (const { id } of FIELDS) {
+            if (previous[id].trim() === (base.fields[id] ?? "")) {
+              next[id] = latest.fields[id] ?? "";
+            }
+          }
+          return next;
+        });
+        setRefused(latest);
+        setBase(latest);
+      } else {
+        setRefused(undefined);
       }
     },
     onSettled: () =>
@@ -731,11 +744,12 @@ function SaveInChat({
   const box = boxFor(personId);
   const loaded = useStore(box.store, (state) => state.loaded);
   const sending = useStore(box.store, (state) => state.sending);
+  const unresolved = useStore(box.store, (state) => state.unresolved);
   const navigate = useNavigate();
   return (
     <Button
       look="main"
-      disabled={count === 0 || !loaded || sending}
+      disabled={count === 0 || !loaded || sending || unresolved}
       onClick={() => {
         // TODO(slice 4): the document's chip, with its version, in place of
         // its name and id in the text.
@@ -750,7 +764,11 @@ function SaveInChat({
         }
       }}
     >
-      {sending ? "Wait: a message is being sent" : "Save these in the chat"}
+      {sending
+        ? "Wait: a message is being sent"
+        : unresolved
+          ? "Retry the message in the chat first"
+          : "Save these in the chat"}
     </Button>
   );
 }

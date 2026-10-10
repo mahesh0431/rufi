@@ -41,6 +41,8 @@ export interface BoxState {
   loaded: boolean;
   /** A send is on its way: the box can't change meanwhile. */
   sending: boolean;
+  /** A send has no answer yet: appending must wait for it to be resolved. */
+  unresolved: boolean;
   /** The last save failed: the text is only in this tab. */
   failed: boolean;
   /** What the person should know: why a read, save or send failed. */
@@ -86,6 +88,7 @@ export function draftBox(api: DraftApi) {
     draft: { text: "" },
     loaded: false,
     sending: false,
+    unresolved: false,
     failed: false,
     notice: null,
   }));
@@ -98,6 +101,7 @@ export function draftBox(api: DraftApi) {
     try {
       api.storage?.setItem(sendKey, JSON.stringify(send));
       unanswered = send;
+      store.setState({ unresolved: true });
       return true;
     } catch (error) {
       store.setState({ sending: false, notice: messageOf(error) });
@@ -108,6 +112,7 @@ export function draftBox(api: DraftApi) {
   function forget(): void {
     api.storage?.removeItem(sendKey);
     unanswered = undefined;
+    store.setState({ unresolved: false });
   }
 
   /** Reads the draft until it is read. */
@@ -127,6 +132,7 @@ export function draftBox(api: DraftApi) {
           draft,
           text: unanswered?.text ?? draft.text,
           loaded: true,
+          unresolved: unanswered !== undefined,
           notice: null,
         });
         return;
@@ -184,11 +190,11 @@ export function draftBox(api: DraftApi) {
     /**
      * Puts `text` in the box after what it holds, as if typed, and saves it
      * now. False, with nothing changed, before the draft is read or while a
-     * send holds the box.
+     * send holds the box or has an unresolved answer.
      */
     append(text: string): boolean {
       const state = store.getState();
-      if (!state.loaded || state.sending) return false;
+      if (!state.loaded || state.sending || state.unresolved) return false;
       const before = state.text.trimEnd();
       store.setState({
         text: before === "" ? text : `${before}\n\n${text}`,

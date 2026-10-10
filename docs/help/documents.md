@@ -126,11 +126,15 @@ A result you already saved or dismissed can't be fixed here.
 
 If you fix a result in two tabs or windows, the second fix doesn't go over the first without you knowing. Rufi says **This result changed in another tab**, shows the value now, and keeps your text in the form. Look at the page, then click **Save my fix over it**, or **Cancel**.
 
+Fields you didn't change take their current values from the other tab. Saving again changes only the fields you edited. If a later save fails, Rufi shows that error and keeps your text.
+
 ### Save these in the chat
 
 Click **Save these in the chat**. Rufi puts **Save these 42 results from "thyrocare-aug.pdf"** in the chat box, after anything you already typed there, and opens the chat. Read it, then send it: nothing goes to the AI until you do. The AI reads the results with your fixes.
 
 While a message of yours is being sent, the button says **Wait: a message is being sent**.
+
+If Rufi didn't receive the send's answer, the button says **Retry the message in the chat first**. Open the chat and retry that message before you add these results. Rufi keeps the message's text and retries the same send, so it isn't taken twice.
 
 ## Look at an original
 
