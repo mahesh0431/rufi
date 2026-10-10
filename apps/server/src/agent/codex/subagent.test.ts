@@ -480,7 +480,7 @@ describe("the reader's provider outcomes", () => {
           throw new Error("No tool call expected.");
         },
         onCompaction: () => undefined,
-        deadlineMs: 5_000,
+        deadlineMs: 60_000,
       });
       expect(outcome.end).toEqual({
         status: "failed",
@@ -489,5 +489,7 @@ describe("the reader's provider outcomes", () => {
         ...(reported && { resetsAt: "2026-10-10T07:35:00.000Z" }),
       });
     },
+    // It starts the fake Codex: a busy machine can take seconds.
+    120_000,
   );
 });

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { dayLine, greeting, printedDate, printedTime } from "./dates.ts";
+import { dayLine, printedDate, printedTime } from "./dates.ts";
 
 // The Mac is in India here: its days start 5½ hours before UTC's.
 const TZ = process.env["TZ"];
@@ -24,12 +24,6 @@ describe("dates", () => {
       "at 18:05 on 4 Oct 2026",
     );
     expect(printedTime("soon")).toBe("soon");
-  });
-
-  it("greets by the hour", () => {
-    expect(greeting(new Date(2026, 9, 4, 9))).toBe("Good morning");
-    expect(greeting(new Date(2026, 9, 4, 12))).toBe("Good afternoon");
-    expect(greeting(new Date(2026, 9, 4, 17))).toBe("Good evening");
   });
 
   it("names the chat's days in this Mac's time zone: Today, Yesterday, then the date", () => {

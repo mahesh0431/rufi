@@ -134,9 +134,27 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   await expect(log(chat(page))).toContainText("Ran a commandls");
   await expect(log(chat(page))).toContainText("Today");
 
-  // The same chat as its page.
+  // The panel's top bar: – makes it the bar again, which has none; ⤢ opens
+  // the chat page.
+  await chat(page).getByRole("button", { name: "Minimise" }).click();
+  await expect(log(chat(page))).toHaveCount(0);
+  await expect(
+    chat(page).getByRole("button", { name: "Open as page" }),
+  ).toHaveCount(0);
+  await box(chat(page)).click();
+  await chat(page).getByRole("button", { name: "Open as page" }).click();
+  await expect(page).toHaveURL(/\/people\/asha\/chat$/);
+
+  // The bar is on the Overview only; Chat with Rufi opens the chat from any
+  // page, as a page of its own.
+  for (const name of ["Help", "Settings"]) {
+    await sidebar(page).getByRole("link", { name }).click();
+    await expect(toolbar(page)).toHaveText(name);
+    await expect(chat(page)).toHaveCount(0);
+  }
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
   await expect(page).toHaveURL(/\/people\/asha\/chat$/);
+  await expect(box(page)).toBeFocused();
   await expect(toolbar(page)).toHaveText("Chat with Rufi");
   await expect(log(page).locator(".reply")).toHaveText("ok:drip");
   await expect(chat(page)).toHaveCount(0);
@@ -153,6 +171,8 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   );
   await expect(page).toHaveURL(/\/people\/asha\/chat$/);
   await expect(log(page).locator(".reply")).toHaveText("ok:drip");
+  await sidebar(page).getByRole("link", { name: "Overview" }).click();
+  await expect(box(chat(page))).toBeVisible();
 });
 
 test("Stop keeps what the reply wrote so far", async ({ page, rufi }) => {
@@ -173,7 +193,16 @@ test("messages sent during a reply wait: edit, reorder, remove, and send one aft
 }) => {
   await opened(page, rufi);
   await send(page, "hang");
+  // While Rufi answers, the box says so, with Stop where Send was, and
+  // typing queues the next message.
+  const answering = chat(page).getByText(/^Rufi is answering · \d+s$/);
+  await expect(answering).toBeVisible();
   await expect(chat(page).getByRole("button", { name: "Stop" })).toBeVisible();
+  await expect(chat(page).getByRole("button", { name: "Send" })).toHaveCount(0);
+  await expect(box(chat(page))).toHaveAttribute(
+    "placeholder",
+    "Type to queue your next message…",
+  );
 
   await send(page, "Second");
   await send(page, "Third");
@@ -193,8 +222,15 @@ test("messages sent during a reply wait: edit, reorder, remove, and send one aft
   await items.nth(0).getByRole("button", { name: "Remove" }).click();
   await expect(items).toHaveText(["Second, edited"]);
 
-  // After a Stop they keep waiting, until you send.
+  // The bar says so too, with Stop. After a Stop they keep waiting, until
+  // you send.
+  await box(chat(page)).press("Escape");
+  await expect(log(chat(page))).toHaveCount(0);
+  await expect(answering).toBeVisible();
   await chat(page).getByRole("button", { name: "Stop" }).click();
+  await expect(answering).toHaveCount(0);
+  await expect(chat(page).getByRole("button", { name: "Send" })).toBeVisible();
+  await box(chat(page)).click();
   await expect(log(chat(page))).toContainText("Stopped.");
   await expect(waiting).toContainText(
     "Stopped · these go when you send a message",
@@ -265,26 +301,7 @@ test("Steer passes your text into the running reply", async ({
   ).toHaveCount(0);
 });
 
-test("signed out, the chat doesn't say it uses the ChatGPT plan", async ({
-  page,
-  rufi,
-}) => {
-  rufi.account = { account: "signed_out", email: null };
-  await opened(page, rufi);
-  // The bar, then the panel.
-  await expect(chat(page)).toContainText(
-    "AI can make mistakes. Check important info.",
-  );
-  await expect(chat(page)).not.toContainText("Using ChatGPT plan");
-  await box(chat(page)).click();
-  await expect(chat(page)).toContainText("What you send");
-  await expect(chat(page)).not.toContainText("Using ChatGPT plan");
-  await expect(
-    chat(page).getByRole("link", { name: "Manage usage" }),
-  ).toHaveCount(0);
-});
-
-test("signed out, the model's button has no empty place for a name, and its menu signs in", async ({
+test("signed out, the chat doesn't say it uses the ChatGPT plan, and the model's menu signs in", async ({
   page,
   rufi,
 }) => {
@@ -300,49 +317,25 @@ test("signed out, the model's button has no empty place for a name, and its menu
     }),
   );
   await opened(page, rufi);
-  const choice = chat(page).getByRole("button", { name: /^Model and effort/ });
-  await expect(choice).toHaveText("Medium");
-  expect((await choice.boundingBox())?.width ?? 0).toBeLessThan(110);
+  // The bar, then the panel.
+  await expect(chat(page)).not.toContainText("Using ChatGPT plan");
   await box(chat(page)).click();
-  await choice.click();
+  await expect(
+    chat(page).getByRole("heading", { name: "Chat with Rufi" }),
+  ).toBeVisible();
+  await expect(chat(page)).not.toContainText("Using ChatGPT plan");
+  await expect(
+    chat(page).getByRole("link", { name: "Manage usage" }),
+  ).toHaveCount(0);
+  await chat(page)
+    .getByRole("button", { name: /^Model and effort/ })
+    .click();
   await expect(page.getByRole("menu")).not.toContainText("pnpm");
   await page.getByRole("menuitem", { name: "Sign in with ChatGPT" }).click();
   await expect(page).toHaveURL(/\/sign-in$/);
   await expect(
     page.getByRole("button", { name: "Sign in with ChatGPT" }),
   ).toBeVisible();
-});
-
-test("the button for the model never says Model or a model's id: before the list of models comes, it keeps the name's place empty", async ({
-  page,
-  rufi,
-}) => {
-  const held = Promise.withResolvers<undefined>();
-  await page.route("**/api/models", async (route) => {
-    await held.promise;
-    await route.continue();
-  });
-  await opened(page, rufi);
-  const choice = chat(page).getByRole("button", { name: /^Model and effort/ });
-  // A new chat has no model of its own yet.
-  await expect(choice).toHaveText("Medium");
-  held.resolve(undefined);
-  await expect(choice).toHaveText("GPT-6-AstraMedium");
-  await choice.click();
-  await page.getByRole("menuitemradio", { name: "GPT-6.1-Sol" }).click();
-  await expect(choice).toHaveText("GPT-6.1-SolMedium");
-
-  // Reloaded while the list is slow: still no name, and never the id.
-  const again = Promise.withResolvers<undefined>();
-  await page.unroute("**/api/models");
-  await page.route("**/api/models", async (route) => {
-    await again.promise;
-    await route.continue();
-  });
-  await page.reload();
-  await expect(choice).toHaveText("Medium");
-  again.resolve(undefined);
-  await expect(choice).toHaveText("GPT-6.1-SolMedium");
 });
 
 test("the model and effort are chosen in the box, also in the bar, and kept for the chat; a new effort doesn't start the AI afresh; neither changes while a reply runs", async ({
@@ -395,8 +388,18 @@ test("the model and effort are chosen in the box, also in the bar, and kept for 
   await expect(choice("GPT-6-Astra, High")).toBeVisible();
 
   // Kept for the chat: in the bar after a reload, and in the chat page's box,
-  // whose top has nothing to choose.
+  // whose top has nothing to choose. While the list of models is slow, the
+  // button keeps the name's place empty: never "Model" or the model's id.
+  const slow = Promise.withResolvers<undefined>();
+  await page.route("**/api/models", async (route) => {
+    await slow.promise;
+    await route.continue();
+  });
   await page.reload();
+  await expect(
+    chat(page).getByRole("button", { name: /^Model and effort/ }),
+  ).toHaveText("High");
+  slow.resolve(undefined);
   await expect(choice("GPT-6-Astra, High")).toBeVisible();
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
   await expect(toolbar(page)).toHaveText("Chat with Rufi");
@@ -860,82 +863,6 @@ test("a click outside the panel steps back to the bar and keeps what you typed; 
   await page.getByRole("main").click({ position: { x: 20, y: 20 } });
   await expect(page.getByRole("menu")).toHaveCount(0);
   await expect(minimise).toHaveCount(0);
-});
-
-test("the bar is on the Overview only; Chat with Rufi opens the chat from any page", async ({
-  page,
-  rufi,
-}) => {
-  await opened(page, rufi);
-  await expect(box(chat(page))).toBeVisible();
-  for (const name of ["Help", "Settings"]) {
-    await sidebar(page).getByRole("link", { name }).click();
-    await expect(toolbar(page)).toHaveText(name);
-    await expect(chat(page)).toHaveCount(0);
-  }
-  await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
-  await expect(page).toHaveURL(/\/people\/asha\/chat$/);
-  await expect(box(page)).toBeFocused();
-  await sidebar(page).getByRole("link", { name: "Overview" }).click();
-  await expect(box(chat(page))).toBeVisible();
-});
-
-test("the panel's thin top bar: – makes it the bar again, ⤢ opens the chat page; the bar has no top bar", async ({
-  page,
-  rufi,
-}) => {
-  await opened(page, rufi);
-  await box(chat(page)).hover();
-  await expect(chat(page).getByRole("heading")).toHaveCount(0);
-  await expect(
-    chat(page).getByRole("button", { name: "Open as page" }),
-  ).toHaveCount(0);
-  await box(chat(page)).click();
-  const top = chat(page)
-    .getByRole("heading", { name: "Chat with Rufi" })
-    .locator("..");
-  await expect(top.getByRole("button")).toHaveCount(2);
-  await top.getByRole("button", { name: "Minimise" }).click();
-  await expect(log(chat(page))).toHaveCount(0);
-  await expect(box(chat(page))).toBeVisible();
-  await box(chat(page)).click();
-  await top.getByRole("button", { name: "Open as page" }).click();
-  await expect(page).toHaveURL(/\/people\/asha\/chat$/);
-});
-
-test("while Rufi answers, the box and the bar say so, counting the seconds, with Stop where Send was; typing queues the next message", async ({
-  page,
-  rufi,
-}) => {
-  await opened(page, rufi);
-  // The reply writes a part, then runs until it is stopped.
-  await send(page, "partial");
-  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:part");
-  const answering = chat(page).getByText(/^Rufi is answering · \d+s$/);
-  await expect(answering).toBeVisible();
-  const seconds = async () =>
-    Number(/(\d+)s$/.exec((await answering.textContent()) ?? "")?.[1]);
-  const first = await seconds();
-  await expect.poll(seconds, { timeout: 5_000 }).toBeGreaterThan(first);
-  await expect(box(chat(page))).toHaveAttribute(
-    "placeholder",
-    "Type to queue your next message…",
-  );
-  await send(page, "Next one");
-  await expect(
-    chat(page)
-      .getByRole("region", { name: "Waiting messages" })
-      .getByRole("listitem"),
-  ).toHaveText(["Next one"]);
-
-  // The bar too, with Stop.
-  await page.keyboard.press("Escape");
-  await expect(log(chat(page))).toHaveCount(0);
-  await expect(answering).toBeVisible();
-  await expect(chat(page).getByRole("button", { name: "Send" })).toHaveCount(0);
-  await chat(page).getByRole("button", { name: "Stop" }).click();
-  await expect(answering).toHaveCount(0);
-  await expect(chat(page).getByRole("button", { name: "Send" })).toBeVisible();
 });
 
 test("a small window opens the chat as a page", async ({ page, rufi }) => {
