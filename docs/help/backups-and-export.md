@@ -14,7 +14,7 @@ A backup doesn't hold:
 
 - your ChatGPT sign-in: a restored copy starts signed out;
 - the list of AI models (`models.json`): a restored copy uses the default list;
-- the AI's own files, such as the messages that wait for the AI;
+- the AI's own files, such as its own copy of the chat;
 - the JPEG copies Rufi makes to show HEIC photos: Rufi makes them again when they are needed;
 - Rufi's log.
 
@@ -64,7 +64,8 @@ What the restored copy has:
 
 - Everything that was in your record when the backup was made, with its documents. Anything you added or changed after that isn't there. Anything you removed after that is back.
 - Your chat and drafts. A reply that was running when the backup was made shows as interrupted. Nothing is sent by itself.
-- Messages that were waiting for the AI don't come back. Your next message starts the AI afresh with the chat's last messages, and the chat shows a quiet line there.
+- Messages that were waiting for the AI come back held, above the box, marked **From a backup: it waited when the backup was made.** Nothing goes to the AI by itself: **Send** each one again, or **Remove** it. A message Rufi was giving the AI when the backup was made shows **Not sure this reached the AI.** (see [Waiting messages](chat.md#waiting-messages)).
+- Your next message starts the AI afresh with the chat's last messages, and the chat shows a quiet line there.
 
 If Rufi refuses:
 
