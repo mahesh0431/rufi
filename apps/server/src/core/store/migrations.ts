@@ -110,7 +110,8 @@ export function checkProblem(db: DatabaseSync): string | undefined {
  * Brings the database at `path` to this Rufi's version, when it is older:
  * every pending migration and the new version in one transaction,
  * committed only when SQLite's integrity and foreign-key checks pass. On
- * any failure nothing changes. The caller holds the folder's rufi.lock.
+ * any failure the record stays at its old version. The caller holds the
+ * folder's rufi.lock and has verified a backup before upgrading it.
  */
 export function migrate(
   path: string,
@@ -123,9 +124,13 @@ export function migrate(
     if (found.state !== "older") {
       throw new Error(`${path} isn't an older record (${found.state}).`);
     }
-    // A migration may rebuild a table, which needs foreign keys off; the
-    // check before commit looks at every link.
-    db.exec("PRAGMA foreign_keys = OFF; PRAGMA synchronous = FULL;");
+    // After inspection and the caller's verified backup, use WAL so a crash
+    // leaves the old record readable by the next start's read-only gate.
+    // A table rebuild needs foreign keys off; the check before commit looks
+    // at every link.
+    db.exec(
+      "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = OFF; PRAGMA synchronous = FULL;",
+    );
     db.exec("BEGIN IMMEDIATE");
     try {
       for (const migration of migrations.slice(found.version)) {

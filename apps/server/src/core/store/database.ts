@@ -39,8 +39,9 @@ export function openReadOnly(path: string): Store | undefined {
  * synchronous FULL), and deleted data is overwritten (secure_delete).
  */
 export function openWritable(path: string): Store {
-  if (!existsSync(path)) writeFileSync(path, "", { flag: "wx", mode: 0o600 });
-  const store = checked(new DatabaseSync(path), path, true);
+  const created = !existsSync(path);
+  if (created) writeFileSync(path, "", { flag: "wx", mode: 0o600 });
+  const store = checked(new DatabaseSync(path), path, created);
   try {
     store.db.exec(
       "PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA secure_delete = ON;",
@@ -62,7 +63,7 @@ export class CantOpen extends Error {
         : found.state === "newer"
           ? `Rufi can't open ${path}: it was made by a newer Rufi. Update Rufi to open it; this one left it unchanged.`
           : found.state === "empty"
-            ? `${path} is empty.`
+            ? `Rufi can't open ${path}: the record is empty, so it left it unchanged. To bring it back, restore your last backup into a new folder (Help: Backups and export).`
             : `Rufi can't open ${path}: it isn't a record this Rufi knows, so it left it unchanged.`,
     );
     this.found = found;
