@@ -2,10 +2,10 @@
 // against its answer key: items missed, wrong values not marked unsure,
 // wrong person or date, and time per page. The numbers are for the bar the
 // person sets before dogfood, not pass or fail. Only the sign-in comes from
-// RUFI_HOME (the test sign-in); the documents and the record are in a
-// scratch data folder.
+// RUFI_HOME (the test sign-in). Every document is read at the same time,
+// each on its own scratch data folder, person and reader.
 //
-//   RUFI_HOME=<test sign-in folder> node apps/server/scripts/reader-pack.ts [--only a,b] [--out dir]
+//   RUFI_HOME=<test sign-in folder> node apps/server/scripts/reader-pack.ts [--only a,b] [--out empty-dir]
 //   node apps/server/scripts/reader-pack.ts --make <dir>    (only writes the pack's files)
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -37,6 +37,7 @@ import {
   REPORTS,
   type Report,
 } from "../tests/pack/reports.ts";
+import { outFolder, runAll, sharedToken } from "./live-run.ts";
 
 const { values } = parseArgs({
   options: {
@@ -174,7 +175,8 @@ if (values.make !== undefined) {
   process.exit(0);
 }
 
-// --- Read the pack with the real reader ---
+// --- Read the pack with the real reader: each document on its own data
+// folder, store, person and reader, all at once ---
 
 const signIn: ChatGptDeps = {
   home: rufiHome(),
@@ -184,65 +186,21 @@ const signIn: ChatGptDeps = {
   issuer: "https://auth.openai.com",
   sleep: (ms) => sleep(ms),
 };
-const home = await mkdtemp(join(tmpdir(), "rufi-pack-"));
-const out = values.out ?? (await mkdtemp(join(tmpdir(), "rufi-pack-out-")));
-await mkdir(out, { recursive: true });
-const store = openWritable(databasePath(home));
-const transcripts = openTranscripts(store);
-const person = await transcripts.addFirstPerson("Asha Fictional");
-const personId = person?.id ?? "";
-const reads = readings(store);
-const docs = documents(store, home, undefined, reads);
+/** One token source for every reader of the run. */
+const token = sharedToken((validForMs) => accessToken(signIn, validForMs));
+// The sign-in once before any reading starts: a run that can't sign in
+// stops here.
+await token(10 * 60_000).catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(2);
+});
+const out = await outFolder("pack", values.out);
+const file = await codexBinary();
 const { version } = createRequire(import.meta.url)("../package.json") as {
   version: string;
 };
-const { log } = diagnostics(home);
-const running = reader({
-  readings: reads,
-  book: notebook(store),
-  pages: pages(store, home),
-  event: async (id, event, write) => {
-    const chat = await transcripts.chat(id);
-    if (!chat) throw new Error("No chat.");
-    await transcripts.addEvent(chat, event, write);
-  },
-  run: subAgentRunner({
-    home,
-    command: { file: await codexBinary(), args: [] },
-    env: childEnvironment(),
-    token: (validForMs) => accessToken(signIn, validForMs),
-    version,
-    log,
-  }),
-  signedIn: () => Promise.resolve(true),
-  choice: () => readerChoice(transcripts.setting),
-  log,
-});
-
-const ids = new Map<string, string>();
-for (const item of chosen) {
-  const { added } = await docs.add(personId, await item.files(), true);
-  ids.set(item.name, added[0] ?? "");
-}
-reads.watch(running.poke);
-running.start();
-const all = () =>
-  store.db.prepare("SELECT document_id, state FROM jobs").all() as {
-    document_id: string;
-    state: string;
-  }[];
-const started = Date.now();
-while (all().some((j) => j.state === "queued" || j.state === "running")) {
-  if (Date.now() - started > 3 * 60 * 60_000) break;
-  await sleep(2_000);
-}
-await running.close();
-
-// --- Score ---
-
 const norm = (text: string) =>
   text.toLowerCase().replace(/[^\p{L}\p{N}<>.,%-]/gu, "");
-const rows: string[] = [];
 const totals = {
   pages: 0,
   expected: 0,
@@ -253,8 +211,70 @@ const totals = {
   extra: 0,
 };
 const byKind = new Map<string, typeof totals & { ms: number }>();
-for (const item of chosen) {
-  const documentId = ids.get(item.name) ?? "";
+
+/** Reads one document with the real reader, then scores it. */
+async function readOne(item: Item) {
+  const home = await mkdtemp(join(tmpdir(), "rufi-pack-"));
+  const store = openWritable(databasePath(home));
+  const transcripts = openTranscripts(store);
+  const person = await transcripts.addFirstPerson("Asha Fictional");
+  const reads = readings(store);
+  const { log } = diagnostics(home);
+  const running = reader({
+    readings: reads,
+    book: notebook(store),
+    pages: pages(store, home),
+    event: async (id, event, write) => {
+      const chat = await transcripts.chat(id);
+      if (!chat) throw new Error("No chat.");
+      await transcripts.addEvent(chat, event, write);
+    },
+    run: subAgentRunner({
+      home,
+      command: { file, args: [] },
+      env: childEnvironment(),
+      token,
+      version,
+      log,
+    }),
+    signedIn: () => Promise.resolve(true),
+    choice: () => readerChoice(transcripts.setting),
+    log,
+  });
+  const { added } = await documents(store, home, undefined, reads).add(
+    person?.id ?? "",
+    await item.files(),
+    true,
+  );
+  const documentId = added[0] ?? "";
+  reads.watch(running.poke);
+  running.start();
+  const state = () =>
+    (
+      store.db
+        .prepare("SELECT state FROM jobs WHERE document_id = ?")
+        .get(documentId) as { state: string } | undefined
+    )?.state;
+  const started = Date.now();
+  while (state() === "queued" || state() === "running") {
+    if (Date.now() - started > 3 * 60 * 60_000) break;
+    await sleep(2_000);
+  }
+  await running.close();
+  try {
+    return score(item, store, documentId, home);
+  } finally {
+    store.close();
+  }
+}
+
+function score(
+  item: Item,
+  store: ReturnType<typeof openWritable>,
+  documentId: string,
+  home: string,
+) {
+  const rows: string[] = [];
   const job = store.db
     .prepare(
       "SELECT state, error, started_at, ended_at, usage FROM jobs WHERE document_id = ? ORDER BY created_at DESC LIMIT 1",
@@ -411,10 +431,33 @@ for (const item of chosen) {
     ].join(" | "),
   );
   if (wrong.length > 0) rows.push(`  wrong: ${wrong.join("; ")}`);
+  rows.push(`  scratch data folder: ${home}`);
+  return rows;
 }
 
+const started = Date.now();
+const results = await runAll(
+  chosen.map((item) => item.name),
+  undefined,
+  async (name) => {
+    const item = chosen.find((i) => i.name === name);
+    if (!item) throw new Error(`No item ${name}`);
+    const lines = await readOne(item);
+    console.log(lines[0]);
+    return lines;
+  },
+);
+const rows = chosen.flatMap((item) => {
+  const result = results.get(item.name);
+  return result?.status === "fulfilled"
+    ? result.value
+    : [`${item.name} | the harness failed: ${String(result?.reason)}`];
+});
+
 const text = [
-  `# Reader pack, ${new Date().toISOString()}`,
+  `# Reader pack, ${new Date(started).toISOString()}`,
+  "",
+  `${String(chosen.length)} documents at once; wall time ${String(Math.round((Date.now() - started) / 1000))} s.`,
   "",
   "Columns: document | kind | outcome | pages | expected items | correct | missed | wrong, marked unsure | wrong, not marked | extra | pages with another name | pages with a wrong / no date | pages may be incomplete / not looked at / unreadable | time per page | tokens / looks | AI asked | end line",
   "",
@@ -430,5 +473,3 @@ const text = [
 ].join("\n");
 await writeFile(join(out, "report.md"), `${text}\n`);
 console.log(text);
-console.log(`Scratch data folder: ${home}`);
-store.close();

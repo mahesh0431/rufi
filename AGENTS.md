@@ -5,7 +5,7 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 ## Tests
 
 - If code decides it, a code test covers it, with exact assertions.
-- If the AI decides it, a live AI test covers it (real AI, fictional data), reported as passes out of runs. The live smoke set (`pnpm smoke`, the test sign-in in `RUFI_HOME`) runs each case three times; run it when the agent, its instructions or Rufi's tools change.
+- If the AI decides it, a live AI test covers it (real AI, fictional data). The live smoke set (`pnpm smoke`, the test sign-in in `RUFI_HOME`) runs each case once, all at the same time, and its report says passed, FAILED, needs a person's verdict or INFRA for each; nothing is run again by itself. Run it when the agent, its instructions or Rufi's tools change. The reader pack (`apps/server/scripts/reader-pack.ts`) reads all its documents at once; run it when the reader changes.
 - An agent adapter passes the same contract tests as the others: `server/chat.test.ts` runs on the scripted fake Codex and on the real Codex binary against a local fake model, offline.
 - No mocking the AI's judgement in code tests. No test modes in `src`: fakes are injected at the composition root.
 - Every test meets the `tdd` skill's bar. Always keep: live safety tests, person scope, nothing private in logs, backup, restore and export, `schema.sql`, `tools.json`, the Codex protocol types, Stop and clean-up.
