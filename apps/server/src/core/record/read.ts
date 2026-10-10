@@ -158,19 +158,20 @@ export async function recordVersion(query: Reads, personId: string) {
 
 /**
  * Each record's version: the id of the last save that changed it, or null
- * when no save has (a record from before Rufi kept saves). Keyed
- * "kind:id".
+ * when no save has (a record from before Rufi kept saves). With asOf,
+ * only the person's first asOf saves count. Keyed "kind:id".
  */
 export async function recordVersions(
   query: Reads,
   personId: string,
   records: readonly { kind: string; id: string }[],
+  asOf?: number,
 ): Promise<Map<string, string | null>> {
   const versions = new Map<string, string | null>(
     records.map(({ kind, id }) => [`${kind}:${id}`, null]),
   );
   if (records.length === 0) return versions;
-  const changes = await query
+  let history = query
     .selectFrom("record_changes as c")
     .innerJoin("operations as o", (join) =>
       join
@@ -183,10 +184,21 @@ export async function recordVersions(
       "c.record_id",
       "in",
       records.map(({ id }) => id),
-    )
-    .orderBy("o.created_at")
-    .orderBy("o.id")
-    .execute();
+    );
+  if (asOf !== undefined) {
+    history = history.where(
+      "o.id",
+      "in",
+      query
+        .selectFrom("operations")
+        .select("id")
+        .where("person_id", "=", personId)
+        .orderBy(sql.ref("operations.rowid"))
+        .limit(asOf),
+    );
+  }
+  // Insertion order is save order, even if the Mac's clock moves back.
+  const changes = await history.orderBy(sql.ref("o.rowid")).execute();
   // Oldest first: the last one a record has wins.
   for (const change of changes) {
     const key = `${change.kind}:${change.record_id}`;

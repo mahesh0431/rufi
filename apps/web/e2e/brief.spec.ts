@@ -3,9 +3,7 @@
 // in both themes; a later save shows the record changed since. Each test
 // checks that the strict CSP refused nothing the screens need.
 import { AxeBuilder } from "@axe-core/playwright";
-import { DatabaseSync } from "node:sqlite";
 import type { Page } from "@playwright/test";
-import { databasePath } from "../../server/src/core/store/database.ts";
 import { expect, test } from "./rufi.ts";
 
 async function accessible(page: Page) {
@@ -58,20 +56,39 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
   await rufi.family();
   await rufi.start({
     scenario: {
-      calls: [
-        {
-          namespace: "rufi",
-          tool: "create_brief",
-          arguments: {
-            markdown: MARKDOWN,
-            record_version: 0,
-            cited: [
-              { kind: "medicine_use", id: "med-a1" },
-              { kind: "result", id: "res-a1" },
-              { kind: "result", id: "res-a7" },
-            ],
+      callsByTurn: [
+        [
+          {
+            namespace: "rufi",
+            tool: "create_brief",
+            arguments: {
+              markdown: MARKDOWN,
+              record_version: 0,
+              cited: [
+                { kind: "medicine_use", id: "med-a1" },
+                { kind: "result", id: "res-a1" },
+                { kind: "result", id: "res-a7" },
+              ],
+            },
           },
-        },
+        ],
+        [
+          {
+            namespace: "rufi",
+            tool: "save_changes",
+            arguments: {
+              changes: [
+                {
+                  kind: "medicine_use",
+                  action: "change",
+                  id: "med-a1",
+                  source: "I stopped Metformin",
+                  fields: { status: "stopped" },
+                },
+              ],
+            },
+          },
+        ],
       ],
     },
   });
@@ -128,31 +145,15 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
     "\n- Result: HbA1c 6.8 % · 12 Aug 2026 (Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf)",
   );
 
-  // A save after the brief, as save_changes writes one: Metformin stopped.
-  const db = new DatabaseSync(databasePath(rufi.home));
-  try {
-    const message = db
-      .prepare(
-        "SELECT id FROM transcript_entries WHERE person_id = 'asha' AND kind = 'message'",
-      )
-      .get() as { id: string };
-    const before = db
-      .prepare("SELECT * FROM medicine_uses WHERE id = 'med-a1'")
-      .get();
-    db.exec(`
-      INSERT INTO operations (id, person_id, chat_id, call_id, request, created_at)
-        VALUES ('op-later', 'asha', 'c-asha', 'call-later', '[]', '2099-01-01T00:00:00Z');
-      UPDATE medicine_uses SET status = 'stopped' WHERE id = 'med-a1';`);
-    db.prepare(
-      "INSERT INTO record_changes (operation_id, seq, person_id, kind, record_id, action, before, after, source_entry_id) VALUES ('op-later', 1, 'asha', 'medicine_use', 'med-a1', 'change', ?, ?, ?)",
-    ).run(
-      JSON.stringify(before),
-      JSON.stringify({ ...before, status: "stopped" }),
-      message.id,
-    );
-  } finally {
-    db.close();
-  }
+  // The second scripted turn changes the record through the running chat.
+  await page.getByRole("link", { name: "Chat with Rufi" }).click();
+  const message = page.getByRole("textbox", { name: "Message to Rufi" });
+  await message.fill("I stopped Metformin");
+  await message.press("Enter");
+  await expect(page.locator(".receipt").getByRole("listitem")).toHaveText(
+    "Changed medicine use Metformin 500 mg: status current → stopped",
+  );
+  await page.getByRole("link", { name: /^Open Visit brief/ }).click();
   await page.reload();
   await expect(page.getByRole("status").getByText(/changed since/)).toHaveText(
     "The record changed since this brief was made. The brief stays as it was; ask Rufi in the chat for a new one to include the changes.",

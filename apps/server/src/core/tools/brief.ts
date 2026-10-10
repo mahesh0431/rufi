@@ -1,12 +1,13 @@
 // create_brief: saves a visit brief the AI wrote from the saved record, in
 // Rufi's own chat (docs/help/visit-brief.md).
-import { BriefInput, BriefRefused, CITED_MAX } from "../briefs/briefs.ts";
+import { BriefInput, BriefRefused } from "../briefs/briefs.ts";
 import { defineTool, Refusal } from "./registry.ts";
 
 export const createBrief = defineTool({
   name: "create_brief",
   shown: "Make a visit brief",
-  description: `Saves a visit brief for the active person: a dated page Rufi shows with a Copy button, and a line in this chat that opens it. Before you read the record for the brief, take record_version from get_overview, and give it here unchanged. Write the brief from saved records only, and give in cited every record its facts come from (kind and id, 1 to ${String(CITED_MAX)}); Rufi lists them under the brief as its Sources. Name the facts in plain words in the brief: no ids, footnotes or citation marks. Rufi refuses a record that isn't saved in this person's record, or was removed; nothing is made then. The same call again returns the same brief. The brief never changes once made; for a changed record, make a new one.`,
+  description:
+    "Saves a visit brief for the active person: a dated page Rufi shows with a Copy button, and a line in this chat that opens it. Before you read the record for the brief, take record_version from get_overview, and give it here unchanged. Write the brief from saved records only, and give in cited every record its facts come from (kind and id, at least one); Rufi lists them under the brief as its Sources. Name the facts in plain words in the brief: no ids, footnotes or citation marks. Rufi refuses a record that wasn't saved in this person's record at record_version, or was removed then; nothing is made then. The same call again returns the same brief. The brief never changes once made; for a changed record, make a new one.",
   input: BriefInput,
   callers: "model",
   readOnly: false,

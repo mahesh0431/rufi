@@ -235,22 +235,103 @@ describe("create_brief", () => {
     expect(brief?.markdown).toBe(MARKDOWN);
   });
 
-  it("takes an older record version, and then shows the record changed since", async () => {
-    // A save while the AI wrote: an accepted rare race, not re-checked.
+  it.each([
+    { when: "before any saves", from: "Saved before Rufi kept sources" },
+    {
+      when: "after earlier saves",
+      from: "Your message, 4 Oct 2026: “I take creatine 5 g every morning”",
+    },
+  ])(
+    "takes an older record version $when, retaining the cited Source and marking it changed since",
+    async ({ when, from }) => {
+      if (when === "after earlier saves") {
+        await saveSaid("I take creatine 5 g every morning", {
+          kind: "medicine_use",
+          action: "change",
+          id: "med-a2",
+          fields: { status: "current" },
+        });
+        // A save that did not change the cited record still counts.
+        await saveSaid("I have a headache", {
+          kind: "symptom",
+          action: "add",
+          fields: { name: "Headache" },
+        });
+      }
+      // A save while the AI wrote: an accepted rare race, not re-checked.
+      const before = await version();
+      await saveSaid("I stopped creatine", {
+        kind: "medicine_use",
+        action: "change",
+        id: "med-a2",
+        fields: { status: "stopped" },
+      });
+      await use(
+        "create_brief",
+        { markdown: MARKDOWN, record_version: before, cited: CITED },
+        "brief-1",
+      );
+      const id = (rows("SELECT id FROM briefs")[0] as { id: string }).id;
+      const brief = await readBrief(store.query, "asha", id);
+      expect(brief?.changedSince).toBe(true);
+      expect(brief?.markdown).toBe(MARKDOWN);
+      expect(brief?.sources).toEqual([
+        {
+          kind: "Medicine use",
+          what: "Metformin 500 mg · Mar 2024 · current",
+          from: "Saved before Rufi kept sources",
+          changedSince: false,
+        },
+        {
+          kind: "Medicine use",
+          what: "Creatine 5 g · Jun 2026 · current",
+          from,
+          changedSince: true,
+        },
+        {
+          kind: "Result",
+          what: "HbA1c 6.8 % · 12 Aug 2026",
+          from: "Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf",
+          changedSince: false,
+        },
+      ]);
+    },
+  );
+
+  it("refuses a citation added after the supplied record version, writing nothing", async () => {
     const before = await version();
-    await saveSaid("I stopped creatine", {
+    await saveSaid("I started magnesium 200 mg at night", {
       kind: "medicine_use",
-      action: "change",
-      id: "med-a2",
-      fields: { status: "stopped" },
+      action: "add",
+      fields: { name: "Magnesium", strength: "200 mg", schedule: "at night" },
     });
-    await use(
+    const records = (
+      await use("get_records", { kind: "medicine_use" }, "read-1")
+    ).body.result["records"] as { id: string; name: string }[];
+    const magnesium = records.find((record) => record.name === "Magnesium");
+    expect(magnesium).toBeDefined();
+    const unchanged = written();
+    const refused = await use(
       "create_brief",
-      { markdown: MARKDOWN, record_version: before, cited: CITED },
+      {
+        markdown: MARKDOWN,
+        record_version: before,
+        cited: [{ kind: "medicine_use", id: magnesium?.id }],
+      },
       "brief-1",
     );
-    const id = (rows("SELECT id FROM briefs")[0] as { id: string }).id;
-    expect((await readBrief(store.query, "asha", id))?.changedSince).toBe(true);
+    expect(refused).toMatchObject({
+      ok: false,
+      body: {
+        issues: [
+          {
+            path: "cited.0.id",
+            fix: "No medicine use with this id was saved at this record version. Read get_overview and write the brief again from that version.",
+          },
+        ],
+      },
+    });
+    expect(written()).toEqual(unchanged);
   });
 
   it("makes one brief for the same call, and refuses the call for another brief", async () => {
@@ -280,6 +361,25 @@ describe("create_brief", () => {
       "This call was already used for another brief, so nothing was made. Make a new call.",
     );
     expect(written()).toEqual(before);
+  });
+
+  it("accepts a brief beyond the former Markdown and citation caps", async () => {
+    const markdown = "x".repeat(20_001);
+    const made = await use(
+      "create_brief",
+      {
+        markdown,
+        record_version: 0,
+        cited: Array.from({ length: 201 }, () => CITED[0]),
+      },
+      "brief-1",
+    );
+    expect(made).toMatchObject({
+      ok: true,
+      body: { result: { brief: "Visit brief · 4 Oct 2026 · 1 record cited" } },
+    });
+    const id = (rows("SELECT id FROM briefs")[0] as { id: string }).id;
+    expect((await readBrief(store.query, "asha", id))?.markdown).toBe(markdown);
   });
 
   it("refuses records that aren't saved in this person's record, a removed one and a version Rufi never gave, writing nothing", async () => {

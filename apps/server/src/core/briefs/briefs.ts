@@ -13,17 +13,13 @@ import { KINDS, kindNamed, type Kind, type Row } from "../record/kinds.ts";
 import { recordVersion, recordVersions } from "../record/read.ts";
 import type { Tables } from "../store/tables.ts";
 
-/** The longest brief, in characters; the tool's description says the same. */
-const MARKDOWN_MAX = 20_000;
-/** Records one brief cites at most; the tool's description says the same. */
-export const CITED_MAX = 200;
-
 const kindNames = KINDS.map((kind) => kind.name) as [string, ...string[]];
 
 export const BriefInput = Schema.Struct({
   markdown: Schema.String.annotate({
-    description: `The brief in Markdown, at most ${String(MARKDOWN_MAX)} characters: short sections, every fact from a record you cite, questions labelled as questions. No links or images.`,
-  }).check(Schema.isMinLength(1), Schema.isMaxLength(MARKDOWN_MAX)),
+    description:
+      "The brief in Markdown: short sections, every fact from a record you cite, questions labelled as questions. No links or images.",
+  }).check(Schema.isMinLength(1)),
   record_version: Schema.Int.annotate({
     description:
       "The record_version get_overview gave you before you read the record for this brief.",
@@ -43,9 +39,10 @@ export const BriefInput = Schema.Struct({
     }),
   )
     .annotate({
-      description: `Every saved record the brief's facts come from, 1 to ${String(CITED_MAX)}.`,
+      description:
+        "Every saved record the brief's facts come from, at least one.",
     })
-    .check(Schema.isMinLength(1), Schema.isMaxLength(CITED_MAX)),
+    .check(Schema.isMinLength(1)),
 });
 export type BriefInput = typeof BriefInput.Type;
 
@@ -136,14 +133,28 @@ export async function createBrief(
       fix: "Rufi gave no such record version. Read get_overview and give its record_version.",
     });
   }
+  const versions = await recordVersions(
+    trx,
+    where.personId,
+    wanted,
+    input.record_version,
+  );
   for (const [index, cited] of input.cited.entries()) {
     const kind = kindNamed(cited.kind) as Kind;
-    const row = await recordOf(trx, kind, where.personId, cited.id);
-    const wrong = !row
+    const saved = await recordOf(trx, kind, where.personId, cited.id);
+    const row =
+      saved &&
+      (await rowAt(trx, kind, where.personId, {
+        ...cited,
+        version: versions.get(`${cited.kind}:${cited.id}`) ?? null,
+      }));
+    const wrong = !saved
       ? `No ${kind.noun} with this id is saved in this person's record. Cite only saved records you read with get_overview or get_records.`
-      : row["removed"] === 1
-        ? `This ${kind.noun} was removed from the record. Leave it out of the brief.`
-        : undefined;
+      : !row
+        ? `No ${kind.noun} with this id was saved at this record version. Read get_overview and write the brief again from that version.`
+        : row["removed"] === 1
+          ? `This ${kind.noun} was removed from the record. Leave it out of the brief.`
+          : undefined;
     if (wrong) {
       problems.push({
         path: `cited.${String(index)}.id`,
@@ -159,7 +170,6 @@ export async function createBrief(
     );
   }
 
-  const versions = await recordVersions(trx, where.personId, wanted);
   const cited: Cited[] = wanted.map(({ kind, id }) => ({
     kind,
     id,
@@ -261,7 +271,7 @@ async function recordOf(
 /**
  * A cited record as it was when cited: as its version's save left it; with
  * no version, as it was before its first save, or as it is when no save has
- * changed it.
+ * changed it. A later add has no before row: it did not exist then.
  */
 async function rowAt(
   query: Kysely<Tables>,
@@ -286,13 +296,10 @@ async function rowAt(
       .executeTakeFirst();
     return change && (JSON.parse(change.after) as Row);
   }
-  const first = await changes
-    .orderBy("o.created_at")
-    .orderBy("o.id")
-    .executeTakeFirst();
-  return first?.before
-    ? (JSON.parse(first.before) as Row)
-    : recordOf(query, kind, personId, cited.id);
+  const first = await changes.orderBy(sql.ref("o.rowid")).executeTakeFirst();
+  if (first)
+    return first.before ? (JSON.parse(first.before) as Row) : undefined;
+  return recordOf(query, kind, personId, cited.id);
 }
 
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);

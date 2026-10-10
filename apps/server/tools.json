@@ -1197,7 +1197,7 @@
     },
     {
       "name": "rufi.create_brief",
-      "description": "Saves a visit brief for the active person: a dated page Rufi shows with a Copy button, and a line in this chat that opens it. Before you read the record for the brief, take record_version from get_overview, and give it here unchanged. Write the brief from saved records only, and give in cited every record its facts come from (kind and id, 1 to 200); Rufi lists them under the brief as its Sources. Name the facts in plain words in the brief: no ids, footnotes or citation marks. Rufi refuses a record that isn't saved in this person's record, or was removed; nothing is made then. The same call again returns the same brief. The brief never changes once made; for a changed record, make a new one.",
+      "description": "Saves a visit brief for the active person: a dated page Rufi shows with a Copy button, and a line in this chat that opens it. Before you read the record for the brief, take record_version from get_overview, and give it here unchanged. Write the brief from saved records only, and give in cited every record its facts come from (kind and id, at least one); Rufi lists them under the brief as its Sources. Name the facts in plain words in the brief: no ids, footnotes or citation marks. Rufi refuses a record that wasn't saved in this person's record at record_version, or was removed then; nothing is made then. The same call again returns the same brief. The brief never changes once made; for a changed record, make a new one.",
       "callers": "model",
       "readOnly": false,
       "destructive": false,
@@ -1206,9 +1206,8 @@
         "properties": {
           "markdown": {
             "type": "string",
-            "description": "The brief in Markdown, at most 20000 characters: short sections, every fact from a record you cite, questions labelled as questions. No links or images.",
-            "minLength": 1,
-            "maxLength": 20000
+            "description": "The brief in Markdown: short sections, every fact from a record you cite, questions labelled as questions. No links or images.",
+            "minLength": 1
           },
           "record_version": {
             "type": "integer",
@@ -1249,9 +1248,8 @@
               ],
               "additionalProperties": false
             },
-            "description": "Every saved record the brief's facts come from, 1 to 200.",
-            "minItems": 1,
-            "maxItems": 200
+            "description": "Every saved record the brief's facts come from, at least one.",
+            "minItems": 1
           }
         },
         "required": [
