@@ -1,7 +1,7 @@
 import type { Draft } from "@rufi/contracts";
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type DraftApi, draftBox, held } from "./draft.ts";
+import { type BoxChip, type DraftApi, draftBox, held } from "./draft.ts";
 
 const editable = (text: string): Draft => ({ text, refs: [] });
 
@@ -247,5 +247,24 @@ describe("the box's chips", () => {
     await settle();
     expect(saves()[0]?.body).toEqual({ text: "", refs: [] });
     expect(box.store.getState().refs).toEqual([]);
+  });
+
+  it("keeps and sends no more than 100 chips: past that, nothing is saved or sent until some are taken out", async () => {
+    const { api, saves, sends } = core(editable("Save these"));
+    const box = draftBox(api);
+    await settle();
+    const many = Array.from({ length: 101 }, (_, n) => ({
+      pointer: { type: "document", id: `doc-${String(n)}` },
+      label: "",
+      detail: "",
+    })) satisfies BoxChip[];
+    box.append("", many);
+    await box.submit(false);
+    await settle();
+    expect(saves()).toHaveLength(0);
+    expect(sends()).toHaveLength(0);
+    box.remove(many[0] as BoxChip);
+    await settle();
+    expect(saves()[0]?.body).toMatchObject({ text: "Save these" });
   });
 });

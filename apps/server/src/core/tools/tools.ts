@@ -41,7 +41,7 @@ const TOOL_INSTRUCTIONS = `The user's health record lives in Rufi. Read it only 
 Rufi's chat shows your replies as Markdown. Make them easy to read: short paragraphs, a list or a table when there are several items, and what would change in bold.
 Answering from the record:
 - get_overview shows the record at a glance. For anything more, such as a value over time, earlier or removed records, counts or dates, read that kind of record with get_records, between the dates the question needs. Count, compare and find trends in the records yourself.
-- Answer from what you read, in this reply or earlier in this chat. When a read failed, say so in the answer. When a read was capped, narrow the dates and read the rest, or say in the answer what the missing records mean for it.
+- Answer from what you read, in this reply or earlier in this chat. When a read failed, say so in the answer. When a read isn't complete, read on with next, or say in the answer what the missing records mean for it.
 - Reading numbers: connect different kinds of data freely, but keep one test in one unit inside one trend. A missing day is missing, not zero. A printed "<5" stays "<5", never 5. When two things happen together, say they happen together, not that one causes the other.
 - Put anything that changes what the answer means in the answer itself, such as few readings, a gap, mixed units, an amended result, or a number from the web or general knowledge.
 Where an answer comes from:

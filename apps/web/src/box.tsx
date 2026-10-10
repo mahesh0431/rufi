@@ -8,6 +8,7 @@
 // the text and go with it; the paperclip adds files as documents.
 import {
   MAX_MESSAGE_CHARS,
+  MAX_REFS,
   type Person,
   type QueueItem,
 } from "@rufi/contracts";
@@ -26,7 +27,7 @@ import { request } from "./api.ts";
 import { AttachButton, AttachStatus } from "./attach.tsx";
 import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
-import { type BoxState, chipKey, tooLong } from "./draft.ts";
+import { type BoxState, chipKey, tooLong, tooMany } from "./draft.ts";
 import { chatPath, type Live, messageOf } from "./live.ts";
 import { ReadCard, ReaderStrip } from "./reading.tsx";
 import { ModelMenu } from "./model-menu.tsx";
@@ -68,7 +69,8 @@ export function Box({
   const running = useStore(live, isRunning);
   const [problem, setProblem] = useState<string | null>(null);
   const long = tooLong(text);
-  const hasText = text.trim() !== "" && !long;
+  const many = tooMany(chips);
+  const hasText = text.trim() !== "" && !long && !many;
 
   // Leaving the screen, the box saves at once what isn't saved yet.
   useEffect(() => () => void box.saveNow(), [box]);
@@ -248,11 +250,13 @@ export function Box({
           )}
         </p>
       )}
-      {(notice || problem || long) && (
+      {(notice || problem || long || many) && (
         <p role="alert" className="px-3.5 pb-2 text-muted">
           {long
             ? `Too long to keep or send: at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters, and this is ${text.length.toLocaleString("en")}.`
-            : (notice ?? problem)}
+            : many
+              ? `Too many added to keep or send: at most ${String(MAX_REFS)}, and this has ${String(chips.length)}. Take some out.`
+              : (notice ?? problem)}
         </p>
       )}
     </form>

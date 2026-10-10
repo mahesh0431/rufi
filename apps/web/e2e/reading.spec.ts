@@ -159,7 +159,7 @@ test("keeps unreadable pages to check and reserves Nothing to save for a complet
   const status = page
     .getByRole("row", { name: /sunrise-labs-august.pdf/ })
     .getByRole("cell")
-    .last();
+    .nth(4); // Status
   await expect(status).toContainText("To check");
   await expect(status).not.toContainText("Nothing to save");
   await status.getByRole("button", { name: "Retry" }).click();

@@ -72,7 +72,7 @@ function fromCall(call: Call): Read | undefined {
     return {
       ...read,
       outcome: "capped",
-      note: `${count ?? "Some records"} · capped: narrow the dates`,
+      note: `${count ?? "Some records"} · capped: more came after these`,
     };
   }
   return { ...read, outcome: "done", note: count };

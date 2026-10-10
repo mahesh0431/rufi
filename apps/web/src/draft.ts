@@ -14,6 +14,7 @@ import {
   type Chip,
   Draft,
   MAX_MESSAGE_CHARS,
+  MAX_REFS,
   type Pointer,
   Sent,
 } from "@rufi/contracts";
@@ -188,7 +189,9 @@ export function draftBox(api: DraftApi) {
     return inTurn(api.client, api.scope, async () => {
       const state = store.getState();
       const { text, refs } = state;
-      if (!state.loaded || state.sending || tooLong(text)) return;
+      if (!state.loaded || state.sending || tooLong(text) || tooMany(refs)) {
+        return;
+      }
       if (unanswered?.text === text.trim()) return;
       // Saving different text replaces the uncertain send with a new draft.
       forget();
@@ -278,7 +281,13 @@ export function draftBox(api: DraftApi) {
     async submit(steer: boolean): Promise<void> {
       const state = store.getState();
       const text = state.text.trim();
-      if (!state.loaded || state.sending || tooLong(text) || text === "") {
+      if (
+        !state.loaded ||
+        state.sending ||
+        tooLong(text) ||
+        tooMany(state.refs) ||
+        text === ""
+      ) {
         return;
       }
       clearTimeout(timer);
@@ -314,6 +323,7 @@ export function draftBox(api: DraftApi) {
 
 /** Longer than Rufi takes: the box says so, and it isn't saved or sent. */
 export const tooLong = (text: string) => text.length > MAX_MESSAGE_CHARS;
+export const tooMany = (refs: readonly unknown[]) => refs.length > MAX_REFS;
 
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : "Rufi had a problem with that.";

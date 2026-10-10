@@ -44,13 +44,25 @@ Rufi never sends a message again by itself. If something goes wrong after Rufi t
 
 A message can have up to 10,000 characters. When the box has more, it says so, and Rufi doesn't keep or send the text until you make it shorter.
 
+## Adding to a message
+
+You can add your results and documents to a message, so the AI knows exactly what you mean by "this" or "these". Each one shows in the box as a chip, above your text: a result with its value and date, or a document with its name. Point at a chip to see what it is.
+
+- **A result:** on the Overview, point at its row and click **+ Add to chat**. To add several, tick their boxes, then click **Add 2 to chat** (with the number you chose). **Clear** unticks them all.
+- **A document:** on the Documents page, point at its row and click **+ Add to chat**.
+- **A new file:** click the paperclip next to the box, or drop files on the chat panel or the chat page. Each file is added as a document at once, the same as on the Documents page (see [Documents](documents.md#add-documents)), and its chip goes in the box. Rufi starts to read it then, not when you send. A file you already added gives the chip of the document you have, and the box says so.
+
+To take a chip out, click its **×**. This changes nothing in your record. The chips are kept with what you typed, also when you reload or Rufi starts again, and they go with the message: your message in the chat shows them too.
+
+Rufi checks each chip: it must be in the record of the person whose chat it is. If it isn't, the box says "Something added to this message isn't in this person's record. Take it out of the message and add it again." When you send, Rufi gives the AI each chip's exact name in your record and its version at that moment, so the AI reads exactly those. A message can have up to 100 chips.
+
 ## What you see
 
-- **Your messages**, on the right.
+- **Your messages**, on the right, with the chips you added to them.
 - **The AI's replies**, which appear as the AI writes them. Replies can have lists and tables. Links in a reply open in your browser, outside Rufi. A reply never shows pictures.
 - **One line for each thing the AI did**, such as reading your Overview or running a command. A tick means it was done. Other signs mean it is running, it failed, or it stopped.
 - **Based on**, a link under an answer once the reply has ended. It opens where the answer comes from. See [Where an answer comes from](#where-an-answer-comes-from).
-- **Receipts**, with a tick, each time the AI saved something to your record: "Saved", then one line for each change. Rufi writes them. See [Changing your record](#changing-your-record).
+- **Receipts**, with a tick, each time the AI saved something to your record: "Saved", then one line for each change. A save from a document starts with a summary, such as "Saved 42 results from Sunrise Labs August.pdf · 40 new · 1 more source · 1 correction"; when the list is long, click **Show what was saved** to see it. Rufi writes them. See [Changing your record](#changing-your-record).
 - **A visit brief's line**, with a page sign and **Open**, when the AI made a brief for you. Rufi writes it. See [Visit brief](visit-brief.md).
 - **Rufi's lines**, with a bell and "Rufi" above them, when something happened outside the chat. Rufi writes them, never the AI, and they are never your words. See [Rufi's lines](#rufis-lines).
 - **How a reply ended**, when it didn't finish: for example "Stopped.", or that your ChatGPT plan's usage limit has been reached, with the time it resets.
@@ -65,7 +77,9 @@ What the AI's reads can do:
 - **Only this person's record.** A read gets only the records of the person whose chat it is. It can't read another person's record, the chat or Rufi's settings. Rufi chooses the person, not the AI.
 - **Only read.** A read can't change anything.
 - **Removed records too.** Records you removed, and the earlier versions of amended results, are in a read too, marked as removed or replaced.
-- **Limits.** One read gives the AI at most 200 records and 32 KB of them, newest first. When there are more, Rufi tells the AI that the read was capped, and the AI reads fewer dates at a time or says in its answer what that means. A read that failed gives the AI an error, never an empty list.
+- **Limits.** One read gives the AI at most 200 records and 32 KB of them, newest first. When there are more, Rufi tells the AI where the read stopped, and the AI reads on from there, or says in its answer what the missing records mean. A read that failed gives the AI an error, never an empty list.
+- **Exactly the ones you added.** For the results you added to a message, the AI reads those records and no others.
+- **Where each one came from.** Each record comes with its sources: your message, or a document and its page.
 
 If your record changes while the AI answers, for example because the AI saved something in the same reply, two of its reads can see the record before and after the change. Rufi keeps what each read got back with the chat.
 
@@ -112,9 +126,13 @@ What Rufi does when it saves:
 
 Your record isn't shown on a page yet, except your results on the Overview. Ask the AI what is in it.
 
+### Saving a document's results
+
+To save the results Rufi read from a document, add the document to a message and say "save it", or "save these" with the results you chose. The AI checks the results with you first, then saves them. See [Documents](documents.md#save-results-to-your-record).
+
 ### Undo
 
-Say "undo that". The AI reads the save and your record as it is now. It tells you what it will change back, and anything that changed after that save, and asks you. Say yes, and the AI saves the reverse, with its own receipt. The first save stays in the history.
+Say "undo that". The AI reads the save and your record as it is now. It tells you what it will change back, and anything that changed after that save, and asks you. Say yes, and the AI saves the reverse, with its own receipt. The first save stays in the history. When the save added a document page as one more source of a result, the undo takes only that source off: the result stays.
 
 ### When a save and a stop meet
 
