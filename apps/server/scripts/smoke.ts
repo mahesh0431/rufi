@@ -1149,7 +1149,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   },
   /**
    * A report that says "repeat in 3 months": the AI sees it on the page,
-   * suggests a follow-up and saves it only on a yes that names the month
+   * offers to add a follow-up and saves it only on a yes that names the month
    * (the date rests on the user's words), due as a month (collected 8 Sep
    * 2026: December).
    */
@@ -1166,7 +1166,10 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     const saved = followUps(home);
     return {
       checks: {
-        suggests_a_follow_up: /follow.?up|remind/i.test(replyOf(suggested)),
+        // An offer, a question to add it: naming the date isn't one.
+        offers_a_follow_up:
+          /follow.?up|remind/i.test(replyOf(suggested)) &&
+          /\badd\b[^.!?]*\?/i.test(replyOf(suggested)),
         nothing_before_yes: before === 0,
         one_follow_up: saved.length === 1,
         due_december_as_a_month: saved[0]?.due === "2026-12",

@@ -723,6 +723,9 @@ describe("the chat AI and a reading", () => {
     ]);
     const id = await addReport();
     await until(done);
+    expect(lines().at(-1)).toBe(
+      "Lab report · 12 Aug · 1 result read · 1 page couldn't be read",
+    );
     const chat = await transcripts.chat(personId);
     if (!chat) throw new Error("No chat.");
     const caller = chatCaller(
