@@ -107,11 +107,17 @@ const document = createRoute({
   },
 });
 
+/** `?open=<id>`: the row to open and bring into view. */
+const openSearch = (search: Record<string, unknown>): { open?: string } =>
+  typeof search["open"] === "string" ? { open: search["open"] } : {};
+
 const record = createRoute({
   getParentRoute: () => root,
   path: "/people/$personId/record/$kind",
+  validateSearch: openSearch,
   component: function Record() {
     const { personId, kind } = record.useParams();
+    const { open } = record.useSearch();
     const people = usePeople();
     if (people.data === undefined) {
       return people.error ? (
@@ -125,7 +131,12 @@ const record = createRoute({
       return <div className="px-6 py-8 text-muted">There is no page here.</div>;
     }
     return (
-      <RecordPage key={`${personId}/${kind}`} person={person} kind={kind} />
+      <RecordPage
+        key={`${personId}/${kind}/${open ?? ""}`}
+        person={person}
+        kind={kind}
+        {...(open !== undefined && { opened: open })}
+      />
     );
   },
 });
@@ -133,8 +144,10 @@ const record = createRoute({
 const followUps = createRoute({
   getParentRoute: () => root,
   path: "/people/$personId/follow-ups",
+  validateSearch: openSearch,
   component: function FollowUps() {
     const { personId } = followUps.useParams();
+    const { open } = followUps.useSearch();
     const people = usePeople();
     if (people.data === undefined) {
       return people.error ? (
@@ -147,7 +160,13 @@ const followUps = createRoute({
     if (!person) {
       return <div className="px-6 py-8 text-muted">There is no page here.</div>;
     }
-    return <FollowUpsPage key={personId} person={person} />;
+    return (
+      <FollowUpsPage
+        key={`${personId}/${open ?? ""}`}
+        person={person}
+        {...(open !== undefined && { opened: open })}
+      />
+    );
   },
 });
 

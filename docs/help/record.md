@@ -12,7 +12,7 @@ Overview is the first page you see. It has three parts, in this order:
    - a document whose reading couldn't finish says so;
    - a follow-up says when it is due, for example "overdue, was due Sep 2026" (see [Follow-ups](follow-ups.md)).
 
-   Click **Open** to go to the document's page (see [Documents](documents.md)), or to Follow-ups. A document read with nothing to save isn't here. When nothing waits, this part isn't shown.
+   Click **Open** to go to the document's page (see [Documents](documents.md)), or to that follow-up on Follow-ups. A document read with nothing to save isn't here. When nothing waits, this part isn't shown.
 
 2. **Your record:** one tile for each kind of record, with its count and a short summary. Click a tile to open that kind's page. A kind with nothing in it says **None yet**.
 3. **Recent changes:** your last 5 saves and undos, newest first. Click one to see its receipt, the same as in the chat.

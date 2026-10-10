@@ -43,17 +43,19 @@ In the sidebar, click **Follow-ups**. The number next to it is how many follow-u
 
 1. **Overdue**, for example "Overdue · was due Sep 2026".
 2. **Due now**, for example "Due this month" or "Due today at 14:30".
-3. **Coming up:** due in the next 30 days.
+3. **Coming up:** due in the next 30 days, for example "Due tomorrow" or "Due 3 Nov 2026".
 4. **Later.**
 5. **At the next visit.**
 6. **No date.**
-7. **Done** and **Dropped**, with what came of each and the record it links to.
+7. **Done** and **Dropped**, with what came of each.
 
-The page shows the new day by itself: when it is open over midnight, it changes within a minute.
+A follow-up about a record shows it under its name, for example "About: HbA1c 6.8 % · 12 Aug 2026". Click it to open that record on its own page. Click a follow-up's name to see its sources and history.
+
+The page shows the new day by itself: when it is open over midnight, it changes within a minute, and when you come back to its window, it reads again at once.
 
 ## Needs you
 
-Overview's **Needs you** shows the follow-ups that are overdue, due now, or coming up in the next 30 days, after any documents that wait for you. **Open** goes to Follow-ups. Needs you is always right, also when a notice didn't show.
+Overview's **Needs you** shows the follow-ups that are overdue, due now, or coming up in the next 30 days, after any documents that wait for you. **Open** opens that follow-up on the Follow-ups page. Needs you is always right, also when a notice didn't show.
 
 ## Notices on your Mac
 

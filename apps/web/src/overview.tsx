@@ -81,13 +81,18 @@ export function OverviewPage({ person }: { person: Person }) {
                       <span className="text-muted">
                         · {state === "coming_up" && "coming up, "}
                         {lower(
-                          whenDue(state, followUp.due).replace(" · ", ", "),
+                          whenDue(
+                            state,
+                            followUp.due,
+                            new Date(overview.dataUpdatedAt),
+                          ).replace(" · ", ", "),
                         )}
                       </span>
                     </span>
                     <Link
                       to="/people/$personId/follow-ups"
                       params={{ personId: person.id }}
+                      search={{ open: followUp.id }}
                       aria-label={`Open ${followUp.title}`}
                       className="rounded-md px-1 text-accent-ink hover:bg-accent-soft"
                     >

@@ -20,7 +20,12 @@ import {
   Series,
 } from "@rufi/contracts/record";
 import { Schema } from "effect";
-import { QueryClient, useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import {
+  focusManager,
+  QueryClient,
+  useInfiniteQuery,
+  useQuery,
+} from "@tanstack/react-query";
 import { read } from "./api.ts";
 
 export const queries = new QueryClient({
@@ -96,6 +101,22 @@ const OverviewAnswer = Schema.Struct({ overview: Overview });
 /** The person's path in the local API. */
 const personPath = (personId: string) =>
   `/api/people/${encodeURIComponent(personId)}`;
+
+// A window that comes back to the front reads again (the queries that ask
+// for it: Overview and Follow-ups). TanStack Query hears only that the page
+// became visible; a page can stay visible behind another window, so the
+// window's focus counts too.
+focusManager.setEventListener((handleFocus) => {
+  const listener = () => {
+    handleFocus();
+  };
+  window.addEventListener("visibilitychange", listener);
+  window.addEventListener("focus", listener);
+  return () => {
+    window.removeEventListener("visibilitychange", listener);
+    window.removeEventListener("focus", listener);
+  };
+});
 
 /**
  * How often a page that depends on the clock (Needs you, Follow-ups) reads
