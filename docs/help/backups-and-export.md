@@ -24,6 +24,17 @@ The backups are in the `backups` folder in your data folder, one folder for each
 
 Each hour Rufi checks that its newest backup is still whole: the record, and that each document is there with its size. It reads every document again only when it makes a backup and when you restore one.
 
+### The backup before an upgrade
+
+Sometimes a new Rufi stores your record in a new way. Then, when it starts, it upgrades your record before it opens it:
+
+1. It makes a backup of your record as it was, with your documents, and checks it. This backup goes in `backups/before-upgrade`, and Rufi never removes it: delete old ones yourself when you no longer need them.
+2. It upgrades your record in one step. If anything goes wrong, your record stays as it was, and Rufi says that it couldn't upgrade it.
+
+If the backup fails (for example, the disk is full), Rufi doesn't upgrade your record and doesn't start. Make space, and start Rufi again.
+
+If your record was made by a newer Rufi (for example, you went back to an older Rufi), Rufi doesn't open it and doesn't change it. Update Rufi to open it.
+
 > **Note:** Backups protect you from a mistake or a damaged database. They are on the same Mac as your record, so they don't protect you if you lose the Mac or its disk.
 
 ### See your backups
@@ -42,13 +53,15 @@ A restore puts a backup into a new folder. Your current data folder doesn't chan
    ls "$RUFI_HOME/backups"
    ```
 
+   The backups made just before an upgrade are in `backups/before-upgrade`.
+
 2. In the Rufi folder, run `pnpm rufi restore` with the backup's folder and a new folder for the copy. The new folder must not exist yet, or be empty. For example:
 
    ```
    pnpm rufi restore "$RUFI_HOME/backups/2026-10-08-091403" ~/Rufi-restored
    ```
 
-   Rufi checks the backup, copies it into the new folder with every document, and checks the copies. It doesn't need Rufi to be stopped.
+   Rufi checks the backup, copies it into the new folder with every document, and checks the copies. A backup from an older Rufi is upgraded in the new folder; the backup itself doesn't change. It doesn't need Rufi to be stopped.
 
 3. Rufi shows the command that opens the copy. Run it, for example:
 
@@ -72,14 +85,14 @@ If Rufi refuses:
 - **The folder isn't empty:** choose a new folder. Rufi never restores over anything.
 - **The backup isn't as it was made, or is damaged:** choose an older backup.
 - **A document file in the backup is missing or changed:** delete the new folder, and restore an older backup.
-- **The backup is from an older Rufi:** this Rufi can't restore it, and nothing is changed. While Rufi is in early development, a backup made by an older Rufi may not restore in a newer one.
+- **The backup is from a newer Rufi:** this Rufi can't restore it, and nothing is changed. Update Rufi, and restore again.
 - **Another Rufi uses the folder:** stop it, or choose another folder.
 
 Use the new folder only after the command says the backup is restored. If the command stopped before that (for example, you pressed Ctrl-C), delete the new folder and restore again. A restore that stopped while it copied leaves a `restoring` folder in the new folder, and Rufi won't start on it.
 
-## If your record is missing
+## If your record is missing or empty
 
-If `rufi.sqlite` is gone from a data folder that had a record, Rufi doesn't start, so that it never shows an empty record in place of yours. It says that the record is missing. Restore your last backup into a new folder, as above.
+If `rufi.sqlite` is gone from a data folder that had a record, Rufi doesn't start, so that it never shows an empty record in place of yours. It says that the record is missing. It also refuses an existing empty `rufi.sqlite` and leaves it unchanged. Restore your last backup into a new folder, as above.
 
 ## Export your data
 

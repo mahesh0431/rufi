@@ -192,6 +192,7 @@ export interface Tables {
   };
   operations: {
     id: string;
+    seq: number;
     person_id: string;
     chat_id: string;
     call_id: string;

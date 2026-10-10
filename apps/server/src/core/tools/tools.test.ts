@@ -875,11 +875,11 @@ describe("the database", () => {
     }).toThrow(/readonly/);
   });
 
-  it("is refused when its tables don't match schema.sql", () => {
+  it("is refused when its tables aren't a record Rufi knows", () => {
     const db = new DatabaseSync(path);
     db.exec("CREATE TABLE people (id TEXT PRIMARY KEY)");
     db.close();
-    expect(() => openReadOnly(path)).toThrow("made by an older Rufi");
+    expect(() => openReadOnly(path)).toThrow("isn't a record this Rufi knows");
   });
 
   it("picks the person only when there is exactly one", async () => {

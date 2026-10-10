@@ -58,8 +58,8 @@ beforeEach(async () => {
   // i2 is saved: by a save in the chat, into a result.
   store.db.exec(`
     INSERT INTO chats (id, person_id, created_at) VALUES ('c1', 'asha', '${NOW}');
-    INSERT INTO operations (id, person_id, chat_id, call_id, request, created_at)
-      VALUES ('op1', 'asha', 'c1', 'call-1', '{}', '${NOW}');
+    INSERT INTO operations (id, seq, person_id, chat_id, call_id, request, created_at)
+      VALUES ('op1', 1, 'asha', 'c1', 'call-1', '{}', '${NOW}');
     UPDATE draft_items SET status = 'saved', saved_as = 'new', record_kind = 'result', record_id = 'r1', operation_id = 'op1'
       WHERE id = 'i2';
   `);

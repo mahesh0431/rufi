@@ -439,9 +439,12 @@ CREATE TABLE chat_queue (
 ) STRICT;
 
 -- One save to the record, made by the AI's call to save_changes in a
--- chat. Its receipt is the transcript entry with the same id.
+-- chat. Its receipt is the transcript entry with the same id. seq is the
+-- order of saves, across people: history is read in that order, never by
+-- time (the Mac's clock can move back) or rowid (VACUUM may renumber it).
 CREATE TABLE operations (
   id TEXT PRIMARY KEY,         -- UUIDv7
+  seq INTEGER NOT NULL UNIQUE, -- 1, 2, 3...: set by the save in its transaction
   person_id TEXT NOT NULL,
   chat_id TEXT NOT NULL,
   call_id TEXT NOT NULL,       -- the agent's id for the call: the same call again is the same save
@@ -527,7 +530,10 @@ CREATE INDEX turns_by_status ON turns (status); -- running turns, found at start
 CREATE INDEX entries_by_turn ON transcript_entries (person_id, turn_id);
 CREATE INDEX queue_by_chat ON chat_queue (person_id, chat_id, state, position);
 CREATE INDEX tool_calls_by_turn ON tool_calls (person_id, turn_id);
-CREATE INDEX operations_by_person ON operations (person_id, created_at);
+CREATE INDEX operations_by_person ON operations (person_id, seq);
 CREATE INDEX changes_by_record ON record_changes (person_id, record_id);
 CREATE INDEX sources_by_record ON record_sources (person_id, record_id);
 CREATE INDEX drafts_by_document ON draft_items (person_id, document_id, page, seq);
+
+-- The version this file makes: the number of migrations (./migrations.ts).
+PRAGMA user_version = 2;

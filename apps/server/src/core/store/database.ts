@@ -1,13 +1,14 @@
 // Rufi's one database. The running Rufi opens it for writing (creating it in
 // a new data folder) while it holds rufi.lock; Rufi's tools read it through a
 // read-only connection of their own.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Context, Effect, Layer } from "effect";
 import { Kysely } from "kysely";
 import { Home } from "../../platform/config.ts";
 import { NodeSqliteDialect } from "./dialect.ts";
+import { inspect, SCHEMA, type Found } from "./migrations.ts";
 import type { Tables } from "./tables.ts";
 
 export interface Store {
@@ -18,15 +19,12 @@ export interface Store {
   close: () => void;
 }
 
-const SCHEMA = readFileSync(new URL("schema.sql", import.meta.url), "utf8");
-
 /** `rufi.sqlite` in Rufi's data folder. */
 export const databasePath = (home: string) => join(home, "rufi.sqlite");
 
 /**
  * Opens the database read-only, or returns undefined when there is none yet.
- * A database whose tables differ from schema.sql is refused: until dogfood
- * the database is reset rather than migrated.
+ * Only a record of this Rufi's version opens (./migrations.ts).
  */
 export function openReadOnly(path: string): Store | undefined {
   if (!existsSync(path)) return undefined;
@@ -36,42 +34,54 @@ export function openReadOnly(path: string): Store | undefined {
 /**
  * Opens the database for writing, creating it from schema.sql when there is
  * none, readable by this user only (SQLite gives its side files the same
- * permissions). Every write is synced to disk (WAL, synchronous FULL), and
- * deleted data is overwritten (secure_delete).
+ * permissions). Only a record of this Rufi's version opens, and nothing
+ * changes before that is known. Every write is synced to disk (WAL,
+ * synchronous FULL), and deleted data is overwritten (secure_delete).
  */
 export function openWritable(path: string): Store {
   const created = !existsSync(path);
   if (created) writeFileSync(path, "", { flag: "wx", mode: 0o600 });
-  const db = new DatabaseSync(path);
+  const store = checked(new DatabaseSync(path), path, created);
   try {
-    db.exec(
+    store.db.exec(
       "PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA secure_delete = ON;",
     );
-    // All of it or none: a half-made database would be refused next time.
-    if (created) db.exec(`BEGIN; ${SCHEMA}; COMMIT;`);
   } catch (error) {
-    db.close();
+    store.close();
     throw new Error(`Couldn't set up ${path}`, { cause: error });
   }
-  return checked(db, path);
+  return store;
 }
 
-/** A database made by another schema: an older Rufi's, reset until dogfood. */
-export class OlderRufi extends Error {}
+/** A database this Rufi doesn't open as it is; the message says why and what to do. */
+export class CantOpen extends Error {
+  readonly found: Found;
+  constructor(path: string, found: Found) {
+    super(
+      found.state === "older"
+        ? `${path} is from an older Rufi. Start Rufi to upgrade it.`
+        : found.state === "newer"
+          ? `Rufi can't open ${path}: it was made by a newer Rufi. Update Rufi to open it; this one left it unchanged.`
+          : found.state === "empty"
+            ? `Rufi can't open ${path}: the record is empty, so it left it unchanged. To bring it back, restore your last backup into a new folder (Help: Backups and export).`
+            : `Rufi can't open ${path}: it isn't a record this Rufi knows, so it left it unchanged.`,
+    );
+    this.found = found;
+  }
+}
 
-/** Turns on foreign keys and refuses a database made by another schema. */
-function checked(db: DatabaseSync, path: string): Store {
+/**
+ * Opens a record of this Rufi's version, with foreign keys on. An empty
+ * database is made into one, all of it or none, when `create` says so.
+ */
+function checked(db: DatabaseSync, path: string, create = false): Store {
   try {
-    db.exec("PRAGMA foreign_keys = ON");
-    const expected = new DatabaseSync(":memory:");
-    expected.exec(SCHEMA);
-    const same = describe(db) === describe(expected);
-    expected.close();
-    if (!same) {
-      throw new OlderRufi(
-        `${path} was made by an older Rufi. It's test data until dogfood: delete it and installed.json beside it, and start again.`,
-      );
+    if (create && inspect(db).state === "empty") {
+      db.exec(`BEGIN; ${SCHEMA}; COMMIT;`);
     }
+    const found = inspect(db);
+    if (found.state !== "current") throw new CantOpen(path, found);
+    db.exec("PRAGMA foreign_keys = ON");
   } catch (error) {
     db.close();
     throw error;
@@ -112,15 +122,4 @@ export async function onlyPersonId(store: Store): Promise<string | undefined> {
     .limit(2)
     .execute();
   return people.length === 1 ? people[0]?.id : undefined;
-}
-
-/** Every table and index, as SQLite stored its definition. */
-function describe(db: DatabaseSync): string {
-  return JSON.stringify(
-    db
-      .prepare(
-        "SELECT type, name, sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name",
-      )
-      .all(),
-  );
 }

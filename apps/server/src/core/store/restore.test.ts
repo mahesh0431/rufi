@@ -144,13 +144,13 @@ describe("restore", () => {
       refusal: "isn't as it was made",
     },
     {
-      case: "a backup from an older Rufi",
+      case: "a backup from a newer Rufi",
       prepare: async () => {
-        // A copy as an older Rufi made it: its tables aren't this one's.
+        // A copy as a newer Rufi made it: a version this one doesn't have.
         const file = join(backup, "rufi.sqlite");
-        const older = new DatabaseSync(file);
-        older.exec("CREATE TABLE chosen_conversations (person_id TEXT)");
-        older.close();
+        const newer = new DatabaseSync(file);
+        newer.exec("PRAGMA user_version = 1000");
+        newer.close();
         const record = JSON.parse(
           await readFile(join(backup, "backup.json"), "utf8"),
         ) as { database: { bytes: number; sha256: string } };
@@ -162,7 +162,7 @@ describe("restore", () => {
         await writeFile(join(backup, "backup.json"), JSON.stringify(record));
       },
       refusal:
-        "Rufi didn't restore it. The backup is from an older Rufi, which this one can't use.",
+        "Rufi didn't restore it. The backup is from a newer Rufi, which this one can't use.",
     },
   ])("refuses $case and changes nothing", async ({ prepare, refusal }) => {
     const target = join(root, "restored");

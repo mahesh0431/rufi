@@ -490,6 +490,8 @@ export async function saveChanges(
     .insertInto("operations")
     .values({
       id,
+      // Next in the order of saves; the save's transaction holds the write lock.
+      seq: sql<number>`(SELECT COALESCE(MAX(seq), 0) + 1 FROM operations)`,
       person_id: where.personId,
       chat_id: where.chatId,
       call_id: where.callId,
