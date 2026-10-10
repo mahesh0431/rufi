@@ -3,9 +3,12 @@
 // wrong person or date, and time per page. The numbers are for the bar the
 // person sets before dogfood, not pass or fail. Only the sign-in comes from
 // RUFI_HOME (the test sign-in). Every document is read at the same time,
-// each on its own scratch data folder, person and reader.
+// each on its own scratch data folder, person and reader. The two long
+// documents (big_300 and bundle) set the run's time, about 20 minutes, so
+// they are read only with --all: at a milestone's end, or for a change to
+// how long documents are read. --only names the documents to read.
 //
-//   RUFI_HOME=<test sign-in folder> node apps/server/scripts/reader-pack.ts [--only a,b] [--out empty-dir]
+//   RUFI_HOME=<test sign-in folder> node apps/server/scripts/reader-pack.ts [--all | --only a,b] [--out empty-dir]
 //   node apps/server/scripts/reader-pack.ts --make <dir>    (only writes the pack's files)
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -41,6 +44,7 @@ import { outFolder, runAll, sharedToken } from "./live-run.ts";
 
 const { values } = parseArgs({
   options: {
+    all: { type: "boolean", default: false },
     only: { type: "string" },
     out: { type: "string" },
     make: { type: "string" },
@@ -60,6 +64,8 @@ interface Item {
   kind: "pdf" | "scan" | "photo" | "png";
   files: () => Promise<NewFile[]>;
   key: ReturnType<typeof expected>;
+  /** Read only with --all (or --only): it takes far longer than the rest. */
+  long?: true;
 }
 
 /** The first `n` pages of a report's answer key. */
@@ -111,10 +117,11 @@ const PACK: Item[] = [
     "other_name",
     "five_pages",
     "eight_pages",
-    "big_300",
   ].map(pdfItem),
+  { ...pdfItem("big_300"), long: true },
   {
     name: "bundle",
+    long: true,
     kind: "pdf",
     files: () =>
       Promise.resolve([{ name: "bundle.pdf", bytes: pdfOf(BUNDLE) }]),
@@ -155,10 +162,19 @@ const PACK: Item[] = [
   },
 ];
 
-const chosen = PACK.filter(
-  (item) =>
-    values.only === undefined || values.only.split(",").includes(item.name),
+const only = values.only?.split(",");
+const chosen = PACK.filter((item) =>
+  only === undefined ? values.all || !item.long : only.includes(item.name),
 );
+/** Which set ran, for the report. */
+const set =
+  only !== undefined
+    ? `the documents named: ${only.join(", ")}`
+    : values.all
+      ? "the whole pack, with the long documents"
+      : `the pack without the long documents (${PACK.filter((i) => i.long)
+          .map((i) => i.name)
+          .join(", ")}; --all reads them)`;
 
 if (values.make !== undefined) {
   await mkdir(values.make, { recursive: true });
@@ -457,7 +473,7 @@ const rows = chosen.flatMap((item) => {
 const text = [
   `# Reader pack, ${new Date(started).toISOString()}`,
   "",
-  `${String(chosen.length)} documents at once; wall time ${String(Math.round((Date.now() - started) / 1000))} s.`,
+  `${String(chosen.length)} documents at once, ${set}; wall time ${String(Math.round((Date.now() - started) / 1000))} s.`,
   "",
   "Columns: document | kind | outcome | pages | expected items | correct | missed | wrong, marked unsure | wrong, not marked | extra | pages with another name | pages with a wrong / no date | pages may be incomplete / not looked at / unreadable | time per page | tokens / looks | AI asked | end line",
   "",
