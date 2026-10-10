@@ -90,6 +90,7 @@ export interface Tables {
     file_name: string;
     entry: string | null;
     entry_job_id: string | null;
+    entry_attempt: number | null;
     entry_at: string | null;
     entry_checks: string | null;
     state: string | null;

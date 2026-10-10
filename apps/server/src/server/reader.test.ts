@@ -44,6 +44,7 @@ let reads: Readings;
 let docs: Documents;
 let personId: string;
 let signedIn: boolean;
+let clock: number;
 
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), "rufi-reader-"));
@@ -51,7 +52,8 @@ beforeEach(async () => {
   transcripts = openTranscripts(store, () => NOW);
   const person = await transcripts.addFirstPerson("Asha Fictional");
   personId = person?.id ?? "";
-  reads = readings(store, () => NOW);
+  clock = Date.parse(NOW);
+  reads = readings(store, () => new Date(clock).toISOString());
   docs = documents(store, home, () => NOW, reads);
   signedIn = true;
   return () => {
@@ -73,7 +75,10 @@ async function addReport(): Promise<string> {
 }
 
 /** A reader running `scripts`, as the core starts it. */
-function startReader(scripts: Script[], options: { deadlineMs?: number } = {}) {
+function startReader(
+  scripts: Script[],
+  options: { deadlineMs?: number; signInPollMs?: number } = {},
+) {
   const fake = scriptedReader(scripts);
   const running = reader({
     readings: reads,
@@ -87,8 +92,8 @@ function startReader(scripts: Script[], options: { deadlineMs?: number } = {}) {
     run: fake.run,
     signedIn: () => Promise.resolve(signedIn),
     log: () => undefined,
-    signInPollMs: 20,
-    now: () => Date.parse(NOW),
+    signInPollMs: options.signInPollMs ?? 20,
+    now: () => clock,
     ...(options.deadlineMs !== undefined && {
       deadlineMs: () => options.deadlineMs ?? 0,
     }),
@@ -246,43 +251,98 @@ describe("a reading", () => {
     await running.close();
   });
 
-  it("asks the AI when something needs the person: an unsure value, another name", async () => {
+  it("counts current results in the end line while keeping earlier values as drafts", async () => {
     await reads.setConsent("yes");
     const { reader: running } = startReader([
       async (turn) => {
         await turn.look(1);
-        // "13.8" isn't on the page: Rufi's check marks it unsure.
-        await turn.save(1, readPage("13.8"));
-        await turn.look(2);
         await turn.save(
-          2,
+          1,
           readPage("13.2", {
-            facts: { kind: "lab_report", name: "Meera Fictional" },
+            items: [
+              {
+                test_name: "Haemoglobin",
+                value_text: "13.2",
+                column: "current",
+              },
+              {
+                test_name: "Haemoglobin",
+                value_text: "13.2",
+                column: "earlier",
+                date: {
+                  label: "Collected",
+                  date: "12 Aug 2025",
+                  iso: "2025-08-12",
+                },
+              },
+            ],
           }),
         );
+        await turn.look(2);
+        await turn.save(2, { outcome: "nothing_here", items: [] });
         return undefined;
       },
     ]);
-    const id = await addReport();
-    await until(done);
-
-    expect(lines().at(-1)).toBe(
-      "Lab report · 12 Aug · 2 results read · 1 to check",
-    );
-    expect(asks()).toEqual([
-      [
-        `A document reading finished: sunrise-august.pdf (document ${id}), 2 draft items read, not saved.`,
-        "What needs the user:",
-        `- unsure: page 1: Haemoglobin "13.8" ("13.8" isn't in the page's own text)`,
-        `- the name on the report is "Meera Fictional"`,
-        "Read the document with get_documents if you need to, then tell the user in a few lines and ask what it needs. Don't save anything.",
-      ].join("\n"),
-    ]);
-    expect(JSON.parse(drafts()[0]?.["unsure"] as string)).toEqual([
-      `"13.8" isn't in the page's own text`,
-    ]);
-    await running.close();
+    try {
+      await addReport();
+      await until(done);
+      expect(lines().at(-1)).toBe("Lab report · 12 Aug · 1 result read");
+      expect(drafts()).toHaveLength(2);
+      expect(JSON.parse(drafts()[1]?.["fields"] as string)).toMatchObject({
+        column: "earlier",
+      });
+    } finally {
+      await running.close();
+    }
   });
+
+  it.each([
+    { printed: "Meera Fictional", askName: true },
+    { printed: "Asha Devi Fictional", askName: true },
+    { printed: "Asha", askName: true },
+    { printed: "Dr Asha Fictional", askName: true },
+    { printed: "Asha-Fictional", askName: true },
+    { printed: "  ASHA   Fictional  ", askName: false },
+  ])(
+    "asks about an unsure value and a differing printed name: $printed",
+    async ({ printed, askName }) => {
+      await reads.setConsent("yes");
+      const { reader: running } = startReader([
+        async (turn) => {
+          await turn.look(1);
+          // "13.8" isn't on the page: Rufi's check marks it unsure.
+          await turn.save(1, readPage("13.8"));
+          await turn.look(2);
+          await turn.save(
+            2,
+            readPage("13.2", {
+              facts: { kind: "lab_report", name: printed },
+            }),
+          );
+          return undefined;
+        },
+      ]);
+      const id = await addReport();
+      await until(done);
+
+      expect(lines().at(-1)).toBe(
+        "Lab report · 12 Aug · 2 results read · 1 to check",
+      );
+      expect(asks()).toEqual([
+        [
+          `A document reading finished: sunrise-august.pdf (document ${id}), 2 draft items read, not saved.`,
+          "What needs the user:",
+          `- unsure: page 1: Haemoglobin "13.8" ("13.8" isn't in the page's own text)`,
+          ...(askName ? [`- the name on the report is "${printed}"`] : []),
+          "Read the document with get_documents if you need to, then tell the user in a few lines and ask what it needs. Don't save anything.",
+        ].join("\n"),
+      ]);
+      expect(JSON.parse(drafts()[0]?.["unsure"] as string)).toEqual([
+        `"13.8" isn't in the page's own text`,
+      ]);
+      await running.close();
+    },
+  );
 
   it("marks pages the reader never saved as not looked at, and Retry reads only those", async () => {
     await reads.setConsent("yes");
@@ -415,6 +475,49 @@ describe("a restart or a failure", () => {
     await second.reader.close();
   });
 
+  it("does not finish from failed entries after the retry is interrupted and Rufi restarts", async () => {
+    await reads.setConsent("yes");
+    const first = startReader([
+      async (turn) => {
+        await turn.look(1);
+        await turn.save(1, readPage());
+        await turn.look(2);
+        await turn.save(2, readPage());
+        return { end: { status: "failed", reason: "connection" } };
+      },
+      async (turn) => {
+        await new Promise((resolve) =>
+          turn.signal?.addEventListener("abort", resolve),
+        );
+        return { end: { status: "interrupted", reason: "stopped" } };
+      },
+    ]);
+    try {
+      await addReport();
+      await until(() => first.runs.length === 2 || done());
+      expect(first.runs).toHaveLength(2);
+      expect(drafts()).toEqual([]);
+    } finally {
+      await first.reader.close();
+    }
+    await reads.recover();
+    const completed = Promise.withResolvers<undefined>();
+    const second = startReader([() => completed.promise]);
+    try {
+      await until(() => second.runs.length === 1 || done());
+      expect(second.runs).toHaveLength(1);
+      expect(drafts()).toEqual([]);
+      expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages"]);
+      completed.resolve(undefined);
+      await until(done);
+      expect(drafts()).toHaveLength(2);
+      expect(lines()).toHaveLength(2);
+    } finally {
+      completed.resolve(undefined);
+      await second.reader.close();
+    }
+  });
+
   it("a deadline fails the reading with its entries kept and no drafts; Retry continues it", async () => {
     await reads.setConsent("yes");
     const { runs, reader: running } = startReader([
@@ -450,6 +553,53 @@ describe("a restart or a failure", () => {
     expect(drafts().map((d) => d["page"])).toEqual([1, 2]);
     await running.close();
   });
+
+  it.each(["timeout", "connection"] as const)(
+    "keeps all entries without publishing after a %s failure; Retry needs a completed turn",
+    async (reason) => {
+      await reads.setConsent("yes");
+      const failure: Script = () =>
+        Promise.resolve({
+          end: { status: "failed", reason },
+        });
+      const { runs, reader: running } = startReader([
+        async (turn) => {
+          await turn.look(1);
+          await turn.save(1, readPage());
+          await turn.look(2);
+          await turn.save(2, readPage());
+          return failure(turn);
+        },
+        ...(reason === "connection" ? [failure] : []),
+        () => Promise.resolve(undefined),
+      ]);
+      try {
+        const id = await addReport();
+        await until(() =>
+          ["failed", "done"].includes(String(job()?.["state"])),
+        );
+        expect(job()?.["state"]).toBe("failed");
+        expect(runs).toHaveLength(reason === "connection" ? 2 : 1);
+        expect(
+          (await reads.view(personId, id))?.pages.map((p) => p.entry),
+        ).toEqual([readPage(), readPage()]);
+        expect(drafts()).toEqual([]);
+        expect(lines().at(-1)).toContain("Couldn't finish reading");
+        expect(asks()).toEqual([]);
+
+        await reads.retry(personId, id);
+        await until(done);
+        expect(runs).toHaveLength(reason === "connection" ? 3 : 2);
+        expect(runs.at(-1)?.input).toContain(
+          "You saved pages 1–2 in an earlier run",
+        );
+        expect(drafts()).toHaveLength(2);
+        expect(lines().at(-1)).toBe("Lab report · 12 Aug · 2 results read");
+      } finally {
+        await running.close();
+      }
+    },
+  );
 
   it("retries once by itself for a passing reason, then fails visibly", async () => {
     await reads.setConsent("yes");
@@ -500,6 +650,53 @@ describe("a restart or a failure", () => {
     expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages"]);
     await running.close();
   });
+  it("waits visibly when the provider rejects a stored sign-in, then resumes at the poll time", async () => {
+    await reads.setConsent("yes");
+    const { runs, reader: running } = startReader(
+      [
+        () => Promise.resolve({ end: { status: "failed", reason: "sign_in" } }),
+        async (turn) => {
+          await turn.look(1);
+          await turn.save(1, readPage());
+          await turn.look(2);
+          await turn.save(2, readPage());
+          return undefined;
+        },
+      ],
+      { signInPollMs: 30_000 },
+    );
+    try {
+      await addReport();
+      await until(() => job()?.["waiting"] === "sign_in" || done());
+      expect(job()).toMatchObject({
+        state: "queued",
+        waiting: "sign_in",
+        wait_until: "2026-10-10T09:00:30.000Z",
+        retried: 0,
+      });
+      expect(await reads.strip(personId)).toMatchObject([
+        {
+          state: "waiting",
+          waiting: "sign_in",
+          waitUntil: "2026-10-10T09:00:30.000Z",
+        },
+      ]);
+      running.poke();
+      await sleep(50);
+      expect(runs).toHaveLength(1);
+      expect(drafts()).toEqual([]);
+      expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages"]);
+
+      clock += 30_000;
+      running.poke();
+      await until(done);
+      expect(runs).toHaveLength(2);
+      expect(drafts()).toHaveLength(2);
+    } finally {
+      await running.close();
+    }
+  });
+
   it("waits a minute when the sign-in can't be renewed yet, keeping its retry", async () => {
     await reads.setConsent("yes");
     const { runs, reader: running } = startReader([
