@@ -7,11 +7,12 @@
 // never sent again by itself. A paused chat (Stop, or Rufi started again
 // with rows waiting) hands nothing over until the person sends; an event
 // that comes meanwhile rides with their next message.
-import type { Queue, QueueItem } from "@rufi/contracts";
+import type { Chip, Pointer, Queue, QueueItem } from "@rufi/contracts";
 import type { Kysely, Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
+import { chipsOf, RefRefusal } from "./refs.ts";
 
 /** Whose queue: the person and their chat. */
 interface ChatOf {
@@ -34,6 +35,8 @@ export interface HandOver {
   notes: string[];
   /** The person's message, when there is one. */
   text: string | undefined;
+  /** The person's message's references, as its chips. */
+  refs: Chip[];
 }
 
 /** A hold that lets an event ride with the person's next message. */
@@ -51,6 +54,7 @@ export async function addRow(
     origin: "person" | "rufi";
     text: string;
     eventId?: string;
+    refs?: readonly Chip[];
   },
   at: string,
 ): Promise<void> {
@@ -69,7 +73,7 @@ export async function addRow(
       chat_id: chat.id,
       origin: row.origin,
       text: row.text,
-      refs: "[]",
+      refs: JSON.stringify(row.refs ?? []),
       event_id: row.eventId ?? null,
       position: (last ?? 0) + 1,
       state: "waiting",
@@ -172,6 +176,7 @@ export function chatQueue(
             "q.state",
             "q.held",
             "q.held_text",
+            "q.refs",
             "e.text as line",
           ])
           .where("q.person_id", "=", chat.personId)
@@ -189,16 +194,23 @@ export function chatQueue(
             state: row.state as QueueItem["state"],
             held: row.held as QueueItem["held"],
             heldText: row.held_text,
+            refs: JSON.parse(row.refs) as Chip[],
           })),
         };
       }),
 
     /**
-     * Takes a message from the box: a new waiting row by the send's id, the
-     * draft emptied and the pause ended, in one transaction. The same id
-     * again finds the row it made: `fresh` is false then.
+     * Takes a message from the box: a new waiting row by the send's id, with
+     * its references checked against the person, the draft emptied and the
+     * pause ended, in one transaction. The same id again finds the row it
+     * made: `fresh` is false then.
      */
-    accept: (chat: ChatOf, id: string, text: string) =>
+    accept: (
+      chat: ChatOf,
+      id: string,
+      text: string,
+      refs: readonly Pointer[] = [],
+    ) =>
       write(chat, async (trx) => {
         const there = await trx
           .selectFrom("chat_queue")
@@ -221,25 +233,40 @@ export function chatQueue(
         ) {
           throw new QueueRefusal("That message id is already used.");
         }
+        let chips: Chip[];
+        try {
+          chips = await chipsOf(trx, chat.personId, refs);
+        } catch (error) {
+          if (error instanceof RefRefusal) {
+            throw new QueueRefusal(error.message, { cause: error });
+          }
+          throw error;
+        }
         const at = now();
         await trx
           .updateTable("chats")
           .set({ paused: null })
           .where("id", "=", chat.id)
           .execute();
-        await addRow(trx, chat, { id, origin: "person", text }, at);
+        await addRow(
+          trx,
+          chat,
+          { id, origin: "person", text, refs: chips },
+          at,
+        );
         await trx
           .insertInto("drafts")
           .values({
             person_id: chat.personId,
             chat_id: chat.id,
             text: "",
+            refs: "[]",
             updated_at: at,
           })
           .onConflict((oc) =>
             oc
               .columns(["person_id", "chat_id"])
-              .doUpdateSet({ text: "", updated_at: at }),
+              .doUpdateSet({ text: "", refs: "[]", updated_at: at }),
           )
           .execute();
         return { id, fresh: true };
@@ -457,6 +484,8 @@ export function chatQueue(
             .filter((row) => row.origin === "rufi")
             .map((row) => row.text),
           text: head.origin === "person" ? head.text : undefined,
+          refs:
+            head.origin === "person" ? (JSON.parse(head.refs) as Chip[]) : [],
         };
       }),
 

@@ -19,6 +19,64 @@ const Line = (max: number) =>
   );
 const Id = Line(100);
 
+// --- References ---
+
+/** The most references one message or draft holds. */
+export const MAX_REFS = 100;
+
+/**
+ * What the box points at: a document, a draft item or a saved record of
+ * the chat's person. Checked against the person when added and when sent.
+ */
+export const Pointer = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("document"), id: Id }),
+  Schema.Struct({ type: Schema.Literal("draft_item"), id: Id }),
+  Schema.Struct({ type: Schema.Literal("record"), kind: Line(40), id: Id }),
+]);
+export type Pointer = typeof Pointer.Type;
+
+const Version = Schema.Int.check(Schema.isGreaterThan(0));
+
+/**
+ * A reference to health data, exact: a pointer with the version it had when
+ * the message was sent (in the box: its version now). A document's version
+ * rises when its draft items change; a draft item's when it is fixed or
+ * dismissed; a record's is the save that last changed it (null for one no
+ * save has changed). The AI reads it with its tools; a save refuses an item
+ * whose message's reference has moved on since.
+ */
+export const Ref = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("document"),
+    id: Id,
+    version: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("draft_item"),
+    id: Id,
+    version: Version,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("record"),
+    kind: Line(40),
+    id: Id,
+    version: Schema.NullOr(Id),
+  }),
+]);
+export type Ref = typeof Ref.Type;
+
+/** A reference as a chip shows it: its name, and where it comes from on hover. */
+export const Chip = Schema.Struct({
+  ref: Ref,
+  /** What the page calls it: "Sunrise Labs August.pdf", "HbA1c 6.8 %". */
+  label: Schema.String,
+  /** Where it comes from, for the hover: "Draft item · not saved · page 2". */
+  detail: Schema.String,
+});
+export type Chip = typeof Chip.Type;
+
+const Pointers = Schema.Array(Pointer).check(Schema.isMaxLength(MAX_REFS));
+
 // --- What the screens get ---
 
 // TODO: drop the kind if it gets complicated. To an agent everything is a
@@ -69,6 +127,8 @@ export const Entry = Schema.Struct({
   ),
   createdAt: Schema.String,
   updatedAt: Schema.String,
+  /** A message's references, as its chips. */
+  refs: Schema.optionalKey(Schema.Array(Chip)),
   /** An event's way to its document: open its reading, or read it again. */
   link: Schema.optionalKey(
     Schema.Struct({
@@ -192,6 +252,8 @@ export const QueueItem = Schema.Struct({
     Schema.Literals(["paused", "signed_out", "restored", "failed"]),
   ),
   heldText: Schema.NullOr(Schema.String),
+  /** A message's references, as its chips. */
+  refs: Schema.Array(Chip),
 });
 export type QueueItem = typeof QueueItem.Type;
 
@@ -229,8 +291,11 @@ export const StreamLine = Schema.Union([
 ]);
 export type StreamLine = typeof StreamLine.Type;
 
-/** The unsent text of a chat's box; the last save wins. */
-export const Draft = Schema.Struct({ text: Schema.String });
+/** The unsent text of a chat's box and its chips; the last save wins. */
+export const Draft = Schema.Struct({
+  text: Schema.String,
+  refs: Schema.Array(Chip),
+});
 export type Draft = typeof Draft.Type;
 
 /** A message the core took into the queue, and the box's draft after it. */
@@ -383,10 +448,15 @@ export const MessageText = Schema.Struct({ text: Message });
 export const SendMessage = Schema.Struct({
   id: Schema.String.check(Schema.isUUID()),
   text: Message,
+  /** Its chips: what it points at. */
+  refs: Schema.optionalKey(Pointers),
 });
 
-/** The box's text, saved over the draft unless a send holds it. */
-export const SaveDraft = Schema.Struct({ text: Text(MAX_MESSAGE_CHARS) });
+/** The box's text and chips, saved over the draft unless a send holds it. */
+export const SaveDraft = Schema.Struct({
+  text: Text(MAX_MESSAGE_CHARS),
+  refs: Schema.optionalKey(Pointers),
+});
 
 export const ReorderQueue = Schema.Struct({ ids: Schema.Array(Id) });
 

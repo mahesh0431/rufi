@@ -17,7 +17,7 @@
     },
     {
       "name": "rufi.get_records",
-      "description": "The active person's records of one kind (medicine_use, prescription, symptom, condition, allergy, result, care_event, none_known, follow_up), as stored: each with its id and fields as save_changes takes them, also the records removed from the record (\"removed\": true) and results replaced by an amended one (\"replaced_by\": the amended result's id). Newest first, undated last. With from or to, only records dated in that period: medicine_use by started, prescription by issued, symptom by onset, condition by recognised, allergy by reacted, result by measured, care_event by date, none_known by asserted, follow_up by due. A record dated at a lower precision is read when its year or month overlaps the period (\"2026\" is in from 2026-03); a record with no date is read only without from and to. At most 200 records and 32 KB of records (as UTF-8 JSON) come back. When a cap leaves records out, the answer says \"complete\": false and \"capped\": narrow the dates and read again. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.",
+      "description": "The active person's records of one kind (medicine_use, prescription, symptom, condition, allergy, result, care_event, none_known, follow_up), as stored: each with its id, its version (the save that last changed it; null when none did), its fields as save_changes takes them and its sources (the user's message, or a document's page), also the records removed from the record (\"removed\": true) and results replaced by an amended one (\"replaced_by\": the amended result's id). Newest first, undated last. With from or to, only records dated in that period: medicine_use by started, prescription by issued, symptom by onset, condition by recognised, allergy by reacted, result by measured, care_event by date, none_known by asserted, follow_up by due. A record dated at a lower precision is read when its year or month overlaps the period (\"2026\" is in from 2026-03); a record with no date is read only without from and to. With ids, exactly those records. At most 200 records and 32 KB of records (as UTF-8 JSON) come back at once; when there are more, the answer says \"complete\": false and gives \"next\": pass it as after, with the same kind, from and to, to read on until \"complete\" is true. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.",
       "callers": "model",
       "readOnly": true,
       "destructive": false,
@@ -46,6 +46,21 @@
           "to": {
             "type": "string",
             "description": "The latest date to read, YYYY, YYYY-MM or YYYY-MM-DD; leave it out for no end."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "minItems": 1,
+            "maxItems": 200,
+            "description": "Exactly these records, by id (at most 200); not with from, to or after."
+          },
+          "after": {
+            "type": "string",
+            "description": "The `next` of the previous answer, to read on with the same kind, from and to."
           }
         },
         "required": [
@@ -62,12 +77,18 @@
           "kind": "symptom",
           "from": "2026-01",
           "to": "2026-06"
+        },
+        {
+          "kind": "result",
+          "ids": [
+            "0199a0f2-0000-7000-8000-00000000000a"
+          ]
         }
       ]
     },
     {
       "name": "rufi.get_documents",
-      "description": "The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its files and pages, and its reading's status: \"not_read\" (not read yet: it waits for the user's yes or their Read it), \"reading\" (Rufi's reader is reading it now; its items come when it ends), \"done\" or \"failed\". With document: its pages (each with what the reader found: its state, its facts such as dates, lab and the name printed on it, and its issues) and its draft items: what the reader read, each with its id, version, page and fields exactly as printed, and why it may be unsure. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page as an image, with the page's own text when the PDF has some (use it for exact characters); a photo or a scan is the image alone. At most 50 documents, 100 pages or 100 draft items come back; when there are more, the answer has \"next\": pass it as after to read on. Rufi chooses the person, not you.",
+      "description": "The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its files and pages, and its reading's status: \"not_read\" (not read yet: it waits for the user's yes or their Read it), \"reading\" (Rufi's reader is reading it now; its items come when it ends), \"done\" or \"failed\". With document: its version (it rises when its draft items change), its pages (each with what the reader found: its state, its facts such as dates, lab, report number and the name printed on it, and its issues) and its draft items: what the reader read, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed (a date on the item is its own; without one, the page's first printed date is used when it is saved), and why it may be unsure. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page as an image, with the page's own text when the PDF has some (use it for exact characters); a photo or a scan is the image alone. At most 50 documents, 100 pages or 100 draft items come back; when there are more, the answer has \"next\": pass it as after to read on. Rufi chooses the person, not you.",
       "callers": "model",
       "readOnly": true,
       "destructive": false,
@@ -134,7 +155,7 @@
     },
     {
       "name": "rufi.save_changes",
-      "description": "Saves changes to the active person's record, all or nothing, after the user clearly said yes to exactly these changes in this chat. Each change is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history) or restore a removed one; ids come from get_overview. Give only what the user said: a field they didn't give stays out, and a date needs their own words from the source message. source is the user's own words the change rests on, copied from their message. At most 20 changes. Rufi refuses a save with any problem and says each one; nothing is saved then. On success Rufi adds its own receipt to the chat and returns it; the same call again returns the same receipt. Never say something was saved without this tool's answer.",
+      "description": "Saves to the active person's record, all or nothing, after the user clearly said yes to exactly this in this chat. Two parts, either or both:\n- changes: typed changes from the user's own words. Each is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history), restore a removed one, or remove_source (take a document page off a record's sources, to undo \"another source\"); ids come from get_overview or get_records. Give only what the user said: a field they didn't give stays out, and a date needs their own words from the source message. source is the user's own words the change rests on, copied from their message.\n- items: draft items of the user's documents (get_documents), each with the version you read and how it goes in: new, another_source (the same result is already saved: its values stay, and the document page becomes another source) or correction (it corrects a saved result: a new result replaces it); record names the saved result, with its version from get_records. Rufi takes each item's values from the stored item, never from you, and its date from the item or its page; fix holds only a value the user corrected in the chat, with their words. An item already saved at that version returns its earlier save; a dismissed item, or one whose version changed, is refused, and nothing is saved.\nNo count limit. Rufi refuses a save with any problem and says each one; nothing is saved then. On success Rufi adds its own receipt to the chat and returns it; the same call again returns the same receipt. Never say something was saved without this tool's answer.",
       "callers": "model",
       "readOnly": false,
       "destructive": false,
@@ -160,7 +181,8 @@
                         "add",
                         "change",
                         "remove",
-                        "restore"
+                        "restore",
+                        "remove_source"
                       ]
                     },
                     "id": {
@@ -175,6 +197,27 @@
                       "minLength": 1,
                       "maxLength": 1000,
                       "description": "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one)."
+                    },
+                    "from": {
+                      "type": "object",
+                      "properties": {
+                        "document": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "page": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "document",
+                        "page"
+                      ],
+                      "additionalProperties": false,
+                      "description": "remove_source only: the document page to take off the record's sources, as get_records lists it."
                     },
                     "fields": {
                       "type": "object",
@@ -289,7 +332,8 @@
                         "add",
                         "change",
                         "remove",
-                        "restore"
+                        "restore",
+                        "remove_source"
                       ]
                     },
                     "id": {
@@ -304,6 +348,27 @@
                       "minLength": 1,
                       "maxLength": 1000,
                       "description": "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one)."
+                    },
+                    "from": {
+                      "type": "object",
+                      "properties": {
+                        "document": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "page": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "document",
+                        "page"
+                      ],
+                      "additionalProperties": false,
+                      "description": "remove_source only: the document page to take off the record's sources, as get_records lists it."
                     },
                     "fields": {
                       "type": "object",
@@ -408,7 +473,8 @@
                         "add",
                         "change",
                         "remove",
-                        "restore"
+                        "restore",
+                        "remove_source"
                       ]
                     },
                     "id": {
@@ -423,6 +489,27 @@
                       "minLength": 1,
                       "maxLength": 1000,
                       "description": "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one)."
+                    },
+                    "from": {
+                      "type": "object",
+                      "properties": {
+                        "document": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "page": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "document",
+                        "page"
+                      ],
+                      "additionalProperties": false,
+                      "description": "remove_source only: the document page to take off the record's sources, as get_records lists it."
                     },
                     "fields": {
                       "type": "object",
@@ -525,7 +612,8 @@
                         "add",
                         "change",
                         "remove",
-                        "restore"
+                        "restore",
+                        "remove_source"
                       ]
                     },
                     "id": {
@@ -540,6 +628,27 @@
                       "minLength": 1,
                       "maxLength": 1000,
                       "description": "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one)."
+                    },
+                    "from": {
+                      "type": "object",
+                      "properties": {
+                        "document": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "page": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "document",
+                        "page"
+                      ],
+                      "additionalProperties": false,
+                      "description": "remove_source only: the document page to take off the record's sources, as get_records lists it."
                     },
                     "fields": {
                       "type": "object",
@@ -620,7 +729,8 @@
                         "add",
                         "change",
                         "remove",
-                        "restore"
+                        "restore",
+                        "remove_source"
                       ]
                     },
                     "id": {
@@ -635,6 +745,27 @@
                       "minLength": 1,
                       "maxLength": 1000,
                       "description": "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one)."
+                    },
+                    "from": {
+                      "type": "object",
+                      "properties": {
+                        "document": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "page": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "document",
+                        "page"
+                      ],
+                      "additionalProperties": false,
+                      "description": "remove_source only: the document page to take off the record's sources, as get_records lists it."
                     },
                     "fields": {
                       "type": "object",
@@ -705,7 +836,8 @@
                         "add",
                         "change",
                         "remove",
-                        "restore"
+                        "restore",
+                        "remove_source"
                       ]
                     },
                     "id": {
@@ -720,6 +852,27 @@
                       "minLength": 1,
                       "maxLength": 1000,
                       "description": "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one)."
+                    },
+                    "from": {
+                      "type": "object",
+                      "properties": {
+                        "document": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "page": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "document",
+                        "page"
+                      ],
+                      "additionalProperties": false,
+                      "description": "remove_source only: the document page to take off the record's sources, as get_records lists it."
                     },
                     "fields": {
                       "type": "object",
@@ -853,7 +1006,8 @@
                         "add",
                         "change",
                         "remove",
-                        "restore"
+                        "restore",
+                        "remove_source"
                       ]
                     },
                     "id": {
@@ -868,6 +1022,27 @@
                       "minLength": 1,
                       "maxLength": 1000,
                       "description": "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one)."
+                    },
+                    "from": {
+                      "type": "object",
+                      "properties": {
+                        "document": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "page": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "document",
+                        "page"
+                      ],
+                      "additionalProperties": false,
+                      "description": "remove_source only: the document page to take off the record's sources, as get_records lists it."
                     },
                     "fields": {
                       "type": "object",
@@ -949,7 +1124,8 @@
                         "add",
                         "change",
                         "remove",
-                        "restore"
+                        "restore",
+                        "remove_source"
                       ]
                     },
                     "id": {
@@ -964,6 +1140,27 @@
                       "minLength": 1,
                       "maxLength": 1000,
                       "description": "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one)."
+                    },
+                    "from": {
+                      "type": "object",
+                      "properties": {
+                        "document": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "page": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "document",
+                        "page"
+                      ],
+                      "additionalProperties": false,
+                      "description": "remove_source only: the document page to take off the record's sources, as get_records lists it."
                     },
                     "fields": {
                       "type": "object",
@@ -1005,7 +1202,8 @@
                         "add",
                         "change",
                         "remove",
-                        "restore"
+                        "restore",
+                        "remove_source"
                       ]
                     },
                     "id": {
@@ -1020,6 +1218,27 @@
                       "minLength": 1,
                       "maxLength": 1000,
                       "description": "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one)."
+                    },
+                    "from": {
+                      "type": "object",
+                      "properties": {
+                        "document": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "page": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "document",
+                        "page"
+                      ],
+                      "additionalProperties": false,
+                      "description": "remove_source only: the document page to take off the record's sources, as get_records lists it."
                     },
                     "fields": {
                       "type": "object",
@@ -1111,13 +1330,184 @@
                 }
               ]
             },
+            "minItems": 1
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item": {
+                  "type": "string",
+                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "description": "The draft item's id, from get_documents."
+                },
+                "version": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "description": "The item's version as you read it with get_documents."
+                },
+                "as": {
+                  "type": "string",
+                  "enum": [
+                    "new",
+                    "another_source",
+                    "correction"
+                  ],
+                  "description": "new: a result the user doesn't have yet. another_source: the same result is already saved (from the user's message or another document): its values stay, and this document's page becomes another source. correction: the item corrects a saved result: a new result replaces it."
+                },
+                "record": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "description": "The saved result's id, from get_records."
+                    },
+                    "version": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The saved result's version, as get_records gave it."
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "version"
+                  ],
+                  "additionalProperties": false,
+                  "description": "For another_source and correction: the saved result it is another source for, or corrects."
+                },
+                "fix": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000,
+                      "description": "The user's own words that give the fix, copied exactly from their message in this chat."
+                    },
+                    "fields": {
+                      "type": "object",
+                      "properties": {
+                        "test": {
+                          "$ref": "#/$defs/Text"
+                        },
+                        "value": {
+                          "$ref": "#/$defs/Text"
+                        },
+                        "comparator": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "<",
+                                "<=",
+                                ">",
+                                ">="
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "number": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "unit": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "range": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "flag": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Text"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "measured": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/DateSaid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "Only the fields the user corrected; the rest come from the item as stored. measured needs the user's own words for the date."
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "fields"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Only when the user said a value of this item is different from what was read (a misread digit, the right date): the fields they gave. Never for another_source."
+                }
+              },
+              "required": [
+                "item",
+                "version",
+                "as"
+              ],
+              "additionalProperties": false
+            },
             "minItems": 1,
-            "maxItems": 20
+            "description": "Draft items of the user's documents to save, as get_documents gave them."
           }
         },
-        "required": [
-          "changes"
-        ],
         "additionalProperties": false,
         "$defs": {
           "Text": {
@@ -1190,6 +1580,88 @@
               "fields": {
                 "name": "Stomach upset"
               }
+            }
+          ]
+        },
+        {
+          "items": [
+            {
+              "item": "0199a0f2-0000-7000-8000-000000000001",
+              "version": 1,
+              "as": "new"
+            },
+            {
+              "item": "0199a0f2-0000-7000-8000-000000000002",
+              "version": 1,
+              "as": "another_source",
+              "record": {
+                "id": "0199a0f2-0000-7000-8000-00000000000a",
+                "version": null
+              }
+            },
+            {
+              "item": "0199a0f2-0000-7000-8000-000000000003",
+              "version": 2,
+              "as": "new",
+              "fix": {
+                "source": "the LDL is 132, not 142",
+                "fields": {
+                  "value": "132",
+                  "number": 132
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "rufi.dismiss_items",
+      "description": "Dismisses draft items of the user's documents that the user doesn't want saved (a test that isn't theirs, a row read by mistake), after they clearly said so in this chat: each is never saved later, and Rufi adds a receipt line to the chat. Give each item's version as you read it with get_documents; one that changed since is refused, and nothing is dismissed. An item already dismissed stays so; a saved item can't be dismissed (remove its record with save_changes instead). Only in a message from the user, never in a turn a Rufi event started.",
+      "callers": "model",
+      "readOnly": false,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item": {
+                  "type": "string",
+                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "description": "The draft item's id, from get_documents."
+                },
+                "version": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "description": "The item's version as you read it."
+                }
+              },
+              "required": [
+                "item",
+                "version"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "items": [
+            {
+              "item": "0199a0f2-0000-7000-8000-000000000004",
+              "version": 1
             }
           ]
         }

@@ -303,7 +303,6 @@ describe("schema", () => {
       group_label: null,
       second_number: null,
       measured_words: null,
-      source_entry_id: null,
       removed: 0,
     };
 

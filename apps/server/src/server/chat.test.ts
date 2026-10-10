@@ -755,6 +755,57 @@ describe("the chat, on the scripted Codex", () => {
       ask: `Note: ${line}`,
     });
 
+  it("sends a message's chips with it: the AI gets them after the words, and the message keeps them with their versions then", async () => {
+    store.db.exec(`
+      INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
+      INSERT INTO files (id, size, media_type, created_at) VALUES ('f-1', 1, 'application/pdf', '2026-10-01T09:00:00Z');
+      INSERT INTO documents (id, person_id, added_at, added_from, version) VALUES
+        ('doc-1', 'asha', '2026-10-01T09:00:00Z', 'chat', 3),
+        ('doc-r', 'ravi', '2026-10-01T09:00:00Z', 'chat', 1);
+      INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name) VALUES
+        ('asha', 'doc-1', 1, 'f-1', 1, 'Sunrise Labs August.pdf'),
+        ('ravi', 'doc-r', 1, 'f-1', 1, 'Ravi lipid panel.pdf');
+      INSERT INTO results (id, person_id, test_name, value_text, unit, measured_at, entered_at)
+        VALUES ('res-1', 'asha', 'HbA1c', '6.8', '%', '2026-08-12', '2026-08-13T00:00:00Z');
+    `);
+    await startChat("fake");
+    const c = await newChat();
+    const id = uuid();
+    await chat?.send(c, id, "Save it", [
+      { type: "document", id: "doc-1" },
+      { type: "record", kind: "result", id: "res-1" },
+    ]);
+    await ended(c.id);
+    expect((await inputs()).at(-1)).toEqual([
+      "Save it\n\nReferences the user added to this message (Rufi's, exact: read them with your tools):\n- document doc-1, version 3: Sunrise Labs August.pdf\n- result res-1 (kind result), version null: HbA1c 6.8 % · 12 Aug 2026",
+    ]);
+    // The message shows its words and its chips, as they were when sent.
+    store.db.exec("UPDATE documents SET version = 4 WHERE id = 'doc-1'");
+    const message = (await transcript(c.id)).all.find((e) => e.id === id);
+    expect(message).toMatchObject({
+      text: "Save it",
+      refs: [
+        {
+          ref: { type: "document", id: "doc-1", version: 3 },
+          label: "Sunrise Labs August.pdf",
+          detail: "Document",
+        },
+        {
+          ref: { type: "record", kind: "result", id: "res-1", version: null },
+          label: "HbA1c 6.8 % · 12 Aug 2026",
+          detail: "Result in your record",
+        },
+      ],
+    });
+    // Another person's document is refused, and nothing waits.
+    await expect(
+      chat?.send(c, uuid(), "And this", [{ type: "document", id: "doc-r" }]),
+    ).rejects.toThrow(
+      "Something added to this message isn't in this person's record. Take it out of the message and add it again.",
+    );
+    expect(await waiting()).toEqual([]);
+  });
+
   it("takes a retried send once: one waiting row, one message", async () => {
     await startChat("fake");
     const c = await newChat();

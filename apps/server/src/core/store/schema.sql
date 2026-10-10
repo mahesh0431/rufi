@@ -11,9 +11,10 @@
 -- The record changes only through a save (docs/adr/0005): one transaction
 -- that writes the records, each record's before and after (record_changes)
 -- and the save's receipt in the transcript. A record is never deleted:
--- removing it sets removed, and its history stays. A record's source is the
--- user's message its current values rest on; a date said in words keeps
--- those words beside it (*_words), counted from that message's time.
+-- removing it sets removed, and its history stays. A record's sources
+-- (record_sources) are what its values rest on: the user's messages and
+-- document pages. A date said in words keeps those words beside it
+-- (*_words), counted from that message's time.
 
 CREATE TABLE people (
   id TEXT PRIMARY KEY,
@@ -36,7 +37,7 @@ CREATE TABLE documents (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL REFERENCES people (id),
   added_at TEXT NOT NULL,
-  added_from TEXT NOT NULL CHECK (added_from IN ('documents_page')),
+  added_from TEXT NOT NULL CHECK (added_from IN ('documents_page', 'chat')),
   kind TEXT CHECK (kind IN ('lab_report', 'prescription', 'letter', 'other')), -- as read; null until read
   date TEXT,             -- the document's date as read (precision date), when every page agrees; null until read
   reader_note TEXT,      -- the reader's one note for the whole document, rewritten by the reader
@@ -115,17 +116,30 @@ CREATE TABLE draft_items (
   fields TEXT NOT NULL,        -- the item's fields now (JSON, as printed)
   original TEXT NOT NULL,      -- the reader's fields, never changed (JSON)
   unsure TEXT NOT NULL DEFAULT '[]', -- why it may be wrong: the reader's words and Rufi's checks (JSON)
+  -- Once saved: how, into which record, by which save; the version saved is
+  -- its version (saving doesn't raise it). Once dismissed: by which call.
+  saved_as TEXT CHECK (saved_as IN ('new', 'another_source', 'correction')),
+  record_kind TEXT,
+  record_id TEXT,
+  operation_id TEXT,
+  dismissed_by TEXT,           -- the AI's call that dismissed it
   created_at TEXT NOT NULL,
   UNIQUE (person_id, id),
   FOREIGN KEY (person_id, document_id, page) REFERENCES document_pages (person_id, document_id, position),
-  FOREIGN KEY (person_id, job_id) REFERENCES jobs (person_id, id)
+  FOREIGN KEY (person_id, job_id) REFERENCES jobs (person_id, id),
+  FOREIGN KEY (person_id, operation_id) REFERENCES operations (person_id, id),
+  CHECK ((status = 'saved') = (operation_id IS NOT NULL)),
+  CHECK ((status = 'dismissed') = (dismissed_by IS NOT NULL))
 ) STRICT;
 
+-- A report as printed: one per lab, report number and collection date of a
+-- document, made when its results are saved.
 CREATE TABLE reports (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL,
   document_id TEXT NOT NULL,
   issuer TEXT,           -- lab or clinic, as printed
+  report_number TEXT,    -- as printed
   collected TEXT,        -- precision date
   UNIQUE (person_id, id),
   FOREIGN KEY (person_id, document_id) REFERENCES documents (person_id, id)
@@ -148,13 +162,11 @@ CREATE TABLE results (
   replaces_id TEXT,            -- an amended result points at the one it replaces
   group_label TEXT,            -- a shared label to join two printed names; printed fields never change
   second_number REAL,          -- a two-value result's second number: a blood pressure '128/84' is 128 and 84
-  measured_words TEXT,         -- the user's words for measured_at, when typed in
-  source_entry_id TEXT,        -- typed in: the user's message it rests on
+  measured_words TEXT,         -- the words for measured_at: the user's, or the date as printed with its label
   removed INTEGER NOT NULL DEFAULT 0,
   UNIQUE (person_id, id),
   FOREIGN KEY (person_id, report_id) REFERENCES reports (person_id, id),
-  FOREIGN KEY (person_id, replaces_id) REFERENCES results (person_id, id),
-  FOREIGN KEY (person_id, source_entry_id) REFERENCES transcript_entries (person_id, id)
+  FOREIGN KEY (person_id, replaces_id) REFERENCES results (person_id, id)
 ) STRICT;
 
 -- One use of a medicine or supplement. Several uses of one medicine can
@@ -173,10 +185,8 @@ CREATE TABLE medicine_uses (
   started_words TEXT,
   ended TEXT,
   ended_words TEXT,
-  source_entry_id TEXT,
   removed INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (person_id, id),
-  FOREIGN KEY (person_id, source_entry_id) REFERENCES transcript_entries (person_id, id)
+  UNIQUE (person_id, id)
 ) STRICT;
 
 -- What a prescriber wrote for one item. It never makes a medicine use.
@@ -192,10 +202,8 @@ CREATE TABLE prescriptions (
   prescriber TEXT,
   issued TEXT,
   issued_words TEXT,
-  source_entry_id TEXT,
   removed INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (person_id, id),
-  FOREIGN KEY (person_id, source_entry_id) REFERENCES transcript_entries (person_id, id)
+  UNIQUE (person_id, id)
 ) STRICT;
 
 -- One episode of a symptom; a symptom that comes back is a new episode.
@@ -212,10 +220,8 @@ CREATE TABLE symptoms (
   location TEXT,
   intermittent INTEGER,        -- 1 comes and goes, 0 constant; null unknown
   details TEXT,
-  source_entry_id TEXT,
   removed INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (person_id, id),
-  FOREIGN KEY (person_id, source_entry_id) REFERENCES transcript_entries (person_id, id)
+  UNIQUE (person_id, id)
 ) STRICT;
 
 CREATE TABLE conditions (
@@ -229,10 +235,8 @@ CREATE TABLE conditions (
   resolved TEXT,
   resolved_words TEXT,
   details TEXT,
-  source_entry_id TEXT,
   removed INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (person_id, id),
-  FOREIGN KEY (person_id, source_entry_id) REFERENCES transcript_entries (person_id, id)
+  UNIQUE (person_id, id)
 ) STRICT;
 
 -- An allergy or intolerance. Only a change to its status makes it inactive;
@@ -247,10 +251,8 @@ CREATE TABLE allergies (
   asserted TEXT,               -- the day the user said it: their message's date
   reacted TEXT,                -- when the reaction happened
   reacted_words TEXT,
-  source_entry_id TEXT,
   removed INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (person_id, id),
-  FOREIGN KEY (person_id, source_entry_id) REFERENCES transcript_entries (person_id, id)
+  UNIQUE (person_id, id)
 ) STRICT;
 
 -- A visit, procedure or immunisation. Planned care is not done care.
@@ -264,10 +266,8 @@ CREATE TABLE care_events (
   date_words TEXT,
   provider TEXT,
   details TEXT,
-  source_entry_id TEXT,
   removed INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (person_id, id),
-  FOREIGN KEY (person_id, source_entry_id) REFERENCES transcript_entries (person_id, id)
+  UNIQUE (person_id, id)
 ) STRICT;
 
 -- "None known", as the user said it on a day: a dated statement, never
@@ -277,10 +277,8 @@ CREATE TABLE none_known (
   person_id TEXT NOT NULL REFERENCES people (id),
   category TEXT NOT NULL CHECK (category IN ('allergies')),
   asserted TEXT,               -- the day the user said it: their message's date
-  source_entry_id TEXT,
   removed INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (person_id, id),
-  FOREIGN KEY (person_id, source_entry_id) REFERENCES transcript_entries (person_id, id)
+  UNIQUE (person_id, id)
 ) STRICT;
 
 -- Something to come back to (PLAN.md §2.2).
@@ -294,10 +292,8 @@ CREATE TABLE follow_ups (
   outcome TEXT,
   linked_kind TEXT,            -- the record it is about, when there is one
   linked_id TEXT,
-  source_entry_id TEXT,
   removed INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (person_id, id),
-  FOREIGN KEY (person_id, source_entry_id) REFERENCES transcript_entries (person_id, id)
+  UNIQUE (person_id, id)
 ) STRICT;
 
 -- Rufi-wide settings, such as the emergency region. One row per key.
@@ -361,6 +357,7 @@ CREATE TABLE transcript_entries (
   activity TEXT CHECK (activity IN ('tool', 'command', 'web_search', 'file_change', 'sub_agent', 'compaction', 'other')),
   detail TEXT,                 -- an activity's one short detail: the query, the search words, the command
   details TEXT,                -- an activity's or reasoning's everything, as the agent gave it (JSON); an event's kind and facts (JSON); null: none
+  refs TEXT,                   -- a message's references, its chips (JSON); null: none
   status TEXT CHECK (status IN ('running', 'done', 'failed', 'stopped')),
   agent_item_id TEXT,          -- the agent's id for a reply or an activity, to update it
   revision INTEGER NOT NULL,   -- the chat's revision when it last changed
@@ -372,7 +369,8 @@ CREATE TABLE transcript_entries (
   FOREIGN KEY (person_id, turn_id) REFERENCES turns (person_id, id),
   -- An activity line has its kind and status; nothing else has either.
   CHECK ((kind = 'activity') = (activity IS NOT NULL) AND (kind = 'activity') = (status IS NOT NULL)),
-  CHECK (details IS NULL OR kind IN ('activity', 'reasoning', 'event'))
+  CHECK (details IS NULL OR kind IN ('activity', 'reasoning', 'event')),
+  CHECK (refs IS NULL OR kind IN ('message', 'steer'))
 ) STRICT;
 
 -- Each call the AI made to one of Rufi's own tools, kept by Rufi as it
@@ -402,6 +400,7 @@ CREATE TABLE drafts (
   person_id TEXT NOT NULL REFERENCES people (id),
   chat_id TEXT NOT NULL,
   text TEXT NOT NULL,          -- may be empty
+  refs TEXT NOT NULL DEFAULT '[]', -- the box's references (JSON): its chips
   updated_at TEXT NOT NULL,
   PRIMARY KEY (person_id, chat_id),
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id)
@@ -418,7 +417,7 @@ CREATE TABLE chat_queue (
   chat_id TEXT NOT NULL,
   origin TEXT NOT NULL CHECK (origin IN ('person', 'rufi')),
   text TEXT NOT NULL,          -- the person's message, or Rufi's note for the AI
-  refs TEXT NOT NULL DEFAULT '[]', -- references sent with it (JSON)
+  refs TEXT NOT NULL DEFAULT '[]', -- references sent with it (JSON): the message's chips
   event_id TEXT,               -- a Rufi event's line in the transcript
   position INTEGER NOT NULL,   -- order among the waiting rows
   state TEXT NOT NULL DEFAULT 'waiting' CHECK (state IN ('waiting', 'handing_over', 'sent', 'not_sure', 'removed')),
@@ -458,13 +457,36 @@ CREATE TABLE record_changes (
   person_id TEXT NOT NULL,
   kind TEXT NOT NULL,          -- the record's kind: 'medicine_use', 'symptom'...
   record_id TEXT NOT NULL,
-  action TEXT NOT NULL CHECK (action IN ('add', 'change', 'remove', 'restore')),
+  -- link and unlink add or take off one of its sources; its values stay.
+  action TEXT NOT NULL CHECK (action IN ('add', 'change', 'remove', 'restore', 'link', 'unlink')),
   before TEXT,                 -- null when added
   after TEXT NOT NULL,
-  source_entry_id TEXT NOT NULL,
+  source_entry_id TEXT,        -- the user's message the change rests on; null for a save from a document alone
   PRIMARY KEY (operation_id, seq),
   FOREIGN KEY (person_id, operation_id) REFERENCES operations (person_id, id),
   FOREIGN KEY (person_id, source_entry_id) REFERENCES transcript_entries (person_id, id)
+) STRICT;
+
+-- Where a record's values came from, several per record: the user's
+-- message, or a page of a document. Each is added by a save, and a later
+-- save may take it off (removed_by); it is never deleted. Saying "save it"
+-- isn't a source: it only says yes.
+CREATE TABLE record_sources (
+  person_id TEXT NOT NULL,
+  kind TEXT NOT NULL,          -- the record's kind: 'result', 'symptom'...
+  record_id TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('message', 'document_page')),
+  entry_id TEXT,               -- message: the user's message
+  document_id TEXT,            -- document_page: the document and its page
+  page INTEGER,
+  operation_id TEXT,           -- the save that added it; null for one from before Rufi kept saves
+  removed_by TEXT,             -- the save that took it off
+  FOREIGN KEY (person_id, entry_id) REFERENCES transcript_entries (person_id, id),
+  FOREIGN KEY (person_id, document_id, page) REFERENCES document_pages (person_id, document_id, position),
+  FOREIGN KEY (person_id, operation_id) REFERENCES operations (person_id, id),
+  FOREIGN KEY (person_id, removed_by) REFERENCES operations (person_id, id),
+  CHECK ((type = 'message') = (entry_id IS NOT NULL)),
+  CHECK ((type = 'document_page') = (document_id IS NOT NULL AND page IS NOT NULL))
 ) STRICT;
 
 -- A visit brief the AI wrote from the saved record, in a chat. Its line in
@@ -504,3 +526,5 @@ CREATE INDEX queue_by_chat ON chat_queue (person_id, chat_id, state, position);
 CREATE INDEX tool_calls_by_turn ON tool_calls (person_id, turn_id);
 CREATE INDEX operations_by_person ON operations (person_id, created_at);
 CREATE INDEX changes_by_record ON record_changes (person_id, record_id);
+CREATE INDEX sources_by_record ON record_sources (person_id, record_id);
+CREATE INDEX drafts_by_document ON draft_items (person_id, document_id, page, seq);

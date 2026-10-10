@@ -155,9 +155,11 @@ chat, your documents and Rufi's settings, as Rufi stored it.
   added them. Each is named by its SHA-256 hash, as in the \`files\` table,
   with an extension for its type. \`document_pages\` says which document
   and page each file is, and the name it had when you added it.
-- \`draft_items\`: what Rufi's reader read from your documents and you
-  haven't saved yet. Not your record: Rufi counts them nowhere until you
-  save them.
+- \`draft_items\`: what Rufi's reader read from your documents, each not
+  saved yet, saved, or dismissed. Not your record: Rufi counts one nowhere
+  until you save it.
+- \`record_sources\`: where each record came from: your message, or a page
+  of a document.
 
 Dates and times are as Rufi stored them: ISO 8601, times in UTC; a date you
 gave in your own words keeps those words next to it.

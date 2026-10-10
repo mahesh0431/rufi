@@ -317,3 +317,36 @@ export const wordsColumn = (field: Field) =>
 
 export const kindNamed = (name: string) =>
   KINDS.find((kind) => kind.name === name);
+
+/** A field's value as its columns, as save_changes stores it. */
+export function columnsOf(field: Field, value: unknown): Row {
+  switch (field.type) {
+    case "value":
+      return { [field.column]: value };
+    case "boolean":
+      return { [field.column]: value === null ? null : value ? 1 : 0 };
+    case "due":
+    case "date": {
+      // A due date is a date, or the next visit.
+      if (value === "next_visit") {
+        return { [field.column]: value, [wordsColumn(field)]: null };
+      }
+      const said = value as { date: string; words: string } | null;
+      return {
+        [field.column]: said?.date ?? null,
+        [wordsColumn(field)]: said?.words ?? null,
+      };
+    }
+    case "link": {
+      const link = value as { kind: string; id: string } | null;
+      return { linked_kind: link?.kind ?? null, linked_id: link?.id ?? null };
+    }
+  }
+}
+
+/**
+ * A value as literal Markdown text: on one line, and with every mark that
+ * could format it, link it or hide it as HTML escaped.
+ */
+export const literal = (text: string) =>
+  text.replace(/\s*\n\s*/g, " ").replace(/[\\`*_[\]<>~|&!#]/g, "\\$&");

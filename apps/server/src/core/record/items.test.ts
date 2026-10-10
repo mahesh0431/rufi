@@ -1,0 +1,733 @@
+// Saving a document's draft items, as the AI does it in Rufi's chat: the
+// real tool caller, the real transcripts, a real database with the
+// fictional family, and drafts made by the real end of a reading. Messages
+// are sent at 10:00 on Sunday 11 Oct 2026 in India.
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { Chip } from "@rufi/contracts";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  transcripts as openTranscripts,
+  type ChatRow,
+  type Transcripts,
+} from "../chat/transcript.ts";
+import type { Entry } from "../documents/notebook.ts";
+import { readings } from "../documents/reading.ts";
+import {
+  databasePath,
+  openReadOnly,
+  openWritable,
+  type Store,
+} from "../store/database.ts";
+import { chatCaller } from "../tools/tools.ts";
+
+const TZ = process.env["TZ"];
+process.env["TZ"] = "Asia/Kolkata";
+afterAll(() => {
+  if (TZ === undefined) delete process.env["TZ"];
+  else process.env["TZ"] = TZ;
+});
+
+const family = await readFile(
+  new URL("../../../tests/fixtures/fictional-family.sql", import.meta.url),
+  "utf8",
+);
+const SUNDAY_10AM = "2026-10-11T04:30:00.000Z";
+
+let store: Store;
+let reader: Store;
+let transcripts: Transcripts;
+let chat: ChatRow;
+let said = 0;
+let calls = 0;
+
+beforeEach(async () => {
+  const path = databasePath(await mkdtemp(join(tmpdir(), "rufi-items-")));
+  store = openWritable(path);
+  store.db.exec(family);
+  reader = openReadOnly(path) as Store;
+  transcripts = openTranscripts(store, () => SUNDAY_10AM);
+  chat = (await transcripts.chat("asha")) as ChatRow;
+  await transcripts.startTurn(chat, "t-1", {
+    id: "thread-1",
+    model: "gpt-6.1-sol",
+  });
+  return () => {
+    reader.close();
+    store.close();
+  };
+});
+
+const COLLECTED = { label: "Collected", date: "12/08/2026", iso: "2026-08-12" };
+
+/** Page 1 prints the report's head; page 2 is its table going on. */
+const PAGES: Record<number, Entry> = {
+  1: {
+    outcome: "read",
+    facts: {
+      kind: "lab_report",
+      dates: [COLLECTED, { label: "Reported", date: "13/08/2026" }],
+      issuer: "Sunrise Labs",
+      name: "Asha Fictional",
+      report_number: "SL-1042",
+    },
+    items: [
+      {
+        test_name: "HbA1c",
+        value_text: "7.1",
+        value_number: 7.1,
+        unit: "%",
+        reference_range: "4.0 - 5.6",
+        flag_text: "H",
+      },
+      {
+        test_name: "TSH",
+        value_text: "2.1",
+        value_number: 2.1,
+        unit: "mIU/L",
+        reference_range: "0.4 - 4.0",
+      },
+    ],
+  },
+  2: {
+    outcome: "read",
+    items: [
+      {
+        test_name: "LDL cholesterol",
+        value_text: "142",
+        value_number: 142,
+        unit: "mg/dL",
+        flag_text: "High",
+        unsure: "the last digit is smudged",
+      },
+      {
+        test_name: "Vitamin D",
+        value_text: "18",
+        unit: "ng/mL",
+        date: { label: "Collected", date: "03/04/2026" },
+        column: "earlier",
+      },
+    ],
+  },
+};
+
+/**
+ * Reads doc-asha-aug with these page entries and finishes the reading as
+ * Rufi does: its draft items, at version 1.
+ */
+async function read(pages: Record<number, Entry> = PAGES) {
+  const run = {
+    jobId: "job-aug",
+    attempt: 1,
+    personId: "asha",
+    documentId: "doc-asha-aug",
+    targets: [1, 2],
+    lookedAt: new Set([1, 2]),
+    closed: true,
+  };
+  store.db
+    .exec(`INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at)
+    VALUES ('job-aug', 'asha', 'document_read', 'doc-asha-aug', 'running', 1, '[1,2]', '2026-10-11T04:00:00Z')`);
+  for (const [position, entry] of Object.entries(pages)) {
+    store.db
+      .prepare(
+        "UPDATE document_pages SET entry = ?, entry_job_id = 'job-aug' WHERE document_id = 'doc-asha-aug' AND position = ?",
+      )
+      .run(JSON.stringify(entry), Number(position));
+  }
+  await store.query
+    .transaction()
+    .execute((trx) => readings(store, () => SUNDAY_10AM).finish(trx, run));
+}
+
+/** The draft items' ids by test, in page order. */
+const drafts = () =>
+  Object.fromEntries(
+    (
+      store.db
+        .prepare(
+          "SELECT id, fields FROM draft_items WHERE person_id = 'asha' ORDER BY page, seq",
+        )
+        .all() as { id: string; fields: string }[]
+    ).map((row) => [
+      (JSON.parse(row.fields) as { test_name: string }).test_name,
+      row.id,
+    ]),
+  ) as Record<string, string>;
+
+/** The user says it in this turn, with its chips. */
+async function say(text: string, refs?: Chip[]): Promise<string> {
+  const id = `msg-${String(++said)}`;
+  await transcripts.addMessage(chat, {
+    id,
+    kind: "message",
+    text,
+    agentTurnId: "t-1",
+    ...(refs !== undefined && { refs }),
+  });
+  return id;
+}
+
+/** The AI calls a tool in the chat's turn, started by `origin`. */
+async function call(
+  tool: string,
+  input: unknown,
+  origin: "person" | "rufi" = "person",
+  callId = `call-${String(++calls)}`,
+) {
+  const answer = await chatCaller(reader, transcripts, () => undefined)(
+    chat,
+    "t-1",
+    origin,
+  )(tool, input, callId);
+  return JSON.parse(answer.text) as {
+    ok: boolean;
+    result: {
+      receipt?: string;
+      changes: { kind: string; action: string; id: string }[];
+      already_saved?: unknown[];
+      note?: string;
+      dismissed?: string[];
+    };
+    error?: string;
+    issues: { path: string; fix: string }[];
+  };
+}
+
+const rows = (sql: string, ...params: unknown[]) =>
+  store.db
+    .prepare(sql)
+    .all(...(params as string[]))
+    .map((row) => ({ ...row }));
+const one = (sql: string, ...params: unknown[]) => rows(sql, ...params)[0];
+
+/** Everything a save writes, to check that a refused one wrote nothing. */
+const written = () => ({
+  operations: rows("SELECT * FROM operations"),
+  results: rows("SELECT * FROM results ORDER BY rowid"),
+  sources: rows("SELECT * FROM record_sources ORDER BY rowid"),
+  reports: rows("SELECT * FROM reports ORDER BY rowid"),
+  drafts: rows("SELECT * FROM draft_items ORDER BY rowid"),
+  receipts: rows("SELECT text FROM transcript_entries WHERE kind = 'receipt'"),
+});
+
+/** A receipt as plain lines, without Markdown marks and escapes. */
+const lines = (receipt: unknown) =>
+  String(receipt)
+    .split("\n")
+    .map((line) =>
+      line
+        .replace(/^- /, "")
+        .replace(/\\(.)|\*/g, (_, kept?: string) => kept ?? ""),
+    )
+    .filter((line) => line !== "");
+
+describe("saving draft items", () => {
+  it("saves the stored items exactly, each with its document page as its source, in one report", async () => {
+    await read();
+    const { HbA1c = "", TSH = "" } = drafts();
+    await say("Save the HbA1c and TSH");
+    const saved = await call("save_changes", {
+      items: [
+        { item: HbA1c, version: 1, as: "new" },
+        { item: TSH, version: 1, as: "new" },
+      ],
+    });
+    expect(saved.ok).toBe(true);
+    expect(lines(saved.result.receipt)).toEqual([
+      "Saved 2 results from Sunrise Labs August.pdf · 2 new",
+      'Added result HbA1c 7.1 %: range 4.0 - 5.6, flag H, measured 12 Aug 2026 ("Collected 12/08/2026") · page 1',
+      'Added result TSH 2.1 mIU/L: range 0.4 - 4.0, measured 12 Aug 2026 ("Collected 12/08/2026") · page 1',
+    ]);
+    const [hba1c, tsh] = saved.result.changes.map((c) => c.id);
+    // The values are the reader's, as printed; Rufi's report groups them.
+    expect(
+      one(
+        "SELECT test_name, value_text, value_number, unit, reference_range, flag_text, measured_at, measured_words, report_id FROM results WHERE id = ?",
+        hba1c,
+      ),
+    ).toEqual({
+      test_name: "HbA1c",
+      value_text: "7.1",
+      value_number: 7.1,
+      unit: "%",
+      reference_range: "4.0 - 5.6",
+      flag_text: "H",
+      measured_at: "2026-08-12",
+      measured_words: "Collected 12/08/2026",
+      report_id: expect.any(String) as string,
+    });
+    expect(
+      rows(
+        "SELECT issuer, report_number, collected FROM reports WHERE report_number IS NOT NULL",
+      ),
+    ).toEqual([
+      {
+        issuer: "Sunrise Labs",
+        report_number: "SL-1042",
+        collected: "2026-08-12",
+      },
+    ]);
+    expect(
+      rows(
+        "SELECT record_id, type, document_id, page, entry_id FROM record_sources WHERE record_id IN (?, ?) ORDER BY rowid",
+        hba1c,
+        tsh,
+      ),
+    ).toEqual([
+      {
+        record_id: hba1c,
+        type: "document_page",
+        document_id: "doc-asha-aug",
+        page: 1,
+        entry_id: null,
+      },
+      {
+        record_id: tsh,
+        type: "document_page",
+        document_id: "doc-asha-aug",
+        page: 1,
+        entry_id: null,
+      },
+    ]);
+    expect(
+      rows(
+        "SELECT status, saved_as, record_id, version, operation_id IS NOT NULL AS by_save FROM draft_items WHERE id IN (?, ?) ORDER BY page, seq",
+        HbA1c,
+        TSH,
+      ),
+    ).toEqual([
+      {
+        status: "saved",
+        saved_as: "new",
+        record_id: hba1c,
+        version: 1,
+        by_save: 1,
+      },
+      {
+        status: "saved",
+        saved_as: "new",
+        record_id: tsh,
+        version: 1,
+        by_save: 1,
+      },
+    ]);
+    // A save from a document alone rests on no message.
+    expect(rows("SELECT action, source_entry_id FROM record_changes")).toEqual([
+      { action: "add", source_entry_id: null },
+      { action: "add", source_entry_id: null },
+    ]);
+  });
+
+  it("puts a page that prints no lab, number or date in the report of the page before", async () => {
+    await read();
+    const { LDL = "" } = Object.fromEntries(
+      Object.entries(drafts()).map(([test, id]) => [test.split(" ")[0], id]),
+    );
+    const { HbA1c = "" } = drafts();
+    await say("Save HbA1c and LDL");
+    const saved = await call("save_changes", {
+      items: [
+        { item: HbA1c, version: 1, as: "new" },
+        { item: LDL, version: 1, as: "new" },
+      ],
+    });
+    expect(saved.ok).toBe(true);
+    const [first, second] = saved.result.changes.map(
+      (c) =>
+        one(
+          "SELECT report_id, measured_at FROM results WHERE id = ?",
+          c.id,
+        ) as {
+          report_id: string;
+          measured_at: string;
+        },
+    );
+    expect(second).toEqual(first);
+    expect(second?.measured_at).toBe("2026-08-12");
+  });
+
+  it("applies the user's fix and keeps the reader's value in the draft", async () => {
+    await read();
+    const { "LDL cholesterol": ldl = "" } = drafts();
+    const message = await say("The LDL is 132, not 142");
+    const saved = await call("save_changes", {
+      items: [
+        {
+          item: ldl,
+          version: 1,
+          as: "new",
+          fix: {
+            source: "The LDL is 132",
+            fields: { value: "132", number: 132 },
+          },
+        },
+      ],
+    });
+    expect(saved.ok).toBe(true);
+    const id = saved.result.changes[0]?.id ?? "";
+    expect(
+      one("SELECT value_text, value_number FROM results WHERE id = ?", id),
+    ).toEqual({ value_text: "132", value_number: 132 });
+    expect(lines(saved.result.receipt).at(-1)).toMatch(
+      /· page 2, and your message$/,
+    );
+    expect(
+      rows(
+        "SELECT type, entry_id, page FROM record_sources WHERE record_id = ? ORDER BY rowid",
+        id,
+      ),
+    ).toEqual([
+      { type: "message", entry_id: message, page: null },
+      { type: "document_page", entry_id: null, page: 2 },
+    ]);
+    expect(
+      one("SELECT source_entry_id FROM record_changes WHERE record_id = ?", id),
+    ).toEqual({ source_entry_id: message });
+    const draft = one(
+      "SELECT fields, original FROM draft_items WHERE id = ?",
+      ldl,
+    ) as { fields: string; original: string };
+    expect(JSON.parse(draft.fields)).toMatchObject({ value_text: "142" });
+    expect(JSON.parse(draft.original)).toMatchObject({ value_text: "142" });
+  });
+
+  it("refuses an item with no date it can store until the user gives one", async () => {
+    await read();
+    const { "Vitamin D": vitamin = "" } = drafts();
+    await say("Save the vitamin D, it was taken on 3 April");
+    const refused = await call("save_changes", {
+      items: [{ item: vitamin, version: 1, as: "new" }],
+    });
+    expect(refused.ok).toBe(false);
+    expect(refused.issues[0]?.fix).toBe(
+      'This item has no date Rufi can store ("Collected 03/04/2026": the order of day and month isn\'t certain). Ask the user when the sample was taken, and give it in fix.fields.measured with their words.',
+    );
+    const saved = await call("save_changes", {
+      items: [
+        {
+          item: vitamin,
+          version: 1,
+          as: "new",
+          fix: {
+            source: "it was taken on 3 April",
+            fields: { measured: { date: "2026-04-03", words: "3 April" } },
+          },
+        },
+      ],
+    });
+    expect(saved.ok).toBe(true);
+    expect(
+      one(
+        "SELECT measured_at, measured_words FROM results WHERE id = ?",
+        saved.result.changes[0]?.id,
+      ),
+    ).toEqual({ measured_at: "2026-04-03", measured_words: "3 April" });
+  });
+
+  it("adds the page as another source of a result already saved, changing no value; undo takes off only that link", async () => {
+    await read();
+    const { TSH = "" } = drafts();
+    // The user typed a TSH before; the report has the same one.
+    store.db
+      .exec(`INSERT INTO results (id, person_id, test_name, value_text, unit, measured_at, entered_at)
+      VALUES ('res-typed', 'asha', 'TSH', '2.1', 'mIU/L', '2026-08-12', '2026-09-01T00:00:00Z')`);
+    const before = one("SELECT * FROM results WHERE id = 'res-typed'");
+    await say("Yes, it's the same TSH");
+    const linked = await call("save_changes", {
+      items: [
+        {
+          item: TSH,
+          version: 1,
+          as: "another_source",
+          record: { id: "res-typed", version: null },
+        },
+      ],
+    });
+    expect(linked.ok).toBe(true);
+    expect(lines(linked.result.receipt)).toEqual([
+      "Saved 1 result from Sunrise Labs August.pdf · 1 more source",
+      "Added a source to result TSH 2.1 mIU/L: Sunrise Labs August.pdf, page 1 (its values stay as they are)",
+    ]);
+    expect(one("SELECT * FROM results WHERE id = 'res-typed'")).toEqual(before);
+    const save = (one("SELECT id FROM operations") as { id: string }).id;
+    expect(rows("SELECT action FROM record_changes")).toEqual([
+      { action: "link" },
+    ]);
+    // The record's version is that save now.
+    const records = await call("get_records", {
+      kind: "result",
+      ids: ["res-typed"],
+    });
+    expect(records.result).toMatchObject({
+      records: [
+        {
+          id: "res-typed",
+          version: save,
+          sources: [
+            {
+              document: "doc-asha-aug",
+              page: 1,
+              file: "Sunrise Labs August.pdf",
+            },
+          ],
+        },
+      ],
+    });
+
+    await say("Undo that");
+    const undone = await call("save_changes", {
+      changes: [
+        {
+          kind: "result",
+          action: "remove_source",
+          id: "res-typed",
+          source: "Undo that",
+          from: { document: "doc-asha-aug", page: 1 },
+        },
+      ],
+    });
+    expect(undone.ok).toBe(true);
+    expect(lines(undone.result.receipt)).toEqual([
+      "Saved",
+      "Took a source off result TSH 2.1 mIU/L: Sunrise Labs August.pdf, page 1 (its values stay as they are)",
+    ]);
+    expect(one("SELECT * FROM results WHERE id = 'res-typed'")).toEqual(before);
+    expect(
+      rows(
+        "SELECT removed_by IS NOT NULL AS removed FROM record_sources WHERE record_id = 'res-typed'",
+      ),
+    ).toEqual([{ removed: 1 }]);
+    // The draft stays saved: it doesn't come back as new.
+    expect(one("SELECT status FROM draft_items WHERE id = ?", TSH)).toEqual({
+      status: "saved",
+    });
+  });
+
+  it("saves a correction as a new result that replaces the saved one", async () => {
+    await read();
+    const { HbA1c = "" } = drafts();
+    await say("That report corrects my HbA1c");
+    const saved = await call("save_changes", {
+      items: [
+        {
+          item: HbA1c,
+          version: 1,
+          as: "correction",
+          record: { id: "res-a1", version: null },
+        },
+      ],
+    });
+    expect(saved.ok).toBe(true);
+    expect(lines(saved.result.receipt)[1]).toBe(
+      'Added result HbA1c 7.1 %: range 4.0 - 5.6, flag H, measured 12 Aug 2026 ("Collected 12/08/2026"), replaces HbA1c 6.8 % · page 1',
+    );
+    expect(
+      one(
+        "SELECT replaces_id FROM results WHERE id = ?",
+        saved.result.changes[0]?.id,
+      ),
+    ).toEqual({ replaces_id: "res-a1" });
+    expect(one("SELECT value_text FROM results WHERE id = 'res-a1'")).toEqual({
+      value_text: "6.8",
+    });
+  });
+
+  it("refuses a stale, dismissed or unknown item, or a changed record, and saves nothing", async () => {
+    await read();
+    const { HbA1c = "", TSH = "", "LDL cholesterol": ldl = "" } = drafts();
+    store.db.exec(
+      `UPDATE draft_items SET version = 2 WHERE id = '${TSH}'; UPDATE draft_items SET status = 'dismissed', dismissed_by = 'x' WHERE id = '${ldl}'`,
+    );
+    const before = written();
+    await say("Save them");
+    const refused = await call("save_changes", {
+      items: [
+        {
+          item: HbA1c,
+          version: 1,
+          as: "correction",
+          record: { id: "res-a1", version: "an-old-save" },
+        },
+        { item: TSH, version: 1, as: "new" },
+        { item: ldl, version: 1, as: "new" },
+        { item: "drf-ravi", version: 1, as: "new" },
+      ],
+    });
+    expect(refused.ok).toBe(false);
+    expect(refused.issues.map((i) => [i.path, i.fix])).toEqual([
+      [
+        "items.0.record",
+        "That result changed since you read it: its version is null now. Read it again with get_records, tell the user what changed and ask again.",
+      ],
+      [
+        "items.1.version",
+        "This item changed since you read it: it is at version 2 now. Read it again with get_documents, tell the user what changed and ask again.",
+      ],
+      [
+        "items.2.item",
+        "This item was dismissed, so it is never saved. Say so to the user.",
+      ],
+      [
+        "items.3.item",
+        "No draft item with this id is this person's. Read the document with get_documents for its items.",
+      ],
+    ]);
+    expect(written()).toEqual(before);
+  });
+
+  it("saves an item once: the same item again returns its earlier save", async () => {
+    await read();
+    const { HbA1c = "" } = drafts();
+    await say("Save it");
+    const first = await call("save_changes", {
+      items: [{ item: HbA1c, version: 1, as: "new" }],
+    });
+    const after = written();
+    const again = await call("save_changes", {
+      items: [{ item: HbA1c, version: 1, as: "new" }],
+    });
+    expect(again.ok).toBe(true);
+    expect(again.result).toEqual({
+      changes: [],
+      already_saved: [
+        {
+          item: HbA1c,
+          as: "new",
+          record: first.result.changes[0]?.id,
+          save: (one("SELECT id FROM operations") as { id: string }).id,
+        },
+      ],
+      note: "Every item was saved before, so nothing new was saved and Rufi added no receipt.",
+    });
+    expect(written()).toEqual(after);
+  });
+
+  it("refuses a save when the document changed since the user's message pointed at it", async () => {
+    await read();
+    const { HbA1c = "" } = drafts();
+    const chip: Chip = {
+      ref: { type: "document", id: "doc-asha-aug", version: 1 },
+      label: "Sunrise Labs August.pdf",
+      detail: "Lab report",
+    };
+    await say("Save it", [chip]);
+    // A fix or a retry moved the document on meanwhile.
+    store.db.exec("UPDATE documents SET version = 2 WHERE id = 'doc-asha-aug'");
+    const refused = await call("save_changes", {
+      items: [{ item: HbA1c, version: 1, as: "new" }],
+    });
+    expect(refused.ok).toBe(false);
+    expect(refused.issues[0]?.fix).toBe(
+      "The document changed since the user's message (a reading, a fix or a dismissal): read it again with get_documents, tell the user what changed and ask again.",
+    );
+  });
+
+  it("saves 300 items in one save with a summary receipt", async () => {
+    await read({
+      1: {
+        outcome: "read",
+        facts: { dates: [COLLECTED], issuer: "Sunrise Labs" },
+        items: Array.from({ length: 300 }, (_, i) => ({
+          test_name: `Test ${String(i + 1)}`,
+          value_text: String(i),
+        })),
+      },
+      2: { outcome: "nothing_here", items: [] },
+    });
+    const ids = Object.values(drafts());
+    await say("Save all of them");
+    const saved = await call("save_changes", {
+      items: ids.map((item) => ({ item, version: 1, as: "new" })),
+    });
+    expect(saved.ok).toBe(true);
+    expect(saved.result.changes).toHaveLength(300);
+    expect(rows("SELECT id FROM operations")).toHaveLength(1);
+    const receipt = (
+      one("SELECT text FROM transcript_entries WHERE kind = 'receipt'") as {
+        text: string;
+      }
+    ).text;
+    expect(lines(receipt)[0]).toBe(
+      "Saved 300 results from Sunrise Labs August.pdf · 300 new",
+    );
+    expect(lines(receipt)).toHaveLength(301);
+    // The AI gets the start of it; the chat has it whole.
+    expect(saved.result.receipt).toMatch(/282 more lines in Rufi's receipt/);
+  });
+
+  it("removes a saved result to undo a save from a document", async () => {
+    await read();
+    const { HbA1c = "" } = drafts();
+    await say("Save it");
+    const saved = await call("save_changes", {
+      items: [{ item: HbA1c, version: 1, as: "new" }],
+    });
+    const id = saved.result.changes[0]?.id ?? "";
+    await say("Undo that");
+    const undone = await call("save_changes", {
+      changes: [{ kind: "result", action: "remove", id, source: "Undo that" }],
+    });
+    expect(undone.ok).toBe(true);
+    expect(one("SELECT removed FROM results WHERE id = ?", id)).toEqual({
+      removed: 1,
+    });
+  });
+});
+
+describe("dismissing draft items", () => {
+  it("dismisses items for good with a receipt line, and raises their versions and the document's", async () => {
+    await read();
+    const { "Vitamin D": vitamin = "", HbA1c = "" } = drafts();
+    await say("Skip the vitamin D, that row is old");
+    const done = await call("dismiss_items", {
+      items: [{ item: vitamin, version: 1 }],
+    });
+    expect(done.ok).toBe(true);
+    expect(lines(done.result.receipt)).toEqual([
+      "Dismissed 1 item from Sunrise Labs August.pdf: not saved",
+      "Vitamin D 18 ng/mL · page 2",
+    ]);
+    expect(
+      one("SELECT status, version FROM draft_items WHERE id = ?", vitamin),
+    ).toEqual({ status: "dismissed", version: 2 });
+    expect(
+      one("SELECT version FROM documents WHERE id = 'doc-asha-aug'"),
+    ).toEqual({ version: 2 });
+    const save = await call("save_changes", {
+      items: [{ item: vitamin, version: 2, as: "new" }],
+    });
+    expect(save.ok).toBe(false);
+    // A saved item can't be dismissed; nothing of the call is.
+    await call("save_changes", {
+      items: [{ item: HbA1c, version: 1, as: "new" }],
+    });
+    const refused = await call("dismiss_items", {
+      items: [{ item: HbA1c, version: 1 }],
+    });
+    expect(refused.ok).toBe(false);
+    expect(refused.issues[0]?.fix).toBe(
+      "This item is saved in the record. To take it out, remove its record with save_changes, after the user says yes.",
+    );
+  });
+});
+
+describe("a turn a Rufi event started", () => {
+  it("can't save or dismiss draft items", async () => {
+    await read();
+    const { HbA1c = "" } = drafts();
+    const before = written();
+    for (const [tool, input] of [
+      ["save_changes", { items: [{ item: HbA1c, version: 1, as: "new" }] }],
+      ["dismiss_items", { items: [{ item: HbA1c, version: 1 }] }],
+    ] as const) {
+      const answer = await call(tool, input, "rufi");
+      expect(answer.ok).toBe(false);
+      expect(answer.error).toBe(
+        "This turn was started by a Rufi event, not by the user, so nothing can be saved or made in it. Explain or ask; the user asks in a message of their own.",
+      );
+    }
+    expect(written()).toEqual(before);
+  });
+});

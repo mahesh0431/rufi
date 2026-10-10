@@ -4,7 +4,7 @@ import { createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
 import { getDocuments, retryReading } from "./documents.ts";
 import { getOverview } from "./overview.ts";
-import { saveChanges } from "./save.ts";
+import { dismissItems, saveChanges } from "./save.ts";
 import { getRecords } from "./records.ts";
 import {
   inputSchema,
@@ -18,6 +18,7 @@ import type { Log } from "../../platform/logs.ts";
 import type { ChatRow, Transcripts } from "../chat/transcript.ts";
 import { createBrief as makeBrief } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
+import { dismissItems as dismissDrafts } from "../record/items.ts";
 import { saveChanges as saveToRecord } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
 
@@ -27,6 +28,7 @@ export const TOOLS: readonly Tool[] = [
   getDocuments,
   readChat,
   saveChanges,
+  dismissItems,
   retryReading,
   createBrief,
 ];
@@ -148,10 +150,10 @@ export function chatCaller(
         personId: chat.personId,
         chatId: chat.id,
         pages,
-        save: (changes, callId) =>
+        save: (input, callId) =>
           origin === "rufi"
             ? Promise.reject(new Refusal(EVENT_TURN))
-            : transcripts.saveWithReceipt(chat, agentTurnId, (trx, at) =>
+            : transcripts.saveWithReceipt(chat, agentTurnId, (trx, at, refs) =>
                 saveToRecord(
                   trx,
                   {
@@ -159,8 +161,19 @@ export function chatCaller(
                     chatId: chat.id,
                     callId,
                     now: at,
+                    refs,
                   },
-                  changes,
+                  input,
+                ),
+              ),
+        dismiss: (input, callId) =>
+          origin === "rufi"
+            ? Promise.reject(new Refusal(EVENT_TURN))
+            : transcripts.saveWithReceipt(chat, agentTurnId, (trx, _at, refs) =>
+                dismissDrafts(
+                  trx,
+                  { personId: chat.personId, callId, refs },
+                  input,
                 ),
               ),
         retryReading: (documentId) =>

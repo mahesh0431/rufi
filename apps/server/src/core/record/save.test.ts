@@ -83,6 +83,14 @@ const row = (table: string, id: string) =>
     unknown
   >;
 const rows = (sql: string) => store.db.prepare(sql).all();
+/** A record's current sources, oldest first. */
+const sourcesOf = (id: string) =>
+  rows(
+    `SELECT type, coalesce(entry_id, document_id || ' p' || page) AS at FROM record_sources WHERE record_id = '${id}' AND removed_by IS NULL ORDER BY rowid`,
+  ).map((source) => {
+    const { type, at } = source as { type: string; at: string };
+    return type === "message" ? { type, entry_id: at } : { type, page: at };
+  });
 const receipts = () =>
   rows(
     "SELECT text, turn_id IS NOT NULL AS in_turn FROM transcript_entries WHERE kind = 'receipt' ORDER BY seq",
@@ -428,7 +436,6 @@ describe("saving each kind of record", () => {
         ...blank(c.table),
         id,
         person_id: "asha",
-        source_entry_id: source,
         removed: 0,
         ...(c.table === "symptoms" ||
         c.table === "medicine_uses" ||
@@ -460,9 +467,15 @@ describe("saving each kind of record", () => {
         );
         expect(lines(changed.body.result.receipt)).toEqual(c.change.receipt);
         expected.push(c.change.receipt);
-        // The rest stays as it was.
-        current = { ...first, ...c.change.stored, source_entry_id: again };
+        // The rest stays as it was; the new message joins its sources.
+        current = { ...first, ...c.change.stored };
         expect(row(c.table, id)).toEqual(current);
+        expect(sourcesOf(id)).toEqual([
+          { type: "message", entry_id: source },
+          { type: "message", entry_id: again },
+        ]);
+      } else {
+        expect(sourcesOf(id)).toEqual([{ type: "message", entry_id: source }]);
       }
 
       const gone = await save(
@@ -471,7 +484,7 @@ describe("saving each kind of record", () => {
       );
       expect(lines(gone.body.result.receipt)).toEqual(c.removed);
       expected.push(c.removed);
-      const removed = { ...current, removed: 1, source_entry_id: source };
+      const removed = { ...current, removed: 1 };
       expect(row(c.table, id)).toEqual(removed);
 
       expect(
@@ -500,7 +513,7 @@ describe("saving each kind of record", () => {
 describe("a save", () => {
   it("changes two records in one save with one receipt, and its reverse puts them back", async () => {
     const said = "I stopped creatine because of a stomach upset";
-    await say(said);
+    const first = await say(said);
     const before = row("medicine_uses", "med-a2");
     const saved = await save([
       {
@@ -545,10 +558,11 @@ describe("a save", () => {
       "Changed medicine use Creatine 5 g: status stopped → current",
       "Removed symptom Stomach upset",
     ]);
-    expect(row("medicine_uses", "med-a2")).toEqual({
-      ...before,
-      source_entry_id: yes,
-    });
+    expect(row("medicine_uses", "med-a2")).toEqual(before);
+    expect(sourcesOf("med-a2")).toEqual([
+      { type: "message", entry_id: first },
+      { type: "message", entry_id: yes },
+    ]);
     expect(row("symptoms", symptom)["removed"]).toBe(1);
     expect(receipts()).toHaveLength(2);
   });
@@ -1051,15 +1065,8 @@ describe("the health rules", () => {
         source: "corrected my HbA1c",
         fields: { value: "6.6" },
       },
-      {
-        kind: "result",
-        action: "remove",
-        id: "res-a2",
-        source: "corrected my HbA1c",
-      },
     ]);
     expect(refused.body.issues.map((issue) => issue.fix)).toEqual([
-      "This result was read from a document, so it changes only by amendment: add a new result with replaces set to this id.",
       "This result was read from a document, so it changes only by amendment: add a new result with replaces set to this id.",
     ]);
     const amended = await save(

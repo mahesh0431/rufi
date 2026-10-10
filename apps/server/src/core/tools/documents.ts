@@ -45,7 +45,7 @@ function shown(input: unknown): string {
 export const getDocuments = defineTool({
   name: "get_documents",
   shown,
-  description: `The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its files and pages, and its reading's status: "not_read" (not read yet: it waits for the user's yes or their Read it), "reading" (Rufi's reader is reading it now; its items come when it ends), "done" or "failed". With document: its pages (each with what the reader found: its state, its facts such as dates, lab and the name printed on it, and its issues) and its draft items: what the reader read, each with its id, version, page and fields exactly as printed, and why it may be unsure. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page as an image, with the page's own text when the PDF has some (use it for exact characters); a photo or a scan is the image alone. At most ${String(PART.documents)} documents, ${String(PART.pages)} pages or ${String(PART.items)} draft items come back; when there are more, the answer has "next": pass it as after to read on. Rufi chooses the person, not you.`,
+  description: `The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its files and pages, and its reading's status: "not_read" (not read yet: it waits for the user's yes or their Read it), "reading" (Rufi's reader is reading it now; its items come when it ends), "done" or "failed". With document: its version (it rises when its draft items change), its pages (each with what the reader found: its state, its facts such as dates, lab, report number and the name printed on it, and its issues) and its draft items: what the reader read, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed (a date on the item is its own; without one, the page's first printed date is used when it is saved), and why it may be unsure. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page as an image, with the page's own text when the PDF has some (use it for exact characters); a photo or a scan is the image alone. At most ${String(PART.documents)} documents, ${String(PART.pages)} pages or ${String(PART.items)} draft items come back; when there are more, the answer has "next": pass it as after to read on. Rufi chooses the person, not you.`,
   input: Input,
   callers: "model",
   readOnly: true,
@@ -130,7 +130,7 @@ export const getDocuments = defineTool({
 
     const document = await db
       .selectFrom("documents")
-      .select(["id", "added_at", "kind", "date"])
+      .select(["id", "added_at", "kind", "date", "version"])
       .where("person_id", "=", personId)
       .where("id", "=", input.document)
       .executeTakeFirst();
@@ -220,7 +220,16 @@ export const getDocuments = defineTool({
     const itemsPart = async (offset: number) => {
       const rows = await db
         .selectFrom("draft_items")
-        .select(["id", "version", "page", "status", "fields", "unsure"])
+        .select([
+          "id",
+          "version",
+          "page",
+          "status",
+          "fields",
+          "unsure",
+          "saved_as",
+          "record_id",
+        ])
         .where("person_id", "=", personId)
         .where("document_id", "=", document.id)
         .orderBy("page")
@@ -238,6 +247,10 @@ export const getDocuments = defineTool({
             version: d.version,
             page: d.page,
             status: d.status === "pending" ? "not saved" : d.status,
+            ...(d.status === "saved" && {
+              saved_as: d.saved_as,
+              record: d.record_id,
+            }),
             ...(JSON.parse(d.fields) as object),
             ...(unsure.length > 0 && { unsure }),
           };
@@ -250,6 +263,7 @@ export const getDocuments = defineTool({
       added_at: document.added_at,
       kind: document.kind,
       date: document.date,
+      version: document.version,
       status: status?.status ?? "not_read",
       ...(status?.status === "reading" && {
         reading: `saved ${String(status.saved)} of ${String(status.of)} pages so far; its draft items come when it ends`,

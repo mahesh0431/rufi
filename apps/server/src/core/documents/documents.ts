@@ -79,11 +79,13 @@ export function documents(
      * PDF, JPEG, PNG or HEIC, or doesn't open, refuses the whole add
      * (NotADocument). The same content as a document already there, or as
      * an earlier file of this add, is left out and named in `already`.
+     * `from`: where the person added them.
      */
     add: async (
       personId: string,
       files: readonly NewFile[],
       together: boolean,
+      from: "documents_page" | "chat" = "documents_page",
     ): Promise<Added> => {
       const looked: Looked[] = [];
       const already: { name: string; documentId: string }[] = [];
@@ -148,7 +150,7 @@ export function documents(
               id: documentId,
               person_id: personId,
               added_at: at,
-              added_from: "documents_page",
+              added_from: from,
               version: 0,
             })
             .execute();

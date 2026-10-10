@@ -131,7 +131,7 @@ describe("pnpm demo's reset", () => {
       expect(receipts[0]?.text).toContain("Magnesium");
       const saved = store.db
         .prepare(
-          "SELECT name, started, started_words, source_entry_id FROM medicine_uses WHERE person_id = 'asha' AND name = 'Magnesium'",
+          "SELECT name, started, started_words, s.entry_id AS source FROM medicine_uses m JOIN record_sources s ON s.record_id = m.id WHERE m.person_id = 'asha' AND name = 'Magnesium'",
         )
         .get();
       const said = entries.find((entry) =>
@@ -141,7 +141,7 @@ describe("pnpm demo's reset", () => {
         name: "Magnesium",
         started: "2026-10-03",
         started_words: "two days ago",
-        source_entry_id: said?.id,
+        source: said?.id,
       });
     } finally {
       store.close();
