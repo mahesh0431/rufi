@@ -41,6 +41,7 @@ import type { ThreadStartParams } from "./protocol/v2/ThreadStartParams.ts";
 import type { ThreadStartResponse } from "./protocol/v2/ThreadStartResponse.ts";
 import type { ThreadTokenUsageUpdatedNotification } from "./protocol/v2/ThreadTokenUsageUpdatedNotification.ts";
 import type { TurnCompletedNotification } from "./protocol/v2/TurnCompletedNotification.ts";
+import type { TurnStartedNotification } from "./protocol/v2/TurnStartedNotification.ts";
 import type { TurnStartResponse } from "./protocol/v2/TurnStartResponse.ts";
 import { RpcError } from "./rpc.ts";
 import { prepareCodexHome } from "./settings.ts";
@@ -185,6 +186,18 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
       }, deadlines.interruptEndMs).unref();
     };
 
+    /**
+     * The turn this run started. Codex names it in `turn/started` before the
+     * turn's first item, and may send both in the same read as its answer
+     * to turn/start, before Rufi has seen that answer: either names it.
+     */
+    const turnStarted = (id: string) => {
+      if (turnId !== undefined) return;
+      turnId = id;
+      // A Stop while the turn started: it ends now.
+      if (stopped) interrupt(stopped);
+    };
+
     const callTool = async (
       call: DynamicToolCallParams,
     ): Promise<DynamicToolCallResponse> => {
@@ -297,6 +310,8 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
                 reasoningOutputTokens: total.reasoningOutputTokens,
                 totalTokens: total.totalTokens,
               };
+            } else if (method === "turn/started") {
+              turnStarted((params as TurnStartedNotification).turn.id);
             } else if (method === "turn/completed") {
               const { turn } = params as TurnCompletedNotification;
               if (turn.id === turnId)
@@ -383,10 +398,7 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
         },
         deadlines.requestMs,
       );
-      turnId = turn.id;
-      // A Stop during turn/start: the turn it started ends now.
-      const during = stoppedNow();
-      if (during) interrupt(during);
+      turnStarted(turn.id);
       return outcome(await ended.promise);
     } finally {
       clearTimeout(deadline);

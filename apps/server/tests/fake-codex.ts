@@ -88,6 +88,11 @@ export interface Scenario {
   rateLimitUpdates?: Record<string, unknown>[];
   /** Threads the fake knows from before, as a restarted Codex would. */
   threads?: Record<string, { history?: string[] }>;
+  /**
+   * Lines go out together, every 20 ms, as a pipe can deliver them: an
+   * answer and the turn's first lines after it come in one read.
+   */
+  together?: boolean;
 }
 
 const scenario = JSON.parse(process.env["FAKE_CODEX"] ?? "{}") as Scenario;
@@ -103,8 +108,20 @@ record({
   codexHome: process.env["CODEX_HOME"],
 });
 
+let held = "";
 const send = (message: object) => {
-  process.stdout.write(`${JSON.stringify(message)}\n`);
+  const line = `${JSON.stringify(message)}\n`;
+  if (!scenario.together) {
+    process.stdout.write(line);
+    return;
+  }
+  if (held === "") {
+    setTimeout(() => {
+      process.stdout.write(held);
+      held = "";
+    }, 20);
+  }
+  held += line;
 };
 let nextId = 1000;
 const asked = new Map<number, (result: unknown) => void>();
