@@ -4,10 +4,12 @@
 // thread is ephemeral (nothing saved), has Rufi's instructions in place of
 // Codex's, no environment (no shell, files or patches), no network, no
 // sub-agents, web search, goals, skills or questions to the user, and exactly
-// the tools the task gives. Rufi checks the thread's model, effort and
-// access when it starts, and ends the turn as failed if Codex shows any item
-// Rufi didn't allow. The offline contract test (subagent.test.ts) proves the
-// complete set of tools the model gets on the pinned Codex.
+// the tools the task gives (on a code-mode model, inside Codex's exec, with
+// the few tools Codex always adds there). Rufi checks the thread's model,
+// effort and access when it starts, and ends the turn as failed if Codex
+// shows any item Rufi didn't allow. The offline contract test
+// (subagent.test.ts) proves the complete set of tools each model gets on the
+// pinned Codex.
 import { setTimeout as sleep } from "node:timers/promises";
 import { join } from "node:path";
 import { errorCode, type Log } from "../../platform/logs.ts";
@@ -57,13 +59,20 @@ export interface SubAgentDeps {
 }
 
 /**
- * The models a sub-agent may run on: those the pinned Codex gives Rufi's
- * tools to directly. Its other models are code-mode only: Codex adds `exec`
- * and other tools of its own, and an `exec` call shows no item Rufi could
- * refuse (lockdown evidence, 10 Oct 2026).
+ * The models a sub-agent may run on, the default first, each with the route
+ * the pinned Codex gives Rufi's tools on it (ADR 0010). Direct: the model
+ * calls them itself, and Codex adds none of its own. Code: the model calls
+ * them from JavaScript in Codex's `exec` (an isolate with no files or
+ * network), and Codex always adds `exec`, `wait`, `request_user_input_async`
+ * and, inside `exec`, `clock__curr_time`; nothing turns them off.
  */
-export const SUB_AGENT_MODELS = [{ id: "gpt-5.5", name: "GPT-5.5" }];
-const DIRECT_MODELS = new Set(SUB_AGENT_MODELS.map((model) => model.id));
+export const SUB_AGENT_MODELS = [
+  { id: "gpt-6.1-sol", name: "GPT-6.1-Sol", route: "code" },
+  { id: "gpt-5.5", name: "GPT-5.5", route: "direct" },
+] as const;
+
+/** Codex's id for a tool call made from a script in `exec` (0.159.3). */
+const VIA_EXEC = "exec-";
 
 /** A token must outlast the whole turn, plus this margin. */
 const TOKEN_MARGIN_MS = 5 * 60_000;
@@ -76,8 +85,11 @@ const TOKEN_MARGIN_MS = 5 * 60_000;
 const LOCKED_CONFIG = {
   /** spawn_agent and its tools (and tool_search, which finds them). */
   agents: { enabled: false },
-  /** multi_agent_v2 on would bring the sub-agent tools back regardless. */
-  features: { multi_agent_v2: false, goals: false },
+  /**
+   * multi_agent_v2 on would bring the sub-agent tools back regardless; a
+   * model with Codex's clock would also get its sleep tool.
+   */
+  features: { multi_agent_v2: false, goals: false, sleep_tool: false },
   /** request_user_input: a sub-agent has nobody to ask. */
   tools: { experimental_request_user_input: { enabled: false } },
   web_search: "disabled",
@@ -88,25 +100,44 @@ const LOCKED_CONFIG = {
   include_collaboration_mode_instructions: false,
 };
 
-/** What the turn may show: messages, reasoning, compactions and its own tools. */
-const allowed = (item: ThreadItem, namespace: string) =>
-  item.type === "userMessage" ||
-  item.type === "agentMessage" ||
-  item.type === "reasoning" ||
-  item.type === "contextCompaction" ||
-  (item.type === "dynamicToolCall" && item.namespace === namespace);
+/**
+ * Why the turn may not show this item, or nothing when it may: messages,
+ * reasoning, compactions and its own tools, by its model's route.
+ */
+function refusal(
+  item: ThreadItem,
+  namespace: string,
+  route: "direct" | "code",
+): string | undefined {
+  if (item.type === "agentMessage" && item.questions !== null) {
+    return "The reader asked a question, but nobody is there to answer it, so Rufi stopped it.";
+  }
+  if (
+    item.type === "userMessage" ||
+    item.type === "agentMessage" ||
+    item.type === "reasoning" ||
+    item.type === "contextCompaction" ||
+    (item.type === "dynamicToolCall" &&
+      item.namespace === namespace &&
+      (route === "code" || !item.id.startsWith(VIA_EXEC)))
+  ) {
+    return undefined;
+  }
+  return "The AI used something Rufi didn't give it, so Rufi stopped it.";
+}
 
 export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
   const deadlines = { ...DEADLINES, ...deps.deadlines };
   const log = deps.log ?? (() => undefined);
 
   return async (task: SubAgentTask, signal?: AbortSignal) => {
-    if (!DIRECT_MODELS.has(task.model)) {
+    const chosen = SUB_AGENT_MODELS.find((model) => model.id === task.model);
+    if (!chosen) {
       return {
         end: {
           status: "failed",
           reason: "provider_failed",
-          text: `Rufi's sub-agents run only on ${[...DIRECT_MODELS].join(", ")}.`,
+          text: `Rufi's sub-agents run only on ${SUB_AGENT_MODELS.map((model) => model.id).join(", ")}.`,
         },
         compactions: 0,
       };
@@ -165,6 +196,7 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
         call.threadId !== threadId ||
         call.turnId !== turnId ||
         call.namespace !== task.tools.namespace ||
+        (chosen.route === "direct" && call.callId.startsWith(VIA_EXEC)) ||
         stopped
       ) {
         return refuse(
@@ -198,13 +230,10 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
     };
 
     const onItem = (item: ThreadItem, completed: boolean) => {
-      if (!allowed(item, task.tools.namespace)) {
+      const refused = refusal(item, task.tools.namespace, chosen.route);
+      if (refused !== undefined) {
         log("subagent.unexpected", { item: item.type });
-        stop({
-          status: "failed",
-          reason: "provider_failed",
-          text: "The AI used something Rufi didn't give it, so Rufi stopped it.",
-        });
+        stop({ status: "failed", reason: "provider_failed", text: refused });
         return;
       }
       if (completed && item.type === "contextCompaction") {

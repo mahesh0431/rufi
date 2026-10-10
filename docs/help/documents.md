@@ -61,7 +61,9 @@ Rufi reads each document as soon as you add it. It sends the document's pages to
 
 ### The reader's model and effort
 
-In **Settings** → **Documents**, choose the **Reader model** and its **Effort**: **Low** (the start), **Medium** or **High**. Higher effort thinks longer on each page, and uses more of your plan. Today the reader can run on one model only, GPT-5.5, because it is the one model where Rufi can lock the reader down to its two tools.
+In **Settings** → **Documents**, choose the **Reader model**: **GPT-6.1-Sol** (the start) or **GPT-5.5**. These are the models where Rufi can lock the reader down to its two tools. On GPT-6.1-Sol, the reader uses its tools through small pieces of code, with no files and no internet (see [Your data and the AI](your-data-and-the-ai.md#reading-your-documents)).
+
+Then choose its **Effort**: **Low**, **Medium** (the start) or **High**. Higher effort thinks longer on each page, and uses more of your plan.
 
 Your choice is used by the next reading that starts. A reading that runs keeps the model and effort it started with; if it stops and goes on later (after Rufi restarts, or with **Retry**), it goes on with the ones chosen then.
 

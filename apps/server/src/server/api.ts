@@ -304,7 +304,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       regions: emergencyRegions(),
       reader: {
         ...(await readerChoice(transcripts.setting)),
-        models: SUB_AGENT_MODELS,
+        models: SUB_AGENT_MODELS.map(({ id, name }) => ({ id, name })),
       },
     };
   };
