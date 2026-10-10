@@ -14,6 +14,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { DatabaseSync } from "node:sqlite";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Entry, Turn } from "@rufi/contracts";
 import type { Brief } from "@rufi/contracts/briefs";
@@ -192,6 +193,31 @@ function chat(api: Api) {
       sent++;
     },
     steer: (text: string) => fromBox("steer", text),
+    /**
+     * Sends a message with chips once nothing runs, as the box does, and
+     * waits for its reply to end.
+     */
+    say: async (text: string, refs: unknown[] = []) => {
+      const idle = async () => {
+        for (let i = 0; i < 600; i++) {
+          const { turns } = await read();
+          const waiting = (await api("GET", `${path}/queue`)) as {
+            items: unknown[];
+          };
+          if (
+            turns.every((t) => t.status !== "running") &&
+            waiting.items.length === 0
+          )
+            return turns.length;
+          await sleep(500);
+        }
+        throw new Error("the chat didn't settle within five minutes");
+      };
+      const before = await idle();
+      await api("PUT", draft, { text, refs });
+      await api("POST", `${path}/messages`, { id: randomUUID(), text, refs });
+      await ended(before + 1);
+    },
     stop: () => api("POST", `${path}/stop`),
     /** What waits in the queue, as the screens read it. */
     queue: async () =>
@@ -371,6 +397,28 @@ const SEEDS: Record<string, string> = {
         day("2026-01-01", i),
       ),
     ).join(", "),
+  duplicate_beyond_200:
+    RESULTS +
+    [
+      // Saved first, so a read of 2 Jun gives it after the others.
+      result("dup-ldl", "LDL Cholesterol", "109", "mg/dL", "2026-06-02"),
+      ...Array.from({ length: 249 }, (_, i) =>
+        result(
+          `j${String(i)}`,
+          "Glucose",
+          String(90 + (i % 20)),
+          "mg/dL",
+          "2026-06-02",
+        ),
+      ),
+    ].join(", "),
+  correction_vs_separate:
+    RESULTS +
+    [
+      result("cr-old", "Creatinine", "0.98", "mg/dL", "2026-08-25"),
+      result("cr-may", "Creatinine", "1.02", "mg/dL", "2026-05-10"),
+      result("hb-dup", "HbA1c", "5.6", "%", "2026-08-25"),
+    ].join(", "),
   analysis:
     RESULTS +
     [
@@ -414,6 +462,126 @@ const SUGAR_BRIEF = ["med-a1", "med-a2", "res-a1", "res-a2"];
 /** A Rufi event from a test producer: its line, and a note for the AI. */
 const testEvent = (core: Core, line: string, ask: string) =>
   core.chat.event("asha", { kind: "test", line, ask });
+
+/**
+ * Adds a fictional report as a document (with the yes to read it), waits
+ * for its reading to end, and gives the document's id.
+ */
+async function readReport(
+  api: Api,
+  home: string,
+  report: string,
+  name: string,
+): Promise<string> {
+  const c = chat(api);
+  await api("PUT", "/api/settings", { readDocuments: "yes" });
+  const found = REPORTS[report];
+  if (!found) throw new Error(`no fictional report ${report}`);
+  await api.upload([{ name, bytes: textPdf(layout(found)) }]);
+  for (let i = 0; ; i++) {
+    const { entries } = await c.read();
+    const lines = entries.filter((e) => e.kind === "event").map((e) => e.text);
+    if (i > 720)
+      throw new Error(`the reading took over six minutes: ${lines.join("; ")}`);
+    if (
+      lines.some((l) => l.startsWith("Lab report") || l.startsWith("Couldn't"))
+    )
+      break;
+    await sleep(500);
+  }
+  // A reading that needs the user gives the AI a note: its reply starts
+  // soon after the line, and a message waits until it has ended.
+  await sleep(3000);
+  const store = openReadOnly(databasePath(home));
+  const row = store?.db
+    .prepare("SELECT document_id AS id FROM document_pages WHERE file_name = ?")
+    .get(name) as { id: string } | undefined;
+  store?.close();
+  if (!row) throw new Error(`no document ${name}`);
+  return row.id;
+}
+
+/** A document's draft items, as stored now. */
+function draftsOf(home: string, documentId: string) {
+  const store = openReadOnly(databasePath(home));
+  if (!store) throw new Error("no database");
+  const rows = store.db
+    .prepare(
+      "SELECT id, page, status, saved_as, record_id, fields, original FROM draft_items WHERE document_id = ? ORDER BY page, seq",
+    )
+    .all(documentId) as {
+    id: string;
+    page: number;
+    status: string;
+    saved_as: string | null;
+    record_id: string | null;
+    fields: string;
+    original: string;
+  }[];
+  store.close();
+  return rows.map((row) => ({
+    ...row,
+    test: (JSON.parse(row.fields) as { test_name: string }).test_name,
+    value: (JSON.parse(row.fields) as { value_text: string }).value_text,
+    read: (JSON.parse(row.original) as { value_text: string }).value_text,
+  }));
+}
+
+/** The results Rufi has now, with their sources, by id. */
+function resultsNow(home: string) {
+  const store = openReadOnly(databasePath(home));
+  if (!store) throw new Error("no database");
+  const rows = store.db
+    .prepare(
+      `SELECT r.id, r.test_name, r.value_text, r.measured_at, r.replaces_id, r.removed,
+         (SELECT json_group_array(json_object('type', s.type, 'document', s.document_id, 'page', s.page))
+            FROM record_sources s WHERE s.person_id = r.person_id AND s.kind = 'result'
+              AND s.record_id = r.id AND s.removed_by IS NULL) AS sources
+       FROM results r WHERE r.person_id = 'asha' ORDER BY r.rowid`,
+    )
+    .all() as {
+    id: string;
+    test_name: string;
+    value_text: string;
+    measured_at: string | null;
+    replaces_id: string | null;
+    removed: number;
+    sources: string;
+  }[];
+  store.close();
+  return rows.map((row) => ({
+    ...row,
+    sources: JSON.parse(row.sources) as {
+      type: string;
+      document: string | null;
+      page: number | null;
+    }[],
+  }));
+}
+
+/** Results with a page of this document among their sources. */
+const fromDocument = (home: string, documentId: string) =>
+  resultsNow(home).filter((r) =>
+    r.sources.some((s) => s.document === documentId),
+  );
+
+/** One chip for the box. */
+const chipOf = (type: "document" | "draft_item", id: string) => ({
+  type,
+  id,
+});
+
+/** Answers yes when the AI asked instead of saving. */
+async function yesIfAsked(
+  c: ReturnType<typeof chat>,
+  home: string,
+  yes = "Yes, save it.",
+) {
+  if (record(home).saves === 0) await c.say(yes);
+}
+
+/** Lipids from 2 Jun 2026, as the fictional lab printed them. */
+const LIPIDS = REPORTS["lipids"]?.rows ?? [];
 
 const CASES: Record<
   string,
@@ -1091,6 +1259,225 @@ const CASES: Record<
         steer_saved: snapshot.entries.some((e) => e.kind === "steer"),
         says_steered: /steered/i.test(reply),
         one_reply: snapshot.turns.length === 1,
+      },
+      snapshot,
+    };
+  },
+  /** "Save these" with three result chips: exactly those are saved, once. */
+  save_these: async (api, home) => {
+    const c = chat(api);
+    const doc = await readReport(api, home, "lipids", "lotus-jun.pdf");
+    const chosen = draftsOf(home, doc).filter((d) =>
+      ["HDL Cholesterol", "LDL Cholesterol", "Triglycerides"].includes(d.test),
+    );
+    await c.say(
+      "Save these three to my record.",
+      chosen.map((d) => chipOf("draft_item", d.id)),
+    );
+    await yesIfAsked(c, home);
+    const snapshot = await c.read();
+    const drafts = draftsOf(home, doc);
+    return {
+      checks: {
+        three_chosen: chosen.length === 3,
+        one_save: record(home).saves === 1,
+        exactly_those_saved:
+          drafts
+            .filter((d) => d.status === "saved")
+            .map((d) => d.id)
+            .sort()
+            .join() ===
+          chosen
+            .map((d) => d.id)
+            .sort()
+            .join(),
+        three_results_from_the_page: fromDocument(home, doc).length === 3,
+        one_receipt: receipts(snapshot) === 1,
+      },
+      snapshot,
+    };
+  },
+  /** "Explain, don't save": the document is explained, and nothing is saved. */
+  explain_dont_save: async (api, home) => {
+    const c = chat(api);
+    const doc = await readReport(api, home, "cbc", "sunrise-aug-cbc.pdf");
+    await c.say(
+      "Can you explain what this report shows? Don't save anything yet.",
+      [chipOf("document", doc)],
+    );
+    const snapshot = await c.read();
+    return {
+      checks: {
+        explains: /haemoglobin|hemoglobin/i.test(lastReply(snapshot)),
+        nothing_saved: nothingSaved(home, snapshot),
+      },
+      snapshot,
+    };
+  },
+  /** A draft isn't the record: the answer says the LDL isn't saved yet. */
+  draft_vs_saved: async (api, home) => {
+    const c = chat(api);
+    await readReport(api, home, "lipids", "lotus-jun.pdf");
+    await c.say("What was my last LDL cholesterol?");
+    const snapshot = await c.read();
+    return {
+      checks: {
+        says_not_saved:
+          /draft|not (yet )?saved|isn.t saved|hasn.t been saved|not in your (saved )?record|not been saved/i.test(
+            lastReply(snapshot),
+          ),
+        nothing_saved: nothingSaved(home, snapshot),
+      },
+      snapshot,
+    };
+  },
+  /** Another name on the report: the AI asks whose it is and saves nothing for someone else. */
+  another_name: async (api, home) => {
+    const c = chat(api);
+    const doc = await readReport(api, home, "other_name", "lotus-sep.pdf");
+    await c.say("Save it.", [chipOf("document", doc)]);
+    const asked = await c.read();
+    await c.say("It's my sister Meera's report, not mine.");
+    const snapshot = await c.read();
+    return {
+      checks: {
+        names_meera: /meera/i.test(lastReply(asked)),
+        nothing_saved: nothingSaved(home, snapshot),
+      },
+      snapshot,
+    };
+  },
+  /**
+   * A page that couldn't be read: the AI says so, and only what was read is
+   * saved. (Page 2 is marked unreadable after the reading, as the reader
+   * marks a blurred photo.)
+   */
+  unreadable_page: async (api, home) => {
+    const c = chat(api);
+    const doc = await readReport(api, home, "urine", "lotus-urine.pdf");
+    const db = new DatabaseSync(databasePath(home));
+    db.exec("PRAGMA busy_timeout = 5000");
+    db.prepare(
+      "DELETE FROM draft_items WHERE document_id = ? AND page = 2",
+    ).run(doc);
+    db.prepare(
+      "UPDATE document_pages SET entry_checks = NULL, state = 'unreadable', state_why = 'The photo is too blurred to read.', entry = json_object('outcome', 'unreadable', 'why', 'The photo is too blurred to read.', 'items', json('[]')) WHERE document_id = ? AND position = 2",
+    ).run(doc);
+    db.close();
+    const pageOne = draftsOf(home, doc);
+    await c.say("Save it.", [chipOf("document", doc)]);
+    const first = await c.read();
+    await yesIfAsked(c, home, "Yes, save what was read.");
+    const snapshot = await c.read();
+    return {
+      checks: {
+        names_the_page:
+          /page 2|couldn.t be read|could not be read|unreadable|blurred/i.test(
+            lastReply(first),
+          ),
+        saved_what_was_read:
+          fromDocument(home, doc).length === pageOne.length &&
+          pageOne.length > 0,
+        one_save: record(home).saves === 1,
+      },
+      snapshot,
+    };
+  },
+  /**
+   * An amended report: its Creatinine corrects the one saved for the same
+   * day, not the one from May; its HbA1c is another source of the same
+   * saved result.
+   */
+  correction_vs_separate: async (api, home) => {
+    const c = chat(api);
+    const doc = await readReport(api, home, "amended", "sunrise-amended.pdf");
+    await c.say("Save it.", [chipOf("document", doc)]);
+    await yesIfAsked(
+      c,
+      home,
+      "Yes: the creatinine corrects the one I have from 25 Aug, and the HbA1c is the same result I already have. Save it.",
+    );
+    await yesIfAsked(c, home);
+    const snapshot = await c.read();
+    const now = resultsNow(home);
+    const fresh = now.filter((r) => r.sources.some((s) => s.document === doc));
+    return {
+      checks: {
+        one_save: record(home).saves === 1,
+        creatinine_corrects_august: now.some(
+          (r) => r.test_name === "Creatinine" && r.replaces_id === "cr-old",
+        ),
+        may_untouched:
+          !now.some((r) => r.replaces_id === "cr-may") &&
+          now.find((r) => r.id === "cr-may")?.sources.length === 0,
+        hba1c_another_source:
+          now
+            .find((r) => r.id === "hb-dup")
+            ?.sources.some((s) => s.document === doc) === true &&
+          !fresh.some((r) => r.id !== "hb-dup" && r.test_name === "HbA1c"),
+        all_eight_in: fresh.length === 8,
+      },
+      snapshot,
+    };
+  },
+  /** The user corrects a value before saving: Rufi saves theirs and keeps the reader's. */
+  correction_before_saving: async (api, home) => {
+    const c = chat(api);
+    const doc = await readReport(api, home, "lipids", "lotus-jun.pdf");
+    await c.say(
+      "Before you save: the LDL on this report is wrong, the lab told me it is 112, not 109. Save it with that.",
+      [chipOf("document", doc)],
+    );
+    await yesIfAsked(c, home);
+    const snapshot = await c.read();
+    const ldl = resultsNow(home).find(
+      (r) =>
+        r.test_name === "LDL Cholesterol" &&
+        r.sources.some((s) => s.document === doc),
+    );
+    const draft = draftsOf(home, doc).find((d) => d.test === "LDL Cholesterol");
+    return {
+      checks: {
+        saved_112: ldl?.value_text === "112",
+        your_words_a_source:
+          ldl?.sources.some((s) => s.type === "message") === true,
+        reader_value_kept: draft?.read === "109",
+        all_six_in: fromDocument(home, doc).length === LIPIDS.length,
+      },
+      snapshot,
+    };
+  },
+  /**
+   * The same LDL is already saved, after 249 other results of that day: the
+   * AI reads on past the first records and makes it another source.
+   */
+  duplicate_beyond_200: async (api, home) => {
+    const c = chat(api);
+    const doc = await readReport(api, home, "lipids", "lotus-jun.pdf");
+    await c.say("Save it.", [chipOf("document", doc)]);
+    await yesIfAsked(
+      c,
+      home,
+      "Yes, that LDL is the same result I already have. Save the rest as new.",
+    );
+    const snapshot = await c.read();
+    const now = resultsNow(home);
+    return {
+      checks: {
+        read_on: recordReads(home).some((call) =>
+          call.input.includes('"after"'),
+        ),
+        ldl_another_source:
+          now
+            .find((r) => r.id === "dup-ldl")
+            ?.sources.some((s) => s.document === doc) === true,
+        no_second_ldl: !now.some(
+          (r) =>
+            r.id !== "dup-ldl" &&
+            r.test_name === "LDL Cholesterol" &&
+            r.removed === 0,
+        ),
+        rest_new: fromDocument(home, doc).length === LIPIDS.length,
       },
       snapshot,
     };
