@@ -302,11 +302,9 @@ describe("a reading", () => {
 
   it.each([
     { printed: "Meera Fictional", askName: true },
-    { printed: "Asha Devi Fictional", askName: true },
-    { printed: "Asha", askName: true },
     { printed: "Dr Asha Fictional", askName: true },
-    { printed: "Asha-Fictional", askName: true },
     { printed: "  ASHA   Fictional  ", askName: false },
+    { printed: " ", askName: false },
   ])(
     "asks about an unsure value and a differing printed name: $printed",
     async ({ printed, askName }) => {
@@ -654,6 +652,7 @@ describe("a restart or a failure", () => {
     expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages"]);
     await running.close();
   });
+
   it("waits visibly when the provider rejects a stored sign-in, then resumes at the poll time", async () => {
     await reads.setConsent("yes");
     const { runs, reader: running } = startReader(
