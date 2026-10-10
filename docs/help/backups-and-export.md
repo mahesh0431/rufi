@@ -30,7 +30,7 @@ Each hour Rufi checks that its newest backup is still whole: the record, and tha
 
 Open **Settings**. Under **Backups**, Rufi shows when it made the last good backup. If the last try failed, or a backup in the folder is damaged, Rufi says when and why, and when your last good backup is from. After Rufi starts again, Settings shows the backup Rufi makes as it starts: while it runs, and then whether it worked. An older failure isn't shown again.
 
-To make a backup now, click **Back up now**.
+To make a backup now, click **Back up now**. When it is done, Settings says **Backed up just now**.
 
 ## Restore a backup
 
@@ -89,7 +89,7 @@ An export is one zip file with everything in your record, your chat, your docume
 2. Under **Export**, click **Export my data**.
 3. In the Rufi app, choose where to save the file. In a browser, it goes to your downloads.
 
-The file is named for the day, for example `rufi-export-2026-10-08.zip`. In it:
+Settings says **Exported your data as a zip**. The file is named for the day, for example `rufi-export-2026-10-08.zip`, unless you give it another name. In it:
 
 | In the zip    | What it is                                                                     |
 | ------------- | ------------------------------------------------------------------------------ |

@@ -246,6 +246,12 @@ function BackupsSection() {
                   ? "Backing up…"
                   : "Back up now"}
               </Button>
+              {/* The same minute as the last one shows no change above. */}
+              {backUp.data?.failed === null && !backUp.isPending && (
+                <p role="status" className="text-muted">
+                  Backed up just now.
+                </p>
+              )}
               {backUp.error && (
                 <p role="alert" className="text-muted">
                   {backUp.error.message}
@@ -278,9 +284,10 @@ function ExportSection() {
           <Download size={15} aria-hidden />
           {exported.isPending ? "Exporting…" : "Export my data"}
         </Button>
-        {exported.data && (
+        {/* The page can't know the name chosen in the save dialog. */}
+        {exported.isSuccess && (
           <p role="status" className="text-muted">
-            Exported {exported.data}.
+            Exported your data as a zip.
           </p>
         )}
         {exported.error && (

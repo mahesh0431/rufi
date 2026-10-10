@@ -323,7 +323,7 @@ async function withFile(
  * Downloads a file the core makes: fetched with the tab's proof, then saved
  * through the browser (the Rufi app asks where). Gives the file's name.
  */
-export async function download(path: string): Promise<string> {
+export async function download(path: string): Promise<void> {
   const { response, file } = await withFile(
     path,
     {},
@@ -342,7 +342,6 @@ export async function download(path: string): Promise<string> {
   setTimeout(() => {
     URL.revokeObjectURL(url);
   }, 60_000);
-  return name;
 }
 
 /** A file the core keeps, such as a document's original, to show. */

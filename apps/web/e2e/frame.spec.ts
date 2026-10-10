@@ -727,6 +727,7 @@ test("Settings backs up, says when a backup failed, and exports your data", asyn
   }
   await page.getByRole("button", { name: "Back up now" }).click();
   await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByRole("status")).toHaveText("Backed up just now.");
 
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export my data" }).click();
@@ -734,9 +735,9 @@ test("Settings backs up, says when a backup failed, and exports your data", asyn
   expect(file.suggestedFilename()).toMatch(
     /^rufi-export-\d{4}-\d{2}-\d{2}\.zip$/,
   );
-  await expect(page.getByRole("status")).toHaveText(
-    `Exported ${file.suggestedFilename()}.`,
-  );
+  await expect(
+    page.getByRole("status").filter({ hasText: "Exported" }),
+  ).toHaveText("Exported your data as a zip.");
 });
 
 test("an export that doesn't come in time says so, and can be tried again", async ({
