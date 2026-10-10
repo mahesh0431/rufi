@@ -116,7 +116,7 @@ The AI can save medicines you take, prescriptions, symptoms, conditions, allergi
 
 What Rufi does when it saves:
 
-- **Only what you said.** A detail you didn't give stays unknown. A date is saved only when you gave one, at the precision you gave it: "since 2019" stays a year. Rufi keeps your words for the date, such as "last Monday", and counts them from when you sent the message, not from when you said yes.
+- **Only what you said.** A detail you didn't give stays unknown. A date is saved only when you gave one, at the precision you gave it: "since 2019" stays a year. Rufi keeps your words for the date, such as "last Monday", and counts them from when you sent the message, not from when you said yes. A result always needs a date: when a report has none, the AI asks you for one, and a rough date is fine (see [Save results to your record](documents.md#save-results-to-your-record)).
 - **All or nothing.** When one part can't be saved, nothing is saved, and the AI tells you why.
 - **Nothing is deleted.** A record you remove leaves your current record, and Rufi keeps its history.
 - **One medicine, one use.** When you take a medicine in two ways, such as a morning and a night dose, stopping one doesn't stop the other. A prescription doesn't add a medicine you take.

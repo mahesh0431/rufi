@@ -460,18 +460,25 @@ const SUGAR_BRIEF = ["med-a1", "med-a2", "res-a1", "res-a2"];
 
 /**
  * Adds a fictional report as a document (Rufi reads it at once), waits
- * for its reading to end, and gives the document's id.
+ * for its reading to end, and gives the document's id. `undated`: the
+ * report has no date printed on it (no Collected or Reported line).
  */
 async function readReport(
   api: Api,
   home: string,
   report: string,
   name: string,
+  { undated = false } = {},
 ): Promise<string> {
   const c = chat(api);
   const found = REPORTS[report];
   if (!found) throw new Error(`no fictional report ${report}`);
-  await api.upload([{ name, bytes: textPdf(layout(found)) }]);
+  const pages = layout(found).map((page) =>
+    undated
+      ? page.filter((text) => !/^(Collected|Reported):/.test(text.text))
+      : page,
+  );
+  await api.upload([{ name, bytes: textPdf(pages) }]);
   for (let i = 0; ; i++) {
     const { entries } = await c.read();
     const lines = entries.filter((e) => e.kind === "event").map((e) => e.text);
@@ -1197,6 +1204,45 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
           fromDocument(home, doc).length === pageOne.length &&
           pageOne.length > 0,
         one_save: record(home).saves === 1,
+      },
+      snapshot,
+    };
+  },
+  /**
+   * A report with no date printed on it: "Save it." makes the AI ask when
+   * the sample was taken, saving nothing; a rough date then saves every
+   * result at the precision given, with the person's words.
+   */
+  no_printed_date: async (api, home) => {
+    const c = chat(api);
+    const doc = await readReport(api, home, "urine", "lotus-undated.pdf", {
+      undated: true,
+    });
+    const drafts = draftsOf(home, doc);
+    await c.say("Save it.", [chipOf("document", doc)]);
+    const asked = await c.read();
+    const savedBefore = record(home).saves;
+    await c.say("Around August 2026.");
+    await yesIfAsked(c, home);
+    const snapshot = await c.read();
+    const saved = fromDocument(home, doc);
+    const store = openReadOnly(databasePath(home));
+    const words = (store?.db
+      .prepare(
+        "SELECT DISTINCT measured_words AS words FROM results WHERE person_id = 'asha' AND measured_at = '2026-08'",
+      )
+      .all() ?? []) as { words: string | null }[];
+    store?.close();
+    return {
+      checks: {
+        asks_for_the_date: /date|when/i.test(replyOf(asked)),
+        nothing_saved_before_the_date: savedBefore === 0,
+        one_save: record(home).saves === 1,
+        every_result_saved: saved.length === drafts.length && drafts.length > 0,
+        month_precision: saved.every((r) => r.measured_at === "2026-08"),
+        the_persons_words:
+          words.length > 0 &&
+          words.every((w) => /August 2026/i.test(w.words ?? "")),
       },
       snapshot,
     };
