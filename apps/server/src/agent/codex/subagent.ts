@@ -27,6 +27,8 @@ import {
 } from "./appserver.ts";
 import { dynamicTools } from "./codex.ts";
 import { endOf } from "./events.ts";
+import type { AccountRateLimitsUpdatedNotification } from "./protocol/v2/AccountRateLimitsUpdatedNotification.ts";
+import type { RateLimitSnapshot } from "./protocol/v2/RateLimitSnapshot.ts";
 import type { ConfigReadResponse } from "./protocol/v2/ConfigReadResponse.ts";
 import type { ConfigRequirementsReadResponse } from "./protocol/v2/ConfigRequirementsReadResponse.ts";
 import type { DynamicToolCallParams } from "./protocol/v2/DynamicToolCallParams.ts";
@@ -118,6 +120,7 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
 
     let compactions = 0;
     let usage: SubAgentOutcome["usage"];
+    let limits: RateLimitSnapshot | undefined;
     let threadId: string | undefined;
     let turnId: string | undefined;
     /** Rufi's own reason to end the turn (a deadline, an item it didn't allow). */
@@ -237,6 +240,14 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
             throw new RpcError(-32601, `Rufi doesn't handle ${method}.`);
           },
           notification: (method, params) => {
+            // Account updates have no thread id and can be sparse.
+            if (method === "account/rateLimits/updated") {
+              limits = {
+                ...limits,
+                ...(params as AccountRateLimitsUpdatedNotification).rateLimits,
+              };
+              return;
+            }
             const p = params as {
               threadId?: string;
               turnId?: string;
@@ -258,7 +269,8 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
               };
             } else if (method === "turn/completed") {
               const { turn } = params as TurnCompletedNotification;
-              if (turn.id === turnId) ended.resolve(stopped ?? endOf(turn));
+              if (turn.id === turnId)
+                ended.resolve(stopped ?? endOf(turn, limits));
             }
           },
           ignored: (what, error) => {

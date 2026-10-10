@@ -185,7 +185,12 @@ export function reader(deps: ReaderDeps) {
           error.code === "sign_in_again" ||
           error.code === "plan_use_off")
       ) {
-        await readings.requeue(started, { waiting: "sign_in" });
+        await readings.requeue(started, {
+          waiting: "sign_in",
+          until: new Date(
+            now() + (deps.signInPollMs ?? SIGN_IN_POLL_MS),
+          ).toISOString(),
+        });
       } else if (error instanceof ChatGptError && error.code === "temporary") {
         // The sign-in can't be renewed yet: wait a little, keep the retry.
         await readings.requeue(started, {
@@ -223,7 +228,12 @@ export function reader(deps: ReaderDeps) {
     if (end.status === "completed") {
       await finish(started);
     } else if (end.reason === "sign_in") {
-      await readings.requeue(started, { waiting: "sign_in" });
+      await readings.requeue(started, {
+        waiting: "sign_in",
+        until: new Date(
+          now() + (deps.signInPollMs ?? SIGN_IN_POLL_MS),
+        ).toISOString(),
+      });
     } else if (end.reason === "usage_limit") {
       await readings.requeue(started, {
         waiting: "usage_limit",

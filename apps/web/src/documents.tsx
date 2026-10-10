@@ -347,7 +347,9 @@ function Status({
         : document.status === "failed"
           ? `Failed · saved ${String(reading.saved)} of ${String(reading.of)}`
           : reading.results === 0
-            ? "Nothing to save"
+            ? reading.canRetry
+              ? "To check"
+              : "Nothing to save"
             : `To check · ${reading.results === 1 ? "1 result" : `${String(reading.results)} results`}`;
   return (
     <span className="flex flex-wrap items-center gap-1">

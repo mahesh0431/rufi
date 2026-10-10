@@ -20,6 +20,7 @@ import {
   type ModelRequest,
   type Step,
 } from "../../../tests/fake-model.ts";
+import type { Scenario } from "../../../tests/fake-codex.ts";
 import { documents } from "../../core/documents/documents.ts";
 import { notebook, type Run } from "../../core/documents/notebook.ts";
 import { pagePath } from "../../core/documents/originals.ts";
@@ -444,4 +445,49 @@ describe("the reader on the pinned Codex", () => {
     expect(answers).toEqual([]);
     expect(stored().pages.every((p) => p["entry"] === null)).toBe(true);
   }, 120_000);
+});
+
+describe("the reader's provider outcomes", () => {
+  it.each([true, false])(
+    "preserves the account reset time when reported: %s",
+    async (reported) => {
+      const scenario: Scenario = reported
+        ? {
+            resetsAt: 1_791_617_700,
+            rateLimitUpdates: [{ planType: "plus", credits: null }],
+          }
+        : {};
+      const runner = subAgentRunner({
+        home: root,
+        command: {
+          file: process.execPath,
+          args: [join(import.meta.dirname, "../../../tests/fake-codex.ts")],
+        },
+        env: {
+          PATH: process.env["PATH"] ?? "",
+          FAKE_CODEX: JSON.stringify(scenario),
+        },
+        token: () => Promise.resolve("not-a-real-token"),
+        version: "0.0.0",
+      });
+      const outcome = await runner({
+        model: MODEL,
+        effort: "low",
+        instructions: INSTRUCTIONS,
+        input: "fail",
+        tools: { namespace: "rufi", specs: [] },
+        callTool: () => {
+          throw new Error("No tool call expected.");
+        },
+        onCompaction: () => undefined,
+        deadlineMs: 5_000,
+      });
+      expect(outcome.end).toEqual({
+        status: "failed",
+        reason: "usage_limit",
+        text: "Your ChatGPT plan's usage limit has been reached.",
+        ...(reported && { resetsAt: "2026-10-10T07:35:00.000Z" }),
+      });
+    },
+  );
 });

@@ -47,7 +47,7 @@ To show one kind only, choose it in the list at the top left.
 | ------------------- | ------------------------------------------------------------------------ |
 | **Not read yet**    | Rufi hasn't read it: it waits for your yes, or for **Read it**           |
 | **Reading**         | Rufi reads it now, or it waits its turn; it shows the pages saved so far |
-| **To check**        | Read: its results wait for you to check and save them                    |
+| **To check**        | Results wait for you to check, or a page needs **Retry**                 |
 | **Nothing to save** | Read, and no results were found (a letter, for example)                  |
 | **Failed**          | The reading stopped before the end; **Retry** continues it               |
 
@@ -72,9 +72,9 @@ To change your answer later, go to **Settings** → **Documents** → **Read doc
 
 ### When the reading ends
 
-The strip item goes, and a line in the chat says what was read, for example **Lab report · 12 Aug · 42 results read · 1 to check · Open**. A document with reports of several dates says so: **6 reports · 4 dates**.
+The strip item goes, and a line in the chat says what was read, for example **Lab report · 12 Aug · 42 results read · 1 to check · Open**. A document with reports of several dates says so: **6 reports · 4 dates**. The result count includes current values. Earlier-column values stay as draft items but do not add to this count.
 
-When something needs you, the AI asks about it in the chat, in a few lines: a value marked unsure, a page that couldn't be read, another name on the report, an unclear date. It only reads and asks; it never saves on its own.
+When something needs you, the AI asks about it in the chat, in a few lines: a value marked unsure, a page that couldn't be read, a name on the report that differs from yours, an unclear date. Case and spacing differences do not need a question. Other differences, including an extra name or a title, do. It only reads and asks; it never saves on its own.
 
 The results are kept as **draft items**: they wait for you and stay across restarts, but they aren't part of your record yet, so they don't count in your Overview or the AI's answers. Saving them from the chat comes in a later version of Rufi.
 
@@ -92,7 +92,7 @@ Rufi checks each page the reader saves. A check never changes what the reader re
 ## When a reading stops
 
 - **Rufi closed while reading:** when Rufi starts again, the reading continues where it stopped (**reading again** in the strip), with the pages it already saved. You see one start line and one end line.
-- **You're signed out:** the reading waits (**waiting for sign-in**) and goes on when you sign in.
+- **You're signed out, or ChatGPT rejects the sign-in:** the reading waits (**waiting for sign-in**). Sign in again. Rufi checks again every 30 seconds.
 - **Your plan's usage limit:** the reading waits until the limit resets (**waiting until 14:30**), then goes on.
 - **The AI connection was lost or restarted:** Rufi tries once more by itself.
 - **It took too long, or failed again:** the line says **Couldn't finish reading … · saved 3 of 5**, with **Retry**. The pages saved so far are kept, and no results are made until a reading finishes.
