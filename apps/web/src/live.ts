@@ -89,7 +89,7 @@ function open(personId: string): Opened {
   const path = chatPath(personId);
   /** The person's documents and readings changed: what shows them reads again. */
   const documentsChanged = () => {
-    for (const key of ["readings", "documents", "reading"]) {
+    for (const key of ["readings", "documents", "reading", "items"]) {
       void queries.invalidateQueries({ queryKey: [key, personId] });
     }
   };

@@ -597,6 +597,7 @@ test("shows a document's PDF in the built-in viewer; a link in it leaves the win
   const page = await app.electron.firstWindow();
   await page.getByRole("link", { name: "Documents" }).click();
   await page.getByRole("button", { name: "Sunrise Labs August.pdf" }).click();
+  await page.getByRole("button", { name: "View original" }).click();
   await expect(page.getByTitle("Sunrise Labs August.pdf")).toBeVisible();
   // The viewer has read the PDF when it shows the PDF's own title.
   const viewer = () =>

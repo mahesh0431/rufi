@@ -26,7 +26,7 @@ import { useStore } from "zustand";
 import { useShallow } from "zustand/shallow";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import type { Live } from "./live.ts";
-import { openReading, RetryButton, TextButton } from "./reading.tsx";
+import { RetryButton } from "./reading.tsx";
 import { isRunning } from "./transcript-state.ts";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no images,
@@ -480,19 +480,19 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
   );
 }
 
-/** An event's way to its document: Open its reading, or Retry it. */
+/** An event's way to its document: Open its page, or Retry it. */
 function EventLink({ link }: { link: NonNullable<Entry["link"]> }) {
   const personId = use(Whose);
   return link.action === "retry" ? (
     <RetryButton personId={personId} documentId={link.document} />
   ) : (
-    <TextButton
-      onClick={() => {
-        openReading(personId, link.document);
-      }}
+    <Link
+      to="/people/$personId/documents/$documentId"
+      params={{ personId, documentId: link.document }}
+      className="rounded-md px-1 text-accent-ink hover:bg-accent-soft"
     >
       Open
-    </TextButton>
+    </Link>
   );
 }
 

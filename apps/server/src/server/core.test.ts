@@ -1422,6 +1422,64 @@ describe("documents over the API", () => {
     expect(logged).toContain("documents.added");
   });
 
+  it("shows the document page's pages and items to the person only, and refuses a fix made on an older version", async () => {
+    const core = await start();
+    const page = await session(core);
+    const { person } = await chat(page);
+    const ravi = addRavi();
+    const added = (await add(core, page, person, [
+      await fixture("sunrise-labs-august.pdf"),
+    ])) as { body: { added: string[] } };
+    const document = added.body.added[0] ?? "";
+    const store = openWritable(databasePath(home));
+    try {
+      store.db.exec(`
+        INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at)
+          VALUES ('j1', '${person}', 'document_read', '${document}', 'done', 1, '[1]', '2026-10-10T09:00:00Z');
+        INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, fields, original, created_at)
+          VALUES ('i1', '${person}', '${document}', 1, 1, 'j1', 'lab_result',
+            '{"test_name":"Haemoglobin","value_text":"13.2"}', '{"test_name":"Haemoglobin","value_text":"13.2"}', '2026-10-10T09:00:00Z');
+      `);
+    } finally {
+      store.close();
+    }
+    const at = (who: string) => `/api/people/${who}/documents/${document}`;
+
+    const image = await page.api("GET", `${at(person)}/pages/1`);
+    expect(image.status).toBe(200);
+    expect(image.headers["content-type"]).toBe("image/png");
+    const items = await page.api("GET", `${at(person)}/items`);
+    expect(items.body["items"]).toMatchObject([{ id: "i1", version: 1 }]);
+    const fix = (version: number) =>
+      page.api("POST", `${at(person)}/items/i1/fix`, {
+        version,
+        fields: { value_text: "13.4" },
+      });
+    expect((await fix(1)).body).toMatchObject({
+      version: 2,
+      fields: { value_text: "13.4", value_number: 13.4 },
+      original: { value_text: "13.2" },
+    });
+    expect(await fix(1)).toMatchObject({
+      status: 409,
+      body: {
+        error: "This result changed in another tab. Your fix wasn't saved.",
+        current: { version: 2, fields: { value_text: "13.4" } },
+      },
+    });
+
+    expect((await page.api("GET", `${at(ravi.id)}/items`)).status).toBe(404);
+    expect((await page.api("GET", `${at(ravi.id)}/pages/1`)).status).toBe(404);
+    expect(
+      (
+        await page.api("POST", `${at(ravi.id)}/items/i1/fix`, {
+          version: 2,
+          fields: { value_text: "1" },
+        })
+      ).status,
+    ).toBe(404);
+  });
+
   it("takes a photo larger than any other request may be", async () => {
     const core = await start();
     const page = await session(core);

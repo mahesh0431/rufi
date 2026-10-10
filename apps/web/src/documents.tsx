@@ -2,9 +2,9 @@
 // a kind filter. Files are added from the button or by dropping them on the
 // page. Two or more photos first show "3 photos → one document", with a
 // switch to make them separate and their order to change; a PDF is always
-// a document of its own. A row opens the original in a popup: a PDF in the
-// browser's own PDF viewer, photos one under the other (a HEIC through its
-// JPEG copy).
+// a document of its own. A row opens the document's page; its original
+// opens from there in a popup: a PDF in the browser's own PDF viewer,
+// photos one under the other (a HEIC through its JPEG copy).
 import { Dialog } from "@base-ui/react/dialog";
 import { Switch } from "@base-ui/react/switch";
 import type { Person } from "@rufi/contracts";
@@ -15,6 +15,7 @@ import {
   type DocumentSummary,
 } from "@rufi/contracts/documents";
 import { useMutation } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { FileText, GripVertical, Image, Plus, X } from "lucide-react";
 import {
   type DragEvent,
@@ -41,7 +42,7 @@ const KINDS: readonly { id: DocumentKind; name: string }[] = [
   { id: "letter", name: "Letters" },
   { id: "other", name: "Other" },
 ];
-const KIND_NAMES: Record<DocumentKind, string> = {
+export const KIND_NAMES: Record<DocumentKind, string> = {
   lab_report: "Lab report",
   prescription: "Prescription",
   letter: "Letter",
@@ -100,7 +101,14 @@ export function DocumentsPage({ person }: { person: Person }) {
   /** Files picked with two or more photos, waiting for Add. */
   const [picked, setPicked] = useState<Chosen[] | undefined>(undefined);
   const [dragging, setDragging] = useState(false);
-  const [open, setOpen] = useState<DocumentSummary | undefined>(undefined);
+  const navigate = useNavigate();
+  /** A document's own page: its items beside its pages, and its original. */
+  const open = (documentId: string) => {
+    void navigate({
+      to: "/people/$personId/documents/$documentId",
+      params: { personId: person.id, documentId },
+    });
+  };
   const picker = useRef<HTMLInputElement | null>(null);
 
   const add = useMutation({
@@ -129,7 +137,6 @@ export function DocumentsPage({ person }: { person: Person }) {
 
   const list = documents.data ?? [];
   const shown = kind === "all" ? list : list.filter((d) => d.kind === kind);
-  const byId = (id: string) => list.find((d) => d.id === id);
 
   return (
     <div
@@ -191,13 +198,7 @@ export function DocumentsPage({ person }: { person: Person }) {
       <div className="-mx-3">
         <ReadCard person={person} />
       </div>
-      <Outcome
-        added={add.data}
-        error={add.error}
-        open={(id) => {
-          setOpen(byId(id));
-        }}
-      />
+      <Outcome added={add.data} error={add.error} open={open} />
 
       {documents.data === undefined && documents.error ? (
         <Problem
@@ -211,7 +212,7 @@ export function DocumentsPage({ person }: { person: Person }) {
           No {KINDS.find((k) => k.id === kind)?.name.toLowerCase()} yet.
         </p>
       ) : (
-        <List personId={person.id} documents={shown} open={setOpen} />
+        <List personId={person.id} documents={shown} open={open} />
       )}
 
       {dragging && (
@@ -228,15 +229,6 @@ export function DocumentsPage({ person }: { person: Person }) {
           add={(files, together) => {
             setPicked(undefined);
             add.mutate({ files, together });
-          }}
-        />
-      )}
-      {open && (
-        <Viewer
-          person={person.id}
-          document={open}
-          close={() => {
-            setOpen(undefined);
           }}
         />
       )}
@@ -316,7 +308,10 @@ function Outcome({
 }
 
 /** A document's name: its first file's, and what else it holds. */
-function describe(document: DocumentSummary): { name: string; more: string } {
+export function describe(document: DocumentSummary): {
+  name: string;
+  more: string;
+} {
   const [first] = document.files;
   const photos = document.files.length;
   const more =
@@ -382,7 +377,7 @@ function List({
 }: {
   personId: string;
   documents: readonly DocumentSummary[];
-  open: (document: DocumentSummary) => void;
+  open: (documentId: string) => void;
 }) {
   return (
     <>
@@ -411,7 +406,7 @@ function List({
                       type="button"
                       className="flex items-center gap-2 text-left font-semibold hover:underline"
                       onClick={() => {
-                        open(document);
+                        open(document.id);
                       }}
                     >
                       <Icon
@@ -612,7 +607,7 @@ function Thumb({ file: { file, kind } }: { file: Chosen }) {
 }
 
 /** The original in a popup: the PDF viewer, or the photos one under the other. */
-function Viewer({
+export function Viewer({
   person,
   document,
   close,

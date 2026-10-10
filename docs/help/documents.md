@@ -1,6 +1,6 @@
 # Documents
 
-You can add lab reports and other documents to Rufi as PDFs or photos. Rufi keeps each original exactly as it came, so you can always look at it again, and reads each document in the background, so you don't have to type its results. This page says how to add documents, how Rufi reads them, and how to look at an original.
+You can add lab reports and other documents to Rufi as PDFs or photos. Rufi keeps each original exactly as it came, so you can always look at it again, and reads each document in the background, so you don't have to type its results. This page says how to add documents, how Rufi reads them, how to check what it read, and how to look at an original.
 
 You can also ask the AI about a document in the chat, and it looks at the pages it needs (see [Your data and the AI](your-data-and-the-ai.md#the-pages-the-ai-looks-at)).
 
@@ -68,11 +68,11 @@ To change your answer later, go to **Settings** → **Documents** → **Read doc
 
 - A line in the chat says the reading started: **Reading thyrocare-aug.pdf · 5 pages**.
 - Above the chat box, the reader strip shows each reading: the one at work with its pages saved and time (**saved 3 of 5 · 1 min**), and those that wait their turn (**waiting**). You can keep chatting meanwhile.
-- Click **Open ▸** to see the reader's work as it goes: each page it saved, with the facts and results it read, its one note for the whole document, Rufi's checks (below) and how much of your plan it used. **Open** shows only; you check and fix results in a later step.
+- Click **Open ▸** to see the reader's work as it goes: each page it saved, with the facts and results it read, its one note for the whole document, Rufi's checks (below) and how much of your plan it used. **Open** shows only; you check and fix results on the document's page (see [Check a report](#check-a-report)).
 
 ### When the reading ends
 
-The strip item goes, and a line in the chat says what was read, for example **Lab report · 12 Aug · 42 results read · 1 to check · Open**. A document with reports of several dates says so: **6 reports · 4 dates**. The result count includes current values. Earlier-column values stay as draft items but do not add to this count.
+The strip item goes, and a line in the chat says what was read, for example **Lab report · 12 Aug · 42 results read · 1 to check · Open**. **Open** goes to the document's page. A document with reports of several dates says so: **6 reports · 4 dates**. The result count includes current values. Earlier-column values stay as draft items but do not add to this count.
 
 When something needs you, the AI asks about it in the chat, in a few lines: a value marked unsure, a page that couldn't be read, a name on the report that differs from yours, an unclear date. Case and spacing differences do not need a question. Other differences, including an extra name or a title, do. It only reads and asks; it never saves on its own.
 
@@ -99,9 +99,47 @@ Rufi checks each page the reader saves. A check never changes what the reader re
 
 **Retry** (on the line, in **Open**, or on the Documents page) continues a reading that failed. For a document that was read with pages that couldn't be read or weren't looked at, it reads only those pages again; the results already read, and any you changed, stay as they are. You can also ask the AI in the chat to read a document again.
 
+## Check a report
+
+Each document has its own page, with the results the reader read beside the page they came from. Use it when you want to check a report carefully before you save it. To open it, click the document's name on the Documents page, or **Open** on the line in the chat.
+
+Nothing on this page saves to your record. You fix what the reader read, then you save in the chat.
+
+### Look at the results beside the page
+
+- The results are in a list, grouped by page. Each page's heading says how its reading went, with the marks from [What the marks mean](#what-the-marks-mean). A page that couldn't be read or wasn't looked at has **Retry**.
+- Click a result to show its page on the right. The arrows above the page go to the page before or after.
+- Values from a report's column of earlier results are rows of their own, marked **earlier**. Rufi doesn't count them as results, here, on the Documents page or in the chat's line.
+- Turn on **Unsure only** to see only the results marked unsure, each with why.
+- **View original** opens the file as you added it. **The reader's work** shows what the reader saved for each page, as **Open ▸** does while it reads.
+
+### Fix a result
+
+1. Click the result, then click **Fix**.
+2. Change what the reader read wrong: the test, value, unit, range, flag or context, exactly as the page prints it. A field you changed is outlined.
+3. Click **Save fix**.
+
+The result shows **fixed by you** and what the reader read (**The reader read: value 2.1**). Rufi keeps the reader's value beside your fix. A fix doesn't take away the **unsure** mark, so the AI still sees why the reader wasn't sure when you save. To fix a date, tell the AI in the chat.
+
+A result you already saved or dismissed can't be fixed here.
+
+### When another tab changed it first
+
+If you fix a result in two tabs or windows, the second fix doesn't go over the first without you knowing. Rufi says **This result changed in another tab**, shows the value now, and keeps your text in the form. Look at the page, then click **Save my fix over it**, or **Cancel**.
+
+Fields you didn't change take their current values from the other tab. Saving again changes only the fields you edited. If a later save fails, Rufi shows that error and keeps your text.
+
+### Save these in the chat
+
+Click **Save these in the chat**. Rufi puts **Save these 42 results from "thyrocare-aug.pdf"** in the chat box, after anything you already typed there, and opens the chat. Read it, then send it: nothing goes to the AI until you do. The AI reads the results with your fixes.
+
+While a message of yours is being sent, the button says **Wait: a message is being sent**.
+
+If Rufi didn't receive the send's answer, the button says **Retry the message in the chat first**. Open the chat and retry that message before you add these results. Rufi keeps the message's text and retries the same send, so it isn't taken twice.
+
 ## Look at an original
 
-Click a document's name. Rufi opens the original over the page:
+On a document's page, click **View original**. Rufi opens the original over the page:
 
 - A PDF opens in the built-in PDF viewer, where you can go through its pages and zoom.
 - Photos show one under the other, in the order of the pages. A HEIC photo shows through a JPEG copy that Rufi made when you added it; if that copy is missing, Rufi makes it again and says **Preparing the photo…** meanwhile.
