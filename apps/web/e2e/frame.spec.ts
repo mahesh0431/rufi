@@ -746,7 +746,11 @@ test("an export that doesn't come in time says so, and can be tried again", asyn
   await page.route("**/api/export", () => undefined);
   await page.getByRole("button", { name: "Export my data" }).click();
   await expect(page.getByRole("button", { name: "Exporting…" })).toBeDisabled();
-  await page.clock.runFor(5 * 60_000);
+  // Five minutes pass, as with the Mac's lid closed: each due timer fires
+  // once. runFor would play every chain of timers in those minutes (the
+  // stream's silence limit, read deadlines, retries) faster than the core
+  // can answer, so the page would keep going offline and reading again.
+  await page.clock.fastForward(5 * 60_000);
   await expect(page.getByRole("alert")).toHaveText(
     "The export didn't come in time. Try again.",
   );
