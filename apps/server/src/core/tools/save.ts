@@ -13,7 +13,7 @@ export const saveChanges = defineTool({
   name: "save_changes",
   shown: "Save to your record",
   description: `Saves to the active person's record, all or nothing, after the user clearly said yes to exactly this in this chat. Two parts, either or both:
-- changes: typed changes from the user's own words. Each is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history), restore a removed one, or remove_source (take a document page off a record's sources, to undo "another source"); ids come from get_overview or get_records. Give only what the user said: a field they didn't give stays out, and a date needs their own words from the source message. source is the user's own words the change rests on, copied from their message.
+- changes: typed changes from the user's own words. Each is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history), restore a removed one, or remove_source (take a document page off a record's sources, to undo "another source": the page goes in from, as {document, page} from the record's sources in get_records); ids come from get_overview or get_records. Give only what the user said: a field they didn't give stays out, and a date needs their own words from the source message. source is the user's own words the change rests on, copied from their message.
 - items: draft items of the user's documents (get_documents), each with the version you read and how it goes in: new, another_source (the same result is already saved: its values stay, and the document page becomes another source) or correction (it corrects a saved result: a new result replaces it); record names the saved result, with its version from get_records. Rufi takes each item's values from the stored item, never from you, and its date from the item or its page; fix holds only a value the user corrected in the chat, with their words. An item already saved at that version returns its earlier save; a dismissed item, or one whose version changed, is refused, and nothing is saved.
 No count limit. Rufi refuses a save with any problem and says each one; nothing is saved then. On success Rufi adds its own receipt to the chat and returns it; the same call again returns the same receipt. Never say something was saved without this tool's answer.`,
   input: SaveInput,
@@ -51,6 +51,17 @@ No count limit. Rufi refuses a save with any problem and says each one; nothing 
           action: "add",
           source: "I stopped creatine because of a stomach upset",
           fields: { name: "Stomach upset" },
+        },
+      ],
+    },
+    {
+      changes: [
+        {
+          kind: "result",
+          action: "remove_source",
+          id: "0199a0f2-0000-7000-8000-00000000000a",
+          source: "Undo that",
+          from: { document: "0199a0f2-0000-7000-8000-0000000000d1", page: 2 },
         },
       ],
     },

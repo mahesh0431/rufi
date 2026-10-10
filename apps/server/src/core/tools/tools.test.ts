@@ -513,6 +513,24 @@ describe("get_records", () => {
     expect(result.returned + rest.returned).toBeLessThanOrEqual(40);
   });
 
+  it(`gives one record larger than ${String(LIMITS.bytes / 1000)} KB on its own, so the read moves on past it`, async () => {
+    const huge = "x".repeat(LIMITS.bytes + 1_000);
+    const store = makeDatabase(
+      family,
+      `INSERT INTO symptoms (id, person_id, name, status, onset, details) VALUES
+         ('s-big', 'asha', 'Headache', 'resolved', '2026-02-01', '${huge}'),
+         ('s-small', 'asha', 'Headache', 'resolved', '2026-01-01', NULL)`,
+    );
+    const first = (await records(store, { kind: "symptom" })).body[
+      "result"
+    ] as { records: { id: string }[]; complete: boolean; next: string };
+    expect(first.records.map((r) => r.id)).toEqual(["s-big"]);
+    expect(first).toMatchObject({ complete: false, next: "s-big" });
+    const rest = (await records(store, { kind: "symptom", after: first.next }))
+      .body["result"] as { records: { id: string }[] };
+    expect(rest.records.map((r) => r.id)).toContain("s-small");
+  });
+
   it("names each read in plain words, with its dates", () => {
     const { specs } = forAgent(
       () => ({ store: undefined, personId: undefined }),

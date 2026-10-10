@@ -131,7 +131,7 @@ function shown(input: unknown): string {
 export const getRecords = defineTool({
   name: "get_records",
   shown,
-  description: `The active person's records of one kind (${names.join(", ")}), as stored: each with its id, its version (the save that last changed it; null when none did), its fields as save_changes takes them and its sources (the user's message, or a document's page), also the records removed from the record ("removed": true) and results replaced by an amended one ("replaced_by": the amended result's id). Newest first, undated last. With from or to, only records dated in that period: ${datedBy}. A record dated at a lower precision is read when its year or month overlaps the period ("2026" is in from 2026-03); a record with no date is read only without from and to. With ids, exactly those records. At most ${String(LIMITS.records)} records and ${String(LIMITS.bytes / 1000)} KB of records (as UTF-8 JSON) come back at once; when there are more, the answer says "complete": false and gives "next": pass it as after, with the same kind, from and to, to read on until "complete" is true. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.`,
+  description: `The active person's records of one kind (${names.join(", ")}), as stored: each with its id, its version (the save that last changed it; null when none did), its fields as save_changes takes them and its sources (the user's message, or a document's page), also the records removed from the record ("removed": true) and results replaced by an amended one ("replaced_by": the amended result's id). Newest first, undated last. With from or to, only records dated in that period: ${datedBy}. A record dated at a lower precision is read when its year or month overlaps the period ("2026" is in from 2026-03); a record with no date is read only without from and to. With ids, exactly those records. At most ${String(LIMITS.records)} records and ${String(LIMITS.bytes / 1000)} KB of records (as UTF-8 JSON) come back at once (a single larger record comes back on its own); when there are more, the answer says "complete": false and gives "next": pass it as after, with the same kind, from and to, to read on until "complete" is true. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.`,
   input: Input,
   callers: "model",
   readOnly: true,
@@ -265,7 +265,11 @@ export const getRecords = defineTool({
         }),
       };
       bytes += Buffer.byteLength(JSON.stringify(record));
-      if (records.length === LIMITS.records || bytes > LIMITS.bytes) {
+      // The first record always comes back, so next always moves on.
+      if (
+        records.length === LIMITS.records ||
+        (bytes > LIMITS.bytes && records.length > 0)
+      ) {
         capped = true;
         break;
       }

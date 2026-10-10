@@ -1,5 +1,5 @@
-// Adding to the chat on the real core: results and documents go into the
-// box as chips (on a row, or several at once), files added with the
+// Adding to the chat on the real core: results, documents and a document's
+// draft items go into the box as chips (on a row, or several at once), files added with the
 // paperclip become documents with their chips, the chips survive a reload
 // and go with the message to the AI, and a big save's receipt shows its
 // summary with the list folded. The strict CSP refuses nothing.
@@ -253,4 +253,59 @@ test("a save of a document's items shows its summary, with what was saved folded
     'Added result Test 1 1: measured 12 Aug 2026 ("Collected 12 Aug 2026") · page 1',
   );
   await accessible(page);
+});
+
+test("a document's draft items go into the chat as chips, one or several at once, and the AI gets their exact ids", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi, undefined, DRAFTS);
+  await page.getByRole("link", { name: "Documents" }).click();
+  await page.getByRole("button", { name: "Sunrise Labs August.pdf" }).click();
+  const items = page.getByRole("region", { name: "Items" });
+  const row = (test: string) =>
+    items
+      .getByRole("row")
+      .filter({ has: page.getByRole("button", { name: test, exact: true }) });
+
+  // One row: its own button, shown on the pointer.
+  await row("Test 1").hover();
+  await row("Test 1").getByRole("button", { name: "+ Add to chat" }).click();
+  await expect(page).toHaveURL(/\/chat$/);
+  await expect(chips(page).getByRole("listitem")).toHaveText(["Test 1 1"]);
+  await page.goBack();
+
+  // Several: tick them, then add them together.
+  await row("Test 2").getByRole("checkbox", { name: "Choose Test 2" }).check();
+  await row("Test 5").getByRole("checkbox", { name: "Choose Test 5" }).check();
+  await expect(page.getByText("2 chosen")).toBeVisible();
+  await accessible(page);
+  const saved = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/chat/draft") &&
+      response.request().method() === "PUT" &&
+      response.request().postData()?.includes("drf-5") === true,
+  );
+  await page.getByRole("button", { name: "Add 2 to chat" }).click();
+  await expect(page).toHaveURL(/\/chat$/);
+  await expect(chips(page).getByRole("listitem")).toHaveText([
+    "Test 1 1",
+    "Test 2 2",
+    "Test 5 5",
+  ]);
+  await saved;
+  await page.reload();
+  await expect(chips(page).getByRole("listitem")).toHaveText([
+    "Test 1 1",
+    "Test 2 2",
+    "Test 5 5",
+  ]);
+
+  await box(page).fill("Save these");
+  await box(page).press("Enter");
+  await expect(box(page)).toHaveValue("");
+  await expect(log(page).locator(".reply")).toHaveText(/^ok:Save these/);
+  expect((await inputs(rufi)).at(-1)?.at(-1)).toBe(
+    "Save these\n\nReferences the user added to this message (Rufi's, exact: read them with your tools):\n- draft item drf-1, version 1: Test 1 1\n- draft item drf-2, version 1: Test 2 2\n- draft item drf-5, version 1: Test 5 5",
+  );
 });
