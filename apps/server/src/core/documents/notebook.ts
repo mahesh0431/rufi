@@ -144,17 +144,17 @@ function numberMatches(printed: string, number: number): boolean {
 }
 
 /**
- * Rufi's checks of a page's entry: a row count that differs from the items,
+ * Rufi's checks of a page's entry: a row count that differs from the items
+ * (an earlier result beside a row doesn't count),
  * a number that isn't its printed value, and, on a page with the PDF's own
  * text, a printed value that isn't in that text.
  */
 export function check(entry: Entry, text: string | undefined): Checks {
   const checks: Checks = { items: [] };
-  if (entry.rows_seen !== undefined && entry.rows_seen !== entry.items.length) {
-    checks.incomplete = {
-      rows_seen: entry.rows_seen,
-      items: entry.items.length,
-    };
+  // A row's earlier result is an item of its own, not a row.
+  const rows = entry.items.filter((item) => item.column !== "earlier").length;
+  if (entry.rows_seen !== undefined && entry.rows_seen !== rows) {
+    checks.incomplete = { rows_seen: entry.rows_seen, items: rows };
   }
   const pageText = text === undefined ? undefined : loose(text);
   const bare = pageText?.replace(/ /g, "");

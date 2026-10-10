@@ -60,10 +60,19 @@ describe("the checks of a saved page", () => {
     expect(check(entry([{ value_text: "13.8" }]), undefined).items).toEqual([]);
   });
 
-  it("flags a page whose row count differs from its items", () => {
+  it("flags a page whose row count differs from its items; a row's earlier result isn't a row", () => {
     expect(check(entry([{ value_text: "1" }], 2), undefined)).toEqual({
       incomplete: { rows_seen: 2, items: 1 },
       items: [],
     });
+    const withEarlier: Entry = {
+      outcome: "read",
+      rows_seen: 1,
+      items: [
+        { test_name: "TSH", value_text: "1.18" },
+        { test_name: "TSH", value_text: "3.28", column: "earlier" },
+      ],
+    };
+    expect(check(withEarlier, undefined)).toEqual({ items: [] });
   });
 });
