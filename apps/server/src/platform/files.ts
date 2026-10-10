@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import lockfile from "proper-lockfile";
 
@@ -27,8 +27,15 @@ export async function writePrivateJson(
 ): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temp = tempPath(path);
-  await writeFile(temp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  await rename(temp, path);
+  try {
+    await writeFile(temp, `${JSON.stringify(value, null, 2)}\n`, {
+      mode: 0o600,
+    });
+    await rename(temp, path);
+  } catch (error) {
+    await rm(temp, { force: true });
+    throw error;
+  }
 }
 
 /** The sha256 of a file's bytes, in hex. */
