@@ -377,7 +377,10 @@ test.describe("follow-up notices", () => {
     await expect(page).toHaveURL(
       /^http:\/\/127\.0\.0\.1:\d+\/people\/asha\/follow-ups$/,
     );
-    await expect(page.getByRole("link", { name: "Documents" })).toBeVisible();
+    // In the same session, the page reads Asha's follow-ups.
+    await expect(page.getByRole("region", { name: /^Overdue/ })).toContainText(
+      "Recheck HbA1c",
+    );
   });
 
   test("a click with no window open opens one on Follow-ups", async ({
@@ -401,7 +404,10 @@ test.describe("follow-up notices", () => {
 
     const page = await opened;
     await expect(page).toHaveURL(/\/people\/asha\/follow-ups$/);
-    await expect(page.getByRole("link", { name: "Documents" })).toBeVisible();
+    // In the same session, the page reads Asha's follow-ups.
+    await expect(page.getByRole("region", { name: /^Overdue/ })).toContainText(
+      "Recheck HbA1c",
+    );
   });
 });
 

@@ -357,3 +357,50 @@ describe("series", () => {
     ]);
   });
 });
+
+describe("follow-ups", () => {
+  it("group by where they stand at the core's time, soonest first; Needs you has the overdue, due and coming-up ones", async () => {
+    store.db
+      .exec(`INSERT INTO follow_ups (id, person_id, title, due, status, outcome, removed) VALUES
+      ('f-over', 'asha', 'Recheck vitamin D', '2026-09', 'open', NULL, 0),
+      ('f-month', 'asha', 'Fasting lipid panel', '2026-10', 'open', NULL, 0),
+      ('f-today', 'asha', 'Call the clinic', '2026-10-11T09:00', 'open', NULL, 0),
+      ('f-soon', 'asha', 'Recheck HbA1c', '2026-11-03', 'open', NULL, 0),
+      ('f-later', 'asha', 'Eye check-up', '2027', 'open', NULL, 0),
+      ('f-visit', 'asha', 'Ask about the dose', 'next_visit', 'open', NULL, 0),
+      ('f-none', 'asha', 'Find the vaccination card', NULL, 'open', NULL, 0),
+      ('f-done', 'asha', 'Recheck ferritin', '2026-08', 'done', '35 ng/mL', 0),
+      ('f-dropped', 'asha', 'Repeat the ultrasound', '2026-07', 'dropped', 'Not needed', 0),
+      ('f-removed', 'asha', 'Taken out', '2026-09', 'open', NULL, 1),
+      ('f-ravi', 'ravi', 'Recheck lipids', '2026-09', 'open', NULL, 0);`);
+    views = recordViews(reader, () => new Date(2026, 9, 11, 14, 20));
+
+    const { groups } = await views.followUps("asha");
+    const overview = await views.overview("asha");
+
+    expect(
+      groups.map(({ group, rows }) => [group, rows.map((row) => row.id)]),
+    ).toEqual([
+      ["overdue", ["f-over"]],
+      ["due", ["f-today", "f-month"]],
+      ["coming_up", ["f-soon"]],
+      ["later", ["f-later"]],
+      ["next_visit", ["f-visit"]],
+      ["no_date", ["f-none"]],
+      ["done", ["f-done"]],
+      ["dropped", ["f-dropped"]],
+    ]);
+    expect(
+      overview?.needsYou.followUps.map(({ state, followUp }) => [
+        state,
+        followUp.id,
+      ]),
+    ).toEqual([
+      ["overdue", "f-over"],
+      ["due", "f-today"],
+      ["due", "f-month"],
+      ["coming_up", "f-soon"],
+    ]);
+    expect(overview?.openFollowUps).toBe(7);
+  });
+});

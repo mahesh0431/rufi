@@ -62,7 +62,10 @@ export interface CoreOptions {
   signIn?: SignIn;
   /** The built screens' folder (apps/web/dist). */
   screens?: string;
-  /** The time the chat stamps on what it stores; the Mac's clock when not given. */
+  /**
+   * The time the chat stamps on what it stores, and when follow-ups are
+   * due; the Mac's clock when not given.
+   */
   now?: () => string;
 }
 
@@ -229,7 +232,10 @@ export const startCore = (options: CoreOptions) =>
     // The token is in the fragment: the browser never sends it in a request.
     const launchUrl = () =>
       `http://127.0.0.1:${String(port)}/#launch=${access.launch()}`;
-    const record = recordViews(reader ?? writer);
+    // The Mac's local time, for when follow-ups are due.
+    const clock = () =>
+      options.now === undefined ? new Date() : new Date(options.now());
+    const record = recordViews(reader ?? writer, clock);
     const personDocuments = documents(writer, home, options.now, readings);
     const app = api({
       transcripts,
@@ -243,6 +249,7 @@ export const startCore = (options: CoreOptions) =>
         return {
           ...overview,
           needsYou: {
+            ...overview.needsYou,
             documents: waiting(await personDocuments.list(personId)),
           },
         };
@@ -305,7 +312,7 @@ export const startCore = (options: CoreOptions) =>
       port,
       launchUrl,
       chat,
-      claimNotices: () => claimNotices(writer.query, new Date()),
+      claimNotices: () => claimNotices(writer.query, clock()),
     };
     return core;
   });

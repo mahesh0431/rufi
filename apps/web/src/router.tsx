@@ -12,6 +12,7 @@ import { BriefPage } from "./brief.tsx";
 import { ChatPage } from "./chat.tsx";
 import { DocumentPage } from "./document-page.tsx";
 import { DocumentsPage } from "./documents.tsx";
+import { FollowUpsPage } from "./follow-ups.tsx";
 import { Frame } from "./frame.tsx";
 import { HelpPage } from "./help-page.tsx";
 import { OverviewPage } from "./overview.tsx";
@@ -129,6 +130,27 @@ const record = createRoute({
   },
 });
 
+const followUps = createRoute({
+  getParentRoute: () => root,
+  path: "/people/$personId/follow-ups",
+  component: function FollowUps() {
+    const { personId } = followUps.useParams();
+    const people = usePeople();
+    if (people.data === undefined) {
+      return people.error ? (
+        <div className="px-6 py-8">
+          <Problem error={people.error} retry={() => void people.refetch()} />
+        </div>
+      ) : null;
+    }
+    const person = people.data.find((p) => p.id === personId);
+    if (!person) {
+      return <div className="px-6 py-8 text-muted">There is no page here.</div>;
+    }
+    return <FollowUpsPage key={personId} person={person} />;
+  },
+});
+
 const brief = createRoute({
   getParentRoute: () => root,
   path: "/people/$personId/briefs/$briefId",
@@ -210,6 +232,7 @@ export const router = createRouter({
     documents,
     document,
     record,
+    followUps,
     brief,
     conversation,
     settings,

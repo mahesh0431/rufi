@@ -6,7 +6,7 @@ Rufi shows your whole record: Overview at a glance, and a page for each kind of 
 
 Overview is the first page you see. It has three parts, in this order:
 
-1. **Needs you:** documents that wait for you. A document that was read, with results not saved yet, says how many it has and how many to check. A document that couldn't be read says so. Click **Open** to go to the document's page (see [Documents](documents.md)). When nothing waits, this part isn't shown.
+1. **Needs you:** documents that wait for you, then follow-ups that are overdue, due now or coming up in the next 30 days. A document that was read, with results not saved yet, says how many it has and how many to check. A document that couldn't be read says so. Click **Open** to go to the document's page (see [Documents](documents.md)), or to Follow-ups (see [Follow-ups](follow-ups.md)). When nothing waits, this part isn't shown.
 2. **Your record:** one tile for each kind of record, with its count and a short summary. Click a tile to open that kind's page. A kind with nothing in it says **None yet**.
 3. **Recent changes:** your last 5 saves and undos, newest first. Click one to see its receipt, the same as in the chat.
 
@@ -57,4 +57,4 @@ To ask about several records, tick their boxes, then click **Add 2 to chat** (wi
 
 ## When your record changes
 
-When a save or an undo happens in the chat, Overview, the sidebar's counts and the open pages show it at once, in every Rufi window and tab. When a reading of a document ends or fails, **Needs you** shows it. When you come back to a Rufi window, Overview reads your record again.
+When a save or an undo happens in the chat, Overview, the sidebar's counts and the open pages show it at once, in every Rufi window and tab. When a reading of a document ends or fails, **Needs you** shows it. When you come back to a Rufi window, Overview reads your record again. While it shows, it also reads again each minute, so Needs you shows the new day after midnight.

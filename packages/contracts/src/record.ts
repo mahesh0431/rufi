@@ -132,6 +132,7 @@ export const FollowUpRow = Schema.Struct({
   outcome: Text,
   about: Schema.optionalKey(Schema.Struct({ kind: Schema.String, id: Id })),
 });
+export type FollowUpRow = typeof FollowUpRow.Type;
 
 /** A stored row that doesn't fit its shape: shown as "can't show this row". */
 export const BadRow = Schema.Struct({
@@ -305,11 +306,53 @@ export const RecentChange = Schema.Struct({
 });
 export type RecentChange = typeof RecentChange.Type;
 
+/**
+ * Where an open follow-up stands now, by the core's due rules
+ * (docs/help/follow-ups.md): coming up is due in the next 30 days.
+ */
+export const DueClass = Schema.Literals([
+  "overdue",
+  "due",
+  "coming_up",
+  "later",
+  "next_visit",
+  "no_date",
+]);
+export type DueClass = typeof DueClass.Type;
+
+/** An open follow-up that needs the person: overdue, due now or coming up. */
+export const FollowUpNeed = Schema.Struct({
+  state: Schema.Literals(["overdue", "due", "coming_up"]),
+  followUp: FollowUpRow,
+});
+export type FollowUpNeed = typeof FollowUpNeed.Type;
+
 /** A person's Overview: what needs them, their record as tiles, the latest saves. */
 export const Overview = Schema.Struct({
   person: Schema.String,
-  needsYou: Schema.Struct({ documents: Schema.Array(WaitingDocument) }),
+  needsYou: Schema.Struct({
+    documents: Schema.Array(WaitingDocument),
+    /** Overdue first, then due now, then coming up. */
+    followUps: Schema.Array(FollowUpNeed),
+  }),
   tiles: Schema.Array(Tile),
   recent: Schema.Array(RecentChange),
+  /** How many follow-ups are open. */
+  openFollowUps: Schema.Int,
 });
 export type Overview = typeof Overview.Type;
+
+/**
+ * The person's follow-ups in the Follow-ups page's groups, in its order:
+ * the open ones by where they stand, then done, then dropped. A group with
+ * no follow-up is left out.
+ */
+export const FollowUps = Schema.Struct({
+  groups: Schema.Array(
+    Schema.Struct({
+      group: Schema.Union([DueClass, Schema.Literals(["done", "dropped"])]),
+      rows: Schema.Array(ShownRow),
+    }),
+  ),
+});
+export type FollowUps = typeof FollowUps.Type;

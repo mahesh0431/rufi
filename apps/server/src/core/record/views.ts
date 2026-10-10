@@ -5,6 +5,8 @@
 // consistent. "Current" is read.ts's isCurrent, as everywhere else.
 import type {
   BadRow,
+  FollowUpNeed,
+  FollowUps,
   Overview,
   PageKind,
   RecentChange,
@@ -27,6 +29,7 @@ import { documentName } from "../documents/reading.ts";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 import { kindNamed, type Kind, type Row } from "./kinds.ts";
+import { classify, dueSpan } from "./due.ts";
 import { changed, fieldsOf, isCurrent } from "./read.ts";
 
 /** Groups on one page: reports are big, other kinds' groups are one row. */
@@ -525,6 +528,66 @@ async function recent(db: Db, personId: string): Promise<RecentChange[]> {
   }));
 }
 
+/** The Follow-ups page's groups, in its order. */
+const FOLLOW_UP_GROUPS = [
+  "overdue",
+  "due",
+  "coming_up",
+  "later",
+  "next_visit",
+  "no_date",
+  "done",
+  "dropped",
+] as const;
+type FollowUpGroup = (typeof FOLLOW_UP_GROUPS)[number];
+
+/**
+ * The person's follow-ups that aren't removed, each in its group at the
+ * local time `now`: the open ones by the due rules (./due.ts), soonest
+ * first, then done and dropped. A row that can't be shown goes with No date.
+ */
+async function followUps(
+  db: Db,
+  personId: string,
+  now: Date,
+): Promise<{ group: FollowUpGroup; row: ShownRow; due: string | null }[]> {
+  const kind = kindOf("follow_up");
+  const { rows } = await sql<Row>`SELECT r.* FROM follow_ups r
+    WHERE r.person_id = ${personId} AND ${isCurrent(kind, "r")}
+    ORDER BY r.rowid`.execute(db);
+  const placed = rows.map((row) => {
+    const due = typeof row["due"] === "string" ? row["due"] : null;
+    const shownRow = shown(kind, row);
+    const group: FollowUpGroup =
+      "problem" in shownRow
+        ? "no_date"
+        : row["status"] === "done" || row["status"] === "dropped"
+          ? row["status"]
+          : classify(due, now);
+    return { group, row: shownRow, due };
+  });
+  // Dated ones by when they stop being due, then when they start: today's
+  // before this month's. The others stay in the order they were saved.
+  const order = (due: string | null) => {
+    const span = dueSpan(due);
+    return span ? [span.overdueFrom.getTime(), span.from.getTime()] : [0, 0];
+  };
+  return placed.toSorted((a, b) => {
+    const byGroup =
+      FOLLOW_UP_GROUPS.indexOf(a.group) - FOLLOW_UP_GROUPS.indexOf(b.group);
+    if (byGroup !== 0 || a.group === "done" || a.group === "dropped") {
+      return byGroup;
+    }
+    const [aEnd = 0, aFrom = 0] = order(a.due);
+    const [bEnd = 0, bFrom = 0] = order(b.due);
+    return aEnd - bEnd || aFrom - bFrom;
+  });
+}
+
+/** Whether follow-ups in this group show in Needs you. */
+const isNeed = (group: FollowUpGroup): group is FollowUpNeed["state"] =>
+  group === "overdue" || group === "due" || group === "coming_up";
+
 /** Documents waiting for the person: read and not saved, or a reading that failed. */
 export function waiting(
   documents: readonly DocumentSummary[],
@@ -552,28 +615,65 @@ export function waiting(
   });
 }
 
-/** The record's reads for the screens, on Rufi's read-only connection. */
-export function recordViews(store: Store) {
+/**
+ * The record's reads for the screens, on Rufi's read-only connection. `now`
+ * is the Mac's local time, read on each call, for when follow-ups are due.
+ */
+export function recordViews(store: Store, now: () => Date = () => new Date()) {
   const read = <A>(work: (db: Db) => Promise<A>) =>
     store.query.transaction().execute(work);
   return {
-    /** Overview without Needs you; undefined when the person isn't in Rufi. */
+    /**
+     * Overview with the follow-ups that need the person, but not the
+     * documents; undefined when the person isn't in Rufi.
+     */
     overview: (personId: string) =>
-      read(async (db): Promise<Omit<Overview, "needsYou"> | undefined> => {
-        const person = await db
-          .selectFrom("people")
-          .select("display_name")
-          .where("id", "=", personId)
-          .executeTakeFirst();
-        if (!person) return undefined;
-        const tiles = [];
-        for (const kind of Object.keys(PAGE_KINDS) as PageKind[]) {
-          tiles.push(await tile(db, personId, kind));
+      read(
+        async (
+          db,
+        ): Promise<
+          | (Omit<Overview, "needsYou"> & {
+              needsYou: Pick<Overview["needsYou"], "followUps">;
+            })
+          | undefined
+        > => {
+          const person = await db
+            .selectFrom("people")
+            .select("display_name")
+            .where("id", "=", personId)
+            .executeTakeFirst();
+          if (!person) return undefined;
+          const tiles = [];
+          for (const kind of Object.keys(PAGE_KINDS) as PageKind[]) {
+            tiles.push(await tile(db, personId, kind));
+          }
+          const placed = await followUps(db, personId, now());
+          return {
+            person: person.display_name,
+            needsYou: {
+              followUps: placed.flatMap(({ group, row }): FollowUpNeed[] =>
+                isNeed(group) && !("problem" in row) && row.kind === "follow_up"
+                  ? [{ state: group, followUp: row }]
+                  : [],
+              ),
+            },
+            tiles,
+            recent: await recent(db, personId),
+            openFollowUps: placed.filter(
+              ({ group }) => group !== "done" && group !== "dropped",
+            ).length,
+          };
+        },
+      ),
+    /** The person's follow-ups in the Follow-ups page's groups. */
+    followUps: (personId: string) =>
+      read(async (db): Promise<FollowUps> => {
+        const groups = new Map<FollowUpGroup, ShownRow[]>();
+        for (const { group, row } of await followUps(db, personId, now())) {
+          groups.set(group, [...(groups.get(group) ?? []), row]);
         }
         return {
-          person: person.display_name,
-          tiles,
-          recent: await recent(db, personId),
+          groups: [...groups].map(([group, rows]) => ({ group, rows })),
         };
       }),
     page: (personId: string, kind: PageKind, after?: string) =>

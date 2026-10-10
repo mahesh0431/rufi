@@ -71,7 +71,7 @@ Saving the reverse of an earlier save, by chat: the user says "undo that", the A
 _Avoid_: revert, rollback
 
 **Needs you**:
-The top of a person's Overview: what is waiting for the user, such as a document read and not saved, or one that couldn't be read. It hides when nothing waits.
+The top of a person's Overview: what is waiting for the user, such as a document read and not saved, one that couldn't be read, or a follow-up that is overdue, due now or coming up in the next 30 days. It hides when nothing waits.
 _Avoid_: inbox, notifications, tasks
 
 **Tile**:

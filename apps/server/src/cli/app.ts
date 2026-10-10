@@ -9,7 +9,7 @@ import { FromApp, type PersonNotices, type ToApp } from "@rufi/contracts/app";
 import { Effect, Schema } from "effect";
 
 /** What an owned Rufi answers the app with. */
-export interface Answers {
+interface Answers {
   /** A fresh link. */
   link: () => string;
   /** The notices due now; undefined when the claim failed (it logs why). */

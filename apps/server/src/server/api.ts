@@ -66,7 +66,7 @@ export interface ApiDeps {
   /** A person's Overview: Needs you, the tiles and the latest saves. */
   overview: (personId: string) => Promise<Overview>;
   /** The record's pages, rows and series, read only. */
-  record: Pick<RecordViews, "page" | "detail" | "series">;
+  record: Pick<RecordViews, "page" | "detail" | "series" | "followUps">;
   /** A visit brief of the person's, with its Sources; undefined: none. */
   brief: (personId: string, briefId: string) => Promise<Brief | undefined>;
   /** The ChatGPT sign-in, read when asked. */
@@ -474,6 +474,11 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       await deps.record.series(id, test, c.req.query("unit") ?? null),
     );
   });
+
+  // The person's follow-ups, in the Follow-ups page's groups.
+  app.get("/api/people/:personId/follow-ups", async (c) =>
+    c.json(await deps.record.followUps((await person(c)).id)),
+  );
 
   app.get("/api/people/:personId/briefs/:briefId", async (c) => {
     const brief = await deps.brief(

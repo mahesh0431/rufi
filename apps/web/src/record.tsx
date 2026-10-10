@@ -162,6 +162,7 @@ function cellsOf(row: RecordRow, groupDate?: string): Cells {
     case "follow_up":
       return {
         title: row.title,
+        detail: row.outcome ?? "",
         status: STATUS[row.status] ?? "",
         date:
           row.due === undefined
@@ -174,7 +175,7 @@ function cellsOf(row: RecordRow, groupDate?: string): Cells {
 }
 
 /** A row as a chip in the chat box. */
-const chipOf = (row: RecordRow): BoxChip => ({
+export const chipOf = (row: RecordRow): BoxChip => ({
   pointer: { type: "record", kind: row.kind, id: row.id },
   label: cellsOf(row).title,
   detail: `${NOUNS[row.kind]} in your record`,
@@ -354,25 +355,31 @@ export function RecordPage({
   );
 }
 
-function RowView({
+/**
+ * A row, which opens in place to its detail. `when` stands for the row's
+ * own date; without `onTick`, it can't be chosen.
+ */
+export function RowView({
   personId,
   row,
   groupDate,
+  when,
   open,
   onOpen,
-  ticked,
-  selecting,
+  ticked = false,
+  selecting = false,
   onTick,
   onAsk,
 }: {
   personId: string;
   row: ShownRow;
-  groupDate: string | undefined;
+  groupDate?: string | undefined;
+  when?: string;
   open: boolean;
   onOpen: () => void;
-  ticked: boolean;
-  selecting: boolean;
-  onTick: (row: RecordRow) => void;
+  ticked?: boolean;
+  selecting?: boolean;
+  onTick?: (row: RecordRow) => void;
   onAsk: (row: RecordRow) => void;
 }) {
   if (isBad(row)) {
@@ -388,15 +395,19 @@ function RowView({
       <div
         className={`group grid grid-cols-[20px_1.4fr_1fr_0.8fr_1fr_auto] items-center gap-2 px-3 py-2 ${open || ticked ? "bg-accent-soft" : "hover:bg-side"}`}
       >
-        <input
-          type="checkbox"
-          aria-label={`Choose ${cells.title}`}
-          checked={ticked}
-          onChange={() => {
-            onTick(row);
-          }}
-          className={`size-[15px] accent-accent ${selecting ? "" : "opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"}`}
-        />
+        {onTick ? (
+          <input
+            type="checkbox"
+            aria-label={`Choose ${cells.title}`}
+            checked={ticked}
+            onChange={() => {
+              onTick(row);
+            }}
+            className={`size-[15px] accent-accent ${selecting ? "" : "opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"}`}
+          />
+        ) : (
+          <span />
+        )}
         <button
           type="button"
           aria-expanded={open}
@@ -410,7 +421,7 @@ function RowView({
         </button>
         <span className="text-muted">{cells.detail}</span>
         <span>{cells.status}</span>
-        <span className="text-muted">{cells.date}</span>
+        <span className="text-muted">{when ?? cells.date}</span>
         <span className="text-right">
           {!selecting && (
             <button
