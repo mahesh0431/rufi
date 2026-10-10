@@ -25,7 +25,7 @@ const documentsPath = (personId: string) =>
   `/api/people/${encodeURIComponent(personId)}/documents`;
 
 /** The person's readings that wait or run, for the strip. */
-export const useReadings = (personId: string) =>
+const useReadings = (personId: string) =>
   useQuery({
     queryKey: ["readings", personId],
     queryFn: async () =>
@@ -49,7 +49,7 @@ function readingsChanged(personId: string) {
  * Reads the person's documents not read yet: all of them (the card), or
  * one. `yes`: the person said yes just now.
  */
-export async function readIt(
+async function readIt(
   personId: string,
   documentId: string | undefined,
   yes: boolean,
@@ -66,7 +66,7 @@ export async function readIt(
 }
 
 /** Reads again what failed in a document's reading. */
-export async function retry(personId: string, documentId: string) {
+async function retry(personId: string, documentId: string) {
   await request(
     "POST",
     `${documentsPath(personId)}/${encodeURIComponent(documentId)}/retry`,

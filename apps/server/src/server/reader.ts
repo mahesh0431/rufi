@@ -270,5 +270,3 @@ export function reader(deps: ReaderDeps) {
     },
   };
 }
-
-export type Reader = ReturnType<typeof reader>;

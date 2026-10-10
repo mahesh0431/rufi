@@ -198,7 +198,7 @@ export const startCore = (options: CoreOptions) =>
 
     // The document reader: one reading at a time, in the background.
     const pageService = pages(reader ?? writer, home);
-    const documentReader = yield* Effect.acquireRelease(
+    yield* Effect.acquireRelease(
       Effect.sync(() => {
         const opened = openReader({
           readings,
@@ -215,7 +215,6 @@ export const startCore = (options: CoreOptions) =>
       }),
       (opened) => Effect.promise(() => opened.close()),
     );
-    void documentReader;
 
     let port = 0;
     const access = sessions();

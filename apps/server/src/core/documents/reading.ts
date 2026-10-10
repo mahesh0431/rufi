@@ -15,7 +15,7 @@ import { Refusal } from "../tools/registry.ts";
 import type { Checks, Entry, Run } from "./notebook.ts";
 
 /** The setting that holds the person's yes: "yes" or "no"; none: not asked yet. */
-export const CONSENT = "read_documents";
+const CONSENT = "read_documents";
 
 export type Consent = "yes" | "no" | null;
 
@@ -84,7 +84,7 @@ const jobOf = (row: Tables["jobs"]): Job => ({
 });
 
 /** A document's name for a person: its file, or "3 photos". */
-export function documentName(files: readonly string[]): string {
+function documentName(files: readonly string[]): string {
   const distinct = [...new Set(files)];
   if (distinct.length <= 1) return distinct[0] ?? "A document";
   return `${String(distinct.length)} photos`;

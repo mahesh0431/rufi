@@ -37,6 +37,9 @@ import { diagnostics } from "../src/platform/logs.ts";
 import { PROOF_HEADER } from "../src/server/api.ts";
 import { startCore, type Core } from "../src/server/core.ts";
 import { FAMILY, familyFiles } from "../tests/fixtures/golden.ts";
+import { textPdf } from "../tests/pack/pdf.ts";
+import { layout, REPORTS } from "../tests/pack/reports.ts";
+import { subAgentRunner } from "../src/agent/codex/subagent.ts";
 
 const { values } = parseArgs({
   options: {
@@ -114,12 +117,26 @@ async function page(core: Core) {
     cookie: swapped.cookie ?? "",
     [PROOF_HEADER]: String(swapped.body["proof"]),
   };
-  return async (method: string, path: string, body?: unknown) => {
+  const api = async (method: string, path: string, body?: unknown) => {
     const reply = await call(method, path, headers, body);
     if (reply.status >= 400)
       throw new Error(`${method} ${path}: ${JSON.stringify(reply.body)}`);
     return reply.body;
   };
+  /** Adds files on the Documents page, as the screens do. */
+  const upload = async (files: { name: string; bytes: Uint8Array }[]) => {
+    const form = new FormData();
+    for (const file of files)
+      form.append("file", new Blob([new Uint8Array(file.bytes)]), file.name);
+    form.append("together", "yes");
+    const reply = await fetch(`${origin}/api/people/asha/documents`, {
+      method: "POST",
+      headers: { origin, ...headers },
+      body: form,
+    });
+    if (reply.status >= 400) throw new Error(`add: ${await reply.text()}`);
+  };
+  return Object.assign(api, { upload });
 }
 
 type Api = Awaited<ReturnType<typeof page>>;
@@ -909,6 +926,58 @@ const CASES: Record<
       snapshot,
     };
   },
+  /**
+   * A real reading while you chat: its lines come, your reply isn't held up,
+   * and its question (another name on the report) comes in a turn of its
+   * own that can only read.
+   */
+  reading_while_chatting: async (api, home) => {
+    const c = chat(api);
+    await api("PUT", "/api/settings", { readDocuments: "yes" });
+    const other = REPORTS["other_name"];
+    if (!other) throw new Error("no fictional report");
+    await api.upload([
+      { name: "lotus-sep.pdf", bytes: textPdf(layout(other)) },
+    ]);
+    await c.ask(
+      "In general, what does a high LDL cholesterol mean? Keep it short.",
+    );
+    // The reading's end line, then the reply it asks for.
+    for (let i = 0; i < 360; i++) {
+      const { entries } = await c.read();
+      if (
+        entries.some(
+          (e) => e.kind === "event" && e.text.startsWith("Lab report"),
+        )
+      )
+        break;
+      await sleep(500);
+    }
+    await c.ended(2);
+    const snapshot = await c.read();
+    const lines = snapshot.entries
+      .filter((e) => e.kind === "event")
+      .map((e) => e.text);
+    const store = openReadOnly(databasePath(home));
+    const drafts = (store?.db.prepare("SELECT id FROM draft_items").all() ?? [])
+      .length;
+    store?.close();
+    return {
+      checks: {
+        start_line: lines.includes("Reading lotus-sep.pdf · 1 page"),
+        end_line: lines.some((l) =>
+          l.startsWith("Lab report · 11 Sep · 8 results read"),
+        ),
+        drafts_made: drafts === 8,
+        one_message_of_yours:
+          snapshot.entries.filter((e) => e.kind === "message").length === 1,
+        event_turn: snapshot.turns.length === 2,
+        asks_about_the_name: /meera/i.test(lastReply(snapshot)),
+        nothing_saved: nothingSaved(home, snapshot),
+      },
+      snapshot,
+    };
+  },
   /** A steer is answered in the same reply, at the AI's next step. */
   steer: async (api) => {
     const c = chat(api);
@@ -999,6 +1068,14 @@ for (const name of names) {
               host,
               log: diagnostics(home).log,
             }),
+          reader: subAgentRunner({
+            home,
+            command: { file, args: [] },
+            env: childEnvironment(),
+            token: (validForMs) => accessToken(signIn, validForMs),
+            version,
+            log: diagnostics(home).log,
+          }),
           log: diagnostics(home).log,
           account: async () => {
             const now = await status(signIn);

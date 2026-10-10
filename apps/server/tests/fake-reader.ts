@@ -9,7 +9,7 @@ import type {
   ToolAnswer,
 } from "../src/agent/runtime.ts";
 
-export interface ReaderTurn {
+interface ReaderTurn {
   /** Calls a reader tool; its answer, parsed. */
   call: (
     name: string,
