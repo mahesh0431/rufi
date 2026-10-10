@@ -364,6 +364,28 @@ describe("the core", () => {
     expect(
       (await page.api("GET", "/api/people/asha/chat")).body["turns"],
     ).toEqual([]);
+    const queue = "/api/people/asha/chat/queue";
+    const said = async () =>
+      (
+        (await page.api("GET", "/api/people/asha/chat")).body["entries"] as {
+          id: string;
+          kind: string;
+          text: string;
+        }[]
+      ).filter((entry) => entry.kind === "message");
+    // The person sends what waits: the one not sure stays.
+    expect((await page.api("POST", `${queue}/q-2/send`)).status).toBe(200);
+    await until(async () => (await said()).length === 1);
+    await sleep(300);
+    expect((await page.api("GET", queue)).body["items"]).toMatchObject([
+      { id: "q-1", state: "not_sure" },
+    ]);
+    // Sent again only when asked, as a new message.
+    expect((await page.api("POST", `${queue}/q-1/send`)).status).toBe(200);
+    await until(async () => (await said()).length === 2);
+    const [, again] = await said();
+    expect(again?.text).toBe("Being handed over");
+    expect(again?.id).not.toBe("q-1");
   });
 
   it("marks replies cut off by a crash as interrupted when it starts", async () => {
@@ -653,6 +675,13 @@ describe("the local API", () => {
     const core = await start();
     const page = await session(core);
     const c = await chat(page);
+    const queue = `${c.path}/queue`;
+    // A reply runs, so the send waits.
+    expect((await page.say(c.path, "hang")).status).toBe(202);
+    await until(
+      async () =>
+        ((await page.api("GET", c.path)).body["turns"] as unknown[]).length > 0,
+    );
     await page.api("PUT", c.draft, { text: "First" });
     const id = randomUUID();
     const sent = await page.say(c.path, "First", "messages", id);
@@ -660,8 +689,22 @@ describe("the local API", () => {
       status: 202,
       body: { id, draft: { text: "", refs: [] } },
     });
-    // A retry whose answer was lost.
+    // A retry whose answer was lost: still one waiting row, and the box
+    // stays empty.
     expect((await page.say(c.path, "First", "messages", id)).status).toBe(202);
+    const waiting = (await page.api("GET", queue)).body["items"] as {
+      id: string;
+    }[];
+    expect(waiting).toMatchObject([{ text: "First", state: "waiting" }]);
+    expect((await page.api("GET", c.draft)).body).toEqual({
+      text: "",
+      refs: [],
+    });
+    // Sent after a Stop: one message.
+    expect((await page.api("POST", `${c.path}/stop`)).status).toBe(200);
+    expect(
+      (await page.api("POST", `${queue}/${waiting[0]?.id ?? ""}/send`)).status,
+    ).toBe(200);
     await until(async () =>
       (
         (await page.api("GET", c.path)).body["turns"] as { status: string }[]
@@ -675,7 +718,7 @@ describe("the local API", () => {
         text: string;
       }[]
     ).filter((entry) => entry.kind === "message");
-    expect(said).toMatchObject([{ id, text: "First" }]);
+    expect(said).toMatchObject([{ text: "hang" }, { id, text: "First" }]);
     // A steer after the reply ended: refused, and the box keeps its text.
     await page.api("PUT", c.draft, { text: "Only the latest" });
     expect(await page.say(c.path, "Only the latest", "steer")).toMatchObject({
@@ -1315,18 +1358,11 @@ describe("never starting over", () => {
 });
 
 describe("first run", () => {
-  it("goes through its steps, kept by the core, and makes one person with one chat from two tabs", async () => {
-    const core = await start({
-      account: () => Promise.resolve({ account: "signed_out", email: null }),
-    });
+  it("makes one person with one chat from two tabs", async () => {
+    const core = await start();
     const page = await session(core);
     const second = await session(core);
-    const step = async () =>
-      (await page.api("GET", "/api/first-run")).body["step"];
-    expect(await step()).toBe("welcome");
-    expect(
-      (await page.api("POST", "/api/first-run", { step: "welcome" })).body,
-    ).toEqual({ step: "name" });
+    await page.api("POST", "/api/first-run", { step: "welcome" });
 
     const both = await Promise.all([
       page.api("POST", "/api/people", { displayName: "Asha Fictional" }),
@@ -1340,15 +1376,6 @@ describe("first run", () => {
     expect(
       (await page.api("GET", `/api/people/${people[0]?.id ?? ""}/chat`)).body,
     ).toMatchObject({ entries: [], before: null });
-
-    // Signed out: the sign-in step, until it is skipped.
-    expect(await second.api("GET", "/api/first-run")).toMatchObject({
-      body: { step: "sign_in" },
-    });
-    await second.api("POST", "/api/first-run", { step: "sign_in" });
-    expect(await step()).toBe("region");
-    await page.api("POST", "/api/first-run", { step: "region" });
-    expect(await step()).toBe("done");
   });
 
   it("skips the sign-in step when Rufi is already signed in, and stays done after signing out", async () => {

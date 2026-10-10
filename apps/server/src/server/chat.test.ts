@@ -807,22 +807,6 @@ describe("the chat, on the scripted Codex", () => {
     expect(await waiting()).toEqual([]);
   });
 
-  it("takes a retried send once: one waiting row, one message", async () => {
-    await startChat("fake");
-    const c = await newChat();
-    await say(c, "hang");
-    await running(c.id);
-    const id = uuid();
-    await chat?.send(c, id, "B");
-    await chat?.send(c, id, "B");
-    expect(await waiting()).toEqual([["B", "waiting", null]]);
-    // The box's draft was emptied with it.
-    expect(store.db.prepare("SELECT text FROM drafts").all()).toEqual([
-      { text: "" },
-    ]);
-    await chat?.stop(c);
-  });
-
   it("gives Rufi events that came during a reply to the AI together, after it, in a turn that can only read", async () => {
     await startChat("fake", { scenario: { calls: [saveHeadache] } });
     const c = await newChat();
@@ -891,29 +875,6 @@ describe("the chat, on the scripted Codex", () => {
     await chat?.queue.sendNow(c, held?.id ?? "");
     await ended(c.id);
     expect((await transcript(c.id)).entries[0]).toEqual(["message", "Hello"]);
-  });
-
-  it("marks a hand-over Rufi stopped during as not sure, never sends it again by itself, and sends it again as new only when asked", async () => {
-    await startChat("fake");
-    const c = await newChat();
-    // Rufi stopped while it handed "Hello" to the AI.
-    await queue.accept(c, uuid(), "Hello");
-    store.db.exec("UPDATE chat_queue SET state = 'handing_over', sent_as = id");
-    await startChat("fake"); // Rufi starts again.
-    expect(await waiting()).toEqual([["Hello", "not_sure", null]]);
-    await say(await chatRow(), "Other");
-    await ended(c.id);
-    await sleep(300);
-    expect(await waiting()).toEqual([["Hello", "not_sure", null]]);
-    const [unsure] = (await queue.list(c)).items;
-    await chat?.queue.sendNow(c, unsure?.id ?? "");
-    await ended(c.id, 2);
-    const messages = (await transcript(c.id)).all.filter(
-      (e) => e.kind === "message",
-    );
-    expect(messages.map((e) => e.text)).toEqual(["Other", "Hello"]);
-    expect(messages[1]?.id).not.toBe(unsure?.id);
-    expect(await waiting()).toEqual([]);
   });
 
   it("starts and changes to allowed models the provider offers only", async () => {

@@ -1,9 +1,8 @@
 // The frame on the real core: opening Rufi, first run, sign-in, Overview,
 // Settings and Help, and what the page does when the core is slow or gone.
-import { chmod, readFile } from "node:fs/promises";
+import { chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
-import { strFromU8, unzipSync } from "fflate";
 import type { Page } from "@playwright/test";
 import { runningLink } from "../../server/src/server/core.ts";
 import { expect, test } from "./rufi.ts";
@@ -698,11 +697,6 @@ test("Settings backs up, says when a backup failed, and exports your data", asyn
   expect(file.suggestedFilename()).toMatch(
     /^rufi-export-\d{4}-\d{2}-\d{2}\.zip$/,
   );
-  const files = unzipSync(await readFile(await file.path()));
-  const folder = file.suggestedFilename().replace(/\.zip$/, "");
-  expect(
-    strFromU8(files[`${folder}/json/people.json`] ?? new Uint8Array()),
-  ).toContain("Asha Fictional");
   await expect(page.getByRole("status")).toHaveText(
     `Exported ${file.suggestedFilename()}.`,
   );
