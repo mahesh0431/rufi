@@ -93,7 +93,7 @@ Rufi checks each page the reader saves. A check never changes what the reader re
 
 ## Save results to your record
 
-1. Add the document to a message (**+ Add to chat** on its row, or its chip from the paperclip), and say "save it". To save only some results, add them and say "save these".
+1. Add the document to a message (**+ Add to chat** on its row on the Documents page, **Save these in the chat** on its page, or its chip from the paperclip), and say "save it". To save only some results, add them on the document's page (see [Add some results to the chat](#add-some-results-to-the-chat)) and say "save these".
 2. The AI reads all the document's draft items and the results you already saved for the same tests and dates. Then it says, in a few lines, how many results are new, and names each one that isn't plainly new. It asks you about:
    - **another source**: the same result is already in your record, for example because you told the AI, or you added another copy of the report. The saved result stays as it is, and this page becomes one more source of it.
    - **a correction**: the lab amended a result you saved. The new result replaces the old one, and the old one stays in its history, marked as replaced.
@@ -159,6 +159,15 @@ A result you already saved or dismissed can't be fixed here.
 If you fix a result in two tabs or windows, the second fix doesn't go over the first without you knowing. Rufi says **This result changed in another tab**, shows the value now, and keeps your text in the form. Look at the page, then click **Save my fix over it**, or **Cancel**.
 
 Fields you didn't change take their current values from the other tab. Saving again changes only the fields you edited. If a later save fails, Rufi shows that error and keeps your text.
+
+### Add some results to the chat
+
+To ask about or save only some results, add them to the chat as chips:
+
+- **One result:** point at its row and click **+ Add to chat**.
+- **Several:** tick their boxes, then click **Add 2 to chat** (with the number you chose). **Clear** unticks them all.
+
+Rufi opens the chat with their chips in the box. Type your message, for example "save these", and send it. Results you already saved or dismissed have no tick box.
 
 ### Save these in the chat
 
