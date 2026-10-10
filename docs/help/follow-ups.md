@@ -1,6 +1,6 @@
 # Follow-ups
 
-A follow-up is something to come back to, such as a recheck or a question for your doctor. You save one in the chat. Rufi shows it on the **Follow-ups** page and in **Needs you** on Overview, and the Rufi app tells you on your Mac when it comes due. This page says how to save one, when it is due, and what the notices on your Mac show.
+A follow-up is something to come back to, such as a recheck or a question for your doctor. You save one in the chat. Rufi shows it on the **Follow-ups** page and in **Needs you** on Overview. While the Rufi app is open, it also tells you on your Mac when one comes due. This page says how to save one, when it is due, and what the notices on your Mac show.
 
 ## Save a follow-up
 
