@@ -65,8 +65,21 @@ export interface Scenario {
   reasoning?: string[];
   /** Codex compacts the thread's context during the turn, before answering. */
   compaction?: boolean;
-  /** Tool calls the model makes during a turn, before answering. */
-  calls?: { namespace: string | null; tool: string; arguments: unknown }[];
+  /**
+   * Tool calls the model makes during a turn, before answering; `id` is
+   * Codex's call id (`call-<n>`; `exec-…` for a call made from exec).
+   */
+  calls?: {
+    id?: string;
+    namespace: string | null;
+    tool: string;
+    arguments: unknown;
+  }[];
+  /**
+   * The turn shows only its message, tool calls and answer: no command and
+   * no item Rufi doesn't know, as a sub-agent's turn.
+   */
+  bare?: boolean;
   /** Tool calls by turn, oldest first, for each thread. */
   callsByTurn?: NonNullable<Scenario["calls"]>[];
   /** A usage-limit snapshot sent before a failed turn. */
@@ -264,10 +277,10 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   const calls = text.includes("quiet")
     ? []
     : (scenario.callsByTurn?.[turnIndex] ?? scenario.calls ?? []);
-  for (const [i, call] of calls.entries()) {
+  for (const [i, { id, ...call }] of calls.entries()) {
     // Like Codex: the item starts, then Rufi is asked to run it.
     const item = {
-      id: `call-${String(i)}`,
+      id: id ?? `call-${String(i)}`,
       type: "dynamicToolCall",
       namespace: call.namespace,
       tool: call.tool,
@@ -320,7 +333,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   if (text.includes("hang")) return;
   if (text.includes("partial")) {
     event("item/started", {
-      item: { id: "item-1", type: "agentMessage", text: "" },
+      item: { id: "item-1", type: "agentMessage", text: "", questions: null },
     });
     event("item/agentMessage/delta", { itemId: "item-1", delta: "ok:part" });
     return;
@@ -380,7 +393,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
       ? ["ok:", "d", "r", "i", "p"]
       : Array.from({ length: 200 }, (_, i) => String(i % 10).repeat(1_000));
     event("item/started", {
-      item: { id: "item-1", type: "agentMessage", text: "" },
+      item: { id: "item-1", type: "agentMessage", text: "", questions: null },
     });
     // A Stop may end the turn between parts.
     const stopped = () => thread.running?.turnId !== turnId;
@@ -406,7 +419,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     event("item/started", { item: userItem(steer) });
     answer(thread, turnId, `item-steer-${String(i)}`, `ok:${textOf(steer)}`);
   }
-  if (!text.includes("quiet"))
+  if (!text.includes("quiet") && !scenario.bare)
     event("item/completed", {
       item: {
         id: "item-ls",
@@ -418,7 +431,9 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
         durationMs: 4,
       },
     });
-  event("item/completed", { item: { id: "item-tp", type: "teleport" } });
+  if (!scenario.bare) {
+    event("item/completed", { item: { id: "item-tp", type: "teleport" } });
+  }
   if (scenario.unstreamed) {
     event("item/completed", {
       item: {
@@ -437,7 +452,10 @@ function answer(thread: Thread, turnId: string, itemId: string, text: string) {
   const params = { threadId: thread.id, turnId };
   send({
     method: "item/started",
-    params: { ...params, item: { id: itemId, type: "agentMessage", text: "" } },
+    params: {
+      ...params,
+      item: { id: itemId, type: "agentMessage", text: "", questions: null },
+    },
   });
   for (const delta of [text.slice(0, 3), text.slice(3)]) {
     send({

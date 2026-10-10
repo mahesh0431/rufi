@@ -579,6 +579,58 @@ describe("the reader on the pinned Codex", () => {
   }, 120_000);
 });
 
+describe("the reader's tool route", () => {
+  it.each([
+    [MODEL, { status: "failed", reason: "provider_failed" }, 0],
+    [CODE_MODEL, { status: "completed" }, 1],
+  ] as const)(
+    "a call made through exec, on %s: %o, tool runs %i",
+    async (readerModel, end, runs) => {
+      const scenario: Scenario = {
+        bare: true,
+        calls: [
+          {
+            id: "exec-1",
+            namespace: "rufi",
+            tool: "get_page",
+            arguments: { page: 1 },
+          },
+        ],
+      };
+      let called = 0;
+      const outcome = await subAgentRunner({
+        home: root,
+        command: {
+          file: process.execPath,
+          args: [join(import.meta.dirname, "../../../tests/fake-codex.ts")],
+        },
+        env: {
+          PATH: process.env["PATH"] ?? "",
+          FAKE_CODEX: JSON.stringify(scenario),
+        },
+        token: () => Promise.resolve("not-a-real-token"),
+        version: "0.0.0",
+      })({
+        model: readerModel,
+        effort: "low",
+        instructions: INSTRUCTIONS,
+        input: INPUT,
+        tools: { namespace: "rufi", specs: [] },
+        callTool: () => {
+          called++;
+          return Promise.resolve({ ok: true, text: "{}" });
+        },
+        onCompaction: () => undefined,
+        deadlineMs: 60_000,
+      });
+      expect(outcome.end, outcome.end.text).toMatchObject(end);
+      expect(called).toBe(runs);
+    },
+    // It starts the fake Codex: a busy machine can take seconds.
+    120_000,
+  );
+});
+
 describe("the reader's provider outcomes", () => {
   it.each([true, false])(
     "preserves the account reset time when reported: %s",
