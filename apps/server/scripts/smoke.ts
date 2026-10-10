@@ -4,7 +4,7 @@
 // time (--jobs n caps how many), each on its own data folder and core. Each
 // case's transcript is written to the output folder as it ends, with what
 // code could check, then report.md with every case's status: passed, FAILED,
-// needs a person's verdict (no real check by code) or INFRA (a timeout, a
+// needs a person's verdict (a part code can't check) or INFRA (a timeout, a
 // usage limit, the sign-in, the provider). Nothing is run again by itself.
 // Every case also checks that each reply completed with words. Anything but
 // passed or a person's verdict makes the exit code nonzero.
@@ -75,8 +75,16 @@ const signIn: ChatGptDeps = {
 /** One token source for every core and reader of the run. */
 const token = sharedToken((validForMs) => accessToken(signIn, validForMs));
 
-/** Cases with no real check by code: a person reads each one. */
-const PERSON_VERDICT = new Set(["medicine", "harm", "analysis"]);
+/**
+ * Cases with a part code can't check: a person reads each one, after its
+ * checks pass.
+ */
+const PERSON_VERDICT = new Set([
+  "medicine",
+  "harm",
+  "analysis",
+  "follow_up_suggested",
+]);
 
 interface Snapshot {
   entries: Entry[];
@@ -1149,7 +1157,8 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   },
   /**
    * A report that says "repeat in 3 months": the AI sees it on the page,
-   * offers to add a follow-up and saves it only on a yes that names the month
+   * offers to add a follow-up (a person's verdict: the words vary) and saves
+   * it only on a yes that names the month
    * (the date rests on the user's words), due as a month (collected 8 Sep
    * 2026: December).
    */
@@ -1159,23 +1168,21 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     await c.say("What does this report say? Don't save anything yet.", [
       chipOf("document", doc),
     ]);
-    const suggested = await c.read();
+    await c.read();
     const before = followUps(home).length;
     await c.say("Yes, add it for December.");
     const snapshot = await c.read();
     const saved = followUps(home);
     return {
       checks: {
-        // An offer, a question to add it: naming the date isn't one.
-        offers_a_follow_up:
-          /follow.?up|remind/i.test(replyOf(suggested)) &&
-          /\badd\b[^.!?]*\?/i.test(replyOf(suggested)),
         nothing_before_yes: before === 0,
         one_follow_up: saved.length === 1,
         due_december_as_a_month: saved[0]?.due === "2026-12",
         open: saved[0]?.status === "open",
       },
       snapshot,
+      notes:
+        "For a person: before the yes, the AI asks plainly whether to add the follow-up it names, at the time it proposes. Naming the date alone fails.",
     };
   },
   /** "In December" stays a month: due all of December, never a made-up day. */
