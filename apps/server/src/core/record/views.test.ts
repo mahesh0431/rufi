@@ -125,13 +125,15 @@ describe("what is current", () => {
 
 describe("groups and paging", () => {
   it("pages by group: newest first, a report whole, a month after its days, undated last, with no group twice or missed", async () => {
-    // Eleven more reports in 2025, one with no date, a long one, and a
-    // result typed on a day of May 2026 beside the one typed for May.
+    // Eleven more reports in 2025, one with no date, a long one, one with
+    // no printed date whose results the person dated, and a result typed on
+    // a day of May 2026 beside the one typed for May.
     const reports = Array.from({ length: 11 }, (_, n) => {
       const month = String(n + 1).padStart(2, "0");
       return { id: `rep-x${month}`, collected: `2025-${month}-10` };
     });
     reports.push({ id: "rep-nodate", collected: null as unknown as string });
+    reports.push({ id: "rep-said", collected: null as unknown as string });
     const insertReport = store.db.prepare(
       "INSERT INTO reports (id, person_id, document_id, issuer, collected) VALUES (?, 'asha', 'doc-asha-aug', 'Sunrise Labs', ?)",
     );
@@ -140,14 +142,17 @@ describe("groups and paging", () => {
     );
     for (const report of reports) {
       insertReport.run(report.id, report.collected);
-      // June's report is long: it ends page 1, whole.
-      const size = report.id === "rep-x06" ? 25 : 3;
+      // July's report is long: it ends page 1, whole.
+      const size = report.id === "rep-x07" ? 25 : 3;
+      // The dated report's results: "around August 2025", a day in July and
+      // one with no date. The latest dates the report.
+      const said = ["2025-08", "2025-07-20", null];
       for (let n = 1; n <= size; n++) {
         insertResult.run(
           `${report.id}-${String(n)}`,
           report.id,
           `Test ${String(n)}`,
-          report.collected,
+          report.id === "rep-said" ? (said[n - 1] ?? null) : report.collected,
         );
       }
     }
@@ -164,10 +169,11 @@ describe("groups and paging", () => {
         "report:rep-x10",
         "report:rep-x09",
         "report:rep-x08",
+        "report:rep-said",
         "report:rep-x07",
-        "report:rep-x06",
       ],
       [
+        "report:rep-x06",
         "report:rep-x05",
         "report:rep-x04",
         "report:rep-x03",
@@ -189,15 +195,19 @@ describe("groups and paging", () => {
       .map((row) => (row as { id: string }).id);
     expect([...all].sort()).toEqual([...current].sort());
     // The long report comes whole on page 1.
-    const june = pages[0]?.groups.find(
-      (group) => group.id === "report:rep-x06",
+    const july = pages[0]?.groups.find(
+      (group) => group.id === "report:rep-x07",
     );
-    expect(june?.rows).toHaveLength(25);
-    expect(june).toMatchObject({
+    expect(july?.rows).toHaveLength(25);
+    expect(july).toMatchObject({
       type: "report",
       issuer: "Sunrise Labs",
-      date: "2025-06-10",
+      date: "2025-07-10",
     });
+    // A report with no printed date takes its results' latest date.
+    expect(
+      pages[0]?.groups.find((group) => group.id === "report:rep-said"),
+    ).toMatchObject({ date: "2025-08" });
     expect(pages[1]?.groups.at(-2)).not.toHaveProperty("date");
   });
 

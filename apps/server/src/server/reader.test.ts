@@ -528,7 +528,7 @@ describe("a restart or a failure", () => {
     const id = await addReport();
     await until(() => job()?.["state"] === "failed");
     expect(lines().at(-1)).toBe(
-      "Couldn't finish reading sunrise-august.pdf · the reading took too long · saved 1 of 2",
+      "Couldn't finish reading sunrise-august.pdf · the reading took too long · read 1 of 2",
     );
     expect(drafts()).toEqual([]);
     expect(asks()).toEqual([]);
@@ -601,7 +601,7 @@ describe("a restart or a failure", () => {
     await until(() => job()?.["state"] === "failed");
     expect(runs).toHaveLength(2);
     expect(lines().at(-1)).toBe(
-      "Couldn't finish reading sunrise-august.pdf · the AI connection was lost · saved 0 of 2",
+      "Couldn't finish reading sunrise-august.pdf · the AI connection was lost · read 0 of 2",
     );
     await running.close();
   });

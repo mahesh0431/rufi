@@ -37,7 +37,7 @@ Under **Overview**, **Your record** lists the kinds of record with their counts:
 
 Each page shows the records that are current, newest first. As you scroll to the end, more load. You can also click **Show more**.
 
-- **Results** are grouped the way the paper is. Results from one report are together: the lab, the date the sample was collected and how many results it has. A report always shows whole. Results you typed in the chat are grouped by their day, or by their month or year when that is all you said ("May 2026"). Rufi never makes up a day. Results with no date come last, under **No date**.
+- **Results** are grouped the way the paper is. Results from one report are together: the lab, the date the sample was collected and how many results it has. When the report prints no date, it shows the latest date of its results, such as the one you gave ("Aug 2026"); a report with no dates at all goes under **No date**. A report always shows whole. Results you typed in the chat are grouped by their day, or by their month or year when that is all you said ("May 2026"). Rufi never makes up a day. Results with no date come last, under **No date**.
 - A result shows its test, its value and unit (in one column, so values line up), the lab's range, and the lab's note and context, as printed. A date shows at the precision known, with its time when there is one. "Amended" means that the lab corrected the result. When a result's own date differs from its report's date, the row shows it.
 - **Other kinds** show one row for each record, newest first by its date: when a medicine started, when a symptom began. Records with no date come last.
 - **Allergies** also show "No known allergies" when you said so, with the day you said it.
