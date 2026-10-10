@@ -2,19 +2,31 @@
 // Node's IPC channel, never the terminal, so no link is printed. The start
 // command answers on it once: owned (it runs Rufi), attached (another Rufi
 // runs) or failed. An owned Rufi then gives the app a fresh link for each new
-// window. When the channel closes, because the app quits or dies, an owned
-// Rufi stops as it does with Ctrl-C.
-import { FromApp, type ToApp } from "@rufi/contracts/app";
+// window, and the follow-up notices due when the app asks (docs/adr/0012).
+// When the channel closes, because the app quits or dies, an owned Rufi
+// stops as it does with Ctrl-C.
+import { FromApp, type PersonNotices, type ToApp } from "@rufi/contracts/app";
 import { Effect, Schema } from "effect";
+
+/** What an owned Rufi answers the app with. */
+export interface Answers {
+  /** A fresh link. */
+  link: () => string;
+  /** The notices due now; undefined when the claim failed (it logs why). */
+  notices: () => Promise<readonly PersonNotices[] | undefined>;
+}
 
 export interface AppChannel {
   /** Sends one message; done when it has gone, or when the app is gone. */
   send: (message: ToApp) => Effect.Effect<void>;
-  /** Answers the app's link requests until the channel closes. */
-  serve: (link: () => string) => Effect.Effect<void>;
+  /**
+   * Tells the app it owns Rufi at `url`, once it listens, then answers the
+   * app's requests until the channel closes.
+   */
+  serve: (url: string, answers: Answers) => Effect.Effect<void>;
 }
 
-const isLinkRequest = Schema.is(FromApp);
+const request = Schema.decodeUnknownOption(FromApp);
 
 /**
  * Sends `message` if the app is there. A failed send only means the app is
@@ -38,10 +50,18 @@ export function appChannel(): AppChannel | undefined {
           resume(Effect.succeed(undefined));
         });
       }),
-    serve: (link) =>
+    serve: (url, answers) =>
       Effect.callback<undefined>((resume) => {
-        const onMessage = (message: unknown) => {
-          if (isLinkRequest(message)) post({ type: "link", url: link() });
+        const onMessage = (raw: unknown) => {
+          const message = request(raw);
+          if (message._tag === "None") return;
+          if (message.value.type === "link") {
+            post({ type: "link", url: answers.link() });
+            return;
+          }
+          void answers.notices().then((people) => {
+            if (people !== undefined) post({ type: "notices", people });
+          });
         };
         const onClose = () => {
           resume(Effect.succeed(undefined));
@@ -49,6 +69,7 @@ export function appChannel(): AppChannel | undefined {
         process.on("message", onMessage);
         process.once("disconnect", onClose);
         if (!process.connected) onClose();
+        else post({ type: "owned", url });
         return Effect.sync(() => {
           process.off("message", onMessage);
           process.off("disconnect", onClose);

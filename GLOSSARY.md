@@ -154,8 +154,12 @@ _Avoid_: whitelist
 ## Coming back to things
 
 **Follow-up**:
-Something to come back to: what, for whom, when (a date, a rough date, "at the next visit" or none) and where it came from.
+Something to come back to: what, for whom, when (a date, a rough date, "at the next visit" or none) and where it came from. It is open, done (with its outcome) or dropped. An open one with a date is coming up, due during its day, month or year, and overdue after it.
 _Avoid_: reminder, task, to-do
+
+**Notice**:
+The Mac notification the Rufi app shows when a person's follow-ups become due or overdue: Rufi and a count only, never a name or what the follow-up is. One per state; its click opens Follow-ups.
+_Avoid_: alert, reminder, push
 
 **Visit brief**:
 A dated summary the AI writes for a doctor's visit from the saved record only, with the records it rests on as its sources. It never changes; when a later save changes the record, its page says so.

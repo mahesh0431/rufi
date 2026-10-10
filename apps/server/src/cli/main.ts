@@ -326,9 +326,15 @@ const startCommand = (open: boolean) =>
     });
     const link = core.launchUrl();
     if (app !== undefined) {
-      yield* app.send({ type: "owned", url: link });
       // Until the app quits or dies; then Rufi stops as with Ctrl-C.
-      return yield* app.serve(core.launchUrl);
+      return yield* app.serve(link, {
+        link: core.launchUrl,
+        notices: () =>
+          core.claimNotices().catch((error: unknown) => {
+            log("notices.failed", { error: errorCode(error) });
+            return undefined;
+          }),
+      });
     }
     console.log("Rufi is running. Its link (it works once):");
     console.log(link);

@@ -6,7 +6,7 @@ Rufi makes a backup of your record and your documents each time it starts and th
 
 Rufi makes a backup each time it starts, and then once a day while it runs. If Rufi was closed for some days, it doesn't make up the days it missed. The backup at start runs in the background: you can use Rufi while it runs.
 
-A backup is a copy of your record: your people, their records with all their history, your chat, your drafts and Rufi's settings, and every document you added, exactly as it came. Rufi checks each backup before it keeps it: the copy of the record, and each document against its fingerprint. A backup that fails its check, or that Rufi stopped in the middle, never counts, and your last good backup stays.
+A backup is a copy of your record: your people, their records with all their history, your chat, your drafts, the follow-up notices already shown and Rufi's settings, and every document you added, exactly as it came. Rufi checks each backup before it keeps it: the copy of the record, and each document against its fingerprint. A backup that fails its check, or that Rufi stopped in the middle, never counts, and your last good backup stays.
 
 If a document's file is missing from your data folder, or has changed, the backup fails and Settings says so: **a document file is missing or changed**. Your last good backup stays. To get the file back, restore that backup into a new folder (see below).
 
@@ -79,6 +79,7 @@ What the restored copy has:
 - Your chat and drafts. A reply that was running when the backup was made shows as interrupted. Nothing is sent by itself.
 - Messages that were waiting for the AI come back held, above the box, marked **From a backup: it waited when the backup was made.** Nothing goes to the AI by itself: **Send** each one again, or **Remove** it. A message Rufi was giving the AI when the backup was made shows **Not sure this reached the AI.** (see [Waiting messages](chat.md#waiting-messages)).
 - Your next message starts the AI afresh with the chat's last messages, and the chat shows a quiet line there.
+- Which follow-up notices you already had, as of the backup. A notice the Rufi app showed after the backup was made can show once more (see [Follow-ups](follow-ups.md#notices-on-your-mac)).
 
 If Rufi refuses:
 

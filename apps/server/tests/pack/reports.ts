@@ -33,6 +33,8 @@ export interface Report {
   status?: { word: string; note: string };
   /** The header (lab, patient, dates) only on page 1. */
   headerOnFirstPage?: boolean;
+  /** A line the lab prints after the results, on the last page. */
+  remark?: string;
 }
 
 /** One item of the answer key: a row as it must be read, on its page. */
@@ -653,6 +655,27 @@ export const REPORTS: Record<string, Report> = {
       note: "Amended report: Creatinine corrected after re-run. Replaces report SD-260825-0102.",
     },
   },
+  hba1c_repeat: {
+    lab: "Sunrise Diagnostics",
+    patient: ASHA,
+    collected: "08 Sep 2026 08:20",
+    collectedIso: "2026-09-08",
+    reported: "08 Sep 2026 16:05",
+    number: "SD-260908-0217",
+    layout: "table",
+    rows: [
+      { test: "HbA1c", value: "7.2", unit: "%", range: "4.0 - 5.6", flag: "H" },
+      {
+        test: "Glucose, Fasting",
+        value: "126",
+        unit: "mg/dL",
+        range: "70 - 99",
+        flag: "H",
+      },
+    ],
+    rowsPerPage: 40,
+    remark: "Remark: Repeat HbA1c in 3 months.",
+  },
   ambiguous_date: {
     lab: "Northgate Clinical Lab",
     patient: ASHA,
@@ -844,6 +867,11 @@ export function layout(report: Report): Text[][] {
       if (previous && row.previous) line(cols.prev, size, row.previous);
       line(cols.unit, size, row.unit);
       line(cols.range, size, row.range);
+      y += step;
+    }
+    if (report.remark !== undefined && index === all.length - 1) {
+      y += 8;
+      line(40, 10, report.remark);
       y += step;
     }
     y += 16;

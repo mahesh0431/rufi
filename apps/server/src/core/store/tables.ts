@@ -136,6 +136,12 @@ export interface Tables {
     media_type: string;
     created_at: string;
   };
+  follow_up_notices: {
+    person_id: string;
+    follow_up_id: string;
+    due: string;
+    state: string;
+  };
   follow_ups: {
     id: string;
     person_id: string;

@@ -21,11 +21,11 @@ const CLI = join(APP, "../server/src/cli/main.ts");
 const ELECTRON = createRequire(join(APP, "package.json"))("electron") as string;
 
 /**
- * What fakes.ts was asked (a message box or the browser), or how a download
+ * What fakes.ts was asked (a message box, the browser or a notice), or how a download
  * a test watches ended.
  */
 interface Told {
-  kind: "dialog" | "browser" | "download" | "save";
+  kind: "dialog" | "browser" | "download" | "save" | "notice";
   value: unknown;
 }
 
@@ -65,7 +65,8 @@ export class Desktop {
     const told: Told[] = [];
     const lines = createInterface({ input: child.stdout });
     lines.on("line", (line) => {
-      const said = /^rufi-test (dialog|browser|download|save) (.*)$/.exec(line);
+      const said =
+        /^rufi-test (dialog|browser|download|save|notice) (.*)$/.exec(line);
       if (said) {
         told.push({
           kind: said[1] as Told["kind"],

@@ -10,9 +10,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { familyFiles } from "../../../tests/fixtures/golden.ts";
 import { readBrief } from "../briefs/briefs.ts";
 import { transcripts, type ChatRow } from "../chat/transcript.ts";
+import { claimNotices } from "../record/notices.ts";
 import { recentSaves } from "../record/read.ts";
 import { chatCaller } from "../tools/tools.ts";
-import { upgradeBackupsPath } from "./backup.ts";
+import { backupsPath, makeBackup, upgradeBackupsPath } from "./backup.ts";
 import { databasePath, openReadOnly, type Store } from "./database.ts";
 import { markerPath, openRecord } from "./install.ts";
 import { MIGRATIONS, migrate } from "./migrations.ts";
@@ -220,6 +221,36 @@ describe("a record of version 1", () => {
 
     expect(await sha(path)).toBe(before);
   });
+});
+
+it("upgrades a record of version 2 to keep follow-up notices, and a backup keeps them through restore", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 2));
+  const db = new DatabaseSync(path);
+  db.exec(
+    "INSERT INTO follow_ups (id, person_id, title, due) VALUES ('f-vitamin-d', 'asha', 'Recheck vitamin D', '2026-09')",
+  );
+  db.close();
+  const now = new Date(2026, 9, 11, 9);
+
+  const store = await openRecord(home);
+  try {
+    expect(await claimNotices(store.query, now)).toEqual([
+      { personId: "asha", due: 0, overdue: 1 },
+    ]);
+  } finally {
+    store.close();
+  }
+  const made = await makeBackup(home, new Date("2026-10-11T08:00:00Z"));
+  const target = join(root, "restored");
+  await restore(join(backupsPath(home), made.name), target);
+
+  const restored = await openRecord(target);
+  try {
+    expect(await claimNotices(restored.query, now)).toEqual([]);
+  } finally {
+    restored.close();
+  }
 });
 
 it("refuses a record from a newer Rufi, unchanged and with no backup made", async () => {

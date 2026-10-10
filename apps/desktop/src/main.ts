@@ -1,7 +1,8 @@
-// The Rufi app: Mac windows around Rufi's screens, and the core as a child
-// process (core.ts). It holds no Rufi logic and imports neither the core's
-// nor the screens' code. ⌘W closes a window and Rufi keeps running; ⌘Q stops
-// what the app started. `pnpm desktop` starts it (scripts/desktop.ts).
+// The Rufi app: Mac windows around Rufi's screens, the core as a child
+// process (core.ts), and follow-up notices (notices.ts). It holds no Rufi
+// logic and imports neither the core's nor the screens' code. ⌘W closes a
+// window and Rufi keeps running; ⌘Q stops what the app started. `pnpm
+// desktop` starts it (scripts/desktop.ts).
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -12,9 +13,13 @@ import {
   dialog,
   Menu,
   nativeTheme,
+  Notification,
+  powerMonitor,
   session as sessions,
 } from "electron";
+import type { PersonNotices } from "@rufi/contracts/app";
 import { core, CoreError } from "./core.ts";
+import { noticeText, noticeTimer } from "./notices.ts";
 import { followAppearance, lockDown, openWindow } from "./window.ts";
 
 const ICON = fileURLToPath(new URL("../assets/rufi-mark.png", import.meta.url));
@@ -30,12 +35,31 @@ app.setName("Rufi");
 // The pinned Node that runs `pnpm desktop`; Electron's own isn't Rufi's.
 const node = app.commandLine.getSwitchValue("rufi-node");
 
-const rufi = core(node, () => {
-  fail(
-    "Rufi stopped",
-    "The Rufi that this app started has stopped. Open the app again to start it.",
-  );
+const rufi = core(node, {
+  // Its notices, as soon as it is ready: those due while Rufi wasn't running.
+  onOwned: () => {
+    notices.check();
+  },
+  onLost: () => {
+    fail(
+      "Rufi stopped",
+      "The Rufi that this app started has stopped. Open the app again to start it.",
+    );
+  },
 });
+
+const notices = noticeTimer({
+  claim: rufi.notices,
+  tell,
+  failed: (error) => {
+    // Asked again at the next check; Rufi shows the follow-ups meanwhile.
+    console.warn(
+      `Rufi couldn't check follow-ups: ${error instanceof CoreError ? error.message : "something went wrong."}`,
+    );
+  },
+});
+/** The notices shown, kept until clicked or closed, so a click still reaches them. */
+const shown = new Set<Notification>();
 
 let quitting = false;
 let failing = false;
@@ -72,8 +96,50 @@ if (!app.requestSingleInstanceLock()) {
     Menu.setApplicationMenu(menu());
     lockDown(sessions.fromPartition("rufi"));
     followAppearance(sessions.fromPartition("rufi"));
+    powerMonitor.on("resume", notices.check);
     show();
   });
+}
+
+/**
+ * One neutral Mac notice for a person: counts only, no name or title. Its
+ * click opens that person's Follow-ups.
+ */
+function tell(person: PersonNotices): void {
+  if (!Notification.isSupported()) return;
+  const notice = new Notification({ title: "Rufi", body: noticeText(person) });
+  shown.add(notice);
+  notice.on("click", () => {
+    shown.delete(notice);
+    showFollowUps(person.personId);
+  });
+  notice.on("close", () => {
+    shown.delete(notice);
+  });
+  notice.show();
+}
+
+/** Brings Rufi's window to the front on a person's Follow-ups, or opens one there. */
+function showFollowUps(personId: string): void {
+  if (!app.isReady() || quitting || failing) return;
+  const path = `/people/${encodeURIComponent(personId)}/follow-ups`;
+  const open = BrowserWindow.getAllWindows()[0];
+  if (open === undefined) {
+    opening ??= newWindow(path).finally(() => {
+      opening = undefined;
+    });
+    return;
+  }
+  if (open.isMinimized()) open.restore();
+  open.focus();
+  // The same origin, so the window keeps its session.
+  const at = URL.parse(open.webContents.getURL());
+  if (at?.protocol === "http:" && at.hostname === "127.0.0.1") {
+    // A failed load is told by the window's did-fail-load.
+    open.webContents
+      .loadURL(new URL(path, at.origin).href)
+      .catch(() => undefined);
+  }
 }
 
 /** Brings Rufi's window to the front, or opens one when there is none. */
@@ -90,7 +156,8 @@ function show(): void {
   });
 }
 
-async function newWindow(): Promise<void> {
+/** A new window on a fresh link, at `path` of Rufi's screens. */
+async function newWindow(path = "/"): Promise<void> {
   if (node === "") {
     fail("Rufi couldn't start", "Open the app with pnpm desktop.");
     return;
@@ -98,6 +165,8 @@ async function newWindow(): Promise<void> {
   try {
     const link = await rufi.link();
     if (quitting || failing) return;
+    // The page keeps the path when it takes the link's token.
+    link.pathname = path;
     openWindow(link, sessions.fromPartition("rufi"), fail);
   } catch (error) {
     fail(

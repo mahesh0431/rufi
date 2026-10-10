@@ -6,6 +6,7 @@ import { mkdir, rm } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import type { Status } from "@rufi/contracts";
+import type { PersonNotices } from "@rufi/contracts/app";
 import { serve, type ServerType } from "@hono/node-server";
 import { Effect } from "effect";
 import type {
@@ -31,6 +32,7 @@ import {
 } from "../core/store/database.ts";
 import { cleanExportStaging, exportZip } from "../core/store/export.ts";
 import { openRecord } from "../core/store/install.ts";
+import { claimNotices } from "../core/record/notices.ts";
 import { readOverview } from "../core/tools/overview.ts";
 import { pages } from "../core/documents/pages.ts";
 import { chatCaller, forAgent, toolsVersion } from "../core/tools/tools.ts";
@@ -108,6 +110,8 @@ export interface Core {
   /** A link that opens Rufi in a browser; each call gives a new single-use one. */
   launchUrl: () => string;
   chat: Chat;
+  /** Takes the follow-up notices due now, for the Rufi app (docs/adr/0012). */
+  claimNotices: () => Promise<readonly PersonNotices[]>;
 }
 
 const attempt = <A>(step: () => Promise<A> | A) =>
@@ -289,6 +293,11 @@ export const startCore = (options: CoreOptions) =>
       () => Effect.promise(() => rm(coreFile(home), { force: true })),
     );
     log("core.started", { count: interrupted });
-    const core: Core = { port, launchUrl, chat };
+    const core: Core = {
+      port,
+      launchUrl,
+      chat,
+      claimNotices: () => claimNotices(writer.query, new Date()),
+    };
     return core;
   });
