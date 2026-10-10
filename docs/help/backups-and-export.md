@@ -90,9 +90,9 @@ If Rufi refuses:
 
 Use the new folder only after the command says the backup is restored. If the command stopped before that (for example, you pressed Ctrl-C), delete the new folder and restore again. A restore that stopped while it copied leaves a `restoring` folder in the new folder, and Rufi won't start on it.
 
-## If your record is missing
+## If your record is missing or empty
 
-If `rufi.sqlite` is gone from a data folder that had a record, Rufi doesn't start, so that it never shows an empty record in place of yours. It says that the record is missing. Restore your last backup into a new folder, as above.
+If `rufi.sqlite` is gone from a data folder that had a record, Rufi doesn't start, so that it never shows an empty record in place of yours. It says that the record is missing. It also refuses an existing empty `rufi.sqlite` and leaves it unchanged. Restore your last backup into a new folder, as above.
 
 ## Export your data
 

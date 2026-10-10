@@ -2,20 +2,34 @@
 // frozen, made by Rufi's own code of that day) opened by this Rufi, directly
 // and through a restore of its backup; and the records it refuses.
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, it } from "vitest";
 import { familyFiles } from "../../../tests/fixtures/golden.ts";
+import { holdRufiLock } from "../../platform/files.ts";
 import { readBrief } from "../briefs/briefs.ts";
 import { transcripts, type ChatRow } from "../chat/transcript.ts";
 import { recentSaves } from "../record/read.ts";
 import { chatCaller } from "../tools/tools.ts";
 import { upgradeBackupsPath } from "./backup.ts";
-import { databasePath, openReadOnly, type Store } from "./database.ts";
+import {
+  databasePath,
+  openReadOnly,
+  openWritable,
+  type Store,
+} from "./database.ts";
 import { markerPath, openRecord } from "./install.ts";
-import { MIGRATIONS, migrate } from "./migrations.ts";
+import { MIGRATIONS, inspect, migrate } from "./migrations.ts";
 import { restore } from "./restore.ts";
 
 const VERSION_1 = [
@@ -220,20 +234,151 @@ describe("a record of version 1", () => {
 
     expect(await sha(path)).toBe(before);
   });
+
+  it("restarts after a process dies with migration pages spilled before commit", async () => {
+    const path = databasePath(home);
+    const db = new DatabaseSync(path);
+    db.exec("PRAGMA journal_mode = DELETE");
+    db.close();
+    const release = await holdRufiLock(home, () => undefined);
+    try {
+      // Only the child changes SQLite's cache and kills itself. The real gate
+      // and backup run; no test hook is needed in product code.
+      const child = spawnSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `
+        import { DatabaseSync } from "node:sqlite";
+        const { openRecord } = await import(process.argv[2]);
+        const exec = DatabaseSync.prototype.exec;
+        DatabaseSync.prototype.exec = function(sql) {
+          if (sql === "BEGIN IMMEDIATE") exec.call(this, "PRAGMA cache_size = 1");
+          if (sql === "COMMIT") process.kill(process.pid, "SIGKILL");
+          return exec.call(this, sql);
+        };
+        (await openRecord(process.argv[1])).close();
+        throw new Error("The upgrade ended without its crash.");
+      `,
+          home,
+          new URL("install.ts", import.meta.url).href,
+        ],
+        {
+          encoding: "utf8",
+          timeout: 10_000,
+        },
+      );
+      expect(child.stderr).toBe("");
+      expect(child.signal).toBe("SIGKILL");
+
+      // Nothing from the pending migration is committed. This read must
+      // work without a writable connection recovering a rollback journal.
+      const old = new DatabaseSync(path, { readOnly: true });
+      try {
+        expect(inspect(old)).toEqual({ state: "older", version: 1 });
+        expect(
+          old
+            .prepare("PRAGMA table_info(operations)")
+            .all()
+            .map((column) => column.name),
+        ).not.toContain("seq");
+      } finally {
+        old.close();
+      }
+
+      const restarted = spawnSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `
+        const { openRecord } = await import(process.argv[2]);
+        (await openRecord(process.argv[1])).close();
+      `,
+          home,
+          new URL("install.ts", import.meta.url).href,
+        ],
+        {
+          encoding: "utf8",
+          timeout: 10_000,
+        },
+      );
+      expect(restarted.stderr).toBe("");
+      expect(restarted.status).toBe(0);
+      const restored = openReadOnly(path) as Store;
+      try {
+        expect(
+          (await readBrief(restored.query, "asha", BRIEF))?.sources,
+        ).toEqual(SOURCES);
+        expect(
+          (await recentSaves(restored, "ravi")).map((save) => save.at),
+        ).toEqual(RAVIS_SAVES);
+      } finally {
+        restored.close();
+      }
+    } finally {
+      await release();
+    }
+  });
 });
 
-it("refuses a record from a newer Rufi, unchanged and with no backup made", async () => {
-  const path = databasePath(home);
-  const db = new DatabaseSync(path);
-  db.exec(`PRAGMA user_version = ${String(MIGRATIONS.length + 1)}`);
-  db.close();
-  const before = await sha(path);
+it.each([
+  {
+    record: "a record from a newer Rufi",
+    prepare: () => {
+      const db = new DatabaseSync(databasePath(home));
+      db.exec(
+        `PRAGMA journal_mode = DELETE; PRAGMA user_version = ${String(MIGRATIONS.length + 1)}`,
+      );
+      db.close();
+    },
+    refusal: "made by a newer Rufi",
+    empty: false,
+  },
+  {
+    record: "an unknown record",
+    prepare: () => {
+      const db = new DatabaseSync(databasePath(home));
+      db.exec("PRAGMA journal_mode = DELETE; CREATE TABLE unknown (id TEXT)");
+      db.close();
+    },
+    refusal: "isn't a record this Rufi knows",
+    empty: false,
+  },
+  ...[true, false].map((marked) => ({
+    record: `an existing empty record ${marked ? "with" : "without"} installed.json`,
+    prepare: async () => {
+      await writeFile(databasePath(home), "");
+      if (!marked) await rm(markerPath(home));
+    },
+    refusal: "restore",
+    empty: true,
+  })),
+])(
+  "refuses $record, unchanged and with no backup made",
+  async ({ prepare, refusal, empty }) => {
+    const path = databasePath(home);
+    await Promise.resolve().then(prepare);
+    const before = await sha(path);
+    const names = (await readdir(home)).sort();
 
-  await expect(openRecord(home)).rejects.toThrow("made by a newer Rufi");
+    await expect(
+      openRecord(home).then((store) => {
+        store.close();
+      }),
+    ).rejects.toThrow(refusal);
+    // The writable opener is also used without the startup gate.
+    if (empty) {
+      expect(() => {
+        openWritable(path).close();
+      }).toThrow(refusal);
+    }
 
-  expect(await sha(path)).toBe(before);
-  expect(await readdir(home)).not.toContain("backups");
-});
+    expect(await sha(path)).toBe(before);
+    expect((await readdir(home)).sort()).toEqual(names);
+  },
+);
 
 it("opens a record the migrations made as this Rufi's own (schema.sql is what they make)", async () => {
   const path = databasePath(join(root, "migrated"));
