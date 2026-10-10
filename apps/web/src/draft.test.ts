@@ -269,6 +269,57 @@ describe("the box's chips", () => {
   });
 });
 
+describe("a lost send's chips", () => {
+  it("are kept in this tab with its text: after a reload the box shows them, and the retry sends them with the same id", async () => {
+    const stored = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        stored.set(key, value);
+      },
+      removeItem: (key: string) => {
+        stored.delete(key);
+      },
+    };
+    const chip = {
+      ref: { type: "document", id: "doc-1", version: 1 },
+      label: "Sunrise Labs August.pdf",
+      detail: "Lab report",
+    } as const;
+    const first = core({ text: "Save it", refs: [chip] });
+    first.api.storage = storage;
+    const box = draftBox(first.api);
+    await settle();
+    const sending = box.submit(false);
+    await settle();
+    first.sends()[0]?.fail(new Error("Rufi can't be reached."));
+    await sending;
+
+    // The core took it and emptied the draft; this tab reloads.
+    const next = core(editable(""));
+    next.api.storage = storage;
+    next.api.newId = () => "id-2";
+    const reloaded = draftBox(next.api);
+    await settle();
+    expect(reloaded.store.getState()).toMatchObject({
+      text: "Save it",
+      refs: [
+        {
+          pointer: { type: "document", id: "doc-1" },
+          label: "Sunrise Labs August.pdf",
+        },
+      ],
+    });
+    void reloaded.submit(false);
+    await settle();
+    expect(next.sends()[0]?.body).toEqual({
+      id: "id-1",
+      text: "Save it",
+      refs: [{ type: "document", id: "doc-1" }],
+    });
+  });
+});
+
 describe("adding to the box from another page", () => {
   it("refuses to append to an unresolved send, also after reload; retry keeps its id and text", async () => {
     const stored = new Map<string, string>();

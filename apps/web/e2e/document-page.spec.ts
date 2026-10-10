@@ -48,7 +48,7 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
     },
   ]);
   await rufi.family(
-    `DELETE FROM results; DELETE FROM reports;
+    `DELETE FROM record_sources; DELETE FROM results; DELETE FROM reports;
      DELETE FROM document_pages; DELETE FROM documents;`,
   );
   await rufi.start({ reader: reader.run });

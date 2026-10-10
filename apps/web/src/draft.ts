@@ -15,7 +15,7 @@ import {
   Draft,
   MAX_MESSAGE_CHARS,
   MAX_REFS,
-  type Pointer,
+  Pointer,
   Sent,
 } from "@rufi/contracts";
 import type { QueryClient } from "@tanstack/react-query";
@@ -64,6 +64,22 @@ const shown = (chips: readonly Chip[]): BoxChip[] =>
   }));
 
 const pointers = (chips: readonly BoxChip[]) => chips.map((c) => c.pointer);
+
+/** A send kept in this tab's storage: its id, text and chips. */
+const Kept = Schema.Struct({
+  id: Schema.String,
+  text: Schema.String,
+  refs: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        pointer: Pointer,
+        label: Schema.String,
+        detail: Schema.String,
+      }),
+    ),
+  ),
+});
+type Kept = typeof Kept.Type;
 const sameChips = (a: readonly BoxChip[], b: readonly BoxChip[]) =>
   a.map(chipKey).join("\n") === b.map(chipKey).join("\n");
 
@@ -131,10 +147,10 @@ export function draftBox(api: DraftApi) {
   }));
   let timer: ReturnType<typeof setTimeout> | undefined;
   /** A send whose answer was lost: the same text again keeps its id. */
-  let unanswered: { id: string; text: string } | undefined;
+  let unanswered: Kept | undefined;
 
   /** Keeps the send's identity before it goes; if storage fails, it doesn't go. */
-  function remember(send: { id: string; text: string }): boolean {
+  function remember(send: Kept): boolean {
     try {
       api.storage?.setItem(sendKey, JSON.stringify(send));
       unanswered = send;
@@ -158,9 +174,7 @@ export function draftBox(api: DraftApi) {
       try {
         const saved = api.storage?.getItem(sendKey);
         unanswered = saved
-          ? Schema.decodeUnknownSync(
-              Schema.Struct({ id: Schema.String, text: Schema.String }),
-            )(JSON.parse(saved))
+          ? Schema.decodeUnknownSync(Kept)(JSON.parse(saved))
           : undefined;
         const draft = Schema.decodeUnknownSync(Draft)(
           await api.call("GET", "draft"),
@@ -168,7 +182,7 @@ export function draftBox(api: DraftApi) {
         store.setState({
           draft,
           text: unanswered?.text ?? draft.text,
-          refs: shown(draft.refs),
+          refs: unanswered?.refs ? [...unanswered.refs] : shown(draft.refs),
           loaded: true,
           unresolved: unanswered !== undefined,
           notice: null,
@@ -302,7 +316,7 @@ export function draftBox(api: DraftApi) {
       const id = !steer && unanswered?.text === text ? unanswered.id : newId();
       await inTurn(api.client, api.scope, async () => {
         try {
-          if (!steer && !remember({ id, text })) return;
+          if (!steer && !remember({ id, text, refs: state.refs })) return;
           const sent = Schema.decodeUnknownSync(Sent)(
             await api.call("POST", steer ? "steer" : "messages", {
               id,
