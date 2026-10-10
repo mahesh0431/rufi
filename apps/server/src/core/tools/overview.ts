@@ -1,7 +1,9 @@
 // get_overview: the active person's record at a glance, as printed.
 import { sql } from "kysely";
+import { kindNamed, type Kind } from "../record/kinds.ts";
 import {
   currentRecords,
+  isCurrent,
   RECORDS_SHOWN,
   recentSaves,
   recordVersion,
@@ -48,8 +50,8 @@ export const getOverview = defineTool({
 });
 
 /**
- * The person's overview as the screens show it: their name, counts and
- * current results. Undefined when the person isn't in Rufi.
+ * The start of get_overview: the person's name, counts and current results.
+ * Undefined when the person isn't in Rufi.
  */
 export async function readOverview(store: Store, personId: string) {
   const { query } = store;
@@ -67,41 +69,19 @@ export async function readOverview(store: Store, personId: string) {
         .where("person_id", "=", person.id)
         .executeTakeFirstOrThrow()
     ).n;
-  // Current: not removed, and no other result of this person replaces it.
+  const results = kindNamed("result") as Kind;
   const current = query
     .selectFrom("results as r")
     .where("r.person_id", "=", person.id)
-    .where("r.removed", "=", 0)
-    .where((eb) =>
-      eb.not(
-        eb.exists(
-          eb
-            .selectFrom("results as n")
-            .select("n.id")
-            .whereRef("n.person_id", "=", "r.person_id")
-            .whereRef("n.replaces_id", "=", "r.id")
-            // A removed amendment no longer replaces it.
-            .where("n.removed", "=", 0),
-        ),
-      ),
-    );
+    .where(isCurrent(results, "r"));
+  // Kept, not removed, and replaced by an amended result.
   const replaced = (
     await query
       .selectFrom("results as r")
       .select((eb) => eb.fn.countAll<number>().as("n"))
       .where("r.person_id", "=", person.id)
       .where("r.removed", "=", 0)
-      .where((eb) =>
-        eb.exists(
-          eb
-            .selectFrom("results as n")
-            .select("n.id")
-            .whereRef("n.person_id", "=", "r.person_id")
-            .whereRef("n.replaces_id", "=", "r.id")
-            // A removed amendment no longer replaces it.
-            .where("n.removed", "=", 0),
-        ),
-      )
+      .where(sql<boolean>`NOT ${isCurrent(results, "r")}`)
       .executeTakeFirstOrThrow()
   ).n;
   const currentCount = (
