@@ -37,6 +37,33 @@ function given(field: Field, row: Row): unknown {
   }
 }
 
+/**
+ * Whether the record in `alias` is current: not removed and, for a result,
+ * not replaced by an amended result that isn't removed. Every read of the
+ * current record (Overview, the record's pages, tiles, series) uses this.
+ */
+export function isCurrent(kind: Kind, alias: string) {
+  const row = sql.ref(alias);
+  const removed = sql`${sql.ref(`${alias}.removed`)} = 0`;
+  if (kind.name !== "result") return sql<boolean>`${removed}`;
+  return sql<boolean>`(${removed} AND NOT EXISTS (SELECT 1 FROM results n WHERE n.person_id = ${row}.person_id AND n.replaces_id = ${row}.id AND n.removed = 0))`;
+}
+
+/** What a change changed: only those fields, before and after. */
+export function changed(kind: Kind, before: Row, after: Row) {
+  const differs = (name: string) => {
+    const field = kind.fields[name] as Field;
+    return (
+      JSON.stringify(given(field, before)) !==
+      JSON.stringify(given(field, after))
+    );
+  };
+  return {
+    before: fieldsOf(kind, before, differs),
+    after: fieldsOf(kind, after, differs),
+  };
+}
+
 /** The fields a record has, by the names save_changes uses. */
 export function fieldsOf(
   kind: Kind,
@@ -61,7 +88,7 @@ export async function currentRecords(store: Store, personId: string) {
   for (const kind of KINDS) {
     if (kind.name === "result") continue;
     const { rows } =
-      await sql<Row>`SELECT * FROM ${sql.table(kind.table)} WHERE person_id = ${personId} AND removed = 0 ORDER BY rowid DESC LIMIT ${RECORDS_SHOWN + 1}`.execute(
+      await sql<Row>`SELECT * FROM ${sql.table(kind.table)} r WHERE person_id = ${personId} AND ${isCurrent(kind, "r")} ORDER BY rowid DESC LIMIT ${RECORDS_SHOWN + 1}`.execute(
         store.query,
       );
     if (rows.length === 0) continue;
@@ -120,19 +147,7 @@ export async function recentSaves(store: Store, personId: string) {
             ? { ...base, fields: fieldsOf(kind, after) }
             : base;
         }
-        // Only what the change changed, before and after.
-        const changed = (name: string) => {
-          const field = kind.fields[name] as Field;
-          return (
-            JSON.stringify(given(field, before)) !==
-            JSON.stringify(given(field, after))
-          );
-        };
-        return {
-          ...base,
-          before: fieldsOf(kind, before, changed),
-          after: fieldsOf(kind, after, changed),
-        };
+        return { ...base, ...changed(kind, before, after) };
       }),
     });
   }

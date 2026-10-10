@@ -70,7 +70,7 @@ async function upgrade(home: string, now: Date): Promise<void> {
   } finally {
     db.close();
   }
-  if (found.state === "current" || found.state === "empty") return;
+  if (found.state === "current") return;
   if (found.state !== "older") throw new CantOpen(database, found);
   try {
     await makeBackup(home, now, { folder: upgradeBackupsPath(home) });

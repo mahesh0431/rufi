@@ -71,8 +71,12 @@ Saving the reverse of an earlier save, by chat: the user says "undo that", the A
 _Avoid_: revert, rollback
 
 **Needs you**:
-The list of what is waiting for the user for one person, such as documents to review.
+The top of a person's Overview: what is waiting for the user, such as a document read and not saved, or one that couldn't be read. It hides when nothing waits.
 _Avoid_: inbox, notifications, tasks
+
+**Tile**:
+One kind of record on the Overview: its count of current records and a short summary that says what it counts, such as how many medicines you take now and how many are in your history. Rufi works it out from the saved record, never with the AI. It opens that kind's page.
+_Avoid_: card, widget
 
 ## The chat
 
@@ -132,7 +136,7 @@ A reply that didn't finish because you stopped it or Rufi closed. What it wrote 
 _Avoid_: cancelled, aborted
 
 **Chip**:
-Something from the record added to a message in the chat: a result, a document or a draft item, shown by its name. It points at exactly that one, for this person; the AI gets its id and its version when the message is sent. Taking a chip out of the box changes nothing in the record.
+Something from the record added to a message in the chat: a record (such as a result, with **Ask Rufi** on its row), a document or a draft item, shown by its name. It points at exactly that one, for this person; the AI gets its id and its version when the message is sent. Taking a chip out of the box changes nothing in the record.
 _Avoid_: attachment, tag, mention
 
 **Draft**:
@@ -188,7 +192,7 @@ Something Rufi offers the AI, such as reading a person's Overview. Tools are how
 _Avoid_: function, plugin, skill
 
 **Overview**:
-A short view of one person's record: who they are, how much is in it, and their current results as printed. The AI reads it through a tool, and it is the first page you see.
+A short view of one person's record. On screen it is the first page you see: **Needs you**, a **tile** for each kind of record, and the recent changes. The AI reads its own short view through a tool: who the person is, how much is in it, and their current results as printed.
 _Avoid_: dashboard, summary
 
 **Help**:

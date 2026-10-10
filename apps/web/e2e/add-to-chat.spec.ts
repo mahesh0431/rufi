@@ -1,4 +1,4 @@
-// Adding to the chat on the real core: results, documents and a document's
+// Adding to the chat on the real core: results (Ask Rufi on the Results page), documents and a document's
 // draft items go into the box as chips (on a row, or several at once), files added with the
 // paperclip become documents with their chips, the chips survive a reload
 // and go with the message to the AI, and a big save's receipt shows its
@@ -51,6 +51,7 @@ const chips = (scope: Page | Locator) =>
   scope.getByRole("list", { name: "Added to this message" });
 const log = (scope: Page | Locator) =>
   scope.getByRole("log", { name: "Messages" });
+const sidebar = (page: Page) => page.getByRole("complementary");
 
 /** Rufi with the fictional family, opened at its Overview. */
 async function opened(
@@ -62,7 +63,9 @@ async function opened(
   await rufi.family(...more);
   await rufi.start(options);
   await page.goto(rufi.link());
-  await expect(page.getByText("Latest results")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Your record" }),
+  ).toBeVisible();
 }
 
 /** What the scripted AI got as each turn's input, in order. */
@@ -84,27 +87,31 @@ test("results go into the chat as chips, one or several at once; they survive a 
   rufi,
 }) => {
   await opened(page, rufi);
-  const row = (test: string) =>
+  await sidebar(page)
+    .getByRole("link", { name: /^Results/ })
+    .click();
+  const row = (name: string) =>
     page
-      .getByRole("row")
-      .filter({ has: page.getByText(test, { exact: true }) });
+      .getByRole("listitem")
+      .filter({ has: page.getByRole("button", { name, exact: true }) });
 
-  // One row: its own button, shown on the pointer.
-  await row("CRP").hover();
-  await row("CRP").getByRole("button", { name: "+ Add to chat" }).click();
-  await expect(chips(chat(page)).getByRole("listitem")).toHaveText([
+  // One row: Ask Rufi, shown on the pointer, puts it in the chat's box.
+  await row("CRP <5 mg/L").hover();
+  await row("CRP <5 mg/L").getByRole("button", { name: "Ask Rufi" }).click();
+  await expect(page).toHaveURL(/\/people\/asha\/chat$/);
+  await expect(chips(page).getByRole("listitem")).toHaveText([
     "CRP <5 mg/L · 12 Aug 2026",
   ]);
-  await page.getByRole("button", { name: "Minimise" }).click();
+  await page.goBack();
 
   // Several: tick them, then add them together.
-  await row("Glucose").getByRole("checkbox").check();
-  await row("Free T4").getByRole("checkbox").check();
+  await row("Glucose 118 mg/dL").getByRole("checkbox").check();
+  await row("Free T4 1.1 ng/dL").getByRole("checkbox").check();
   await expect(page.getByText("2 chosen")).toBeVisible();
   await accessible(page);
   // They go in as the screen shows them.
   await page.getByRole("button", { name: "Add 2 to chat" }).click();
-  await expect(chips(chat(page)).getByRole("listitem")).toHaveText([
+  await expect(chips(page).getByRole("listitem")).toHaveText([
     "CRP <5 mg/L · 12 Aug 2026",
     "Free T4 1.1 ng/dL · 1 Sep 2026",
     "Glucose 118 mg/dL · 12 Aug 2026",
@@ -119,32 +126,29 @@ test("results go into the chat as chips, one or several at once; they survive a 
       response.request().postData()?.includes("res-a2") === true &&
       response.request().postData()?.includes("res-a6") === false,
   );
-  await chips(chat(page))
+  await chips(page)
     .getByRole("button", {
       name: "Take Free T4 1.1 ng/dL · 1 Sep 2026 out of the message",
     })
     .click();
-  await expect(chips(chat(page)).getByRole("listitem")).toHaveCount(2);
+  await expect(chips(page).getByRole("listitem")).toHaveCount(2);
   await saved;
   await page.reload();
-  await box(chat(page)).click();
-  await expect(chips(chat(page)).getByRole("listitem")).toHaveText([
+  await expect(chips(page).getByRole("listitem")).toHaveText([
     "CRP <5 mg/L · 12 Aug 2026",
     "Glucose 118 mg/dL · 12 Aug 2026",
   ]);
 
-  await box(chat(page)).fill("Are these high?");
-  await box(chat(page)).press("Enter");
-  await expect(box(chat(page))).toHaveValue("");
-  await expect(chips(chat(page))).toHaveCount(1);
-  const message = log(chat(page)).locator("[data-entry]").first();
+  await box(page).fill("Are these high?");
+  await box(page).press("Enter");
+  await expect(box(page)).toHaveValue("");
+  await expect(chips(page)).toHaveCount(1);
+  const message = log(page).locator("[data-entry]").first();
   await expect(chips(message).getByRole("listitem")).toHaveText([
     "CRP <5 mg/L · 12 Aug 2026",
     "Glucose 118 mg/dL · 12 Aug 2026",
   ]);
-  await expect(log(chat(page)).locator(".reply")).toHaveText(
-    /^ok:Are these high\?/,
-  );
+  await expect(log(page).locator(".reply")).toHaveText(/^ok:Are these high\?/);
   expect((await inputs(rufi)).at(-1)?.at(-1)).toBe(
     "Are these high?\n\nReferences the user added to this message (Rufi's, exact: read them with your tools):\n- result res-a3 (kind result), version null: CRP <5 mg/L · 12 Aug 2026\n- result res-a2 (kind result), version null: Glucose 118 mg/dL · 12 Aug 2026",
   );

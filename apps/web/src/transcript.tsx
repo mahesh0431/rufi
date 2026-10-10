@@ -479,7 +479,7 @@ const RECEIPT_LINES = 5;
  * Rufi's receipt: its heading and its lines. A big save's summary shows,
  * and its list folds under "Show what was saved".
  */
-function Receipt({ text }: { text: string }) {
+export function Receipt({ text }: { text: string }) {
   const [head = "", ...rest] = text.split("\n\n");
   const list = rest.join("\n\n");
   const long = list.split("\n").length > RECEIPT_LINES;

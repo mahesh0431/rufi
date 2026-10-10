@@ -87,19 +87,29 @@ function open(personId: string): Opened {
   }));
   const stop = new AbortController();
   const path = chatPath(personId);
-  /** The person's documents and readings changed: what shows them reads again. */
+  /**
+   * The person's documents and readings changed: what shows them reads
+   * again, and Overview's Needs you.
+   */
   const documentsChanged = () => {
-    for (const key of ["readings", "documents", "reading", "items"]) {
+    for (const key of [
+      "readings",
+      "documents",
+      "reading",
+      "items",
+      "overview",
+    ]) {
       void queries.invalidateQueries({ queryKey: [key, personId] });
     }
   };
   /**
    * A save, an undo or a dismissal landed (its receipt came): every screen
    * that shows saved data reads again, whichever size of the chat is open.
+   * A kind's pages read again from the first, so their cursors are new.
    */
   const recordChanged = () => {
     documentsChanged();
-    for (const key of ["overview", "brief"]) {
+    for (const key of ["record", "series", "brief"]) {
       void queries.invalidateQueries({ queryKey: [key, personId] });
     }
   };

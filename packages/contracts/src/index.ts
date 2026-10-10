@@ -392,33 +392,6 @@ export const FirstRunStep = Schema.Literals([
 export const FirstRun = Schema.Struct({ step: FirstRunStep });
 export type FirstRun = typeof FirstRun.Type;
 
-/** One current result, exactly as printed. */
-export const OverviewResult = Schema.Struct({
-  id: Schema.String,
-  test: Schema.String,
-  value: Schema.String,
-  unit: Schema.optionalKey(Schema.String),
-  range: Schema.optionalKey(Schema.String),
-  flag: Schema.optionalKey(Schema.String),
-  context: Schema.optionalKey(Schema.String),
-  /** The date at the precision known: "2026", "2026-08" or "2026-08-12". */
-  measured: Schema.optionalKey(Schema.String),
-  amended: Schema.optionalKey(Schema.Boolean),
-});
-export type OverviewResult = typeof OverviewResult.Type;
-
-/** A person's record at a glance (the same read as the AI's get_overview). */
-export const Overview = Schema.Struct({
-  person: Schema.String,
-  documents: Schema.Int,
-  reports: Schema.Int,
-  /** Current results; `latest_results` shows the newest of them. */
-  results: Schema.Int,
-  earlier_versions_kept: Schema.Int,
-  latest_results: Schema.Array(OverviewResult),
-});
-export type Overview = typeof Overview.Type;
-
 // --- What the screens send ---
 
 export const AddPerson = Schema.Struct({ displayName: Line(200) });

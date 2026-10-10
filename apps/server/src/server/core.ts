@@ -33,7 +33,7 @@ import {
 import { cleanExportStaging, exportZip } from "../core/store/export.ts";
 import { openRecord } from "../core/store/install.ts";
 import { claimNotices } from "../core/record/notices.ts";
-import { readOverview } from "../core/tools/overview.ts";
+import { recordViews, waiting } from "../core/record/views.ts";
 import { pages } from "../core/documents/pages.ts";
 import { chatCaller, forAgent, toolsVersion } from "../core/tools/tools.ts";
 import { holdRufiLock, readJson, writePrivateJson } from "../platform/files.ts";
@@ -229,6 +229,8 @@ export const startCore = (options: CoreOptions) =>
     // The token is in the fragment: the browser never sends it in a request.
     const launchUrl = () =>
       `http://127.0.0.1:${String(port)}/#launch=${access.launch()}`;
+    const record = recordViews(reader ?? writer);
+    const personDocuments = documents(writer, home, options.now, readings);
     const app = api({
       transcripts,
       drafts,
@@ -236,16 +238,22 @@ export const startCore = (options: CoreOptions) =>
       sessions: access,
       port: () => port,
       overview: async (personId) => {
-        const overview = reader && (await readOverview(reader, personId));
+        const overview = await record.overview(personId);
         if (!overview) throw new Error("The person isn't in the record.");
-        return overview;
+        return {
+          ...overview,
+          needsYou: {
+            documents: waiting(await personDocuments.list(personId)),
+          },
+        };
       },
+      record,
       brief: async (personId, briefId) =>
         reader && (await readBrief(reader.query, personId, briefId)),
       account,
       backups,
       exportZip: () => exportZip(home, new Date()),
-      documents: documents(writer, home, options.now, readings),
+      documents: personDocuments,
       readings,
       items: draftItems(writer, readings.changed),
       pages: pageService,
