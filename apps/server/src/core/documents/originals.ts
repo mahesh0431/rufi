@@ -6,7 +6,7 @@
 import { constants } from "node:fs";
 import { copyFile, mkdir, open, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { sha256 } from "../../platform/files.ts";
+import { sha256, tempPath } from "../../platform/files.ts";
 
 export const filesPath = (home: string) => join(home, "files");
 export const originalPath = (home: string, id: string) =>
@@ -26,7 +26,7 @@ export const isFileId = (id: string) => /^[0-9a-f]{64}$/.test(id);
 async function writeSynced(path: string, bytes: Uint8Array): Promise<void> {
   const folder = join(path, "..");
   await mkdir(folder, { recursive: true, mode: 0o700 });
-  const temp = `${path}.${String(process.pid)}.${String(Date.now())}.tmp`;
+  const temp = tempPath(path);
   try {
     const file = await open(temp, "wx", 0o600);
     try {

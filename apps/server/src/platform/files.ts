@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import lockfile from "proper-lockfile";
 
@@ -14,15 +14,28 @@ export async function readJson(path: string): Promise<unknown> {
   }
 }
 
+/**
+ * A temp file beside `path`, to rename onto it: its own name each time, so
+ * two writes of the same file at the same time never share one.
+ */
+export const tempPath = (path: string) => `${path}.${randomUUID()}.tmp`;
+
 /** Writes JSON readable only by this user, replacing the file in one step. */
 export async function writePrivateJson(
   path: string,
   value: unknown,
 ): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temp = `${path}.${String(process.pid)}.tmp`;
-  await writeFile(temp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  await rename(temp, path);
+  const temp = tempPath(path);
+  try {
+    await writeFile(temp, `${JSON.stringify(value, null, 2)}\n`, {
+      mode: 0o600,
+    });
+    await rename(temp, path);
+  } catch (error) {
+    await rm(temp, { force: true });
+    throw error;
+  }
 }
 
 /** The sha256 of a file's bytes, in hex. */
