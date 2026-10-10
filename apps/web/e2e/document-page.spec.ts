@@ -39,7 +39,11 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
       const first = readPage("13.2", { rows_seen: 2 });
       await turn.save(1, { ...first, items: [...first.items, PLATELETS] });
       await turn.look(2);
-      await turn.save(2, readPage("13.2", { rows_seen: 3 }));
+      const second = readPage("13.2", { rows_seen: 3 });
+      await turn.save(2, {
+        ...second,
+        items: [...second.items, { ...second.items[0], column: "earlier" }],
+      });
       return undefined;
     },
   ]);
@@ -67,10 +71,12 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
   await page.getByRole("button", { name: "sunrise-labs-august.pdf" }).click();
   const items = page.getByRole("region", { name: "Items" });
   const shown = page.getByRole("region", { name: "Page" });
-  await expect(items).toContainText("3 results · 1 unsure");
+  // An earlier column's value is a row of its own, not a result.
+  await expect(items).toContainText("3 results · 1 earlier · 1 unsure");
   await expect(items).toContainText(
-    "Page 2 · read · 1 item · may be incomplete: the reader counted 3 rows and read 1",
+    "Page 2 · read · 2 items · may be incomplete: the reader counted 3 rows and read 1",
   );
+  await expect(items.getByRole("row", { name: /earlier/ })).toHaveCount(1);
   await expect(shown.getByRole("img", { name: "Page 1 of 2" })).toBeVisible();
   await items.getByRole("button", { name: "Haemoglobin" }).nth(1).click();
   await expect(shown.getByRole("img", { name: "Page 2 of 2" })).toBeVisible();

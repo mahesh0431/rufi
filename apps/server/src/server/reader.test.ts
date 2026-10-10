@@ -288,6 +288,10 @@ describe("a reading", () => {
       await until(done);
       expect(lines().at(-1)).toBe("Lab report · 12 Aug · 1 result read");
       expect(drafts()).toHaveLength(2);
+      expect((await docs.list(personId))[0]?.reading).toMatchObject({
+        results: 1,
+        toCheck: 0,
+      });
       expect(JSON.parse(drafts()[1]?.["fields"] as string)).toMatchObject({
         column: "earlier",
       });

@@ -109,6 +109,7 @@ Nothing on this page saves to your record. You fix what the reader read, then yo
 
 - The results are in a list, grouped by page. Each page's heading says how its reading went, with the marks from [What the marks mean](#what-the-marks-mean). A page that couldn't be read or wasn't looked at has **Retry**.
 - Click a result to show its page on the right. The arrows above the page go to the page before or after.
+- Values from a report's column of earlier results are rows of their own, marked **earlier**. Rufi doesn't count them as results, here, on the Documents page or in the chat's line.
 - Turn on **Unsure only** to see only the results marked unsure, each with why.
 - **View original** opens the file as you added it. **The reader's work** shows what the reader saved for each page, as **Open ▸** does while it reads.
 

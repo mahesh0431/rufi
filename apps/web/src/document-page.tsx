@@ -120,14 +120,21 @@ function Checking({
   const [original, setOriginal] = useState(false);
   const { name } = describe(document);
   const pending = items.items.filter((i) => i.status === "pending");
-  const unsure = pending.filter((i) => i.unsure.length > 0);
+  // Results are current values only, as the Documents page and the chat's
+  // line count them; an earlier column's values stay rows of their own.
+  const results = pending.filter((i) => i.fields.column !== "earlier");
+  const earlier = pending.length - results.length;
+  const unsure = results.filter((i) => i.unsure.length > 0);
   const fixed = pending.filter((i) => fixesOf(i).length > 0);
   /** A page's items, also those the filter hides. */
   const count = (position: number) =>
     items.items.filter((i) => i.page === position).length;
-  const listed = unsureOnly
-    ? items.items.filter((i) => i.unsure.length > 0)
-    : items.items;
+  const marked = items.items.filter((i) => i.unsure.length > 0);
+  const listed = unsureOnly ? marked : items.items;
+  const left = [
+    plural(results.length, "result"),
+    ...(earlier > 0 ? [`${String(earlier)} earlier`] : []),
+  ].join(" · ");
   const about = [
     ...(document.kind ? [KIND_NAMES[document.kind]] : []),
     ...(document.date ? [printedDate(document.date)] : []),
@@ -187,12 +194,12 @@ function Checking({
                 }}
                 className="accent-accent"
               />
-              Unsure only ({unsure.length})
+              Unsure only ({marked.length})
             </label>
             <span className="flex-1" />
             <span className="text-xs text-muted">
               {[
-                plural(pending.length, "result"),
+                left,
                 `${String(unsure.length)} unsure`,
                 ...(fixed.length > 0
                   ? [`${String(fixed.length)} fixed by you`]
@@ -233,14 +240,14 @@ function Checking({
         <span className="text-muted">
           {pending.length === 0
             ? "Nothing here waits to be saved."
-            : `${plural(pending.length, "result")} not saved yet.`}
+            : `Not saved yet: ${left}.`}
         </span>
         <span className="flex-1" />
         <SaveInChat
           personId={person.id}
           document={document}
           name={name}
-          count={pending.length}
+          count={results.length}
         />
       </div>
 
@@ -419,9 +426,6 @@ function Row({
           {fields.context_text && (
             <span className="text-muted"> · {fields.context_text}</span>
           )}
-          {fields.column === "earlier" && (
-            <span className="text-muted"> (earlier)</span>
-          )}
           {item.unsure.map((why) => (
             <span key={why} className="block text-xs text-muted">
               {why}
@@ -448,6 +452,7 @@ function Row({
         </td>
         <td className={`${cell} text-right whitespace-nowrap`}>
           {fields.flag_text && <Tag>{fields.flag_text}</Tag>}
+          {fields.column === "earlier" && <Tag>earlier</Tag>}
           {fixes.length > 0 && <Tag strong>fixed by you</Tag>}
           {item.unsure.length > 0 && <Tag>unsure</Tag>}
           {done && <Tag>{item.status}</Tag>}

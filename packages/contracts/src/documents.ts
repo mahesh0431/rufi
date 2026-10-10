@@ -44,7 +44,7 @@ export const DocumentSummary = Schema.Struct({
     Schema.Struct({
       saved: Schema.Int,
       of: Schema.Int,
-      /** Draft items not saved or dismissed yet. */
+      /** Current values not saved or dismissed yet (an earlier column's aren't counted). */
       results: Schema.Int,
       /** Of those, the ones marked unsure. */
       toCheck: Schema.Int,
