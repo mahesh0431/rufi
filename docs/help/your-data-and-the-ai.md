@@ -51,6 +51,7 @@ The reader sends the document's pages to the AI service you signed in with, the 
 
 - It gets only Rufi's instructions for reading, the list of the document's pages and its own notes: none of your chat or your record.
 - It can do two things only, both through Rufi: look at a page of that document, and save what the page says in its notebook. It has no files, no commands and no internet, and it can't start other work. This is a lock, not only an instruction: Rufi starts the reader without them, and stops a reading that uses anything else.
+- On GPT-6.1-Sol, the reader's model to start with, the reader uses these two through small pieces of code that it writes. That code runs closed off inside Codex: it has no files and no network, and it can only use the reader's two tools and read the time. The reader can also try to ask you a question; nobody is there to answer, so Rufi stops that reading, and it continues as any stopped reading does. On GPT-5.5, the reader uses its two tools without code. You choose the model in **Settings** → **Documents** (see [Documents](documents.md#the-readers-model-and-effort)).
 - Its thread isn't saved by the AI. Rufi keeps its notebook (what each page says) and its draft items in `rufi.sqlite`, with the reader's version and how much of your plan the reading used.
 
 Draft items aren't your record until you save them. They are in your backups and your export (the `draft_items` table), apart from your record.

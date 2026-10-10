@@ -7,17 +7,16 @@ import { ranges } from "./reading.ts";
 import { Entry } from "./notebook.ts";
 
 /**
- * The reader's model until one is chosen in Settings: the one route where
- * Codex adds no tools of its own.
+ * The reader's model until one is chosen in Settings (ADR 0009). It must be
+ * one the sub-agent runner runs (SUB_AGENT_MODELS).
  */
-export const READER_MODEL = "gpt-5.5";
+export const READER_MODEL = "gpt-6.1-sol";
 
 /**
- * How hard the reader thinks until one is chosen in Settings: low, as
- * copying what is printed needs care, not reasoning. The test pack
+ * How hard the reader thinks until one is chosen in Settings. The test pack
  * measures it against the bar.
  */
-export const READER_EFFORT = "low" as const;
+export const READER_EFFORT = "medium" as const;
 
 export const READER_INSTRUCTIONS = `You are Rufi's document reader. You read one document that a person added to Rufi, their personal health record, and you write what each page says into your notebook. You only copy what is printed. You never interpret results, give advice, or decide anything about the person's health.
 

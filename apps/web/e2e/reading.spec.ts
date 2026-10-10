@@ -123,14 +123,19 @@ test("Settings keeps the reader's model and effort, and the next reading runs wi
   await opened(page, rufi, reader);
   await page.getByRole("link", { name: "Settings" }).click();
   const model = page.getByRole("combobox", { name: "Reader model" });
-  await expect(model).toHaveValue("gpt-5.5");
-  await expect(model.getByRole("option")).toHaveText(["GPT-5.5"]);
+  await expect(model).toHaveValue("gpt-6.1-sol");
+  await expect(model.getByRole("option")).toHaveText([
+    "GPT-6.1-Sol",
+    "GPT-5.5",
+  ]);
   const effort = page.getByRole("radiogroup", { name: "Effort" });
-  await expect(effort.getByRole("radio", { name: "Low" })).toBeChecked();
+  await expect(effort.getByRole("radio", { name: "Medium" })).toBeChecked();
   await accessible(page);
+  await model.selectOption("gpt-5.5");
   await effort.getByRole("radio", { name: "High" }).click();
   await expect(effort.getByRole("radio", { name: "High" })).toBeChecked();
   await page.reload();
+  await expect(model).toHaveValue("gpt-5.5");
   await expect(effort.getByRole("radio", { name: "High" })).toBeChecked();
 
   await add(page);

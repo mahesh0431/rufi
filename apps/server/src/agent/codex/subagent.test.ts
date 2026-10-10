@@ -35,8 +35,10 @@ import type { SubAgentOutcome } from "../runtime.ts";
 import { codexBinary } from "./binary.ts";
 import { subAgentRunner } from "./subagent.ts";
 
-/** The reader's model: the one route where Codex adds no tools of its own. */
+/** The reader's direct model: Codex adds no tools of its own. */
 const MODEL = "gpt-5.5";
+/** The reader's code-mode model: Rufi's tools only inside Codex's exec. */
+const CODE_MODEL = "gpt-6.1-sol";
 const INSTRUCTIONS = "You read one document for Rufi. (Test instructions.)";
 const INPUT = "Read the document's pages and save each one.";
 /** Over any model's compaction limit: Codex summarises the thread. */
@@ -179,6 +181,26 @@ function callable(request: ModelRequest): string[] {
     .sort();
 }
 
+/** The tools a code-mode request offers inside exec, from exec's own description. */
+function inExec(request: ModelRequest): string[] {
+  const exec = [
+    ...(request.tools ?? []),
+    ...request.input.flatMap((item) =>
+      item.type === "additional_tools" ? (item.tools ?? []) : [],
+    ),
+  ]
+    .flatMap((tool) => {
+      const t = tool as { name?: string; tools?: unknown[] };
+      return [t, ...((t.tools ?? []) as (typeof t)[])];
+    })
+    .find((tool) => tool.name === "exec") as
+    | { description?: string }
+    | undefined;
+  return [...(exec?.description ?? "").matchAll(/^### `([^`]+)`$/gm)]
+    .map((match) => match[1] ?? "")
+    .sort();
+}
+
 const isCompaction = (request: ModelRequest) =>
   JSON.stringify(request.input.at(-1)).includes(
     "CONTEXT CHECKPOINT COMPACTION",
@@ -186,6 +208,20 @@ const isCompaction = (request: ModelRequest) =>
 
 const call = (name: string, args: unknown, tokens?: number): Step => ({
   call: { namespace: "rufi", name, arguments: args },
+  ...(tokens !== undefined && { tokens }),
+});
+
+/** A script for exec: look at a page, then show its text and its image. */
+const look = (page: number): Step => ({
+  exec: `const answer = await tools.rufi__get_page({ page: ${String(page)} });
+const at = answer.lastIndexOf("\\ndata:");
+text(answer.slice(0, at));
+image(answer.slice(at + 1));`,
+});
+
+/** A script for exec: save a page, and show Rufi's answer. */
+const save = (page: number, entry: unknown, tokens?: number): Step => ({
+  exec: `text(await tools.rufi__save_page(${JSON.stringify({ page, entry })}));`,
   ...(tokens !== undefined && { tokens }),
 });
 
@@ -428,22 +464,118 @@ describe("the reader on the pinned Codex", () => {
     expect(stored().notes.every((n) => n["reader_note"] === null)).toBe(true);
   }, 120_000);
 
-  it("refuses a code-mode model, whose exec Rufi couldn't see, before a turn starts", async () => {
+  it("on a code-mode model, can reach only its two tools and Codex's pinned set through exec, and sees the page image", async () => {
     const run = job([1, 2]);
-    const { outcome, answers } = await read(
+    const { outcome } = await read(
       run,
-      [{ text: "Done." }],
+      [
+        look(1),
+        save(1, entry("13.2")),
+        // The answer to this save reports usage over the limit: Codex compacts.
+        save(1, entry("13.4"), OVER_LIMIT),
+        look(1),
+        { text: "Done." },
+      ],
       undefined,
-      "gpt-6.1-sol",
+      CODE_MODEL,
+    );
+
+    expect(outcome.end).toEqual({ status: "completed" });
+    expect(outcome.compactions).toBe(1);
+
+    // The complete exposed set, in every request, also after the compaction:
+    // exec and wait run Rufi's tools; the async question fails the turn.
+    const requests = model?.requests ?? [];
+    expect(requests.filter(isCompaction)).toHaveLength(1);
+    for (const request of requests) {
+      const where = JSON.stringify(request.input.at(-1)).slice(0, 80);
+      if (isCompaction(request)) {
+        expect(callable(request), where).toEqual([]);
+        continue;
+      }
+      expect(callable(request), where).toEqual([
+        "functions.exec",
+        "functions.request_user_input_async",
+        "functions.wait",
+      ]);
+      expect(inExec(request), where).toEqual([
+        "clock__curr_time",
+        "rufi__get_page",
+        "rufi__save_page",
+      ]);
+    }
+    // Rufi's instructions only (this model takes them as a developer
+    // message), and no history: then just the task.
+    expect(
+      requests[0]?.input
+        .filter((item) => item.type === "message")
+        .map((item) => [item.role, item.content]),
+    ).toEqual([
+      ["developer", [{ type: "input_text", text: INSTRUCTIONS }]],
+      ["user", [{ type: "input_text", text: INPUT }]],
+    ]);
+
+    // The page image reached the model, as Rufi drew it, through exec.
+    const shown = requests[1]?.input.at(-1);
+    expect(shown?.type).toBe("custom_tool_call_output");
+    const output = shown?.output as { type: string; image_url?: string }[];
+    const drawn = await readFile(
+      pagePath(
+        root,
+        store.db
+          .prepare("SELECT file_id FROM document_pages WHERE document_id = ?")
+          .get(documentId)?.["file_id"] as string,
+        1,
+      ),
+    );
+    expect(output.filter((part) => part.type === "input_image")).toEqual([
+      expect.objectContaining({
+        image_url: `data:image/png;base64,${drawn.toString("base64")}`,
+      }),
+    ]);
+    // The saves through exec reached the notebook.
+    expect(stored().pages[0]).toMatchObject({
+      entry: JSON.stringify(entry("13.4")),
+      entry_job_id: jobId,
+    });
+  }, 120_000);
+
+  it("fails the turn when a code-mode reader asks the person a question", async () => {
+    const { outcome } = await read(
+      job([1]),
+      [
+        {
+          call: {
+            name: "request_user_input_async",
+            arguments: { questions: [{ title: "Which page is the latest?" }] },
+          },
+        },
+        { text: "Done." },
+      ],
+      undefined,
+      CODE_MODEL,
     );
     expect(outcome.end).toEqual({
       status: "failed",
       reason: "provider_failed",
-      text: "Rufi's sub-agents run only on gpt-5.5.",
+      text: "The reader asked a question, but nobody is there to answer it, so Rufi stopped it.",
+    });
+  }, 120_000);
+
+  it("refuses a model it doesn't run before a turn starts", async () => {
+    const { outcome, answers } = await read(
+      job([1, 2]),
+      [{ text: "Done." }],
+      undefined,
+      "gpt-6-astra",
+    );
+    expect(outcome.end).toEqual({
+      status: "failed",
+      reason: "provider_failed",
+      text: "Rufi's sub-agents run only on gpt-6.1-sol, gpt-5.5.",
     });
     expect(model?.requests).toEqual([]);
     expect(answers).toEqual([]);
-    expect(stored().pages.every((p) => p["entry"] === null)).toBe(true);
   }, 120_000);
 });
 

@@ -3,9 +3,10 @@
 // wrong person or date, and time per page. The numbers are for the bar the
 // person sets before dogfood, not pass or fail. Only the sign-in comes from
 // RUFI_HOME (the test sign-in). Every document is read at the same time,
-// each on its own scratch data folder, person and reader.
+// each on its own scratch data folder, person and reader, with the reader's
+// default model and effort unless --model or --effort says otherwise.
 //
-//   RUFI_HOME=<test sign-in folder> node apps/server/scripts/reader-pack.ts [--only a,b] [--out empty-dir]
+//   RUFI_HOME=<test sign-in folder> node apps/server/scripts/reader-pack.ts [--only a,b] [--model id] [--effort level] [--out empty-dir]
 //   node apps/server/scripts/reader-pack.ts --make <dir>    (only writes the pack's files)
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -27,7 +28,7 @@ import { databasePath, openWritable } from "../src/core/store/database.ts";
 import { childEnvironment, rufiHome } from "../src/platform/config.ts";
 import { Secrets, secretsLayer } from "../src/platform/keychain.ts";
 import { diagnostics } from "../src/platform/logs.ts";
-import { reader, readerChoice } from "../src/server/reader.ts";
+import { reader, READER_SETTING, readerChoice } from "../src/server/reader.ts";
 import { drawn, photo, scan } from "../tests/pack/images.ts";
 import { scanPdf, textPdf } from "../tests/pack/pdf.ts";
 import {
@@ -44,6 +45,8 @@ const { values } = parseArgs({
     only: { type: "string" },
     out: { type: "string" },
     make: { type: "string" },
+    model: { type: "string" },
+    effort: { type: "string" },
   },
 });
 
@@ -194,6 +197,25 @@ await token(10 * 60_000).catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(2);
 });
+/** The reader's model and effort for every document of the run. */
+const choice = await readerChoice((key) =>
+  Promise.resolve(
+    key === READER_SETTING.model
+      ? values.model
+      : key === READER_SETTING.effort
+        ? values.effort
+        : undefined,
+  ),
+);
+if (
+  (values.model !== undefined && values.model !== choice.model) ||
+  (values.effort !== undefined && values.effort !== choice.effort)
+) {
+  console.error(
+    `The reader doesn't run on ${values.model ?? choice.model}, ${values.effort ?? choice.effort}.`,
+  );
+  process.exit(2);
+}
 const out = await outFolder("pack", values.out);
 const file = await codexBinary();
 const { version } = createRequire(import.meta.url)("../package.json") as {
@@ -238,7 +260,7 @@ async function readOne(item: Item) {
       log,
     }),
     signedIn: () => Promise.resolve(true),
-    choice: () => readerChoice(transcripts.setting),
+    choice: () => Promise.resolve(choice),
     log,
   });
   const { added } = await documents(store, home, undefined, reads).add(
@@ -456,6 +478,8 @@ const rows = chosen.flatMap((item) => {
 
 const text = [
   `# Reader pack, ${new Date(started).toISOString()}`,
+  "",
+  `Reader: ${choice.model}, ${choice.effort}.`,
   "",
   `${String(chosen.length)} documents at once; wall time ${String(Math.round((Date.now() - started) / 1000))} s.`,
   "",

@@ -153,11 +153,11 @@ describe("the reader's model and effort", () => {
     await addReport();
     await until(done);
     expect(runs.map(({ model, effort }) => ({ model, effort }))).toEqual([
-      { model: "gpt-5.5", effort: "high" },
+      { model: "gpt-6.1-sol", effort: "high" },
     ]);
     expect(
       JSON.parse(String(rows("SELECT reader FROM jobs")[0]?.["reader"])),
-    ).toMatchObject({ model: "gpt-5.5", effort: "high" });
+    ).toMatchObject({ model: "gpt-6.1-sol", effort: "high" });
     await running.close();
   });
 });
