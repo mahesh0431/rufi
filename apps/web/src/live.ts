@@ -133,7 +133,9 @@ function open(personId: string): Opened {
       // A reconnect: the latest page only; an older page on its way is dropped.
       store.setState({ ...next, status: "open", older: "idle" });
       void readQueue();
-      documentsChanged();
+      // A save may have landed while the stream was down, its receipt maybe
+      // not on the latest page: everything that shows saved data reads again.
+      recordChanged();
     } else {
       store.setState({ ...next, status: "open" });
       if (line.entries.some((entry) => entry.kind === "receipt")) {

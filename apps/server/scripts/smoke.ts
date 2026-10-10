@@ -902,8 +902,13 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   /** "Undo that" of a save of two records asks, then saves the reverse. */
   undo: async (api, home) => {
     const c = chat(api);
+    // Two days ago by its weekday: never today, so "since" has one meaning.
+    const day = new Date(Date.now() - 2 * 86_400_000).toLocaleDateString(
+      "en-GB",
+      { weekday: "long" },
+    );
     await c.ask(
-      "I stopped creatine yesterday. I have had a stomach upset since Sunday.",
+      `I stopped creatine yesterday. I have had a stomach upset since ${day}.`,
     );
     await c.ask("yes");
     const stopped = medicine(home, "Creatine")?.["status"] === "stopped";
@@ -1227,11 +1232,14 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     const snapshot = await c.read();
     const saved = fromDocument(home, doc);
     const store = openReadOnly(databasePath(home));
-    const words = (store?.db
-      .prepare(
-        "SELECT DISTINCT measured_words AS words FROM results WHERE person_id = 'asha' AND measured_at = '2026-08'",
-      )
-      .all() ?? []) as { words: string | null }[];
+    const words = saved.map(
+      (r) =>
+        (
+          store?.db
+            .prepare("SELECT measured_words AS words FROM results WHERE id = ?")
+            .get(r.id) as { words: string | null } | undefined
+        )?.words,
+    );
     store?.close();
     return {
       checks: {
@@ -1240,9 +1248,10 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         one_save: record(home).saves === 1,
         every_result_saved: saved.length === drafts.length && drafts.length > 0,
         month_precision: saved.every((r) => r.measured_at === "2026-08"),
+        // The rough date as the person said it, "Around" kept.
         the_persons_words:
           words.length > 0 &&
-          words.every((w) => /August 2026/i.test(w.words ?? "")),
+          words.every((w) => /^Around August 2026\.?$/.test(w ?? "")),
       },
       snapshot,
     };

@@ -962,6 +962,75 @@ test("a save from the chat bar on Overview shows there at once, without leaving 
   await expect(crp).toHaveCount(0);
 });
 
+test("a save made in another window while this one's connection was down shows on Overview once it connects again", async ({
+  page,
+  rufi,
+  context,
+}) => {
+  // The connection can be dropped, as a sleeping Mac or a network change
+  // drops it.
+  await page.addInitScript(() => {
+    const drops: AbortController[] = [];
+    const fetched = globalThis.fetch;
+    globalThis.fetch = (input, init) => {
+      if (!(typeof input === "string" && input.endsWith("/stream"))) {
+        return fetched(input, init);
+      }
+      const drop = new AbortController();
+      drops.push(drop);
+      const signals = [drop.signal, init?.signal].filter((one) => !!one);
+      return fetched(input, { ...init, signal: AbortSignal.any(signals) });
+    };
+    Object.assign(globalThis, {
+      dropStream: () => {
+        for (const drop of drops.splice(0)) drop.abort();
+      },
+    });
+  });
+  await opened(page, rufi, {
+    scenario: {
+      calls: [
+        {
+          namespace: "rufi",
+          tool: "save_changes",
+          arguments: {
+            changes: [
+              {
+                kind: "result",
+                action: "remove",
+                id: "res-a3",
+                source: "Remove the CRP result",
+              },
+            ],
+          },
+        },
+      ],
+    },
+  });
+  const crp = page
+    .getByRole("main")
+    .getByRole("cell", { name: "CRP", exact: true });
+  await expect(crp).toBeVisible();
+  // The stream drops, and its reconnect waits until the other window saved.
+  const down = Promise.withResolvers<undefined>();
+  await page.route("**/chat/stream", async (route) => {
+    await down.promise;
+    await route.continue();
+  });
+  await page.evaluate(() => {
+    (globalThis as unknown as { dropStream: () => void }).dropStream();
+  });
+
+  const other = await context.newPage();
+  await other.goto(rufi.link());
+  await box(chat(other)).fill("Remove the CRP result");
+  await box(chat(other)).press("Enter");
+  await expect(log(chat(other)).locator(".receipt")).toContainText("CRP");
+
+  down.resolve(undefined);
+  await expect(crp).toHaveCount(0);
+});
+
 test("Based on, under an answer once it ended, opens How and Used; small talk has none; a stopped reply has no How", async ({
   page,
   rufi,

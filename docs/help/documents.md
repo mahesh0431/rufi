@@ -170,7 +170,7 @@ Rufi opens the chat with their chips in the box. Type your message, for example 
 
 ### Save these in the chat
 
-Click **Save these in the chat**. Rufi puts **Save these 42 results.** in the chat box, after anything you already typed there, with the document's chip, and opens the chat. Read it, then send it: nothing goes to the AI until you do. The AI reads the results with your fixes, then checks them with you and saves them (see [Save results to your record](#save-results-to-your-record)).
+Click **Save these in the chat**. Rufi puts **Save these 42 results.** in the chat box, after anything you already typed there, with the document's chip, and opens the chat. Read it, then send it: this message goes to the AI only when you send it. The AI reads the results with your fixes, then checks them with you and saves them (see [Save results to your record](#save-results-to-your-record)).
 
 While a message of yours is being sent, the button says **Wait: a message is being sent**.
 
