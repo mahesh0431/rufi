@@ -1,13 +1,20 @@
-// Settings: how Rufi looks, the region whose emergency number the AI gives,
+// Settings: the ChatGPT plan the AI uses, how Rufi looks, the region whose emergency number the AI gives,
 // reading documents with the AI, backups, and the export of your data.
 import { Switch } from "@base-ui/react/switch";
 import { Backups } from "@rufi/contracts";
 import { useMutation } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { DatabaseBackup, Download } from "lucide-react";
 import { download, read } from "./api.ts";
 import { AppearanceChoice } from "./appearance.tsx";
 import { printedTime } from "./dates.ts";
-import { queries, saveSettings, useBackups, useSettings } from "./reads.ts";
+import {
+  queries,
+  saveSettings,
+  useBackups,
+  useSettings,
+  useStatus,
+} from "./reads.ts";
 import { Button, Problem } from "./ui.tsx";
 
 export function SettingsPage() {
@@ -19,7 +26,8 @@ export function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-[620px] px-6 py-8">
-      <h2 id="appearance" className="mb-2 px-0.5 font-semibold">
+      <PlanSection />
+      <h2 id="appearance" className="mt-8 mb-2 px-0.5 font-semibold">
         Appearance
       </h2>
       <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
@@ -74,6 +82,46 @@ export function SettingsPage() {
       <BackupsSection />
       <ExportSection />
     </div>
+  );
+}
+
+/** The ChatGPT plan Rufi's AI runs on, or the way to sign in. */
+function PlanSection() {
+  const status = useStatus();
+  const account = status.data?.account;
+  return (
+    <>
+      <h2 className="mb-2 px-0.5 font-semibold">ChatGPT plan</h2>
+      <div className="rounded-xl border border-line bg-surface p-4">
+        {status.data === undefined && status.error ? (
+          <Problem error={status.error} retry={() => void status.refetch()} />
+        ) : account === "signed_in" ? (
+          <p>
+            Rufi's AI uses your ChatGPT plan
+            {status.data?.email ? ` (${status.data.email})` : ""}.{" "}
+            <a
+              href="https://chatgpt.com/codex/settings/usage"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              Manage usage
+            </a>
+          </p>
+        ) : (
+          account && (
+            <p>
+              {account === "signed_out"
+                ? "Not signed in. Rufi's AI needs your ChatGPT plan to answer."
+                : "You are signed in, but ChatGPT plan use isn't allowed for Rufi."}{" "}
+              <Link to="/sign-in" className="underline">
+                {account === "signed_out" ? "Sign in" : "Sign in again"}
+              </Link>
+            </p>
+          )
+        )}
+      </div>
+    </>
   );
 }
 

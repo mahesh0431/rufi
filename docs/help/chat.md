@@ -6,7 +6,7 @@ The chat is where you talk with Rufi's AI about your record. You have one chat w
 
 The chat bar is the box at the bottom right of the Overview. It says "Ask or tell Rufi about" and your name, and shows the model and effort that answer, such as "GPT-6-Astra Medium". It is your chat, the same as the panel and the page, and the same in every browser tab. Help and Settings have no chat bar: to talk to Rufi from there, click **Chat with Rufi** in the sidebar.
 
-Under the box, in every size of the chat, "AI can make mistakes. Check important info." reminds you to check what the AI says. When you are signed in, "Using ChatGPT plan" comes before it, and **Manage usage** opens your ChatGPT plan's usage page in your browser.
+Under the box, in every size of the chat, "AI can make mistakes. Check important info." reminds you to check what the AI says. To see the ChatGPT plan the AI uses, and its usage, open **Settings** › **ChatGPT plan** (see [Signing in with ChatGPT](signing-in.md#your-plan-in-settings)).
 
 ## The chat panel
 

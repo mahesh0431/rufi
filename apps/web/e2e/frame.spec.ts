@@ -447,6 +447,21 @@ test.describe("sign-in status", () => {
       sidebar(page).getByRole("link", { name: "Settings" }),
     ).toBeVisible();
     await expect(sidebar(page)).not.toContainText(/signed in|ChatGPT/);
+
+    // Settings says which plan the AI uses, first, with its usage page.
+    await sidebar(page).getByRole("link", { name: "Settings" }).click();
+    await expect(page.getByRole("heading", { level: 2 }).first()).toHaveText(
+      "ChatGPT plan",
+    );
+    await expect(page.getByRole("main")).toContainText(
+      "Rufi's AI uses your ChatGPT plan (asha@example.com). Manage usage",
+    );
+    const usage = page.getByRole("link", { name: "Manage usage" });
+    await expect(usage).toHaveAttribute(
+      "href",
+      "https://chatgpt.com/codex/settings/usage",
+    );
+    await expect(usage).toHaveAttribute("target", "_blank");
   });
 
   test("signed out links to signing in", async ({ page, rufi }) => {
@@ -462,6 +477,21 @@ test.describe("sign-in status", () => {
       page.getByRole("button", { name: "Sign in with ChatGPT" }),
     ).toBeVisible();
     await accessible(page);
+
+    // Settings says so too, and signs in the same way.
+    await sidebar(page).getByRole("link", { name: "Settings" }).click();
+    await expect(page.getByRole("main")).toContainText(
+      "Not signed in. Rufi's AI needs your ChatGPT plan to answer. Sign in",
+    );
+    await expect(page.getByRole("main")).not.toContainText("Manage usage");
+    await accessible(page);
+    await page
+      .getByRole("main")
+      .getByRole("link", { name: "Sign in", exact: true })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Sign in with ChatGPT" }),
+    ).toBeVisible();
   });
 
   test("signed in, but the plan can't be used", async ({ page, rufi }) => {
@@ -472,6 +502,13 @@ test.describe("sign-in status", () => {
     await expect(
       sidebar(page).getByRole("link", { name: "ChatGPT plan can't be used" }),
     ).toBeVisible();
+    await sidebar(page).getByRole("link", { name: "Settings" }).click();
+    await expect(page.getByRole("main")).toContainText(
+      "You are signed in, but ChatGPT plan use isn't allowed for Rufi. Sign in again",
+    );
+    await expect(
+      page.getByRole("main").getByRole("link", { name: "Sign in again" }),
+    ).toHaveAttribute("href", "/sign-in");
   });
 });
 

@@ -110,18 +110,10 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
     "What you send, and the parts of your record the AI reads to answer, go to OpenAI",
   );
   await accessible(page);
-  // The plan it uses, quietly under the box, never only in a menu.
-  await expect(chat(page)).toContainText(
-    "Using ChatGPT plan · Manage usage · AI can make mistakes. Check important info.",
+  // Under the box, only the reminder: the plan is in Settings.
+  await expect(chat(page).getByText(/AI can make mistakes/)).toHaveText(
+    "AI can make mistakes. Check important info.",
   );
-  await expect(
-    chat(page).getByRole("link", { name: "Manage usage" }),
-  ).toHaveAttribute("target", "_blank");
-  await chat(page)
-    .getByRole("button", { name: "Model and effort: GPT-6-Astra, Medium" })
-    .click();
-  await expect(page.getByRole("menu")).not.toContainText("Using ChatGPT plan");
-  await page.keyboard.press("Escape");
 
   await box(chat(page)).fill("drip: my thyroid results");
   await box(chat(page)).press("Enter");
@@ -262,25 +254,6 @@ test("Steer passes your text into the running reply", async ({
   );
   await expect(
     chat(page).getByRole("region", { name: "Waiting messages" }),
-  ).toHaveCount(0);
-});
-
-test("signed out, the chat doesn't say it uses the ChatGPT plan", async ({
-  page,
-  rufi,
-}) => {
-  rufi.account = { account: "signed_out", email: null };
-  await opened(page, rufi);
-  // The bar, then the panel.
-  await expect(chat(page)).toContainText(
-    "AI can make mistakes. Check important info.",
-  );
-  await expect(chat(page)).not.toContainText("Using ChatGPT plan");
-  await box(chat(page)).click();
-  await expect(chat(page)).toContainText("What you send");
-  await expect(chat(page)).not.toContainText("Using ChatGPT plan");
-  await expect(
-    chat(page).getByRole("link", { name: "Manage usage" }),
   ).toHaveCount(0);
 });
 
