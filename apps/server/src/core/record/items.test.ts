@@ -531,6 +531,30 @@ describe("saving draft items", () => {
     });
   });
 
+  it("refuses two items that both correct the same saved result", async () => {
+    await read();
+    const { HbA1c = "", TSH = "" } = drafts();
+    await say("Both correct my HbA1c");
+    const before = written();
+    const refused = await call("save_changes", {
+      items: [HbA1c, TSH].map((item) => ({
+        item,
+        version: 1,
+        as: "correction",
+        record: { id: "res-a1", version: null },
+      })),
+    });
+    expect(refused.ok).toBe(false);
+    expect(refused.issues).toEqual([
+      {
+        path: "items.1.record",
+        got: expect.any(String) as unknown,
+        fix: "items.0 already changes this result: make it one change.",
+      },
+    ]);
+    expect(written()).toEqual(before);
+  });
+
   it("refuses a stale, dismissed or unknown item, or a changed record, and saves nothing", async () => {
     await read();
     const { HbA1c = "", TSH = "", "LDL cholesterol": ldl = "" } = drafts();
@@ -617,7 +641,7 @@ describe("saving draft items", () => {
     });
     expect(refused.ok).toBe(false);
     expect(refused.issues[0]?.fix).toBe(
-      "The document changed since the user's message (a reading, a fix or a dismissal): read it again with get_documents, tell the user what changed and ask again.",
+      "The document changed since the user's message (a reading or a fix): read it again with get_documents, tell the user what changed and ask again.",
     );
   });
 
@@ -674,7 +698,7 @@ describe("saving draft items", () => {
 });
 
 describe("dismissing draft items", () => {
-  it("dismisses items for good with a receipt line, and raises their versions and the document's", async () => {
+  it("dismisses items for good with a receipt line, and raises their versions", async () => {
     await read();
     const { "Vitamin D": vitamin = "", HbA1c = "" } = drafts();
     await say("Skip the vitamin D, that row is old");
@@ -689,9 +713,6 @@ describe("dismissing draft items", () => {
     expect(
       one("SELECT status, version FROM draft_items WHERE id = ?", vitamin),
     ).toEqual({ status: "dismissed", version: 2 });
-    expect(
-      one("SELECT version FROM documents WHERE id = 'doc-asha-aug'"),
-    ).toEqual({ version: 2 });
     const save = await call("save_changes", {
       items: [{ item: vitamin, version: 2, as: "new" }],
     });
@@ -707,6 +728,26 @@ describe("dismissing draft items", () => {
     expect(refused.issues[0]?.fix).toBe(
       "This item is saved in the record. To take it out, remove its record with save_changes, after the user says yes.",
     );
+  });
+
+  it("lets the rest be saved in the same turn as the document the message pointed at", async () => {
+    await read();
+    const { "Vitamin D": vitamin = "", HbA1c = "" } = drafts();
+    await say("Save it, but not the vitamin D", [
+      {
+        ref: { type: "document", id: "doc-asha-aug", version: 1 },
+        label: "Sunrise Labs August.pdf",
+        detail: "Lab report",
+      },
+    ]);
+    const done = await call("dismiss_items", {
+      items: [{ item: vitamin, version: 1 }],
+    });
+    expect(done.ok).toBe(true);
+    const saved = await call("save_changes", {
+      items: [{ item: HbA1c, version: 1, as: "new" }],
+    });
+    expect(saved.ok).toBe(true);
   });
 });
 

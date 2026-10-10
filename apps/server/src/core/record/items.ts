@@ -288,7 +288,7 @@ export async function planItems(
       problem(
         `${at}.item`,
         save.item,
-        "The document changed since the user's message (a reading, a fix or a dismissal): read it again with get_documents, tell the user what changed and ask again.",
+        "The document changed since the user's message (a reading or a fix): read it again with get_documents, tell the user what changed and ask again.",
       );
       continue;
     }
@@ -352,18 +352,18 @@ export async function planItems(
         problem(`${at}.record`, target, wrong);
         continue;
       }
+      const key = `result:${target.id}`;
+      const other = context.touched.get(key);
+      if (other !== undefined) {
+        problem(
+          `${at}.record`,
+          target,
+          `${other} already changes this result: make it one change.`,
+        );
+        continue;
+      }
+      context.touched.set(key, at);
       if (save.as === "another_source") {
-        const key = `result:${target.id}`;
-        const other = context.touched.get(key);
-        if (other !== undefined) {
-          problem(
-            `${at}.record`,
-            target,
-            `${other} already changes this result: make it one change.`,
-          );
-          continue;
-        }
-        context.touched.set(key, at);
         if (save.fix !== undefined) {
           problem(
             `${at}.fix`,
@@ -508,9 +508,11 @@ export class DismissRefused extends Error {
 
 /**
  * Dismisses draft items the user doesn't want saved: each final, its
- * version and its document's raised, with a receipt line; all or nothing.
- * One already dismissed is left as it is. A saved item can't be: its
- * record is removed with save_changes instead.
+ * version raised, with a receipt line; all or nothing. The document's
+ * version stays: a dismissed item is refused by its own state, and "save
+ * the rest" in the same turn still matches the message. One already
+ * dismissed is left as it is. A saved item can't be: its record is removed
+ * with save_changes instead.
  */
 export async function dismissItems(
   trx: Transaction<Tables>,
@@ -608,13 +610,6 @@ export async function dismissItems(
       .where("id", "=", row.id)
       .execute();
   }
-  const documents = [...new Set(now.map((r) => r.document_id))];
-  await trx
-    .updateTable("documents")
-    .set((eb) => ({ version: eb("version", "+", 1) }))
-    .where("person_id", "=", where.personId)
-    .where("id", "in", documents)
-    .execute();
   const names = [...new Set(now.map((r) => r.file_name))];
   const lines = now.map((row) => {
     const fields = JSON.parse(row.fields) as Fields;
