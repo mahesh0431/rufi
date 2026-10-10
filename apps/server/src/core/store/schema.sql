@@ -133,8 +133,10 @@ CREATE TABLE draft_items (
   CHECK ((status = 'dismissed') = (dismissed_by IS NOT NULL))
 ) STRICT;
 
--- A report as printed: one per lab, report number and collection date of a
--- document, made when its results are saved.
+-- A report as printed, made when its results are saved. A complete lab,
+-- report number and collection date identifies it across the person's
+-- documents; otherwise it stays within one document. document_id is its
+-- first document; each result's actual page is kept in record_sources.
 CREATE TABLE reports (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL,

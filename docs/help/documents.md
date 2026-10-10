@@ -106,7 +106,7 @@ What Rufi does when it saves a document's results:
 
 - **The values as printed.** Rufi saves each result from the draft item, as the reader read it, never as the AI typed it. If you correct a value in the chat ("the LDL is 132, not 142"), Rufi saves your value and keeps your words.
 - **Its date.** A result gets the date printed for it, or else the first date printed on its page, such as the collection date. When there is no clear date, the AI asks you, and Rufi keeps your words for it.
-- **Its report.** Results with the same lab, report number and collection date go in one report. A page that prints none of these belongs to the report of the page before it.
+- **Its report.** Results with the same printed lab, report number and collection date go in one report, even when they came from different documents. If any of these is missing, Rufi keeps reports from different documents apart. A page that prints none of these belongs to the report of the page before it.
 - **Its sources.** Each result keeps where it came from: the document and its page, your message, or both. The receipt, the AI's reads and a visit brief show them.
 - **All or nothing.** Rufi saves all the results in one step, however many there are. If one can't be saved, nothing is saved, and the AI tells you why.
 - **Each result once.** A result you already saved isn't saved again: the AI gets the earlier save back.

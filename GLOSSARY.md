@@ -37,7 +37,7 @@ One thing a reading found, such as a result, kept exactly as printed and waiting
 _Avoid_: pending result, unconfirmed record, extracted row
 
 **Report**:
-A lab or clinic report read from a document: who issued it and when the sample was collected.
+A lab or clinic report read from a document: who issued it, its printed report number, and when the sample was collected. When all three match, saved results from different documents belong to the same report for that person. If any is missing, reports stay within their document.
 _Avoid_: lab sheet, test report
 
 **Result**:

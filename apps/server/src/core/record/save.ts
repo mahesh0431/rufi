@@ -797,23 +797,25 @@ async function write(
 }
 
 /**
- * The report a result read from a document belongs to: the one with its
- * document's lab, report number and collection date, made the first time.
+ * Reuse the person's report by its complete printed identity, across
+ * documents. An incomplete identity stays within its document.
  */
 async function reportFor(
   trx: Transaction<Tables>,
   personId: string,
   key: NonNullable<Planned["report"]>,
 ): Promise<string> {
-  const found = await trx
+  let query = trx
     .selectFrom("reports")
     .select("id")
     .where("person_id", "=", personId)
-    .where("document_id", "=", key.document)
     .where("issuer", "is", key.issuer)
     .where("report_number", "is", key.number)
-    .where("collected", "is", key.collected)
-    .executeTakeFirst();
+    .where("collected", "is", key.collected);
+  if (key.issuer === null || key.number === null || key.collected === null) {
+    query = query.where("document_id", "=", key.document);
+  }
+  const found = await query.executeTakeFirst();
   if (found) return found.id;
   const id = uuid();
   await trx

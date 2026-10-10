@@ -113,28 +113,35 @@ const PAGES: Record<number, Entry> = {
 };
 
 /**
- * Reads doc-asha-aug with these page entries and finishes the reading as
+ * Reads a document with these page entries and finishes the reading as
  * Rufi does: its draft items, at version 1.
  */
-async function read(pages: Record<number, Entry> = PAGES) {
+async function read(
+  pages: Record<number, Entry> = PAGES,
+  documentId = "doc-asha-aug",
+) {
+  const jobId = `job-${documentId}`;
+  const targets = Object.keys(pages).map(Number);
   const run = {
-    jobId: "job-aug",
+    jobId,
     attempt: 1,
     personId: "asha",
-    documentId: "doc-asha-aug",
-    targets: [1, 2],
-    lookedAt: new Set([1, 2]),
+    documentId,
+    targets,
+    lookedAt: new Set(targets),
     closed: true,
   };
   store.db
-    .exec(`INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at)
-    VALUES ('job-aug', 'asha', 'document_read', 'doc-asha-aug', 'running', 1, '[1,2]', '2026-10-11T04:00:00Z')`);
+    .prepare(
+      "INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at) VALUES (?, 'asha', 'document_read', ?, 'running', 1, ?, '2026-10-11T04:00:00Z')",
+    )
+    .run(jobId, documentId, JSON.stringify(targets));
   for (const [position, entry] of Object.entries(pages)) {
     store.db
       .prepare(
-        "UPDATE document_pages SET entry = ?, entry_job_id = 'job-aug' WHERE document_id = 'doc-asha-aug' AND position = ?",
+        "UPDATE document_pages SET entry = ?, entry_job_id = ? WHERE document_id = ? AND position = ?",
       )
-      .run(JSON.stringify(entry), Number(position));
+      .run(JSON.stringify(entry), jobId, documentId, Number(position));
   }
   await store.query
     .transaction()
@@ -224,6 +231,88 @@ const lines = (receipt: unknown) =>
     .filter((line) => line !== "");
 
 describe("saving draft items", () => {
+  it.each([
+    "same save",
+    "later save",
+    "missing issuer",
+    "missing number",
+    "missing collected date",
+  ])("groups reports across documents safely: %s", async (scenario) => {
+    const facts = {
+      ...(scenario !== "missing issuer" && { issuer: "Sunrise Labs" }),
+      ...(scenario !== "missing number" && { report_number: "SOL-SPLIT-1" }),
+      ...(scenario !== "missing collected date" && { dates: [COLLECTED] }),
+    };
+    // Another person's identical printed report must never be reused.
+    store.db
+      .prepare(
+        "UPDATE reports SET issuer = ?, report_number = ?, collected = ? WHERE id = 'rep-ravi-jul'",
+      )
+      .run(
+        facts.issuer ?? null,
+        facts.report_number ?? null,
+        facts.dates?.[0]?.iso ?? null,
+      );
+    await read({
+      1: {
+        outcome: "read",
+        facts,
+        items: [{ test_name: "Ferritin", value_text: "42", date: COLLECTED }],
+      },
+    });
+    await read(
+      {
+        1: {
+          outcome: "read",
+          facts,
+          items: [
+            { test_name: "Vitamin B12", value_text: "510", date: COLLECTED },
+          ],
+        },
+      },
+      "doc-asha-sep",
+    );
+    const { Ferritin = "", "Vitamin B12": B12 = "" } = drafts();
+    const items = [Ferritin, B12].map((item) => ({
+      item,
+      version: 1,
+      as: "new",
+    }));
+    await say("Save Ferritin and Vitamin B12");
+    if (scenario === "later save") {
+      for (const item of items) {
+        expect((await call("save_changes", { items: [item] })).ok).toBe(true);
+      }
+    } else {
+      expect((await call("save_changes", { items })).ok).toBe(true);
+    }
+    const saved = rows(
+      "SELECT r.test_name, r.value_text, r.report_id, s.document_id, s.page FROM results r JOIN record_sources s ON s.person_id = r.person_id AND s.record_id = r.id WHERE r.test_name IN ('Ferritin', 'Vitamin B12') ORDER BY r.test_name",
+    );
+    expect(saved).toEqual([
+      {
+        test_name: "Ferritin",
+        value_text: "42",
+        report_id: expect.any(String) as string,
+        document_id: "doc-asha-aug",
+        page: 1,
+      },
+      {
+        test_name: "Vitamin B12",
+        value_text: "510",
+        report_id: expect.any(String) as string,
+        document_id: "doc-asha-sep",
+        page: 1,
+      },
+    ]);
+    expect(new Set(saved.map((row) => row["report_id"])).size).toBe(
+      scenario === "same save" || scenario === "later save" ? 1 : 2,
+    );
+    expect(saved.every((row) => row["report_id"] !== "rep-ravi-jul")).toBe(
+      true,
+    );
+  });
+
   it("saves the stored items exactly, each with its document page as its source, in one report", async () => {
     await read();
     const { HbA1c = "", TSH = "" } = drafts();
