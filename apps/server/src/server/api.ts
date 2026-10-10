@@ -21,6 +21,7 @@ import {
   type StreamLine,
 } from "@rufi/contracts";
 import { APPEARANCE_HEADER } from "@rufi/contracts/app";
+import type { Brief } from "@rufi/contracts/briefs";
 import { readFile } from "node:fs/promises";
 import { Option, Result, Schema } from "effect";
 import type { HttpBindings } from "@hono/node-server";
@@ -54,6 +55,8 @@ export interface ApiDeps {
   port: () => number;
   /** A person's overview (what get_overview starts with). */
   overview: (personId: string) => Promise<Overview>;
+  /** A visit brief of the person's, with its Sources; undefined: none. */
+  brief: (personId: string, briefId: string) => Promise<Brief | undefined>;
   /** The ChatGPT sign-in, read when asked. */
   account: () => Promise<Status>;
   /** Signing in from the screens. */
@@ -408,6 +411,15 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.get("/api/people/:personId/overview", async (c) =>
     c.json({ overview: await deps.overview((await person(c)).id) }),
   );
+
+  app.get("/api/people/:personId/briefs/:briefId", async (c) => {
+    const brief = await deps.brief(
+      (await person(c)).id,
+      c.req.param("briefId"),
+    );
+    if (!brief) throw new HttpError(404, "There is no such brief.");
+    return c.json({ brief });
+  });
 
   // A person's documents: the list, adding files, and a file's bytes to show.
   const documentsPath = "/api/people/:personId/documents";

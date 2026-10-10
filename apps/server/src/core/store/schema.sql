@@ -347,17 +347,17 @@ CREATE TABLE turns (
 
 -- A chat's transcript, in order: your messages (steers marked), one
 -- line per thing the agent did with everything it sent and got back, the
--- agent's reasoning and its replies, Rufi's receipts and Rufi's events
--- (its own factual lines, never the person's words). Stored before anyone
--- is shown it.
+-- agent's reasoning and its replies, Rufi's receipts, Rufi's events
+-- (its own factual lines, never the person's words) and the line of each
+-- visit brief. Stored before anyone is shown it.
 CREATE TABLE transcript_entries (
   id TEXT PRIMARY KEY,         -- UUIDv7; a message keeps the id the agent got with it
   person_id TEXT NOT NULL,
   chat_id TEXT NOT NULL,
   seq INTEGER NOT NULL,        -- 1, 2, 3... in the chat
   turn_id TEXT,                -- the reply it belongs to
-  kind TEXT NOT NULL CHECK (kind IN ('message', 'steer', 'activity', 'reply', 'reasoning', 'receipt', 'event')),
-  text TEXT NOT NULL,          -- the message or the reply as it came; an activity's short title; the reasoning's summary; a receipt's or an event's line
+  kind TEXT NOT NULL CHECK (kind IN ('message', 'steer', 'activity', 'reply', 'reasoning', 'receipt', 'event', 'brief')),
+  text TEXT NOT NULL,          -- the message or the reply as it came; an activity's short title; the reasoning's summary; a receipt's, an event's or a brief's line
   activity TEXT CHECK (activity IN ('tool', 'command', 'web_search', 'file_change', 'sub_agent', 'compaction', 'other')),
   detail TEXT,                 -- an activity's one short detail: the query, the search words, the command
   details TEXT,                -- an activity's or reasoning's everything, as the agent gave it (JSON); an event's kind and facts (JSON); null: none
@@ -465,6 +465,29 @@ CREATE TABLE record_changes (
   PRIMARY KEY (operation_id, seq),
   FOREIGN KEY (person_id, operation_id) REFERENCES operations (person_id, id),
   FOREIGN KEY (person_id, source_entry_id) REFERENCES transcript_entries (person_id, id)
+) STRICT;
+
+-- A visit brief the AI wrote from the saved record, in a chat. Its line in
+-- the transcript has the same id. It never changes: it keeps the record
+-- version it was made from (the person's count of saves when the AI started
+-- reading), so a later save shows as "the record changed since", and each
+-- record it cites with that record's version then (the save that last
+-- changed it), so its Sources show what it rested on.
+CREATE TABLE briefs (
+  id TEXT PRIMARY KEY,         -- UUIDv7
+  person_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  turn_id TEXT,                -- the reply that made it
+  call_id TEXT NOT NULL,       -- the agent's id for the call: the same call again is the same brief
+  markdown TEXT NOT NULL,      -- as the AI wrote it
+  record_version INTEGER NOT NULL,
+  cited TEXT NOT NULL,         -- JSON: [{kind, id, version}], version null for a record no save has changed
+  created_at TEXT NOT NULL,
+  UNIQUE (person_id, id),
+  UNIQUE (chat_id, call_id),
+  FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
+  FOREIGN KEY (person_id, turn_id) REFERENCES turns (person_id, id),
+  FOREIGN KEY (person_id, id) REFERENCES transcript_entries (person_id, id) DEFERRABLE INITIALLY DEFERRED
 ) STRICT;
 
 CREATE INDEX documents_by_added ON documents (person_id, added_at);

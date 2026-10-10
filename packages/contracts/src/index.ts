@@ -42,7 +42,10 @@ export const Entry = Schema.Struct({
   seq: Schema.Int,
   /** The reply it belongs to. */
   turnId: Schema.NullOr(Schema.String),
-  /** event: Rufi's own factual line about something that happened, never the person's words. */
+  /**
+   * event: Rufi's own factual line about something that happened, never the
+   * person's words; brief: the line of a visit brief, whose id is the brief's.
+   */
   kind: Schema.Literals([
     "message",
     "steer",
@@ -50,11 +53,12 @@ export const Entry = Schema.Struct({
     "reply",
     "receipt",
     "event",
+    "brief",
   ]),
   /**
    * The message; the reply's answer (without its rufi-basis blocks, which
-   * the turn's How holds); an activity's short title; a receipt's or an
-   * event's line.
+   * the turn's How holds); an activity's short title; a receipt's, an
+   * event's or a brief's line.
    */
   text: Schema.String,
   activity: Schema.NullOr(ActivityKind),

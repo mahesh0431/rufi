@@ -17,8 +17,6 @@ import {
 } from "./transcript-state.ts";
 
 export interface Live extends Transcript {
-  /** Whose chat it is. */
-  personId: string;
   /** loading: before the first snapshot; missing: no such person. */
   status: "loading" | "open" | "missing";
   /** Loading an older page, or why it couldn't be loaded. */
@@ -82,7 +80,6 @@ function open(personId: string): Opened {
   if (found) return found;
   const store = createStore<Live>(() => ({
     ...emptyTranscript,
-    personId,
     status: "loading",
     older: "idle",
     queue: { items: [], paused: null },

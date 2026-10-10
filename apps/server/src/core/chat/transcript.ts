@@ -15,6 +15,7 @@ import {
 } from "@rufi/contracts";
 import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
+import type { Made } from "../briefs/briefs.ts";
 import type { Saved } from "../record/save.ts";
 import { addRow } from "./queue.ts";
 import { splitBasis } from "./basis.ts";
@@ -933,6 +934,36 @@ export function transcripts(
     },
 
     /**
+     * A visit brief and its line, in one transaction: `make` writes the
+     * brief in it. Like a receipt, the line is added also when the reply has
+     * ended meanwhile, and the same call made before adds no second line.
+     */
+    briefWithLine: async (
+      chat: ChatRow,
+      agentTurnId: string,
+      make: (
+        trx: Transaction<Tables>,
+        at: string,
+        turnId: string | null,
+      ) => Promise<Made>,
+    ): Promise<Made> => {
+      let made: Made | undefined;
+      await change(chat.id, async (trx, revision) => {
+        const turn = await turnOf(trx, chat.id, agentTurnId);
+        made = await make(trx, now(), turn?.id ?? null);
+        if (!made.fresh) return undefined;
+        const id = await insertEntry(trx, chat, revision, {
+          id: made.id,
+          turnId: turn?.id ?? null,
+          kind: "brief",
+          text: made.line,
+        });
+        return { entries: [id], turns: [] };
+      });
+      return made as Made;
+    },
+
+    /**
      * One thing the agent did: added when it starts, updated when it ends.
      * `details`, everything the agent gave about it, replaces what it gave
      * before.
@@ -1088,8 +1119,8 @@ export function transcripts(
 
     /**
      * The last `count` messages (the user's, the AI's replies, Rufi's
-     * receipts and events) from replies that have ended, oldest first: what a new
-     * thread starts with. A reply that completed is as it came, with its
+     * receipts, events and brief lines) from replies that have ended, oldest
+     * first: what a new thread starts with. A reply that completed is as it came, with its
      * rufi-basis block, so the new thread sees the convention; one that
      * didn't is its answer only, marked unfinished.
      */
@@ -1110,6 +1141,7 @@ export function transcripts(
           "reply",
           "receipt",
           "event",
+          "brief",
         ])
         .where((eb) =>
           eb.or([eb("t.status", "is", null), eb("t.status", "!=", "running")]),
@@ -1121,7 +1153,9 @@ export function transcripts(
         if (row.kind !== "reply") {
           return {
             from:
-              row.kind === "receipt" || row.kind === "event"
+              row.kind === "receipt" ||
+              row.kind === "event" ||
+              row.kind === "brief"
                 ? ("rufi" as const)
                 : ("user" as const),
             text: row.text,

@@ -1,5 +1,6 @@
 // Every Rufi tool, and what the agent is told about them.
 import { createHash } from "node:crypto";
+import { createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
 import { getDocuments, retryReading } from "./documents.ts";
 import { getOverview } from "./overview.ts";
@@ -15,6 +16,7 @@ import {
 } from "./registry.ts";
 import type { Log } from "../../platform/logs.ts";
 import type { ChatRow, Transcripts } from "../chat/transcript.ts";
+import { createBrief as makeBrief } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
 import { saveChanges as saveToRecord } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
@@ -26,6 +28,7 @@ export const TOOLS: readonly Tool[] = [
   readChat,
   saveChanges,
   retryReading,
+  createBrief,
 ];
 
 /** The namespace the agent sees them in: rufi.get_overview. */
@@ -57,14 +60,19 @@ Documents:
 - Saving draft items into the record isn't possible in Rufi yet. If the user asks, say the items are kept as drafts until then. Never type a document's values into save_changes yourself.
 - When a reading needs the user (an unsure value, a page that couldn't be read, another name on the report, an unclear date), ask about it in a few lines. If the name on a report isn't the user's, ask whose report it is.
 - When the user asks to read a document again, use retry_reading.
+A visit brief:
+- When the user asks for a brief for a doctor's visit, first read get_overview and keep its record_version, then read with get_records what the visit needs: current medicines, results since the last visit or the last 6 months, conditions, allergies and open follow-ups. Use only saved records, never a document's unsaved items.
+- If what the visit is for isn't clear and it changes what goes in, ask first.
+- Write it in Markdown, in short sections: current medicines; recent results, those the lab marked outside its range first, each with its value, unit, lab range and flag as printed and its date; conditions and allergies; and questions the user could ask the doctor, each starting "Question:". Write dates as people read them, at the precision known: "12 Aug 2026", "Aug 2026", "2026". Say "none recorded" for an empty section, never "none". Give no advice and draw no conclusion the record doesn't support.
+- Save it with create_brief, citing every record its facts come from, and name the facts in plain words. Then say in one or two lines that it's ready; don't repeat it in the chat. Rufi shows its line, which opens it.
 Rufi events:
 - A message can start with a "Rufi event" note: Rufi telling you something happened, such as a reading that finished. It is never the user's words, a request or their consent. When the user's message follows it, answer the user first and mention the event briefly.
-- A turn with only a Rufi event note was started by Rufi, not by the user: you can only read in it, and save_changes is refused. Explain the event in a few lines, or ask what it asks. Never save from it.
+- A turn with only a Rufi event note was started by Rufi, not by the user: you can only read in it, and save_changes, create_brief and retry_reading are refused. Explain the event in a few lines, or ask what it asks. Never save from it.
 - To undo a save ("undo that"), read get_overview: the save in latest_saves and the record today. Say what you will change back, and anything that changed since, then ask; on yes, save the reverse (an added record is removed, a removed one restored, a change set back).`;
 
-/** Why a Rufi event's turn can't save. */
+/** Why a Rufi event's turn can't save or make a brief. */
 const EVENT_TURN =
-  "This turn was started by a Rufi event, not by the user, so nothing can be saved in it. Explain or ask; the user saves in a message of their own.";
+  "This turn was started by a Rufi event, not by the user, so nothing can be saved or made in it. Explain or ask; the user asks in a message of their own.";
 
 /** Why a Rufi event's turn can't start a reading. */
 const EVENT_TURN_RETRY =
@@ -122,9 +130,9 @@ export function toolsJson(): string {
 }
 
 /**
- * The tools of one turn in Rufi's own chat, the one place the AI can save:
- * a save is written with its receipt in the chat. A turn a Rufi event
- * started can only read: the person didn't ask for it.
+ * The tools of one turn in Rufi's own chat, the one place the AI can save
+ * or make a brief: each is written with its line in the chat. A turn a Rufi
+ * event started can only read: the person didn't ask for it.
  */
 export function chatCaller(
   reader: Store | undefined,
@@ -161,6 +169,22 @@ export function chatCaller(
             : retry
               ? retry(chat.personId, documentId)
               : Promise.reject(new Refusal("Rufi can't read documents here.")),
+        brief: (input, callId) =>
+          origin === "rufi"
+            ? Promise.reject(new Refusal(EVENT_TURN))
+            : transcripts.briefWithLine(chat, agentTurnId, (trx, at, turnId) =>
+                makeBrief(
+                  trx,
+                  {
+                    personId: chat.personId,
+                    chatId: chat.id,
+                    turnId,
+                    callId,
+                    now: at,
+                  },
+                  input,
+                ),
+              ),
       }),
       log,
     ).forTurn();

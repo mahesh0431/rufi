@@ -14,6 +14,7 @@ import type {
   AgentTools,
   RunSubAgent,
 } from "../agent/runtime.ts";
+import { readBrief } from "../core/briefs/briefs.ts";
 import { allowlistFile } from "../core/chat/models.ts";
 import { drafts as openDrafts } from "../core/chat/drafts.ts";
 import { chatQueue } from "../core/chat/queue.ts";
@@ -233,6 +234,8 @@ export const startCore = (options: CoreOptions) =>
         if (!overview) throw new Error("The person isn't in the record.");
         return overview;
       },
+      brief: async (personId, briefId) =>
+        reader && (await readBrief(reader.query, personId, briefId)),
       account,
       backups,
       exportZip: () => exportZip(home, new Date()),

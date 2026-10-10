@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Entry, Turn } from "@rufi/contracts";
+import type { Brief } from "@rufi/contracts/briefs";
 import { Effect, Exit, Scope } from "effect";
 import { everyTurnAnswered } from "./answered.ts";
 import type { ChatGptDeps } from "../src/agent/chatgpt/openai.ts";
@@ -231,6 +232,8 @@ interface Outcome {
    */
   counts?: Record<string, boolean>;
   snapshot: Snapshot;
+  /** More for a person to judge, after the transcript. */
+  notes?: string;
 }
 
 /** The scratch record, read as it is now. */
@@ -379,6 +382,34 @@ const SEEDS: Record<string, string> = {
       result("u3", "Glucose", "112", "mg/dL", "2026-09-08"),
     ].join(", "),
 };
+
+/** The briefs the AI made, as stored, and each as its page shows it. */
+async function briefs(api: Api, home: string) {
+  const store = openReadOnly(databasePath(home));
+  if (!store) throw new Error("no database");
+  const rows = store.db
+    .prepare("SELECT id, record_version, cited FROM briefs ORDER BY created_at")
+    .all() as { id: string; record_version: number; cited: string }[];
+  store.close();
+  return Promise.all(
+    rows.map(async (row) => ({
+      recordVersion: row.record_version,
+      cited: (JSON.parse(row.cited) as { id: string }[]).map((c) => c.id),
+      page: (
+        (await api("GET", `/api/people/asha/briefs/${row.id}`)) as {
+          brief: Brief;
+        }
+      ).brief,
+    })),
+  );
+}
+
+/** A brief's page as text, for a person to judge. */
+const briefText = (brief: Brief) =>
+  `## The brief\n\n${brief.markdown}\n\n## Sources${brief.changedSince ? " (the record changed since)" : ""}\n\n${brief.sources.map((s) => `- ${s.kind}: ${s.what} (${s.from})${s.changedSince ? " · changed since" : ""}`).join("\n")}`;
+
+/** Asha's current medicines and the sugar results a brief about sugar needs. */
+const SUGAR_BRIEF = ["med-a1", "med-a2", "res-a1", "res-a2"];
 
 /** A Rufi event from a test producer: its line, and a note for the AI. */
 const testEvent = (core: Core, line: string, ask: string) =>
@@ -927,6 +958,65 @@ const CASES: Record<
     };
   },
   /**
+   * A brief for a visit about sugar: made once from the saved record, citing
+   * the current medicines and the sugar results, with questions labelled.
+   */
+  brief: async (api, home) => {
+    const c = chat(api);
+    await c.ask(
+      "Please make a brief for my visit with my doctor on Friday. It's mostly about my blood sugar.",
+    );
+    const snapshot = await c.read();
+    const made = await briefs(api, home);
+    const brief = made[0];
+    return {
+      checks: {
+        one_brief: made.length === 1,
+        one_line:
+          snapshot.entries.filter((e) => e.kind === "brief").length === 1,
+        took_the_record_version: brief?.recordVersion === 0,
+        cites_medicines_and_sugar_results: SUGAR_BRIEF.every((id) =>
+          brief?.cited.includes(id),
+        ),
+        questions_labelled: /Question:/.test(brief?.page.markdown ?? ""),
+        dates_as_people_read_them:
+          brief !== undefined &&
+          !/\b\d{4}-\d{2}(-\d{2})?\b/.test(brief.page.markdown),
+        not_changed_since: brief?.page.changedSince === false,
+        nothing_saved: nothingSaved(home, snapshot),
+      },
+      snapshot,
+      ...(brief && { notes: briefText(brief.page) }),
+    };
+  },
+  /** A save after the brief: its page says the record changed since. */
+  brief_then_save: async (api, home) => {
+    const c = chat(api);
+    await c.ask(
+      "Please make a brief for my visit with my doctor on Friday. It's mostly about my blood sugar.",
+    );
+    await c.ask("I stopped taking creatine yesterday. Please note that.");
+    await c.ask("Yes, save it.");
+    const snapshot = await c.read();
+    const made = await briefs(api, home);
+    const brief = made[0];
+    const creatine = brief?.page.sources.find((s) =>
+      s.what.startsWith("Creatine"),
+    );
+    return {
+      checks: {
+        one_brief: made.length === 1,
+        saved: record(home).saves === 1,
+        creatine_stopped: medicine(home, "Creatine")?.["status"] === "stopped",
+        changed_since: brief?.page.changedSince === true,
+        creatine_as_cited_and_marked:
+          creatine?.what.includes("current") === true && creatine.changedSince,
+      },
+      snapshot,
+      ...(brief && { notes: briefText(brief.page) }),
+    };
+  },
+  /**
    * A real reading while you chat: its lines come, your reply isn't held up,
    * and its question (another name on the report) comes in a turn of its
    * own that can only read.
@@ -1014,7 +1104,7 @@ function transcriptText(snapshot: Snapshot): string {
       let text: string;
       if (e.kind === "activity")
         text = `· ${e.text}${e.detail ? `: ${e.detail}` : ""} (${e.status ?? ""})`;
-      else if (e.kind === "receipt" || e.kind === "event")
+      else if (e.kind === "receipt" || e.kind === "event" || e.kind === "brief")
         text = `Rufi: ${e.text}`;
       else
         text = `${e.kind === "reply" ? "AI" : e.kind === "steer" ? "You (steer)" : "You"}: ${e.text}`;
@@ -1115,7 +1205,7 @@ for (const name of names) {
       line = `${name} run ${String(run)}: ${failed.length === 0 ? "checks passed" : `FAILED ${failed.join(", ")}`}${counted.length > 0 ? ` (${counted.join(", ")})` : ""}`;
       await writeFile(
         join(out, `${name}-${String(run)}.md`),
-        `# ${line}\n\n${transcriptText(outcome.snapshot)}\n`,
+        `# ${line}\n\n${transcriptText(outcome.snapshot)}\n${outcome.notes === undefined ? "" : `\n${outcome.notes}\n`}`,
       );
     } catch (error) {
       failures++;
