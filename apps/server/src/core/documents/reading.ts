@@ -229,7 +229,7 @@ export function readings(
     });
     if (failure !== undefined) {
       return {
-        line: `Couldn't finish reading ${name} · ${failure} · saved ${String(mine.length)} of ${String(targets.size)}`,
+        line: `Couldn't finish reading ${name} · ${failure} · read ${String(mine.length)} of ${String(targets.size)}`,
         ask: undefined,
         facts: { ...facts(0, 0), action: "retry" },
       };

@@ -45,13 +45,13 @@ The Documents page lists everything you added, newest first:
 
 To show one kind only, choose it in the list at the top left.
 
-| Status              | What it means                                                            |
-| ------------------- | ------------------------------------------------------------------------ |
-| **Not read yet**    | Never read (added before Rufi read each document); **Retry** reads it    |
-| **Reading**         | Rufi reads it now, or it waits its turn; it shows the pages saved so far |
-| **To check**        | Results wait for you to check, or a page needs **Retry**                 |
-| **Nothing to save** | Read, and no results were found (a letter, for example)                  |
-| **Failed**          | The reading stopped before the end; **Retry** continues it               |
+| Status              | What it means                                                           |
+| ------------------- | ----------------------------------------------------------------------- |
+| **Not read yet**    | Never read (added before Rufi read each document); **Retry** reads it   |
+| **Reading**         | Rufi reads it now, or it waits its turn; it shows the pages read so far |
+| **To check**        | Results wait for you to check, or a page needs **Retry**                |
+| **Nothing to save** | Read, and no results were found (a letter, for example)                 |
+| **Failed**          | The reading stopped before the end; **Retry** continues it              |
 
 ## How Rufi reads a document
 
@@ -70,8 +70,8 @@ Your choice is used by the next reading that starts. A reading that runs keeps t
 ### While a document is read
 
 - A line in the chat says the reading started: **Reading thyrocare-aug.pdf · 5 pages**.
-- Above the chat box, the reader strip shows each reading: the one at work with its pages saved and time (**saved 3 of 5 · 1 min**), and those that wait their turn (**waiting**). You can keep chatting meanwhile.
-- Click **Open ▸** to see the reader's work as it goes: each page it saved, with the facts and results it read, its one note for the whole document, Rufi's checks (below) and how much of your plan it used. **Open** shows only; you check and fix results on the document's page (see [Check a report](#check-a-report)).
+- Above the chat box, the reader strip shows each reading: the one at work with its pages read and time (**read 3 of 5 · 1 min**), and those that wait their turn (**waiting**). You can keep chatting meanwhile.
+- Click **Open ▸** to see the reader's work as it goes: each page it read, with the facts and results it read, its one note for the whole document, Rufi's checks (below) and how much of your plan it used. **Open** shows only; you check and fix results on the document's page (see [Check a report](#check-a-report)).
 
 ### When the reading ends
 
@@ -127,7 +127,7 @@ Say "undo that", as for any save (see [Undo](chat.md#undo)). The AI removes the 
 - **You're signed out, or ChatGPT rejects the sign-in:** the reading waits (**waiting for sign-in**). Sign in again. Rufi checks again every 30 seconds.
 - **Your plan's usage limit:** the reading waits until the limit resets (**waiting until 14:30**), then goes on.
 - **The AI connection was lost or restarted:** Rufi tries once more by itself.
-- **It took too long, or failed again:** the line says **Couldn't finish reading … · saved 3 of 5**, with **Retry**. The pages saved so far are kept, and no results are made until a reading finishes.
+- **It took too long, or failed again:** the line says **Couldn't finish reading … · read 3 of 5**, with **Retry**. The pages read so far are kept, and no results are made until a reading finishes.
 
 **Retry** (on the line, in **Open**, or on the Documents page) continues a reading that failed. For a document that was read with pages that couldn't be read or weren't looked at, it reads only those pages again; the results already read, and any you changed, stay as they are. You can also ask the AI in the chat to read a document again.
 

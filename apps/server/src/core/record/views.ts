@@ -66,7 +66,8 @@ const calendar = (date: RawBuilder<unknown>) =>
 
 /**
  * Each current record's group and the group's date. A result read from a
- * report belongs to the report, dated when its sample was collected; a
+ * report belongs to the report, dated when its sample was collected (or,
+ * with no date printed, by its results' latest date); a
  * typed one to its day (or month or year, at the precision known); any
  * other record is a group of its own.
  */
@@ -74,7 +75,10 @@ function grouped(kind: Kind, personId: string) {
   if (kind.name === "result") {
     const measured = sql`r.measured_at`;
     const gid = sql<string>`CASE WHEN r.report_id IS NOT NULL THEN 'report:' || r.report_id WHEN ${calendar(measured)} THEN 'chat:' || substr(r.measured_at, 1, 10) ELSE 'chat:' END`;
-    const date = sql`CASE WHEN r.report_id IS NOT NULL THEN p.collected ELSE substr(r.measured_at, 1, 10) END`;
+    // A report with no printed date takes its current results' latest
+    // date, at its precision; undated only when none of them has one.
+    const latest = sql`(SELECT max(substr(m.measured_at, 1, 10)) FROM results m WHERE m.person_id = r.person_id AND m.report_id = r.report_id AND ${calendar(sql`m.measured_at`)} AND ${isCurrent(kind, "m")})`;
+    const date = sql`CASE WHEN r.report_id IS NOT NULL THEN coalesce(p.collected, ${latest}) ELSE substr(r.measured_at, 1, 10) END`;
     return {
       gid,
       keys: sql`SELECT ${gid} AS gid, ${date} AS d FROM results r LEFT JOIN reports p ON p.person_id = r.person_id AND p.id = r.report_id WHERE r.person_id = ${personId} AND ${isCurrent(kind, "r")}`,

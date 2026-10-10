@@ -72,7 +72,7 @@ test("reads a report in the background as it is added: the strip, the lines and 
   await start(page, rufi, reader);
 
   await expect(
-    page.getByRole("cell", { name: /Reading · saved 1 of 2/ }),
+    page.getByRole("cell", { name: /Reading · read 1 of 2/ }),
   ).toBeVisible();
   await accessible(page);
 
@@ -82,10 +82,10 @@ test("reads a report in the background as it is added: the strip, the lines and 
   ).toBeVisible();
   const strip = page.getByRole("region", { name: "Reading documents" });
   await expect(strip).toContainText("sunrise-labs-august.pdf");
-  await expect(strip).toContainText("saved 1 of 2");
+  await expect(strip).toContainText("read 1 of 2");
   await strip.getByRole("button", { name: "Open ▸" }).click();
   const sheet = page.getByRole("dialog");
-  await expect(sheet).toContainText("reading · saved 1 of 2");
+  await expect(sheet).toContainText("reading · read 1 of 2");
   await expect(sheet).toContainText("Collected date on page 1.");
   await expect(sheet.getByRole("cell", { name: "Haemoglobin" })).toBeVisible();
   await expect(sheet).toContainText("Page 2");
