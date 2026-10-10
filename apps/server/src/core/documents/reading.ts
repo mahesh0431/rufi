@@ -331,14 +331,17 @@ export function readings(
     });
     const date = agreed(dates);
     const distinctDates = new Set(dates.filter((d) => d !== undefined));
+    // A report per lab, number and date printed; a page that prints none
+    // (a table that goes on) is part of the one before.
     const reports = new Set(
-      all.map((e) =>
-        JSON.stringify([
+      all
+        .map((e) => [
           e.facts?.issuer,
           e.facts?.report_number,
           firstDate(e)?.iso ?? firstDate(e)?.date,
-        ]),
-      ),
+        ])
+        .filter((key) => key.some((part) => part !== undefined))
+        .map((key) => JSON.stringify(key)),
     );
     const today = now();
     const head =
