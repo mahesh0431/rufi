@@ -216,6 +216,8 @@ describe("tiles", () => {
       INSERT INTO conditions (id, person_id, name, status) VALUES
         ('con-a1', 'asha', 'Type 2 diabetes', 'ongoing'),
         ('con-a2', 'asha', 'Sprained ankle', 'resolved');
+      INSERT INTO allergies (id, person_id, substance, status) VALUES
+        ('all-a1', 'asha', 'Pollen', 'inactive');
       INSERT INTO none_known (id, person_id, category, asserted) VALUES
         ('nk-a1', 'asha', 'allergies', '2026-10-01');
       INSERT INTO symptoms (id, person_id, name, status, onset) VALUES
@@ -242,7 +244,8 @@ describe("tiles", () => {
       },
       { kind: "prescription", count: 0, names: [] },
       { kind: "condition", count: 2, now: 1, names: ["Type 2 diabetes"] },
-      { kind: "allergy", count: 0, now: 0, names: [], noneKnown: "2026-10-01" },
+      // An inactive allergy is in the count; "none known" still holds.
+      { kind: "allergy", count: 1, now: 0, names: [], noneKnown: "2026-10-01" },
       {
         kind: "symptom",
         count: 2,
@@ -256,6 +259,10 @@ describe("tiles", () => {
       {
         id: "none_known:nk-a1",
         rows: [{ kind: "none_known", asserted: "2026-10-01" }],
+      },
+      {
+        id: "allergy:all-a1",
+        rows: [{ kind: "allergy", substance: "Pollen" }],
       },
     ]);
   });

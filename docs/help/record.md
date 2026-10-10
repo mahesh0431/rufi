@@ -6,7 +6,14 @@ Rufi shows your whole record: Overview at a glance, and a page for each kind of 
 
 Overview is the first page you see. It has three parts, in this order:
 
-1. **Needs you:** documents that wait for you, then follow-ups that are overdue, due now or coming up in the next 30 days. A document that was read, with results not saved yet, says how many it has and how many to check. A document that couldn't be read says so. Click **Open** to go to the document's page (see [Documents](documents.md)), or to Follow-ups (see [Follow-ups](follow-ups.md)). When nothing waits, this part isn't shown.
+1. **Needs you:** documents that wait for you, then follow-ups that are overdue, due now or coming up in the next 30 days:
+   - a document that was read, with results not saved yet, says how many it has and how many to check;
+   - a document with pages that couldn't be read says "couldn't be read · try a clearer scan". Add a clearer scan or photo, or click **Retry** on its page;
+   - a document whose reading couldn't finish says so;
+   - a follow-up says when it is due, for example "overdue, was due Sep 2026" (see [Follow-ups](follow-ups.md)).
+
+   Click **Open** to go to the document's page (see [Documents](documents.md)), or to Follow-ups. A document read with nothing to save isn't here. When nothing waits, this part isn't shown.
+
 2. **Your record:** one tile for each kind of record, with its count and a short summary. Click a tile to open that kind's page. A kind with nothing in it says **None yet**.
 3. **Recent changes:** your last 5 saves and undos, newest first. Click one to see its receipt, the same as in the chat.
 
@@ -31,7 +38,7 @@ Under **Overview**, **Your record** lists the kinds of record with their counts:
 Each page shows the records that are current, newest first. As you scroll to the end, more load. You can also click **Show more**.
 
 - **Results** are grouped the way the paper is. Results from one report are together: the lab, the date the sample was collected and how many results it has. A report always shows whole. Results you typed in the chat are grouped by their day, or by their month or year when that is all you said ("May 2026"). Rufi never makes up a day. Results with no date come last, under **No date**.
-- A result shows its test, value and unit, the lab's range, and the lab's note and context, as printed. "Amended" means that the lab corrected the result. When a result's own date differs from its report's date, the row shows it.
+- A result shows its test, its value and unit (in one column, so values line up), the lab's range, and the lab's note and context, as printed. A date shows at the precision known, with its time when there is one. "Amended" means that the lab corrected the result. When a result's own date differs from its report's date, the row shows it.
 - **Other kinds** show one row for each record, newest first by its date: when a medicine started, when a symptom began. Records with no date come last.
 - **Allergies** also show "No known allergies" when you said so, with the day you said it.
 

@@ -96,8 +96,8 @@ test("results go into the chat as chips, one or several at once; they survive a 
       .filter({ has: page.getByRole("button", { name, exact: true }) });
 
   // One row: Ask Rufi, shown on the pointer, puts it in the chat's box.
-  await row("CRP <5 mg/L").hover();
-  await row("CRP <5 mg/L").getByRole("button", { name: "Ask Rufi" }).click();
+  await row("CRP").hover();
+  await row("CRP").getByRole("button", { name: "Ask Rufi" }).click();
   await expect(page).toHaveURL(/\/people\/asha\/chat$/);
   await expect(chips(page).getByRole("listitem")).toHaveText([
     "CRP <5 mg/L · 12 Aug 2026",
@@ -105,8 +105,8 @@ test("results go into the chat as chips, one or several at once; they survive a 
   await page.goBack();
 
   // Several: tick them, then add them together.
-  await row("Glucose 118 mg/dL").getByRole("checkbox").check();
-  await row("Free T4 1.1 ng/dL").getByRole("checkbox").check();
+  await row("Glucose").getByRole("checkbox").check();
+  await row("Free T4").getByRole("checkbox").check();
   await expect(page.getByText("2 chosen")).toBeVisible();
   await accessible(page);
   // They go in as the screen shows them.
