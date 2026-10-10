@@ -1,6 +1,7 @@
 // The Documents page on the real core: adding files (photos as one document
 // in the order chosen, a PDF on its own, the same content again, a file that
-// isn't a document) and the popup that shows the original. The strict CSP
+// isn't a document) and, from a document's page, the popup that shows the
+// original. The strict CSP
 // refuses nothing the page needs.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -111,6 +112,7 @@ test("adds photos as one document in the order chosen, and a PDF as its own", as
 
   // The popup: the photos in their order, the HEIC upright through its copy.
   await page.getByRole("button", { name: "IMG_2.jpg" }).click();
+  await page.getByRole("button", { name: "View original" }).click();
   const popup = page.getByRole("dialog", { name: /IMG_2\.jpg/ });
   const second = popup.getByRole("img", { name: "Photo 2 of 2" });
   await expect(second).toBeVisible();
@@ -142,9 +144,9 @@ test("names the same content again, also renamed, and refuses a file that isn't 
   await expect(rows(page)).toHaveCount(2);
   await status.getByRole("button", { name: "open it" }).click();
   await expect(
-    page.getByRole("dialog", { name: /thyroid recheck\.jpg/ }),
+    page.getByRole("heading", { name: /thyroid recheck\.jpg/ }),
   ).toBeVisible();
-  await page.keyboard.press("Escape");
+  await page.getByRole("link", { name: "Documents" }).click();
 
   await picker(page).setInputFiles([
     {
@@ -167,6 +169,7 @@ test("offers a copy of a PDF where the browser has no PDF viewer", async ({
   await documentsPage(page, rufi);
   await accessible(page);
   await page.getByRole("button", { name: "Sunrise Labs August.pdf" }).click();
+  await page.getByRole("button", { name: "View original" }).click();
   const popup = page.getByRole("dialog", { name: /Sunrise Labs August\.pdf/ });
   await expect(popup).toContainText("PDF · 2 pages");
   // Chromium here has no PDF viewer: the Rufi app's has (apps/desktop/e2e).

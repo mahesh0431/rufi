@@ -1,6 +1,7 @@
 // Reading documents on the screens, on the real core with a scripted reader
 // (tests/fake-reader.ts): the one-time yes, the reader strip above the chat
-// box, the start and end lines, and Open with the reader's work.
+// box, the start and end lines, and Open with the reader's work and the
+// document's page.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
@@ -85,7 +86,12 @@ test("asks once, then reads a report in the background: the strip, the lines and
   const end = page.getByText("Lab report · 12 Aug · 2 results read");
   await expect(end).toBeVisible();
   await expect(strip).toBeHidden();
-  await page.getByRole("button", { name: "Open", exact: true }).click();
+  // Open leads to the document's page; the reader's work is a button there.
+  await page.getByRole("link", { name: "Open", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Items" })).toContainText(
+    "2 results · 0 unsure",
+  );
+  await page.getByRole("button", { name: "The reader's work" }).click();
   await expect(sheet).toContainText("sunrise-labs-august.pdf · read");
   // Page 1 open, page 2 folded: both read.
   await expect(sheet.getByText(/^read · 1 item · Sunrise Labs/)).toHaveCount(2);

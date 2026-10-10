@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-router";
 import { BriefPage } from "./brief.tsx";
 import { ChatPage } from "./chat.tsx";
+import { DocumentPage } from "./document-page.tsx";
 import { DocumentsPage } from "./documents.tsx";
 import { Frame } from "./frame.tsx";
 import { HelpPage } from "./help-page.tsx";
@@ -78,6 +79,29 @@ const documents = createRoute({
       return <div className="px-6 py-8 text-muted">There is no page here.</div>;
     }
     return <DocumentsPage key={personId} person={person} />;
+  },
+});
+
+const document = createRoute({
+  getParentRoute: () => root,
+  path: "/people/$personId/documents/$documentId",
+  component: function Document() {
+    const { personId, documentId } = document.useParams();
+    const people = usePeople();
+    if (people.data === undefined) {
+      return people.error ? (
+        <div className="px-6 py-8">
+          <Problem error={people.error} retry={() => void people.refetch()} />
+        </div>
+      ) : null;
+    }
+    const person = people.data.find((p) => p.id === personId);
+    if (!person) {
+      return <div className="px-6 py-8 text-muted">There is no page here.</div>;
+    }
+    return (
+      <DocumentPage key={documentId} person={person} documentId={documentId} />
+    );
   },
 });
 
@@ -160,6 +184,7 @@ export const router = createRouter({
     home,
     chat,
     documents,
+    document,
     brief,
     conversation,
     settings,

@@ -36,8 +36,10 @@ import { RefRefusal } from "../core/chat/refs.ts";
 import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
 import { NotADocument, type Documents } from "../core/documents/documents.ts";
 import { NeedsYes, type Readings } from "../core/documents/reading.ts";
+import { StaleFix, type DraftItems } from "../core/documents/items.ts";
+import type { Pages } from "../core/documents/pages.ts";
 import { Refusal } from "../core/tools/registry.ts";
-import { ReadIt } from "@rufi/contracts/documents";
+import { FixItem, ReadIt } from "@rufi/contracts/documents";
 import { OriginalMissing } from "../core/documents/originals.ts";
 import type { BackupJob } from "../core/store/backup.ts";
 import type { Change, Transcripts } from "../core/chat/transcript.ts";
@@ -69,6 +71,10 @@ export interface ApiDeps {
   documents: Documents;
   /** Their readings: what waits and runs, and each one's work. */
   readings: Readings;
+  /** A document's draft items, and the person's fixes. */
+  items: DraftItems;
+  /** A document's pages as the reader saw them. */
+  pages: Pages;
   /** The secret `pnpm start` shows to get a fresh link while Rufi runs. */
   launcher: string;
   /** A fresh single-use link that opens Rufi. */
@@ -527,6 +533,51 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     );
     if (!found) throw new HttpError(404, "Not found.");
     return c.json(found);
+  });
+  // The document page: its items, a fix, and a page as the reader saw it.
+  app.get(`${documentsPath}/:documentId/items`, async (c) => {
+    const found = await deps.items.view(
+      (await person(c)).id,
+      c.req.param("documentId"),
+    );
+    if (!found) throw new HttpError(404, "Not found.");
+    return c.json(found);
+  });
+  app.post(`${documentsPath}/:documentId/items/:itemId/fix`, async (c) => {
+    const found = await person(c);
+    const fix = await body(c, FixItem);
+    try {
+      const fixed = await deps.items.fix(
+        found.id,
+        c.req.param("documentId"),
+        c.req.param("itemId"),
+        fix,
+      );
+      if (!fixed) throw new HttpError(404, "Not found.");
+      return c.json(fixed);
+    } catch (error) {
+      if (error instanceof StaleFix) {
+        throw new HttpError(409, error.message, { current: error.current });
+      }
+      if (error instanceof Refusal) throw new HttpError(409, error.message);
+      throw error;
+    }
+  });
+  app.get(`${documentsPath}/:documentId/pages/:position`, async (c) => {
+    const position = c.req.param("position");
+    if (!/^[1-9]\d{0,5}$/.test(position))
+      throw new HttpError(404, "Not found.");
+    const page = await deps.pages.page(
+      (await person(c)).id,
+      c.req.param("documentId"),
+      Number(position),
+    );
+    if (!page) throw new HttpError(404, "Not found.");
+    if (!page.ok) {
+      throw new HttpError(409, "This page couldn't be prepared to be shown.");
+    }
+    c.header("Content-Type", page.image.mediaType);
+    return c.body(new Uint8Array(page.image.bytes));
   });
   const filePath = `${documentsPath}/:documentId/files/:fileId`;
   app.get(filePath, (c) => fileOf(c, false));

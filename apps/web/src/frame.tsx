@@ -37,9 +37,9 @@ const isChatPage = (pathname: string) =>
 const isBriefPage = (pathname: string) =>
   /^\/people\/[^/]+\/briefs\/[^/]+$/.test(pathname);
 
-/** Whether the address is a person's Documents page. */
+/** Whether the address is a person's Documents page, or one document's. */
 const isDocumentsPage = (pathname: string) =>
-  /^\/people\/[^/]+\/documents$/.test(pathname);
+  /^\/people\/[^/]+\/documents(\/[^/]+)?$/.test(pathname);
 
 export function Frame() {
   useAppearance();
