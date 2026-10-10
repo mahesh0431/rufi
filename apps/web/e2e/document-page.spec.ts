@@ -48,7 +48,7 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
     },
   ]);
   await rufi.family(
-    `DELETE FROM results; DELETE FROM reports;
+    `DELETE FROM record_sources; DELETE FROM results; DELETE FROM reports;
      DELETE FROM document_pages; DELETE FROM documents;`,
   );
   await rufi.start({ reader: reader.run });
@@ -153,8 +153,13 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
   await page.getByRole("button", { name: "Save these in the chat" }).click();
   await expect(page).toHaveURL(/\/people\/asha\/chat$/);
   await expect(box).toHaveValue(
-    /^What changed since March\?\n\nSave these 3 results from "sunrise-labs-august\.pdf" \(document [0-9a-f-]+\)\.$/,
+    "What changed since March?\n\nSave these 3 results.",
   );
+  await expect(
+    page
+      .getByRole("list", { name: "Added to this message" })
+      .getByRole("listitem"),
+  ).toHaveText(["sunrise-labs-august.pdf"]);
 
   // A lost send's answer blocks appending, including after a reload.
   const submitted: { id: string; text: string }[] = [];

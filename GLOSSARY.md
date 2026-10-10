@@ -33,11 +33,11 @@ The AI that does a reading: a separate AI that Rufi starts for one document, wit
 _Avoid_: parser, OCR, extractor
 
 **Draft item**:
-One thing a reading found, such as a result, kept exactly as printed and waiting for you: not part of your record, so it counts in no answer, Overview or trend until you save it. The reader's own values are kept beside any change. It points to its document and page, and may be marked unsure.
+One thing a reading found, such as a result, kept exactly as printed and waiting for you: not part of your record, so it counts in no answer, Overview or trend until you save it. The reader's own values are kept beside any change. It points to its document and page, and may be marked unsure. It waits until it is saved (new, as another source of a saved result, or as a correction) or dismissed; a dismissed item is never saved.
 _Avoid_: pending result, unconfirmed record, extracted row
 
 **Report**:
-A lab or clinic report read from a document: who issued it and when the sample was collected.
+A lab or clinic report read from a document: who issued it, its printed report number, and when the sample was collected. When all three match, saved results from different documents belong to the same report for that person. If any is missing, reports stay within their document.
 _Avoid_: lab sheet, test report
 
 **Result**:
@@ -53,8 +53,8 @@ A result the lab issued again, replacing an earlier version; its value or any ot
 _Avoid_: corrected, updated, overwritten
 
 **Source**:
-Where something came from, such as a document, a message in the chat, a record item or a research entry. A change saved from the chat rests on the user's own message in the chat, and a date said in words ("last Monday") counts from when that message was sent.
-_Avoid_: origin, provenance
+Where a saved record came from: the user's own message in the chat, or a document and its page. A record can have several, such as a result the user told the AI and then added in a lab report; the same result from another copy is another source, not another result. Undo of another source takes only that source off. A date said in words ("last Monday") counts from when the source message was sent.
+_Avoid_: origin, provenance, attachment
 
 ## Changes
 
@@ -63,7 +63,7 @@ One change to the record that the user agreed to in the chat: the AI's call to s
 _Avoid_: change set, batch, transaction, commit
 
 **Receipt**:
-What Rufi adds to the chat for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words.
+What Rufi adds to the chat for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words. A save of a document's draft items starts with a summary (how many new, more sources and corrections), and its lines say each one's page.
 _Avoid_: toast, success message, confirmation
 
 **Undo**:
@@ -131,8 +131,12 @@ _Avoid_: cancel, abort
 A reply that didn't finish because you stopped it or Rufi closed. What it wrote so far is kept, and it never runs again.
 _Avoid_: cancelled, aborted
 
+**Chip**:
+Something from the record added to a message in the chat: a result, a document or a draft item, shown by its name. It points at exactly that one, for this person; the AI gets its id and its version when the message is sent. Taking a chip out of the box changes nothing in the record.
+_Avoid_: attachment, tag, mention
+
 **Draft**:
-The message you started in the chat and haven't sent, saved quietly while you type; only a save that failed shows under the box ("Not saved"). The last save wins: two tabs typing at once replace each other's text. A send moves it into the queue and empties the box, in one step. Rufi never sends a draft by itself.
+The message you started in the chat and haven't sent, with its chips, saved quietly while you type; only a save that failed shows under the box ("Not saved"). The last save wins: two tabs typing at once replace each other's text. A send moves it into the queue and empties the box, in one step. Rufi never sends a draft by itself.
 _Avoid_: note, unsent
 
 **Model**:
@@ -232,7 +236,8 @@ _Avoid_: download, dump
 - **You** keep the **records** of one or more **people**.
 - A **document** can hold **reports**; a **report** has **results**. A **result** can also be typed in without a report.
 - A **reading** of a **document** makes **draft items**; they become **results** only when you save them. Its end is a **Rufi event** in the person's **chat**.
-- A **save** changes one **person**'s **records**, rests on their messages as its **sources**, and gives one **receipt**; an **undo** is a new save.
+- A **save** changes one **person**'s **records**, rests on their messages or **documents**' pages as its **sources**, and gives one **receipt**; an **undo** is a new save.
+- A message's **chips** point at the person's **results**, **documents** or **draft items**; "save it" with a document's chip saves its **draft items** as **results**.
 - A **person** has one **chat**, made with them; it can produce **saves**, **follow-ups** and **research entries**.
 - A **chat** has one **queue**: your messages and the notes of **Rufi events** wait there for the AI.
 - The **chat** has one **transcript**, one **draft** and a **model**; a **steer** and each **activity** belong to one reply.

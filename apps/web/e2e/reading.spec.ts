@@ -26,7 +26,7 @@ async function start(
   reader: ReturnType<typeof scriptedReader>,
 ) {
   await rufi.family(
-    `DELETE FROM results; DELETE FROM reports;
+    `DELETE FROM record_sources; DELETE FROM results; DELETE FROM reports;
      DELETE FROM document_pages; DELETE FROM documents;`,
   );
   await rufi.start({ reader: reader.run });
@@ -165,7 +165,7 @@ test("keeps unreadable pages to check and reserves Nothing to save for a complet
   const status = page
     .getByRole("row", { name: /sunrise-labs-august.pdf/ })
     .getByRole("cell")
-    .last();
+    .nth(4); // Status
   await expect(status).toContainText("To check");
   await expect(status).not.toContainText("Nothing to save");
   await status.getByRole("button", { name: "Retry" }).click();

@@ -4,9 +4,11 @@
 // message waits, and Steer passes it into the reply instead. The box clears
 // only when the core took the message, and nothing is sent again by itself.
 // The model and effort are chosen beside Send; what waits shows above the
-// box.
+// box. Chips (references to documents, draft items and records) sit above
+// the text and go with it; the paperclip adds files as documents.
 import {
   MAX_MESSAGE_CHARS,
+  MAX_REFS,
   type Person,
   type QueueItem,
 } from "@rufi/contracts";
@@ -22,31 +24,15 @@ import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
-import { type BoxState, type DraftBox, draftBox, tooLong } from "./draft.ts";
+import { AttachButton, AttachStatus } from "./attach.tsx";
+import { boxFor } from "./boxes.ts";
+import { ChipView } from "./chips.tsx";
+import { type BoxState, chipKey, tooLong, tooMany } from "./draft.ts";
 import { chatPath, type Live, messageOf } from "./live.ts";
 import { ReadCard, ReaderStrip } from "./reading.tsx";
 import { ModelMenu } from "./model-menu.tsx";
-import { queries } from "./reads.ts";
 import { isRunning } from "./transcript-state.ts";
 import { Button } from "./ui.tsx";
-
-const boxes = new Map<string, DraftBox>();
-
-/** The box of a person's chat, the same in every size. */
-export function boxFor(personId: string): DraftBox {
-  let box = boxes.get(personId);
-  if (!box) {
-    const path = chatPath(personId);
-    box = draftBox({
-      call: (method, to, body) => request(method, `${path}/${to}`, body),
-      client: queries,
-      scope: `draft/${personId}`,
-      storage: sessionStorage,
-    });
-    boxes.set(personId, box);
-  }
-  return box;
-}
 
 /**
  * What the box says under it: a send on its way, or a draft that couldn't be
@@ -79,10 +65,12 @@ export function Box({
   const locked = useStore(box.store, (state) => state.sending);
   const saved = useStore(box.store, saveState);
   const notice = useStore(box.store, (state) => state.notice);
+  const chips = useStore(box.store, (state) => state.refs);
   const running = useStore(live, isRunning);
   const [problem, setProblem] = useState<string | null>(null);
   const long = tooLong(text);
-  const hasText = text.trim() !== "" && !long;
+  const many = tooMany(chips);
+  const hasText = text.trim() !== "" && !long && !many;
 
   // Leaving the screen, the box saves at once what isn't saved yet.
   useEffect(() => () => void box.saveNow(), [box]);
@@ -181,6 +169,7 @@ export function Box({
           act={act}
         />
       )}
+      {size !== "bar" && <AttachStatus personId={person.id} />}
       {size === "bar" ? (
         <div className="flex items-center gap-1.5 py-1.5 pr-1.5 pl-4">
           {running ? (
@@ -201,8 +190,28 @@ export function Box({
         <div
           className={`rounded-2xl border border-line bg-surface px-3.5 pt-2.5 pb-1.5 ${size === "page" ? "shadow-sm" : ""}`}
         >
+          {chips.length > 0 && (
+            <ul
+              aria-label="Added to this message"
+              className="mb-1.5 flex max-h-24 flex-wrap gap-1.5 overflow-auto"
+            >
+              {chips.map((chip) => (
+                <li key={chipKey(chip)} className="max-w-full">
+                  <ChipView
+                    chip={chip}
+                    {...(!locked && {
+                      onRemove: () => {
+                        box.remove(chip);
+                      },
+                    })}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
           <div className="flex">{field}</div>
           <div className="mt-1 flex items-center gap-1.5">
+            <AttachButton personId={person.id} />
             {running && <Answering live={live} />}
             <span className="flex-1" />
             {running && hasText && (
@@ -241,11 +250,13 @@ export function Box({
           )}
         </p>
       )}
-      {(notice || problem || long) && (
+      {(notice || problem || long || many) && (
         <p role="alert" className="px-3.5 pb-2 text-muted">
           {long
             ? `Too long to keep or send: at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters, and this is ${text.length.toLocaleString("en")}.`
-            : (notice ?? problem)}
+            : many
+              ? `Too many added to keep or send: at most ${String(MAX_REFS)}, and this has ${String(chips.length)}. Take some out.`
+              : (notice ?? problem)}
         </p>
       )}
     </form>
@@ -421,6 +432,16 @@ function QueueView({
                         ? `Rufi's note: ${item.text}`
                         : item.text}
                     </span>
+                    {item.refs.length > 0 && (
+                      <span className="mt-0.5 flex flex-wrap gap-1">
+                        {item.refs.map(({ ref, label, detail }) => (
+                          <ChipView
+                            key={`${ref.type}:${ref.id}`}
+                            chip={{ pointer: ref, label, detail }}
+                          />
+                        ))}
+                      </span>
+                    )}
                     {why !== null && (
                       <span className="block text-xs text-muted">{why}</span>
                     )}

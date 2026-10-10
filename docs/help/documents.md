@@ -1,6 +1,6 @@
 # Documents
 
-You can add lab reports and other documents to Rufi as PDFs or photos. Rufi keeps each original exactly as it came, so you can always look at it again, and reads each document in the background, so you don't have to type its results. This page says how to add documents, how Rufi reads them, how to check what it read, and how to look at an original.
+You can add lab reports and other documents to Rufi as PDFs or photos. Rufi keeps each original exactly as it came, so you can always look at it again, and reads each document in the background, so you don't have to type its results. This page says how to add documents, how Rufi reads them, how to check what it read, how to save the results to your record, and how to look at an original.
 
 You can also ask the AI about a document in the chat, and it looks at the pages it needs (see [Your data and the AI](your-data-and-the-ai.md#the-pages-the-ai-looks-at)).
 
@@ -10,6 +10,8 @@ You can also ask the AI about a document in the chat, and it looks at the pages 
 2. Click **Add documents** and choose one or more files. You can also drop files on the page.
 
 Rufi takes PDFs and photos in JPEG, PNG or HEIC (the format of iPhone photos). It knows a file by its content, not by its name.
+
+You can also add documents in the chat: click the paperclip next to the box, or drop files on the chat. They are added the same way, and each one's chip goes in the box (see [Adding to a message](chat.md#adding-to-a-message)). To add a document you already have to a message, point at its row on the Documents page and click **+ Add to chat**.
 
 ### Photos taken together
 
@@ -76,7 +78,7 @@ The strip item goes, and a line in the chat says what was read, for example **La
 
 When something needs you, the AI asks about it in the chat, in a few lines: a value marked unsure, a page that couldn't be read, a name on the report that differs from yours, an unclear date. Case and spacing differences do not need a question. Other differences, including an extra name or a title, do. It only reads and asks; it never saves on its own.
 
-The results are kept as **draft items**: they wait for you and stay across restarts, but they aren't part of your record yet, so they don't count in your Overview or the AI's answers. Saving them from the chat comes in a later version of Rufi.
+The results are kept as **draft items**: they wait for you and stay across restarts, but they aren't part of your record yet, so they don't count in your Overview or the AI's answers until you save them (see [Save results to your record](#save-results-to-your-record)).
 
 ### What the marks mean
 
@@ -88,6 +90,35 @@ Rufi checks each page the reader saves. A check never changes what the reader re
 | **may be incomplete** | The reader counted more (or fewer) rows on the page than it saved                                           |
 | **couldn't be read**  | The reader couldn't read the page, and says why                                                             |
 | **not looked at**     | The reading ended without this page                                                                         |
+
+## Save results to your record
+
+1. Add the document to a message (**+ Add to chat** on its row on the Documents page, **Save these in the chat** on its page, or its chip from the paperclip), and say "save it". To save only some results, add them on the document's page (see [Add some results to the chat](#add-some-results-to-the-chat)) and say "save these".
+2. The AI reads all the document's draft items and the results you already saved for the same tests and dates. Then it says, in a few lines, how many results are new, and names each one that isn't plainly new. It asks you about:
+   - **another source**: the same result is already in your record, for example because you told the AI, or you added another copy of the report. The saved result stays as it is, and this page becomes one more source of it.
+   - **a correction**: the lab amended a result you saved. The new result replaces the old one, and the old one stays in its history, marked as replaced.
+   - a value marked **unsure**, a page that **couldn't be read**, or a date that isn't clear.
+   - **another name** on the report. If the report isn't yours, the AI saves nothing from it. It never saves a report for someone else.
+3. Answer, and say yes. When every result is plainly new and you said "save it", the AI saves at once.
+4. The chat shows a receipt with a summary, for example **Saved 42 results from Sunrise Labs August.pdf · 40 new · 1 more source · 1 correction**, and the page of each one. Click **Show what was saved** to see the whole list.
+
+What Rufi does when it saves a document's results:
+
+- **The values as printed.** Rufi saves each result from the draft item, as the reader read it, never as the AI typed it. If you correct a value in the chat ("the LDL is 132, not 142"), Rufi saves your value and keeps your words.
+- **Its date.** A result gets the date printed for it, or else the first date printed on its page, such as the collection date. When there is no clear date, the AI asks you, and Rufi keeps your words for it.
+- **Its report.** Results with the same printed lab, report number and collection date go in one report, even when they came from different documents. If any of these is missing, Rufi keeps reports from different documents apart. A page that prints none of these belongs to the report of the page before it.
+- **Its sources.** Each result keeps where it came from: the document and its page, your message, or both. The receipt, the AI's reads and a visit brief show them.
+- **All or nothing.** Rufi saves all the results in one step, however many there are. If one can't be saved, nothing is saved, and the AI tells you why.
+- **Each result once.** A result you already saved isn't saved again: the AI gets the earlier save back.
+- **Nothing changed since.** If a result changed after the AI read it (the reading went on, or you changed it), Rufi refuses the save. The AI reads the document again and asks you again.
+
+### Results you don't want
+
+If a result isn't yours, or was read by mistake, tell the AI. When you say yes, it sets the result aside: the chat shows a receipt such as **Dismissed 1 item from Sunrise Labs August.pdf: not saved**, and that result is never saved later. A result you already saved can't be set aside: ask the AI to remove it from your record instead.
+
+### Undo
+
+Say "undo that", as for any save (see [Undo](chat.md#undo)). The AI removes the results the save added, and they stay in the history. When a result became **another source**, the undo takes only that page off its sources: the result stays.
 
 ## When a reading stops
 
@@ -129,9 +160,18 @@ If you fix a result in two tabs or windows, the second fix doesn't go over the f
 
 Fields you didn't change take their current values from the other tab. Saving again changes only the fields you edited. If a later save fails, Rufi shows that error and keeps your text.
 
+### Add some results to the chat
+
+To ask about or save only some results, add them to the chat as chips:
+
+- **One result:** point at its row and click **+ Add to chat**.
+- **Several:** tick their boxes, then click **Add 2 to chat** (with the number you chose). **Clear** unticks them all.
+
+Rufi opens the chat with their chips in the box. Type your message, for example "save these", and send it. Results you already saved or dismissed have no tick box.
+
 ### Save these in the chat
 
-Click **Save these in the chat**. Rufi puts **Save these 42 results from "thyrocare-aug.pdf"** in the chat box, after anything you already typed there, and opens the chat. Read it, then send it: nothing goes to the AI until you do. The AI reads the results with your fixes.
+Click **Save these in the chat**. Rufi puts **Save these 42 results.** in the chat box, after anything you already typed there, with the document's chip, and opens the chat. Read it, then send it: nothing goes to the AI until you do. The AI reads the results with your fixes, then checks them with you and saves them (see [Save results to your record](#save-results-to-your-record)).
 
 While a message of yours is being sent, the button says **Wait: a message is being sent**.
 

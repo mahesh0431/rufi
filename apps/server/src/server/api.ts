@@ -32,6 +32,7 @@ import { getCookie, setCookie } from "hono/cookie";
 import { stream } from "hono/streaming";
 import { Stopped } from "../agent/runtime.ts";
 import type { Drafts } from "../core/chat/drafts.ts";
+import { RefRefusal } from "../core/chat/refs.ts";
 import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
 import { NotADocument, type Documents } from "../core/documents/documents.ts";
 import { NeedsYes, type Readings } from "../core/documents/reading.ts";
@@ -452,6 +453,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
           })),
         ),
         form?.get("together") === "yes",
+        form?.get("from") === "chat" ? "chat" : "documents_page",
       );
       deps.log("documents.added", {
         count: added.added.length,
@@ -600,15 +602,15 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   // The same id again (a retry) finds the message it made.
   app.post(`${one}/messages`, async (c) => {
     const found = await chatOf(c);
-    const { id, text } = await body(c, SendMessage, MESSAGE_REFUSAL);
-    await acting(() => chat.send(found, id, text));
+    const { id, text, refs } = await body(c, SendMessage, MESSAGE_REFUSAL);
+    await acting(() => chat.send(found, id, text, refs));
     return c.json({ id, draft: await drafts.read(found) }, 202);
   });
   // Steer: into the running reply, or refused with the text left in the box.
   app.post(`${one}/steer`, async (c) => {
     const found = await chatOf(c);
-    const { id, text } = await body(c, SendMessage, MESSAGE_REFUSAL);
-    await acting(() => chat.steer(found, id, text));
+    const { id, text, refs } = await body(c, SendMessage, MESSAGE_REFUSAL);
+    await acting(() => chat.steer(found, id, text, refs));
     return c.json({ id, draft: await drafts.save(found, "") });
   });
   app.post(`${one}/stop`, async (c) => {
@@ -661,8 +663,13 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.get(draftPath, async (c) => c.json(await drafts.read(await chatOf(c))));
   app.put(draftPath, async (c) => {
     const found = await chatOf(c);
-    const { text } = await body(c, SaveDraft);
-    return c.json(await drafts.save(found, text));
+    const { text, refs } = await body(c, SaveDraft);
+    try {
+      return c.json(await drafts.save(found, text, refs));
+    } catch (error) {
+      if (error instanceof RefRefusal) throw new HttpError(400, error.message);
+      throw error;
+    }
   });
 
   // The live stream: a snapshot, then every stored change after it.

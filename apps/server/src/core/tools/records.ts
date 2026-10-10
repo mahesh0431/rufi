@@ -1,11 +1,14 @@
 // get_records: the active person's records of one kind, optionally between
-// two dates, as stored: removed records and earlier versions too, marked.
-// The person is Rufi's choice; the AI can't name one, and nothing else can
-// be read. The AI counts, compares and finds trends in the records itself.
+// two dates or exactly by id, as stored: removed records and earlier
+// versions too, marked, each with its version and its sources. A read that
+// a cap cuts short goes on with a continuation, so it can always be
+// finished (docs/adr/0006). The person is Rufi's choice; the AI can't name
+// one, and nothing else can be read. The AI counts, compares and finds
+// trends in the records itself.
 import { Schema } from "effect";
 import { sql } from "kysely";
 import { dateProblem, shownDate } from "../record/dates.ts";
-import { fieldsOf } from "../record/read.ts";
+import { fieldsOf, recordVersions } from "../record/read.ts";
 import { KINDS, kindNamed, type Kind, type Row } from "../record/kinds.ts";
 import { defineTool, Refusal } from "./registry.ts";
 
@@ -37,7 +40,37 @@ const Input = Schema.Struct({
   to: Bound(
     "The latest date to read, YYYY, YYYY-MM or YYYY-MM-DD; leave it out for no end.",
   ),
-});
+  ids: Schema.optionalKey(
+    Schema.Array(
+      Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+    )
+      .check(Schema.isMinLength(1), Schema.isMaxLength(LIMITS.records))
+      .annotate({
+        description: `Exactly these records, by id (at most ${String(LIMITS.records)}); not with from, to or after.`,
+      }),
+  ),
+  after: Schema.optionalKey(
+    Schema.String.annotate({
+      description:
+        "The `next` of the previous answer, to read on with the same kind, from and to.",
+    }),
+  ),
+}).check(
+  Schema.makeFilter(
+    (input: {
+      ids?: unknown;
+      from?: unknown;
+      to?: unknown;
+      after?: unknown;
+    }) =>
+      input.ids !== undefined &&
+      (input.from !== undefined ||
+        input.to !== undefined ||
+        input.after !== undefined)
+        ? "Give ids alone, or from, to and after without ids."
+        : undefined,
+  ),
+);
 
 /** Each kind with the field its dates are compared with. */
 const datedBy = KINDS.map((kind) => `${kind.name} by ${kind.dated}`).join(", ");
@@ -98,7 +131,7 @@ function shown(input: unknown): string {
 export const getRecords = defineTool({
   name: "get_records",
   shown,
-  description: `The active person's records of one kind (${names.join(", ")}), as stored: each with its id and fields as save_changes takes them, also the records removed from the record ("removed": true) and results replaced by an amended one ("replaced_by": the amended result's id). Newest first, undated last. With from or to, only records dated in that period: ${datedBy}. A record dated at a lower precision is read when its year or month overlaps the period ("2026" is in from 2026-03); a record with no date is read only without from and to. At most ${String(LIMITS.records)} records and ${String(LIMITS.bytes / 1000)} KB of records (as UTF-8 JSON) come back. When a cap leaves records out, the answer says "complete": false and "capped": narrow the dates and read again. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.`,
+  description: `The active person's records of one kind (${names.join(", ")}), as stored: each with its id, its version (the save that last changed it; null when none did), its fields as save_changes takes them and its sources (the user's message, or a document's page), also the records removed from the record ("removed": true) and results replaced by an amended one ("replaced_by": the amended result's id). Newest first, undated last. With from or to, only records dated in that period: ${datedBy}. A record dated at a lower precision is read when its year or month overlaps the period ("2026" is in from 2026-03); a record with no date is read only without from and to. With ids, exactly those records. At most ${String(LIMITS.records)} records and ${String(LIMITS.bytes / 1000)} KB of records (as UTF-8 JSON) come back at once (a single larger record comes back on its own); when there are more, the answer says "complete": false and gives "next": pass it as after, with the same kind, from and to, to read on until "complete" is true. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.`,
   input: Input,
   callers: "model",
   readOnly: true,
@@ -106,6 +139,7 @@ export const getRecords = defineTool({
   examples: [
     { kind: "result", from: "2024" },
     { kind: "symptom", from: "2026-01", to: "2026-06" },
+    { kind: "result", ids: ["0199a0f2-0000-7000-8000-00000000000a"] },
   ],
   run: async (input, { store, personId }) => {
     if (!store) return { note: "Rufi has no records yet." };
@@ -122,6 +156,35 @@ export const getRecords = defineTool({
     // A date at the precision both have: "2026" overlaps from 2026-03.
     const atBoth = (bound: string) =>
       sql`substr(${date}, 1, min(length(${date}), ${bound.length}))`;
+    // The order, and where a continuation goes on: after the record it names.
+    const isCalendar = sql<number>`coalesce(${calendar}, 0)`;
+    const isUndated = sql<number>`(${date} IS NULL)`;
+    const sortDate = sql<string>`coalesce(${date}, '')`;
+    let after = sql``;
+    if (input.after !== undefined) {
+      const { rows: last } = await sql<{
+        c: number;
+        n: number;
+        d: string;
+        r: number;
+      }>`SELECT ${isCalendar} AS c, ${isUndated} AS n, ${sortDate} AS d, r.rowid AS r FROM ${sql.table(kind.table)} r WHERE r.person_id = ${personId} AND r.id = ${input.after}`.execute(
+        store.query,
+      );
+      const at = last[0];
+      if (!at) {
+        throw new Refusal(
+          "That `after` isn't from this read: read again without it.",
+        );
+      }
+      after = sql`AND (${isCalendar} < ${at.c}
+        OR (${isCalendar} = ${at.c} AND ${isUndated} > ${at.n})
+        OR (${isCalendar} = ${at.c} AND ${isUndated} = ${at.n} AND ${sortDate} < ${at.d})
+        OR (${isCalendar} = ${at.c} AND ${isUndated} = ${at.n} AND ${sortDate} = ${at.d} AND r.rowid < ${at.r}))`;
+    }
+    const exactly =
+      input.ids === undefined
+        ? sql``
+        : sql`AND r.id IN (${sql.join(input.ids)})`;
     const { rows } = await sql<Row>`
       SELECT r.*${
         kind.name === "result"
@@ -137,14 +200,50 @@ export const getRecords = defineTool({
       }
       ${input.from === undefined ? sql`` : sql`AND ${atBoth(input.from)} >= substr(${input.from}, 1, length(${date}))`}
       ${input.to === undefined ? sql`` : sql`AND ${atBoth(input.to)} <= substr(${input.to}, 1, length(${date}))`}
+      ${after}
+      ${exactly}
       ORDER BY ${calendar} DESC, ${date} IS NULL, ${date} DESC, r.rowid DESC
       LIMIT ${LIMITS.records + 1}`.execute(store.query);
+    const ids = rows.map((row) => String(row["id"]));
+    const versions = await recordVersions(
+      store.query,
+      personId,
+      ids.map((id) => ({ kind: kind.name, id })),
+    );
+    const sources =
+      ids.length === 0
+        ? []
+        : await store.query
+            .selectFrom("record_sources as s")
+            .leftJoin("document_pages as p", (join) =>
+              join
+                .onRef("p.person_id", "=", "s.person_id")
+                .onRef("p.document_id", "=", "s.document_id")
+                .onRef("p.position", "=", "s.page"),
+            )
+            .select([
+              "s.record_id",
+              "s.type",
+              "s.entry_id",
+              "s.document_id",
+              "s.page",
+              "p.file_name",
+            ])
+            .where("s.person_id", "=", personId)
+            .where("s.kind", "=", kind.name)
+            .where("s.record_id", "in", ids)
+            .where("s.removed_by", "is", null)
+            .orderBy(sql.ref("s.rowid"))
+            .execute();
     const records: Record<string, unknown>[] = [];
     let bytes = 0;
     let capped = false;
     for (const row of rows) {
+      const id = String(row["id"]);
+      const mine = sources.filter((source) => source.record_id === id);
       const record = {
         id: row["id"],
+        version: versions.get(`${kind.name}:${id}`) ?? null,
         ...fieldsOf(kind, row),
         ...(typeof row["asserted"] === "string" && {
           asserted: row["asserted"],
@@ -153,14 +252,30 @@ export const getRecords = defineTool({
         ...(typeof row["replaced_by"] === "string" && {
           replaced_by: row["replaced_by"],
         }),
+        ...(mine.length > 0 && {
+          sources: mine.map((source) =>
+            source.type === "message"
+              ? { message: source.entry_id }
+              : {
+                  document: source.document_id,
+                  page: source.page,
+                  file: source.file_name,
+                },
+          ),
+        }),
       };
       bytes += Buffer.byteLength(JSON.stringify(record));
-      if (records.length === LIMITS.records || bytes > LIMITS.bytes) {
+      // The first record always comes back, so next always moves on.
+      if (
+        records.length === LIMITS.records ||
+        (bytes > LIMITS.bytes && records.length > 0)
+      ) {
         capped = true;
         break;
       }
       records.push(record);
     }
+    const missing = input.ids?.filter((id) => !ids.includes(id)) ?? [];
     return {
       kind: kind.name,
       ...(input.from !== undefined && { from: input.from }),
@@ -168,8 +283,10 @@ export const getRecords = defineTool({
       records,
       returned: records.length,
       complete: !capped,
+      ...(missing.length > 0 && { not_found: missing }),
       ...(capped && {
-        capped: `Narrow the dates: more records matched than the ${records.length === LIMITS.records ? `${String(LIMITS.records)} records` : `${String(LIMITS.bytes / 1000)} KB`} that come back at most. These are the newest ${String(records.length)}.`,
+        next: records.at(-1)?.["id"],
+        capped: `More records matched than come back at once (${records.length === LIMITS.records ? `${String(LIMITS.records)} records` : `${String(LIMITS.bytes / 1000)} KB`}). These are the next ${String(records.length)}: read on with after set to next.`,
       }),
     };
   },

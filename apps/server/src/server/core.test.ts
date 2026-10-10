@@ -347,6 +347,7 @@ describe("the core", () => {
             state: "not_sure",
             held: null,
             heldText: null,
+            refs: [],
           },
           {
             id: "q-2",
@@ -355,6 +356,7 @@ describe("the core", () => {
             state: "waiting",
             held: null,
             heldText: null,
+            refs: [],
           },
         ],
       },
@@ -581,9 +583,13 @@ describe("the local API", () => {
     const c = await chat(page);
     const ravi = addRavi();
     const draft = c.draft;
-    expect((await page.api("GET", draft)).body).toEqual({ text: "" });
+    expect((await page.api("GET", draft)).body).toEqual({
+      text: "",
+      refs: [],
+    });
     expect((await page.api("PUT", draft, { text: "Start" })).body).toEqual({
       text: "Start",
+      refs: [],
     });
     await page.api("PUT", `/api/people/${ravi.id}/chat/draft`, {
       text: "Half written",
@@ -592,10 +598,55 @@ describe("the local API", () => {
     await page.api("PUT", draft, { text: "From the other tab" });
     expect((await page.api("GET", draft)).body).toEqual({
       text: "From the other tab",
+      refs: [],
     });
     expect(
       (await page.api("GET", `/api/people/${ravi.id}/chat/draft`)).body,
     ).toMatchObject({ text: "Half written" });
+
+    // Chips are kept with the draft, named from what is stored; another
+    // person's is refused and the draft stays as it was.
+    const writable = openWritable(databasePath(home));
+    try {
+      writable.db
+        .exec(`INSERT INTO results (id, person_id, test_name, value_text, unit, entered_at) VALUES
+        ('res-1', '${c.person}', 'HbA1c', '6.8', '%', '2026-10-04T09:00:00Z'),
+        ('res-r', 'ravi', 'LDL', '162', 'mg/dL', '2026-10-04T09:00:00Z')`);
+    } finally {
+      writable.close();
+    }
+    const chip = {
+      ref: { type: "record", kind: "result", id: "res-1", version: null },
+      label: "HbA1c 6.8 %",
+      detail: "Result in your record",
+    };
+    expect(
+      (
+        await page.api("PUT", draft, {
+          text: "Is this high?",
+          refs: [{ type: "record", kind: "result", id: "res-1" }],
+        })
+      ).body,
+    ).toEqual({ text: "Is this high?", refs: [chip] });
+    expect((await page.api("GET", draft)).body).toEqual({
+      text: "Is this high?",
+      refs: [chip],
+    });
+    expect(
+      await page.api("PUT", draft, {
+        text: "And this?",
+        refs: [{ type: "record", kind: "result", id: "res-r" }],
+      }),
+    ).toMatchObject({
+      status: 400,
+      body: {
+        error:
+          "Something added to this message isn't in this person's record. Take it out of the message and add it again.",
+      },
+    });
+    expect((await page.api("GET", draft)).body).toMatchObject({
+      text: "Is this high?",
+    });
   });
 
   it("takes a send into the queue and empties the box in one step; the same send again makes no second message", async () => {
@@ -607,7 +658,7 @@ describe("the local API", () => {
     const sent = await page.say(c.path, "First", "messages", id);
     expect(sent).toMatchObject({
       status: 202,
-      body: { id, draft: { text: "" } },
+      body: { id, draft: { text: "", refs: [] } },
     });
     // A retry whose answer was lost.
     expect((await page.say(c.path, "First", "messages", id)).status).toBe(202);
@@ -636,6 +687,7 @@ describe("the local API", () => {
     });
     expect((await page.api("GET", c.draft)).body).toEqual({
       text: "Only the latest",
+      refs: [],
     });
   });
 

@@ -20,11 +20,15 @@ import { FileText, GripVertical, Image, Plus, X } from "lucide-react";
 import {
   type DragEvent,
   type KeyboardEvent,
+  type RefObject,
   useEffect,
   useRef,
   useState,
 } from "react";
 import { fetchFile, upload } from "./api.ts";
+import { boxFor } from "./boxes.ts";
+import { useShowChat } from "./panel.ts";
+import type { BoxChip } from "./draft.ts";
 import { printedDate, printedDay } from "./dates.ts";
 import { queries, useDocuments } from "./reads.ts";
 import {
@@ -50,10 +54,11 @@ export const KIND_NAMES: Record<DocumentKind, string> = {
 };
 
 /** What the file picker offers; Rufi itself goes by the content. */
-const ACCEPT = ".pdf,.jpg,.jpeg,.png,.heic,.heif,application/pdf,image/*";
+export const ACCEPT =
+  ".pdf,.jpg,.jpeg,.png,.heic,.heif,application/pdf,image/*";
 
 /** A chosen file and what its first bytes say it is. */
-interface Chosen {
+export interface Chosen {
   file: File;
   kind: "pdf" | "jpeg" | "png" | "heic" | "other";
 }
@@ -73,7 +78,7 @@ const HEIC_BRANDS = new Set([
  * What a file is by its first bytes, not its name or the browser's type: a
  * hint for grouping photos. The core looks at the whole file and decides.
  */
-async function look(file: File): Promise<Chosen> {
+export async function look(file: File): Promise<Chosen> {
   const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
   const text = (from: number, to: number) =>
     String.fromCharCode(...head.subarray(from, to));
@@ -90,7 +95,7 @@ async function look(file: File): Promise<Chosen> {
   return { file, kind };
 }
 
-const isPhoto = ({ kind }: Chosen) =>
+export const isPhoto = ({ kind }: Chosen) =>
   kind === "jpeg" || kind === "png" || kind === "heic";
 
 const isHeic = (type: string) => type === "image/heic" || type === "image/heif";
@@ -370,6 +375,22 @@ function Status({
   );
 }
 
+/** "+ Add to chat" on a row: its chip goes in the chat box, and the chat opens. */
+function AddToChat({ personId, chip }: { personId: string; chip: BoxChip }) {
+  const showChat = useShowChat(personId);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (boxFor(personId).append("", [chip])) showChat();
+      }}
+      className="rounded-lg border border-line bg-surface px-2 py-px text-xs whitespace-nowrap text-accent-ink opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus:opacity-100"
+    >
+      + Add to chat
+    </button>
+  );
+}
+
 function List({
   personId,
   documents,
@@ -390,6 +411,9 @@ function List({
               <th className="py-2 font-normal">Date</th>
               <th className="py-2 font-normal">Added</th>
               <th className="py-2 font-normal">Status</th>
+              <th className="py-2 font-normal">
+                <span className="sr-only">Add to chat</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -400,7 +424,10 @@ function List({
                   ? FileText
                   : Image;
               return (
-                <tr key={document.id} className="border-t border-line">
+                <tr
+                  key={document.id}
+                  className="group border-t border-line hover:bg-side"
+                >
                   <td className="py-2.5">
                     <button
                       type="button"
@@ -428,6 +455,16 @@ function List({
                   <td className="py-2.5">
                     <Status personId={personId} document={document} />
                   </td>
+                  <td className="py-2.5 pl-2 text-right">
+                    <AddToChat
+                      personId={personId}
+                      chip={{
+                        pointer: { type: "document", id: document.id },
+                        label: name,
+                        detail: "",
+                      }}
+                    />
+                  </td>
                 </tr>
               );
             })}
@@ -447,14 +484,17 @@ const PANEL =
 const BACKDROP = "fixed inset-0 z-40 bg-ink/25";
 
 /** Before adding two or more photos: one document or several, and their order. */
-function AddDialog({
+export function AddDialog({
   chosen,
   close,
   add,
+  container,
 }: {
   chosen: Chosen[];
   close: () => void;
   add: (files: File[], together: boolean) => void;
+  /** Where it opens: inside the chat panel, so it counts as the panel's. */
+  container?: RefObject<HTMLElement | null> | null;
 }) {
   const [order, setOrder] = useState(chosen);
   const [together, setTogether] = useState(true);
@@ -481,7 +521,7 @@ function AddDialog({
         if (!next) close();
       }}
     >
-      <Dialog.Portal>
+      <Dialog.Portal container={container ?? undefined}>
         <Dialog.Backdrop className={BACKDROP} />
         <Dialog.Popup className={`${PANEL} w-[460px] max-w-[92vw] p-[18px]`}>
           <Dialog.Title className="text-[15px] font-semibold">

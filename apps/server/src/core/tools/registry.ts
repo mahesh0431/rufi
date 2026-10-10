@@ -4,7 +4,8 @@ import { Result, Schema, SchemaIssue } from "effect";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import type { BriefInput, Made } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
-import type { Change, Saved } from "../record/save.ts";
+import type { DismissInput, Dismissed } from "../record/items.ts";
+import type { SaveRequest, Saved } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
 
 /** What a tool gets from Rufi, never from the model. */
@@ -23,8 +24,10 @@ export interface ToolContext {
    * Saves changes to the record with their receipt: only in Rufi's own
    * chat, where the chat and the user's messages are Rufi's.
    */
-  save?:
-    | ((changes: readonly Change[], callId: string) => Promise<Saved>)
+  save?: ((input: SaveRequest, callId: string) => Promise<Saved>) | undefined;
+  /** Dismisses draft items with a receipt line: only in Rufi's own chat. */
+  dismiss?:
+    | ((input: DismissInput, callId: string) => Promise<Dismissed>)
     | undefined;
   /**
    * Reads a document's failed pages again, at the person's request: only

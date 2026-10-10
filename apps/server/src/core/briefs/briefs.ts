@@ -242,7 +242,7 @@ export async function readBrief(
     sources.push({
       kind: capital(kind.noun),
       what: summary(kind, row),
-      from: await sourceOf(query, personId, row),
+      from: await sourceOf(query, personId, kind, row, record.version),
       changedSince: now.get(`${record.kind}:${record.id}`) !== record.version,
     });
   }
@@ -323,54 +323,76 @@ function summary(kind: Kind, row: Row): string {
 const WORDS_MAX = 140;
 
 /**
- * Where a record came from, in words: the report it was read from, or the
- * user's message it rests on.
+ * Where a record came from when it was cited (its version: the save that
+ * last changed it then, null for none), in words: each of its sources then
+ * (a document's page, with the report it was read from; the user's message
+ * it rests on).
  */
-// TODO(saving draft items): read the record's typed sources (a document
-// page, a message; several per record) once records have them.
 async function sourceOf(
   query: Kysely<Tables>,
   personId: string,
+  kind: Kind,
   row: Row,
+  version: string | null,
 ): Promise<string> {
+  // Saves up to the cited version; none when no save had changed it.
+  const upTo =
+    version === null
+      ? sql<number>`0`
+      : sql<number>`(SELECT rowid FROM operations WHERE id = ${version})`;
+  const order = (operation: "s.operation_id" | "s.removed_by") =>
+    sql<number>`(SELECT rowid FROM operations WHERE id = ${sql.ref(operation)})`;
+  const sources = await query
+    .selectFrom("record_sources as s")
+    .leftJoin("document_pages as p", (join) =>
+      join
+        .onRef("p.person_id", "=", "s.person_id")
+        .onRef("p.document_id", "=", "s.document_id")
+        .onRef("p.position", "=", "s.page"),
+    )
+    .leftJoin("transcript_entries as e", (join) =>
+      join
+        .onRef("e.person_id", "=", "s.person_id")
+        .onRef("e.id", "=", "s.entry_id"),
+    )
+    .select(["s.page", "p.file_name", "e.text", "e.created_at"])
+    .where("s.person_id", "=", personId)
+    .where("s.kind", "=", kind.name)
+    .where("s.record_id", "=", String(row["id"]))
+    .where(
+      sql<boolean>`(s.operation_id IS NULL OR ${order("s.operation_id")} <= ${upTo})`,
+    )
+    .where(
+      sql<boolean>`(s.removed_by IS NULL OR ${order("s.removed_by")} > ${upTo})`,
+    )
+    .orderBy(sql.ref("s.rowid"))
+    .execute();
   const reportId = row["report_id"];
-  if (typeof reportId === "string") {
-    const report = await query
-      .selectFrom("reports")
-      .select(["document_id", "issuer", "collected"])
-      .where("person_id", "=", personId)
-      .where("id", "=", reportId)
-      .executeTakeFirst();
-    if (report) {
-      const files = await query
-        .selectFrom("document_pages")
-        .select("file_name")
-        .distinct()
-        .where("person_id", "=", personId)
-        .where("document_id", "=", report.document_id)
-        .orderBy("file_name")
-        .execute();
-      return [
-        `${report.issuer ?? "A"} report${report.collected === null ? "" : `, collected ${shownDate(report.collected)}`}`,
-        ...files.map((file) => file.file_name),
-      ].join(" · ");
+  const report =
+    typeof reportId === "string"
+      ? await query
+          .selectFrom("reports")
+          .select(["issuer", "collected"])
+          .where("person_id", "=", personId)
+          .where("id", "=", reportId)
+          .executeTakeFirst()
+      : undefined;
+  const words = sources.map((source) => {
+    if (source.text !== null && source.created_at !== null) {
+      const said =
+        source.text.length > WORDS_MAX
+          ? `${source.text.slice(0, WORDS_MAX - 1)}…`
+          : source.text;
+      return `Your message, ${shownDate(localTime(source.created_at).slice(0, 10))}: “${said}”`;
     }
+    return `${source.file_name ?? "A document"}, page ${String(source.page)}`;
+  });
+  if (report && sources.some((source) => source.file_name !== null)) {
+    words.unshift(
+      `${report.issuer ?? "A"} report${report.collected === null ? "" : `, collected ${shownDate(report.collected)}`}`,
+    );
   }
-  const entryId = row["source_entry_id"];
-  if (typeof entryId === "string") {
-    const message = await query
-      .selectFrom("transcript_entries")
-      .select(["text", "created_at"])
-      .where("person_id", "=", personId)
-      .where("id", "=", entryId)
-      .executeTakeFirst();
-    if (message) {
-      const words =
-        message.text.length > WORDS_MAX
-          ? `${message.text.slice(0, WORDS_MAX - 1)}…`
-          : message.text;
-      return `Your message, ${shownDate(localTime(message.created_at).slice(0, 10))}: “${words}”`;
-    }
-  }
-  return "Saved before Rufi kept sources";
+  return words.length > 0
+    ? words.join(" · ")
+    : "Saved before Rufi kept sources";
 }

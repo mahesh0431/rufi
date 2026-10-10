@@ -6,11 +6,14 @@
 import {
   type ActivityKind,
   type Chat,
+  type Chip,
   DEFAULT_EFFORT,
   type Effort,
   type EndReason,
   type Entry,
   type Page,
+  type Pointer,
+  type Ref,
   type Turn,
 } from "@rufi/contracts";
 import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
@@ -18,10 +21,20 @@ import { v7 as uuid } from "uuid";
 import type { Made } from "../briefs/briefs.ts";
 import type { Saved } from "../record/save.ts";
 import { addRow } from "./queue.ts";
+import { chipsOf } from "./refs.ts";
 import { splitBasis } from "./basis.ts";
 import { usedOf } from "./used.ts";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
+
+/** What a receipt is written for: a save, or a dismissal of draft items. */
+interface Receipted {
+  /** The receipt's id. */
+  id: string;
+  receipt: string;
+  /** False: nothing new, so no receipt. */
+  fresh: boolean;
+}
 
 /** A person's chat with the agent thread it points at. */
 export interface ChatRow extends Chat {
@@ -76,6 +89,7 @@ const toEntry = (row: EntryRow, finished: boolean): Entry => ({
   status: row.status as Entry["status"],
   createdAt: row.created_at,
   updatedAt: row.updated_at,
+  ...(row.refs !== null && { refs: JSON.parse(row.refs) as Chip[] }),
   ...(row.kind === "event" && linkOf(row.details)),
 });
 
@@ -368,6 +382,8 @@ export function transcripts(
       status?: NonNullable<Entry["status"]>;
       agentItemId?: string;
       details?: string;
+      /** A message's chips. */
+      refs?: readonly Chip[];
     },
   ): Promise<string> {
     const id = entry.id ?? uuid();
@@ -385,6 +401,10 @@ export function transcripts(
         activity: entry.activity ?? null,
         detail: entry.detail ?? null,
         details: entry.details ?? null,
+        refs:
+          entry.refs === undefined || entry.refs.length === 0
+            ? null
+            : JSON.stringify(entry.refs),
         status: entry.status ?? null,
         agent_item_id: entry.agentItemId ?? null,
         revision,
@@ -399,7 +419,7 @@ export function transcripts(
   const handedOver = (trx: Db, chat: ChatRow, handOver: string) =>
     trx
       .selectFrom("chat_queue")
-      .select(["id", "origin", "text"])
+      .select(["id", "origin", "text", "refs"])
       .where("person_id", "=", chat.personId)
       .where("chat_id", "=", chat.id)
       .where("sent_as", "=", handOver)
@@ -412,7 +432,7 @@ export function transcripts(
     trx: Transaction<Tables>,
     chat: ChatRow,
     revision: number,
-    rows: { id: string; origin: string; text: string }[],
+    rows: { id: string; origin: string; text: string; refs: string }[],
     turnId: string | null,
   ): Promise<string[]> {
     if (rows.length === 0) return [];
@@ -443,6 +463,7 @@ export function transcripts(
           turnId,
           kind: "message",
           text: row.text,
+          refs: JSON.parse(row.refs) as Chip[],
         }),
       );
     }
@@ -757,6 +778,10 @@ export function transcripts(
       return found;
     },
 
+    /** The chips of references, each checked to be the person's (RefRefusal). */
+    chips: (personId: string, refs: readonly Pointer[]) =>
+      chipsOf(db, personId, refs),
+
     /** Who started a turn: a Rufi event's turn can only read. */
     origin: async (chat: ChatRow, agentTurnId: string) =>
       ((await turnOf(db, chat.id, agentTurnId))?.origin ?? "person") as
@@ -852,6 +877,7 @@ export function transcripts(
         kind: "message" | "steer";
         text: string;
         agentTurnId?: string;
+        refs?: readonly Chip[];
       },
     ) =>
       change(chat.id, async (trx, revision) => {
@@ -870,6 +896,7 @@ export function transcripts(
           turnId: turn?.id ?? null,
           kind: message.kind,
           text: message.text,
+          ...(message.refs !== undefined && { refs: message.refs }),
         });
         return { entries: [id], turns: [] };
       }),
@@ -907,21 +934,39 @@ export function transcripts(
       }),
 
     /**
-     * A save to the record and its receipt, in one transaction
-     * (docs/adr/0005): `save` writes the record in it. The line is added
+     * A save to the record (or a dismissal of draft items) and its
+     * receipt, in one transaction (docs/adr/0005): `save` writes it, given
+     * the references of the user's messages in this turn. The line is added
      * also when the reply has ended meanwhile (a Stop, a deadline): what is
      * saved is shown. The same call saved before adds no second line.
      */
-    saveWithReceipt: async (
+    saveWithReceipt: async <T extends Receipted = Saved>(
       chat: ChatRow,
       agentTurnId: string,
-      save: (trx: Transaction<Tables>, at: string) => Promise<Saved>,
-    ): Promise<Saved> => {
-      let saved: Saved | undefined;
+      save: (trx: Transaction<Tables>, at: string, refs: Ref[]) => Promise<T>,
+    ): Promise<T> => {
+      let saved: T | undefined;
       await change(chat.id, async (trx, revision) => {
-        saved = await save(trx, now());
-        if (!saved.fresh) return undefined;
         const turn = await turnOf(trx, chat.id, agentTurnId);
+        // What the user pointed at in this turn's messages.
+        const messages =
+          turn === undefined
+            ? []
+            : await trx
+                .selectFrom("transcript_entries")
+                .select("refs")
+                .where("person_id", "=", chat.personId)
+                .where("turn_id", "=", turn.id)
+                .where("refs", "is not", null)
+                .execute();
+        saved = await save(
+          trx,
+          now(),
+          messages.flatMap((m) =>
+            (JSON.parse(m.refs ?? "[]") as Chip[]).map((chip) => chip.ref),
+          ),
+        );
+        if (!saved.fresh) return undefined;
         const id = await insertEntry(trx, chat, revision, {
           id: saved.id,
           turnId: turn?.id ?? null,
@@ -930,7 +975,7 @@ export function transcripts(
         });
         return { entries: [id], turns: [] };
       });
-      return saved as Saved;
+      return saved as T;
     },
 
     /**

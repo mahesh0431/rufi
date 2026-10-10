@@ -10,7 +10,6 @@ export interface Tables {
     asserted: string | null;
     reacted: string | null;
     reacted_words: string | null;
-    source_entry_id: string | null;
     removed: number;
   };
   briefs: {
@@ -34,7 +33,6 @@ export interface Tables {
     date_words: string | null;
     provider: string | null;
     details: string | null;
-    source_entry_id: string | null;
     removed: number;
   };
   chat_queue: {
@@ -78,7 +76,6 @@ export interface Tables {
     resolved: string | null;
     resolved_words: string | null;
     details: string | null;
-    source_entry_id: string | null;
     removed: number;
   };
   document_pages: {
@@ -119,12 +116,18 @@ export interface Tables {
     fields: string;
     original: string;
     unsure: string;
+    saved_as: string | null;
+    record_kind: string | null;
+    record_id: string | null;
+    operation_id: string | null;
+    dismissed_by: string | null;
     created_at: string;
   };
   drafts: {
     person_id: string;
     chat_id: string;
     text: string;
+    refs: string;
     updated_at: string;
   };
   files: {
@@ -143,7 +146,6 @@ export interface Tables {
     outcome: string | null;
     linked_kind: string | null;
     linked_id: string | null;
-    source_entry_id: string | null;
     removed: number;
   };
   jobs: {
@@ -179,7 +181,6 @@ export interface Tables {
     started_words: string | null;
     ended: string | null;
     ended_words: string | null;
-    source_entry_id: string | null;
     removed: number;
   };
   none_known: {
@@ -187,7 +188,6 @@ export interface Tables {
     person_id: string;
     category: string;
     asserted: string | null;
-    source_entry_id: string | null;
     removed: number;
   };
   operations: {
@@ -214,7 +214,6 @@ export interface Tables {
     prescriber: string | null;
     issued: string | null;
     issued_words: string | null;
-    source_entry_id: string | null;
     removed: number;
   };
   record_changes: {
@@ -226,13 +225,25 @@ export interface Tables {
     action: string;
     before: string | null;
     after: string;
-    source_entry_id: string;
+    source_entry_id: string | null;
+  };
+  record_sources: {
+    person_id: string;
+    kind: string;
+    record_id: string;
+    type: string;
+    entry_id: string | null;
+    document_id: string | null;
+    page: number | null;
+    operation_id: string | null;
+    removed_by: string | null;
   };
   reports: {
     id: string;
     person_id: string;
     document_id: string;
     issuer: string | null;
+    report_number: string | null;
     collected: string | null;
   };
   results: {
@@ -253,7 +264,6 @@ export interface Tables {
     group_label: string | null;
     second_number: number | null;
     measured_words: string | null;
-    source_entry_id: string | null;
     removed: number;
   };
   settings: {
@@ -273,7 +283,6 @@ export interface Tables {
     location: string | null;
     intermittent: number | null;
     details: string | null;
-    source_entry_id: string | null;
     removed: number;
   };
   tool_calls: {
@@ -300,6 +309,7 @@ export interface Tables {
     activity: string | null;
     detail: string | null;
     details: string | null;
+    refs: string | null;
     status: string | null;
     agent_item_id: string | null;
     revision: number;

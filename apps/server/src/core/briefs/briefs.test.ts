@@ -194,7 +194,7 @@ describe("create_brief", () => {
         {
           kind: "Result",
           what: "HbA1c 6.8 % · 12 Aug 2026",
-          from: "Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf",
+          from: "Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf, page 1",
           changedSince: false,
         },
         {
@@ -291,7 +291,7 @@ describe("create_brief", () => {
         {
           kind: "Result",
           what: "HbA1c 6.8 % · 12 Aug 2026",
-          from: "Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf",
+          from: "Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf, page 1",
           changedSince: false,
         },
       ]);

@@ -28,7 +28,9 @@ When Rufi creates your data folder, it makes it private to your Mac user account
 
 > **Note:** When you ask Rufi something, the AI reads the parts of your record it needs. That text goes to the AI service you signed in with (today OpenAI, through your ChatGPT plan) so it can answer. See [OpenAI's policies](https://openai.com/policies/) for how they handle it.
 
-When the AI reads your record, it gets only the records of the person whose chat it is: Rufi chooses the person, and the AI can't name another one. The AI can't read the chat or Rufi's settings this way, and it can't change anything.
+When the AI reads your record with Rufi's tools, it gets only the records of the person whose chat it is: Rufi chooses the person, and the AI can't name another one. The AI can't read the chat or Rufi's settings this way, and it can't change anything.
+
+Rufi's tools aren't all that the chat's AI can do. It runs with the same access to this Mac as Codex has when you use it yourself: it can run commands and open the files your Mac account can open. Rufi tells it to use only Rufi's tools for your record, but that is an instruction, not a lock. Treat the chat as able to see your data folder. The [reader](#reading-your-documents) is different: Rufi locks it to two tools for one document.
 
 ## The pages the AI looks at
 
@@ -37,7 +39,7 @@ When you ask about a document in the chat, the AI can look at its pages, one at 
 - **A PDF page:** Rufi draws the page as an image and gives it with the page's own text, when the PDF has text (a scanned PDF has none). Links and anything else in the PDF that would act on its own are left out.
 - **A photo:** the photo as you added it. A HEIC photo goes as its JPEG copy, because the AI can't open HEIC.
 
-Each page the AI looks at goes to the AI service you signed in with, like the parts of your record it reads. The AI can look only at the documents of the person whose chat it is, and only through Rufi: it can't open the files in your data folder. Looking at a page changes nothing; documents aren't part of your record until you save from them.
+Each page the AI looks at goes to the AI service you signed in with, like the parts of your record it reads. Rufi's tool gives the AI only the documents of the person whose chat it is. Looking at a page changes nothing; documents aren't part of your record until you save from them.
 
 Rufi keeps the drawn PDF pages in `cache/` and draws a page again when its copy is missing; they aren't in your backups or your export.
 
@@ -48,7 +50,7 @@ Rufi reads each document you add with its own reader (see [Documents](documents.
 The reader sends the document's pages to the AI service you signed in with, the same way as above. It is a separate AI that Rufi starts for that one document:
 
 - It gets only Rufi's instructions for reading, the list of the document's pages and its own notes: none of your chat or your record.
-- It can do two things only, both through Rufi: look at a page of that document, and save what the page says in its notebook. It has no files, no commands and no internet, and it can't start other work.
+- It can do two things only, both through Rufi: look at a page of that document, and save what the page says in its notebook. It has no files, no commands and no internet, and it can't start other work. This is a lock, not only an instruction: Rufi starts the reader without them, and stops a reading that uses anything else.
 - Its thread isn't saved by the AI. Rufi keeps its notebook (what each page says) and its draft items in `rufi.sqlite`, with the reader's version and how much of your plan the reading used.
 
 Draft items aren't your record until you save them. They are in your backups and your export (the `draft_items` table), apart from your record.

@@ -288,6 +288,7 @@ describe("get_records", () => {
     expect(result.records.slice(1, 5)).toEqual([
       {
         id: "res-a5",
+        version: null,
         test: "TSH",
         value: "4.6",
         number: 4.6,
@@ -296,9 +297,13 @@ describe("get_records", () => {
         flag: "High",
         measured: { date: "2026-08-12" },
         replaces: "res-a4",
+        sources: [
+          { document: "doc-asha-sep", page: 1, file: "thyroid recheck.jpg" },
+        ],
       },
       {
         id: "res-a4",
+        version: null,
         test: "TSH",
         value: "2.1",
         number: 2.1,
@@ -306,9 +311,17 @@ describe("get_records", () => {
         range: "0.4 - 4.0",
         measured: { date: "2026-08-12" },
         replaced_by: "res-a5",
+        sources: [
+          {
+            document: "doc-asha-aug",
+            page: 2,
+            file: "Sunrise Labs August.pdf",
+          },
+        ],
       },
       {
         id: "res-a3",
+        version: null,
         test: "CRP",
         value: "<5",
         comparator: "<",
@@ -316,6 +329,13 @@ describe("get_records", () => {
         unit: "mg/L",
         range: "<10",
         measured: { date: "2026-08-12" },
+        sources: [
+          {
+            document: "doc-asha-aug",
+            page: 2,
+            file: "Sunrise Labs August.pdf",
+          },
+        ],
       },
       expect.objectContaining({ id: "res-a2", removed: true }),
     ]);
@@ -397,13 +417,75 @@ describe("get_records", () => {
     expect(capped.body["result"]).toMatchObject({
       returned: LIMITS.records,
       complete: false,
-      capped: `Narrow the dates: more records matched than the ${String(LIMITS.records)} records that come back at most. These are the newest ${String(LIMITS.records)}.`,
+      next: `g1`,
     });
-    // The newest first: the oldest one is the one left out, and a narrower read gets it.
+    // The newest first: the oldest one is the one left out, and reading on gets it.
     expect(ids(capped)).not.toContain("g0");
     expect(
-      ids(await records(more, { kind: "result", to: "2025-01-01" })),
-    ).toEqual(["g0"]);
+      (await records(more, { kind: "result", after: "g1" })).body["result"],
+    ).toMatchObject({ records: [{ id: "g0" }], complete: true });
+  });
+
+  it("reads on past the cap to the end, also among 300 records of one day and records with no date", async () => {
+    const day = Array.from(
+      { length: 300 },
+      (_, i) =>
+        `('d${String(i).padStart(3, "0")}', 'asha', NULL, 'Glucose', '${String(90 + (i % 30))}', 'mg/dL', '2026-08-12', '2026-08-13T00:00:00Z')`,
+    ).join(",");
+    const store = makeDatabase(
+      family,
+      `INSERT INTO results (id, person_id, report_id, test_name, value_text, unit, measured_at, entered_at) VALUES ${day}`,
+    );
+    const read: string[] = [];
+    let after: string | undefined;
+    for (let reads = 0; reads < 10; reads++) {
+      const answer = (
+        await records(store, {
+          kind: "result",
+          ...(after !== undefined && { after }),
+        })
+      ).body["result"] as {
+        records: { id: string }[];
+        complete: boolean;
+        next?: string;
+      };
+      read.push(...answer.records.map((found) => found.id));
+      if (answer.complete) break;
+      after = answer.next;
+    }
+    // Every record once: the fictional family's 8 and the day's 300.
+    expect(read).toHaveLength(308);
+    expect(new Set(read).size).toBe(308);
+    expect(read.slice(-2)).toEqual(["res-a7", "res-a8"]);
+    const { ok, body } = await records(store, {
+      kind: "result",
+      after: "res-r1",
+    });
+    expect(ok).toBe(false);
+    expect(body["error"]).toBe(
+      "That `after` isn't from this read: read again without it.",
+    );
+  });
+
+  it("reads exactly the records named by id, and says which aren't there", async () => {
+    const store = makeDatabase(family);
+    const result = (
+      await records(store, {
+        kind: "result",
+        ids: ["res-a7", "res-a1", "res-r1", "nope"],
+      })
+    ).body["result"];
+    expect(result).toMatchObject({
+      records: [{ id: "res-a1" }, { id: "res-a7" }],
+      complete: true,
+      not_found: ["res-r1", "nope"],
+    });
+    const both = await records(store, {
+      kind: "result",
+      ids: ["res-a1"],
+      from: "2026",
+    });
+    expect(both.ok).toBe(false);
   });
 
   it(`says when the records are more than ${String(LIMITS.bytes / 1000)} KB`, async () => {
@@ -419,13 +501,34 @@ describe("get_records", () => {
     );
     const result = (await records(store, { kind: "symptom" })).body[
       "result"
-    ] as { returned: number; capped: string };
+    ] as { returned: number; capped: string; next: string };
     expect(result).toMatchObject({ complete: false });
     expect(result.returned).toBeGreaterThan(0);
     expect(result.returned).toBeLessThan(40);
     expect(result.capped).toBe(
-      `Narrow the dates: more records matched than the ${String(LIMITS.bytes / 1000)} KB that come back at most. These are the newest ${String(result.returned)}.`,
+      `More records matched than come back at once (${String(LIMITS.bytes / 1000)} KB). These are the next ${String(result.returned)}: read on with after set to next.`,
     );
+    const rest = (await records(store, { kind: "symptom", after: result.next }))
+      .body["result"] as { returned: number };
+    expect(result.returned + rest.returned).toBeLessThanOrEqual(40);
+  });
+
+  it(`gives one record larger than ${String(LIMITS.bytes / 1000)} KB on its own, so the read moves on past it`, async () => {
+    const huge = "x".repeat(LIMITS.bytes + 1_000);
+    const store = makeDatabase(
+      family,
+      `INSERT INTO symptoms (id, person_id, name, status, onset, details) VALUES
+         ('s-big', 'asha', 'Headache', 'resolved', '2026-02-01', '${huge}'),
+         ('s-small', 'asha', 'Headache', 'resolved', '2026-01-01', NULL)`,
+    );
+    const first = (await records(store, { kind: "symptom" })).body[
+      "result"
+    ] as { records: { id: string }[]; complete: boolean; next: string };
+    expect(first.records.map((r) => r.id)).toEqual(["s-big"]);
+    expect(first).toMatchObject({ complete: false, next: "s-big" });
+    const rest = (await records(store, { kind: "symptom", after: first.next }))
+      .body["result"] as { records: { id: string }[] };
+    expect(rest.records.map((r) => r.id)).toContain("s-small");
   });
 
   it("names each read in plain words, with its dates", () => {
@@ -610,7 +713,7 @@ describe("the error envelope", () => {
       "rm_rf",
     );
     expect(body["error"]).toBe(
-      "There is no tool called rm_rf. Rufi's tools: get_overview, get_records, get_documents, read_chat, save_changes, retry_reading, create_brief.",
+      "There is no tool called rm_rf. Rufi's tools: get_overview, get_records, get_documents, read_chat, save_changes, dismiss_items, retry_reading, create_brief.",
     );
   });
 

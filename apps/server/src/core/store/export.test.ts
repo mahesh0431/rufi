@@ -124,7 +124,6 @@ second line', NULL, '');
         "outcome",
         "linked_kind",
         "linked_id",
-        "source_entry_id",
         "removed",
       ],
       rows: [
@@ -138,7 +137,6 @@ second line', NULL, '');
           outcome: null,
           linked_kind: null,
           linked_id: null,
-          source_entry_id: null,
           removed: 0,
         },
       ],
@@ -146,8 +144,8 @@ second line', NULL, '');
     expect(
       strFromU8(files[`${FOLDER}/csv/follow_ups.csv`] ?? new Uint8Array()),
     ).toBe(
-      '"id","person_id","title","due","due_words","status","outcome","linked_kind","linked_id","source_entry_id","removed"\r\n' +
-        '"f1","asha","रक्त जाँच\nsecond line",,"","open",,,,,0\r\n',
+      '"id","person_id","title","due","due_words","status","outcome","linked_kind","linked_id","removed"\r\n' +
+        '"f1","asha","रक्त जाँच\nsecond line",,"","open",,,,0\r\n',
     );
     expect(
       strFromU8(files[`${FOLDER}/csv/people.csv`] ?? new Uint8Array()),

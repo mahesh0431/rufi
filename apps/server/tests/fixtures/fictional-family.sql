@@ -47,6 +47,17 @@ INSERT INTO results (id, person_id, report_id, test_name, value_text, comparator
   ('res-r1', 'ravi', 'rep-ravi-jul', 'LDL cholesterol', '162', NULL, 162, 'mg/dL', '<100', 'High', 'Calculated', '2026-06-30', '2026-07-01T08:01:00Z', NULL),
   ('res-r2', 'ravi', 'rep-ravi-jul', 'HDL cholesterol', '41', NULL, 41, 'mg/dL', '>40', NULL, NULL, '2026-06-30', '2026-07-01T08:01:00Z', NULL);
 
+-- The results read from documents point to their page.
+INSERT INTO record_sources (person_id, kind, record_id, type, document_id, page) VALUES
+  ('asha', 'result', 'res-a1', 'document_page', 'doc-asha-aug', 1),
+  ('asha', 'result', 'res-a2', 'document_page', 'doc-asha-aug', 1),
+  ('asha', 'result', 'res-a3', 'document_page', 'doc-asha-aug', 2),
+  ('asha', 'result', 'res-a4', 'document_page', 'doc-asha-aug', 2),
+  ('asha', 'result', 'res-a5', 'document_page', 'doc-asha-sep', 1),
+  ('asha', 'result', 'res-a6', 'document_page', 'doc-asha-sep', 1),
+  ('ravi', 'result', 'res-r1', 'document_page', 'doc-ravi-jul', 1),
+  ('ravi', 'result', 'res-r2', 'document_page', 'doc-ravi-jul', 1);
+
 -- Records from before Rufi kept their source (none given).
 INSERT INTO medicine_uses (id, person_id, name, strength, amount, schedule, route, purpose, status, started, started_words) VALUES
   ('med-a1', 'asha', 'Metformin', '500 mg', '1 tablet', 'twice a day', 'by mouth', 'blood sugar', 'current', '2024-03', NULL),

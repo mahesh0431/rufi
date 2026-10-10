@@ -4,7 +4,7 @@ import { createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
 import { getDocuments, retryReading } from "./documents.ts";
 import { getOverview } from "./overview.ts";
-import { saveChanges } from "./save.ts";
+import { dismissItems, saveChanges } from "./save.ts";
 import { getRecords } from "./records.ts";
 import {
   inputSchema,
@@ -18,6 +18,7 @@ import type { Log } from "../../platform/logs.ts";
 import type { ChatRow, Transcripts } from "../chat/transcript.ts";
 import { createBrief as makeBrief } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
+import { dismissItems as dismissDrafts } from "../record/items.ts";
 import { saveChanges as saveToRecord } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
 
@@ -27,6 +28,7 @@ export const TOOLS: readonly Tool[] = [
   getDocuments,
   readChat,
   saveChanges,
+  dismissItems,
   retryReading,
   createBrief,
 ];
@@ -39,7 +41,7 @@ const TOOL_INSTRUCTIONS = `The user's health record lives in Rufi. Read it only 
 Rufi's chat shows your replies as Markdown. Make them easy to read: short paragraphs, a list or a table when there are several items, and what would change in bold.
 Answering from the record:
 - get_overview shows the record at a glance. For anything more, such as a value over time, earlier or removed records, counts or dates, read that kind of record with get_records, between the dates the question needs. Count, compare and find trends in the records yourself.
-- Answer from what you read, in this reply or earlier in this chat. When a read failed, say so in the answer. When a read was capped, narrow the dates and read the rest, or say in the answer what the missing records mean for it.
+- Answer from what you read, in this reply or earlier in this chat. When a read failed, say so in the answer. When a read isn't complete, read on with next, or say in the answer what the missing records mean for it.
 - Reading numbers: connect different kinds of data freely, but keep one test in one unit inside one trend. A missing day is missing, not zero. A printed "<5" stays "<5", never 5. When two things happen together, say they happen together, not that one causes the other.
 - Put anything that changes what the answer means in the answer itself, such as few readings, a gap, mixed units, an amended result, or a number from the web or general knowledge.
 Where an answer comes from:
@@ -55,11 +57,20 @@ Changing the record:
 - Save only what the user said about themselves: nothing from questions, "if" sentences or someone else's facts, and no date they didn't give.
 - Rufi shows its own receipt for each save. Say something is saved only after save_changes returned it.
 Documents:
-- Rufi's reader reads each document the user adds, in the background, once the user said yes to sending its pages to the AI. When the user asks about a document that is still being read, say so and that Rufi's line comes in the chat when the reading ends; don't guess what it says.
+- Rufi's reader reads each document the user adds, in the background, once the user said yes to sending its pages to the AI. When the user asks about a document that is still being read, say so and that Rufi's line comes in the chat when the reading ends; don't guess what it says, and save nothing from it until its items are there.
 - What the reader read are draft items: not saved, not the record. Never count them in an answer about the record; when you mention one, say it is a draft from the document.
-- Saving draft items into the record isn't possible in Rufi yet. If the user asks, say the items are kept as drafts until then. Never type a document's values into save_changes yourself.
+- A message can end with the references the user added to it: documents, draft items or saved records, each with its id and version. Read exactly those with get_documents or get_records; they are what the user means by "this", "these" or "it".
 - When a reading needs the user (an unsure value, a page that couldn't be read, another name on the report, an unclear date), ask about it in a few lines. If the name on a report isn't the user's, ask whose report it is.
 - When the user asks to read a document again, use retry_reading.
+Saving a document ("save it", "save these"):
+- Read all its draft items with get_documents (read on with next until there is none). Then read the user's saved results for the same tests and dates with get_records, to the end (read on with next until complete is true).
+- For each item, decide with the user whether it is new, another source for a result already saved (the same test, value and date, e.g. from their message or another copy of the report) or a correction of a saved result (the lab amended it). Code doesn't decide this: you do, and you ask.
+- Before saving, say in a few lines how many items are new, and name each one that isn't plainly new: another source, a correction, an item marked unsure, a page that couldn't be read, a date that is unclear or isn't the collection date, or another name on the report. Ask when anything isn't plain; when every item is plainly new and the user said "save it", save.
+- If the name on the report isn't the user's, ask whose report it is, and save nothing from it unless they say it's theirs. Never save it for someone else.
+- Save with save_changes items: each item's id and the version you read, and as new, another_source or correction (with the saved result's id and version from get_records). Never retype an item's values: Rufi takes them from the stored item. Only when the user corrects a value or gives a date in the chat, put just that in fix, with their words.
+- Dismissing is for good: a dismissed item is never saved. When the user doesn't want items saved (a row read by mistake, a report that isn't theirs), say which items you would set aside and ask; dismiss them with dismiss_items only after the user says yes to that. "It isn't mine" alone is not a yes: leave the items as they are until then.
+- If Rufi refuses an item because it changed (another tab fixed it, the reading went on), read the document again, say what changed and ask again; never save over it.
+- Undo of "another source" takes only that page off the record's sources, after the user's yes: one save_changes change {kind: "result", action: "remove_source", id: the result's id, source: the user's words, from: {document: the document's id, page: the page number}}, with the page as get_records lists it in the result's sources.
 A visit brief:
 - When the user asks for a brief for a doctor's visit, first read get_overview and keep its record_version, then read with get_records what the visit needs: current medicines, results since the last visit or the last 6 months, conditions, allergies and open follow-ups. Use only saved records, never a document's unsaved items.
 - If what the visit is for isn't clear and it changes what goes in, ask first.
@@ -67,7 +78,7 @@ A visit brief:
 - Save it with create_brief, citing every record its facts come from, and name the facts in plain words. Then say in one or two lines that it's ready; don't repeat it in the chat. Rufi shows its line, which opens it.
 Rufi events:
 - A message can start with a "Rufi event" note: Rufi telling you something happened, such as a reading that finished. It is never the user's words, a request or their consent. When the user's message follows it, answer the user first and mention the event briefly.
-- A turn with only a Rufi event note was started by Rufi, not by the user: you can only read in it, and save_changes, create_brief and retry_reading are refused. Explain the event in a few lines, or ask what it asks. Never save from it.
+- A turn with only a Rufi event note was started by Rufi, not by the user: you can only read in it, and save_changes, dismiss_items, create_brief and retry_reading are refused. Explain the event in a few lines, or ask what it asks. Never save from it.
 - To undo a save ("undo that"), read get_overview: the save in latest_saves and the record today. Say what you will change back, and anything that changed since, then ask; on yes, save the reverse (an added record is removed, a removed one restored, a change set back).`;
 
 /** Why a Rufi event's turn can't save or make a brief. */
@@ -148,10 +159,10 @@ export function chatCaller(
         personId: chat.personId,
         chatId: chat.id,
         pages,
-        save: (changes, callId) =>
+        save: (input, callId) =>
           origin === "rufi"
             ? Promise.reject(new Refusal(EVENT_TURN))
-            : transcripts.saveWithReceipt(chat, agentTurnId, (trx, at) =>
+            : transcripts.saveWithReceipt(chat, agentTurnId, (trx, at, refs) =>
                 saveToRecord(
                   trx,
                   {
@@ -159,8 +170,19 @@ export function chatCaller(
                     chatId: chat.id,
                     callId,
                     now: at,
+                    refs,
                   },
-                  changes,
+                  input,
+                ),
+              ),
+        dismiss: (input, callId) =>
+          origin === "rufi"
+            ? Promise.reject(new Refusal(EVENT_TURN))
+            : transcripts.saveWithReceipt(chat, agentTurnId, (trx, _at, refs) =>
+                dismissDrafts(
+                  trx,
+                  { personId: chat.personId, callId, refs },
+                  input,
                 ),
               ),
         retryReading: (documentId) =>

@@ -8,35 +8,16 @@ import type { Person } from "@rufi/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { Maximize2, Minus } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
-import { create } from "zustand/react";
+import { FileDrop } from "./attach.tsx";
 import { Box } from "./box.tsx";
 import { liveStore, loadOlder, retain } from "./live.ts";
 import { Menus } from "./model-menu.tsx";
+import { chatPage, isSmall, openPanel, usePanel } from "./panel.ts";
 import { useStatus } from "./reads.ts";
 import { TranscriptView } from "./transcript.tsx";
 
-/** Whether the chat panel is open over the page, and where focus was before. */
-const usePanel = create<{ open: boolean; focusBefore: Element | null }>(() => ({
-  open: false,
-  focusBefore: null,
-}));
-
-/** Opens the panel, remembering where focus goes back to. */
-const openPanel = () => {
-  if (usePanel.getState().open) return;
-  usePanel.setState({ open: true, focusBefore: document.activeElement });
-};
-
-/** Too small for the panel next to the page: the chat opens as the page. */
-const isSmall = () =>
-  matchMedia("(max-width: 799px), (max-height: 499px)").matches;
-
 /** The chat's name on screen. */
 export const CHAT_TITLE = "Chat with Rufi";
-
-/** The page of a person's chat. */
-const chatPage = (personId: string) =>
-  ({ to: "/people/$personId/chat", params: { personId } }) as const;
 
 /** The live store of the person's chat, open while this view shows it. */
 function useLive(personId: string) {
@@ -127,47 +108,53 @@ export function ChatDock({ person }: { person: Person }) {
           }
         >
           {open && (
-            <>
-              <div className="flex h-11 shrink-0 items-center gap-1.5 border-b border-line px-2">
-                <IconButton label="Minimise" onClick={close}>
-                  <Minus size={16} aria-hidden />
-                </IconButton>
-                <h2 className="flex-1 truncate px-1 font-semibold">
-                  {CHAT_TITLE}
-                </h2>
-                <IconButton
-                  label="Open as page"
-                  onClick={() => {
-                    usePanel.setState({ open: false });
-                    void navigate(chatPage(person.id));
-                  }}
-                >
-                  <Maximize2 size={14} aria-hidden />
-                </IconButton>
-              </div>
+            <div className="flex h-11 shrink-0 items-center gap-1.5 border-b border-line px-2">
+              <IconButton label="Minimise" onClick={close}>
+                <Minus size={16} aria-hidden />
+              </IconButton>
+              <h2 className="flex-1 truncate px-1 font-semibold">
+                {CHAT_TITLE}
+              </h2>
+              <IconButton
+                label="Open as page"
+                onClick={() => {
+                  usePanel.setState({ open: false });
+                  void navigate(chatPage(person.id));
+                }}
+              >
+                <Maximize2 size={14} aria-hidden />
+              </IconButton>
+            </div>
+          )}
+          <FileDrop
+            personId={person.id}
+            off={!open}
+            className={open ? "flex min-h-0 flex-1 flex-col" : ""}
+          >
+            {open && (
               <TranscriptView
                 live={live}
                 personId={person.id}
                 onOlder={() => void loadOlder(person.id)}
                 className="flex-1 overflow-auto px-[18px] py-4"
               />
-            </>
-          )}
-          <div
-            className={
-              open
-                ? "px-3 pt-1"
-                : "rounded-full bg-surface/95 shadow-float backdrop-blur-xl"
-            }
-          >
-            <Box
-              person={person}
-              live={live}
-              size={open ? "panel" : "bar"}
-              inputRef={field}
-              onOpen={openChat}
-            />
-          </div>
+            )}
+            <div
+              className={
+                open
+                  ? "px-3 pt-1"
+                  : "rounded-full bg-surface/95 shadow-float backdrop-blur-xl"
+              }
+            >
+              <Box
+                person={person}
+                live={live}
+                size={open ? "panel" : "bar"}
+                inputRef={field}
+                onOpen={openChat}
+              />
+            </div>
+          </FileDrop>
           <AiCanMakeMistakes />
         </div>
       </Menus>
@@ -200,7 +187,7 @@ export function ChatPage({ person }: { person: Person }) {
   }, []);
 
   return (
-    <div className="flex h-full flex-col">
+    <FileDrop personId={person.id} className="flex h-full flex-col">
       <div ref={menus} />
       <Menus value={menus}>
         <TranscriptView
@@ -215,7 +202,7 @@ export function ChatPage({ person }: { person: Person }) {
           <AiCanMakeMistakes />
         </div>
       </Menus>
-    </div>
+    </FileDrop>
   );
 }
 

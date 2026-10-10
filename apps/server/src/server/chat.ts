@@ -3,7 +3,7 @@
 // in Rufi's own queue (core/chat/queue.ts): the dispatcher here hands the AI
 // one turn's rows at a time, claimed in the database before the AI is
 // called, and the next only after that turn and its writes have ended.
-import type { Effort } from "@rufi/contracts";
+import type { Chip, Effort, Pointer } from "@rufi/contracts";
 import {
   NotSent,
   Stopped,
@@ -21,6 +21,7 @@ import {
   type ChatQueue,
   type HandOver,
 } from "../core/chat/queue.ts";
+import { refsForAi, RefRefusal } from "../core/chat/refs.ts";
 import { safetyInstructions } from "../core/chat/safety.ts";
 import type { ChatRow, Transcripts } from "../core/chat/transcript.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
@@ -73,8 +74,14 @@ export function chat(deps: ChatDeps) {
   const acting = new Map<string, Set<AbortController>>();
   /** A new thread's earlier chat, until its first message is sent. */
   const pendingContext = new Map<string, string>();
-  /** Steers sent, so their message is saved as a steer; by message id. */
-  const steers = new Map<string, string>(); // message id -> thread id
+  /**
+   * Steers sent, so their message is saved as a steer with its own words
+   * and chips (the AI got the reference list too); by message id.
+   */
+  const steers = new Map<
+    string,
+    { threadId: string; text: string; refs: Chip[] }
+  >();
   /** Each running turn's tool caller and chat, by thread. */
   const callers = new Map<
     string,
@@ -211,18 +218,22 @@ export function chat(deps: ChatDeps) {
         if (handOver !== undefined) queue.changed(chat.id);
         return;
       }
-      case "message":
+      case "message": {
         // A hand-over's message entered with its turn; a steer is saved
         // here when the agent shows it first.
-        if (steers.delete(event.id)) {
+        const steer = steers.get(event.id);
+        if (steer) {
+          steers.delete(event.id);
           await transcripts.addMessage(chat, {
             id: event.id,
             kind: "steer",
-            text: event.text,
+            text: steer.text,
             agentTurnId: event.turnId,
+            refs: steer.refs,
           });
         }
         return;
+      }
       case "text":
         replied.add(event.itemId);
         await transcripts.appendReply(
@@ -259,8 +270,8 @@ export function chat(deps: ChatDeps) {
         if (callers.get(event.threadId)?.turnId === event.turnId) {
           callers.delete(event.threadId);
         }
-        for (const [id, threadId] of steers) {
-          if (threadId === event.threadId) steers.delete(id);
+        for (const [id, steer] of steers) {
+          if (steer.threadId === event.threadId) steers.delete(id);
         }
         await transcripts.endTurn(chat, event.turnId, event.end);
         await endHandOver(chat, event.turnId);
@@ -502,13 +513,18 @@ export function chat(deps: ChatDeps) {
     models: offered,
 
     /**
-     * Takes a message into the queue by the send's id, and empties the box,
-     * in one step; it goes to the AI in its turn. The same id again finds
-     * the message it made.
+     * Takes a message and its references into the queue by the send's id,
+     * and empties the box, in one step; it goes to the AI in its turn. The
+     * same id again finds the message it made.
      */
-    send: async (chat: ChatRow, id: string, text: string) => {
+    send: async (
+      chat: ChatRow,
+      id: string,
+      text: string,
+      refs: readonly Pointer[] = [],
+    ) => {
       try {
-        await queue.accept(chat, id, text);
+        await queue.accept(chat, id, text, refs);
       } catch (error) {
         if (error instanceof QueueRefusal) throw new ChatRefusal(error.message);
         throw error;
@@ -521,16 +537,31 @@ export function chat(deps: ChatDeps) {
      * Passes a message into the running reply; saved as a steer. When the
      * reply has ended, it is refused: it never becomes a waiting message.
      */
-    steer: (chat: ChatRow, id: string, text: string) =>
+    steer: (
+      chat: ChatRow,
+      id: string,
+      text: string,
+      refs: readonly Pointer[] = [],
+    ) =>
       inLane(chat, async (chat) => {
         const threadId = threadOf(chat);
         if (threadId === null || !agent.running(threadId)) {
           throw new ChatRefusal(STEER_ENDED);
         }
-        steers.set(id, threadId);
+        let chips: Chip[];
+        try {
+          chips = await transcripts.chips(chat.personId, refs);
+        } catch (error) {
+          if (error instanceof RefRefusal) throw new ChatRefusal(error.message);
+          throw error;
+        }
+        steers.set(id, { threadId, text, refs: chips });
         let turnId: string;
         try {
-          ({ turnId } = await agent.steer(threadId, { id, text }));
+          ({ turnId } = await agent.steer(threadId, {
+            id,
+            text: withRefs(text, chips),
+          }));
         } catch (error) {
           steers.delete(id);
           if (error instanceof NotSent || !agent.running(threadId)) {
@@ -545,6 +576,7 @@ export function chat(deps: ChatDeps) {
             kind: "steer",
             text,
             agentTurnId: turnId,
+            refs: chips,
           }),
         );
         saving = saved.then(
@@ -688,8 +720,16 @@ function inputOf(handOver: HandOver, context: string | undefined): string[] {
     ...(handOver.notes.length === 0
       ? []
       : [`${NOTES_HEAD}\n\n${handOver.notes.join("\n\n")}`]),
-    ...(handOver.text === undefined ? [] : [handOver.text]),
+    ...(handOver.text === undefined
+      ? []
+      : [withRefs(handOver.text, handOver.refs)]),
   ];
+}
+
+/** A message as the AI gets it: the person's words, then their references. */
+function withRefs(text: string, chips: readonly Chip[]): string {
+  const list = refsForAi(chips);
+  return list === undefined ? text : `${text}\n\n${list}`;
 }
 
 const WHO = { user: "User", ai: "AI", rufi: "Rufi" } as const;

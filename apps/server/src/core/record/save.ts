@@ -1,27 +1,41 @@
 // A save to the record (docs/adr/0005): the AI's save_changes call, after
-// the user said yes in the chat. Every change is checked first; then the
-// save, each record's before and after, and nothing else, are written in the
-// caller's transaction, with the receipt built from what was written.
-// The same call again gives the same save; any problem saves nothing.
+// the user said yes in the chat. It holds typed changes the AI made from the
+// user's words, a document's draft items (items.ts), or both. Every one is
+// checked first; then the save, each record's before and after, its sources,
+// the items' outcome and nothing else are written in the caller's
+// transaction, with the receipt built from what was written. There is no
+// count limit: a big save is one transaction too. The same call again gives
+// the same save; any problem saves nothing.
+import type { Ref } from "@rufi/contracts";
 import { Schema } from "effect";
 import { sql, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
 import type { Tables } from "../store/tables.ts";
 import { isAfter, localTime, shownDate } from "./dates.ts";
+import { ItemSave, planItems, type Earlier } from "./items.ts";
+import { recordVersions } from "./read.ts";
 import {
+  columnsOf,
   KINDS,
   kindNamed,
+  literal,
   wordsColumn,
   type Field,
   type Kind,
   type Row,
 } from "./kinds.ts";
 
-/** Changes in one save at most; the tool's description says the same number. */
-export const CHANGES_MAX = 20;
-
-const ACTIONS = ["add", "change", "remove", "restore"] as const;
-type Action = (typeof ACTIONS)[number];
+/** What the AI can do to a record with a typed change. */
+const ACTIONS = [
+  "add",
+  "change",
+  "remove",
+  "restore",
+  "remove_source",
+] as const;
+type Asked = (typeof ACTIONS)[number];
+/** What a save did to a record, as its history keeps it. */
+type Action = "add" | "change" | "remove" | "restore" | "link" | "unlink";
 
 const Id = Schema.String.check(
   Schema.isTrimmed(),
@@ -56,6 +70,15 @@ function changeOf(kind: Kind) {
       description:
         "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one).",
     }),
+    from: Schema.optionalKey(
+      Schema.Struct({
+        document: Id,
+        page: Schema.Int.check(Schema.isGreaterThan(0)),
+      }).annotate({
+        description:
+          "remove_source only: the document page to take off the record's sources, as get_records lists it.",
+      }),
+    ),
     fields: Schema.optionalKey(
       Schema.Struct(fields).annotate({
         description:
@@ -64,9 +87,26 @@ function changeOf(kind: Kind) {
     ),
   }).check(
     Schema.makeFilter(
-      (change: { action: Action; id?: string; fields?: object }) => {
+      (change: {
+        action: Asked;
+        id?: string;
+        fields?: object;
+        from?: object;
+      }) => {
         const issues: Schema.FilterIssue[] = [];
         const given = change.fields ?? {};
+        if (
+          (change.action === "remove_source") !==
+          (change.from !== undefined)
+        ) {
+          issues.push({
+            path: ["from"],
+            issue:
+              change.action === "remove_source"
+                ? "Give from: the document page to take off."
+                : "Leave from out: it is only for remove_source.",
+          });
+        }
         if (change.action === "add") {
           if (change.id !== undefined) {
             issues.push({
@@ -100,7 +140,7 @@ function changeOf(kind: Kind) {
         if (change.action !== "change" && change.fields !== undefined) {
           issues.push({
             path: ["fields"],
-            issue: `Leave fields out: ${change.action === "remove" ? "removing" : "restoring"} changes no field.`,
+            issue: `Leave fields out: ${change.action === "remove" ? "removing" : change.action === "restore" ? "restoring" : "taking off a source"} changes no field.`,
           });
         }
         return issues;
@@ -109,14 +149,27 @@ function changeOf(kind: Kind) {
   );
 }
 
-/** save_changes' input. */
-export const Changes = Schema.Struct({
-  changes: Schema.Array(Schema.Union(KINDS.map(changeOf))).check(
-    Schema.isMinLength(1),
-    Schema.isMaxLength(CHANGES_MAX),
+/** save_changes' input: typed changes, draft items, or both; no count limit. */
+export const SaveInput = Schema.Struct({
+  changes: Schema.optionalKey(
+    Schema.Array(Schema.Union(KINDS.map(changeOf))).check(
+      Schema.isMinLength(1),
+    ),
   ),
-});
-export type Change = (typeof Changes.Type)["changes"][number];
+  items: Schema.optionalKey(
+    Schema.Array(ItemSave).check(Schema.isMinLength(1)).annotate({
+      description:
+        "Draft items of the user's documents to save, as get_documents gave them.",
+    }),
+  ),
+}).check(
+  Schema.makeFilter((input: { changes?: unknown; items?: unknown }) =>
+    input.changes === undefined && input.items === undefined
+      ? "Give changes, items, or both."
+      : undefined,
+  ),
+);
+export type SaveRequest = typeof SaveInput.Type;
 
 /** A problem with one part of the input, in words the AI can act on. */
 export interface Problem {
@@ -139,9 +192,11 @@ export interface Saved {
   id: string;
   /** The receipt as Markdown, from what was written. */
   receipt: string;
-  /** False when this call was saved before: nothing new was written. */
+  /** False when nothing new was written: the call was saved before, or every item was. */
   fresh: boolean;
   changes: { kind: string; action: Action; id: string }[];
+  /** Items saved before at the version named, with their earlier save. */
+  earlier: Earlier[];
 }
 
 interface Where {
@@ -150,14 +205,24 @@ interface Where {
   /** The agent's id for the call. */
   callId: string;
   now: string;
+  /** The references of the user's messages in this turn: still as they were. */
+  refs?: readonly Ref[];
 }
 
 /** A message of the user's a change rests on. */
-interface Source {
+export interface Source {
   id: string;
   text: string;
   /** When it was sent, in the Mac's local time. */
   local: string;
+}
+
+/** A page of a document a record rests on. */
+interface Page {
+  document: string;
+  page: number;
+  /** Its file's name. */
+  name: string;
 }
 
 /** Text compared as the words it shows: case, spacing and quote marks aside. */
@@ -187,9 +252,10 @@ const describe = (value: unknown) => {
 export async function saveChanges(
   trx: Transaction<Tables>,
   where: Where,
-  changes: readonly Change[],
+  input: SaveRequest,
 ): Promise<Saved> {
-  const request = JSON.stringify(changes);
+  const changes = input.changes ?? [];
+  const request = JSON.stringify(input);
   const earlier = await trx
     .selectFrom("operations")
     .select(["id", "request"])
@@ -230,7 +296,9 @@ export async function saveChanges(
   const problem = (path: string, got: unknown, fix: string) =>
     problems.push({ path, got: describe(got), fix });
   const planned: Planned[] = [];
-  const touched = new Map<string, number>();
+  /** Records the save changes, "kind:id", and the change that does. */
+  const touched = new Map<string, string>();
+  const pointed = (where.refs ?? []).filter((ref) => ref.type === "record");
 
   for (const [index, change] of changes.entries()) {
     const at = `changes.${String(index)}`;
@@ -255,11 +323,11 @@ export async function saveChanges(
         problem(
           `${at}.id`,
           id,
-          `changes.${String(other)} already changes this ${kind.noun}: make it one change.`,
+          `${other} already changes this ${kind.noun}: make it one change.`,
         );
         continue;
       }
-      touched.set(key, index);
+      touched.set(key, at);
       before = await recordOf(trx, kind, where.personId, id);
       const wrong = before
         ? stateProblem(kind, change.action, before)
@@ -268,6 +336,58 @@ export async function saveChanges(
         problem(`${at}.id`, id, wrong);
         continue;
       }
+      const asked = pointed.filter((r) => r.kind === kind.name && r.id === id);
+      if (asked.length > 0) {
+        const version = (
+          await recordVersions(trx, where.personId, [{ kind: kind.name, id }])
+        ).get(key);
+        if (asked.some((r) => r.version !== version)) {
+          problem(
+            `${at}.id`,
+            id,
+            `This ${kind.noun} changed since the user pointed at it: read it again, tell the user what changed and ask again.`,
+          );
+          continue;
+        }
+      }
+    }
+
+    if (change.action === "remove_source") {
+      const from = change.from as { document: string; page: number };
+      const linked = await trx
+        .selectFrom("record_sources as s")
+        .innerJoin("document_pages as p", (join) =>
+          join
+            .onRef("p.person_id", "=", "s.person_id")
+            .onRef("p.document_id", "=", "s.document_id")
+            .onRef("p.position", "=", "s.page"),
+        )
+        .select("p.file_name")
+        .where("s.person_id", "=", where.personId)
+        .where("s.kind", "=", kind.name)
+        .where("s.record_id", "=", change.id ?? "")
+        .where("s.document_id", "=", from.document)
+        .where("s.page", "=", from.page)
+        .where("s.removed_by", "is", null)
+        .executeTakeFirst();
+      if (!linked) {
+        problem(
+          `${at}.from`,
+          from,
+          `This page isn't one of the ${kind.noun}'s sources: read its sources with get_records.`,
+        );
+        continue;
+      }
+      planned.push({
+        kind,
+        action: "unlink",
+        id: change.id,
+        source,
+        page: { ...from, name: linked.file_name },
+        columns: {},
+        before,
+      });
+      continue;
     }
 
     const columns: Row =
@@ -303,7 +423,7 @@ export async function saveChanges(
             : "replaces is only for adding an amended result.";
         if (wrong) problem(path, value, wrong);
       }
-      Object.assign(columns, stored(field, value));
+      Object.assign(columns, columnsOf(field, value));
     }
 
     if (change.action === "add" && kind.asserted) {
@@ -331,11 +451,38 @@ export async function saveChanges(
       before,
     });
   }
+  const items =
+    input.items === undefined
+      ? { planned: [], earlier: [] }
+      : await planItems(
+          trx,
+          {
+            personId: where.personId,
+            now: where.now,
+            messageWith: sourceOf,
+            says: (source, words) => plain(source.text).includes(plain(words)),
+            refs: where.refs ?? [],
+            problem,
+            touched,
+          },
+          input.items,
+        );
+  planned.push(...items.planned);
   if (problems.length > 0) {
     throw new SaveRefused(
       "Nothing was saved. Fix these and save again.",
       problems,
     );
+  }
+  // Every item was saved before: nothing new to write.
+  if (planned.length === 0) {
+    return {
+      id: "",
+      receipt: "",
+      fresh: false,
+      changes: [],
+      earlier: items.earlier,
+    };
   }
 
   const id = uuid();
@@ -351,26 +498,38 @@ export async function saveChanges(
     })
     .execute();
   const written: Written[] = [];
-  for (const [index, change] of planned.entries()) {
-    const after = await write(trx, where, change);
-    written.push({
-      kind: change.kind,
-      action: change.action,
-      before: change.before ?? null,
-      after,
-    });
+  let seq = 0;
+  for (const change of planned) {
+    const done = await write(trx, where, id, change);
+    written.push(done);
+    if (done.item) {
+      await trx
+        .updateTable("draft_items")
+        .set({
+          status: "saved",
+          saved_as: done.item.as,
+          record_kind: change.kind.name,
+          record_id: String(done.after["id"]),
+          operation_id: id,
+        })
+        .where("person_id", "=", where.personId)
+        .where("id", "=", done.item.id)
+        .execute();
+    }
+    // A link that was there already changed nothing: no history.
+    if (done.already) continue;
     await trx
       .insertInto("record_changes")
       .values({
         operation_id: id,
-        seq: index + 1,
+        seq: ++seq,
         person_id: where.personId,
         kind: change.kind.name,
-        record_id: String(after["id"]),
+        record_id: String(done.after["id"]),
         action: change.action,
         before: change.before ? JSON.stringify(change.before) : null,
-        after: JSON.stringify(after),
-        source_entry_id: change.source.id,
+        after: JSON.stringify(done.after),
+        source_entry_id: change.source?.id ?? null,
       })
       .execute();
   }
@@ -391,16 +550,30 @@ export async function saveChanges(
       action: w.action,
       id: String(w.after["id"]),
     })),
+    earlier: items.earlier,
   };
 }
 
-interface Planned {
+/** One change to write, checked. */
+export interface Planned {
   kind: Kind;
   action: Action;
   id: string | undefined;
-  source: Source;
+  /** The user's message it rests on, when there is one. */
+  source: Source | undefined;
+  /** The document page it rests on, when there is one. */
+  page?: Page;
   columns: Row;
   before: Row | undefined;
+  /** The draft item it saves. */
+  item?: { id: string; as: "new" | "another_source" | "correction" };
+  /** The report a result from a document belongs to. */
+  report?: {
+    document: string;
+    issuer: string | null;
+    number: string | null;
+    collected: string | null;
+  };
 }
 
 interface Written {
@@ -408,6 +581,11 @@ interface Written {
   action: Action;
   before: Row | null;
   after: Row;
+  source: Source | undefined;
+  page: Page | undefined;
+  item: Planned["item"];
+  /** A link that was there already. */
+  already?: true;
 }
 
 /** A record of the person's, removed or not. */
@@ -425,12 +603,12 @@ async function recordOf(
 }
 
 /** Why the record can't take this action now. */
-function stateProblem(
-  kind: Kind,
-  action: Action,
-  row: Row,
-): string | undefined {
-  if (kind.name === "result" && row["report_id"] !== null) {
+function stateProblem(kind: Kind, action: Asked, row: Row): string | undefined {
+  if (
+    kind.name === "result" &&
+    row["report_id"] !== null &&
+    action === "change"
+  ) {
     return "This result was read from a document, so it changes only by amendment: add a new result with replaces set to this id.";
   }
   const removed = row["removed"] === 1;
@@ -441,6 +619,9 @@ function stateProblem(
     return `This ${kind.noun} is already removed.`;
   if (action === "restore" && !removed)
     return `This ${kind.noun} isn't removed.`;
+  if (action === "remove_source" && removed) {
+    return `This ${kind.noun} is removed: restore it first.`;
+  }
   return undefined;
 }
 
@@ -503,58 +684,152 @@ function dateSaid(field: Field, value: unknown): { words: string } | undefined {
     : undefined;
 }
 
-/** A field's value as its columns. */
-function stored(field: Field, value: unknown): Row {
-  switch (field.type) {
-    case "value":
-      return { [field.column]: value };
-    case "boolean":
-      return { [field.column]: value === null ? null : value ? 1 : 0 };
-    case "due":
-    case "date": {
-      // A due date is a date, or the next visit.
-      if (value === "next_visit") {
-        return { [field.column]: value, [wordsColumn(field)]: null };
-      }
-      const said = value as { date: string; words: string } | null;
-      return {
-        [field.column]: said?.date ?? null,
-        [wordsColumn(field)]: said?.words ?? null,
-      };
-    }
-    case "link": {
-      const link = value as { kind: string; id: string } | null;
-      return { linked_kind: link?.kind ?? null, linked_id: link?.id ?? null };
-    }
-  }
-}
-
-/** Writes one planned change; returns the record as stored now. */
+/**
+ * Writes one planned change with its sources, by save `operation`;
+ * returns what was written.
+ */
 async function write(
   trx: Transaction<Tables>,
   where: Where,
+  operation: string,
   change: Planned,
-): Promise<Row> {
+): Promise<Written> {
   const table = sql.table(change.kind.table);
-  const columns: Row = { ...change.columns, source_entry_id: change.source.id };
+  const columns: Row = { ...change.columns };
   let id = change.id ?? "";
-  if (change.action === "add") {
-    id = uuid();
-    Object.assign(columns, { id, person_id: where.personId });
-    if (change.kind.name === "result") columns["entered_at"] = where.now;
-    const names = Object.keys(columns);
-    await sql`INSERT INTO ${table} (${sql.join(names.map((name) => sql.ref(name)))}) VALUES (${sql.join(names.map((name) => columns[name]))})`.execute(
-      trx,
-    );
-  } else {
-    const sets = Object.entries(columns).map(
-      ([name, value]) => sql`${sql.ref(name)} = ${value}`,
-    );
-    await sql`UPDATE ${table} SET ${sql.join(sets)} WHERE person_id = ${where.personId} AND id = ${id}`.execute(
-      trx,
-    );
+  const sourced = (
+    type: "message" | "document_page",
+  ): Promise<{ id: string } | undefined> => {
+    let query = trx
+      .selectFrom("record_sources")
+      .select("record_id as id")
+      .where("person_id", "=", where.personId)
+      .where("kind", "=", change.kind.name)
+      .where("record_id", "=", id)
+      .where("removed_by", "is", null);
+    query =
+      type === "message"
+        ? query.where("entry_id", "=", change.source?.id ?? "")
+        : query
+            .where("document_id", "=", change.page?.document ?? "")
+            .where("page", "=", change.page?.page ?? 0);
+    return query.executeTakeFirst();
+  };
+  const addSource = async (type: "message" | "document_page") => {
+    if (await sourced(type)) return false;
+    await trx
+      .insertInto("record_sources")
+      .values({
+        person_id: where.personId,
+        kind: change.kind.name,
+        record_id: id,
+        type,
+        entry_id: type === "message" ? (change.source?.id ?? null) : null,
+        document_id:
+          type === "document_page" ? (change.page?.document ?? null) : null,
+        page: type === "document_page" ? (change.page?.page ?? null) : null,
+        operation_id: operation,
+        removed_by: null,
+      })
+      .execute();
+    return true;
+  };
+  let already = false;
+  switch (change.action) {
+    case "add": {
+      id = uuid();
+      Object.assign(columns, { id, person_id: where.personId });
+      if (change.kind.name === "result") columns["entered_at"] = where.now;
+      if (change.report) {
+        columns["report_id"] = await reportFor(
+          trx,
+          where.personId,
+          change.report,
+        );
+      }
+      const names = Object.keys(columns);
+      await sql`INSERT INTO ${table} (${sql.join(names.map((name) => sql.ref(name)))}) VALUES (${sql.join(names.map((name) => columns[name]))})`.execute(
+        trx,
+      );
+      break;
+    }
+    case "link":
+      already = !(await addSource("document_page"));
+      break;
+    case "unlink":
+      await trx
+        .updateTable("record_sources")
+        .set({ removed_by: operation })
+        .where("person_id", "=", where.personId)
+        .where("kind", "=", change.kind.name)
+        .where("record_id", "=", id)
+        .where("document_id", "=", change.page?.document ?? "")
+        .where("page", "=", change.page?.page ?? 0)
+        .where("removed_by", "is", null)
+        .execute();
+      break;
+    case "change":
+    case "remove":
+    case "restore": {
+      const sets = Object.entries(columns).map(
+        ([name, value]) => sql`${sql.ref(name)} = ${value}`,
+      );
+      await sql`UPDATE ${table} SET ${sql.join(sets)} WHERE person_id = ${where.personId} AND id = ${id}`.execute(
+        trx,
+      );
+    }
   }
-  return (await recordOf(trx, change.kind, where.personId, id)) as Row;
+  // What the values now rest on: the user's message, the document's page.
+  if (change.action === "add" || change.action === "change") {
+    if (change.source) await addSource("message");
+    if (change.page) await addSource("document_page");
+  }
+  return {
+    kind: change.kind,
+    action: change.action,
+    before: change.before ?? null,
+    after: (await recordOf(trx, change.kind, where.personId, id)) as Row,
+    source: change.source,
+    page: change.page,
+    item: change.item,
+    ...(already && { already: true as const }),
+  };
+}
+
+/**
+ * Reuse the person's report by its complete printed identity, across
+ * documents. An incomplete identity stays within its document.
+ */
+async function reportFor(
+  trx: Transaction<Tables>,
+  personId: string,
+  key: NonNullable<Planned["report"]>,
+): Promise<string> {
+  let query = trx
+    .selectFrom("reports")
+    .select("id")
+    .where("person_id", "=", personId)
+    .where("issuer", "is", key.issuer)
+    .where("report_number", "is", key.number)
+    .where("collected", "is", key.collected);
+  if (key.issuer === null || key.number === null || key.collected === null) {
+    query = query.where("document_id", "=", key.document);
+  }
+  const found = await query.executeTakeFirst();
+  if (found) return found.id;
+  const id = uuid();
+  await trx
+    .insertInto("reports")
+    .values({
+      id,
+      person_id: personId,
+      document_id: key.document,
+      issuer: key.issuer,
+      report_number: key.number,
+      collected: key.collected,
+    })
+    .execute();
+  return id;
 }
 
 /**
@@ -619,6 +894,7 @@ async function replay(
       action: row.action as Action,
       id: row.record_id,
     })),
+    earlier: [],
   };
 }
 
@@ -638,6 +914,13 @@ async function linksOf(
 ): Promise<Links> {
   const links: Links = new Map();
   for (const { before, after } of written) {
+    // An amended result names the one it replaces by its label.
+    const replaced = after["replaces_id"];
+    if (typeof replaced === "string") {
+      const result = kindNamed("result") as Kind;
+      const old = await recordOf(trx, result, personId, replaced);
+      if (old) links.set(linkKey("replaces", replaced), result.label(old));
+    }
     for (const row of [before, after]) {
       const kind = row && kindNamed(String(row["linked_kind"]));
       if (!row || !kind) continue;
@@ -687,6 +970,9 @@ function shownField(field: Field, row: Row, links: Links): string | undefined {
         `${kindNamed(String(row["linked_kind"]))?.noun ?? "record"} ${value as string}`
       );
     case "value":
+      if (field.column === "replaces_id") {
+        return links.get(linkKey("replaces", value)) ?? (value as string);
+      }
       return typeof value === "number" ? String(value) : (value as string);
   }
 }
@@ -712,27 +998,49 @@ function apart(then: string, now: string): [string, string] {
   return [tail(then), tail(now)];
 }
 
-/**
- * A value as literal Markdown text: on one line, and with every mark that
- * could format it, link it or hide it as HTML escaped.
- */
-const literal = (text: string) =>
-  text.replace(/\s*\n\s*/g, " ").replace(/[\\`*_[\]<>~|&!#]/g, "\\$&");
+const plural = (n: number, one: string, many = `${one}s`) =>
+  `${String(n)} ${n === 1 ? one : many}`;
 
 /**
  * The receipt for a save, from the records as written: a "Saved" heading,
  * then one line per change in Markdown, with the record's name in bold and
- * each value in italics. Every value is literal text.
+ * each value in italics. Every value is literal text. A save of draft items
+ * starts with a summary ("Saved 42 results from …") and each line says
+ * the page it came from; the screens fold a long list under the summary.
  */
 function receiptText(written: readonly Written[], links: Links): string {
   const value = (text: string) =>
     text === "not given" ? text : `*${literal(text)}*`;
-  const lines = written.map(({ kind, action, before, after }) => {
+  const documents = [
+    ...new Map(
+      written.flatMap((w) => (w.page ? [[w.page.document, w.page.name]] : [])),
+    ).values(),
+  ];
+  /** Where a line's record came from: the page, and the user's message. */
+  const from = ({ page, source, item }: Written) => {
+    if (!page || !item) return "";
+    const where =
+      documents.length === 1
+        ? `page ${String(page.page)}`
+        : `${page.name}, page ${String(page.page)}`;
+    return ` · ${literal(where)}${source ? ", and your message" : ""}`;
+  };
+  const lines = written.map((w) => {
+    const { kind, action, before, after } = w;
     // A statement's label says what it is: "no known allergies (as of …)".
     const name =
       kind.name === "none_known"
         ? `**${literal(kind.label(after))}**`
         : `${kind.noun} **${literal(kind.label(after))}**`;
+    if (action === "link" || action === "unlink") {
+      const page = value(
+        `${w.page?.name ?? "a document"}, page ${String(w.page?.page ?? "")}`,
+      );
+      if (w.already) return `- The ${name} already had ${page} as a source`;
+      return action === "link"
+        ? `- Added a source to ${name}: ${page} (its values stay as they are)`
+        : `- Took a source off ${name}: ${page} (its values stay as they are)`;
+    }
     const verb = {
       add: "Added",
       change: "Changed",
@@ -771,7 +1079,22 @@ function receiptText(written: readonly Written[], links: Links): string {
       details.length > 0
         ? `: ${details.join(action === "add" ? ", " : "; ")}`
         : "";
-    return `- ${verb} ${name}${said}`;
+    return `- ${verb} ${name}${said}${from(w)}`;
   });
-  return `**Saved**\n\n${lines.join("\n")}`;
+  const items = written.filter((w) => w.item);
+  if (items.length === 0) return `**Saved**\n\n${lines.join("\n")}`;
+  const count = (as: string) => items.filter((w) => w.item?.as === as).length;
+  const others = written.length - items.length;
+  const parts = [
+    count("new") > 0 && `${String(count("new"))} new`,
+    count("another_source") > 0 &&
+      plural(count("another_source"), "more source", "more sources"),
+    count("correction") > 0 && plural(count("correction"), "correction"),
+    others > 0 && plural(others, "other change"),
+  ].filter((part) => part !== false);
+  const what =
+    documents.length === 1
+      ? literal(documents[0] ?? "")
+      : `${String(documents.length)} documents`;
+  return `**Saved ${plural(items.length, "result")}** from ${what} · ${parts.join(" · ")}\n\n${lines.join("\n")}`;
 }

@@ -24,6 +24,7 @@ import type { Entry, Read, Turn } from "@rufi/contracts";
 import type { StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/shallow";
+import { ChipView } from "./chips.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import type { Live } from "./live.ts";
 import { RetryButton } from "./reading.tsx";
@@ -428,6 +429,18 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
       {entry.kind === "steer" && (
         <p className="text-xs text-accent-ink">Steer</p>
       )}
+      {entry.refs && entry.refs.length > 0 && (
+        <ul
+          aria-label="Added to this message"
+          className="mb-1 flex flex-wrap gap-1.5"
+        >
+          {entry.refs.map(({ ref, label, detail }) => (
+            <li key={`${ref.type}:${ref.id}`} className="max-w-full">
+              <ChipView chip={{ pointer: ref, label, detail }} />
+            </li>
+          ))}
+        </ul>
+      )}
       <p className="break-words whitespace-pre-wrap">{entry.text}</p>
     </div>
   ) : entry.kind === "receipt" ? (
@@ -438,9 +451,7 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
       className="flex items-start gap-1.5 rounded-lg border border-line bg-side px-3 py-2"
     >
       <Check size={14} className="mt-1 shrink-0 text-accent-ink" aria-hidden />
-      <div className="receipt min-w-0 break-words">
-        <Marked text={entry.text} links={false} />
-      </div>
+      <Receipt text={entry.text} />
     </div>
   ) : entry.kind === "event" ? (
     // Rufi's own line about something that happened: never your words.
@@ -477,6 +488,38 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
     </p>
   ) : (
     <Reply id={id} text={entry.text} streaming={streaming} />
+  );
+}
+
+/** A receipt longer than this many lines shows its summary, its list folded. */
+const RECEIPT_LINES = 5;
+
+/**
+ * Rufi's receipt: its heading and its lines. A big save's summary shows,
+ * and its list folds under "Show what was saved".
+ */
+function Receipt({ text }: { text: string }) {
+  const [head = "", ...rest] = text.split("\n\n");
+  const list = rest.join("\n\n");
+  const long = list.split("\n").length > RECEIPT_LINES;
+  return (
+    <div className="receipt min-w-0 flex-1 break-words">
+      {long ? (
+        <>
+          <Marked text={head} links={false} />
+          <details>
+            <summary className="w-fit cursor-pointer text-[13px] text-accent-ink">
+              {head.startsWith("**Dismissed")
+                ? "Show the items"
+                : "Show what was saved"}
+            </summary>
+            <Marked text={list} links={false} />
+          </details>
+        </>
+      ) : (
+        <Marked text={text} links={false} />
+      )}
+    </div>
   );
 }
 

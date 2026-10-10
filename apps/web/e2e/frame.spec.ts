@@ -489,7 +489,9 @@ test.describe("Overview", () => {
     await expect(row("TSH amended")).toContainText("4.6 mIU/L");
     // A partial date stays partial; no date stays empty.
     await expect(row("Vitamin D")).toContainText("May 2026");
-    await expect(row("Blood group")).toHaveText("Blood groupB positive");
+    await expect(row("Blood group")).toHaveText(
+      "Blood groupB positive+ Add to chat",
+    );
     await expect(page.getByText(/Showing the newest/)).toHaveCount(0);
   });
 
