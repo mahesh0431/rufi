@@ -35,19 +35,19 @@ If one of the files isn't a PDF, JPEG, PNG or HEIC photo, is damaged, or is a PD
 
 The Documents page lists everything you added, newest first:
 
-| Column   | What it shows                                                             |
-| -------- | ------------------------------------------------------------------------- |
-| Document | The file's name as you added it, and its pages or how many more photos    |
-| Kind     | A lab report, prescription, letter or other; empty until Rufi reads it    |
-| Date     | The document's date; empty until Rufi reads it                            |
-| Added    | The day you added it                                                      |
-| Status   | How its reading went (see below), with **Read it**, **Retry** or **Open** |
+| Column   | What it shows                                                          |
+| -------- | ---------------------------------------------------------------------- |
+| Document | The file's name as you added it, and its pages or how many more photos |
+| Kind     | A lab report, prescription, letter or other; empty until Rufi reads it |
+| Date     | The document's date; empty until Rufi reads it                         |
+| Added    | The day you added it                                                   |
+| Status   | How its reading went (see below), with **Retry** or **Open**           |
 
 To show one kind only, choose it in the list at the top left.
 
 | Status              | What it means                                                            |
 | ------------------- | ------------------------------------------------------------------------ |
-| **Not read yet**    | Rufi hasn't read it: it waits for your yes, or for **Read it**           |
+| **Not read yet**    | Never read (added before Rufi read each document); **Retry** reads it    |
 | **Reading**         | Rufi reads it now, or it waits its turn; it shows the pages saved so far |
 | **To check**        | Results wait for you to check, or a page needs **Retry**                 |
 | **Nothing to save** | Read, and no results were found (a letter, for example)                  |
@@ -57,14 +57,13 @@ To show one kind only, choose it in the list at the top left.
 
 Rufi's reader is an AI that reads one document at a time, page by page, in the background. It copies what each page says: every result exactly as printed (`<5` stays `<5`), with its unit, range and the lab's own flag, and the dates, lab and name printed on the page. It doesn't judge your results and it saves nothing to your record. It sees only that document's pages: not your record, your chat, other documents or the internet.
 
-### Your yes, once
+Rufi reads each document as soon as you add it. It sends the document's pages to the AI you signed in with (your ChatGPT plan) to read them. The first run tells you this once.
 
-Before the reader reads anything, Rufi asks once: **Read … with the AI?** It sends a document's pages to the AI you signed in with (your ChatGPT plan) to read them. The question shows above the chat box and on the Documents page.
+### The reader's model and effort
 
-- **Read it**: Rufi reads the documents that wait, and every document you add after this.
-- **Not now**: nothing is sent. Your documents show **Not read yet**; click **Read it** next to one to be asked again.
+In **Settings** → **Documents**, choose the **Reader model** and its **Effort**: **Low** (the start), **Medium** or **High**. Higher effort thinks longer on each page, and uses more of your plan. Today the reader can run on one model only, GPT-5.5, because it is the one model where Rufi can lock the reader down to its two tools.
 
-To change your answer later, go to **Settings** → **Documents** → **Read documents with the AI**. Off: nothing new is read; a reading that runs finishes. On again: the documents that waited keep their own **Read it**.
+Your choice is used by the next reading that starts. A reading that runs keeps the model and effort it started with; if it stops and goes on later (after Rufi restarts, or with **Retry**), it goes on with the ones chosen then.
 
 ### While a document is read
 

@@ -45,7 +45,7 @@ Rufi keeps the drawn PDF pages in `cache/` and draws a page again when its copy 
 
 ## Reading your documents
 
-Rufi reads each document you add with its own reader (see [Documents](documents.md#how-rufi-reads-a-document)), only after your yes. Being signed in isn't that yes: Rufi asks once, and **Settings** → **Documents** → **Read documents with the AI** changes it. Nothing goes to any other service, and when the AI can't be reached, Rufi doesn't fall back to another one: the reading waits or fails, and says so.
+Rufi reads each document you add with its own reader, as soon as you add it (see [Documents](documents.md#how-rufi-reads-a-document)). Nothing goes to any other service, and when the AI can't be reached, Rufi doesn't fall back to another one: the reading waits or fails, and says so.
 
 The reader sends the document's pages to the AI service you signed in with, the same way as above. It is a separate AI that Rufi starts for that one document:
 

@@ -18,7 +18,7 @@ export const Menus = createContext<RefObject<HTMLDivElement | null> | null>(
   null,
 );
 
-const EFFORTS: readonly { id: Effort; name: string }[] = [
+export const EFFORTS: readonly { id: Effort; name: string }[] = [
   { id: "low", name: "Low" },
   { id: "medium", name: "Medium" },
   { id: "high", name: "High" },

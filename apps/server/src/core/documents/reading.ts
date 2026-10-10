@@ -6,27 +6,13 @@
 // line: page states, the draft items from this job's entries, the
 // document's kind, date and version, and the job done. A failed job keeps
 // its entries and makes no drafts; Retry continues it. Nothing here writes
-// the record. Rufi reads documents only after the person's yes.
+// the record. Rufi reads each document as it is added.
 import type { Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 import { Refusal } from "../tools/registry.ts";
 import type { Checks, Entry, Run } from "./notebook.ts";
-
-/** The setting that holds the person's yes: "yes" or "no"; none: not asked yet. */
-const CONSENT = "read_documents";
-
-export type Consent = "yes" | "no" | null;
-
-/** No yes yet: nothing is sent to the AI. */
-export class NeedsYes extends Error {
-  constructor() {
-    super(
-      "Rufi needs your yes before it sends a document's pages to the AI to read them.",
-    );
-  }
-}
 
 export interface Job {
   id: string;
@@ -155,22 +141,6 @@ export function readings(
     for (const listener of listeners.get(personId) ?? []) listener();
     for (const watcher of watchers) watcher();
   };
-
-  const consent = async (): Promise<Consent> => {
-    const row = await db
-      .selectFrom("settings")
-      .select("value")
-      .where("key", "=", CONSENT)
-      .executeTakeFirst();
-    return row?.value === "yes" || row?.value === "no" ? row.value : null;
-  };
-
-  const saveConsent = (trx: Trx, value: "yes" | "no") =>
-    trx
-      .insertInto("settings")
-      .values({ key: CONSENT, value })
-      .onConflict((oc) => oc.column("key").doUpdateSet({ value }))
-      .execute();
 
   /** Queues a reading of `targets` of the document. */
   const queueIn = async (
@@ -445,7 +415,6 @@ export function readings(
       .execute();
 
   return {
-    consent,
     changed,
 
     /** Listens to every change: the reader looks for work. */
@@ -463,14 +432,8 @@ export function readings(
       };
     },
 
-    /** Queues a reading of every page, inside an add's transaction, after the yes. */
+    /** Queues a reading of every page, inside an add's transaction. */
     queueNew: async (trx: Trx, personId: string, documentId: string) => {
-      const row = await trx
-        .selectFrom("settings")
-        .select("value")
-        .where("key", "=", CONSENT)
-        .executeTakeFirst();
-      if (row?.value !== "yes") return;
       await queueIn(
         trx,
         personId,
@@ -480,79 +443,11 @@ export function readings(
     },
 
     /**
-     * The person's yes or no. A no stops what hasn't started: those
-     * documents are not read yet again; a running reading finishes.
-     */
-    setConsent: async (value: "yes" | "no") => {
-      const stopped = await db.transaction().execute(async (trx) => {
-        await saveConsent(trx, value);
-        if (value === "yes") return [];
-        return trx
-          .deleteFrom("jobs")
-          .where("state", "=", "queued")
-          .where("attempt", "=", 0)
-          .returning("person_id")
-          .execute();
-      });
-      for (const { person_id } of stopped) changed(person_id);
-    },
-
-    /**
-     * Reads documents never read: `documentId`, or all of the person's.
-     * `yes`: the person said yes just now. Without a yes: NeedsYes.
-     */
-    readIt: async (
-      personId: string,
-      documentId: string | undefined,
-      yes: boolean,
-    ) => {
-      const queued = await db.transaction().execute(async (trx) => {
-        if (yes) await saveConsent(trx, "yes");
-        else {
-          const row = await trx
-            .selectFrom("settings")
-            .select("value")
-            .where("key", "=", CONSENT)
-            .executeTakeFirst();
-          if (row?.value !== "yes") throw new NeedsYes();
-        }
-        let query = trx
-          .selectFrom("documents as d")
-          .select("d.id")
-          .where("d.person_id", "=", personId)
-          .where((eb) =>
-            eb.not(
-              eb.exists(
-                eb
-                  .selectFrom("jobs as j")
-                  .select("j.id")
-                  .whereRef("j.person_id", "=", "d.person_id")
-                  .whereRef("j.document_id", "=", "d.id"),
-              ),
-            ),
-          );
-        if (documentId !== undefined)
-          query = query.where("d.id", "=", documentId);
-        const unread = await query.execute();
-        if (documentId !== undefined && unread.length === 0) {
-          throw new Refusal(
-            "This document is already read or being read. Use Retry for pages that failed.",
-          );
-        }
-        for (const { id } of unread) {
-          await queueIn(trx, personId, id, await positions(trx, personId, id));
-        }
-        return unread.length;
-      });
-      changed(personId);
-      return queued;
-    },
-
-    /**
      * Reads again what failed: a failed reading continues where it stopped
      * (with a fresh deadline); a finished one reads its unreadable and
      * not-looked-at pages in a new job, which never touches the drafts
-     * already made. Returns the pages it will read.
+     * already made; one never read is read in full. Returns the pages it
+     * will read.
      */
     retry: async (personId: string, documentId: string) => {
       const targets = await db.transaction().execute(async (trx) => {
@@ -566,7 +461,10 @@ export function readings(
           throw new Refusal("There is no such document for this person.");
         const job = await latestJob(trx, personId, documentId);
         if (!job) {
-          throw new Refusal("This document isn't read yet: use Read it.");
+          // Never read (added before Rufi read each document as it came).
+          const all = await positions(trx, personId, documentId);
+          await queueIn(trx, personId, documentId, all);
+          return all;
         }
         if (job.state === "queued" || job.state === "running") {
           throw new Refusal("This document is being read now.");
@@ -620,7 +518,7 @@ export function readings(
     },
 
     /**
-     * The next reading to run, oldest first: none without the yes. A job
+     * The next reading to run, oldest first. A job
      * waiting for a usage limit waits until its time; `wake` is the
      * earliest such time.
      */
@@ -628,8 +526,6 @@ export function readings(
       job: Job | undefined;
       wake: string | undefined;
     }> => {
-      if ((await consent()) !== "yes")
-        return { job: undefined, wake: undefined };
       const rows = await db
         .selectFrom("jobs")
         .selectAll()
@@ -903,7 +799,6 @@ export function readings(
         .orderBy("created_at")
         .orderBy("id")
         .execute();
-      const off = (await consent()) !== "yes";
       const list = [];
       for (const row of jobs) {
         const job = jobOf(row);
@@ -921,10 +816,7 @@ export function readings(
             job.state === "running"
               ? ("running" as const)
               : ("waiting" as const),
-          waiting:
-            off && job.state === "queued"
-              ? ("turned_off" as const)
-              : job.waiting,
+          waiting: job.waiting,
           waitUntil: job.waitUntil,
           again: job.state === "running" ? job.attempt > 1 : job.attempt > 0,
           saved: pages.filter(

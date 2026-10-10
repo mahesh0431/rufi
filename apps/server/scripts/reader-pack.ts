@@ -27,7 +27,7 @@ import { databasePath, openWritable } from "../src/core/store/database.ts";
 import { childEnvironment, rufiHome } from "../src/platform/config.ts";
 import { Secrets, secretsLayer } from "../src/platform/keychain.ts";
 import { diagnostics } from "../src/platform/logs.ts";
-import { reader } from "../src/server/reader.ts";
+import { reader, readerChoice } from "../src/server/reader.ts";
 import { drawn, photo, scan } from "../tests/pack/images.ts";
 import { scanPdf, textPdf } from "../tests/pack/pdf.ts";
 import {
@@ -192,7 +192,6 @@ const transcripts = openTranscripts(store);
 const person = await transcripts.addFirstPerson("Asha Fictional");
 const personId = person?.id ?? "";
 const reads = readings(store);
-await reads.setConsent("yes");
 const docs = documents(store, home, undefined, reads);
 const { version } = createRequire(import.meta.url)("../package.json") as {
   version: string;
@@ -216,6 +215,7 @@ const running = reader({
     log,
   }),
   signedIn: () => Promise.resolve(true),
+  choice: () => readerChoice(transcripts.setting),
   log,
 });
 

@@ -27,12 +27,7 @@ import type { BoxChip } from "./draft.ts";
 import { messageOf, retain } from "./live.ts";
 import { useShowChat } from "./panel.ts";
 import { queries, useDocuments } from "./reads.ts";
-import {
-  openReading,
-  ReadItButton,
-  RetryButton,
-  TextButton,
-} from "./reading.tsx";
+import { openReading, RetryButton, TextButton } from "./reading.tsx";
 import { Button, Problem } from "./ui.tsx";
 
 const documentPath = (personId: string, documentId: string) =>
@@ -170,10 +165,8 @@ function Checking({
             you save them in the chat.
           </p>
         </div>
-        {document.status === "not_read" && (
-          <ReadItButton personId={person.id} document={document} />
-        )}
-        {document.reading?.canRetry === true && (
+        {(document.status === "not_read" ||
+          document.reading?.canRetry === true) && (
           <RetryButton personId={person.id} documentId={document.id} />
         )}
         <Button

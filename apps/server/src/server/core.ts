@@ -38,7 +38,7 @@ import { holdRufiLock, readJson, writePrivateJson } from "../platform/files.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { api, LAUNCHER_HEADER } from "./api.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
-import { reader as openReader } from "./reader.ts";
+import { reader as openReader, readerChoice } from "./reader.ts";
 import { secret, sessions } from "./session.ts";
 import { signInFlow, type SignIn } from "./signin.ts";
 
@@ -209,6 +209,7 @@ export const startCore = (options: CoreOptions) =>
           event: chat.event,
           run: options.reader,
           signedIn: async () => (await account()).account === "signed_in",
+          choice: () => readerChoice(transcripts.setting),
           log,
         });
         readings.watch(opened.poke);

@@ -101,14 +101,12 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   ]);
   await accessible(page);
 
-  // The panel: the chat's name, and what goes to OpenAI before the first message.
+  // The panel: the chat's name; before the first message, nothing more.
   await box(chat(page)).click();
   await expect(
     chat(page).getByRole("heading", { name: "Chat with Rufi" }),
   ).toBeVisible();
-  await expect(chat(page)).toContainText(
-    "What you send, and the parts of your record the AI reads to answer, go to OpenAI",
-  );
+  await expect(chat(page)).not.toContainText("go to OpenAI");
   await accessible(page);
   // Under the box, only the reminder: the plan is in Settings.
   await expect(chat(page).getByText(/AI can make mistakes/)).toHaveText(

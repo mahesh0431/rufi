@@ -464,7 +464,7 @@ const testEvent = (core: Core, line: string, ask: string) =>
   core.chat.event("asha", { kind: "test", line, ask });
 
 /**
- * Adds a fictional report as a document (with the yes to read it), waits
+ * Adds a fictional report as a document (Rufi reads it at once), waits
  * for its reading to end, and gives the document's id.
  */
 async function readReport(
@@ -474,7 +474,6 @@ async function readReport(
   name: string,
 ): Promise<string> {
   const c = chat(api);
-  await api("PUT", "/api/settings", { readDocuments: "yes" });
   const found = REPORTS[report];
   if (!found) throw new Error(`no fictional report ${report}`);
   await api.upload([{ name, bytes: textPdf(layout(found)) }]);
@@ -1191,7 +1190,6 @@ const CASES: Record<
    */
   reading_while_chatting: async (api, home) => {
     const c = chat(api);
-    await api("PUT", "/api/settings", { readDocuments: "yes" });
     const other = REPORTS["other_name"];
     if (!other) throw new Error("no fictional report");
     await api.upload([

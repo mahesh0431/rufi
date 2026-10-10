@@ -345,11 +345,12 @@ export const Settings = Schema.Struct({
   ),
   /** The regions Rufi knows, to choose from. */
   regions: Schema.Array(Region),
-  /**
-   * The person's yes to send a document's pages to the AI to read them:
-   * yes, no, or null when not asked yet.
-   */
-  readDocuments: Schema.NullOr(Schema.Literals(["yes", "no"])),
+  /** The document reader's model and effort, and the models it can run on. */
+  reader: Schema.Struct({
+    model: Schema.String,
+    effort: Effort,
+    models: Schema.Array(Model),
+  }),
 });
 export type Settings = typeof Settings.Type;
 
@@ -427,8 +428,9 @@ export const SaveSettings = Schema.Struct({
   appearance: Schema.optionalKey(Appearance),
   /** A region code Rufi knows, such as "IN"; null clears it. */
   emergencyRegion: Schema.optionalKey(Schema.NullOr(Line(10))),
-  /** Read documents with the AI, or not. */
-  readDocuments: Schema.optionalKey(Schema.Literals(["yes", "no"])),
+  /** The document reader's model: one of the models it can run on. */
+  readerModel: Schema.optionalKey(Id),
+  readerEffort: Schema.optionalKey(Effort),
 });
 
 const Message = Schema.String.check(

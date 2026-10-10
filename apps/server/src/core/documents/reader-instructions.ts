@@ -6,14 +6,18 @@ import { Schema } from "effect";
 import { ranges } from "./reading.ts";
 import { Entry } from "./notebook.ts";
 
-/** The reader's model: the one route where Codex adds no tools of its own. */
+/**
+ * The reader's model until one is chosen in Settings: the one route where
+ * Codex adds no tools of its own.
+ */
 export const READER_MODEL = "gpt-5.5";
 
 /**
- * How hard the reader thinks: low, as copying what is printed needs care,
- * not reasoning. The test pack measures it against the bar.
+ * How hard the reader thinks until one is chosen in Settings: low, as
+ * copying what is printed needs care, not reasoning. The test pack
+ * measures it against the bar.
  */
-export const READER_EFFORT = "low";
+export const READER_EFFORT = "low" as const;
 
 export const READER_INSTRUCTIONS = `You are Rufi's document reader. You read one document that a person added to Rufi, their personal health record, and you write what each page says into your notebook. You only copy what is printed. You never interpret results, give advice, or decide anything about the person's health.
 
@@ -66,7 +70,8 @@ const hash = (value: string) =>
 
 /**
  * The reader version stored with a reading: its instructions, entry format,
- * model and effort, page preparation and tools.
+ * model and effort (the defaults; a run stores the ones it used), page
+ * preparation and tools.
  */
 export const READER_VERSION = {
   instructions: hash(READER_INSTRUCTIONS),

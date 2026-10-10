@@ -55,7 +55,7 @@ export function documents(
   store: Store,
   home: string,
   now: () => string = () => new Date().toISOString(),
-  /** Reads what is added, after the person's yes; nothing is read without it. */
+  /** Reads what is added. */
   reads?: Readings,
 ) {
   const db = store.query;
