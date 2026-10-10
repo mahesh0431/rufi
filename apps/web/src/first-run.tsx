@@ -73,8 +73,9 @@ function Welcome() {
   return (
     <Step title="Welcome to Rufi">
       <p>
-        What you ask, and the parts of your record the AI reads to answer, are
-        sent to the AI in the cloud. Your record is kept on your Mac.
+        Rufi uses AI. What you ask, the documents you add and the parts of your
+        record the AI reads go to the AI provider you sign in with. Your record
+        is kept on your Mac.
       </p>
       <label className="flex items-center gap-2">
         <input

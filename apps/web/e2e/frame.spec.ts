@@ -265,7 +265,7 @@ test.describe("first run", () => {
     ).toBeVisible();
     await welcoming();
     await expect(page.getByRole("main")).toContainText(
-      "What you ask, and the parts of your record the AI reads to answer, are sent to the AI in the cloud. Your record is kept on your Mac.",
+      "Rufi uses AI. What you ask, the documents you add and the parts of your record the AI reads go to the AI provider you sign in with. Your record is kept on your Mac.",
     );
     await accessible(page);
     // The look can be chosen here too, and stays chosen.
@@ -446,6 +446,21 @@ test.describe("sign-in status", () => {
       sidebar(page).getByRole("link", { name: "Settings" }),
     ).toBeVisible();
     await expect(sidebar(page)).not.toContainText(/signed in|ChatGPT/);
+
+    // Settings says which plan the AI uses, first, with its usage page.
+    await sidebar(page).getByRole("link", { name: "Settings" }).click();
+    await expect(page.getByRole("heading", { level: 2 }).first()).toHaveText(
+      "ChatGPT plan",
+    );
+    await expect(page.getByRole("main")).toContainText(
+      "Rufi's AI uses your ChatGPT plan (asha@example.com). Manage usage",
+    );
+    const usage = page.getByRole("link", { name: "Manage usage" });
+    await expect(usage).toHaveAttribute(
+      "href",
+      "https://chatgpt.com/codex/settings/usage",
+    );
+    await expect(usage).toHaveAttribute("target", "_blank");
   });
 
   test("signed out links to signing in", async ({ page, rufi }) => {
@@ -461,6 +476,21 @@ test.describe("sign-in status", () => {
       page.getByRole("button", { name: "Sign in with ChatGPT" }),
     ).toBeVisible();
     await accessible(page);
+
+    // Settings says so too, and signs in the same way.
+    await sidebar(page).getByRole("link", { name: "Settings" }).click();
+    await expect(page.getByRole("main")).toContainText(
+      "Not signed in. Rufi's AI needs your ChatGPT plan to answer. Sign in",
+    );
+    await expect(page.getByRole("main")).not.toContainText("Manage usage");
+    await accessible(page);
+    await page
+      .getByRole("main")
+      .getByRole("link", { name: "Sign in", exact: true })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Sign in with ChatGPT" }),
+    ).toBeVisible();
   });
 
   test("signed in, but the plan can't be used", async ({ page, rufi }) => {
@@ -471,6 +501,13 @@ test.describe("sign-in status", () => {
     await expect(
       sidebar(page).getByRole("link", { name: "ChatGPT plan can't be used" }),
     ).toBeVisible();
+    await sidebar(page).getByRole("link", { name: "Settings" }).click();
+    await expect(page.getByRole("main")).toContainText(
+      "You are signed in, but ChatGPT plan use isn't allowed for Rufi. Sign in again",
+    );
+    await expect(
+      page.getByRole("main").getByRole("link", { name: "Sign in again" }),
+    ).toHaveAttribute("href", "/sign-in");
   });
 });
 
@@ -690,6 +727,7 @@ test("Settings backs up, says when a backup failed, and exports your data", asyn
   }
   await page.getByRole("button", { name: "Back up now" }).click();
   await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByRole("status")).toHaveText("Backed up just now.");
 
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export my data" }).click();
@@ -697,9 +735,9 @@ test("Settings backs up, says when a backup failed, and exports your data", asyn
   expect(file.suggestedFilename()).toMatch(
     /^rufi-export-\d{4}-\d{2}-\d{2}\.zip$/,
   );
-  await expect(page.getByRole("status")).toHaveText(
-    `Exported ${file.suggestedFilename()}.`,
-  );
+  await expect(
+    page.getByRole("status").filter({ hasText: "Exported" }),
+  ).toHaveText("Exported your data as a zip.");
 });
 
 test("an export that doesn't come in time says so, and can be tried again", async ({

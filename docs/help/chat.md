@@ -6,7 +6,7 @@ The chat is where you talk with Rufi's AI about your record. You have one chat w
 
 The chat bar is the box at the bottom right of the Overview. It says "Ask or tell Rufi about" and your name, and shows the model and effort that answer, such as "GPT-6-Astra Medium". It is your chat, the same as the panel and the page, and the same in every browser tab. Help and Settings have no chat bar: to talk to Rufi from there, click **Chat with Rufi** in the sidebar.
 
-Under the box, in every size of the chat, "AI can make mistakes. Check important info." reminds you to check what the AI says. When you are signed in, "Using ChatGPT plan" comes before it, and **Manage usage** opens your ChatGPT plan's usage page in your browser.
+Under the box, in every size of the chat, "AI can make mistakes. Check important info." reminds you to check what the AI says. To see the ChatGPT plan the AI uses, and its usage, open **Settings** › **ChatGPT plan** (see [Signing in with ChatGPT](signing-in.md#your-plan-in-settings)).
 
 ## The chat panel
 
@@ -23,8 +23,6 @@ Press ⌘J again, or click anywhere outside the panel, to close it. What you typ
 ## The chat page
 
 Click **Chat with Rufi** in the sidebar, on any page, to open your chat as a page. The page shows the same chat as the panel, with the same box. In a small window, the chat opens as a page instead of the panel.
-
-Before your first message, the chat says what goes to OpenAI. See [Your data and the AI](your-data-and-the-ai.md).
 
 ## Reading back
 
@@ -118,7 +116,7 @@ The AI can save medicines you take, prescriptions, symptoms, conditions, allergi
 
 What Rufi does when it saves:
 
-- **Only what you said.** A detail you didn't give stays unknown. A date is saved only when you gave one, at the precision you gave it: "since 2019" stays a year. Rufi keeps your words for the date, such as "last Monday", and counts them from when you sent the message, not from when you said yes.
+- **Only what you said.** A detail you didn't give stays unknown. A date is saved only when you gave one, at the precision you gave it: "since 2019" stays a year. Rufi keeps your words for the date, such as "last Monday", and counts them from when you sent the message, not from when you said yes. A result always needs a date: when a report has none, the AI asks you for one, and a rough date is fine (see [Save results to your record](documents.md#save-results-to-your-record)).
 - **All or nothing.** When one part can't be saved, nothing is saved, and the AI tells you why.
 - **Nothing is deleted.** A record you remove leaves your current record, and Rufi keeps its history.
 - **One medicine, one use.** When you take a medicine in two ways, such as a morning and a night dose, stopping one doesn't stop the other. A prescription doesn't add a medicine you take.

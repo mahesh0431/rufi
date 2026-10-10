@@ -37,7 +37,7 @@ export const DocumentSummary = Schema.Struct({
   kind: Schema.NullOr(DocumentKind),
   /** The document's date as read, at its precision; null until read. */
   date: Schema.NullOr(Schema.String),
-  /** not_read: no reading yet (it waits for the person's yes, or Read it). */
+  /** not_read: never read (added before Rufi read each document as it came); Retry reads it. */
   status: Schema.Literals(["not_read", "reading", "done", "failed"]),
   /** The latest reading: pages saved of those it reads, and its drafts. */
   reading: Schema.NullOr(
@@ -77,9 +77,6 @@ export const Added = Schema.Struct({
 });
 export type Added = typeof Added.Type;
 
-/** "Read it": `yes` when the person said yes just now. */
-export const ReadIt = Schema.Struct({ yes: Schema.Boolean });
-
 /** A reading that waits or runs, for the strip above the chat box. */
 export const ReadingNow = Schema.Struct({
   documentId: Schema.String,
@@ -87,9 +84,7 @@ export const ReadingNow = Schema.Struct({
   name: Schema.String,
   state: Schema.Literals(["running", "waiting"]),
   /** What a waiting reading waits for; null: its turn. */
-  waiting: Schema.NullOr(
-    Schema.Literals(["sign_in", "usage_limit", "turned_off"]),
-  ),
+  waiting: Schema.NullOr(Schema.Literals(["sign_in", "usage_limit"])),
   /** When a usage limit resets. */
   waitUntil: Schema.NullOr(Schema.String),
   /** It ran before: reading again after a restart or a retry. */

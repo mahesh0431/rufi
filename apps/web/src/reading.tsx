@@ -1,11 +1,9 @@
-// Reading documents on the screens: the one-time yes, the reader strip above
-// the chat box, and Open: a reading's work as the reader saved it, read
+// Reading documents on the screens: Retry, the reader strip above the chat
+// box, and Open: a reading's work as the reader saved it, read
 // only. Rufi's live stream says when readings change; the Documents page
 // also looks again while one reads.
 import { Dialog } from "@base-ui/react/dialog";
-import type { Person } from "@rufi/contracts";
 import {
-  type DocumentSummary,
   type ReadEntry,
   ReadingView,
   Readings,
@@ -15,10 +13,10 @@ import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { create } from "zustand/react";
-import { ApiError, read, request } from "./api.ts";
+import { read, request } from "./api.ts";
 import { printedTime } from "./dates.ts";
 import { messageOf } from "./live.ts";
-import { queries, saveSettings, useDocuments, useSettings } from "./reads.ts";
+import { queries } from "./reads.ts";
 import { Button } from "./ui.tsx";
 
 const documentsPath = (personId: string) =>
@@ -43,26 +41,6 @@ function readingsChanged(personId: string) {
   for (const key of ["readings", "documents", "reading"]) {
     void queries.invalidateQueries({ queryKey: [key, personId] });
   }
-}
-
-/**
- * Reads the person's documents not read yet: all of them (the card), or
- * one. `yes`: the person said yes just now.
- */
-async function readIt(
-  personId: string,
-  documentId: string | undefined,
-  yes: boolean,
-) {
-  await request(
-    "POST",
-    documentId === undefined
-      ? `${documentsPath(personId)}/read`
-      : `${documentsPath(personId)}/${encodeURIComponent(documentId)}/read`,
-    { yes },
-  );
-  if (yes) void queries.invalidateQueries({ queryKey: ["settings"] });
-  readingsChanged(personId);
 }
 
 /** Reads again what failed in a document's reading. */
@@ -116,8 +94,6 @@ function stateOf(reading: ReadingNow, elapsed: string): string {
       return reading.waitUntil
         ? `waiting until ${printedTime(reading.waitUntil)} (usage limit)`
         : "waiting for the usage limit";
-    case "turned_off":
-      return "waiting · reading is off in Settings";
     case null:
       return reading.again
         ? `waiting to read again · saved ${String(reading.saved)} of ${String(reading.of)}`
@@ -182,159 +158,9 @@ function StripRow({
   );
 }
 
-/** The documents a yes would read: added and never read. */
-const unread = (documents: readonly DocumentSummary[] | undefined) =>
-  (documents ?? []).filter((d) => d.status === "not_read");
-
-/** The words of the one-time question, for `count` documents named `name`. */
-const QUESTION = {
-  title: (count: number, name: string) =>
-    count === 1
-      ? `Read ${name} with the AI?`
-      : `Read these ${String(count)} documents with the AI?`,
-  body: "To read a document, Rufi sends its pages to the AI you signed in with (your ChatGPT plan). It asks once; you can change it in Settings.",
-};
-
-const nameOf = (document: DocumentSummary | undefined) =>
-  document?.files[0]?.name ?? "this document";
-
-/**
- * The one-time question, shown while documents wait for the person's
- * first answer. Read it says yes and reads them; Not now says no.
- */
-export function ReadCard({ person }: { person: Person }) {
-  const settings = useSettings();
-  const documents = useDocuments(person.id);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const waiting = unread(documents.data);
-  if (settings.data?.readDocuments !== null || waiting.length === 0) {
-    return null;
-  }
-  const act = async (action: () => Promise<unknown>) => {
-    setBusy(true);
-    setProblem(null);
-    try {
-      await action();
-    } catch (error) {
-      setProblem(messageOf(error));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <section
-      aria-label="Read documents with the AI"
-      className="mx-3 mb-1.5 rounded-xl border border-line bg-side px-3 py-2.5"
-    >
-      <p className="font-semibold">
-        {QUESTION.title(waiting.length, nameOf(waiting[0]))}
-      </p>
-      <p className="mt-1 text-xs text-muted">{QUESTION.body}</p>
-      {problem && (
-        <p role="alert" className="mt-1 text-muted">
-          {problem}
-        </p>
-      )}
-      <div className="mt-2 flex justify-end gap-2">
-        <Button
-          disabled={busy}
-          onClick={() => void act(() => saveSettings({ readDocuments: "no" }))}
-        >
-          Not now
-        </Button>
-        <Button
-          look="main"
-          disabled={busy}
-          onClick={() => void act(() => readIt(person.id, undefined, true))}
-        >
-          Read it
-        </Button>
-      </div>
-    </section>
-  );
-}
-
 const PANEL =
   "fixed top-1/2 left-1/2 z-40 -translate-x-1/2 -translate-y-1/2 rounded-[14px] bg-surface shadow-menu outline-none";
 const BACKDROP = "fixed inset-0 z-40 bg-ink/25";
-
-/**
- * "Read it" for one document on the Documents page: at once after the yes,
- * otherwise the question first.
- */
-export function ReadItButton({
-  personId,
-  document,
-}: {
-  personId: string;
-  document: DocumentSummary;
-}) {
-  const settings = useSettings();
-  const [asking, setAsking] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const go = async (yes: boolean) => {
-    setProblem(null);
-    try {
-      await readIt(personId, document.id, yes);
-      setAsking(false);
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 409) {
-        const body = error.body as { needsYes?: unknown } | undefined;
-        if (body?.needsYes === true) {
-          setAsking(true);
-          return;
-        }
-      }
-      setProblem(messageOf(error));
-    }
-  };
-  return (
-    <>
-      <TextButton
-        onClick={() => {
-          if (settings.data?.readDocuments === "yes") void go(false);
-          else setAsking(true);
-        }}
-      >
-        Read it
-      </TextButton>
-      {problem && (
-        <span role="alert" className="block text-xs text-muted">
-          {problem}
-        </span>
-      )}
-      {asking && (
-        <Dialog.Root
-          open
-          onOpenChange={(next) => {
-            if (!next) setAsking(false);
-          }}
-        >
-          <Dialog.Portal>
-            <Dialog.Backdrop className={BACKDROP} />
-            <Dialog.Popup
-              className={`${PANEL} w-[420px] max-w-[92vw] p-[18px]`}
-            >
-              <Dialog.Title className="text-[15px] font-semibold">
-                {QUESTION.title(1, nameOf(document))}
-              </Dialog.Title>
-              <Dialog.Description className="mt-1 text-muted">
-                {QUESTION.body}
-              </Dialog.Description>
-              <div className="mt-4 flex justify-end gap-2">
-                <Dialog.Close render={<Button />}>Not now</Dialog.Close>
-                <Button look="main" onClick={() => void go(true)}>
-                  Read it
-                </Button>
-              </div>
-            </Dialog.Popup>
-          </Dialog.Portal>
-        </Dialog.Root>
-      )}
-    </>
-  );
-}
 
 /** Retry for a document whose reading failed, or has pages that did. */
 export function RetryButton({

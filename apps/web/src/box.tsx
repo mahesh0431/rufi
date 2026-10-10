@@ -29,7 +29,7 @@ import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
 import { type BoxState, chipKey, tooLong, tooMany } from "./draft.ts";
 import { chatPath, type Live, messageOf } from "./live.ts";
-import { ReadCard, ReaderStrip } from "./reading.tsx";
+import { ReaderStrip } from "./reading.tsx";
 import { ModelMenu } from "./model-menu.tsx";
 import { isRunning } from "./transcript-state.ts";
 import { Button } from "./ui.tsx";
@@ -159,7 +159,6 @@ export function Box({
         submit(false);
       }}
     >
-      {size !== "bar" && <ReadCard person={person} />}
       {size !== "bar" && <ReaderStrip personId={person.id} />}
       {size !== "bar" && (
         <QueueView

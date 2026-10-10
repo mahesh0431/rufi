@@ -59,10 +59,6 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
     mimeType: "application/pdf",
     buffer: await readFile(REPORT),
   });
-  await page
-    .getByRole("region", { name: "Read documents with the AI" })
-    .getByRole("button", { name: "Read it" })
-    .click();
   await expect(
     page.getByRole("cell", { name: /To check · 3 results/ }),
   ).toBeVisible({ timeout: 10_000 });

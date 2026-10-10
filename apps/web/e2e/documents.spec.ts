@@ -108,7 +108,8 @@ test("adds photos as one document in the order chosen, and a PDF as its own", as
   await expect(rows(page).filter({ hasText: "lipid.pdf" })).toContainText(
     "1 page",
   );
-  await expect(rows(page).first()).toContainText("Not read yet");
+  // Rufi reads what is added at once; no reader here, so it waits its turn.
+  await expect(rows(page).first()).toContainText("Reading · saved 0 of 1");
 
   // The popup: the photos in their order, the HEIC upright through its copy.
   await page.getByRole("button", { name: "IMG_2.jpg" }).click();

@@ -31,13 +31,7 @@ import { useShowChat } from "./panel.ts";
 import type { BoxChip } from "./draft.ts";
 import { printedDate, printedDay } from "./dates.ts";
 import { queries, useDocuments } from "./reads.ts";
-import {
-  openReading,
-  ReadCard,
-  ReadItButton,
-  RetryButton,
-  TextButton,
-} from "./reading.tsx";
+import { openReading, RetryButton, TextButton } from "./reading.tsx";
 import { Button, Problem } from "./ui.tsx";
 
 const KINDS: readonly { id: DocumentKind; name: string }[] = [
@@ -200,9 +194,6 @@ export function DocumentsPage({ person }: { person: Person }) {
         />
       </div>
 
-      <div className="-mx-3">
-        <ReadCard person={person} />
-      </div>
       <Outcome added={add.data} error={add.error} open={open} />
 
       {documents.data === undefined && documents.error ? (
@@ -356,10 +347,7 @@ function Status({
       <span className="rounded-full bg-side px-2 py-px text-xs text-muted">
         {words}
       </span>
-      {document.status === "not_read" && (
-        <ReadItButton personId={personId} document={document} />
-      )}
-      {reading?.canRetry === true && (
+      {(document.status === "not_read" || reading?.canRetry === true) && (
         <RetryButton personId={personId} documentId={document.id} />
       )}
       {document.status !== "not_read" && (

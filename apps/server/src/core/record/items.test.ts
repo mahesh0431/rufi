@@ -488,7 +488,7 @@ describe("saving draft items", () => {
     });
     expect(refused.ok).toBe(false);
     expect(refused.issues[0]?.fix).toBe(
-      'This item has no date Rufi can store ("Collected 03/04/2026": the order of day and month isn\'t certain). Ask the user when the sample was taken, and give it in fix.fields.measured with their words.',
+      "This item has no date Rufi can store (\"Collected 03/04/2026\": the order of day and month isn't certain). Ask the user when the sample was taken; a rough date such as 'around August 2026' is fine. Give it in fix.fields.measured at the precision they gave, with their words; never make one up.",
     );
     const saved = await call("save_changes", {
       items: [

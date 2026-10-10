@@ -62,7 +62,8 @@ export interface SubAgentDeps {
  * and other tools of its own, and an `exec` call shows no item Rufi could
  * refuse (lockdown evidence, 10 Oct 2026).
  */
-const DIRECT_MODELS = new Set(["gpt-5.5"]);
+export const SUB_AGENT_MODELS = [{ id: "gpt-5.5", name: "GPT-5.5" }];
+const DIRECT_MODELS = new Set(SUB_AGENT_MODELS.map((model) => model.id));
 
 /** A token must outlast the whole turn, plus this margin. */
 const TOKEN_MARGIN_MS = 5 * 60_000;

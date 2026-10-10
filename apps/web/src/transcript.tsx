@@ -276,9 +276,7 @@ export function TranscriptView({
       <div className={inner}>
         {status === "missing" ? (
           <p className="text-muted">There is no chat here.</p>
-        ) : status === "open" && empty ? (
-          <FirstMessage />
-        ) : (
+        ) : status === "open" && empty ? null : (
           <div
             ref={log}
             role="log"
@@ -322,23 +320,6 @@ export function TranscriptView({
         )}
       </div>
     </div>
-  );
-}
-
-/** Before your first message: what goes to OpenAI. */
-function FirstMessage() {
-  return (
-    <p className="text-muted">
-      What you send, and the parts of your record the AI reads to answer, go to
-      OpenAI through your ChatGPT plan.{" "}
-      <Link
-        to="/help/$page"
-        params={{ page: "your-data-and-the-ai" }}
-        className="text-accent-ink underline"
-      >
-        Your data and the AI
-      </Link>
-    </p>
   );
 }
 

@@ -1,13 +1,16 @@
 // The document reader at work: runs the queued readings one at a time, each
 // as a Rufi sub-agent (agent/codex/subagent.ts) with the reader's two tools,
 // and writes its start and end into the person's chat as Rufi events. A
-// reading starts only after the person's yes, and only when signed in; a
-// usage limit makes it wait until the limit resets. Only a reader turn that
-// completed normally finishes a reading; a turn that failed for a passing
+// reading starts only when signed in; a usage limit makes it wait until the
+// limit resets. Each run uses the model and effort chosen in Settings when
+// it starts. Only a reader turn that completed normally finishes a reading; a turn that failed for a passing
 // reason gets one automatic retry, and anything else ends the reading as
 // failed, its notebook kept for Retry. When Rufi stops, a running reading
 // is left as it is: the next start queues it again.
+import { Effort } from "@rufi/contracts";
+import { Option, Schema } from "effect";
 import { ChatGptError } from "../agent/chatgpt/openai.ts";
+import { SUB_AGENT_MODELS } from "../agent/codex/subagent.ts";
 import type {
   RunSubAgent,
   SubAgentOutcome,
@@ -36,6 +39,8 @@ export interface ReaderDeps {
   /** Runs the reader sub-agent; without one, readings wait. */
   run: RunSubAgent | undefined;
   signedIn: () => Promise<boolean>;
+  /** The model and effort chosen in Settings (readerChoice), read as a run starts. */
+  choice: () => Promise<ReaderChoice>;
   log: Log;
   /** How long one run of a reading may take, for its number of pages. */
   deadlineMs?: (pages: number) => number;
@@ -58,6 +63,33 @@ const SIGN_IN_POLL_MS = 30_000;
 const RENEW_WAIT_MS = 60_000;
 /** After an unexpected failure of the loop itself. */
 const ERROR_MS = 5_000;
+
+/** The settings that hold the reader's model and effort. */
+export const READER_SETTING = {
+  model: "reader_model",
+  effort: "reader_effort",
+} as const;
+
+export interface ReaderChoice {
+  model: string;
+  effort: Effort;
+}
+
+/**
+ * The reader's model and effort as chosen in Settings, or the defaults. A
+ * model the sub-agent runner doesn't run is the default.
+ */
+export async function readerChoice(
+  setting: (key: string) => Promise<string | undefined>,
+): Promise<ReaderChoice> {
+  const chosen = await setting(READER_SETTING.model);
+  return {
+    model: SUB_AGENT_MODELS.find((m) => m.id === chosen)?.id ?? READER_MODEL,
+    effort: Schema.decodeUnknownOption(Effort)(
+      await setting(READER_SETTING.effort),
+    ).pipe(Option.getOrElse(() => READER_EFFORT)),
+  };
+}
 
 /** Why a run ended, in words for the person, when it fails the reading. */
 const WHY: Partial<Record<NonNullable<TurnEnd["reason"]>, string>> = {
@@ -148,14 +180,15 @@ export function reader(deps: ReaderDeps) {
     }
 
     const tools = forReader(started, deps.pages, deps.book, log);
+    const { model, effort } = await deps.choice();
     const counts = { looks: 0, saves: 0 };
     const t0 = Date.now();
     let outcome: SubAgentOutcome;
     try {
       outcome = await runSubAgent(
         {
-          model: READER_MODEL,
-          effort: READER_EFFORT,
+          model,
+          effort,
           instructions: READER_INSTRUCTIONS,
           input: readerInput(await readings.about(started)),
           tools: { namespace: tools.namespace, specs: tools.specs },
@@ -223,7 +256,11 @@ export function reader(deps: ReaderDeps) {
       saves: counts.saves,
       compactions: outcome.compactions,
     };
-    await readings.recordRun(started, usage, READER_VERSION);
+    await readings.recordRun(started, usage, {
+      ...READER_VERSION,
+      model,
+      effort,
+    });
 
     if (end.status === "completed") {
       await finish(started);

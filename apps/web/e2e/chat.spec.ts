@@ -101,27 +101,17 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   ]);
   await accessible(page);
 
-  // The panel: the chat's name, and what goes to OpenAI before the first message.
+  // The panel: the chat's name; before the first message, nothing more.
   await box(chat(page)).click();
   await expect(
     chat(page).getByRole("heading", { name: "Chat with Rufi" }),
   ).toBeVisible();
-  await expect(chat(page)).toContainText(
-    "What you send, and the parts of your record the AI reads to answer, go to OpenAI",
-  );
+  await expect(chat(page)).not.toContainText("go to OpenAI");
   await accessible(page);
-  // The plan it uses, quietly under the box, never only in a menu.
-  await expect(chat(page)).toContainText(
-    "Using ChatGPT plan · Manage usage · AI can make mistakes. Check important info.",
+  // Under the box, only the reminder: the plan is in Settings.
+  await expect(chat(page).getByText(/AI can make mistakes/)).toHaveText(
+    "AI can make mistakes. Check important info.",
   );
-  await expect(
-    chat(page).getByRole("link", { name: "Manage usage" }),
-  ).toHaveAttribute("target", "_blank");
-  await chat(page)
-    .getByRole("button", { name: "Model and effort: GPT-6-Astra, Medium" })
-    .click();
-  await expect(page.getByRole("menu")).not.toContainText("Using ChatGPT plan");
-  await page.keyboard.press("Escape");
 
   await box(chat(page)).fill("drip: my thyroid results");
   await box(chat(page)).press("Enter");
@@ -301,10 +291,7 @@ test("Steer passes your text into the running reply", async ({
   ).toHaveCount(0);
 });
 
-test("signed out, the chat doesn't say it uses the ChatGPT plan, and the model's menu signs in", async ({
-  page,
-  rufi,
-}) => {
+test("signed out, the model's menu signs in", async ({ page, rufi }) => {
   rufi.account = { account: "signed_out", email: null };
   // The core can't list the models without the sign-in.
   await page.route("**/api/models", (route) =>
@@ -317,16 +304,10 @@ test("signed out, the chat doesn't say it uses the ChatGPT plan, and the model's
     }),
   );
   await opened(page, rufi);
-  // The bar, then the panel.
-  await expect(chat(page)).not.toContainText("Using ChatGPT plan");
   await box(chat(page)).click();
   await expect(
     chat(page).getByRole("heading", { name: "Chat with Rufi" }),
   ).toBeVisible();
-  await expect(chat(page)).not.toContainText("Using ChatGPT plan");
-  await expect(
-    chat(page).getByRole("link", { name: "Manage usage" }),
-  ).toHaveCount(0);
   await chat(page)
     .getByRole("button", { name: /^Model and effort/ })
     .click();
@@ -944,6 +925,110 @@ test("a save to the record shows Rufi's receipt, also after a reload", async ({
   await expect(chat(page)).toHaveCount(0);
   await shown(page);
   await accessible(page);
+});
+
+test("a save from the chat bar on Overview shows there at once, without leaving the page", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi, {
+    scenario: {
+      calls: [
+        {
+          namespace: "rufi",
+          tool: "save_changes",
+          arguments: {
+            changes: [
+              {
+                kind: "result",
+                action: "remove",
+                id: "res-a3",
+                source: "Remove the CRP result",
+              },
+            ],
+          },
+        },
+      ],
+    },
+  });
+  const crp = page
+    .getByRole("main")
+    .getByRole("cell", { name: "CRP", exact: true });
+  await expect(crp).toBeVisible();
+  await box(chat(page)).fill("Remove the CRP result");
+  await box(chat(page)).press("Enter");
+  await expect(log(chat(page)).locator(".receipt")).toContainText("CRP");
+  await page.keyboard.press("Escape");
+  await expect(crp).toHaveCount(0);
+});
+
+test("a save made in another window while this one's connection was down shows on Overview once it connects again", async ({
+  page,
+  rufi,
+  context,
+}) => {
+  // The connection can be dropped, as a sleeping Mac or a network change
+  // drops it.
+  await page.addInitScript(() => {
+    const drops: AbortController[] = [];
+    const fetched = globalThis.fetch;
+    globalThis.fetch = (input, init) => {
+      if (!(typeof input === "string" && input.endsWith("/stream"))) {
+        return fetched(input, init);
+      }
+      const drop = new AbortController();
+      drops.push(drop);
+      const signals = [drop.signal, init?.signal].filter((one) => !!one);
+      return fetched(input, { ...init, signal: AbortSignal.any(signals) });
+    };
+    Object.assign(globalThis, {
+      dropStream: () => {
+        for (const drop of drops.splice(0)) drop.abort();
+      },
+    });
+  });
+  await opened(page, rufi, {
+    scenario: {
+      calls: [
+        {
+          namespace: "rufi",
+          tool: "save_changes",
+          arguments: {
+            changes: [
+              {
+                kind: "result",
+                action: "remove",
+                id: "res-a3",
+                source: "Remove the CRP result",
+              },
+            ],
+          },
+        },
+      ],
+    },
+  });
+  const crp = page
+    .getByRole("main")
+    .getByRole("cell", { name: "CRP", exact: true });
+  await expect(crp).toBeVisible();
+  // The stream drops, and its reconnect waits until the other window saved.
+  const down = Promise.withResolvers<undefined>();
+  await page.route("**/chat/stream", async (route) => {
+    await down.promise;
+    await route.continue();
+  });
+  await page.evaluate(() => {
+    (globalThis as unknown as { dropStream: () => void }).dropStream();
+  });
+
+  const other = await context.newPage();
+  await other.goto(rufi.link());
+  await box(chat(other)).fill("Remove the CRP result");
+  await box(chat(other)).press("Enter");
+  await expect(log(chat(other)).locator(".receipt")).toContainText("CRP");
+
+  down.resolve(undefined);
+  await expect(crp).toHaveCount(0);
 });
 
 test("Based on, under an answer once it ended, opens How and Used; small talk has none; a stopped reply has no How", async ({

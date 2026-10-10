@@ -25,7 +25,7 @@ What the user added for a person in one go: one PDF, or photos added together, s
 _Avoid_: upload, attachment
 
 **Reading**:
-Rufi reading one document in the background with its reader, after your yes: one page at a time, then a line in the chat when it ends. Only a reading that finished makes draft items; one that stopped continues with **Retry**, or by itself after Rufi starts again.
+Rufi reading one document in the background with its reader, as soon as you add it: one page at a time, then a line in the chat when it ends. Only a reading that finished makes draft items; one that stopped continues with **Retry**, or by itself after Rufi starts again.
 _Avoid_: import, scan, parsing, extraction
 
 **Reader**:

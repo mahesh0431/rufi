@@ -436,7 +436,7 @@ export async function planItems(
       problem(
         `${at}.item`,
         save.item,
-        `This item has no date Rufi can store (${date ? `"${date.label} ${date.date}": the order of day and month isn't certain` : "none is printed for it"}). Ask the user when the sample was taken, and give it in fix.fields.measured with their words.`,
+        `This item has no date Rufi can store (${date ? `"${date.label} ${date.date}": the order of day and month isn't certain` : "none is printed for it"}). Ask the user when the sample was taken; a rough date such as 'around August 2026' is fine. Give it in fix.fields.measured at the precision they gave, with their words; never make one up.`,
       );
       continue;
     }

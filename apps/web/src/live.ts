@@ -93,6 +93,16 @@ function open(personId: string): Opened {
       void queries.invalidateQueries({ queryKey: [key, personId] });
     }
   };
+  /**
+   * A save, an undo or a dismissal landed (its receipt came): every screen
+   * that shows saved data reads again, whichever size of the chat is open.
+   */
+  const recordChanged = () => {
+    documentsChanged();
+    for (const key of ["overview", "brief"]) {
+      void queries.invalidateQueries({ queryKey: [key, personId] });
+    }
+  };
 
   // Each change starts a read; only the last one started is shown, so an
   // older answer that comes late never replaces a newer one.
@@ -123,8 +133,15 @@ function open(personId: string): Opened {
       // A reconnect: the latest page only; an older page on its way is dropped.
       store.setState({ ...next, status: "open", older: "idle" });
       void readQueue();
-      documentsChanged();
-    } else store.setState({ ...next, status: "open" });
+      // A save may have landed while the stream was down, its receipt maybe
+      // not on the latest page: everything that shows saved data reads again.
+      recordChanged();
+    } else {
+      store.setState({ ...next, status: "open" });
+      if (line.entries.some((entry) => entry.kind === "receipt")) {
+        recordChanged();
+      }
+    }
     // A reply that ended for the sign-in: the sidebar says so.
     if (line.turns.some((turn) => turn.endReason === "sign_in")) {
       void queries.invalidateQueries({ queryKey: ["status"] });

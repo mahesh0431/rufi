@@ -35,19 +35,19 @@ If one of the files isn't a PDF, JPEG, PNG or HEIC photo, is damaged, or is a PD
 
 The Documents page lists everything you added, newest first:
 
-| Column   | What it shows                                                             |
-| -------- | ------------------------------------------------------------------------- |
-| Document | The file's name as you added it, and its pages or how many more photos    |
-| Kind     | A lab report, prescription, letter or other; empty until Rufi reads it    |
-| Date     | The document's date; empty until Rufi reads it                            |
-| Added    | The day you added it                                                      |
-| Status   | How its reading went (see below), with **Read it**, **Retry** or **Open** |
+| Column   | What it shows                                                          |
+| -------- | ---------------------------------------------------------------------- |
+| Document | The file's name as you added it, and its pages or how many more photos |
+| Kind     | A lab report, prescription, letter or other; empty until Rufi reads it |
+| Date     | The document's date; empty until Rufi reads it                         |
+| Added    | The day you added it                                                   |
+| Status   | How its reading went (see below), with **Retry** or **Open**           |
 
 To show one kind only, choose it in the list at the top left.
 
 | Status              | What it means                                                            |
 | ------------------- | ------------------------------------------------------------------------ |
-| **Not read yet**    | Rufi hasn't read it: it waits for your yes, or for **Read it**           |
+| **Not read yet**    | Never read (added before Rufi read each document); **Retry** reads it    |
 | **Reading**         | Rufi reads it now, or it waits its turn; it shows the pages saved so far |
 | **To check**        | Results wait for you to check, or a page needs **Retry**                 |
 | **Nothing to save** | Read, and no results were found (a letter, for example)                  |
@@ -57,14 +57,13 @@ To show one kind only, choose it in the list at the top left.
 
 Rufi's reader is an AI that reads one document at a time, page by page, in the background. It copies what each page says: every result exactly as printed (`<5` stays `<5`), with its unit, range and the lab's own flag, and the dates, lab and name printed on the page. It doesn't judge your results and it saves nothing to your record. It sees only that document's pages: not your record, your chat, other documents or the internet.
 
-### Your yes, once
+Rufi reads each document as soon as you add it. It sends the document's pages to the AI you signed in with (your ChatGPT plan) to read them. The first run tells you this once.
 
-Before the reader reads anything, Rufi asks once: **Read … with the AI?** It sends a document's pages to the AI you signed in with (your ChatGPT plan) to read them. The question shows above the chat box and on the Documents page.
+### The reader's model and effort
 
-- **Read it**: Rufi reads the documents that wait, and every document you add after this.
-- **Not now**: nothing is sent. Your documents show **Not read yet**; click **Read it** next to one to be asked again.
+In **Settings** → **Documents**, choose the **Reader model** and its **Effort**: **Low** (the start), **Medium** or **High**. Higher effort thinks longer on each page, and uses more of your plan. Today the reader can run on one model only, GPT-5.5, because it is the one model where Rufi can lock the reader down to its two tools.
 
-To change your answer later, go to **Settings** → **Documents** → **Read documents with the AI**. Off: nothing new is read; a reading that runs finishes. On again: the documents that waited keep their own **Read it**.
+Your choice is used by the next reading that starts. A reading that runs keeps the model and effort it started with; if it stops and goes on later (after Rufi restarts, or with **Retry**), it goes on with the ones chosen then.
 
 ### While a document is read
 
@@ -105,7 +104,7 @@ Rufi checks each page the reader saves. A check never changes what the reader re
 What Rufi does when it saves a document's results:
 
 - **The values as printed.** Rufi saves each result from the draft item, as the reader read it, never as the AI typed it. If you correct a value in the chat ("the LDL is 132, not 142"), Rufi saves your value and keeps your words.
-- **Its date.** A result gets the date printed for it, or else the first date printed on its page, such as the collection date. When there is no clear date, the AI asks you, and Rufi keeps your words for it.
+- **Its date.** A result gets the date printed for it, or else the first date printed on its page, such as the collection date. Every result needs a date. When a report has no clear date, the AI asks you when the sample was taken before it saves anything. A rough date is fine, such as "around August 2026" or "early this year": Rufi saves it at the precision you gave (a month, a year) and keeps your words. If you don't know, the AI explains that it needs a date and asks for a rough one. It never makes one up.
 - **Its report.** Results with the same printed lab, report number and collection date go in one report, even when they came from different documents. If any of these is missing, Rufi keeps reports from different documents apart. A page that prints none of these belongs to the report of the page before it.
 - **Its sources.** Each result keeps where it came from: the document and its page, your message, or both. The receipt, the AI's reads and a visit brief show them.
 - **All or nothing.** Rufi saves all the results in one step, however many there are. If one can't be saved, nothing is saved, and the AI tells you why.
@@ -171,7 +170,7 @@ Rufi opens the chat with their chips in the box. Type your message, for example 
 
 ### Save these in the chat
 
-Click **Save these in the chat**. Rufi puts **Save these 42 results.** in the chat box, after anything you already typed there, with the document's chip, and opens the chat. Read it, then send it: nothing goes to the AI until you do. The AI reads the results with your fixes, then checks them with you and saves them (see [Save results to your record](#save-results-to-your-record)).
+Click **Save these in the chat**. Rufi puts **Save these 42 results.** in the chat box, after anything you already typed there, with the document's chip, and opens the chat. Read it, then send it: this message goes to the AI only when you send it. The AI reads the results with your fixes, then checks them with you and saves them (see [Save results to your record](#save-results-to-your-record)).
 
 While a message of yours is being sent, the button says **Wait: a message is being sent**.
 

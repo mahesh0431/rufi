@@ -59,7 +59,7 @@ Each time, everything that was in the demo folder is removed first: the record, 
 
 In a new data folder, Rufi takes you through four short steps:
 
-1. **Welcome.** Rufi says what goes to the AI: what you ask, and the parts of your record the AI reads to answer, are sent to the AI in the cloud. Your record is kept on your Mac. Tick "I understand Rufi is not a doctor", then click **Continue**. Here you can also choose how Rufi looks: **System**, **Light** or **Dark** (see [How Rufi looks](#how-rufi-looks)).
+1. **Welcome.** Rufi says what goes to the AI: what you ask, the documents you add and the parts of your record the AI reads go to the AI provider you sign in with. Your record is kept on your Mac. Tick "I understand Rufi is not a doctor", then click **Continue**. Here you can also choose how Rufi looks: **System**, **Light** or **Dark** (see [How Rufi looks](#how-rufi-looks)).
 2. **Your name.** Rufi adds you to the record.
 3. **Sign in with ChatGPT.** See [Signing in with ChatGPT](signing-in.md#sign-in-in-rufi). To do it later, click **Skip for now**: your record works without the AI.
 4. **Your emergency region,** for the number the AI gives in an emergency. Choose it and click **Continue**, or click **Skip**. You can change it in Settings.
@@ -73,7 +73,7 @@ Rufi keeps each step you finished. If you reload the page, close it or open Rufi
 - **The sidebar:** your name, **Chat with Rufi**, **Overview**, and at the bottom **Help** and **Settings**. When the AI can't be used, a line under them says why.
 - **The chat bar:** the box at the bottom right of the Overview, where you talk to Rufi. It is your one chat with Rufi, the same as Chat with Rufi in the sidebar. See [Talking to Rufi](chat.md).
 - **Overview:** your latest results, as the lab printed them: the test, the value and unit, the lab's range, the lab's note and when it was measured. "Amended" means that the lab corrected the result. When there are more results than Overview shows, it says so.
-- **Settings:** how Rufi looks, and your emergency region. When a message may describe an emergency, the AI gives this region's number; with no region, it says to call your local emergency number. See [What Rufi's AI will and won't do](safety.md#in-an-emergency-it-tells-you-to-call-for-help-first). Settings also shows your backups and exports your data: see [Backups and export](backups-and-export.md).
+- **Settings:** the ChatGPT plan Rufi's AI uses (see [Signing in with ChatGPT](signing-in.md#your-plan-in-settings)), how Rufi looks, and your emergency region. When a message may describe an emergency, the AI gives this region's number; with no region, it says to call your local emergency number. See [What Rufi's AI will and won't do](safety.md#in-an-emergency-it-tells-you-to-call-for-help-first). Settings also holds the model and effort Rufi reads your documents with (see [Documents](documents.md#the-readers-model-and-effort)), shows your backups and exports your data: see [Backups and export](backups-and-export.md).
 - **Help:** these pages.
 
 The other pages come in later steps.
@@ -89,4 +89,4 @@ Your choice shows at once in the Rufi windows or tabs that are open in the same 
 
 ## If you're not signed in
 
-The sidebar says "Not signed in" or "ChatGPT plan can't be used". Overview, your chat, Settings and Help still work; only the AI needs the sign-in to answer. Click that line to sign in (see [Signing in with ChatGPT](signing-in.md#sign-in-in-rufi)).
+The sidebar says "Not signed in" or "ChatGPT plan can't be used". Overview, your chat, Settings and Help still work; only the AI needs the sign-in to answer. Click that line, or **Sign in** in **Settings** › **ChatGPT plan**, to sign in (see [Signing in with ChatGPT](signing-in.md#sign-in-in-rufi)).

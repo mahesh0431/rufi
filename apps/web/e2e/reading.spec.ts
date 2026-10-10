@@ -1,6 +1,7 @@
 // Reading documents on the screens, on the real core with a scripted reader
-// (tests/fake-reader.ts): the one-time yes, the reader strip above the chat
-// box, the start and end lines, and Open with the reader's work and the
+// (tests/fake-reader.ts): reading as a document is added, with the model and
+// effort chosen in Settings, the reader strip above the chat box, the start
+// and end lines, and Open with the reader's work and the
 // document's page.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -20,7 +21,7 @@ async function accessible(page: Page) {
 }
 
 /** Rufi with the family and no documents, reading with `reader`. */
-async function start(
+async function opened(
   page: Page,
   rufi: Rufi,
   reader: ReturnType<typeof scriptedReader>,
@@ -31,6 +32,20 @@ async function start(
   );
   await rufi.start({ reader: reader.run });
   await page.goto(rufi.link());
+}
+
+/** As `opened`, with the fictional report just added. */
+async function start(
+  page: Page,
+  rufi: Rufi,
+  reader: ReturnType<typeof scriptedReader>,
+) {
+  await opened(page, rufi, reader);
+  await add(page);
+}
+
+/** Adds the fictional report on the Documents page. */
+async function add(page: Page) {
   await page.getByRole("link", { name: "Documents" }).click();
   await page.getByLabel("Choose documents").setInputFiles({
     name: "sunrise-labs-august.pdf",
@@ -39,7 +54,7 @@ async function start(
   });
 }
 
-test("asks once, then reads a report in the background: the strip, the lines and Open", async ({
+test("reads a report in the background as it is added: the strip, the lines and Open", async ({
   page,
   rufi,
 }) => {
@@ -56,15 +71,10 @@ test("asks once, then reads a report in the background: the strip, the lines and
   ]);
   await start(page, rufi, reader);
 
-  const card = page.getByRole("region", { name: "Read documents with the AI" });
-  await expect(card).toContainText("Read sunrise-labs-august.pdf with the AI?");
-  await expect(page.getByRole("cell", { name: /Not read yet/ })).toBeVisible();
-  await accessible(page);
-  await card.getByRole("button", { name: "Read it" }).click();
-  await expect(card).toBeHidden();
   await expect(
     page.getByRole("cell", { name: /Reading · saved 1 of 2/ }),
   ).toBeVisible();
+  await accessible(page);
 
   await page.getByRole("link", { name: "Chat with Rufi" }).click();
   await expect(
@@ -97,7 +107,7 @@ test("asks once, then reads a report in the background: the strip, the lines and
   await expect(sheet.getByText(/^read · 1 item · Sunrise Labs/)).toHaveCount(2);
 });
 
-test("Not now keeps the document not read; its Read it asks again", async ({
+test("Settings keeps the reader's model and effort, and the next reading runs with them", async ({
   page,
   rufi,
 }) => {
@@ -110,25 +120,26 @@ test("Not now keeps the document not read; its Read it asks again", async ({
       return undefined;
     },
   ]);
-  await start(page, rufi, reader);
-  const card = page.getByRole("region", { name: "Read documents with the AI" });
-  await card.getByRole("button", { name: "Not now" }).click();
-  await expect(card).toBeHidden();
-  await expect(page.getByRole("cell", { name: /Not read yet/ })).toBeVisible();
-  expect(reader.runs).toEqual([]);
+  await opened(page, rufi, reader);
+  await page.getByRole("link", { name: "Settings" }).click();
+  const model = page.getByRole("combobox", { name: "Reader model" });
+  await expect(model).toHaveValue("gpt-5.5");
+  await expect(model.getByRole("option")).toHaveText(["GPT-5.5"]);
+  const effort = page.getByRole("radiogroup", { name: "Effort" });
+  await expect(effort.getByRole("radio", { name: "Low" })).toBeChecked();
+  await accessible(page);
+  await effort.getByRole("radio", { name: "High" }).click();
+  await expect(effort.getByRole("radio", { name: "High" })).toBeChecked();
+  await page.reload();
+  await expect(effort.getByRole("radio", { name: "High" })).toBeChecked();
 
-  await page.getByRole("button", { name: "Read it" }).click();
-  const ask = page.getByRole("dialog");
-  await expect(ask).toContainText("Read sunrise-labs-august.pdf with the AI?");
-  await ask.getByRole("button", { name: "Read it" }).click();
+  await add(page);
   await expect(
     page.getByRole("cell", { name: /To check · 2 results/ }),
-  ).toBeVisible({
-    timeout: 10_000,
-  });
-
-  await page.getByRole("link", { name: "Settings" }).click();
-  await expect(page.getByRole("switch")).toBeChecked();
+  ).toBeVisible({ timeout: 10_000 });
+  expect(reader.runs.map(({ model, effort }) => ({ model, effort }))).toEqual([
+    { model: "gpt-5.5", effort: "high" },
+  ]);
 });
 
 test("keeps unreadable pages to check and reserves Nothing to save for a completed empty reading", async ({
@@ -158,10 +169,6 @@ test("keeps unreadable pages to check and reserves Nothing to save for a complet
     },
   ]);
   await start(page, rufi, reader);
-  await page
-    .getByRole("region", { name: "Read documents with the AI" })
-    .getByRole("button", { name: "Read it" })
-    .click();
   const status = page
     .getByRole("row", { name: /sunrise-labs-august.pdf/ })
     .getByRole("cell")

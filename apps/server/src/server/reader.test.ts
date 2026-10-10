@@ -1,8 +1,9 @@
 // The document reader at work, on a real database and real files, with a
 // scripted reader sub-agent (tests/fake-reader.ts) and the real jobs,
-// notebook, page service and chat transcript: the person's yes, a reading
-// from its start line to its drafts and end line, a restart in the middle,
-// failures and Retry, and waiting for the sign-in or a usage limit.
+// notebook, page service and chat transcript: the reader's model and
+// effort, a reading from its start line to its drafts and end line, a
+// restart in the middle, failures and Retry, and waiting for the sign-in or
+// a usage limit.
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,18 +22,14 @@ import {
 import { documents, type Documents } from "../core/documents/documents.ts";
 import { notebook } from "../core/documents/notebook.ts";
 import { pages } from "../core/documents/pages.ts";
-import {
-  NeedsYes,
-  readings,
-  type Readings,
-} from "../core/documents/reading.ts";
+import { readings, type Readings } from "../core/documents/reading.ts";
 import {
   databasePath,
   openWritable,
   type Store,
 } from "../core/store/database.ts";
 import { chatCaller } from "../core/tools/tools.ts";
-import { reader } from "./reader.ts";
+import { reader, readerChoice } from "./reader.ts";
 
 const FIXTURES = join(import.meta.dirname, "../../tests/fixtures/documents");
 const NOW = "2026-10-10T09:00:00.000Z";
@@ -91,6 +88,7 @@ function startReader(
     },
     run: fake.run,
     signedIn: () => Promise.resolve(signedIn),
+    choice: () => readerChoice(transcripts.setting),
     log: () => undefined,
     signInPollMs: options.signInPollMs ?? 20,
     now: () => clock,
@@ -139,9 +137,10 @@ const pageStates = () =>
   rows("SELECT position, state FROM document_pages ORDER BY position");
 const done = () => job()?.["state"] === "done";
 
-describe("the person's yes", () => {
-  it("sends nothing before the yes, and reads what waited once they say it", async () => {
-    const id = await addReport();
+describe("the reader's model and effort", () => {
+  it("a run takes those chosen in Settings as it starts, and records them; a model the runner doesn't run is the default", async () => {
+    await transcripts.saveSetting("reader_effort", "high");
+    await transcripts.saveSetting("reader_model", "gpt-6-astra");
     const { runs, reader: running } = startReader([
       async (turn) => {
         await turn.look(1);
@@ -151,33 +150,20 @@ describe("the person's yes", () => {
         return undefined;
       },
     ]);
-    await sleep(50);
-    expect(rows("SELECT id FROM jobs")).toEqual([]);
-    expect(runs).toEqual([]);
-    expect((await docs.list(personId))[0]?.status).toBe("not_read");
-    await expect(reads.readIt(personId, id, false)).rejects.toThrow(NeedsYes);
-
-    await reads.readIt(personId, undefined, true);
-    await until(done);
-    expect(runs).toHaveLength(1);
-    expect(await reads.consent()).toBe("yes");
-    await running.close();
-  });
-
-  it("a no stops readings that haven't started; their documents are not read yet again", async () => {
-    await reads.setConsent("yes");
-    signedIn = false;
     await addReport();
-    expect(rows("SELECT state FROM jobs")).toEqual([{ state: "queued" }]);
-    await reads.setConsent("no");
-    expect(rows("SELECT state FROM jobs")).toEqual([]);
-    expect((await docs.list(personId))[0]?.status).toBe("not_read");
+    await until(done);
+    expect(runs.map(({ model, effort }) => ({ model, effort }))).toEqual([
+      { model: "gpt-5.5", effort: "high" },
+    ]);
+    expect(
+      JSON.parse(String(rows("SELECT reader FROM jobs")[0]?.["reader"])),
+    ).toMatchObject({ model: "gpt-5.5", effort: "high" });
+    await running.close();
   });
 });
 
 describe("a reading", () => {
   it("writes a start line, then drafts, page states and an end line in one go", async () => {
-    await reads.setConsent("yes");
     let midway: unknown;
     const { runs, reader: running } = startReader([
       async (turn) => {
@@ -252,7 +238,6 @@ describe("a reading", () => {
   });
 
   it("counts current results in the end line while keeping earlier values as drafts", async () => {
-    await reads.setConsent("yes");
     const { reader: running } = startReader([
       async (turn) => {
         await turn.look(1);
@@ -308,7 +293,6 @@ describe("a reading", () => {
   ])(
     "asks about an unsure value and a differing printed name: $printed",
     async ({ printed, askName }) => {
-      await reads.setConsent("yes");
       const { reader: running } = startReader([
         async (turn) => {
           await turn.look(1);
@@ -347,7 +331,6 @@ describe("a reading", () => {
   );
 
   it("marks pages the reader never saved as not looked at, and Retry reads only those", async () => {
-    await reads.setConsent("yes");
     const { runs, reader: running } = startReader([
       async (turn) => {
         await turn.look(1);
@@ -401,8 +384,17 @@ describe("a reading", () => {
 });
 
 describe("a restart or a failure", () => {
+  it("Retry reads a document never read (from before Rufi read each one as it came) in full", async () => {
+    const id = await addReport();
+    store.db.exec("DELETE FROM jobs");
+    expect((await docs.list(personId))[0]?.status).toBe("not_read");
+    expect(await reads.retry(personId, id)).toEqual([1, 2]);
+    expect(rows("SELECT state, targets FROM jobs")).toEqual([
+      { state: "queued", targets: "[1,2]" },
+    ]);
+  });
+
   it("continues after a restart from the notebook: no second start line, one set of drafts", async () => {
-    await reads.setConsent("yes");
     const first = startReader([
       async (turn) => {
         await turn.look(1);
@@ -447,7 +439,6 @@ describe("a restart or a failure", () => {
   });
 
   it("finishes without a reader when every page was saved before a crash", async () => {
-    await reads.setConsent("yes");
     const first = startReader([
       async (turn) => {
         await turn.look(1);
@@ -478,7 +469,6 @@ describe("a restart or a failure", () => {
   });
 
   it("does not finish from failed entries after the retry is interrupted and Rufi restarts", async () => {
-    await reads.setConsent("yes");
     const first = startReader([
       async (turn) => {
         await turn.look(1);
@@ -521,7 +511,6 @@ describe("a restart or a failure", () => {
   });
 
   it("a deadline fails the reading with its entries kept and no drafts; Retry continues it", async () => {
-    await reads.setConsent("yes");
     const { runs, reader: running } = startReader([
       async (turn) => {
         await turn.look(1);
@@ -559,7 +548,6 @@ describe("a restart or a failure", () => {
   it.each(["timeout", "connection"] as const)(
     "keeps all entries without publishing after a %s failure; Retry needs a completed turn",
     async (reason) => {
-      await reads.setConsent("yes");
       const failure: Script = () =>
         Promise.resolve({
           end: { status: "failed", reason },
@@ -604,7 +592,6 @@ describe("a restart or a failure", () => {
   );
 
   it("retries once by itself for a passing reason, then fails visibly", async () => {
-    await reads.setConsent("yes");
     const lost = () =>
       Promise.resolve({
         end: { status: "failed" as const, reason: "connection" as const },
@@ -620,7 +607,6 @@ describe("a restart or a failure", () => {
   });
 
   it("waits for the sign-in, and until a usage limit resets", async () => {
-    await reads.setConsent("yes");
     signedIn = false;
     const { runs, reader: running } = startReader([
       () =>
@@ -654,7 +640,6 @@ describe("a restart or a failure", () => {
   });
 
   it("waits visibly when the provider rejects a stored sign-in, then resumes at the poll time", async () => {
-    await reads.setConsent("yes");
     const { runs, reader: running } = startReader(
       [
         () => Promise.resolve({ end: { status: "failed", reason: "sign_in" } }),
@@ -701,7 +686,6 @@ describe("a restart or a failure", () => {
   });
 
   it("waits a minute when the sign-in can't be renewed yet, keeping its retry", async () => {
-    await reads.setConsent("yes");
     const { runs, reader: running } = startReader([
       () =>
         Promise.reject(
@@ -724,7 +708,6 @@ describe("a restart or a failure", () => {
 
 describe("the chat AI and a reading", () => {
   it("sees the drafts as not saved, and can read failed pages again only in the person's turn", async () => {
-    await reads.setConsent("yes");
     const { reader: running } = startReader([
       async (turn) => {
         await turn.look(1);

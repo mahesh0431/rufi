@@ -35,16 +35,18 @@ import type { Drafts } from "../core/chat/drafts.ts";
 import { RefRefusal } from "../core/chat/refs.ts";
 import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
 import { NotADocument, type Documents } from "../core/documents/documents.ts";
-import { NeedsYes, type Readings } from "../core/documents/reading.ts";
+import type { Readings } from "../core/documents/reading.ts";
 import { StaleFix, type DraftItems } from "../core/documents/items.ts";
 import type { Pages } from "../core/documents/pages.ts";
 import { Refusal } from "../core/tools/registry.ts";
-import { FixItem, ReadIt } from "@rufi/contracts/documents";
+import { FixItem } from "@rufi/contracts/documents";
 import { OriginalMissing } from "../core/documents/originals.ts";
 import type { BackupJob } from "../core/store/backup.ts";
 import type { Change, Transcripts } from "../core/chat/transcript.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
+import { SUB_AGENT_MODELS } from "../agent/codex/subagent.ts";
 import { ChatRefusal, type Chat } from "./chat.ts";
+import { READER_SETTING, readerChoice } from "./reader.ts";
 import { screen } from "./screens.ts";
 import { sameSecret, type Sessions } from "./session.ts";
 import type { SignInFlow } from "./signin.ts";
@@ -300,7 +302,10 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       emergencyRegion: known?.region ?? null,
       emergency: known ? { name: known.name, number: known.number } : null,
       regions: emergencyRegions(),
-      readDocuments: await deps.readings.consent(),
+      reader: {
+        ...(await readerChoice(transcripts.setting)),
+        models: SUB_AGENT_MODELS,
+      },
     };
   };
 
@@ -362,8 +367,18 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     if (changed.appearance !== undefined) {
       await transcripts.saveSetting("appearance", changed.appearance);
     }
-    if (changed.readDocuments !== undefined) {
-      await deps.readings.setConsent(changed.readDocuments);
+    const model = changed.readerModel;
+    if (model !== undefined && !SUB_AGENT_MODELS.some((m) => m.id === model)) {
+      throw new HttpError(400, "Rufi's reader can't run on that model.");
+    }
+    if (model !== undefined) {
+      await transcripts.saveSetting(READER_SETTING.model, model);
+    }
+    if (changed.readerEffort !== undefined) {
+      await transcripts.saveSetting(
+        READER_SETTING.effort,
+        changed.readerEffort,
+      );
     }
     return c.json(await settings(c));
   });
@@ -486,35 +501,15 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     c.header("Content-Type", found.mediaType);
     return c.body(new Uint8Array(bytes));
   };
-  /** A reading's refusal (no yes, nothing to retry) as the answer shows it. */
+  /** A reading's refusal (nothing to retry) as the answer shows it. */
   const reading = async <T>(action: () => Promise<T>): Promise<T> => {
     try {
       return await action();
     } catch (error) {
-      if (error instanceof NeedsYes) {
-        throw new HttpError(409, error.message, { needsYes: true });
-      }
       if (error instanceof Refusal) throw new HttpError(409, error.message);
       throw error;
     }
   };
-  // Read documents not read yet: all of the person's (the yes card), or one.
-  app.post(`${documentsPath}/read`, async (c) => {
-    const found = await person(c);
-    const { yes } = await body(c, ReadIt);
-    const queued = await reading(() =>
-      deps.readings.readIt(found.id, undefined, yes),
-    );
-    return c.json({ queued });
-  });
-  app.post(`${documentsPath}/:documentId/read`, async (c) => {
-    const found = await person(c);
-    const { yes } = await body(c, ReadIt);
-    const queued = await reading(() =>
-      deps.readings.readIt(found.id, c.req.param("documentId"), yes),
-    );
-    return c.json({ queued });
-  });
   app.post(`${documentsPath}/:documentId/retry`, async (c) => {
     const found = await person(c);
     const pages = await reading(() =>
