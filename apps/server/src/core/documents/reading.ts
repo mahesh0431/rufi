@@ -308,7 +308,7 @@ export function readings(
       .executeTakeFirst();
     const names = [
       ...new Set(
-        all.flatMap((e) => (e.facts?.name === undefined ? [] : [e.facts.name])),
+        all.flatMap((e) => (e.facts?.name?.trim() ? [e.facts.name] : [])),
       ),
     ];
     const otherNames = names.filter(
