@@ -41,6 +41,8 @@ export interface ReaderDeps {
   deadlineMs?: (pages: number) => number;
   /** How often a reading waiting for the sign-in looks again. */
   signInPollMs?: number;
+  /** The clock for wait times, the same as the readings' clock. */
+  now?: () => number;
 }
 
 /**
@@ -52,6 +54,8 @@ const deadlineFor = (pages: number) => Math.min(60, 5 + pages) * 60_000;
 /** A loop with nothing to do looks again this often. */
 const IDLE_MS = 60_000;
 const SIGN_IN_POLL_MS = 30_000;
+/** A sign-in that can't be renewed yet is tried again after this. */
+const RENEW_WAIT_MS = 60_000;
 /** After an unexpected failure of the loop itself. */
 const ERROR_MS = 5_000;
 
@@ -65,6 +69,7 @@ const WHY: Partial<Record<NonNullable<TurnEnd["reason"]>, string>> = {
 
 export function reader(deps: ReaderDeps) {
   const { readings, log } = deps;
+  const now = deps.now ?? Date.now;
   const stop = new AbortController();
   let wake: (() => void) | undefined;
   /** A poke while no rest waits: the next rest ends at once. */
@@ -181,6 +186,12 @@ export function reader(deps: ReaderDeps) {
           error.code === "plan_use_off")
       ) {
         await readings.requeue(started, { waiting: "sign_in" });
+      } else if (error instanceof ChatGptError && error.code === "temporary") {
+        // The sign-in can't be renewed yet: wait a little, keep the retry.
+        await readings.requeue(started, {
+          waiting: "sign_in",
+          until: new Date(now() + RENEW_WAIT_MS).toISOString(),
+        });
       } else if (!job.retried) {
         await readings.requeue(started, { retry: true });
       } else {
@@ -216,7 +227,7 @@ export function reader(deps: ReaderDeps) {
     } else if (end.reason === "usage_limit") {
       await readings.requeue(started, {
         waiting: "usage_limit",
-        until: end.resetsAt ?? new Date(Date.now() + 60 * 60_000).toISOString(),
+        until: end.resetsAt ?? new Date(now() + 60 * 60_000).toISOString(),
       });
     } else if (end.reason !== "timeout" && !job.retried) {
       // A passing reason (a lost connection, a restart, a refused answer):
@@ -245,7 +256,7 @@ export function reader(deps: ReaderDeps) {
           delay = deps.signInPollMs ?? SIGN_IN_POLL_MS;
         }
         if (at !== undefined) {
-          delay = Math.min(delay, Date.parse(at) - Date.now());
+          delay = Math.min(delay, Date.parse(at) - now());
         }
       } catch (error) {
         log("reader.failed", { error: errorCode(error) });

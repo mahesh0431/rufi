@@ -735,11 +735,13 @@ export function readings(
     /**
      * A run that didn't finish goes back to the queue: to wait (for the
      * sign-in, or until a usage limit resets), or as its one automatic retry.
+     * A sign-in wait with `until` tries again then (a renewal that can't
+     * happen yet).
      */
     requeue: async (
       run: Run,
       how:
-        | { waiting: "sign_in" }
+        | { waiting: "sign_in"; until?: string }
         | { waiting: "usage_limit"; until: string }
         | { retry: true },
     ) => {
@@ -751,7 +753,7 @@ export function readings(
             : {
                 state: "queued",
                 waiting: how.waiting,
-                wait_until: how.waiting === "usage_limit" ? how.until : null,
+                wait_until: how.until ?? null,
               },
         )
         .where("id", "=", run.jobId)

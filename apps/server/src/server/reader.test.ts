@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { beforeEach, describe, expect, it } from "vitest";
+import { ChatGptError } from "../agent/chatgpt/openai.ts";
 import {
   readPage,
   scriptedReader,
@@ -87,6 +88,7 @@ function startReader(scripts: Script[], options: { deadlineMs?: number } = {}) {
     signedIn: () => Promise.resolve(signedIn),
     log: () => undefined,
     signInPollMs: 20,
+    now: () => Date.parse(NOW),
     ...(options.deadlineMs !== undefined && {
       deadlineMs: () => options.deadlineMs ?? 0,
     }),
@@ -121,7 +123,9 @@ const asks = () =>
     "SELECT text FROM chat_queue WHERE origin = 'rufi' ORDER BY position",
   ).map((r) => r["text"] as string);
 const job = () =>
-  rows("SELECT state, attempt, error, waiting, wait_until FROM jobs")[0];
+  rows(
+    "SELECT state, attempt, retried, error, waiting, wait_until FROM jobs",
+  )[0];
 const drafts = () =>
   rows(
     "SELECT page, seq, version, status, fields, original, unsure FROM draft_items ORDER BY page, seq",
@@ -494,6 +498,26 @@ describe("a restart or a failure", () => {
     await sleep(50);
     expect(runs).toHaveLength(1);
     expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages"]);
+    await running.close();
+  });
+  it("waits a minute when the sign-in can't be renewed yet, keeping its retry", async () => {
+    await reads.setConsent("yes");
+    const { runs, reader: running } = startReader([
+      () =>
+        Promise.reject(
+          new ChatGptError("temporary", "Can't renew the sign-in yet."),
+        ),
+    ]);
+    await addReport();
+    await until(() => job()?.["waiting"] === "sign_in");
+    expect(job()).toMatchObject({
+      state: "queued",
+      retried: 0,
+      wait_until: "2026-10-10T09:01:00.000Z",
+    });
+    running.poke();
+    await sleep(50);
+    expect(runs).toHaveLength(1);
     await running.close();
   });
 });
