@@ -432,9 +432,10 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       const gate = Promise.withResolvers<undefined>();
       tokenGate = gate.promise;
       await say(c, "Hello");
-      await sleep(100);
+      await until(async () => (await waiting())[0]?.[1] === "handing_over");
       await chat?.stop(c);
       gate.resolve(undefined);
+      await until(async () => (await waiting())[0]?.[1] === "waiting");
       await sleep(300);
       expect((await transcript(c.id)).entries).toEqual([]);
       expect(await waiting()).toEqual([["Hello", "waiting", null]]);

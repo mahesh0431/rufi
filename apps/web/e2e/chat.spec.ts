@@ -546,7 +546,7 @@ test("a quick send whose answer was lost keeps its id through Help and reload: t
       response.request().method() === "GET",
   );
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
-  expect(await (await draftRead).json()).toEqual({ text: "" });
+  expect(await (await draftRead).json()).toEqual({ text: "", refs: [] });
   await expect(box(page)).toHaveValue("Questions for the visit");
   await expect(log(page).locator(".reply")).toHaveCount(1);
   expect(ids).toHaveLength(1); // Reload never retries by itself.

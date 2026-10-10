@@ -55,7 +55,7 @@ async function documentsPage(page: Page, rufi: Rufi, empty = false) {
   await rufi.family(
     ...(empty
       ? [
-          `DELETE FROM results; DELETE FROM reports;
+          `DELETE FROM record_sources; DELETE FROM results; DELETE FROM reports;
            DELETE FROM document_pages; DELETE FROM documents;`,
         ]
       : []),

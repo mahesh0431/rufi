@@ -8,8 +8,15 @@
 // the queue and empties the draft in one step. When its answer is lost, the
 // tab keeps the id and text through reloads, so an explicit retry uses the
 // same id and the core never takes it twice. Autosaves skip that text.
-// Nothing here sends a message by itself.
-import { Draft, MAX_MESSAGE_CHARS, Sent } from "@rufi/contracts";
+// Nothing here sends a message by itself. The box's chips (references to
+// health data) are kept with its text: saved, sent and cleared with it.
+import {
+  type Chip,
+  Draft,
+  MAX_MESSAGE_CHARS,
+  type Pointer,
+  Sent,
+} from "@rufi/contracts";
 import type { QueryClient } from "@tanstack/react-query";
 import { Schema } from "effect";
 import { createStore } from "zustand/vanilla";
@@ -33,8 +40,36 @@ export interface DraftApi {
   storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
 }
 
+/** A chip in the box: what it points at, and its name and hover text. */
+export interface BoxChip {
+  pointer: Pointer;
+  label: string;
+  detail: string;
+}
+
+/** A chip's identity: the same thing is one chip. */
+export const chipKey = ({ pointer }: Pick<BoxChip, "pointer">) =>
+  `${pointer.type}:${pointer.type === "record" ? `${pointer.kind}:` : ""}${pointer.id}`;
+
+/** The box's chips from the core's. */
+const shown = (chips: readonly Chip[]): BoxChip[] =>
+  chips.map(({ ref, label, detail }) => ({
+    pointer:
+      ref.type === "record"
+        ? { type: ref.type, kind: ref.kind, id: ref.id }
+        : { type: ref.type, id: ref.id },
+    label,
+    detail,
+  }));
+
+const pointers = (chips: readonly BoxChip[]) => chips.map((c) => c.pointer);
+const sameChips = (a: readonly BoxChip[], b: readonly BoxChip[]) =>
+  a.map(chipKey).join("\n") === b.map(chipKey).join("\n");
+
 export interface BoxState {
   text: string;
+  /** The box's chips, in the order they were added. */
+  refs: BoxChip[];
   /** The draft as the core has it, as far as the box knows. */
   draft: Draft;
   /** The draft is read: until then the box can't be typed in. */
@@ -83,7 +118,8 @@ export function draftBox(api: DraftApi) {
   const sendKey = `rufi/send/${api.scope}`;
   const store = createStore<BoxState>(() => ({
     text: "",
-    draft: { text: "" },
+    refs: [],
+    draft: { text: "", refs: [] },
     loaded: false,
     sending: false,
     failed: false,
@@ -126,6 +162,7 @@ export function draftBox(api: DraftApi) {
         store.setState({
           draft,
           text: unanswered?.text ?? draft.text,
+          refs: shown(draft.refs),
           loaded: true,
           notice: null,
         });
@@ -150,17 +187,34 @@ export function draftBox(api: DraftApi) {
     clearTimeout(timer);
     return inTurn(api.client, api.scope, async () => {
       const state = store.getState();
-      const { text } = state;
+      const { text, refs } = state;
       if (!state.loaded || state.sending || tooLong(text)) return;
       if (unanswered?.text === text.trim()) return;
       // Saving different text replaces the uncertain send with a new draft.
       forget();
-      if (text === state.draft.text && !state.failed) return;
+      if (
+        text === state.draft.text &&
+        sameChips(refs, shown(state.draft.refs)) &&
+        !state.failed
+      ) {
+        return;
+      }
       try {
         const draft = Schema.decodeUnknownSync(Draft)(
-          await api.call("PUT", "draft", { text }),
+          await api.call("PUT", "draft", { text, refs: pointers(refs) }),
         );
-        store.setState({ draft, failed: false, notice: null });
+        // The core names the chips; ones taken out meanwhile stay out.
+        const now = store.getState().refs;
+        store.setState({
+          draft,
+          refs: now.map(
+            (chip) =>
+              shown(draft.refs).find((c) => chipKey(c) === chipKey(chip)) ??
+              chip,
+          ),
+          failed: false,
+          notice: null,
+        });
       } catch (error) {
         store.setState({ failed: true, notice: messageOf(error) });
       }
@@ -182,6 +236,41 @@ export function draftBox(api: DraftApi) {
     saveNow: save,
 
     /**
+     * Puts `text` in the box after what it holds, as if typed, and `chips`
+     * after its chips (one already there stays once), and saves it now.
+     * False, with nothing changed, before the draft is read or while a send
+     * holds the box.
+     */
+    append(text: string, chips: readonly BoxChip[] = []): boolean {
+      const state = store.getState();
+      if (!state.loaded || state.sending) return false;
+      const before = state.text.trimEnd();
+      const keys = new Set(state.refs.map(chipKey));
+      store.setState({
+        text:
+          text === ""
+            ? state.text
+            : before === ""
+              ? text
+              : `${before}\n\n${text}`,
+        refs: [...state.refs, ...chips.filter((c) => !keys.has(chipKey(c)))],
+        notice: null,
+      });
+      void save();
+      return true;
+    },
+
+    /** Takes a chip out of the box; nothing it points at changes. */
+    remove(chip: Pick<BoxChip, "pointer">): void {
+      const state = store.getState();
+      if (!state.loaded || state.sending) return;
+      store.setState({
+        refs: state.refs.filter((c) => chipKey(c) !== chipKey(chip)),
+      });
+      void save();
+    },
+
+    /**
      * Sends the text into the queue, or steers it into the running reply.
      * The box empties when the core took it; a refusal leaves the text with
      * the reason.
@@ -200,13 +289,18 @@ export function draftBox(api: DraftApi) {
         try {
           if (!steer && !remember({ id, text })) return;
           const sent = Schema.decodeUnknownSync(Sent)(
-            await api.call("POST", steer ? "steer" : "messages", { id, text }),
+            await api.call("POST", steer ? "steer" : "messages", {
+              id,
+              text,
+              refs: pointers(state.refs),
+            }),
           );
           forget();
           store.setState({
             sending: false,
             draft: sent.draft,
             text: sent.draft.text,
+            refs: shown(sent.draft.refs),
             failed: false,
           });
         } catch (error) {

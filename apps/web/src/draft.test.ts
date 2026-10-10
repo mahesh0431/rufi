@@ -3,7 +3,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type DraftApi, draftBox, held } from "./draft.ts";
 
-const editable = (text: string): Draft => ({ text });
+const editable = (text: string): Draft => ({ text, refs: [] });
 
 /** The core's refusal, as the API gives it: its words and its answer. */
 const refusal = (error: string, draft?: Draft) =>
@@ -91,7 +91,9 @@ describe("the box's draft", () => {
     await vi.advanceTimersByTimeAsync(399);
     expect(saves()).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(1);
-    expect(saves().map((save) => save.body)).toEqual([{ text: "Que" }]);
+    expect(saves().map((save) => save.body)).toEqual([
+      { text: "Que", refs: [] },
+    ]);
 
     box.type("Questions");
     await vi.advanceTimersByTimeAsync(1_000);
@@ -100,7 +102,7 @@ describe("the box's draft", () => {
     await settle();
     expect(box.store.getState().text).toBe("Questions");
     await vi.advanceTimersByTimeAsync(400);
-    expect(saves()[1]?.body).toEqual({ text: "Questions" });
+    expect(saves()[1]?.body).toEqual({ text: "Questions", refs: [] });
   });
 
   it("after a save that failed says Not saved, and saves again even when the text is back to the last one kept: the core may have the failed one", async () => {
@@ -122,7 +124,7 @@ describe("the box's draft", () => {
     });
     box.type("Start");
     await vi.advanceTimersByTimeAsync(400);
-    expect(saves()[2]?.body).toEqual({ text: "Start" });
+    expect(saves()[2]?.body).toEqual({ text: "Start", refs: [] });
     saves()[2]?.answer(editable("Start"));
     await settle();
     expect(box.store.getState()).toMatchObject({ failed: false, notice: null });
@@ -142,7 +144,7 @@ describe("the box's draft", () => {
     saves()[0]?.answer(editable("Hello"));
     await settle();
     expect(sends().map(({ path, body }) => ({ path, body }))).toEqual([
-      { path: "messages", body: { id: "id-1", text: "Hello" } },
+      { path: "messages", body: { id: "id-1", text: "Hello", refs: [] } },
     ]);
     box.type("Hello!");
     expect(held(box.store.getState())).toBe(true);
@@ -180,10 +182,70 @@ describe("the box's draft", () => {
     sends()[2]?.answer({ id: "id-2", draft: editable("") });
     await again;
     expect(sends().map(({ body }) => body)).toEqual([
-      { id: "id-1", text: "Keep this" },
-      { id: "id-2", text: "Keep this" },
-      { id: "id-2", text: "Keep this" },
+      { id: "id-1", text: "Keep this", refs: [] },
+      { id: "id-2", text: "Keep this", refs: [] },
+      { id: "id-2", text: "Keep this", refs: [] },
     ]);
     expect(box.store.getState().text).toBe("");
+  });
+});
+
+describe("the box's chips", () => {
+  const doc = {
+    pointer: { type: "document", id: "doc-1" },
+    label: "",
+    detail: "",
+  } as const;
+  const named = {
+    ref: { type: "document", id: "doc-1", version: 2 },
+    label: "Sunrise Labs August.pdf",
+    detail: "Lab report",
+  } as const;
+
+  it("adds chips after the text and saves them with it, once each; the core names them; they go with the send and clear with it", async () => {
+    const { api, saves, sends } = core(editable("What changed?"));
+    const box = draftBox(api);
+    await settle();
+
+    expect(box.append("", [doc])).toBe(true);
+    expect(box.append("", [doc])).toBe(true);
+    await settle();
+    expect(saves()[0]?.body).toEqual({
+      text: "What changed?",
+      refs: [{ type: "document", id: "doc-1" }],
+    });
+    saves()[0]?.answer({ text: "What changed?", refs: [named] });
+    await settle();
+    expect(box.store.getState().refs).toEqual([
+      {
+        pointer: { type: "document", id: "doc-1" },
+        label: "Sunrise Labs August.pdf",
+        detail: "Lab report",
+      },
+    ]);
+    // Nothing new to save for the second add of the same chip.
+    expect(saves()).toHaveLength(1);
+
+    void box.submit(false);
+    await settle();
+    expect(sends()[0]?.body).toEqual({
+      id: "id-1",
+      text: "What changed?",
+      refs: [{ type: "document", id: "doc-1" }],
+    });
+    sends()[0]?.answer({ id: "id-1", draft: editable("") });
+    await settle();
+    expect(box.store.getState()).toMatchObject({ text: "", refs: [] });
+  });
+
+  it("reads the draft with its chips, as after a reload; a chip taken out is saved without it", async () => {
+    const { api, saves } = core({ text: "", refs: [named] });
+    const box = draftBox(api);
+    await settle();
+    expect(box.store.getState().refs).toHaveLength(1);
+    box.remove(doc);
+    await settle();
+    expect(saves()[0]?.body).toEqual({ text: "", refs: [] });
+    expect(box.store.getState().refs).toEqual([]);
   });
 });

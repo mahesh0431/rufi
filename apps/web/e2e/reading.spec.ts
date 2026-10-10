@@ -25,7 +25,7 @@ async function start(
   reader: ReturnType<typeof scriptedReader>,
 ) {
   await rufi.family(
-    `DELETE FROM results; DELETE FROM reports;
+    `DELETE FROM record_sources; DELETE FROM results; DELETE FROM reports;
      DELETE FROM document_pages; DELETE FROM documents;`,
   );
   await rufi.start({ reader: reader.run });

@@ -170,7 +170,6 @@ export const SaveInput = Schema.Struct({
   ),
 );
 export type SaveRequest = typeof SaveInput.Type;
-export type Change = NonNullable<SaveRequest["changes"]>[number];
 
 /** A problem with one part of the input, in words the AI can act on. */
 export interface Problem {
@@ -769,7 +768,9 @@ async function write(
         .where("removed_by", "is", null)
         .execute();
       break;
-    default: {
+    case "change":
+    case "remove":
+    case "restore": {
       const sets = Object.entries(columns).map(
         ([name, value]) => sql`${sql.ref(name)} = ${value}`,
       );

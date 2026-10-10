@@ -126,7 +126,7 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
     .getByRole("listitem");
   await expect(sources).toHaveText([
     "Medicine useMetformin 500 mg · Mar 2024 · currentSaved before Rufi kept sources",
-    "ResultHbA1c 6.8 % · 12 Aug 2026Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf",
+    "ResultHbA1c 6.8 % · 12 Aug 2026Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf, page 1",
     "ResultVitamin D 22 ng/mL · May 2026Saved before Rufi kept sources",
   ]);
   await expect(page.getByText("The record changed since")).toHaveCount(0);
@@ -142,7 +142,7 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
   expect(copied).toMatch(/^Visit brief · Made at \d\d:\d\d on /);
   expect(copied).toContain(`saved record\n\n${MARKDOWN}\n\nSources\n`);
   expect(copied).toContain(
-    "\n- Result: HbA1c 6.8 % · 12 Aug 2026 (Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf)",
+    "\n- Result: HbA1c 6.8 % · 12 Aug 2026 (Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf, page 1)",
   );
 
   // The second scripted turn changes the record through the running chat.

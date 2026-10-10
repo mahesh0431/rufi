@@ -322,10 +322,7 @@ describe("saving draft items", () => {
 
   it("puts a page that prints no lab, number or date in the report of the page before", async () => {
     await read();
-    const { LDL = "" } = Object.fromEntries(
-      Object.entries(drafts()).map(([test, id]) => [test.split(" ")[0], id]),
-    );
-    const { HbA1c = "" } = drafts();
+    const { HbA1c = "", "LDL cholesterol": LDL = "" } = drafts();
     await say("Save HbA1c and LDL");
     const saved = await call("save_changes", {
       items: [

@@ -329,12 +329,12 @@ export async function planItems(
         continue;
       }
       const target = save.record;
-      before = (await trx
+      before = await trx
         .selectFrom("results")
         .selectAll()
         .where("person_id", "=", personId)
         .where("id", "=", target.id)
-        .executeTakeFirst()) as Row | undefined;
+        .executeTakeFirst();
       const current = versions.get(`result:${target.id}`) ?? null;
       const pointed = context.refs.filter(
         (r) => r.type === "record" && r.id === target.id,

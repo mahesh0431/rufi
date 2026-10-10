@@ -5,7 +5,7 @@
 // from what the screen sent: a sent message keeps each one's version then.
 // The AI gets them as a short list after the message and reads them with
 // its tools.
-import type { Chip, Pointer, Ref } from "@rufi/contracts";
+import type { Chip, Pointer } from "@rufi/contracts";
 import { sql, type Kysely } from "kysely";
 import { shownDate } from "../record/dates.ts";
 import { kindNamed, type Kind, type Row } from "../record/kinds.ts";
