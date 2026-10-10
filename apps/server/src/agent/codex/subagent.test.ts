@@ -13,7 +13,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fakeModel,
   type FakeModel,
@@ -681,7 +681,13 @@ describe("the reader's provider outcomes", () => {
 describe("the reader's turn when Codex's lines come together", () => {
   // Codex's answer to turn/start, turn/started and the turn's first lines
   // can arrive in one read: the turn is still the reader's.
-  const run = (scenario: Scenario, input: string, callTool: () => void) =>
+  const log = () => join(root, "fake-codex.jsonl");
+  const run = (
+    scenario: Scenario,
+    input: string,
+    callTool: () => void,
+    signal?: AbortSignal,
+  ) =>
     subAgentRunner({
       home: root,
       command: {
@@ -691,23 +697,38 @@ describe("the reader's turn when Codex's lines come together", () => {
       env: {
         PATH: process.env["PATH"] ?? "",
         FAKE_CODEX: JSON.stringify({ ...scenario, together: true }),
+        FAKE_CODEX_LOG: log(),
       },
       token: () => Promise.resolve("not-a-real-token"),
       version: "0.0.0",
-    })({
-      model: MODEL,
-      effort: "low",
-      instructions: INSTRUCTIONS,
-      input,
-      tools: { namespace: "rufi", specs: [] },
-      callTool: () => {
-        callTool();
-        return Promise.resolve({ ok: true, text: "{}" });
+    })(
+      {
+        model: MODEL,
+        effort: "low",
+        instructions: INSTRUCTIONS,
+        input,
+        tools: { namespace: "rufi", specs: [] },
+        callTool: () => {
+          callTool();
+          return Promise.resolve({ ok: true, text: "{}" });
+        },
+        onCompaction: () => undefined,
+        // Well under the test's own timeout: an end missed waits for this.
+        deadlineMs: 20_000,
       },
-      onCompaction: () => undefined,
-      // Well under the test's own timeout: an end missed waits for this.
-      deadlineMs: 20_000,
-    });
+      signal,
+    );
+  /** What the fake Codex received from Rufi, in order. */
+  const received = async () =>
+    (await readFile(log(), "utf8").catch(() => ""))
+      .split("\n")
+      .filter(Boolean)
+      .flatMap((line) => {
+        const { received } = JSON.parse(line) as {
+          received?: { method?: string; params?: Record<string, unknown> };
+        };
+        return received?.method === undefined ? [] : [received];
+      });
 
   it("runs the turn's first tool call", async () => {
     let called = 0;
@@ -735,5 +756,38 @@ describe("the reader's turn when Codex's lines come together", () => {
       reason: "usage_limit",
       resetsAt: "2026-10-10T07:35:00.000Z",
     });
+  }, 120_000);
+
+  it("ends a turn stopped while it starts, with one interrupt", async () => {
+    const stop = new AbortController();
+    const outcome = run(
+      { bare: true, slow: ["turn/start"], slowMs: 250 },
+      "hang",
+      () => {
+        throw new Error("No tool call expected.");
+      },
+      stop.signal,
+    );
+    // Stopped once Codex has the turn/start, before its answer comes back
+    // with turn/started in the same read: either names the turn.
+    await vi.waitFor(
+      async () => {
+        expect((await received()).map((m) => m.method)).toContain("turn/start");
+      },
+      { timeout: 10_000, interval: 5 },
+    );
+    stop.abort();
+    expect((await outcome).end).toEqual({
+      status: "interrupted",
+      reason: "stopped",
+      text: "Stopped.",
+    });
+    const messages = await received();
+    const start = messages.find((m) => m.method === "turn/start");
+    expect(
+      messages
+        .filter((m) => m.method === "turn/interrupt")
+        .map((m) => m.params),
+    ).toEqual([{ threadId: start?.params?.["threadId"], turnId: "turn-1" }]);
   }, 120_000);
 });
