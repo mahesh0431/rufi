@@ -276,16 +276,21 @@ function FollowUpView({
 
 /**
  * The record a follow-up is about, by its label and date, read through the
- * record's own detail; it opens on its kind's page.
+ * record's own detail; it opens on its kind's page. A result amended since
+ * keeps the values the follow-up was about, says what it was amended to,
+ * and opens the current one, following each amendment; `said` is the label
+ * of the record the follow-up names, once an amendment is followed.
  */
 function About({
   personId,
   kind,
   id,
+  said,
 }: {
   personId: string;
   kind: string;
   id: string;
+  said?: string;
 }) {
   const detail = useRecordDetail(personId, kind, id);
   const row = detail.data?.row;
@@ -298,11 +303,26 @@ function About({
   }
   const cells = cellsOf(row);
   const label = [cells.title, cells.date].filter(Boolean).join(" · ");
+  const newer = detail.data?.replacedBy;
+  if (newer !== undefined && !("problem" in newer)) {
+    return (
+      <About
+        personId={personId}
+        kind={kind}
+        id={newer.id}
+        said={said ?? label}
+      />
+    );
+  }
+  const shown =
+    said === undefined
+      ? label
+      : `${said} · amended to ${cells.value ?? cells.title}`;
   return (
     <span className="block text-[12.5px] text-muted">
       About:{" "}
       {detail.data?.removed ? (
-        `${label} (removed from your record)`
+        `${shown} (removed from your record)`
       ) : (
         <Link
           to="/people/$personId/record/$kind"
@@ -310,7 +330,7 @@ function About({
           search={{ open: id }}
           className="rounded-md text-accent-ink hover:bg-accent-soft"
         >
-          {label}
+          {shown}
         </Link>
       )}
     </span>

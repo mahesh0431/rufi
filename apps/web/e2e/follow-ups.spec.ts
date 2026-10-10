@@ -98,6 +98,32 @@ test("a done follow-up shows the result it is about, which opens on Results", as
   await expect(row).toBeInViewport();
 });
 
+test("a follow-up about a result amended since says so, and opens the current one", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family(
+    "INSERT INTO follow_ups (id, person_id, title, due, linked_kind, linked_id) VALUES ('f-tsh', 'asha', 'Recheck TSH', '2026-12', 'result', 'res-a4');",
+  );
+  await rufi.start({ now: () => new Date(2026, 9, 11, 9).toISOString() });
+  await page.goto(rufi.link());
+  await page
+    .getByRole("complementary")
+    .getByRole("link", { name: /^Follow-ups/ })
+    .click();
+
+  await page
+    .getByRole("link", {
+      name: "TSH 2.1 mIU/L · 12 Aug 2026 · amended to 4.6 mIU/L",
+    })
+    .click();
+
+  await expect(page).toHaveURL(/\/record\/result\?open=res-a5$/);
+  const row = page.getByRole("button", { name: "TSH amended" });
+  await expect(row).toHaveAttribute("aria-expanded", "true");
+  await expect(row).toBeInViewport();
+});
+
 test("Needs you's Open opens that follow-up on Follow-ups, in view", async ({
   page,
   rufi,
