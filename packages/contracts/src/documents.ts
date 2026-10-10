@@ -193,3 +193,88 @@ export const ReadingView = Schema.Struct({
   effort: Schema.NullOr(Schema.String),
 });
 export type ReadingView = typeof ReadingView.Type;
+
+/** A draft item's printed fields that a fix can change, and their limits. */
+export const FIXABLE = {
+  test_name: 200,
+  value_text: 100,
+  unit: 200,
+  reference_range: 200,
+  flag_text: 200,
+  context_text: 200,
+} as const;
+export type Fixable = keyof typeof FIXABLE;
+
+/** A lab result's fields on a draft item, as printed. */
+const DraftFields = Schema.Struct({
+  test_name: Schema.String,
+  value_text: Schema.String,
+  comparator: Schema.optionalKey(Schema.String),
+  value_number: Schema.optionalKey(Schema.Number),
+  unit: Schema.optionalKey(Schema.String),
+  reference_range: Schema.optionalKey(Schema.String),
+  flag_text: Schema.optionalKey(Schema.String),
+  context_text: Schema.optionalKey(Schema.String),
+  date: Schema.optionalKey(PrintedDate),
+  column: Schema.optionalKey(Schema.Literals(["current", "earlier"])),
+  from_page: Schema.optionalKey(Schema.Int),
+});
+
+/** What the reader read and the person hasn't saved yet: never the record. */
+export const DraftItem = Schema.Struct({
+  id: Schema.String,
+  /** Rises with each fix; a fix names the version it was made on. */
+  version: Schema.Int,
+  page: Schema.Int,
+  status: Schema.Literals(["pending", "saved", "dismissed"]),
+  /** The fields now: the reader's, or the person's fix. */
+  fields: DraftFields,
+  /** The reader's fields, never changed. */
+  original: DraftFields,
+  /** Why it may be wrong: the reader's words and Rufi's checks. */
+  unsure: Schema.Array(Schema.String),
+});
+export type DraftItem = typeof DraftItem.Type;
+
+/** A document's pages and draft items, for the document page. */
+export const DocumentItems = Schema.Struct({
+  pages: Schema.Array(
+    Schema.Struct({
+      position: Schema.Int,
+      /** Once a reading that read it ended; null while it waits. */
+      state: Schema.NullOr(
+        Schema.Literals([
+          "read",
+          "nothing_here",
+          "unreadable",
+          "not_looked_at",
+        ]),
+      ),
+      why: Schema.NullOr(Schema.String),
+      /** The reader counted more or fewer rows than it read. */
+      incomplete: Schema.NullOr(
+        Schema.Struct({ rows_seen: Schema.Int, items: Schema.Int }),
+      ),
+    }),
+  ),
+  /** In page order, then as on the page. */
+  items: Schema.Array(DraftItem),
+});
+export type DocumentItems = typeof DocumentItems.Type;
+
+const fixed = (field: Fixable) =>
+  Schema.optionalKey(Schema.String.check(Schema.isMaxLength(FIXABLE[field])));
+
+/** A fix: the item's version it was made on, and the fields it changes. */
+export const FixItem = Schema.Struct({
+  version: Schema.Int,
+  fields: Schema.Struct({
+    test_name: fixed("test_name"),
+    value_text: fixed("value_text"),
+    unit: fixed("unit"),
+    reference_range: fixed("reference_range"),
+    flag_text: fixed("flag_text"),
+    context_text: fixed("context_text"),
+  }),
+});
+export type FixItem = typeof FixItem.Type;

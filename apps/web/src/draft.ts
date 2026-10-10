@@ -182,6 +182,23 @@ export function draftBox(api: DraftApi) {
     saveNow: save,
 
     /**
+     * Puts `text` in the box after what it holds, as if typed, and saves it
+     * now. False, with nothing changed, before the draft is read or while a
+     * send holds the box.
+     */
+    append(text: string): boolean {
+      const state = store.getState();
+      if (!state.loaded || state.sending) return false;
+      const before = state.text.trimEnd();
+      store.setState({
+        text: before === "" ? text : `${before}\n\n${text}`,
+        notice: null,
+      });
+      void save();
+      return true;
+    },
+
+    /**
      * Sends the text into the queue, or steers it into the running reply.
      * The box empties when the core took it; a refusal leaves the text with
      * the reason.

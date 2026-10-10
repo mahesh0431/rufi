@@ -33,7 +33,7 @@ import { Button } from "./ui.tsx";
 const boxes = new Map<string, DraftBox>();
 
 /** The box of a person's chat, the same in every size. */
-function boxFor(personId: string): DraftBox {
+export function boxFor(personId: string): DraftBox {
   let box = boxes.get(personId);
   if (!box) {
     const path = chatPath(personId);

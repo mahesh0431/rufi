@@ -22,6 +22,7 @@ import { transcripts as openTranscripts } from "../core/chat/transcript.ts";
 import { documents } from "../core/documents/documents.ts";
 import { notebook } from "../core/documents/notebook.ts";
 import { readings as openReadings } from "../core/documents/reading.ts";
+import { draftItems } from "../core/documents/items.ts";
 import { backupJob } from "../core/store/backup.ts";
 import {
   databasePath,
@@ -241,6 +242,8 @@ export const startCore = (options: CoreOptions) =>
       exportZip: () => exportZip(home, new Date()),
       documents: documents(writer, home, options.now, readings),
       readings,
+      items: draftItems(writer, readings.changed),
+      pages: pageService,
       signIn: signInFlow(options.signIn, log),
       launcher,
       launchUrl,

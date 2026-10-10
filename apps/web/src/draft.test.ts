@@ -187,3 +187,33 @@ describe("the box's draft", () => {
     expect(box.store.getState().text).toBe("");
   });
 });
+
+describe("adding to the box from another page", () => {
+  it("puts the text after what the box holds and saves it; refuses while a send holds the box", async () => {
+    const { api, saves, sends } = core(editable("What changed since March?"));
+    const box = draftBox(api);
+    await settle();
+
+    expect(box.append("Save these 18 results.")).toBe(true);
+    await settle();
+    expect(box.store.getState().text).toBe(
+      "What changed since March?\n\nSave these 18 results.",
+    );
+    expect(saves()[0]?.body).toEqual({
+      text: "What changed since March?\n\nSave these 18 results.",
+    });
+    saves()[0]?.answer(
+      editable("What changed since March?\n\nSave these 18 results."),
+    );
+    await settle();
+
+    void box.submit(false);
+    await settle();
+    expect(held(box.store.getState())).toBe(true);
+    expect(box.append("Save these 2 results.")).toBe(false);
+    expect(box.store.getState().text).toBe(
+      "What changed since March?\n\nSave these 18 results.",
+    );
+    expect(sends()).toHaveLength(1);
+  });
+});
