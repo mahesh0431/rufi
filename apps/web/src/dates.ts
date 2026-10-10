@@ -16,17 +16,23 @@ const MONTHS = [
   "Dec",
 ];
 
-/** "2026-08-12" → "12 Aug 2026"; "2026-08" → "Aug 2026"; "2026" → "2026". */
+/**
+ * "2026-08-12" → "12 Aug 2026"; "2026-08" → "Aug 2026"; "2026" → "2026";
+ * "2026-05-20T08:30" → "20 May 2026 08:30", the time as stored (local, never
+ * through UTC).
+ */
 export function printedDate(value: string): string {
-  const match = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$/.exec(value);
+  const match = /^(\d{4})(?:-(\d{2})(?:-(\d{2})(?:T(\d{2}:\d{2}))?)?)?$/.exec(
+    value,
+  );
   if (!match) return value;
-  const [, year = "", month, day] = match;
+  const [, year = "", month, day, time] = match;
   const name = month === undefined ? undefined : MONTHS[Number(month) - 1];
   if (month !== undefined && name === undefined) return value;
   if (name === undefined) return year;
-  return day === undefined
-    ? `${name} ${year}`
-    : `${String(Number(day))} ${name} ${year}`;
+  if (day === undefined) return `${name} ${year}`;
+  const date = `${String(Number(day))} ${name} ${year}`;
+  return time === undefined ? date : `${date} ${time}`;
 }
 
 /** "Sunday, 4 October" for today's greeting. */

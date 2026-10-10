@@ -525,30 +525,37 @@ async function recent(db: Db, personId: string): Promise<RecentChange[]> {
   }));
 }
 
-/** Documents waiting for the person: read and not saved, or a reading that failed. */
+/**
+ * Documents waiting for the person: read with results not saved, read with
+ * pages that couldn't be read (Retry reads them), or a reading that failed.
+ * A document read cleanly with nothing to save waits for nothing.
+ */
 export function waiting(
   documents: readonly DocumentSummary[],
 ): WaitingDocument[] {
   return documents.flatMap((document): WaitingDocument[] => {
     const name = documentName(document.files.map((file) => file.name));
     const reading = document.reading;
-    if (document.status === "failed") {
-      return [
-        { id: document.id, name, state: "failed", results: 0, toCheck: 0 },
-      ];
-    }
-    if (document.status === "done" && reading && reading.results > 0) {
-      return [
-        {
-          id: document.id,
-          name,
-          state: "to_save",
-          results: reading.results,
-          toCheck: reading.toCheck,
-        },
-      ];
-    }
-    return [];
+    const state =
+      document.status === "failed"
+        ? "failed"
+        : document.status !== "done" || !reading
+          ? undefined
+          : reading.results > 0
+            ? "to_save"
+            : reading.canRetry
+              ? "unread_pages"
+              : undefined;
+    if (state === undefined) return [];
+    return [
+      {
+        id: document.id,
+        name,
+        state,
+        results: state === "failed" ? 0 : (reading?.results ?? 0),
+        toCheck: state === "failed" ? 0 : (reading?.toCheck ?? 0),
+      },
+    ];
   });
 }
 

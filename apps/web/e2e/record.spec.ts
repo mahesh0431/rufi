@@ -50,7 +50,7 @@ test("a save in one window refreshes Overview's tiles there and a kind's page in
   await sidebar(results)
     .getByRole("link", { name: /^Results/ })
     .click();
-  const crp = results.getByRole("button", { name: "CRP <5 mg/L" });
+  const crp = results.getByRole("button", { name: "CRP", exact: true });
   await expect(crp).toBeVisible();
   await expect(
     results.getByRole("region", {
@@ -83,6 +83,57 @@ test("a save in one window refreshes Overview's tiles there and a kind's page in
   ).toBeVisible();
 });
 
+test("a row's history shows a correction before and after, a time with its time", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family(
+    `INSERT INTO results (id, person_id, test_name, value_text, unit, measured_at, measured_words, entered_at)
+       VALUES ('res-bp', 'asha', 'Blood pressure', '128/84', 'mmHg', '2026-05-20T08:30', '8:30 that morning', '2026-05-20T10:00:00Z');`,
+  );
+  await rufi.start({
+    scenario: {
+      calls: [
+        {
+          namespace: "rufi",
+          tool: "save_changes",
+          arguments: {
+            changes: [
+              {
+                kind: "result",
+                action: "change",
+                id: "res-bp",
+                source: "It was taken at 9:45, not 8:30",
+                fields: {
+                  measured: { date: "2026-05-20T09:45", words: "at 9:45" },
+                },
+              },
+            ],
+          },
+        },
+      ],
+    },
+  });
+  await page.goto(rufi.link());
+  await box(page).fill("It was taken at 9:45, not 8:30");
+  await box(page).press("Enter");
+  await expect(chat(page).locator(".receipt")).toContainText("Blood pressure");
+  await page.keyboard.press("Escape");
+
+  await sidebar(page)
+    .getByRole("link", { name: /^Results/ })
+    .click();
+  const row = page
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("button", { name: "Blood pressure" }) });
+  // Its own time shows: its group says only the day.
+  await expect(row).toContainText("09:45");
+  await row.getByRole("button", { name: "Blood pressure" }).click();
+  await expect(row).toContainText(
+    "measured 20 May 2026 08:30 → 20 May 2026 09:45",
+  );
+});
+
 test("the Results page shows results as the lab printed them, by report, and more as you scroll", async ({
   page,
   rufi,
@@ -103,21 +154,21 @@ test("the Results page shows results as the lab printed them, by report, and mor
     page
       .getByRole("listitem")
       .filter({ has: page.getByRole("button", { name }) });
-  await expect(row("HbA1c 6.8 %")).toContainText("4.0 - 5.6High");
-  await expect(row("Glucose 118 mg/dL")).toContainText("High · Fasting");
+  await expect(row("HbA1c")).toContainText("6.8 %4.0 - 5.6High");
+  await expect(row("Glucose")).toContainText("118 mg/dL70 - 99High · Fasting");
   // The amended TSH is in the report that amended it, with its own date.
   await expect(
     page
       .getByRole("region", { name: "Sunrise Labs · 1 Sep 2026 · 2 results" })
       .getByRole("listitem")
       .filter({ hasText: "TSH" }),
-  ).toContainText("TSH 4.6 mIU/L amended0.4 - 4.0High12 Aug 2026");
+  ).toContainText("TSH amended4.6 mIU/L0.4 - 4.0High12 Aug 2026");
   // A month typed in the chat stays a month; no date stays empty.
   await expect(
     page.getByRole("region", {
       name: "Typed in the chat · May 2026 · 1 result",
     }),
-  ).toContainText("Vitamin D 22 ng/mL");
+  ).toContainText("Vitamin D22 ng/mL");
   // The oldest reports come when the end of the page shows.
   const oldest = page.getByRole("region", {
     name: "Lakeside Clinic · 5 Jan 2025 · 1 result",
@@ -129,11 +180,11 @@ test("the Results page shows results as the lab printed them, by report, and mor
   await expect(oldest).toBeVisible();
   await expect(
     page.getByRole("region", { name: "No date · 1 result" }),
-  ).toContainText("Blood group B positive");
+  ).toContainText("Blood groupB positive");
   await accessible(page);
 });
 
-test("a reading that ends, with nothing saved, shows in Needs you on an open Overview", async ({
+test("a reading that ends, with nothing saved, shows in Needs you on an open Overview: results to save, or pages that couldn't be read", async ({
   page,
   rufi,
   context,
@@ -144,6 +195,26 @@ test("a reading that ends, with nothing saved, shows in Needs you on an open Ove
       await turn.save(1, readPage());
       return undefined;
     },
+    // A blurred photo: the reading completes, with its page unreadable.
+    async (turn) => {
+      await turn.look(1);
+      await turn.save(1, {
+        outcome: "unreadable",
+        why: "The print is blurred.",
+        items: [],
+      });
+      return undefined;
+    },
+    // Read again: a letter, cleanly read, with nothing to save.
+    async (turn) => {
+      await turn.look(1);
+      await turn.save(1, {
+        outcome: "read",
+        facts: { kind: "letter" },
+        items: [],
+      });
+      return undefined;
+    },
   ]);
   await rufi.family();
   await rufi.start({ reader: reader.run });
@@ -151,24 +222,43 @@ test("a reading that ends, with nothing saved, shows in Needs you on an open Ove
   await expect(
     page.getByRole("heading", { name: "Your record" }),
   ).toBeVisible();
-  await expect(page.getByRole("region", { name: "Needs you" })).toHaveCount(0);
+  const needsYou = page.getByRole("region", { name: "Needs you" });
+  await expect(needsYou).toHaveCount(0);
 
-  // Another window adds a report; this one stays on Overview.
+  // Another window adds the documents; this one stays on Overview.
   const other = await context.newPage();
   await other.goto(rufi.link());
   await sidebar(other).getByRole("link", { name: "Documents" }).click();
-  await other.getByLabel("Choose documents").setInputFiles({
-    name: "lotus-labs.pdf",
-    mimeType: "application/pdf",
-    buffer: await readFile(
-      join(
-        import.meta.dirname,
-        "../../server/tests/fixtures/documents/ravi-lipid-panel.pdf",
+  const add = async (name: string, mimeType: string, file: string) => {
+    await other.getByLabel("Choose documents").setInputFiles({
+      name,
+      mimeType,
+      buffer: await readFile(
+        join(
+          import.meta.dirname,
+          "../../server/tests/fixtures/documents",
+          file,
+        ),
       ),
-    ),
-  });
-  await expect(page.getByRole("region", { name: "Needs you" })).toContainText(
+    });
+  };
+  await add("lotus-labs.pdf", "application/pdf", "ravi-lipid-panel.pdf");
+  await expect(needsYou).toContainText(
     /lotus-labs\.pdf · \d+ results? read, not saved/,
   );
+  await add("clinic-letter.heic", "image/heic", "sideways.heic");
+  await expect(needsYou.getByRole("listitem")).toHaveText([
+    /clinic-letter\.heic · couldn't be read · try a clearer scan/,
+    /lotus-labs\.pdf · \d+ results? read, not saved/,
+  ]);
   await accessible(page);
+
+  // Read again cleanly with nothing to save, it waits for nothing.
+  await other
+    .getByRole("row", { name: /clinic-letter\.heic/ })
+    .getByRole("button", { name: "Retry" })
+    .click();
+  await expect(needsYou.getByRole("listitem")).toHaveText([
+    /lotus-labs\.pdf · \d+ results? read, not saved/,
+  ]);
 });

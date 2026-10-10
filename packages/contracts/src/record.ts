@@ -287,11 +287,14 @@ export const Tile = Schema.Struct({
 });
 export type Tile = typeof Tile.Type;
 
-/** A document waiting for you: read and not saved, or not read. */
+/**
+ * A document waiting for you: read with results not saved, read with pages
+ * that couldn't be read, or a reading that failed.
+ */
 export const WaitingDocument = Schema.Struct({
   id: Id,
   name: Schema.String,
-  state: Schema.Literals(["to_save", "failed"]),
+  state: Schema.Literals(["to_save", "unread_pages", "failed"]),
   results: Schema.Int,
   toCheck: Schema.Int,
 });

@@ -53,8 +53,9 @@ const isBad = (row: ShownRow): row is Exclude<ShownRow, RecordRow> =>
 const join = (...parts: (string | undefined | false)[]) =>
   parts.filter((part) => typeof part === "string" && part !== "").join(" ");
 
+/** A stored date at its own precision, with its time when it has one. */
 const dated = (when?: { date: string }) =>
-  when === undefined ? undefined : printedDate(when.date.slice(0, 10));
+  when === undefined ? undefined : printedDate(when.date);
 
 /** From one date to another, as known. */
 const span = (from?: { date: string }, to?: { date: string }) =>
@@ -85,6 +86,9 @@ const STATUS: Record<string, string> = {
 interface Cells {
   /** What the row is, as its chip names it. */
   title: string;
+  /** A result's name, shown apart from its value so values line up. */
+  name?: string;
+  value?: string;
   /** A word after the title. */
   note?: string;
   detail?: string;
@@ -96,15 +100,23 @@ interface Cells {
 function cellsOf(row: RecordRow, groupDate?: string): Cells {
   switch (row.kind) {
     case "result": {
-      const measured = row.measured?.date.slice(0, 10);
+      // Its own date (and time) only when its group's doesn't say it.
+      const measured = row.measured?.date;
       return {
         title: join(row.test, row.value, row.unit),
+        name: row.test,
+        value: join(row.value, row.unit),
         ...(row.replaces !== undefined && { note: "amended" }),
         ...(row.range !== undefined && { detail: row.range }),
         status: [row.flag, row.context].filter(Boolean).join(" · "),
-        // Only a date that differs from its group's.
+        // Only a date that differs from its group's; on its group's day,
+        // only its time.
         ...(measured !== undefined &&
-          measured !== groupDate && { date: printedDate(measured) }),
+          measured !== groupDate && {
+            date: measured.startsWith(`${groupDate ?? ""}T`)
+              ? measured.slice(11)
+              : dated(row.measured),
+          }),
       };
     }
     case "medicine_use":
@@ -275,6 +287,12 @@ export function RecordPage({
   );
   return (
     <div className="mx-auto max-w-[790px] px-6 py-8">
+      {results && (
+        <p className="mb-3 text-muted">
+          As printed, newest first. Changes start in the chat:{" "}
+          <b className="font-semibold">Ask Rufi</b> on a row.
+        </p>
+      )}
       {groups.length === 0 ? (
         <p className="text-muted">Nothing here yet.</p>
       ) : results ? (
@@ -383,10 +401,11 @@ function RowView({
     );
   }
   const cells = cellsOf(row, groupDate);
+  const result = cells.value !== undefined;
   return (
     <li className="border-t border-line first:border-t-0">
       <div
-        className={`group grid grid-cols-[20px_1.4fr_1fr_0.8fr_1fr_auto] items-center gap-2 px-3 py-2 ${open || ticked ? "bg-accent-soft" : "hover:bg-side"}`}
+        className={`group grid items-center gap-2 px-3 py-2 ${result ? "grid-cols-[20px_1.2fr_1fr_0.9fr_1fr_0.9fr_auto]" : "grid-cols-[20px_1.4fr_1fr_0.8fr_1fr_auto]"} ${open || ticked ? "bg-accent-soft" : "hover:bg-side"}`}
       >
         <input
           type="checkbox"
@@ -403,11 +422,12 @@ function RowView({
           onClick={onOpen}
           className="min-w-0 text-left font-semibold"
         >
-          {cells.title}
+          {cells.name ?? cells.title}
           {cells.note !== undefined && (
             <span className="font-normal text-muted"> {cells.note}</span>
           )}
         </button>
+        {result && <span>{cells.value}</span>}
         <span className="text-muted">{cells.detail}</span>
         <span>{cells.status}</span>
         <span className="text-muted">{cells.date}</span>
@@ -434,7 +454,7 @@ function RowView({
 function valueOf(value: unknown): string {
   if (value === undefined || value === null) return "not known";
   if (typeof value === "object" && "date" in value) {
-    return printedDate(String(value.date).slice(0, 10));
+    return printedDate(String(value.date));
   }
   if (typeof value === "object" && "kind" in value) return "another record";
   if (value === "next_visit") return "the next visit";

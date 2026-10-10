@@ -5,7 +5,7 @@ import type { Person } from "@rufi/contracts";
 import type { RecentChange, Tile } from "@rufi/contracts/record";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { greeting, printedDate, printedTime, today } from "./dates.ts";
+import { dayLine, greeting, printedDate, printedTime, today } from "./dates.ts";
 import { KIND_TITLES } from "./record.tsx";
 import { useOverview } from "./reads.ts";
 import { Receipt } from "./transcript.tsx";
@@ -47,14 +47,16 @@ export function OverviewPage({ person }: { person: Person }) {
                       <span className="text-muted">
                         ·{" "}
                         {document.state === "failed"
-                          ? "couldn't be read"
-                          : [
-                              `${String(document.results)} ${document.results === 1 ? "result" : "results"} read, not saved`,
-                              document.toCheck > 0 &&
-                                `${String(document.toCheck)} to check`,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
+                          ? "couldn't finish reading"
+                          : document.state === "unread_pages"
+                            ? "couldn't be read · try a clearer scan"
+                            : [
+                                `${String(document.results)} ${document.results === 1 ? "result" : "results"} read, not saved`,
+                                document.toCheck > 0 &&
+                                  `${String(document.toCheck)} to check`,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
                       </span>
                     </span>
                     <Link
@@ -89,7 +91,7 @@ export function OverviewPage({ person }: { person: Person }) {
               </h2>
               <ul className="rounded-xl border border-line bg-surface">
                 {data.recent.map((change) => (
-                  <RecentView key={change.id} change={change} />
+                  <RecentView key={change.id} change={change} now={now} />
                 ))}
               </ul>
             </section>
@@ -105,13 +107,15 @@ const plural = (n: number, one: string, many: string) =>
 
 /** What a tile says under its title, from what the core counted. */
 function tileLines(tile: Tile): string[] {
-  if (tile.count === 0) {
-    return tile.noneKnown === undefined
-      ? ["None yet"]
-      : [
-          `None known${tile.noneKnown === "" ? "" : ` (as of ${printedDate(tile.noneKnown)})`}`,
-        ];
+  // "None known" stands beside inactive allergies: only an active one or
+  // one of unknown status can't (the save refuses it).
+  if (tile.noneKnown !== undefined) {
+    return [
+      `None known${tile.noneKnown === "" ? "" : ` (as of ${printedDate(tile.noneKnown)})`}`,
+      ...(tile.count > 0 ? [`${String(tile.count)} inactive`] : []),
+    ];
   }
+  if (tile.count === 0) return ["None yet"];
   const names = tile.names.join(", ");
   const latest = tile.latest;
   switch (tile.kind) {
@@ -198,13 +202,24 @@ function summaryOf(receipt: string): string {
     : `${first} · and ${String(rest.length)} more`;
 }
 
-function RecentView({ change }: { change: RecentChange }) {
+/** When a save was: "Today 01:45", "Yesterday 18:02", else "18:31 on 3 Sep 2026". */
+function savedAt(iso: string, now: Date): string {
+  const day = dayLine(iso, now);
+  if (day !== "Today" && day !== "Yesterday") {
+    return printedTime(iso).replace(/^at /, "");
+  }
+  const at = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${day} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+}
+
+function RecentView({ change, now }: { change: RecentChange; now: Date }) {
   return (
     <li className="border-t border-line px-3 py-2 first:border-t-0">
       <details>
         <summary className="flex cursor-pointer gap-2.5">
-          <span className="w-44 shrink-0 text-muted">
-            {printedTime(change.at).replace(/^at /, "")}
+          <span className="w-36 shrink-0 text-muted">
+            {savedAt(change.at, now)}
           </span>
           <span className="min-w-0 flex-1 truncate">
             {summaryOf(change.receipt)}
