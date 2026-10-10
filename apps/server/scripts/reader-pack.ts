@@ -3,9 +3,12 @@
 // wrong person or date, and time per page. The numbers are for the bar the
 // person sets before dogfood, not pass or fail. Only the sign-in comes from
 // RUFI_HOME (the test sign-in). Every document is read at the same time,
-// each on its own scratch data folder, person and reader.
+// each on its own scratch data folder, person and reader. By default it
+// reads a small dense set: two pages each of the densest reports, as a PDF
+// and as photos. --all reads the whole pack (long and many documents, about
+// 20 minutes); --only names the documents to read, from either.
 //
-//   RUFI_HOME=<test sign-in folder> node apps/server/scripts/reader-pack.ts [--only a,b] [--out empty-dir]
+//   RUFI_HOME=<test sign-in folder> node apps/server/scripts/reader-pack.ts [--all | --only a,b] [--out empty-dir]
 //   node apps/server/scripts/reader-pack.ts --make <dir>    (only writes the pack's files)
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -41,6 +44,7 @@ import { outFolder, runAll, sharedToken } from "./live-run.ts";
 
 const { values } = parseArgs({
   options: {
+    all: { type: "boolean", default: false },
     only: { type: "string" },
     out: { type: "string" },
     make: { type: "string" },
@@ -77,6 +81,38 @@ const pdfItem = (name: string): Item => ({
   files: () =>
     Promise.resolve([{ name: `${name}.pdf`, bytes: pdfOf([report(name)]) }]),
   key: expected([report(name)]),
+});
+
+/** The first `n` pages of a report as a text PDF. */
+const firstPagesPdf = (name: string, n: number): Item => ({
+  name: `${name}_${String(n)}_pages`,
+  kind: "pdf",
+  files: () =>
+    Promise.resolve([
+      {
+        name: `${name}-${String(n)}-pages.pdf`,
+        bytes: textPdf(layout(report(name)).slice(0, n)),
+      },
+    ]),
+  key: firstPages(report(name), n),
+});
+
+/** The first `n` pages of a report, each a photo-like JPEG of its own. */
+const photosItem = (itemName: string, name: string, n: number): Item => ({
+  name: itemName,
+  kind: "photo",
+  files: async () => {
+    const pdf = pdfOf([report(name)]);
+    const out: NewFile[] = [];
+    for (let p = 1; p <= n; p++) {
+      out.push({
+        name: `${name.replaceAll("_", "-")}-photo-${String(p)}.jpg`,
+        bytes: await photo(await drawn(pdf, p), 10 + p),
+      });
+    }
+    return out;
+  },
+  key: firstPages(report(name), n),
 });
 
 /** Page 1 of a report as a photo-like JPEG (or a plain PNG). */
@@ -137,28 +173,32 @@ const PACK: Item[] = [
     },
     key: expected([report("five_pages")]),
   },
-  {
-    name: "eight_pages_photos",
-    kind: "photo",
-    files: async () => {
-      const pdf = pdfOf([report("eight_pages")]);
-      const out: NewFile[] = [];
-      for (let p = 1; p <= 3; p++) {
-        out.push({
-          name: `eight-pages-photo-${String(p)}.jpg`,
-          bytes: await photo(await drawn(pdf, p), 10 + p),
-        });
-      }
-      return out;
-    },
-    key: firstPages(report("eight_pages"), 3),
-  },
+  photosItem("eight_pages_photos", "eight_pages", 3),
 ];
 
-const chosen = PACK.filter(
-  (item) =>
-    values.only === undefined || values.only.split(",").includes(item.name),
-);
+/**
+ * The default: two pages each of the densest reports (30 and 25 results a
+ * page), as a PDF and as photos.
+ */
+const DENSE: Item[] = [
+  firstPagesPdf("big_300", 2),
+  photosItem("eight_pages_2_photos", "eight_pages", 2),
+];
+
+const only = values.only?.split(",");
+const chosen =
+  only !== undefined
+    ? [...DENSE, ...PACK].filter((item) => only.includes(item.name))
+    : values.all
+      ? PACK
+      : DENSE;
+/** Which set ran, for the report. */
+const set =
+  only !== undefined
+    ? `the documents named: ${only.join(", ")}`
+    : values.all
+      ? "the whole pack (--all)"
+      : "the small dense set (--all reads the whole pack)";
 
 if (values.make !== undefined) {
   await mkdir(values.make, { recursive: true });
@@ -457,7 +497,7 @@ const rows = chosen.flatMap((item) => {
 const text = [
   `# Reader pack, ${new Date(started).toISOString()}`,
   "",
-  `${String(chosen.length)} documents at once; wall time ${String(Math.round((Date.now() - started) / 1000))} s.`,
+  `${String(chosen.length)} documents at once, ${set}; wall time ${String(Math.round((Date.now() - started) / 1000))} s.`,
   "",
   "Columns: document | kind | outcome | pages | expected items | correct | missed | wrong, marked unsure | wrong, not marked | extra | pages with another name | pages with a wrong / no date | pages may be incomplete / not looked at / unreadable | time per page | tokens / looks | AI asked | end line",
   "",
