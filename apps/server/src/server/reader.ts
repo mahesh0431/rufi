@@ -1,10 +1,9 @@
 // The document reader at work: runs the queued readings one at a time, each
 // as a Rufi sub-agent (agent/codex/subagent.ts) with the reader's two tools,
 // and writes its start and end into the person's chat as Rufi events. A
-// reading starts only when signed in; a
-// usage limit makes it wait until the limit resets. Each run uses the
-// model and effort chosen in Settings when it starts. Only a reader turn that
-// completed normally finishes a reading; a turn that failed for a passing
+// reading starts only when signed in; a usage limit makes it wait until the
+// limit resets. Each run uses the model and effort chosen in Settings when
+// it starts. Only a reader turn that completed normally finishes a reading; a turn that failed for a passing
 // reason gets one automatic retry, and anything else ends the reading as
 // failed, its notebook kept for Retry. When Rufi stops, a running reading
 // is left as it is: the next start queues it again.

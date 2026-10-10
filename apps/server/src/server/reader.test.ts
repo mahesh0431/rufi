@@ -1,8 +1,9 @@
 // The document reader at work, on a real database and real files, with a
 // scripted reader sub-agent (tests/fake-reader.ts) and the real jobs,
-// notebook, page service and chat transcript: the reader's model and effort, a reading
-// from its start line to its drafts and end line, a restart in the middle,
-// failures and Retry, and waiting for the sign-in or a usage limit.
+// notebook, page service and chat transcript: the reader's model and
+// effort, a reading from its start line to its drafts and end line, a
+// restart in the middle, failures and Retry, and waiting for the sign-in or
+// a usage limit.
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -383,6 +384,16 @@ describe("a reading", () => {
 });
 
 describe("a restart or a failure", () => {
+  it("Retry reads a document never read (from before Rufi read each one as it came) in full", async () => {
+    const id = await addReport();
+    store.db.exec("DELETE FROM jobs");
+    expect((await docs.list(personId))[0]?.status).toBe("not_read");
+    expect(await reads.retry(personId, id)).toEqual([1, 2]);
+    expect(rows("SELECT state, targets FROM jobs")).toEqual([
+      { state: "queued", targets: "[1,2]" },
+    ]);
+  });
+
   it("continues after a restart from the notebook: no second start line, one set of drafts", async () => {
     const first = startReader([
       async (turn) => {
