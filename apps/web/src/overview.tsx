@@ -1,184 +1,234 @@
-// A person's record at a glance: the latest results as the lab printed them.
-// A result goes into the chat as a chip: "+ Add to chat" on its row, or
-// several ticked at once.
-import type { OverviewResult, Person } from "@rufi/contracts";
+// The home: what needs you, your record as one tile per kind, and the latest
+// saves, each opening to its receipt. A tile opens its kind's page. The
+// tiles' words are worked out from the saved record, never by the AI.
+import type { Person } from "@rufi/contracts";
+import type { RecentChange, Tile } from "@rufi/contracts/record";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { boxFor } from "./boxes.ts";
-import { useShowChat } from "./panel.ts";
-import { greeting, printedDate, today } from "./dates.ts";
-import type { BoxChip } from "./draft.ts";
+import { dayLine, greeting, printedDate, printedTime, today } from "./dates.ts";
+import { KIND_TITLES } from "./record.tsx";
 import { useOverview } from "./reads.ts";
-import { Button, Problem } from "./ui.tsx";
+import { Receipt } from "./transcript.tsx";
+import { Problem } from "./ui.tsx";
 
 export function OverviewPage({ person }: { person: Person }) {
   const overview = useOverview(person.id);
   // The greeting and date as the page opened.
   const [now] = useState(() => new Date());
+  const data = overview.data;
   return (
     <div className="mx-auto max-w-[790px] px-6 py-8">
       <p className="text-muted">{today(now)}</p>
       <h1 className="mb-6 text-[22px] font-bold">
         {greeting(now)}, {person.displayName}
       </h1>
-      {overview.data === undefined && overview.error ? (
-        <Problem error={overview.error} retry={() => void overview.refetch()} />
-      ) : overview.data === undefined ? null : overview.data.results === 0 ? (
-        <p className="text-muted">
-          Your latest results will be shown here when your record has some.
-        </p>
+      {data === undefined ? (
+        overview.error && (
+          <Problem
+            error={overview.error}
+            retry={() => void overview.refetch()}
+          />
+        )
       ) : (
-        <Results
-          personId={person.id}
-          results={overview.data.latest_results}
-          total={overview.data.results}
-        />
+        <>
+          {data.needsYou.documents.length > 0 && (
+            <section aria-labelledby="needs-you" className="mb-6">
+              <h2 id="needs-you" className="mb-2 px-0.5 font-semibold">
+                Needs you
+              </h2>
+              <ul className="rounded-xl border border-line bg-surface">
+                {data.needsYou.documents.map((document) => (
+                  <li
+                    key={document.id}
+                    className="flex items-center gap-2.5 border-t border-line px-3 py-2 first:border-t-0"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="font-semibold">{document.name}</span>{" "}
+                      <span className="text-muted">
+                        ·{" "}
+                        {document.state === "failed"
+                          ? "couldn't finish reading"
+                          : document.state === "unread_pages"
+                            ? "couldn't be read · try a clearer scan"
+                            : [
+                                `${String(document.results)} ${document.results === 1 ? "result" : "results"} read, not saved`,
+                                document.toCheck > 0 &&
+                                  `${String(document.toCheck)} to check`,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                      </span>
+                    </span>
+                    <Link
+                      to="/people/$personId/documents/$documentId"
+                      params={{ personId: person.id, documentId: document.id }}
+                      aria-label={`Open ${document.name}`}
+                      className="rounded-md px-1 text-accent-ink hover:bg-accent-soft"
+                    >
+                      Open
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          <section aria-labelledby="your-record" className="mb-6">
+            <h2 id="your-record" className="mb-2 px-0.5 font-semibold">
+              Your record
+            </h2>
+            <ul className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2.5">
+              {data.tiles.map((tile) => (
+                <li key={tile.kind}>
+                  <TileView personId={person.id} tile={tile} />
+                </li>
+              ))}
+            </ul>
+          </section>
+          {data.recent.length > 0 && (
+            <section aria-labelledby="recent">
+              <h2 id="recent" className="mb-2 px-0.5 font-semibold">
+                Recent changes
+              </h2>
+              <ul className="rounded-xl border border-line bg-surface">
+                {data.recent.map((change) => (
+                  <RecentView key={change.id} change={change} now={now} />
+                ))}
+              </ul>
+            </section>
+          )}
+        </>
       )}
     </div>
   );
 }
 
-/** A result as a chip: what the row shows. */
-const chipOf = (result: OverviewResult): BoxChip => ({
-  pointer: { type: "record", kind: "result", id: result.id },
-  label: [result.test, result.value, result.unit].filter(Boolean).join(" "),
-  detail: "Result in your record",
-});
+const plural = (n: number, one: string, many: string) =>
+  `${String(n)} ${n === 1 ? one : many}`;
 
-function Results({
-  personId,
-  results,
-  total,
-}: {
-  personId: string;
-  results: readonly OverviewResult[];
-  total: number;
-}) {
-  const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
-  const [problem, setProblem] = useState<string | null>(null);
-  const showChat = useShowChat(personId);
-  const addToChat = (chosen: readonly OverviewResult[]) => {
-    if (boxFor(personId).append("", chosen.map(chipOf))) {
-      setTicked(new Set());
-      setProblem(null);
-      showChat();
-    } else {
-      setProblem("A message is being sent: add these again in a moment.");
+/** What a tile says under its title, from what the core counted. */
+function tileLines(tile: Tile): string[] {
+  // "None known" stands beside inactive allergies: only an active one or
+  // one of unknown status can't (the save refuses it).
+  if (tile.noneKnown !== undefined) {
+    return [
+      `None known${tile.noneKnown === "" ? "" : ` (as of ${printedDate(tile.noneKnown)})`}`,
+      ...(tile.count > 0 ? [`${String(tile.count)} inactive`] : []),
+    ];
+  }
+  if (tile.count === 0) return ["None yet"];
+  const names = tile.names.join(", ");
+  const latest = tile.latest;
+  switch (tile.kind) {
+    case "result":
+      return latest
+        ? [
+            [
+              `Latest: ${latest.label}`,
+              latest.date && printedDate(latest.date),
+              latest.results !== undefined &&
+                plural(latest.results, "result", "results"),
+            ]
+              .filter(Boolean)
+              .join(" · "),
+            ...(latest.flagged
+              ? [`${String(latest.flagged)} with a lab note`]
+              : []),
+          ]
+        : [];
+    case "medicine_use": {
+      const now = tile.now ?? 0;
+      return [
+        `${String(now)} taking now${names === "" ? "" : `: ${names}`}`,
+        ...(tile.count > now ? [`${String(tile.count - now)} in history`] : []),
+      ];
     }
-  };
-  const selecting = ticked.size > 0;
+    case "condition":
+      return [
+        `${String(tile.now ?? 0)} ongoing${names === "" ? "" : `: ${names}`}`,
+      ];
+    case "allergy":
+      return [
+        `${String(tile.now ?? 0)} active${names === "" ? "" : `: ${names}`}`,
+      ];
+    case "prescription":
+    case "symptom":
+    case "care_event":
+      return latest
+        ? [
+            [`Latest: ${latest.label}`, latest.date && printedDate(latest.date)]
+              .filter(Boolean)
+              .join(" · "),
+          ]
+        : [];
+  }
+}
+
+function TileView({ personId, tile }: { personId: string; tile: Tile }) {
+  const empty = tile.count === 0;
   return (
-    <section aria-labelledby="latest">
-      <h2 id="latest" className="mb-2 px-0.5 font-semibold">
-        Latest results{" "}
-        <span className="font-normal text-muted">as printed by the lab</span>
-      </h2>
-      <div className="rounded-xl border border-line bg-surface px-3">
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="text-left text-xs text-muted">
-              <th className="w-7 py-2 font-normal">
-                <span className="sr-only">Choose</span>
-              </th>
-              <th className="py-2 font-normal">Test</th>
-              <th className="py-2 font-normal">Value</th>
-              <th className="py-2 font-normal">Lab range</th>
-              <th className="py-2 font-normal">Lab note</th>
-              <th className="py-2 font-normal">Measured</th>
-              <th className="py-2 font-normal">
-                <span className="sr-only">Add to chat</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {results.map((result) => {
-              const on = ticked.has(result.id);
-              return (
-                <tr
-                  key={result.id}
-                  className={`group border-t border-line ${on ? "bg-accent-soft" : "hover:bg-side"}`}
-                >
-                  <td className="py-2.5">
-                    <input
-                      type="checkbox"
-                      aria-label={`Choose ${result.test}`}
-                      checked={on}
-                      onChange={() => {
-                        const next = new Set(ticked);
-                        if (on) next.delete(result.id);
-                        else next.add(result.id);
-                        setTicked(next);
-                      }}
-                      className={`size-[15px] accent-accent ${selecting ? "" : "opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"}`}
-                    />
-                  </td>
-                  <td className="py-2.5">
-                    <span className="font-semibold">{result.test}</span>
-                    {result.amended && (
-                      <span className="text-muted"> amended</span>
-                    )}
-                  </td>
-                  <td className="py-2.5">
-                    {[result.value, result.unit].filter(Boolean).join(" ")}
-                  </td>
-                  <td className="py-2.5">{result.range}</td>
-                  <td className="py-2.5">{result.flag}</td>
-                  <td className="py-2.5">
-                    {[
-                      result.measured && printedDate(result.measured),
-                      result.context,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </td>
-                  <td className="py-2.5 text-right">
-                    {!selecting && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          addToChat([result]);
-                        }}
-                        className="rounded-lg border border-line bg-surface px-2 py-px text-xs whitespace-nowrap text-accent-ink opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus:opacity-100"
-                      >
-                        + Add to chat
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      {total > results.length && (
-        <p className="mt-2 px-0.5 text-muted">
-          Showing the newest {results.length} of {total} results.
-        </p>
-      )}
-      {problem !== null && (
-        <p role="alert" className="mt-2 px-0.5 text-muted">
-          {problem}
-        </p>
-      )}
-      {selecting && (
-        <div className="sticky bottom-20 mt-3 flex items-center gap-2.5 rounded-xl bg-surface px-3 py-2 shadow-float">
-          <span className="flex-1 font-semibold">{ticked.size} chosen</span>
-          <Button
-            onClick={() => {
-              setTicked(new Set());
-            }}
-          >
-            Clear
-          </Button>
-          <Button
-            look="main"
-            onClick={() => {
-              addToChat(results.filter((r) => ticked.has(r.id)));
-            }}
-          >
-            Add {ticked.size} to chat
-          </Button>
+    <Link
+      to="/people/$personId/record/$kind"
+      params={{ personId, kind: tile.kind }}
+      className="block h-full rounded-xl border border-line bg-surface px-3 py-2.5 hover:bg-side"
+    >
+      <span
+        className={`flex justify-between ${empty ? "text-muted" : "font-semibold"}`}
+      >
+        {KIND_TITLES[tile.kind]}
+        {!empty && <span className="tabular-nums">{tile.count}</span>}
+      </span>
+      {tileLines(tile).map((line) => (
+        <span key={line} className="mt-0.5 block text-[12.5px] text-muted">
+          {line}
+        </span>
+      ))}
+    </Link>
+  );
+}
+
+/** A receipt's first line as plain words: its summary, or its only change. */
+function summaryOf(receipt: string): string {
+  const lines = receipt
+    .split("\n")
+    .map((line) =>
+      line
+        .replace(/^- /, "")
+        .replace(/\\(.)|\*/g, (_, kept?: string) => kept ?? ""),
+    )
+    .filter((line) => line.trim() !== "" && line !== "Saved");
+  const [first = "Saved", ...rest] = lines;
+  return rest.length === 0
+    ? first
+    : `${first} · and ${String(rest.length)} more`;
+}
+
+/** When a save was: "Today 01:45", "Yesterday 18:02", else "18:31 on 3 Sep 2026". */
+function savedAt(iso: string, now: Date): string {
+  const day = dayLine(iso, now);
+  if (day !== "Today" && day !== "Yesterday") {
+    return printedTime(iso).replace(/^at /, "");
+  }
+  const at = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${day} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+}
+
+function RecentView({ change, now }: { change: RecentChange; now: Date }) {
+  return (
+    <li className="border-t border-line px-3 py-2 first:border-t-0">
+      <details>
+        <summary className="flex cursor-pointer gap-2.5">
+          <span className="w-36 shrink-0 text-muted">
+            {savedAt(change.at, now)}
+          </span>
+          <span className="min-w-0 flex-1 truncate">
+            {summaryOf(change.receipt)}
+          </span>
+        </summary>
+        <div className="mt-2 rounded-lg border border-line bg-side px-3 py-2">
+          <Receipt text={change.receipt} />
         </div>
-      )}
-    </section>
+      </details>
+    </li>
   );
 }

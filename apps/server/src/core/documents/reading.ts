@@ -70,7 +70,7 @@ const jobOf = (row: Tables["jobs"]): Job => ({
 });
 
 /** A document's name for a person: its file, or "3 photos". */
-function documentName(files: readonly string[]): string {
+export function documentName(files: readonly string[]): string {
   const distinct = [...new Set(files)];
   if (distinct.length <= 1) return distinct[0] ?? "A document";
   return `${String(distinct.length)} photos`;

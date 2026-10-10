@@ -15,6 +15,8 @@ describe("dates", () => {
     expect(printedDate("2026-09-01")).toBe("1 Sep 2026");
     expect(printedDate("2026-05")).toBe("May 2026");
     expect(printedDate("2026")).toBe("2026");
+    // A time is the Mac's local time as stored: never moved through UTC.
+    expect(printedDate("2026-05-20T08:30")).toBe("20 May 2026 08:30");
     expect(printedDate("2026-13")).toBe("2026-13");
     expect(printedDate("early 2025")).toBe("early 2025");
   });

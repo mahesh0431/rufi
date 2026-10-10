@@ -44,9 +44,9 @@ A message can have up to 10,000 characters. When the box has more, it says so, a
 
 ## Adding to a message
 
-You can add your results and documents to a message, so the AI knows exactly what you mean by "this" or "these". Each one shows in the box as a chip, above your text: a result with its value and date, or a document with its name. Point at a chip to see what it is.
+You can add your records and documents to a message, so the AI knows exactly what you mean by "this" or "these". Each one shows in the box as a chip, above your text: a record such as a result with its value and date, or a document with its name. Point at a chip to see what it is.
 
-- **A result:** on the Overview, point at its row and click **+ Add to chat**. To add several, tick their boxes, then click **Add 2 to chat** (with the number you chose). **Clear** unticks them all.
+- **A record:** on its kind's page (see [Your record](record.md)), point at its row and click **Ask Rufi**. To add several, tick their boxes, then click **Add 2 to chat** (with the number you chose). **Clear** unticks them all.
 - **A document:** on the Documents page, point at its row and click **+ Add to chat**.
 - **A new file:** click the paperclip next to the box, or drop files on the chat panel or the chat page. Each file is added as a document at once, the same as on the Documents page (see [Documents](documents.md#add-documents)), and its chip goes in the box. Rufi starts to read it then, not when you send. A file you already added gives the chip of the document you have, and the box says so.
 
@@ -122,7 +122,7 @@ What Rufi does when it saves:
 - **One medicine, one use.** When you take a medicine in two ways, such as a morning and a night dose, stopping one doesn't stop the other. A prescription doesn't add a medicine you take.
 - **"No known allergies" has a date.** It can't stay in your record beside an allergy that is active or whose status is unknown. When you tell the AI about such an allergy, it asks you to remove "no known allergies" in the same save.
 
-Your record isn't shown on a page yet, except your results on the Overview. Ask the AI what is in it.
+To see your record, open Overview or a kind's page (see [Your record](record.md)). To change a record from there, click **Ask Rufi** on its row.
 
 ### Saving a document's results
 

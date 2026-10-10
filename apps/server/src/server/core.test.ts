@@ -556,6 +556,56 @@ describe("the local API", () => {
     ).toBe(404);
   });
 
+  it("reads the record only for the person in the path, and only by GET", async () => {
+    const store = openWritable(databasePath(home));
+    store.db.exec(
+      await readFile(
+        join(import.meta.dirname, "../../tests/fixtures/fictional-family.sql"),
+        "utf8",
+      ),
+    );
+    store.close();
+    const core = await start();
+    const page = await session(core);
+    const asha = "/api/people/asha";
+    expect(
+      (await page.api("GET", `${asha}/record/result/res-a1`)).body,
+    ).toMatchObject({
+      row: { kind: "result", id: "res-a1", test: "HbA1c" },
+    });
+    // Ravi's result, asked for as Asha's: not found, as an unknown one is.
+    for (const path of [
+      `${asha}/record/result/res-r1`,
+      `${asha}/record/result/nothing`,
+      `${asha}/record/no_kind`,
+      `${asha}/record/no_kind/res-a1`,
+      `${asha}/record/none_known`,
+      "/api/people/nobody/record/result",
+      "/api/people/nobody/overview",
+    ]) {
+      expect((await page.api("GET", path)).status, path).toBe(404);
+    }
+    expect(
+      (await page.api("GET", `${asha}/record/result?after=nonsense`)).status,
+    ).toBe(400);
+    expect((await page.api("GET", `${asha}/series`)).status).toBe(400);
+    const ravis = (await page.api("GET", "/api/people/ravi/record/result"))
+      .body as {
+      groups: { rows: { id: string }[] }[];
+    };
+    expect(ravis.groups.flatMap((g) => g.rows.map((r) => r.id))).toEqual([
+      "res-r1",
+      "res-r2",
+    ]);
+    // The screens can't change the record: no route takes a write.
+    expect((await page.api("POST", `${asha}/record/result`, {})).status).toBe(
+      404,
+    );
+    expect(
+      (await page.api("PUT", `${asha}/record/result/res-a1`, {})).status,
+    ).toBe(404);
+  });
+
   it("takes a message at the limit and stores it whole", async () => {
     const core = await start();
     const page = await session(core);

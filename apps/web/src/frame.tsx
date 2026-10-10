@@ -1,6 +1,7 @@
-// The frame around every page: the sidebar, the toolbar, the chat bar on the
-// Overview, and what the connection to Rufi is doing. It stays when a page
-// fails. Until first run is known to be done, it shows first run only, over
+// The frame around every page: the sidebar (with the person's record by
+// kind), the toolbar, the chat bar on the Overview, and what the connection
+// to Rufi is doing. It holds the person's live stream on every page, so a
+// save shows wherever you are. It stays when a page fails. Until first run is known to be done, it shows first run only, over
 // the whole window, whatever the address.
 import {
   Link,
@@ -15,13 +16,16 @@ import {
   MessageCircle,
   Settings,
 } from "lucide-react";
+import type { Person } from "@rufi/contracts";
 import { type ReactNode, useEffect } from "react";
 import { useConnection } from "./api.ts";
 import { useAppearance } from "./appearance.tsx";
 import { CHAT_TITLE, ChatDock } from "./chat.tsx";
 import { ReadingSheet } from "./reading.tsx";
 import { FirstRun } from "./first-run.tsx";
-import { useFirstRun, usePeople, useStatus } from "./reads.ts";
+import { retain } from "./live.ts";
+import { isPageKind, KIND_TITLES } from "./record.tsx";
+import { useFirstRun, useOverview, usePeople, useStatus } from "./reads.ts";
 
 const TITLES: Record<string, string> = {
   settings: "Settings",
@@ -37,6 +41,18 @@ const isChatPage = (pathname: string) =>
 const isBriefPage = (pathname: string) =>
   /^\/people\/[^/]+\/briefs\/[^/]+$/.test(pathname);
 
+/** The kind of a person's record page at the address, if it is one. */
+const recordKind = (pathname: string) => {
+  const kind = /^\/people\/[^/]+\/record\/([^/]+)$/.exec(pathname)?.[1];
+  return kind !== undefined && isPageKind(kind) ? kind : undefined;
+};
+
+/** The person whose page the address is, if it is one. */
+const personAt = (pathname: string) => {
+  const id = /^\/people\/([^/]+)/.exec(pathname)?.[1];
+  return id === undefined ? undefined : decodeURIComponent(id);
+};
+
 /** Whether the address is a person's Documents page, or one document's. */
 const isDocumentsPage = (pathname: string) =>
   /^\/people\/[^/]+\/documents(\/[^/]+)?$/.test(pathname);
@@ -44,14 +60,24 @@ const isDocumentsPage = (pathname: string) =>
 export function Frame() {
   useAppearance();
   const connection = useConnection();
-  const person = usePeople().data?.[0];
   const step = useFirstRun().data?.step;
   /** First run is done: known only once the core says so. */
   const welcomed = step === "done";
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
+  // The person whose page this is; elsewhere, the first person.
+  const people = usePeople().data;
+  const person =
+    people?.find((p) => p.id === personAt(pathname)) ?? people?.[0];
   const onChat = isChatPage(pathname);
+  const kind = recordKind(pathname);
+  // Their stream on every page: a save, an undo or a reading shows at once.
+  const streaming = welcomed && connection !== "ended" ? person?.id : undefined;
+  useEffect(
+    () => (streaming === undefined ? undefined : retain(streaming)),
+    [streaming],
+  );
   // During first run, another page's address leads home, where Rufi opens
   // once first run is done.
   const navigate = useNavigate();
@@ -97,6 +123,7 @@ export function Frame() {
           <Place to="/" icon={<House size={15} aria-hidden />}>
             Overview
           </Place>
+          {person && <RecordNav person={person} />}
           {person && (
             <Link
               to="/people/$personId/documents"
@@ -126,11 +153,13 @@ export function Frame() {
           <h1 className="truncate text-[15px] font-semibold">
             {onChat
               ? CHAT_TITLE
-              : isDocumentsPage(pathname)
-                ? "Documents"
-                : isBriefPage(pathname)
-                  ? "Visit brief"
-                  : (TITLES[pathname.split("/")[1] ?? ""] ?? "Overview")}
+              : kind !== undefined
+                ? KIND_TITLES[kind]
+                : isDocumentsPage(pathname)
+                  ? "Documents"
+                  : isBriefPage(pathname)
+                    ? "Visit brief"
+                    : (TITLES[pathname.split("/")[1] ?? ""] ?? "Overview")}
           </h1>
         </header>
         <Offline shown={connection === "offline"} />
@@ -143,6 +172,36 @@ export function Frame() {
       )}
       <ReadingSheet />
     </div>
+  );
+}
+
+/** The person's record by kind, each with its count, as Overview's tiles. */
+function RecordNav({ person }: { person: Person }) {
+  const tiles = useOverview(person.id).data?.tiles;
+  return (
+    <>
+      <p className="px-2 pt-3 pb-0.5 text-[11px] text-muted">Your record</p>
+      {(Object.keys(KIND_TITLES) as (keyof typeof KIND_TITLES)[]).map(
+        (kind) => {
+          const count = tiles?.find((tile) => tile.kind === kind)?.count ?? 0;
+          return (
+            <Link
+              key={kind}
+              to="/people/$personId/record/$kind"
+              params={{ personId: person.id, kind }}
+              className={`flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-surface/60 ${count === 0 ? "text-muted" : ""}`}
+              activeProps={{ className: "bg-accent-soft text-accent-ink" }}
+            >
+              {KIND_TITLES[kind]}
+              {count > 0 && (
+                <span className="ml-auto text-muted tabular-nums">{count}</span>
+              )}
+            </Link>
+          );
+        },
+      )}
+      <div className="h-3" />
+    </>
   );
 }
 

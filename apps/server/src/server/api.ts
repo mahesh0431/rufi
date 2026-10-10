@@ -15,13 +15,13 @@ import {
   SendMessage,
   type Backups,
   type FirstRun,
-  type Overview,
   type Settings,
   type Status,
   type StreamLine,
 } from "@rufi/contracts";
 import { APPEARANCE_HEADER } from "@rufi/contracts/app";
 import type { Brief } from "@rufi/contracts/briefs";
+import type { Overview } from "@rufi/contracts/record";
 import { readFile } from "node:fs/promises";
 import { Option, Result, Schema } from "effect";
 import type { HttpBindings } from "@hono/node-server";
@@ -38,6 +38,11 @@ import { NotADocument, type Documents } from "../core/documents/documents.ts";
 import type { Readings } from "../core/documents/reading.ts";
 import { StaleFix, type DraftItems } from "../core/documents/items.ts";
 import type { Pages } from "../core/documents/pages.ts";
+import {
+  BadCursor,
+  isPageKind,
+  type RecordViews,
+} from "../core/record/views.ts";
 import { Refusal } from "../core/tools/registry.ts";
 import { FixItem } from "@rufi/contracts/documents";
 import { OriginalMissing } from "../core/documents/originals.ts";
@@ -58,8 +63,10 @@ export interface ApiDeps {
   sessions: Sessions;
   /** The port Rufi listens on, once known. */
   port: () => number;
-  /** A person's overview (what get_overview starts with). */
+  /** A person's Overview: Needs you, the tiles and the latest saves. */
   overview: (personId: string) => Promise<Overview>;
+  /** The record's pages, rows and series, read only. */
+  record: Pick<RecordViews, "page" | "detail" | "series">;
   /** A visit brief of the person's, with its Sources; undefined: none. */
   brief: (personId: string, briefId: string) => Promise<Brief | undefined>;
   /** The ChatGPT sign-in, read when asked. */
@@ -433,6 +440,40 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.get("/api/people/:personId/overview", async (c) =>
     c.json({ overview: await deps.overview((await person(c)).id) }),
   );
+
+  // The record, read only: a kind's page, a row, a test's series. Changes
+  // start in the chat.
+  app.get("/api/people/:personId/record/:kind", async (c) => {
+    const { id } = await person(c);
+    const kind = c.req.param("kind");
+    if (!isPageKind(kind)) throw new HttpError(404, "Not found.");
+    try {
+      return c.json(await deps.record.page(id, kind, c.req.query("after")));
+    } catch (error) {
+      if (error instanceof BadCursor) throw new HttpError(400, error.message);
+      throw error;
+    }
+  });
+  app.get("/api/people/:personId/record/:kind/:id", async (c) => {
+    const found = await deps.record.detail(
+      (await person(c)).id,
+      c.req.param("kind"),
+      c.req.param("id"),
+    );
+    if (!found) throw new HttpError(404, "Not found.");
+    return c.json(found);
+  });
+  app.get("/api/people/:personId/series", async (c) => {
+    const { id } = await person(c);
+    const test = c.req.query("test");
+    if (test === undefined || test === "") {
+      throw new HttpError(400, "That request isn't valid.");
+    }
+    // No unit: the test's values that have none.
+    return c.json(
+      await deps.record.series(id, test, c.req.query("unit") ?? null),
+    );
+  });
 
   app.get("/api/people/:personId/briefs/:briefId", async (c) => {
     const brief = await deps.brief(

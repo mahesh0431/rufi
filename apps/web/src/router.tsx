@@ -15,6 +15,7 @@ import { DocumentsPage } from "./documents.tsx";
 import { Frame } from "./frame.tsx";
 import { HelpPage } from "./help-page.tsx";
 import { OverviewPage } from "./overview.tsx";
+import { isPageKind, RecordPage } from "./record.tsx";
 import { usePeople } from "./reads.ts";
 import { SettingsPage } from "./settings.tsx";
 import { SignIn } from "./signin.tsx";
@@ -105,6 +106,29 @@ const document = createRoute({
   },
 });
 
+const record = createRoute({
+  getParentRoute: () => root,
+  path: "/people/$personId/record/$kind",
+  component: function Record() {
+    const { personId, kind } = record.useParams();
+    const people = usePeople();
+    if (people.data === undefined) {
+      return people.error ? (
+        <div className="px-6 py-8">
+          <Problem error={people.error} retry={() => void people.refetch()} />
+        </div>
+      ) : null;
+    }
+    const person = people.data.find((p) => p.id === personId);
+    if (!person || !isPageKind(kind)) {
+      return <div className="px-6 py-8 text-muted">There is no page here.</div>;
+    }
+    return (
+      <RecordPage key={`${personId}/${kind}`} person={person} kind={kind} />
+    );
+  },
+});
+
 const brief = createRoute({
   getParentRoute: () => root,
   path: "/people/$personId/briefs/$briefId",
@@ -185,6 +209,7 @@ export const router = createRouter({
     chat,
     documents,
     document,
+    record,
     brief,
     conversation,
     settings,
