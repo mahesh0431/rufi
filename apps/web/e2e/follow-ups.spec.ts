@@ -30,10 +30,12 @@ test("an idle Follow-ups page shows the new day within a minute", async ({
   // ends. The stream pings every 15 s of real time and counts as stopped
   // after 45 s of silence on the page's clock: a real ping comes in the
   // middle, so the page reads again by its own timer, not by a reconnect.
-  await page.clock.runFor(25_000);
+  // fastForward fires each due timer once; runFor would play every chain
+  // of timers (read deadlines, retries) faster than the core can answer.
+  await page.clock.fastForward(25_000);
   await page.waitForTimeout(16_000);
   now = new Date(2026, 11, 3, 0, 1);
-  await page.clock.runFor(20_000);
+  await page.clock.fastForward(20_000);
 
   const dueNow = page.getByRole("region", { name: /^Due now/ });
   await expect(dueNow).toContainText("Fasting lipid panel");
