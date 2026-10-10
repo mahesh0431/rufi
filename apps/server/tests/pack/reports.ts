@@ -717,7 +717,7 @@ const named = (name: string): Report => {
   return found;
 };
 
-/** The bundle: six reports of four dates in one 20-page PDF. */
+/** The bundle: six reports of five dates in one 19-page PDF. */
 export const BUNDLE: Report[] = [
   { ...named("cbc"), rows: rowsOf(40, 21), rowsPerPage: 14 },
   {
