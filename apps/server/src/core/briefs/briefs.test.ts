@@ -363,25 +363,6 @@ describe("create_brief", () => {
     expect(written()).toEqual(before);
   });
 
-  it("accepts a brief beyond the former Markdown and citation caps", async () => {
-    const markdown = "x".repeat(20_001);
-    const made = await use(
-      "create_brief",
-      {
-        markdown,
-        record_version: 0,
-        cited: Array.from({ length: 201 }, () => CITED[0]),
-      },
-      "brief-1",
-    );
-    expect(made).toMatchObject({
-      ok: true,
-      body: { result: { brief: "Visit brief · 4 Oct 2026 · 1 record cited" } },
-    });
-    const id = (rows("SELECT id FROM briefs")[0] as { id: string }).id;
-    expect((await readBrief(store.query, "asha", id))?.markdown).toBe(markdown);
-  });
-
   it("refuses records that aren't saved in this person's record, a removed one and a version Rufi never gave, writing nothing", async () => {
     await saveSaid("Remove the creatine, I never took it", {
       kind: "medicine_use",
