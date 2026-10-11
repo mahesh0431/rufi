@@ -153,10 +153,14 @@ export class Desktop {
    * soon for Playwright to attach.
    */
   async again(): Promise<number | null> {
-    const again = spawn(ELECTRON, [APP, `--rufi-node=${process.execPath}`], {
-      env: await this.#env(),
-      stdio: "ignore",
-    });
+    const again = spawn(
+      ELECTRON,
+      ["-r", FAKES, APP, `--rufi-node=${process.execPath}`],
+      {
+        env: await this.#env(),
+        stdio: "ignore",
+      },
+    );
     return new Promise((resolve) => again.once("exit", resolve));
   }
 

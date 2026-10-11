@@ -8,7 +8,13 @@
 // it as a background app, with no icon in the Dock).
 import { BrowserWindow, dialog, Notification, shell } from "electron";
 
-for (const method of ["show", "showInactive", "focus", "moveTop"] as const) {
+for (const method of [
+  "show",
+  "showInactive",
+  "focus",
+  "moveTop",
+  "restore",
+] as const) {
   BrowserWindow.prototype[method] = () => undefined;
 }
 
