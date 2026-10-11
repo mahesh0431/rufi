@@ -95,7 +95,7 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
   await page.goto(rufi.link());
   const chat = page.getByRole("region", { name: "Chat" });
   const box = chat.getByRole("textbox", { name: "Message to Rufi" });
-  await box.click();
+  await chat.getByRole("button", { name: "Open the chat" }).click();
   await box.fill("Make a brief for my visit on Friday");
   await box.press("Enter");
 

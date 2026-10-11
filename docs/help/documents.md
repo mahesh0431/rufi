@@ -11,7 +11,7 @@ You can also ask the AI about a document in the chat, and it looks at the pages 
 
 Rufi takes PDFs and photos in JPEG, PNG or HEIC (the format of iPhone photos). It knows a file by its content, not by its name.
 
-You can also add documents in the chat: click the paperclip next to the box, or drop files on the chat. They are added the same way, and each one's chip goes in the box (see [Adding to a message](chat.md#adding-to-a-message)). To add a document you already have to a message, point at its row on the Documents page and click **+ Add to chat**.
+You can also add documents in the chat: click the paperclip next to the box, or drop files on the chat. They are added the same way, and each one's chip goes in the box (see [Adding to a message](chat.md#adding-to-a-message)). To add a document you already have to a message, point at its row on the Documents page and click **Ask Rufi**.
 
 ### Photos taken together
 
@@ -94,7 +94,7 @@ Rufi checks each page the reader reads. A check never changes what the reader re
 
 ## Save results to your record
 
-1. Add the document to a message (**+ Add to chat** on its row on the Documents page, **Save these in the chat** on its page, or its chip from the paperclip), and say "save it". To save only some results, add them on the document's page (see [Add some results to the chat](#add-some-results-to-the-chat)) and say "save these".
+1. Add the document to a message (**Ask Rufi** on its row on the Documents page, **Save these in the chat** on its page, or its chip from the paperclip), and say "save it". To save only some results, add them on the document's page (see [Add some results to the chat](#add-some-results-to-the-chat)) and say "save these".
 2. The AI reads all the document's draft items and the results you already saved for the same tests and dates. Then it says, in a few lines, how many results are new, and names each one that isn't plainly new. It asks you about:
    - **another source**: the same result is already in your record, for example because you told the AI, or you added another copy of the report. The saved result stays as it is, and this page becomes one more source of it.
    - **a correction**: the lab amended a result you saved. The new result replaces the old one, and the old one stays in its history, marked as replaced.
@@ -163,16 +163,11 @@ Fields you didn't change take their current values from the other tab. Saving ag
 
 ### Add some results to the chat
 
-To ask about or save only some results, add them to the chat as chips:
-
-- **One result:** point at its row and click **+ Add to chat**.
-- **Several:** tick their boxes, then click **Add 2 to chat** (with the number you chose). **Clear** unticks them all.
-
-Rufi opens the chat with their chips in the box. Type your message, for example "save these", and send it. Results you already saved or dismissed have no tick box.
+To ask about or save only some results, add them to the chat as chips: point at a result's row and click **Ask Rufi**, for each one you want. You stay on the page, and the chat bar shows what you added. Then click the bar, type your message, for example "save these", and send it. Results you already saved or dismissed have no **Ask Rufi**.
 
 ### Save these in the chat
 
-Click **Save these in the chat**. Rufi puts **Save these 42 results.** in the chat box, after anything you already typed there, with the document's chip, and opens the chat. Read it, then send it: this message goes to the AI only when you send it. The AI reads the results with your fixes, then checks them with you and saves them (see [Save results to your record](#save-results-to-your-record)).
+Click **Save these in the chat**. Rufi puts **Save these 42 results.** in the chat box, after anything you already typed there, with the document's chip. You stay on the page, so you can read the results beside it. Click the chat bar, read the message, then send it: this message goes to the AI only when you send it. The AI reads the results with your fixes, then checks them with you and saves them (see [Save results to your record](#save-results-to-your-record)).
 
 While a message of yours is being sent, the button says **Wait: a message is being sent**.
 

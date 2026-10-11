@@ -21,6 +21,7 @@ import type { BoxChip } from "./draft.ts";
 import { ACCEPT, AddDialog, type Chosen, isPhoto, look } from "./documents.tsx";
 import { messageOf } from "./live.ts";
 import { Menus } from "./model-menu.tsx";
+import { whyClosed } from "./panel.ts";
 import { queries } from "./reads.ts";
 
 interface Attaching {
@@ -74,12 +75,13 @@ async function add(personId: string, files: File[], together: boolean) {
       label: "",
       detail: "",
     }));
-    if (!boxFor(personId).append("", chips)) {
+    const box = boxFor(personId);
+    const why = whyClosed(box.store.getState());
+    if (why !== null) {
       state.setState({
-        notice:
-          "Added. A message was being sent, so the chip isn't in the box: add it from the Documents page.",
+        notice: `Added to Documents, not to this message. ${why} Then use Ask Rufi on it there.`,
       });
-    } else if (added.already.length > 0) {
+    } else if (box.append("", chips) && added.already.length > 0) {
       state.setState({
         notice: `${added.already.map((a) => a.name).join(", ")} ${added.already.length === 1 ? "was" : "were"} already added: the chip is the document you have.`,
       });

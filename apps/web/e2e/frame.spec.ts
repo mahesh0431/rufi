@@ -136,7 +136,7 @@ test("follows the Mac's light or dark appearance, also when it changes while Ruf
   // The chat with a reply, and a help page with code and a table.
   const chat = page.getByRole("region", { name: "Chat" });
   const box = chat.getByRole("textbox", { name: "Message to Rufi" });
-  await box.click();
+  await chat.getByRole("button", { name: "Open the chat" }).click();
   await box.fill("Hello in the dark");
   await box.press("Enter");
   await expect(chat.locator(".reply")).toHaveText("ok:Hello in the dark");
@@ -339,7 +339,7 @@ test.describe("first run", () => {
     await expect(title).toHaveText("Overview");
     // The person's chat was made with them: the bar works at once.
     const bar = page.getByRole("region", { name: "Chat" });
-    await bar.getByRole("textbox", { name: "Message to Rufi" }).click();
+    await bar.getByRole("button", { name: "Open the chat" }).click();
     await bar
       .getByRole("textbox", { name: "Message to Rufi" })
       .fill("Hello from the first page");

@@ -488,6 +488,50 @@ describe("get_records", () => {
     expect(both.ok).toBe(false);
   });
 
+  it("reads exactly one report's results, as stored; only results, and only the active person's reports", async () => {
+    const store = makeDatabase(family);
+    const report = await records(store, {
+      kind: "result",
+      report: "rep-asha-aug",
+    });
+    expect(report.body["result"]).toMatchObject({
+      kind: "result",
+      report: "rep-asha-aug",
+      records: [
+        { id: "res-a4", replaced_by: "res-a5" },
+        { id: "res-a3" },
+        { id: "res-a2" },
+        { id: "res-a1" },
+      ],
+      complete: true,
+    });
+    expect(
+      (await records(store, { kind: "result", report: "rep-ravi-jul" })).body,
+    ).toMatchObject({
+      ok: false,
+      error: "There is no report rep-ravi-jul in this person's record.",
+    });
+    for (const wrong of [
+      { kind: "allergy", report: "rep-asha-aug" },
+      { kind: "result", report: "rep-asha-aug", ids: ["res-a1"] },
+    ]) {
+      expect((await records(store, wrong)).ok).toBe(false);
+    }
+    // A continuation from another report's read isn't from this one.
+    expect(
+      (
+        await records(store, {
+          kind: "result",
+          report: "rep-asha-sep",
+          after: "res-a1",
+        })
+      ).body,
+    ).toMatchObject({
+      ok: false,
+      error: "That `after` isn't from this read: read again without it.",
+    });
+  });
+
   it(`says when the records are more than ${String(LIMITS.bytes / 1000)} KB`, async () => {
     const long = "x".repeat(1_000);
     const symptoms = Array.from(
@@ -547,6 +591,7 @@ describe("get_records", () => {
         { kind: "medicine_use", from: "2024-03" },
         { kind: "allergy", to: "2025" },
         { kind: "care_event", from: "2024", to: "2026-10-08" },
+        { kind: "result", report: "rep-asha-aug" },
         { kind: "rash" },
         "not an object",
       ].map((input) => shown?.(input)),
@@ -559,6 +604,7 @@ describe("get_records", () => {
       "Read your medicine uses since Mar 2024",
       "Read your allergies up to 2025",
       "Read your care events from 2024 to 8 Oct 2026",
+      "Read the results of a report",
       "Read your records",
       "Read your records",
     ]);

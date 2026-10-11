@@ -756,7 +756,7 @@ describe("the chat, on the scripted Codex", () => {
       ask: `Note: ${line}`,
     });
 
-  it("sends a message's chips with it: the AI gets them after the words, and the message keeps them with their versions then", async () => {
+  it("sends a message's chips with it: the AI gets them after the words, and the message keeps them with their versions then; a report's chip counts its current results", async () => {
     store.db.exec(`
       INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
       INSERT INTO files (id, size, media_type, created_at) VALUES ('f-1', 1, 'application/pdf', '2026-10-01T09:00:00Z');
@@ -768,17 +768,48 @@ describe("the chat, on the scripted Codex", () => {
         ('ravi', 'doc-r', 1, 'f-1', 1, 'Ravi lipid panel.pdf');
       INSERT INTO results (id, person_id, test_name, value_text, unit, measured_at, entered_at)
         VALUES ('res-1', 'asha', 'HbA1c', '6.8', '%', '2026-08-12', '2026-08-13T00:00:00Z');
+      INSERT INTO reports (id, person_id, document_id, issuer, collected) VALUES
+        ('rep-1', 'asha', 'doc-1', 'Sunrise Labs', '2026-08-12'),
+        ('rep-r', 'ravi', 'doc-r', 'Lakeside Diagnostics', '2026-06-30');
+      INSERT INTO results (id, person_id, report_id, test_name, value_text, unit, measured_at, entered_at, replaces_id, removed) VALUES
+        ('res-2', 'asha', 'rep-1', 'Glucose', '118', 'mg/dL', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 0),
+        ('res-3', 'asha', 'rep-1', 'CRP', '<5', 'mg/L', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 0),
+        ('res-4', 'asha', 'rep-1', 'TSH', '2.1', 'mIU/L', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 1);
+      INSERT INTO documents (id, person_id, added_at, added_from, version)
+        VALUES ('doc-correction', 'asha', '2026-10-01T09:00:00Z', 'chat', 1);
+      INSERT INTO files (id, size, media_type, created_at)
+        VALUES ('f-correction', 1, 'application/pdf', '2026-10-01T09:00:00Z');
+      INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name, entry)
+        VALUES ('asha', 'doc-correction', 1, 'f-correction', 1, 'Corrected report.pdf',
+          '{"outcome":"read","facts":{"issuer":"Sunrise Labs","report_number":"CORRECTED","dates":[{"label":"Collected","date":"12/08/2026","iso":"2026-08-12"}]}}');
+      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, created_at)
+        VALUES ('job-correction', 'asha', 'document_read', 'doc-correction', 'done', '[1]', '2026-10-01T09:00:00Z');
+      INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, fields, original, created_at)
+        VALUES ('item-correction', 'asha', 'doc-correction', 1, 1, 'job-correction', 'lab_result',
+          '{"test_name":"CRP","value_text":"4","unit":"mg/L"}',
+          '{"test_name":"CRP","value_text":"4","unit":"mg/L"}', '2026-10-01T09:00:00Z');
     `);
     await startChat("fake");
     const c = await newChat();
+    // A report's version is the last save that changed any of its results,
+    // also one it took out.
+    store.db.exec(`
+      INSERT INTO operations (id, seq, person_id, chat_id, call_id, request, created_at) VALUES
+        ('op-1', 1, 'asha', '${c.id}', 'call-1', '{}', '2026-08-13T00:00:00Z'),
+        ('op-2', 2, 'asha', '${c.id}', 'call-2', '{}', '2026-08-14T00:00:00Z');
+      INSERT INTO record_changes (operation_id, seq, person_id, kind, record_id, action, after) VALUES
+        ('op-2', 1, 'asha', 'result', 'res-4', 'remove', '{}'),
+        ('op-1', 1, 'asha', 'result', 'res-2', 'add', '{}');
+    `);
     const id = uuid();
     await chat?.send(c, id, "Save it", [
       { type: "document", id: "doc-1" },
       { type: "record", kind: "result", id: "res-1" },
+      { type: "report", id: "rep-1" },
     ]);
     await ended(c.id);
     expect((await inputs()).at(-1)).toEqual([
-      "Save it\n\nReferences the user added to this message (Rufi's, exact: read them with your tools):\n- document doc-1, version 3: Sunrise Labs August.pdf\n- result res-1 (kind result), version null: HbA1c 6.8 % · 12 Aug 2026",
+      "Save it\n\nReferences the user added to this message (Rufi's, exact: read them with your tools):\n- document doc-1, version 3: Sunrise Labs August.pdf\n- result res-1 (kind result), version null: HbA1c 6.8 % · 12 Aug 2026\n- report rep-1, version op-2: Sunrise Labs · 12 Aug 2026 · 2 results",
     ]);
     // The message shows its words and its chips, as they were when sent.
     store.db.exec("UPDATE documents SET version = 4 WHERE id = 'doc-1'");
@@ -796,15 +827,136 @@ describe("the chat, on the scripted Codex", () => {
           label: "HbA1c 6.8 % · 12 Aug 2026",
           detail: "Result in your record",
         },
+        {
+          ref: { type: "report", id: "rep-1", version: "op-2" },
+          label: "Sunrise Labs · 12 Aug 2026 · 2 results",
+          detail: "Report in your record",
+        },
       ],
     });
-    // Another person's document is refused, and nothing waits.
-    await expect(
-      chat?.send(c, uuid(), "And this", [{ type: "document", id: "doc-r" }]),
-    ).rejects.toThrow(
-      "Something added to this message isn't in this person's record. Take it out of the message and add it again.",
-    );
+    // Another person's document or report is refused, and nothing waits.
+    for (const theirs of [
+      { type: "document", id: "doc-r" },
+      { type: "report", id: "rep-r" },
+    ] as const) {
+      await expect(chat?.send(c, uuid(), "And this", [theirs])).rejects.toThrow(
+        "Something added to this message isn't in this person's record. Take it out of the message and add it again.",
+      );
+    }
     expect(await waiting()).toEqual([]);
+
+    // A replacement changes this report's current results even when the
+    // replacement is typed, or belongs to a different report. Exercise
+    // real saves and the chips sent afterwards, including undo and restore.
+    let turns = 1;
+    const save = async (text: string, input: unknown) => {
+      const callId = uuid();
+      await startChat("fake", {
+        scenario: {
+          calls: [
+            {
+              id: callId,
+              namespace: "rufi",
+              tool: "save_changes",
+              arguments: input,
+            },
+          ],
+        },
+      });
+      await say(c, text);
+      await ended(c.id, ++turns);
+      const call = store.db
+        .prepare("SELECT answer FROM tool_calls WHERE call_id = ?")
+        .get(callId);
+      const answer = JSON.parse(String(call?.["answer"])) as {
+        ok: boolean;
+        result: { changes: { id: string }[] };
+      };
+      expect(answer.ok).toBe(true);
+      const receipt = (await transcript(c.id)).all
+        .filter((e) => e.kind === "receipt")
+        .at(-1);
+      expect(receipt).toBeDefined();
+      return { version: receipt?.id, id: answer.result.changes[0]?.id };
+    };
+    const checkReport = async (version: string | undefined, count: number) => {
+      const messageId = uuid();
+      await chat?.send(c, messageId, "quiet: read this report", [
+        { type: "report", id: "rep-1" },
+      ]);
+      await ended(c.id, ++turns);
+      expect(
+        (await transcript(c.id)).all.find((e) => e.id === messageId)?.refs,
+      ).toEqual([
+        {
+          ref: { type: "report", id: "rep-1", version },
+          label: `Sunrise Labs · 12 Aug 2026 · ${String(count)} ${count === 1 ? "result" : "results"}`,
+          detail: "Report in your record",
+        },
+      ]);
+    };
+    for (const amendment of [
+      {
+        text: "The lab corrected my glucose to 116",
+        input: {
+          changes: [
+            {
+              kind: "result",
+              action: "add",
+              source: "The lab corrected my glucose to 116",
+              fields: {
+                test: "Glucose",
+                value: "116",
+                unit: "mg/dL",
+                replaces: "res-2",
+              },
+            },
+          ],
+        },
+        count: 1,
+      },
+      {
+        text: "That report corrects my CRP",
+        input: {
+          items: [
+            {
+              item: "item-correction",
+              version: 1,
+              as: "correction",
+              record: { id: "res-3", version: null },
+            },
+          ],
+        },
+        count: 0,
+      },
+    ]) {
+      const added = await save(amendment.text, amendment.input);
+      await checkReport(added.version, amendment.count);
+      const undone = await save("Undo that amendment", {
+        changes: [
+          {
+            kind: "result",
+            action: "remove",
+            id: added.id,
+            source: "Undo that amendment",
+          },
+        ],
+      });
+      expect(undone.version).not.toBe(added.version);
+      await checkReport(undone.version, amendment.count + 1);
+      const restored = await save("Restore that amendment", {
+        changes: [
+          {
+            kind: "result",
+            action: "restore",
+            id: added.id,
+            source: "Restore that amendment",
+          },
+        ],
+      });
+      expect(restored.version).not.toBe(undone.version);
+      await checkReport(restored.version, amendment.count);
+    }
   });
 
   it("gives Rufi events that came during a reply to the AI together, after it, in a turn that can only read", async () => {

@@ -1,13 +1,14 @@
 // The chat: the person's one chat with Rufi in three sizes, drawn with the
-// same transcript and box. The bar, a pill, sits bottom right on the
-// Overview; click it or press ⌘J and the panel opens over the page, always
-// the same size; –, Esc or a click outside it steps back to the bar. "Open as page" shows the chat at its own
-// address, Chat with Rufi in the sidebar. A small window opens the page
-// instead of the panel.
+// same transcript and box. The bar, a pill, sits bottom right on the pages
+// where you read your health; Ask Rufi on them adds to its box, and the bar
+// lights up a moment. Click it or press ⌘J and the panel opens over the
+// page, always the same size; –, Esc or a click outside it steps back to
+// the bar. "Open as page" shows the chat at its own address, Chat with Rufi
+// in the sidebar. A small window opens the page instead of the panel.
 import type { Person } from "@rufi/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { Maximize2, Minus } from "lucide-react";
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { FileDrop } from "./attach.tsx";
 import { Box } from "./box.tsx";
 import { liveStore, loadOlder, retain } from "./live.ts";
@@ -18,18 +19,27 @@ import { TranscriptView } from "./transcript.tsx";
 /** The chat's name on screen. */
 export const CHAT_TITLE = "Chat with Rufi";
 
+/** How long the bar stays lit after a page added to it. */
+const LIT_MS = 900;
+
 /** The live store of the person's chat, open while this view shows it. */
 function useLive(personId: string) {
   useEffect(() => retain(personId), [personId]);
   return liveStore(personId);
 }
 
-/** The bar and the panel, on the Overview. */
+/** The bar and the panel, over the pages where you read your health. */
 export function ChatDock({ person }: { person: Person }) {
   const open = usePanel((state) => state.open);
+  const asked = usePanel((state) => state.asked);
+  const [lit, setLit] = useState(false);
+  const seen = useRef(asked);
+  /** Closing with nowhere to go back to: the bar's box takes the focus. */
+  const refocus = useRef(false);
   const live = useLive(person.id);
   const navigate = useNavigate();
-  const field = useRef<HTMLTextAreaElement | null>(null);
+  /** The box's text field in the panel; the pill, in the bar. */
+  const field = useRef<HTMLElement | null>(null);
   const menus = useRef<HTMLDivElement | null>(null);
   const dock = useRef<HTMLElement | null>(null);
 
@@ -50,7 +60,7 @@ export function ChatDock({ person }: { person: Person }) {
       back !== document.body
     ) {
       back.focus();
-    } else field.current?.focus();
+    } else refocus.current = true;
   };
 
   // ⌘J opens the chat, and closes it again.
@@ -71,16 +81,35 @@ export function ChatDock({ person }: { person: Person }) {
       removeEventListener("keydown", onKey);
     };
   });
-  // The panel opens with the box ready for typing.
+  // The panel opens with the box ready for typing; the bar's box, drawn
+  // anew, takes the focus when it had nowhere else to go back to.
   useEffect(() => {
-    if (open) field.current?.focus();
+    if (open || refocus.current) field.current?.focus();
+    refocus.current = false;
   }, [open]);
+  // A page added to the box: the bar lights up a moment; an open panel's
+  // box takes the focus.
+  useEffect(() => {
+    if (asked === seen.current) return;
+    seen.current = asked;
+    if (usePanel.getState().open) field.current?.focus();
+    setLit(true);
+    const off = setTimeout(() => {
+      setLit(false);
+    }, LIT_MS);
+    return () => {
+      clearTimeout(off);
+    };
+  }, [asked]);
   // A click outside the panel and its menus steps back to the bar; focus
-  // goes where the click put it.
+  // goes where the click put it. Ask Rufi on the page adds to the open
+  // panel's box instead.
   useEffect(() => {
     if (!open) return;
     const onDown = (event: PointerEvent) => {
       if (event.target instanceof Node && dock.current?.contains(event.target))
+        return;
+      if (event.target instanceof Element && event.target.closest("[data-ask]"))
         return;
       usePanel.setState({ open: false, focusBefore: null });
     };
@@ -142,7 +171,7 @@ export function ChatDock({ person }: { person: Person }) {
               className={
                 open
                   ? "px-3 pt-1"
-                  : "rounded-full bg-surface/95 shadow-float backdrop-blur-xl"
+                  : `rounded-full bg-surface/95 shadow-float backdrop-blur-xl transition-shadow ${lit ? "ring-2 ring-accent" : ""}`
               }
             >
               <Box
@@ -154,7 +183,7 @@ export function ChatDock({ person }: { person: Person }) {
               />
             </div>
           </FileDrop>
-          <AiCanMakeMistakes />
+          {open && <AiCanMakeMistakes />}
         </div>
       </Menus>
       <div ref={menus} />

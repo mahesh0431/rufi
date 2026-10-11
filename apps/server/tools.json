@@ -17,7 +17,7 @@
     },
     {
       "name": "rufi.get_records",
-      "description": "The active person's records of one kind (medicine_use, prescription, symptom, condition, allergy, result, care_event, none_known, follow_up), as stored: each with its id, its version (the save that last changed it; null when none did), its fields as save_changes takes them and its sources (the user's message, or a document's page), also the records removed from the record (\"removed\": true) and results replaced by an amended one (\"replaced_by\": the amended result's id). Newest first, undated last. With from or to, only records dated in that period: medicine_use by started, prescription by issued, symptom by onset, condition by recognised, allergy by reacted, result by measured, care_event by date, none_known by asserted, follow_up by due. A record dated at a lower precision is read when its year or month overlaps the period (\"2026\" is in from 2026-03); a record with no date is read only without from and to. With ids, exactly those records. At most 200 records and 32 KB of records (as UTF-8 JSON) come back at once (a single larger record comes back on its own); when there are more, the answer says \"complete\": false and gives \"next\": pass it as after, with the same kind, from and to, to read on until \"complete\" is true. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.",
+      "description": "The active person's records of one kind (medicine_use, prescription, symptom, condition, allergy, result, care_event, none_known, follow_up), as stored: each with its id, its version (the save that last changed it; null when none did), its fields as save_changes takes them and its sources (the user's message, or a document's page), also the records removed from the record (\"removed\": true) and results replaced by an amended one (\"replaced_by\": the amended result's id). Newest first, undated last. With from or to, only records dated in that period: medicine_use by started, prescription by issued, symptom by onset, condition by recognised, allergy by reacted, result by measured, care_event by date, none_known by asserted, follow_up by due. A record dated at a lower precision is read when its year or month overlaps the period (\"2026\" is in from 2026-03); a record with no date is read only without from and to. With ids, exactly those records. With report (kind result), only the results of that report: the id of a report the user added to their message. At most 200 records and 32 KB of records (as UTF-8 JSON) come back at once (a single larger record comes back on its own); when there are more, the answer says \"complete\": false and gives \"next\": pass it as after, with the same kind, from, to and report, to read on until \"complete\" is true. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.",
       "callers": "model",
       "readOnly": true,
       "destructive": false,
@@ -58,9 +58,15 @@
             "maxItems": 200,
             "description": "Exactly these records, by id (at most 200); not with from, to or after."
           },
+          "report": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "Only the results of this report, by its id (kind result only); not with ids."
+          },
           "after": {
             "type": "string",
-            "description": "The `next` of the previous answer, to read on with the same kind, from and to."
+            "description": "The `next` of the previous answer, to read on with the same kind, from, to and report."
           }
         },
         "required": [
@@ -83,6 +89,10 @@
           "ids": [
             "0199a0f2-0000-7000-8000-00000000000a"
           ]
+        },
+        {
+          "kind": "result",
+          "report": "0199a0f2-0000-7000-8000-00000000000b"
         }
       ]
     },

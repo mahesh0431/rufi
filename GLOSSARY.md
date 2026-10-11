@@ -85,7 +85,7 @@ Each person's one conversation with Rufi's AI, kept by Rufi and made with the pe
 _Avoid_: conversation, thread, session
 
 **Chat bar**:
-The box at the bottom right of the Overview, a pill with the model and effort and Send: the person's chat, the same in every browser tab. While a reply runs, it says "Rufi is answering" with Stop. Other pages reach the chat with **Chat with Rufi** in the sidebar.
+The box at the bottom right of the pages where you read your health (Overview, the record's pages, Follow-ups, Documents, a document's page, a visit brief), a pill with the model and effort and Send: the person's chat, the same in every browser tab. The pages leave room for it, so it covers nothing. It is one line, always the same size: what **Ask Rufi** added (the first chip's name and how many more), then the start of the draft, or a reason for the moment; a click opens the chat panel. While a reply runs, it says "Rufi is answering" with Stop. Help and Settings reach the chat with **Chat with Rufi** in the sidebar.
 _Avoid_: composer, input
 
 **Chat panel**:
@@ -136,7 +136,7 @@ A reply that didn't finish because you stopped it or Rufi closed. What it wrote 
 _Avoid_: cancelled, aborted
 
 **Chip**:
-Something from the record added to a message in the chat: a record (such as a result, with **Ask Rufi** on its row), a document or a draft item, shown by its name. It points at exactly that one, for this person; the AI gets its id and its version when the message is sent. Taking a chip out of the box changes nothing in the record.
+Something from the record added to a message in the chat: a record (such as a result, with **Ask Rufi** on its row), a report's results (with **Ask Rufi** in its heading), a document or a draft item, shown by its name. **Ask Rufi** adds it and the page stays. In the box, a document's chip also says what Rufi is doing with it (Reading…, Waiting to read, Read, Read · some pages unclear, Couldn't read); this is worked out each time, never stored. It points at exactly that one, for this person; the AI gets its id and its version when the message is sent. Taking a chip out of the box changes nothing in the record.
 _Avoid_: attachment, tag, mention
 
 **Draft**:
