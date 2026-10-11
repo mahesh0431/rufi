@@ -44,11 +44,11 @@ test("a save in one window refreshes Overview's tiles there and a kind's page in
       ],
     },
   });
-  // One window on the Results page, with no chat on it.
+  // One window on the Lab results page, with no chat on it.
   const results = await context.newPage();
   await results.goto(rufi.link());
   await sidebar(results)
-    .getByRole("link", { name: /^Results/ })
+    .getByRole("link", { name: /^Lab results/ })
     .click();
   const crp = results.getByRole("button", { name: "CRP", exact: true });
   await expect(crp).toBeVisible();
@@ -61,7 +61,9 @@ test("a save in one window refreshes Overview's tiles there and a kind's page in
 
   // The other on Overview: the save goes from its chat bar.
   await page.goto(rufi.link());
-  const tile = page.getByRole("main").getByRole("link", { name: /^Results 7/ });
+  const tile = page
+    .getByRole("main")
+    .getByRole("link", { name: /^Lab results 7/ });
   await expect(tile).toBeVisible();
   await accessible(page);
   await chat(page).getByRole("button", { name: "Open the chat" }).click();
@@ -70,12 +72,12 @@ test("a save in one window refreshes Overview's tiles there and a kind's page in
   await expect(chat(page).locator(".receipt")).toContainText("CRP");
   await page.keyboard.press("Escape");
   await expect(
-    page.getByRole("main").getByRole("link", { name: /^Results 6/ }),
+    page.getByRole("main").getByRole("link", { name: /^Lab results 6/ }),
   ).toBeVisible();
   await expect(
     page.getByRole("region", { name: "Recent changes" }),
   ).toContainText("Removed result CRP");
-  // The Results page in the other window read again by itself.
+  // The Lab results page in the other window read again by itself.
   await expect(crp).toHaveCount(0);
   await expect(
     results.getByRole("region", {
@@ -89,8 +91,8 @@ test("a row's history shows a correction before and after, a time with its time"
   rufi,
 }) => {
   await rufi.family(
-    `INSERT INTO results (id, person_id, test_name, value_text, unit, measured_at, measured_words, entered_at)
-       VALUES ('res-bp', 'asha', 'Blood pressure', '128/84', 'mmHg', '2026-05-20T08:30', '8:30 that morning', '2026-05-20T10:00:00Z');`,
+    `INSERT INTO results (id, person_id, category, test_name, value_text, unit, measured_at, measured_words, entered_at)
+       VALUES ('res-bp', 'asha', 'measurement', 'Blood pressure', '128/84', 'mmHg', '2026-05-20T08:30', '8:30 that morning', '2026-05-20T10:00:00Z');`,
   );
   await rufi.start({
     scenario: {
@@ -123,11 +125,12 @@ test("a row's history shows a correction before and after, a time with its time"
   await page.keyboard.press("Escape");
 
   await sidebar(page)
-    .getByRole("link", { name: /^Results/ })
+    .getByRole("link", { name: /^Measurements/ })
     .click();
+  // Its day on Measurements: 20 May 2026.
   const row = page
-    .getByRole("listitem")
-    .filter({ has: page.getByRole("button", { name: "Blood pressure" }) });
+    .getByRole("region", { name: "20 May 2026 · 1 measurement" })
+    .locator("#row-result-res-bp");
   // Its own time shows: its group says only the day.
   await expect(row).toContainText("09:45");
   await row.getByRole("button", { name: "Blood pressure" }).click();
@@ -136,7 +139,7 @@ test("a row's history shows a correction before and after, a time with its time"
   );
 });
 
-test("the Results page shows results as the lab printed them, by report, and more as you scroll", async ({
+test("the Lab results page shows lab results as the lab printed them, by report, and more as you scroll", async ({
   page,
   rufi,
 }) => {
@@ -144,13 +147,13 @@ test("the Results page shows results as the lab printed them, by report, and mor
   const reports = Array.from({ length: 12 }, (_, n) => {
     const month = String(n + 1).padStart(2, "0");
     return `INSERT INTO reports (id, person_id, document_id, issuer, collected) VALUES ('rep-${month}', 'asha', 'doc-asha-aug', 'Lakeside Clinic', '2025-${month}-05');
-      INSERT INTO results (id, person_id, report_id, test_name, value_text, measured_at, entered_at) VALUES ('res-${month}', 'asha', 'rep-${month}', 'Ferritin', '${String(30 + n)}', '2025-${month}-05', '2026-10-01T10:00:00Z');`;
+      INSERT INTO results (id, person_id, report_id, category, test_name, value_text, measured_at, entered_at) VALUES ('res-${month}', 'asha', 'rep-${month}', 'lab', 'Ferritin', '${String(30 + n)}', '2025-${month}-05', '2026-10-01T10:00:00Z');`;
   });
   await rufi.family(...reports);
   await rufi.start();
   await page.goto(rufi.link());
   await sidebar(page)
-    .getByRole("link", { name: /^Results/ })
+    .getByRole("link", { name: /^Lab results/ })
     .click();
   const row = (name: string) =>
     page
@@ -184,6 +187,54 @@ test("the Results page shows results as the lab printed them, by report, and mor
     page.getByRole("region", { name: "No date · 1 result" }),
   ).toContainText("Blood groupB positive");
   await accessible(page);
+});
+
+test("Measurements shows them by the day taken, at its precision; an older results address and a follow-up's About open the page of the result's category", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family(
+    "INSERT INTO follow_ups (id, person_id, title, due, linked_kind, linked_id) VALUES ('f-weight', 'asha', 'Weigh again', '2026-12', 'result', 'res-a10');",
+  );
+  await rufi.start({ now: () => new Date(2026, 9, 11, 9).toISOString() });
+  await page.goto(rufi.link());
+  await sidebar(page)
+    .getByRole("link", { name: /^Measurements/ })
+    .click();
+  await expect(
+    page.getByRole("region", { name: "20 Sep 2026 · 2 measurements" }),
+  ).toContainText("128/84 mmHg");
+  // Known only by its month: never a made-up day.
+  await expect(
+    page.getByRole("region", { name: "Aug 2026 · 1 measurement" }),
+  ).toContainText("62 kg");
+  await expect(page.getByRole("button", { name: "HbA1c" })).toHaveCount(0);
+  await accessible(page);
+
+  // The address results had before: a measurement opens on Measurements.
+  await page.goto(
+    new URL("/people/asha/record/result?open=res-a10", page.url()).href,
+  );
+  await expect(page).toHaveURL(/\/record\/measurement\?open=res-a10$/);
+  await expect(
+    page
+      .getByRole("listitem")
+      .filter({ hasText: "61.5 kg" })
+      .getByRole("button", { name: "Weight" }),
+  ).toHaveAttribute("aria-expanded", "true");
+  // With no row, it opens Lab results.
+  await page.goto(new URL("/people/asha/record/result", page.url()).href);
+  await expect(page).toHaveURL(/\/record\/lab_result$/);
+  await expect(page.getByRole("button", { name: "HbA1c" })).toBeVisible();
+
+  // A follow-up about a measurement opens it on Measurements.
+  await sidebar(page)
+    .getByRole("link", { name: /^Follow-ups/ })
+    .click();
+  await page
+    .getByRole("link", { name: "Weight 61.5 kg · 20 Sep 2026" })
+    .click();
+  await expect(page).toHaveURL(/\/record\/measurement\?open=res-a10$/);
 });
 
 test("a reading that ends, with nothing saved, shows in Needs you on an open Overview: results to save, or pages that couldn't be read", async ({
@@ -222,7 +273,7 @@ test("a reading that ends, with nothing saved, shows in Needs you on an open Ove
   await rufi.start({ reader: reader.run });
   await page.goto(rufi.link());
   await expect(
-    page.getByRole("heading", { name: "Your record" }),
+    page.getByRole("heading", { name: "Health record" }),
   ).toBeVisible();
   const needsYou = page.getByRole("region", { name: "Needs you" });
   await expect(needsYou).toHaveCount(0);

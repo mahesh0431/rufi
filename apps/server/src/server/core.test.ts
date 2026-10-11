@@ -704,7 +704,7 @@ describe("the local API", () => {
     const chip = {
       ref: { type: "record", kind: "result", id: "res-1", version: null },
       label: "HbA1c 6.8 %",
-      detail: "Result in your record",
+      detail: "Lab result in your health record",
     };
     expect(
       (

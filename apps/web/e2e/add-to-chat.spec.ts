@@ -74,7 +74,7 @@ async function opened(
   await rufi.start(options);
   await page.goto(rufi.link());
   await expect(
-    page.getByRole("heading", { name: "Your record" }),
+    page.getByRole("heading", { name: "Health record" }),
   ).toBeVisible();
 }
 
@@ -115,7 +115,7 @@ test("Ask Rufi puts chips of several kinds in the box, a report as one, and the 
   await expect(minimise).toHaveCount(0);
 
   await sidebar(page)
-    .getByRole("link", { name: /^Results/ })
+    .getByRole("link", { name: /^Lab results/ })
     .click();
   const results = page.url();
   const row = (name: string) =>
@@ -303,6 +303,7 @@ test("a save of a document's items shows its summary, with what was saved folded
                 item: `drf-${String(n)}`,
                 version: 1,
                 as: "new",
+                category: "lab",
               })),
             },
           },
@@ -323,7 +324,7 @@ test("a save of a document's items shows its summary, with what was saved folded
   await receipt.getByText("Show what was saved").click();
   await expect(list).toHaveCount(7);
   await expect(list.first()).toHaveText(
-    'Added result Test 1 1: measured 12 Aug 2026 ("Collected 12 Aug 2026") · page 1',
+    'Added result Test 1 1: category lab, measured 12 Aug 2026 ("Collected 12 Aug 2026") · page 1',
   );
   await accessible(page);
 });

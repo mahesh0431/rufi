@@ -9,6 +9,8 @@ import {
   redirect,
   useLocation,
 } from "@tanstack/react-router";
+import type { PageKind } from "@rufi/contracts/record";
+import type { ReactNode } from "react";
 import { BriefPage } from "./brief.tsx";
 import { ChatPage } from "./chat.tsx";
 import { DocumentPage } from "./document-page.tsx";
@@ -17,7 +19,7 @@ import { FollowUpsPage } from "./follow-ups.tsx";
 import { Frame } from "./frame.tsx";
 import { HelpPage } from "./help-page.tsx";
 import { OverviewPage } from "./overview.tsx";
-import { isPageKind, RecordPage } from "./record.tsx";
+import { isPageKind, pageOf, RecordPage } from "./record.tsx";
 import { usePeople, useRecordDetail } from "./reads.ts";
 import { SettingsPage } from "./settings.tsx";
 import { SignIn } from "./signin.tsx";
@@ -111,7 +113,7 @@ const document = createRoute({
 /**
  * The address of results before they had two pages, `record/result`: it
  * opens the page of the row's category, or Lab results when no row is
- * asked for.
+ * asked for (or it can't be read).
  */
 function ResultsBefore({
   personId,
@@ -120,7 +122,7 @@ function ResultsBefore({
   personId: string;
   open?: string;
 }) {
-  const to = (kind: "lab_result" | "measurement") => (
+  const to = (kind: PageKind) => (
     <Navigate
       to="/people/$personId/record/$kind"
       params={{ personId, kind }}
@@ -139,17 +141,13 @@ function ResultBefore({
 }: {
   personId: string;
   open: string;
-  to: (kind: "lab_result" | "measurement") => React.ReactNode;
+  to: (kind: PageKind) => ReactNode;
 }) {
   const detail = useRecordDetail(personId, "result", open);
   if (detail.isPending) return null;
   const row = detail.data?.row;
   return to(
-    row?.kind === "result" &&
-      "category" in row &&
-      row.category === "measurement"
-      ? "measurement"
-      : "lab_result",
+    (row !== undefined && !("problem" in row) && pageOf(row)) || "lab_result",
   );
 }
 

@@ -1,6 +1,7 @@
-// A kind's page of the person's record: newest first, in groups as the paper
-// has them (a report whole, a day of results typed in the chat, or one row
-// each for the other kinds), more as the person scrolls. A row opens in
+// A page of the person's health record: newest first, in groups as the
+// paper has them (on Lab results, a report's lab results whole or a day of
+// lab results typed in the chat; on Measurements, the day they were taken;
+// one row each for the other kinds), more as the person scrolls. A row opens in
 // place to its sources, its history and, for a result, its values over
 // time. The page only shows: changes start in the chat, with Ask Rufi on a
 // row (or a report's heading): its chip goes in the chat box, and the page
@@ -23,7 +24,7 @@ import { askRufi } from "./panel.ts";
 import { useRecordDetail, useRecordPages, useSeries } from "./reads.ts";
 import { Button, Problem } from "./ui.tsx";
 
-/** The kinds with a page, in the sidebar's order, by their page title. */
+/** The pages, in the sidebar's order, by their title: results have two. */
 export const KIND_TITLES: Record<PageKind, string> = {
   lab_result: "Lab results",
   measurement: "Measurements",
@@ -188,11 +189,31 @@ export function cellsOf(row: RecordRow, groupDate?: string): Cells {
   }
 }
 
+/** What a row is called: a result by its category. */
+const nounOf = (row: RecordRow) =>
+  row.kind === "result"
+    ? row.category === "measurement"
+      ? "Measurement"
+      : "Lab result"
+    : NOUNS[row.kind];
+
+/** The page a row shows on: a result's by its category. */
+export const pageOf = (row: RecordRow): PageKind | undefined => {
+  if (row.kind === "result") {
+    return row.category === "measurement" ? "measurement" : "lab_result";
+  }
+  return isPageKind(row.kind) ? row.kind : undefined;
+};
+
+/** The kind of record a page's rows are. */
+const rowKindOf = (kind: PageKind) =>
+  kind === "lab_result" || kind === "measurement" ? "result" : kind;
+
 /** A row as a chip in the chat box. */
 export const chipOf = (row: RecordRow): BoxChip => ({
   pointer: { type: "record", kind: row.kind, id: row.id },
   label: cellsOf(row).title,
-  detail: `${NOUNS[row.kind]} in your record`,
+  detail: `${nounOf(row)} in your health record`,
 });
 
 /**
@@ -208,10 +229,18 @@ const reportChip = (group: RecordGroup): BoxChip => {
   };
 };
 
-/** A group's heading: a report, results typed in the chat, or no date. */
+/**
+ * A group's heading: a report, lab results typed in the chat, the day
+ * measurements were taken, or no date.
+ */
 function groupHeading(group: RecordGroup) {
   const when = group.date === undefined ? undefined : printedDate(group.date);
-  const count = `${String(group.rows.length)} ${group.rows.length === 1 ? "result" : "results"}`;
+  const n = group.rows.length;
+  if (group.type === "day") {
+    const count = `${String(n)} ${n === 1 ? "measurement" : "measurements"}`;
+    return { name: when ?? "No date", detail: count };
+  }
+  const count = `${String(n)} ${n === 1 ? "result" : "results"}`;
   if (group.type === "report") {
     return {
       name: group.issuer ?? "Report",
@@ -240,7 +269,7 @@ export function RecordPage({
 }) {
   const pages = useRecordPages(person.id, kind);
   const [open, setOpen] = useState<string | null>(
-    opened === undefined ? null : `${kind}:${opened}`,
+    opened === undefined ? null : `${rowKindOf(kind)}:${opened}`,
   );
   const sought = useRef(opened);
   const more = useRef<HTMLButtonElement | null>(null);
@@ -275,7 +304,7 @@ export function RecordPage({
     if (there) {
       sought.current = undefined;
       document
-        .getElementById(rowElementId(kind, id))
+        .getElementById(rowElementId(rowKindOf(kind), id))
         ?.scrollIntoView({ block: "center" });
     } else if (!hasNextPage) {
       sought.current = undefined;
@@ -315,8 +344,11 @@ export function RecordPage({
     <div className="mx-auto max-w-[790px] px-6 py-8">
       {results && (
         <p className="mb-3 text-muted">
-          As printed, newest first. Changes start in the chat:{" "}
-          <b className="font-semibold">Ask Rufi</b> on a row.
+          {kind === "measurement"
+            ? "By the day they were taken, newest first."
+            : "As printed, newest first."}{" "}
+          Changes start in the chat: <b className="font-semibold">Ask Rufi</b>{" "}
+          on a row.
         </p>
       )}
       {groups.length === 0 ? (
@@ -490,7 +522,9 @@ export function RowDetail({
             .join(" · ")}
         </p>
       )}
-      {removed && <p className="pt-2 text-muted">Removed from your record.</p>}
+      {removed && (
+        <p className="pt-2 text-muted">Removed from your health record.</p>
+      )}
       <h3 className="mt-3 mb-1 text-xs font-semibold text-muted">Sources</h3>
       {sources.length === 0 ? (
         <p className="text-muted">None kept: saved before Rufi kept sources.</p>
@@ -600,6 +634,14 @@ function SeriesTable({
     ) : null;
   }
   const title = unit === undefined ? test : `${test} (${unit})`;
+  // A lab's columns, unless no value has a range or a note (most
+  // measurements).
+  const lab = series.data.values.some(
+    (value) =>
+      !isBad(value) &&
+      value.kind === "result" &&
+      (value.range ?? value.flag ?? value.context) !== undefined,
+  );
   return (
     <>
       <h3 className="mt-3 mb-1 text-xs font-semibold text-muted">
@@ -610,15 +652,15 @@ function SeriesTable({
           <tr className="text-left text-xs text-muted">
             <th className="py-1 font-normal">Measured</th>
             <th className="py-1 font-normal">Value</th>
-            <th className="py-1 font-normal">Lab range</th>
-            <th className="py-1 font-normal">Lab note</th>
+            {lab && <th className="py-1 font-normal">Lab range</th>}
+            {lab && <th className="py-1 font-normal">Lab note</th>}
           </tr>
         </thead>
         <tbody>
           {series.data.values.map((value) =>
             isBad(value) || value.kind !== "result" ? (
               <tr key={value.id} className="border-t border-line">
-                <td colSpan={4} className="py-1 text-muted italic">
+                <td colSpan={lab ? 4 : 2} className="py-1 text-muted italic">
                   Can't show this row.
                 </td>
               </tr>
@@ -626,10 +668,12 @@ function SeriesTable({
               <tr key={value.id} className="border-t border-line">
                 <td className="py-1">{dated(value.measured) ?? "No date"}</td>
                 <td className="py-1">{join(value.value, value.unit)}</td>
-                <td className="py-1">{value.range}</td>
-                <td className="py-1">
-                  {[value.flag, value.context].filter(Boolean).join(" · ")}
-                </td>
+                {lab && <td className="py-1">{value.range}</td>}
+                {lab && (
+                  <td className="py-1">
+                    {[value.flag, value.context].filter(Boolean).join(" · ")}
+                  </td>
+                )}
               </tr>
             ),
           )}

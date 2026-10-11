@@ -63,7 +63,7 @@ async function opened(
   await rufi.start(options);
   await page.goto(rufi.link());
   await expect(
-    page.getByRole("heading", { name: "Your record" }),
+    page.getByRole("heading", { name: "Health record" }),
   ).toBeVisible();
 }
 
@@ -98,7 +98,8 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   await expect(sidebar(page).getByRole("link")).toHaveText([
     "Chat with Rufi",
     "Overview",
-    "Results7",
+    "Lab results7",
+    "Measurements3",
     "Medicines2",
     "Prescriptions",
     "Conditions",
@@ -149,7 +150,12 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   // The bar is on the pages where you read your health, not Help or
   // Settings; Chat with Rufi opens the chat from any page, as a page of its
   // own.
-  for (const name of ["Results", "Follow-ups", "Documents"]) {
+  for (const name of [
+    "Lab results",
+    "Measurements",
+    "Follow-ups",
+    "Documents",
+  ]) {
     await sidebar(page)
       .getByRole("link", { name: new RegExp(`^${name}`) })
       .click();
@@ -810,7 +816,7 @@ test("⌘J opens the panel; Esc steps back and returns focus; another page close
 
   // Another page closes the panel: coming back shows the bar.
   await sidebar(page)
-    .getByRole("link", { name: /^Results/ })
+    .getByRole("link", { name: /^Lab results/ })
     .click();
   await page.keyboard.press("ControlOrMeta+j");
   await expect(minimise).toBeVisible();
@@ -1023,7 +1029,7 @@ test("a save made in another window while this one's connection was down shows o
   const results = (count: number) =>
     page
       .getByRole("main")
-      .getByRole("link", { name: new RegExp(`^Results ${String(count)}`) });
+      .getByRole("link", { name: new RegExp(`^Lab results ${String(count)}`) });
   await expect(results(7)).toBeVisible();
   // The stream drops, and its reconnect waits until the other window saved.
   const down = Promise.withResolvers<undefined>();
@@ -1081,7 +1087,7 @@ test("Based on, under an answer once it ended, opens How and Used; small talk ha
     opened1.getByText("From your record, read now.", { exact: true }),
   ).toBeVisible();
   await expect(opened1.getByRole("listitem")).toHaveText([
-    "Read your results in Aug 2026 · 5 records",
+    "Read your results in Aug 2026 · 6 records",
     "Ran a commandls",
   ]);
   await accessible(page);
@@ -1147,8 +1153,10 @@ test("activity lines keep their sign beside a long detail; Rufi's own tool lines
   await expect(log(chat(page)).locator(".reply")).toHaveText(
     "ok:I have a headache",
   );
-  const own = log(chat(page)).locator("p", { hasText: "Save to your record" });
-  await expect(own).toHaveText("done:Save to your record");
+  const own = log(chat(page)).locator("p", {
+    hasText: "Save to your health record",
+  });
+  await expect(own).toHaveText("done:Save to your health record");
   const other = log(chat(page)).locator("p", { hasText: "Used a tool" });
   await expect(other).toContainText('{"query":"headache headache');
   // The sign keeps its 13 px beside a detail longer than the line.

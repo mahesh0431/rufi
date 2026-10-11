@@ -307,8 +307,8 @@ function Sheet({
         {reading && (
           <>
             <p className="text-xs text-muted">
-              What the reader read, not saved: these become your record only
-              when you save them in the chat.
+              What the reader read, not saved: these become part of your health
+              record only when you save them in the chat.
             </p>
             {reading.note && (
               <div>

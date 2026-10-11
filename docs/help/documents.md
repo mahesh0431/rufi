@@ -1,6 +1,6 @@
 # Documents
 
-You can add lab reports and other documents to Rufi as PDFs or photos. Rufi keeps each original exactly as it came, so you can always look at it again, and reads each document in the background, so you don't have to type its results. This page says how to add documents, how Rufi reads them, how to check what it read, how to save the results to your record, and how to look at an original.
+You can add lab reports and other documents to Rufi as PDFs or photos. Rufi keeps each original exactly as it came, so you can always look at it again, and reads each document in the background, so you don't have to type its results. This page says how to add documents, how Rufi reads them, how to check what it read, how to save the results to your health record, and how to look at an original.
 
 You can also ask the AI about a document in the chat, and it looks at the pages it needs (see [Your data and the AI](your-data-and-the-ai.md#the-pages-the-ai-looks-at)).
 
@@ -55,7 +55,7 @@ To show one kind only, choose it in the list at the top left.
 
 ## How Rufi reads a document
 
-Rufi's reader is an AI that reads one document at a time, page by page, in the background. It copies what each page says: every result exactly as printed (`<5` stays `<5`), with its unit, range and the lab's own flag, and the dates, lab and name printed on the page. It doesn't judge your results and it saves nothing to your record. It sees only that document's pages: not your record, your chat, other documents or the internet.
+Rufi's reader is an AI that reads one document at a time, page by page, in the background. It copies what each page says: every result exactly as printed, lab results and measurements such as a blood pressure taken at a visit (`<5` stays `<5`, `130/85` stays `130/85`), with its unit, range and the lab's own flag, and the dates, lab and name printed on the page. When the page dates a measurement, such as the day of a visit, the reader copies that date with it. It doesn't judge your results, doesn't decide which are lab results and which are measurements, and saves nothing to your health record. It sees only that document's pages: not your health record, your chat, other documents or the internet.
 
 Rufi reads each document as soon as you add it. It sends the document's pages to the AI you signed in with (your ChatGPT plan) to read them. The first run tells you this once.
 
@@ -79,7 +79,7 @@ The strip item goes, and a line in the chat says what was read, for example **La
 
 When something needs you, the AI asks about it in the chat, in a few lines: a value marked unsure, a page that couldn't be read, a name on the report that differs from yours, an unclear date. Case and spacing differences do not need a question. Other differences, including an extra name or a title, do. It only reads and asks; it never saves on its own.
 
-The results are kept as **draft items**: they wait for you and stay across restarts, but they aren't part of your record yet, so they don't count in your Overview or the AI's answers until you save them (see [Save results to your record](#save-results-to-your-record)).
+The results are kept as **draft items**: they wait for you and stay across restarts, but they aren't part of your health record yet, so they don't count in your Overview or the AI's answers until you save them (see [Save results to your health record](#save-results-to-your-health-record)).
 
 ### What the marks mean
 
@@ -92,21 +92,21 @@ Rufi checks each page the reader reads. A check never changes what the reader re
 | **couldn't be read**  | The reader couldn't read the page, and says why                                                             |
 | **not looked at**     | The reading ended without this page                                                                         |
 
-## Save results to your record
+## Save results to your health record
 
 1. Add the document to a message (**Ask Rufi** on its row on the Documents page, **Save these in the chat** on its page, or its chip from the paperclip), and say "save it". To save only some results, add them on the document's page (see [Add some results to the chat](#add-some-results-to-the-chat)) and say "save these".
-2. The AI reads all the document's draft items and the results you already saved for the same tests and dates. Then it says, in a few lines, how many results are new, and names each one that isn't plainly new. It asks you about:
-   - **another source**: the same result is already in your record, for example because you told the AI, or you added another copy of the report. The saved result stays as it is, and this page becomes one more source of it.
+2. The AI reads all the document's draft items and the results you already saved for the same tests and dates. Then it says, in a few lines, how many results are new, which are lab results and which are measurements, and names each one that isn't plainly new. It asks you about:
+   - **another source**: the same result is already in your health record, for example because you told the AI, or you added another copy of the report. The saved result stays as it is, and this page becomes one more source of it.
    - **a correction**: the lab amended a result you saved. The new result replaces the old one, and the old one stays in its history, marked as replaced.
    - a value marked **unsure**, a page that **couldn't be read**, or a date that isn't clear.
    - **another name** on the report. If the report isn't yours, the AI saves nothing from it. It never saves a report for someone else.
 3. Answer, and say yes. When every result is plainly new and you said "save it", the AI saves at once.
-4. The chat shows a receipt with a summary, for example **Saved 42 results from Sunrise Labs August.pdf · 40 new · 1 more source · 1 correction**, and the page of each one. Click **Show what was saved** to see the whole list.
+4. Lab results go to the Lab results page and measurements to Measurements (see [Lab results and Measurements](record.md#lab-results-and-measurements)). The chat shows a receipt with a summary, for example **Saved 42 results from Sunrise Labs August.pdf · 40 new · 1 more source · 1 correction**, and the page of each one. Click **Show what was saved** to see the whole list.
 
 What Rufi does when it saves a document's results:
 
 - **The values as printed.** Rufi saves each result from the draft item, as the reader read it, never as the AI typed it. If you correct a value in the chat ("the LDL is 132, not 142"), Rufi saves your value and keeps your words.
-- **Its date.** A result gets the date printed for it, or else the first date printed on its page, such as the collection date. Every result needs a date. When a report has no clear date, the AI asks you when the sample was taken before it saves anything. A rough date is fine, such as "around August 2026" or "early this year": Rufi saves it at the precision you gave (a month, a year) and keeps your words. If you don't know, the AI explains that it needs a date and asks for a rough one. It never makes one up.
+- **Its date.** A lab result gets the date printed for it, or else the first date printed on its page, such as the collection date. Every result needs a date. When a report has no clear date, the AI asks you when the sample was taken before it saves anything. A rough date is fine, such as "around August 2026" or "early this year": Rufi saves it at the precision you gave (a month, a year) and keeps your words. If you don't know, the AI explains that it needs a date and asks for a rough one. It never makes one up. A measurement's date is the day it was taken: it gets only the date printed for it, or the one you give, never the report's collection date.
 - **Its report.** Results with the same printed lab, report number and collection date go in one report, even when they came from different documents. If any of these is missing, Rufi keeps reports from different documents apart. A page that prints none of these belongs to the report of the page before it.
 - **Its sources.** Each result keeps where it came from: the document and its page, your message, or both. The receipt, the AI's reads and a visit brief show them.
 - **All or nothing.** Rufi saves all the results in one step, however many there are. If one can't be saved, nothing is saved, and the AI tells you why.
@@ -115,7 +115,7 @@ What Rufi does when it saves a document's results:
 
 ### Results you don't want
 
-If a result isn't yours, or was read by mistake, tell the AI. When you say yes, it sets the result aside: the chat shows a receipt such as **Dismissed 1 item from Sunrise Labs August.pdf: not saved**, and that result is never saved later. A result you already saved can't be set aside: ask the AI to remove it from your record instead.
+If a result isn't yours, or was read by mistake, tell the AI. When you say yes, it sets the result aside: the chat shows a receipt such as **Dismissed 1 item from Sunrise Labs August.pdf: not saved**, and that result is never saved later. A result you already saved can't be set aside: ask the AI to remove it from your health record instead.
 
 ### Undo
 
@@ -135,7 +135,7 @@ Say "undo that", as for any save (see [Undo](chat.md#undo)). The AI removes the 
 
 Each document has its own page, with the results the reader read beside the page they came from. Use it when you want to check a report carefully before you save it. To open it, click the document's name on the Documents page, or **Open** on the line in the chat.
 
-Nothing on this page saves to your record. You fix what the reader read, then you save in the chat.
+Nothing on this page saves to your health record. You fix what the reader read, then you save in the chat.
 
 ### Look at the results beside the page
 
@@ -167,7 +167,7 @@ To ask about or save only some results, add them to the chat as chips: point at 
 
 ### Save these in the chat
 
-Click **Save these in the chat**. Rufi puts **Save these 42 results.** in the chat box, after anything you already typed there, with the document's chip. You stay on the page, so you can read the results beside it. Click the chat bar, read the message, then send it: this message goes to the AI only when you send it. The AI reads the results with your fixes, then checks them with you and saves them (see [Save results to your record](#save-results-to-your-record)).
+Click **Save these in the chat**. Rufi puts **Save these 42 results.** in the chat box, after anything you already typed there, with the document's chip. You stay on the page, so you can read the results beside it. Click the chat bar, read the message, then send it: this message goes to the AI only when you send it. The AI reads the results with your fixes, then checks them with you and saves them (see [Save results to your health record](#save-results-to-your-health-record)).
 
 While a message of yours is being sent, the button says **Wait: a message is being sent**.
 

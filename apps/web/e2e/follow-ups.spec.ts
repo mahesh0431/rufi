@@ -73,7 +73,7 @@ test("a window coming back to the front reads Follow-ups again, with the page vi
   expect(await page.evaluate(() => document.visibilityState)).toBe("visible");
 });
 
-test("a done follow-up shows the result it is about, which opens on Results", async ({
+test("a done follow-up shows the result it is about, which opens on Lab results", async ({
   page,
   rufi,
 }) => {
@@ -94,7 +94,9 @@ test("a done follow-up shows the result it is about, which opens on Results", as
 
   await done.getByRole("link", { name: "HbA1c 6.8 % · 12 Aug 2026" }).click();
 
-  await expect(page).toHaveURL(/\/people\/asha\/record\/result\?open=res-a1$/);
+  await expect(page).toHaveURL(
+    /\/people\/asha\/record\/lab_result\?open=res-a1$/,
+  );
   const row = page.getByRole("button", { name: "HbA1c", exact: true });
   await expect(row).toHaveAttribute("aria-expanded", "true");
   await expect(row).toBeInViewport();
@@ -120,7 +122,7 @@ test("a follow-up about a result amended since says so, and opens the current on
     })
     .click();
 
-  await expect(page).toHaveURL(/\/record\/result\?open=res-a5$/);
+  await expect(page).toHaveURL(/\/record\/lab_result\?open=res-a5$/);
   const row = page.getByRole("button", { name: "TSH amended" });
   await expect(row).toHaveAttribute("aria-expanded", "true");
   await expect(row).toBeInViewport();

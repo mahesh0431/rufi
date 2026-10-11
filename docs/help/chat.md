@@ -1,10 +1,10 @@
 # Talking to Rufi
 
-The chat is where you talk with Rufi's AI about your record. You have one chat with Rufi, and you can see it in three sizes: the chat bar, the chat panel and the chat page. Rufi keeps the whole chat, and what you typed but didn't send. To talk about something new, just say so.
+The chat is where you talk with Rufi's AI about your health record. You have one chat with Rufi, and you can see it in three sizes: the chat bar, the chat panel and the chat page. Rufi keeps the whole chat, and what you typed but didn't send. To talk about something new, just say so.
 
 ## The chat bar
 
-The chat bar is the box at the bottom right of the pages where you read your health: Overview, each page of your record, Follow-ups, Documents, a document's page and a visit brief. It says "Ask or tell Rufi about" and your name, and shows the model and effort that answer, such as "GPT-6-Astra Medium". It is your chat, the same as the panel and the page, and the same in every browser tab. These pages leave room at their bottom for the bar, so it never covers a row or a button. Help and Settings have no chat bar: to talk to Rufi from there, click **Chat with Rufi** in the sidebar. The chat page has its own box.
+The chat bar is the box at the bottom right of the pages where you read your health: Overview, each page of your health record, Follow-ups, Documents, a document's page and a visit brief. It says "Ask or tell Rufi about" and your name, and shows the model and effort that answer, such as "GPT-6-Astra Medium". It is your chat, the same as the panel and the page, and the same in every browser tab. These pages leave room at their bottom for the bar, so it never covers a row or a button. Help and Settings have no chat bar: to talk to Rufi from there, click **Chat with Rufi** in the sidebar. The chat page has its own box.
 
 The bar is always the same size: one line. When you add something to your message with **Ask Rufi** (see [Adding to a message](#adding-to-a-message)), the bar shows the first one's name and how many more, such as "CRP <5 mg/L · 12 Aug 2026 +2", and lights up for a moment. After that, it shows the start of what you typed. When Rufi has something to tell you, such as why it couldn't add something, the bar shows that for the moment, in grey. Click the bar to see it all in the panel, and to write your message.
 
@@ -48,8 +48,8 @@ A message can have up to 10,000 characters. When the box has more, it says so, a
 
 You can add your records and documents to a message, so the AI knows exactly what you mean by "this" or "these". Each one shows in the box as a chip, above your text: a record such as a result with its value and date, or a document with its name. Point at a chip to see what it is.
 
-- **A record:** on its kind's page (see [Your record](record.md)), point at its row and click **Ask Rufi**.
-- **A report:** on Results, click **Ask Rufi** in a report's heading. Its results go in as one chip, such as "Sunrise Labs · 12 Aug 2026 · 3 results", and the AI reads exactly that report's results. Results you typed in the chat have no such heading button.
+- **A record:** on its page (see [Your health record](record.md)), point at its row and click **Ask Rufi**.
+- **A report:** on Lab results, click **Ask Rufi** in a report's heading. Its results, with any measurements it printed, go in as one chip, such as "Sunrise Labs · 12 Aug 2026 · 3 results", and the AI reads exactly that report's results. Lab results you typed in the chat, and days of measurements, have no such heading button.
 - **A follow-up or a document that needs you:** on Overview, click **Ask Rufi** on its line in **Needs you**.
 - **A document:** on the Documents page, point at its row and click **Ask Rufi**.
 - **A result the reader read:** on a document's page, point at its row and click **Ask Rufi** (see [Documents](documents.md#add-some-results-to-the-chat)).
@@ -69,9 +69,9 @@ A document's chip in the box says what Rufi is doing with that document:
 
 A document that was never read, or whose state Rufi doesn't know yet, shows no state. While a file you added is on its way, the box says "Adding" and its name until its chip comes. A chip in a message you sent shows no state.
 
-To take a chip out, click its **×**. This changes nothing in your record. The chips are kept with what you typed, also when you reload or Rufi starts again, and they go with the message: your message in the chat shows them too.
+To take a chip out, click its **×**. This changes nothing in your health record. The chips are kept with what you typed, also when you reload or Rufi starts again, and they go with the message: your message in the chat shows them too.
 
-Rufi checks each chip: it must be in the record of the person whose chat it is. If it isn't, the box says "Something added to this message isn't in this person's record. Take it out of the message and add it again." When you send, Rufi gives the AI each chip's exact name in your record and its version at that moment, so the AI reads exactly those. A message can have up to 100 chips.
+Rufi checks each chip: it must be in the health record of the person whose chat it is. If it isn't, the box says "Something added to this message isn't in this person's record. Take it out of the message and add it again." When you send, Rufi gives the AI each chip's exact name in your health record and its version at that moment, so the AI reads exactly those. A message can have up to 100 chips.
 
 ## What you see
 
@@ -79,15 +79,15 @@ Rufi checks each chip: it must be in the record of the person whose chat it is. 
 - **The AI's replies**, which appear as the AI writes them. Replies can have lists and tables. Links in a reply open in your browser, outside Rufi. A reply never shows pictures.
 - **One line for each thing the AI did**, such as reading your Overview or running a command. A tick means it was done. Other signs mean it is running, it failed, or it stopped.
 - **Based on**, a link under an answer once the reply has ended. It opens where the answer comes from. See [Where an answer comes from](#where-an-answer-comes-from).
-- **Receipts**, with a tick, each time the AI saved something to your record: "Saved", then one line for each change. A save from a document starts with a summary, such as "Saved 42 results from Sunrise Labs August.pdf · 40 new · 1 more source · 1 correction"; when the list is long, click **Show what was saved** to see it. Rufi writes them. See [Changing your record](#changing-your-record).
+- **Receipts**, with a tick, each time the AI saved something to your health record: "Saved", then one line for each change. A save from a document starts with a summary, such as "Saved 42 results from Sunrise Labs August.pdf · 40 new · 1 more source · 1 correction"; when the list is long, click **Show what was saved** to see it. Rufi writes them. See [Changing your health record](#changing-your-health-record).
 - **A visit brief's line**, with a page sign and **Open**, when the AI made a brief for you. Rufi writes it. See [Visit brief](visit-brief.md).
 - **Rufi's lines**, with a bell and "Rufi" above them, when something happened outside the chat. Rufi writes them, never the AI, and they are never your words. See [Rufi's lines](#rufis-lines).
 - **How a reply ended**, when it didn't finish: for example "Stopped.", or that your ChatGPT plan's usage limit has been reached, with the time it resets.
 - **A quiet line**, "The AI started afresh here. It can still read earlier messages.", where the AI started again with a new memory of the chat: after you changed the model, when Rufi changed the AI's tools, when the AI's own copy of the chat was lost (for example after a restore), or where the AI compacted its memory of a long chat. From there, the AI has the chat's last messages, and it reads further back when it needs to. See [The AI's memory of the chat](#the-ais-memory-of-the-chat).
 
-## Asking about your record
+## Asking about your health record
 
-Ask the AI about your record in your own words, for example "What was my last HbA1c?", "How many times did I have a headache this year?" or "How has my HbA1c changed since I started creatine?". The AI reads your Overview. For anything more, such as earlier results, counts or dates, it reads one kind of record, such as your results or your symptoms, all of them or between two dates. The AI does the counting and the comparing itself.
+Ask the AI about your health record in your own words, for example "What was my last HbA1c?", "How many times did I have a headache this year?" or "How has my HbA1c changed since I started creatine?". The AI reads your Overview. For anything more, such as earlier results, counts or dates, it reads one kind of record, such as your lab results, your measurements or your symptoms, all of them or between two dates. The AI does the counting and the comparing itself.
 
 What the AI's reads can do:
 
@@ -98,14 +98,14 @@ What the AI's reads can do:
 - **Exactly the ones you added.** For the results you added to a message, the AI reads those records and no others.
 - **Where each one came from.** Each record comes with its sources: your message, or a document and its page.
 
-If your record changes while the AI answers, for example because the AI saved something in the same reply, two of its reads can see the record before and after the change. Rufi keeps what each read got back with the chat.
+If your health record changes while the AI answers, for example because the AI saved something in the same reply, two of its reads can see the record before and after the change. Rufi keeps what each read got back with the chat.
 
 ## Where an answer comes from
 
 Under an answer, once the reply has ended, the **Based on** link opens two parts:
 
-- **How**: the AI's own words on where the answer comes from: your record, read in this reply or earlier in the chat, the web, or general knowledge. It also says how the AI got the answer, for example which results it compared.
-- **Used**: which reads the AI made in that reply, and how each one ended: your Overview, your records of one kind (for example "Read your results in 2026 · 8 records"), a web search or a web page, a command. Rufi makes this list itself, not from the AI's words. What each read got back isn't shown here; Rufi keeps it with the chat.
+- **How**: the AI's own words on where the answer comes from: your health record, read in this reply or earlier in the chat, the web, or general knowledge. It also says how the AI got the answer, for example which results it compared.
+- **Used**: which reads the AI made in that reply, and how each one ended: your Overview, your records of one kind (for example "Read your lab results in 2026 · 8 records"), a web search or a web page, a command. Rufi makes this list itself, not from the AI's words. What each read got back isn't shown here; Rufi keeps it with the chat.
 
 Used is what the AI read, not proof that each read supports the answer. For the web, Rufi sees what was searched or opened, not the text of the page. When a read failed, stopped or was capped, its line says so. When the AI answers from something it read earlier in the chat, Used is empty for that reply, and How says so. If How and Used don't agree, ask the AI.
 
@@ -115,12 +115,12 @@ Small talk, such as "thanks", has no How, and no Based on when the AI read nothi
 
 The AI writes How at the end of its reply, and Rufi shows it under Based on, not in the answer. If the AI forgets it, the answer has no How.
 
-## Changing your record
+## Changing your health record
 
-You change your record by telling the AI in the chat. Nothing changes until you say yes.
+You change your health record by telling the AI in the chat. Nothing changes until you say yes.
 
 1. Tell the AI, for example "I stopped creatine because of a stomach upset".
-2. The AI reads your record, then says what it will save and asks you. Nothing is saved yet.
+2. The AI reads your health record, then says what it will save and asks you. Nothing is saved yet.
 3. Say yes to save it. If you say no, ask a question, or say "yes, but explain first", the AI saves nothing.
 4. The chat shows a receipt with a tick: "Saved", then one line for each change, with the record's name in bold and each changed detail as old → new. For example:
 
@@ -131,25 +131,26 @@ You change your record by telling the AI in the chat. Nothing changes until you 
 
    When a detail is long, its line shows the part around the change. Rufi writes the receipt itself, from what it saved, not from the AI's words. If the receipt is different from what the AI told you, trust the receipt and tell the AI.
 
-The AI can save medicines you take, prescriptions, symptoms, conditions, allergies, results such as your weight or blood pressure, visits, procedures and immunisations, "no known allergies", and follow-ups.
+The AI can save medicines you take, prescriptions, symptoms, conditions, allergies, lab results, measurements such as your weight or blood pressure, visits, procedures and immunisations, "no known allergies", and follow-ups.
 
 What Rufi does when it saves:
 
-- **Only what you said.** A detail you didn't give stays unknown. A date is saved only when you gave one, at the precision you gave it: "since 2019" stays a year. Rufi keeps your words for the date, such as "last Monday", and counts them from when you sent the message, not from when you said yes. A result always needs a date: when a report has none, the AI asks you for one, and a rough date is fine (see [Save results to your record](documents.md#save-results-to-your-record)).
+- **Only what you said.** A detail you didn't give stays unknown. A date is saved only when you gave one, at the precision you gave it: "since 2019" stays a year. Rufi keeps your words for the date, such as "last Monday", and counts them from when you sent the message, not from when you said yes. A result always needs a date: when a report has none, the AI asks you for one, and a rough date is fine (see [Save results to your health record](documents.md#save-results-to-your-health-record)).
 - **All or nothing.** When one part can't be saved, nothing is saved, and the AI tells you why.
-- **Nothing is deleted.** A record you remove leaves your current record, and Rufi keeps its history.
+- **Nothing is deleted.** A record you remove leaves your current health record, and Rufi keeps its history.
 - **One medicine, one use.** When you take a medicine in two ways, such as a morning and a night dose, stopping one doesn't stop the other. A prescription doesn't add a medicine you take.
-- **"No known allergies" has a date.** It can't stay in your record beside an allergy that is active or whose status is unknown. When you tell the AI about such an allergy, it asks you to remove "no known allergies" in the same save.
+- **A lab result or a measurement.** The AI says which each new result is, and asks when it isn't sure. To move a result to the other page, say so, for example "this weight is a measurement": its value, date and sources stay, and the receipt shows the change (see [Lab results and Measurements](record.md#lab-results-and-measurements)).
+- **"No known allergies" has a date.** It can't stay in your health record beside an allergy that is active or whose status is unknown. When you tell the AI about such an allergy, it asks you to remove "no known allergies" in the same save.
 
-To see your record, open Overview or a kind's page (see [Your record](record.md)). To change a record from there, click **Ask Rufi** on its row.
+To see your health record, open Overview or one of its pages (see [Your health record](record.md)). To change a record from there, click **Ask Rufi** on its row.
 
 ### Saving a document's results
 
-To save the results Rufi read from a document, add the document to a message and say "save it", or "save these" with the results you chose. The AI checks the results with you first, then saves them. See [Documents](documents.md#save-results-to-your-record).
+To save the results Rufi read from a document, add the document to a message and say "save it", or "save these" with the results you chose. The AI checks the results with you first, then saves them. See [Documents](documents.md#save-results-to-your-health-record).
 
 ### Undo
 
-Say "undo that". The AI reads the save and your record as it is now. It tells you what it will change back, and anything that changed after that save, and asks you. Say yes, and the AI saves the reverse, with its own receipt. The first save stays in the history. When the save added a document page as one more source of a result, the undo takes only that source off: the result stays.
+Say "undo that". The AI reads the save and your health record as it is now. It tells you what it will change back, and anything that changed after that save, and asks you. Say yes, and the AI saves the reverse, with its own receipt. The first save stays in the history. When the save added a document page as one more source of a result, the undo takes only that source off: the result stays.
 
 ### When a save and a stop meet
 
@@ -193,7 +194,7 @@ Some things happen outside your chat. Rufi tells you with its own line in the ch
 
 When the AI should know too, Rufi gives it a note:
 
-- **When nothing runs**, the AI gets the note at once, in a short reply of its own. In that reply the AI can only read your record: it can explain or ask, but it can't save anything. Only your own messages can save.
+- **When nothing runs**, the AI gets the note at once, in a short reply of its own. In that reply the AI can only read your health record: it can explain or ask, but it can't save anything. Only your own messages can save.
 - **When a reply runs**, the note waits until the reply has ended. Notes that wait together go to the AI together, in one reply.
 - **After a Stop, or when you're signed out**, the note waits above the box as "Rufi's note", marked **Rufi**, with "Goes to the AI with your next message." It goes once, with your next message, never as a reply of its own later. **Remove** it if the AI doesn't need it.
 

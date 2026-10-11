@@ -4,7 +4,7 @@ A follow-up is something to come back to, such as a recheck or a question for yo
 
 ## Save a follow-up
 
-Tell the AI in the chat, for example "Remind me to recheck my HbA1c in December". The AI says what it would save and asks; it saves only after you say yes, as for every change (see [Changing your record](chat.md#changing-your-record)).
+Tell the AI in the chat, for example "Remind me to recheck my HbA1c in December". The AI says what it would save and asks; it saves only after you say yes, as for every change (see [Changing your health record](chat.md#changing-your-health-record)).
 
 When a document or your words suggest one, for example a report that says "Repeat HbA1c in 3 months", the AI suggests a follow-up and asks. It saves nothing until you say yes.
 
@@ -49,7 +49,7 @@ In the sidebar, click **Follow-ups**. The number next to it is how many follow-u
 6. **No date.**
 7. **Done** and **Dropped**, with what came of each.
 
-A follow-up about a record shows it under its name, for example "About: HbA1c 6.8 % · 12 Aug 2026". Click it to open that record on its own page. If the lab amended that result since, the line keeps the value the follow-up was about and adds what it was amended to ("· amended to 4.6 mIU/L"), and the link opens the current result, which shows the earlier value under **Replaces**. Click a follow-up's name to see its sources and history.
+A follow-up about a record shows it under its name, for example "About: HbA1c 6.8 % · 12 Aug 2026". Click it to open that record on its own page: a result opens on Lab results or on Measurements, the page it is on now. If the lab amended that result since, the line keeps the value the follow-up was about and adds what it was amended to ("· amended to 4.6 mIU/L"), and the link opens the current result, which shows the earlier value under **Replaces**. Click a follow-up's name to see its sources and history.
 
 The page shows the new day by itself: when it is open over midnight, it changes within a minute, and when you come back to its window, it reads again at once.
 

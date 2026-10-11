@@ -825,12 +825,12 @@ describe("the chat, on the scripted Codex", () => {
         {
           ref: { type: "record", kind: "result", id: "res-1", version: null },
           label: "HbA1c 6.8 % · 12 Aug 2026",
-          detail: "Result in your record",
+          detail: "Lab result in your health record",
         },
         {
           ref: { type: "report", id: "rep-1", version: "op-2" },
           label: "Sunrise Labs · 12 Aug 2026 · 2 results",
-          detail: "Report in your record",
+          detail: "Report in your health record",
         },
       ],
     });
@@ -891,7 +891,7 @@ describe("the chat, on the scripted Codex", () => {
         {
           ref: { type: "report", id: "rep-1", version },
           label: `Sunrise Labs · 12 Aug 2026 · ${String(count)} ${count === 1 ? "result" : "results"}`,
-          detail: "Report in your record",
+          detail: "Report in your health record",
         },
       ]);
     };

@@ -272,7 +272,8 @@ function ExportSection() {
       <h2 className="mt-8 mb-2 px-0.5 font-semibold">Export</h2>
       <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
         <p>
-          One zip with everything in your record, your chat and Rufi's settings.
+          One zip with everything in your health record, your chat and Rufi's
+          settings.
         </p>
         <Button
           className="self-start"
