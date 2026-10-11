@@ -8,7 +8,8 @@
 // command, "command"
 // starts a long command ("background command": and the turn ends while it
 // runs), "drip" streams its answer in five parts 100 ms
-// apart, "long" streams 200 parts of 1,000 characters, and anything else
+// apart, "long" streams 200 parts of 1,000 characters, "think" streams a
+// reasoning summary (fake-model.ts's THINKING) before it answers, and anything else
 // answers "ok:<text>".
 // The test passes a scenario in FAKE_CODEX and reads what happened from the
 // JSON lines written to FAKE_CODEX_LOG.
@@ -24,6 +25,7 @@ import {
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
+import { THINKING } from "./fake-model.ts";
 
 export interface Scenario {
   /** Methods the fake never answers. */
@@ -62,8 +64,13 @@ export interface Scenario {
     text: string;
     questions?: { title: string; options: string[] | null }[];
   };
-  /** The summary parts of a reasoning item the turn has before its answer. */
+  /**
+   * The summary parts of a reasoning item the turn has before its answer,
+   * streamed as Codex does: the item starts, each part streams in two
+   * deltas, then the item completes, `reasoningMs` (0) after the last one.
+   */
   reasoning?: string[];
+  reasoningMs?: number;
   /** Codex compacts the thread's context during the turn, before answering. */
   compaction?: boolean;
   /**
@@ -335,14 +342,31 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
       reply: await askRufi(request.method, request.params),
     });
   }
-  if (scenario.reasoning) {
+  const reasoning =
+    scenario.reasoning ?? (text.includes("think") ? THINKING : undefined);
+  if (reasoning) {
+    const item = { id: "item-think", type: "reasoning", content: [] };
+    event("item/started", { item: { ...item, summary: [] } });
+    for (const [summaryIndex, part] of reasoning.entries()) {
+      if (summaryIndex > 0) {
+        event("item/reasoning/summaryPartAdded", {
+          itemId: item.id,
+          summaryIndex,
+        });
+      }
+      const half = Math.ceil(part.length / 2);
+      for (const delta of [part.slice(0, half), part.slice(half)]) {
+        event("item/reasoning/summaryTextDelta", {
+          itemId: item.id,
+          delta,
+          summaryIndex,
+        });
+      }
+    }
+    if (scenario.reasoningMs) await sleep(scenario.reasoningMs);
+    if (thread.running?.turnId !== turnId) return;
     event("item/completed", {
-      item: {
-        id: "item-think",
-        type: "reasoning",
-        summary: scenario.reasoning,
-        content: [],
-      },
+      item: { ...item, summary: reasoning },
     });
   }
   if (scenario.compaction) {

@@ -142,7 +142,7 @@ Rufi also keeps everything the AI did in a reply, so that an answer can be trace
 - For each read or save with Rufi's own tools, what the AI asked and exactly what Rufi answered, except the page images it looked at: Rufi keeps which page it was, not the image.
 - The AI's reasoning summaries: a short account of its thinking, when the AI service gives one. Rufi asks for them.
 
-You don't see these in Rufi yet, except as **Based on** under each answer. Rufi keeps them as long as the chat. Work the AI gives to a sub-agent isn't kept.
+You see the reasoning summaries in the chat, behind each "Thought for" line, and the rest only as **Based on** under each answer. Rufi keeps them as long as the chat. Work the AI gives to a sub-agent isn't kept.
 
 For each change to your record, Rufi also keeps the record before and after it, and the message of yours it came from.
 

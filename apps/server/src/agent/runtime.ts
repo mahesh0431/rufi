@@ -66,6 +66,11 @@ export type AgentEvent = { threadId: string } & (
       details?: unknown;
     }
   /**
+   * The agent's reasoning for a step as it goes: an empty `delta` when it
+   * starts thinking, then each part of its summary as it streams.
+   */
+  | { type: "thinking"; turnId: string; itemId: string; delta: string }
+  /**
    * The agent's reasoning for a step, once it is whole: the summary it gave
    * (empty when none), and everything it gave as it came (plain JSON).
    */

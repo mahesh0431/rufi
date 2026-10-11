@@ -981,6 +981,53 @@ test("a save to the record shows Rufi's receipt, also after a reload", async ({
   await accessible(page);
 });
 
+test("while the AI thinks, a line shows its latest heading; after the reply it folds, and opens to the whole summary, also after a reload", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi, {
+    scenario: {
+      reasoning: [
+        "**Reading the record**\n\nAsha asks about her results.",
+        "**Comparing the reports**\n\nTwo reports, one lab.",
+      ],
+      reasoningMs: 1_500,
+    },
+  });
+  await send(page, "How are my results?");
+  const live = log(chat(page)).locator("p", { hasText: "Thinking…" });
+  await expect(live).toHaveText("Thinking…Comparing the reports");
+  await accessible(page);
+
+  /** The folded line, closed; a click opens the summary, Markdown as shown. */
+  const folded = async (scope: Page | Locator) => {
+    const thought = log(scope).locator("details", { hasText: "Thought for" });
+    await expect(thought.locator("summary")).toHaveText(/^Thought for \d+ s$/);
+    await expect(thought.locator(".thought")).toBeHidden();
+    await thought.locator("summary").click();
+    await expect(thought.locator(".thought strong")).toHaveText([
+      "Reading the record",
+      "Comparing the reports",
+    ]);
+    await expect(thought.locator(".thought")).toContainText(
+      "Two reports, one lab.",
+    );
+    await expect(log(scope).getByText("Thinking…")).toHaveCount(0);
+  };
+  await expect(log(chat(page)).locator(".reply")).toHaveText(
+    "ok:How are my results?",
+  );
+  await folded(chat(page));
+  await accessible(page);
+
+  await page.reload();
+  await opener(chat(page)).click();
+  await folded(chat(page));
+  await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
+  await expect(chat(page)).toHaveCount(0);
+  await folded(page);
+});
+
 test("a save made in another window while this one's connection was down shows on Overview once it connects again", async ({
   page,
   rufi,

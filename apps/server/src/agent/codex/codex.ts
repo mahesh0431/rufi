@@ -34,6 +34,7 @@ import type { ItemCompletedNotification } from "./protocol/v2/ItemCompletedNotif
 import type { ItemStartedNotification } from "./protocol/v2/ItemStartedNotification.ts";
 import type { ModelListResponse } from "./protocol/v2/ModelListResponse.ts";
 import type { RateLimitSnapshot } from "./protocol/v2/RateLimitSnapshot.ts";
+import type { ReasoningSummaryTextDeltaNotification } from "./protocol/v2/ReasoningSummaryTextDeltaNotification.ts";
 import type { ThreadBackgroundTerminalsListResponse } from "./protocol/v2/ThreadBackgroundTerminalsListResponse.ts";
 import type { ThreadResumeResponse } from "./protocol/v2/ThreadResumeResponse.ts";
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
@@ -78,6 +79,8 @@ interface Running {
   end: TurnEnd | undefined;
   /** Agent messages that streamed; the others arrive whole at their end. */
   streamed: Set<string>;
+  /** The summary part each reasoning item streams now, by item. */
+  thinking: Map<string, number>;
   /** Settles once the turn has ended. */
   ended: PromiseWithResolvers<void>;
   /** A Stop under way; nothing more of the turn is shown after it. */
@@ -377,6 +380,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       turnId,
       end: undefined,
       streamed: new Set(),
+      thinking: new Map(),
       messaged: Promise.withResolvers(),
       ended: Promise.withResolvers(),
       stopping: undefined,
@@ -417,6 +421,17 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           });
           return;
         }
+        if (item.type === "reasoning") {
+          running.thinking.set(item.id, 0);
+          emit({
+            type: "thinking",
+            threadId,
+            turnId,
+            itemId: item.id,
+            delta: "",
+          });
+          return;
+        }
         if (item.type === "commandExecution") void track();
         const activity = activityOf(item, false, deps.tools);
         if (activity) {
@@ -437,6 +452,25 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         emit({ type: "text", threadId, turnId, itemId, delta });
         return;
       }
+      case "item/reasoning/summaryTextDelta": {
+        const { itemId, delta, summaryIndex } =
+          params as ReasoningSummaryTextDeltaNotification;
+        // A later part of the summary starts a new paragraph, as the whole
+        // summary is joined.
+        const part = running.thinking.get(itemId) ?? summaryIndex;
+        running.thinking.set(itemId, summaryIndex);
+        emit({
+          type: "thinking",
+          threadId,
+          turnId,
+          itemId,
+          delta: summaryIndex > part ? `\n\n${delta}` : delta,
+        });
+        return;
+      }
+      case "item/reasoning/summaryPartAdded":
+        // The next delta says which part it is.
+        return;
       case "item/completed": {
         const { item } = params as ItemCompletedNotification;
         if (item.type === "userMessage") return;
