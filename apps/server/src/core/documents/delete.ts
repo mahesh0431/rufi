@@ -251,7 +251,7 @@ export function deletions(deps: {
 
   /** Removes the bytes of files no live page uses, under the gate. */
   const removeUnused = (ids: readonly string[]) =>
-    deps.gate.run(async () => {
+    deps.gate.exclusive(async () => {
       for (const id of ids) {
         // A page added meanwhile (the same file again) keeps it.
         const live = await db

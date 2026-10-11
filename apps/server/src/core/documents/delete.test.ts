@@ -447,7 +447,8 @@ describe("the bytes", () => {
     await writeFile(join(home, "files", "notes.txt"), "not Rufi's");
     // Rufi stops between the commit and the removal.
     const stopping: FileGate = {
-      run: () => Promise.reject(new Error("Rufi stopped.")),
+      ...fileGate(),
+      exclusive: () => Promise.reject(new Error("Rufi stopped.")),
     };
     const remover = deleting({ gate: stopping });
     for (const document of [AUG, heic]) {
@@ -522,15 +523,48 @@ describe("the bytes", () => {
     ).not.toContain(AUG_FILE);
   });
 
+  it("a backup under way holds up neither an add nor a drawn page", async () => {
+    let copied: () => void = () => undefined;
+    const copying = new Promise<void>((resolve) => {
+      copied = resolve;
+    });
+    let finish: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const { backup } = await import("node:sqlite");
+    const during = makeBackup(home, new Date(NOW), {
+      gate,
+      copy: async (...args) => {
+        const made = await backup(...args);
+        copied();
+        await held;
+        return made;
+      },
+    });
+    await copying;
+
+    const added = await add("asha", "ravi-lipid-panel.pdf", "lipid.pdf");
+    const drawn = await pages(store, home, gate).page("asha", AUG, 2);
+
+    expect((await docs.list("asha")).map((d) => d.id)).toContain(added);
+    expect(drawn?.ok).toBe(true);
+    expect(await there(pagePath(home, AUG_FILE, 2))).toBe(true);
+    finish();
+    const made = await during;
+    await verifyBackup(join(home, "backups", made.name));
+  });
+
   it("a file added again by another person while a delete waits stays, and its backup reads", async () => {
     store.db.exec(
       "UPDATE results SET removed = 1 WHERE report_id = 'rep-asha-aug'",
     );
     const remover = deleting();
     const version = (await remover.preview("asha", AUG))?.version ?? "";
-    // The gate is busy, so Ravi's add of the same bytes waits in it.
+    // Another removal holds the gate, so Ravi's add of the same bytes waits,
+    // and the delete's removal waits behind it.
     let free: () => void = () => undefined;
-    const busy = gate.run(
+    const busy = gate.exclusive(
       () =>
         new Promise<void>((resolve) => {
           free = resolve;

@@ -234,7 +234,7 @@ export async function exportZip(
       return { tables, bytes };
     };
     const { tables, bytes: originalBytes } = await (gate
-      ? gate.run(read)
+      ? gate.shared(read)
       : read());
     const createdAt = now.toISOString();
     const files: Record<string, Uint8Array | [Uint8Array, { level: 0 }]> = {

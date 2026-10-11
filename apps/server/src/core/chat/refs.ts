@@ -250,7 +250,7 @@ export function refsForAi(chips: readonly Chip[]): string | undefined {
   if (chips.length === 0) return undefined;
   const lines = chips.map(({ ref, label, deleted }) => {
     if (deleted) {
-      return `- ${ref.type === "document" ? "document" : "draft item"} ${ref.id}: ${label} (its document was deleted: there is nothing to read)`;
+      return `- ${ref.type === "document" ? "document" : "draft item"} ${ref.id}: ${label} (its document was deleted: don't use or quote anything you read from it before)`;
     }
     switch (ref.type) {
       case "document":

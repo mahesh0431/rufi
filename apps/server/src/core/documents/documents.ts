@@ -133,7 +133,7 @@ export function documents(
       const added = groups.map(() => uuid());
       // Inside the gate from the first byte to the commit: a delete of the
       // same bytes meanwhile never removes them under this add.
-      await gate.run(async () => {
+      await gate.shared(async () => {
         // Every original is on disk before any row points to it.
         for (const file of looked) {
           await keepOriginal(home, file.id, file.bytes);

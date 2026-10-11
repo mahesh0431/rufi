@@ -209,7 +209,7 @@ export async function makeBackup(
         await copyOriginal(filesPath(home), join(staging, "files"), id, size);
       }
     };
-    await (gate ? gate.run(copyAll) : copyAll());
+    await (gate ? gate.shared(copyAll) : copyAll());
     const record: BackupRecord = {
       format: "rufi-backup",
       version: 1,

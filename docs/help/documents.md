@@ -234,4 +234,4 @@ A delete removes the document from Rufi's data folder. Copies outside it stay:
 - **Rufi's backups** keep the document until they age out, in about 5 weeks. Backups made before an update keep it until you remove them (see [Backups and export](backups-and-export.md#deleted-documents-in-backups)).
 - **Exports** you saved keep it.
 - **Time Machine** and other backups of your Mac keep it.
-- **The AI** may remember what it already read in this chat. Rufi's tools no longer show it the document.
+- **The AI** may remember what it already read in this chat. Rufi's tools no longer show it the document, and Rufi tells it not to use or quote what it read from it.

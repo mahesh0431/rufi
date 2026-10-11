@@ -137,7 +137,7 @@ export const getDocuments = defineTool({
       .executeTakeFirst();
     if (document?.deleted_at != null) {
       throw new Refusal(
-        "The user deleted this document from Rufi: its pages and draft items are gone, so there is nothing to read.",
+        "The user deleted this document from Rufi: its pages and draft items are gone. Don't use or quote anything you read from it before; say it was deleted.",
       );
     }
     if (!document) {

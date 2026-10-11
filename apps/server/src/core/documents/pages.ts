@@ -63,7 +63,7 @@ export type Publish = (
 export const publisher =
   (store: Store, gate: FileGate): Publish =>
   (fileId, keep) =>
-    gate.run(async () => {
+    gate.shared(async () => {
       const live = await store.query
         .selectFrom("files")
         .select("id")
