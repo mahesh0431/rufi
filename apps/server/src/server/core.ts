@@ -5,6 +5,7 @@
 import { mkdir, rm } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { Status } from "@rufi/contracts";
 import type { PersonNotices } from "@rufi/contracts/app";
 import { serve, type ServerType } from "@hono/node-server";
@@ -78,6 +79,9 @@ export interface CoreOptions {
 /** What `pnpm start` reads to reach the running Rufi; there while it runs. */
 export const coreFile = (home: string) => join(home, "core.json");
 
+/** How long a stop waits for the requests under way to end. */
+const STOP_WAIT_MS = 2_000;
+
 /** How long `pnpm start` waits for a running Rufi to answer. */
 const REOPEN_MS = 3_000;
 
@@ -149,10 +153,18 @@ export const startCore = (options: CoreOptions) =>
     // The requests the local API is answering. Stopping the server cuts
     // their connections, not their work (a page being drawn, the allowlist
     // written): the lock goes only once each has ended, after the agent and
-    // the database have closed, so one waiting on them ends at once.
+    // the database have closed, so one waiting on them ends at once. One
+    // waiting on ChatGPT may take its own deadline: Rufi waits STOP_WAIT_MS
+    // at most, and logs what it left.
     const answering = new Set<Promise<unknown>>();
     yield* Effect.addFinalizer(() =>
-      Effect.promise(() => Promise.allSettled(answering)),
+      Effect.promise(async () => {
+        const ended = await Promise.race([
+          Promise.allSettled(answering).then(() => true),
+          sleep(STOP_WAIT_MS, false, { ref: false }),
+        ]);
+        if (!ended) log("core.stopped_waiting", { count: answering.size });
+      }),
     );
     const writer = yield* Effect.acquireRelease(
       attempt(() => openRecord(home)),

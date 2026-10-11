@@ -472,6 +472,31 @@ describe("the core", () => {
     await release();
   });
 
+  it("doesn't wait for ever for a request that doesn't end, and logs it", async () => {
+    const asked = Promise.withResolvers<undefined>();
+    let hold = false;
+    const core = await start({
+      account: () => {
+        if (!hold)
+          return Promise.resolve({ account: "signed_out", email: null });
+        asked.resolve(undefined);
+        return new Promise<Status>(() => undefined);
+      },
+    });
+    const page = await session(core);
+    hold = true;
+    const cut = page.api("GET", "/api/status").catch(() => undefined);
+    await asked.promise;
+
+    const began = Date.now();
+    await stop();
+    expect(Date.now() - began).toBeLessThan(4_000);
+    expect(logged).toContain("core.stopped_waiting");
+    await cut;
+    const release = await holdRufiLock(home, () => undefined);
+    await release();
+  });
+
   it("closes every part when it stops, even when one of them fails", async () => {
     let agent: AgentRuntime | undefined;
     const core = await start({
