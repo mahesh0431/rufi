@@ -155,7 +155,8 @@ record, your chat, your documents and Rufi's settings, as Rufi stored it.
 - \`files/\`: your original documents (PDFs and photos), exactly as you
   added them. Each is named by its SHA-256 hash, as in the \`files\` table,
   with an extension for its type. \`document_pages\` says which document
-  and page each file is, and the name it had when you added it.
+  and page each file is, and the name it had when you added it. A document
+  you deleted has \`deleted_at\` in \`documents\`, and its pages have no file.
 - \`draft_items\`: what Rufi's reader read from your documents, each not
   saved yet, saved, or dismissed. Not your record: Rufi counts one nowhere
   until you save it.

@@ -1,6 +1,6 @@
 # Documents
 
-You can add lab reports and other documents to Rufi as PDFs or photos. Rufi keeps each original exactly as it came, so you can always look at it again, and reads each document in the background, so you don't have to type its results. This page says how to add documents, how Rufi reads them, how to check what it read, how to save the results to your health record, and how to look at an original.
+You can add lab reports and other documents to Rufi as PDFs or photos. Rufi keeps each original exactly as it came, so you can always look at it again, and reads each document in the background, so you don't have to type its results. This page says how to add documents, how Rufi reads them, how to check what it read, how to save the results to your health record, how to look at an original, and how to delete a document.
 
 You can also ask the AI about a document in the chat, and it looks at the pages it needs (see [Your data and the AI](your-data-and-the-ai.md#the-pages-the-ai-looks-at)).
 
@@ -25,7 +25,7 @@ A PDF is always a document of its own, also when you add it together with photos
 
 ### The same file again
 
-Rufi adds each file only once for a person. When a file has the same content as a document you already added, Rufi says **was already added** and links to that document; nothing new is added. It looks at the content, so a copy with another name is found too. Two files with the same name but different content are two documents.
+Rufi adds each file only once for a person. When a file has the same content as a document you already added, Rufi says **was already added** and links to that document; nothing new is added. It looks at the content, so a copy with another name is found too. Two files with the same name but different content are two documents. A document you deleted doesn't count: you can add its file again, and it becomes a new document.
 
 ### When Rufi doesn't add a file
 
@@ -190,4 +190,48 @@ In a browser that has no PDF viewer, Rufi says so and offers **Save a copy**, to
 
 The originals are in the `files` folder in your data folder, each named by its content's fingerprint (its SHA-256 hash). Rufi writes each file to disk completely before the document shows in Rufi. Your backups and the export hold every original (see [Backups and export](backups-and-export.md)).
 
-You can't delete a document yet.
+## Delete a document
+
+Delete a document that you added by mistake, for example someone else's report or a blurred copy. This removes the document from Rufi. To take one wrong result out of your health record and keep the document, ask the AI in the chat instead (see [Undo](chat.md#undo)).
+
+1. Open the document's page: click its name on the Documents page.
+2. Click **Delete document**. Rufi shows what goes and what stays.
+3. Click **Delete document** again.
+
+Rufi goes back to the Documents page, and a line in the chat says **Deleted Sunrise Labs August.pdf**.
+
+### When results from it are in your health record
+
+If you saved results from the document, Rufi doesn't delete it. It says **… can't be deleted yet** and lists each saved result that comes from it. A result that an amended result replaced is in the list too, marked **replaced**: it comes back if the amended one is removed. A result you already removed isn't in the list.
+
+Fix these in the chat first:
+
+1. Click **Ask Rufi**. The document goes in the chat box.
+2. Tell the AI what to do. For a result that came only from this document, say "remove these results". For a result that you also gave in another way (you told the AI, or another document has it), say "take this document off it": the result stays, with its other sources.
+3. When the AI has saved that, delete the document.
+
+This keeps your health record in your hands: it changes only in the chat, with your yes.
+
+### What goes, and what stays
+
+| Goes from Rufi                                        | Stays                                                                                        |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| The original file and the pages Rufi drew from it     | Your health record, with its history and receipts                                            |
+| What the reader read: its notes and the unsaved items | The chat: your messages, the AI's replies and Rufi's lines                                   |
+| A reading that waits or runs: it stops                | Visit briefs, as they were written                                                           |
+|                                                       | The document's name and page numbers, so that what points at it can say **document deleted** |
+
+After the delete, a chip of the document in an old message says **document deleted** and opens nothing. A reading's line about it has no **Open** or **Retry**. A saved result's sources say **Document deleted (Sunrise Labs August.pdf, page 2)**. A result you removed before can still come back with "undo that"; its source says **document deleted**. The document itself can't come back: add its file again if you need it.
+
+If another person in Rufi has the same file, Rufi keeps the file for them.
+
+If the document changed while you looked at its preview (for example, you saved a result from it in another tab), Rufi doesn't delete it. It says **Something changed since you opened this** and shows how it is now.
+
+### Copies Rufi can't reach
+
+A delete removes the document from Rufi's data folder. Copies outside it stay:
+
+- **Rufi's backups** keep the document until they age out, in about 5 weeks. Backups made before an update keep it until you remove them (see [Backups and export](backups-and-export.md#deleted-documents-in-backups)).
+- **Exports** you saved keep it.
+- **Time Machine** and other backups of your Mac keep it.
+- **The AI** may remember what it already read in this chat. Rufi's tools no longer show it the document.

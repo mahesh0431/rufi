@@ -25,7 +25,7 @@ What people see for the record: the sidebar's heading, Overview and the help say
 _Avoid_: your record (on screen), health file, chart
 
 **Document**:
-What the user added for a person in one go: one PDF, or photos added together, such as a lab report photographed page by page. Its pages are the PDF's pages or the photos, in order. Rufi keeps each original file exactly as it came, and the same content only once per person.
+What the user added for a person in one go: one PDF, or photos added together, such as a lab report photographed page by page. Its pages are the PDF's pages or the photos, in order. Rufi keeps each original file exactly as it came, and the same content only once per person, until the user deletes the document.
 _Avoid_: upload, attachment
 
 **Reading**:
@@ -85,6 +85,14 @@ _Avoid_: toast, success message, confirmation
 **Undo**:
 Saving the reverse of an earlier save, by chat: the user says "undo that", the AI says what will change back and anything that changed since, and saves it after the user says yes. The earlier save stays in the history.
 _Avoid_: revert, rollback
+
+**Remove**:
+Taking a record out of the current record, by a save in the chat: it stays in the history, shows as removed, and "undo that" brings it back. A record is never deleted.
+_Avoid_: delete (for a record), erase
+
+**Delete**:
+Taking a document out of Rufi, on its page, not in the chat: its original, the pages Rufi drew from it, the reader's work, its readings and its draft items go. Its name and page numbers stay, so the history, sources and chips that point at it say "document deleted". It can't be undone. While a saved record that isn't removed comes from the document, it can't be deleted: the user removes that record, or takes the document off it, in the chat first. Rufi's backups keep the document until they age out.
+_Avoid_: remove (for a document), erase, purge
 
 **Needs you**:
 The top of a person's Overview: what is waiting for the user, such as a document read and not saved, one that couldn't be read, or a follow-up that is overdue, due now or coming up in the next 30 days. It hides when nothing waits.

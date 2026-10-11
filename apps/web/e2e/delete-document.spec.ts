@@ -1,0 +1,111 @@
+// Deleting a document on the real core, with the fictional family: a
+// document with saved results is blocked, its preview lists them and Ask
+// Rufi puts it in the chat; one whose results were removed goes, and an
+// old message's chip of it says it was deleted. The strict CSP refuses
+// nothing.
+import { AxeBuilder } from "@axe-core/playwright";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./rufi.ts";
+
+async function accessible(page: Page) {
+  const { violations } = await new AxeBuilder({ page }).analyze();
+  expect(violations.map((violation) => violation.id)).toEqual([]);
+}
+
+// The CSP's refusals, collected in the page.
+test.beforeEach(async ({ context }) => {
+  await context.addInitScript(() => {
+    const refused: string[] = [];
+    Object.assign(globalThis, { refused });
+    (globalThis as unknown as EventTarget).addEventListener(
+      "securitypolicyviolation",
+      (event) => {
+        const { violatedDirective, blockedURI } = event as Event & {
+          violatedDirective: string;
+          blockedURI: string;
+        };
+        refused.push(`${violatedDirective} ${blockedURI}`);
+      },
+    );
+  });
+});
+test.afterEach(async ({ page }) => {
+  expect(
+    await page.evaluate(
+      () => (globalThis as unknown as { refused: string[] }).refused,
+    ),
+  ).toEqual([]);
+});
+
+/** Opens a document's page from the Documents page. */
+async function openDocument(page: Page, name: string) {
+  await page.getByRole("link", { name: "Documents" }).click();
+  await page.getByRole("button", { name, exact: true }).click();
+}
+
+test("a document with saved results is blocked with Ask Rufi; one without goes, and its old chip says deleted", async ({
+  page,
+  rufi,
+}) => {
+  const chip = JSON.stringify([
+    {
+      ref: { type: "document", id: "doc-asha-aug", version: 0 },
+      label: "Sunrise Labs August.pdf",
+      detail: "Lab report",
+    },
+  ]);
+  await rufi.family(
+    // The August report's results were removed in the chat before.
+    "UPDATE results SET removed = 1 WHERE report_id = 'rep-asha-aug';",
+    `INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, refs, revision, created_at, updated_at)
+       VALUES ('m-1', 'asha', 'c-asha', 1, 'message', 'What does this report say?', '${chip}', 1, '2026-10-05T09:00:00Z', '2026-10-05T09:00:00Z');
+     UPDATE chats SET revision = 1 WHERE id = 'c-asha';`,
+  );
+  await rufi.start();
+  await page.goto(rufi.link());
+
+  // Blocked: the September photo's results are in the record.
+  await openDocument(page, "thyroid recheck.jpg");
+  await page.getByRole("button", { name: "Delete document" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(
+    dialog.getByRole("heading", {
+      name: "thyroid recheck.jpg can't be deleted yet",
+    }),
+  ).toBeVisible();
+  await expect(
+    dialog
+      .getByRole("list", { name: "Saved results from this document" })
+      .getByRole("listitem"),
+  ).toHaveText(["TSH 4.6 mIU/L12 Aug 2026", "Free T4 1.1 ng/dL1 Sep 2026"]);
+  await accessible(page);
+  await dialog.getByRole("button", { name: "Ask Rufi" }).click();
+  await expect(dialog).toHaveCount(0);
+  // The closed chat bar says what is added.
+  const opener = page.getByRole("button", { name: "Open the chat" });
+  await expect(opener).toHaveAccessibleDescription(/^thyroid recheck\.jpg /);
+
+  // Deletable: what goes, what stays, and what Rufi can't reach.
+  await openDocument(page, "Sunrise Labs August.pdf");
+  await page.getByRole("button", { name: "Delete document" }).click();
+  await expect(
+    dialog.getByRole("heading", { name: "Delete Sunrise Labs August.pdf?" }),
+  ).toBeVisible();
+  await expect(dialog).toContainText("The file: 1 PDF, 2 pages");
+  await expect(dialog).toContainText(
+    "Its backups keep this document until they age out",
+  );
+  await accessible(page);
+  await dialog.getByRole("button", { name: "Delete document" }).click();
+
+  await expect(page).toHaveURL(/\/documents$/);
+  await expect(
+    page.getByRole("button", { name: "Sunrise Labs August.pdf", exact: true }),
+  ).toHaveCount(0);
+  await opener.click();
+  const messages = page.getByRole("log", { name: "Messages" });
+  await expect(messages).toContainText("Deleted Sunrise Labs August.pdf");
+  await expect(messages).toContainText(
+    "Sunrise Labs August.pdf · document deleted",
+  );
+});

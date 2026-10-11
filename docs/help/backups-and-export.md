@@ -39,6 +39,12 @@ If your record was made by a newer Rufi (for example, you went back to an older 
 
 > **Note:** Backups protect you from a mistake or a damaged database. They are in your data folder, on the same disk as your record, so they don't protect you if you lose the Mac or that disk. To keep a copy somewhere else, copy a backup's folder to another disk or to the cloud. Never put the data folder itself in the cloud (see [Your data and the AI](your-data-and-the-ai.md#where-your-data-lives)).
 
+### Deleted documents in backups
+
+When you delete a document (see [Documents](documents.md#delete-a-document)), Rufi removes it from your data folder at once. The backups made before that keep it: a backup never changes after Rufi made it. The document goes from Rufi's backups as they age out, in about 5 weeks. Backups made before an upgrade keep it until you delete them yourself. A backup made after the delete doesn't have the document. Restoring an older backup brings the document back, as it was then.
+
+An export you saved before the delete keeps the document too.
+
 ### See your backups
 
 Open **Settings**. Under **Backups**, Rufi shows when it made the last good backup. If the last try failed, or a backup in the folder is damaged, Rufi says when and why, and when your last good backup is from. After Rufi starts again, Settings shows the backup Rufi makes as it starts: while it runs, and then whether it worked. An older failure isn't shown again.

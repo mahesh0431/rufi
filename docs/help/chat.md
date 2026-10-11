@@ -71,7 +71,9 @@ A document that was never read, or whose state Rufi doesn't know yet, shows no s
 
 To take a chip out, click its **×**. This changes nothing in your health record. The chips are kept with what you typed, also when you reload or Rufi starts again, and they go with the message: your message in the chat shows them too.
 
-Rufi checks each chip: it must be in the health record of the person whose chat it is. If it isn't, the box says "Something added to this message isn't in this person's record. Take it out of the message and add it again." When you send, Rufi gives the AI each chip's exact name in your health record and its version at that moment, so the AI reads exactly those. A message can have up to 100 chips.
+Rufi checks each chip: it must be in the health record of the person whose chat it is. If it isn't, the box says "Something added to this message isn't in this person's record. Take it out of the message and add it again." A chip of a document you deleted says "A document added to this message was deleted. Take it out of the message."
+
+When you delete a document (see [Documents](documents.md#delete-a-document)), its chips in messages you sent, and the chips of the results the reader read from it, keep their names and say **document deleted**. They open nothing. A chip of it in a message that waits to go says the same, and the AI is told that the document was deleted. When you send, Rufi gives the AI each chip's exact name in your health record and its version at that moment, so the AI reads exactly those. A message can have up to 100 chips.
 
 ## What you see
 
@@ -190,7 +192,7 @@ A held message says why under it, and goes only when you click **Send** (or **Se
 
 ## Rufi's lines
 
-Some things happen outside your chat. Rufi tells you with its own line in the chat. For example, "Reading thyrocare-aug.pdf · 5 pages" says that Rufi started to read a document, and "Lab report · 12 Aug · 42 results read · 1 to check · Open" that the reading has finished; **Open** shows what was read (see [Documents](documents.md#how-rufi-reads-a-document)). Rufi writes these lines, not the AI, and they are never your words. Readings at work show above the box, in the reader strip.
+Some things happen outside your chat. Rufi tells you with its own line in the chat. For example, "Reading thyrocare-aug.pdf · 5 pages" says that Rufi started to read a document, and "Lab report · 12 Aug · 42 results read · 1 to check · Open" that the reading has finished; **Open** shows what was read (see [Documents](documents.md#how-rufi-reads-a-document)). After you delete a document, its lines have no **Open** or **Retry**, and a new line says **Deleted Sunrise Labs August.pdf**. Rufi writes these lines, not the AI, and they are never your words. Readings at work show above the box, in the reader strip.
 
 When the AI should know too, Rufi gives it a note:
 

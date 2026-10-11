@@ -64,7 +64,7 @@ If Rufi can't show a stored record, its row says **Can't show this row**. The re
 
 Click a record's name to open it in place. Click again to close it.
 
-- **Sources:** where it came from. For a document page, click **Open** to go to the document. For something you said in the chat, your words are shown.
+- **Sources:** where it came from. For a document page, click **Open** to go to the document. A page of a document you deleted says **Document deleted (Sunrise Labs August.pdf, page 2)**, with nothing to open. For something you said in the chat, your words are shown.
 - **History:** each save that changed it, oldest first, with its date and time. A change shows what changed, before and after, such as "value 22 → 24". A removal has its own line. A record saved before Rufi kept its history has none.
 - **Replaces** or **Replaced by:** for an amended result, the earlier version it replaces, which is kept. For a replaced result, the result that replaced it.
 - For a result, when it was measured and when it entered Rufi. These are two different dates.
