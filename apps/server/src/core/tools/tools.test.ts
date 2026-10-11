@@ -517,6 +517,19 @@ describe("get_records", () => {
     ]) {
       expect((await records(store, wrong)).ok).toBe(false);
     }
+    // A continuation from another report's read isn't from this one.
+    expect(
+      (
+        await records(store, {
+          kind: "result",
+          report: "rep-asha-sep",
+          after: "res-a1",
+        })
+      ).body,
+    ).toMatchObject({
+      ok: false,
+      error: "That `after` isn't from this read: read again without it.",
+    });
   });
 
   it(`says when the records are more than ${String(LIMITS.bytes / 1000)} KB`, async () => {

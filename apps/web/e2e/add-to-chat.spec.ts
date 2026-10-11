@@ -51,9 +51,14 @@ const box = (scope: Page | Locator) =>
   scope.getByRole("textbox", { name: "Message to Rufi" });
 const chips = (scope: Page | Locator) =>
   scope.getByRole("list", { name: "Added to this message" });
-/** The closed bar's line of what is added: the first chip and how many more. */
-const added = (scope: Locator) =>
-  scope.getByRole("status", { name: "Added to this message" });
+/** The closed bar says what is added: the first chip and how many more. */
+const added = (scope: Locator, shown: string) =>
+  expect(opener(scope)).toHaveAccessibleDescription(
+    new RegExp(`^${shown.replace(/[.+?]/g, "\\$&")} `),
+  );
+/** The closed bar: a pill that opens the chat panel. */
+const opener = (scope: Locator) =>
+  scope.getByRole("button", { name: "Open the chat" });
 const log = (scope: Page | Locator) =>
   scope.getByRole("log", { name: "Messages" });
 const sidebar = (page: Page) => page.getByRole("complementary");
@@ -106,7 +111,7 @@ test("Ask Rufi puts chips of several kinds in the box, a report as one, and the 
     .getByRole("button", { name: "Ask Rufi about Repeat HbA1c" })
     .click();
   await expect(page).toHaveURL(/\/$/);
-  await expect(added(bar)).toHaveText("Repeat HbA1c · 15 Jan 2026");
+  await added(bar, "Repeat HbA1c · 15 Jan 2026");
   await expect(minimise).toHaveCount(0);
 
   await sidebar(page)
@@ -129,11 +134,11 @@ test("Ask Rufi puts chips of several kinds in the box, a report as one, and the 
     .click();
   expect(page.url()).toBe(results);
   await expect(minimise).toHaveCount(0);
-  await expect(added(bar)).toHaveText("Repeat HbA1c · 15 Jan 2026 +2");
+  await added(bar, "Repeat HbA1c · 15 Jan 2026 +2");
   await accessible(page);
 
   // The panel shows them all.
-  await box(bar).click();
+  await opener(bar).click();
   await expect(box(bar)).toBeFocused();
   await expect(chips(bar).getByRole("listitem")).toHaveText([
     "Repeat HbA1c · 15 Jan 2026",
@@ -158,8 +163,8 @@ test("Ask Rufi puts chips of several kinds in the box, a report as one, and the 
   await expect(chips(bar).getByRole("listitem")).toHaveCount(2);
   await saved;
   await page.reload();
-  await expect(added(bar)).toHaveText("Repeat HbA1c · 15 Jan 2026 +1");
-  await box(bar).click();
+  await added(bar, "Repeat HbA1c · 15 Jan 2026 +1");
+  await opener(bar).click();
   await expect(chips(bar).getByRole("listitem")).toHaveText([
     "Repeat HbA1c · 15 Jan 2026",
     "Sunrise Labs · 1 Sep 2026 · 2 results",
@@ -199,7 +204,7 @@ test("the paperclip says it adds a file, then gives its chip with what Rufi does
 }) => {
   await opened(page, rufi);
   const bar = chat(page);
-  await box(bar).click();
+  await opener(bar).click();
   // The upload is held: the box says what it adds before the chip exists.
   const upload = Promise.withResolvers<undefined>();
   await page.route("**/api/people/asha/documents", async (route) => {
@@ -245,8 +250,8 @@ test("the paperclip says it adds a file, then gives its chip with what Rufi does
   await row.hover();
   await row.getByRole("button", { name: "Ask Rufi" }).click();
   expect(page.url()).toBe(documents);
-  await expect(added(bar)).toHaveText("Asha lipid panel.pdf +2");
-  await box(bar).click();
+  await added(bar, "Asha lipid panel.pdf +2");
+  await opener(bar).click();
   await expect(chips(bar).getByRole("listitem")).toHaveText([
     "Asha lipid panel.pdf · Waiting to read",
     "Sunrise Labs August.pdf",
@@ -306,7 +311,7 @@ test("a save of a document's items shows its summary, with what was saved folded
     },
     DRAFTS,
   );
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await box(chat(page)).fill("Save it");
   await box(chat(page)).press("Enter");
   const receipt = log(chat(page)).locator(".receipt");
@@ -344,10 +349,10 @@ test("a document's draft items go into the chat as chips, and the AI gets their 
     await row(test).getByRole("button", { name: "Ask Rufi" }).click();
   }
   expect(page.url()).toBe(documentPage);
-  await expect(added(bar)).toHaveText("Test 1 1 +1");
+  await added(bar, "Test 1 1 +1");
   await accessible(page);
   await page.reload();
-  await box(bar).click();
+  await opener(bar).click();
   await expect(chips(bar).getByRole("listitem")).toHaveText([
     "Test 1 1",
     "Test 5 5",

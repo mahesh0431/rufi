@@ -38,7 +38,8 @@ export function ChatDock({ person }: { person: Person }) {
   const refocus = useRef(false);
   const live = useLive(person.id);
   const navigate = useNavigate();
-  const field = useRef<HTMLTextAreaElement | null>(null);
+  /** The box's text field in the panel; the pill, in the bar. */
+  const field = useRef<HTMLElement | null>(null);
   const menus = useRef<HTMLDivElement | null>(null);
   const dock = useRef<HTMLElement | null>(null);
 

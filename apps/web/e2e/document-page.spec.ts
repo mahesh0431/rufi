@@ -143,31 +143,50 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
 
   const chat = page.getByRole("region", { name: "Chat" });
   const box = chat.getByRole("textbox", { name: "Message to Rufi" });
+  const opener = chat.getByRole("button", { name: "Open the chat" });
   const minimise = chat.getByRole("button", { name: "Minimise" });
   const save = page.getByRole("button", { name: "Save these in the chat" });
 
-  // In a short window too, the page's footer ends above the bar.
-  await page.setViewportSize({ width: 1000, height: 560 });
-  await expect(save).toBeInViewport();
-  const button = await save.boundingBox();
-  const bar = await chat.locator("form").boundingBox();
-  expect((button?.y ?? 0) + (button?.height ?? 0)).toBeLessThan(bar?.y ?? 0);
-  await page.setViewportSize({ width: 1280, height: 720 });
-
-  // Save these in the chat: after what the box holds, and the page stays;
-  // the person sends.
-  await box.click();
-  await box.fill("What changed since March?");
+  // Save these in the chat, twice: after what the box holds, and the page
+  // stays; the person sends. The bar stays one line, whatever the text.
+  await opener.click();
+  await box.fill("What changed since March?\nAnd since June?");
   await page.keyboard.press("Escape");
+  await save.click();
   await save.click();
   expect(page.url()).toBe(documentPage);
   await expect(minimise).toHaveCount(0);
-  await expect(
-    chat.getByRole("status", { name: "Added to this message" }),
-  ).toHaveText("sunrise-labs-august.pdf");
-  await box.click();
+  await expect(opener).toHaveAccessibleDescription(
+    /^sunrise-labs-august\.pdf What changed since March\?/,
+  );
+
+  // In a short window, the footer's button is above the bar: a click at
+  // its middle and near its corner reaches it.
+  await page.setViewportSize({ width: 1000, height: 420 });
+  await page.getByRole("main").evaluate((main) => {
+    main.scrollTo(0, main.scrollHeight);
+  });
+  const button = await save.boundingBox();
+  for (const [x, y] of [
+    [0.5, 0.5],
+    [0.9, 0.9],
+  ] as const) {
+    const at = {
+      x: (button?.x ?? 0) + (button?.width ?? 0) * x,
+      y: (button?.y ?? 0) + (button?.height ?? 0) * y,
+    };
+    expect(
+      await page.evaluate(
+        ({ x, y }) => document.elementFromPoint(x, y)?.textContent,
+        at,
+      ),
+    ).toBe("Save these in the chat");
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+
+  await opener.click();
   await expect(box).toHaveValue(
-    "What changed since March?\n\nSave these 3 results.",
+    "What changed since March?\nAnd since June?\n\nSave these 3 results.\n\nSave these 3 results.",
   );
   await expect(
     chat
@@ -175,9 +194,10 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
       .getByRole("listitem"),
   ).toHaveText(["sunrise-labs-august.pdf · Read"]);
   await accessible(page);
+  await box.fill("What changed since March?");
 
-  // A lost send's answer blocks adding, including after a reload, and the
-  // bar says why.
+  // A lost send's answer blocks adding, also after a reload, and the bar
+  // says why each time.
   const submitted: { id: string; text: string }[] = [];
   await page.route("**/messages", async (route) => {
     submitted.push(
@@ -194,22 +214,29 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
     name: "Retry the message in the chat first",
   });
   await expect(unresolved).toBeDisabled();
+  const refused =
+    "Your last message may not have reached Rufi: send it again or change it first.";
+  const ask = async () => {
+    await items.getByRole("row").filter({ hasText: "Platelet count" }).hover();
+    await items.getByRole("button", { name: "Ask Rufi" }).first().click();
+    await expect(chat.getByRole("alert")).toHaveText(refused);
+    await expect(opener).toHaveAccessibleDescription(
+      new RegExp(`${refused.replace(/[.?:]/g, "\\$&")}$`),
+    );
+  };
+  await ask();
   await page.reload();
   await expect(unresolved).toBeDisabled();
-  await items.getByRole("row").filter({ hasText: "Platelet count" }).hover();
-  await items.getByRole("button", { name: "Ask Rufi" }).first().click();
-  await expect(chat.getByRole("alert")).toHaveText(
-    "Your last message may not have reached Rufi: send it again or change it first.",
-  );
+  await ask();
   expect(submitted).toHaveLength(1);
-  // The core took it, so its reply runs: ⌘J opens the panel.
+  // The core took it, so its reply runs: ⌘J opens the panel, which says why
+  // in full.
   await page.keyboard.press("ControlOrMeta+j");
+  await expect(chat.getByRole("alert")).toHaveText(refused);
   await expect(box).toHaveValue(submitted[0]?.text ?? "");
   await box.press("Enter");
   await expect(box).toHaveValue("");
   expect(submitted).toEqual([submitted[0], submitted[0]]);
   expect(page.url()).toBe(documentPage);
-  await expect(
-    page.getByRole("button", { name: "Save these in the chat" }),
-  ).toBeEnabled();
+  await expect(save).toBeEnabled();
 });

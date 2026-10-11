@@ -176,6 +176,10 @@ export const getRecords = defineTool({
     const isCalendar = sql<number>`coalesce(${calendar}, 0)`;
     const isUndated = sql<number>`(${date} IS NULL)`;
     const sortDate = sql<string>`coalesce(${date}, '')`;
+    const ofReport =
+      input.report === undefined
+        ? sql``
+        : sql`AND r.report_id = ${input.report}`;
     let after = sql``;
     if (input.after !== undefined) {
       const { rows: last } = await sql<{
@@ -183,7 +187,7 @@ export const getRecords = defineTool({
         n: number;
         d: string;
         r: number;
-      }>`SELECT ${isCalendar} AS c, ${isUndated} AS n, ${sortDate} AS d, r.rowid AS r FROM ${sql.table(kind.table)} r WHERE r.person_id = ${personId} AND r.id = ${input.after}`.execute(
+      }>`SELECT ${isCalendar} AS c, ${isUndated} AS n, ${sortDate} AS d, r.rowid AS r FROM ${sql.table(kind.table)} r WHERE r.person_id = ${personId} AND r.id = ${input.after} ${ofReport}`.execute(
         store.query,
       );
       const at = last[0];
@@ -214,10 +218,6 @@ export const getRecords = defineTool({
       input.ids === undefined
         ? sql``
         : sql`AND r.id IN (${sql.join(input.ids)})`;
-    const ofReport =
-      input.report === undefined
-        ? sql``
-        : sql`AND r.report_id = ${input.report}`;
     const { rows } = await sql<Row>`
       SELECT r.*${
         kind.name === "result"

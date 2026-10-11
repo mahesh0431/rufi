@@ -6,8 +6,10 @@
 // The model and effort are chosen beside Send; what waits shows above the
 // box. Chips (references to documents, draft items and records) sit above
 // the text and go with it; a document's chip says what Rufi is doing with
-// it. The paperclip adds files as documents. The bar shows what was added,
-// small: the first chip's name and how many more.
+// it. The paperclip adds files as documents. The bar is a pill of one fixed
+// size that opens the panel: on one line, what was added (the first chip's
+// name and how many more), then the text's start, or a reason when there is
+// one; the panel shows it whole.
 import {
   MAX_MESSAGE_CHARS,
   MAX_REFS,
@@ -22,7 +24,13 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { type ReactNode, type RefObject, useEffect, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useId,
+  useState,
+} from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
@@ -65,8 +73,8 @@ export function Box({
   size: "bar" | "panel" | "page";
   /** The bar: a click opens the chat. */
   onOpen?: () => void;
-  /** The box's text field, for focus. */
-  inputRef: RefObject<HTMLTextAreaElement | null>;
+  /** The box's text field, for focus; in the bar, the pill. */
+  inputRef: RefObject<HTMLElement | null>;
 }) {
   const box = boxFor(person.id);
   const text = useStore(box.store, (state) => state.text);
@@ -102,6 +110,19 @@ export function Box({
 
   const stop = () => act(() => request("POST", `${chatPath(person.id)}/stop`));
 
+  /**
+   * Why the box can't keep, send or add what it should, in words; an add
+   * refused just now comes first.
+   */
+  const why = long
+    ? `Too long to keep or send: at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters, and this is ${text.length.toLocaleString("en")}.`
+    : many
+      ? `Too many added to keep or send: at most ${String(MAX_REFS)}, and this has ${String(chips.length)}. Take some out.`
+      : (refused ?? notice ?? problem);
+  /** In the pill, for the moment, in place of the text. */
+  const reason = why ?? saved;
+  const pill = useId();
+
   // The box grows with its text up to a few lines, then scrolls.
   const field = (
     <div
@@ -109,7 +130,9 @@ export function Box({
       data-text={text}
     >
       <textarea
-        ref={inputRef}
+        ref={(element) => {
+          inputRef.current = element;
+        }}
         rows={1}
         aria-label="Message to Rufi"
         placeholder={
@@ -119,7 +142,6 @@ export function Box({
         }
         value={text}
         readOnly={!loaded || locked}
-        onClick={onOpen}
         onChange={(event) => {
           box.type(event.target.value);
           if (refused !== null) usePanel.setState({ refused: null });
@@ -131,10 +153,7 @@ export function Box({
             !event.nativeEvent.isComposing
           ) {
             event.preventDefault();
-            if (hasText) {
-              onOpen?.();
-              submit(false);
-            }
+            if (hasText) submit(false);
           }
         }}
         className="resize-none overflow-hidden bg-transparent outline-none placeholder:text-muted"
@@ -182,19 +201,37 @@ export function Box({
       )}
       {size !== "bar" && <AttachStatus personId={person.id} />}
       {size === "bar" ? (
-        <div className="flex items-center gap-1.5 py-1.5 pr-1.5 pl-3">
-          <Added chips={chips} />
-          {running ? (
-            <button
-              type="button"
-              onClick={onOpen}
-              className="min-w-0 flex-1 text-left"
+        <div className="flex h-11 items-center gap-1.5 pr-1.5">
+          <button
+            type="button"
+            ref={(element) => {
+              inputRef.current = element;
+            }}
+            aria-label="Open the chat"
+            aria-describedby={pill}
+            onClick={onOpen}
+            className="flex h-full min-w-0 flex-1 items-center rounded-l-full pl-3 text-left"
+          >
+            <span
+              id={pill}
+              className="flex min-w-0 flex-1 items-center gap-1.5"
             >
-              <Answering live={live} />
-            </button>
-          ) : (
-            field
-          )}
+              <Added chips={chips} />{" "}
+              {reason !== null ? (
+                <span className="truncate text-muted">{reason}</span>
+              ) : running ? (
+                <Answering live={live} />
+              ) : (
+                <span
+                  className={`truncate ${text.trim() === "" ? "text-muted" : ""}`}
+                >
+                  {text.trim() === ""
+                    ? `Ask or tell Rufi about ${person.displayName}…`
+                    : text}
+                </span>
+              )}
+            </span>
+          </button>
           {choice}
           {running ? stopButton : sendButton}
         </div>
@@ -246,30 +283,32 @@ export function Box({
           </div>
         </div>
       )}
-      {saved !== null && (
-        <p
-          role="status"
-          className="flex items-center gap-1.5 px-3.5 pb-1 text-xs text-muted"
-        >
-          {saved}
-          {saved === "Not saved" && (
-            <button
-              type="button"
-              onClick={() => void box.saveNow()}
-              className="underline"
+      {size === "bar"
+        ? why !== null && (
+            <p role="alert" className="sr-only">
+              {why}
+            </p>
+          )
+        : saved !== null && (
+            <p
+              role="status"
+              className="flex items-center gap-1.5 px-3.5 pb-1 text-xs text-muted"
             >
-              Retry
-            </button>
+              {saved}
+              {saved === "Not saved" && (
+                <button
+                  type="button"
+                  onClick={() => void box.saveNow()}
+                  className="underline"
+                >
+                  Retry
+                </button>
+              )}
+            </p>
           )}
-        </p>
-      )}
-      {(notice || problem || refused || long || many) && (
+      {size !== "bar" && why !== null && (
         <p role="alert" className="px-3.5 pb-2 text-muted">
-          {long
-            ? `Too long to keep or send: at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters, and this is ${text.length.toLocaleString("en")}.`
-            : many
-              ? `Too many added to keep or send: at most ${String(MAX_REFS)}, and this has ${String(chips.length)}. Take some out.`
-              : (notice ?? problem ?? refused)}
+          {why}
         </p>
       )}
     </form>
@@ -282,8 +321,6 @@ function Added({ chips }: { chips: readonly BoxChip[] }) {
   if (first === undefined) return null;
   return (
     <span
-      role="status"
-      aria-label="Added to this message"
       title={chips.map((chip) => chip.label).join("\n")}
       className="inline-flex max-w-[180px] shrink-0 items-center gap-1 rounded-lg border border-line bg-side px-1.5 text-xs"
     >
