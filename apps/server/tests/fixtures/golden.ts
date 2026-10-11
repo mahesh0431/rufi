@@ -28,12 +28,19 @@ const FAMILY_FILES = [
   "sunrise-labs-august.pdf",
   "thyroid-recheck.jpg",
   "ravi-lipid-panel.pdf",
-].map((name) => join(import.meta.dirname, "documents", name));
+];
 
-/** Puts the family's document files in the data folder, as Rufi keeps them. */
-export async function familyFiles(home: string): Promise<void> {
+/**
+ * Puts the family's document files (or the files of `tests/fixtures/documents`
+ * named) in the data folder, as Rufi keeps them.
+ */
+export async function familyFiles(
+  home: string,
+  names: readonly string[] = FAMILY_FILES,
+): Promise<void> {
   await mkdir(join(home, "files"), { recursive: true, mode: 0o700 });
-  for (const file of FAMILY_FILES) {
+  for (const name of names) {
+    const file = join(import.meta.dirname, "documents", name);
     await writeFile(
       originalPath(home, await sha256(file)),
       await readFile(file),
