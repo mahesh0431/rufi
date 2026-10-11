@@ -148,6 +148,8 @@ export const startCore = (options: CoreOptions) =>
       ),
       (release) => Effect.promise(() => release().catch(() => undefined)),
     );
+    // Stopping the server cuts connections, not the work of their handlers.
+    const answering = new Set<Promise<unknown>>();
     const writer = yield* Effect.acquireRelease(
       attempt(() => openRecord(home)),
       (store) =>
@@ -160,6 +162,13 @@ export const startCore = (options: CoreOptions) =>
     const reader = yield* Effect.acquireRelease(
       attempt(() => openReadOnly(databasePath(home))),
       (store) => Effect.sync(() => store?.close()),
+    );
+    // After the server and background work stop, finish the handlers before
+    // closing their record connections or releasing the folder. A document
+    // whose original is still being written must be able to commit its rows.
+    // Never hand the folder to another owner while a handler can still write.
+    yield* Effect.addFinalizer(() =>
+      Effect.promise(() => Promise.allSettled(answering)),
     );
     const transcripts = openTranscripts(writer, options.now);
     const drafts = openDrafts(writer, options.now);
@@ -311,7 +320,13 @@ export const startCore = (options: CoreOptions) =>
           new Promise<ServerType>((resolve, reject) => {
             const started = serve(
               {
-                fetch: app.fetch,
+                fetch: (request, env) => {
+                  const answer = Promise.resolve(app.fetch(request, env));
+                  const done = () => answering.delete(answer);
+                  answering.add(answer);
+                  answer.then(done, done);
+                  return answer;
+                },
                 hostname: "127.0.0.1",
                 port: options.port ?? 0,
               },

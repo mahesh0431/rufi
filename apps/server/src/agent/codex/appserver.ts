@@ -15,7 +15,9 @@ export interface CodexCommand {
 }
 
 export interface Deadlines {
-  /** initialize, thread start/resume, the turn/start acknowledgement, checks. */
+  /** Codex's start: its process starting, then its answer to initialize. */
+  startMs: number;
+  /** Thread start/resume, the turn/start acknowledgement, checks. */
   requestMs: number;
   /** A whole turn. */
   turnMs: number;
@@ -29,6 +31,7 @@ export interface Deadlines {
 }
 
 export const DEADLINES: Deadlines = {
+  startMs: 30_000,
   requestMs: 30_000,
   turnMs: 5 * 60_000,
   interruptAckMs: 5_000,
@@ -152,7 +155,7 @@ export async function startAppServer(
       clientInfo: { name: "Rufi", title: "Rufi", version: options.version },
       capabilities: { experimentalApi: true, requestAttestation: false },
     };
-    await rpc.request("initialize", params, options.deadlines.requestMs);
+    await rpc.request("initialize", params, options.deadlines.startMs);
     rpc.notify("initialized");
     await checkSettings(rpc, options.deadlines.requestMs);
   } catch (error) {

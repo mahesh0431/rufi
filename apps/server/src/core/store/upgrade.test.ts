@@ -87,6 +87,16 @@ const RAVIS_SAVES = [
   "2026-10-08T07:02:00.000Z",
 ];
 
+/**
+ * The originals the frozen record names: the family's files as they were on
+ * 11 Oct 2026. The thyroid photo has changed since; its old bytes stay here.
+ */
+const VERSION_1_FILES = [
+  "sunrise-labs-august.pdf",
+  "thyroid-recheck-version-1.jpg",
+  "ravi-lipid-panel.pdf",
+];
+
 let root: string;
 let home: string;
 
@@ -100,7 +110,7 @@ async function version1(folder: string): Promise<void> {
   db.exec("PRAGMA journal_mode = WAL");
   db.close();
   await writeFile(markerPath(folder), '{"createdAt":"2026-10-01T09:00:00Z"}');
-  await familyFiles(folder);
+  await familyFiles(folder, VERSION_1_FILES);
 }
 
 const sha = async (path: string) =>

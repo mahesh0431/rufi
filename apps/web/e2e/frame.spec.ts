@@ -1,6 +1,6 @@
 // The frame on the real core: opening Rufi, first run, sign-in, Overview,
 // Settings and Help, and what the page does when the core is slow or gone.
-import { chmod } from "node:fs/promises";
+import { chmod, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
@@ -823,6 +823,50 @@ test.describe("Help", () => {
     await expect(
       page.getByRole("heading", { name: "Sign in in Rufi", exact: true }),
     ).toBeInViewport();
+  });
+
+  test("every link to a part of a page finds that part", async ({
+    page,
+    rufi,
+  }) => {
+    await rufi.family();
+    await rufi.start();
+    await page.goto(rufi.link());
+    const pages = [
+      ...(await readdir(join(import.meta.dirname, "../../../docs/help")))
+        .filter((file) => file.endsWith(".md"))
+        .map((file) => file.slice(0, -3)),
+      "glossary",
+    ];
+    const parts = new Map<string, string[]>();
+    const links: { from: string; to: string }[] = [];
+    for (const name of pages) {
+      await page.goto(new URL(`/help/${name}`, page.url()).href);
+      const article = page.getByRole("article");
+      await expect(article.getByRole("heading", { level: 1 })).toBeVisible();
+      const found = await article.evaluate((element) => ({
+        ids: [...element.querySelectorAll("[id]")].map((e) => e.id),
+        hrefs: [...element.querySelectorAll("a[href*='#']")].map(
+          (a) => a.getAttribute("href") ?? "",
+        ),
+      }));
+      parts.set(name, found.ids);
+      for (const href of found.hrefs) {
+        links.push({
+          from: name,
+          to: href.startsWith("#") ? `/help/${name}${href}` : href,
+        });
+      }
+    }
+    // Both kinds are there: to another page's part and to this page's.
+    expect(links.some((l) => !l.to.startsWith(`/help/${l.from}#`))).toBe(true);
+    expect(links.some((l) => l.to.startsWith(`/help/${l.from}#`))).toBe(true);
+    const lost = links.filter(({ to }) => {
+      const [, name = "", anchor = ""] =
+        /^\/help\/([^#]+)#(.+)$/.exec(to) ?? [];
+      return !parts.get(name)?.includes(anchor);
+    });
+    expect(lost).toEqual([]);
   });
 
   test("web links open outside Rufi", async ({ page, rufi }) => {
