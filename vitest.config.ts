@@ -7,5 +7,6 @@ export default defineConfig({
       "apps/*/scripts/*.test.ts",
       "lint/*.test.ts",
     ],
+    setupFiles: ["apps/server/tests/scratch-home.ts"],
   },
 });

@@ -1,6 +1,6 @@
 # Getting started
 
-Rufi runs on your Mac and opens in your browser, or as an app in its own window. Your health record stays in your data folder on your Mac (see [Your data and the AI](your-data-and-the-ai.md)).
+Rufi runs on your Mac and opens in your browser, or as an app in its own window. Your health record stays in your data folder on your Mac. The first time you start Rufi, it makes this folder, `~/.rufi/data`: you don't set anything up. If you used an earlier Rufi app, move its `~/.rufi` folder away (for example to `~/.rufi-old`) before you first start this Rufi: Rufi doesn't start, and changes nothing, while that folder holds the earlier app's files. To see the folder or move it, see [Your data and the AI](your-data-and-the-ai.md#where-your-data-lives).
 
 ## Start Rufi
 
@@ -9,7 +9,7 @@ Rufi runs on your Mac and opens in your browser, or as an app in its own window.
 
 The link works once, for 5 minutes. When the page opens, Rufi removes the link from the address bar. The tab stays open when you reload it.
 
-If the record is missing from a data folder that had one, Rufi doesn't start: it says so, and doesn't show an empty record in place of yours. See [Backups and export](backups-and-export.md#if-your-record-is-missing-or-empty).
+If the record is missing from a data folder that had one, Rufi doesn't start: it says so, and doesn't show an empty record in place of yours. See [Backups and export](backups-and-export.md#if-your-record-is-missing-or-empty). The same goes for a data folder that isn't there, for example on a disk that isn't connected: connect the disk and start Rufi again (see [Your data and the AI](your-data-and-the-ai.md#where-your-data-lives)).
 
 ## Open Rufi again
 
@@ -73,7 +73,7 @@ Rufi keeps each step you finished. If you reload the page, close it or open Rufi
 - **The sidebar:** your name, **Chat with Rufi**, **Overview**, **Health record** with each of its pages and its count (**Lab results**, **Measurements**, **Medicines** and the others), **Documents**, and at the bottom **Help** and **Settings**. When the AI can't be used, a line under them says why.
 - **The chat bar:** the box at the bottom right of every page where you read your health (Overview, your health record's pages, Follow-ups and Documents), where you talk to Rufi. **Ask Rufi** on those pages puts things in it, and you stay on the page. It is your one chat with Rufi, the same as Chat with Rufi in the sidebar. See [Talking to Rufi](chat.md).
 - **Overview:** what needs you (documents waiting to be saved or read again), your health record as one tile for each of its pages, and your recent changes. Each kind of record has its own page, and results have two: Lab results and Measurements. See [Your health record](record.md).
-- **Settings:** the ChatGPT plan Rufi's AI uses (see [Signing in with ChatGPT](signing-in.md#your-plan-in-settings)), how Rufi looks, and your emergency region. When a message may describe an emergency, the AI gives this region's number; with no region, it says to call your local emergency number. See [What Rufi's AI will and won't do](safety.md#in-an-emergency-it-tells-you-to-call-for-help-first). Settings also holds the model and effort Rufi reads your documents with (see [Documents](documents.md#the-readers-model-and-effort)), shows your backups and exports your data: see [Backups and export](backups-and-export.md).
+- **Settings:** the ChatGPT plan Rufi's AI uses (see [Signing in with ChatGPT](signing-in.md#your-plan-in-settings)), how Rufi looks, and your emergency region. When a message may describe an emergency, the AI gives this region's number; with no region, it says to call your local emergency number. See [What Rufi's AI will and won't do](safety.md#in-an-emergency-it-tells-you-to-call-for-help-first). Settings also holds the model and effort Rufi reads your documents with (see [Documents](documents.md#the-readers-model-and-effort)), shows your backups and exports your data (see [Backups and export](backups-and-export.md)), and shows where your data folder is (see [Your data and the AI](your-data-and-the-ai.md#where-your-data-lives)).
 - **Help:** these pages.
 
 The other pages come in later steps.

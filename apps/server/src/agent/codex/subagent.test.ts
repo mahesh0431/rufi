@@ -788,6 +788,11 @@ describe("the reader's turn when Codex's lines come together", () => {
       messages
         .filter((m) => m.method === "turn/interrupt")
         .map((m) => m.params),
-    ).toEqual([{ threadId: start?.params?.["threadId"], turnId: "turn-1" }]);
+    ).toEqual([
+      {
+        threadId: start?.params?.["threadId"],
+        turnId: expect.stringMatching(/^turn-1-/) as string,
+      },
+    ]);
   }, 120_000);
 });

@@ -37,11 +37,19 @@ export function openReadOnly(path: string): Store | undefined {
  * permissions). Only a record of this Rufi's version opens, and nothing
  * changes before that is known. Every write is synced to disk (WAL,
  * synchronous FULL), and deleted data is overwritten (secure_delete).
+ * resumeEmpty is only for an uninstalled first start owned by creating.json.
  */
-export function openWritable(path: string): Store {
+export function openWritable(
+  path: string,
+  options: { resumeEmpty?: boolean } = {},
+): Store {
   const created = !existsSync(path);
   if (created) writeFileSync(path, "", { flag: "wx", mode: 0o600 });
-  const store = checked(new DatabaseSync(path), path, created);
+  const store = checked(
+    new DatabaseSync(path),
+    path,
+    created || options.resumeEmpty === true,
+  );
   try {
     store.db.exec(
       "PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA secure_delete = ON;",

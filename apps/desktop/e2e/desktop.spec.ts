@@ -4,7 +4,7 @@
 // fails, new windows, and what the page can't do. Dock, menus, focus and the
 // looks are checked by hand on the Mac.
 import { existsSync } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { unzipSync } from "fflate";
@@ -31,6 +31,40 @@ import {
 /** The first run's welcome: the page loaded and its session works. */
 const working = (page: Page) =>
   expect(page.getByRole("heading", { name: "Welcome to Rufi" })).toBeVisible();
+
+test.describe("a foreign Rufi home", () => {
+  for (const chosen of ["remembered", "alias"] as const) {
+    test(`refuses the ${chosen} path without writing or locking it`, async ({
+      desktop,
+    }) => {
+      const root = join(desktop.userHome, ".rufi");
+      await mkdir(join(root, "records"), { recursive: true });
+      await writeFile(
+        join(root, "rufi.db"),
+        "the older app's fictional record",
+      );
+      if (chosen === "remembered") desktop.remembered();
+      else await symlink(root, desktop.home);
+
+      const app = await desktop.launch();
+      expect(await app.exited).toBe(0);
+      expect(app.told).toEqual([
+        {
+          kind: "dialog",
+          value: {
+            message: "Rufi couldn't start",
+            detail: `${root} holds files that aren't this Rufi's home, perhaps from an older Rufi app. Rufi changed nothing there. Move that folder away (for example to ${root}-old), then start Rufi again.`,
+          },
+        },
+      ]);
+      expect((await readdir(root)).sort()).toEqual(["records", "rufi.db"]);
+      expect(await readFile(join(root, "rufi.db"), "utf8")).toBe(
+        "the older app's fictional record",
+      );
+      expect(await desktop.running()).toBe(false);
+    });
+  }
+});
 
 /** The app's only `rufi start`, which runs its Rufi. */
 async function core(desktop: Desktop, app: App): Promise<number> {
@@ -151,6 +185,41 @@ test.describe("starting", () => {
     await working(await app.electron.firstWindow());
     expect(await desktop.running()).toBe(true);
     await core(desktop, app);
+  });
+
+  test("with no RUFI_HOME, makes Rufi's own data folder, then opens on the same one, and Settings says so", async ({
+    desktop,
+  }) => {
+    desktop.remembered();
+    const first = await desktop.launch();
+    await working(await first.electron.firstWindow());
+    const root = join(desktop.userHome, ".rufi");
+    expect(
+      JSON.parse(await readFile(join(root, "location.json"), "utf8")),
+    ).toEqual({ version: 1, dataFolder: desktop.home });
+    expect(await desktop.running()).toBe(true);
+    await first.electron.evaluate(({ app }) => {
+      app.quit();
+    });
+    expect(await first.exited).toBe(0);
+
+    const store = openWritable(databasePath(desktop.home));
+    store.db.exec(await readFile(FAMILY, "utf8"));
+    store.db.exec(FIRST_RUN_DONE);
+    store.close();
+    const app = await desktop.launch();
+    const page = await app.electron.firstWindow();
+    await page.getByRole("link", { name: "Settings" }).click();
+    const section = page
+      .getByRole("heading", { name: "Data folder" })
+      .locator("+ div");
+    await expect(section).toContainText(desktop.home);
+    await expect(section).toContainText(
+      "Rufi made this folder for your data on its first start.",
+    );
+    // One app for the remembered folder.
+    expect(await desktop.again()).toBe(0);
+    expect(app.electron.windows()).toHaveLength(1);
   });
 
   test("opens on the Rufi that pnpm start runs, and leaves it running when it quits", async ({

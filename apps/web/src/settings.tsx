@@ -1,10 +1,10 @@
 // Settings: the ChatGPT plan the AI uses, how Rufi looks, the region whose
 // emergency number the AI gives, the model and effort documents are read
-// with, backups, and the export of your data.
-import { Backups } from "@rufi/contracts";
+// with, backups, the export of your data, and where Rufi keeps it.
+import { Backups, DataFolder } from "@rufi/contracts";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { DatabaseBackup, Download } from "lucide-react";
+import { DatabaseBackup, Download, FolderOpen } from "lucide-react";
 import { download, read } from "./api.ts";
 import { AppearanceChoice } from "./appearance.tsx";
 import { printedTime } from "./dates.ts";
@@ -13,6 +13,7 @@ import {
   queries,
   saveSettings,
   useBackups,
+  useDataFolder,
   useSettings,
   useStatus,
 } from "./reads.ts";
@@ -82,6 +83,7 @@ export function SettingsPage() {
       <DocumentsSection />
       <BackupsSection />
       <ExportSection />
+      <DataFolderSection />
     </div>
   );
 }
@@ -295,6 +297,69 @@ function ExportSection() {
           <p role="alert" className="text-muted">
             {exported.error.message}
           </p>
+        )}
+      </div>
+    </>
+  );
+}
+
+/** How the data folder was chosen, in a sentence. */
+const SOURCES = {
+  default: "Rufi made this folder for your data on its first start.",
+  moved: "You moved your data to this folder.",
+  RUFI_HOME:
+    "RUFI_HOME chose this folder when Rufi started. Without it, Rufi uses the folder it remembers.",
+} as const;
+
+/** Where Rufi keeps your data, and Show in Finder. */
+function DataFolderSection() {
+  const folder = useDataFolder();
+  const show = useMutation({
+    mutationFn: () => read(DataFolder, "POST", "/api/data-folder/show"),
+  });
+  return (
+    <>
+      <h2 id="data-folder" className="mt-8 mb-2 px-0.5 font-semibold">
+        Data folder
+      </h2>
+      <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
+        {folder.data === undefined && folder.error ? (
+          <Problem error={folder.error} retry={() => void folder.refetch()} />
+        ) : (
+          folder.data && (
+            <>
+              <p className="font-mono break-all select-text">
+                {folder.data.path}
+              </p>
+              <p className="text-muted">
+                {SOURCES[folder.data.source]} To move it, see{" "}
+                <Link
+                  to="/help/$page"
+                  params={{ page: "your-data-and-the-ai" }}
+                  hash="move-your-data"
+                  className="underline"
+                >
+                  Move your data
+                </Link>
+                .
+              </p>
+              <Button
+                className="self-start"
+                disabled={show.isPending}
+                onClick={() => {
+                  show.mutate();
+                }}
+              >
+                <FolderOpen size={15} aria-hidden />
+                Show in Finder
+              </Button>
+              {show.error && (
+                <p role="alert" className="text-muted">
+                  {show.error.message}
+                </p>
+              )}
+            </>
+          )
         )}
       </div>
     </>

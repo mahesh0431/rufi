@@ -3,6 +3,7 @@
 import {
   type SaveSettings,
   Backups,
+  DataFolder,
   FirstRun,
   Models,
   People,
@@ -95,6 +96,14 @@ export const useBackups = () =>
     queryFn: () => read(Backups, "GET", "/api/backups"),
     refetchInterval: (query) =>
       query.state.data?.running === true ? 1_000 : 60_000,
+  });
+
+/** Where Rufi keeps its data; it changes only while Rufi isn't running. */
+export const useDataFolder = () =>
+  useQuery({
+    queryKey: ["data-folder"],
+    queryFn: () => read(DataFolder, "GET", "/api/data-folder"),
+    staleTime: Infinity,
   });
 
 const OverviewAnswer = Schema.Struct({ overview: Overview });

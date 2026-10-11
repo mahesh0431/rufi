@@ -14,6 +14,7 @@ import {
   SelectModel,
   SendMessage,
   type Backups,
+  type DataFolder,
   type FirstRun,
   type Settings,
   type Status,
@@ -74,6 +75,8 @@ export interface ApiDeps {
   /** Signing in from the screens. */
   signIn: SignInFlow;
   backups: BackupJob;
+  /** The data folder in use, and how it was chosen; `show` shows it in Finder. */
+  folder: DataFolder & { show: () => Promise<void> };
   /** The export, made when asked: the zip and its file name. */
   exportZip: () => Promise<{ name: string; bytes: Uint8Array }>;
   /** Each person's documents. */
@@ -412,6 +415,21 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.post("/api/backups", async (c) => {
     await deps.backups.backUp().catch(() => undefined);
     return c.json(backups());
+  });
+
+  const folder = (): DataFolder => ({
+    path: deps.folder.path,
+    source: deps.folder.source,
+  });
+  app.get("/api/data-folder", (c) => c.json(folder()));
+  app.post("/api/data-folder/show", async (c) => {
+    try {
+      await deps.folder.show();
+    } catch (error) {
+      deps.log("folder.show_failed", { error: errorCode(error) });
+      throw new HttpError(500, "Rufi couldn't open Finder. Try again.");
+    }
+    return c.json(folder());
   });
 
   app.get("/api/export", async (c) => {
