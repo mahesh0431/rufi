@@ -198,7 +198,7 @@ When the AI should know too, Rufi gives it a note:
 
 - **When nothing runs**, the AI gets the note at once, in a short reply of its own. In that reply the AI can only read your health record: it can explain or ask, but it can't save anything. Only your own messages can save.
 - **When a reply runs**, the note waits until the reply has ended. Notes that wait together go to the AI together, in one reply.
-- **After a Stop, or when you're signed out**, the note waits above the box as "Rufi's note", marked **Rufi**, with "Goes to the AI with your next message." It goes once, with your next message, never as a reply of its own later. **Remove** it if the AI doesn't need it.
+- **After a Stop, when you're signed out, or when you deleted a document**, the note waits above the box as "Rufi's note", marked **Rufi**, with "Goes to the AI with your next message." It goes once, with your next message, never as a reply of its own later. **Remove** it if the AI doesn't need it.
 
 ## The model and effort
 

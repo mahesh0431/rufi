@@ -366,6 +366,11 @@ function Answering({ live }: { live: StoreApi<Live> }) {
   );
 }
 
+/** Rufi's note that goes with the person's next message. */
+const rides = (item: QueueItem) =>
+  item.origin === "rufi" &&
+  (item.held === "paused" || item.held === "signed_out");
+
 /** Why a row doesn't go by itself, in words for the person. */
 function whyHeld(item: QueueItem): string | null {
   if (item.state === "not_sure") {
@@ -432,7 +437,11 @@ function QueueView({
       ? "Stopped · these go when you send a message"
       : paused === "restarted"
         ? "Rufi restarted · these go when you send a message"
-        : items.some((item) => item.state !== "waiting" || item.held !== null)
+        : items.some(
+              (item) =>
+                item.state !== "waiting" ||
+                (item.held !== null && !rides(item)),
+            )
           ? "Not sent · Rufi sends these only when you say"
           : "Waiting";
 

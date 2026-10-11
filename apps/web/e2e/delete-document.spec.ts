@@ -118,6 +118,13 @@ test("a document with saved results is blocked with Ask Rufi; one without goes, 
       .getByRole("listitem")
       .filter({ hasText: "Sunrise Labs August.pdf" }),
   ).toContainText("document deleted");
+  // The AI hears of it with the next message, and no reply starts now.
+  const waiting = page.getByRole("region", { name: "Waiting messages" });
+  await expect(waiting).toContainText(
+    "Rufi's note: Deleted Sunrise Labs August.pdf",
+  );
+  await expect(waiting).toContainText("Goes to the AI with your next message.");
+  await expect(waiting).not.toContainText("Not sent");
   // The other tab, and the address opened again, say it was deleted.
   const gone = "There is no such document. It may have been deleted.";
   await expect(other.getByText(gone)).toBeVisible();
