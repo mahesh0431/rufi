@@ -498,7 +498,11 @@ function Thinking({ entry, turn }: { entry: Entry; turn: Turn | undefined }) {
         data-entry={entry.id}
         className="relative flex min-w-0 items-center gap-1.5 text-muted"
       >
-        <LoaderCircle size={13} className="shrink-0 animate-spin" aria-hidden />
+        <LoaderCircle
+          size={ICON}
+          className="shrink-0 animate-spin"
+          aria-hidden
+        />
         <span className="shrink-0">Thinking…</span>
         {heading !== "" && <span className="truncate text-xs">{heading}</span>}
       </p>
@@ -513,15 +517,16 @@ function Thinking({ entry, turn }: { entry: Entry; turn: Turn | undefined }) {
       (turn?.status === "interrupted" && turn.endReason === null));
   return (
     <details data-entry={entry.id} className="group text-muted">
-      <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-md hover:text-ink [&::-webkit-details-marker]:hidden">
-        <Brain size={13} className="shrink-0" aria-hidden />
+      {/* It opens like a button: the same icon size and at least 32 px high. */}
+      <summary className="flex min-h-8 w-fit cursor-pointer list-none items-center gap-1.5 rounded-md hover:text-ink [&::-webkit-details-marker]:hidden">
+        <Brain size={ICON} className="shrink-0" aria-hidden />
         <span>
           {unknownEnd
             ? "Thinking stopped"
             : thoughtFor(entry.createdAt, end ?? entry.updatedAt)}
         </span>
         <ChevronRight
-          size={12}
+          size={ICON}
           className="shrink-0 transition-transform group-open:rotate-90"
           aria-hidden
         />

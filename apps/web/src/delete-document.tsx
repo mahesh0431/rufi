@@ -247,7 +247,9 @@ function Preview({
           </p>
         )}
       </div>
-      {/* The Mac's order: Cancel, then the action; Return never deletes. */}
+      {/* The Mac's order: Cancel, then the action. No default button: the
+          dialog opens with the focus off Delete, so Return there deletes
+          nothing; Delete itself takes Return and Space when focused. */}
       <div className="flex justify-end gap-2 px-4 pt-3 pb-3.5">
         <Dialog.Close render={<Button icon={X} />}>
           {blocked ? "Close" : "Cancel"}

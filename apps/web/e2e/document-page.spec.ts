@@ -175,12 +175,13 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
       x: (button?.x ?? 0) + (button?.width ?? 0) * x,
       y: (button?.y ?? 0) + (button?.height ?? 0) * y,
     };
+    // What is there is the button or a part of it, such as its icon.
     expect(
-      await page.evaluate(
-        ({ x, y }) => document.elementFromPoint(x, y)?.textContent,
-        at,
-      ),
-    ).toBe("Save in chat");
+      await save.evaluate((element, { x, y }) => {
+        const hit = document.elementFromPoint(x, y);
+        return hit !== null && element.contains(hit);
+      }, at),
+    ).toBe(true);
   }
   await page.setViewportSize({ width: 1280, height: 720 });
 
