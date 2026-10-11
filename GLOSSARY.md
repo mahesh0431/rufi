@@ -223,8 +223,16 @@ _Avoid_: login, API key
 The permission you give Rufi when you sign in, so it can use your ChatGPT plan. Without it the AI can't answer.
 
 **Data folder**:
-The one folder on your Mac where Rufi keeps everything for your records: the record, the sign-in details, the log and the AI's own files.
-_Avoid_: vault, profile, workspace
+The one folder on your Mac where Rufi keeps everything for your records: the record, the sign-in details, the log and the AI's own files. Rufi makes it at its first start, `~/Library/Application Support/Rufi/data`, and remembers it in the location file; `RUFI_HOME` picks another one for one run.
+_Avoid_: vault, profile, workspace, home
+
+**Location file**:
+`~/Library/Application Support/Rufi/location.json`, next to the default data folder: the path of the data folder Rufi opens. Never health data or secrets. Rufi writes it only after the record exists, and stops when the folder it names is gone.
+_Avoid_: pointer, config
+
+**Move (the data folder)**:
+Copying the whole data folder into a new, empty folder with `pnpm rufi move-data`, while Rufi doesn't run: checked, then the location file names the new folder. The old folder is kept, marked moved, and Rufi never opens it again. Unlike a restore, a move keeps the sign-in and every backup.
+_Avoid_: relocate, sync
 
 **Keychain**:
 Your Mac's store for secrets. Rufi keeps the sign-in itself there, never in the data folder.

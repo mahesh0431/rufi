@@ -203,22 +203,26 @@ describe("a move", () => {
     ],
     [
       "into itself",
-      async () => void (to = join(from, "inside")),
+      () => Promise.resolve(void (to = join(from, "inside"))),
       "Choose a folder outside it",
     ],
     [
       "into iCloud Drive",
-      async () =>
-        void (to = join(
-          userHome,
-          "Library/Mobile Documents/com~apple~CloudDocs/Rufi",
-        )),
+      () =>
+        Promise.resolve(
+          void (to = join(
+            userHome,
+            "Library/Mobile Documents/com~apple~CloudDocs/Rufi",
+          )),
+        ),
       "is in iCloud Drive or a cloud folder",
     ],
     [
       "into a cloud folder",
-      async () =>
-        void (to = join(userHome, "Library/CloudStorage/Dropbox/Rufi")),
+      () =>
+        Promise.resolve(
+          void (to = join(userHome, "Library/CloudStorage/Dropbox/Rufi")),
+        ),
       "is in iCloud Drive or a cloud folder",
     ],
   ])("is refused %s, and changes nothing", async (_when, arrange, says) => {
@@ -279,7 +283,7 @@ describe("a move that stopped", () => {
         "pnpm rufi move-data --finish",
       );
       await expect(findDataFolder(place({ RUFI_HOME: from }))).rejects.toThrow(
-        "--finish",
+        step === "copying" ? "--finish" : "Rufi uses that folder now",
       );
       if (step === "copying") {
         await expect(findDataFolder(place({ RUFI_HOME: to }))).rejects.toThrow(

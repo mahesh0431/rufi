@@ -31,6 +31,7 @@ import {
   type Store,
 } from "../core/store/database.ts";
 import { cleanExportStaging, exportZip } from "../core/store/export.ts";
+import type { FolderSource } from "../core/store/data-folder.ts";
 import { openRecord } from "../core/store/install.ts";
 import { claimNotices } from "../core/record/notices.ts";
 import { recordViews, waiting } from "../core/record/views.ts";
@@ -47,6 +48,11 @@ import { signInFlow, type SignIn } from "./signin.ts";
 export interface CoreOptions {
   /** Rufi's data folder. */
   home: string;
+  /**
+   * How the data folder was chosen, for Settings, and how to show it in
+   * Finder; RUFI_HOME, and nothing to show, when not given.
+   */
+  folder?: { source: FolderSource; show: (path: string) => Promise<void> };
   /** Makes the agent, with Rufi's tools and the host its events go to. */
   agent: (tools: AgentTools, host: AgentHost) => AgentRuntime;
   /** Runs the document reader; without it, readings wait. */
@@ -259,6 +265,13 @@ export const startCore = (options: CoreOptions) =>
         reader && (await readBrief(reader.query, personId, briefId)),
       account,
       backups,
+      folder: {
+        path: home,
+        source: options.folder?.source ?? "RUFI_HOME",
+        show: () =>
+          options.folder?.show(home) ??
+          Promise.reject(new Error("Finder isn't offered here.")),
+      },
       exportZip: () => exportZip(home, new Date()),
       documents: personDocuments,
       readings,

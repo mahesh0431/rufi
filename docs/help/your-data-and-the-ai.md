@@ -1,10 +1,30 @@
 # Your data and the AI
 
-Rufi keeps your health record on your Mac. This page says where they are, what the AI sends, what Rufi keeps of your chat, and what Rufi writes in its log.
+Rufi keeps your health record on your Mac. This page says where it is, how to move it, what the AI sends, what Rufi keeps of your chat, and what Rufi writes in its log.
 
 ## Where your data lives
 
-Everything is in one data folder on your Mac. Today you choose it with the `RUFI_HOME` setting before you run Rufi.
+Everything for your health record is in one data folder on your Mac. The first time you start Rufi, it makes this folder for you. You don't set anything up:
+
+```
+~/Library/Application Support/Rufi/data
+```
+
+To see where your data folder is, open **Settings** › **Data folder**. **Show in Finder** shows it in Finder.
+
+Rufi remembers the data folder in a small file next to it, the location file: `~/Library/Application Support/Rufi/location.json`. It holds only the folder's path, never health data or secrets. Each time Rufi starts, it opens the folder that this file names:
+
+- If that folder isn't there (for example, it is on a disk that isn't connected, or it was deleted), Rufi says so and doesn't start. It never starts an empty record in place of yours. Connect the disk, or put the folder back, and start Rufi again.
+- If the folder is there but your record isn't in it (for example, an empty folder where the disk used to be), Rufi doesn't start either. Check that it is the right disk.
+- If the location file is damaged, Rufi doesn't start. The file is short: `{"version": 1, "dataFolder": "/path/to/your/data/folder"}`. Put the path of your data folder back in it, or get the file back from your Mac's backup.
+- If the location file is gone and `~/Library/Application Support/Rufi/data` holds your record, Rufi remembers that folder again and starts.
+- If the location file is gone and that folder holds other files but no record, Rufi doesn't start and changes nothing.
+
+> **Note:** If you delete both the location file and your data folder, Rufi can't tell that from a new Mac: it starts a new, empty record. To get your data back, restore a backup (see [Backups and export](backups-and-export.md#restore-a-backup)).
+
+Keep the data folder on your Mac's own disk or on a disk that you connect to your Mac. Don't put it in iCloud Drive, Dropbox or another folder that syncs to the cloud, or on a network disk: their copies can damage your record. Rufi doesn't move it there (see [Move your data](#move-your-data)). A copy of a backup or of an export can go anywhere.
+
+Your sign-in's secrets aren't in the data folder: they are in your Mac's Keychain (see [Signing in with ChatGPT](signing-in.md)).
 
 | In the data folder | What it is                                                                                                                                                                                                          |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -23,8 +43,60 @@ Everything is in one data folder on your Mac. Today you choose it with the `RUFI
 | `rufi.lock`        | A folder that is there while Rufi or a Rufi command uses the data folder, so only one of them does at a time                                                                                                        |
 | `credentials.lock` | A short-lived folder while Rufi changes or renews the sign-in                                                                                                                                                       |
 | `restoring/`       | There only when a restore into this folder didn't finish. Rufi doesn't start on such a folder                                                                                                                       |
+| `moved-to.json`    | There in a folder that you moved your data out of: it names the new folder. Rufi doesn't start on such a folder                                                                                                     |
+| `moving-out.json`  | There in your data folder while it is moved, and after a move stopped. Rufi doesn't start on it until you finish or cancel the move                                                                                 |
+| `moving-in.json`   | There in the new folder of a move until the copy is checked, and for good in a cancelled one. Rufi doesn't start on such a folder                                                                                   |
 
 When Rufi creates your data folder, it makes it private to your Mac user account. The files Rufi writes in it, such as `rufi.sqlite` and the log, are private to your account too. Rufi doesn't change a folder that already existed, so who can open a folder you chose depends on that folder's permissions and on who can use your Mac account.
+
+## Move your data
+
+You can move your data folder to another folder: on your Mac, or on a disk that you connect to it.
+
+1. Quit Rufi: **⌘Q** in the Rufi app, or Ctrl-C in the terminal where `pnpm start` runs. To close the window isn't enough.
+2. In the Rufi folder, run `pnpm rufi move-data` with the new folder. The new folder must not exist yet, or must be empty. For example:
+
+   ```
+   pnpm rufi move-data /Volumes/Health/Rufi
+   ```
+
+3. Start Rufi as usual. It opens on the new folder.
+
+Rufi copies everything in your data folder into the new folder: your health record and your chat, your documents, your backups, your sign-in and the AI's workspace. It checks the copy (the record, and each file against the old one) and only then uses the new folder. You stay signed in.
+
+The AI's own files (`codex/` and `sub-agents/`) stay in the old folder, because they name the old folder. Your chat is in your record, so nothing is lost: your next message starts the AI afresh with the chat's last messages, and the chat shows a quiet line there.
+
+The old folder stays as it was, with a `moved-to.json` file that names the new folder. Rufi doesn't open the old folder any more, also not with `RUFI_HOME`, so that you never change two copies. Delete it when you're ready.
+
+Rufi doesn't move your data, and changes nothing, when:
+
+- Rufi or a Rufi command runs. Quit it first.
+- The new folder isn't empty, is your data folder, is in it, or holds it. Choose a new folder.
+- The new folder is in iCloud Drive or in a cloud folder in `~/Library/CloudStorage` (such as Dropbox, Google Drive or OneDrive), or on a network disk. Rufi can't find every folder that syncs: also don't use Desktop or Documents when iCloud keeps them.
+- `RUFI_HOME` is set. Unset it first.
+
+If the copy fails (for example, the disk is full, or the data folder holds a link that Rufi can't copy), Rufi says why and keeps your old folder. The new folder keeps what was copied, marked so that Rufi never opens it. Delete it before you try again.
+
+### If a move stopped
+
+If a move stopped before it finished (for example, the Mac turned off), Rufi doesn't start: it says that the move didn't finish. Then run one of these:
+
+- `pnpm rufi move-data --finish`: Rufi checks the copy again, and finishes the move. If the copy isn't complete, Rufi says so and changes nothing.
+- `pnpm rufi move-data --cancel`: Rufi goes back to the old folder. It marks the new folder as cancelled, so that it never opens it, and keeps all its files. Delete the new folder when you're ready.
+
+When a move is finished, there is nothing to finish or cancel. To go back, move your data again, into a new folder.
+
+## Start Rufi on another folder
+
+`RUFI_HOME` starts Rufi on another data folder for one run, for example on a restored copy (see [Backups and export](backups-and-export.md#restore-a-backup)):
+
+```
+RUFI_HOME=~/Rufi-restored pnpm start
+```
+
+Then Rufi doesn't read or change the location file, and **Settings** › **Data folder** says that `RUFI_HOME` chose the folder. The next time you start Rufi without it, Rufi opens your usual data folder.
+
+## What goes to the AI
 
 > **Note:** When you ask Rufi something, the AI reads the parts of your health record it needs. That text goes to the AI service you signed in with (today OpenAI, through your ChatGPT plan) so it can answer. See [OpenAI's policies](https://openai.com/policies/) for how they handle it.
 

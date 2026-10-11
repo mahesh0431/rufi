@@ -37,7 +37,7 @@ If the backup fails (for example, the disk is full), Rufi doesn't upgrade your r
 
 If your record was made by a newer Rufi (for example, you went back to an older Rufi), Rufi doesn't open it and doesn't change it. Update Rufi to open it.
 
-> **Note:** Backups protect you from a mistake or a damaged database. They are on the same Mac as your record, so they don't protect you if you lose the Mac or its disk.
+> **Note:** Backups protect you from a mistake or a damaged database. They are in your data folder, on the same disk as your record, so they don't protect you if you lose the Mac or that disk. To keep a copy somewhere else, copy a backup's folder to another disk or to the cloud. Never put the data folder itself in the cloud (see [Your data and the AI](your-data-and-the-ai.md#where-your-data-lives)).
 
 ### See your backups
 
@@ -49,10 +49,12 @@ To make a backup now, click **Back up now**. When it is done, Settings says **Ba
 
 A restore puts a backup into a new folder. Your current data folder doesn't change. You then start Rufi on the new folder.
 
-1. Find the backup you want: open the `backups` folder in your data folder. For example, in the terminal:
+A restore brings back your record as it was when the backup was made, signed out. To put your data on another disk as it is now, with your sign-in and all your backups, move it instead (see [Move your data](your-data-and-the-ai.md#move-your-data)).
+
+1. Find the backup you want: open the `backups` folder in your data folder (**Settings** › **Data folder** › **Show in Finder**). For example, in the terminal, for the data folder that Rufi made:
 
    ```
-   ls "$RUFI_HOME/backups"
+   ls ~/Library/"Application Support"/Rufi/data/backups
    ```
 
    The backups made just before an upgrade are in `backups/before-upgrade`.
@@ -60,7 +62,7 @@ A restore puts a backup into a new folder. Your current data folder doesn't chan
 2. In the Rufi folder, run `pnpm rufi restore` with the backup's folder and a new folder for the copy. The new folder must not exist yet, or be empty. For example:
 
    ```
-   pnpm rufi restore "$RUFI_HOME/backups/2026-10-08-091403" ~/Rufi-restored
+   pnpm rufi restore ~/Library/"Application Support"/Rufi/data/backups/2026-10-08-091403 ~/Rufi-restored
    ```
 
    Rufi checks the backup, copies it into the new folder with every document, and checks the copies. A backup from an older Rufi is upgraded in the new folder; the backup itself doesn't change. It doesn't need Rufi to be stopped.
@@ -73,7 +75,7 @@ A restore puts a backup into a new folder. Your current data folder doesn't chan
 
 4. Sign in with ChatGPT again: the copy starts signed out (see [Signing in with ChatGPT](signing-in.md)).
 
-The copy is a Rufi of its own: it can run next to the Rufi of your current data folder. To use the copy from now on, set `RUFI_HOME` to the new folder each time you start Rufi.
+The copy is a Rufi of its own: it can run next to the Rufi of your current data folder. To use the copy from now on, set `RUFI_HOME` to the new folder each time you start Rufi (see [Start Rufi on another folder](your-data-and-the-ai.md#start-rufi-on-another-folder)).
 
 What the restored copy has:
 

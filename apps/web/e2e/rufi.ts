@@ -22,6 +22,7 @@ import {
   databasePath,
   openWritable,
 } from "../../server/src/core/store/database.ts";
+import type { FolderSource } from "../../server/src/core/store/data-folder.ts";
 import { startCore, type Core } from "../../server/src/server/core.ts";
 
 const SERVER = join(import.meta.dirname, "../../server");
@@ -36,6 +37,8 @@ export class Rufi {
    * one that succeeds signs Rufi in. No browser opens.
    */
   readonly signIns: PromiseWithResolvers<undefined>[] = [];
+  /** The folders Show in Finder was asked to show; no Finder opens. */
+  readonly shown: string[] = [];
   #scope: Scope.Closeable | undefined;
   #core: Core | undefined;
   #model: FakeModel | undefined;
@@ -76,6 +79,8 @@ export class Rufi {
       now?: () => string;
       /** The document reader (tests/fake-reader.ts); without it, readings wait. */
       reader?: RunSubAgent;
+      /** How the data folder was chosen; RUFI_HOME when not given. */
+      source?: FolderSource;
     } = {},
   ): Promise<Core> {
     const { port } = options;
@@ -120,6 +125,13 @@ export class Rufi {
           return { email: "asha@example.com" };
         },
         screens: SCREENS,
+        folder: {
+          source: options.source ?? "RUFI_HOME",
+          show: (path) => {
+            this.shown.push(path);
+            return Promise.resolve();
+          },
+        },
         ...(options.reader !== undefined && { reader: options.reader }),
         ...(port !== undefined && { port }),
         ...(options.now !== undefined && { now: options.now }),

@@ -4,7 +4,7 @@
 // folder, names the folder; with none, the first start makes the default
 // folder and its record, then writes the location file. A remembered folder
 // that is gone, or a damaged location file, stops Rufi: it never starts an
-// empty record in place of one (docs/adr/0016).
+// empty record in place of one (docs/adr/0014).
 import { lstat, readdir } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { Context, Schema } from "effect";
@@ -39,7 +39,7 @@ export interface Place {
 /** Rufi's own folder in the Mac's place for app data: the location file and the default data folder. */
 export const locationRoot = (userHome: string) =>
   join(userHome, "Library", "Application Support", "Rufi");
-export const defaultFolder = (root: string) => join(root, "data");
+const defaultFolder = (root: string) => join(root, "data");
 const locationFile = (root: string) => join(root, "location.json");
 
 /** The location file: which folder holds the record. No health data, no secrets. */
@@ -72,7 +72,7 @@ const LOCATION_WAIT_MS = 5_000;
 export async function findDataFolder(place: Place): Promise<DataFolder> {
   const override = rufiHomeOverride(place.env);
   if (override !== undefined) {
-    await checkMarks(override);
+    await checkMarks(override, false);
     return { path: override, source: "RUFI_HOME" };
   }
   const root = locationRoot(place.userHome);
@@ -97,7 +97,7 @@ export async function managedFolder(root: string): Promise<DataFolder> {
   const complete = there?.includes("installed.json") === true;
   if (complete && there.includes("rufi.sqlite")) {
     // The record is there and only the location file was lost: remember it.
-    await checkMarks(fallback);
+    await checkMarks(fallback, false);
     await rememberFolder(root, fallback);
     return { path: fallback, source: "default" };
   }
@@ -186,15 +186,16 @@ async function checkRemembered(root: string, folder: string): Promise<void> {
       `${folder} isn't Rufi's data folder any more: Rufi's record isn't in it. If it's on a disk, check it's the right disk. Rufi won't start an empty record in its place (Help: Your data and the AI).`,
     );
   }
-  await checkMarks(folder);
+  await checkMarks(folder, true);
 }
 
 /**
  * Refuses a data folder that a move left: one being moved out, one moved
  * away, or a new folder whose copy isn't done or was cancelled. Checked at
- * every start, also with RUFI_HOME.
+ * every start, also with RUFI_HOME. `remembered`: the location file names
+ * the folder.
  */
-export async function checkMarks(folder: string): Promise<void> {
+async function checkMarks(folder: string, remembered: boolean): Promise<void> {
   const movingOut = await readMark(join(folder, MOVING_OUT));
   if (movingOut !== undefined) {
     throw new Error(
@@ -202,9 +203,15 @@ export async function checkMarks(folder: string): Promise<void> {
     );
   }
   const movedTo = await readMark(join(folder, MOVED_TO));
+  if (movedTo !== undefined && remembered) {
+    // The location file still names it: the switch didn't happen.
+    throw new Error(
+      `Rufi was moving its data from ${folder} to ${movedTo.folder}, and the move didn't finish. To finish it, run: pnpm rufi move-data --finish. To stay with ${folder}, run: pnpm rufi move-data --cancel.`,
+    );
+  }
   if (movedTo !== undefined) {
     throw new Error(
-      `Rufi's data moved from ${folder} to ${movedTo.folder}. Rufi uses that folder now. Delete ${folder} when you no longer need it. If the move didn't finish, run: pnpm rufi move-data --finish.`,
+      `Rufi's data moved from ${folder} to ${movedTo.folder}. Rufi uses that folder now. Delete ${folder} when you no longer need it.`,
     );
   }
   const movingIn = await readMark(join(folder, MOVING_IN));

@@ -3,7 +3,7 @@
 // and only then switches the location file; the old folder is kept, marked,
 // for the person to delete. Every step leaves a state a start refuses or a
 // `--finish` or `--cancel` ends; none guesses which copy is right
-// (docs/adr/0016):
+// (docs/adr/0014):
 //
 //   source             new folder               location   start opens
 //   moving-out         moving-in (copying)      source     neither
@@ -95,7 +95,7 @@ export async function moveData(place: Place, to: string): Promise<Move> {
   return withLocationLock(root, 0, async () => {
     const { path: from } = await managedFolder(root);
     await checkTarget(place.userHome, from, to);
-    return withBoth(from, to, async () => {
+    return withBoth(from, to, async (held) => {
       const there = await readdir(to);
       if (there.some((name) => name !== "rufi.lock")) {
         throw new Error(
@@ -114,6 +114,7 @@ export async function moveData(place: Place, to: string): Promise<Move> {
         await writeMark(to, MOVING_IN, { folder: from });
         await copyFolder(from, to);
         await verify(from, to);
+        held();
       } catch (error) {
         await cancel(from, to);
         throw new Error(
@@ -143,7 +144,7 @@ export async function finishMove(place: Place): Promise<Move> {
         `That move was cancelled, and Rufi uses ${from}. To move again, delete ${to} first.`,
       );
     }
-    return withBoth(from, to, async () => {
+    return withBoth(from, to, async (held) => {
       try {
         await verify(from, to);
       } catch (error) {
@@ -152,6 +153,7 @@ export async function finishMove(place: Place): Promise<Move> {
           { cause: error },
         );
       }
+      held();
       await commit(root, { from, to });
       return { from, to };
     });
@@ -220,12 +222,20 @@ async function unfinished(
  * where the data went, and last the location file names the new one.
  */
 async function commit(root: string, { from, to }: Move): Promise<void> {
-  await rm(join(to, MOVING_IN), { force: true });
-  await syncFolder(to);
-  await writeMark(from, MOVED_TO, { folder: to });
-  await rm(join(from, MOVING_OUT), { force: true });
-  await syncFolder(from);
-  await rememberFolder(root, to);
+  try {
+    await rm(join(to, MOVING_IN), { force: true });
+    await syncFolder(to);
+    await writeMark(from, MOVED_TO, { folder: to });
+    await rm(join(from, MOVING_OUT), { force: true });
+    await syncFolder(from);
+    await rememberFolder(root, to);
+  } catch (error) {
+    // Each step can run again: --finish takes it from where it stopped.
+    throw new Error(
+      `The move to ${to} stopped while Rufi switched to it. ${reason(error)} To finish it, run: pnpm rufi move-data --finish.`,
+      { cause: error },
+    );
+  }
   // The new folder opens as the next start will open it.
   await managedFolder(root);
 }
@@ -254,28 +264,42 @@ function refuseOverride(place: Place): void {
   }
 }
 
-/** Runs `task` while holding rufi.lock in `from`, then in `to`; refuses while Rufi runs on either. */
+/**
+ * Runs `task` while holding rufi.lock in `from`, then in `to`; refuses while
+ * Rufi runs on either. `held` throws once either lock was lost (its folder
+ * removed, or not refreshed in time), so nothing is switched after.
+ */
 async function withBoth<T>(
   from: string,
   to: string,
-  task: () => Promise<T>,
+  task: (held: () => void) => Promise<T>,
 ): Promise<T> {
-  return locked(from, () => locked(to, task));
+  return locked(from, (first) =>
+    locked(to, (second) =>
+      task(() => {
+        first();
+        second();
+      }),
+    ),
+  );
 }
 
-async function locked<T>(folder: string, task: () => Promise<T>): Promise<T> {
+async function locked<T>(
+  folder: string,
+  task: (held: () => void) => Promise<T>,
+): Promise<T> {
   let lost: Error | undefined;
   const release = await holdRufiLock(folder, (error) => {
     lost = error;
   });
   try {
-    const result = await task();
-    if (lost) {
-      throw new Error(`Rufi lost its lock on ${folder} during the move.`, {
-        cause: lost,
-      });
-    }
-    return result;
+    return await task(() => {
+      if (lost) {
+        throw new Error(`Rufi lost its lock on ${folder} during the move.`, {
+          cause: lost,
+        });
+      }
+    });
   } finally {
     await release().catch(() => undefined);
   }

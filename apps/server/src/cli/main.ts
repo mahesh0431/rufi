@@ -8,7 +8,7 @@ import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseArgs } from "node:util";
+import { parseArgs, promisify } from "node:util";
 import { setTimeout as sleep } from "node:timers/promises";
 import { NodeRuntime } from "@effect/platform-node";
 import { Cause, Console, Effect, Layer } from "effect";
@@ -27,6 +27,7 @@ import {
   RecordStore,
   recordLayer,
 } from "../core/store/database.ts";
+import { cancelMove, finishMove, moveData } from "../core/store/move.ts";
 import { restore } from "../core/store/restore.ts";
 import { forAgent } from "../core/tools/tools.ts";
 import { findDataFolder, Folder } from "../core/store/data-folder.ts";
@@ -54,7 +55,11 @@ const USAGE = `Usage: pnpm rufi <command>
       [--person id]   whose record Rufi's tools read (not needed with one person)
       [--debug]       also print Rufi's log lines
   restore <backup> <new folder>
-                      restore a backup into a new or empty folder (no RUFI_HOME needed)`;
+                      restore a backup into a new or empty folder (no RUFI_HOME needed)
+  move-data <new folder>
+                      move your data folder into a new or empty folder (quit Rufi first)
+  move-data --finish | --cancel
+                      finish a move that stopped, or go back to the old folder`;
 
 /** A promise-based step, with its error kept as it is. */
 const run = <A>(step: () => Promise<A>) =>
@@ -137,6 +142,11 @@ const main = Effect.gen(function* () {
         return yield* usageError;
       }
       return yield* restoreCommand(backup, target);
+    }
+    case "move-data": {
+      const [what, ...more] = rest;
+      if (what === undefined || more.length > 0) return yield* usageError;
+      return yield* moveCommand(what);
     }
     case "ask": {
       const { values, positionals } = parseArgs({
@@ -253,6 +263,37 @@ const restoreCommand = (backup: string, target: string) =>
     console.log(`RUFI_HOME=${shellQuoted(folder)} pnpm start`);
   });
 
+/**
+ * Moves the data folder, or ends a move that stopped. Without RUFI_HOME:
+ * the remembered folder is what moves.
+ */
+const moveCommand = (what: string) =>
+  Effect.gen(function* () {
+    const place = { env: process.env, userHome: homedir() };
+    if (what === "--finish" || what === "--cancel") {
+      const { from, to } = yield* run(() =>
+        what === "--finish" ? finishMove(place) : cancelMove(place),
+      );
+      if (what === "--cancel") {
+        console.log(`Cancelled the move. Rufi uses ${from} again.`);
+        console.log(`Delete ${to} when you no longer need it.`);
+        return;
+      }
+      printMoved(from, to);
+      return;
+    }
+    const from = process.env["INIT_CWD"] ?? process.cwd();
+    const moved = yield* run(() => moveData(place, resolve(from, what)));
+    printMoved(moved.from, moved.to);
+  });
+
+function printMoved(from: string, to: string): void {
+  console.log(`Moved your data to ${to}. Rufi uses it from now on.`);
+  console.log(
+    `The old folder ${from} is kept, and Rufi won't open it. Delete it when you're ready.`,
+  );
+}
+
 /** A path as the shell takes it: in single quotes when it needs them. */
 const shellQuoted = (path: string) =>
   /^[\w./~-]+$/.test(path) ? path : `'${path.replaceAll("'", "'\\''")}'`;
@@ -297,8 +338,10 @@ const startCommand = (open: boolean) =>
     ) as {
       version: string;
     };
+    const { source } = yield* Folder;
     const core = yield* startCore({
       home,
+      folder: { source, show: showInFinder },
       agent: (tools, host) =>
         codexRuntime({
           home,
@@ -481,6 +524,11 @@ function show(event: AgentEvent): void {
   process.stdout.write(`${midLine ? "\n" : ""}${line}\n`);
   midLine = false;
 }
+
+/** Shows the folder in Finder, selected in the folder that holds it. */
+const showInFinder = async (path: string): Promise<void> => {
+  await promisify(execFile)("open", ["-R", path], { timeout: 10_000 });
+};
 
 /** Opens the default browser; if that fails, the link is already on screen. */
 function openBrowser(link: string): void {

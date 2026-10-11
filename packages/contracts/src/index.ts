@@ -389,6 +389,16 @@ export const Backups = Schema.Struct({
 });
 export type Backups = typeof Backups.Type;
 
+/**
+ * Where Rufi keeps its data: the folder Rufi made (default), one the person
+ * moved it to (moved), or one RUFI_HOME picked for this run.
+ */
+export const DataFolder = Schema.Struct({
+  path: Schema.String,
+  source: Schema.Literals(["default", "moved", "RUFI_HOME"]),
+});
+export type DataFolder = typeof DataFolder.Type;
+
 /** The first step of the first run not done yet, or done. */
 export const FirstRunStep = Schema.Literals([
   "welcome",

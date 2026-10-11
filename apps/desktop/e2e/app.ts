@@ -41,7 +41,11 @@ export interface App {
 
 export class Desktop {
   readonly folder: string;
-  readonly home: string;
+  /** The test's Mac home folder: Rufi's remembered folder is in it, never the real one. */
+  readonly userHome: string;
+  /** The data folder: RUFI_HOME, or with `remembered()`, the one Rufi makes. */
+  home: string;
+  #remembered = false;
   readonly #apps: App[] = [];
   readonly #terminals: ChildProcess[] = [];
   /** Every `rufi start` a test saw, killed at the end if a bug left it. */
@@ -50,6 +54,13 @@ export class Desktop {
   constructor(folder: string) {
     this.folder = folder;
     this.home = join(folder, "home");
+    this.userHome = join(folder, "user");
+  }
+
+  /** From now on, launches without RUFI_HOME: on the folder Rufi remembers. */
+  remembered(): void {
+    this.#remembered = true;
+    this.home = join(this.userHome, "Library/Application Support/Rufi/data");
   }
 
   /** Opens the app, as `pnpm desktop` does. */
@@ -97,24 +108,37 @@ export class Desktop {
     return new Promise((resolve) => again.once("exit", resolve));
   }
 
-  /** The app's environment: this data folder and temporary folder. */
+  /**
+   * The app's environment: this data folder (or none, when remembered),
+   * temporary folder and Mac home folder.
+   */
   async #env(): Promise<Record<string, string>> {
     const env: Record<string, string> = {};
     for (const [name, value] of Object.entries(process.env)) {
-      if (value !== undefined && name !== "ELECTRON_RUN_AS_NODE") {
+      if (
+        value !== undefined &&
+        name !== "ELECTRON_RUN_AS_NODE" &&
+        name !== "RUFI_HOME"
+      ) {
         env[name] = value;
       }
     }
     // The app's own files go in its temporary folder: here, the test's.
     const temporary = join(this.folder, "tmp");
     await mkdir(temporary, { recursive: true });
-    return { ...env, RUFI_HOME: this.home, TMPDIR: temporary };
+    await mkdir(this.userHome, { recursive: true });
+    return {
+      ...env,
+      ...(!this.#remembered && { RUFI_HOME: this.home }),
+      HOME: this.userHome,
+      TMPDIR: temporary,
+    };
   }
 
   /** `pnpm start` in a terminal, until the test ends; its first link. */
   async terminal(): Promise<{ rufi: ChildProcess; link: string }> {
     const rufi = spawn(process.execPath, [CLI, "start", "--no-open"], {
-      env: { ...process.env, RUFI_HOME: this.home },
+      env: await this.#env(),
       stdio: ["ignore", "pipe", "inherit"],
     });
     this.#terminals.push(rufi);

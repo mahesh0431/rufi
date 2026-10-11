@@ -212,6 +212,30 @@ test("Settings chooses light, dark or the Mac's; every open tab changes at once,
   await expect.poll(theme(page)).toBe("light");
 });
 
+test("Settings shows the data folder, how it was chosen, and shows it in Finder", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start({ source: "moved" });
+  await page.goto(rufi.link());
+  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  const section = page
+    .getByRole("heading", { name: "Data folder" })
+    .locator("+ div");
+
+  await expect(section).toContainText(rufi.home);
+  await expect(section).toContainText("You moved your data to this folder.");
+  await accessible(page);
+  await section.getByRole("button", { name: "Show in Finder" }).click();
+  await expect.poll(() => rufi.shown).toEqual([rufi.home]);
+
+  await section.getByRole("link", { name: "Move your data" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Move your data" }),
+  ).toBeInViewport();
+});
+
 test("a settings read from before a save never undoes the look just chosen", async ({
   page,
   rufi,

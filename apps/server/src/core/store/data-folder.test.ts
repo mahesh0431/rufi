@@ -65,7 +65,7 @@ describe("the first start", () => {
   });
 
   it.each([
-    ["before the folder was made", async () => undefined],
+    ["before the folder was made", () => Promise.resolve()],
     [
       "after the folder was made, with its lock left",
       async () => {
@@ -192,19 +192,29 @@ describe("a folder a move left", () => {
     writeFile(join(folder, name), JSON.stringify(value));
 
   it.each([
-    [MOVING_OUT, { folder: "/new" }, "the move didn't finish"],
-    [MOVED_TO, { folder: "/new" }, "Rufi uses that folder now"],
-    [MOVING_IN, { folder: "/old" }, "that didn't finish"],
-    [MOVING_IN, { folder: "/old", cancelled: true }, "a cancelled move"],
+    [MOVING_OUT, { folder: "/new" }, "the move didn't finish", "didn't finish"],
+    [
+      MOVED_TO,
+      { folder: "/new" },
+      "the move didn't finish",
+      "Rufi uses that folder now",
+    ],
+    [MOVING_IN, { folder: "/old" }, "that didn't finish", "that didn't finish"],
+    [
+      MOVING_IN,
+      { folder: "/old", cancelled: true },
+      "a cancelled move",
+      "a cancelled move",
+    ],
   ])(
     "with %s %j is refused, remembered or through RUFI_HOME",
-    async (name, value, says) => {
+    async (name, value, remembered, chosen) => {
       await findDataFolder(place());
       await mark(data, name, value);
 
-      await expect(findDataFolder(place())).rejects.toThrow(says);
+      await expect(findDataFolder(place())).rejects.toThrow(remembered);
       await expect(findDataFolder(place({ RUFI_HOME: data }))).rejects.toThrow(
-        says,
+        chosen,
       );
     },
   );

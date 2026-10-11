@@ -153,6 +153,41 @@ test.describe("starting", () => {
     await core(desktop, app);
   });
 
+  test("with no RUFI_HOME, makes Rufi's own data folder, then opens on the same one, and Settings says so", async ({
+    desktop,
+  }) => {
+    desktop.remembered();
+    const first = await desktop.launch();
+    await working(await first.electron.firstWindow());
+    const root = join(desktop.userHome, "Library/Application Support/Rufi");
+    expect(
+      JSON.parse(await readFile(join(root, "location.json"), "utf8")),
+    ).toEqual({ version: 1, dataFolder: desktop.home });
+    expect(await desktop.running()).toBe(true);
+    await first.electron.evaluate(({ app }) => {
+      app.quit();
+    });
+    expect(await first.exited).toBe(0);
+
+    const store = openWritable(databasePath(desktop.home));
+    store.db.exec(await readFile(FAMILY, "utf8"));
+    store.db.exec(FIRST_RUN_DONE);
+    store.close();
+    const app = await desktop.launch();
+    const page = await app.electron.firstWindow();
+    await page.getByRole("link", { name: "Settings" }).click();
+    const section = page
+      .getByRole("heading", { name: "Data folder" })
+      .locator("+ div");
+    await expect(section).toContainText(desktop.home);
+    await expect(section).toContainText(
+      "Rufi made this folder for your data on its first start.",
+    );
+    // One app for the remembered folder.
+    expect(await desktop.again()).toBe(0);
+    expect(app.electron.windows()).toHaveLength(1);
+  });
+
   test("opens on the Rufi that pnpm start runs, and leaves it running when it quits", async ({
     desktop,
   }) => {

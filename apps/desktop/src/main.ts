@@ -26,8 +26,11 @@ const ICON = fileURLToPath(new URL("../assets/rufi-mark.png", import.meta.url));
 
 // Chromium's own files, before anything else can make them in the default
 // place. One folder per data folder, so one app runs per data folder; the
-// pages keep nothing there (their session is in memory).
-const home = resolve(process.env["RUFI_HOME"]?.trim() ?? "");
+// pages keep nothing there (their session is in memory). Without RUFI_HOME,
+// the folder is the one Rufi remembers, whichever it is: `rufi start` finds
+// it (docs/adr/0014).
+const chosen = process.env["RUFI_HOME"]?.trim();
+const home = chosen ? resolve(chosen) : "remembered data folder";
 const profile = createHash("sha256").update(home).digest("hex").slice(0, 16);
 app.setPath("userData", join(tmpdir(), `rufi-app-${profile}`));
 app.setName("Rufi");
