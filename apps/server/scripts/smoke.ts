@@ -1627,9 +1627,10 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     await yesIfAsked(c, home, "Yes, move it.");
     const moved = resultsNow(home).find((r) => r.id === "bp-aug");
     const movedReceipts = receipts(await c.read());
-    await c.ask("Undo that.");
-    await yesIfAsked(c, home, "Yes, undo it.");
-    if (record(home).saves < 2) await c.ask("Yes, move it back.");
+    // say, not ask: ask counts only its own messages, and yesIfAsked may
+    // have sent one.
+    await c.say("Undo that.");
+    if (record(home).saves < 2) await c.say("Yes, move it back.");
     const snapshot = await c.read();
     const back = resultsNow(home).find((r) => r.id === "bp-aug");
     const kept = (r: typeof before) =>
