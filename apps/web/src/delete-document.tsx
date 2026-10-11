@@ -9,7 +9,7 @@ import { Dialog } from "@base-ui/react/dialog";
 import { DeletePreview } from "@rufi/contracts/documents";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Trash2 } from "lucide-react";
+import { MessageCircle, Trash2, X } from "lucide-react";
 import { Schema } from "effect";
 import { useState } from "react";
 import { ApiError, read } from "./api.ts";
@@ -54,11 +54,12 @@ export function DeleteDocument({
   return (
     <>
       <Button
+        look="quiet"
+        icon={Trash2}
         onClick={() => {
           setOpen(true);
         }}
       >
-        <Trash2 size={13} aria-hidden />
         Delete
       </Button>
       {open && (
@@ -246,13 +247,15 @@ function Preview({
           </p>
         )}
       </div>
+      {/* The Mac's order: Cancel, then the action; Return never deletes. */}
       <div className="flex justify-end gap-2 px-4 pt-3 pb-3.5">
-        <Dialog.Close render={<Button />}>
+        <Dialog.Close render={<Button icon={X} />}>
           {blocked ? "Close" : "Cancel"}
         </Dialog.Close>
         {blocked ? (
           <Button
             look="main"
+            icon={MessageCircle}
             {...ASKS}
             onClick={() => {
               if (
@@ -272,8 +275,10 @@ function Preview({
           </Button>
         ) : (
           <Button
-            look="main"
-            disabled={preview === undefined || remove.isPending}
+            look="delete"
+            icon={Trash2}
+            disabled={preview === undefined}
+            busy={remove.isPending && "Deleting…"}
             onClick={() => {
               if (preview) {
                 setChanged(undefined);
@@ -281,8 +286,7 @@ function Preview({
               }
             }}
           >
-            <Trash2 size={13} aria-hidden />
-            {remove.isPending ? "Deleting…" : "Delete"}
+            Delete
           </Button>
         )}
       </div>

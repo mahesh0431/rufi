@@ -11,12 +11,20 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import {
+  Activity,
   CalendarClock,
   CircleHelp,
+  ClipboardList,
   FileText,
+  FlaskConical,
+  HeartPulse,
   House,
   MessageCircle,
+  Pill,
+  Ruler,
   Settings,
+  ShieldAlert,
+  Stethoscope,
 } from "lucide-react";
 import type { Person } from "@rufi/contracts";
 import { type ReactNode, useEffect } from "react";
@@ -29,6 +37,7 @@ import { retain } from "./live.ts";
 import { resetPanel } from "./panel.ts";
 import { isPageKind, KIND_TITLES } from "./record.tsx";
 import { useFirstRun, useOverview, usePeople, useStatus } from "./reads.ts";
+import { ICON, type Icon } from "./ui.tsx";
 
 const TITLES: Record<string, string> = {
   settings: "Settings",
@@ -141,11 +150,11 @@ export function Frame() {
               className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-surface/60"
               activeProps={{ className: "bg-accent-soft text-accent-ink" }}
             >
-              <MessageCircle size={15} aria-hidden />
+              <MessageCircle size={ICON} aria-hidden />
               {CHAT_TITLE}
             </Link>
           )}
-          <Place to="/" icon={<House size={15} aria-hidden />}>
+          <Place to="/" icon={<House size={ICON} aria-hidden />}>
             Overview
           </Place>
           {person && <RecordNav person={person} />}
@@ -157,15 +166,15 @@ export function Frame() {
               className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-surface/60"
               activeProps={{ className: "bg-accent-soft text-accent-ink" }}
             >
-              <FileText size={15} aria-hidden />
+              <FileText size={ICON} aria-hidden />
               Documents
             </Link>
           )}
           <div className="flex-1" />
-          <Place to="/help" icon={<CircleHelp size={15} aria-hidden />}>
+          <Place to="/help" icon={<CircleHelp size={ICON} aria-hidden />}>
             Help
           </Place>
-          <Place to="/settings" icon={<Settings size={15} aria-hidden />}>
+          <Place to="/settings" icon={<Settings size={ICON} aria-hidden />}>
             Settings
           </Place>
         </nav>
@@ -215,7 +224,7 @@ function FollowUpsNav({ person }: { person: Person }) {
       className="mt-3 flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-surface/60"
       activeProps={{ className: "bg-accent-soft text-accent-ink" }}
     >
-      <CalendarClock size={15} aria-hidden />
+      <CalendarClock size={ICON} aria-hidden />
       Follow-ups
       {open > 0 && (
         <span className="ml-auto text-muted tabular-nums">{open}</span>
@@ -223,6 +232,18 @@ function FollowUpsNav({ person }: { person: Person }) {
     </Link>
   );
 }
+
+/** Each record page's icon in the sidebar. */
+const KIND_ICONS: Record<keyof typeof KIND_TITLES, Icon> = {
+  lab_result: FlaskConical,
+  measurement: Ruler,
+  medicine_use: Pill,
+  prescription: ClipboardList,
+  condition: HeartPulse,
+  allergy: ShieldAlert,
+  symptom: Activity,
+  care_event: Stethoscope,
+};
 
 /** The person's record by kind, each with its count, as Overview's tiles. */
 function RecordNav({ person }: { person: Person }) {
@@ -233,6 +254,7 @@ function RecordNav({ person }: { person: Person }) {
       {(Object.keys(KIND_TITLES) as (keyof typeof KIND_TITLES)[]).map(
         (kind) => {
           const count = tiles?.find((tile) => tile.kind === kind)?.count ?? 0;
+          const KindIcon = KIND_ICONS[kind];
           return (
             <Link
               key={kind}
@@ -241,6 +263,7 @@ function RecordNav({ person }: { person: Person }) {
               className={`flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-surface/60 ${count === 0 ? "text-muted" : ""}`}
               activeProps={{ className: "bg-accent-soft text-accent-ink" }}
             >
+              <KindIcon size={ICON} aria-hidden />
               {KIND_TITLES[kind]}
               {count > 0 && (
                 <span className="ml-auto text-muted tabular-nums">{count}</span>

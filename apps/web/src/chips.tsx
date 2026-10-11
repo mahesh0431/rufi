@@ -16,6 +16,7 @@ import {
 import { type ChipState, chipState } from "./chip-state.ts";
 import { useReadings } from "./reading.tsx";
 import { useDocuments } from "./reads.ts";
+import { IconButton } from "./ui.tsx";
 
 const ICONS = {
   document: FileText,
@@ -91,14 +92,14 @@ export function ChipView({
         </span>
       )}
       {onRemove ? (
-        <button
-          type="button"
-          aria-label={`Take ${label} out of the message`}
+        // The one smaller button: a chip is a word in the message, and a
+        // full-size button would make every chip a row of its own.
+        <IconButton
+          label={`Take ${label} out of the message`}
+          icon={X}
           onClick={onRemove}
-          className="grid size-[18px] shrink-0 place-items-center rounded-md text-muted hover:bg-line hover:text-ink"
-        >
-          <X size={11} aria-hidden />
-        </button>
+          className="size-6"
+        />
       ) : (
         <span className="w-1" />
       )}

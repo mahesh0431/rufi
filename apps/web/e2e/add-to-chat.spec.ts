@@ -335,7 +335,7 @@ test("a document's draft items go into the chat as chips, and the AI gets their 
 }) => {
   await opened(page, rufi, undefined, DRAFTS);
   await page.getByRole("link", { name: "Documents" }).click();
-  await page.getByRole("button", { name: "Sunrise Labs August.pdf" }).click();
+  await page.getByRole("link", { name: "Sunrise Labs August.pdf" }).click();
   const items = page.getByRole("region", { name: "Items" });
   const row = (test: string) =>
     items

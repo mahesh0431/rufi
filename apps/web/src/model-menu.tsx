@@ -5,13 +5,14 @@
 import { Menu } from "@base-ui/react/menu";
 import { DEFAULT_EFFORT, type Effort } from "@rufi/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, LogIn } from "lucide-react";
 import { createContext, type RefObject, useContext } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
 import { chatPath, type Live } from "./live.ts";
 import { useModels, useStatus } from "./reads.ts";
+import { ICON } from "./ui.tsx";
 
 /** Where the chat's menus open: inside the chat, beside its glass. */
 export const Menus = createContext<RefObject<HTMLDivElement | null> | null>(
@@ -61,13 +62,13 @@ export function ModelMenu({
     <Menu.Root modal={false}>
       <Menu.Trigger
         aria-label={`Model and effort: ${name === undefined ? effortName : `${name}, ${effortName}`}`}
-        className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[13px] whitespace-nowrap hover:bg-side data-[popup-open]:bg-side"
+        className="flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-[13px] whitespace-nowrap hover:bg-side data-[popup-open]:bg-side"
       >
         {/* While the list comes, the name's place is kept; without one, none. */}
         {name ??
           (models.isPending && <span className="inline-block w-[5.5rem]" />)}
         <span className="text-muted">{effortName}</span>
-        <ChevronDown size={14} className="text-muted" aria-hidden />
+        <ChevronDown size={ICON} className="text-muted" aria-hidden />
       </Menu.Trigger>
       <Menu.Portal container={menus}>
         <Menu.Positioner side="top" align="end" sideOffset={8} className="z-30">
@@ -81,6 +82,7 @@ export function ModelMenu({
                   className={`${ITEM} text-accent-ink`}
                   onClick={() => void navigate({ to: "/sign-in" })}
                 >
+                  <LogIn size={ICON} aria-hidden />
                   Sign in with ChatGPT
                 </Menu.Item>
               ) : models.error ? (
@@ -104,7 +106,7 @@ export function ModelMenu({
                     >
                       <span className="grid size-4 place-items-center text-accent">
                         <Menu.RadioItemIndicator>
-                          <Check size={15} aria-hidden />
+                          <Check size={ICON} aria-hidden />
                         </Menu.RadioItemIndicator>
                       </span>
                       {m.name}

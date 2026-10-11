@@ -28,7 +28,7 @@ Click **Chat with Rufi** in the sidebar, on any page, to open your chat as a pag
 
 ## Reading back
 
-The chat opens at its latest messages. Scroll up to see older ones: Rufi loads them as you go, and what you read stays where it is on the screen. If Rufi can't load them, the chat says so: click **Try again**.
+The chat opens at its latest messages. Scroll up to see older ones: Rufi loads them as you go, and what you read stays where it is on the screen. If Rufi can't load them, the chat says so: click **Retry**.
 
 A line between days says which day the messages under it are from: "Today", "Yesterday", then the day, such as "Thu 8 Oct", with the year when it isn't this year. The days are in your Mac's time zone.
 
@@ -48,11 +48,11 @@ A message can have up to 10,000 characters. When the box has more, it says so, a
 
 You can add your records and documents to a message, so the AI knows exactly what you mean by "this" or "these". Each one shows in the box as a chip, above your text: a record such as a result with its value and date, or a document with its name. Point at a chip to see what it is.
 
-- **A record:** on its page (see [Your health record](record.md)), point at its row and click **Ask Rufi**.
+- **A record:** on its page (see [Your health record](record.md)), click **Ask Rufi** on its row.
 - **A report:** on Lab results, click **Ask Rufi** in a report's heading. Its results, with any measurements it printed, go in as one chip, such as "Sunrise Labs · 12 Aug 2026 · 3 results", and the AI reads exactly that report's results. Lab results you typed in the chat, and days of measurements, have no such heading button.
 - **A follow-up or a document that needs you:** on Overview, click **Ask Rufi** on its line in **Needs you**.
-- **A document:** on the Documents page, point at its row and click **Ask Rufi**.
-- **A result the reader read:** on a document's page, point at its row and click **Ask Rufi** (see [Documents](documents.md#add-some-results-to-the-chat)).
+- **A document:** on the Documents page, click **Ask Rufi** on its row.
+- **A result the reader read:** on a document's page, click **Ask Rufi** on its row (see [Documents](documents.md#add-some-results-to-the-chat)).
 - **A new file:** click the paperclip next to the box, or drop files on the chat panel or the chat page. Each file is added as a document at once, the same as on the Documents page (see [Documents](documents.md#add-documents)), and its chip goes in the box. Rufi starts to read it then, not when you send. A file you already added gives the chip of the document you have, and the box says so.
 
 **Ask Rufi** never takes you away from the page, and doesn't open the panel: collect what you want to ask about while you read, then click the bar to write and send. When the panel is open, **Ask Rufi** adds to its box, and the panel stays open. If Rufi can't add it at that moment, the bar says why and what to do: the box is still loading, a message is being sent, or your last message may not have reached Rufi (send it again or change it first).
@@ -171,7 +171,7 @@ If you click Stop while the AI thinks, its summary so far stays, with the time u
 
 **Stop.** After a Stop, nothing more goes to the AI until you send a message. Rufi keeps this also when you reload or Rufi starts again.
 
-**Steer.** To change the reply that is running, type in the box and click **Steer** instead of sending. Your text goes into that reply, and the AI takes it at its next step. The chat shows it as your message, marked "Steer". If the reply ended just before, the box says "The reply had ended, so this wasn't passed into it. Send it as a new message." Your text stays in the box.
+**Add to reply.** To change the reply that is running, type in the box and click **Add to reply** instead of sending. Your text goes into that reply, and the AI takes it at its next step. The chat shows it as your message, marked "Added to the reply". If the reply ended just before, the box says "The reply had ended, so this wasn't passed into it. Send it as a new message." Your text stays in the box.
 
 ## Waiting messages
 
@@ -179,7 +179,7 @@ While the AI replies, the box says "Type to queue your next message…". When yo
 
 - **Edit** it (the pencil), then **Save**.
 - **Move up** or **Move down**, to change the order.
-- **Remove** it (the bin). It never goes to the AI.
+- **Remove** it (the X). It never goes to the AI.
 
 The line above them says what happens next:
 

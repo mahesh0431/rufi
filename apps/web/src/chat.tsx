@@ -8,13 +8,14 @@
 import type { Person } from "@rufi/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { Maximize2, Minus } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileDrop } from "./attach.tsx";
 import { Box } from "./box.tsx";
 import { liveStore, loadOlder, retain } from "./live.ts";
 import { Menus } from "./model-menu.tsx";
 import { chatPage, isSmall, openPanel, usePanel } from "./panel.ts";
 import { TranscriptView } from "./transcript.tsx";
+import { IconButton } from "./ui.tsx";
 
 /** The chat's name on screen. */
 export const CHAT_TITLE = "Chat with Rufi";
@@ -137,21 +138,18 @@ export function ChatDock({ person }: { person: Person }) {
         >
           {open && (
             <div className="flex h-11 shrink-0 items-center gap-1.5 border-b border-line px-2">
-              <IconButton label="Minimise" onClick={close}>
-                <Minus size={16} aria-hidden />
-              </IconButton>
+              <IconButton label="Minimise" icon={Minus} onClick={close} />
               <h2 className="flex-1 truncate px-1 font-semibold">
                 {CHAT_TITLE}
               </h2>
               <IconButton
                 label="Open as page"
+                icon={Maximize2}
                 onClick={() => {
                   usePanel.setState({ open: false });
                   void navigate(chatPage(person.id));
                 }}
-              >
-                <Maximize2 size={14} aria-hidden />
-              </IconButton>
+              />
             </div>
           )}
           <FileDrop
@@ -240,27 +238,5 @@ function AiCanMakeMistakes() {
     <p className="pt-1 pb-2 text-center text-[11.5px] text-muted">
       AI can make mistakes. Check important health decisions with your doctor.
     </p>
-  );
-}
-
-function IconButton({
-  label,
-  onClick,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className="grid size-7 shrink-0 place-items-center rounded-lg text-muted hover:bg-side hover:text-ink"
-    >
-      {children}
-    </button>
   );
 }

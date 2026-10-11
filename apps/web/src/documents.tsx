@@ -16,8 +16,8 @@ import {
   type DocumentSummary,
 } from "@rufi/contracts/documents";
 import { useMutation } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
-import { FileText, GripVertical, Image, Plus, X } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { FileText, GripVertical, Image, Plus, ScanText, X } from "lucide-react";
 import {
   type DragEvent,
   type KeyboardEvent,
@@ -31,8 +31,8 @@ import { AskRufi } from "./ask.tsx";
 import { askRufi } from "./panel.ts";
 import { printedDate, printedDay } from "./dates.ts";
 import { queries, useDocuments } from "./reads.ts";
-import { openReading, RetryButton, TextButton } from "./reading.tsx";
-import { Button, Problem } from "./ui.tsx";
+import { openReading, RetryButton } from "./reading.tsx";
+import { Button, IconButton, Problem } from "./ui.tsx";
 
 const KINDS: readonly { id: DocumentKind; name: string }[] = [
   { id: "lab_report", name: "Lab reports" },
@@ -174,11 +174,11 @@ export function DocumentsPage({ person }: { person: Person }) {
         <div className="flex-1" />
         <Button
           look="main"
-          disabled={add.isPending}
+          icon={Plus}
+          busy={add.isPending && "Adding…"}
           onClick={() => picker.current?.click()}
         >
-          <Plus size={15} aria-hidden />
-          {add.isPending ? "Adding…" : "Add documents"}
+          Add…
         </Button>
         <input
           ref={picker}
@@ -208,7 +208,7 @@ export function DocumentsPage({ person }: { person: Person }) {
           No {KINDS.find((k) => k.id === kind)?.name.toLowerCase()} yet.
         </p>
       ) : (
-        <List personId={person.id} documents={shown} open={open} />
+        <List personId={person.id} documents={shown} />
       )}
 
       {dragging && (
@@ -244,9 +244,9 @@ function Empty({ add }: { add: () => void }) {
         You can also drop files here. Rufi keeps each original exactly as it
         came.
       </p>
-      <Button look="main" className="mt-3" onClick={add}>
-        <Plus size={15} aria-hidden />
-        Add documents
+      {/* The page's main Add is above; this one is plain. */}
+      <Button icon={Plus} className="mt-3" onClick={add}>
+        Add…
       </Button>
     </div>
   );
@@ -351,13 +351,15 @@ function Status({
         <RetryButton personId={personId} documentId={document.id} />
       )}
       {document.status !== "not_read" && (
-        <TextButton
+        <Button
+          look="quiet"
+          icon={ScanText}
           onClick={() => {
             openReading(personId, document.id);
           }}
         >
-          Open
-        </TextButton>
+          View reading
+        </Button>
       )}
     </span>
   );
@@ -366,11 +368,9 @@ function Status({
 function List({
   personId,
   documents,
-  open,
 }: {
   personId: string;
   documents: readonly DocumentSummary[];
-  open: (documentId: string) => void;
 }) {
   return (
     <>
@@ -401,12 +401,10 @@ function List({
                   className="group border-t border-line hover:bg-side"
                 >
                   <td className="py-2.5">
-                    <button
-                      type="button"
-                      className="flex items-center gap-2 text-left font-semibold hover:underline"
-                      onClick={() => {
-                        open(document.id);
-                      }}
+                    <Link
+                      to="/people/$personId/documents/$documentId"
+                      params={{ personId, documentId: document.id }}
+                      className="flex w-fit items-center gap-2 text-left font-semibold hover:underline"
                     >
                       <Icon
                         size={16}
@@ -414,7 +412,7 @@ function List({
                         aria-hidden
                       />
                       {name}
-                    </button>
+                    </Link>
                     {more && <div className="ml-6 text-muted">{more}</div>}
                   </td>
                   <td className="py-2.5 text-muted">
@@ -527,19 +525,17 @@ export function AddDialog({
                 }}
                 className="flex items-center gap-2.5 border-t border-line px-2.5 py-2 first:border-t-0"
               >
-                <button
-                  type="button"
-                  aria-label={`Move ${file.file.name}`}
-                  className="cursor-grab rounded text-muted"
+                <IconButton
+                  label={`Move ${file.file.name}`}
+                  icon={GripVertical}
+                  className="cursor-grab"
                   onKeyDown={(event: KeyboardEvent) => {
                     if (event.key === "ArrowUp") move(index, index - 1);
                     else if (event.key === "ArrowDown") move(index, index + 1);
                     else return;
                     event.preventDefault();
                   }}
-                >
-                  <GripVertical size={16} aria-hidden />
-                </button>
+                />
                 <Thumb file={file} />
                 <span className="min-w-0 flex-1 truncate">
                   {file.file.name}
@@ -575,9 +571,10 @@ export function AddDialog({
             </span>
           </label>
           <div className="mt-3.5 flex justify-end gap-2">
-            <Dialog.Close render={<Button />}>Cancel</Dialog.Close>
+            <Dialog.Close render={<Button icon={X} />}>Cancel</Dialog.Close>
             <Button
               look="main"
+              icon={Plus}
               onClick={() => {
                 add(
                   order.map(({ file }) => file),
@@ -658,9 +655,7 @@ export function Viewer({
                 · {what} · added {printedDay(document.addedAt)}
               </span>
             </Dialog.Title>
-            <Dialog.Close render={<Button look="quiet" aria-label="Close" />}>
-              <X size={15} aria-hidden />
-            </Dialog.Close>
+            <Dialog.Close render={<IconButton label="Close" icon={X} />} />
           </div>
           {/* Focusable, so the keyboard can scroll it too. */}
           <div

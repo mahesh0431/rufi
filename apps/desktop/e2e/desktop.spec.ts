@@ -614,7 +614,7 @@ test.describe("the page", () => {
     const app = await desktop.launch();
     const page = await app.electron.firstWindow();
     await page.getByRole("link", { name: "Settings" }).click();
-    await page.getByRole("button", { name: "Export my data" }).click();
+    await page.getByRole("button", { name: "Export" }).click();
     await expect(page.getByRole("status")).toContainText("Exported");
     await expect.poll(() => app.told.map((t) => t.kind)).toEqual(["save"]);
     const { name, path } = (app.told[0]?.value ?? {}) as {
@@ -744,7 +744,7 @@ test("shows a document's PDF in the built-in viewer; a link in it leaves the win
   const app = await desktop.launch();
   const page = await app.electron.firstWindow();
   await page.getByRole("link", { name: "Documents" }).click();
-  await page.getByRole("button", { name: "Sunrise Labs August.pdf" }).click();
+  await page.getByRole("link", { name: "Sunrise Labs August.pdf" }).click();
   await page.getByRole("button", { name: "View original" }).click();
   await expect(page.getByTitle("Sunrise Labs August.pdf")).toBeVisible();
   // The viewer has read the PDF when it shows the PDF's own title.

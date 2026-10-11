@@ -16,13 +16,14 @@ import type {
   ShownRow,
 } from "@rufi/contracts/record";
 import { Link } from "@tanstack/react-router";
+import { ArrowUpRight, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AskRufi } from "./ask.tsx";
 import { printedDate, printedTime } from "./dates.ts";
 import type { BoxChip } from "./draft.ts";
 import { askRufi } from "./panel.ts";
 import { useRecordDetail, useRecordPages, useSeries } from "./reads.ts";
-import { Button, Problem } from "./ui.tsx";
+import { Button, buttonLook, ICON, Problem } from "./ui.tsx";
 
 /** The pages, in the sidebar's order, by their title: results have two. */
 export const KIND_TITLES: Record<PageKind, string> = {
@@ -372,7 +373,6 @@ export function RecordPage({
                 {group.type === "report" && (
                   <AskRufi
                     aria-label={`Ask Rufi about this report: ${heading.name} · ${heading.detail}`}
-                    className="font-normal"
                     onClick={() => {
                       askRufi(person.id, [reportChip(group)]);
                     }}
@@ -392,8 +392,9 @@ export function RecordPage({
         <div className="mt-2 text-center">
           <Button
             ref={more}
+            icon={ChevronDown}
             onClick={() => void fetchNextPage()}
-            disabled={isFetchingNextPage}
+            busy={isFetchingNextPage && "Loading…"}
           >
             Show more
           </Button>
@@ -549,8 +550,9 @@ export function RowDetail({
                   <Link
                     to="/people/$personId/documents/$documentId"
                     params={{ personId, documentId: source.document }}
-                    className="rounded-md px-1 text-accent-ink hover:bg-accent-soft"
+                    className={buttonLook({ look: "quiet" })}
                   >
+                    <ArrowUpRight size={ICON} aria-hidden />
                     Open
                   </Link>
                 </>

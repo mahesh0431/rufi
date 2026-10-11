@@ -40,7 +40,7 @@ test.afterEach(async ({ page }) => {
 /** Opens a document's page from the Documents page. */
 async function openDocument(page: Page, name: string) {
   await page.getByRole("link", { name: "Documents" }).click();
-  await page.getByRole("button", { name, exact: true }).click();
+  await page.getByRole("link", { name, exact: true }).click();
 }
 
 test("a document with saved results is blocked with Ask Rufi; one without goes, its old chip says deleted, and its open tab says so", async ({
@@ -108,7 +108,7 @@ test("a document with saved results is blocked with Ask Rufi; one without goes, 
 
   await expect(page).toHaveURL(/\/documents$/);
   await expect(
-    page.getByRole("button", { name: "Sunrise Labs August.pdf", exact: true }),
+    page.getByRole("link", { name: "Sunrise Labs August.pdf", exact: true }),
   ).toHaveCount(0);
   await opener.click();
   const messages = page.getByRole("log", { name: "Messages" });
@@ -130,7 +130,7 @@ test("a document with saved results is blocked with Ask Rufi; one without goes, 
   await expect(other.getByText(gone)).toBeVisible();
   await other.reload();
   await expect(other.getByText(gone)).toBeVisible();
-  await expect(other.getByRole("button", { name: "Try again" })).toHaveCount(0);
+  await expect(other.getByRole("button", { name: "Retry" })).toHaveCount(0);
   // An address of no document at all doesn't say it was deleted.
   await other.goto(other.url().replace("doc-asha-aug", "doc-nobody"));
   await expect(

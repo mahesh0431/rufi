@@ -1,3 +1,4 @@
+import { Tooltip } from "@base-ui/react/tooltip";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
@@ -30,7 +31,10 @@ const root = createRoot(element);
 root.render(
   <StrictMode>
     <QueryClientProvider client={queries}>
-      <RouterProvider router={router} />
+      {/* One after another, icon buttons' tooltips show without a wait. */}
+      <Tooltip.Provider>
+        <RouterProvider router={router} />
+      </Tooltip.Provider>
     </QueryClientProvider>
   </StrictMode>,
 );

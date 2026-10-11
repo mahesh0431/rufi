@@ -3,7 +3,7 @@
 // reader or Rufi's checks marked. A fix changes an item's printed fields and
 // keeps the reader's; it names the item's version, so a fix made on an older
 // one (another tab fixed it first) is refused with the value as it is now.
-// Nothing here saves to the record: "Save these in the chat" puts the words
+// Nothing here saves to the record: "Save in chat" puts the words
 // in the chat box, and the person sends them. An item goes
 // into the chat as a chip too: Ask Rufi on its row. The page stays, to read
 // beside what you write.
@@ -16,8 +16,17 @@ import {
 import type { Person } from "@rufi/contracts";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Schema } from "effect";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  MessageCircle,
+  Pencil,
+  ScanText,
+  X,
+} from "lucide-react";
+import { useEffect, useId, useState } from "react";
 import { useStore } from "zustand";
 import { ApiError, fetchFile, read } from "./api.ts";
 import { AskRufi, ASKS } from "./ask.tsx";
@@ -29,8 +38,8 @@ import type { BoxChip } from "./draft.ts";
 import { messageOf, retain } from "./live.ts";
 import { askRufi } from "./panel.ts";
 import { queries, useDocuments } from "./reads.ts";
-import { openReading, RetryButton, TextButton } from "./reading.tsx";
-import { Button, Problem } from "./ui.tsx";
+import { openReading, RetryButton } from "./reading.tsx";
+import { Button, IconButton, Problem } from "./ui.tsx";
 
 const documentPath = (personId: string, documentId: string) =>
   `/api/people/${encodeURIComponent(personId)}/documents/${encodeURIComponent(documentId)}`;
@@ -188,6 +197,7 @@ function Checking({
           <RetryButton personId={person.id} documentId={document.id} />
         )}
         <Button
+          icon={FileText}
           onClick={() => {
             setOriginal(true);
           }}
@@ -196,11 +206,12 @@ function Checking({
         </Button>
         {document.status !== "not_read" && (
           <Button
+            icon={ScanText}
             onClick={() => {
               openReading(person.id, document.id);
             }}
           >
-            The reader's work
+            View reading
           </Button>
         )}
         <DeleteDocument
@@ -507,17 +518,18 @@ function Row({
           {item.unsure.length > 0 && <Tag>unsure</Tag>}
           {done && <Tag>{item.status}</Tag>}
           {selected && !done && !fixing && (
-            <TextButton
+            <Button
+              look="quiet"
+              icon={Pencil}
               onClick={() => {
                 fix(item.id);
               }}
             >
               Fix
-            </TextButton>
+            </Button>
           )}
           {!done && (
             <AskRufi
-              className="ml-1"
               onClick={(event) => {
                 event.stopPropagation();
                 add();
@@ -664,16 +676,17 @@ function FixForm({
           {item.original.unit ? ` ${item.original.unit}` : ""}. Rufi keeps it
           beside your fix.
         </span>
-        <Button className="px-2.5 py-0.5" onClick={close}>
+        <Button icon={X} onClick={close}>
           Cancel
         </Button>
         <Button
           type="submit"
           look="main"
-          className="px-2.5 py-0.5"
-          disabled={changed.length === 0 || save.isPending}
+          icon={Check}
+          disabled={changed.length === 0}
+          busy={save.isPending && "Saving…"}
         >
-          {refused ? "Save my fix over it" : "Save fix"}
+          {refused ? "Replace fix" : "Save fix"}
         </Button>
       </div>
     </form>
@@ -704,31 +717,25 @@ function PageView({
       className="flex min-h-[320px] min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface"
     >
       <div className="flex items-center gap-2 border-b border-line px-3 py-1.5">
-        <Button
-          look="quiet"
-          className="px-1.5"
-          aria-label="Previous page"
+        <IconButton
+          label="Previous page"
+          icon={ChevronLeft}
           disabled={position <= 1}
           onClick={() => {
             show(position - 1);
           }}
-        >
-          <ChevronLeft size={15} aria-hidden />
-        </Button>
+        />
         <b>
           Page {position} of {of}
         </b>
-        <Button
-          look="quiet"
-          className="px-1.5"
-          aria-label="Next page"
+        <IconButton
+          label="Next page"
+          icon={ChevronRight}
           disabled={position >= of}
           onClick={() => {
             show(position + 1);
           }}
-        >
-          <ChevronRight size={15} aria-hidden />
-        </Button>
+        />
         <span className="flex-1" />
         {page && (
           <span className="text-xs text-muted">
@@ -810,33 +817,44 @@ function SaveInChat({
   const loaded = useStore(box.store, (state) => state.loaded);
   const sending = useStore(box.store, (state) => state.sending);
   const unresolved = useStore(box.store, (state) => state.unresolved);
+  const reason = useId();
+  const why = sending
+    ? "Wait: a message is being sent."
+    : unresolved
+      ? "Retry the message in the chat first."
+      : null;
   return (
-    <Button
-      look="main"
-      {...ASKS}
-      disabled={count === 0 || !loaded || sending || unresolved}
-      onClick={() => {
-        // The document's chip: the core names it and stamps its version
-        // when the message is sent.
-        askRufi(
-          personId,
-          [
-            {
-              pointer: { type: "document", id: document.id },
-              label: name,
-              detail: "",
-            },
-          ],
-          `${count === 1 ? "Save this result" : `Save these ${String(count)} results`}.`,
-        );
-      }}
-    >
-      {sending
-        ? "Wait: a message is being sent"
-        : unresolved
-          ? "Retry the message in the chat first"
-          : "Save these in the chat"}
-    </Button>
+    <>
+      {why !== null && (
+        <span id={reason} className="text-muted">
+          {why}
+        </span>
+      )}
+      <Button
+        look="main"
+        icon={MessageCircle}
+        {...ASKS}
+        {...(why !== null && { "aria-describedby": reason })}
+        disabled={count === 0 || !loaded || sending || unresolved}
+        onClick={() => {
+          // The document's chip: the core names it and stamps its version
+          // when the message is sent.
+          askRufi(
+            personId,
+            [
+              {
+                pointer: { type: "document", id: document.id },
+                label: name,
+                detail: "",
+              },
+            ],
+            `${count === 1 ? "Save this result" : `Save these ${String(count)} results`}.`,
+          );
+        }}
+      >
+        Save in chat
+      </Button>
+    </>
   );
 }
 

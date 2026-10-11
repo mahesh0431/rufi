@@ -1,8 +1,9 @@
 // The chat's box, the same in every size: what you type is the chat's
 // draft, kept by the core, saved quietly; the box says only when it couldn't
 // be. Enter sends into Rufi's queue; while a reply runs the box says so, the
-// message waits, and Steer passes it into the reply instead. The box clears
-// only when the core took the message, and nothing is sent again by itself.
+// message waits, and Add to reply passes it into the reply instead. The box
+// clears only when the core took the message, and nothing is sent again by
+// itself.
 // The model and effort are chosen beside Send; what waits shows above the
 // box. Chips (references to documents, draft items and records) sit above
 // the text and go with it; a document's chip says what Rufi is doing with
@@ -19,18 +20,17 @@ import {
 import {
   ArrowDown,
   ArrowUp,
+  Check,
+  CornerUpRight,
   LoaderCircle,
+  type LucideProps,
   Pencil,
+  RotateCw,
+  Send,
   Square,
-  Trash2,
+  X,
 } from "lucide-react";
-import {
-  type ReactNode,
-  type RefObject,
-  useEffect,
-  useId,
-  useState,
-} from "react";
+import { type RefObject, useEffect, useId, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
@@ -49,7 +49,7 @@ import { ReaderStrip } from "./reading.tsx";
 import { ModelMenu } from "./model-menu.tsx";
 import { usePanel } from "./panel.ts";
 import { isRunning } from "./transcript-state.ts";
-import { Button } from "./ui.tsx";
+import { Button, IconButton } from "./ui.tsx";
 
 /**
  * What the box says under it: a send on its way, or a draft that couldn't be
@@ -162,24 +162,23 @@ export function Box({
   );
   const choice = <ModelMenu live={live} personId={person.id} act={act} />;
   const sendButton = (
-    <button
+    <IconButton
       type="submit"
-      aria-label={running ? "Send (waits for the reply)" : "Send"}
+      look="main"
+      label={running ? "Send (waits for the reply)" : "Send"}
+      icon={Send}
       disabled={!hasText || locked}
-      className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-on-accent disabled:bg-muted/40"
-    >
-      <ArrowUp size={16} aria-hidden />
-    </button>
+      className="rounded-full disabled:bg-muted/40 disabled:opacity-100"
+    />
   );
   const stopButton = (
-    <button
-      type="button"
-      aria-label="Stop"
+    <IconButton
+      look="main"
+      label="Stop"
+      icon={Stop}
       onClick={() => void stop()}
-      className="grid size-8 shrink-0 place-items-center rounded-full bg-ink text-surface"
-    >
-      <Square size={12} fill="currentColor" aria-hidden />
-    </button>
+      className="rounded-full bg-ink text-surface not-disabled:hover:bg-ink"
+    />
   );
 
   return (
@@ -266,15 +265,14 @@ export function Box({
             <span className="flex-1" />
             {running && hasText && (
               <Button
-                look="plain"
-                className="py-1"
+                icon={CornerUpRight}
                 title="Pass this into the reply that is running"
                 disabled={locked}
                 onClick={() => {
                   submit(true);
                 }}
               >
-                Steer
+                Add to reply
               </Button>
             )}
             {choice}
@@ -296,13 +294,13 @@ export function Box({
             >
               {saved}
               {saved === "Not saved" && (
-                <button
-                  type="button"
+                <Button
+                  look="quiet"
+                  icon={RotateCw}
                   onClick={() => void box.saveNow()}
-                  className="underline"
                 >
                   Retry
-                </button>
+                </Button>
               )}
             </p>
           )}
@@ -453,13 +451,15 @@ function QueueView({
       <h3 className="flex items-center gap-2 text-xs font-normal text-muted">
         <span className="flex-1">{heading}</span>
         {!running && paused !== null && first && (
-          <TextButton
+          <Button
+            look="quiet"
+            icon={Send}
             onClick={() => {
               send(first);
             }}
           >
             Send now
-          </TextButton>
+          </Button>
         )}
       </h3>
       {error !== null && <p className="text-muted">{error}</p>}
@@ -482,10 +482,18 @@ function QueueView({
                     }}
                     className="rounded-lg border border-line bg-surface px-2 py-1"
                   />
-                  <div className="flex gap-1">
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      icon={X}
+                      onClick={() => {
+                        setEditing(null);
+                      }}
+                    >
+                      Cancel
+                    </Button>
                     <Button
                       look="main"
-                      className="py-0.5"
+                      icon={Check}
                       disabled={editing.text.trim() === ""}
                       onClick={() => {
                         const text = editing.text.trim();
@@ -494,14 +502,6 @@ function QueueView({
                       }}
                     >
                       Save
-                    </Button>
-                    <Button
-                      className="py-0.5"
-                      onClick={() => {
-                        setEditing(null);
-                      }}
-                    >
-                      Cancel
                     </Button>
                   </div>
                 </div>
@@ -535,53 +535,51 @@ function QueueView({
                     </span>
                   )}
                   {(item.state === "not_sure" || (isWaiting && !free)) && (
-                    <TextButton
+                    <Button
+                      look="quiet"
+                      icon={Send}
                       onClick={() => {
                         send(item);
                       }}
                     >
                       {item.state === "not_sure" ? "Send again" : "Send"}
-                    </TextButton>
+                    </Button>
                   )}
                   {free && index > 0 && (
-                    <Icon
+                    <IconButton
                       label="Move up"
+                      icon={ArrowUp}
                       onClick={() => {
                         move(item.id, -1);
                       }}
-                    >
-                      <ArrowUp size={13} aria-hidden />
-                    </Icon>
+                    />
                   )}
                   {free && index >= 0 && index < ids.length - 1 && (
-                    <Icon
+                    <IconButton
                       label="Move down"
+                      icon={ArrowDown}
                       onClick={() => {
                         move(item.id, 1);
                       }}
-                    >
-                      <ArrowDown size={13} aria-hidden />
-                    </Icon>
+                    />
                   )}
                   {isWaiting && item.origin === "person" && (
-                    <Icon
+                    <IconButton
                       label="Edit"
+                      icon={Pencil}
                       onClick={() => {
                         setEditing({ id: item.id, text: item.text });
                       }}
-                    >
-                      <Pencil size={13} aria-hidden />
-                    </Icon>
+                    />
                   )}
                   {item.state !== "handing_over" && (
-                    <Icon
+                    <IconButton
                       label="Remove"
+                      icon={X}
                       onClick={() =>
                         void act(() => request("DELETE", one(item)))
                       }
-                    >
-                      <Trash2 size={13} aria-hidden />
-                    </Icon>
+                    />
                   )}
                 </>
               )}
@@ -593,42 +591,7 @@ function QueueView({
   );
 }
 
-function TextButton({
-  onClick,
-  children,
-}: {
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="shrink-0 rounded-md px-1 py-0.5 text-xs whitespace-nowrap text-accent-ink hover:bg-accent-soft"
-    >
-      {children}
-    </button>
-  );
-}
-
-function Icon({
-  label,
-  onClick,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-side hover:text-ink"
-    >
-      {children}
-    </button>
-  );
+/** Stop: a filled square, the one filled icon. */
+function Stop(props: LucideProps) {
+  return <Square {...props} size={12} fill="currentColor" />;
 }

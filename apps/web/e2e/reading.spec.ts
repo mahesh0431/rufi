@@ -95,7 +95,7 @@ test("reads a report in the background as it is added: the strip, the lines and 
   const strip = page.getByRole("region", { name: "Reading documents" });
   await expect(strip).toContainText("sunrise-labs-august.pdf");
   await expect(strip).toContainText("read 1 of 2");
-  await strip.getByRole("button", { name: "Open ▸" }).click();
+  await strip.getByRole("button", { name: "View reading" }).click();
   const sheet = page.getByRole("dialog");
   await expect(sheet).toContainText("reading · read 1 of 2");
   await expect(sheet).toContainText("Collected date on page 1.");
@@ -109,12 +109,12 @@ test("reads a report in the background as it is added: the strip, the lines and 
   await expect(end).toBeVisible();
   await expect(strip).toBeHidden();
   await expect(chip).toHaveText("sunrise-labs-august.pdf · Read");
-  // Open leads to the document's page; the reader's work is a button there.
+  // Open leads to the document's page; View reading is a button there.
   await page.getByRole("link", { name: "Open", exact: true }).click();
   await expect(page.getByRole("region", { name: "Items" })).toContainText(
     "2 results · 0 unsure",
   );
-  await page.getByRole("button", { name: "The reader's work" }).click();
+  await page.getByRole("button", { name: "View reading" }).click();
   await expect(sheet).toContainText("sunrise-labs-august.pdf · read");
   // Page 1 open, page 2 folded: both read.
   await expect(sheet.getByText(/^read · 1 item · Sunrise Labs/)).toHaveCount(2);

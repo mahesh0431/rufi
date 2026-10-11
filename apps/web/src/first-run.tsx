@@ -9,6 +9,7 @@ import {
 } from "@rufi/contracts";
 import { useMutation } from "@tanstack/react-query";
 import { Schema } from "effect";
+import { ArrowRight, Check } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { ApiError, read } from "./api.ts";
 import { AppearanceChoice } from "./appearance.tsx";
@@ -95,6 +96,7 @@ function Welcome() {
       )}
       <Button
         look="main"
+        icon={ArrowRight}
         className="self-start"
         disabled={!understood || done.isPending}
         onClick={() => {
@@ -156,10 +158,11 @@ function YourName() {
       <Button
         type="submit"
         look="main"
+        icon={Check}
         className="self-start"
         disabled={trimmed === "" || add.isPending}
       >
-        Continue
+        Save and continue
       </Button>
     </form>
   );
@@ -208,20 +211,22 @@ function EmergencyRegion() {
       <div className="flex gap-2">
         <Button
           look="main"
+          icon={Check}
           disabled={region === "" || done.isPending}
           onClick={() => {
             done.mutate(region);
           }}
         >
-          Continue
+          Save and continue
         </Button>
         <Button
+          icon={ArrowRight}
           disabled={done.isPending}
           onClick={() => {
             done.mutate(null);
           }}
         >
-          Skip
+          Skip for now
         </Button>
       </div>
     </Step>
