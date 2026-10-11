@@ -172,7 +172,8 @@ async function chipOf(
         .where("r.report_id", "=", ref.id)
         .where(isCurrent(result, "r"))
         .executeTakeFirstOrThrow();
-      // The last save that changed any of its results, also one taken out.
+      // A replacement can be typed or belong to another report. Changes
+      // to it also change whether its predecessor is current in this report.
       const last = await db
         .selectFrom("record_changes as c")
         .innerJoin("operations as o", (on) =>
@@ -185,10 +186,20 @@ async function chipOf(
             .onRef("r.person_id", "=", "c.person_id")
             .onRef("r.id", "=", "c.record_id"),
         )
+        .leftJoin("results as predecessor", (on) =>
+          on
+            .onRef("predecessor.person_id", "=", "r.person_id")
+            .onRef("predecessor.id", "=", "r.replaces_id"),
+        )
         .select("c.operation_id")
         .where("c.person_id", "=", personId)
         .where("c.kind", "=", "result")
-        .where("r.report_id", "=", ref.id)
+        .where((eb) =>
+          eb.or([
+            eb("r.report_id", "=", ref.id),
+            eb("predecessor.report_id", "=", ref.id),
+          ]),
+        )
         .orderBy("o.seq", "desc")
         .limit(1)
         .executeTakeFirst();
