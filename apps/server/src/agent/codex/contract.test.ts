@@ -19,6 +19,7 @@ import type { AddressInfo } from "node:net";
 import { fakeModel } from "../../../tests/fake-model.ts";
 import { DEFAULT_ALLOWLIST } from "../../core/chat/models.ts";
 import { forAgent } from "../../core/tools/tools.ts";
+import { typescriptOf } from "../../core/tools/typescript.ts";
 import type { AgentEvent, AgentRuntime, AgentTools } from "../runtime.ts";
 import { DEADLINES } from "./appserver.ts";
 import { codexBinary } from "./binary.ts";
@@ -166,65 +167,104 @@ describe("the pinned Codex", () => {
   }, 60_000);
 
   it("sends Rufi's tools to the model as the rufi namespace", async () => {
-    // A local stand-in for the model endpoint: it records what Codex sends
-    // and refuses, so the turn ends without any AI. A protocol check only.
-    const bodies: unknown[] = [];
-    const server = createServer((request, response) => {
-      const chunks: Buffer[] = [];
-      request.on("data", (chunk: Buffer) => chunks.push(chunk));
-      request.on("end", () => {
-        if (request.url?.endsWith("/responses")) {
-          bodies.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-        }
-        response.writeHead(400, { "content-type": "application/json" });
-        response.end('{"error":{"message":"offline test"}}');
-      });
-    });
-    await new Promise<void>((resolve) =>
-      server.listen(0, "127.0.0.1", resolve),
+    const { tools, body } = await firstRequest("gpt-6.1-sol");
+    // On this route the model gets one JavaScript tool, `exec`, and Rufi's
+    // tools as functions inside it, declared in its description.
+    const sent = JSON.stringify(body);
+    const spec = tools.specs[0];
+    expect(sent).toContain("\\n## rufi\\nRufi: the user's health record.");
+    expect(sent).toContain("### `rufi__get_overview`");
+    expect(sent).toContain(JSON.stringify(spec?.description).slice(1, -1));
+    expect(sent).toContain(
+      "declare const tools: { rufi__get_overview(args: {}): Promise<unknown>; };",
     );
-    const { port } = server.address() as AddressInfo;
-    try {
-      const tools = forAgent(
-        () => ({ store: undefined, personId: undefined }),
-        () => undefined,
-      );
-      const ended = Promise.withResolvers<undefined>();
-      const agent = await real({
-        args: [
-          "-c",
-          `model_providers.openai_chatgpt_plan.base_url="http://127.0.0.1:${String(port)}/v1"`,
-        ],
-        tools: { namespace: tools.namespace, specs: tools.specs },
-        onEvent: (event) => {
-          if (event.type === "turnEnded") ended.resolve(undefined);
-        },
-      });
-      const { threadId } = await agent.startThread({
-        model: "gpt-6.1-sol",
-        instructions: tools.instructions,
-      });
-      await agent.send(threadId, {
-        id: "m-1",
-        input: ["What are my latest results?"],
-      });
-      await ended.promise;
-      // On this route the model gets one JavaScript tool, `exec`, and Rufi's
-      // tools as functions inside it, declared in its description.
-      const sent = JSON.stringify(bodies[0]);
-      const spec = tools.specs[0];
-      expect(sent).toContain("\\n## rufi\\nRufi: the user's health record.");
-      expect(sent).toContain("### `rufi__get_overview`");
-      expect(sent).toContain(JSON.stringify(spec?.description).slice(1, -1));
-      expect(sent).toContain(
-        "declare const tools: { rufi__get_overview(args: {}): Promise<unknown>; };",
-      );
-      expect(sent).toContain(JSON.stringify(tools.instructions).slice(1, -1));
-    } finally {
-      server.close();
-    }
+    expect(sent).toContain(JSON.stringify(tools.instructions).slice(1, -1));
   });
+
+  // Codex cuts a tool's input schema over its size limit down to `unknown`
+  // before the model sees it, so the model would guess the shape.
+  it.each(DEFAULT_ALLOWLIST)(
+    "gives the model every tool's whole input on %s: a tool Codex cuts carries it in its description",
+    async (model) => {
+      const { tools, body } = await firstRequest(model);
+      const exec = textsIn(body).find((text) =>
+        text.includes("declare const tools"),
+      );
+      const cut = tools.specs.filter((spec) => {
+        const start = exec?.indexOf(`rufi__${spec.name}(args:`) ?? -1;
+        const declared = exec?.slice(
+          start,
+          exec.indexOf("): Promise<unknown>", start),
+        );
+        return start === -1 || /(?<!")\bunknown\b(?!")/.test(declared ?? "");
+      });
+      expect(cut.map((spec) => spec.name)).toEqual(["save_changes"]);
+      for (const spec of cut) {
+        expect(exec).toContain(spec.description);
+        expect(spec.description).toContain(typescriptOf(spec.inputSchema));
+      }
+    },
+  );
 });
+
+/**
+ * The first request Codex sends the model on a new thread with Rufi's tools,
+ * to a local stand-in for the model endpoint: it records what Codex sends
+ * and refuses, so the turn ends without any AI. A protocol check only.
+ */
+async function firstRequest(model: string) {
+  const bodies: unknown[] = [];
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      if (request.url?.endsWith("/responses")) {
+        bodies.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      }
+      response.writeHead(400, { "content-type": "application/json" });
+      response.end('{"error":{"message":"offline test"}}');
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  try {
+    const tools = forAgent(
+      () => ({ store: undefined, personId: undefined }),
+      () => undefined,
+    );
+    const ended = Promise.withResolvers<undefined>();
+    const agent = await real({
+      args: [
+        "-c",
+        `model_providers.openai_chatgpt_plan.base_url="http://127.0.0.1:${String(port)}/v1"`,
+      ],
+      tools: { namespace: tools.namespace, specs: tools.specs },
+      onEvent: (event) => {
+        if (event.type === "turnEnded") ended.resolve(undefined);
+      },
+    });
+    const { threadId } = await agent.startThread({
+      model,
+      instructions: tools.instructions,
+    });
+    await agent.send(threadId, {
+      id: "m-1",
+      input: ["What are my latest results?"],
+    });
+    await ended.promise;
+    return { tools, body: bodies[0] };
+  } finally {
+    server.close();
+  }
+}
+
+/** Every string in a JSON value. */
+const textsIn = (value: unknown): string[] =>
+  typeof value === "string"
+    ? [value]
+    : typeof value === "object" && value !== null
+      ? Object.values(value).flatMap(textsIn)
+      : [];
 
 const FAKE = join(import.meta.dirname, "../../../tests/fake-codex.ts");
 

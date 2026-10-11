@@ -25,7 +25,8 @@ The AI connects different parts of your record, for example your sleep and your 
 - keeps one test in one unit in a trend,
 - treats a missing day as missing, not as zero,
 - keeps a value such as "<5" as printed, never as 5,
-- says that two things happen together, not that one causes the other.
+- says that two things happen together, not that one causes the other,
+- says first when the lab flagged a result, such as High, with the lab's range, and only then gives context, such as a common treatment target.
 
 Anything that changes what an answer means, such as only two readings, a gap or a value from the web, is in the answer itself. Under each answer, **Based on** shows where it comes from. See [Where an answer comes from](chat.md#where-an-answer-comes-from).
 
