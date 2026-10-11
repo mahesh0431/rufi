@@ -43,6 +43,9 @@ const NOW = "2026-10-11T09:00:00.000Z";
 const AUG = "doc-asha-aug";
 const AUG_FILE =
   "7f4a70ccb858d23ee1cce44693bc2c009abb14604f0f3dbd48470639d6928b54";
+/** Asha's September photo. */
+const SEP_FILE =
+  "a2d64c4aa2a3101f1fc2ee893451ca0f43f547ca48ba5a1ce625c42d52e23562";
 /** Ravi's lipid panel's PDF. */
 const RAVI_FILE =
   "f7d7c195033e1719e2c191970b14e52478e02faf51f1d61e57b517674fbc9c45";
@@ -482,11 +485,7 @@ describe("the bytes", () => {
     expect(await there(originalPath(home, RAVI_FILE))).toBe(true);
     expect(await there(pagePath(home, RAVI_FILE, 1))).toBe(true);
     expect((await readdir(join(home, "files"))).sort()).toEqual(
-      [
-        "151e4196f9224a081cc4fadd0edb7687b5eba4a5cb46451fa96db4b4c921b666",
-        RAVI_FILE,
-        "notes.txt",
-      ].sort(),
+      [SEP_FILE, RAVI_FILE, "notes.txt"].sort(),
     );
   });
 
