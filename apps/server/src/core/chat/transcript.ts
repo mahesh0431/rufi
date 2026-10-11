@@ -108,14 +108,15 @@ const toEntry = (
   ...(row.kind === "event" && linkOf(row.details)),
 });
 
-/** An event's link to its document, from its facts. */
+/** An event's link to its document, from its facts; none once it is deleted. */
 function linkOf(details: string | null): Pick<Entry, "link"> {
   const facts = (
     JSON.parse(details ?? "{}") as {
-      facts?: { document?: unknown; action?: unknown };
+      facts?: { document?: unknown; action?: unknown; deleted?: unknown };
     }
   ).facts;
   return typeof facts?.document === "string" &&
+    facts.deleted !== true &&
     (facts.action === "open" || facts.action === "retry")
     ? { link: { document: facts.document, action: facts.action } }
     : {};
@@ -814,11 +815,17 @@ export function transcripts(
         facts?: unknown;
         /** Rufi's note for the AI, when the AI should hear of it. */
         ask?: string;
+        /** Sends the note with the person's next message, never by itself. */
+        withNextMessage?: true;
       },
-      write?: (trx: Transaction<Tables>) => Promise<void>,
+      /** Returns the entries it changed too, when it changes any. */
+      write?: (
+        trx: Transaction<Tables>,
+        revision: number,
+      ) => Promise<string[] | undefined>,
     ) =>
       change(chat.id, async (trx, revision) => {
-        await write?.(trx);
+        const changed = (await write?.(trx, revision)) ?? [];
         const id = await insertEntry(trx, chat, revision, {
           turnId: null,
           kind: "event",
@@ -832,11 +839,17 @@ export function transcripts(
           await addRow(
             trx,
             chat,
-            { id: uuid(), origin: "rufi", text: event.ask, eventId: id },
+            {
+              id: uuid(),
+              origin: "rufi",
+              text: event.ask,
+              eventId: id,
+              withNextMessage: event.withNextMessage,
+            },
             now(),
           );
         }
-        return { entries: [id], turns: [] };
+        return { entries: [...changed, id], turns: [] };
       }),
 
     /**

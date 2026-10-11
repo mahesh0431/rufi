@@ -279,7 +279,13 @@ export const getRecords = defineTool({
                 .onRef("p.document_id", "=", "s.document_id")
                 .onRef("p.position", "=", "s.page"),
             )
+            .leftJoin("documents as d", (join) =>
+              join
+                .onRef("d.person_id", "=", "s.person_id")
+                .onRef("d.id", "=", "s.document_id"),
+            )
             .select([
+              "d.deleted_at",
               "s.record_id",
               "s.type",
               "s.entry_id",
@@ -318,6 +324,9 @@ export const getRecords = defineTool({
                   document: source.document_id,
                   page: source.page,
                   file: source.file_name,
+                  ...(source.deleted_at !== null && {
+                    document_deleted: true,
+                  }),
                 },
           ),
         }),

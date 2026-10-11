@@ -45,6 +45,8 @@ const EVENTS = new Set([
   "folder.show_failed",
   "notices.failed",
   "documents.added",
+  "documents.deleted",
+  "documents.cleanup_failed",
   "signin.failed",
 ] as const);
 

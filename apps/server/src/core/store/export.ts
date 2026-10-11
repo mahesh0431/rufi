@@ -11,6 +11,7 @@ import { DatabaseSync } from "node:sqlite";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { filesPath, OriginalMissing } from "../documents/originals.ts";
 import { CheckFailed, copyDatabase } from "./backup.ts";
+import type { FileGate } from "../documents/gate.ts";
 import { databasePath } from "./database.ts";
 
 type Value = string | number | null;
@@ -154,7 +155,8 @@ record, your chat, your documents and Rufi's settings, as Rufi stored it.
 - \`files/\`: your original documents (PDFs and photos), exactly as you
   added them. Each is named by its SHA-256 hash, as in the \`files\` table,
   with an extension for its type. \`document_pages\` says which document
-  and page each file is, and the name it had when you added it.
+  and page each file is, and the name it had when you added it. A document
+  you deleted has \`deleted_at\` in \`documents\`, and its pages have no file.
 - \`draft_items\`: what Rufi's reader read from your documents, each not
   saved yet, saved, or dismissed. Not your record: Rufi counts one nowhere
   until you save it.
@@ -202,17 +204,38 @@ const hashOf = (bytes: Uint8Array) =>
 /**
  * The export as zip bytes and its file name. Made from one fixed copy of the
  * database in the data folder, checked against it, then the copy is removed.
+ * The copy and the reading of its originals are inside the running Rufi's
+ * file `gate`, so a delete never removes an original the copy names.
  */
 export async function exportZip(
   home: string,
   now: Date,
+  gate?: FileGate,
 ): Promise<{ name: string; bytes: Uint8Array }> {
   const folder = `rufi-export-${String(now.getFullYear())}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
   const staging = await mkdtemp(join(home, STAGING));
   try {
     const copy = join(staging, "rufi.sqlite");
-    await copyDatabase(databasePath(home), copy);
-    const tables = readTables(copy);
+    const read = async () => {
+      await copyDatabase(databasePath(home), copy);
+      const tables = readTables(copy);
+      const bytes = new Map<string, Uint8Array>();
+      for (const row of tables.find((t) => t.name === "files")?.rows ?? []) {
+        const id = String(row[0]);
+        bytes.set(
+          id,
+          await readFile(join(filesPath(home), id)).catch((error: unknown) => {
+            throw new OriginalMissing(`The document file ${id} is missing.`, {
+              cause: error,
+            });
+          }),
+        );
+      }
+      return { tables, bytes };
+    };
+    const { tables, bytes: originalBytes } = await (gate
+      ? gate.shared(read)
+      : read());
     const createdAt = now.toISOString();
     const files: Record<string, Uint8Array | [Uint8Array, { level: 0 }]> = {
       [`${folder}/README.md`]: strToU8(README(folder, createdAt, tables)),
@@ -237,13 +260,7 @@ export async function exportZip(
     const originals = tables.find((t) => t.name === "files");
     for (const row of originals?.rows ?? []) {
       const id = String(row[0]);
-      const bytes = await readFile(join(filesPath(home), id)).catch(
-        (error: unknown) => {
-          throw new OriginalMissing(`The document file ${id} is missing.`, {
-            cause: error,
-          });
-        },
-      );
+      const bytes = originalBytes.get(id) ?? new Uint8Array();
       if (hashOf(bytes) !== id) {
         throw new OriginalMissing(`The document file ${id} has changed.`);
       }

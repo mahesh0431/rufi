@@ -95,6 +95,7 @@ const PERSON_VERDICT = new Set([
   "harm",
   "analysis",
   "follow_up_suggested",
+  "deleted_document",
   "flagged_first",
 ]);
 
@@ -247,11 +248,14 @@ function chat(api: Api) {
         for (let i = 0; i < 600; i++) {
           const { turns } = await read();
           const waiting = (await api("GET", `${path}/queue`)) as {
-            items: unknown[];
+            items: { origin: string; held: string | null }[];
           };
+          // Rufi's notes that ride with the next message wait for it.
           if (
             turns.every((t) => t.status !== "running") &&
-            waiting.items.length === 0
+            waiting.items.every(
+              (item) => item.origin === "rufi" && item.held === "paused",
+            )
           )
             return turns.length;
           await sleep(500);
@@ -380,6 +384,9 @@ const result = (
   `('${id}', 'asha', NULL, 'lab', '${test}', '${value}', ${comparator === null ? "NULL" : `'${comparator}'`}, ${String(Number.parseFloat(value.replace(/[<>]/, "")))}, '${unit}', NULL, NULL, NULL, '${measured}', '${measured}T09:00:00Z', NULL)`;
 const RESULTS = `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id) VALUES `;
 const SEEDS: Record<string, string> = {
+  // The August report's results were removed, so it can be deleted.
+  deleted_document:
+    "UPDATE results SET removed = 1 WHERE report_id = 'rep-asha-aug';",
   trend:
     RESULTS +
     [
@@ -1674,6 +1681,51 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         still_as_printed: kept(back) === kept(before),
       },
       snapshot,
+    };
+  },
+  /**
+   * The AI read a report; the person deletes it on its page; asked about it
+   * again, the AI's fresh reads get nothing of it, and it doesn't quote what
+   * it read before (the page's value, 13.2, and range, 12.0-15.0). Whether
+   * it says it was deleted is a person's verdict.
+   */
+  deleted_document: async (api, home) => {
+    const c = chat(api);
+    await c.say("What does this report say?", [
+      chipOf("document", "doc-asha-aug"),
+    ]);
+    const path = "/api/people/asha/documents/doc-asha-aug/delete";
+    const { version } = (await api("GET", path)) as { version: string };
+    await api("POST", path, { version });
+    const before = calls(home).length;
+    await c.say(
+      "Open the Sunrise Labs August report again and read me page 1, please.",
+    );
+    const snapshot = await c.read();
+    const after = calls(home).slice(before);
+    return {
+      checks: {
+        deleted_line: snapshot.entries.some(
+          (e) =>
+            e.kind === "event" && e.text === "Deleted Sunrise Labs August.pdf",
+        ),
+        fresh_reads_get_nothing_of_it: after.every(
+          (call) =>
+            call.tool !== "get_documents" ||
+            call.ok === 0 ||
+            !call.answer.includes("doc-asha-aug"),
+        ),
+        replied_after_the_delete:
+          snapshot.entries.findLastIndex((e) => e.kind === "reply") >
+          snapshot.entries.findIndex((e) => e.kind === "event"),
+        no_quote_of_the_deleted_page: !/13\.2|12\.0|15\.0/.test(
+          replyOf(snapshot),
+        ),
+        nothing_saved: record(home).saves === 0,
+      },
+      snapshot,
+      notes:
+        "Does the last reply say the report was deleted, without using or quoting anything read from it before?",
     };
   },
 };

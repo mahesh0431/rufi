@@ -61,7 +61,7 @@ async function readOverview(store: Store, personId: string) {
     .where("id", "=", personId)
     .executeTakeFirst();
   if (!person) return undefined;
-  const count = async (table: "documents" | "reports" | "results") =>
+  const count = async (table: "reports" | "results") =>
     (
       await query
         .selectFrom(table)
@@ -111,7 +111,15 @@ async function readOverview(store: Store, personId: string) {
 
   return {
     person: person.display_name,
-    documents: await count("documents"),
+    // A deleted document stays as a tombstone (docs/adr/0015): not counted.
+    documents: (
+      await query
+        .selectFrom("documents")
+        .select((eb) => eb.fn.countAll<number>().as("n"))
+        .where("person_id", "=", person.id)
+        .where("deleted_at", "is", null)
+        .executeTakeFirstOrThrow()
+    ).n,
     reports: await count("reports"),
     results: currentCount,
     earlier_versions_kept: replaced,

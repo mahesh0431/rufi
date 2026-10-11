@@ -539,7 +539,11 @@ export function RowDetail({
               }
               className="py-0.5"
             >
-              {source.type === "document" ? (
+              {source.type === "document" && source.deleted ? (
+                <span className="text-muted">
+                  Document deleted ({source.file}, page {source.page})
+                </span>
+              ) : source.type === "document" ? (
                 <>
                   {source.file} · page {source.page}{" "}
                   <Link

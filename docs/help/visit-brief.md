@@ -33,7 +33,7 @@ The page shows when the brief was made, the brief as the AI wrote it, and **Sour
 | Medicine use | Magnesium 200 mg · current | Your message, 7 Oct 2026: "I started magnesium…"                     |
 | Result       | HbA1c 6.8 % · 12 Aug 2026  | Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf |
 
-Rufi builds this list itself, from the records the AI cited. A record that Rufi had before it kept sources says **Saved before Rufi kept sources**.
+Rufi builds this list itself, from the records the AI cited. A record that Rufi had before it kept sources says **Saved before Rufi kept sources**. A page of a document you deleted says **Document deleted (Sunrise Labs August.pdf, page 2)**: the brief itself doesn't change.
 
 ## Copy a brief
 

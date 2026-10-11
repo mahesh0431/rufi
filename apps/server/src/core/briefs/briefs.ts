@@ -350,12 +350,17 @@ async function sourceOf(
         .onRef("p.document_id", "=", "s.document_id")
         .onRef("p.position", "=", "s.page"),
     )
+    .leftJoin("documents as d", (join) =>
+      join
+        .onRef("d.person_id", "=", "s.person_id")
+        .onRef("d.id", "=", "s.document_id"),
+    )
     .leftJoin("transcript_entries as e", (join) =>
       join
         .onRef("e.person_id", "=", "s.person_id")
         .onRef("e.id", "=", "s.entry_id"),
     )
-    .select(["s.page", "p.file_name", "e.text", "e.created_at"])
+    .select(["s.page", "p.file_name", "d.deleted_at", "e.text", "e.created_at"])
     .where("s.person_id", "=", personId)
     .where("s.kind", "=", kind.name)
     .where("s.record_id", "=", String(row["id"]))
@@ -386,7 +391,8 @@ async function sourceOf(
           : source.text;
       return `Your message, ${shownDate(localTime(source.created_at).slice(0, 10))}: “${said}”`;
     }
-    return `${source.file_name ?? "A document"}, page ${String(source.page)}`;
+    const page = `${source.file_name ?? "A document"}, page ${String(source.page)}`;
+    return source.deleted_at === null ? page : `Document deleted (${page})`;
   });
   if (report && sources.some((source) => source.file_name !== null)) {
     words.unshift(

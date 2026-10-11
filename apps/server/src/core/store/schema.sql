@@ -23,7 +23,8 @@ CREATE TABLE people (
 
 -- Original bytes, exactly as they came, shared across people. The bytes are
 -- in files/<id> in the data folder, written and synced before any row points
--- to them; a row is only added with a document page that uses it.
+-- to them; a row is only added with a document page that uses it, and goes
+-- (with its bytes) once no live page of anyone uses it.
 CREATE TABLE files (
   id TEXT PRIMARY KEY,   -- sha256 of the bytes, hex
   size INTEGER NOT NULL,
@@ -32,7 +33,10 @@ CREATE TABLE files (
 ) STRICT;
 
 -- What the user added for a person: one PDF, or one or more photos added
--- together. Its pages point to the files.
+-- together. Its pages point to the files. A deleted document stays as a
+-- tombstone (docs/adr/0015): its row and its pages' names and positions, for
+-- the history and sources that point at them; its files, reader's work,
+-- readings and draft items are gone.
 CREATE TABLE documents (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL REFERENCES people (id),
@@ -42,16 +46,17 @@ CREATE TABLE documents (
   date TEXT,             -- the document's date as read (precision date), when every page agrees; null until read
   reader_note TEXT,      -- the reader's one note for the whole document, rewritten by the reader
   version INTEGER NOT NULL DEFAULT 0, -- rises whenever its draft items change (a reading, a retry)
+  deleted_at TEXT,       -- when the person deleted it: a tombstone, out of every list and action
   UNIQUE (person_id, id)
 ) STRICT;
 
 -- A document's pages in order: a page of a PDF, or a whole photo (page 1).
--- The same content belongs to at most one document per person.
+-- The same content belongs to at most one live document per person.
 CREATE TABLE document_pages (
   person_id TEXT NOT NULL,
   document_id TEXT NOT NULL,
   position INTEGER NOT NULL,   -- 1, 2, 3... in the document
-  file_id TEXT NOT NULL REFERENCES files (id),
+  file_id TEXT REFERENCES files (id), -- null once its document is deleted
   page_in_file INTEGER NOT NULL, -- 1, 2, 3... in the file
   file_name TEXT NOT NULL,     -- the file's name as it was added
   -- The reader's notebook: this page's entry (JSON, as save_page checked it)
@@ -550,4 +555,4 @@ CREATE INDEX sources_by_record ON record_sources (person_id, record_id);
 CREATE INDEX drafts_by_document ON draft_items (person_id, document_id, page, seq);
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 4;
+PRAGMA user_version = 5;

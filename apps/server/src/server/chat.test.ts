@@ -20,6 +20,8 @@ import {
   type Transcripts,
 } from "../core/chat/transcript.ts";
 import { documents } from "../core/documents/documents.ts";
+import { deletions } from "../core/documents/delete.ts";
+import { fileGate } from "../core/documents/gate.ts";
 import { pages } from "../core/documents/pages.ts";
 import {
   databasePath,
@@ -1050,6 +1052,88 @@ describe("the chat, on the scripted Codex", () => {
     expect(last.at(-2)).toContain("Note: Lab report read");
     expect(await waiting()).toEqual([]);
   });
+
+  it.each([false, true])(
+    "a deleted document's notice reaches the existing thread with the next person's message, once (restart: %s)",
+    async (restart) => {
+      await startChat("fake");
+      const c = await newChat();
+      const { added } = await documents(store, home).add(
+        "asha",
+        [
+          {
+            name: "Sunrise Labs August.pdf",
+            bytes: new Uint8Array(
+              await readFile(
+                join(
+                  import.meta.dirname,
+                  "../../tests/fixtures/documents/sunrise-labs-august.pdf",
+                ),
+              ),
+            ),
+          },
+        ],
+        true,
+      );
+      const documentId = added[0] ?? "";
+      await say(c, "quiet Explain my report");
+      await ended(c.id);
+      const threadId = (await chatRow()).threadId as string;
+      const remover = deletions({
+        store,
+        home,
+        gate: fileGate(),
+        event: (personId, event, write) => {
+          if (!chat) throw new Error("No chat.");
+          return chat.event(personId, event, write);
+        },
+        stopReading: () => undefined,
+        changed: () => undefined,
+        log: () => undefined,
+      });
+      await remover.remove(
+        "asha",
+        documentId,
+        (await remover.preview("asha", documentId))?.version ?? "",
+      );
+      if (restart) {
+        await chat?.close();
+        chat = undefined;
+        store.close();
+        store = openWritable(databasePath(home));
+        transcripts = openTranscripts(store);
+        queue = chatQueue(store);
+        await queue.endStopped();
+        await startChat("fake", {
+          scenario: { threads: { [threadId]: {} } },
+        });
+      }
+      await sleep(300);
+      expect((await transcript(c.id)).turns).toHaveLength(1);
+      expect(await waiting()).toEqual([
+        ["Deleted Sunrise Labs August.pdf", "waiting", "paused"],
+      ]);
+      await say(await chatRow(), "quiet Continue the comparison");
+      await ended(c.id, 2);
+      expect((await inputs()).at(-1)).toEqual([
+        expect.stringContaining(
+          `The user deleted document ${documentId} (Sunrise Labs August.pdf).`,
+        ),
+        "quiet Continue the comparison",
+      ]);
+      expect((await inputs()).at(-1)?.[0]).toContain(
+        "Don't use or quote anything you read from it before",
+      );
+      expect((await inputs()).at(-1)?.[0]).toContain(
+        "It is not the user's words, a request or their consent.",
+      );
+      expect((await chatRow()).threadId).toBe(threadId);
+      expect(await waiting()).toEqual([]);
+      await say(await chatRow(), "quiet And what else?");
+      await ended(c.id, 3);
+      expect((await inputs()).at(-1)).toEqual(["quiet And what else?"]);
+    },
+  );
 
   it("holds messages while signed out; signing in sends nothing; Send now does", async () => {
     await startChat("fake");

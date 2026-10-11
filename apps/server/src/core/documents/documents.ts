@@ -13,8 +13,9 @@ import type {
 } from "@rufi/contracts/documents";
 import { v7 as uuid } from "uuid";
 import type { Store } from "../store/database.ts";
+import { fileGate, type FileGate } from "./gate.ts";
 import { inspect, type Inspected } from "./inspect.ts";
-import { displayCopy } from "./pages.ts";
+import { displayCopy, publisher } from "./pages.ts";
 import type { Readings } from "./reading.ts";
 import {
   displayPath,
@@ -57,10 +58,16 @@ export function documents(
   now: () => string = () => new Date().toISOString(),
   /** Reads what is added. */
   reads?: Readings,
+  /** Shared with backups, the export, drawn pages and deletes. */
+  gate: FileGate = fileGate(),
 ) {
   const db = store.query;
+  const publish = publisher(store, gate);
 
-  /** The person's document that already holds the file `id`, if any. */
+  /**
+   * The person's document that already holds the file `id`, if any. A
+   * deleted document's pages hold no file.
+   */
   const holding = async (personId: string, id: string) =>
     (
       await db
@@ -112,11 +119,6 @@ export function documents(
           display: found.display,
         });
       }
-      // Every original is on disk before any row points to it.
-      for (const file of looked) {
-        await keepOriginal(home, file.id, file.bytes);
-        if (file.display) await keepDisplay(home, file.id, file.display);
-      }
 
       // In the order the files came: each PDF its own document; the photos
       // one document where the first of them was, or each its own.
@@ -129,49 +131,58 @@ export function documents(
       }
       const at = now();
       const added = groups.map(() => uuid());
-      await db.transaction().execute(async (trx) => {
+      // Inside the gate from the first byte to the commit: a delete of the
+      // same bytes meanwhile never removes them under this add.
+      await gate.shared(async () => {
+        // Every original is on disk before any row points to it.
         for (const file of looked) {
-          await trx
-            .insertInto("files")
-            .values({
-              id: file.id,
-              size: file.bytes.byteLength,
-              media_type: file.mediaType,
-              created_at: at,
-            })
-            .onConflict((oc) => oc.column("id").doNothing())
-            .execute();
+          await keepOriginal(home, file.id, file.bytes);
+          if (file.display) await keepDisplay(home, file.id, file.display);
         }
-        for (const [index, group] of groups.entries()) {
-          const documentId = added[index] ?? "";
-          await trx
-            .insertInto("documents")
-            .values({
-              id: documentId,
-              person_id: personId,
-              added_at: at,
-              added_from: from,
-              version: 0,
-            })
-            .execute();
-          let position = 0;
-          for (const file of group) {
-            for (let page = 1; page <= file.pages; page++) {
-              await trx
-                .insertInto("document_pages")
-                .values({
-                  person_id: personId,
-                  document_id: documentId,
-                  position: ++position,
-                  file_id: file.id,
-                  page_in_file: page,
-                  file_name: file.name,
-                })
-                .execute();
-            }
+        await db.transaction().execute(async (trx) => {
+          for (const file of looked) {
+            await trx
+              .insertInto("files")
+              .values({
+                id: file.id,
+                size: file.bytes.byteLength,
+                media_type: file.mediaType,
+                created_at: at,
+              })
+              .onConflict((oc) => oc.column("id").doNothing())
+              .execute();
           }
-          await reads?.queueNew(trx, personId, documentId);
-        }
+          for (const [index, group] of groups.entries()) {
+            const documentId = added[index] ?? "";
+            await trx
+              .insertInto("documents")
+              .values({
+                id: documentId,
+                person_id: personId,
+                added_at: at,
+                added_from: from,
+                version: 0,
+              })
+              .execute();
+            let position = 0;
+            for (const file of group) {
+              for (let page = 1; page <= file.pages; page++) {
+                await trx
+                  .insertInto("document_pages")
+                  .values({
+                    person_id: personId,
+                    document_id: documentId,
+                    position: ++position,
+                    file_id: file.id,
+                    page_in_file: page,
+                    file_name: file.name,
+                  })
+                  .execute();
+              }
+            }
+            await reads?.queueNew(trx, personId, documentId);
+          }
+        });
       });
       if (added.length > 0) reads?.changed(personId);
       for (const { name, id } of repeats) {
@@ -201,6 +212,7 @@ export function documents(
           "f.media_type",
         ])
         .where("d.person_id", "=", personId)
+        .where("d.deleted_at", "is", null)
         .orderBy("d.added_at", "desc")
         .orderBy("d.id", "desc")
         .orderBy("p.position")
@@ -209,6 +221,7 @@ export function documents(
       type File = { -readonly [K in keyof DocumentFile]: DocumentFile[K] };
       const list: (Omit<DocumentSummary, "files"> & { files: File[] })[] = [];
       for (const row of rows) {
+        if (row.file_id === null) continue;
         let document = list.at(-1);
         if (document?.id !== row.id) {
           const reading = statuses?.get(row.id);
@@ -278,7 +291,7 @@ export function documents(
         };
       }
       // Made again when it's missing.
-      await displayCopy(home, fileId);
+      await displayCopy(home, fileId, publish);
       return { path: displayPath(home, fileId), mediaType: "image/jpeg" };
     },
   };

@@ -23,6 +23,7 @@ import { ApiError, fetchFile, read } from "./api.ts";
 import { AskRufi, ASKS } from "./ask.tsx";
 import { boxFor } from "./boxes.ts";
 import { printedDate, printedDay } from "./dates.ts";
+import { DeleteDocument } from "./delete-document.tsx";
 import { describe, KIND_NAMES, Viewer } from "./documents.tsx";
 import type { BoxChip } from "./draft.ts";
 import { messageOf, retain } from "./live.ts";
@@ -81,6 +82,11 @@ export function DocumentPage({
       ),
   });
   const document = documents.data?.find((d) => d.id === documentId);
+  // The list says it isn't there: its items' refusal is no problem to try
+  // again.
+  if (documents.data !== undefined && !document) {
+    return <Gone personId={person.id} documentId={documentId} />;
+  }
   if (documents.error ?? items.error) {
     return (
       <div className="px-6 py-8">
@@ -94,13 +100,36 @@ export function DocumentPage({
       </div>
     );
   }
-  if (documents.data === undefined || items.data === undefined) return null;
-  if (!document) {
-    return (
-      <div className="px-6 py-8 text-muted">There is no such document.</div>
-    );
-  }
+  if (!document || items.data === undefined) return null;
   return <Checking person={person} document={document} items={items.data} />;
+}
+
+/** A document not in the list: deleted, or never added. */
+function Gone({
+  personId,
+  documentId,
+}: {
+  personId: string;
+  documentId: string;
+}) {
+  // Asked again here: a page open when the delete came has its items.
+  const asked = useQuery({
+    queryKey: ["gone", personId, documentId],
+    queryFn: () =>
+      read(DocumentItems, "GET", `${documentPath(personId, documentId)}/items`),
+    gcTime: 0,
+  });
+  if (asked.isPending) return null;
+  const deleted =
+    asked.error instanceof ApiError &&
+    (asked.error.body as { deleted?: unknown } | undefined)?.deleted === true;
+  return (
+    <div className="px-6 py-8 text-muted">
+      {deleted
+        ? "This document was deleted."
+        : "There is no such document. It may have been deleted."}
+    </div>
+  );
 }
 
 function Checking({
@@ -174,6 +203,11 @@ function Checking({
             The reader's work
           </Button>
         )}
+        <DeleteDocument
+          personId={person.id}
+          documentId={document.id}
+          name={name}
+        />
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 px-5 pb-3.5 md:flex-row">

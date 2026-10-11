@@ -19,7 +19,9 @@ import {
   transcripts as openTranscripts,
   type Transcripts,
 } from "../core/chat/transcript.ts";
+import { deletions } from "../core/documents/delete.ts";
 import { documents, type Documents } from "../core/documents/documents.ts";
+import { fileGate } from "../core/documents/gate.ts";
 import { notebook } from "../core/documents/notebook.ts";
 import { pages } from "../core/documents/pages.ts";
 import { readings, type Readings } from "../core/documents/reading.ts";
@@ -74,7 +76,11 @@ async function addReport(): Promise<string> {
 /** A reader running `scripts`, as the core starts it. */
 function startReader(
   scripts: Script[],
-  options: { deadlineMs?: number; signInPollMs?: number } = {},
+  options: {
+    deadlineMs?: number;
+    signInPollMs?: number;
+    log?: (event: string) => void;
+  } = {},
 ) {
   const fake = scriptedReader(scripts);
   const running = reader({
@@ -89,7 +95,7 @@ function startReader(
     run: fake.run,
     signedIn: () => Promise.resolve(signedIn),
     choice: () => readerChoice(transcripts.setting),
-    log: () => undefined,
+    log: options.log ?? (() => undefined),
     signInPollMs: options.signInPollMs ?? 20,
     now: () => clock,
     ...(options.deadlineMs !== undefined && {
@@ -785,4 +791,69 @@ describe("the chat AI and a reading", () => {
     });
     await running.close();
   });
+});
+
+describe("a document deleted while it is read", () => {
+  it.each([
+    { when: "its run is stopped", stop: true },
+    { when: "the stop comes after its run ended", stop: false },
+  ])(
+    "writes nothing more when $when, and a restart doesn't read it",
+    async ({ stop }) => {
+      const logged: string[] = [];
+      let stopped: boolean | undefined;
+      let late: unknown;
+      let id = "";
+      const running: { stopDocument?: (id: string) => void } = {};
+      const remover = deletions({
+        store,
+        home,
+        gate: fileGate(),
+        event: async (person, event, write) => {
+          const chat = await transcripts.chat(person);
+          if (!chat) throw new Error("No chat.");
+          await transcripts.addEvent(chat, event, write);
+        },
+        stopReading: (document) => {
+          if (stop) running.stopDocument?.(document);
+        },
+        changed: reads.changed,
+        log: () => undefined,
+        now: () => NOW,
+      });
+      const { reader: started } = startReader(
+        [
+          async (turn) => {
+            await turn.look(1);
+            await turn.save(1, readPage());
+            const preview = await remover.preview(personId, id);
+            await remover.remove(personId, id, preview?.version ?? "");
+            stopped = turn.signal?.aborted;
+            late = (await turn.save(1, readPage("14.0"))).ok;
+            return undefined;
+          },
+        ],
+        { log: (event) => logged.push(event) },
+      );
+      running.stopDocument = started.stopDocument;
+      id = await addReport();
+      await until(() => late !== undefined);
+      await started.close();
+
+      expect(stopped).toBe(stop);
+      expect(late).toBe(false);
+      expect(lines()).toEqual([
+        "Reading sunrise-august.pdf · 2 pages",
+        "Deleted sunrise-august.pdf",
+      ]);
+      expect(asks()).toEqual([
+        `The user deleted document ${id} (sunrise-august.pdf). Don't use or quote anything you read from it before; say it was deleted.`,
+      ]);
+      expect(drafts()).toEqual([]);
+      expect(rows("SELECT id FROM jobs")).toEqual([]);
+      expect(logged).not.toContain("reader.failed");
+      expect(await reads.recover()).toBe(0);
+      expect((await reads.next()).job).toBeUndefined();
+    },
+  );
 });

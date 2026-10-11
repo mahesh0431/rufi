@@ -35,6 +35,7 @@ import { Stopped } from "../agent/runtime.ts";
 import type { Drafts } from "../core/chat/drafts.ts";
 import { RefRefusal } from "../core/chat/refs.ts";
 import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
+import { StalePreview, type Deletions } from "../core/documents/delete.ts";
 import { NotADocument, type Documents } from "../core/documents/documents.ts";
 import type { Readings } from "../core/documents/reading.ts";
 import { StaleFix, type DraftItems } from "../core/documents/items.ts";
@@ -45,7 +46,7 @@ import {
   type RecordViews,
 } from "../core/record/views.ts";
 import { Refusal } from "../core/tools/registry.ts";
-import { FixItem } from "@rufi/contracts/documents";
+import { DeleteDocument, FixItem } from "@rufi/contracts/documents";
 import { OriginalMissing } from "../core/documents/originals.ts";
 import type { BackupJob } from "../core/store/backup.ts";
 import type { Change, Transcripts } from "../core/chat/transcript.ts";
@@ -81,6 +82,8 @@ export interface ApiDeps {
   exportZip: () => Promise<{ name: string; bytes: Uint8Array }>;
   /** Each person's documents. */
   documents: Documents;
+  /** Deleting one: its preview, and the delete. */
+  deletions: Deletions;
   /** Their readings: what waits and runs, and each one's work. */
   readings: Readings;
   /** A document's draft items, and the person's fixes. */
@@ -586,6 +589,32 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     );
     return c.json({ pages });
   });
+  // Delete: what it would do, then the delete made on that preview. A
+  // preview that changed meanwhile refuses it with the preview as it is now.
+  app.get(`${documentsPath}/:documentId/delete`, async (c) => {
+    const preview = await deps.deletions.preview(
+      (await person(c)).id,
+      c.req.param("documentId"),
+    );
+    if (!preview) throw new HttpError(404, "There is no such document.");
+    return c.json(preview);
+  });
+  app.post(`${documentsPath}/:documentId/delete`, async (c) => {
+    const found = await person(c);
+    const { version } = await body(c, DeleteDocument);
+    const started = Date.now();
+    try {
+      await deps.deletions.remove(found.id, c.req.param("documentId"), version);
+    } catch (error) {
+      if (error instanceof StalePreview) {
+        throw new HttpError(409, error.message, { preview: error.preview });
+      }
+      if (error instanceof Refusal) throw new HttpError(404, error.message);
+      throw error;
+    }
+    deps.log("documents.deleted", { ms: Date.now() - started });
+    return c.json({ deleted: true });
+  });
   // What waits and runs, for the strip; one reading's work, for Open.
   app.get("/api/people/:personId/readings", async (c) =>
     c.json({ readings: await deps.readings.strip((await person(c)).id) }),
@@ -600,12 +629,15 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   });
   // The document page: its items, a fix, and a page as the reader saw it.
   app.get(`${documentsPath}/:documentId/items`, async (c) => {
-    const found = await deps.items.view(
-      (await person(c)).id,
-      c.req.param("documentId"),
-    );
-    if (!found) throw new HttpError(404, "Not found.");
-    return c.json(found);
+    const personId = (await person(c)).id;
+    const documentId = c.req.param("documentId");
+    const found = await deps.items.view(personId, documentId);
+    if (found) return c.json(found);
+    // The page says so: a deleted document's address isn't a mistake.
+    if (await deps.deletions.deleted(personId, documentId)) {
+      throw new HttpError(404, "This document was deleted.", { deleted: true });
+    }
+    throw new HttpError(404, "Not found.");
   });
   app.post(`${documentsPath}/:documentId/items/:itemId/fix`, async (c) => {
     const found = await person(c);

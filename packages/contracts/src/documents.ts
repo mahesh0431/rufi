@@ -273,3 +273,39 @@ export const FixItem = Schema.Struct({
   }),
 });
 export type FixItem = typeof FixItem.Type;
+
+/**
+ * What deleting a document would do (docs/help/documents.md), for its
+ * preview. A document with saved results that aren't removed can't be
+ * deleted until they are removed, or the document taken off them, in the
+ * chat. `version` names this preview: a delete made on another refuses.
+ */
+export const DeletePreview = Schema.Struct({
+  name: Schema.String,
+  /** Its files in page order, each with its pages. */
+  files: Schema.Array(
+    Schema.Struct({ name: Schema.String, pages: Schema.Int }),
+  ),
+  /** Readings that wait or run: the delete stops them. */
+  readings: Schema.Int,
+  /** Draft items not saved yet. */
+  unsaved: Schema.Int,
+  /** Saved records that come from it and aren't removed: they block. */
+  blocking: Schema.Array(
+    Schema.Struct({
+      kind: Schema.String,
+      id: Schema.String,
+      /** "HbA1c 6.8 %". */
+      label: Schema.String,
+      /** Its date as shown, when it has one. */
+      date: Schema.NullOr(Schema.String),
+      /** An amended result replaced it; it comes back if that one is removed. */
+      replaced: Schema.Boolean,
+    }),
+  ),
+  version: Schema.String,
+});
+export type DeletePreview = typeof DeletePreview.Type;
+
+/** A delete, made on the preview `version`. */
+export const DeleteDocument = Schema.Struct({ version: Schema.String });
