@@ -1672,7 +1672,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     const { version } = (await api("GET", path)) as { version: string };
     await api("POST", path, { version });
     const before = calls(home).length;
-    await c.ask(
+    await c.say(
       "Open the Sunrise Labs August report again and read me page 1, please.",
     );
     const snapshot = await c.read();
@@ -1689,6 +1689,9 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
             call.ok === 0 ||
             !call.answer.includes("doc-asha-aug"),
         ),
+        replied_after_the_delete:
+          snapshot.entries.findLastIndex((e) => e.kind === "reply") >
+          snapshot.entries.findIndex((e) => e.kind === "event"),
         nothing_saved: record(home).saves === 0,
       },
       snapshot,
