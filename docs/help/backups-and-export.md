@@ -54,7 +54,7 @@ A restore brings back your record as it was when the backup was made, signed out
 1. Find the backup you want: open the `backups` folder in your data folder (**Settings** › **Data folder** › **Show in Finder**). For example, in the terminal, for the data folder that Rufi made:
 
    ```
-   ls ~/Library/"Application Support"/Rufi/data/backups
+   ls ~/.rufi/data/backups
    ```
 
    The backups made just before an upgrade are in `backups/before-upgrade`.
@@ -62,7 +62,7 @@ A restore brings back your record as it was when the backup was made, signed out
 2. In the Rufi folder, run `pnpm rufi restore` with the backup's folder and a new folder for the copy. The new folder must not exist yet, or be empty. For example:
 
    ```
-   pnpm rufi restore ~/Library/"Application Support"/Rufi/data/backups/2026-10-08-091403 ~/Rufi-restored
+   pnpm rufi restore ~/.rufi/data/backups/2026-10-08-091403 ~/Rufi-restored
    ```
 
    Rufi checks the backup, copies it into the new folder with every document, and checks the copies. A backup from an older Rufi is upgraded in the new folder; the backup itself doesn't change. It doesn't need Rufi to be stopped.

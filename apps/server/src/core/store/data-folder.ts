@@ -36,9 +36,11 @@ export interface Place {
   userHome: string;
 }
 
-/** Rufi's own folder in the Mac's place for app data: the location file and the default data folder. */
-export const locationRoot = (userHome: string) =>
-  join(userHome, "Library", "Application Support", "Rufi");
+/**
+ * Rufi's home, `~/.rufi`: the location file, the default data folder, and
+ * later what belongs to Rufi rather than to one data folder.
+ */
+export const locationRoot = (userHome: string) => join(userHome, ".rufi");
 const defaultFolder = (root: string) => join(root, "data");
 const locationFile = (root: string) => join(root, "location.json");
 
@@ -76,8 +78,36 @@ export async function findDataFolder(place: Place): Promise<DataFolder> {
     return { path: override, source: "RUFI_HOME" };
   }
   const root = locationRoot(place.userHome);
-  return withLocationLock(root, LOCATION_WAIT_MS, () => managedFolder(root));
+  return withHome(root, LOCATION_WAIT_MS, () => managedFolder(root));
 }
+
+/**
+ * Runs `task` holding location.lock in Rufi's home, once the home is known to
+ * be this Rufi's: it has the location file, or holds nothing but what this
+ * Rufi makes there. An older Rufi app's `~/.rufi` is never changed: nothing
+ * is made in it, not even the lock. Only names are looked at.
+ */
+export async function withHome<T>(
+  root: string,
+  waitMs: number,
+  task: () => Promise<T>,
+): Promise<T> {
+  if (!(await exists(locationFile(root)))) {
+    const foreign = (await entries(root))?.some((name) => !isOurs(name));
+    if (foreign) {
+      throw new Error(
+        `${root} holds files that aren't this Rufi's home, perhaps from an older Rufi app. Rufi changed nothing there. Move that folder away (for example to ${root}-old), then start Rufi again.`,
+      );
+    }
+  }
+  return withLocationLock(root, waitMs, task);
+}
+
+/** What this Rufi makes in its home before the location file: the default data folder, the lock, the location file's temp file. */
+const isOurs = (name: string) =>
+  name === "data" ||
+  name === "location.lock" ||
+  /^location\.json\.[\w-]+\.tmp$/.test(name);
 
 /**
  * The remembered data folder, or the default one made now. The caller holds

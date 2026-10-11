@@ -1,6 +1,6 @@
 # Getting started
 
-Rufi runs on your Mac and opens in your browser, or as an app in its own window. Your health record stays in your data folder on your Mac. The first time you start Rufi, it makes this folder, `~/Library/Application Support/Rufi/data`: you don't set anything up. To see the folder or move it, see [Your data and the AI](your-data-and-the-ai.md#where-your-data-lives).
+Rufi runs on your Mac and opens in your browser, or as an app in its own window. Your health record stays in your data folder on your Mac. The first time you start Rufi, it makes this folder, `~/.rufi/data`: you don't set anything up. If you used an earlier Rufi app, move its `~/.rufi` folder away (for example to `~/.rufi-old`) before you first start this Rufi: Rufi doesn't start, and changes nothing, while that folder holds the earlier app's files. To see the folder or move it, see [Your data and the AI](your-data-and-the-ai.md#where-your-data-lives).
 
 ## Start Rufi
 

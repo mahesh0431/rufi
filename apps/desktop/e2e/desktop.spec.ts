@@ -159,7 +159,7 @@ test.describe("starting", () => {
     desktop.remembered();
     const first = await desktop.launch();
     await working(await first.electron.firstWindow());
-    const root = join(desktop.userHome, "Library/Application Support/Rufi");
+    const root = join(desktop.userHome, ".rufi");
     expect(
       JSON.parse(await readFile(join(root, "location.json"), "utf8")),
     ).toEqual({ version: 1, dataFolder: desktop.home });

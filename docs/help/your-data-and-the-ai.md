@@ -4,21 +4,22 @@ Rufi keeps your health record on your Mac. This page says where it is, how to mo
 
 ## Where your data lives
 
-Everything for your health record is in one data folder on your Mac. The first time you start Rufi, it makes this folder for you. You don't set anything up:
+Everything for your health record is in one data folder on your Mac. The first time you start Rufi, it makes this folder for you, in Rufi's home folder `~/.rufi`. You don't set anything up:
 
 ```
-~/Library/Application Support/Rufi/data
+~/.rufi/data
 ```
 
-To see where your data folder is, open **Settings** › **Data folder**. **Show in Finder** shows it in Finder.
+To see where your data folder is, open **Settings** › **Data folder**. **Show in Finder** shows it in Finder. Finder hides folders whose name starts with a dot, such as `~/.rufi`: **Show in Finder** opens it anyway, and in Finder ⇧⌘. (Shift-Command-period) shows hidden folders.
 
-Rufi remembers the data folder in a small file next to it, the location file: `~/Library/Application Support/Rufi/location.json`. It holds only the folder's path, never health data or secrets. Each time Rufi starts, it opens the folder that this file names:
+Rufi remembers the data folder in a small file next to it, the location file: `~/.rufi/location.json`. It stays in `~/.rufi` when you move your data. It holds only the folder's path, never health data or secrets. Each time Rufi starts, it opens the folder that this file names:
 
 - If that folder isn't there (for example, it is on a disk that isn't connected, or it was deleted), Rufi says so and doesn't start. It never starts an empty record in place of yours. Connect the disk, or put the folder back, and start Rufi again.
 - If the folder is there but your record isn't in it (for example, an empty folder where the disk used to be), Rufi doesn't start either. Check that it is the right disk.
 - If the location file is damaged, Rufi doesn't start. The file is short: `{"version": 1, "dataFolder": "/path/to/your/data/folder"}`. Put the path of your data folder back in it, or get the file back from your Mac's backup.
-- If the location file is gone and `~/Library/Application Support/Rufi/data` holds your record, Rufi remembers that folder again and starts.
+- If the location file is gone and `~/.rufi/data` holds your record, Rufi remembers that folder again and starts.
 - If the location file is gone and that folder holds other files but no record, Rufi doesn't start and changes nothing.
+- If there is no location file and `~/.rufi` holds other files, for example from an earlier Rufi app, Rufi doesn't start and changes nothing there. Move that folder away (for example to `~/.rufi-old`), then start Rufi again.
 
 > **Note:** If you delete both the location file and your data folder, Rufi can't tell that from a new Mac: it starts a new, empty record. To get your data back, restore a backup (see [Backups and export](backups-and-export.md#restore-a-backup)).
 

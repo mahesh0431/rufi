@@ -60,7 +60,7 @@ export class Desktop {
   /** From now on, launches without RUFI_HOME: on the folder Rufi remembers. */
   remembered(): void {
     this.#remembered = true;
-    this.home = join(this.userHome, "Library/Application Support/Rufi/data");
+    this.home = join(this.userHome, ".rufi/data");
   }
 
   /** Opens the app, as `pnpm desktop` does. */

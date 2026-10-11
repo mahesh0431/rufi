@@ -32,7 +32,6 @@ import {
   sha256,
   syncFile,
   syncFolder,
-  withLocationLock,
   writePrivateJson,
 } from "../../platform/files.ts";
 import { checkOriginal, filesPath } from "../documents/originals.ts";
@@ -48,6 +47,7 @@ import {
   readLocation,
   readMark,
   rememberFolder,
+  withHome,
 } from "./data-folder.ts";
 import { databasePath } from "./database.ts";
 
@@ -92,7 +92,7 @@ const MOUNT_MS = 10_000;
 export async function moveData(place: Place, to: string): Promise<Move> {
   refuseOverride(place);
   const root = locationRoot(place.userHome);
-  return withLocationLock(root, 0, async () => {
+  return withHome(root, 0, async () => {
     const { path: from } = await managedFolder(root);
     await checkTarget(place.userHome, from, to);
     return withBoth(from, to, async (held) => {
@@ -132,7 +132,7 @@ export async function moveData(place: Place, to: string): Promise<Move> {
 export async function finishMove(place: Place): Promise<Move> {
   refuseOverride(place);
   const root = locationRoot(place.userHome);
-  return withLocationLock(root, 0, async () => {
+  return withHome(root, 0, async () => {
     const { from, to, there, cancelled } = await unfinished(root, "finish");
     if (!there) {
       throw new Error(
@@ -167,7 +167,7 @@ export async function finishMove(place: Place): Promise<Move> {
 export async function cancelMove(place: Place): Promise<Move> {
   refuseOverride(place);
   const root = locationRoot(place.userHome);
-  return withLocationLock(root, 0, async () => {
+  return withHome(root, 0, async () => {
     const { from, to, there } = await unfinished(root, "cancel");
     // A new folder on a disk that isn't connected can't be marked; it can't
     // be opened either.

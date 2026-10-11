@@ -22,7 +22,7 @@ it("moves the data folder into a folder named from where the person is", async (
   const code = await new Promise((resolve) => rufi.once("exit", resolve));
 
   expect(code, out).toBe(0);
-  const root = join(userHome, "Library/Application Support/Rufi");
+  const root = join(userHome, ".rufi");
   expect(out).toContain(`Moved your data to ${join(userHome, "Rufi data")}.`);
   expect(out).toContain(`The old folder ${join(root, "data")} is kept`);
   expect(

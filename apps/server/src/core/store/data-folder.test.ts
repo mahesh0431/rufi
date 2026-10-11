@@ -1,6 +1,5 @@
-// Which data folder Rufi opens. Every case runs in a scratch Mac home under
-// the temp folder: the real ~/Library/Application Support/Rufi is never
-// touched.
+// Which data folder Rufi opens. Every case runs in a scratch home folder
+// under the temp folder: the real ~/.rufi is never touched.
 import {
   mkdir,
   mkdtemp,
@@ -24,6 +23,7 @@ import {
 } from "./data-folder.ts";
 import { databasePath, openWritable } from "./database.ts";
 import { markerPath } from "./install.ts";
+import { moveData } from "./move.ts";
 
 let userHome: string;
 let root: string;
@@ -122,6 +122,22 @@ describe("the first start", () => {
 
     await expect(findDataFolder(place())).rejects.toThrow("no Rufi record");
     expect(await readdir(data)).not.toContain("rufi.sqlite");
+  });
+});
+
+describe("an older Rufi app's ~/.rufi", () => {
+  it("stops the first start and changes nothing in it", async () => {
+    const old = join(userHome, ".rufi");
+    await mkdir(join(old, "records"), { recursive: true });
+    await writeFile(join(old, "rufi.db"), "the older app's");
+
+    await expect(findDataFolder(place())).rejects.toThrow(
+      `${old} holds files that aren't this Rufi's home, perhaps from an older Rufi app. Rufi changed nothing there. Move that folder away (for example to ${old}-old)`,
+    );
+    await expect(moveData(place(), join(userHome, "new"))).rejects.toThrow(
+      "aren't this Rufi's home",
+    );
+    expect((await readdir(old)).sort()).toEqual(["records", "rufi.db"]);
   });
 });
 
