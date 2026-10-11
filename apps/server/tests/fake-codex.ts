@@ -13,6 +13,7 @@
 // The test passes a scenario in FAKE_CODEX and reads what happened from the
 // JSON lines written to FAKE_CODEX_LOG.
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   appendFileSync,
   existsSync,
@@ -124,6 +125,8 @@ const send = (message: object) => {
   held += line;
 };
 let nextId = 1000;
+/** This run's tag, in its turn ids. */
+const RUN = randomUUID().slice(0, 8);
 const asked = new Map<number, (result: unknown) => void>();
 const askRufi = (method: string, params: unknown) =>
   new Promise((resolve) => {
@@ -221,10 +224,12 @@ const userItem = (entry: Queued) => ({
 
 /** Starts a turn for `next`; nothing runs. */
 function dispatch(thread: Thread, next: Queued) {
-  // Numbered across every thread and restart, so never used twice.
+  // Numbered across every thread and restart, with this run's tag, so never
+  // used twice, also by a fake on a fresh CODEX_HOME (after a move): Codex's
+  // own ids are UUIDs.
   const turnId = `turn-${String(
     [...threads.values()].reduce((n, t) => n + t.history.length, 0) + 1,
-  )}`;
+  )}-${RUN}`;
   thread.running = { turnId, steers: [], interrupted: false };
   record({ turn: turnId, effort: thread.effort ?? null });
   // Like Codex: the message is in its record once it is recorded, a moment

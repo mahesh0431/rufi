@@ -32,6 +32,7 @@ import { restore } from "../core/store/restore.ts";
 import { forAgent } from "../core/tools/tools.ts";
 import { findDataFolder, Folder } from "../core/store/data-folder.ts";
 import { childEnvironment, Home } from "../platform/config.ts";
+import { mountList } from "../platform/disks.ts";
 import { holdRufiLock } from "../platform/files.ts";
 import { Secrets, secretsLayer } from "../platform/keychain.ts";
 import {
@@ -283,7 +284,9 @@ const moveCommand = (what: string) =>
       return;
     }
     const from = process.env["INIT_CWD"] ?? process.cwd();
-    const moved = yield* run(() => moveData(place, resolve(from, what)));
+    const moved = yield* run(() =>
+      moveData(place, resolve(from, what), mountList),
+    );
     printMoved(moved.from, moved.to);
   });
 

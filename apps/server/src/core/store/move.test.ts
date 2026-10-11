@@ -2,11 +2,14 @@
 // record and retires the old folder; refusals change nothing; a move that
 // stopped at any step is refused at start and ends with --finish or --cancel.
 import {
+  chmod,
   copyFile,
   mkdir,
   mkdtemp,
   readdir,
   readFile,
+  realpath,
+  stat,
   rename,
   rm,
   symlink,
@@ -39,6 +42,11 @@ let root: string;
 let from: string;
 let to: string;
 const place = (env: NodeJS.ProcessEnv = {}) => ({ env, userHome });
+/** The Mac's mounted disks: its own, and a network disk at ~/Health. */
+const disks = async () =>
+  `/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)
+//asha@nas.local/Health on ${await realpath(userHome)}/Health (smbfs, nodev, nosuid, mounted by asha)
+`;
 const secrets = memorySecrets();
 const releases: (() => Promise<void>)[] = [];
 
@@ -100,6 +108,9 @@ beforeEach(async () => {
     await mkdir(join(from, path, ".."), { recursive: true });
     await writeFile(join(from, path), text);
   }
+  // A file only its owner may read: copied, synced and kept read-only.
+  await writeFile(join(from, "workspace/readonly.md"), "fictional, read-only");
+  await chmod(join(from, "workspace/readonly.md"), 0o444);
   await saveInWal(
     from,
     "INSERT INTO people (id, display_name) VALUES ('amir', 'Amir Fictional')",
@@ -137,7 +148,7 @@ const location = async () =>
 
 describe("a move", () => {
   it("keeps the whole record, the sign-in and the backups, and retires the old folder", async () => {
-    await moveData(place(), to);
+    await moveData(place(), to, disks);
 
     expect(await findDataFolder(place())).toEqual({
       path: to,
@@ -157,6 +168,9 @@ describe("a move", () => {
       "fictional notes",
     );
     expect(await readdir(join(to, "logs"))).toEqual(["rufi.log"]);
+    expect((await stat(join(to, "workspace/readonly.md"))).mode & 0o777).toBe(
+      0o444,
+    );
     // Still signed in: the Keychain entry is under the host id, not the folder.
     const now = await status({
       home: to,
@@ -225,19 +239,24 @@ describe("a move", () => {
         ),
       "is in iCloud Drive or a cloud folder",
     ],
+    [
+      "onto a network disk",
+      () => Promise.resolve(void (to = join(userHome, "Health/Rufi"))),
+      "is on a network disk",
+    ],
   ])("is refused %s, and changes nothing", async (_when, arrange, says) => {
     await arrange();
 
-    await expect(moveData(place(), to)).rejects.toThrow(says);
+    await expect(moveData(place(), to, disks)).rejects.toThrow(says);
 
     expect(await location()).toEqual({ version: 1, dataFolder: from });
     expect(await readdir(from)).not.toContain(MOVING_OUT);
   });
 
   it("is refused with RUFI_HOME set, the demo's folder too", async () => {
-    await expect(moveData(place({ RUFI_HOME: from }), to)).rejects.toThrow(
-      "Unset RUFI_HOME",
-    );
+    await expect(
+      moveData(place({ RUFI_HOME: from }), to, disks),
+    ).rejects.toThrow("Unset RUFI_HOME");
     await expect(finishMove(place({ RUFI_HOME: from }))).rejects.toThrow(
       "Unset RUFI_HOME",
     );
@@ -246,7 +265,7 @@ describe("a move", () => {
   it("that fails while copying keeps the old folder in use and the new one closed", async () => {
     await symlink("/etc/hosts", join(from, "workspace", "link"));
 
-    await expect(moveData(place(), to)).rejects.toThrow(
+    await expect(moveData(place(), to, disks)).rejects.toThrow(
       `Rufi didn't move your data, and still uses ${from}. Rufi can't move ${join(from, "workspace/link")}: it's a link`,
     );
 
@@ -263,7 +282,7 @@ describe("a move", () => {
 describe("a move that stopped", () => {
   /** A finished move, taken back to the state a crash at an earlier step leaves. */
   async function stoppedAt(step: "copying" | "switching"): Promise<void> {
-    await moveData(place(), to);
+    await moveData(place(), to, disks);
     await writePrivateJson(join(root, "location.json"), {
       version: 1,
       dataFolder: from,
@@ -329,6 +348,36 @@ describe("a move that stopped", () => {
       await expect(finishMove(place())).rejects.toThrow(
         `There's no move to finish: Rufi uses ${from}`,
       );
+    },
+  );
+
+  it.each(["a move", "--finish"] as const)(
+    "is refused by %s when an original changed and kept its size",
+    async (by) => {
+      const [id = ""] = await readdir(join(from, "files"));
+      /** The same number of bytes, not the ones the original's id names. */
+      const change = async (folder: string) => {
+        const path = join(folder, "files", id);
+        const bytes = await readFile(path);
+        await chmod(path, 0o600);
+        await writeFile(
+          path,
+          bytes.map((byte) => byte ^ 1),
+        );
+      };
+      if (by === "a move") {
+        await change(from);
+        await expect(moveData(place(), to, disks)).rejects.toThrow(
+          `Rufi didn't move your data, and still uses ${from}. The document file ${id} is missing or changed.`,
+        );
+      } else {
+        await stoppedAt("copying");
+        await change(to);
+        await expect(finishMove(place())).rejects.toThrow(
+          `The copy in ${to} isn't complete, so Rufi can't finish the move. The document file ${id} is missing or changed.`,
+        );
+      }
+      expect(await location()).toEqual({ version: 1, dataFolder: from });
     },
   );
 

@@ -11,7 +11,6 @@
 //   moved-to           complete                 source     the new one, with RUFI_HOME only
 //   moved-to           complete                 new        the new one
 //   (none)             moving-in, cancelled     source     the source
-import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import {
   chmod,
@@ -25,8 +24,8 @@ import {
 } from "node:fs/promises";
 import { basename, dirname, join, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { promisify } from "node:util";
 import { rufiHomeOverride } from "../../platform/config.ts";
+import { onNetworkDisk } from "../../platform/disks.ts";
 import {
   holdRufiLock,
   sha256,
@@ -83,18 +82,21 @@ const CLOUD = [
   join("Library", "Mobile Documents"),
   join("Library", "CloudStorage"),
 ];
-/** Disks on a network (smbfs, afpfs, nfs, webdav): SQLite's locks aren't safe there. */
-const NETWORK = /^(smbfs|afpfs|nfs|webdav|cifs|ftp)$/;
-/** How long the list of the Mac's disks may take. */
-const MOUNT_MS = 10_000;
-
-/** Moves the data folder to `to`, an absolute path that doesn't exist or is an empty folder. */
-export async function moveData(place: Place, to: string): Promise<Move> {
+/**
+ * Moves the data folder to `to`, an absolute path that doesn't exist or is an
+ * empty folder. `mounts` gives the Mac's list of mounted disks
+ * (platform/disks.ts).
+ */
+export async function moveData(
+  place: Place,
+  to: string,
+  mounts: () => Promise<string>,
+): Promise<Move> {
   refuseOverride(place);
   const root = locationRoot(place.userHome);
   return withHome(root, 0, async () => {
     const { path: from } = await managedFolder(root);
-    await checkTarget(place.userHome, from, to);
+    await checkTarget(place.userHome, from, to, mounts);
     return withBoth(from, to, async (held) => {
       const there = await readdir(to);
       if (there.some((name) => name !== "rufi.lock")) {
@@ -313,6 +315,7 @@ async function checkTarget(
   userHome: string,
   from: string,
   to: string,
+  mounts: () => Promise<string>,
 ): Promise<void> {
   const there = await lstat(to).catch(() => undefined);
   if (there !== undefined) {
@@ -344,7 +347,7 @@ async function checkTarget(
       `${to} is in iCloud Drive or a cloud folder. Rufi's data folder must be on this Mac or a disk you connect to it; copy backups to the cloud instead (Help: Backups and export).`,
     );
   }
-  if (NETWORK.test(await diskType(target))) {
+  if (onNetworkDisk(target, await mounts())) {
     throw new Error(
       `${to} is on a network disk. Rufi's data folder must be on this Mac or a disk you connect to it; copy backups to a network disk instead (Help: Backups and export).`,
     );
@@ -361,23 +364,6 @@ async function real(path: string): Promise<string> {
     if (parent === path) throw error;
     return join(await real(parent), basename(path));
   }
-}
-
-/** The file system type of the disk `path` is on, from the Mac's list of mounted disks. */
-async function diskType(path: string): Promise<string> {
-  const { stdout } = await promisify(execFile)("/sbin/mount", [], {
-    timeout: MOUNT_MS,
-  });
-  let best = { at: "", type: "" };
-  for (const line of stdout.split("\n")) {
-    const found = /^.+ on (.+) \(([^,)]+)/.exec(line);
-    const at = found?.[1];
-    const type = found?.[2];
-    if (at === undefined || type === undefined) continue;
-    const inside = at === "/" || path === at || path.startsWith(at + sep);
-    if (inside && at.length > best.at.length) best = { at, type };
-  }
-  return best.type;
 }
 
 interface Entry {
@@ -460,15 +446,16 @@ function freshThreads(path: string): void {
 }
 
 /**
- * The copy is complete: its database passes SQLite's checks and names only
- * originals that are there, and every other file a move keeps is in `to`
+ * The copy is complete: its database passes SQLite's checks and every
+ * original it names is there with the bytes its id (SHA-256) names, and every other file a move keeps is in `to`
  * with the same bytes as in `from`.
  */
 async function verify(from: string, to: string): Promise<void> {
   const database = databasePath(to);
   checkDatabase(database);
   for (const { id, size } of filesIn(database)) {
-    await checkOriginal(filesPath(to), id, size, false);
+    // By its hash too: a copy of a changed original is no copy of the record.
+    await checkOriginal(filesPath(to), id, size, true);
   }
   for (const { path } of (await contents(from)).files) {
     const copy = join(to, path);

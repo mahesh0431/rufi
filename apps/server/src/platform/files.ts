@@ -56,9 +56,9 @@ export async function syncFolder(path: string): Promise<void> {
   }
 }
 
-/** Puts a file's bytes on the disk. */
+/** Puts a file's bytes on the disk; a read-only file too. */
 export async function syncFile(path: string): Promise<void> {
-  const file = await open(path, "r+");
+  const file = await open(path, "r");
   try {
     await file.sync();
   } finally {

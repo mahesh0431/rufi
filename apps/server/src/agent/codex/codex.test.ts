@@ -287,18 +287,26 @@ describe("starting Codex", () => {
   });
 });
 
+/** The fake's first turn: its ids carry the run's tag, as Codex's are unique. */
+const TURN_1 = expect.stringMatching(/^turn-1-/) as string;
+/** The id of the turn that started on `thread`. */
+const turnOf = (thread: string) => {
+  const started = seen(thread).find((e) => e.type === "turnStarted");
+  return started?.type === "turnStarted" ? started.turnId : "";
+};
+
 describe("a turn", () => {
   it("streams the reply, shows what the agent did, and ignores stray notifications", async () => {
     const thread = await ask(start(), "Hello");
     expect(await ended(thread)).toEqual({ status: "completed" });
     expect(seen(thread)).toEqual([
-      { type: "turnStarted", turnId: "turn-1" },
-      { type: "message", turnId: "turn-1", id: "m-Hello", text: "Hello" },
-      { type: "text", turnId: "turn-1", itemId: "item-1", delta: "ok:" },
-      { type: "text", turnId: "turn-1", itemId: "item-1", delta: "Hello" },
+      { type: "turnStarted", turnId: TURN_1 },
+      { type: "message", turnId: TURN_1, id: "m-Hello", text: "Hello" },
+      { type: "text", turnId: TURN_1, itemId: "item-1", delta: "ok:" },
+      { type: "text", turnId: TURN_1, itemId: "item-1", delta: "Hello" },
       {
         type: "activity",
-        turnId: "turn-1",
+        turnId: TURN_1,
         itemId: "item-ls",
         activity: "command",
         title: "Ran a command",
@@ -317,7 +325,7 @@ describe("a turn", () => {
       },
       {
         type: "activity",
-        turnId: "turn-1",
+        turnId: TURN_1,
         itemId: "item-tp",
         activity: "other",
         title: "The AI did something Rufi can't display",
@@ -325,7 +333,7 @@ describe("a turn", () => {
         status: "done",
         details: { id: "item-tp", type: "teleport" },
       },
-      { type: "turnEnded", turnId: "turn-1", end: { status: "completed" } },
+      { type: "turnEnded", turnId: TURN_1, end: { status: "completed" } },
     ]);
     expect(diagnostics).toContainEqual({
       event: "codex.notification_ignored",
@@ -345,7 +353,7 @@ describe("a turn", () => {
     expect(seen(thread).filter((e) => e.type === "reasoning")).toEqual([
       {
         type: "reasoning",
-        turnId: "turn-1",
+        turnId: TURN_1,
         itemId: "item-think",
         summary: "**Reading**\n\nThe user said hello.",
         details: {
@@ -407,7 +415,7 @@ describe("a turn", () => {
       },
     ]);
     expect(seen(threadId)).toContainEqual(
-      expect.objectContaining({ type: "message", turnId: "turn-1", id: "m-1" }),
+      expect.objectContaining({ type: "message", turnId: TURN_1, id: "m-1" }),
     );
   });
 
@@ -440,20 +448,20 @@ describe("a turn", () => {
     expect(last.slice(-3)).toEqual([
       {
         type: "text",
-        turnId: "turn-1",
+        turnId: TURN_1,
         itemId: "item-last",
         delta: "Which person do you mean?",
       },
       {
         type: "question",
-        turnId: "turn-1",
+        turnId: TURN_1,
         itemId: "item-last",
         title: "Whose results?",
         options: ["Asha", "Ravi"],
       },
       {
         type: "question",
-        turnId: "turn-1",
+        turnId: TURN_1,
         itemId: "item-last",
         title: "Anything else?",
         options: [],
@@ -480,7 +488,7 @@ describe("a turn", () => {
       text: "The reply took too long, so Rufi stopped it.",
     });
     expect(await sent("turn/interrupt")).toEqual([
-      { threadId: thread, turnId: "turn-1" },
+      { threadId: thread, turnId: TURN_1 },
     ]);
   });
 
@@ -602,7 +610,7 @@ describe("starting a reply", () => {
     await agent.stop(thread, "an-earlier-turn");
     await sleep(100);
     expect(agent.running(thread)).toBe(true);
-    await agent.stop(thread, "turn-1");
+    await agent.stop(thread, turnOf(thread));
     expect(await ended(thread)).toMatchObject({ status: "interrupted" });
   });
 
@@ -613,12 +621,12 @@ describe("starting a reply", () => {
     await expect(
       agent.steer(thread, { id: "s-1", text: "shorter" }),
     ).resolves.toEqual({
-      turnId: "turn-1",
+      turnId: TURN_1,
     });
     await ended(thread);
     expect(seen(thread)).toContainEqual({
       type: "message",
-      turnId: "turn-1",
+      turnId: TURN_1,
       id: "s-1",
       text: "shorter",
     });
@@ -806,7 +814,7 @@ describe("Stop", () => {
     expect(seen(thread).filter((e) => e.type === "activity")).toEqual([
       {
         type: "activity",
-        turnId: "turn-1",
+        turnId: TURN_1,
         itemId: "item-cmd",
         activity: "command",
         title: "Ran a command",

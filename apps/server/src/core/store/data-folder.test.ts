@@ -134,9 +134,11 @@ describe("an older Rufi app's ~/.rufi", () => {
     await expect(findDataFolder(place())).rejects.toThrow(
       `${old} holds files that aren't this Rufi's home, perhaps from an older Rufi app. Rufi changed nothing there. Move that folder away (for example to ${old}-old)`,
     );
-    await expect(moveData(place(), join(userHome, "new"))).rejects.toThrow(
-      "aren't this Rufi's home",
-    );
+    await expect(
+      moveData(place(), join(userHome, "new"), () =>
+        Promise.resolve("/dev/disk3s1s1 on / (apfs, local, journaled)\n"),
+      ),
+    ).rejects.toThrow("aren't this Rufi's home");
     expect((await readdir(old)).sort()).toEqual(["records", "rufi.db"]);
   });
 });
