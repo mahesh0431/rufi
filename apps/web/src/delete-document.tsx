@@ -128,13 +128,22 @@ function Preview({
   });
   const preview = changed ?? found.data;
   const blocked = preview !== undefined && preview.blocking.length > 0;
+  const title = blocked
+    ? `${preview.name} can't be deleted yet`
+    : `Delete ${preview?.name ?? name}?`;
 
   return (
     <>
-      <Dialog.Title className="px-4 pt-3.5 pb-1 text-[14px] font-semibold">
-        {blocked
-          ? `${preview.name} can't be deleted yet`
-          : `Delete ${preview?.name ?? name}?`}
+      {/* One line: a long name is cut, and its tooltip has it whole. */}
+      <Dialog.Title
+        aria-label={title}
+        className="flex min-w-0 px-4 pt-3.5 pb-1 text-[14px] font-semibold whitespace-pre"
+      >
+        {!blocked && "Delete "}
+        <span className="truncate" title={preview?.name ?? name}>
+          {preview?.name ?? name}
+        </span>
+        {blocked ? " can't be deleted yet" : "?"}
       </Dialog.Title>
       {changed && (
         <p
