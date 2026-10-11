@@ -68,7 +68,9 @@ const TOOLS: AgentTools = {
 /*
  * Timing: a busy CI machine can be slow by a second or more. So a deadline the
  * fake meets (requestMs, Stop's) is 1 s or more, and a test that waits a
- * deadline out sets it short (GIVE_UP, a turn's 300 ms). `until` waits far
+ * deadline out sets it short (GIVE_UP, a turn's 300 ms). Starting the fake (a
+ * new Node process) is the slowest step, so its own deadline (startMs) is
+ * long, except where a test waits it out. `until` waits far
  * longer than both, and fails when it gives up. A test waits for what it
  * needs, not a fixed time, except to check that nothing more happens or when
  * nothing shows what it needs.
@@ -98,6 +100,7 @@ function start(
     },
     version: "9.9.9",
     deadlines: {
+      startMs: 10_000,
       requestMs: 1_000,
       turnMs: 3_000,
       interruptAckMs: 1_000,
@@ -262,7 +265,11 @@ describe("starting Codex", () => {
     "gives up when Codex doesn't answer %s, and ends it",
     async (method) => {
       await expect(
-        start({ hang: [method] }).startThread(SETTINGS),
+        start(
+          { hang: [method] },
+          undefined,
+          method === "initialize" ? { startMs: 1_000 } : {},
+        ).startThread(SETTINGS),
       ).rejects.toThrow(`didn't answer ${method} within 1 s`);
       if (method !== "thread/start") {
         expect((await pids()).filter(isRunning)).toEqual([]);
@@ -864,7 +871,7 @@ describe("Stop", () => {
     await until(async () => (await pids()).length > 0);
     const began = Date.now();
     await Effect.runPromise(Fiber.interrupt(opening));
-    // Well before initialize's own deadline (requestMs, 1 s here).
+    // Well before initialize's own deadline (startMs, 10 s here).
     expect(Date.now() - began).toBeLessThan(500);
     await agent.close();
     expect((await pids()).filter(isRunning)).toEqual([]);
