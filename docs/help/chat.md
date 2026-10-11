@@ -78,7 +78,7 @@ Rufi checks each chip: it must be in the health record of the person whose chat 
 - **Your messages**, on the right, with the chips you added to them.
 - **The AI's replies**, which appear as the AI writes them. Replies can have lists and tables. Links in a reply open in your browser, outside Rufi. A reply never shows pictures.
 - **One line for each thing the AI did**, such as reading your Overview or running a command. A tick means it was done. Other signs mean it is running, it failed, or it stopped.
-- **A line for each time the AI thought**, such as "Thought for 8 s". Click it to read the AI's summary of its thinking; click again to close it. See [While the AI replies](#while-the-ai-replies).
+- **A line for each time the AI thought**, such as "Thought for 8s". Click it to read the AI's summary of its thinking; click again to close it. See [While the AI replies](#while-the-ai-replies).
 - **Based on**, a link under an answer once the reply has ended. It opens where the answer comes from. See [Where an answer comes from](#where-an-answer-comes-from).
 - **Receipts**, with a tick, each time the AI saved something to your health record: "Saved", then one line for each change. A save from a document starts with a summary, such as "Saved 42 results from Sunrise Labs August.pdf · 40 new · 1 more source · 1 correction"; when the list is long, click **Show what was saved** to see it. Rufi writes them. See [Changing your health record](#changing-your-health-record).
 - **A visit brief's line**, with a page sign and **Open**, when the AI made a brief for you. Rufi writes it. See [Visit brief](visit-brief.md).
@@ -161,7 +161,7 @@ If you stop the reply while the AI saves, the save can still finish. Then its re
 
 While the AI replies, the box and the chat bar say "Rufi is answering" and how many seconds it has taken so far.
 
-**Thinking.** While the AI thinks, a line in the chat says "Thinking…". When the AI service sends a short summary of the thinking, the line also shows what the AI thinks about now, for example "Thinking… Comparing the reports". When the AI stops thinking, the line becomes "Thought for 8 s", with the time it thought. Click it to read the whole summary. A reply can have more than one of these lines, in the order things happened. When the AI service sent no summary, the line doesn't open. After a reload, and in older replies, the lines are the same.
+**Thinking.** While the AI thinks, a line in the chat says "Thinking…". When the AI service sends a short summary of the thinking, the line also shows what the AI thinks about now, for example "Thinking… Comparing the reports". When the AI stops thinking, the line becomes "Thought for 8s", with the time it thought. Click it to read the whole summary. A reply can have more than one of these lines, in the order things happened. When the AI service sent no summary, the line goes away when the AI stops thinking, because there is nothing to read. After a reload, and in older replies, the lines are the same.
 
 **Stop.** The stop button (the square, where the send button was) ends the reply now, in every size of the chat. What the AI wrote so far stays.
 

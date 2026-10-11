@@ -18,13 +18,11 @@ describe("the AI's thinking", () => {
     );
   });
 
-  it("says how long it thought, from its start to its end", () => {
+  it("says how long it thought, from its start to its end, as the box counts", () => {
     const at = (s: number) =>
       new Date(Date.UTC(2026, 9, 11, 8, 0, s)).toISOString();
     expect(thoughtFor(at(0), at(0))).toBe("Thought briefly");
-    expect(thoughtFor(at(0), at(8))).toBe("Thought for 8 s");
-    expect(thoughtFor(at(0), at(59))).toBe("Thought for 59 s");
-    expect(thoughtFor(at(0), at(60))).toBe("Thought for 1 min");
-    expect(thoughtFor(at(0), at(125))).toBe("Thought for 2 min 5 s");
+    expect(thoughtFor(at(0), at(8))).toBe("Thought for 8s");
+    expect(thoughtFor(at(0), at(125))).toBe("Thought for 125s");
   });
 });

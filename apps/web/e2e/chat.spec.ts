@@ -1002,7 +1002,7 @@ test("while the AI thinks, a line shows its latest heading; after the reply it f
   /** The folded line, closed; a click opens the summary, Markdown as shown. */
   const folded = async (scope: Page | Locator) => {
     const thought = log(scope).locator("details", { hasText: "Thought for" });
-    await expect(thought.locator("summary")).toHaveText(/^Thought for \d+ s$/);
+    await expect(thought.locator("summary")).toHaveText(/^Thought for \d+s$/);
     await expect(thought.locator(".thought")).toBeHidden();
     await thought.locator("summary").click();
     await expect(thought.locator(".thought strong")).toHaveText([
@@ -1026,6 +1026,22 @@ test("while the AI thinks, a line shows its latest heading; after the reply it f
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
   await expect(chat(page)).toHaveCount(0);
   await folded(page);
+});
+
+test("thinking with no summary shows while it runs, and nothing once it ends", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi, {
+    scenario: { reasoning: [], reasoningMs: 1_000 },
+  });
+  await send(page, "Hello");
+  await expect(
+    log(chat(page)).locator("p", { hasText: "Thinking…" }),
+  ).toHaveText("Thinking…");
+  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
+  await expect(log(chat(page))).not.toContainText("Thinking…");
+  await expect(log(chat(page))).not.toContainText("Thought");
 });
 
 test("a save made in another window while this one's connection was down shows on Overview once it connects again", async ({

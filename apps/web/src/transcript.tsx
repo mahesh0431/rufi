@@ -1,6 +1,6 @@
 // The chat's transcript as the core stored it: your messages, one line per
 // thing the AI did, a line for each time it thought ("Thinking…" with its
-// latest heading, then "Thought for 8 s", which opens its summary), the AI's
+// latest heading, then "Thought for 8s", which opens its summary), the AI's
 // replies as Markdown with Based on under each
 // answer once it ended, Rufi's receipt for each save to the record, Rufi's
 // own event lines (never your words), the line of each visit brief, which
@@ -488,8 +488,8 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
 
 /**
  * A time the AI thought: while it thinks, "Thinking…" and its summary's
- * latest heading; then "Thought for 8 s", which opens the whole summary
- * when the AI service gave one.
+ * latest heading; then "Thought for 8s", which opens the whole summary. A
+ * finished one with no summary has nothing to open, so it shows nothing.
  */
 function Thinking({ entry, live }: { entry: Entry; live: boolean }) {
   if (live) {
@@ -505,21 +505,12 @@ function Thinking({ entry, live }: { entry: Entry; live: boolean }) {
       </p>
     );
   }
-  const took = thoughtFor(entry.createdAt, entry.updatedAt);
-  const line = (
-    <>
-      <Brain size={13} className="shrink-0" aria-hidden />
-      <span>{took}</span>
-    </>
-  );
-  return entry.text.trim() === "" ? (
-    <p data-entry={entry.id} className="flex items-center gap-1.5 text-muted">
-      {line}
-    </p>
-  ) : (
+  if (entry.text.trim() === "") return null;
+  return (
     <details data-entry={entry.id} className="group text-muted">
       <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-md hover:text-ink [&::-webkit-details-marker]:hidden">
-        {line}
+        <Brain size={13} className="shrink-0" aria-hidden />
+        <span>{thoughtFor(entry.createdAt, entry.updatedAt)}</span>
         <ChevronRight
           size={12}
           className="shrink-0 transition-transform group-open:rotate-90"

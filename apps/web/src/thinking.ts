@@ -19,11 +19,11 @@ export function latestHeading(summary: string): string {
   return line.replaceAll("**", "").trim();
 }
 
-/** "Thought for 8 s", from when the thinking started to when it ended. */
+/**
+ * "Thought for 8s", from when the thinking started to when it ended, in
+ * whole seconds as the box counts them.
+ */
 export function thoughtFor(from: string, to: string): string {
-  const seconds = Math.round((Date.parse(to) - Date.parse(from)) / 1000);
-  if (seconds < 1) return "Thought briefly";
-  if (seconds < 60) return `Thought for ${String(seconds)} s`;
-  const rest = seconds % 60;
-  return `Thought for ${String(Math.floor(seconds / 60))} min${rest > 0 ? ` ${String(rest)} s` : ""}`;
+  const seconds = Math.floor((Date.parse(to) - Date.parse(from)) / 1000);
+  return seconds < 1 ? "Thought briefly" : `Thought for ${String(seconds)}s`;
 }
