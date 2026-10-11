@@ -2,7 +2,25 @@
 // open: the Mac's message box (it answers Quit at once), the browser and the
 // Mac's notices (kept in `globalThis.notices`, for a test to click). Each
 // call is printed as one line, for the test to read. Loaded with -r.
-import { dialog, Notification, shell } from "electron";
+//
+// On the Mac, the app's windows load and draw as usual but never show or
+// take the focus, so tests never get in the way of the person at the Mac
+// (app.ts runs it as a background app, with no icon in the Dock). Elsewhere
+// (CI's virtual display) there is no one to disturb, and a window that never
+// shows there gets no clicks inside a PDF.
+import { BrowserWindow, dialog, Notification, shell } from "electron";
+
+if (process.platform === "darwin") {
+  for (const method of [
+    "show",
+    "showInactive",
+    "focus",
+    "moveTop",
+    "restore",
+  ] as const) {
+    BrowserWindow.prototype[method] = () => undefined;
+  }
+}
 
 const told = (kind: string, value: unknown) => {
   console.log(`rufi-test ${kind} ${JSON.stringify(value)}`);

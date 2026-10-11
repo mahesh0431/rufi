@@ -2,6 +2,8 @@
 // data folder with the scripted Codex, and used over HTTP like a browser.
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
+import { syncBuiltinESMExports } from "node:module";
 import { request as httpRequest, type IncomingMessage } from "node:http";
 import {
   chmod,
@@ -13,6 +15,7 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
+import fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -22,7 +25,7 @@ import type { Status, StreamLine } from "@rufi/contracts";
 import { APPEARANCE_HEADER } from "@rufi/contracts/app";
 import { createCanvas } from "@napi-rs/canvas";
 import { Effect, Exit, Scope } from "effect";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { codexRuntime } from "../agent/codex/codex.ts";
 import type { AgentRuntime } from "../agent/runtime.ts";
 import {
@@ -1597,6 +1600,74 @@ describe("documents over the API", () => {
     );
     return { status: answer.status, body: (await answer.json()) as unknown };
   };
+
+  it("finishes a document's late file write and record before releasing the data folder", async () => {
+    const core = await start();
+    const page = await session(core);
+    const { person } = await chat(page);
+    const file = await fixture("thyroid-recheck.jpg");
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const id = createHash("sha256").update(bytes).digest("hex");
+    const path = join(home, "files", id);
+    const publishing = Promise.withResolvers<undefined>();
+    const finish = Promise.withResolvers<undefined>();
+    const rename = fs.rename;
+    // Slow disk at the real publication boundary: all document code and
+    // the eventual file write run normally.
+    const delayed = vi
+      .spyOn(fs, "rename")
+      .mockImplementation(async (from, to) => {
+        if (to === path) {
+          publishing.resolve(undefined);
+          await finish.promise;
+        }
+        await rename(from, to);
+      });
+    syncBuiltinESMExports();
+    const adding = add(core, page, person, [file]).catch(() => undefined);
+    let stopping: Promise<void> | undefined;
+    try {
+      await publishing.promise;
+      let stopped = false;
+      stopping = stop().then(() => {
+        stopped = true;
+      });
+      // Seconds later, the disconnected upload still owns the folder: until
+      // its file and rows are kept, nothing else may take it.
+      await sleep(3_000);
+      expect(stopped).toBe(false);
+      await expect(holdRufiLock(home, () => undefined)).rejects.toThrow(
+        "already running",
+      );
+
+      finish.resolve(undefined);
+      await stopping;
+      await adding;
+      const release = await holdRufiLock(home, () => undefined);
+      try {
+        expect(await readFile(path)).toEqual(Buffer.from(bytes));
+      } finally {
+        await release();
+      }
+
+      const reopened = await session(await start());
+      expect(
+        (await reopened.api("GET", `/api/people/${person}/documents`)).body,
+      ).toMatchObject({
+        documents: [
+          {
+            files: [{ id, name: file.name, mediaType: "image/jpeg", pages: 1 }],
+          },
+        ],
+      });
+    } finally {
+      finish.resolve(undefined);
+      await stopping;
+      await adding;
+      delayed.mockRestore();
+      syncBuiltinESMExports();
+    }
+  }, 10_000);
 
   it("adds documents for the person in the path, and shows each file only to them", async () => {
     const core = await start();
