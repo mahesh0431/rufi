@@ -434,6 +434,44 @@ describe("the core", () => {
     },
   );
 
+  it("lets the data folder go only once the requests it was answering have ended", async () => {
+    // A request still at work when Rufi stops (a page being drawn, the
+    // allowlist written) must not write after another process may hold the
+    // folder.
+    const asked = Promise.withResolvers<undefined>();
+    const answer = Promise.withResolvers<Status>();
+    let hold = false;
+    const core = await start({
+      account: () => {
+        if (!hold)
+          return Promise.resolve({ account: "signed_out", email: null });
+        asked.resolve(undefined);
+        return answer.promise;
+      },
+    });
+    const page = await session(core);
+    hold = true;
+    // Stopping cuts the request's connection; its handler goes on.
+    const cut = page.api("GET", "/api/status").catch(() => undefined);
+    await asked.promise;
+
+    let stopped = false;
+    const stopping = stop().then(() => {
+      stopped = true;
+    });
+    await sleep(300);
+    expect(stopped).toBe(false);
+    await expect(holdRufiLock(home, () => undefined)).rejects.toThrow(
+      "already running",
+    );
+
+    answer.resolve({ account: "signed_out", email: null });
+    await stopping;
+    await cut;
+    const release = await holdRufiLock(home, () => undefined);
+    await release();
+  });
+
   it("closes every part when it stops, even when one of them fails", async () => {
     let agent: AgentRuntime | undefined;
     const core = await start({

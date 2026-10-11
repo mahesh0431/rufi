@@ -146,6 +146,14 @@ export const startCore = (options: CoreOptions) =>
       ),
       (release) => Effect.promise(() => release().catch(() => undefined)),
     );
+    // The requests the local API is answering. Stopping the server cuts
+    // their connections, not their work (a page being drawn, the allowlist
+    // written): the lock goes only once each has ended, after the agent and
+    // the database have closed, so one waiting on them ends at once.
+    const answering = new Set<Promise<unknown>>();
+    yield* Effect.addFinalizer(() =>
+      Effect.promise(() => Promise.allSettled(answering)),
+    );
     const writer = yield* Effect.acquireRelease(
       attempt(() => openRecord(home)),
       (store) =>
@@ -290,7 +298,13 @@ export const startCore = (options: CoreOptions) =>
           new Promise<ServerType>((resolve, reject) => {
             const started = serve(
               {
-                fetch: app.fetch,
+                fetch: (request, env) => {
+                  const answer = Promise.resolve(app.fetch(request, env));
+                  const done = () => answering.delete(answer);
+                  answering.add(answer);
+                  answer.then(done, done);
+                  return answer;
+                },
                 hostname: "127.0.0.1",
                 port: options.port ?? 0,
               },
