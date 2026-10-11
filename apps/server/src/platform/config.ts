@@ -1,27 +1,33 @@
 import { isAbsolute, resolve } from "node:path";
-import { Context, Effect, Layer } from "effect";
+import { Context } from "effect";
 
 /**
- * Rufi's data folder. Required until dogfood: with no default, nothing can
- * touch the real data folder by accident.
+ * The data folder RUFI_HOME names, when it is set and not blank: it picks a
+ * folder for demo, tests and restored copies, in place of the remembered
+ * one (core/store/data-folder.ts).
+ */
+export function rufiHomeOverride(env: NodeJS.ProcessEnv): string | undefined {
+  const home = env["RUFI_HOME"]?.trim();
+  if (!home) return undefined;
+  return isAbsolute(home) ? home : resolve(home);
+}
+
+/**
+ * RUFI_HOME, required: for the scripts that run on the test sign-in only
+ * (the live AI set, the reader pack), never on the person's data.
  */
 export function rufiHome(env: NodeJS.ProcessEnv = process.env): string {
-  const home = env["RUFI_HOME"]?.trim();
-  if (!home) {
+  const home = rufiHomeOverride(env);
+  if (home === undefined) {
     throw new Error(
       "Set RUFI_HOME to Rufi's data folder first, for example: export RUFI_HOME=~/rufi-test",
     );
   }
-  return isAbsolute(home) ? home : resolve(home);
+  return home;
 }
 
 /** Rufi's data folder, for the parts that need it. */
 export class Home extends Context.Service<Home, string>()("rufi/Home") {}
-
-export const homeLayer = Layer.effect(
-  Home,
-  Effect.try({ try: () => rufiHome(), catch: (error) => error }),
-);
 
 /** Variables a child program (Codex) may inherit; secrets like API keys never do. */
 const CHILD_VARIABLES = [

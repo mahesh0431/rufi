@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import lockfile from "proper-lockfile";
 
@@ -20,7 +20,10 @@ export async function readJson(path: string): Promise<unknown> {
  */
 export const tempPath = (path: string) => `${path}.${randomUUID()}.tmp`;
 
-/** Writes JSON readable only by this user, replacing the file in one step. */
+/**
+ * Writes JSON readable only by this user, replacing the file in one step.
+ * The file and the folder's new entry are on the disk when it returns.
+ */
 export async function writePrivateJson(
   path: string,
   value: unknown,
@@ -28,13 +31,38 @@ export async function writePrivateJson(
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temp = tempPath(path);
   try {
-    await writeFile(temp, `${JSON.stringify(value, null, 2)}\n`, {
-      mode: 0o600,
-    });
+    const file = await open(temp, "wx", 0o600);
+    try {
+      await file.writeFile(`${JSON.stringify(value, null, 2)}\n`);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
     await rename(temp, path);
   } catch (error) {
     await rm(temp, { force: true });
     throw error;
+  }
+  await syncFolder(dirname(path));
+}
+
+/** Puts a folder's entries (a new, renamed or removed file) on the disk. */
+export async function syncFolder(path: string): Promise<void> {
+  const folder = await open(path, "r");
+  try {
+    await folder.sync();
+  } finally {
+    await folder.close();
+  }
+}
+
+/** Puts a file's bytes on the disk. */
+export async function syncFile(path: string): Promise<void> {
+  const file = await open(path, "r+");
+  try {
+    await file.sync();
+  } finally {
+    await file.close();
   }
 }
 
@@ -49,18 +77,22 @@ export async function sha256(path: string): Promise<string> {
 class BusyError extends Error {}
 
 /**
- * Rufi's two locks, folders in the data folder. Whoever needs both takes
- * `rufi.lock` first.
- * - `rufi.lock`: held for its whole life by the running Rufi, or by a
- *   terminal command, so only one of them uses the data folder at a time.
- * - `credentials.lock`: held briefly while the sign-in is changed or renewed.
+ * Rufi's locks, folders. Whoever needs more than one takes them in this
+ * order: `location.lock`, then `rufi.lock`, then `credentials.lock`.
+ * - `location.lock`: beside the location file, held while Rufi finds its
+ *   data folder (and makes it, at the first start) or moves it.
+ * - `rufi.lock`: in the data folder, held for its whole life by the running
+ *   Rufi, or by a terminal command, so only one of them uses the data
+ *   folder at a time.
+ * - `credentials.lock`: in the data folder, held briefly while the sign-in
+ *   is changed or renewed.
  * A lock left by a crashed process goes stale after 10 s.
  */
 const STALE_MS = 10_000;
 
 async function lock(
   folder: string,
-  name: "rufi" | "credentials",
+  name: "location" | "rufi" | "credentials",
   waitMs: number,
   busy: string,
   onLost?: (error: Error) => void,
@@ -107,6 +139,28 @@ export function holdRufiLock(
     "Rufi is already running with this data folder, or another Rufi command is. Quit it first, then try again.",
     onLost,
   );
+}
+
+/**
+ * Runs `task` while holding `location.lock` in `folder`, where the location
+ * file is; waits up to `waitMs` for it.
+ */
+export async function withLocationLock<T>(
+  folder: string,
+  waitMs: number,
+  task: () => Promise<T>,
+): Promise<T> {
+  const release = await lock(
+    folder,
+    "location",
+    waitMs,
+    "Another Rufi command is finding or moving Rufi's data folder. Try again when it finishes.",
+  );
+  try {
+    return await task();
+  } finally {
+    await release();
+  }
 }
 
 /**

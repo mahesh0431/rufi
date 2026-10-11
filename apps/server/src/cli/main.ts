@@ -5,6 +5,7 @@
 import { execFile } from "node:child_process";
 import { access } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -28,7 +29,8 @@ import {
 } from "../core/store/database.ts";
 import { restore } from "../core/store/restore.ts";
 import { forAgent } from "../core/tools/tools.ts";
-import { childEnvironment, Home, homeLayer } from "../platform/config.ts";
+import { findDataFolder, Folder } from "../core/store/data-folder.ts";
+import { childEnvironment, Home } from "../platform/config.ts";
 import { holdRufiLock } from "../platform/files.ts";
 import { Secrets, secretsLayer } from "../platform/keychain.ts";
 import {
@@ -57,6 +59,19 @@ const USAGE = `Usage: pnpm rufi <command>
 /** A promise-based step, with its error kept as it is. */
 const run = <A>(step: () => Promise<A>) =>
   Effect.tryPromise({ try: step, catch: (error) => error });
+
+/**
+ * The data folder: RUFI_HOME, else the remembered one, made at the first
+ * start (core/store/data-folder.ts).
+ */
+const folderLayer = Layer.effect(
+  Folder,
+  run(() => findDataFolder({ env: process.env, userHome: homedir() })),
+);
+const homeLayer = Layer.effect(
+  Home,
+  Effect.map(Folder, (folder) => folder.path),
+).pipe(Layer.provideMerge(folderLayer));
 
 /** What the sign-in code needs, from the data folder and the Keychain. */
 const chatGpt = Effect.gen(function* () {
