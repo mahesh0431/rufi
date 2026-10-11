@@ -8,7 +8,7 @@ The chat bar is the box at the bottom right of the pages where you read your hea
 
 The bar is always the same size: one line. When you add something to your message with **Ask Rufi** (see [Adding to a message](#adding-to-a-message)), the bar shows the first one's name and how many more, such as "CRP <5 mg/L · 12 Aug 2026 +2", and lights up for a moment. After that, it shows the start of what you typed. When Rufi has something to tell you, such as why it couldn't add something, the bar shows that for the moment, in grey. Click the bar to see it all in the panel, and to write your message.
 
-Under the box, in the panel and on the chat page, "AI can make mistakes. Check important info." reminds you to check what the AI says. To see the ChatGPT plan the AI uses, and its usage, open **Settings** › **ChatGPT plan** (see [Signing in with ChatGPT](signing-in.md#your-plan-in-settings)).
+Under the box, in the panel and on the chat page, "AI can make mistakes. Check important health decisions with your doctor." reminds you to check what the AI says. To see the ChatGPT plan the AI uses, and its usage, open **Settings** › **ChatGPT plan** (see [Signing in with ChatGPT](signing-in.md#your-plan-in-settings)).
 
 ## The chat panel
 

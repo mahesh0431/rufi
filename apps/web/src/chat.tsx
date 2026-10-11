@@ -238,7 +238,7 @@ export function ChatPage({ person }: { person: Person }) {
 function AiCanMakeMistakes() {
   return (
     <p className="pt-1 pb-2 text-center text-[11.5px] text-muted">
-      AI can make mistakes. Check important info.
+      AI can make mistakes. Check important health decisions with your doctor.
     </p>
   );
 }

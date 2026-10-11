@@ -6,7 +6,7 @@ In an emergency, don't wait for Rufi: call your emergency number.
 
 ## It can research and propose; you decide with your doctor
 
-The AI can look into your records and results, explain what the evidence says, and propose options, for example that a medicine's dose may be worth reviewing. When you might act on what it says, it adds a short reminder that it is an AI and that you should check with your doctor first.
+The AI can look into your records and results, explain what the evidence says, and propose options, for example that a medicine's dose may be worth reviewing. When you ask whether to start, stop or change a medicine or a dose, or are about to act on something, its answer says to decide it with your doctor or prescriber. Under the chat's box, Rufi always says that AI can make mistakes and that you should check important health decisions with your doctor.
 
 It can be wrong. Check with your doctor before you act.
 

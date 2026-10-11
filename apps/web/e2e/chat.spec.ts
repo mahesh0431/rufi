@@ -122,7 +122,7 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   await accessible(page);
   // Under the box, only the reminder: the plan is in Settings.
   await expect(chat(page).getByText(/AI can make mistakes/)).toHaveText(
-    "AI can make mistakes. Check important info.",
+    "AI can make mistakes. Check important health decisions with your doctor.",
   );
 
   await box(chat(page)).fill("drip: my thyroid results");
