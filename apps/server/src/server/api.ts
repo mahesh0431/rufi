@@ -414,7 +414,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     };
   };
   app.get("/api/backups", (c) => c.json(backups()));
-  // Back up now: answers when it is done; a failure shows in the status.
+  // Back up: answers when it is done; a failure shows in the status.
   app.post("/api/backups", async (c) => {
     await deps.backups.backUp().catch(() => undefined);
     return c.json(backups());

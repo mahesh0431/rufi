@@ -23,6 +23,7 @@ import { messageOf } from "./live.ts";
 import { Menus } from "./model-menu.tsx";
 import { whyClosed } from "./panel.ts";
 import { queries } from "./reads.ts";
+import { IconButton } from "./ui.tsx";
 
 interface Attaching {
   /** Files on their way, by name. */
@@ -110,15 +111,11 @@ export function AttachButton({ personId }: { personId: string }) {
   const picker = useRef<HTMLInputElement | null>(null);
   return (
     <>
-      <button
-        type="button"
-        aria-label="Add documents"
-        title="Add documents (PDF, JPG, PNG or HEIC)"
+      <IconButton
+        label="Add documents…"
+        icon={Paperclip}
         onClick={() => picker.current?.click()}
-        className="grid size-7 shrink-0 place-items-center rounded-lg text-muted hover:bg-side hover:text-ink"
-      >
-        <Paperclip size={16} aria-hidden />
-      </button>
+      />
       <input
         ref={picker}
         type="file"

@@ -113,7 +113,7 @@ test("adds photos as one document in the order chosen, and a PDF as its own", as
   await expect(rows(page).first()).toContainText("Reading · read 0 of 1");
 
   // The popup: the photos in their order, the HEIC upright through its copy.
-  await page.getByRole("button", { name: "IMG_2.jpg" }).click();
+  await page.getByRole("link", { name: "IMG_2.jpg" }).click();
   await page.getByRole("button", { name: "View original" }).click();
   const popup = page.getByRole("dialog", { name: /IMG_2\.jpg/ });
   const second = popup.getByRole("img", { name: "Photo 2 of 2" });
@@ -170,7 +170,7 @@ test("offers a copy of a PDF where the browser has no PDF viewer", async ({
   await page.emulateMedia({ colorScheme: "dark" });
   await documentsPage(page, rufi);
   await accessible(page);
-  await page.getByRole("button", { name: "Sunrise Labs August.pdf" }).click();
+  await page.getByRole("link", { name: "Sunrise Labs August.pdf" }).click();
   await page.getByRole("button", { name: "View original" }).click();
   const popup = page.getByRole("dialog", { name: /Sunrise Labs August\.pdf/ });
   await expect(popup).toContainText("PDF · 2 pages");

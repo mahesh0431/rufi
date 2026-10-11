@@ -6,6 +6,15 @@
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
 }
 
+/* One focus ring for everything the keyboard reaches. In the base layer, so
+   a part that draws its own focus can still say so. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
 html,
 body,
 #root {

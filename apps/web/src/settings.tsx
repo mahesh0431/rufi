@@ -237,16 +237,14 @@ function BackupsSection() {
                 </p>
               )}
               <Button
+                icon={DatabaseBackup}
                 className="self-start"
-                disabled={status.running || backUp.isPending}
+                busy={(status.running || backUp.isPending) && "Backing up…"}
                 onClick={() => {
                   backUp.mutate();
                 }}
               >
-                <DatabaseBackup size={15} aria-hidden />
-                {status.running || backUp.isPending
-                  ? "Backing up…"
-                  : "Back up now"}
+                Back up
               </Button>
               {/* The same minute as the last one shows no change above. */}
               {backUp.data?.failed === null && !backUp.isPending && (
@@ -278,14 +276,14 @@ function ExportSection() {
           settings.
         </p>
         <Button
+          icon={Download}
           className="self-start"
-          disabled={exported.isPending}
+          busy={exported.isPending && "Exporting…"}
           onClick={() => {
             exported.mutate();
           }}
         >
-          <Download size={15} aria-hidden />
-          {exported.isPending ? "Exporting…" : "Export my data"}
+          Export
         </Button>
         {/* The page can't know the name chosen in the save dialog. */}
         {exported.isSuccess && (
@@ -344,13 +342,13 @@ function DataFolderSection() {
                 .
               </p>
               <Button
+                icon={FolderOpen}
                 className="self-start"
                 disabled={show.isPending}
                 onClick={() => {
                   show.mutate();
                 }}
               >
-                <FolderOpen size={15} aria-hidden />
                 Show in Finder
               </Button>
               {show.error && (

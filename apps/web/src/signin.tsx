@@ -2,7 +2,7 @@
 // and waits for ChatGPT to send you back; this page asks how it goes.
 import { SignInState } from "@rufi/contracts";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { LogIn } from "lucide-react";
+import { ArrowRight, LogIn } from "lucide-react";
 import { useEffect } from "react";
 import { read } from "./api.ts";
 import { queries, useStatus } from "./reads.ts";
@@ -77,16 +77,20 @@ export function SignIn({ skip }: { skip?: () => void }) {
         {state !== "waiting" && (
           <Button
             look="main"
+            icon={LogIn}
             disabled={start.isPending}
             onClick={() => {
               start.mutate();
             }}
           >
-            <LogIn size={15} aria-hidden />
             Sign in with ChatGPT
           </Button>
         )}
-        {skip && <Button onClick={skip}>Skip for now</Button>}
+        {skip && (
+          <Button icon={ArrowRight} onClick={skip}>
+            Skip for now
+          </Button>
+        )}
       </div>
       {(error ?? start.error?.message) && (
         <p role="alert" className="text-muted">

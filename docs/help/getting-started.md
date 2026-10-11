@@ -60,9 +60,9 @@ Each time, everything that was in the demo folder is removed first: the record, 
 In a new data folder, Rufi takes you through four short steps:
 
 1. **Welcome.** Rufi says what goes to the AI: what you ask, the documents you add and the parts of your health record the AI reads go to the AI provider you sign in with. Your health record is kept on your Mac. Tick "I understand Rufi is not a doctor", then click **Continue**. Here you can also choose how Rufi looks: **System**, **Light** or **Dark** (see [How Rufi looks](#how-rufi-looks)).
-2. **Your name.** Rufi adds you to the record.
+2. **Your name.** Type it and click **Save and continue**. Rufi adds you to the record.
 3. **Sign in with ChatGPT.** See [Signing in with ChatGPT](signing-in.md#sign-in-in-rufi). To do it later, click **Skip for now**: your health record works without the AI.
-4. **Your emergency region,** for the number the AI gives in an emergency. Choose it and click **Continue**, or click **Skip**. You can change it in Settings.
+4. **Your emergency region,** for the number the AI gives in an emergency. Choose it and click **Save and continue**, or click **Skip for now**. You can change it in Settings.
 
 The steps fill the window. The sidebar, Help, Settings and your chat show when the first run is done.
 

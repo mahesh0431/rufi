@@ -49,7 +49,7 @@ An export you saved before the delete keeps the document too.
 
 Open **Settings**. Under **Backups**, Rufi shows when it made the last good backup. If the last try failed, or a backup in the folder is damaged, Rufi says when and why, and when your last good backup is from. After Rufi starts again, Settings shows the backup Rufi makes as it starts: while it runs, and then whether it worked. An older failure isn't shown again.
 
-To make a backup now, click **Back up now**. When it is done, Settings says **Backed up just now**.
+To make a backup now, click **Back up**. When it is done, Settings says **Backed up just now**.
 
 ## Restore a backup
 
@@ -111,7 +111,7 @@ If `rufi.sqlite` is gone from a data folder that had a record, Rufi doesn't star
 An export is one zip file with everything in your record, your chat, your documents and Rufi's settings, so that your data is never locked in Rufi.
 
 1. Open **Settings**.
-2. Under **Export**, click **Export my data**.
+2. Under **Export**, click **Export**.
 3. In the Rufi app, choose where to save the file. In a browser, it goes to your downloads.
 
 Settings says **Exported your data as a zip**. The file is named for the day, for example `rufi-export-2026-10-08.zip`, unless you give it another name. In it:

@@ -122,6 +122,7 @@ function CopyButton({ text }: { text: () => string }) {
         {said}
       </span>
       <Button
+        icon={Copy}
         onClick={() => {
           navigator.clipboard.writeText(text()).then(
             () => {
@@ -133,7 +134,6 @@ function CopyButton({ text }: { text: () => string }) {
           );
         }}
       >
-        <Copy size={14} aria-hidden />
         Copy
       </Button>
     </>

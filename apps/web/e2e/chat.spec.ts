@@ -1,5 +1,5 @@
 // The chat on the real core: the bar, the panel and the page of the
-// person's one chat; streaming, Stop, waiting messages, Steer, the model and
+// person's one chat; streaming, Stop, waiting messages, Add to reply, the model and
 // drafts; older pages, day lines and where the AI started afresh; and what
 // the AI's Markdown may and may not do. Each test checks that the strict CSP
 // refused nothing the screens need.
@@ -306,17 +306,17 @@ test("an older read of the queue never undoes a newer change", async ({
   await expect(items).toHaveText(["Second, edited", "Third"]);
 });
 
-test("Steer passes your text into the running reply", async ({
+test("Add to reply passes your text into the running reply", async ({
   page,
   rufi,
 }) => {
   await opened(page, rufi);
   await send(page, "hang");
   await box(chat(page)).fill("Only the latest results, please");
-  await chat(page).getByRole("button", { name: "Steer" }).click();
+  await chat(page).getByRole("button", { name: "Add to reply" }).click();
   await expect(box(chat(page))).toHaveValue("");
   await expect(log(chat(page))).toContainText(
-    "SteerOnly the latest results, please",
+    "Added to the replyOnly the latest results, please",
   );
   await expect(
     chat(page).getByRole("region", { name: "Waiting messages" }),
@@ -1327,7 +1327,7 @@ test("activity lines keep their sign beside a long detail; Rufi's own tool lines
 });
 
 test.describe("on the real Codex binary, with a local fake model", () => {
-  test("a reply streams after Rufi's tool; Stop; a message waits; Steer", async ({
+  test("a reply streams after Rufi's tool; Stop; a message waits; Add to reply", async ({
     page,
     rufi,
   }) => {
@@ -1350,8 +1350,8 @@ test.describe("on the real Codex binary, with a local fake model", () => {
         .getByRole("listitem"),
     ).toHaveText(["Waits its turn"]);
     await box(chat(page)).fill("Steered in");
-    await chat(page).getByRole("button", { name: "Steer" }).click();
-    await expect(log(chat(page))).toContainText("SteerSteered in");
+    await chat(page).getByRole("button", { name: "Add to reply" }).click();
+    await expect(log(chat(page))).toContainText("Added to the replySteered in");
 
     await chat(page).getByRole("button", { name: "Stop" }).click();
     await expect(log(chat(page))).toContainText("Stopped.");

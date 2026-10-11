@@ -11,12 +11,14 @@
 // re-renders alone.
 import { Link } from "@tanstack/react-router";
 import {
+  ArrowUpRight,
   Bell,
   Brain,
   Check,
   ChevronRight,
   FileText,
   LoaderCircle,
+  RotateCw,
   Square,
   X,
 } from "lucide-react";
@@ -41,6 +43,7 @@ import type { Live } from "./live.ts";
 import { RetryButton } from "./reading.tsx";
 import { latestHeading, thoughtFor } from "./thinking.ts";
 import { isRunning } from "./transcript-state.ts";
+import { Button, buttonLook, ICON } from "./ui.tsx";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no images,
 // and links only to http(s) pages, opened outside Rufi with no opener or
@@ -308,15 +311,14 @@ export function TranscriptView({
                     Loading earlier messages…
                   </p>
                 ) : older === "failed" ? (
-                  <p role="alert">
-                    Rufi couldn't load earlier messages.{" "}
-                    <button
-                      type="button"
-                      onClick={onOlder}
-                      className="text-accent-ink underline"
-                    >
-                      Try again
-                    </button>
+                  <p
+                    role="alert"
+                    className="flex items-center justify-center gap-1.5"
+                  >
+                    Rufi couldn't load earlier messages.
+                    <Button look="quiet" icon={RotateCw} onClick={onOlder}>
+                      Retry
+                    </Button>
                   </p>
                 ) : null}
               </div>
@@ -418,7 +420,7 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
       className="max-w-[85%] self-end rounded-2xl bg-accent-soft px-3.5 py-2"
     >
       {entry.kind === "steer" && (
-        <p className="text-xs text-accent-ink">Steer</p>
+        <p className="text-xs text-accent-ink">Added to the reply</p>
       )}
       {entry.refs && entry.refs.length > 0 && (
         <ul
@@ -451,18 +453,15 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
       className="flex items-start gap-2 rounded-lg border border-line bg-side px-3 py-2"
     >
       <Bell size={14} className="mt-1 shrink-0 text-muted" aria-hidden />
-      <div className="min-w-0 break-words">
+      <div className="min-w-0 flex-1 break-words">
         <p className="text-xs text-muted">Rufi</p>
-        <p className="whitespace-pre-wrap">
-          {entry.text}
-          {entry.link && (
-            <>
-              {" · "}
-              <EventLink link={entry.link} />
-            </>
-          )}
-        </p>
+        <p className="whitespace-pre-wrap">{entry.text}</p>
       </div>
+      {entry.link && (
+        <span className="shrink-0 self-center">
+          <EventLink link={entry.link} />
+        </span>
+      )}
     </div>
   ) : entry.kind === "brief" ? (
     <BriefLine id={id} text={entry.text} />
@@ -499,7 +498,11 @@ function Thinking({ entry, turn }: { entry: Entry; turn: Turn | undefined }) {
         data-entry={entry.id}
         className="relative flex min-w-0 items-center gap-1.5 text-muted"
       >
-        <LoaderCircle size={13} className="shrink-0 animate-spin" aria-hidden />
+        <LoaderCircle
+          size={ICON}
+          className="shrink-0 animate-spin"
+          aria-hidden
+        />
         <span className="shrink-0">Thinking…</span>
         {heading !== "" && <span className="truncate text-xs">{heading}</span>}
       </p>
@@ -514,15 +517,16 @@ function Thinking({ entry, turn }: { entry: Entry; turn: Turn | undefined }) {
       (turn?.status === "interrupted" && turn.endReason === null));
   return (
     <details data-entry={entry.id} className="group text-muted">
-      <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-md hover:text-ink [&::-webkit-details-marker]:hidden">
-        <Brain size={13} className="shrink-0" aria-hidden />
+      {/* It opens like a button: the same icon size and at least 32 px high. */}
+      <summary className="flex min-h-8 w-fit cursor-pointer list-none items-center gap-1.5 rounded-md hover:text-ink [&::-webkit-details-marker]:hidden">
+        <Brain size={ICON} className="shrink-0" aria-hidden />
         <span>
           {unknownEnd
             ? "Thinking stopped"
             : thoughtFor(entry.createdAt, end ?? entry.updatedAt)}
         </span>
         <ChevronRight
-          size={12}
+          size={ICON}
           className="shrink-0 transition-transform group-open:rotate-90"
           aria-hidden
         />
@@ -575,8 +579,9 @@ function EventLink({ link }: { link: NonNullable<Entry["link"]> }) {
     <Link
       to="/people/$personId/documents/$documentId"
       params={{ personId, documentId: link.document }}
-      className="rounded-md px-1 text-accent-ink underline underline-offset-2 hover:bg-accent-soft"
+      className={buttonLook({ look: "quiet" })}
     >
+      <ArrowUpRight size={ICON} aria-hidden />
       Open
     </Link>
   );
@@ -599,8 +604,9 @@ function BriefLine({ id, text }: { id: string; text: string }) {
         to="/people/$personId/briefs/$briefId"
         params={{ personId, briefId: id }}
         aria-label={`Open ${text}`}
-        className="shrink-0 rounded-lg border border-line bg-surface px-2.5 py-0.5 font-medium text-accent-ink hover:bg-page"
+        className={buttonLook()}
       >
+        <ArrowUpRight size={ICON} aria-hidden />
         Open
       </Link>
     </div>

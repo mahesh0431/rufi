@@ -1,7 +1,7 @@
 // A document's page on the real core, after a scripted reading
 // (tests/fake-reader.ts): the items beside their page, "Unsure only", a fix
 // that keeps the reader's value, a fix from a second tab refused with the
-// value now, and "Save these in the chat" putting the words in the box.
+// value now, and "Save in chat" putting the words in the box.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
@@ -64,7 +64,7 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
   ).toBeVisible({ timeout: 10_000 });
 
   // Items beside the page; a row shows its page.
-  await page.getByRole("button", { name: "sunrise-labs-august.pdf" }).click();
+  await page.getByRole("link", { name: "sunrise-labs-august.pdf" }).click();
   const items = page.getByRole("region", { name: "Items" });
   const shown = page.getByRole("region", { name: "Page" });
   // An earlier column's value is a row of its own, not a result.
@@ -122,7 +122,7 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
 
   // A later refusal replaces the stale notice and keeps the person's text.
   await form.getByLabel("Value").fill("");
-  await form.getByRole("button", { name: "Save my fix over it" }).click();
+  await form.getByRole("button", { name: "Replace fix" }).click();
   await expect(form.getByRole("alert")).toHaveText(
     "A result needs its test name and value.",
   );
@@ -145,9 +145,9 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
   const box = chat.getByRole("textbox", { name: "Message to Rufi" });
   const opener = chat.getByRole("button", { name: "Open the chat" });
   const minimise = chat.getByRole("button", { name: "Minimise" });
-  const save = page.getByRole("button", { name: "Save these in the chat" });
+  const save = page.getByRole("button", { name: "Save in chat" });
 
-  // Save these in the chat, twice: after what the box holds, and the page
+  // Save in chat, twice: after what the box holds, and the page
   // stays; the person sends. The bar stays one line, whatever the text.
   await opener.click();
   await box.fill("What changed since March?\nAnd since June?");
@@ -175,12 +175,13 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
       x: (button?.x ?? 0) + (button?.width ?? 0) * x,
       y: (button?.y ?? 0) + (button?.height ?? 0) * y,
     };
+    // What is there is the button or a part of it, such as its icon.
     expect(
-      await page.evaluate(
-        ({ x, y }) => document.elementFromPoint(x, y)?.textContent,
-        at,
-      ),
-    ).toBe("Save these in the chat");
+      await save.evaluate((element, { x, y }) => {
+        const hit = document.elementFromPoint(x, y);
+        return hit !== null && element.contains(hit);
+      }, at),
+    ).toBe(true);
   }
   await page.setViewportSize({ width: 1280, height: 720 });
 
@@ -210,10 +211,11 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
   await box.press("Enter");
   await expect(chat.getByRole("alert")).toHaveText("Rufi can't be reached.");
   await page.keyboard.press("Escape");
-  const unresolved = page.getByRole("button", {
-    name: "Retry the message in the chat first",
-  });
-  await expect(unresolved).toBeDisabled();
+  // Why it can't be used yet stays beside the button, as its description.
+  await expect(save).toBeDisabled();
+  await expect(save).toHaveAccessibleDescription(
+    "Retry the message in the chat first.",
+  );
   const refused =
     "Your last message may not have reached Rufi: send it again or change it first.";
   const ask = async () => {
@@ -226,7 +228,9 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
   };
   await ask();
   await page.reload();
-  await expect(unresolved).toBeDisabled();
+  await expect(save).toHaveAccessibleDescription(
+    "Retry the message in the chat first.",
+  );
   await ask();
   expect(submitted).toHaveLength(1);
   // The core took it, so its reply runs: ⌘J opens the panel, which says why

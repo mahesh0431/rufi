@@ -1,5 +1,5 @@
 // Reading documents on the screens: Retry, the reader strip above the chat
-// box, and Open: a reading's work as the reader saved it, read
+// box, and View reading: a reading's work as the reader saved it, read
 // only. Rufi's live stream says when readings change; the Documents page
 // also looks again while one reads.
 import { Dialog } from "@base-ui/react/dialog";
@@ -10,14 +10,14 @@ import {
   type ReadingNow,
 } from "@rufi/contracts/documents";
 import { useQuery } from "@tanstack/react-query";
-import { X } from "lucide-react";
+import { RotateCw, ScanText, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { create } from "zustand/react";
 import { read, request } from "./api.ts";
 import { printedTime } from "./dates.ts";
 import { messageOf } from "./live.ts";
 import { queries } from "./reads.ts";
-import { Button } from "./ui.tsx";
+import { Button, IconButton } from "./ui.tsx";
 
 const documentsPath = (personId: string) =>
   `/api/people/${encodeURIComponent(personId)}/documents`;
@@ -52,7 +52,7 @@ async function retry(personId: string, documentId: string) {
   readingsChanged(personId);
 }
 
-/** Which reading Open shows, over any screen. */
+/** Which reading View reading shows, over any screen. */
 const useOpen = create<{ personId: string; documentId: string } | null>(
   () => null,
 );
@@ -101,7 +101,7 @@ function stateOf(reading: ReadingNow, elapsed: string): string {
   }
 }
 
-/** Above the chat box: each reading that runs or waits, with Open. */
+/** Above the chat box: each reading that runs or waits, with View reading. */
 export function ReaderStrip({ personId }: { personId: string }) {
   const readings = useReadings(personId);
   const list = readings.data ?? [];
@@ -144,15 +144,15 @@ function StripRow({
         {stateOf(reading, elapsed)}
       </span>
       {(running || reading.saved > 0) && (
-        <button
-          type="button"
-          className="rounded-md px-1 text-xs whitespace-nowrap text-accent-ink hover:bg-accent-soft"
+        <Button
+          look="quiet"
+          icon={ScanText}
           onClick={() => {
             openReading(personId, reading.documentId);
           }}
         >
-          Open ▸
-        </button>
+          View reading
+        </Button>
       )}
     </li>
   );
@@ -171,42 +171,33 @@ export function RetryButton({
   documentId: string;
 }) {
   const [problem, setProblem] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   return (
     <>
-      <TextButton
+      <Button
+        look="quiet"
+        icon={RotateCw}
+        busy={busy && "Retrying…"}
         onClick={() => {
           setProblem(null);
-          retry(personId, documentId).catch((error: unknown) => {
-            setProblem(messageOf(error));
-          });
+          setBusy(true);
+          retry(personId, documentId)
+            .catch((error: unknown) => {
+              setProblem(messageOf(error));
+            })
+            .finally(() => {
+              setBusy(false);
+            });
         }}
       >
         Retry
-      </TextButton>
+      </Button>
       {problem && (
         <span role="alert" className="block text-xs text-muted">
           {problem}
         </span>
       )}
     </>
-  );
-}
-
-export function TextButton({
-  onClick,
-  children,
-}: {
-  onClick: () => void;
-  children: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="rounded-md px-1 text-accent-ink hover:bg-accent-soft"
-    >
-      {children}
-    </button>
   );
 }
 
@@ -217,7 +208,7 @@ const OUTCOME = {
   not_looked_at: "not looked at",
 } as const;
 
-/** Open: one reading's work, read only, as it goes and after it ended. */
+/** View reading: one reading's work, read only, as it goes and after it ended. */
 export function ReadingSheet() {
   const open = useOpen();
   if (!open) return null;
@@ -289,9 +280,7 @@ function Sheet({
         {canRetry && (
           <RetryButton personId={personId} documentId={documentId} />
         )}
-        <Dialog.Close render={<Button look="quiet" aria-label="Close" />}>
-          <X size={15} aria-hidden />
-        </Dialog.Close>
+        <Dialog.Close render={<IconButton label="Close" icon={X} />} />
       </div>
       <div
         tabIndex={0}

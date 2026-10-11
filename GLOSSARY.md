@@ -136,7 +136,7 @@ What an answer rests on, shown as **Based on** under the answer once the reply h
 _Avoid_: reason, rationale, citation; "reasoning" is the AI's thinking, and a **source** is what a record rests on
 
 **Steer**:
-A message sent while the AI is replying, passed into that reply. The AI takes it at its next step, after what it is writing now, so it can change course. The transcript keeps it as your message, marked as a steer.
+A message sent while the AI is replying, passed into that reply. The AI takes it at its next step, after what it is writing now, so it can change course. On screen, its button is **Add to reply**, and the transcript keeps it as your message, marked "Added to the reply".
 _Avoid_: nudge, interrupt
 
 **Queue**:

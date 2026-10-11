@@ -382,7 +382,7 @@ export function backupJob(
   options: { now?: () => Date; copy?: Copy; gate?: FileGate } = {},
 ) {
   const now = options.now ?? (() => new Date());
-  /** The start's work or a backup, which Back up now and the hourly look join. */
+  /** The start's work or a backup, which Back up and the hourly look join. */
   let running: Promise<Backup> | undefined;
   /** The newest backup that passed its check when last looked at. */
   let last: Backup | undefined;

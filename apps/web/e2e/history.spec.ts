@@ -167,7 +167,7 @@ test("a long chat opens at its latest page; older pages load as you scroll up, i
   await expect(questions(page).first()).not.toHaveText("Fictional question 1");
 });
 
-test("an older page that can't be loaded says so, and Try again loads it", async ({
+test("an older page that can't be loaded says so, and Retry loads it", async ({
   page,
   rufi,
 }) => {
@@ -182,10 +182,10 @@ test("an older page that can't be loaded says so, and Try again loads it", async
     element.scrollTop = 0;
   });
   await expect(log(page).getByRole("alert")).toHaveText(
-    "Rufi couldn't load earlier messages. Try again",
+    "Rufi couldn't load earlier messages.Retry",
   );
   await page.unroute("**/chat?before=*");
-  await log(page).getByRole("button", { name: "Try again" }).click();
+  await log(page).getByRole("button", { name: "Retry" }).click();
   await expect(questions(page).first()).toHaveText("Fictional question 141");
 });
 

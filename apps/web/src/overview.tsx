@@ -5,6 +5,7 @@
 import type { Person } from "@rufi/contracts";
 import type { RecentChange, Tile } from "@rufi/contracts/record";
 import { Link } from "@tanstack/react-router";
+import { ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 import { AskRufi } from "./ask.tsx";
 import { dayLine, greeting, printedDate, printedTime, today } from "./dates.ts";
@@ -13,7 +14,7 @@ import { askRufi } from "./panel.ts";
 import { KIND_TITLES } from "./record.tsx";
 import { useOverview } from "./reads.ts";
 import { Receipt } from "./transcript.tsx";
-import { Problem } from "./ui.tsx";
+import { buttonLook, ICON, Problem } from "./ui.tsx";
 
 export function OverviewPage({ person }: { person: Person }) {
   const overview = useOverview(person.id);
@@ -65,7 +66,6 @@ export function OverviewPage({ person }: { person: Person }) {
                       </span>
                     </span>
                     <AskRufi
-                      shown
                       aria-label={`Ask Rufi about ${document.name}`}
                       onClick={() => {
                         askRufi(person.id, [
@@ -81,8 +81,9 @@ export function OverviewPage({ person }: { person: Person }) {
                       to="/people/$personId/documents/$documentId"
                       params={{ personId: person.id, documentId: document.id }}
                       aria-label={`Open ${document.name}`}
-                      className="rounded-md px-1 text-accent-ink hover:bg-accent-soft"
+                      className={buttonLook({ look: "quiet" })}
                     >
+                      <ArrowUpRight size={ICON} aria-hidden />
                       Open
                     </Link>
                   </li>
@@ -106,7 +107,6 @@ export function OverviewPage({ person }: { person: Person }) {
                       </span>
                     </span>
                     <AskRufi
-                      shown
                       aria-label={`Ask Rufi about ${followUp.title}`}
                       onClick={() => {
                         askRufi(person.id, [
@@ -127,8 +127,9 @@ export function OverviewPage({ person }: { person: Person }) {
                       params={{ personId: person.id }}
                       search={{ open: followUp.id }}
                       aria-label={`Open ${followUp.title}`}
-                      className="rounded-md px-1 text-accent-ink hover:bg-accent-soft"
+                      className={buttonLook({ look: "quiet" })}
                     >
+                      <ArrowUpRight size={ICON} aria-hidden />
                       Open
                     </Link>
                   </li>

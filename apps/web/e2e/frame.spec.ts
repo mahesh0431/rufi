@@ -330,7 +330,7 @@ test.describe("first run", () => {
     await expect(name).toBeFocused();
     await page.reload();
     await name.fill("Mira Fictional");
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Save and continue" }).click();
 
     await expect(
       page.getByRole("heading", { name: "Sign in with ChatGPT", level: 1 }),
@@ -350,7 +350,7 @@ test.describe("first run", () => {
     await accessible(page);
     await page.reload();
     await region.selectOption("IN");
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Save and continue" }).click();
 
     await expect(
       page.getByRole("heading", { name: /, Mira Fictional$/ }),
@@ -402,7 +402,7 @@ test.describe("first run", () => {
     await page
       .getByRole("textbox", { name: "What's your name?" })
       .fill("Mira Fictional");
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Save and continue" }).click();
 
     await page.getByRole("button", { name: "Sign in with ChatGPT" }).click();
     await expect(page.getByRole("status")).toContainText(
@@ -417,7 +417,7 @@ test.describe("first run", () => {
     await page
       .getByRole("combobox", { name: "Emergency region" })
       .selectOption("IN");
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Save and continue" }).click();
     await expect(sidebar(page)).toContainText("Mira Fictional");
     await expect(sidebar(page)).not.toContainText("Not signed in");
   });
@@ -474,15 +474,15 @@ test.describe("first run", () => {
     await page
       .getByRole("textbox", { name: "What's your name?" })
       .fill("Mira Fictional");
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Save and continue" }).click();
     await expect(
       page.getByRole("combobox", { name: "Emergency region" }),
     ).toBeVisible();
     // The other tab still shows the form; its name isn't added.
-    await other.getByRole("button", { name: "Continue" }).click();
+    await other.getByRole("button", { name: "Save and continue" }).click();
     const region = other.getByRole("combobox", { name: "Emergency region" });
     await region.selectOption("IN");
-    await other.getByRole("button", { name: "Continue" }).click();
+    await other.getByRole("button", { name: "Save and continue" }).click();
     await expect(sidebar(other)).toContainText("Mira Fictional");
   });
 });
@@ -588,7 +588,7 @@ test.describe("Overview", () => {
     await expect(page.getByRole("alert")).toBeVisible();
 
     await page.unroute("**/overview");
-    await page.getByRole("button", { name: "Try again" }).click();
+    await page.getByRole("button", { name: "Retry" }).click();
     await expect(
       page.getByRole("heading", { name: "Health record" }),
     ).toBeVisible();
@@ -734,24 +734,24 @@ test("Settings backs up, says when a backup failed, and exports your data", asyn
   // Rufi is still finding its backups: it doesn't claim there are none.
   await expect(page.getByText(/No backup yet/)).toHaveCount(0);
   await expect(page.getByText(/^Last backup at \d\d:\d\d on /)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Back up now" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Back up" })).toBeEnabled();
   await accessible(page);
 
   await chmod(join(rufi.home, "backups"), 0o500);
   try {
-    await page.getByRole("button", { name: "Back up now" }).click();
+    await page.getByRole("button", { name: "Back up" }).click();
     await expect(page.getByRole("alert")).toHaveText(
       /^The last try failed at \d\d:\d\d on .+: the backups folder can't be written\. Your last good backup is from \d\d:\d\d on /,
     );
   } finally {
     await chmod(join(rufi.home, "backups"), 0o700);
   }
-  await page.getByRole("button", { name: "Back up now" }).click();
+  await page.getByRole("button", { name: "Back up" }).click();
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByRole("status")).toHaveText("Backed up just now.");
 
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export my data" }).click();
+  await page.getByRole("button", { name: "Export" }).click();
   const file = await download;
   expect(file.suggestedFilename()).toMatch(
     /^rufi-export-\d{4}-\d{2}-\d{2}\.zip$/,
@@ -772,7 +772,7 @@ test("an export that doesn't come in time says so, and can be tried again", asyn
   await sidebar(page).getByRole("link", { name: "Settings" }).click();
   // Rufi takes the request and never answers.
   await page.route("**/api/export", () => undefined);
-  await page.getByRole("button", { name: "Export my data" }).click();
+  await page.getByRole("button", { name: "Export" }).click();
   await expect(page.getByRole("button", { name: "Exporting…" })).toBeDisabled();
   // Five minutes pass, as with the Mac's lid closed: each due timer fires
   // once. runFor would play every chain of timers in those minutes (the
@@ -782,9 +782,7 @@ test("an export that doesn't come in time says so, and can be tried again", asyn
   await expect(page.getByRole("alert")).toHaveText(
     "The export didn't come in time. Try again.",
   );
-  await expect(
-    page.getByRole("button", { name: "Export my data" }),
-  ).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Export" })).toBeEnabled();
 });
 
 test.describe("Help", () => {

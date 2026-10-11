@@ -7,11 +7,11 @@ You can also ask the AI about a document in the chat, and it looks at the pages 
 ## Add documents
 
 1. In the sidebar, click **Documents**.
-2. Click **Add documents** and choose one or more files. You can also drop files on the page.
+2. Click **Add…** and choose one or more files. You can also drop files on the page.
 
 Rufi takes PDFs and photos in JPEG, PNG or HEIC (the format of iPhone photos). It knows a file by its content, not by its name.
 
-You can also add documents in the chat: click the paperclip next to the box, or drop files on the chat. They are added the same way, and each one's chip goes in the box (see [Adding to a message](chat.md#adding-to-a-message)). To add a document you already have to a message, point at its row on the Documents page and click **Ask Rufi**.
+You can also add documents in the chat: click the paperclip next to the box, or drop files on the chat. They are added the same way, and each one's chip goes in the box (see [Adding to a message](chat.md#adding-to-a-message)). To add a document you already have to a message, click **Ask Rufi** on its row on the Documents page.
 
 ### Photos taken together
 
@@ -41,7 +41,7 @@ The Documents page lists everything you added, newest first:
 | Kind     | A lab report, prescription, letter or other; empty until Rufi reads it |
 | Date     | The document's date; empty until Rufi reads it                         |
 | Added    | The day you added it                                                   |
-| Status   | How its reading went (see below), with **Retry** or **Open**           |
+| Status   | How its reading went (see below), with **Retry** or **View reading**   |
 
 To show one kind only, choose it in the list at the top left.
 
@@ -71,7 +71,7 @@ Your choice is used by the next reading that starts. A reading that runs keeps t
 
 - A line in the chat says the reading started: **Reading thyrocare-aug.pdf · 5 pages**.
 - Above the chat box, the reader strip shows each reading: the one at work with its pages read and time (**read 3 of 5 · 1 min**), and those that wait their turn (**waiting**). You can keep chatting meanwhile.
-- Click **Open ▸** to see the reader's work as it goes: each page it read, with the facts and results it read, its one note for the whole document, Rufi's checks (below) and how much of your plan it used. **Open** shows only; you check and fix results on the document's page (see [Check a report](#check-a-report)).
+- Click **View reading** to see the reader's work as it goes: each page it read, with the facts and results it read, its one note for the whole document, Rufi's checks (below) and how much of your plan it used. **View reading** shows only; you check and fix results on the document's page (see [Check a report](#check-a-report)).
 
 ### When the reading ends
 
@@ -94,7 +94,7 @@ Rufi checks each page the reader reads. A check never changes what the reader re
 
 ## Save results to your health record
 
-1. Add the document to a message (**Ask Rufi** on its row on the Documents page, **Save these in the chat** on its page, or its chip from the paperclip), and say "save it". To save only some results, add them on the document's page (see [Add some results to the chat](#add-some-results-to-the-chat)) and say "save these".
+1. Add the document to a message (**Ask Rufi** on its row on the Documents page, **Save in chat** on its page, or its chip from the paperclip), and say "save it". To save only some results, add them on the document's page (see [Add some results to the chat](#add-some-results-to-the-chat)) and say "save these".
 2. The AI reads all the document's draft items and the results you already saved for the same tests and dates. Then it says, in a few lines, how many results are new, which are lab results and which are measurements, and names each one that isn't plainly new. It asks you about:
    - **another source**: the same result is already in your health record, for example because you told the AI, or you added another copy of the report. The saved result stays as it is, and this page becomes one more source of it.
    - **a correction**: the lab amended a result you saved. The new result replaces the old one, and the old one stays in its history, marked as replaced.
@@ -129,7 +129,7 @@ Say "undo that", as for any save (see [Undo](chat.md#undo)). The AI removes the 
 - **The AI connection was lost or restarted:** Rufi tries once more by itself.
 - **It took too long, or failed again:** the line says **Couldn't finish reading … · read 3 of 5**, with **Retry**. The pages read so far are kept, and no results are made until a reading finishes.
 
-**Retry** (on the line, in **Open**, or on the Documents page) continues a reading that failed. For a document that was read with pages that couldn't be read or weren't looked at, it reads only those pages again; the results already read, and any you changed, stay as they are. You can also ask the AI in the chat to read a document again.
+**Retry** (on the line, in **View reading**, or on the Documents page) continues a reading that failed. For a document that was read with pages that couldn't be read or weren't looked at, it reads only those pages again; the results already read, and any you changed, stay as they are. You can also ask the AI in the chat to read a document again.
 
 ## Check a report
 
@@ -143,7 +143,7 @@ Nothing on this page saves to your health record. You fix what the reader read, 
 - Click a result to show its page on the right. The arrows above the page go to the page before or after.
 - Values from a report's column of earlier results are rows of their own, marked **earlier**. Rufi doesn't count them as results, here, on the Documents page or in the chat's line.
 - Turn on **Unsure only** to see only the results marked unsure, each with why.
-- **View original** opens the file as you added it. **The reader's work** shows what the reader read on each page, as **Open ▸** does while it reads.
+- **View original** opens the file as you added it. **View reading** shows what the reader read on each page, also while it reads.
 
 ### Fix a result
 
@@ -157,21 +157,21 @@ A result you already saved or dismissed can't be fixed here.
 
 ### When another tab changed it first
 
-If you fix a result in two tabs or windows, the second fix doesn't go over the first without you knowing. Rufi says **This result changed in another tab**, shows the value now, and keeps your text in the form. Look at the page, then click **Save my fix over it**, or **Cancel**.
+If you fix a result in two tabs or windows, the second fix doesn't go over the first without you knowing. Rufi says **This result changed in another tab**, shows the value now, and keeps your text in the form. Look at the page, then click **Replace fix**, or **Cancel**.
 
 Fields you didn't change take their current values from the other tab. Saving again changes only the fields you edited. If a later save fails, Rufi shows that error and keeps your text.
 
 ### Add some results to the chat
 
-To ask about or save only some results, add them to the chat as chips: point at a result's row and click **Ask Rufi**, for each one you want. You stay on the page, and the chat bar shows what you added. Then click the bar, type your message, for example "save these", and send it. Results you already saved or dismissed have no **Ask Rufi**.
+To ask about or save only some results, add them to the chat as chips: click **Ask Rufi** on a result's row, for each one you want. You stay on the page, and the chat bar shows what you added. Then click the bar, type your message, for example "save these", and send it. Results you already saved or dismissed have no **Ask Rufi**.
 
-### Save these in the chat
+### Save in chat
 
-Click **Save these in the chat**. Rufi puts **Save these 42 results.** in the chat box, after anything you already typed there, with the document's chip. You stay on the page, so you can read the results beside it. Click the chat bar, read the message, then send it: this message goes to the AI only when you send it. The AI reads the results with your fixes, then checks them with you and saves them (see [Save results to your health record](#save-results-to-your-health-record)).
+Click **Save in chat**. Rufi puts **Save these 42 results.** in the chat box, after anything you already typed there, with the document's chip. You stay on the page, so you can read the results beside it. Click the chat bar, read the message, then send it: this message goes to the AI only when you send it. The AI reads the results with your fixes, then checks them with you and saves them (see [Save results to your health record](#save-results-to-your-health-record)).
 
-While a message of yours is being sent, the button says **Wait: a message is being sent**.
+While a message of yours is being sent, Rufi says **Wait: a message is being sent.** beside the button.
 
-If Rufi didn't receive the send's answer, the button says **Retry the message in the chat first**. Open the chat and retry that message before you add these results. Rufi keeps the message's text and retries the same send, so it isn't taken twice.
+If Rufi didn't receive the send's answer, Rufi says **Retry the message in the chat first.** beside the button. Open the chat and retry that message before you add these results. Rufi keeps the message's text and retries the same send, so it isn't taken twice.
 
 ## Look at an original
 

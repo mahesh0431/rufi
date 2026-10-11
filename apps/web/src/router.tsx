@@ -10,6 +10,7 @@ import {
   useLocation,
 } from "@tanstack/react-router";
 import type { PageKind } from "@rufi/contracts/record";
+import { House } from "lucide-react";
 import type { ReactNode } from "react";
 import { BriefPage } from "./brief.tsx";
 import { ChatPage } from "./chat.tsx";
@@ -23,7 +24,7 @@ import { isPageKind, pageOf, RecordPage } from "./record.tsx";
 import { usePeople, useRecordDetail } from "./reads.ts";
 import { SettingsPage } from "./settings.tsx";
 import { SignIn } from "./signin.tsx";
-import { Problem } from "./ui.tsx";
+import { buttonLook, ICON, Problem } from "./ui.tsx";
 
 const root = createRootRoute({ component: Frame });
 
@@ -322,7 +323,8 @@ export const router = createRouter({
   defaultNotFoundComponent: () => (
     <div className="px-6 py-8 text-muted">
       There is no page here.{" "}
-      <Link to="/" className="text-accent-ink">
+      <Link to="/" className={buttonLook({ look: "quiet" })}>
+        <House size={ICON} aria-hidden />
         Go to Overview
       </Link>
     </div>
