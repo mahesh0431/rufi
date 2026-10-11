@@ -222,13 +222,14 @@ function Preview({
                 <strong className="font-semibold">
                   Delete file and results
                 </strong>
-                : the chat opens, and Rufi goes through the results with you. It
-                removes each one only when you say yes.
+                : the chat opens, and the AI goes through the results with you.
+                It removes each one only when you say yes.
               </li>
             </ul>
           </>
         )}
-        {preview && (
+        {/* With saved results, the two choices say what goes and stays. */}
+        {preview && saved.length === 0 && (
           <>
             <h3 className="mt-3 mb-1 text-xs font-semibold text-muted">
               Goes from Rufi
@@ -247,19 +248,21 @@ function Preview({
               Stays
             </h3>
             <ul className="list-disc pl-[18px]">
-              <li>The history of your health record</li>
+              <li>Your health record and its history</li>
               <li>
                 The chat. Where it points at this document, it says "document
                 deleted".
               </li>
             </ul>
-            <p className="mt-3 rounded-[10px] bg-side px-3 py-2 text-xs">
-              Rufi can't reach copies outside it. Its backups keep this document
-              until they age out, in about 5 weeks. Backups from before an
-              update keep it until you remove them. Exports you saved, Time
-              Machine, and what the AI already read keep theirs.
-            </p>
           </>
+        )}
+        {preview && (
+          <p className="mt-3 rounded-[10px] bg-side px-3 py-2 text-xs">
+            Rufi can't reach copies outside it. Its backups keep this document
+            until they age out, in about 5 weeks. Backups from before an update
+            keep it until you remove them. Exports you saved, Time Machine, and
+            what the AI already read keep theirs.
+          </p>
         )}
         {remove.error && !changed && (
           <p role="alert" className="mt-2 text-muted">

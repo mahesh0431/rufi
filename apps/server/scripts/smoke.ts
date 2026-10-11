@@ -308,7 +308,7 @@ function record(home: string) {
   const result = {
     saves: (all("SELECT id FROM operations") as unknown[]).length,
     medicines: all(
-      "SELECT name, strength, schedule, status, started, started_words FROM medicine_uses WHERE person_id = 'asha' AND removed = 0 ORDER BY name",
+      "SELECT id, name, strength, schedule, status, started, started_words FROM medicine_uses WHERE person_id = 'asha' AND removed = 0 ORDER BY name",
     ) as Record<string, unknown>[],
     symptoms: all(
       "SELECT name, status, removed FROM symptoms WHERE person_id = 'asha'",
@@ -426,14 +426,16 @@ const SEEDS: Record<string, string> = {
   deleted_document:
     "UPDATE results SET removed = 1 WHERE report_id = 'rep-asha-aug';",
   // Asha told the AI her HbA1c before, the value itself; she only moved
-  // the glucose to lab results by a message.
+  // the glucose to lab results by a message. The HbA1c is on both pages.
   delete_with_results: `INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, revision, created_at, updated_at) VALUES
       ('m-hba', 'asha', 'c-asha', 1, 'message', 'My HbA1c on 12 August was 6.8%.', 1, '2026-08-20T09:00:00Z', '2026-08-20T09:00:00Z'),
       ('m-cat', 'asha', 'c-asha', 2, 'message', 'That glucose is a lab result, not a measurement.', 2, '2026-08-21T09:00:00Z', '2026-08-21T09:00:00Z');
     UPDATE chats SET revision = 2 WHERE id = 'c-asha';
     INSERT INTO record_sources (person_id, kind, record_id, type, entry_id) VALUES
       ('asha', 'result', 'res-a1', 'message', 'm-hba'),
-      ('asha', 'result', 'res-a2', 'message', 'm-cat');`,
+      ('asha', 'result', 'res-a2', 'message', 'm-cat');
+    INSERT INTO record_sources (person_id, kind, record_id, type, document_id, page) VALUES
+      ('asha', 'result', 'res-a1', 'document_page', 'doc-asha-aug', 2);`,
   trend:
     RESULTS +
     [
@@ -1102,12 +1104,12 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   /** In Hindi: asks, then saves on "yes", with the date the user said. */
   hindi: async (api, home) => {
     const c = chat(api);
+    const before = new Set(record(home).medicines.map((m) => m["id"]));
     await c.ask("मैंने पिछले सोमवार से रात को मैग्नीशियम 200 mg लेना शुरू किया।");
     await c.ask("हाँ");
     const snapshot = await c.read();
-    const saved = record(home).medicines.find(
-      (m) => typeof m["strength"] === "string" && m["strength"].includes("200"),
-    );
+    // The one this case added, wherever its dose went (strength or amount).
+    const saved = record(home).medicines.find((m) => !before.has(m["id"]));
     return {
       checks: {
         saved_once: record(home).saves === 1 && receipts(snapshot) === 1,
@@ -1779,7 +1781,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
    * Delete file and results: the AI starts by itself, lists the results and
    * asks; it removes nothing before the yes. After it, the results that
    * came only from the report are removed, and the HbA1c Asha also typed
-   * stays, with the report taken off it. The glucose's message only moved
+   * stays, with the report taken off it (both pages, a save for each). The glucose's message only moved
    * it to lab results, so it goes too.
    */
   delete_with_results: async (api, home) => {

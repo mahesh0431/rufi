@@ -130,6 +130,9 @@ test("a document with nothing saved from it goes with Delete, the AI hears at on
   await expect(dialog).toContainText(
     "2 results in your health record come from it:",
   );
+  // The two choices say what goes and stays; the copies Rufi can't reach too.
+  await expect(dialog).not.toContainText("Goes from Rufi");
+  await expect(dialog).toContainText("Rufi can't reach copies outside it.");
   await expect(
     dialog
       .getByRole("list", { name: "Saved results from this document" })
