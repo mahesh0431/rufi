@@ -18,11 +18,16 @@ const Text = Schema.optionalKey(Schema.String);
 const When = Schema.optionalKey(Dated);
 const Id = Schema.String;
 
+/** A result is a lab result or a measurement; each has its own page. */
+export const ResultCategory = Schema.Literals(["lab", "measurement"]);
+export type ResultCategory = typeof ResultCategory.Type;
+
 export const ResultRow = Schema.Struct({
   kind: Schema.Literal("result"),
   id: Id,
   test: Schema.String,
   value: Schema.String,
+  category: ResultCategory,
   comparator: Text,
   number: Schema.optionalKey(Schema.Number),
   second_number: Schema.optionalKey(Schema.Number),
@@ -159,9 +164,13 @@ export type RecordRow = typeof RecordRow.Type;
 export const ShownRow = Schema.Union([RecordRow, BadRow]);
 export type ShownRow = typeof ShownRow.Type;
 
-/** The kinds with a page of their own; "none known" shows with allergies. */
+/**
+ * The record's pages: one per kind, but results have two, Lab results and
+ * Measurements, by their category; "none known" shows with allergies.
+ */
 export const PageKind = Schema.Literals([
-  "result",
+  "lab_result",
+  "measurement",
   "medicine_use",
   "prescription",
   "condition",
@@ -172,12 +181,14 @@ export const PageKind = Schema.Literals([
 export type PageKind = typeof PageKind.Type;
 
 /**
- * A group on a kind's page: a report (its results), a day of results typed
- * in the chat (or a month or year, at the precision known), or one row.
+ * A group on a page: on Lab results, a report (its lab results) or a day of
+ * lab results typed in the chat; on Measurements, the day they were taken;
+ * a day can be a month or year, at the precision known. On other pages,
+ * one row.
  */
 export const RecordGroup = Schema.Struct({
   id: Schema.String,
-  type: Schema.Literals(["report", "chat", "row"]),
+  type: Schema.Literals(["report", "chat", "day", "row"]),
   /** The group's date; none for an undated group. */
   date: Schema.optionalKey(Schema.String),
   /** A report's lab or clinic, as printed. */
@@ -253,18 +264,19 @@ export const RecordDetail = Schema.Struct({
 });
 export type RecordDetail = typeof RecordDetail.Type;
 
-/** Every current value of one test in one unit, oldest first, undated last. */
+/** Every current value of one test in one unit and category, oldest first, undated last. */
 export const Series = Schema.Struct({
   test: Schema.String,
   unit: Schema.NullOr(Schema.String),
+  category: ResultCategory,
   values: Schema.Array(ShownRow),
 });
 export type Series = typeof Series.Type;
 
-/** A kind's tile on Overview: what it counts, worked out from the record. */
+/** A page's tile on Overview: what it counts, worked out from the record. */
 export const Tile = Schema.Struct({
   kind: PageKind,
-  /** Current records of the kind. */
+  /** Current records on the page. */
   count: Schema.Int,
   /**
    * Those that apply now: medicines taken now, conditions ongoing, allergies
@@ -273,7 +285,7 @@ export const Tile = Schema.Struct({
   now: Schema.optionalKey(Schema.Int),
   /** Names of those that apply now, or of the latest, a few at most. */
   names: Schema.Array(Schema.String),
-  /** The latest group: a report, a day of typed results, or a row. */
+  /** The latest group: a report, a day of results, or a row. */
   latest: Schema.optionalKey(
     Schema.Struct({
       label: Schema.String,

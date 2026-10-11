@@ -152,6 +152,7 @@ CREATE TABLE results (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL REFERENCES people (id),
   report_id TEXT,        -- null when typed in rather than read from a report
+  category TEXT NOT NULL CHECK (category IN ('lab', 'measurement')), -- the AI's choice with the person; the pages filter by it
   test_name TEXT NOT NULL,     -- as printed
   value_text TEXT NOT NULL,    -- as printed, e.g. '<5', '6.8', 'Negative'
   comparator TEXT,             -- '<', '<=', '>' or '>=' when printed; '<5' is not 5
@@ -160,7 +161,7 @@ CREATE TABLE results (
   reference_range TEXT,        -- as printed
   flag_text TEXT,              -- 'High' / 'Low' only as printed; Rufi adds none
   context_text TEXT,           -- method or context as printed, e.g. 'Calculated', 'Fasting'
-  measured_at TEXT,            -- when the sample was taken (precision date or time)
+  measured_at TEXT,            -- when the sample was taken, or the measurement made (precision date or time)
   entered_at TEXT NOT NULL,    -- when it entered Rufi
   replaces_id TEXT,            -- an amended result points at the one it replaces
   group_label TEXT,            -- a shared label to join two printed names; printed fields never change
@@ -549,4 +550,4 @@ CREATE INDEX sources_by_record ON record_sources (person_id, record_id);
 CREATE INDEX drafts_by_document ON draft_items (person_id, document_id, page, seq);
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 3;
+PRAGMA user_version = 4;

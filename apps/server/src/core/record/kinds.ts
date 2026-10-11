@@ -42,6 +42,12 @@ export interface Field {
   past?: boolean | ((after: Row) => boolean);
   /** The AI must give it when adding, and can't forget it. */
   required?: true;
+  /**
+   * The field of an add that names an earlier record of the kind (an
+   * amended result's replaces): when the add leaves this field out, it
+   * takes the earlier record's value, before required is checked.
+   */
+  inheritsVia?: string;
   /** Always known in the record: "unknown" stands for not known. */
   notNull?: true;
 }
@@ -218,6 +224,16 @@ export const KINDS: readonly Kind[] = [
     fields: {
       test: required(text("test_name", "test")),
       value: required(text("value_text", "value")),
+      // A lab result or a measurement: the AI's choice with the person,
+      // never worked out from the test's name (docs/adr/0013).
+      category: {
+        ...required(choice("category", ["lab", "measurement"])),
+        input: Schema.Literals(["lab", "measurement"]).annotate({
+          description:
+            "lab: a test of a sample, such as blood or urine, whether from a report or typed in (shown on Lab results). measurement: a reading of the body, such as blood pressure, pulse, weight, height, temperature or SpO2 (shown on Measurements). Choose it with the user; an amended result keeps the category of the one it replaces unless you give one.",
+        }),
+        inheritsVia: "replaces",
+      },
       comparator: choice("comparator", ["<", "<=", ">", ">="]),
       number: number("value_number", "number"),
       second_number: number("second_number", "second number"),

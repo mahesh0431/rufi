@@ -218,6 +218,7 @@ describe("schema", () => {
           id: "res-x",
           person_id: "amma",
           report_id: "rep-nanna",
+          category: "lab",
           test_name: "HbA1c",
           value_text: "6.8",
           entered_at: now,
@@ -228,6 +229,7 @@ describe("schema", () => {
     it("rejects a typed-in result for a person who doesn't exist", () => {
       const typed = {
         id: "res-typed",
+        category: "measurement",
         test_name: "Weight",
         value_text: "61 kg",
         entered_at: now,
@@ -243,6 +245,7 @@ describe("schema", () => {
         id: "res-nanna",
         person_id: "nanna",
         report_id: "rep-nanna",
+        category: "lab",
         test_name: "Ferritin",
         value_text: "22",
         entered_at: now,
@@ -251,6 +254,7 @@ describe("schema", () => {
         insert("results", {
           id: "res-x",
           person_id: "amma",
+          category: "lab",
           test_name: "Ferritin",
           value_text: "25",
           entered_at: now,
@@ -289,6 +293,7 @@ describe("schema", () => {
       id: "res-crp",
       person_id: "amma",
       report_id: "rep-amma",
+      category: "lab",
       test_name: "C-Reactive Protein",
       value_text: "<5",
       comparator: "<",
@@ -343,6 +348,17 @@ describe("schema", () => {
         .prepare("SELECT * FROM results WHERE group_label = 'LDL' ORDER BY id")
         .all();
       expect(rows).toEqual([original, amended]);
+    });
+
+    it("needs a category: lab or measurement, never none or another", () => {
+      const { category: _, ...none } = crp;
+      expect(() => {
+        insert("results", none);
+      }).toThrow("NOT NULL constraint failed: results.category");
+      expect(() => {
+        insert("results", { ...crp, category: "vital" });
+      }).toThrow("CHECK constraint failed");
+      insert("results", { ...crp, id: "res-bp", category: "measurement" });
     });
 
     it("keeps dates at the precision they were known", () => {

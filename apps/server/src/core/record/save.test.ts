@@ -316,6 +316,7 @@ const KIND_CASES: KindCase[] = [
     add: {
       test: "Blood pressure",
       value: "128/84",
+      category: "measurement",
       number: 128,
       second_number: 84,
       unit: "mmHg",
@@ -324,6 +325,7 @@ const KIND_CASES: KindCase[] = [
     stored: {
       test_name: "Blood pressure",
       value_text: "128/84",
+      category: "measurement",
       value_number: 128,
       second_number: 84,
       unit: "mmHg",
@@ -333,7 +335,7 @@ const KIND_CASES: KindCase[] = [
     },
     added: [
       "Saved",
-      'Added result Blood pressure 128/84 mmHg: measured 4 Oct 2026 ("this morning")',
+      'Added result Blood pressure 128/84 mmHg: category measurement, measured 4 Oct 2026 ("this morning")',
     ],
     change: {
       said: "Sorry, the blood pressure was 126/84",
@@ -1067,7 +1069,7 @@ describe("the health rules", () => {
       },
     ]);
     expect(refused.body.issues.map((issue) => issue.fix)).toEqual([
-      "This result was read from a document, so it changes only by amendment: add a new result with replaces set to this id.",
+      "This result was read from a document, so what it prints and its date change only by amendment: add a new result with replaces set to this id. Only its category changes in place, in a change of its own.",
     ]);
     const amended = await save(
       [
@@ -1175,6 +1177,122 @@ describe("the health rules", () => {
     expect(back.body.issues[0]?.fix).toBe(
       "This save would leave more than one current amendment of this result. Ask the user which value is right, then save only that amendment; remove any other current amendment in the same save.",
     );
+  });
+
+  it("needs a result's category on an add; an amended result keeps the one it replaces unless the save gives one", async () => {
+    await say(
+      "My clinic HbA1c was 6.9 on 3 Oct, the lab amended my HbA1c to 6.6, and that weight was 61 kg",
+    );
+    const none = await save([
+      {
+        kind: "result",
+        action: "add",
+        source: "My clinic HbA1c was 6.9 on 3 Oct",
+        fields: { test: "HbA1c", value: "6.9" },
+      },
+    ]);
+    expect(none.ok).toBe(false);
+    expect(JSON.stringify(none.body.issues)).toContain(
+      "Give category when adding a result.",
+    );
+    const saved = await save(
+      [
+        {
+          kind: "result",
+          action: "add",
+          source: "the lab amended my HbA1c to 6.6",
+          fields: { test: "HbA1c", value: "6.6", replaces: "res-a1" },
+        },
+        {
+          kind: "result",
+          action: "add",
+          source: "that weight was 61 kg",
+          fields: { test: "Weight", value: "61", replaces: "res-a10" },
+        },
+        {
+          kind: "result",
+          action: "add",
+          source: "My clinic HbA1c was 6.9 on 3 Oct",
+          fields: {
+            test: "Glucose",
+            value: "6.9",
+            replaces: "res-a2",
+            category: "measurement",
+          },
+        },
+      ],
+      "call-2",
+    );
+    expect(saved.ok).toBe(true);
+    expect(
+      saved.body.result.changes.map((c) => row("results", c.id)["category"]),
+    ).toEqual(["lab", "measurement", "measurement"]);
+  });
+
+  it("moves a result read from a document to the other category in place, and back; a move with a printed value is refused whole", async () => {
+    const sources = sourcesOf("res-a1");
+    const printed = { ...row("results", "res-a1") };
+    await say("That HbA1c is a measurement, not a lab result");
+    const moved = await save([
+      {
+        kind: "result",
+        action: "change",
+        id: "res-a1",
+        source: "That HbA1c is a measurement",
+        fields: { category: "measurement" },
+      },
+    ]);
+    expect(moved.ok).toBe(true);
+    expect(lines(moved.body.result.receipt)).toEqual([
+      "Saved",
+      "Changed result HbA1c 6.8 %: category lab → measurement",
+    ]);
+    expect(row("results", "res-a1")).toEqual({
+      ...printed,
+      category: "measurement",
+    });
+
+    await say("Move it back and make it 6.6");
+    const before = { ...written(), results: rows("SELECT * FROM results") };
+    const mixed = await save(
+      [
+        {
+          kind: "result",
+          action: "change",
+          id: "res-a1",
+          source: "Move it back and make it 6.6",
+          fields: { category: "lab", value: "6.6" },
+        },
+      ],
+      "call-2",
+    );
+    expect(mixed.ok).toBe(false);
+    expect({ ...written(), results: rows("SELECT * FROM results") }).toEqual(
+      before,
+    );
+
+    await say("Undo that");
+    const back = await save(
+      [
+        {
+          kind: "result",
+          action: "change",
+          id: "res-a1",
+          source: "Undo that",
+          fields: { category: "lab" },
+        },
+      ],
+      "call-3",
+    );
+    expect(back.ok).toBe(true);
+    expect(row("results", "res-a1")).toEqual(printed);
+    // Each move rests on the user's words; the report's page stays a source.
+    expect(sourcesOf("res-a1").slice(0, sources.length)).toEqual(sources);
+    expect(
+      rows(
+        "SELECT action FROM record_changes WHERE record_id = 'res-a1' ORDER BY rowid",
+      ),
+    ).toEqual([{ action: "change" }, { action: "change" }]);
   });
 
   describe("one current amendment of a result", () => {

@@ -2,7 +2,7 @@
   "tools": [
     {
       "name": "rufi.get_overview",
-      "description": "The active person's health record in Rufi at a glance: their name, how many documents and reports they have, their current test results exactly as printed (id, test, value, unit, reference range, flag, method or context, measured date at the precision known), their other records by kind (medicine uses, prescriptions, symptoms, conditions, allergies, care events, \"none known\" statements, follow-ups; each with its id and fields as save_changes takes them), their latest saves with what each changed, and record_version: a number every save raises, which create_brief takes. At most 20 results, newest measured first, undated last; at most 50 records of a kind, newest first; the latest 5 saves, newest first. An amended result replaces the one it corrects and says \"amended\": true. Removed records aren't shown. Takes no input: Rufi chooses the person, not you.",
+      "description": "The active person's health record in Rufi at a glance: their name, how many documents and reports they have, their current results exactly as printed (id, test, value, category: lab or measurement, unit, reference range, flag, method or context, measured date at the precision known), their other records by kind (medicine uses, prescriptions, symptoms, conditions, allergies, care events, \"none known\" statements, follow-ups; each with its id and fields as save_changes takes them), their latest saves with what each changed, and record_version: a number every save raises, which create_brief takes. At most 20 results, newest measured first, undated last; at most 50 records of a kind, newest first; the latest 5 saves, newest first. An amended result replaces the one it corrects and says \"amended\": true. Removed records aren't shown. Takes no input: Rufi chooses the person, not you.",
       "callers": "both",
       "readOnly": true,
       "destructive": false,
@@ -17,7 +17,7 @@
     },
     {
       "name": "rufi.get_records",
-      "description": "The active person's records of one kind (medicine_use, prescription, symptom, condition, allergy, result, care_event, none_known, follow_up), as stored: each with its id, its version (the save that last changed it; null when none did), its fields as save_changes takes them and its sources (the user's message, or a document's page), also the records removed from the record (\"removed\": true) and results replaced by an amended one (\"replaced_by\": the amended result's id). Newest first, undated last. With from or to, only records dated in that period: medicine_use by started, prescription by issued, symptom by onset, condition by recognised, allergy by reacted, result by measured, care_event by date, none_known by asserted, follow_up by due. A record dated at a lower precision is read when its year or month overlaps the period (\"2026\" is in from 2026-03); a record with no date is read only without from and to. With ids, exactly those records. At most 200 records and 32 KB of records (as UTF-8 JSON) come back at once (a single larger record comes back on its own); when there are more, the answer says \"complete\": false and gives \"next\": pass it as after, with the same kind, from and to, to read on until \"complete\" is true. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.",
+      "description": "The active person's records of one kind (medicine_use, prescription, symptom, condition, allergy, result, care_event, none_known, follow_up), as stored: each with its id, its version (the save that last changed it; null when none did), its fields as save_changes takes them and its sources (the user's message, or a document's page), also the records removed from the record (\"removed\": true) and results replaced by an amended one (\"replaced_by\": the amended result's id). Newest first, undated last. For results, category reads only lab results or only measurements; without it, both. With from or to, only records dated in that period: medicine_use by started, prescription by issued, symptom by onset, condition by recognised, allergy by reacted, result by measured, care_event by date, none_known by asserted, follow_up by due. A record dated at a lower precision is read when its year or month overlaps the period (\"2026\" is in from 2026-03); a record with no date is read only without from and to. With ids, exactly those records. At most 200 records and 32 KB of records (as UTF-8 JSON) come back at once (a single larger record comes back on its own); when there are more, the answer says \"complete\": false and gives \"next\": pass it as after, with the same kind, category, from and to, to read on until \"complete\" is true. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.",
       "callers": "model",
       "readOnly": true,
       "destructive": false,
@@ -47,6 +47,14 @@
             "type": "string",
             "description": "The latest date to read, YYYY, YYYY-MM or YYYY-MM-DD; leave it out for no end."
           },
+          "category": {
+            "type": "string",
+            "enum": [
+              "lab",
+              "measurement"
+            ],
+            "description": "Results only: just lab results or just measurements; leave it out for both."
+          },
           "ids": {
             "type": "array",
             "items": {
@@ -60,7 +68,7 @@
           },
           "after": {
             "type": "string",
-            "description": "The `next` of the previous answer, to read on with the same kind, from and to."
+            "description": "The `next` of the previous answer, to read on with the same kind, category, from and to."
           }
         },
         "required": [
@@ -72,6 +80,11 @@
         {
           "kind": "result",
           "from": "2024"
+        },
+        {
+          "kind": "result",
+          "category": "measurement",
+          "from": "2026-09"
         },
         {
           "kind": "symptom",
@@ -155,7 +168,7 @@
     },
     {
       "name": "rufi.save_changes",
-      "description": "Saves to the active person's record, all or nothing, after the user clearly said yes to exactly this in this chat. Two parts, either or both:\n- changes: typed changes from the user's own words. Each is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history), restore a removed one, or remove_source (take a document page off a record's sources, to undo \"another source\": the page goes in from, as {document, page} from the record's sources in get_records); ids come from get_overview or get_records. Give only what the user said: a field they didn't give stays out, and a date needs their own words from the source message. source is the user's own words the change rests on, copied from their message.\n- items: draft items of the user's documents (get_documents), each with the version you read and how it goes in: new, another_source (the same result is already saved: its values stay, and the document page becomes another source) or correction (it corrects a saved result: a new result replaces it); record names the saved result, with its version from get_records. Rufi takes each item's values from the stored item, never from you, and its date from the item or its page; fix holds only a value the user corrected in the chat, or the date they gave for an item with none (a rough one is fine, at their precision), with their words. An item already saved at that version returns its earlier save; a dismissed item, or one whose version changed, is refused, and nothing is saved.\nNo count limit. Rufi refuses a save with any problem and says each one; nothing is saved then. On success Rufi adds its own receipt to the chat and returns it; the same call again returns the same receipt. Never say something was saved without this tool's answer.",
+      "description": "Saves to the active person's record, all or nothing, after the user clearly said yes to exactly this in this chat. Two parts, either or both:\n- changes: typed changes from the user's own words. Each is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history), restore a removed one, or remove_source (take a document page off a record's sources, to undo \"another source\": the page goes in from, as {document, page} from the record's sources in get_records); ids come from get_overview or get_records. Give only what the user said: a field they didn't give stays out, and a date needs their own words from the source message. A result's category (lab or measurement) is the one field you choose, with the user: every added result needs one, except an amended result, which keeps the category of the one it replaces unless you give one. A result read from a document changes in place only its category, in a change of its own; what it prints and its date change only by amendment. source is the user's own words the change rests on, copied from their message.\n- items: draft items of the user's documents (get_documents), each with the version you read and how it goes in: new, another_source (the same result is already saved: its values stay, and the document page becomes another source) or correction (it corrects a saved result: a new result replaces it); record names the saved result, with its version from get_records. category: lab or measurement, for new; a correction keeps the corrected result's unless you give one; never for another_source. Rufi takes each item's values from the stored item, never from you, and its date from the item or, for a lab result, its page; a measurement is dated only by its own date or the user's; fix holds only a value the user corrected in the chat, or the date they gave for an item with none (a rough one is fine, at their precision), with their words. An item already saved at that version returns its earlier save; a dismissed item, or one whose version changed, is refused, and nothing is saved.\nNo count limit. Rufi refuses a save with any problem and says each one; nothing is saved then. On success Rufi adds its own receipt to the chat and returns it; the same call again returns the same receipt. Never say something was saved without this tool's answer.",
       "callers": "model",
       "readOnly": false,
       "destructive": false,
@@ -883,6 +896,14 @@
                         "value": {
                           "$ref": "#/$defs/Text"
                         },
+                        "category": {
+                          "type": "string",
+                          "enum": [
+                            "lab",
+                            "measurement"
+                          ],
+                          "description": "lab: a test of a sample, such as blood or urine, whether from a report or typed in (shown on Lab results). measurement: a reading of the body, such as blood pressure, pulse, weight, height, temperature or SpO2 (shown on Measurements). Choose it with the user; an amended result keeps the category of the one it replaces unless you give one."
+                        },
                         "comparator": {
                           "anyOf": [
                             {
@@ -1390,6 +1411,14 @@
                   "additionalProperties": false,
                   "description": "For another_source and correction: the saved result it is another source for, or corrects."
                 },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "lab",
+                    "measurement"
+                  ],
+                  "description": "What the item is, chosen with the user: lab (a test of a sample) or measurement (blood pressure, pulse, weight, height, temperature, SpO2). Needed for new; a correction keeps the corrected result's category unless you give one; never for another_source."
+                },
                 "fix": {
                   "type": "object",
                   "properties": {
@@ -1587,6 +1616,39 @@
           "changes": [
             {
               "kind": "result",
+              "action": "add",
+              "source": "my HbA1c at the clinic was 6.8 on 3 Oct",
+              "fields": {
+                "test": "HbA1c",
+                "value": "6.8",
+                "category": "lab",
+                "number": 6.8,
+                "unit": "%",
+                "measured": {
+                  "date": "2026-10-03",
+                  "words": "3 Oct"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "changes": [
+            {
+              "kind": "result",
+              "action": "change",
+              "id": "0199a0f2-0000-7000-8000-00000000000b",
+              "source": "that's a measurement",
+              "fields": {
+                "category": "measurement"
+              }
+            }
+          ]
+        },
+        {
+          "changes": [
+            {
+              "kind": "result",
               "action": "remove_source",
               "id": "0199a0f2-0000-7000-8000-00000000000a",
               "source": "Undo that",
@@ -1602,7 +1664,8 @@
             {
               "item": "0199a0f2-0000-7000-8000-000000000001",
               "version": 1,
-              "as": "new"
+              "as": "new",
+              "category": "lab"
             },
             {
               "item": "0199a0f2-0000-7000-8000-000000000002",
@@ -1617,6 +1680,7 @@
               "item": "0199a0f2-0000-7000-8000-000000000003",
               "version": 2,
               "as": "new",
+              "category": "lab",
               "fix": {
                 "source": "the LDL is 132, not 142",
                 "fields": {

@@ -766,8 +766,8 @@ describe("the chat, on the scripted Codex", () => {
       INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name) VALUES
         ('asha', 'doc-1', 1, 'f-1', 1, 'Sunrise Labs August.pdf'),
         ('ravi', 'doc-r', 1, 'f-1', 1, 'Ravi lipid panel.pdf');
-      INSERT INTO results (id, person_id, test_name, value_text, unit, measured_at, entered_at)
-        VALUES ('res-1', 'asha', 'HbA1c', '6.8', '%', '2026-08-12', '2026-08-13T00:00:00Z');
+      INSERT INTO results (id, person_id, category, test_name, value_text, unit, measured_at, entered_at)
+        VALUES ('res-1', 'asha', 'lab', 'HbA1c', '6.8', '%', '2026-08-12', '2026-08-13T00:00:00Z');
     `);
     await startChat("fake");
     const c = await newChat();

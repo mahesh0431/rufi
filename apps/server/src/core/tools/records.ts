@@ -40,6 +40,12 @@ const Input = Schema.Struct({
   to: Bound(
     "The latest date to read, YYYY, YYYY-MM or YYYY-MM-DD; leave it out for no end.",
   ),
+  category: Schema.optionalKey(
+    Schema.Literals(["lab", "measurement"]).annotate({
+      description:
+        "Results only: just lab results or just measurements; leave it out for both.",
+    }),
+  ),
   ids: Schema.optionalKey(
     Schema.Array(
       Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
@@ -52,23 +58,28 @@ const Input = Schema.Struct({
   after: Schema.optionalKey(
     Schema.String.annotate({
       description:
-        "The `next` of the previous answer, to read on with the same kind, from and to.",
+        "The `next` of the previous answer, to read on with the same kind, category, from and to.",
     }),
   ),
 }).check(
   Schema.makeFilter(
     (input: {
+      kind: string;
+      category?: unknown;
       ids?: unknown;
       from?: unknown;
       to?: unknown;
       after?: unknown;
     }) =>
-      input.ids !== undefined &&
-      (input.from !== undefined ||
-        input.to !== undefined ||
-        input.after !== undefined)
-        ? "Give ids alone, or from, to and after without ids."
-        : undefined,
+      input.category !== undefined && input.kind !== "result"
+        ? "Give category only with kind result."
+        : input.ids !== undefined &&
+            (input.category !== undefined ||
+              input.from !== undefined ||
+              input.to !== undefined ||
+              input.after !== undefined)
+          ? "Give ids alone, or category, from, to and after without ids."
+          : undefined,
   ),
 );
 
@@ -118,26 +129,37 @@ const dateIn = (value: unknown) =>
     ? value
     : undefined;
 
-/** A read in plain words, from what the AI sent: "Read your results in 2026". */
+/** What a read of results of one category is called. */
+const CATEGORY_NOUNS: Record<string, string> = {
+  lab: "lab results",
+  measurement: "measurements",
+};
+
+/** A read in plain words, from what the AI sent: "Read your lab results in 2026". */
 function shown(input: unknown): string {
   const sent = (input ?? {}) as Record<string, unknown>;
   const kind =
     typeof sent["kind"] === "string" ? kindNamed(sent["kind"]) : undefined;
   if (!kind) return "Read your records";
   const when = period(dateIn(sent["from"]), dateIn(sent["to"]));
-  return `Read your ${kind.nouns}${when === undefined ? "" : ` ${when}`}`;
+  const nouns =
+    (typeof sent["category"] === "string" &&
+      CATEGORY_NOUNS[sent["category"]]) ||
+    kind.nouns;
+  return `Read your ${nouns}${when === undefined ? "" : ` ${when}`}`;
 }
 
 export const getRecords = defineTool({
   name: "get_records",
   shown,
-  description: `The active person's records of one kind (${names.join(", ")}), as stored: each with its id, its version (the save that last changed it; null when none did), its fields as save_changes takes them and its sources (the user's message, or a document's page), also the records removed from the record ("removed": true) and results replaced by an amended one ("replaced_by": the amended result's id). Newest first, undated last. With from or to, only records dated in that period: ${datedBy}. A record dated at a lower precision is read when its year or month overlaps the period ("2026" is in from 2026-03); a record with no date is read only without from and to. With ids, exactly those records. At most ${String(LIMITS.records)} records and ${String(LIMITS.bytes / 1000)} KB of records (as UTF-8 JSON) come back at once (a single larger record comes back on its own); when there are more, the answer says "complete": false and gives "next": pass it as after, with the same kind, from and to, to read on until "complete" is true. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.`,
+  description: `The active person's records of one kind (${names.join(", ")}), as stored: each with its id, its version (the save that last changed it; null when none did), its fields as save_changes takes them and its sources (the user's message, or a document's page), also the records removed from the record ("removed": true) and results replaced by an amended one ("replaced_by": the amended result's id). Newest first, undated last. For results, category reads only lab results or only measurements; without it, both. With from or to, only records dated in that period: ${datedBy}. A record dated at a lower precision is read when its year or month overlaps the period ("2026" is in from 2026-03); a record with no date is read only without from and to. With ids, exactly those records. At most ${String(LIMITS.records)} records and ${String(LIMITS.bytes / 1000)} KB of records (as UTF-8 JSON) come back at once (a single larger record comes back on its own); when there are more, the answer says "complete": false and gives "next": pass it as after, with the same kind, category, from and to, to read on until "complete" is true. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.`,
   input: Input,
   callers: "model",
   readOnly: true,
   destructive: false,
   examples: [
     { kind: "result", from: "2024" },
+    { kind: "result", category: "measurement", from: "2026-09" },
     { kind: "symptom", from: "2026-01", to: "2026-06" },
     { kind: "result", ids: ["0199a0f2-0000-7000-8000-00000000000a"] },
   ],
@@ -185,6 +207,10 @@ export const getRecords = defineTool({
       input.ids === undefined
         ? sql``
         : sql`AND r.id IN (${sql.join(input.ids)})`;
+    const ofCategory =
+      input.category === undefined
+        ? sql``
+        : sql`AND r.category = ${input.category}`;
     const { rows } = await sql<Row>`
       SELECT r.*${
         kind.name === "result"
@@ -202,6 +228,7 @@ export const getRecords = defineTool({
       ${input.to === undefined ? sql`` : sql`AND ${atBoth(input.to)} <= substr(${input.to}, 1, length(${date}))`}
       ${after}
       ${exactly}
+      ${ofCategory}
       ORDER BY ${calendar} DESC, ${date} IS NULL, ${date} DESC, r.rowid DESC
       LIMIT ${LIMITS.records + 1}`.execute(store.query);
     const ids = rows.map((row) => String(row["id"]));
@@ -278,6 +305,7 @@ export const getRecords = defineTool({
     const missing = input.ids?.filter((id) => !ids.includes(id)) ?? [];
     return {
       kind: kind.name,
+      ...(input.category !== undefined && { category: input.category }),
       ...(input.from !== undefined && { from: input.from }),
       ...(input.to !== undefined && { to: input.to }),
       records,

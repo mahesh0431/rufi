@@ -354,6 +354,63 @@ it("upgrades a record of version 2 to keep follow-up notices, and a backup keeps
   }
 });
 
+/** Every result as stored, and every change to one as history keeps it. */
+function resultsIn(path: string) {
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    return {
+      version: (
+        db.prepare("PRAGMA user_version").get() as { user_version: number }
+      ).user_version,
+      results: db.prepare("SELECT * FROM results ORDER BY id").all(),
+      history: db
+        .prepare(
+          "SELECT * FROM record_changes WHERE kind = 'result' ORDER BY operation_id, seq",
+        )
+        .all(),
+    };
+  } finally {
+    db.close();
+  }
+}
+
+it.each([1, 3])(
+  "upgrades a record of version %i so every result is a lab result, its fields, ids and links kept and its history unchanged",
+  async (version) => {
+    const path = databasePath(home);
+    if (version > 1) migrate(path, MIGRATIONS.slice(0, version));
+    const before = resultsIn(path);
+    expect(before.results.length).toBeGreaterThan(0);
+
+    (await openRecord(home)).close();
+
+    const after = resultsIn(path);
+    expect(after.version).toBe(MIGRATIONS.length);
+    expect(after.results).toEqual(
+      before.results.map((row) => ({ ...row, category: "lab" })),
+    );
+    expect(after.history).toEqual(before.history);
+  },
+);
+
+it("keeps the backup made before the category upgrade at version 3, and a restore of it upgrades only the new folder", async () => {
+  migrate(databasePath(home), MIGRATIONS.slice(0, 3));
+  const before = resultsIn(databasePath(home));
+  (await openRecord(home)).close();
+  const [name] = await readdir(upgradeBackupsPath(home));
+  const backup = join(upgradeBackupsPath(home), name ?? "");
+  const target = join(root, "restored");
+
+  await restore(backup, target);
+
+  expect(resultsIn(join(backup, "rufi.sqlite")).version).toBe(3);
+  const restored = resultsIn(databasePath(target));
+  expect(restored.version).toBe(MIGRATIONS.length);
+  expect(restored.results).toEqual(
+    before.results.map((row) => ({ ...row, category: "lab" })),
+  );
+});
+
 it.each([
   {
     record: "a record from a newer Rufi",
