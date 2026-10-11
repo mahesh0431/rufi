@@ -19,8 +19,17 @@ function valuesOf(field: Field): string {
       return " (date)";
     case "due":
       return ' (date or "next_visit")';
-    case "link":
-      return " ({kind, id} of another record)";
+    case "link": {
+      // The kinds it can name, from its object's kind.
+      const json = jsonSchemaOf(field.input);
+      const kinds = [json, ...((json["anyOf"] ?? []) as Json[])].flatMap(
+        (part) =>
+          ((part["properties"] as Record<string, Json> | undefined)?.["kind"]?.[
+            "enum"
+          ] ?? []) as string[],
+      );
+      return ` ({kind: ${kinds.join("|")}, id} of another record)`;
+    }
     case "boolean":
       return " (true|false)";
     case "value": {
@@ -43,7 +52,7 @@ const named = (fields: Record<string, Field>, names: readonly string[]) =>
  * (0.159.3), but keeps the description whole.
  */
 export const FIELDS = [
-  'Fields by kind, in changes[].fields (a date is {"date": "2026-09-28", "words": "last Monday"}: YYYY, YYYY-MM or YYYY-MM-DD at the precision the user gave, with their own words):',
+  'Fields by kind, in changes[].fields (a date is {"date": "2026-09-28", "words": "last Monday"}: YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM in local time, at the precision the user gave, with their own words):',
   ...KINDS.map(
     (kind) => `- ${kind.name}: ${named(kind.fields, Object.keys(kind.fields))}`,
   ),
