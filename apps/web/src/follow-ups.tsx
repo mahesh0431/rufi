@@ -18,13 +18,7 @@ import { useEffect, useState } from "react";
 import { AskRufi } from "./ask.tsx";
 import { printedDate } from "./dates.ts";
 import { askRufi } from "./panel.ts";
-import {
-  cellsOf,
-  chipOf,
-  isPageKind,
-  RowDetail,
-  rowElementId,
-} from "./record.tsx";
+import { cellsOf, chipOf, pageOf, RowDetail, rowElementId } from "./record.tsx";
 import { useFollowUps, useRecordDetail } from "./reads.ts";
 import { Problem } from "./ui.tsx";
 
@@ -276,7 +270,9 @@ function About({
 }) {
   const detail = useRecordDetail(personId, kind, id);
   const row = detail.data?.row;
-  if (row === undefined || "problem" in row || !isPageKind(kind)) {
+  // A result opens on the page of its category.
+  const page = row === undefined || "problem" in row ? undefined : pageOf(row);
+  if (row === undefined || "problem" in row || page === undefined) {
     return detail.error ? (
       <span className="block text-[12.5px] text-muted">
         About: a record Rufi can't show
@@ -304,11 +300,11 @@ function About({
     <span className="block text-[12.5px] text-muted">
       About:{" "}
       {detail.data?.removed ? (
-        `${shown} (removed from your record)`
+        `${shown} (removed from your health record)`
       ) : (
         <Link
           to="/people/$personId/record/$kind"
-          params={{ personId, kind }}
+          params={{ personId, kind: page }}
           search={{ open: id }}
           className="rounded-md text-accent-ink hover:bg-accent-soft"
         >

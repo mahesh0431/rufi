@@ -171,7 +171,7 @@ test("a brief that isn't there says so", async ({ page, rufi }) => {
   await rufi.start();
   await page.goto(rufi.link());
   await expect(
-    page.getByRole("heading", { name: "Your record" }),
+    page.getByRole("heading", { name: "Health record" }),
   ).toBeVisible();
   await page.goto(
     new URL("/people/asha/briefs/no-such-brief", page.url()).href,

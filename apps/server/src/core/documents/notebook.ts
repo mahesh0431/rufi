@@ -31,9 +31,9 @@ const PrintedDate = Schema.Struct({
   ),
 });
 
-/** One result read from a page, in Rufi's result fields, as printed. */
+/** One result read from a page (a lab result or a measurement), in Rufi's result fields, as printed. */
 const Item = Schema.Struct({
-  test_name: Text(200, "The test's name, exactly as printed."),
+  test_name: Text(200, "The test's or measurement's name, exactly as printed."),
   value_text: Text(
     100,
     "The value exactly as printed: '<5', '4,6', 'Negative'.",

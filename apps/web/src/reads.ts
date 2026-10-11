@@ -17,6 +17,7 @@ import {
   Overview,
   RecordDetail,
   RecordPage,
+  type ResultCategory,
   Series,
 } from "@rufi/contracts/record";
 import { Schema } from "effect";
@@ -174,15 +175,23 @@ export const useRecordDetail = (personId: string, kind: string, id: string) =>
       ),
   });
 
-/** A test's current values in one unit (none: the values without a unit). */
-export const useSeries = (personId: string, test: string, unit?: string) =>
+/**
+ * A test's current values in one unit (none: the values without a unit)
+ * and one category.
+ */
+export const useSeries = (
+  personId: string,
+  test: string,
+  unit: string | undefined,
+  category: ResultCategory,
+) =>
   useQuery({
-    queryKey: ["series", personId, test, unit ?? null],
+    queryKey: ["series", personId, test, unit ?? null, category],
     queryFn: () =>
       read(
         Series,
         "GET",
-        `${personPath(personId)}/series?${new URLSearchParams({ test, ...(unit !== undefined && { unit }) }).toString()}`,
+        `${personPath(personId)}/series?${new URLSearchParams({ test, ...(unit !== undefined && { unit }), category }).toString()}`,
       ),
   });
 

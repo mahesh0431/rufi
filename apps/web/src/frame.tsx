@@ -229,7 +229,7 @@ function RecordNav({ person }: { person: Person }) {
   const tiles = useOverview(person.id).data?.tiles;
   return (
     <>
-      <p className="px-2 pt-3 pb-0.5 text-[11px] text-muted">Your record</p>
+      <p className="px-2 pt-3 pb-0.5 text-[11px] text-muted">Health record</p>
       {(Object.keys(KIND_TITLES) as (keyof typeof KIND_TITLES)[]).map(
         (kind) => {
           const count = tiles?.find((tile) => tile.kind === kind)?.count ?? 0;

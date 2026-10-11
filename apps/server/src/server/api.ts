@@ -466,12 +466,17 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.get("/api/people/:personId/series", async (c) => {
     const { id } = await person(c);
     const test = c.req.query("test");
-    if (test === undefined || test === "") {
+    const category = c.req.query("category");
+    if (
+      test === undefined ||
+      test === "" ||
+      (category !== "lab" && category !== "measurement")
+    ) {
       throw new HttpError(400, "That request isn't valid.");
     }
     // No unit: the test's values that have none.
     return c.json(
-      await deps.record.series(id, test, c.req.query("unit") ?? null),
+      await deps.record.series(id, test, c.req.query("unit") ?? null, category),
     );
   });
 

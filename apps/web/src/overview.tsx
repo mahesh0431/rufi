@@ -1,6 +1,6 @@
 // The home: what needs you (each line with Ask Rufi, for the chat box over
-// the page), your record as one tile per kind, and the latest saves, each
-// opening to its receipt. A tile opens its kind's page. The
+// the page), your health record as one tile per page, and the latest saves,
+// each opening to its receipt. A tile opens its page. The
 // tiles' words are worked out from the saved record, never by the AI.
 import type { Person } from "@rufi/contracts";
 import type { RecentChange, Tile } from "@rufi/contracts/record";
@@ -136,9 +136,9 @@ export function OverviewPage({ person }: { person: Person }) {
               </ul>
             </section>
           )}
-          <section aria-labelledby="your-record" className="mb-6">
-            <h2 id="your-record" className="mb-2 px-0.5 font-semibold">
-              Your record
+          <section aria-labelledby="health-record" className="mb-6">
+            <h2 id="health-record" className="mb-2 px-0.5 font-semibold">
+              Health record
             </h2>
             <ul className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2.5">
               {data.tiles.map((tile) => (
@@ -186,7 +186,15 @@ function tileLines(tile: Tile): string[] {
   const names = tile.names.join(", ");
   const latest = tile.latest;
   switch (tile.kind) {
-    case "result":
+    case "measurement":
+      return latest
+        ? [
+            [`Latest: ${latest.label}`, latest.date && printedDate(latest.date)]
+              .filter(Boolean)
+              .join(" · "),
+          ]
+        : [];
+    case "lab_result":
       return latest
         ? [
             [

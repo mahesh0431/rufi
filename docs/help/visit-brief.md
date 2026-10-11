@@ -1,6 +1,6 @@
 # Visit brief
 
-Before a doctor's visit, you can ask Rufi for a visit brief: a dated page with your current medicines, recent results, conditions and allergies, and questions to ask. Every fact in it comes from your saved record, and Rufi lists those records under the brief. You can copy it and paste it wherever you need it.
+Before a doctor's visit, you can ask Rufi for a visit brief: a dated page with your current medicines, recent lab results and measurements, conditions and allergies, and questions to ask. Every fact in it comes from your saved health record, and Rufi lists those records under the brief. You can copy it and paste it wherever you need it.
 
 ## Ask for a brief
 
@@ -17,7 +17,8 @@ Rufi writes this line, not the AI. Click **Open** to see the brief.
 The AI picks what matters for this visit. A brief usually has:
 
 - **Current medicines**, with their strength and when you take them.
-- **Recent results**, those the lab marked outside its range first. Each has its value, unit, lab range and date, as the lab printed them.
+- **Recent lab results**, those the lab marked outside its range first. Each has its value, unit, lab range and date, as the lab printed them.
+- **Recent measurements**, such as blood pressure or weight, when you have any.
 - **Conditions and allergies.** When your record has none, the brief says "none recorded". That doesn't mean you have none.
 - **Questions to ask**, each starting with "Question:".
 

@@ -257,6 +257,7 @@ export interface Tables {
     id: string;
     person_id: string;
     report_id: string | null;
+    category: string;
     test_name: string;
     value_text: string;
     comparator: string | null;

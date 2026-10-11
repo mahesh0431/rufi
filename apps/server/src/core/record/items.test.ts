@@ -277,6 +277,7 @@ describe("saving draft items", () => {
       item,
       version: 1,
       as: "new",
+      category: "lab",
     }));
     await say("Save Ferritin and Vitamin B12");
     if (scenario === "later save") {
@@ -319,15 +320,15 @@ describe("saving draft items", () => {
     await say("Save the HbA1c and TSH");
     const saved = await call("save_changes", {
       items: [
-        { item: HbA1c, version: 1, as: "new" },
-        { item: TSH, version: 1, as: "new" },
+        { item: HbA1c, version: 1, as: "new", category: "lab" },
+        { item: TSH, version: 1, as: "new", category: "lab" },
       ],
     });
     expect(saved.ok).toBe(true);
     expect(lines(saved.result.receipt)).toEqual([
       "Saved 2 results from Sunrise Labs August.pdf · 2 new",
-      'Added result HbA1c 7.1 %: range 4.0 - 5.6, flag H, measured 12 Aug 2026 ("Collected 12/08/2026") · page 1',
-      'Added result TSH 2.1 mIU/L: range 0.4 - 4.0, measured 12 Aug 2026 ("Collected 12/08/2026") · page 1',
+      'Added result HbA1c 7.1 %: category lab, range 4.0 - 5.6, flag H, measured 12 Aug 2026 ("Collected 12/08/2026") · page 1',
+      'Added result TSH 2.1 mIU/L: category lab, range 0.4 - 4.0, measured 12 Aug 2026 ("Collected 12/08/2026") · page 1',
     ]);
     const [hba1c, tsh] = saved.result.changes.map((c) => c.id);
     // The values are the reader's, as printed; Rufi's report groups them.
@@ -415,8 +416,8 @@ describe("saving draft items", () => {
     await say("Save HbA1c and LDL");
     const saved = await call("save_changes", {
       items: [
-        { item: HbA1c, version: 1, as: "new" },
-        { item: LDL, version: 1, as: "new" },
+        { item: HbA1c, version: 1, as: "new", category: "lab" },
+        { item: LDL, version: 1, as: "new", category: "lab" },
       ],
     });
     expect(saved.ok).toBe(true);
@@ -444,6 +445,7 @@ describe("saving draft items", () => {
           item: ldl,
           version: 1,
           as: "new",
+          category: "lab",
           fix: {
             source: "The LDL is 132",
             fields: { value: "132", number: 132 },
@@ -484,7 +486,7 @@ describe("saving draft items", () => {
     const { "Vitamin D": vitamin = "" } = drafts();
     await say("Save the vitamin D, it was taken on 3 April");
     const refused = await call("save_changes", {
-      items: [{ item: vitamin, version: 1, as: "new" }],
+      items: [{ item: vitamin, version: 1, as: "new", category: "lab" }],
     });
     expect(refused.ok).toBe(false);
     expect(refused.issues[0]?.fix).toBe(
@@ -496,6 +498,7 @@ describe("saving draft items", () => {
           item: vitamin,
           version: 1,
           as: "new",
+          category: "lab",
           fix: {
             source: "it was taken on 3 April",
             fields: { measured: { date: "2026-04-03", words: "3 April" } },
@@ -517,10 +520,25 @@ describe("saving draft items", () => {
     const { TSH = "" } = drafts();
     // The user typed a TSH before; the report has the same one.
     store.db
-      .exec(`INSERT INTO results (id, person_id, test_name, value_text, unit, measured_at, entered_at)
-      VALUES ('res-typed', 'asha', 'TSH', '2.1', 'mIU/L', '2026-08-12', '2026-09-01T00:00:00Z')`);
+      .exec(`INSERT INTO results (id, person_id, category, test_name, value_text, unit, measured_at, entered_at)
+      VALUES ('res-typed', 'asha', 'lab', 'TSH', '2.1', 'mIU/L', '2026-08-12', '2026-09-01T00:00:00Z')`);
     const before = one("SELECT * FROM results WHERE id = 'res-typed'");
     await say("Yes, it's the same TSH");
+    // Another source never changes the saved result, its category neither.
+    const unchanged = written();
+    const moved = await call("save_changes", {
+      items: [
+        {
+          item: TSH,
+          version: 1,
+          as: "another_source",
+          record: { id: "res-typed", version: null },
+          category: "lab",
+        },
+      ],
+    });
+    expect(moved.issues.map((i) => i.path)).toEqual(["items.0.category"]);
+    expect(written()).toEqual(unchanged);
     const linked = await call("save_changes", {
       items: [
         {
@@ -607,7 +625,7 @@ describe("saving draft items", () => {
     });
     expect(saved.ok).toBe(true);
     expect(lines(saved.result.receipt)[1]).toBe(
-      'Added result HbA1c 7.1 %: range 4.0 - 5.6, flag H, measured 12 Aug 2026 ("Collected 12/08/2026"), replaces HbA1c 6.8 % · page 1',
+      'Added result HbA1c 7.1 %: category lab, range 4.0 - 5.6, flag H, measured 12 Aug 2026 ("Collected 12/08/2026"), replaces HbA1c 6.8 % · page 1',
     );
     expect(
       one(
@@ -618,6 +636,119 @@ describe("saving draft items", () => {
     expect(one("SELECT value_text FROM results WHERE id = 'res-a1'")).toEqual({
       value_text: "6.8",
     });
+  });
+
+  it("needs a category for a new item; a correction keeps the corrected result's unless the save gives one", async () => {
+    await read();
+    const { HbA1c = "", TSH = "" } = drafts();
+    await say("Save them: both correct my saved results");
+    const before = written();
+    const none = await call("save_changes", {
+      items: [{ item: HbA1c, version: 1, as: "new" }],
+    });
+    expect(none.issues.map((i) => i.path)).toEqual(["items.0.category"]);
+    expect(written()).toEqual(before);
+
+    const saved = await call("save_changes", {
+      items: [
+        {
+          item: HbA1c,
+          version: 1,
+          as: "correction",
+          record: { id: "res-a1", version: null },
+        },
+        {
+          item: TSH,
+          version: 1,
+          as: "correction",
+          // A weight typed in the chat (a measurement), corrected by a lab value.
+          record: { id: "res-a10", version: null },
+          category: "lab",
+        },
+      ],
+    });
+    expect(saved.ok).toBe(true);
+    expect(
+      saved.result.changes.map((c) =>
+        one("SELECT category FROM results WHERE id = ?", c.id),
+      ),
+    ).toEqual([{ category: "lab" }, { category: "lab" }]);
+  });
+
+  it("dates a measurement only by its own date or the user's, never by the report's collection date", async () => {
+    await read({
+      1: {
+        outcome: "read",
+        facts: { kind: "prescription", dates: [COLLECTED] },
+        items: [
+          {
+            test_name: "Blood pressure",
+            value_text: "130/85",
+            unit: "mmHg",
+            date: { label: "Visit", date: "5 Oct 2026", iso: "2026-10-05" },
+          },
+          {
+            test_name: "Weight",
+            value_text: "72",
+            value_number: 72,
+            unit: "kg",
+          },
+        ],
+      },
+    });
+    const { "Blood pressure": bp = "", Weight: weight = "" } = drafts();
+    await say("Save them as measurements; I was weighed on 4 Oct");
+    const before = written();
+    const refused = await call("save_changes", {
+      items: [
+        { item: bp, version: 1, as: "new", category: "measurement" },
+        { item: weight, version: 1, as: "new", category: "measurement" },
+      ],
+    });
+    expect(refused.issues).toEqual([
+      {
+        path: "items.1.item",
+        got: expect.any(String) as unknown,
+        fix: "This measurement has no date Rufi can store (none is printed for it, and a report's collection date isn't when it was measured). Ask the user when it was measured; a rough date such as 'around August 2026' is fine. Give it in fix.fields.measured at the precision they gave, with their words; never make one up.",
+      },
+    ]);
+    expect(written()).toEqual(before);
+
+    const saved = await call("save_changes", {
+      items: [
+        { item: bp, version: 1, as: "new", category: "measurement" },
+        {
+          item: weight,
+          version: 1,
+          as: "new",
+          category: "measurement",
+          fix: {
+            source: "I was weighed on 4 Oct",
+            fields: { measured: { date: "2026-10-04", words: "4 Oct" } },
+          },
+        },
+      ],
+    });
+    expect(saved.ok).toBe(true);
+    expect(
+      saved.result.changes.map((c) =>
+        one(
+          "SELECT category, measured_at, measured_words FROM results WHERE id = ?",
+          c.id,
+        ),
+      ),
+    ).toEqual([
+      {
+        category: "measurement",
+        measured_at: "2026-10-05",
+        measured_words: "Visit 5 Oct 2026",
+      },
+      {
+        category: "measurement",
+        measured_at: "2026-10-04",
+        measured_words: "4 Oct",
+      },
+    ]);
   });
 
   it("refuses two items that both correct the same saved result", async () => {
@@ -660,9 +791,9 @@ describe("saving draft items", () => {
           as: "correction",
           record: { id: "res-a1", version: "an-old-save" },
         },
-        { item: TSH, version: 1, as: "new" },
-        { item: ldl, version: 1, as: "new" },
-        { item: "drf-ravi", version: 1, as: "new" },
+        { item: TSH, version: 1, as: "new", category: "lab" },
+        { item: ldl, version: 1, as: "new", category: "lab" },
+        { item: "drf-ravi", version: 1, as: "new", category: "lab" },
       ],
     });
     expect(refused.ok).toBe(false);
@@ -692,11 +823,11 @@ describe("saving draft items", () => {
     const { HbA1c = "" } = drafts();
     await say("Save it");
     const first = await call("save_changes", {
-      items: [{ item: HbA1c, version: 1, as: "new" }],
+      items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }],
     });
     const after = written();
     const again = await call("save_changes", {
-      items: [{ item: HbA1c, version: 1, as: "new" }],
+      items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }],
     });
     expect(again.ok).toBe(true);
     expect(again.result).toEqual({
@@ -726,7 +857,7 @@ describe("saving draft items", () => {
     // A fix or a retry moved the document on meanwhile.
     store.db.exec("UPDATE documents SET version = 2 WHERE id = 'doc-asha-aug'");
     const refused = await call("save_changes", {
-      items: [{ item: HbA1c, version: 1, as: "new" }],
+      items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }],
     });
     expect(refused.ok).toBe(false);
     expect(refused.issues[0]?.fix).toBe(
@@ -749,7 +880,12 @@ describe("saving draft items", () => {
     const ids = Object.values(drafts());
     await say("Save all of them");
     const saved = await call("save_changes", {
-      items: ids.map((item) => ({ item, version: 1, as: "new" })),
+      items: ids.map((item) => ({
+        item,
+        version: 1,
+        as: "new",
+        category: "lab",
+      })),
     });
     expect(saved.ok).toBe(true);
     expect(saved.result.changes).toHaveLength(300);
@@ -772,7 +908,7 @@ describe("saving draft items", () => {
     const { HbA1c = "" } = drafts();
     await say("Save it");
     const saved = await call("save_changes", {
-      items: [{ item: HbA1c, version: 1, as: "new" }],
+      items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }],
     });
     const id = saved.result.changes[0]?.id ?? "";
     await say("Undo that");
@@ -803,12 +939,12 @@ describe("dismissing draft items", () => {
       one("SELECT status, version FROM draft_items WHERE id = ?", vitamin),
     ).toEqual({ status: "dismissed", version: 2 });
     const save = await call("save_changes", {
-      items: [{ item: vitamin, version: 2, as: "new" }],
+      items: [{ item: vitamin, version: 2, as: "new", category: "lab" }],
     });
     expect(save.ok).toBe(false);
     // A saved item can't be dismissed; nothing of the call is.
     await call("save_changes", {
-      items: [{ item: HbA1c, version: 1, as: "new" }],
+      items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }],
     });
     const refused = await call("dismiss_items", {
       items: [{ item: HbA1c, version: 1 }],
@@ -834,7 +970,7 @@ describe("dismissing draft items", () => {
     });
     expect(done.ok).toBe(true);
     const saved = await call("save_changes", {
-      items: [{ item: HbA1c, version: 1, as: "new" }],
+      items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }],
     });
     expect(saved.ok).toBe(true);
   });
@@ -846,7 +982,10 @@ describe("a turn a Rufi event started", () => {
     const { HbA1c = "" } = drafts();
     const before = written();
     for (const [tool, input] of [
-      ["save_changes", { items: [{ item: HbA1c, version: 1, as: "new" }] }],
+      [
+        "save_changes",
+        { items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }] },
+      ],
       ["dismiss_items", { items: [{ item: HbA1c, version: 1 }] }],
     ] as const) {
       const answer = await call(tool, input, "rufi");

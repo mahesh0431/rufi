@@ -766,15 +766,15 @@ describe("the chat, on the scripted Codex", () => {
       INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name) VALUES
         ('asha', 'doc-1', 1, 'f-1', 1, 'Sunrise Labs August.pdf'),
         ('ravi', 'doc-r', 1, 'f-1', 1, 'Ravi lipid panel.pdf');
-      INSERT INTO results (id, person_id, test_name, value_text, unit, measured_at, entered_at)
-        VALUES ('res-1', 'asha', 'HbA1c', '6.8', '%', '2026-08-12', '2026-08-13T00:00:00Z');
+      INSERT INTO results (id, person_id, category, test_name, value_text, unit, measured_at, entered_at)
+        VALUES ('res-1', 'asha', 'lab', 'HbA1c', '6.8', '%', '2026-08-12', '2026-08-13T00:00:00Z');
       INSERT INTO reports (id, person_id, document_id, issuer, collected) VALUES
         ('rep-1', 'asha', 'doc-1', 'Sunrise Labs', '2026-08-12'),
         ('rep-r', 'ravi', 'doc-r', 'Lakeside Diagnostics', '2026-06-30');
-      INSERT INTO results (id, person_id, report_id, test_name, value_text, unit, measured_at, entered_at, replaces_id, removed) VALUES
-        ('res-2', 'asha', 'rep-1', 'Glucose', '118', 'mg/dL', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 0),
-        ('res-3', 'asha', 'rep-1', 'CRP', '<5', 'mg/L', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 0),
-        ('res-4', 'asha', 'rep-1', 'TSH', '2.1', 'mIU/L', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 1);
+      INSERT INTO results (id, person_id, report_id, category, test_name, value_text, unit, measured_at, entered_at, replaces_id, removed) VALUES
+        ('res-2', 'asha', 'rep-1', 'lab', 'Glucose', '118', 'mg/dL', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 0),
+        ('res-3', 'asha', 'rep-1', 'lab', 'CRP', '<5', 'mg/L', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 0),
+        ('res-4', 'asha', 'rep-1', 'lab', 'TSH', '2.1', 'mIU/L', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 1);
       INSERT INTO documents (id, person_id, added_at, added_from, version)
         VALUES ('doc-correction', 'asha', '2026-10-01T09:00:00Z', 'chat', 1);
       INSERT INTO files (id, size, media_type, created_at)
@@ -825,12 +825,12 @@ describe("the chat, on the scripted Codex", () => {
         {
           ref: { type: "record", kind: "result", id: "res-1", version: null },
           label: "HbA1c 6.8 % · 12 Aug 2026",
-          detail: "Result in your record",
+          detail: "Lab result in your health record",
         },
         {
           ref: { type: "report", id: "rep-1", version: "op-2" },
           label: "Sunrise Labs · 12 Aug 2026 · 2 results",
-          detail: "Report in your record",
+          detail: "Report in your health record",
         },
       ],
     });
@@ -891,7 +891,7 @@ describe("the chat, on the scripted Codex", () => {
         {
           ref: { type: "report", id: "rep-1", version },
           label: `Sunrise Labs · 12 Aug 2026 · ${String(count)} ${count === 1 ? "result" : "results"}`,
-          detail: "Report in your record",
+          detail: "Report in your health record",
         },
       ]);
     };

@@ -20,6 +20,10 @@ _Avoid_: patient, profile, member
 Everything Rufi holds as true about one person: what the user said yes to in the chat, and what came from their documents. Each record (a medicine use, prescription, symptom, condition, allergy, result, care event, "none known" statement or follow-up) keeps its source and its history; removing one takes it out of the current record and keeps its history.
 _Avoid_: chart, file, history
 
+**Health record**:
+What people see for the record: the sidebar's heading, Overview and the help say "your health record". The AI says it too. Tables, tools and code keep "record".
+_Avoid_: your record (on screen), health file, chart
+
 **Document**:
 What the user added for a person in one go: one PDF, or photos added together, such as a lab report photographed page by page. Its pages are the PDF's pages or the photos, in order. Rufi keeps each original file exactly as it came, and the same content only once per person.
 _Avoid_: upload, attachment
@@ -41,8 +45,20 @@ A lab or clinic report read from a document: who issued it, its printed report n
 _Avoid_: lab sheet, test report
 
 **Result**:
-One lab test or measurement, kept exactly as reported or entered: name, value, unit, reference range, the lab's own flag, method or context, and when it was measured at the precision known. A measurement such as weight is a result typed in without a report.
+One lab test or measurement, kept exactly as reported or entered: name, value, unit, reference range, the lab's own flag, method or context, and when it was measured at the precision known. Every result has a **category**: it is a lab result or a measurement.
 _Avoid_: reading, lab value
+
+**Category**:
+Whether a result is a lab result or a measurement, which decides the page it shows on. The AI chooses it with the user when it saves, never from the test's name or from having a report; an amended result keeps the category of the one it replaces unless the user agrees to another. The user can change it in the chat ("that's a measurement"): the same result moves, with a receipt. Results saved before Rufi had categories count as lab results.
+_Avoid_: type, kind (a kind is a kind of record)
+
+**Lab result**:
+A result of the category lab: a test of a sample, such as blood or urine, from a lab or a clinic, also when the user types it in. The **Lab results** page groups them by report, a report's lab results whole, and the typed ones by day.
+_Avoid_: lab value, test result
+
+**Measurement**:
+A result of the category measurement: a reading of the body, such as blood pressure, pulse, weight, height, temperature or SpO2, typed in or read from a document. The **Measurements** page groups them by the day they were taken, at the precision known. Its date is when it was taken, never a lab's collection date.
+_Avoid_: vital, vitals, reading
 
 **As printed**:
 Exactly what the source shows, kept unchanged. A printed "High" is the lab's word, never Rufi's judgement.
@@ -75,7 +91,7 @@ The top of a person's Overview: what is waiting for the user, such as a document
 _Avoid_: inbox, notifications, tasks
 
 **Tile**:
-One kind of record on the Overview: its count of current records and a short summary that says what it counts, such as how many medicines you take now and how many are in your history. Rufi works it out from the saved record, never with the AI. It opens that kind's page.
+One page of the health record on the Overview, such as Lab results or Medicines: its count of current records and a short summary that says what it counts, such as how many medicines you take now and how many are in your history. Rufi works it out from the saved record, never with the AI. It opens that page.
 _Avoid_: card, widget
 
 ## The chat
@@ -192,7 +208,7 @@ Something Rufi offers the AI, such as reading a person's Overview. Tools are how
 _Avoid_: function, plugin, skill
 
 **Overview**:
-A short view of one person's record. On screen it is the first page you see: **Needs you**, a **tile** for each kind of record, and the recent changes. The AI reads its own short view through a tool: who the person is, how much is in it, and their current results as printed.
+A short view of one person's health record. On screen it is the first page you see: **Needs you**, a **tile** for each page of the record, and the recent changes. The AI reads its own short view through a tool: who the person is, how much is in it, and their current results as printed.
 _Avoid_: dashboard, summary
 
 **Help**:

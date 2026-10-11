@@ -39,10 +39,12 @@ import {
   BUNDLE,
   expected,
   layout,
+  PRESCRIPTION,
   REPORTS,
   type Report,
 } from "../tests/pack/reports.ts";
 import { outFolder, runAll, sharedToken } from "./live-run.ts";
+import { chooseItems, norm, scoreItems, type Draft } from "./reader-score.ts";
 
 const { values } = parseArgs({
   options: {
@@ -138,6 +140,17 @@ const imageItem = (
   key: firstPages(report(name), 1),
 });
 
+/** A clinic's prescription with the visit's measurements, an undated height and a lab value. */
+const prescription: Item = {
+  name: "prescription",
+  kind: "pdf",
+  files: () =>
+    Promise.resolve([
+      { name: "prescription.pdf", bytes: textPdf(PRESCRIPTION.pages) },
+    ]),
+  key: PRESCRIPTION.key,
+};
+
 const PACK: Item[] = [
   ...[
     "cbc",
@@ -178,24 +191,24 @@ const PACK: Item[] = [
     key: expected([report("five_pages")]),
   },
   photosItem("eight_pages_photos", "eight_pages", 3),
+  prescription,
 ];
 
 /**
  * The default: two pages each of the densest reports (30 and 25 results a
- * page), as a PDF and as photos.
+ * page), as a PDF and as photos, and the prescription.
  */
 const DENSE: Item[] = [
   firstPagesPdf("big_300", 2),
   photosItem("eight_pages_2_photos", "eight_pages", 2),
+  prescription,
 ];
 
 const only = values.only?.split(",");
-const chosen =
-  only !== undefined
-    ? [...DENSE, ...PACK].filter((item) => only.includes(item.name))
-    : values.all
-      ? PACK
-      : DENSE;
+const chosen = chooseItems(DENSE, PACK, {
+  ...(only !== undefined && { only }),
+  all: values.all,
+});
 /** Which set ran, for the report. */
 const set =
   only !== undefined
@@ -262,8 +275,6 @@ const file = await codexBinary();
 const { version } = createRequire(import.meta.url)("../package.json") as {
   version: string;
 };
-const norm = (text: string) =>
-  text.toLowerCase().replace(/[^\p{L}\p{N}<>.,%-]/gu, "");
 const totals = {
   pages: 0,
   expected: 0,
@@ -272,6 +283,7 @@ const totals = {
   wrongFlagged: 0,
   wrongSilent: 0,
   extra: 0,
+  wrongItemDates: 0,
 };
 const byKind = new Map<string, typeof totals & { ms: number }>();
 
@@ -355,15 +367,10 @@ function score(
         "SELECT page, fields, unsure FROM draft_items WHERE document_id = ?",
       )
       .all(documentId) as { page: number; fields: string; unsure: string }[]
-  ).map((d) => ({
+  ).map((d): Draft => ({
     page: d.page,
-    fields: JSON.parse(d.fields) as {
-      test_name: string;
-      value_text: string;
-      column?: string;
-    },
+    fields: JSON.parse(d.fields) as Draft["fields"],
     unsure: (JSON.parse(d.unsure) as string[]).length > 0,
-    used: false,
   }));
   const pageRows = store.db
     .prepare(
@@ -390,33 +397,8 @@ function score(
       .get(`%${documentId}%`) as { text: string } | undefined
   )?.text;
 
-  const score = { correct: 0, missed: 0, wrongFlagged: 0, wrongSilent: 0 };
-  const wrong: string[] = [];
-  for (const want of item.key.items) {
-    const found = drafts.find(
-      (d) =>
-        !d.used &&
-        d.page === want.page &&
-        d.fields.column !== "earlier" &&
-        norm(d.fields.test_name) === norm(want.test),
-    );
-    if (!found) {
-      score.missed++;
-      continue;
-    }
-    found.used = true;
-    if (norm(found.fields.value_text) === norm(want.value)) score.correct++;
-    else {
-      if (found.unsure) score.wrongFlagged++;
-      else score.wrongSilent++;
-      wrong.push(
-        `p${String(want.page)} ${want.test}: "${found.fields.value_text}" for "${want.value}"${found.unsure ? " (unsure)" : ""}`,
-      );
-    }
-  }
-  const extra = drafts.filter(
-    (d) => !d.used && d.fields.column !== "earlier",
-  ).length;
+  const score = scoreItems(item.key.items, drafts);
+  const { wrong, extra } = score;
   let wrongPerson = 0;
   let wrongDate = 0;
   let noDate = 0;
@@ -453,6 +435,7 @@ function score(
   totals.wrongFlagged += score.wrongFlagged;
   totals.wrongSilent += score.wrongSilent;
   totals.extra += extra;
+  totals.wrongItemDates += score.wrongItemDates;
   const kind = byKind.get(item.kind) ?? {
     pages: 0,
     expected: 0,
@@ -461,6 +444,7 @@ function score(
     wrongFlagged: 0,
     wrongSilent: 0,
     extra: 0,
+    wrongItemDates: 0,
     ms: 0,
   };
   kind.pages += pageCount;
@@ -470,6 +454,7 @@ function score(
   kind.wrongFlagged += score.wrongFlagged;
   kind.wrongSilent += score.wrongSilent;
   kind.extra += extra;
+  kind.wrongItemDates += score.wrongItemDates;
   kind.ms += ms;
   byKind.set(item.kind, kind);
   rows.push(
@@ -484,6 +469,7 @@ function score(
       String(score.wrongFlagged),
       String(score.wrongSilent),
       String(extra),
+      String(score.wrongItemDates),
       String(wrongPerson),
       `${String(wrongDate)} / ${String(noDate)}`,
       `${String(flags.incomplete)} / ${String(flags.notLooked)} / ${String(flags.unreadable)}`,
@@ -524,16 +510,16 @@ const text = [
   "",
   `${String(chosen.length)} documents at once, ${set}; wall time ${String(Math.round((Date.now() - started) / 1000))} s.`,
   "",
-  "Columns: document | kind | outcome | pages | expected items | correct | missed | wrong, marked unsure | wrong, not marked | extra | pages with another name | pages with a wrong / no date | pages may be incomplete / not looked at / unreadable | time per page | tokens / looks | AI asked | end line",
+  "Columns: document | kind | outcome | pages | expected items | correct | missed | wrong, marked unsure | wrong, not marked | extra | items with a wrong date of their own | pages with another name | pages with a wrong / no date | pages may be incomplete / not looked at / unreadable | time per page | tokens / looks | AI asked | end line",
   "",
   ...rows.map((r) => `- ${r}`),
   "",
-  `Totals: ${String(totals.pages)} pages, ${String(totals.expected)} expected items, ${String(totals.correct)} correct, ${String(totals.missed)} missed, ${String(totals.wrongFlagged)} wrong but marked unsure, ${String(totals.wrongSilent)} wrong and not marked, ${String(totals.extra)} extra.`,
+  `Totals: ${String(totals.pages)} pages, ${String(totals.expected)} expected items, ${String(totals.correct)} correct, ${String(totals.missed)} missed, ${String(totals.wrongFlagged)} wrong but marked unsure, ${String(totals.wrongSilent)} wrong and not marked, ${String(totals.extra)} extra, ${String(totals.wrongItemDates)} with a wrong date of their own.`,
   "",
   "By kind:",
   ...[...byKind].map(
     ([kind, k]) =>
-      `- ${kind}: ${String(k.pages)} pages, ${String(k.expected)} items, ${String(k.correct)} correct, ${String(k.missed)} missed, ${String(k.wrongFlagged)} wrong (unsure), ${String(k.wrongSilent)} wrong (not marked), ${String(k.extra)} extra, ${k.pages > 0 ? (k.ms / k.pages / 1000).toFixed(1) : "—"} s per page`,
+      `- ${kind}: ${String(k.pages)} pages, ${String(k.expected)} items, ${String(k.correct)} correct, ${String(k.missed)} missed, ${String(k.wrongFlagged)} wrong (unsure), ${String(k.wrongSilent)} wrong (not marked), ${String(k.extra)} extra, ${String(k.wrongItemDates)} with a wrong date of their own, ${k.pages > 0 ? (k.ms / k.pages / 1000).toFixed(1) : "—"} s per page`,
   ),
 ].join("\n");
 await writeFile(join(out, "report.md"), `${text}\n`);

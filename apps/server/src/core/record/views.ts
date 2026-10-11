@@ -1,8 +1,10 @@
 // The record as its screens show it: Overview's tiles and latest saves, a
-// page per kind in groups (a report whole, a day of typed results, or one
-// row), a row with its sources and history, and a test's series. Read only,
-// for one person, each answer from one read transaction so it is
-// consistent. "Current" is read.ts's isCurrent, as everywhere else.
+// page per kind in groups (a report's lab results whole, a day of results,
+// or one row), a row with its sources and history, and a test's series.
+// Results have two pages, Lab results and Measurements, by their category
+// (docs/adr/0013). Read only, for one person, each answer from one read
+// transaction so it is consistent. "Current" is read.ts's isCurrent, as
+// everywhere else.
 import type {
   BadRow,
   FollowUpNeed,
@@ -15,6 +17,7 @@ import type {
   RecordGroup,
   RecordPage,
   RecordSource,
+  ResultCategory,
   ResultRow,
   Series,
   ShownRow,
@@ -32,27 +35,34 @@ import { kindNamed, type Kind, type Row } from "./kinds.ts";
 import { classify, dueSpan } from "./due.ts";
 import { changed, fieldsOf, isCurrent } from "./read.ts";
 
-/** Groups on one page: reports are big, other kinds' groups are one row. */
+/** Groups on one page: reports and days are big, other kinds' groups are one row. */
 const GROUPS_PER_PAGE = { result: 10, other: 30 };
 /** Latest saves on Overview. */
 const RECENT_SHOWN = 5;
 /** Names a tile shows at most. */
 const NAMES_SHOWN = 3;
 
-/** The kinds each page shows: allergies' page has the "none known" statements too. */
-const PAGE_KINDS: Record<PageKind, readonly string[]> = {
-  result: ["result"],
-  medicine_use: ["medicine_use"],
-  prescription: ["prescription"],
-  condition: ["condition"],
-  allergy: ["allergy", "none_known"],
-  symptom: ["symptom"],
-  care_event: ["care_event"],
+/**
+ * The kinds each page shows: allergies' page has the "none known"
+ * statements too; each results page shows the results of one category.
+ */
+const PAGES: Record<
+  PageKind,
+  { kinds: readonly string[]; category?: ResultCategory }
+> = {
+  lab_result: { kinds: ["result"], category: "lab" },
+  measurement: { kinds: ["result"], category: "measurement" },
+  medicine_use: { kinds: ["medicine_use"] },
+  prescription: { kinds: ["prescription"] },
+  condition: { kinds: ["condition"] },
+  allergy: { kinds: ["allergy", "none_known"] },
+  symptom: { kinds: ["symptom"] },
+  care_event: { kinds: ["care_event"] },
 };
 
 /** Whether `kind` names a page. */
 export const isPageKind = (kind: string): kind is PageKind =>
-  Object.hasOwn(PAGE_KINDS, kind);
+  Object.hasOwn(PAGES, kind);
 
 /** A cursor that isn't one this read gave. */
 export class BadCursor extends Error {}
@@ -65,23 +75,35 @@ const calendar = (date: RawBuilder<unknown>) =>
   sql`${date} GLOB '[0-9][0-9][0-9][0-9]*'`;
 
 /**
- * Each current record's group and the group's date. A result read from a
- * report belongs to the report, dated when its sample was collected (or,
- * with no date printed, by its results' latest date); a
- * typed one to its day (or month or year, at the precision known); any
- * other record is a group of its own.
+ * Each current record's group and the group's date. A lab result read from
+ * a report belongs to the report, dated when its sample was collected (or,
+ * with no date printed, by its lab results' latest date); a typed one to
+ * its day. A measurement belongs to the day it was taken, from a report or
+ * not. A day is a month or year at the precision known. Any other record
+ * is a group of its own.
  */
-function grouped(kind: Kind, personId: string) {
+function grouped(kind: Kind, personId: string, category?: ResultCategory) {
   if (kind.name === "result") {
     const measured = sql`r.measured_at`;
-    const gid = sql<string>`CASE WHEN r.report_id IS NOT NULL THEN 'report:' || r.report_id WHEN ${calendar(measured)} THEN 'chat:' || substr(r.measured_at, 1, 10) ELSE 'chat:' END`;
-    // A report with no printed date takes its current results' latest
+    const day = sql`substr(r.measured_at, 1, 10)`;
+    const mine = sql`r.person_id = ${personId} AND r.category = ${category} AND ${isCurrent(kind, "r")}`;
+    if (category === "measurement") {
+      const gid = sql<string>`'day:' || CASE WHEN ${calendar(measured)} THEN ${day} ELSE '' END`;
+      return {
+        gid,
+        mine,
+        keys: sql`SELECT ${gid} AS gid, ${day} AS d FROM results r WHERE ${mine}`,
+      };
+    }
+    const gid = sql<string>`CASE WHEN r.report_id IS NOT NULL THEN 'report:' || r.report_id WHEN ${calendar(measured)} THEN 'chat:' || ${day} ELSE 'chat:' END`;
+    // A report with no printed date takes its current lab results' latest
     // date, at its precision; undated only when none of them has one.
-    const latest = sql`(SELECT max(substr(m.measured_at, 1, 10)) FROM results m WHERE m.person_id = r.person_id AND m.report_id = r.report_id AND ${calendar(sql`m.measured_at`)} AND ${isCurrent(kind, "m")})`;
-    const date = sql`CASE WHEN r.report_id IS NOT NULL THEN coalesce(p.collected, ${latest}) ELSE substr(r.measured_at, 1, 10) END`;
+    const latest = sql`(SELECT max(substr(m.measured_at, 1, 10)) FROM results m WHERE m.person_id = r.person_id AND m.report_id = r.report_id AND m.category = r.category AND ${calendar(sql`m.measured_at`)} AND ${isCurrent(kind, "m")})`;
+    const date = sql`CASE WHEN r.report_id IS NOT NULL THEN coalesce(p.collected, ${latest}) ELSE ${day} END`;
     return {
       gid,
-      keys: sql`SELECT ${gid} AS gid, ${date} AS d FROM results r LEFT JOIN reports p ON p.person_id = r.person_id AND p.id = r.report_id WHERE r.person_id = ${personId} AND ${isCurrent(kind, "r")}`,
+      mine,
+      keys: sql`SELECT ${gid} AS gid, ${date} AS d FROM results r LEFT JOIN reports p ON p.person_id = r.person_id AND p.id = r.report_id WHERE ${mine}`,
     };
   }
   const field = kind.fields[kind.dated];
@@ -89,9 +111,11 @@ function grouped(kind: Kind, personId: string) {
   // Allergies with no reaction date sort by the day the user said them.
   const date = kind.asserted ? sql`coalesce(${dated}, r.asserted)` : dated;
   const gid = sql<string>`${kind.name} || ':' || r.id`;
+  const mine = sql`r.person_id = ${personId} AND ${isCurrent(kind, "r")}`;
   return {
     gid,
-    keys: sql`SELECT ${gid} AS gid, ${date} AS d FROM ${sql.table(kind.table)} r WHERE r.person_id = ${personId} AND ${isCurrent(kind, "r")}`,
+    mine,
+    keys: sql`SELECT ${gid} AS gid, ${date} AS d FROM ${sql.table(kind.table)} r WHERE ${mine}`,
   };
 }
 
@@ -134,12 +158,13 @@ function decodeCursor(cursor: string): Key {
 async function groupKeys(
   db: Db,
   personId: string,
-  kinds: readonly Kind[],
+  pageKind: PageKind,
   after: Key | undefined,
   limit: number,
 ) {
+  const { kinds, category } = PAGES[pageKind];
   const all = sql.join(
-    kinds.map((kind) => grouped(kind, personId).keys),
+    kinds.map((name) => grouped(kindOf(name), personId, category).keys),
     sql` UNION ALL `,
   );
   const from =
@@ -187,17 +212,18 @@ async function members(
   db: Db,
   personId: string,
   kind: Kind,
+  category: ResultCategory | undefined,
   gids: readonly string[],
 ) {
   if (gids.length === 0) return [];
-  const { gid } = grouped(kind, personId);
+  const { gid, mine } = grouped(kind, personId, category);
   const report =
     kind.name === "result"
       ? sql`, p.issuer AS report_issuer FROM results r LEFT JOIN reports p ON p.person_id = r.person_id AND p.id = r.report_id`
       : sql` FROM ${sql.table(kind.table)} r`;
   const { rows } = await sql<Row>`
     SELECT r.*, ${gid} AS gid${report}
-    WHERE r.person_id = ${personId} AND ${isCurrent(kind, "r")} AND ${gid} IN (${sql.join(gids)})
+    WHERE ${mine} AND ${gid} IN (${sql.join(gids)})
     ORDER BY r.rowid`.execute(db);
   return rows;
 }
@@ -214,13 +240,13 @@ async function page(
   pageKind: PageKind,
   after: string | undefined,
 ): Promise<RecordPage> {
-  const kinds = PAGE_KINDS[pageKind].map(kindOf);
+  const { kinds, category } = PAGES[pageKind];
   const size =
-    pageKind === "result" ? GROUPS_PER_PAGE.result : GROUPS_PER_PAGE.other;
+    category === undefined ? GROUPS_PER_PAGE.other : GROUPS_PER_PAGE.result;
   const keys = await groupKeys(
     db,
     personId,
-    kinds,
+    pageKind,
     after === undefined ? undefined : decodeCursor(after),
     size + 1,
   );
@@ -231,7 +257,9 @@ async function page(
         ? "report"
         : key.gid.startsWith("chat:")
           ? "chat"
-          : "row";
+          : key.gid.startsWith("day:")
+            ? "day"
+            : "row";
       return [
         key.gid,
         {
@@ -244,17 +272,20 @@ async function page(
       ];
     }),
   );
-  for (const kind of kinds) {
+  for (const name of kinds) {
+    const kind = kindOf(name);
     const rows = await members(
       db,
       personId,
       kind,
+      category,
       mine.map((key) => key.gid),
     );
     for (const row of rows) {
       const group = groups.get(String(row["gid"]));
       if (!group) continue;
       if (
+        group.type === "report" &&
         typeof row["report_issuer"] === "string" &&
         group.issuer === undefined
       ) {
@@ -422,33 +453,45 @@ async function detail(
   };
 }
 
-/** Every current value of one test in one unit: dated oldest first, then undated. */
+/**
+ * Every current value of one test in one unit and one category: dated
+ * oldest first, then undated. A lab test and a measurement of the same
+ * name are two series.
+ */
 async function series(
   db: Db,
   personId: string,
   test: string,
   unit: string | null,
+  category: ResultCategory,
 ): Promise<Series> {
   const kind = kindOf("result");
   const { rows } = await sql<Row>`
     SELECT r.* FROM results r
     WHERE r.person_id = ${personId} AND r.test_name = ${test}
       AND ${unit === null ? sql`r.unit IS NULL` : sql`r.unit = ${unit}`}
+      AND r.category = ${category}
       AND ${isCurrent(kind, "r")}
     ORDER BY ${calendar(sql`r.measured_at`)} DESC, r.measured_at, r.entered_at, r.rowid`.execute(
     db,
   );
-  return { test, unit, values: rows.map((row) => shown(kind, row)) };
+  return {
+    test,
+    unit,
+    category,
+    values: rows.map((row) => shown(kind, row)),
+  };
 }
 
-/** A kind's tile: its count and what it counts. */
+/** A page's tile: its count and what it counts. */
 async function tile(
   db: Db,
   personId: string,
   pageKind: PageKind,
 ): Promise<Tile> {
-  const kind = kindOf(pageKind);
-  const current = sql`FROM ${sql.table(kind.table)} r WHERE r.person_id = ${personId} AND ${isCurrent(kind, "r")}`;
+  const { kinds, category } = PAGES[pageKind];
+  const kind = kindOf(kinds[0] ?? "");
+  const current = sql`FROM ${sql.table(kind.table)} r WHERE ${grouped(kind, personId, category).mine}`;
   const { rows: counted } = await sql<{
     n: number;
   }>`SELECT count(*) AS n ${current}`.execute(db);
@@ -487,16 +530,21 @@ async function tile(
   const first = (await page(db, personId, pageKind, undefined)).groups[0];
   const row = first?.rows[0];
   if (!first || !row) return base;
-  if (pageKind === "result") {
+  if (category !== undefined) {
     const results = first.rows.filter(
       (r): r is ResultRow => r.kind === "result" && !("problem" in r),
     );
+    // A day of measurements is named by what was measured.
+    const names = [...new Set(results.map((r) => r.test))];
     return {
       ...base,
+      ...(first.type === "day" && { names: names.slice(0, NAMES_SHOWN) }),
       latest: {
         label:
-          first.issuer ??
-          (first.type === "report" ? "A report" : "Typed in the chat"),
+          first.type === "day"
+            ? names.slice(0, NAMES_SHOWN).join(", ")
+            : (first.issuer ??
+              (first.type === "report" ? "A report" : "Typed in the chat")),
         ...(first.date !== undefined && { date: first.date }),
         results: first.rows.length,
         flagged: results.filter((r) => r.flag !== undefined).length,
@@ -655,7 +703,7 @@ export function recordViews(store: Store, now: () => Date = () => new Date()) {
             .executeTakeFirst();
           if (!person) return undefined;
           const tiles = [];
-          for (const kind of Object.keys(PAGE_KINDS) as PageKind[]) {
+          for (const kind of Object.keys(PAGES) as PageKind[]) {
             tiles.push(await tile(db, personId, kind));
           }
           const placed = await followUps(db, personId, now());
@@ -691,8 +739,12 @@ export function recordViews(store: Store, now: () => Date = () => new Date()) {
       read((db) => page(db, personId, kind, after)),
     detail: (personId: string, kind: string, id: string) =>
       read((db) => detail(db, personId, kind, id)),
-    series: (personId: string, test: string, unit: string | null) =>
-      read((db) => series(db, personId, test, unit)),
+    series: (
+      personId: string,
+      test: string,
+      unit: string | null,
+      category: ResultCategory,
+    ) => read((db) => series(db, personId, test, unit, category)),
   };
 }
 

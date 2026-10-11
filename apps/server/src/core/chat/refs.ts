@@ -151,7 +151,7 @@ async function chipOf(
             shownDate(date.slice(0, 10)),
         ),
         detail: join(
-          `${kind.noun.charAt(0).toUpperCase()}${kind.noun.slice(1)} in your record`,
+          `${nounOf(kind, row)} in your health record`,
           row["removed"] === 1 && "removed",
         ),
       };
@@ -212,10 +212,18 @@ async function chipOf(
           report.collected !== null && shownDate(report.collected),
           `${String(count)} ${count === 1 ? "result" : "results"}`,
         ),
-        detail: "Report in your record",
+        detail: "Report in your health record",
       };
     }
   }
+}
+
+/** What a record is called on its chip: a result by its category. */
+function nounOf(kind: Kind, row: Row): string {
+  if (kind.name === "result") {
+    return row["category"] === "measurement" ? "Measurement" : "Lab result";
+  }
+  return `${kind.noun.charAt(0).toUpperCase()}${kind.noun.slice(1)}`;
 }
 
 /**

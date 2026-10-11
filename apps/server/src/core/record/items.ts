@@ -82,6 +82,12 @@ export const ItemSave = Schema.Struct({
         "For another_source and correction: the saved result it is another source for, or corrects.",
     }),
   ),
+  category: Schema.optionalKey(
+    Schema.Literals(["lab", "measurement"]).annotate({
+      description:
+        "What the item is, chosen with the user: lab (a test of a sample) or measurement (blood pressure, pulse, weight, height, temperature, SpO2). Needed for new; a correction keeps the corrected result's category unless you give one; never for another_source.",
+    }),
+  ),
   fix: Schema.optionalKey(
     Schema.Struct({
       source: Schema.String.check(
@@ -311,6 +317,14 @@ export async function planItems(
 
     let before: Row | undefined;
     if (save.as === "new") {
+      if (save.category === undefined) {
+        problem(
+          `${at}.category`,
+          undefined,
+          "Give the new result's category, lab or measurement, as you and the user chose it.",
+        );
+        continue;
+      }
       if (save.record !== undefined) {
         problem(
           `${at}.record`,
@@ -364,6 +378,14 @@ export async function planItems(
       }
       context.touched.set(key, at);
       if (save.as === "another_source") {
+        if (save.category !== undefined) {
+          problem(
+            `${at}.category`,
+            save.category,
+            "Another source keeps the saved result as it is, its category too: leave category out. To move the result to the other page, change its category in a save of its own after this one.",
+          );
+          continue;
+        }
         if (save.fix !== undefined) {
           problem(
             `${at}.fix`,
@@ -387,9 +409,13 @@ export async function planItems(
     }
 
     // A new result, or one that replaces the corrected one: the item's
-    // values, then the user's fix.
+    // values, then the user's fix. A correction keeps the corrected
+    // result's category unless the AI gives one.
+    const category = save.category ?? before?.["category"];
+    const measurement = category === "measurement";
     let source: Source | undefined;
     const columns: Row = {
+      category,
       test_name: fields.test_name,
       value_text: fields.value_text,
       comparator: fields.comparator ?? null,
@@ -400,9 +426,11 @@ export async function planItems(
       context_text: fields.context_text ?? null,
     };
     // Its date: its own, else (in the current column) its report's first
-    // printed date: the collection date when one is printed.
+    // printed date: the collection date when one is printed. A measurement
+    // takes only its own: a lab's collection date isn't when it was taken.
     const date =
-      fields.date ?? (fields.column === "earlier" ? undefined : report?.date);
+      fields.date ??
+      (fields.column === "earlier" || measurement ? undefined : report?.date);
     if (date?.iso !== undefined && dateProblem(date.iso) === undefined) {
       columns["measured_at"] = date.iso;
       columns["measured_words"] = `${date.label} ${date.date}`;
@@ -436,7 +464,9 @@ export async function planItems(
       problem(
         `${at}.item`,
         save.item,
-        `This item has no date Rufi can store (${date ? `"${date.label} ${date.date}": the order of day and month isn't certain` : "none is printed for it"}). Ask the user when the sample was taken; a rough date such as 'around August 2026' is fine. Give it in fix.fields.measured at the precision they gave, with their words; never make one up.`,
+        measurement
+          ? `This measurement has no date Rufi can store (${date ? `"${date.label} ${date.date}": the order of day and month isn't certain` : "none is printed for it, and a report's collection date isn't when it was measured"}). Ask the user when it was measured; a rough date such as 'around August 2026' is fine. Give it in fix.fields.measured at the precision they gave, with their words; never make one up.`
+          : `This item has no date Rufi can store (${date ? `"${date.label} ${date.date}": the order of day and month isn't certain` : "none is printed for it"}). Ask the user when the sample was taken; a rough date such as 'around August 2026' is fine. Give it in fix.fields.measured at the precision they gave, with their words; never make one up.`,
       );
       continue;
     }

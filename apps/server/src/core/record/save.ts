@@ -116,7 +116,9 @@ function changeOf(kind: Kind) {
             });
           }
           for (const [name, field] of Object.entries(kind.fields)) {
-            if (field.required && !(name in given)) {
+            const inherited =
+              field.inheritsVia !== undefined && field.inheritsVia in given;
+            if (field.required && !(name in given) && !inherited) {
               issues.push({
                 path: ["fields", name],
                 issue: `Give ${name} when adding a ${kind.noun}.`,
@@ -330,7 +332,7 @@ export async function saveChanges(
       touched.set(key, at);
       before = await recordOf(trx, kind, where.personId, id);
       const wrong = before
-        ? stateProblem(kind, change.action, before)
+        ? stateProblem(kind, change.action, before, given)
         : `No ${kind.noun} with this id is in this person's record.`;
       if (wrong) {
         problem(`${at}.id`, id, wrong);
@@ -426,6 +428,29 @@ export async function saveChanges(
       Object.assign(columns, columnsOf(field, value));
     }
 
+    if (change.action === "add") {
+      // An amended result keeps the category of the one it replaces,
+      // unless the change gives one.
+      for (const [name, field] of Object.entries(kind.fields)) {
+        if (field.inheritsVia === undefined || name in given) continue;
+        const from = given[field.inheritsVia];
+        const earlier =
+          typeof from === "string"
+            ? await recordOf(trx, kind, where.personId, from)
+            : undefined;
+        if (earlier) columns[field.column] = earlier[field.column];
+      }
+      for (const [name, field] of Object.entries(kind.fields)) {
+        const value = columns[field.column];
+        if (field.required && (value === undefined || value === null)) {
+          problem(
+            `${at}.fields.${name}`,
+            undefined,
+            `Give ${name} when adding a ${kind.noun}.`,
+          );
+        }
+      }
+    }
     if (change.action === "add" && kind.asserted) {
       columns.asserted = source.local.slice(0, 10);
     }
@@ -604,14 +629,26 @@ async function recordOf(
   return rows[0];
 }
 
+/**
+ * What a change may set on a result read from a report: its category. What
+ * it prints and its date change only by amendment.
+ */
+const UNPRINTED: readonly string[] = ["category"];
+
 /** Why the record can't take this action now. */
-function stateProblem(kind: Kind, action: Asked, row: Row): string | undefined {
+function stateProblem(
+  kind: Kind,
+  action: Asked,
+  row: Row,
+  given: Record<string, unknown>,
+): string | undefined {
   if (
     kind.name === "result" &&
     row["report_id"] !== null &&
-    action === "change"
+    action === "change" &&
+    Object.keys(given).some((name) => !UNPRINTED.includes(name))
   ) {
-    return "This result was read from a document, so it changes only by amendment: add a new result with replaces set to this id.";
+    return "This result was read from a document, so what it prints and its date change only by amendment: add a new result with replaces set to this id. Only its category changes in place, in a change of its own.";
   }
   const removed = row["removed"] === 1;
   if (action === "change" && removed) {

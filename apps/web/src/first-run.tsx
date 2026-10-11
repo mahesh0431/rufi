@@ -74,8 +74,8 @@ function Welcome() {
     <Step title="Welcome to Rufi">
       <p>
         Rufi uses AI. What you ask, the documents you add and the parts of your
-        record the AI reads go to the AI provider you sign in with. Your record
-        is kept on your Mac.
+        health record the AI reads go to the AI provider you sign in with. Your
+        health record is kept on your Mac.
       </p>
       <label className="flex items-center gap-2">
         <input

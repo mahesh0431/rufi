@@ -6,11 +6,11 @@ In an emergency, don't wait for Rufi: call your emergency number.
 
 ## It can research and propose; you decide with your doctor
 
-The AI can look into your records and results, explain what the evidence says, and propose options, for example that a medicine's dose may be worth reviewing. When you might act on what it says, it adds a short reminder that it is an AI and that you should check with your doctor first.
+The AI can look into your records and results, explain what the evidence says, and propose options, for example that a medicine's dose may be worth reviewing. When you ask whether to start, stop or change a medicine or a dose, or are about to act on something, its answer says to decide it with your doctor or prescriber. Under the chat's box, Rufi always says that AI can make mistakes and that you should check important health decisions with your doctor.
 
 It can be wrong. Check with your doctor before you act.
 
-What you do, and what you keep in your record, is your decision. If you tell the AI what you decided, such as stopping a medicine, it doesn't argue or refuse.
+What you do, and what you keep in your health record, is your decision. If you tell the AI what you decided, such as stopping a medicine, it doesn't argue or refuse.
 
 ## In an emergency, it tells you to call for help first
 
@@ -35,4 +35,4 @@ The AI doesn't help anyone harm themselves or someone else, for example with dos
 
 ## It asks before it saves, and says "saved" only when Rufi saved it
 
-The AI says what it will save and asks you first. It saves only after you say yes, and only what you said about yourself: nothing from a question, an "if" or someone else's news. It says that something was saved only when Rufi confirmed it, and Rufi shows its own receipt for each save. See [Changing your record](chat.md#changing-your-record).
+The AI says what it will save and asks you first. It saves only after you say yes, and only what you said about yourself: nothing from a question, an "if" or someone else's news. It says that something was saved only when Rufi confirmed it, and Rufi shows its own receipt for each save. See [Changing your health record](chat.md#changing-your-health-record).

@@ -39,7 +39,7 @@ test.describe("opening Rufi", () => {
     // Reloading keeps the tab's session.
     await page.reload();
     await expect(
-      page.getByRole("heading", { name: "Your record" }),
+      page.getByRole("heading", { name: "Health record" }),
     ).toBeVisible();
   });
 
@@ -53,7 +53,7 @@ test.describe("opening Rufi", () => {
     const link = rufi.link();
     await page.goto(link);
     await expect(
-      page.getByRole("heading", { name: "Your record" }),
+      page.getByRole("heading", { name: "Health record" }),
     ).toBeVisible();
 
     const reused = await context.newPage();
@@ -68,7 +68,7 @@ test.describe("opening Rufi", () => {
     const second = await context.newPage();
     await second.goto(fresh ?? "");
     await expect(
-      second.getByRole("heading", { name: "Your record" }),
+      second.getByRole("heading", { name: "Health record" }),
     ).toBeVisible();
   });
 
@@ -91,7 +91,7 @@ test.describe("opening Rufi", () => {
     const { port } = await rufi.start();
     await page.goto(rufi.link());
     await expect(
-      page.getByRole("heading", { name: "Your record" }),
+      page.getByRole("heading", { name: "Health record" }),
     ).toBeVisible();
 
     await rufi.stop();
@@ -102,7 +102,7 @@ test.describe("opening Rufi", () => {
     // What the page had read stays.
     await sidebar(page).getByRole("link", { name: "Overview" }).click();
     await expect(
-      page.getByRole("heading", { name: "Your record" }),
+      page.getByRole("heading", { name: "Health record" }),
     ).toBeVisible();
 
     await rufi.start({ port });
@@ -111,7 +111,7 @@ test.describe("opening Rufi", () => {
     ).toBeVisible();
     await page.goto(rufi.link());
     await expect(
-      page.getByRole("heading", { name: "Your record" }),
+      page.getByRole("heading", { name: "Health record" }),
     ).toBeVisible();
   });
 });
@@ -125,7 +125,7 @@ test("follows the Mac's light or dark appearance, also when it changes while Ruf
   await rufi.start();
   await page.goto(rufi.link());
   await expect(
-    page.getByRole("heading", { name: "Your record" }),
+    page.getByRole("heading", { name: "Health record" }),
   ).toBeVisible();
   const background = () =>
     page.evaluate(() => getComputedStyle(document.body).backgroundColor);
@@ -177,7 +177,7 @@ test("Settings chooses light, dark or the Mac's; every open tab changes at once,
   const other = await context.newPage();
   await other.goto((await runningLink(rufi.home)) ?? "");
   await expect(
-    other.getByRole("heading", { name: "Your record" }),
+    other.getByRole("heading", { name: "Health record" }),
   ).toBeVisible();
 
   await appearance.getByRole("radio", { name: "Dark" }).check();
@@ -187,7 +187,7 @@ test("Settings chooses light, dark or the Mac's; every open tab changes at once,
   const fresh = await context.newPage();
   await fresh.goto((await runningLink(rufi.home)) ?? "");
   await expect(
-    fresh.getByRole("heading", { name: "Your record" }),
+    fresh.getByRole("heading", { name: "Health record" }),
   ).toBeVisible();
   expect(await firstFrame(fresh)).toBe("dark");
 
@@ -195,7 +195,7 @@ test("Settings chooses light, dark or the Mac's; every open tab changes at once,
   await rufi.start({ port });
   await page.goto(rufi.link());
   await expect(
-    page.getByRole("heading", { name: "Your record" }),
+    page.getByRole("heading", { name: "Health record" }),
   ).toBeVisible();
   expect(await firstFrame(page)).toBe("dark");
 
@@ -285,7 +285,7 @@ test.describe("first run", () => {
     ).toBeVisible();
     await welcoming();
     await expect(page.getByRole("main")).toContainText(
-      "Rufi uses AI. What you ask, the documents you add and the parts of your record the AI reads go to the AI provider you sign in with. Your record is kept on your Mac.",
+      "Rufi uses AI. What you ask, the documents you add and the parts of your health record the AI reads go to the AI provider you sign in with. Your health record is kept on your Mac.",
     );
     await accessible(page);
     // The look can be chosen here too, and stays chosen.
@@ -331,10 +331,12 @@ test.describe("first run", () => {
     await expect(
       page.getByRole("heading", { name: /, Mira Fictional$/ }),
     ).toBeVisible();
-    // A new record: every kind's tile is there, empty.
-    await expect(
-      page.getByRole("main").getByRole("link", { name: "Results None yet" }),
-    ).toBeVisible();
+    // A new record: every page's tile is there, empty.
+    for (const name of ["Lab results", "Measurements"]) {
+      await expect(
+        page.getByRole("main").getByRole("link", { name: `${name} None yet` }),
+      ).toBeVisible();
+    }
     await expect(sidebar(page)).toContainText("Mira Fictional");
     await expect(title).toHaveText("Overview");
     // The person's chat was made with them: the bar works at once.
@@ -417,7 +419,8 @@ test.describe("first run", () => {
     await expect(sidebar(page).getByRole("link")).toHaveText([
       "Chat with Rufi",
       "Overview",
-      "Results7",
+      "Lab results7",
+      "Measurements3",
       "Medicines2",
       "Prescriptions",
       "Conditions",
@@ -563,7 +566,7 @@ test.describe("Overview", () => {
     await page.unroute("**/overview");
     await page.getByRole("button", { name: "Try again" }).click();
     await expect(
-      page.getByRole("heading", { name: "Your record" }),
+      page.getByRole("heading", { name: "Health record" }),
     ).toBeVisible();
   });
 });
@@ -633,7 +636,7 @@ test.describe("when Rufi is slow or away", () => {
     await page.clock.install();
     await page.goto(rufi.link());
     await expect(
-      page.getByRole("heading", { name: "Your record" }),
+      page.getByRole("heading", { name: "Health record" }),
     ).toBeVisible();
 
     await page.route("**/api/**", (route) => route.abort());

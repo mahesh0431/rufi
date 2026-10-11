@@ -76,13 +76,30 @@ describe("get_overview", () => {
         person: "Asha Fictional",
         documents: 2,
         reports: 2,
-        results: 7,
+        results: 10,
         earlier_versions_kept: 1,
         latest_results: [
+          {
+            id: "res-a10",
+            test: "Weight",
+            value: "61.5",
+            category: "measurement",
+            unit: "kg",
+            measured: "2026-09-20",
+          },
+          {
+            id: "res-a9",
+            test: "Blood pressure",
+            value: "128/84",
+            category: "measurement",
+            unit: "mmHg",
+            measured: "2026-09-20",
+          },
           {
             id: "res-a6",
             test: "Free T4",
             value: "1.1",
+            category: "lab",
             unit: "ng/dL",
             range: "0.8 - 1.8",
             context: "Direct",
@@ -92,6 +109,7 @@ describe("get_overview", () => {
             id: "res-a5",
             test: "TSH",
             value: "4.6",
+            category: "lab",
             unit: "mIU/L",
             range: "0.4 - 4.0",
             flag: "High",
@@ -102,6 +120,7 @@ describe("get_overview", () => {
             id: "res-a3",
             test: "CRP",
             value: "<5",
+            category: "lab",
             unit: "mg/L",
             range: "<10",
             measured: "2026-08-12",
@@ -110,6 +129,7 @@ describe("get_overview", () => {
             id: "res-a2",
             test: "Glucose",
             value: "118",
+            category: "lab",
             unit: "mg/dL",
             range: "70 - 99",
             flag: "High",
@@ -120,21 +140,36 @@ describe("get_overview", () => {
             id: "res-a1",
             test: "HbA1c",
             value: "6.8",
+            category: "lab",
             unit: "%",
             range: "4.0 - 5.6",
             flag: "High",
             measured: "2026-08-12",
           },
           {
+            id: "res-a11",
+            test: "Weight",
+            value: "62",
+            category: "measurement",
+            unit: "kg",
+            measured: "2026-08",
+          },
+          {
             id: "res-a7",
             test: "Vitamin D",
             value: "22",
+            category: "lab",
             unit: "ng/mL",
             range: "30 - 100",
             flag: "Low",
             measured: "2026-05",
           },
-          { id: "res-a8", test: "Blood group", value: "B positive" },
+          {
+            id: "res-a8",
+            test: "Blood group",
+            value: "B positive",
+            category: "lab",
+          },
         ],
         record: {
           medicine_use: {
@@ -179,11 +214,11 @@ describe("get_overview", () => {
   it(`shows at most ${String(RESULTS_SHOWN)} results, in a stable order`, async () => {
     const rows = Array.from({ length: 25 }, (_, i) => {
       const n = String(i).padStart(2, "0");
-      return `('extra-${n}', 'ravi', NULL, 'Weight', '${n}', NULL, NULL, 'kg', NULL, NULL, NULL, '2026-01-01', '2026-01-01T00:00:00Z', NULL)`;
+      return `('extra-${n}', 'ravi', NULL, 'measurement', 'Weight', '${n}', NULL, NULL, 'kg', NULL, NULL, NULL, '2026-01-01', '2026-01-01T00:00:00Z', NULL)`;
     });
     const store = makeDatabase(
       family,
-      `INSERT INTO results (id, person_id, report_id, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id) VALUES ${rows.join(",")}`,
+      `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id) VALUES ${rows.join(",")}`,
     );
     const { body } = await call({ store, personId: "ravi" });
     const latest = (body["result"] as { latest_results: { value: string }[] })
@@ -267,12 +302,18 @@ describe("get_records", () => {
     expect(JSON.stringify(body)).not.toContain("LDL");
   });
 
-  it("gives records as stored, newest first, removed and replaced ones marked", async () => {
+  it("gives records as stored, newest first, removed and replaced ones marked, of one category when asked", async () => {
     const store = makeDatabase(
       family,
       "UPDATE results SET removed = 1 WHERE id = 'res-a2'",
     );
-    const { body } = await records(store, { kind: "result" });
+    expect(
+      ids(await records(store, { kind: "result", category: "measurement" })),
+    ).toEqual(["res-a10", "res-a9", "res-a11"]);
+    expect(
+      (await records(store, { kind: "symptom", category: "lab" })).ok,
+    ).toBe(false);
+    const { body } = await records(store, { kind: "result", category: "lab" });
     const result = body["result"] as { records: Record<string, unknown>[] };
     expect(result).toMatchObject({ returned: 8, complete: true });
     expect(result.records.map((found) => found["id"])).toEqual([
@@ -291,6 +332,7 @@ describe("get_records", () => {
         version: null,
         test: "TSH",
         value: "4.6",
+        category: "lab",
         number: 4.6,
         unit: "mIU/L",
         range: "0.4 - 4.0",
@@ -306,6 +348,7 @@ describe("get_records", () => {
         version: null,
         test: "TSH",
         value: "2.1",
+        category: "lab",
         number: 2.1,
         unit: "mIU/L",
         range: "0.4 - 4.0",
@@ -324,6 +367,7 @@ describe("get_records", () => {
         version: null,
         test: "CRP",
         value: "<5",
+        category: "lab",
         comparator: "<",
         number: 5,
         unit: "mg/L",
@@ -365,6 +409,7 @@ describe("get_records", () => {
       "res-a3",
       "res-a2",
       "res-a1",
+      "res-a11",
     ]);
     // Vitamin D is dated May 2026: in from mid-May, not in up to April.
     expect(await between("2026-05-15", "2026-06")).toEqual(["res-a7"]);
@@ -398,10 +443,10 @@ describe("get_records", () => {
         const day = new Date(Date.UTC(2025, 0, 1 + i))
           .toISOString()
           .slice(0, 10);
-        return `('g${String(i)}', 'asha', NULL, 'Glucose', '5.${String(i % 10)}', NULL, NULL, 'mmol/L', NULL, NULL, NULL, '${day}', '2026-01-01T00:00:00Z', NULL)`;
+        return `('g${String(i)}', 'asha', NULL, 'lab', 'Glucose', '5.${String(i % 10)}', NULL, NULL, 'mmol/L', NULL, NULL, NULL, '${day}', '2026-01-01T00:00:00Z', NULL)`;
       }).join(",");
     const insert = (n: number) =>
-      `DELETE FROM results WHERE person_id = 'asha'; INSERT INTO results (id, person_id, report_id, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id) VALUES ${glucose(n)}`;
+      `DELETE FROM results WHERE person_id = 'asha'; INSERT INTO results (id, person_id, report_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id) VALUES ${glucose(n)}`;
     const exactly = makeDatabase(family, insert(LIMITS.records));
     expect(
       (await records(exactly, { kind: "result" })).body["result"],
@@ -426,45 +471,63 @@ describe("get_records", () => {
     ).toMatchObject({ records: [{ id: "g0" }], complete: true });
   });
 
-  it("reads on past the cap to the end, also among 300 records of one day and records with no date", async () => {
+  it("reads on past the cap to the end, also among 300 records of one day, of either category, and records with no date", async () => {
+    // Lab results and measurements in turn, all on one day.
     const day = Array.from(
       { length: 300 },
       (_, i) =>
-        `('d${String(i).padStart(3, "0")}', 'asha', NULL, 'Glucose', '${String(90 + (i % 30))}', 'mg/dL', '2026-08-12', '2026-08-13T00:00:00Z')`,
+        `('d${String(i).padStart(3, "0")}', 'asha', NULL, '${i % 2 === 0 ? "lab" : "measurement"}', 'Glucose', '${String(90 + (i % 30))}', 'mg/dL', '2026-08-12', '2026-08-13T00:00:00Z')`,
     ).join(",");
     const store = makeDatabase(
       family,
-      `INSERT INTO results (id, person_id, report_id, test_name, value_text, unit, measured_at, entered_at) VALUES ${day}`,
+      `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, unit, measured_at, entered_at) VALUES ${day}`,
     );
-    const read: string[] = [];
-    let after: string | undefined;
-    for (let reads = 0; reads < 10; reads++) {
-      const answer = (
-        await records(store, {
-          kind: "result",
-          ...(after !== undefined && { after }),
-        })
-      ).body["result"] as {
-        records: { id: string }[];
-        complete: boolean;
-        next?: string;
-      };
-      read.push(...answer.records.map((found) => found.id));
-      if (answer.complete) break;
-      after = answer.next;
-    }
-    // Every record once: the fictional family's 8 and the day's 300.
-    expect(read).toHaveLength(308);
-    expect(new Set(read).size).toBe(308);
+    const readAll = async (input: Record<string, unknown>) => {
+      const read: { id: string; category: string }[] = [];
+      let after: string | undefined;
+      for (let reads = 0; reads < 10; reads++) {
+        const answer = (
+          await records(store, {
+            ...input,
+            ...(after !== undefined && { after }),
+          })
+        ).body["result"] as {
+          records: { id: string; category: string }[];
+          complete: boolean;
+          next?: string;
+        };
+        read.push(...answer.records);
+        if (answer.complete) break;
+        after = answer.next;
+      }
+      return read;
+    };
+    // Every record once: the fictional family's 11 and the day's 300.
+    const read = (await readAll({ kind: "result" })).map((found) => found.id);
+    expect(read).toHaveLength(311);
+    expect(new Set(read).size).toBe(311);
     expect(read.slice(-2)).toEqual(["res-a7", "res-a8"]);
-    const { ok, body } = await records(store, {
+    // Only measurements: the family's 3 and the day's 150, each once.
+    const measurements = await readAll({
       kind: "result",
-      after: "res-r1",
+      category: "measurement",
     });
-    expect(ok).toBe(false);
-    expect(body["error"]).toBe(
-      "That `after` isn't from this read: read again without it.",
-    );
+    expect(new Set(measurements.map((found) => found.id)).size).toBe(153);
+    expect(measurements).toHaveLength(153);
+    expect(
+      measurements.every((found) => found.category === "measurement"),
+    ).toBe(true);
+    // An anchor from another read: another person's, or another category's.
+    for (const input of [
+      { kind: "result", after: "res-r1" },
+      { kind: "result", category: "measurement", after: "res-a7" },
+    ]) {
+      const { ok, body } = await records(store, input);
+      expect(ok).toBe(false);
+      expect(body["error"]).toBe(
+        "That `after` isn't from this read: read again without it.",
+      );
+    }
   });
 
   it("reads exactly the records named by id, and says which aren't there", async () => {

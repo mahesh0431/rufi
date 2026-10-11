@@ -1,6 +1,6 @@
 # Your data and the AI
 
-Rufi keeps your records on your Mac. This page says where they are, what the AI sends, what Rufi keeps of your chat, and what Rufi writes in its log.
+Rufi keeps your health record on your Mac. This page says where they are, what the AI sends, what Rufi keeps of your chat, and what Rufi writes in its log.
 
 ## Where your data lives
 
@@ -8,7 +8,7 @@ Everything is in one data folder on your Mac. Today you choose it with the `RUFI
 
 | In the data folder | What it is                                                                                                                                                                                                          |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `rufi.sqlite`      | The record (people, documents, reports and results) and your chat, with what the AI did in it (see below)                                                                                                           |
+| `rufi.sqlite`      | The record (people, documents, reports, lab results and measurements) and your chat, with what the AI did in it (see below)                                                                                         |
 | `installed.json`   | Says a record was made in this folder. If it is there and `rufi.sqlite` isn't, Rufi doesn't start: it never shows an empty record in place of yours                                                                 |
 | `files/`           | Your documents, exactly as you added them (see [Documents](documents.md))                                                                                                                                           |
 | `cache/`           | Copies Rufi makes again when they are missing: the JPEG copy that shows a HEIC photo, and the pages of your PDFs drawn as images for the AI (see below)                                                             |
@@ -26,7 +26,7 @@ Everything is in one data folder on your Mac. Today you choose it with the `RUFI
 
 When Rufi creates your data folder, it makes it private to your Mac user account. The files Rufi writes in it, such as `rufi.sqlite` and the log, are private to your account too. Rufi doesn't change a folder that already existed, so who can open a folder you chose depends on that folder's permissions and on who can use your Mac account.
 
-> **Note:** When you ask Rufi something, the AI reads the parts of your record it needs. That text goes to the AI service you signed in with (today OpenAI, through your ChatGPT plan) so it can answer. See [OpenAI's policies](https://openai.com/policies/) for how they handle it.
+> **Note:** When you ask Rufi something, the AI reads the parts of your health record it needs. That text goes to the AI service you signed in with (today OpenAI, through your ChatGPT plan) so it can answer. See [OpenAI's policies](https://openai.com/policies/) for how they handle it.
 
 When the AI reads your record with Rufi's tools, it gets only the records of the person whose chat it is: Rufi chooses the person, and the AI can't name another one. The AI can't read the chat or Rufi's settings this way, and it can't change anything.
 

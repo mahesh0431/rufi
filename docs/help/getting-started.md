@@ -1,6 +1,6 @@
 # Getting started
 
-Rufi runs on your Mac and opens in your browser, or as an app in its own window. Your records stay in your data folder on your Mac (see [Your data and the AI](your-data-and-the-ai.md)).
+Rufi runs on your Mac and opens in your browser, or as an app in its own window. Your health record stays in your data folder on your Mac (see [Your data and the AI](your-data-and-the-ai.md)).
 
 ## Start Rufi
 
@@ -9,7 +9,7 @@ Rufi runs on your Mac and opens in your browser, or as an app in its own window.
 
 The link works once, for 5 minutes. When the page opens, Rufi removes the link from the address bar. The tab stays open when you reload it.
 
-If the record is missing from a data folder that had one, Rufi doesn't start: it says so, and doesn't show an empty record in place of yours. See [Backups and export](backups-and-export.md#if-your-record-is-missing).
+If the record is missing from a data folder that had one, Rufi doesn't start: it says so, and doesn't show an empty record in place of yours. See [Backups and export](backups-and-export.md#if-your-record-is-missing-or-empty).
 
 ## Open Rufi again
 
@@ -42,9 +42,9 @@ To try Rufi without your own records, run `pnpm demo` in the Rufi folder. It ope
 
 Each time you run it, the demo folder starts again with the same test data:
 
-- A made-up family, Asha and Ravi Fictional, with their test results, medicines and an allergy.
+- A made-up family, Asha and Ravi Fictional, with their lab results, measurements (blood pressure and weight), medicines and an allergy.
 - The first run is done, and the emergency region is India.
-- A few days of Asha's chat with Rufi, with one change saved to her record and its receipt.
+- A few days of Asha's chat with Rufi, with one change saved to her health record and its receipt.
 
 Each time, everything that was in the demo folder is removed first: the record, its backups, the AI's earlier chats, and any file you put there yourself. Only the sign-in stays, so you sign in with ChatGPT once (see [Signing in with ChatGPT](signing-in.md#sign-in-in-rufi)), and the next demo is signed in.
 
@@ -59,9 +59,9 @@ Each time, everything that was in the demo folder is removed first: the record, 
 
 In a new data folder, Rufi takes you through four short steps:
 
-1. **Welcome.** Rufi says what goes to the AI: what you ask, the documents you add and the parts of your record the AI reads go to the AI provider you sign in with. Your record is kept on your Mac. Tick "I understand Rufi is not a doctor", then click **Continue**. Here you can also choose how Rufi looks: **System**, **Light** or **Dark** (see [How Rufi looks](#how-rufi-looks)).
+1. **Welcome.** Rufi says what goes to the AI: what you ask, the documents you add and the parts of your health record the AI reads go to the AI provider you sign in with. Your health record is kept on your Mac. Tick "I understand Rufi is not a doctor", then click **Continue**. Here you can also choose how Rufi looks: **System**, **Light** or **Dark** (see [How Rufi looks](#how-rufi-looks)).
 2. **Your name.** Rufi adds you to the record.
-3. **Sign in with ChatGPT.** See [Signing in with ChatGPT](signing-in.md#sign-in-in-rufi). To do it later, click **Skip for now**: your record works without the AI.
+3. **Sign in with ChatGPT.** See [Signing in with ChatGPT](signing-in.md#sign-in-in-rufi). To do it later, click **Skip for now**: your health record works without the AI.
 4. **Your emergency region,** for the number the AI gives in an emergency. Choose it and click **Continue**, or click **Skip**. You can change it in Settings.
 
 The steps fill the window. The sidebar, Help, Settings and your chat show when the first run is done.
@@ -70,9 +70,9 @@ Rufi keeps each step you finished. If you reload the page, close it or open Rufi
 
 ## What you see
 
-- **The sidebar:** your name, **Chat with Rufi**, **Overview**, **Your record** with each kind of record and its count, **Documents**, and at the bottom **Help** and **Settings**. When the AI can't be used, a line under them says why.
-- **The chat bar:** the box at the bottom right of every page where you read your health (Overview, your record's pages, Follow-ups and Documents), where you talk to Rufi. **Ask Rufi** on those pages puts things in it, and you stay on the page. It is your one chat with Rufi, the same as Chat with Rufi in the sidebar. See [Talking to Rufi](chat.md).
-- **Overview:** what needs you (documents waiting to be saved or read again), your record as one tile for each kind, and your recent changes. Each kind of record also has its own page. See [Your record](record.md).
+- **The sidebar:** your name, **Chat with Rufi**, **Overview**, **Health record** with each of its pages and its count (**Lab results**, **Measurements**, **Medicines** and the others), **Documents**, and at the bottom **Help** and **Settings**. When the AI can't be used, a line under them says why.
+- **The chat bar:** the box at the bottom right of every page where you read your health (Overview, your health record's pages, Follow-ups and Documents), where you talk to Rufi. **Ask Rufi** on those pages puts things in it, and you stay on the page. It is your one chat with Rufi, the same as Chat with Rufi in the sidebar. See [Talking to Rufi](chat.md).
+- **Overview:** what needs you (documents waiting to be saved or read again), your health record as one tile for each of its pages, and your recent changes. Each kind of record has its own page, and results have two: Lab results and Measurements. See [Your health record](record.md).
 - **Settings:** the ChatGPT plan Rufi's AI uses (see [Signing in with ChatGPT](signing-in.md#your-plan-in-settings)), how Rufi looks, and your emergency region. When a message may describe an emergency, the AI gives this region's number; with no region, it says to call your local emergency number. See [What Rufi's AI will and won't do](safety.md#in-an-emergency-it-tells-you-to-call-for-help-first). Settings also holds the model and effort Rufi reads your documents with (see [Documents](documents.md#the-readers-model-and-effort)), shows your backups and exports your data: see [Backups and export](backups-and-export.md).
 - **Help:** these pages.
 

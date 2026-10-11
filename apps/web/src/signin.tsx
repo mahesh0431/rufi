@@ -43,7 +43,7 @@ export function SignIn({ skip }: { skip?: () => void }) {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-muted">
-        Rufi's AI uses your ChatGPT plan. Your record works without it.
+        Rufi's AI uses your ChatGPT plan. Your health record works without it.
       </p>
       {status?.account === "no_plan_use" && (
         <p>

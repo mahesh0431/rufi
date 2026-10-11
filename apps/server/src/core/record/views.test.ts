@@ -91,7 +91,7 @@ describe("what is current", () => {
     await saveSaid("Remove the CRP result", [
       { kind: "result", action: "remove", id: "res-a3" },
     ]);
-    const [page] = await allPages("result");
+    const [page] = await allPages("lab_result");
     // res-a4 is replaced by the amended res-a5; res-a3 was removed.
     expect(
       page?.groups.map((group) => [
@@ -118,7 +118,7 @@ describe("what is current", () => {
     expect(
       await views.detail("asha", "no_such_kind", "res-a1"),
     ).toBeUndefined();
-    const ravi = await views.page("ravi", "result");
+    const ravi = await views.page("ravi", "lab_result");
     expect(idsOf(ravi)).toEqual(["res-r1", "res-r2"]);
   });
 });
@@ -138,7 +138,7 @@ describe("groups and paging", () => {
       "INSERT INTO reports (id, person_id, document_id, issuer, collected) VALUES (?, 'asha', 'doc-asha-aug', 'Sunrise Labs', ?)",
     );
     const insertResult = store.db.prepare(
-      "INSERT INTO results (id, person_id, report_id, test_name, value_text, measured_at, entered_at) VALUES (?, 'asha', ?, ?, '1', ?, '2026-10-01T10:00:00Z')",
+      "INSERT INTO results (id, person_id, report_id, category, test_name, value_text, measured_at, entered_at) VALUES (?, 'asha', ?, 'lab', ?, '1', ?, '2026-10-01T10:00:00Z')",
     );
     for (const report of reports) {
       insertReport.run(report.id, report.collected);
@@ -158,7 +158,7 @@ describe("groups and paging", () => {
     }
     insertResult.run("res-day", null, "Weight", "2026-05-20T08:30");
 
-    const pages = await allPages("result");
+    const pages = await allPages("lab_result");
     expect(pages.map((page) => page.groups.map((group) => group.id))).toEqual([
       [
         "report:rep-asha-sep",
@@ -189,7 +189,7 @@ describe("groups and paging", () => {
     expect(all.length).toBe(new Set(all).size);
     const current = store.db
       .prepare(
-        "SELECT id FROM results WHERE person_id = 'asha' AND id NOT IN ('res-a4')",
+        "SELECT id FROM results WHERE person_id = 'asha' AND category = 'lab' AND id NOT IN ('res-a4')",
       )
       .all()
       .map((row) => (row as { id: string }).id);
@@ -212,9 +212,9 @@ describe("groups and paging", () => {
   });
 
   it("refuses a cursor it didn't give", async () => {
-    await expect(views.page("asha", "result", "not-a-cursor")).rejects.toThrow(
-      "That page isn't one Rufi gave.",
-    );
+    await expect(
+      views.page("asha", "lab_result", "not-a-cursor"),
+    ).rejects.toThrow("That page isn't one Rufi gave.");
   });
 });
 
@@ -236,7 +236,7 @@ describe("tiles", () => {
     const overview = await views.overview("asha");
     expect(overview?.tiles).toEqual([
       {
-        kind: "result",
+        kind: "lab_result",
         count: 7,
         names: [],
         latest: {
@@ -244,6 +244,17 @@ describe("tiles", () => {
           date: "2026-09-01",
           results: 2,
           flagged: 1,
+        },
+      },
+      {
+        kind: "measurement",
+        count: 3,
+        names: ["Blood pressure", "Weight"],
+        latest: {
+          label: "Blood pressure, Weight",
+          date: "2026-09-20",
+          results: 2,
+          flagged: 0,
         },
       },
       {
@@ -337,9 +348,9 @@ describe("a row opened", () => {
 
   it("shows a stored row that doesn't fit as can't-show, and the page and tiles still answer", async () => {
     store.db.exec(
-      "INSERT INTO results (id, person_id, test_name, value_text, measured_at, entered_at) VALUES ('res-bad', 'asha', 'Iron', '80', 'last week', '2026-10-01T10:00:00Z')",
+      "INSERT INTO results (id, person_id, category, test_name, value_text, measured_at, entered_at) VALUES ('res-bad', 'asha', 'lab', 'Iron', '80', 'last week', '2026-10-01T10:00:00Z')",
     );
-    const page = await views.page("asha", "result");
+    const page = await views.page("asha", "lab_result");
     expect(page.groups.at(-1)?.rows).toEqual([
       expect.objectContaining({
         kind: "result",
@@ -359,18 +370,162 @@ describe("a row opened", () => {
 });
 
 describe("series", () => {
-  it("lists a test's current values in one unit, dated oldest first, undated last", async () => {
+  it("lists a test's current values in one unit and category, dated oldest first, undated last", async () => {
     store.db.exec(`
-      INSERT INTO results (id, person_id, test_name, value_text, unit, measured_at, entered_at) VALUES
-        ('tsh-mar', 'asha', 'TSH', '1.9', 'mIU/L', '2026-03', '2026-10-01T10:00:00Z'),
-        ('tsh-none', 'asha', 'TSH', '3.0', 'mIU/L', NULL, '2026-10-01T10:00:00Z'),
-        ('tsh-other', 'asha', 'TSH', '1900', 'µIU/mL', '2026-04-01', '2026-10-01T10:00:00Z');`);
-    const series = await views.series("asha", "TSH", "mIU/L");
+      INSERT INTO results (id, person_id, category, test_name, value_text, unit, measured_at, entered_at) VALUES
+        ('tsh-mar', 'asha', 'lab', 'TSH', '1.9', 'mIU/L', '2026-03', '2026-10-01T10:00:00Z'),
+        ('tsh-none', 'asha', 'lab', 'TSH', '3.0', 'mIU/L', NULL, '2026-10-01T10:00:00Z'),
+        ('tsh-other', 'asha', 'lab', 'TSH', '1900', 'µIU/mL', '2026-04-01', '2026-10-01T10:00:00Z'),
+        ('tsh-moved', 'asha', 'measurement', 'TSH', '2.5', 'mIU/L', '2026-04-01', '2026-10-01T10:00:00Z');`);
+    const series = await views.series("asha", "TSH", "mIU/L", "lab");
     // The replaced 2.1 isn't a point: the amended 4.6 is.
     expect(series.values.map((value) => value.id)).toEqual([
       "tsh-mar",
       "res-a5",
       "tsh-none",
+    ]);
+    const other = await views.series("asha", "TSH", "mIU/L", "measurement");
+    expect(other.values.map((value) => value.id)).toEqual(["tsh-moved"]);
+  });
+});
+
+describe("lab results and measurements", () => {
+  it("show each category on its page: a report's lab results whole on Lab results, measurements by the day taken at its precision, undated last", async () => {
+    store.db.exec(`
+      INSERT INTO reports (id, person_id, document_id, issuer, collected) VALUES
+        ('rep-visit', 'asha', 'doc-asha-sep', 'Lakeview Clinic', NULL);
+      INSERT INTO results (id, person_id, report_id, category, test_name, value_text, unit, measured_at, entered_at) VALUES
+        ('bp-sep', 'asha', 'rep-asha-sep', 'measurement', 'Blood pressure', '130/85', 'mmHg', '2026-09-01', '2026-10-01T10:00:00Z'),
+        ('lab-visit', 'asha', 'rep-visit', 'lab', 'Ferritin', '35', 'ng/mL', '2025-07-20', '2026-10-01T10:00:00Z'),
+        ('pulse-visit', 'asha', 'rep-visit', 'measurement', 'Pulse', '72', '/min', '2025-09-03T10:15', '2026-10-01T10:00:00Z'),
+        ('height-when', 'asha', NULL, 'measurement', 'Height', '160', 'cm', NULL, '2026-10-01T10:00:00Z');`);
+    const groupsOf = async (kind: "lab_result" | "measurement") =>
+      (await allPages(kind)).flatMap((page) =>
+        page.groups.map((group) => ({
+          id: group.id,
+          type: group.type,
+          date: group.date,
+          issuer: group.issuer,
+          rows: group.rows.map((row) => row.id),
+        })),
+      );
+
+    expect(await groupsOf("lab_result")).toEqual([
+      {
+        id: "report:rep-asha-sep",
+        type: "report",
+        date: "2026-09-01",
+        issuer: "Sunrise Labs",
+        rows: ["res-a5", "res-a6"],
+      },
+      {
+        id: "report:rep-asha-aug",
+        type: "report",
+        date: "2026-08-12",
+        issuer: "Sunrise Labs",
+        rows: ["res-a1", "res-a2", "res-a3"],
+      },
+      {
+        id: "chat:2026-05",
+        type: "chat",
+        date: "2026-05",
+        issuer: undefined,
+        rows: ["res-a7"],
+      },
+      // A report with no printed date takes its lab results' latest date,
+      // not its measurements'.
+      {
+        id: "report:rep-visit",
+        type: "report",
+        date: "2025-07-20",
+        issuer: "Lakeview Clinic",
+        rows: ["lab-visit"],
+      },
+      {
+        id: "chat:",
+        type: "chat",
+        date: undefined,
+        issuer: undefined,
+        rows: ["res-a8"],
+      },
+    ]);
+    expect(await groupsOf("measurement")).toEqual([
+      {
+        id: "day:2026-09-20",
+        type: "day",
+        date: "2026-09-20",
+        issuer: undefined,
+        rows: ["res-a9", "res-a10"],
+      },
+      {
+        id: "day:2026-09-01",
+        type: "day",
+        date: "2026-09-01",
+        issuer: undefined,
+        rows: ["bp-sep"],
+      },
+      {
+        id: "day:2026-08",
+        type: "day",
+        date: "2026-08",
+        issuer: undefined,
+        rows: ["res-a11"],
+      },
+      {
+        id: "day:2025-09-03",
+        type: "day",
+        date: "2025-09-03",
+        issuer: undefined,
+        rows: ["pulse-visit"],
+      },
+      {
+        id: "day:",
+        type: "day",
+        date: undefined,
+        issuer: undefined,
+        rows: ["height-when"],
+      },
+    ]);
+  });
+
+  it("move a result that an amendment in the other category replaces, and back when it is undone", async () => {
+    const pageIds = async (kind: "lab_result" | "measurement") =>
+      (await allPages(kind)).flatMap(idsOf);
+    const counts = async () =>
+      (await views.overview("asha"))?.tiles
+        .slice(0, 2)
+        .map((tile) => [tile.kind, tile.count]);
+
+    await saveSaid("That vitamin D was a home test of 24", [
+      {
+        kind: "result",
+        action: "add",
+        fields: {
+          test: "Vitamin D",
+          value: "24",
+          category: "measurement",
+          replaces: "res-a7",
+        },
+      },
+    ]);
+    const { id: amendment } = store.db
+      .prepare("SELECT id FROM results WHERE replaces_id = 'res-a7'")
+      .get() as { id: string };
+    expect(await pageIds("lab_result")).not.toContain("res-a7");
+    expect(await pageIds("measurement")).toContain(amendment);
+    expect(await counts()).toEqual([
+      ["lab_result", 6],
+      ["measurement", 4],
+    ]);
+
+    await saveSaid("Undo that", [
+      { kind: "result", action: "remove", id: amendment },
+    ]);
+    expect(await pageIds("lab_result")).toContain("res-a7");
+    expect(await pageIds("measurement")).not.toContain(amendment);
+    expect(await counts()).toEqual([
+      ["lab_result", 7],
+      ["measurement", 3],
     ]);
   });
 });

@@ -150,8 +150,8 @@ function Checking({
             <span className="text-muted">· {about}</span>
           </h2>
           <p className="text-xs text-muted">
-            What the reader read, not saved. These become your record only when
-            you save them in the chat.
+            What the reader read, not saved. These become part of your health
+            record only when you save them in the chat.
           </p>
         </div>
         {(document.status === "not_read" ||
