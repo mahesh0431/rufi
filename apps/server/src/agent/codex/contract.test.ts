@@ -256,7 +256,7 @@ async function members(groups: ReadonlySet<number>) {
     .split("\n")
     .map((line) => /^\s*(\d+)\s+(.*)$/.exec(line))
     .filter((match) => match !== null)
-    .map((match) => ({ pid: Number(match?.[1]), command: match?.[2] ?? "" }));
+    .map((match) => ({ pid: Number(match[1]), command: match[2] ?? "" }));
 }
 
 /** Polls `done` until it holds; fails, saying `what`, after `ms`. */
