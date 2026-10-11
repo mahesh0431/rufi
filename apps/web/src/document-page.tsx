@@ -82,14 +82,10 @@ export function DocumentPage({
       ),
   });
   const document = documents.data?.find((d) => d.id === documentId);
-  // The list says it isn't there (deleted, or never added): its items'
-  // refusal is no problem to try again.
+  // The list says it isn't there: its items' refusal is no problem to try
+  // again.
   if (documents.data !== undefined && !document) {
-    return (
-      <div className="px-6 py-8 text-muted">
-        There is no such document. It may have been deleted.
-      </div>
-    );
+    return <Gone personId={person.id} documentId={documentId} />;
   }
   if (documents.error ?? items.error) {
     return (
@@ -106,6 +102,34 @@ export function DocumentPage({
   }
   if (!document || items.data === undefined) return null;
   return <Checking person={person} document={document} items={items.data} />;
+}
+
+/** A document not in the list: deleted, or never added. */
+function Gone({
+  personId,
+  documentId,
+}: {
+  personId: string;
+  documentId: string;
+}) {
+  // Asked again here: a page open when the delete came has its items.
+  const asked = useQuery({
+    queryKey: ["gone", personId, documentId],
+    queryFn: () =>
+      read(DocumentItems, "GET", `${documentPath(personId, documentId)}/items`),
+    gcTime: 0,
+  });
+  if (asked.isPending) return null;
+  const deleted =
+    asked.error instanceof ApiError &&
+    (asked.error.body as { deleted?: unknown } | undefined)?.deleted === true;
+  return (
+    <div className="px-6 py-8 text-muted">
+      {deleted
+        ? "This document was deleted."
+        : "There is no such document. It may have been deleted."}
+    </div>
+  );
 }
 
 function Checking({

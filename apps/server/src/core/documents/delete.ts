@@ -273,6 +273,16 @@ export function deletions(deps: {
     preview: async (personId: string, documentId: string) =>
       previewIn(db, personId, documentId),
 
+    /** Whether the person's document was deleted: its tombstone is there. */
+    deleted: async (personId: string, documentId: string) =>
+      (await db
+        .selectFrom("documents")
+        .select("id")
+        .where("person_id", "=", personId)
+        .where("id", "=", documentId)
+        .where("deleted_at", "is not", null)
+        .executeTakeFirst()) !== undefined,
+
     /**
      * Deletes the document, when the preview `version` is still what is
      * true and nothing saved rests on it; otherwise StalePreview, with

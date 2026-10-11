@@ -126,11 +126,16 @@ test("a document with saved results is blocked with Ask Rufi; one without goes, 
   await expect(waiting).toContainText("Goes to the AI with your next message.");
   await expect(waiting).not.toContainText("Not sent");
   // The other tab, and the address opened again, say it was deleted.
-  const gone = "There is no such document. It may have been deleted.";
+  const gone = "This document was deleted.";
   await expect(other.getByText(gone)).toBeVisible();
   await other.reload();
   await expect(other.getByText(gone)).toBeVisible();
   await expect(other.getByRole("button", { name: "Try again" })).toHaveCount(0);
+  // An address of no document at all doesn't say it was deleted.
+  await other.goto(other.url().replace("doc-asha-aug", "doc-nobody"));
+  await expect(
+    other.getByText("There is no such document. It may have been deleted."),
+  ).toBeVisible();
   await other.close();
 });
 

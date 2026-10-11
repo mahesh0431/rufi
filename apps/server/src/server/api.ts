@@ -629,12 +629,15 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   });
   // The document page: its items, a fix, and a page as the reader saw it.
   app.get(`${documentsPath}/:documentId/items`, async (c) => {
-    const found = await deps.items.view(
-      (await person(c)).id,
-      c.req.param("documentId"),
-    );
-    if (!found) throw new HttpError(404, "Not found.");
-    return c.json(found);
+    const personId = (await person(c)).id;
+    const documentId = c.req.param("documentId");
+    const found = await deps.items.view(personId, documentId);
+    if (found) return c.json(found);
+    // The page says so: a deleted document's address isn't a mistake.
+    if (await deps.deletions.deleted(personId, documentId)) {
+      throw new HttpError(404, "This document was deleted.", { deleted: true });
+    }
+    throw new HttpError(404, "Not found.");
   });
   app.post(`${documentsPath}/:documentId/items/:itemId/fix`, async (c) => {
     const found = await person(c);
