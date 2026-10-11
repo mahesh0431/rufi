@@ -2,13 +2,53 @@
 // yes in Rufi's chat (docs/adr/0005). Only Rufi's own chat can save, and
 // only in a turn the user started. dismiss_items: draft items the user
 // doesn't want saved, never saved later.
-import { DismissInput, DismissRefused } from "../record/items.ts";
+import { DismissInput, DismissRefused, FIXABLE } from "../record/items.ts";
+import { KINDS, kindNamed, type Field, type Kind } from "../record/kinds.ts";
 import { SaveInput, SaveRefused } from "../record/save.ts";
 import { defineTool, jsonSchemaOf, Refusal } from "./registry.ts";
-import { typescriptOf } from "./typescript.ts";
 
 /** Receipt lines the AI gets back at most; the rest are in Rufi's receipt. */
 const RECEIPT_LINES = 20;
+
+type Json = Record<string, unknown>;
+
+/** A field's fixed values, or what kind of value it takes. */
+function valuesOf(field: Field): string {
+  switch (field.type) {
+    case "date":
+      return " (date)";
+    case "due":
+      return ' (date or "next_visit")';
+    case "link":
+      return " ({kind, id} of another record)";
+    case "boolean":
+      return " (true|false)";
+    case "value": {
+      // A fixed set: an enum, or a union of them.
+      const json = jsonSchemaOf(field.input);
+      const values = [json, ...((json["anyOf"] ?? []) as Json[])].flatMap(
+        (part) => (part["enum"] ?? []) as string[],
+      );
+      return values.length > 0 ? ` (${values.join("|")})` : "";
+    }
+  }
+}
+
+const named = (fields: Record<string, Field>, names: readonly string[]) =>
+  names.map((name) => `${name}${valuesOf(fields[name] as Field)}`).join(", ");
+
+/**
+ * Each kind's fields, in the description: Codex cuts an input schema over
+ * 5,000 bytes, as this one is, to `unknown` before the model sees it
+ * (0.159.3), but keeps the description whole.
+ */
+export const FIELDS = [
+  'Fields by kind, in changes[].fields (a date is {"date": "2026-09-28", "words": "last Monday"}: YYYY, YYYY-MM or YYYY-MM-DD at the precision the user gave, with their own words):',
+  ...KINDS.map(
+    (kind) => `- ${kind.name}: ${named(kind.fields, Object.keys(kind.fields))}`,
+  ),
+  `A draft item's fix.fields: ${named((kindNamed("result") as Kind).fields, FIXABLE)}.`,
+].join("\n");
 
 export const saveChanges = defineTool({
   name: "save_changes",
@@ -17,8 +57,7 @@ export const saveChanges = defineTool({
 - changes: typed changes from the user's own words. Each is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history), restore a removed one, or remove_source (take a document page off a record's sources, to undo "another source": the page goes in from, as {document, page} from the record's sources in get_records); ids come from get_overview or get_records. Give only what the user said: a field they didn't give stays out, and a date needs their own words from the source message. A result's category (lab or measurement) is the one field you choose, with the user: every added result needs one, except an amended result, which keeps the category of the one it replaces unless you give one. A result read from a document changes in place only its category, in a change of its own; what it prints and its date change only by amendment. source is the user's own words the change rests on, copied from their message.
 - items: draft items of the user's documents (get_documents), each with the version you read and how it goes in: new, another_source (the same result is already saved: its values stay, and the document page becomes another source) or correction (it corrects a saved result: a new result replaces it); record names the saved result, with its version from get_records. category: lab or measurement, for new; a correction keeps the corrected result's unless you give one; never for another_source. Rufi takes each item's values from the stored item, never from you, and its date from the item or, for a lab result, its page; a measurement is dated only by its own date or the user's; fix holds only a value the user corrected in the chat, or the date they gave for an item with none (a rough one is fine, at their precision), with their words. An item already saved at that version returns its earlier save; a dismissed item, or one whose version changed, is refused, and nothing is saved.
 No count limit. Rufi refuses a save with any problem and says each one; nothing is saved then. On success Rufi adds its own receipt to the chat and returns it; the same call again returns the same receipt. Never say something was saved without this tool's answer.
-Its input, as TypeScript (use exactly these keys):
-${typescriptOf(jsonSchemaOf(SaveInput))}`,
+${FIELDS}`,
   input: SaveInput,
   callers: "model",
   readOnly: false,

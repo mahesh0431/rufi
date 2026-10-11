@@ -19,7 +19,7 @@ import type { AddressInfo } from "node:net";
 import { fakeModel } from "../../../tests/fake-model.ts";
 import { DEFAULT_ALLOWLIST } from "../../core/chat/models.ts";
 import { forAgent } from "../../core/tools/tools.ts";
-import { typescriptOf } from "../../core/tools/typescript.ts";
+import { FIELDS } from "../../core/tools/save.ts";
 import type { AgentEvent, AgentRuntime, AgentTools } from "../runtime.ts";
 import { DEADLINES } from "./appserver.ts";
 import { codexBinary } from "./binary.ts";
@@ -184,7 +184,7 @@ describe("the pinned Codex", () => {
   // Codex cuts a tool's input schema over its size limit down to `unknown`
   // before the model sees it, so the model would guess the shape.
   it.each(DEFAULT_ALLOWLIST)(
-    "gives the model every tool's whole input on %s: a tool Codex cuts carries it in its description",
+    "gives the model every tool's input on %s: Codex cuts only save_changes', whose description names its fields",
     async (model) => {
       const { tools, body } = await firstRequest(model);
       const exec = textsIn(body).find((text) =>
@@ -199,10 +199,9 @@ describe("the pinned Codex", () => {
         return start === -1 || /(?<!")\bunknown\b(?!")/.test(declared ?? "");
       });
       expect(cut.map((spec) => spec.name)).toEqual(["save_changes"]);
-      for (const spec of cut) {
-        expect(exec).toContain(spec.description);
-        expect(spec.description).toContain(typescriptOf(spec.inputSchema));
-      }
+      // Its fields reach the model in its description.
+      expect(cut[0]?.description).toContain(FIELDS);
+      expect(exec).toContain(cut[0]?.description);
     },
   );
 });

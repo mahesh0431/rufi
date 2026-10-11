@@ -13,6 +13,7 @@ import {
   type Store,
 } from "../store/database.ts";
 import { RESULTS_SHOWN } from "./overview.ts";
+import { FIELDS } from "./save.ts";
 import {
   defineTool,
   NoInput,
@@ -926,6 +927,22 @@ describe("the error envelope", () => {
       () => undefined,
     )("accept_changes", {});
     expect(answer.ok).toBe(false);
+  });
+});
+
+describe("save_changes' fields, in its description", () => {
+  it("names each kind's fields with a fixed set's values, and which are dates, a due or a link", () => {
+    const lines = FIELDS.split("\n");
+    expect(lines).toHaveLength(11);
+    expect(lines).toContain(
+      "- result: test, value, category (lab|measurement), comparator (<|<=|>|>=), number, second_number, unit, range, flag, context, measured (date), replaces",
+    );
+    expect(lines).toContain(
+      '- follow_up: title, due (date or "next_visit"), status (open|done|dropped), outcome, about ({kind, id} of another record)',
+    );
+    expect(lines.at(-1)).toBe(
+      "A draft item's fix.fields: test, value, comparator (<|<=|>|>=), number, unit, range, flag, context, measured (date).",
+    );
   });
 });
 
