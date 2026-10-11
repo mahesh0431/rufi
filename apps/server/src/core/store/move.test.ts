@@ -15,6 +15,7 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -397,5 +398,90 @@ describe("a move that stopped", () => {
       path: from,
       source: "default",
     });
+  });
+
+  it("keeps the source closed until a disconnected completed target can be cancelled", async () => {
+    await stoppedAt("switching");
+    const detached = join(userHome, "disconnected");
+    await rename(to, detached);
+
+    await expect(cancelMove(place())).rejects.toThrow("connect the disk");
+    expect(await readdir(from)).toContain(MOVED_TO);
+    expect(await location()).toEqual({ version: 1, dataFolder: from });
+    await expect(findDataFolder(place())).rejects.toThrow("--cancel");
+
+    await rename(detached, to);
+    await expect(cancelMove(place())).resolves.toEqual({ from, to });
+    expect(await findDataFolder(place())).toEqual({
+      path: from,
+      source: "default",
+    });
+    await expect(findDataFolder(place({ RUFI_HOME: to }))).rejects.toThrow(
+      "a cancelled move",
+    );
+    expect(people(from)).toEqual(["amir", "asha"]);
+    expect(people(to)).toEqual(["amir", "asha"]);
+  });
+
+  it("doesn't treat a target lookup error as a disconnected disk", async () => {
+    await stoppedAt("switching");
+    await rename(to, join(userHome, "detached"));
+    await writeFile(to, "not a directory");
+    const inaccessible = join(to, "data");
+    await writePrivateJson(join(from, MOVED_TO), { folder: inaccessible });
+
+    await expect(cancelMove(place())).rejects.toThrow("ENOTDIR");
+    await expect(finishMove(place())).rejects.toThrow("ENOTDIR");
+    expect(await readdir(from)).toContain(MOVED_TO);
+    expect(await location()).toEqual({ version: 1, dataFolder: from });
+  });
+
+  it("keeps the source marks if the target cannot store its cancelled marker", async () => {
+    await stoppedAt("switching");
+    // Fail the target-directory fsync after its cancelled marker was
+    // renamed. A visible marker is not enough to make the source usable.
+    const child = spawnSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `
+      import fs from "node:fs";
+      import { syncBuiltinESMExports } from "node:module";
+      const open = fs.promises.open;
+      fs.promises.open = async function(path, ...args) {
+        const handle = await open.call(this, path, ...args);
+        if (path === process.argv[3]) handle.sync = async () => { throw new Error("target sync failed"); };
+        return handle;
+      };
+      syncBuiltinESMExports();
+      const { cancelMove } = await import(process.argv[1]);
+      await cancelMove({ env: {}, userHome: process.argv[2] });
+    `,
+        new URL("move.ts", import.meta.url).href,
+        userHome,
+        to,
+      ],
+      {
+        env: { ...process.env, HOME: userHome, RUFI_HOME: "" },
+        encoding: "utf8",
+        timeout: 10_000,
+      },
+    );
+    expect(child.status).toBe(1);
+    expect(child.stderr).toContain("target sync failed");
+    expect(await readdir(from)).toContain(MOVED_TO);
+    await expect(findDataFolder(place())).rejects.toThrow("--cancel");
+    await expect(finishMove(place())).rejects.toThrow(
+      `To use ${from} again, run: pnpm rufi move-data --cancel.`,
+    );
+    await cancelMove(place());
+    expect(await findDataFolder(place())).toEqual({
+      path: from,
+      source: "default",
+    });
+    await expect(findDataFolder(place({ RUFI_HOME: to }))).rejects.toThrow(
+      "a cancelled move",
+    );
   });
 });

@@ -19,7 +19,7 @@ Rufi remembers the data folder in a small file next to it, the location file: `~
 - If the location file is damaged, Rufi doesn't start. The file is short: `{"version": 1, "dataFolder": "/path/to/your/data/folder"}`. Put the path of your data folder back in it, or get the file back from your Mac's backup.
 - If the location file is gone and `~/.rufi/data` holds your record, Rufi remembers that folder again and starts.
 - If the location file is gone and that folder holds other files but no record, Rufi doesn't start and changes nothing.
-- If there is no location file and `~/.rufi` holds other files, for example from an earlier Rufi app, Rufi doesn't start and changes nothing there. Move that folder away (for example to `~/.rufi-old`), then start Rufi again.
+- If `~/.rufi` holds files that aren't this Rufi's home, for example from an earlier Rufi app, Rufi doesn't start and changes nothing there. Move that folder away (for example to `~/.rufi-old`), then start Rufi again. This also applies when `RUFI_HOME` points into that folder, directly or through a link.
 
 > **Note:** If you delete both the location file and your data folder, Rufi can't tell that from a new Mac: it starts a new, empty record. To get your data back, restore a backup (see [Backups and export](backups-and-export.md#restore-a-backup)).
 
@@ -31,6 +31,7 @@ Your sign-in's secrets aren't in the data folder: they are in your Mac's Keychai
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `rufi.sqlite`      | The record (people, documents, reports, lab results and measurements) and your chat, with what the AI did in it (see below)                                                                                         |
 | `installed.json`   | Says a record was made in this folder. If it is there and `rufi.sqlite` isn't, Rufi doesn't start: it never shows an empty record in place of yours                                                                 |
+| `creating.json`    | There while Rufi first makes its record. If that first start stops, Rufi uses this file to go on safely at the next start. It removes the file after the record is made                                             |
 | `files/`           | Your documents, exactly as you added them (see [Documents](documents.md))                                                                                                                                           |
 | `cache/`           | Copies Rufi makes again when they are missing: the JPEG copy that shows a HEIC photo, and the pages of your PDFs drawn as images for the AI (see below)                                                             |
 | `backups/`         | Rufi's backups of `rufi.sqlite` and your documents, made when it starts and then each day. They never hold your sign-in, the AI's files, the log or `models.json` (see [Backups and export](backups-and-export.md)) |
@@ -84,6 +85,8 @@ If a move stopped before it finished (for example, the Mac turned off), Rufi doe
 
 - `pnpm rufi move-data --finish`: Rufi checks the copy again, and finishes the move. If the copy isn't complete, Rufi says so and changes nothing.
 - `pnpm rufi move-data --cancel`: Rufi goes back to the old folder. It marks the new folder as cancelled, so that it never opens it, and keeps all its files. Delete the new folder when you're ready.
+
+If the new folder is on a disk that isn't connected, connect it first. Rufi must mark that copy as cancelled before it can use the old folder again. If it can't write that mark, it keeps the move open and says why.
 
 When a move is finished, there is nothing to finish or cancel. To go back, move your data again, into a new folder.
 

@@ -42,6 +42,7 @@ import {
   MOVED_TO,
   MOVING_IN,
   MOVING_OUT,
+  checkHomePath,
   type Place,
   readLocation,
   readMark,
@@ -106,9 +107,7 @@ export async function moveData(
           `${to} isn't empty. Move Rufi's data into a new or empty folder: Rufi never moves it over anything.`,
         );
       }
-      if (
-        (await lstat(databasePath(from)).catch(() => undefined)) === undefined
-      ) {
+      if ((await lstat(databasePath(from)).catch(gone)) === undefined) {
         throw new Error(
           `There's no record in ${from} yet. Start Rufi once, then move it.`,
         );
@@ -141,12 +140,12 @@ export async function finishMove(place: Place): Promise<Move> {
     const { from, to, there, cancelled } = await unfinished(root, "finish");
     if (!there) {
       throw new Error(
-        `The new folder ${to} isn't there. If it's on a disk, connect the disk and try again. To stay with ${from}, run: pnpm rufi move-data --cancel.`,
+        `The new folder ${to} isn't there. If it's on a disk, connect the disk and try again. Rufi needs that folder to finish or cancel the move.`,
       );
     }
     if (cancelled) {
       throw new Error(
-        `That move was cancelled, and Rufi uses ${from}. To move again, delete ${to} first.`,
+        `That copy is marked cancelled, so Rufi can't finish the move. To use ${from} again, run: pnpm rufi move-data --cancel.`,
       );
     }
     return withBoth(from, to, async (held) => {
@@ -174,13 +173,11 @@ export async function cancelMove(place: Place): Promise<Move> {
   const root = locationRoot(place.userHome);
   return withHome(root, 0, async () => {
     const { from, to, there } = await unfinished(root, "cancel");
-    // A new folder on a disk that isn't connected can't be marked; it can't
-    // be opened either.
-    if (!there)
-      return locked(from, async () => {
-        await clearSource(from);
-        return { from, to };
-      });
+    if (!there) {
+      throw new Error(
+        `The new folder ${to} isn't there. If it's on a disk, connect the disk and try again. Rufi must mark that copy cancelled before it can use ${from} again.`,
+      );
+    }
     return withBoth(from, to, async () => {
       await cancel(from, to);
       return { from, to };
@@ -198,6 +195,7 @@ async function unfinished(
   doing: "finish" | "cancel",
 ): Promise<Move & { there: boolean; cancelled: boolean }> {
   const from = await readLocation(root);
+  if (from !== undefined) await checkHomePath(root, from);
   const out =
     from === undefined
       ? undefined
@@ -209,7 +207,8 @@ async function unfinished(
     );
   }
   const to = out.folder;
-  if ((await lstat(to).catch(() => undefined)) === undefined) {
+  await checkHomePath(root, to);
+  if ((await lstat(to).catch(gone)) === undefined) {
     return { from, to, there: false, cancelled: false };
   }
   const mark = await readMark(join(to, MOVING_IN));
@@ -320,7 +319,8 @@ async function checkTarget(
   to: string,
   mounts: () => Promise<string>,
 ): Promise<void> {
-  const there = await lstat(to).catch(() => undefined);
+  await checkHomePath(locationRoot(userHome), to);
+  const there = await lstat(to).catch(gone);
   if (there !== undefined) {
     if (!there.isDirectory()) {
       throw new Error(

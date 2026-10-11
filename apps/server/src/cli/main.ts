@@ -30,7 +30,12 @@ import {
 import { cancelMove, finishMove, moveData } from "../core/store/move.ts";
 import { restore } from "../core/store/restore.ts";
 import { forAgent } from "../core/tools/tools.ts";
-import { findDataFolder, Folder } from "../core/store/data-folder.ts";
+import {
+  checkHomePath,
+  findDataFolder,
+  Folder,
+  locationRoot,
+} from "../core/store/data-folder.ts";
 import { childEnvironment, Home } from "../platform/config.ts";
 import { mountList } from "../platform/disks.ts";
 import { holdRufiLock } from "../platform/files.ts";
@@ -254,9 +259,11 @@ const restoreCommand = (backup: string, target: string) =>
   Effect.gen(function* () {
     const from = process.env["INIT_CWD"] ?? process.cwd();
     const folder = resolve(from, target);
-    const { createdAt } = yield* run(() =>
-      restore(resolve(from, backup), folder),
-    );
+    const source = resolve(from, backup);
+    const root = locationRoot(homedir());
+    yield* run(() => checkHomePath(root, source));
+    yield* run(() => checkHomePath(root, folder));
+    const { createdAt } = yield* run(() => restore(source, folder));
     console.log(
       `Restored the backup from ${new Date(createdAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })} into ${folder}.`,
     );
