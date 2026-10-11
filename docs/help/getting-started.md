@@ -9,7 +9,7 @@ Rufi runs on your Mac and opens in your browser, or as an app in its own window.
 
 The link works once, for 5 minutes. When the page opens, Rufi removes the link from the address bar. The tab stays open when you reload it.
 
-If the record is missing from a data folder that had one, Rufi doesn't start: it says so, and doesn't show an empty record in place of yours. See [Backups and export](backups-and-export.md#if-your-record-is-missing).
+If the record is missing from a data folder that had one, Rufi doesn't start: it says so, and doesn't show an empty record in place of yours. See [Backups and export](backups-and-export.md#if-your-record-is-missing-or-empty).
 
 ## Open Rufi again
 
