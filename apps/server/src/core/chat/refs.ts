@@ -172,8 +172,9 @@ async function chipOf(
         .where("r.report_id", "=", ref.id)
         .where(isCurrent(result, "r"))
         .executeTakeFirstOrThrow();
-      // A replacement can be typed or belong to another report. Changes
-      // to it also change whether its predecessor is current in this report.
+      // The last save that changed any of its results (also one taken out),
+      // or a result that replaces one of them: a replacement can be typed or
+      // belong to another report, and still decides what is current here.
       const last = await db
         .selectFrom("record_changes as c")
         .innerJoin("operations as o", (on) =>
