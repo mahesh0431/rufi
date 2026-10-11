@@ -66,14 +66,17 @@ const TOOLS: AgentTools = {
 };
 
 /*
- * Timing: a busy CI machine can be slow by a second or more. So a deadline the
- * fake meets (requestMs, Stop's) is 1 s or more, and a test that waits a
- * deadline out sets it short (GIVE_UP, a turn's 300 ms). `until` waits far
- * longer than both, and fails when it gives up. A test waits for what it
- * needs, not a fixed time, except to check that nothing more happens or when
- * nothing shows what it needs.
+ * Timing: a busy CI machine can be slow by a second or more, and starting the
+ * fake (a new Node process) is the slowest step: it counts in initialize's
+ * deadline. So a deadline the fake meets is 1 s or more (Stop's), 5 s for a
+ * request, and a test that waits a deadline out sets it short (WAIT_OUT,
+ * GIVE_UP, a turn's 300 ms). `until` waits far longer than both, and fails
+ * when it gives up. A test waits for what it needs, not a fixed time, except
+ * to check that nothing more happens or when nothing shows what it needs.
  */
 
+/** A request's deadline when the fake never answers, so Rufi gives up soon. */
+const WAIT_OUT = { requestMs: 1_000 };
 /** Stop's deadlines when the fake never answers, so Rufi gives up soon. */
 const GIVE_UP = { interruptAckMs: 300, interruptEndMs: 300 };
 
@@ -98,7 +101,7 @@ function start(
     },
     version: "9.9.9",
     deadlines: {
-      requestMs: 1_000,
+      requestMs: 5_000,
       turnMs: 3_000,
       interruptAckMs: 1_000,
       interruptEndMs: 1_000,
@@ -262,7 +265,7 @@ describe("starting Codex", () => {
     "gives up when Codex doesn't answer %s, and ends it",
     async (method) => {
       await expect(
-        start({ hang: [method] }).startThread(SETTINGS),
+        start({ hang: [method] }, undefined, WAIT_OUT).startThread(SETTINGS),
       ).rejects.toThrow(`didn't answer ${method} within 1 s`);
       if (method !== "thread/start") {
         expect((await pids()).filter(isRunning)).toEqual([]);
@@ -547,7 +550,7 @@ describe("starting a reply", () => {
       refusing.send("no-such-thread", { id: "m-1", input: ["Hi"] }),
     ).rejects.toBeInstanceOf(NotSent);
     await runtime?.close();
-    const silent = start({ hang: ["turn/start"] });
+    const silent = start({ hang: ["turn/start"] }, undefined, WAIT_OUT);
     const { threadId } = await silent.startThread(SETTINGS);
     const sending = silent.send(threadId, { id: "m-2", input: ["Hi"] });
     await expect(sending).rejects.toThrow("didn't answer turn/start");
@@ -571,7 +574,11 @@ describe("starting a reply", () => {
 
   it("stops a reply Codex starts after its request timed out, when Stop came meanwhile", async () => {
     // Codex takes the request only after Rufi gave up waiting for it.
-    const agent = start({ slow: ["turn/start"], slowMs: 1_500 });
+    const agent = start(
+      { slow: ["turn/start"], slowMs: 1_500 },
+      undefined,
+      WAIT_OUT,
+    );
     const { threadId } = await agent.startThread(SETTINGS);
     const op = new AbortController();
     const sending = agent.send(
@@ -864,7 +871,7 @@ describe("Stop", () => {
     await until(async () => (await pids()).length > 0);
     const began = Date.now();
     await Effect.runPromise(Fiber.interrupt(opening));
-    // Well before initialize's own deadline (requestMs, 1 s here).
+    // Well before initialize's own deadline (requestMs, 5 s here).
     expect(Date.now() - began).toBeLessThan(500);
     await agent.close();
     expect((await pids()).filter(isRunning)).toEqual([]);
