@@ -15,11 +15,14 @@ export const usePanel = create<{
   asked: number;
   /** Why the last add from a page didn't go in the box. */
   refused: string | null;
+  /** The panel opens on the next page, instead of closing. */
+  openNext: boolean;
 }>(() => ({
   open: false,
   focusBefore: null,
   asked: 0,
   refused: null,
+  openNext: false,
 }));
 
 /** Opens the panel, remembering where focus goes back to. */
@@ -28,9 +31,17 @@ export const openPanel = () => {
   usePanel.setState({ open: true, focusBefore: document.activeElement });
 };
 
-/** Another page or person: the panel closes and forgets where focus was. */
+/**
+ * Another page or person: the panel closes and forgets where focus was,
+ * or opens when the last page asked for that (`openNext`).
+ */
 export const resetPanel = () => {
-  usePanel.setState({ open: false, focusBefore: null, refused: null });
+  usePanel.setState((now) => ({
+    open: now.openNext,
+    openNext: false,
+    focusBefore: null,
+    refused: null,
+  }));
 };
 
 /** Too small for the panel next to the page: the chat opens as the page. */

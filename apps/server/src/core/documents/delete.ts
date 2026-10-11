@@ -2,14 +2,14 @@
 // Its original, its pages' images and text, the reader's work, its readings
 // and its draft items go; its row and its pages' names and positions stay as
 // a tombstone, so the history, the sources and the chat that point at it
-// still read and say "document deleted". The record never changes here:
-// while a saved record that isn't removed rests on one of its pages, the
-// delete is refused, and the person fixes that in the chat (ADR 0005).
-// The database part is one transaction with its Rufi event; the bytes go
-// after the commit, under the file gate, and the next start removes what a
-// crash left between the two.
+// still read and say "document deleted". The record never changes here
+// (ADR 0005): records saved from it stay, or, when the person chose so, the
+// AI goes through them with the person in the chat to remove them. The
+// database part is one transaction with its Rufi event, whose note tells
+// the AI at once; the bytes go after the commit, under the file gate, and
+// the next start removes what a crash left between the two.
 import { createHash } from "node:crypto";
-import type { DeletePreview } from "@rufi/contracts/documents";
+import type { DeleteDocument, DeletePreview } from "@rufi/contracts/documents";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { shownDate } from "../record/dates.ts";
 import { kindNamed, type Row } from "../record/kinds.ts";
@@ -32,16 +32,24 @@ export class StalePreview extends Error {
   }
 }
 
+/** A delete with saved records from it, and no choice what becomes of them. */
+export class NoChoice extends Error {
+  constructor() {
+    super("Choose whether the results saved from it stay or go.");
+  }
+}
+
+/**
+ * What the AI is told of a deleted document, wherever it meets one: its
+ * instructions, its reads and a deleted chip. The same words everywhere.
+ */
+export const DELETED_DOCUMENT =
+  "Its pages are unavailable: don't use or quote anything you read from them before, also when the user asks. Records saved from it are facts like any other until the user removes them: read them with get_records, as they are now, and say the original was deleted. A deleted file doesn't mean its records are wrong.";
+
 /** What the delete writes its Rufi event with: the chat's own (server/chat.ts). */
 export type WriteEvent = (
   personId: string,
-  event: {
-    kind: string;
-    line: string;
-    facts?: unknown;
-    ask?: string;
-    withNextMessage?: true;
-  },
+  event: { kind: string; line: string; facts?: unknown; ask?: string },
   write: (trx: Transaction<Tables>, revision: number) => Promise<string[]>,
 ) => Promise<void>;
 
@@ -59,7 +67,7 @@ const liveDocument = (db: Db, personId: string, documentId: string) =>
  * The saved records, of any kind, that aren't removed and rest on a page of
  * the document by a source no save took off: current or replaced, both.
  */
-async function blockingOf(db: Db, personId: string, documentId: string) {
+async function savedFrom(db: Db, personId: string, documentId: string) {
   const sources = await db
     .selectFrom("record_sources")
     .select(["kind", "record_id"])
@@ -71,7 +79,7 @@ async function blockingOf(db: Db, personId: string, documentId: string) {
     .orderBy("kind")
     .orderBy("record_id")
     .execute();
-  const blocking: DeletePreview["blocking"][number][] = [];
+  const saved: DeletePreview["saved"][number][] = [];
   for (const { kind: name, record_id: id } of sources) {
     const kind = kindNamed(name);
     if (!kind) continue;
@@ -92,7 +100,7 @@ async function blockingOf(db: Db, personId: string, documentId: string) {
         .where("replaces_id", "=", id)
         .where("removed", "=", 0)
         .executeTakeFirst()) !== undefined;
-    blocking.push({
+    saved.push({
       kind: kind.name,
       id,
       label: kind.label(row),
@@ -103,7 +111,7 @@ async function blockingOf(db: Db, personId: string, documentId: string) {
       replaced,
     });
   }
-  return blocking;
+  return saved;
 }
 
 /** What deleting the document would do now; undefined when it isn't there. */
@@ -141,13 +149,13 @@ async function previewIn(
     .where("document_id", "=", documentId)
     .where("status", "=", "pending")
     .executeTakeFirstOrThrow();
-  const blocking = await blockingOf(db, personId, documentId);
+  const saved = await savedFrom(db, personId, documentId);
   const shown = {
     name: documentName(pages.map((p) => p.file_name)),
     files: files.map(({ name, pages }) => ({ name, pages })),
     readings,
     unsaved,
-    blocking,
+    saved,
   };
   // What the person agrees to: not a reading's progress, which moves on
   // while they look.
@@ -239,6 +247,28 @@ async function markDeleted(
   return [...sent, ...events].map((e) => e.id);
 }
 
+/** The AI's note of a delete: what is true now, and what to do. */
+function noteOf(
+  documentId: string,
+  preview: DeletePreview,
+  choice: DeleteDocument["saved"],
+): string {
+  const list = preview.saved
+    .map(
+      (r) =>
+        `- ${r.kind} ${r.id}: ${r.label}${r.date === null ? "" : `, ${r.date}`}${r.replaced ? " (replaced by an amendment)" : ""}`,
+    )
+    .join("\n");
+  const deleted = `The user deleted document ${documentId} (${preview.name})`;
+  if (choice === undefined) {
+    return `${deleted}. Nothing saved in the record came from it. ${DELETED_DOCUMENT} Say in one short line that it was deleted.`;
+  }
+  if (choice === "keep") {
+    return `${deleted}, the file only. These records saved from it stay in the record, valid:\n${list}\n${DELETED_DOCUMENT} Say in one short line that the file was deleted and its records stay.`;
+  }
+  return `${deleted} and asked to remove the records saved from it:\n${list}\nGo through them with the user now. First read each one and its sources with get_records. A record the user also gave another way (another document, or the value in their own message; a message that only changed its category doesn't count) can stay, with this document taken off it: one remove_source change for each of its pages. Say what you propose for each and ask: one yes for the list, or one for each. Remove nothing before their yes; this note isn't their yes. When removing an amendment brings back the result it replaced, say so. ${DELETED_DOCUMENT}`;
+}
+
 export function deletions(deps: {
   store: Store;
   home: string;
@@ -285,28 +315,36 @@ export function deletions(deps: {
 
     /**
      * Deletes the document, when the preview `version` is still what is
-     * true and nothing saved rests on it; otherwise StalePreview, with
-     * nothing changed. Refusal when there is no such document.
+     * true; otherwise StalePreview, with nothing changed. With records saved
+     * from it, `saved` says whether they stay or the AI goes through them
+     * with the person to remove them (NoChoice without it). Its note goes to
+     * the AI at once. Refusal when there is no such document.
      */
-    remove: async (personId: string, documentId: string, version: string) => {
+    remove: async (
+      personId: string,
+      documentId: string,
+      version: string,
+      saved?: DeleteDocument["saved"],
+    ) => {
       const before = await previewIn(db, personId, documentId);
       if (!before) throw new Refusal("There is no such document.");
+      if (before.version !== version) throw new StalePreview(before);
+      const choice = before.saved.length > 0 ? saved : undefined;
+      if (before.saved.length > 0 && choice === undefined) throw new NoChoice();
       let files: string[] = [];
       await deps.event(
         personId,
         {
           kind: "document_deleted",
           line: `Deleted ${before.name}`,
-          facts: { deleted: documentId },
-          ask: `The user deleted document ${documentId} (${before.name}). Don't use or quote anything you read from it before; say it was deleted.`,
-          withNextMessage: true,
+          facts: { deleted: documentId, ...(choice && { saved: choice }) },
+          // The version is a hash of what the note lists: the same inside.
+          ask: noteOf(documentId, before, choice),
         },
         async (trx, revision) => {
           const found = await previewIn(trx, personId, documentId);
           if (!found) throw new Refusal("There is no such document.");
-          if (found.version !== version || found.blocking.length > 0) {
-            throw new StalePreview(found);
-          }
+          if (found.version !== version) throw new StalePreview(found);
           const at = now();
           const items = (
             await trx

@@ -846,8 +846,11 @@ describe("a document deleted while it is read", () => {
         "Reading sunrise-august.pdf · 2 pages",
         "Deleted sunrise-august.pdf",
       ]);
+      // Only the delete's note: no reading's.
       expect(asks()).toEqual([
-        `The user deleted document ${id} (sunrise-august.pdf). Don't use or quote anything you read from it before; say it was deleted.`,
+        expect.stringContaining(
+          `The user deleted document ${id} (sunrise-august.pdf). Nothing saved in the record came from it.`,
+        ),
       ]);
       expect(drafts()).toEqual([]);
       expect(rows("SELECT id FROM jobs")).toEqual([]);

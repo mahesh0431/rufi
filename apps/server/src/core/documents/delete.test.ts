@@ -26,7 +26,7 @@ import {
   type Store,
 } from "../store/database.ts";
 import { chatCaller } from "../tools/tools.ts";
-import { deletions, StalePreview, sweepFiles } from "./delete.ts";
+import { deletions, NoChoice, StalePreview, sweepFiles } from "./delete.ts";
 import { documents, type Documents } from "./documents.ts";
 import { fileGate, type FileGate } from "./gate.ts";
 import { displayPath, originalPath, pagePath } from "./originals.ts";
@@ -144,15 +144,19 @@ beforeEach(async () => {
   });
 });
 
+/** Rufi's notes for the AI that wait in the queue, and their holds. */
+const notes = () =>
+  rows("SELECT held, text FROM chat_queue WHERE origin = 'rufi'");
+
 describe("a document with saved results", () => {
-  it("can't be deleted: the preview lists each result not removed, a replaced one too, and a delete changes nothing", async () => {
-    // CRP was removed before: it doesn't block.
+  it("lists each one not removed, a replaced one too; a delete with no choice changes nothing; Delete file keeps them, and the AI hears at once they stay", async () => {
+    // CRP was removed before: it isn't listed.
     store.db.exec("UPDATE results SET removed = 1 WHERE id = 'res-a3'");
     const remover = deleting();
 
     const preview = await remover.preview("asha", AUG);
 
-    expect(preview?.blocking).toEqual([
+    expect(preview?.saved).toEqual([
       {
         kind: "result",
         id: "res-a1",
@@ -178,17 +182,80 @@ describe("a document with saved results", () => {
     const before = rows("SELECT * FROM documents");
     await expect(
       remover.remove("asha", AUG, preview?.version ?? ""),
-    ).rejects.toBeInstanceOf(StalePreview);
+    ).rejects.toBeInstanceOf(NoChoice);
     expect(rows("SELECT * FROM documents")).toEqual(before);
+    expect(notes()).toEqual([]);
     expect(await there(originalPath(home, AUG_FILE))).toBe(true);
+
+    await remover.remove("asha", AUG, preview?.version ?? "", "keep");
+
+    expect(rows("SELECT deleted_at FROM documents WHERE id = ?", AUG)).toEqual([
+      { deleted_at: NOW },
+    ]);
+    expect(await there(originalPath(home, AUG_FILE))).toBe(false);
+    const kept = await recordViews(reader, () => new Date(NOW)).detail(
+      "asha",
+      "result",
+      "res-a1",
+    );
+    expect(kept?.removed).toBe(false);
+    expect(kept?.sources).toEqual([
+      {
+        type: "document",
+        document: AUG,
+        page: 1,
+        file: "Sunrise Labs August.pdf",
+        deleted: true,
+      },
+    ]);
+    // Not held for the person's next message: it goes in its turn.
+    expect(notes()).toEqual([
+      {
+        held: null,
+        text: expect.stringContaining(
+          `The user deleted document ${AUG} (Sunrise Labs August.pdf), the file only. These records saved from it stay in the record, valid:
+- result res-a1: HbA1c 6.8 %, 12 Aug 2026
+- result res-a2: Glucose 118 mg/dL, 12 Aug 2026
+- result res-a4: TSH 2.1 mIU/L, 12 Aug 2026 (replaced by an amendment)
+`,
+        ) as unknown,
+      },
+    ]);
   });
 
-  it("goes once the chat removed them or took the document off them: the history reads, and a result the user also typed stays", async () => {
-    // Vitamin D, typed in the chat, was also saved as read from page 2;
-    // then the document was taken off it.
+  it("with its results: the AI hears at once which to go through; after the delete, it removes them on a yes, and takes the document off one the user also typed", async () => {
+    // Vitamin D, typed in the chat, was also saved as read from page 2.
     store.db.exec(
       `INSERT INTO record_sources (person_id, kind, record_id, type, document_id, page) VALUES ('asha', 'result', 'res-a7', 'document_page', '${AUG}', 2)`,
     );
+    const views = recordViews(reader, () => new Date(NOW));
+    const history = (await views.detail("asha", "result", "res-a1"))?.history;
+    const remover = deleting();
+    const preview = await remover.preview("asha", AUG);
+    expect(preview?.saved.map((r) => r.id)).toEqual([
+      "res-a1",
+      "res-a2",
+      "res-a3",
+      "res-a4",
+      "res-a7",
+    ]);
+
+    await remover.remove("asha", AUG, preview?.version ?? "", "remove");
+
+    // The delete changed nothing in the record or its history.
+    expect((await views.detail("asha", "result", "res-a1"))?.history).toEqual(
+      history,
+    );
+    const [note] = notes();
+    expect(note?.held).toBeNull();
+    expect(note?.text).toContain(
+      `The user deleted document ${AUG} (Sunrise Labs August.pdf) and asked to remove the records saved from it:
+- result res-a1: HbA1c 6.8 %, 12 Aug 2026
+`,
+    );
+    expect(note?.text).toContain("- result res-a7: Vitamin D");
+    expect(note?.text).toContain("this note isn't their yes");
+    // The user's yes, in the chat.
     await save("That report isn't mine: take it off my vitamin D", [
       {
         kind: "result",
@@ -207,13 +274,9 @@ describe("a document with saved results", () => {
         source: "And remove the results it gave",
       })),
     );
-    const views = recordViews(reader, () => new Date(NOW));
-    const history = (await views.detail("asha", "result", "res-a1"))?.history;
-    const remover = deleting();
-    const preview = await remover.preview("asha", AUG);
-    expect(preview?.blocking).toEqual([]);
-
-    await remover.remove("asha", AUG, preview?.version ?? "");
+    expect(
+      rows("SELECT text FROM transcript_entries WHERE kind = 'receipt'"),
+    ).toHaveLength(2);
 
     // A tombstone: its name and pages, no file, nothing of the reader's.
     expect(
@@ -239,9 +302,9 @@ describe("a document with saved results", () => {
     expect(rows("SELECT id FROM files WHERE id = ?", AUG_FILE)).toEqual([]);
     expect(await there(originalPath(home, AUG_FILE))).toBe(false);
     expect((await docs.list("asha")).map((d) => d.id)).not.toContain(AUG);
-    // The record and its history are as they were; the source says deleted.
+    // Removed on the yes; its source says deleted.
     const removed = await views.detail("asha", "result", "res-a1");
-    expect(removed?.history).toEqual(history);
+    expect(removed?.removed).toBe(true);
     expect(removed?.sources).toEqual([
       {
         type: "document",
@@ -305,9 +368,9 @@ describe("a delete", () => {
       .catch((error: unknown) => error);
 
     expect(refused).toBeInstanceOf(StalePreview);
-    expect((refused as StalePreview).preview.blocking.map((b) => b.id)).toEqual(
-      ["res-a7"],
-    );
+    expect((refused as StalePreview).preview.saved.map((r) => r.id)).toEqual([
+      "res-a7",
+    ]);
     expect(rows("SELECT deleted_at FROM documents WHERE id = ?", id)).toEqual([
       { deleted_at: null },
     ]);
@@ -315,9 +378,8 @@ describe("a delete", () => {
       rows("SELECT text FROM transcript_entries WHERE kind = 'event'"),
     ).toEqual([]);
 
-    store.db.exec(`DELETE FROM record_sources WHERE document_id = '${id}'`);
     const fresh = await remover.preview("asha", id);
-    await remover.remove("asha", id, fresh?.version ?? "");
+    await remover.remove("asha", id, fresh?.version ?? "", "keep");
     expect(rows("SELECT deleted_at FROM documents WHERE id = ?", id)).toEqual([
       { deleted_at: NOW },
     ]);

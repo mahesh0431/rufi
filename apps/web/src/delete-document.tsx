@@ -1,24 +1,26 @@
 // Delete, on a document's page: a preview of what goes and what
-// stays, then the delete (docs/help/documents.md). While results saved from
-// the document are in the record, it can't be deleted: the preview lists
-// them, and Ask Rufi puts the document in the chat to remove them, or take
-// the document off them, first. A delete made on a preview that changed
-// meanwhile (another tab saved a result) is refused, and the preview shows
-// how it is now.
+// stays, then the delete (docs/help/documents.md). When results saved from
+// the document are in the record, the preview lists them and the person
+// chooses: Delete file keeps them; Delete file and results opens the chat,
+// where the AI goes through them and removes each one on a yes. A delete
+// made on a preview that changed meanwhile (another tab saved a result) is
+// refused, and the preview shows how it is now.
 import { Dialog } from "@base-ui/react/dialog";
-import { DeletePreview } from "@rufi/contracts/documents";
+import {
+  DeletePreview,
+  type DeleteDocument as Confirm,
+} from "@rufi/contracts/documents";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { MessageCircle, Trash2, X } from "lucide-react";
+import { FileX, Trash2, X } from "lucide-react";
 import { Schema } from "effect";
 import { useState } from "react";
 import { ApiError, read } from "./api.ts";
-import { ASKS } from "./ask.tsx";
-import { askRufi } from "./panel.ts";
+import { chatPage, isSmall, usePanel } from "./panel.ts";
 import { Button, Problem } from "./ui.tsx";
 
 const PANEL =
-  "fixed top-1/2 left-1/2 z-40 w-[440px] max-w-[94vw] -translate-x-1/2 -translate-y-1/2 rounded-[14px] bg-surface shadow-menu outline-none flex max-h-[calc(100vh-32px)] flex-col";
+  "fixed top-1/2 left-1/2 z-40 w-[480px] max-w-[94vw] -translate-x-1/2 -translate-y-1/2 rounded-[14px] bg-surface shadow-menu outline-none flex max-h-[calc(100vh-32px)] flex-col";
 const BACKDROP = "fixed inset-0 z-40 bg-ink/25";
 
 const Deleted = Schema.Struct({ deleted: Schema.Literal(true) });
@@ -76,9 +78,6 @@ export function DeleteDocument({
                 personId={personId}
                 documentId={documentId}
                 name={name}
-                close={() => {
-                  setOpen(false);
-                }}
               />
             </Dialog.Popup>
           </Dialog.Portal>
@@ -92,12 +91,10 @@ function Preview({
   personId,
   documentId,
   name,
-  close,
 }: {
   personId: string;
   documentId: string;
   name: string;
-  close: () => void;
 }) {
   const navigate = useNavigate();
   const found = useQuery({
@@ -108,9 +105,15 @@ function Preview({
   /** The preview a refused delete came back with: how it is now. */
   const [changed, setChanged] = useState<DeletePreview | undefined>(undefined);
   const remove = useMutation({
-    mutationFn: (version: string) =>
-      read(Deleted, "POST", deletePath(personId, documentId), { version }),
-    onSuccess: () => {
+    mutationFn: (body: Confirm) =>
+      read(Deleted, "POST", deletePath(personId, documentId), body),
+    onSuccess: (_, { saved }) => {
+      // With its results: the chat opens, where the AI starts on them.
+      if (saved === "remove" && isSmall()) {
+        void navigate(chatPage(personId));
+        return;
+      }
+      if (saved === "remove") usePanel.setState({ openNext: true });
       void navigate({
         to: "/people/$personId/documents",
         params: { personId },
@@ -130,10 +133,17 @@ function Preview({
     },
   });
   const preview = changed ?? found.data;
-  const blocked = preview !== undefined && preview.blocking.length > 0;
-  const title = blocked
-    ? `${preview.name} can't be deleted yet`
-    : `Delete ${preview?.name ?? name}?`;
+  const saved = preview?.saved ?? [];
+  const shown = preview?.name ?? name;
+  const title = `Delete ${shown}?`;
+  const confirm = (choice?: Confirm["saved"]) => {
+    if (!preview) return;
+    setChanged(undefined);
+    remove.mutate({
+      version: preview.version,
+      ...(choice && { saved: choice }),
+    });
+  };
 
   return (
     <>
@@ -142,11 +152,11 @@ function Preview({
         aria-label={title}
         className="flex min-w-0 px-4 pt-3.5 pb-1 text-[14px] font-semibold whitespace-pre"
       >
-        {!blocked && "Delete "}
-        <span className="truncate" title={preview?.name ?? name}>
-          {preview?.name ?? name}
+        {"Delete "}
+        <span className="truncate" title={shown}>
+          {shown}
         </span>
-        {blocked ? " can't be deleted yet" : "?"}
+        ?
       </Dialog.Title>
       {changed && (
         <p
@@ -161,9 +171,7 @@ function Preview({
       <div
         tabIndex={0}
         role="group"
-        aria-label={
-          blocked ? "Saved results from it" : "What goes and what stays"
-        }
+        aria-label="What goes and what stays"
         className="min-h-0 flex-1 overflow-auto px-4 py-1"
       >
         {found.error && !preview && (
@@ -174,18 +182,20 @@ function Preview({
             }}
           />
         )}
-        {preview && blocked && (
+        {preview && saved.length > 0 && (
           <>
             <p className="mt-1.5 mb-2.5">
-              These results in your health record come from it:
+              {saved.length === 1
+                ? "1 result in your health record comes from it:"
+                : `${String(saved.length)} results in your health record come from it:`}
             </p>
-            {/* A long list scrolls by itself, so what to do stays in view. */}
+            {/* A long list scrolls by itself, so the choice stays in view. */}
             <ul
               tabIndex={0}
               aria-label="Saved results from this document"
-              className="max-h-[40vh] overflow-auto rounded-[10px] border border-line"
+              className="max-h-[30vh] overflow-auto rounded-[10px] border border-line"
             >
-              {preview.blocking.map((record) => (
+              {saved.map((record) => (
                 <li
                   key={`${record.kind}:${record.id}`}
                   className="flex gap-2 border-t border-line px-2.5 py-1.5 first:border-t-0"
@@ -202,15 +212,25 @@ function Preview({
                 </li>
               ))}
             </ul>
-            <p className="mt-2.5">
-              In the chat, remove them, or take this document off them. Then
-              delete it.
-            </p>
+            <ul className="mt-2.5 flex flex-col gap-1.5">
+              <li>
+                <strong className="font-semibold">Delete file</strong>: the
+                results stay in your health record. Where they came from says
+                "document deleted".
+              </li>
+              <li>
+                <strong className="font-semibold">
+                  Delete file and results
+                </strong>
+                : the chat opens, and Rufi goes through the results with you. It
+                removes each one only when you say yes.
+              </li>
+            </ul>
           </>
         )}
-        {preview && !blocked && (
+        {preview && (
           <>
-            <h3 className="mt-2 mb-1 text-xs font-semibold text-muted">
+            <h3 className="mt-3 mb-1 text-xs font-semibold text-muted">
               Goes from Rufi
             </h3>
             <ul className="list-disc pl-[18px]">
@@ -227,7 +247,7 @@ function Preview({
               Stays
             </h3>
             <ul className="list-disc pl-[18px]">
-              <li>Your health record and its history</li>
+              <li>The history of your health record</li>
               <li>
                 The chat. Where it points at this document, it says "document
                 deleted".
@@ -247,34 +267,44 @@ function Preview({
           </p>
         )}
       </div>
-      {/* The Mac's order: Cancel, then the action. No default button: the
-          dialog opens with the focus off Delete, so Return there deletes
-          nothing; Delete itself takes Return and Space when focused. */}
-      <div className="flex justify-end gap-2 px-4 pt-3 pb-3.5">
-        <Dialog.Close render={<Button icon={X} />}>
-          {blocked ? "Close" : "Cancel"}
-        </Dialog.Close>
-        {blocked ? (
-          <Button
-            look="main"
-            icon={MessageCircle}
-            {...ASKS}
-            onClick={() => {
-              if (
-                askRufi(personId, [
-                  {
-                    pointer: { type: "document", id: documentId },
-                    label: preview.name,
-                    detail: "",
-                  },
-                ])
-              ) {
-                close();
+      {/* The Mac's order: Cancel, then the actions. No default button: the
+          dialog opens with the focus off them, so Return there deletes
+          nothing; a delete button takes Return and Space when focused. */}
+      <div className="flex flex-wrap justify-end gap-2 px-4 pt-3 pb-3.5">
+        <Dialog.Close render={<Button icon={X} />}>Cancel</Dialog.Close>
+        {saved.length > 0 ? (
+          <>
+            <Button
+              look="delete"
+              icon={FileX}
+              disabled={remove.isPending}
+              busy={
+                remove.isPending &&
+                remove.variables.saved === "keep" &&
+                "Deleting…"
               }
-            }}
-          >
-            Ask Rufi
-          </Button>
+              onClick={() => {
+                confirm("keep");
+              }}
+            >
+              Delete file
+            </Button>
+            <Button
+              look="delete"
+              icon={Trash2}
+              disabled={remove.isPending}
+              busy={
+                remove.isPending &&
+                remove.variables.saved === "remove" &&
+                "Deleting…"
+              }
+              onClick={() => {
+                confirm("remove");
+              }}
+            >
+              Delete file and results
+            </Button>
+          </>
         ) : (
           <Button
             look="delete"
@@ -282,10 +312,7 @@ function Preview({
             disabled={preview === undefined}
             busy={remove.isPending && "Deleting…"}
             onClick={() => {
-              if (preview) {
-                setChanged(undefined);
-                remove.mutate(preview.version);
-              }
+              confirm();
             }}
           >
             Delete

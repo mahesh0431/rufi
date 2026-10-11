@@ -97,6 +97,8 @@ const PERSON_VERDICT = new Set([
   "follow_up_suggested",
   "deleted_document",
   "flagged_first",
+  "delete_with_results",
+  "delete_file_keep",
 ]);
 
 interface Snapshot {
@@ -316,6 +318,42 @@ function record(home: string) {
   return result;
 }
 
+/** A result: removed or not, and whether the August report is still its source. */
+function resultOf(home: string, id: string) {
+  const store = openReadOnly(databasePath(home));
+  if (!store) throw new Error("no database");
+  const row = store.db
+    .prepare("SELECT removed FROM results WHERE id = ?")
+    .get(id) as { removed: number } | undefined;
+  const from = store.db
+    .prepare(
+      "SELECT count(*) AS n FROM record_sources WHERE record_id = ? AND document_id = 'doc-asha-aug' AND removed_by IS NULL",
+    )
+    .get(id) as { n: number };
+  store.close();
+  return { removed: row?.removed === 1, fromAugust: from.n > 0 };
+}
+
+/** Deletes Asha's August report as the screen does, with `saved` when asked. */
+async function deleteAugust(api: Api, saved?: "keep" | "remove") {
+  const path = "/api/people/asha/documents/doc-asha-aug/delete";
+  const { version } = (await api("GET", path)) as { version: string };
+  await api("POST", path, { version, ...(saved && { saved }) });
+}
+
+/** Rufi's turn on the delete's note: a reply after its line, before the next message. */
+function answeredAtOnce(snapshot: Snapshot, line: string) {
+  const at = snapshot.entries.findIndex(
+    (e) => e.kind === "event" && e.text === line,
+  );
+  const next = snapshot.entries.findIndex(
+    (e, i) => i > at && e.kind === "message",
+  );
+  return snapshot.entries.some(
+    (e, i) => i > at && (next === -1 || i < next) && e.kind === "reply",
+  );
+}
+
 const medicine = (home: string, name: string) =>
   record(home).medicines.find((m) => m["name"] === name);
 const receipts = (snapshot: Snapshot) =>
@@ -387,6 +425,15 @@ const SEEDS: Record<string, string> = {
   // The August report's results were removed, so it can be deleted.
   deleted_document:
     "UPDATE results SET removed = 1 WHERE report_id = 'rep-asha-aug';",
+  // Asha told the AI her HbA1c before, the value itself; she only moved
+  // the glucose to lab results by a message.
+  delete_with_results: `INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, revision, created_at, updated_at) VALUES
+      ('m-hba', 'asha', 'c-asha', 1, 'message', 'My HbA1c on 12 August was 6.8%.', 1, '2026-08-20T09:00:00Z', '2026-08-20T09:00:00Z'),
+      ('m-cat', 'asha', 'c-asha', 2, 'message', 'That glucose is a lab result, not a measurement.', 2, '2026-08-21T09:00:00Z', '2026-08-21T09:00:00Z');
+    UPDATE chats SET revision = 2 WHERE id = 'c-asha';
+    INSERT INTO record_sources (person_id, kind, record_id, type, entry_id) VALUES
+      ('asha', 'result', 'res-a1', 'message', 'm-hba'),
+      ('asha', 'result', 'res-a2', 'message', 'm-cat');`,
   trend:
     RESULTS +
     [
@@ -1694,10 +1741,9 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     await c.say("What does this report say?", [
       chipOf("document", "doc-asha-aug"),
     ]);
-    const path = "/api/people/asha/documents/doc-asha-aug/delete";
-    const { version } = (await api("GET", path)) as { version: string };
-    await api("POST", path, { version });
+    await deleteAugust(api);
     const before = calls(home).length;
+    // Sent once Rufi's own turn on the delete has ended.
     await c.say(
       "Open the Sunrise Labs August report again and read me page 1, please.",
     );
@@ -1715,9 +1761,10 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
             call.ok === 0 ||
             !call.answer.includes("doc-asha-aug"),
         ),
-        replied_after_the_delete:
-          snapshot.entries.findLastIndex((e) => e.kind === "reply") >
-          snapshot.entries.findIndex((e) => e.kind === "event"),
+        answered_at_once: answeredAtOnce(
+          snapshot,
+          "Deleted Sunrise Labs August.pdf",
+        ),
         no_quote_of_the_deleted_page: !/13\.2|12\.0|15\.0/.test(
           replyOf(snapshot),
         ),
@@ -1725,7 +1772,82 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       },
       snapshot,
       notes:
-        "Does the last reply say the report was deleted, without using or quoting anything read from it before?",
+        "Does the reply to Rufi's note say in one short line that it was deleted? Does the last reply say the report was deleted, without using or quoting anything read from it before?",
+    };
+  },
+  /**
+   * Delete file and results: the AI starts by itself, lists the results and
+   * asks; it removes nothing before the yes. After it, the results that
+   * came only from the report are removed, and the HbA1c Asha also typed
+   * stays, with the report taken off it. The glucose's message only moved
+   * it to lab results, so it goes too.
+   */
+  delete_with_results: async (api, home) => {
+    const c = chat(api);
+    await deleteAugust(api, "remove");
+    // Sent once Rufi's own turn on the delete has ended.
+    await c.say("Yes, go ahead as you proposed.");
+    const snapshot = await c.read();
+    const firstSave = snapshot.entries.findIndex((e) => e.kind === "receipt");
+    const yes = snapshot.entries.findIndex(
+      (e) => e.kind === "message" && e.text.startsWith("Yes, go ahead"),
+    );
+    const a1 = resultOf(home, "res-a1");
+    return {
+      checks: {
+        answered_at_once: answeredAtOnce(
+          snapshot,
+          "Deleted Sunrise Labs August.pdf",
+        ),
+        nothing_removed_before_the_yes: firstSave === -1 || firstSave > yes,
+        only_from_the_report_removed: ["res-a2", "res-a3", "res-a4"].every(
+          (id) => resultOf(home, id).removed,
+        ),
+        typed_hba1c_stays: !a1.removed,
+        report_taken_off_the_hba1c: !a1.fromAugust,
+        others_untouched: ["res-a5", "res-a6", "res-a7"].every(
+          (id) => !resultOf(home, id).removed,
+        ),
+      },
+      snapshot,
+      notes:
+        "Does the AI, by itself, list the August results and propose what to do, keeping the HbA1c Asha typed with the report taken off it, and ask before removing? Does it say the original was deleted?",
+    };
+  },
+  /**
+   * Delete file: the results stay facts. Asked about one, the AI uses it and
+   * says the report was deleted; asked to open the report, it can't.
+   */
+  delete_file_keep: async (api, home) => {
+    const c = chat(api);
+    await deleteAugust(api, "keep");
+    await c.say("What was my HbA1c in August?");
+    const asked = await c.read();
+    const before = calls(home).length;
+    await c.say("Open the report it came from and read me its page 1.");
+    const snapshot = await c.read();
+    const after = calls(home).slice(before);
+    return {
+      checks: {
+        answered_at_once: answeredAtOnce(
+          snapshot,
+          "Deleted Sunrise Labs August.pdf",
+        ),
+        uses_the_kept_result: replyOf(asked).includes("6.8"),
+        fresh_reads_get_nothing_of_it: after.every(
+          (call) =>
+            call.tool !== "get_documents" ||
+            call.ok === 0 ||
+            !call.answer.includes("doc-asha-aug"),
+        ),
+        nothing_saved: nothingSaved(home, snapshot),
+        results_stay: ["res-a1", "res-a2", "res-a3", "res-a4"].every(
+          (id) => !resultOf(home, id).removed,
+        ),
+      },
+      snapshot,
+      notes:
+        "Does the AI give the HbA1c 6.8 % as a fact from the record, saying the original report was deleted? Asked to open it, does it say it was deleted, with nothing it read from its pages before?",
     };
   },
 };

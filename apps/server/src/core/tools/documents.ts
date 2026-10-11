@@ -5,6 +5,7 @@
 // with a continuation, so a read can always be finished. The person is
 // Rufi's choice; the AI names only a document of theirs and a page.
 import { Schema } from "effect";
+import { DELETED_DOCUMENT } from "../documents/delete.ts";
 import type { Entry } from "../documents/notebook.ts";
 import { readings } from "../documents/reading.ts";
 import { defineTool, Refusal, WithImage } from "./registry.ts";
@@ -137,7 +138,7 @@ export const getDocuments = defineTool({
       .executeTakeFirst();
     if (document?.deleted_at != null) {
       throw new Refusal(
-        "The user deleted this document from Rufi: its pages and draft items are gone. Don't use or quote anything you read from it before; say it was deleted.",
+        `The user deleted this document from Rufi: its pages and draft items are gone. ${DELETED_DOCUMENT}`,
       );
     }
     if (!document) {

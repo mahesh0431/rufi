@@ -1054,8 +1054,8 @@ describe("the chat, on the scripted Codex", () => {
   });
 
   it.each([false, true])(
-    "a deleted document's notice reaches the existing thread with the next person's message, once (restart: %s)",
-    async (restart) => {
+    "a deleted document's note goes to the existing thread at once in a turn of its own, or, when Rufi stopped before handing it over, with the next message (stopped: %s)",
+    async (stopped) => {
       await startChat("fake");
       const c = await newChat();
       const { added } = await documents(store, home).add(
@@ -1083,9 +1083,12 @@ describe("the chat, on the scripted Codex", () => {
         store,
         home,
         gate: fileGate(),
-        event: (personId, event, write) => {
+        event: async (personId, event, write) => {
           if (!chat) throw new Error("No chat.");
-          return chat.event(personId, event, write);
+          // Rufi stops right after the delete's commit: nothing hands it over.
+          if (stopped) {
+            await transcripts.addEvent(c, event, write);
+          } else await chat.event(personId, event, write);
         },
         stopReading: () => undefined,
         changed: () => undefined,
@@ -1096,7 +1099,10 @@ describe("the chat, on the scripted Codex", () => {
         documentId,
         (await remover.preview("asha", documentId))?.version ?? "",
       );
-      if (restart) {
+      const note = expect.stringContaining(
+        `The user deleted document ${documentId} (Sunrise Labs August.pdf). Nothing saved in the record came from it.`,
+      ) as unknown;
+      if (stopped) {
         await chat?.close();
         chat = undefined;
         store.close();
@@ -1107,23 +1113,22 @@ describe("the chat, on the scripted Codex", () => {
         await startChat("fake", {
           scenario: { threads: { [threadId]: {} } },
         });
+        await sleep(300);
+        expect((await transcript(c.id)).turns).toHaveLength(1);
+        expect(await waiting()).toEqual([
+          ["Deleted Sunrise Labs August.pdf", "waiting", "paused"],
+        ]);
+        await say(await chatRow(), "quiet Continue the comparison");
+        await ended(c.id, 2);
+        expect((await inputs()).at(-1)).toEqual([
+          note,
+          "quiet Continue the comparison",
+        ]);
+      } else {
+        // No message from the person: the note is the turn's whole input.
+        await ended(c.id, 2);
+        expect((await inputs()).at(-1)).toEqual([note]);
       }
-      await sleep(300);
-      expect((await transcript(c.id)).turns).toHaveLength(1);
-      expect(await waiting()).toEqual([
-        ["Deleted Sunrise Labs August.pdf", "waiting", "paused"],
-      ]);
-      await say(await chatRow(), "quiet Continue the comparison");
-      await ended(c.id, 2);
-      expect((await inputs()).at(-1)).toEqual([
-        expect.stringContaining(
-          `The user deleted document ${documentId} (Sunrise Labs August.pdf).`,
-        ),
-        "quiet Continue the comparison",
-      ]);
-      expect((await inputs()).at(-1)?.[0]).toContain(
-        "Don't use or quote anything you read from it before",
-      );
       expect((await inputs()).at(-1)?.[0]).toContain(
         "It is not the user's words, a request or their consent.",
       );

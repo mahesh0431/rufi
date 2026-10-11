@@ -290,8 +290,11 @@ export const DeletePreview = Schema.Struct({
   readings: Schema.Int,
   /** Draft items not saved yet. */
   unsaved: Schema.Int,
-  /** Saved records that come from it and aren't removed: they block. */
-  blocking: Schema.Array(
+  /**
+   * Saved records that come from it and aren't removed: the person chooses
+   * whether they stay or go with it.
+   */
+  saved: Schema.Array(
     Schema.Struct({
       kind: Schema.String,
       id: Schema.String,
@@ -307,5 +310,13 @@ export const DeletePreview = Schema.Struct({
 });
 export type DeletePreview = typeof DeletePreview.Type;
 
-/** A delete, made on the preview `version`. */
-export const DeleteDocument = Schema.Struct({ version: Schema.String });
+/**
+ * A delete, made on the preview `version`. With saved records from it, the
+ * person's choice: they stay (`keep`), or the AI goes through them with the
+ * person to remove them (`remove`).
+ */
+export const DeleteDocument = Schema.Struct({
+  version: Schema.String,
+  saved: Schema.optionalKey(Schema.Literals(["keep", "remove"])),
+});
+export type DeleteDocument = typeof DeleteDocument.Type;
