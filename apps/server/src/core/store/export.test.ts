@@ -174,6 +174,11 @@ second line', NULL, '');
     expect(names.filter((n) => n.includes("/json/"))).toHaveLength(
       names.filter((n) => n.includes("/csv/")).length,
     );
+    // Each result says whether it is a lab result or a measurement.
+    const results = JSON.parse(
+      strFromU8(files[`${FOLDER}/json/results.json`] ?? new Uint8Array()),
+    ) as { columns: string[] };
+    expect(results.columns).toContain("category");
     for (const bytes of Object.values(files)) {
       expect(strFromU8(bytes)).not.toContain(sentinel);
     }

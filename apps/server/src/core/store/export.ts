@@ -138,8 +138,8 @@ const README = (
   tables: Table[],
 ) => `# Your Rufi data
 
-Exported from Rufi on ${createdAt}. This is everything in your record, your
-chat, your documents and Rufi's settings, as Rufi stored it.
+Exported from Rufi on ${createdAt}. This is everything in your health
+record, your chat, your documents and Rufi's settings, as Rufi stored it.
 
 - \`json/\`: one file per table. Each file holds the table's name, its
   columns, and its rows, each row an object of column and value. A value
@@ -158,6 +158,10 @@ chat, your documents and Rufi's settings, as Rufi stored it.
 - \`draft_items\`: what Rufi's reader read from your documents, each not
   saved yet, saved, or dismissed. Not your record: Rufi counts one nowhere
   until you save it.
+- \`results\`: your lab results and measurements, as printed. Its
+  \`category\` column says which each one is: \`lab\` (on Lab results) or
+  \`measurement\` (on Measurements). Results saved before Rufi had
+  categories count as \`lab\`.
 - \`record_sources\`: where each record came from: your message, or a page
   of a document.
 

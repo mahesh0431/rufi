@@ -5,6 +5,7 @@ import {
   createRoute,
   createRouter,
   Link,
+  Navigate,
   redirect,
   useLocation,
 } from "@tanstack/react-router";
@@ -17,7 +18,7 @@ import { Frame } from "./frame.tsx";
 import { HelpPage } from "./help-page.tsx";
 import { OverviewPage } from "./overview.tsx";
 import { isPageKind, RecordPage } from "./record.tsx";
-import { usePeople } from "./reads.ts";
+import { usePeople, useRecordDetail } from "./reads.ts";
 import { SettingsPage } from "./settings.tsx";
 import { SignIn } from "./signin.tsx";
 import { Problem } from "./ui.tsx";
@@ -107,6 +108,51 @@ const document = createRoute({
   },
 });
 
+/**
+ * The address of results before they had two pages, `record/result`: it
+ * opens the page of the row's category, or Lab results when no row is
+ * asked for.
+ */
+function ResultsBefore({
+  personId,
+  open,
+}: {
+  personId: string;
+  open?: string;
+}) {
+  const to = (kind: "lab_result" | "measurement") => (
+    <Navigate
+      to="/people/$personId/record/$kind"
+      params={{ personId, kind }}
+      search={open === undefined ? {} : { open }}
+      replace
+    />
+  );
+  if (open === undefined) return to("lab_result");
+  return <ResultBefore personId={personId} open={open} to={to} />;
+}
+
+function ResultBefore({
+  personId,
+  open,
+  to,
+}: {
+  personId: string;
+  open: string;
+  to: (kind: "lab_result" | "measurement") => React.ReactNode;
+}) {
+  const detail = useRecordDetail(personId, "result", open);
+  if (detail.isPending) return null;
+  const row = detail.data?.row;
+  return to(
+    row?.kind === "result" &&
+      "category" in row &&
+      row.category === "measurement"
+      ? "measurement"
+      : "lab_result",
+  );
+}
+
 /** `?open=<id>`: the row to open and bring into view. */
 const openSearch = (search: Record<string, unknown>): { open?: string } =>
   typeof search["open"] === "string" ? { open: search["open"] } : {};
@@ -127,6 +173,14 @@ const record = createRoute({
       ) : null;
     }
     const person = people.data.find((p) => p.id === personId);
+    if (person && kind === "result") {
+      return (
+        <ResultsBefore
+          personId={personId}
+          {...(open !== undefined && { open })}
+        />
+      );
+    }
     if (!person || !isPageKind(kind)) {
       return <div className="px-6 py-8 text-muted">There is no page here.</div>;
     }

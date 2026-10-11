@@ -153,7 +153,8 @@ function tileLines(tile: Tile): string[] {
   const names = tile.names.join(", ");
   const latest = tile.latest;
   switch (tile.kind) {
-    case "result":
+    case "lab_result":
+    case "measurement":
       return latest
         ? [
             [

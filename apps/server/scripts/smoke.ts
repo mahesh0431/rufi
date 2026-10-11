@@ -52,7 +52,8 @@ import { PROOF_HEADER } from "../src/server/api.ts";
 import { startCore, type Core } from "../src/server/core.ts";
 import { FAMILY, familyFiles } from "../tests/fixtures/golden.ts";
 import { textPdf } from "../tests/pack/pdf.ts";
-import { layout, REPORTS } from "../tests/pack/reports.ts";
+import { layout, PRESCRIPTION, REPORTS } from "../tests/pack/reports.ts";
+import type { Text } from "../tests/pack/pdf.ts";
 import { subAgentRunner } from "../src/agent/codex/subagent.ts";
 
 const { values } = parseArgs({
@@ -365,8 +366,8 @@ const result = (
   measured: string,
   comparator: string | null = null,
 ) =>
-  `('${id}', 'asha', NULL, '${test}', '${value}', ${comparator === null ? "NULL" : `'${comparator}'`}, ${String(Number.parseFloat(value.replace(/[<>]/, "")))}, '${unit}', NULL, NULL, NULL, '${measured}', '${measured}T09:00:00Z', NULL)`;
-const RESULTS = `INSERT INTO results (id, person_id, report_id, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id) VALUES `;
+  `('${id}', 'asha', NULL, 'lab', '${test}', '${value}', ${comparator === null ? "NULL" : `'${comparator}'`}, ${String(Number.parseFloat(value.replace(/[<>]/, "")))}, '${unit}', NULL, NULL, NULL, '${measured}', '${measured}T09:00:00Z', NULL)`;
+const RESULTS = `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id) VALUES `;
 const SEEDS: Record<string, string> = {
   trend:
     RESULTS +
@@ -438,6 +439,12 @@ const SEEDS: Record<string, string> = {
       result("u2", "Glucose", "118", "mg/dL", "2026-06-03"),
       result("u3", "Glucose", "112", "mg/dL", "2026-09-08"),
     ].join(", "),
+  // A blood pressure the August report printed, saved before results had
+  // categories: it counts as a lab result until the person moves it.
+  move_category: `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, value_number, unit, measured_at, measured_words, entered_at) VALUES
+    ('bp-aug', 'asha', 'rep-asha-aug', 'lab', 'Blood pressure', '124/80', 124, 'mmHg', '2026-08-12', 'Collected 12/08/2026', '2026-08-13T09:01:00Z');
+    INSERT INTO record_sources (person_id, kind, record_id, type, document_id, page) VALUES
+    ('asha', 'result', 'bp-aug', 'document_page', 'doc-asha-aug', 1);`,
 };
 
 /** The briefs the AI made, as stored, and each as its page shows it. */
@@ -480,7 +487,6 @@ async function readReport(
   name: string,
   { undated = false } = {},
 ): Promise<string> {
-  const c = chat(api);
   const found = REPORTS[report];
   if (!found) throw new Error(`no fictional report ${report}`);
   const pages = layout(found).map((page) =>
@@ -488,6 +494,20 @@ async function readReport(
       ? page.filter((text) => !/^(Collected|Reported):/.test(text.text))
       : page,
   );
+  return readDocument(api, home, name, pages);
+}
+
+/**
+ * Adds a fictional document of these pages (Rufi reads it at once), waits
+ * for its reading to end, and gives the document's id.
+ */
+async function readDocument(
+  api: Api,
+  home: string,
+  name: string,
+  pages: Text[][],
+): Promise<string> {
+  const c = chat(api);
   await api.upload([{ name, bytes: textPdf(pages) }]);
   for (let i = 0; ; i++) {
     const { entries } = await c.read();
@@ -497,7 +517,9 @@ async function readReport(
         `the reading took over six minutes: ${lines.join("; ")}`,
       );
     if (
-      lines.some((l) => l.startsWith("Lab report") || l.startsWith("Couldn't"))
+      lines.some((l) =>
+        /^(Lab report|Prescription|Letter|Document|Couldn't)/.test(l),
+      )
     )
       break;
     await sleep(500);
@@ -545,7 +567,7 @@ function resultsNow(home: string) {
   if (!store) throw new Error("no database");
   const rows = store.db
     .prepare(
-      `SELECT r.id, r.test_name, r.value_text, r.measured_at, r.replaces_id, r.removed,
+      `SELECT r.id, r.category, r.test_name, r.value_text, r.value_number, r.unit, r.measured_at, r.replaces_id, r.removed,
          (SELECT json_group_array(json_object('type', s.type, 'document', s.document_id, 'page', s.page))
             FROM record_sources s WHERE s.person_id = r.person_id AND s.kind = 'result'
               AND s.record_id = r.id AND s.removed_by IS NULL) AS sources
@@ -553,8 +575,11 @@ function resultsNow(home: string) {
     )
     .all() as {
     id: string;
+    category: string;
     test_name: string;
     value_text: string;
+    value_number: number | null;
+    unit: string | null;
     measured_at: string | null;
     replaces_id: string | null;
     removed: number;
@@ -652,7 +677,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         how_present: basis(snapshot).how !== null,
         used_shows_the_read: basis(snapshot).used.some(
           (read) =>
-            read.title.startsWith("Read your results") && read.note !== null,
+            /^Read your (lab )?results/.test(read.title) && read.note !== null,
         ),
       },
       snapshot,
@@ -1150,6 +1175,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
             .sort()
             .join(),
         three_results_from_the_page: fromDocument(home, doc).length === 3,
+        lab_results: fromDocument(home, doc).every((r) => r.category === "lab"),
         one_receipt: receipts(snapshot) === 1,
       },
       snapshot,
@@ -1220,6 +1246,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         result_saved: result !== undefined,
+        a_lab_result: result?.category === "lab",
         follow_up_done: done?.status === "done",
         outcome_given: (done?.outcome ?? "") !== "",
         linked_to_the_new_result:
@@ -1352,6 +1379,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         nothing_saved_before_the_date: savedBefore === 0,
         one_save: record(home).saves === 1,
         every_result_saved: saved.length === drafts.length && drafts.length > 0,
+        lab_results: saved.every((r) => r.category === "lab"),
         month_precision: saved.every((r) => r.measured_at === "2026-08"),
         // The rough date as the person said it, "Around" kept.
         the_persons_words:
@@ -1385,6 +1413,11 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         creatinine_corrects_august: now.some(
           (r) => r.test_name === "Creatinine" && r.replaces_id === "cr-old",
         ),
+        // A correction keeps the category of the result it replaces.
+        correction_a_lab_result:
+          now.find(
+            (r) => r.test_name === "Creatinine" && r.replaces_id === "cr-old",
+          )?.category === "lab",
         may_untouched:
           !now.some((r) => r.replaces_id === "cr-may") &&
           now.find((r) => r.id === "cr-may")?.sources.length === 0,
@@ -1417,6 +1450,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         saved_112: ldl?.value_text === "112",
+        a_lab_result: ldl?.category === "lab",
         your_words_a_source:
           ldl?.sources.some((s) => s.type === "message") === true,
         reader_value_kept: draft?.read === "109",
@@ -1456,6 +1490,140 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
             r.removed === 0,
         ),
         rest_new: fromDocument(home, doc).length === LIPIDS.length,
+      },
+      snapshot,
+    };
+  },
+  /** A lab value typed in, with no report: saved as a lab result, after a yes. */
+  typed_lab_result: async (api, home) => {
+    const c = chat(api);
+    await c.ask("My HbA1c at the clinic was 6.8 on 3 Oct.");
+    const asked_first = nothingSaved(home, await c.read());
+    await yesIfAsked(c, home, "Yes, save it.");
+    const snapshot = await c.read();
+    const store = openReadOnly(databasePath(home));
+    const saved = store?.db
+      .prepare(
+        "SELECT category, report_id, value_text, measured_at FROM results WHERE person_id = 'asha' AND test_name LIKE '%HbA1c%' AND id NOT LIKE 'res-%'",
+      )
+      .all() as
+      | {
+          category: string;
+          report_id: string | null;
+          value_text: string;
+          measured_at: string | null;
+        }[]
+      | undefined;
+    store?.close();
+    const hba1c = saved?.[0];
+    return {
+      checks: {
+        asked_first,
+        saved_once: record(home).saves === 1 && saved?.length === 1,
+        a_lab_result: hba1c?.category === "lab",
+        no_report: hba1c?.report_id === null,
+        value_6_8: hba1c?.value_text === "6.8",
+        on_3_oct: /^\d{4}-10-03$/.test(hba1c?.measured_at ?? ""),
+      },
+      snapshot,
+    };
+  },
+  /**
+   * A prescription with the visit's BP and weight, a height with no date,
+   * and a TSH collected on another day: the BP and weight are measurements on the
+   * visit day, the TSH a lab result on its collection day, and the AI asks
+   * when the height was measured before saving it.
+   */
+  prescription_measurements: async (api, home) => {
+    const c = chat(api);
+    const doc = await readDocument(
+      api,
+      home,
+      "lakeview-oct.pdf",
+      PRESCRIPTION.pages,
+    );
+    await c.say("Save the results from this prescription.", [
+      chipOf("document", doc),
+    ]);
+    const asked = await c.read();
+    const heightBefore = fromDocument(home, doc).some((r) =>
+      /height/i.test(r.test_name),
+    );
+    await c.say("I measured my height on 1 Sep 2026.");
+    await yesIfAsked(c, home);
+    // It may have saved the rest first and ask again for the height.
+    if (!fromDocument(home, doc).some((r) => /height/i.test(r.test_name))) {
+      await c.say("Yes, save the height too.");
+    }
+    const snapshot = await c.read();
+    const saved = fromDocument(home, doc);
+    const named = (pattern: RegExp) =>
+      saved.find((r) => pattern.test(r.test_name));
+    const bp = named(/blood pressure|^bp$/i);
+    const weight = named(/weight/i);
+    const height = named(/height/i);
+    const tsh = named(/tsh/i);
+    return {
+      checks: {
+        asks_when_the_height_was_measured:
+          /height/i.test(replyOf(asked)) && /when|date/i.test(replyOf(asked)),
+        no_height_before_its_date: !heightBefore,
+        bp_a_measurement_on_the_visit_day:
+          bp?.category === "measurement" &&
+          bp.value_text === "130/85" &&
+          bp.measured_at === "2026-10-05",
+        weight_a_measurement_on_the_visit_day:
+          weight?.category === "measurement" &&
+          weight.measured_at === "2026-10-05",
+        height_a_measurement_on_the_day_given:
+          height?.category === "measurement" &&
+          height.measured_at === "2026-09-01",
+        tsh_a_lab_result_on_its_collection_day:
+          tsh?.category === "lab" &&
+          tsh.value_text === "4.8" &&
+          tsh.measured_at === "2026-10-01",
+        four_results: saved.length === 4,
+      },
+      snapshot,
+    };
+  },
+  /**
+   * "That's a measurement" on a result read from a report: the same result
+   * moves, its printed values and sources stay, with a receipt; undo moves
+   * it back.
+   */
+  move_category: async (api, home) => {
+    const c = chat(api);
+    const before = resultsNow(home).find((r) => r.id === "bp-aug");
+    await c.ask(
+      "The blood pressure from my August report is on Lab results, but it's a measurement. Please move it.",
+    );
+    await yesIfAsked(c, home, "Yes, move it.");
+    const moved = resultsNow(home).find((r) => r.id === "bp-aug");
+    const movedReceipts = receipts(await c.read());
+    await c.ask("Undo that.");
+    await yesIfAsked(c, home, "Yes, undo it.");
+    if (record(home).saves < 2) await c.ask("Yes, move it back.");
+    const snapshot = await c.read();
+    const back = resultsNow(home).find((r) => r.id === "bp-aug");
+    const kept = (r: typeof before) =>
+      JSON.stringify([
+        r?.value_text,
+        r?.value_number,
+        r?.unit,
+        r?.measured_at,
+        r?.replaces_id,
+        r?.removed,
+        r?.sources.filter((s) => s.type === "document_page"),
+      ]);
+    return {
+      checks: {
+        moved_to_measurements: moved?.category === "measurement",
+        same_result: !resultsNow(home).some((r) => r.replaces_id === "bp-aug"),
+        printed_values_and_sources_kept: kept(moved) === kept(before),
+        a_receipt: movedReceipts === 1,
+        undo_moves_it_back: back?.category === "lab",
+        still_as_printed: kept(back) === kept(before),
       },
       snapshot,
     };

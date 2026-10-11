@@ -10,7 +10,7 @@ The AI can look into your records and results, explain what the evidence says, a
 
 It can be wrong. Check with your doctor before you act.
 
-What you do, and what you keep in your record, is your decision. If you tell the AI what you decided, such as stopping a medicine, it doesn't argue or refuse.
+What you do, and what you keep in your health record, is your decision. If you tell the AI what you decided, such as stopping a medicine, it doesn't argue or refuse.
 
 ## In an emergency, it tells you to call for help first
 

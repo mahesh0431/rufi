@@ -294,7 +294,12 @@ function About({
 }) {
   const detail = useRecordDetail(personId, kind, id);
   const row = detail.data?.row;
-  if (row === undefined || "problem" in row || !isPageKind(kind)) {
+  // A result's address opens the page of its category.
+  if (
+    row === undefined ||
+    "problem" in row ||
+    (kind !== "result" && !isPageKind(kind))
+  ) {
     return detail.error ? (
       <span className="block text-[12.5px] text-muted">
         About: a record Rufi can't show

@@ -7,6 +7,7 @@
 import type { Person } from "@rufi/contracts";
 import type {
   PageKind,
+  ResultCategory,
   RecordChange,
   RecordGroup,
   RecordRow,
@@ -23,7 +24,8 @@ import { Button, Problem } from "./ui.tsx";
 
 /** The kinds with a page, in the sidebar's order, by their page title. */
 export const KIND_TITLES: Record<PageKind, string> = {
-  result: "Results",
+  lab_result: "Lab results",
+  measurement: "Measurements",
   medicine_use: "Medicines",
   prescription: "Prescriptions",
   condition: "Conditions",
@@ -297,7 +299,7 @@ export function RecordPage({
     );
   }
   const groups = pages.data.pages.flatMap((page) => page.groups);
-  const results = kind === "result";
+  const results = kind === "lab_result" || kind === "measurement";
   const row = (shown: ShownRow, groupDate?: string) => (
     <RowView
       key={`${shown.kind}:${shown.id}`}
@@ -619,7 +621,12 @@ export function RowDetail({
         </>
       )}
       {row.kind === "result" && (
-        <SeriesTable personId={personId} test={row.test} unit={row.unit} />
+        <SeriesTable
+          personId={personId}
+          test={row.test}
+          unit={row.unit}
+          category={row.category}
+        />
       )}
     </div>
   );
@@ -630,12 +637,14 @@ function SeriesTable({
   personId,
   test,
   unit,
+  category,
 }: {
   personId: string;
   test: string;
   unit: string | undefined;
+  category: ResultCategory;
 }) {
-  const series = useSeries(personId, test, unit);
+  const series = useSeries(personId, test, unit, category);
   if (series.data === undefined) {
     return series.error ? (
       <Problem error={series.error} retry={() => void series.refetch()} />

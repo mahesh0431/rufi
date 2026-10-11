@@ -42,6 +42,11 @@ export interface Expected {
   page: number;
   test: string;
   value: string;
+  /**
+   * The item's own date as it must be read: YYYY-MM-DD, or null when it
+   * must have none. Left out when the pack doesn't score it.
+   */
+  date?: string | null;
 }
 
 /** A small seeded generator, so the pack is the same every time. */
@@ -887,3 +892,79 @@ export function layout(report: Report): Text[][] {
     return page;
   });
 }
+
+/**
+ * A clinic's prescription, one page: the visit's measurements (dated by the
+ * visit, 5 Oct), a height the patient told with no date, and a TSH whose
+ * sample was collected on another day (1 Oct). The reader copies all four
+ * as items; only the visit's measurements take its date.
+ */
+export const PRESCRIPTION = {
+  pages: [
+    [
+      { x: 40, y: 48, size: 16, text: "Lakeview Family Clinic", bold: true },
+      {
+        x: 40,
+        y: 64,
+        size: 8,
+        text: "Fictional clinic · 2 Example Lane · For testing only",
+      },
+      { x: 40, y: 88, size: 10, text: `Patient: ${ASHA}`, bold: true },
+      { x: 330, y: 88, size: 10, text: "Visit date: 05 Oct 2026" },
+      { x: 40, y: 102, size: 10, text: "Age/Sex: 41 Y / F" },
+      { x: 330, y: 102, size: 10, text: "Dr. Fictional, MBBS" },
+      { x: 40, y: 130, size: 11, text: "Vitals at this visit", bold: true },
+      { x: 40, y: 146, size: 10, text: "Blood pressure" },
+      { x: 200, y: 146, size: 10, text: "130/85 mmHg" },
+      { x: 40, y: 161, size: 10, text: "Weight" },
+      { x: 200, y: 161, size: 10, text: "72 kg" },
+      { x: 40, y: 186, size: 11, text: "History", bold: true },
+      {
+        x: 40,
+        y: 202,
+        size: 10,
+        text: "Height 160 cm (as told by the patient). Hypothyroid since 2024.",
+      },
+      { x: 40, y: 228, size: 11, text: "Investigations", bold: true },
+      {
+        x: 40,
+        y: 244,
+        size: 10,
+        text: "Northgate Clinical Lab · sample collected 01 Oct 2026",
+      },
+      { x: 40, y: 260, size: 10, text: "TSH" },
+      { x: 200, y: 260, size: 10, text: "4.8", bold: true },
+      { x: 240, y: 260, size: 10, text: "H", bold: true },
+      { x: 270, y: 260, size: 10, text: "mIU/L" },
+      { x: 340, y: 260, size: 10, text: "0.4 - 4.0" },
+      { x: 40, y: 290, size: 11, text: "Rx", bold: true },
+      {
+        x: 40,
+        y: 306,
+        size: 10,
+        text: "1. Tab. Levothyroxine 25 mcg · once daily before breakfast · 30 days",
+      },
+      {
+        x: 40,
+        y: 330,
+        size: 10,
+        text: "Advice: Repeat TSH after 6 weeks.",
+      },
+      {
+        x: 40,
+        y: 360,
+        size: 8,
+        text: "Page 1 of 1 · Fictional data for testing Rufi",
+      },
+    ],
+  ] satisfies Text[][],
+  key: {
+    items: [
+      { page: 1, test: "Blood pressure", value: "130/85", date: "2026-10-05" },
+      { page: 1, test: "Weight", value: "72", date: "2026-10-05" },
+      { page: 1, test: "Height", value: "160", date: null },
+      { page: 1, test: "TSH", value: "4.8" },
+    ] satisfies Expected[],
+    pages: [{ patient: ASHA, collectedIso: "2026-10-01" }],
+  },
+};

@@ -508,13 +508,9 @@ describe("lab results and measurements", () => {
         },
       },
     ]);
-    const amendment = String(
-      (
-        store.db
-          .prepare("SELECT id FROM results WHERE replaces_id = 'res-a7'")
-          .get() as { id: string }
-      ).id,
-    );
+    const { id: amendment } = store.db
+      .prepare("SELECT id FROM results WHERE replaces_id = 'res-a7'")
+      .get() as { id: string };
     expect(await pageIds("lab_result")).not.toContain("res-a7");
     expect(await pageIds("measurement")).toContain(amendment);
     expect(await counts()).toEqual([

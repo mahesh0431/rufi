@@ -39,6 +39,7 @@ import {
   BUNDLE,
   expected,
   layout,
+  PRESCRIPTION,
   REPORTS,
   type Report,
 } from "../tests/pack/reports.ts";
@@ -138,6 +139,17 @@ const imageItem = (
   key: firstPages(report(name), 1),
 });
 
+/** A clinic's prescription with the visit's measurements, an undated height and a lab value. */
+const prescription: Item = {
+  name: "prescription",
+  kind: "pdf",
+  files: () =>
+    Promise.resolve([
+      { name: "prescription.pdf", bytes: textPdf(PRESCRIPTION.pages) },
+    ]),
+  key: PRESCRIPTION.key,
+};
+
 const PACK: Item[] = [
   ...[
     "cbc",
@@ -178,15 +190,17 @@ const PACK: Item[] = [
     key: expected([report("five_pages")]),
   },
   photosItem("eight_pages_photos", "eight_pages", 3),
+  prescription,
 ];
 
 /**
  * The default: two pages each of the densest reports (30 and 25 results a
- * page), as a PDF and as photos.
+ * page), as a PDF and as photos, and the prescription.
  */
 const DENSE: Item[] = [
   firstPagesPdf("big_300", 2),
   photosItem("eight_pages_2_photos", "eight_pages", 2),
+  prescription,
 ];
 
 const only = values.only?.split(",");
@@ -361,6 +375,7 @@ function score(
       test_name: string;
       value_text: string;
       column?: string;
+      date?: { iso?: string };
     },
     unsure: (JSON.parse(d.unsure) as string[]).length > 0,
     used: false,
@@ -405,6 +420,14 @@ function score(
       continue;
     }
     found.used = true;
+    // A measurement's own date: the visit's when the page gives it, none
+    // when it gives none (never the lab's collection date).
+    const date = found.fields.date?.iso ?? null;
+    if (want.date !== undefined && date !== want.date) {
+      wrong.push(
+        `p${String(want.page)} ${want.test}: date ${date ?? "none"} for ${want.date ?? "none"}`,
+      );
+    }
     if (norm(found.fields.value_text) === norm(want.value)) score.correct++;
     else {
       if (found.unsure) score.wrongFlagged++;

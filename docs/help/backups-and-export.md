@@ -1,6 +1,6 @@
 # Backups and export
 
-Rufi makes a backup of your record and your documents each time it starts and then each day, and you can take all your data out of Rufi as one file. This page says what a backup holds, how to restore one, and what an export holds.
+Rufi makes a backup of your health record and your documents each time it starts and then each day, and you can take all your data out of Rufi as one file. This page says what a backup holds, how to restore one, and what an export holds.
 
 ## Backups
 
@@ -30,6 +30,8 @@ Sometimes a new Rufi stores your record in a new way. Then, when it starts, it u
 
 1. It makes a backup of your record as it was, with your documents, and checks it. This backup goes in `backups/before-upgrade`, and Rufi never removes it: delete old ones yourself when you no longer need them.
 2. It upgrades your record in one step. If anything goes wrong, your record stays as it was, and Rufi says that it couldn't upgrade it.
+
+The upgrade that brought Lab results and Measurements puts every result you saved before on Lab results: Rufi doesn't guess which were measurements. To move one, tell Rufi in the chat.
 
 If the backup fails (for example, the disk is full), Rufi doesn't upgrade your record and doesn't start. Make space, and start Rufi again.
 
@@ -76,6 +78,7 @@ The copy is a Rufi of its own: it can run next to the Rufi of your current data 
 What the restored copy has:
 
 - Everything that was in your record when the backup was made, with its documents. Anything you added or changed after that isn't there. Anything you removed after that is back.
+- In a backup from before Rufi had Lab results and Measurements, every result counts as a lab result: Rufi can't tell which were measurements. To move one, tell Rufi in the chat, for example "my blood pressure from August is a measurement".
 - Your chat and drafts. A reply that was running when the backup was made shows as interrupted. Nothing is sent by itself.
 - Messages that were waiting for the AI come back held, above the box, marked **From a backup: it waited when the backup was made.** Nothing goes to the AI by itself: **Send** each one again, or **Remove** it. A message Rufi was giving the AI when the backup was made shows **Not sure this reached the AI.** (see [Waiting messages](chat.md#waiting-messages)).
 - Your next message starts the AI afresh with the chat's last messages, and the chat shows a quiet line there.
@@ -114,6 +117,8 @@ Settings says **Exported your data as a zip**. The file is named for the day, fo
 | `files/`      | Every document you added, exactly as it came, named by its fingerprint         |
 
 Rufi checks the export against your record and your documents before it gives it to you. If a document's file is missing or changed, Rufi doesn't make the export, and says so. An export never holds your ChatGPT sign-in, the AI's own files, Rufi's log or the list of AI models.
+
+The `results` table holds your lab results and measurements; its `category` column says which each one is, `lab` or `measurement`.
 
 In the export, a document's file is named by its fingerprint, with its type: for example `files/7f4a…8b54.pdf`. The `document_pages` table says which document and page each file is, and the name it had when you added it.
 
