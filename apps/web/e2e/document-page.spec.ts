@@ -54,7 +54,7 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
   await rufi.start({ reader: reader.run });
   await page.goto(rufi.link());
   await page.getByRole("link", { name: "Documents" }).click();
-  await page.getByLabel("Choose documents").setInputFiles({
+  await page.getByLabel("Choose documents", { exact: true }).setInputFiles({
     name: "sunrise-labs-august.pdf",
     mimeType: "application/pdf",
     buffer: await readFile(REPORT),
@@ -141,23 +141,43 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
     items.getByRole("cell", { name: "2.0-4.0", exact: true }),
   ).toBeVisible();
 
-  // Save these in the chat: after what the box holds; the person sends.
-  await page.getByRole("link", { name: "Chat with Rufi" }).click();
-  const box = page.getByRole("textbox", { name: "Message to Rufi" });
+  const chat = page.getByRole("region", { name: "Chat" });
+  const box = chat.getByRole("textbox", { name: "Message to Rufi" });
+  const minimise = chat.getByRole("button", { name: "Minimise" });
+  const save = page.getByRole("button", { name: "Save these in the chat" });
+
+  // In a short window too, the page's footer ends above the bar.
+  await page.setViewportSize({ width: 1000, height: 560 });
+  await expect(save).toBeInViewport();
+  const button = await save.boundingBox();
+  const bar = await chat.locator("form").boundingBox();
+  expect((button?.y ?? 0) + (button?.height ?? 0)).toBeLessThan(bar?.y ?? 0);
+  await page.setViewportSize({ width: 1280, height: 720 });
+
+  // Save these in the chat: after what the box holds, and the page stays;
+  // the person sends.
+  await box.click();
   await box.fill("What changed since March?");
-  await page.goBack();
-  await page.getByRole("button", { name: "Save these in the chat" }).click();
-  await expect(page).toHaveURL(/\/people\/asha\/chat$/);
+  await page.keyboard.press("Escape");
+  await save.click();
+  expect(page.url()).toBe(documentPage);
+  await expect(minimise).toHaveCount(0);
+  await expect(
+    chat.getByRole("status", { name: "Added to this message" }),
+  ).toHaveText("sunrise-labs-august.pdf");
+  await box.click();
   await expect(box).toHaveValue(
     "What changed since March?\n\nSave these 3 results.",
   );
   await expect(
-    page
+    chat
       .getByRole("list", { name: "Added to this message" })
       .getByRole("listitem"),
-  ).toHaveText(["sunrise-labs-august.pdf"]);
+  ).toHaveText(["sunrise-labs-august.pdf · Read"]);
+  await accessible(page);
 
-  // A lost send's answer blocks appending, including after a reload.
+  // A lost send's answer blocks adding, including after a reload, and the
+  // bar says why.
   const submitted: { id: string; text: string }[] = [];
   await page.route("**/messages", async (route) => {
     submitted.push(
@@ -168,21 +188,27 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
     await route.abort();
   });
   await box.press("Enter");
-  await expect(page.getByRole("alert")).toHaveText("Rufi can't be reached.");
-  await page.goBack();
+  await expect(chat.getByRole("alert")).toHaveText("Rufi can't be reached.");
+  await page.keyboard.press("Escape");
   const unresolved = page.getByRole("button", {
     name: "Retry the message in the chat first",
   });
   await expect(unresolved).toBeDisabled();
   await page.reload();
   await expect(unresolved).toBeDisabled();
+  await items.getByRole("row").filter({ hasText: "Platelet count" }).hover();
+  await items.getByRole("button", { name: "Ask Rufi" }).first().click();
+  await expect(chat.getByRole("alert")).toHaveText(
+    "Your last message may not have reached Rufi: send it again or change it first.",
+  );
   expect(submitted).toHaveLength(1);
-  await page.getByRole("link", { name: "Chat with Rufi" }).click();
+  // The core took it, so its reply runs: ⌘J opens the panel.
+  await page.keyboard.press("ControlOrMeta+j");
   await expect(box).toHaveValue(submitted[0]?.text ?? "");
   await box.press("Enter");
   await expect(box).toHaveValue("");
   expect(submitted).toEqual([submitted[0], submitted[0]]);
-  await page.goto(documentPage);
+  expect(page.url()).toBe(documentPage);
   await expect(
     page.getByRole("button", { name: "Save these in the chat" }),
   ).toBeEnabled();

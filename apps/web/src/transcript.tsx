@@ -513,7 +513,7 @@ function EventLink({ link }: { link: NonNullable<Entry["link"]> }) {
     <Link
       to="/people/$personId/documents/$documentId"
       params={{ personId, documentId: link.document }}
-      className="rounded-md px-1 text-accent-ink hover:bg-accent-soft"
+      className="rounded-md px-1 text-accent-ink underline underline-offset-2 hover:bg-accent-soft"
     >
       Open
     </Link>

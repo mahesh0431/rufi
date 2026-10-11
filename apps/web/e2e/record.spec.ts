@@ -230,7 +230,7 @@ test("a reading that ends, with nothing saved, shows in Needs you on an open Ove
   await other.goto(rufi.link());
   await sidebar(other).getByRole("link", { name: "Documents" }).click();
   const add = async (name: string, mimeType: string, file: string) => {
-    await other.getByLabel("Choose documents").setInputFiles({
+    await other.getByLabel("Choose documents", { exact: true }).setInputFiles({
       name,
       mimeType,
       buffer: await readFile(

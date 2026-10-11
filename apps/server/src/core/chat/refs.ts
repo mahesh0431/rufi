@@ -1,15 +1,16 @@
 // References in the chat (docs/help/chat.md): a message's chips, each an
-// exact pointer to the person's health data: a document, a draft item or a
-// saved record. They are checked against the chat's person when added (the
-// draft) and when sent, and named and versioned from what is stored, never
-// from what the screen sent: a sent message keeps each one's version then.
+// exact pointer to the person's health data: a document, a draft item, a
+// saved record or a report (its results). They are checked against the
+// chat's person when added (the draft) and when sent, and named and
+// versioned from what is stored, never from what the screen sent: a sent
+// message keeps each one's version then.
 // The AI gets them as a short list after the message and reads them with
 // its tools.
 import type { Chip, Pointer } from "@rufi/contracts";
 import { sql, type Kysely } from "kysely";
 import { shownDate } from "../record/dates.ts";
 import { kindNamed, type Kind, type Row } from "../record/kinds.ts";
-import { recordVersions } from "../record/read.ts";
+import { isCurrent, recordVersions } from "../record/read.ts";
 import type { Tables } from "../store/tables.ts";
 
 /** A reference that isn't the person's, in words for the person. */
@@ -155,6 +156,53 @@ async function chipOf(
         ),
       };
     }
+    case "report": {
+      const report = await db
+        .selectFrom("reports")
+        .select(["issuer", "collected"])
+        .where("person_id", "=", personId)
+        .where("id", "=", ref.id)
+        .executeTakeFirst();
+      if (!report) return undefined;
+      const result = kindNamed("result") as Kind;
+      const current = await db
+        .selectFrom("results as r")
+        .select((eb) => eb.fn.countAll<number>().as("n"))
+        .where("r.person_id", "=", personId)
+        .where("r.report_id", "=", ref.id)
+        .where(isCurrent(result, "r"))
+        .executeTakeFirstOrThrow();
+      // The last save that changed any of its results, also one taken out.
+      const last = await db
+        .selectFrom("record_changes as c")
+        .innerJoin("operations as o", (on) =>
+          on
+            .onRef("o.person_id", "=", "c.person_id")
+            .onRef("o.id", "=", "c.operation_id"),
+        )
+        .innerJoin("results as r", (on) =>
+          on
+            .onRef("r.person_id", "=", "c.person_id")
+            .onRef("r.id", "=", "c.record_id"),
+        )
+        .select("c.operation_id")
+        .where("c.person_id", "=", personId)
+        .where("c.kind", "=", "result")
+        .where("r.report_id", "=", ref.id)
+        .orderBy("o.seq", "desc")
+        .limit(1)
+        .executeTakeFirst();
+      const count = current.n;
+      return {
+        ref: { ...ref, version: last?.operation_id ?? null },
+        label: join(
+          report.issuer ?? "Report",
+          report.collected !== null && shownDate(report.collected),
+          `${String(count)} ${count === 1 ? "result" : "results"}`,
+        ),
+        detail: "Report in your record",
+      };
+    }
   }
 }
 
@@ -172,6 +220,8 @@ export function refsForAi(chips: readonly Chip[]): string | undefined {
         return `- draft item ${ref.id}, version ${String(ref.version)}: ${label}`;
       case "record":
         return `- ${kindNamed(ref.kind)?.noun ?? ref.kind} ${ref.id} (kind ${ref.kind}), version ${ref.version === null ? "null" : ref.version}: ${label}`;
+      case "report":
+        return `- report ${ref.id}, version ${ref.version === null ? "null" : ref.version}: ${label}`;
     }
   });
   return `References the user added to this message (Rufi's, exact: read them with your tools):\n${lines.join("\n")}`;

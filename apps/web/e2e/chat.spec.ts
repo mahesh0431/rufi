@@ -91,9 +91,8 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
     "placeholder",
     "Ask or tell Rufi about Asha Fictional…",
   );
-  await expect(
-    chat(page).getByText("AI can make mistakes. Check important info."),
-  ).toBeVisible();
+  // The reminder is under the panel, where answers are read.
+  await expect(chat(page).getByText(/AI can make mistakes/)).toHaveCount(0);
   await expect(sidebar(page).getByRole("link")).toHaveText([
     "Chat with Rufi",
     "Overview",
@@ -145,8 +144,16 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   await chat(page).getByRole("button", { name: "Open as page" }).click();
   await expect(page).toHaveURL(/\/people\/asha\/chat$/);
 
-  // The bar is on the Overview only; Chat with Rufi opens the chat from any
-  // page, as a page of its own.
+  // The bar is on the pages where you read your health, not Help or
+  // Settings; Chat with Rufi opens the chat from any page, as a page of its
+  // own.
+  for (const name of ["Results", "Follow-ups", "Documents"]) {
+    await sidebar(page)
+      .getByRole("link", { name: new RegExp(`^${name}`) })
+      .click();
+    await expect(toolbar(page)).toHaveText(name);
+    await expect(box(chat(page))).toBeVisible();
+  }
   for (const name of ["Help", "Settings"]) {
     await sidebar(page).getByRole("link", { name }).click();
     await expect(toolbar(page)).toHaveText(name);
@@ -776,7 +783,7 @@ test("Markdown in a reply: tables and web links work; HTML, images and other lin
   expect(requests.filter((url) => url.includes("127.0.0.1:9"))).toEqual([]);
 });
 
-test("⌘J opens the panel; Esc steps back and returns focus", async ({
+test("⌘J opens the panel; Esc steps back and returns focus; another page closes it", async ({
   page,
   rufi,
 }) => {
@@ -798,6 +805,33 @@ test("⌘J opens the panel; Esc steps back and returns focus", async ({
   await page.keyboard.press("Escape");
   await expect(minimise).toHaveCount(0);
   await expect(settings).toBeFocused();
+
+  // Another page closes the panel: coming back shows the bar.
+  await sidebar(page)
+    .getByRole("link", { name: /^Results/ })
+    .click();
+  await page.keyboard.press("ControlOrMeta+j");
+  await expect(minimise).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(minimise).toHaveCount(0);
+  await page.goForward();
+  await expect(box(chat(page))).toBeVisible();
+  await expect(minimise).toHaveCount(0);
+
+  // When what had the focus is gone, Esc puts it in the box.
+  await page.evaluate(() => {
+    const gone = document.createElement("button");
+    gone.id = "gone";
+    document.body.append(gone);
+    gone.focus();
+  });
+  await page.keyboard.press("ControlOrMeta+j");
+  await expect(minimise).toBeVisible();
+  await page.evaluate(() => document.getElementById("gone")?.remove());
+  await page.keyboard.press("Escape");
+  await expect(minimise).toHaveCount(0);
+  await expect(box(chat(page))).toBeFocused();
 });
 
 test("a click outside the panel steps back to the bar and keeps what you typed; a click in it, its menu, Stop or Based on doesn't", async ({

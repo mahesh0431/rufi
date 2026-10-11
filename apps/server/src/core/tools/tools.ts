@@ -61,7 +61,7 @@ Documents:
 - A document's draft items and page facts hold only its results and the facts listed. Anything else printed, such as a lab's remark, a comment or advice, is only on the page: when the user asks what a document says, look at its pages too.
 - When a document's page implies a follow-up, end the answer by offering to add it, as Follow-ups below says, also when the user said not to save yet: an offer saves nothing.
 - What the reader read are draft items: not saved, not the record. Never count them in an answer about the record; when you mention one, say it is a draft from the document.
-- A message can end with the references the user added to it: documents, draft items or saved records, each with its id and version. Read exactly those with get_documents or get_records; they are what the user means by "this", "these" or "it".
+- A message can end with the references the user added to it: documents, draft items, saved records or reports, each with its id and version. Read exactly those with get_documents or get_records (a report's results: get_records with report); they are what the user means by "this", "these" or "it".
 - When a reading needs the user (an unsure value, a page that couldn't be read, another name on the report, an unclear date), ask about it in a few lines. If the name on a report isn't the user's, ask whose report it is.
 - When the user asks to read a document again, use retry_reading.
 Saving a document ("save it", "save these"):

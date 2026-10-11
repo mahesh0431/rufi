@@ -1,8 +1,10 @@
-// Adding to the chat on the real core: results (Ask Rufi on the Results page), documents and a document's
-// draft items go into the box as chips (on a row, or several at once), files added with the
-// paperclip become documents with their chips, the chips survive a reload
-// and go with the message to the AI, and a big save's receipt shows its
-// summary with the list folded. The strict CSP refuses nothing.
+// Adding to the chat on the real core: Needs you lines, results, a report,
+// documents and a document's draft items go into the chat box as chips with
+// Ask Rufi, and the page stays (the closed bar says what is added); files
+// added with the paperclip become documents with their chips, which say what
+// Rufi does with them; the chips survive a reload and go with the message to
+// the AI, and a big save's receipt shows its summary with the list folded.
+// The strict CSP refuses nothing.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
@@ -49,6 +51,9 @@ const box = (scope: Page | Locator) =>
   scope.getByRole("textbox", { name: "Message to Rufi" });
 const chips = (scope: Page | Locator) =>
   scope.getByRole("list", { name: "Added to this message" });
+/** The closed bar's line of what is added: the first chip and how many more. */
+const added = (scope: Locator) =>
+  scope.getByRole("status", { name: "Added to this message" });
 const log = (scope: Page | Locator) =>
   scope.getByRole("log", { name: "Messages" });
 const sidebar = (page: Page) => page.getByRole("complementary");
@@ -82,39 +87,58 @@ const inputs = async (rufi: Rufi) =>
         : [];
     });
 
-test("results go into the chat as chips, one or several at once; they survive a reload and go with the message", async ({
+test("Ask Rufi puts chips of several kinds in the box, a report as one, and the page stays; they survive a reload and go with the message", async ({
   page,
   rufi,
 }) => {
-  await opened(page, rufi);
+  await opened(
+    page,
+    rufi,
+    undefined,
+    "INSERT INTO follow_ups (id, person_id, title, due) VALUES ('f-hba1c', 'asha', 'Repeat HbA1c', '2026-01-15');",
+  );
+  const bar = chat(page);
+  const minimise = bar.getByRole("button", { name: "Minimise" });
+
+  // A Needs you line: its chip goes in the box; the bar says so, closed.
+  await page
+    .getByRole("region", { name: "Needs you" })
+    .getByRole("button", { name: "Ask Rufi about Repeat HbA1c" })
+    .click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(added(bar)).toHaveText("Repeat HbA1c · 15 Jan 2026");
+  await expect(minimise).toHaveCount(0);
+
   await sidebar(page)
     .getByRole("link", { name: /^Results/ })
     .click();
+  const results = page.url();
   const row = (name: string) =>
     page
       .getByRole("listitem")
       .filter({ has: page.getByRole("button", { name, exact: true }) });
 
-  // One row: Ask Rufi, shown on the pointer, puts it in the chat's box.
+  // A row: Ask Rufi, shown on the pointer.
   await row("CRP").hover();
   await row("CRP").getByRole("button", { name: "Ask Rufi" }).click();
-  await expect(page).toHaveURL(/\/people\/asha\/chat$/);
-  await expect(chips(page).getByRole("listitem")).toHaveText([
-    "CRP <5 mg/L · 12 Aug 2026",
-  ]);
-  await page.goBack();
-
-  // Several: tick them, then add them together.
-  await row("Glucose").getByRole("checkbox").check();
-  await row("Free T4").getByRole("checkbox").check();
-  await expect(page.getByText("2 chosen")).toBeVisible();
+  // A report: one chip for its results, from its heading.
+  await page
+    .getByRole("button", {
+      name: "Ask Rufi about this report: Sunrise Labs · 1 Sep 2026 · 2 results",
+    })
+    .click();
+  expect(page.url()).toBe(results);
+  await expect(minimise).toHaveCount(0);
+  await expect(added(bar)).toHaveText("Repeat HbA1c · 15 Jan 2026 +2");
   await accessible(page);
-  // They go in as the screen shows them.
-  await page.getByRole("button", { name: "Add 2 to chat" }).click();
-  await expect(chips(page).getByRole("listitem")).toHaveText([
+
+  // The panel shows them all.
+  await box(bar).click();
+  await expect(box(bar)).toBeFocused();
+  await expect(chips(bar).getByRole("listitem")).toHaveText([
+    "Repeat HbA1c · 15 Jan 2026",
     "CRP <5 mg/L · 12 Aug 2026",
-    "Free T4 1.1 ng/dL · 1 Sep 2026",
-    "Glucose 118 mg/dL · 12 Aug 2026",
+    "Sunrise Labs · 1 Sep 2026 · 2 results",
   ]);
   await accessible(page);
 
@@ -123,51 +147,77 @@ test("results go into the chat as chips, one or several at once; they survive a 
     (response) =>
       response.url().endsWith("/chat/draft") &&
       response.request().method() === "PUT" &&
-      response.request().postData()?.includes("res-a2") === true &&
-      response.request().postData()?.includes("res-a6") === false,
+      response.request().postData()?.includes("rep-asha-sep") === true &&
+      response.request().postData()?.includes("res-a3") === false,
   );
-  await chips(page)
+  await chips(bar)
     .getByRole("button", {
-      name: "Take Free T4 1.1 ng/dL · 1 Sep 2026 out of the message",
+      name: "Take CRP <5 mg/L · 12 Aug 2026 out of the message",
     })
     .click();
-  await expect(chips(page).getByRole("listitem")).toHaveCount(2);
+  await expect(chips(bar).getByRole("listitem")).toHaveCount(2);
   await saved;
   await page.reload();
-  await expect(chips(page).getByRole("listitem")).toHaveText([
-    "CRP <5 mg/L · 12 Aug 2026",
-    "Glucose 118 mg/dL · 12 Aug 2026",
+  await expect(added(bar)).toHaveText("Repeat HbA1c · 15 Jan 2026 +1");
+  await box(bar).click();
+  await expect(chips(bar).getByRole("listitem")).toHaveText([
+    "Repeat HbA1c · 15 Jan 2026",
+    "Sunrise Labs · 1 Sep 2026 · 2 results",
   ]);
 
-  await box(page).fill("Are these high?");
-  await box(page).press("Enter");
-  await expect(box(page)).toHaveValue("");
-  await expect(chips(page)).toHaveCount(1);
-  const message = log(page).locator("[data-entry]").first();
+  await box(bar).fill("Are these high?");
+  await box(bar).press("Enter");
+  await expect(box(bar)).toHaveValue("");
+  // Only the sent message's chips are left.
+  await expect(chips(bar)).toHaveCount(1);
+  const message = log(bar).locator("[data-entry]").first();
   await expect(chips(message).getByRole("listitem")).toHaveText([
-    "CRP <5 mg/L · 12 Aug 2026",
-    "Glucose 118 mg/dL · 12 Aug 2026",
+    "Repeat HbA1c · 15 Jan 2026",
+    "Sunrise Labs · 1 Sep 2026 · 2 results",
   ]);
-  await expect(log(page).locator(".reply")).toHaveText(/^ok:Are these high\?/);
+  await expect(log(bar).locator(".reply")).toHaveText(/^ok:Are these high\?/);
+  expect(page.url()).toBe(results);
   expect((await inputs(rufi)).at(-1)?.at(-1)).toBe(
-    "Are these high?\n\nReferences the user added to this message (Rufi's, exact: read them with your tools):\n- result res-a3 (kind result), version null: CRP <5 mg/L · 12 Aug 2026\n- result res-a2 (kind result), version null: Glucose 118 mg/dL · 12 Aug 2026",
+    "Are these high?\n\nReferences the user added to this message (Rufi's, exact: read them with your tools):\n- follow-up f-hba1c (kind follow_up), version null: Repeat HbA1c · 15 Jan 2026\n- report rep-asha-sep, version null: Sunrise Labs · 1 Sep 2026 · 2 results",
   );
+
+  // With the panel open, Ask Rufi adds to its box, and it stays open (a
+  // window wide enough to show the row beside the panel).
+  await page.setViewportSize({ width: 2000, height: 800 });
+  await row("HbA1c").hover();
+  await row("HbA1c").getByRole("button", { name: "Ask Rufi" }).click();
+  await expect(minimise).toBeVisible();
+  await expect(chips(bar.locator("form")).getByRole("listitem")).toHaveText([
+    "HbA1c 6.8 % · 12 Aug 2026",
+  ]);
+  await expect(box(bar)).toBeFocused();
 });
 
-test("the paperclip adds a file as a document with its chip; the same file again gives the chip of the one you have; a Documents row adds its chip", async ({
+test("the paperclip says it adds a file, then gives its chip with what Rufi does with it; the same file again gives the chip of the one you have; a Documents row adds its chip", async ({
   page,
   rufi,
 }) => {
   await opened(page, rufi);
-  await page.getByRole("link", { name: "Chat with Rufi" }).click();
-  const picker = page.getByLabel("Choose documents to add");
+  const bar = chat(page);
+  await box(bar).click();
+  // The upload is held: the box says what it adds before the chip exists.
+  const upload = Promise.withResolvers<undefined>();
+  await page.route("**/api/people/asha/documents", async (route) => {
+    if (route.request().method() === "POST") await upload.promise;
+    await route.continue();
+  });
+  const picker = bar.getByLabel("Choose documents to add");
   await picker.setInputFiles({
     name: "Asha lipid panel.pdf",
     mimeType: "application/pdf",
     buffer: await readFile(join(FIXTURES, "ravi-lipid-panel.pdf")),
   });
-  await expect(chips(page).getByRole("listitem")).toHaveText([
-    "Asha lipid panel.pdf",
+  await expect(bar.getByText("Adding Asha lipid panel.pdf…")).toBeVisible();
+  await expect(chips(bar)).toHaveCount(0);
+  upload.resolve(undefined);
+  // With no reader, its reading waits.
+  await expect(chips(bar).getByRole("listitem")).toHaveText([
+    "Asha lipid panel.pdf · Waiting to read",
   ]);
   await picker.setInputFiles({
     name: "August again.pdf",
@@ -179,21 +229,35 @@ test("the paperclip adds a file as a document with its chip; the same file again
       "August again.pdf was already added: the chip is the document you have.",
     ),
   ).toBeVisible();
-  await expect(chips(page).getByRole("listitem")).toHaveText([
-    "Asha lipid panel.pdf",
+  await expect(chips(bar).getByRole("listitem")).toHaveText([
+    "Asha lipid panel.pdf · Waiting to read",
     "Sunrise Labs August.pdf",
   ]);
   await accessible(page);
 
-  // The new document is on the Documents page, added from the chat.
+  // The new document is on the Documents page, added from the chat; Ask
+  // Rufi on a row adds its chip, and the page stays.
   await page.getByRole("link", { name: "Documents" }).click();
+  const documents = page.url();
   const row = page
     .getByRole("row")
     .filter({ has: page.getByText("thyroid recheck.jpg") });
   await row.hover();
-  await row.getByRole("button", { name: "+ Add to chat" }).click();
-  await expect(page).toHaveURL(/\/chat$/);
-  await expect(chips(page).getByRole("listitem")).toHaveText([
+  await row.getByRole("button", { name: "Ask Rufi" }).click();
+  expect(page.url()).toBe(documents);
+  await expect(added(bar)).toHaveText("Asha lipid panel.pdf +2");
+  await box(bar).click();
+  await expect(chips(bar).getByRole("listitem")).toHaveText([
+    "Asha lipid panel.pdf · Waiting to read",
+    "Sunrise Labs August.pdf",
+    "thyroid recheck.jpg",
+  ]);
+
+  // A sent message's chips say nothing of the reading.
+  await box(bar).fill("What are these?");
+  await box(bar).press("Enter");
+  const message = log(bar).locator("[data-entry]").first();
+  await expect(chips(message).getByRole("listitem")).toHaveText([
     "Asha lipid panel.pdf",
     "Sunrise Labs August.pdf",
     "thyroid recheck.jpg",
@@ -259,7 +323,7 @@ test("a save of a document's items shows its summary, with what was saved folded
   await accessible(page);
 });
 
-test("a document's draft items go into the chat as chips, one or several at once, and the AI gets their exact ids", async ({
+test("a document's draft items go into the chat as chips, and the AI gets their exact ids", async ({
   page,
   rufi,
 }) => {
@@ -271,45 +335,29 @@ test("a document's draft items go into the chat as chips, one or several at once
     items
       .getByRole("row")
       .filter({ has: page.getByRole("button", { name: test, exact: true }) });
+  const bar = chat(page);
+  const documentPage = page.url();
 
-  // One row: its own button, shown on the pointer.
-  await row("Test 1").hover();
-  await row("Test 1").getByRole("button", { name: "+ Add to chat" }).click();
-  await expect(page).toHaveURL(/\/chat$/);
-  await expect(chips(page).getByRole("listitem")).toHaveText(["Test 1 1"]);
-  await page.goBack();
-
-  // Several: tick them, then add them together.
-  await row("Test 2").getByRole("checkbox", { name: "Choose Test 2" }).check();
-  await row("Test 5").getByRole("checkbox", { name: "Choose Test 5" }).check();
-  await expect(page.getByText("2 chosen")).toBeVisible();
+  // Each row: its own Ask Rufi, shown on the pointer; the page stays.
+  for (const test of ["Test 1", "Test 5"]) {
+    await row(test).hover();
+    await row(test).getByRole("button", { name: "Ask Rufi" }).click();
+  }
+  expect(page.url()).toBe(documentPage);
+  await expect(added(bar)).toHaveText("Test 1 1 +1");
   await accessible(page);
-  const saved = page.waitForResponse(
-    (response) =>
-      response.url().endsWith("/chat/draft") &&
-      response.request().method() === "PUT" &&
-      response.request().postData()?.includes("drf-5") === true,
-  );
-  await page.getByRole("button", { name: "Add 2 to chat" }).click();
-  await expect(page).toHaveURL(/\/chat$/);
-  await expect(chips(page).getByRole("listitem")).toHaveText([
-    "Test 1 1",
-    "Test 2 2",
-    "Test 5 5",
-  ]);
-  await saved;
   await page.reload();
-  await expect(chips(page).getByRole("listitem")).toHaveText([
+  await box(bar).click();
+  await expect(chips(bar).getByRole("listitem")).toHaveText([
     "Test 1 1",
-    "Test 2 2",
     "Test 5 5",
   ]);
 
-  await box(page).fill("Save these");
-  await box(page).press("Enter");
-  await expect(box(page)).toHaveValue("");
-  await expect(log(page).locator(".reply")).toHaveText(/^ok:Save these/);
+  await box(bar).fill("Save these");
+  await box(bar).press("Enter");
+  await expect(box(bar)).toHaveValue("");
+  await expect(log(bar).locator(".reply")).toHaveText(/^ok:Save these/);
   expect((await inputs(rufi)).at(-1)?.at(-1)).toBe(
-    "Save these\n\nReferences the user added to this message (Rufi's, exact: read them with your tools):\n- draft item drf-1, version 1: Test 1 1\n- draft item drf-2, version 1: Test 2 2\n- draft item drf-5, version 1: Test 5 5",
+    "Save these\n\nReferences the user added to this message (Rufi's, exact: read them with your tools):\n- draft item drf-1, version 1: Test 1 1\n- draft item drf-5, version 1: Test 5 5",
   );
 });

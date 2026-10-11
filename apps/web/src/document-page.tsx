@@ -4,8 +4,9 @@
 // keeps the reader's; it names the item's version, so a fix made on an older
 // one (another tab fixed it first) is refused with the value as it is now.
 // Nothing here saves to the record: "Save these in the chat" puts the words
-// in the chat box, and the person sends them. An item goes into the chat as
-// a chip too: "+ Add to chat" on its row, or several ticked at once.
+// in the chat box, and the person sends them. An item goes
+// into the chat as a chip too: Ask Rufi on its row. The page stays, to read
+// beside what you write.
 import {
   DocumentItems,
   DraftItem,
@@ -14,18 +15,18 @@ import {
 } from "@rufi/contracts/documents";
 import type { Person } from "@rufi/contracts";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
 import { Schema } from "effect";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useStore } from "zustand";
 import { ApiError, fetchFile, read } from "./api.ts";
+import { AskRufi, ASKS } from "./ask.tsx";
 import { boxFor } from "./boxes.ts";
 import { printedDate, printedDay } from "./dates.ts";
 import { describe, KIND_NAMES, Viewer } from "./documents.tsx";
 import type { BoxChip } from "./draft.ts";
 import { messageOf, retain } from "./live.ts";
-import { useShowChat } from "./panel.ts";
+import { askRufi } from "./panel.ts";
 import { queries, useDocuments } from "./reads.ts";
 import { openReading, RetryButton, TextButton } from "./reading.tsx";
 import { Button, Problem } from "./ui.tsx";
@@ -116,18 +117,6 @@ function Checking({
   const [fixing, setFixing] = useState<string | undefined>(undefined);
   const [shown, setShown] = useState(items.items[0]?.page ?? 1);
   const [original, setOriginal] = useState(false);
-  const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
-  const [problem, setProblem] = useState<string | null>(null);
-  const showChat = useShowChat(person.id);
-  const addToChat = (chosen: readonly Item[]) => {
-    if (boxFor(person.id).append("", chosen.map(chipOf))) {
-      setTicked(new Set());
-      setProblem(null);
-      showChat();
-    } else {
-      setProblem("A message is being sent: add these again in a moment.");
-    }
-  };
   const { name } = describe(document);
   const pending = items.items.filter((i) => i.status === "pending");
   // Results are current values only, as the Documents page and the chat's
@@ -153,7 +142,7 @@ function Checking({
   ].join(" · ");
 
   return (
-    <div className="flex h-full min-h-[560px] flex-col">
+    <div className="flex h-full min-h-[420px] flex-col">
       <div className="flex flex-wrap items-center gap-2.5 px-5 pt-3.5 pb-2.5">
         <div className="min-w-0 flex-1">
           <h2 className="truncate">
@@ -231,15 +220,8 @@ function Checking({
                 setShown(item.page);
               }}
               fix={setFixing}
-              ticked={ticked}
-              tick={(item) => {
-                const next = new Set(ticked);
-                if (next.has(item.id)) next.delete(item.id);
-                else next.add(item.id);
-                setTicked(next);
-              }}
               add={(item) => {
-                addToChat([item]);
+                askRufi(person.id, [chipOf(item)]);
               }}
             />
           </div>
@@ -255,48 +237,18 @@ function Checking({
       </div>
 
       <div className="flex items-center gap-2.5 border-t border-line bg-surface px-5 py-2.5">
-        {ticked.size > 0 ? (
-          <>
-            <span className="font-semibold">{ticked.size} chosen</span>
-            {problem !== null && (
-              <span role="alert" className="text-muted">
-                {problem}
-              </span>
-            )}
-            <span className="flex-1" />
-            <Button
-              onClick={() => {
-                setTicked(new Set());
-              }}
-            >
-              Clear
-            </Button>
-            <Button
-              look="main"
-              onClick={() => {
-                addToChat(items.items.filter((i) => ticked.has(i.id)));
-              }}
-            >
-              Add {ticked.size} to chat
-            </Button>
-          </>
-        ) : (
-          <>
-            <span className="text-muted">
-              {problem ??
-                (pending.length === 0
-                  ? "Nothing here waits to be saved."
-                  : `Not saved yet: ${left}.`)}
-            </span>
-            <span className="flex-1" />
-            <SaveInChat
-              personId={person.id}
-              document={document}
-              name={name}
-              count={results.length}
-            />
-          </>
-        )}
+        <span className="text-muted">
+          {pending.length === 0
+            ? "Nothing here waits to be saved."
+            : `Not saved yet: ${left}.`}
+        </span>
+        <span className="flex-1" />
+        <SaveInChat
+          personId={person.id}
+          document={document}
+          name={name}
+          count={results.length}
+        />
       </div>
 
       {original && (
@@ -333,8 +285,6 @@ function Items({
   fixing,
   select,
   fix,
-  ticked,
-  tick,
   add,
 }: {
   personId: string;
@@ -349,9 +299,6 @@ function Items({
   fixing: string | undefined;
   select: (item: Item) => void;
   fix: (id: string | undefined) => void;
-  /** Items chosen to add to the chat together. */
-  ticked: ReadonlySet<string>;
-  tick: (item: Item) => void;
   add: (item: Item) => void;
 }) {
   if (status === "not_read" || status === "reading") {
@@ -424,11 +371,6 @@ function Items({
                   select(item);
                 }}
                 fix={fix}
-                ticked={ticked.has(item.id)}
-                selecting={ticked.size > 0}
-                tick={() => {
-                  tick(item);
-                }}
                 add={() => {
                   add(item);
                 }}
@@ -464,9 +406,6 @@ function Row({
   fixing,
   select,
   fix,
-  ticked,
-  selecting,
-  tick,
   add,
 }: {
   personId: string;
@@ -476,10 +415,6 @@ function Row({
   fixing: boolean;
   select: () => void;
   fix: (id: string | undefined) => void;
-  ticked: boolean;
-  /** Some item is ticked: the rows' own adds hide. */
-  selecting: boolean;
-  tick: () => void;
   add: () => void;
 }) {
   const { fields } = item;
@@ -490,21 +425,9 @@ function Row({
     <>
       <tr
         onClick={select}
-        className={`group cursor-pointer ${selected || ticked ? "bg-accent-soft" : "hover:bg-page"} ${done ? "text-muted" : ""}`}
+        className={`group cursor-pointer ${selected ? "bg-accent-soft" : "hover:bg-page"} ${done ? "text-muted" : ""}`}
       >
         <td className={cell}>
-          {!done && (
-            <input
-              type="checkbox"
-              aria-label={`Choose ${fields.test_name}`}
-              checked={ticked}
-              onClick={(event) => {
-                event.stopPropagation();
-              }}
-              onChange={tick}
-              className={`mr-1.5 size-[15px] align-[-2px] accent-accent ${selecting ? "" : "opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"}`}
-            />
-          )}
           <button
             type="button"
             aria-pressed={selected}
@@ -558,17 +481,14 @@ function Row({
               Fix
             </TextButton>
           )}
-          {!done && !selecting && (
-            <button
-              type="button"
+          {!done && (
+            <AskRufi
+              className="ml-1"
               onClick={(event) => {
                 event.stopPropagation();
                 add();
               }}
-              className="ml-1 rounded-lg border border-line bg-surface px-2 py-px text-xs whitespace-nowrap text-accent-ink opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus:opacity-100"
-            >
-              + Add to chat
-            </button>
+            />
           )}
         </td>
       </tr>
@@ -837,8 +757,8 @@ function PageImage({ path, alt }: { path: string; alt: string }) {
 }
 
 /**
- * Puts the words to save this document's results in the chat box, after
- * what is there, with the document's chip, and opens the chat; the person
+ * Puts the words to save this document's results in the chat bar, after
+ * what is there, with the document's chip; the page stays, and the person
  * sends them.
  */
 function SaveInChat({
@@ -856,16 +776,16 @@ function SaveInChat({
   const loaded = useStore(box.store, (state) => state.loaded);
   const sending = useStore(box.store, (state) => state.sending);
   const unresolved = useStore(box.store, (state) => state.unresolved);
-  const navigate = useNavigate();
   return (
     <Button
       look="main"
+      {...ASKS}
       disabled={count === 0 || !loaded || sending || unresolved}
       onClick={() => {
         // The document's chip: the core names it and stamps its version
         // when the message is sent.
-        const added = box.append(
-          `${count === 1 ? "Save this result" : `Save these ${String(count)} results`}.`,
+        askRufi(
+          personId,
           [
             {
               pointer: { type: "document", id: document.id },
@@ -873,13 +793,8 @@ function SaveInChat({
               detail: "",
             },
           ],
+          `${count === 1 ? "Save this result" : `Save these ${String(count)} results`}.`,
         );
-        if (added) {
-          void navigate({
-            to: "/people/$personId/chat",
-            params: { personId },
-          });
-        }
       }}
     >
       {sending

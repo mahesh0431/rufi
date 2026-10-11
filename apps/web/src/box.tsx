@@ -5,7 +5,9 @@
 // only when the core took the message, and nothing is sent again by itself.
 // The model and effort are chosen beside Send; what waits shows above the
 // box. Chips (references to documents, draft items and records) sit above
-// the text and go with it; the paperclip adds files as documents.
+// the text and go with it; a document's chip says what Rufi is doing with
+// it. The paperclip adds files as documents. The bar shows what was added,
+// small: the first chip's name and how many more.
 import {
   MAX_MESSAGE_CHARS,
   MAX_REFS,
@@ -26,11 +28,18 @@ import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
 import { AttachButton, AttachStatus } from "./attach.tsx";
 import { boxFor } from "./boxes.ts";
-import { ChipView } from "./chips.tsx";
-import { type BoxState, chipKey, tooLong, tooMany } from "./draft.ts";
+import { ChipView, useChipStates } from "./chips.tsx";
+import {
+  type BoxChip,
+  type BoxState,
+  chipKey,
+  tooLong,
+  tooMany,
+} from "./draft.ts";
 import { chatPath, type Live, messageOf } from "./live.ts";
 import { ReaderStrip } from "./reading.tsx";
 import { ModelMenu } from "./model-menu.tsx";
+import { usePanel } from "./panel.ts";
 import { isRunning } from "./transcript-state.ts";
 import { Button } from "./ui.tsx";
 
@@ -66,6 +75,8 @@ export function Box({
   const saved = useStore(box.store, saveState);
   const notice = useStore(box.store, (state) => state.notice);
   const chips = useStore(box.store, (state) => state.refs);
+  const refused = usePanel((state) => state.refused);
+  const stateOf = useChipStates(person.id);
   const running = useStore(live, isRunning);
   const [problem, setProblem] = useState<string | null>(null);
   const long = tooLong(text);
@@ -111,6 +122,7 @@ export function Box({
         onClick={onOpen}
         onChange={(event) => {
           box.type(event.target.value);
+          if (refused !== null) usePanel.setState({ refused: null });
         }}
         onKeyDown={(event) => {
           if (
@@ -170,7 +182,8 @@ export function Box({
       )}
       {size !== "bar" && <AttachStatus personId={person.id} />}
       {size === "bar" ? (
-        <div className="flex items-center gap-1.5 py-1.5 pr-1.5 pl-4">
+        <div className="flex items-center gap-1.5 py-1.5 pr-1.5 pl-3">
+          <Added chips={chips} />
           {running ? (
             <button
               type="button"
@@ -198,6 +211,7 @@ export function Box({
                 <li key={chipKey(chip)} className="max-w-full">
                   <ChipView
                     chip={chip}
+                    state={stateOf(chip.pointer)}
                     {...(!locked && {
                       onRemove: () => {
                         box.remove(chip);
@@ -249,16 +263,40 @@ export function Box({
           )}
         </p>
       )}
-      {(notice || problem || long || many) && (
+      {(notice || problem || refused || long || many) && (
         <p role="alert" className="px-3.5 pb-2 text-muted">
           {long
             ? `Too long to keep or send: at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters, and this is ${text.length.toLocaleString("en")}.`
             : many
               ? `Too many added to keep or send: at most ${String(MAX_REFS)}, and this has ${String(chips.length)}. Take some out.`
-              : (notice ?? problem)}
+              : (notice ?? problem ?? refused)}
         </p>
       )}
     </form>
+  );
+}
+
+/** In the bar: what is added to the message, as its first chip and how many more. */
+function Added({ chips }: { chips: readonly BoxChip[] }) {
+  const first = chips[0];
+  if (first === undefined) return null;
+  return (
+    <span
+      role="status"
+      aria-label="Added to this message"
+      title={chips.map((chip) => chip.label).join("\n")}
+      className="inline-flex max-w-[180px] shrink-0 items-center gap-1 rounded-lg border border-line bg-side px-1.5 text-xs"
+    >
+      <span className="truncate">
+        {first.label === "" ? "Adding…" : first.label}
+      </span>
+      {chips.length > 1 && (
+        <span className="font-semibold text-accent-ink">
+          {" "}
+          +{chips.length - 1}
+        </span>
+      )}
+    </span>
   );
 }
 

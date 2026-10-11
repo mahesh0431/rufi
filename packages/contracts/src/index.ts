@@ -25,13 +25,15 @@ const Id = Line(100);
 export const MAX_REFS = 100;
 
 /**
- * What the box points at: a document, a draft item or a saved record of
- * the chat's person. Checked against the person when added and when sent.
+ * What the box points at: a document, a draft item, a saved record or a
+ * report (its results) of the chat's person. Checked against the person when
+ * added and when sent.
  */
 export const Pointer = Schema.Union([
   Schema.Struct({ type: Schema.Literal("document"), id: Id }),
   Schema.Struct({ type: Schema.Literal("draft_item"), id: Id }),
   Schema.Struct({ type: Schema.Literal("record"), kind: Line(40), id: Id }),
+  Schema.Struct({ type: Schema.Literal("report"), id: Id }),
 ]);
 export type Pointer = typeof Pointer.Type;
 
@@ -42,7 +44,8 @@ const Version = Schema.Int.check(Schema.isGreaterThan(0));
  * the message was sent (in the box: its version now). A document's version
  * rises when its draft items change; a draft item's when it is fixed or
  * dismissed; a record's is the save that last changed it (null for one no
- * save has changed). The AI reads it with its tools; a save refuses an item
+ * save has changed); a report's, the save that last changed any of its
+ * results. The AI reads it with its tools; a save refuses an item
  * whose message's reference has moved on since.
  */
 export const Ref = Schema.Union([
@@ -59,6 +62,11 @@ export const Ref = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("record"),
     kind: Line(40),
+    id: Id,
+    version: Schema.NullOr(Id),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("report"),
     id: Id,
     version: Schema.NullOr(Id),
   }),

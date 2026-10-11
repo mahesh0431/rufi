@@ -69,7 +69,8 @@ async function documentsPage(page: Page, rufi: Rufi, empty = false) {
   ).toBeVisible();
 }
 
-const picker = (page: Page) => page.getByLabel("Choose documents");
+const picker = (page: Page) =>
+  page.getByLabel("Choose documents", { exact: true });
 const rows = (page: Page) =>
   page.getByRole("row").filter({ hasNot: page.getByRole("columnheader") });
 
