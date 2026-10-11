@@ -485,13 +485,14 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
 }
 
 /**
- * A time the AI thought: while it thinks, "Thinking…" and its summary's
- * latest heading; then "Thought for 8s", which opens the whole summary. A
- * finished one with no summary has nothing to open, so it shows nothing.
- * A cut step uses its turn's end; after a crash the end is unknown.
+ * A time the AI thought, as the core says: while it thinks, "Thinking…" and
+ * its summary's latest heading; then "Thought for 8s", which opens the whole
+ * summary. A finished one with no summary has nothing to open, so it shows
+ * nothing. A step cut by its reply's end runs until that end; after a crash
+ * (a reply interrupted with no reason) nobody knows when it ended.
  */
 function Thinking({ entry, turn }: { entry: Entry; turn: Turn | undefined }) {
-  if (turn?.status === "running" && entry.status === "running") {
+  if (entry.status === "running") {
     const heading = latestHeading(entry.text);
     return (
       <p
