@@ -66,7 +66,7 @@ test("a document with saved results is blocked with Ask Rufi; one without goes, 
 
   // Blocked: the September photo's results are in the record.
   await openDocument(page, "thyroid recheck.jpg");
-  await page.getByRole("button", { name: "Delete document" }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(
     dialog.getByRole("heading", {
@@ -87,7 +87,7 @@ test("a document with saved results is blocked with Ask Rufi; one without goes, 
 
   // Deletable: what goes, what stays, and what Rufi can't reach.
   await openDocument(page, "Sunrise Labs August.pdf");
-  await page.getByRole("button", { name: "Delete document" }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(
     dialog.getByRole("heading", { name: "Delete Sunrise Labs August.pdf?" }),
   ).toBeVisible();
@@ -96,7 +96,7 @@ test("a document with saved results is blocked with Ask Rufi; one without goes, 
     "Its backups keep this document until they age out",
   );
   await accessible(page);
-  await dialog.getByRole("button", { name: "Delete document" }).click();
+  await dialog.getByRole("button", { name: "Delete", exact: true }).click();
 
   await expect(page).toHaveURL(/\/documents$/);
   await expect(

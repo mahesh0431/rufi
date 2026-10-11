@@ -195,8 +195,8 @@ The originals are in the `files` folder in your data folder, each named by its c
 Delete a document that you added by mistake, for example someone else's report or a blurred copy. This removes the document from Rufi. To take one wrong result out of your health record and keep the document, ask the AI in the chat instead (see [Undo](chat.md#undo)).
 
 1. Open the document's page: click its name on the Documents page.
-2. Click **Delete document**. Rufi shows what goes and what stays.
-3. Click **Delete document** again.
+2. Click **Delete**. Rufi shows what goes and what stays.
+3. Click **Delete** again.
 
 Rufi goes back to the Documents page, and a line in the chat says **Deleted Sunrise Labs August.pdf**.
 

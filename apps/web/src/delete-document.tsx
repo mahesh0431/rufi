@@ -1,4 +1,4 @@
-// Delete document, on a document's page: a preview of what goes and what
+// Delete, on a document's page: a preview of what goes and what
 // stays, then the delete (docs/help/documents.md). While results saved from
 // the document are in the record, it can't be deleted: the preview lists
 // them, and Ask Rufi puts the document in the chat to remove them, or take
@@ -9,6 +9,7 @@ import { Dialog } from "@base-ui/react/dialog";
 import { DeletePreview } from "@rufi/contracts/documents";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { Trash2 } from "lucide-react";
 import { Schema } from "effect";
 import { useState } from "react";
 import { ApiError, read } from "./api.ts";
@@ -57,7 +58,8 @@ export function DeleteDocument({
           setOpen(true);
         }}
       >
-        Delete document
+        <Trash2 size={13} aria-hidden />
+        Delete
       </Button>
       {open && (
         <Dialog.Root
@@ -269,7 +271,8 @@ function Preview({
               }
             }}
           >
-            {remove.isPending ? "Deleting…" : "Delete document"}
+            <Trash2 size={13} aria-hidden />
+            {remove.isPending ? "Deleting…" : "Delete"}
           </Button>
         )}
       </div>

@@ -2,7 +2,7 @@
 
 **Date:** 11 Oct 2026 · **Status:** accepted
 
-A document added by mistake (someone else's report, a blurred copy) must be removable from Rufi, not only hidden: its original, the pages drawn from it, the reader's work, its readings and its draft items. A document and its draft items aren't the record (ADR 0005), so deleting one is a screen action, like adding one: **Delete document** on its page, a preview, a confirm. There is no AI tool; the AI can't delete.
+A document added by mistake (someone else's report, a blurred copy) must be removable from Rufi, not only hidden: its original, the pages drawn from it, the reader's work, its readings and its draft items. A document and its draft items aren't the record (ADR 0005), so deleting one is a screen action, like adding one: **Delete** on its page, a preview, a confirm. There is no AI tool; the AI can't delete.
 
 **Chat first for saved results.** The record still changes only by a save in the chat. While a record that isn't removed (current, or replaced by an amendment, which comes back if that one is removed) rests on a page of the document by a source no save took off, the delete is refused, and the preview lists those records. The person removes them, or takes the document off one that has another source (`remove_source`), in the chat; which of the two is the AI's call with the person, not code's. Removed records don't block. The check runs again inside the delete's transaction.
 
