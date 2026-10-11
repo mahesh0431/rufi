@@ -247,11 +247,14 @@ function chat(api: Api) {
         for (let i = 0; i < 600; i++) {
           const { turns } = await read();
           const waiting = (await api("GET", `${path}/queue`)) as {
-            items: unknown[];
+            items: { origin: string; held: string | null }[];
           };
+          // Rufi's notes that ride with the next message wait for it.
           if (
             turns.every((t) => t.status !== "running") &&
-            waiting.items.length === 0
+            waiting.items.every(
+              (item) => item.origin === "rufi" && item.held === "paused",
+            )
           )
             return turns.length;
           await sleep(500);
