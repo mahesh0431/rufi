@@ -4,7 +4,15 @@
 // made again when missing, never backed up; so are pages drawn for the AI,
 // in cache/pages/.
 import { constants } from "node:fs";
-import { copyFile, mkdir, open, rename, rm, stat } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  open,
+  readdir,
+  rename,
+  rm,
+  stat,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { sha256, tempPath } from "../../platform/files.ts";
 
@@ -21,6 +29,53 @@ export const pageTextPath = (home: string, id: string, page: number) =>
 
 /** A file id is the sha256 of its bytes, in hex: nothing else is a path. */
 export const isFileId = (id: string) => /^[0-9a-f]{64}$/.test(id);
+
+/**
+ * The file id a name in files/ or the caches is for: the id itself, a
+ * display copy (<id>.jpg), or a temporary file of either. Undefined for a
+ * name that isn't Rufi's.
+ */
+const idOfName = (name: string) =>
+  /^([0-9a-f]{64})(?:\.jpg)?(?:\.[0-9a-f-]{36}\.tmp)?$/.exec(name)?.[1];
+
+/** Removes an original and its caches (display copy, drawn pages). */
+export async function removeBytes(home: string, id: string): Promise<void> {
+  if (!isFileId(id)) return;
+  await rm(originalPath(home, id), { force: true });
+  await rm(displayPath(home, id), { force: true });
+  await rm(join(home, "cache", "pages", id), { recursive: true, force: true });
+}
+
+/**
+ * Removes the originals and caches that no file in `live` names: what a
+ * delete left when Rufi stopped between its commit and its removal, and
+ * what an add or a cache left half written. Names that aren't Rufi's stay.
+ * Only at start, before anything else uses the files.
+ */
+export async function sweepBytes(
+  home: string,
+  live: ReadonlySet<string>,
+): Promise<number> {
+  let removed = 0;
+  const sweep = async (folder: string) => {
+    const names = await readdir(folder).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    });
+    for (const name of names) {
+      const id = idOfName(name);
+      if (id === undefined || (live.has(id) && !name.endsWith(".tmp"))) {
+        continue;
+      }
+      await rm(join(folder, name), { recursive: true, force: true });
+      removed++;
+    }
+  };
+  await sweep(filesPath(home));
+  await sweep(join(home, "cache", "display"));
+  await sweep(join(home, "cache", "pages"));
+  return removed;
+}
 
 /** Writes and syncs a file, its folder too, then puts it in place in one step. */
 async function writeSynced(path: string, bytes: Uint8Array): Promise<void> {

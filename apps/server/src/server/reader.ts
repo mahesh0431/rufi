@@ -26,7 +26,12 @@ import {
   readerInput,
 } from "../core/documents/reader-instructions.ts";
 import { forReader } from "../core/documents/reader-tools.ts";
-import type { Job, Readings, Usage } from "../core/documents/reading.ts";
+import {
+  ReadingGone,
+  type Job,
+  type Readings,
+  type Usage,
+} from "../core/documents/reading.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import type { Chat } from "./chat.ts";
 
@@ -107,6 +112,8 @@ export function reader(deps: ReaderDeps) {
   /** A poke while no rest waits: the next rest ends at once. */
   let poked = false;
   let loop: Promise<void> | undefined;
+  /** The run under way: the delete of its document stops it. */
+  let current: { documentId: string; stop: AbortController } | undefined;
 
   const poke = () => {
     poked = true;
@@ -127,18 +134,31 @@ export function reader(deps: ReaderDeps) {
       if (poked || stop.signal.aborted) done();
     });
 
+  /** A reading whose document was deleted meanwhile ends here, quietly. */
+  const unlessGone = async (work: Promise<void>) => {
+    try {
+      await work;
+    } catch (error) {
+      if (!(error instanceof ReadingGone)) throw error;
+    }
+  };
+
   /** Ends a run that completed: drafts, page states, the end line, the ask. */
   const finish = async (run: Run) => {
     const end = await readings.ending(run);
-    await deps.event(
-      run.personId,
-      {
-        kind: "document_read",
-        line: end.line,
-        facts: end.facts,
-        ...(end.ask !== undefined && { ask: end.ask }),
-      },
-      (trx) => readings.finish(trx, run),
+    await unlessGone(
+      deps.event(
+        run.personId,
+        {
+          kind: "document_read",
+          line: end.line,
+          facts: end.facts,
+          ...(end.ask !== undefined && { ask: end.ask }),
+        },
+        async (trx) => {
+          await readings.finish(trx, run);
+        },
+      ),
     );
     readings.changed(run.personId);
   };
@@ -146,16 +166,39 @@ export function reader(deps: ReaderDeps) {
   /** Ends a reading as failed: its entries kept, no drafts, the end line. */
   const fail = async (run: Run, why: string) => {
     const end = await readings.ending(run, why);
-    await deps.event(
-      run.personId,
-      { kind: "document_read", line: end.line, facts: end.facts },
-      (trx) => readings.fail(trx, run, why),
+    await unlessGone(
+      deps.event(
+        run.personId,
+        { kind: "document_read", line: end.line, facts: end.facts },
+        async (trx) => {
+          await readings.fail(trx, run, why);
+        },
+      ),
     );
     readings.changed(run.personId);
   };
 
   /** One run of a reading, from its start to its end or its next wait. */
   const runJob = async (job: Job, runSubAgent: RunSubAgent) => {
+    const mine = { documentId: job.documentId, stop: new AbortController() };
+    current = mine;
+    try {
+      await runOnce(job, runSubAgent, mine.stop.signal);
+    } catch (error) {
+      if (!(error instanceof ReadingGone)) throw error;
+    } finally {
+      if (current === mine) current = undefined;
+    }
+  };
+
+  /** One run; `deleted` aborts when its document is deleted. */
+  const runOnce = async (
+    job: Job,
+    runSubAgent: RunSubAgent,
+    deleted: AbortSignal,
+  ) => {
+    /** Rufi is stopping, or the document is gone: nothing more is written. */
+    const ended = () => stop.signal.aborted || deleted.aborted;
     let run: Run | undefined;
     if (job.startedAt === null) {
       // The start line once per reading, with its first real start.
@@ -206,11 +249,11 @@ export function reader(deps: ReaderDeps) {
           },
           deadlineMs: (deps.deadlineMs ?? deadlineFor)(job.targets.length),
         },
-        stop.signal,
+        AbortSignal.any([stop.signal, deleted]),
       );
     } catch (error) {
       started.closed = true;
-      if (stop.signal.aborted) return;
+      if (ended()) return;
       log("reader.failed", { error: errorCode(error) });
       if (
         error instanceof ChatGptError &&
@@ -244,8 +287,9 @@ export function reader(deps: ReaderDeps) {
       ms: Date.now() - t0,
       count: counts.saves,
     });
-    // Rufi is stopping: the next start queues the reading again.
-    if (stop.signal.aborted) return;
+    // Rufi is stopping: the next start queues the reading again. Or the
+    // document was deleted: its reading is gone.
+    if (ended()) return;
     const usage: Usage = {
       inputTokens: outcome.usage?.inputTokens ?? 0,
       cachedInputTokens: outcome.usage?.cachedInputTokens ?? 0,
@@ -320,6 +364,10 @@ export function reader(deps: ReaderDeps) {
     },
     /** Something was queued or changed: look again now. */
     poke,
+    /** The document was deleted: its run, when one is under way, stops. */
+    stopDocument: (documentId: string) => {
+      if (current?.documentId === documentId) current.stop.abort();
+    },
     /** Stops: a running reading is interrupted and left for the next start. */
     close: async () => {
       stop.abort();

@@ -80,6 +80,11 @@ export const Chip = Schema.Struct({
   label: Schema.String,
   /** Where it comes from, for the hover: "Draft item · not saved · page 2". */
   detail: Schema.String,
+  /**
+   * Its document was deleted after it was sent: it keeps its name and
+   * opens nothing.
+   */
+  deleted: Schema.optionalKey(Schema.Literal(true)),
 });
 export type Chip = typeof Chip.Type;
 

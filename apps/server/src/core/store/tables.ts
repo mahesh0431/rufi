@@ -82,7 +82,7 @@ export interface Tables {
     person_id: string;
     document_id: string;
     position: number;
-    file_id: string;
+    file_id: string | null;
     page_in_file: number;
     file_name: string;
     entry: string | null;
@@ -102,6 +102,7 @@ export interface Tables {
     date: string | null;
     reader_note: string | null;
     version: number;
+    deleted_at: string | null;
   };
   draft_items: {
     id: string;

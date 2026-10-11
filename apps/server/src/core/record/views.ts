@@ -324,6 +324,11 @@ async function sourcesOf(
         .onRef("p.document_id", "=", "s.document_id")
         .onRef("p.position", "=", "s.page"),
     )
+    .leftJoin("documents as d", (join) =>
+      join
+        .onRef("d.person_id", "=", "s.person_id")
+        .onRef("d.id", "=", "s.document_id"),
+    )
     .leftJoin("transcript_entries as e", (join) =>
       join
         .onRef("e.person_id", "=", "s.person_id")
@@ -335,6 +340,7 @@ async function sourcesOf(
       "s.document_id",
       "s.page",
       "p.file_name",
+      "d.deleted_at",
       "e.text",
       "e.created_at",
     ])
@@ -357,6 +363,7 @@ async function sourcesOf(
           document: source.document_id ?? "",
           page: source.page ?? 0,
           file: source.file_name ?? "",
+          deleted: source.deleted_at !== null,
         },
   );
 }

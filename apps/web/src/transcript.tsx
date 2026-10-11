@@ -415,9 +415,9 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
           aria-label="Added to this message"
           className="mb-1 flex flex-wrap gap-1.5"
         >
-          {entry.refs.map(({ ref, label, detail }) => (
+          {entry.refs.map(({ ref, label, detail, deleted }) => (
             <li key={`${ref.type}:${ref.id}`} className="max-w-full">
-              <ChipView chip={{ pointer: ref, label, detail }} />
+              <ChipView chip={{ pointer: ref, label, detail, deleted }} />
             </li>
           ))}
         </ul>

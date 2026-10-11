@@ -15,6 +15,7 @@ import {
 import { join } from "node:path";
 import { backup, DatabaseSync } from "node:sqlite";
 import { Schema } from "effect";
+import type { FileGate } from "../documents/gate.ts";
 import {
   checkOriginal,
   copyOriginal,
@@ -184,7 +185,9 @@ function nameFor(at: Date): string {
  * Makes a backup: copies the database into a new private staging folder,
  * checks it, writes its record, checks it all again, and only then gives it
  * its name in `folder` (`backups/` unless given). A failed or stopped one
- * leaves only staging, which never counts.
+ * leaves only staging, which never counts. The copy of the database and of
+ * its originals is made inside the running Rufi's file `gate`, so a delete
+ * never removes an original the copy names.
  */
 export async function makeBackup(
   home: string,
@@ -192,17 +195,21 @@ export async function makeBackup(
   {
     copy = backup,
     folder = backupsPath(home),
-  }: { copy?: Copy; folder?: string } = {},
+    gate,
+  }: { copy?: Copy; folder?: string; gate?: FileGate } = {},
 ): Promise<Backup> {
   await mkdir(folder, { recursive: true, mode: 0o700 });
   const staging = await mkdtemp(join(folder, STAGING));
   try {
     const database = join(staging, "rufi.sqlite");
-    await copyDatabase(databasePath(home), database, copy);
-    await mkdir(join(staging, "files"), { mode: 0o700 });
-    for (const { id, size } of filesIn(database)) {
-      await copyOriginal(filesPath(home), join(staging, "files"), id, size);
-    }
+    const copyAll = async () => {
+      await copyDatabase(databasePath(home), database, copy);
+      await mkdir(join(staging, "files"), { mode: 0o700 });
+      for (const { id, size } of filesIn(database)) {
+        await copyOriginal(filesPath(home), join(staging, "files"), id, size);
+      }
+    };
+    await (gate ? gate.run(copyAll) : copyAll());
     const record: BackupRecord = {
       format: "rufi-backup",
       version: 1,
@@ -372,7 +379,7 @@ const HOUR_MS = 60 * 60 * 1000;
 export function backupJob(
   home: string,
   log: Log,
-  options: { now?: () => Date; copy?: Copy } = {},
+  options: { now?: () => Date; copy?: Copy; gate?: FileGate } = {},
 ) {
   const now = options.now ?? (() => new Date());
   /** The start's work or a backup, which Back up now and the hourly look join. */
@@ -393,11 +400,10 @@ export function backupJob(
   const attempt = async (): Promise<Backup> => {
     const started = Date.now();
     try {
-      const made = await makeBackup(
-        home,
-        now(),
-        options.copy && { copy: options.copy },
-      );
+      const made = await makeBackup(home, now(), {
+        ...(options.copy && { copy: options.copy }),
+        ...(options.gate && { gate: options.gate }),
+      });
       last = made;
       failed = undefined;
       log("backup.made", { ms: Date.now() - started });

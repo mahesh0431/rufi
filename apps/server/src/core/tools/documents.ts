@@ -73,7 +73,8 @@ export const getDocuments = defineTool({
       let query = db
         .selectFrom("documents")
         .select(["id", "added_at", "kind", "date"])
-        .where("person_id", "=", personId);
+        .where("person_id", "=", personId)
+        .where("deleted_at", "is", null);
       if (input.after !== undefined) {
         const last = await db
           .selectFrom("documents")
@@ -130,10 +131,15 @@ export const getDocuments = defineTool({
 
     const document = await db
       .selectFrom("documents")
-      .select(["id", "added_at", "kind", "date", "version"])
+      .select(["id", "added_at", "kind", "date", "version", "deleted_at"])
       .where("person_id", "=", personId)
       .where("id", "=", input.document)
       .executeTakeFirst();
+    if (document?.deleted_at != null) {
+      throw new Refusal(
+        "The user deleted this document from Rufi: its pages and draft items are gone, so there is nothing to read.",
+      );
+    }
     if (!document) {
       throw new Refusal(
         "There is no such document for this person: read the list for its id.",

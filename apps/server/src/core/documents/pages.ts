@@ -6,6 +6,7 @@
 // read pages here, so the AI sees the same page either way.
 import { readFile } from "node:fs/promises";
 import type { Store } from "../store/database.ts";
+import { fileGate, type FileGate } from "./gate.ts";
 import { draw, inspect } from "./inspect.ts";
 import {
   displayPath,
@@ -48,10 +49,34 @@ const readIfThere = (path: string) =>
     },
   );
 
+/**
+ * Keeps what was made from the file `fileId` (a drawn page, a display
+ * copy), inside the file gate and only while the file is still live: what
+ * was made from a file a delete removed meanwhile is dropped.
+ */
+export type Publish = (
+  fileId: string,
+  keep: () => Promise<void>,
+) => Promise<void>;
+
+/** Publish through `gate`, checking the file in `store`. */
+export const publisher =
+  (store: Store, gate: FileGate): Publish =>
+  (fileId, keep) =>
+    gate.run(async () => {
+      const live = await store.query
+        .selectFrom("files")
+        .select("id")
+        .where("id", "=", fileId)
+        .executeTakeFirst();
+      if (live) await keep();
+    });
+
 /** A HEIC's display copy (JPEG), made again when it's missing. */
 export async function displayCopy(
   home: string,
   fileId: string,
+  publish: Publish,
 ): Promise<Uint8Array> {
   const kept = await readIfThere(displayPath(home, fileId));
   if (kept) return kept;
@@ -59,8 +84,9 @@ export async function displayCopy(
   if (!made.ok || !made.display) {
     throw new Error("The photo's display copy couldn't be made.");
   }
-  await keepDisplay(home, fileId, made.display);
-  return made.display;
+  const display = made.display;
+  await publish(fileId, () => keepDisplay(home, fileId, display));
+  return display;
 }
 
 /** A PDF page drawn and its text, from the cache or drawn now and kept. */
@@ -68,6 +94,7 @@ async function drawn(
   home: string,
   fileId: string,
   page: number,
+  publish: Publish,
 ): Promise<{ png: Uint8Array; text: string | undefined } | undefined> {
   const png = await readIfThere(pagePath(home, fileId, page));
   const meta = await readIfThere(pageTextPath(home, fileId, page));
@@ -80,16 +107,19 @@ async function drawn(
   const made = await draw(await readFile(originalPath(home, fileId)), page);
   if (!made.ok) return undefined;
   // The text last: a page counts as kept once both are there.
-  await keepCached(pagePath(home, fileId, page), made.png);
-  await keepCached(
-    pageTextPath(home, fileId, page),
-    new TextEncoder().encode(JSON.stringify({ text: made.text ?? null })),
-  );
+  await publish(fileId, async () => {
+    await keepCached(pagePath(home, fileId, page), made.png);
+    await keepCached(
+      pageTextPath(home, fileId, page),
+      new TextEncoder().encode(JSON.stringify({ text: made.text ?? null })),
+    );
+  });
   return made;
 }
 
-export function pages(store: Store, home: string) {
+export function pages(store: Store, home: string, gate: FileGate = fileGate()) {
   const db = store.query;
+  const publish = publisher(store, gate);
   return {
     /** How many pages the person's document has; 0 when it isn't theirs. */
     count: async (personId: string, documentId: string): Promise<number> => {
@@ -126,7 +156,7 @@ export function pages(store: Store, home: string) {
         .orderBy("p.position")
         .execute();
       const row = all.find((p) => p.position === position);
-      if (!row) return undefined;
+      if (row?.file_id == null) return undefined;
       const about = {
         position,
         pages: all.length,
@@ -153,12 +183,17 @@ export function pages(store: Store, home: string) {
             ok: true,
             image: {
               mediaType: "image/jpeg",
-              bytes: await displayCopy(home, row.file_id),
+              bytes: await displayCopy(home, row.file_id, publish),
             },
             text: undefined,
           };
         default: {
-          const made = await drawn(home, row.file_id, row.page_in_file);
+          const made = await drawn(
+            home,
+            row.file_id,
+            row.page_in_file,
+            publish,
+          );
           if (!made) return { ...about, ok: false, reason: "couldnt_prepare" };
           return {
             ...about,

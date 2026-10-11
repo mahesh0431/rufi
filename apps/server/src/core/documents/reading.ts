@@ -56,6 +56,24 @@ export interface Ending {
 
 type Trx = Transaction<Tables>;
 
+/**
+ * The reading is gone: its document was deleted (core/documents/delete.ts).
+ * Whatever of it still runs stops quietly, with nothing written.
+ */
+export class ReadingGone extends Error {}
+
+/** Why a job's guarded update changed nothing: gone, or moved on. */
+async function notRunning(trx: Trx, jobId: string, what: string) {
+  const job = await trx
+    .selectFrom("jobs")
+    .select("id")
+    .where("id", "=", jobId)
+    .executeTakeFirst();
+  return job
+    ? new Error(what)
+    : new ReadingGone("The reading's document was deleted.");
+}
+
 const jobOf = (row: Tables["jobs"]): Job => ({
   id: row.id,
   personId: row.person_id,
@@ -390,7 +408,11 @@ export function readings(
       .where("attempt", "=", job.attempt)
       .executeTakeFirst();
     if (started.numUpdatedRows !== 1n) {
-      throw new Error("The reading changed before it started.");
+      throw await notRunning(
+        trx,
+        job.id,
+        "The reading changed before it started.",
+      );
     }
     return {
       jobId: job.id,
@@ -456,6 +478,7 @@ export function readings(
           .select("id")
           .where("person_id", "=", personId)
           .where("id", "=", documentId)
+          .where("deleted_at", "is", null)
           .executeTakeFirst();
         if (!exists)
           throw new Refusal("There is no such document for this person.");
@@ -694,7 +717,11 @@ export function readings(
         .where("attempt", "=", run.attempt)
         .executeTakeFirst();
       if (ended.numUpdatedRows !== 1n) {
-        throw new Error("The reading isn't running any more.");
+        throw await notRunning(
+          trx,
+          run.jobId,
+          "The reading isn't running any more.",
+        );
       }
     },
 
@@ -714,7 +741,11 @@ export function readings(
         .where("attempt", "=", run.attempt)
         .executeTakeFirst();
       if (ended.numUpdatedRows !== 1n) {
-        throw new Error("The reading isn't running any more.");
+        throw await notRunning(
+          trx,
+          run.jobId,
+          "The reading isn't running any more.",
+        );
       }
       const pages = await trx
         .selectFrom("document_pages")
@@ -906,6 +937,7 @@ export function readings(
         .select(["id", "reader_note"])
         .where("person_id", "=", personId)
         .where("id", "=", documentId)
+        .where("deleted_at", "is", null)
         .executeTakeFirst();
       if (!document) return undefined;
       const job = await latestJob(db, personId, documentId);

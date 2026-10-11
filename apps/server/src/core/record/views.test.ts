@@ -342,6 +342,7 @@ describe("a row opened", () => {
         document: "doc-asha-aug",
         page: 1,
         file: "Sunrise Labs August.pdf",
+        deleted: false,
       },
     ]);
   });

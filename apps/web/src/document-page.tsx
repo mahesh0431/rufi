@@ -23,6 +23,7 @@ import { ApiError, fetchFile, read } from "./api.ts";
 import { AskRufi, ASKS } from "./ask.tsx";
 import { boxFor } from "./boxes.ts";
 import { printedDate, printedDay } from "./dates.ts";
+import { DeleteDocument } from "./delete-document.tsx";
 import { describe, KIND_NAMES, Viewer } from "./documents.tsx";
 import type { BoxChip } from "./draft.ts";
 import { messageOf, retain } from "./live.ts";
@@ -97,7 +98,9 @@ export function DocumentPage({
   if (documents.data === undefined || items.data === undefined) return null;
   if (!document) {
     return (
-      <div className="px-6 py-8 text-muted">There is no such document.</div>
+      <div className="px-6 py-8 text-muted">
+        There is no such document. It may have been deleted.
+      </div>
     );
   }
   return <Checking person={person} document={document} items={items.data} />;
@@ -174,6 +177,11 @@ function Checking({
             The reader's work
           </Button>
         )}
+        <DeleteDocument
+          personId={person.id}
+          documentId={document.id}
+          name={name}
+        />
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 px-5 pb-3.5 md:flex-row">

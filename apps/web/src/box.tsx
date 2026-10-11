@@ -508,10 +508,10 @@ function QueueView({
                     </span>
                     {item.refs.length > 0 && (
                       <span className="mt-0.5 flex flex-wrap gap-1">
-                        {item.refs.map(({ ref, label, detail }) => (
+                        {item.refs.map(({ ref, label, detail, deleted }) => (
                           <ChipView
                             key={`${ref.type}:${ref.id}`}
-                            chip={{ pointer: ref, label, detail }}
+                            chip={{ pointer: ref, label, detail, deleted }}
                           />
                         ))}
                       </span>

@@ -2,7 +2,8 @@
 // icon says what it is (a document, a draft item, a saved record, a
 // report's results), its name
 // is what the page calls it, and the pointer shows where it comes from. In
-// the box, a document's chip also says what Rufi is doing with it.
+// the box, a document's chip also says what Rufi is doing with it. A chip
+// whose document was deleted keeps its name, says so, and is dimmed.
 import type { Pointer } from "@rufi/contracts";
 import {
   Activity,
@@ -46,7 +47,12 @@ export function ChipView({
   state,
   onRemove,
 }: {
-  chip: { pointer: Pointer; label: string; detail: string };
+  chip: {
+    pointer: Pointer;
+    label: string;
+    detail: string;
+    deleted?: true | undefined;
+  };
   /** What Rufi is doing with it: only in the box. */
   state?: ChipState | undefined;
   /** Takes it out of the box; none in a sent message. */
@@ -54,14 +60,25 @@ export function ChipView({
 }) {
   const Icon = ICONS[chip.pointer.type];
   const label = chip.label === "" ? "Adding…" : chip.label;
-  const named = state === undefined ? label : `${label} · ${state.text}`;
+  const named = chip.deleted
+    ? `${label} · document deleted`
+    : state === undefined
+      ? label
+      : `${label} · ${state.text}`;
   return (
     <span
-      title={chip.detail === "" ? named : `${named}\n${chip.detail}`}
-      className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-line bg-side py-px pr-1 pl-2 text-[12.5px]"
+      title={
+        chip.detail === "" || chip.deleted ? named : `${named}\n${chip.detail}`
+      }
+      className={`inline-flex max-w-full items-center gap-1.5 rounded-lg border border-line bg-side py-px pr-1 pl-2 text-[12.5px] ${chip.deleted ? "text-muted" : ""}`}
     >
       <Icon size={13} className="shrink-0 text-muted" aria-hidden />
       <span className="max-w-[220px] truncate">{label}</span>
+      {chip.deleted && (
+        <span className="-ml-1.5 shrink-0 whitespace-nowrap">
+          {" · "}document deleted
+        </span>
+      )}
       {state !== undefined && (
         <span className="-ml-1.5 shrink-0 whitespace-nowrap text-muted">
           {" · "}

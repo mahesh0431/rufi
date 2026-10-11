@@ -59,6 +59,11 @@ export async function chipsOf(
     const chip = await chipOf(db, personId, ref);
     if (!chip) {
       if (drop) continue;
+      if (ref.type === "document" && (await deleted(db, personId, ref.id))) {
+        throw new RefRefusal(
+          "A document added to this message was deleted. Take it out of the message.",
+        );
+      }
       throw new RefRefusal(
         "Something added to this message isn't in this person's record. Take it out of the message and add it again.",
       );
@@ -67,6 +72,16 @@ export async function chipsOf(
   }
   return chips;
 }
+
+/** Whether the person's document `id` was deleted. */
+const deleted = async (db: Kysely<Tables>, personId: string, id: string) =>
+  (await db
+    .selectFrom("documents")
+    .select("id")
+    .where("person_id", "=", personId)
+    .where("id", "=", id)
+    .where("deleted_at", "is not", null)
+    .executeTakeFirst()) !== undefined;
 
 async function chipOf(
   db: Kysely<Tables>,
@@ -90,6 +105,7 @@ async function chipOf(
         .select(["id", "kind", "date", "version"])
         .where("person_id", "=", personId)
         .where("id", "=", ref.id)
+        .where("deleted_at", "is", null)
         .executeTakeFirst();
       if (!document) return undefined;
       return {
@@ -232,7 +248,10 @@ function nounOf(kind: Kind, row: Row): string {
  */
 export function refsForAi(chips: readonly Chip[]): string | undefined {
   if (chips.length === 0) return undefined;
-  const lines = chips.map(({ ref, label }) => {
+  const lines = chips.map(({ ref, label, deleted }) => {
+    if (deleted) {
+      return `- ${ref.type === "document" ? "document" : "draft item"} ${ref.id}: ${label} (its document was deleted: there is nothing to read)`;
+    }
     switch (ref.type) {
       case "document":
         return `- document ${ref.id}, version ${String(ref.version)}: ${label}`;

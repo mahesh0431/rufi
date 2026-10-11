@@ -211,6 +211,8 @@ export const RecordSource = Schema.Union([
     document: Id,
     page: Schema.Int,
     file: Schema.String,
+    /** The document was deleted: its name and page stay, nothing to open. */
+    deleted: Schema.Boolean,
   }),
   Schema.Struct({
     type: Schema.Literal("message"),

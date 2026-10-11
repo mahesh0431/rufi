@@ -23,6 +23,7 @@ export const MIGRATIONS: readonly string[] = [
   read("migrations/0002-save-order.sql"),
   read("migrations/0003-follow-up-notices.sql"),
   read("migrations/0004-result-categories.sql"),
+  read("migrations/0005-deleted-documents.sql"),
 ];
 
 /** What a database file is, read without changing it. */

@@ -20,7 +20,9 @@ import { allowlistFile } from "../core/chat/models.ts";
 import { drafts as openDrafts } from "../core/chat/drafts.ts";
 import { chatQueue } from "../core/chat/queue.ts";
 import { transcripts as openTranscripts } from "../core/chat/transcript.ts";
+import { deletions, sweepFiles } from "../core/documents/delete.ts";
 import { documents } from "../core/documents/documents.ts";
+import { fileGate } from "../core/documents/gate.ts";
 import { notebook } from "../core/documents/notebook.ts";
 import { readings as openReadings } from "../core/documents/reading.ts";
 import { draftItems } from "../core/documents/items.ts";
@@ -163,9 +165,12 @@ export const startCore = (options: CoreOptions) =>
     const drafts = openDrafts(writer, options.now);
     const queue = chatQueue(writer, options.now);
     const readings = openReadings(writer, options.now);
+    // Before anything uses the files: what a delete left when Rufi stopped.
+    yield* attempt(() => sweepFiles(writer, home));
+    const gate = fileGate();
     yield* attempt(() => cleanExportStaging(home));
     const backups = yield* Effect.acquireRelease(
-      Effect.sync(() => backupJob(home, log)),
+      Effect.sync(() => backupJob(home, log, { gate })),
       (job) => Effect.promise(() => job.close()),
     );
     // In the background: a backup never delays or stops the start.
@@ -201,7 +206,7 @@ export const startCore = (options: CoreOptions) =>
               reader,
               transcripts,
               log,
-              reader && pages(reader, home),
+              reader && pages(reader, home, gate),
               (personId, documentId) => readings.retry(personId, documentId),
             ),
           },
@@ -212,8 +217,8 @@ export const startCore = (options: CoreOptions) =>
     );
 
     // The document reader: one reading at a time, in the background.
-    const pageService = pages(reader ?? writer, home);
-    yield* Effect.acquireRelease(
+    const pageService = pages(reader ?? writer, home, gate);
+    const documentReader = yield* Effect.acquireRelease(
       Effect.sync(() => {
         const opened = openReader({
           readings,
@@ -242,7 +247,13 @@ export const startCore = (options: CoreOptions) =>
     const clock = () =>
       options.now === undefined ? new Date() : new Date(options.now());
     const record = recordViews(reader ?? writer, clock);
-    const personDocuments = documents(writer, home, options.now, readings);
+    const personDocuments = documents(
+      writer,
+      home,
+      options.now,
+      readings,
+      gate,
+    );
     const app = api({
       transcripts,
       drafts,
@@ -272,8 +283,18 @@ export const startCore = (options: CoreOptions) =>
           options.folder?.show(home) ??
           Promise.reject(new Error("Finder isn't offered here.")),
       },
-      exportZip: () => exportZip(home, new Date()),
+      exportZip: () => exportZip(home, new Date(), gate),
       documents: personDocuments,
+      deletions: deletions({
+        store: writer,
+        home,
+        gate,
+        event: chat.event,
+        stopReading: documentReader.stopDocument,
+        changed: readings.changed,
+        log,
+        ...(options.now && { now: options.now }),
+      }),
       readings,
       items: draftItems(writer, readings.changed),
       pages: pageService,

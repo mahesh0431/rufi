@@ -411,6 +411,38 @@ it("keeps the backup made before the category upgrade at version 3, and a restor
   );
 });
 
+/** The documents and their pages as stored. */
+function documentsIn(path: string) {
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    return {
+      documents: db.prepare("SELECT * FROM documents ORDER BY id").all(),
+      pages: db
+        .prepare(
+          "SELECT * FROM document_pages ORDER BY person_id, document_id, position",
+        )
+        .all(),
+    };
+  } finally {
+    db.close();
+  }
+}
+
+it("upgrades a record of version 4 so a document can be deleted, every document and page kept as it was and none deleted", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 4));
+  const before = documentsIn(path);
+  expect(before.pages.length).toBeGreaterThan(0);
+
+  (await openRecord(home)).close();
+
+  const after = documentsIn(path);
+  expect(after.documents).toEqual(
+    before.documents.map((row) => ({ ...row, deleted_at: null })),
+  );
+  expect(after.pages).toEqual(before.pages);
+});
+
 it.each([
   {
     record: "a record from a newer Rufi",

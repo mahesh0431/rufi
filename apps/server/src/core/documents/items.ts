@@ -91,11 +91,17 @@ export function draftItems(
       documentId: string,
     ): Promise<DocumentItems | undefined> => {
       const pages = await db
-        .selectFrom("document_pages")
-        .select(["position", "state", "state_why", "entry_checks"])
-        .where("person_id", "=", personId)
-        .where("document_id", "=", documentId)
-        .orderBy("position")
+        .selectFrom("document_pages as p")
+        .innerJoin("documents as d", (join) =>
+          join
+            .onRef("d.person_id", "=", "p.person_id")
+            .onRef("d.id", "=", "p.document_id"),
+        )
+        .select(["p.position", "p.state", "p.state_why", "p.entry_checks"])
+        .where("p.person_id", "=", personId)
+        .where("p.document_id", "=", documentId)
+        .where("d.deleted_at", "is", null)
+        .orderBy("p.position")
         .execute();
       if (pages.length === 0) return undefined;
       const items = await db
