@@ -7,6 +7,7 @@ export default defineConfig({
       "apps/*/scripts/*.test.ts",
       "lint/*.test.ts",
     ],
+    globalSetup: ["apps/server/tests/run-folder.ts"],
     setupFiles: ["apps/server/tests/scratch-home.ts"],
   },
 });

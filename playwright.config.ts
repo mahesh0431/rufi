@@ -6,6 +6,7 @@ import { defineConfig } from "@playwright/test";
 // fictional data folder, signed out (apps/desktop/e2e/app.ts).
 export default defineConfig({
   outputDir: "node_modules/.playwright",
+  globalSetup: "apps/server/tests/run-folder.ts",
   fullyParallel: true,
   forbidOnly: process.env["CI"] !== undefined,
   reporter: "list",
