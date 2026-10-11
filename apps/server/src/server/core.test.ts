@@ -31,6 +31,8 @@ import {
   openWritable,
 } from "../core/store/database.ts";
 import { backupsPath } from "../core/store/backup.ts";
+import { findDataFolder } from "../core/store/data-folder.ts";
+import { moveData } from "../core/store/move.ts";
 import { restore } from "../core/store/restore.ts";
 import { holdRufiLock } from "../platform/files.ts";
 import { diagnostics } from "../platform/logs.ts";
@@ -1071,6 +1073,85 @@ describe("the local API", () => {
     );
     await until(() => replyText(second.lines) === "ok:drip");
     second.hangUp();
+  });
+
+  it("goes on after a move in a fresh AI thread that has the saved chat", async () => {
+    const userHome = await mkdtemp(join(tmpdir(), "rufi-moved-"));
+    home = (await findDataFolder({ env: {}, userHome })).path;
+    const log = join(userHome, "fake.jsonl");
+    // Started from the data folder in use: after the move, the moved one,
+    // whose AI folder (codex/) is new.
+    const agent: CoreOptions["agent"] = (tools, host) =>
+      codexRuntime({
+        home,
+        command: { file: process.execPath, args: [FAKE] },
+        env: {
+          PATH: process.env["PATH"] ?? "",
+          FAKE_CODEX: "{}",
+          FAKE_CODEX_LOG: log,
+        },
+        token: () => Promise.resolve("token"),
+        version: "0.0.0",
+        tools,
+        host,
+      });
+    const turns = async (page: Awaited<ReturnType<typeof session>>) =>
+      (await page.api("GET", c.path)).body["turns"] as {
+        status: string;
+        afresh: boolean;
+      }[];
+    let page = await session(await start({ agent }));
+    const c = await chat(page);
+    await page.say(c.path, "Is my TSH still high?");
+    await until(async () => (await turns(page))[0]?.status === "completed");
+    await stop();
+
+    const moved = join(userHome, "Rufi data");
+    await moveData({ env: {}, userHome }, moved, () =>
+      Promise.resolve("/dev/disk3s1s1 on / (apfs, local, journaled)\n"),
+    );
+    home = (await findDataFolder({ env: {}, userHome })).path;
+    expect(home).toBe(moved);
+    page = await session(await start({ agent }));
+    await page.say(c.path, "And my iron?");
+    await until(async () => (await turns(page))[1]?.status === "completed");
+
+    expect((await turns(page)).map((turn) => turn.afresh)).toEqual([
+      false,
+      true,
+    ]);
+    const entries = (await page.api("GET", c.path)).body["entries"] as {
+      kind: string;
+      text: string;
+    }[];
+    expect(
+      entries.filter((e) => e.kind === "reply").map((e) => e.text),
+    ).toEqual(["ok:Is my TSH still high?", "ok:And my iron?"]);
+    const lines = (await readFile(log, "utf8"))
+      .trim()
+      .split("\n")
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            received?: {
+              method?: string;
+              params?: { threadId?: string; input?: { text: string }[] };
+            };
+          },
+      )
+      .flatMap(({ received }) => (received ? [received] : []));
+    // Rufi doesn't try the old thread: a resume would write to the old folder.
+    expect(lines.map((line) => line.method)).not.toContain("thread/resume");
+    const started = lines.flatMap((line) =>
+      line.method === "turn/start" ? [line.params ?? {}] : [],
+    );
+    expect(started).toHaveLength(2);
+    // Another thread, and its first input holds the chat before the move.
+    expect(started[1]?.threadId).not.toBe(started[0]?.threadId);
+    const input = (started[1]?.input ?? []).map((part) => part.text).join("\n");
+    expect(input).toContain("Is my TSH still high?");
+    expect(input).toContain("ok:Is my TSH still high?");
+    expect(input).toContain("And my iron?");
   });
 
   it(

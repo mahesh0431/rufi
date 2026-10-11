@@ -97,6 +97,8 @@ export async function moveData(
   return withHome(root, 0, async () => {
     const { path: from } = await managedFolder(root);
     await checkTarget(place.userHome, from, to, mounts);
+    // Made by the lock below; their entries are synced before the switch.
+    const made = await missingFolders(to);
     return withBoth(from, to, async (held) => {
       const there = await readdir(to);
       if (there.some((name) => name !== "rufi.lock")) {
@@ -115,6 +117,7 @@ export async function moveData(
         await writeMark(from, MOVING_OUT, { folder: to });
         await writeMark(to, MOVING_IN, { folder: from });
         await copyFolder(from, to);
+        for (const folder of made) await syncFolder(dirname(folder));
         await verify(from, to);
         held();
       } catch (error) {
@@ -352,6 +355,23 @@ async function checkTarget(
       `${to} is on a network disk. Rufi's data folder must be on this Mac or a disk you connect to it; copy backups to a network disk instead (Help: Backups and export).`,
     );
   }
+}
+
+/** `path` and each folder above it that doesn't exist yet, deepest first. */
+async function missingFolders(path: string): Promise<string[]> {
+  const missing: string[] = [];
+  for (let at = path; ; at = dirname(at)) {
+    if ((await lstat(at).catch(gone)) !== undefined || dirname(at) === at) {
+      return missing;
+    }
+    missing.push(at);
+  }
+}
+
+/** Undefined when the path isn't there; any other error is thrown. */
+function gone(error: unknown): undefined {
+  if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+  throw error;
 }
 
 /** The real path of `path`, through its nearest folder that exists. */
