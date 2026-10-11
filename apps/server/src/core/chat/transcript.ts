@@ -78,19 +78,28 @@ type EntryRow = Selectable<Tables["transcript_entries"]>;
 type TurnRow = Selectable<Tables["turns"]>;
 
 /** An entry as the screens get it; a reply shows its answer (docs/adr/0007). */
-const toEntry = (row: EntryRow, finished: boolean): Entry => ({
+const toEntry = (
+  row: EntryRow,
+  turnStatus: TurnRow["status"] | undefined,
+): Entry => ({
   id: row.id,
   seq: row.seq,
   turnId: row.turn_id,
   kind: row.kind as Entry["kind"],
-  text: row.kind === "reply" ? splitBasis(row.text, finished).answer : row.text,
+  text:
+    row.kind === "reply"
+      ? splitBasis(row.text, turnStatus === "completed").answer
+      : row.text,
   activity: row.activity as Entry["activity"],
   detail: row.detail,
-  // Reasoning is whole once the agent gave all of it.
+  // Reasoning is whole once the agent gave all of it; a partial summary
+  // stops with its turn, without changing what the agent gave.
   status:
     row.kind === "reasoning"
       ? row.details === null
-        ? "running"
+        ? turnStatus === "running"
+          ? "running"
+          : "stopped"
         : "done"
       : (row.status as Entry["status"]),
   createdAt: row.created_at,
@@ -127,29 +136,31 @@ const toChat = (row: Selectable<Tables["chats"]>): ChatRow => ({
   paused: row.paused as ChatRow["paused"],
 });
 
-/** Entries as the screens get them: a reply is split by whether its turn completed. */
+/** Entries as the screens get them, with replies and reasoning by their turn's state. */
 async function entriesOut(trx: Db, rows: EntryRow[]): Promise<Entry[]> {
-  const replyTurns = [
+  const turnIds = [
     ...new Set(
       rows.flatMap((row) =>
-        row.kind === "reply" && row.turn_id !== null ? [row.turn_id] : [],
+        (row.kind === "reply" || row.kind === "reasoning") &&
+        row.turn_id !== null
+          ? [row.turn_id]
+          : [],
       ),
     ),
   ];
-  const completed = new Set(
-    replyTurns.length === 0
+  const statuses = new Map(
+    turnIds.length === 0
       ? []
       : (
           await trx
             .selectFrom("turns")
-            .select("id")
-            .where("id", "in", replyTurns)
-            .where("status", "=", "completed")
+            .select(["id", "status"])
+            .where("id", "in", turnIds)
             .execute()
-        ).map((turn) => turn.id),
+        ).map((turn) => [turn.id, turn.status]),
   );
   return rows.map((row) =>
-    toEntry(row, row.turn_id !== null && completed.has(row.turn_id)),
+    toEntry(row, row.turn_id === null ? undefined : statuses.get(row.turn_id)),
   );
 }
 
@@ -830,7 +841,7 @@ export function transcripts(
 
     /**
      * A reply ended: final from now on. Its unfinished activity is stopped,
-     * and its replies are sent again, now split as an ended reply.
+     * and its replies and reasoning are sent again by the ended turn's state.
      */
     endTurn: (chat: ChatRow, agentTurnId: string, end: TurnEnding) =>
       change(chat.id, async (trx, revision) => {
@@ -855,15 +866,15 @@ export function transcripts(
           .where("status", "=", "running")
           .returning("id")
           .execute();
-        const replies = await trx
+        const entries = await trx
           .selectFrom("transcript_entries")
           .select("id")
           .where("person_id", "=", turn.person_id)
           .where("turn_id", "=", turn.id)
-          .where("kind", "=", "reply")
+          .where("kind", "in", ["reply", "reasoning"])
           .execute();
         return {
-          entries: [...stopped, ...replies].map((row) => row.id),
+          entries: [...stopped, ...entries].map((row) => row.id),
           turns: [turn.id],
         };
       }),

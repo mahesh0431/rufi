@@ -7,6 +7,13 @@ import { AxeBuilder } from "@axe-core/playwright";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Locator, Page } from "@playwright/test";
+import { Page as ChatPage } from "@rufi/contracts";
+import { Schema } from "effect";
+import { transcripts } from "../../server/src/core/chat/transcript.ts";
+import {
+  databasePath,
+  openWritable,
+} from "../../server/src/core/store/database.ts";
 import { runningLink } from "../../server/src/server/core.ts";
 import { expect, test, type Rufi } from "./rufi.ts";
 
@@ -1042,6 +1049,96 @@ test("thinking with no summary shows while it runs, and nothing once it ends", a
   await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
   await expect(log(chat(page))).not.toContainText("Thinking…");
   await expect(log(chat(page))).not.toContainText("Thought");
+});
+
+/** The real API, with this fictional tab's session proof. */
+async function chatPage(page: Page) {
+  const body = await page.evaluate(async () => {
+    const response = await fetch("/api/people/asha/chat", {
+      headers: { "x-rufi-proof": sessionStorage.getItem("rufi.proof") ?? "" },
+    });
+    if (!response.ok)
+      throw new Error(`Chat read failed: ${String(response.status)}`);
+    const body: unknown = await response.json();
+    return body;
+  });
+  return Schema.decodeUnknownSync(ChatPage)(body);
+}
+
+test("Stop ends partial thinking at the Stop time, keeping its summary after reload", async ({
+  page,
+  rufi,
+}) => {
+  let now = "2026-10-11T09:00:00.000Z";
+  const summary = "**Checking the record**\n\nThe summary so far.";
+  await opened(page, rufi, {
+    now: () => now,
+    scenario: { reasoning: [summary], reasoningMs: 30_000 },
+  });
+  await send(page, "Check my results");
+  await expect(log(chat(page))).toContainText("Thinking…Checking the record");
+  now = "2026-10-11T09:00:08.000Z";
+  await chat(page).getByRole("button", { name: "Stop", exact: true }).click();
+  await expect
+    .poll(async () =>
+      (await chatPage(page)).entries
+        .filter((entry) => entry.kind === "reasoning")
+        .map((entry) => [entry.status, entry.text]),
+    )
+    .toEqual([["stopped", summary]]);
+  const thought = log(chat(page)).locator("details", {
+    hasText: "Thought for",
+  });
+  await expect(thought.locator("summary")).toHaveText("Thought for 8s");
+  await thought.locator("summary").click();
+  await expect(thought.locator(".thought")).toContainText(
+    "The summary so far.",
+  );
+  await page.reload();
+  await opener(chat(page)).click();
+  await expect(thought.locator("summary")).toHaveText("Thought for 8s");
+});
+
+test("a restart keeps partial thinking and shows Thinking stopped without guessing its duration", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  // What a crash left: a saved start and summary, with no end notification.
+  const store = openWritable(databasePath(rufi.home));
+  const saved = transcripts(store, () => "2026-10-11T09:00:00.000Z");
+  const found = await saved.chat("asha");
+  if (!found) throw new Error("The fictional chat is missing.");
+  const summary = "**Checking the record**\n\nThe summary before the crash.";
+  try {
+    await saved.startTurn(found, "cut-turn", {
+      id: "cut-thread",
+      model: "gpt-6-astra",
+    });
+    await saved.appendReasoning(found, "cut-turn", "cut-thinking", "");
+    await saved.appendReasoning(found, "cut-turn", "cut-thinking", summary);
+  } finally {
+    store.close();
+  }
+  await rufi.start({ now: () => "2026-10-11T10:00:00.000Z" });
+  await page.goto(rufi.link());
+  await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
+  expect(
+    (await chatPage(page)).entries
+      .filter((entry) => entry.kind === "reasoning")
+      .map((entry) => [entry.status, entry.text]),
+  ).toEqual([["stopped", summary]]);
+  const thought = log(page).locator("details", { hasText: "Thinking stopped" });
+  await expect(thought.locator("summary")).toHaveText("Thinking stopped");
+  await thought.locator("summary").click();
+  await expect(thought.locator(".thought")).toContainText(
+    "The summary before the crash.",
+  );
+  await expect(log(page)).toContainText(
+    "Rufi closed before the reply finished.",
+  );
+  await page.reload();
+  await expect(thought.locator("summary")).toHaveText("Thinking stopped");
 });
 
 test("a save made in another window while this one's connection was down shows on Overview once it connects again", async ({

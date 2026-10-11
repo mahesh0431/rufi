@@ -409,10 +409,8 @@ function QuietLine() {
 
 function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
   const entry = useStore(live, (state) => state.entries[id]);
-  const streaming = useStore(
-    live,
-    (state) => state.turns[entry?.turnId ?? ""]?.status === "running",
-  );
+  const turn = useStore(live, (state) => state.turns[entry?.turnId ?? ""]);
+  const streaming = turn?.status === "running";
   if (!entry) return null;
   return entry.kind === "message" || entry.kind === "steer" ? (
     <div
@@ -469,7 +467,7 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
   ) : entry.kind === "brief" ? (
     <BriefLine id={id} text={entry.text} />
   ) : entry.kind === "reasoning" ? (
-    <Thinking entry={entry} live={streaming && entry.status === "running"} />
+    <Thinking entry={entry} turn={turn} />
   ) : entry.kind === "activity" ? (
     <p
       data-entry={id}
@@ -490,9 +488,10 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
  * A time the AI thought: while it thinks, "Thinking…" and its summary's
  * latest heading; then "Thought for 8s", which opens the whole summary. A
  * finished one with no summary has nothing to open, so it shows nothing.
+ * A cut step uses its turn's end; after a crash the end is unknown.
  */
-function Thinking({ entry, live }: { entry: Entry; live: boolean }) {
-  if (live) {
+function Thinking({ entry, turn }: { entry: Entry; turn: Turn | undefined }) {
+  if (turn?.status === "running" && entry.status === "running") {
     const heading = latestHeading(entry.text);
     return (
       <p
@@ -506,11 +505,21 @@ function Thinking({ entry, live }: { entry: Entry; live: boolean }) {
     );
   }
   if (entry.text.trim() === "") return null;
+  const stopped = entry.status === "stopped";
+  const end = stopped ? turn?.endedAt : entry.updatedAt;
+  const unknownEnd =
+    stopped &&
+    (end == null ||
+      (turn?.status === "interrupted" && turn.endReason === null));
   return (
     <details data-entry={entry.id} className="group text-muted">
       <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-md hover:text-ink [&::-webkit-details-marker]:hidden">
         <Brain size={13} className="shrink-0" aria-hidden />
-        <span>{thoughtFor(entry.createdAt, entry.updatedAt)}</span>
+        <span>
+          {unknownEnd
+            ? "Thinking stopped"
+            : thoughtFor(entry.createdAt, end ?? entry.updatedAt)}
+        </span>
         <ChevronRight
           size={12}
           className="shrink-0 transition-transform group-open:rotate-90"

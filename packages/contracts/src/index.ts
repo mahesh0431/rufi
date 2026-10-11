@@ -110,7 +110,8 @@ export const Entry = Schema.Struct({
   turnId: Schema.NullOr(Schema.String),
   /**
    * reasoning: the AI's thinking for a step, with its summary as the AI
-   * service gave it (status running while it thinks, then done); event:
+   * service gave it (status running while it thinks, then done, or stopped
+   * when its turn ends before the summary is whole); event:
    * Rufi's own factual line about something that happened, never the
    * person's words; brief: the line of a visit brief, whose id is the brief's.
    */

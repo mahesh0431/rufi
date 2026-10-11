@@ -163,6 +163,8 @@ While the AI replies, the box and the chat bar say "Rufi is answering" and how m
 
 **Thinking.** While the AI thinks, a line in the chat says "Thinking…". When the AI service sends a short summary of the thinking, the line also shows what the AI thinks about now, for example "Thinking… Comparing the reports". When the AI stops thinking, the line becomes "Thought for 8s", with the time it thought. Click it to read the whole summary. A reply can have more than one of these lines, in the order things happened. When the AI service sent no summary, the line goes away when the AI stops thinking, because there is nothing to read. After a reload, and in older replies, the lines are the same.
 
+If you click Stop while the AI thinks, its summary so far stays, with the time up to Stop. If Rufi closed before the thinking finished, its line says "Thinking stopped": Rufi doesn't know when it ended. Click the line to read the summary it kept.
+
 **Stop.** The stop button (the square, where the send button was) ends the reply now, in every size of the chat. What the AI wrote so far stays.
 
 **Stop.** After a Stop, nothing more goes to the AI until you send a message. Rufi keeps this also when you reload or Rufi starts again.
