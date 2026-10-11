@@ -35,7 +35,13 @@ export class StalePreview extends Error {
 /** What the delete writes its Rufi event with: the chat's own (server/chat.ts). */
 export type WriteEvent = (
   personId: string,
-  event: { kind: string; line: string; facts?: unknown },
+  event: {
+    kind: string;
+    line: string;
+    facts?: unknown;
+    ask?: string;
+    withNextMessage?: true;
+  },
   write: (trx: Transaction<Tables>, revision: number) => Promise<string[]>,
 ) => Promise<void>;
 
@@ -282,6 +288,8 @@ export function deletions(deps: {
           kind: "document_deleted",
           line: `Deleted ${before.name}`,
           facts: { deleted: documentId },
+          ask: `The user deleted document ${documentId} (${before.name}). Don't use or quote anything you read from it before; say it was deleted.`,
+          withNextMessage: true,
         },
         async (trx, revision) => {
           const found = await previewIn(trx, personId, documentId);

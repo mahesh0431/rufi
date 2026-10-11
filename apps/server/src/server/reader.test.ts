@@ -846,7 +846,9 @@ describe("a document deleted while it is read", () => {
         "Reading sunrise-august.pdf · 2 pages",
         "Deleted sunrise-august.pdf",
       ]);
-      expect(asks()).toEqual([]);
+      expect(asks()).toEqual([
+        `The user deleted document ${id} (sunrise-august.pdf). Don't use or quote anything you read from it before; say it was deleted.`,
+      ]);
       expect(drafts()).toEqual([]);
       expect(rows("SELECT id FROM jobs")).toEqual([]);
       expect(logged).not.toContain("reader.failed");

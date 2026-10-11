@@ -802,6 +802,8 @@ export function transcripts(
         facts?: unknown;
         /** Rufi's note for the AI, when the AI should hear of it. */
         ask?: string;
+        /** Sends the note with the person's next message, never by itself. */
+        withNextMessage?: true;
       },
       /** Returns the entries it changed too, when it changes any. */
       write?: (
@@ -824,7 +826,13 @@ export function transcripts(
           await addRow(
             trx,
             chat,
-            { id: uuid(), origin: "rufi", text: event.ask, eventId: id },
+            {
+              id: uuid(),
+              origin: "rufi",
+              text: event.ask,
+              eventId: id,
+              withNextMessage: event.withNextMessage,
+            },
             now(),
           );
         }

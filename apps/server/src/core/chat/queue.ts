@@ -45,7 +45,7 @@ const RIDES = ["paused", "signed_out"];
 const CHANGED_ELSEWHERE =
   "The waiting messages changed meanwhile. Look again, then try again.";
 
-/** A new waiting row at the end, in `trx`; held when the chat is paused. */
+/** A new waiting row at the end, in `trx`; an event can wait for a person. */
 export async function addRow(
   trx: Transaction<Tables>,
   chat: ChatOf,
@@ -55,6 +55,8 @@ export async function addRow(
     text: string;
     eventId?: string;
     refs?: readonly Chip[];
+    /** Holds a Rufi note to ride with the person's next message. */
+    withNextMessage?: true;
   },
   at: string,
 ): Promise<void> {
@@ -77,7 +79,10 @@ export async function addRow(
       event_id: row.eventId ?? null,
       position: (last ?? 0) + 1,
       state: "waiting",
-      held: row.origin === "rufi" && paused !== null ? "paused" : null,
+      held:
+        row.origin === "rufi" && (row.withNextMessage || paused !== null)
+          ? "paused"
+          : null,
       held_text: null,
       sent_as: null,
       turn_id: null,
