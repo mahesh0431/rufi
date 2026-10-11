@@ -84,7 +84,8 @@ export async function findDataFolder(place: Place): Promise<DataFolder> {
 
 /**
  * Runs `task` holding location.lock in Rufi's home, once the home is known to
- * be this Rufi's: it holds nothing but what this Rufi makes there.
+ * be this Rufi's: it has the location file, or holds nothing but what this
+ * Rufi makes there.
  * An older Rufi app's `~/.rufi` is never changed: nothing
  * is made in it, not even the lock. Only names are looked at.
  */
@@ -97,8 +98,13 @@ export async function withHome<T>(
   return withLocationLock(root, waitMs, task);
 }
 
-/** Refuses foreign names even when someone put a location file beside them. Reads names only. */
+/**
+ * Refuses a home that isn't this Rufi's: no location file (which only this
+ * Rufi writes), and names this Rufi doesn't make. Reads names only. With a
+ * location file, the home is this Rufi's whatever else is put beside it.
+ */
 async function checkHome(root: string): Promise<void> {
+  if (await exists(locationFile(root))) return;
   if ((await entries(root))?.some((name) => !isOurs(name))) {
     throw new Error(
       `${root} holds files that aren't this Rufi's home, perhaps from an older Rufi app. Rufi changed nothing there. Move that folder away (for example to ${root}-old), then start Rufi again.`,
@@ -128,9 +134,14 @@ async function real(path: string): Promise<string> {
   }
 }
 
-/** Names this Rufi makes in its home: the default folder, the lock and the location file (including an interrupted write). */
+/**
+ * Names this Rufi makes in its home: the default folder, the lock and the
+ * location file (including an interrupted write); and Finder's .DS_Store,
+ * which Show in Finder can leave.
+ */
 const isOurs = (name: string) =>
   name === "data" ||
+  name === ".DS_Store" ||
   name === "location.json" ||
   name === "location.lock" ||
   /^location\.json\.[\w-]+\.tmp$/.test(name);
@@ -160,16 +171,8 @@ export async function managedFolder(root: string): Promise<DataFolder> {
     return { path: fallback, source: "default" };
   }
   const creating = there?.includes(basename(creatingPath(fallback))) === true;
-  if (
-    complete ||
-    (there ?? []).some(
-      (name) =>
-        !FIRST_START.has(name) &&
-        !(creating && /^installed\.json\.[\w-]+\.tmp$/.test(name)) &&
-        !(creating && name === "rufi.sqlite-journal") &&
-        !(!database && /^creating\.json\.[\w-]+\.tmp$/.test(name)),
-    )
-  ) {
+  const left = (name: string) => leftByFirstStart(name, { creating, database });
+  if (complete || (there ?? []).some((name) => !left(name))) {
     throw new Error(
       `${fallback} holds files but no Rufi record, so Rufi won't start a record there. Move those files somewhere else, then start Rufi again (Help: Your data and the AI).`,
     );
@@ -181,9 +184,9 @@ export async function managedFolder(root: string): Promise<DataFolder> {
 
 /**
  * What a first start that stopped midway can leave in the default folder: a
- * stale lock, or the new database before its marker. Only creating.json
- * authorizes an empty database, its interrupted schema's journal, or an
- * installed.json temp file. The first start goes on from there.
+ * stale lock, or the new database before its marker (see leftByFirstStart).
+ * Only creating.json authorizes an empty database. The first start goes on
+ * from there.
  */
 const FIRST_START = new Set([
   "rufi.lock",
@@ -193,6 +196,26 @@ const FIRST_START = new Set([
   "rufi.sqlite-shm",
   "creating.json",
 ]);
+
+/**
+ * Whether `name` is something a first start that stopped can leave: always
+ * FIRST_START's names; with creating.json, the schema's journal and an
+ * installed.json temp file; before the database, a creating.json temp file.
+ */
+function leftByFirstStart(
+  name: string,
+  { creating, database }: { creating: boolean; database: boolean },
+): boolean {
+  if (FIRST_START.has(name)) return true;
+  if (
+    creating &&
+    (name === "rufi.sqlite-journal" ||
+      /^installed\.json\.[\w-]+\.tmp$/.test(name))
+  ) {
+    return true;
+  }
+  return !database && /^creating\.json\.[\w-]+\.tmp$/.test(name);
+}
 
 /** Makes the default folder and its record, under its rufi.lock. */
 async function firstStart(folder: string): Promise<void> {

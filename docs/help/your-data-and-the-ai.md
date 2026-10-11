@@ -19,7 +19,7 @@ Rufi remembers the data folder in a small file next to it, the location file: `~
 - If the location file is damaged, Rufi doesn't start. The file is short: `{"version": 1, "dataFolder": "/path/to/your/data/folder"}`. Put the path of your data folder back in it, or get the file back from your Mac's backup.
 - If the location file is gone and `~/.rufi/data` holds your record, Rufi remembers that folder again and starts.
 - If the location file is gone and that folder holds other files but no record, Rufi doesn't start and changes nothing.
-- If `~/.rufi` holds files that aren't this Rufi's home, for example from an earlier Rufi app, Rufi doesn't start and changes nothing there. Move that folder away (for example to `~/.rufi-old`), then start Rufi again. This also applies when `RUFI_HOME` points into that folder, directly or through a link.
+- If there is no location file and `~/.rufi` holds files that aren't this Rufi's home, for example from an earlier Rufi app, Rufi doesn't start and changes nothing there. Move that folder away (for example to `~/.rufi-old`), then start Rufi again. This also applies when `RUFI_HOME` points into that folder, directly or through a link.
 
 > **Note:** If you delete both the location file and your data folder, Rufi can't tell that from a new Mac: it starts a new, empty record. To get your data back, restore a backup (see [Backups and export](backups-and-export.md#restore-a-backup)).
 

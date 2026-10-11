@@ -374,24 +374,28 @@ describe("an older Rufi app's ~/.rufi", () => {
     },
   );
 
-  it("doesn't trust a location file beside foreign names", async () => {
-    await mkdir(root);
+  it("trusts its location file: what's put beside it later isn't looked at", async () => {
+    await findDataFolder(place());
+    // The older app run again after this Rufi's first start.
     await writeFile(join(root, "rufi.db"), "the older app's");
-    await writeFile(
-      join(root, "location.json"),
-      JSON.stringify({ version: 1, dataFolder: root }),
-    );
 
-    await expect(findDataFolder(place())).rejects.toThrow(
-      "aren't this Rufi's home",
+    expect(await findDataFolder(place())).toEqual({
+      path: data,
+      source: "default",
+    });
+    expect(await readFile(join(root, "rufi.db"), "utf8")).toBe(
+      "the older app's",
     );
-    await expect(finishMove(place())).rejects.toThrow(
-      "aren't this Rufi's home",
-    );
-    await expect(cancelMove(place())).rejects.toThrow(
-      "aren't this Rufi's home",
-    );
-    expect((await readdir(root)).sort()).toEqual(["location.json", "rufi.db"]);
+  });
+
+  it("isn't stopped by the .DS_Store Finder leaves", async () => {
+    await mkdir(root);
+    await writeFile(join(root, ".DS_Store"), "");
+
+    expect(await findDataFolder(place())).toEqual({
+      path: data,
+      source: "default",
+    });
   });
 });
 
