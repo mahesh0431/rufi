@@ -471,45 +471,63 @@ describe("get_records", () => {
     ).toMatchObject({ records: [{ id: "g0" }], complete: true });
   });
 
-  it("reads on past the cap to the end, also among 300 records of one day and records with no date", async () => {
+  it("reads on past the cap to the end, also among 300 records of one day, of either category, and records with no date", async () => {
+    // Lab results and measurements in turn, all on one day.
     const day = Array.from(
       { length: 300 },
       (_, i) =>
-        `('d${String(i).padStart(3, "0")}', 'asha', NULL, 'lab', 'Glucose', '${String(90 + (i % 30))}', 'mg/dL', '2026-08-12', '2026-08-13T00:00:00Z')`,
+        `('d${String(i).padStart(3, "0")}', 'asha', NULL, '${i % 2 === 0 ? "lab" : "measurement"}', 'Glucose', '${String(90 + (i % 30))}', 'mg/dL', '2026-08-12', '2026-08-13T00:00:00Z')`,
     ).join(",");
     const store = makeDatabase(
       family,
       `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, unit, measured_at, entered_at) VALUES ${day}`,
     );
-    const read: string[] = [];
-    let after: string | undefined;
-    for (let reads = 0; reads < 10; reads++) {
-      const answer = (
-        await records(store, {
-          kind: "result",
-          ...(after !== undefined && { after }),
-        })
-      ).body["result"] as {
-        records: { id: string }[];
-        complete: boolean;
-        next?: string;
-      };
-      read.push(...answer.records.map((found) => found.id));
-      if (answer.complete) break;
-      after = answer.next;
-    }
+    const readAll = async (input: Record<string, unknown>) => {
+      const read: { id: string; category: string }[] = [];
+      let after: string | undefined;
+      for (let reads = 0; reads < 10; reads++) {
+        const answer = (
+          await records(store, {
+            ...input,
+            ...(after !== undefined && { after }),
+          })
+        ).body["result"] as {
+          records: { id: string; category: string }[];
+          complete: boolean;
+          next?: string;
+        };
+        read.push(...answer.records);
+        if (answer.complete) break;
+        after = answer.next;
+      }
+      return read;
+    };
     // Every record once: the fictional family's 11 and the day's 300.
+    const read = (await readAll({ kind: "result" })).map((found) => found.id);
     expect(read).toHaveLength(311);
     expect(new Set(read).size).toBe(311);
     expect(read.slice(-2)).toEqual(["res-a7", "res-a8"]);
-    const { ok, body } = await records(store, {
+    // Only measurements: the family's 3 and the day's 150, each once.
+    const measurements = await readAll({
       kind: "result",
-      after: "res-r1",
+      category: "measurement",
     });
-    expect(ok).toBe(false);
-    expect(body["error"]).toBe(
-      "That `after` isn't from this read: read again without it.",
-    );
+    expect(new Set(measurements.map((found) => found.id)).size).toBe(153);
+    expect(measurements).toHaveLength(153);
+    expect(
+      measurements.every((found) => found.category === "measurement"),
+    ).toBe(true);
+    // An anchor from another read: another person's, or another category's.
+    for (const input of [
+      { kind: "result", after: "res-r1" },
+      { kind: "result", category: "measurement", after: "res-a7" },
+    ]) {
+      const { ok, body } = await records(store, input);
+      expect(ok).toBe(false);
+      expect(body["error"]).toBe(
+        "That `after` isn't from this read: read again without it.",
+      );
+    }
   });
 
   it("reads exactly the records named by id, and says which aren't there", async () => {
