@@ -1632,8 +1632,8 @@ describe("documents over the API", () => {
       stopping = stop().then(() => {
         stopped = true;
       });
-      // Past the former two-second abandonment limit. The disconnected
-      // upload must still own the folder until its file and rows are kept.
+      // Seconds later, the disconnected upload still owns the folder: until
+      // its file and rows are kept, nothing else may take it.
       await sleep(3_000);
       expect(stopped).toBe(false);
       await expect(holdRufiLock(home, () => undefined)).rejects.toThrow(
