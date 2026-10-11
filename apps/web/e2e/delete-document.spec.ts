@@ -105,7 +105,9 @@ test("a document with saved results is blocked with Ask Rufi; one without goes, 
   await opener.click();
   const messages = page.getByRole("log", { name: "Messages" });
   await expect(messages).toContainText("Deleted Sunrise Labs August.pdf");
-  await expect(messages).toContainText(
-    "Sunrise Labs August.pdf · document deleted",
-  );
+  await expect(
+    messages
+      .getByRole("listitem")
+      .filter({ hasText: "Sunrise Labs August.pdf" }),
+  ).toContainText("document deleted");
 });

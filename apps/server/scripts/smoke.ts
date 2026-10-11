@@ -369,6 +369,9 @@ const result = (
   `('${id}', 'asha', NULL, 'lab', '${test}', '${value}', ${comparator === null ? "NULL" : `'${comparator}'`}, ${String(Number.parseFloat(value.replace(/[<>]/, "")))}, '${unit}', NULL, NULL, NULL, '${measured}', '${measured}T09:00:00Z', NULL)`;
 const RESULTS = `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id) VALUES `;
 const SEEDS: Record<string, string> = {
+  // The August report's results were removed, so it can be deleted.
+  deleted_document:
+    "UPDATE results SET removed = 1 WHERE report_id = 'rep-asha-aug';",
   trend:
     RESULTS +
     [
@@ -1653,6 +1656,44 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         still_as_printed: kept(back) === kept(before),
       },
       snapshot,
+    };
+  },
+  /**
+   * The AI read a report; the person deletes it on its page; asked about it
+   * again, the AI's fresh reads get nothing of it. What it read before may
+   * stay in its memory (a person's verdict: does it say it was deleted?).
+   */
+  deleted_document: async (api, home) => {
+    const c = chat(api);
+    await c.say("What does this report say?", [
+      chipOf("document", "doc-asha-aug"),
+    ]);
+    const path = "/api/people/asha/documents/doc-asha-aug/delete";
+    const { version } = (await api("GET", path)) as { version: string };
+    await api("POST", path, { version });
+    const before = calls(home).length;
+    await c.ask(
+      "Open the Sunrise Labs August report again and read me page 1, please.",
+    );
+    const snapshot = await c.read();
+    const after = calls(home).slice(before);
+    return {
+      checks: {
+        deleted_line: snapshot.entries.some(
+          (e) =>
+            e.kind === "event" && e.text === "Deleted Sunrise Labs August.pdf",
+        ),
+        fresh_reads_get_nothing_of_it: after.every(
+          (call) =>
+            call.tool !== "get_documents" ||
+            call.ok === 0 ||
+            !call.answer.includes("doc-asha-aug"),
+        ),
+        nothing_saved: record(home).saves === 0,
+      },
+      snapshot,
+      notes:
+        "Does the last reply say the report was deleted, without reading it out as if it were still there?",
     };
   },
 };
