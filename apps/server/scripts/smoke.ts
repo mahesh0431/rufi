@@ -1,7 +1,7 @@
 // The live smoke set: the real core, the real Codex and the real AI, on a
 // scratch data folder holding the fictional family. Only the sign-in comes
-// from RUFI_HOME (the test sign-in). Every case runs once, all at the same
-// time (--jobs n caps how many), each on its own data folder and core. Each
+// from RUFI_HOME (the test sign-in). Every case runs once, at most JOBS at a
+// time (--jobs n for another cap), each on its own data folder and core. Each
 // case's transcript is written to the output folder as it ends, with what
 // code could check, then report.md with every case's status: passed, FAILED,
 // needs a person's verdict (a part code can't check) or INFRA (a timeout, a
@@ -63,7 +63,17 @@ const { values } = parseArgs({
     out: { type: "string" },
   },
 });
-const jobs = values.jobs === undefined ? undefined : Number(values.jobs);
+/**
+ * How many cases run at the same time by default. With 40 or more at once,
+ * ChatGPT dropped the connection of several (INFRA); 16 at once ran the
+ * whole set (44 cases) with none, in a little over 2 minutes.
+ */
+const JOBS = 16;
+const jobs = Number(values.jobs ?? JOBS);
+if (!Number.isInteger(jobs) || jobs < 1) {
+  console.error("--jobs takes a whole number of cases, 1 or more.");
+  process.exit(2);
+}
 // The test sign-in, renewed in its own folder when needed.
 const signIn: ChatGptDeps = {
   home: rufiHome(),
@@ -1813,7 +1823,7 @@ await writeFile(
   [
     `# Live smoke set, ${new Date(started).toISOString()}`,
     "",
-    `${String(names.length)} cases, ${String(jobs ?? names.length)} at a time: ${String(counted("passed"))} passed, ${String(counted("FAILED"))} FAILED, ${String(counted("needs a person's verdict"))} need a person's verdict, ${String(counted("INFRA"))} INFRA.`,
+    `${String(names.length)} cases, ${String(Math.min(jobs, names.length))} at a time: ${String(counted("passed"))} passed, ${String(counted("FAILED"))} FAILED, ${String(counted("needs a person's verdict"))} need a person's verdict, ${String(counted("INFRA"))} INFRA.`,
     `Wall time ${String(Math.round((Date.now() - started) / 1000))} s; the event loop's longest delay ${String(Math.round(loop.max / 1e6))} ms; this process's peak memory ${String(Math.round(process.resourceUsage().maxRSS / 1024))} MB.`,
     "",
     ...ended.map((e) => `- ${e.line}`),

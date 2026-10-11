@@ -13,7 +13,7 @@ INSERT INTO chats (id, person_id, created_at) VALUES
 -- The files' bytes are in tests/fixtures/documents (golden.ts copies them).
 INSERT INTO files (id, size, media_type, created_at) VALUES
   ('7f4a70ccb858d23ee1cce44693bc2c009abb14604f0f3dbd48470639d6928b54', 17196, 'application/pdf', '2026-08-13T09:00:00Z'),
-  ('151e4196f9224a081cc4fadd0edb7687b5eba4a5cb46451fa96db4b4c921b666', 14435, 'image/jpeg', '2026-09-02T18:30:00Z'),
+  ('a2d64c4aa2a3101f1fc2ee893451ca0f43f547ca48ba5a1ce625c42d52e23562', 30740, 'image/jpeg', '2026-09-02T18:30:00Z'),
   ('f7d7c195033e1719e2c191970b14e52478e02faf51f1d61e57b517674fbc9c45', 16150, 'application/pdf', '2026-07-01T08:00:00Z');
 
 INSERT INTO documents (id, person_id, added_at, added_from) VALUES
@@ -24,7 +24,7 @@ INSERT INTO documents (id, person_id, added_at, added_from) VALUES
 INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name) VALUES
   ('asha', 'doc-asha-aug', 1, '7f4a70ccb858d23ee1cce44693bc2c009abb14604f0f3dbd48470639d6928b54', 1, 'Sunrise Labs August.pdf'),
   ('asha', 'doc-asha-aug', 2, '7f4a70ccb858d23ee1cce44693bc2c009abb14604f0f3dbd48470639d6928b54', 2, 'Sunrise Labs August.pdf'),
-  ('asha', 'doc-asha-sep', 1, '151e4196f9224a081cc4fadd0edb7687b5eba4a5cb46451fa96db4b4c921b666', 1, 'thyroid recheck.jpg'),
+  ('asha', 'doc-asha-sep', 1, 'a2d64c4aa2a3101f1fc2ee893451ca0f43f547ca48ba5a1ce625c42d52e23562', 1, 'thyroid recheck.jpg'),
   ('ravi', 'doc-ravi-jul', 1, 'f7d7c195033e1719e2c191970b14e52478e02faf51f1d61e57b517674fbc9c45', 1, 'Ravi lipid panel.pdf');
 
 INSERT INTO reports (id, person_id, document_id, issuer, collected) VALUES
