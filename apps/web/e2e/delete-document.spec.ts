@@ -43,9 +43,10 @@ async function openDocument(page: Page, name: string) {
   await page.getByRole("button", { name, exact: true }).click();
 }
 
-test("a document with saved results is blocked with Ask Rufi; one without goes, and its old chip says deleted", async ({
+test("a document with saved results is blocked with Ask Rufi; one without goes, its old chip says deleted, and its open tab says so", async ({
   page,
   rufi,
+  context,
 }) => {
   const chip = JSON.stringify([
     {
@@ -87,6 +88,13 @@ test("a document with saved results is blocked with Ask Rufi; one without goes, 
 
   // Deletable: what goes, what stays, and what Rufi can't reach.
   await openDocument(page, "Sunrise Labs August.pdf");
+  // Another tab has it open.
+  const other = await context.newPage();
+  await other.goto(rufi.link());
+  await other.goto(page.url());
+  await expect(
+    other.getByRole("button", { name: "Delete", exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(
     dialog.getByRole("heading", { name: "Delete Sunrise Labs August.pdf?" }),
@@ -110,4 +118,55 @@ test("a document with saved results is blocked with Ask Rufi; one without goes, 
       .getByRole("listitem")
       .filter({ hasText: "Sunrise Labs August.pdf" }),
   ).toContainText("document deleted");
+  // The other tab, and the address opened again, say it was deleted.
+  const gone = "There is no such document. It may have been deleted.";
+  await expect(other.getByText(gone)).toBeVisible();
+  await other.reload();
+  await expect(other.getByText(gone)).toBeVisible();
+  await expect(other.getByRole("button", { name: "Try again" })).toHaveCount(0);
+  await other.close();
+});
+
+test("a report with many saved results keeps the dialog's buttons in view, its list scrolling", async ({
+  page,
+  rufi,
+}) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  const many = Array.from({ length: 40 }, (_, i) => `res-m${String(i)}`);
+  await rufi.family(
+    `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, value_number, unit, measured_at, entered_at) VALUES ${many
+      .map(
+        (id, i) =>
+          `('${id}', 'asha', 'rep-asha-sep', 'lab', 'Test ${String(i + 1)}', '${String(i + 1)}', ${String(i + 1)}, 'U/L', '2026-09-01', '2026-09-02T18:31:00Z')`,
+      )
+      .join(", ")};
+     INSERT INTO record_sources (person_id, kind, record_id, type, document_id, page) VALUES ${many
+       .map(
+         (id) =>
+           `('asha', 'result', '${id}', 'document_page', 'doc-asha-sep', 1)`,
+       )
+       .join(", ")};`,
+  );
+  await rufi.start();
+  await page.goto(rufi.link());
+  await openDocument(page, "thyroid recheck.jpg");
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  const results = dialog
+    .getByRole("list", { name: "Saved results from this document" })
+    .getByRole("listitem");
+  await expect(results).toHaveCount(42);
+
+  await expect(dialog.getByRole("heading")).toBeInViewport();
+  await expect(
+    dialog.getByRole("button", { name: "Ask Rufi" }),
+  ).toBeInViewport();
+  await results.last().scrollIntoViewIfNeeded();
+  await expect(results.last()).toBeInViewport();
+  await expect(
+    dialog.getByRole("button", { name: "Ask Rufi" }),
+  ).toBeInViewport();
+  await accessible(page);
+  await dialog.getByRole("button", { name: "Ask Rufi" }).click();
+  await expect(dialog).toHaveCount(0);
 });

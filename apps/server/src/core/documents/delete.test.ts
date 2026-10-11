@@ -259,6 +259,11 @@ describe("a document with saved results", () => {
     );
     const list = await call("get_documents", {}, "call-list");
     expect(list.text).not.toContain(AUG);
+    const overview = JSON.parse(
+      (await call("get_overview", {}, "call-overview")).text,
+    ) as { result: { documents: number; reports: number } };
+    // Only September's report is left; both reports stay in the record.
+    expect(overview.result).toMatchObject({ documents: 1, reports: 2 });
     const one = await call("get_documents", { document: AUG }, "call-one");
     expect(one.ok).toBe(false);
     expect(one.text).toContain("deleted this document");

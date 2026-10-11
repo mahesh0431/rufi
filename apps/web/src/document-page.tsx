@@ -82,6 +82,15 @@ export function DocumentPage({
       ),
   });
   const document = documents.data?.find((d) => d.id === documentId);
+  // The list says it isn't there (deleted, or never added): its items'
+  // refusal is no problem to try again.
+  if (documents.data !== undefined && !document) {
+    return (
+      <div className="px-6 py-8 text-muted">
+        There is no such document. It may have been deleted.
+      </div>
+    );
+  }
   if (documents.error ?? items.error) {
     return (
       <div className="px-6 py-8">
@@ -95,14 +104,7 @@ export function DocumentPage({
       </div>
     );
   }
-  if (documents.data === undefined || items.data === undefined) return null;
-  if (!document) {
-    return (
-      <div className="px-6 py-8 text-muted">
-        There is no such document. It may have been deleted.
-      </div>
-    );
-  }
+  if (!document || items.data === undefined) return null;
   return <Checking person={person} document={document} items={items.data} />;
 }
 

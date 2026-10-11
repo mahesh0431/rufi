@@ -121,13 +121,17 @@ export function pages(store: Store, home: string, gate: FileGate = fileGate()) {
   const db = store.query;
   const publish = publisher(store, gate);
   return {
-    /** How many pages the person's document has; 0 when it isn't theirs. */
+    /**
+     * How many pages the person's document has; 0 when it isn't theirs or
+     * was deleted (its pages hold no file).
+     */
     count: async (personId: string, documentId: string): Promise<number> => {
       const row = await db
         .selectFrom("document_pages")
         .select((eb) => eb.fn.countAll<number>().as("pages"))
         .where("person_id", "=", personId)
         .where("document_id", "=", documentId)
+        .where("file_id", "is not", null)
         .executeTakeFirstOrThrow();
       return row.pages;
     },

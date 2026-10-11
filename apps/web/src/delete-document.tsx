@@ -18,7 +18,7 @@ import { askRufi } from "./panel.ts";
 import { Button, Problem } from "./ui.tsx";
 
 const PANEL =
-  "fixed top-1/2 left-1/2 z-40 w-[440px] max-w-[94vw] -translate-x-1/2 -translate-y-1/2 rounded-[14px] bg-surface shadow-menu outline-none";
+  "fixed top-1/2 left-1/2 z-40 w-[440px] max-w-[94vw] -translate-x-1/2 -translate-y-1/2 rounded-[14px] bg-surface shadow-menu outline-none flex max-h-[calc(100vh-32px)] flex-col";
 const BACKDROP = "fixed inset-0 z-40 bg-ink/25";
 
 const Deleted = Schema.Struct({ deleted: Schema.Literal(true) });
@@ -156,7 +156,15 @@ function Preview({
           how it is now.
         </p>
       )}
-      <div className="px-4 py-1">
+      {/* The title and the buttons stay; what is between scrolls. */}
+      <div
+        tabIndex={0}
+        role="group"
+        aria-label={
+          blocked ? "Saved results from it" : "What goes and what stays"
+        }
+        className="min-h-0 flex-1 overflow-auto px-4 py-1"
+      >
         {found.error && !preview && (
           <Problem
             error={found.error}
@@ -170,9 +178,11 @@ function Preview({
             <p className="mt-1.5 mb-2.5">
               These results in your health record come from it:
             </p>
+            {/* A long list scrolls by itself, so what to do stays in view. */}
             <ul
+              tabIndex={0}
               aria-label="Saved results from this document"
-              className="overflow-hidden rounded-[10px] border border-line"
+              className="max-h-[40vh] overflow-auto rounded-[10px] border border-line"
             >
               {preview.blocking.map((record) => (
                 <li
