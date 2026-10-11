@@ -11,6 +11,7 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 - Every test meets the `tdd` skill's bar. Always keep: live safety tests, person scope, nothing private in logs, backup, restore and export, `schema.sql`, the migrations and their upgrade tests, `tools.json`, the Codex protocol types, Stop and clean-up.
 - The screens are tested in Chromium with Playwright (`apps/web/e2e/`) on the real core with the built screens, the scripted fake Codex and a fictional data folder, with axe on each screen and no CSP refusal; a short chat smoke runs the real Codex binary on the local fake model.
 - The Rufi app is tested with Playwright's Electron support (`apps/desktop/e2e/`) on the real `rufi start`, a fictional data folder per test, signed out; `e2e/fakes.ts` (loaded with `-r`) stands in for the Mac's message box and the browser. No test link names a scheme the Mac itself opens (`mailto:`, a made-up one): its alert can stop Electron from starting until someone closes it. CI runs them under a virtual display. Dock, menus, focus and the looks are checked by hand on the Mac.
+- Tests and live runs show no window on the Mac and never take the focus: the screens' tests run headless Chromium; the app's tests run Electron as a background app (a copy of its bundle marked `LSUIElement`, in `e2e/app.ts`) whose windows `e2e/fakes.ts` never shows or focuses. A live run uses a headless browser on the real core, unless it must check something only the Rufi app shows.
 
 ## Code
 

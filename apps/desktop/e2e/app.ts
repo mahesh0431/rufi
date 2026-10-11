@@ -1,9 +1,11 @@
 // The Rufi app as `pnpm desktop` runs it, for its tests: Electron on this
 // checkout, the real `rufi start` on this pinned Node, and a fresh fictional
 // data folder per test, signed out, so the real AI is never reached.
-// fakes.ts stands in for the Mac's message box and the browser.
+// fakes.ts stands in for the Mac's message box and the browser. Nothing
+// shows on the Mac: the app runs as a background app and its windows stay
+// hidden.
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,7 +20,57 @@ import {
 const APP = join(import.meta.dirname, "..");
 const FAKES = join(import.meta.dirname, "fakes.ts");
 const CLI = join(APP, "../server/src/cli/main.ts");
-const ELECTRON = createRequire(join(APP, "package.json"))("electron") as string;
+const require = createRequire(join(APP, "package.json"));
+
+/**
+ * Electron's binary. On the Mac, inside a copy of its bundle marked as a
+ * background app (LSUIElement): no icon in the Dock, not even while it
+ * starts. The copy is an APFS clone, made once per Electron version.
+ */
+const ELECTRON =
+  process.platform === "darwin"
+    ? await background(require("electron") as string)
+    : (require("electron") as string);
+
+async function background(binary: string): Promise<string> {
+  const { version } = require("electron/package.json") as { version: string };
+  const folder = join(APP, "node_modules/.cache", `electron-${version}`);
+  const bundle = join(folder, "Rufi tests.app");
+  const inside = join(bundle, binary.slice(binary.indexOf(".app/") + 5));
+  if (await exists(bundle)) return inside;
+  // Made beside it, then moved in place: a half-made copy is never used.
+  const making = `${bundle}.${String(process.pid)}`;
+  await mkdir(folder, { recursive: true });
+  await rm(making, { recursive: true, force: true });
+  const run = promisify(execFile);
+  await run("cp", [
+    "-cR",
+    binary.slice(0, binary.indexOf(".app/") + 4),
+    making,
+  ]);
+  const plist = join(making, "Contents/Info.plist");
+  await run("plutil", ["-replace", "LSUIElement", "-bool", "true", plist]);
+  await run("plutil", [
+    "-replace",
+    "CFBundleIdentifier",
+    "-string",
+    "dev.rufi.tests",
+    plist,
+  ]);
+  await rename(making, bundle).catch(async (error: unknown) => {
+    // Another test worker made it first.
+    await rm(making, { recursive: true, force: true });
+    if (!(await exists(bundle))) throw error;
+  });
+  return inside;
+}
+
+async function exists(path: string): Promise<boolean> {
+  return access(path).then(
+    () => true,
+    () => false,
+  );
+}
 
 /**
  * What fakes.ts was asked (a message box, the browser or a notice), or how a download
@@ -180,24 +232,36 @@ export class Desktop {
   }
 }
 
-/** The `rufi start` processes that `parent` runs. */
+/**
+ * The `rufi start` processes that `parent` runs. Only its children's
+ * commands are read: another program's command line can be as long as
+ * `ps`'s whole answer may be.
+ */
 export async function rufiStarts(
   parent: number | undefined,
 ): Promise<number[]> {
-  const { stdout } = await promisify(execFile)("ps", [
-    "-A",
+  const run = promisify(execFile);
+  const { stdout: table } = await run("ps", ["-A", "-o", "pid=,ppid="]);
+  const children = table
+    .split("\n")
+    .map((line) => line.trim().split(/\s+/).map(Number))
+    .filter(([, ppid]) => ppid === parent)
+    .map(([pid]) => String(pid));
+  if (children.length === 0) return [];
+  const { stdout } = await run("ps", [
     "-o",
-    "pid=,ppid=,command=",
-  ]);
+    "pid=,command=",
+    "-p",
+    children.join(","),
+  ]).catch((error: unknown) => {
+    // 1: none of them runs any more.
+    if ((error as { code?: unknown }).code === 1) return { stdout: "" };
+    throw error;
+  });
   return stdout
     .split("\n")
-    .map((line) => /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line))
-    .filter(
-      (match) =>
-        match !== null &&
-        Number(match[2]) === parent &&
-        (match[3] ?? "").includes(`${CLI} start`),
-    )
+    .map((line) => /^\s*(\d+)\s+(.*)$/.exec(line))
+    .filter((match) => match !== null && match[2]?.includes(`${CLI} start`))
     .map((match) => Number(match?.[1]));
 }
 

@@ -228,18 +228,35 @@ describe("the pinned Codex", () => {
 
 const FAKE = join(import.meta.dirname, "../../../tests/fake-codex.ts");
 
-/** The processes in `groups`: pid and command. */
+/**
+ * The processes in `groups`: pid and command. Only their commands are read:
+ * another program's command line can be as long as `ps`'s whole answer may
+ * be.
+ */
 async function members(groups: ReadonlySet<number>) {
-  const { stdout } = await promisify(execFile)("ps", [
-    "-A",
+  const run = promisify(execFile);
+  const { stdout: table } = await run("ps", ["-A", "-o", "pid=,pgid="]);
+  const pids = table
+    .split("\n")
+    .map((line) => line.trim().split(/\s+/).map(Number))
+    .filter(([, pgid]) => pgid !== undefined && groups.has(pgid))
+    .map(([pid]) => String(pid));
+  if (pids.length === 0) return [];
+  const { stdout } = await run("ps", [
     "-o",
-    "pid=,pgid=,command=",
-  ]);
+    "pid=,command=",
+    "-p",
+    pids.join(","),
+  ]).catch((error: unknown) => {
+    // 1: none of them runs any more.
+    if ((error as { code?: unknown }).code === 1) return { stdout: "" };
+    throw error;
+  });
   return stdout
     .split("\n")
-    .map((line) => /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line))
-    .filter((match) => match !== null && groups.has(Number(match[2])))
-    .map((match) => ({ pid: Number(match?.[1]), command: match?.[3] ?? "" }));
+    .map((line) => /^\s*(\d+)\s+(.*)$/.exec(line))
+    .filter((match) => match !== null)
+    .map((match) => ({ pid: Number(match?.[1]), command: match?.[2] ?? "" }));
 }
 
 /** Polls `done` until it holds; fails, saying `what`, after `ms`. */
