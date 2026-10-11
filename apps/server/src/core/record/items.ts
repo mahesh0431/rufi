@@ -31,7 +31,7 @@ const Id = Schema.String.check(
 const result = kindNamed("result") as Kind;
 
 /** The result fields a user's fix may give: what is printed, and the date. */
-const FIXABLE = [
+export const FIXABLE = [
   "test",
   "value",
   "comparator",

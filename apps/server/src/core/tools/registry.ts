@@ -229,7 +229,12 @@ function describeInput(input: unknown): string {
 
 /** The JSON Schema of a tool's input, as tools.json and the agent get it. */
 export function inputSchema(tool: Tool): Record<string, unknown> {
-  const { schema, definitions } = Schema.toJsonSchemaDocument(tool.input, {
+  return jsonSchemaOf(tool.input);
+}
+
+/** The JSON Schema of an input, with its definitions in `$defs`. */
+export function jsonSchemaOf(input: Input): Record<string, unknown> {
+  const { schema, definitions } = Schema.toJsonSchemaDocument(input, {
     onExcessProperty: "error",
   });
   // `properties` comes first and is always there: the shape Codex already

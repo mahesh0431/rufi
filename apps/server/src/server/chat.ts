@@ -260,6 +260,14 @@ export function chat(deps: ChatDeps) {
           ...(event.details !== undefined && { details: event.details }),
         });
         return;
+      case "thinking":
+        await transcripts.appendReasoning(
+          chat,
+          event.turnId,
+          event.itemId,
+          event.delta,
+        );
+        return;
       case "reasoning":
         await transcripts.addReasoning(chat, event.turnId, event.itemId, {
           summary: event.summary,

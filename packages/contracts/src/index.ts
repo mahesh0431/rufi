@@ -114,7 +114,10 @@ export const Entry = Schema.Struct({
   /** The reply it belongs to. */
   turnId: Schema.NullOr(Schema.String),
   /**
-   * event: Rufi's own factual line about something that happened, never the
+   * reasoning: the AI's thinking for a step, with its summary as the AI
+   * service gave it (status running while it thinks, then done, or stopped
+   * when its turn ends before the summary is whole); event:
+   * Rufi's own factual line about something that happened, never the
    * person's words; brief: the line of a visit brief, whose id is the brief's.
    */
   kind: Schema.Literals([
@@ -122,14 +125,15 @@ export const Entry = Schema.Struct({
     "steer",
     "activity",
     "reply",
+    "reasoning",
     "receipt",
     "event",
     "brief",
   ]),
   /**
    * The message; the reply's answer (without its rufi-basis blocks, which
-   * the turn's How holds); an activity's short title; a receipt's, an
-   * event's or a brief's line.
+   * the turn's How holds); an activity's short title; the reasoning's
+   * summary so far; a receipt's, an event's or a brief's line.
    */
   text: Schema.String,
   activity: Schema.NullOr(ActivityKind),

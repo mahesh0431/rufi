@@ -9,7 +9,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { Entry } from "@rufi/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Scenario } from "../../tests/fake-codex.ts";
-import { fakeModel, type FakeModel } from "../../tests/fake-model.ts";
+import { fakeModel, THINKING, type FakeModel } from "../../tests/fake-model.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexRuntime } from "../agent/codex/codex.ts";
 import type { Deadlines } from "../agent/codex/appserver.ts";
@@ -304,6 +304,43 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       { status: "completed", model: "gpt-6.1-sol", endReason: null },
     ]);
   });
+
+  it(
+    "shows the AI's reasoning summary as it streams, then whole",
+    timeout,
+    async () => {
+      await startChat(name);
+      const c = await newChat();
+      const shown: [string, string | null][] = [];
+      transcripts.subscribe(c.id, (change) => {
+        for (const entry of change.entries) {
+          if (entry.kind === "reasoning")
+            shown.push([entry.text, entry.status]);
+        }
+      });
+      await say(c, "think");
+      await ended(c.id);
+      const whole = THINKING.join("\n\n");
+      // Thinking from its start, its summary growing, until it is whole.
+      expect(shown[0]?.[1]).toBe("running");
+      expect(shown.at(-1)).toEqual([whole, "done"]);
+      for (const [i, [text]] of shown.entries()) {
+        expect(whole.startsWith(text)).toBe(true);
+        expect(text.length).toBeGreaterThanOrEqual(
+          shown[i - 1]?.[0].length ?? 0,
+        );
+      }
+      expect(
+        (await transcript(c.id)).entries.filter(
+          ([kind]) => kind !== "activity",
+        ),
+      ).toEqual([
+        ["message", "think"],
+        ["reasoning", whole],
+        ["reply", "ok:think"],
+      ]);
+    },
+  );
 
   it(
     "holds a message sent during a reply, keeps it waiting after Stop, and runs it first at the next send",
@@ -1249,13 +1286,14 @@ describe("the chat, on the scripted Codex", () => {
     await say(c, "What's new?");
     await ended(c.id);
     const { all, turns } = await transcript(c.id);
-    // The screens get the lines, never the reasoning.
+    // The screens get the lines and the reasoning's summary, never details.
     expect(
       all
         .filter((e) => e.kind !== "message" && e.kind !== "reply")
         .map((e) => [e.activity, e.text, e.detail, e.status]),
     ).toEqual([
       ["tool", "Read your overview", null, "done"],
+      [null, "**Reading the record**", null, "done"],
       ["command", "Ran a command", "ls", "done"],
       ["other", "The AI did something Rufi can't display", "teleport", "done"],
     ]);

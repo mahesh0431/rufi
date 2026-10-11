@@ -5,8 +5,9 @@
 // Rufi's get_overview (through Codex's `exec` tool, as a model does),
 // "command" runs a long command (as the fake's does, it ignores TERM and
 // leaves a program in the background) and Codex waits for it, "background
-// command" runs the same command and the reply ends while it runs, and
-// anything else answers "ok:<text>". No sign-in and no AI.
+// command" runs the same command and the reply ends while it runs, "think"
+// streams a reasoning summary (THINKING) before it answers,
+// and anything else answers "ok:<text>". No sign-in and no AI.
 // With a `script`, it answers each request with the script's next step
 // instead (a call of a direct tool, or text), reporting the step's tokens as
 // the usage, so a test can drive a whole sub-agent turn and force a
@@ -46,6 +47,9 @@ export interface FakeModel {
   requests: ModelRequest[];
   close: () => Promise<void>;
 }
+
+/** The reasoning summary "think" streams, in two parts. */
+export const THINKING = ["**Thinking it over**", "The user asked me to think."];
 
 /** The prompt Codex sends to have the thread summarised (0.159.3). */
 const COMPACTION = "You are performing a CONTEXT CHECKPOINT COMPACTION";
@@ -113,6 +117,34 @@ export async function fakeModel(
           event({ type, item } as { type: string });
         }
         completed(tokens);
+      };
+      /** A reasoning item whose summary streams part by part. */
+      const think = (item: string) => {
+        event({
+          type: "response.output_item.added",
+          item: { type: "reasoning", id: item, summary: [] },
+        } as { type: string });
+        for (const [summary_index, text] of THINKING.entries()) {
+          event({
+            type: "response.reasoning_summary_part.added",
+            item_id: item,
+            summary_index,
+          } as { type: string });
+          event({
+            type: "response.reasoning_summary_text.delta",
+            item_id: item,
+            summary_index,
+            delta: text,
+          } as { type: string });
+        }
+        event({
+          type: "response.output_item.done",
+          item: {
+            type: "reasoning",
+            id: item,
+            summary: THINKING.map((text) => ({ type: "summary_text", text })),
+          },
+        } as { type: string });
       };
       if (options.script) {
         if (last.startsWith(COMPACTION)) {
@@ -199,6 +231,7 @@ export async function fakeModel(
       // A steer arrives as the last message of a later request in the same turn.
       const delay = last.includes("slow") ? 1_500 : 0;
       setTimeout(() => {
+        if (last.includes("think")) think(`rs-${String(requests.length)}`);
         const item = `msg-${String(requests.length)}`;
         const text = `ok:${last}`;
         event({

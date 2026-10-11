@@ -351,12 +351,24 @@ describe("a turn", () => {
     ).toBe(true);
   });
 
-  it("passes on the AI's reasoning summary, with everything Codex gave", async () => {
+  it("passes on the AI's reasoning summary as it streams, then whole with everything Codex gave", async () => {
     const thread = await ask(
       start({ reasoning: ["**Reading**", "The user said hello."] }),
       "Hello",
     );
     await ended(thread);
+    // The thinking starts empty; a new summary part starts a new paragraph.
+    expect(
+      seen(thread)
+        .filter((e) => e.type === "thinking")
+        .map((e) => [e.itemId, e.delta]),
+    ).toEqual([
+      ["item-think", ""],
+      ["item-think", "**Read"],
+      ["item-think", "ing**"],
+      ["item-think", "\n\nThe user s"],
+      ["item-think", "aid hello."],
+    ]);
     expect(seen(thread).filter((e) => e.type === "reasoning")).toEqual([
       {
         type: "reasoning",

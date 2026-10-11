@@ -78,15 +78,30 @@ type EntryRow = Selectable<Tables["transcript_entries"]>;
 type TurnRow = Selectable<Tables["turns"]>;
 
 /** An entry as the screens get it; a reply shows its answer (docs/adr/0007). */
-const toEntry = (row: EntryRow, finished: boolean): Entry => ({
+const toEntry = (
+  row: EntryRow,
+  turnStatus: TurnRow["status"] | undefined,
+): Entry => ({
   id: row.id,
   seq: row.seq,
   turnId: row.turn_id,
   kind: row.kind as Entry["kind"],
-  text: row.kind === "reply" ? splitBasis(row.text, finished).answer : row.text,
+  text:
+    row.kind === "reply"
+      ? splitBasis(row.text, turnStatus === "completed").answer
+      : row.text,
   activity: row.activity as Entry["activity"],
   detail: row.detail,
-  status: row.status as Entry["status"],
+  // Reasoning is whole once the agent gave all of it; a partial summary
+  // stops with its turn, without changing what the agent gave.
+  status:
+    row.kind === "reasoning"
+      ? row.details === null
+        ? turnStatus === "running"
+          ? "running"
+          : "stopped"
+        : "done"
+      : (row.status as Entry["status"]),
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   ...(row.refs !== null && { refs: JSON.parse(row.refs) as Chip[] }),
@@ -122,33 +137,31 @@ const toChat = (row: Selectable<Tables["chats"]>): ChatRow => ({
   paused: row.paused as ChatRow["paused"],
 });
 
-/**
- * Entries as the screens get them: the AI's reasoning stays in the
- * database, and a reply is split by whether its turn completed.
- */
+/** Entries as the screens get them, with replies and reasoning by their turn's state. */
 async function entriesOut(trx: Db, rows: EntryRow[]): Promise<Entry[]> {
-  const shown = rows.filter((row) => row.kind !== "reasoning");
-  const replyTurns = [
+  const turnIds = [
     ...new Set(
-      shown.flatMap((row) =>
-        row.kind === "reply" && row.turn_id !== null ? [row.turn_id] : [],
+      rows.flatMap((row) =>
+        (row.kind === "reply" || row.kind === "reasoning") &&
+        row.turn_id !== null
+          ? [row.turn_id]
+          : [],
       ),
     ),
   ];
-  const completed = new Set(
-    replyTurns.length === 0
+  const statuses = new Map(
+    turnIds.length === 0
       ? []
       : (
           await trx
             .selectFrom("turns")
-            .select("id")
-            .where("id", "in", replyTurns)
-            .where("status", "=", "completed")
+            .select(["id", "status"])
+            .where("id", "in", turnIds)
             .execute()
-        ).map((turn) => turn.id),
+        ).map((turn) => [turn.id, turn.status]),
   );
-  return shown.map((row) =>
-    toEntry(row, row.turn_id !== null && completed.has(row.turn_id)),
+  return rows.map((row) =>
+    toEntry(row, row.turn_id === null ? undefined : statuses.get(row.turn_id)),
   );
 }
 
@@ -376,7 +389,7 @@ export function transcripts(
     entry: {
       id?: string;
       turnId: string | null;
-      kind: Entry["kind"] | "reasoning";
+      kind: Entry["kind"];
       text: string;
       activity?: ActivityKind;
       detail?: string;
@@ -841,7 +854,7 @@ export function transcripts(
 
     /**
      * A reply ended: final from now on. Its unfinished activity is stopped,
-     * and its replies are sent again, now split as an ended reply.
+     * and its replies and reasoning are sent again by the ended turn's state.
      */
     endTurn: (chat: ChatRow, agentTurnId: string, end: TurnEnding) =>
       change(chat.id, async (trx, revision) => {
@@ -866,15 +879,15 @@ export function transcripts(
           .where("status", "=", "running")
           .returning("id")
           .execute();
-        const replies = await trx
+        const entries = await trx
           .selectFrom("transcript_entries")
           .select("id")
           .where("person_id", "=", turn.person_id)
           .where("turn_id", "=", turn.id)
-          .where("kind", "=", "reply")
+          .where("kind", "in", ["reply", "reasoning"])
           .execute();
         return {
-          entries: [...stopped, ...replies].map((row) => row.id),
+          entries: [...stopped, ...entries].map((row) => row.id),
           turns: [turn.id],
         };
       }),
@@ -1076,8 +1089,46 @@ export function transcripts(
       }),
 
     /**
-     * The AI's reasoning for a step, kept and never shown yet: its summary,
-     * and everything the agent gave. Once per agent item.
+     * The AI's reasoning for a step as it goes: the line is made when it
+     * starts thinking, and its summary grows as it streams. Its time is from
+     * then until it is whole.
+     */
+    appendReasoning: (
+      chat: ChatRow,
+      agentTurnId: string,
+      itemId: string,
+      text: string,
+    ) =>
+      change(chat.id, async (trx, revision) => {
+        const turn = await turnOf(trx, chat.id, agentTurnId);
+        if (turn?.status !== "running") return undefined;
+        const line = await itemOf(trx, turn, itemId, "reasoning");
+        if (!line) {
+          const id = await insertEntry(trx, chat, revision, {
+            turnId: turn.id,
+            kind: "reasoning",
+            text,
+            agentItemId: itemId,
+          });
+          return { entries: [id], turns: [] };
+        }
+        if (text === "" || line.details !== null) return undefined;
+        await trx
+          .updateTable("transcript_entries")
+          .set({
+            text: sql<string>`text || ${text}`,
+            revision,
+            updated_at: now(),
+          })
+          .where("id", "=", line.id)
+          .execute();
+        return { entries: [line.id], turns: [] };
+      }),
+
+    /**
+     * The AI's reasoning for a step, once it is whole: its summary, which
+     * replaces what streamed, and everything the agent gave. Once per agent
+     * item.
      */
     addReasoning: (
       chat: ChatRow,
@@ -1088,15 +1139,30 @@ export function transcripts(
       change(chat.id, async (trx, revision) => {
         const turn = await turnOf(trx, chat.id, agentTurnId);
         if (turn?.status !== "running") return undefined;
-        if (await itemOf(trx, turn, itemId, "reasoning")) return undefined;
-        const id = await insertEntry(trx, chat, revision, {
-          turnId: turn.id,
-          kind: "reasoning",
-          text: reasoning.summary,
-          agentItemId: itemId,
-          details: JSON.stringify(reasoning.details),
-        });
-        return { entries: [id], turns: [] };
+        const line = await itemOf(trx, turn, itemId, "reasoning");
+        const details = JSON.stringify(reasoning.details);
+        if (!line) {
+          const id = await insertEntry(trx, chat, revision, {
+            turnId: turn.id,
+            kind: "reasoning",
+            text: reasoning.summary,
+            agentItemId: itemId,
+            details,
+          });
+          return { entries: [id], turns: [] };
+        }
+        if (line.details !== null) return undefined;
+        await trx
+          .updateTable("transcript_entries")
+          .set({
+            text: reasoning.summary,
+            details,
+            revision,
+            updated_at: now(),
+          })
+          .where("id", "=", line.id)
+          .execute();
+        return { entries: [line.id], turns: [] };
       }),
 
     /**

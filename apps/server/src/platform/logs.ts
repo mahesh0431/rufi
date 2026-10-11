@@ -109,6 +109,7 @@ const FIELDS: Record<string, (value: unknown) => boolean> = {
       "text",
       "question",
       "activity",
+      "thinking",
       "reasoning",
       "tool_call",
       "turnEnded",
