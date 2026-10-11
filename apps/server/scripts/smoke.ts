@@ -1679,12 +1679,18 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
 };
 
 function transcriptText(snapshot: Snapshot): string {
-  const last = new Map(snapshot.entries.map((e) => [e.turnId, e.id]));
-  return snapshot.entries
+  // Thinking with no summary shows nothing, as in the chat.
+  const shown = snapshot.entries.filter(
+    (e) => e.kind !== "reasoning" || e.text.trim() !== "",
+  );
+  const last = new Map(shown.map((e) => [e.turnId, e.id]));
+  return shown
     .map((e) => {
       let text: string;
       if (e.kind === "activity")
         text = `· ${e.text}${e.detail ? `: ${e.detail}` : ""} (${e.status ?? ""})`;
+      else if (e.kind === "reasoning")
+        text = `AI thinking (${e.status ?? ""}): ${e.text}`;
       else if (e.kind === "receipt" || e.kind === "event" || e.kind === "brief")
         text = `Rufi: ${e.text}`;
       else

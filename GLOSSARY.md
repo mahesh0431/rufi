@@ -112,7 +112,7 @@ _Avoid_: drawer, popup, sidebar
 The chat at its own address, opened with **Chat with Rufi** in the sidebar. A small window opens the chat as a page.
 
 **Transcript**:
-Rufi's own stored copy of the chat: your messages, the AI's replies and its reasoning, a receipt for each save, and one activity line for each thing the AI did, with everything that activity sent and got back. Each part is saved before it is shown; the reasoning and what each activity sent and got back aren't shown yet. The chat shows its latest page first, and older pages as the user scrolls up, with a line between days and a quiet line where the AI **started afresh**; Rufi works out both lines from the transcript when it shows it.
+Rufi's own stored copy of the chat: your messages, the AI's replies and its reasoning, a receipt for each save, and one activity line for each thing the AI did, with everything that activity sent and got back. Each part is saved before it is shown. The reasoning shows as a line for each time the AI thought ("Thinking…", then "Thought for 8s", which opens its summary; none when the AI service gave no summary). A cut step keeps its partial summary; after a crash, with no known end time, its line says "Thinking stopped". What each activity sent and got back isn't shown yet. The chat shows its latest page first, and older pages as the user scrolls up, with a line between days and a quiet line where the AI **started afresh**; Rufi works out both lines from the transcript when it shows it.
 _Avoid_: log, history
 
 **Started afresh**:

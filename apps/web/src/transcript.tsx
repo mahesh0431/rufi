@@ -1,5 +1,7 @@
 // The chat's transcript as the core stored it: your messages, one line per
-// thing the AI did, the AI's replies as Markdown with Based on under each
+// thing the AI did, a line for each time it thought ("Thinking…" with its
+// latest heading, then "Thought for 8s", which opens its summary), the AI's
+// replies as Markdown with Based on under each
 // answer once it ended, Rufi's receipt for each save to the record, Rufi's
 // own event lines (never your words), the line of each visit brief, which
 // opens it, and how a reply ended when it didn't finish. A line between days, and a quiet line
@@ -8,7 +10,16 @@
 // Each entry reads only itself from the live store, so a streaming reply
 // re-renders alone.
 import { Link } from "@tanstack/react-router";
-import { Bell, Check, FileText, LoaderCircle, Square, X } from "lucide-react";
+import {
+  Bell,
+  Brain,
+  Check,
+  ChevronRight,
+  FileText,
+  LoaderCircle,
+  Square,
+  X,
+} from "lucide-react";
 import {
   createContext,
   use,
@@ -28,6 +39,7 @@ import { ChipView } from "./chips.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import type { Live } from "./live.ts";
 import { RetryButton } from "./reading.tsx";
+import { latestHeading, thoughtFor } from "./thinking.ts";
 import { isRunning } from "./transcript-state.ts";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no images,
@@ -397,10 +409,8 @@ function QuietLine() {
 
 function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
   const entry = useStore(live, (state) => state.entries[id]);
-  const streaming = useStore(
-    live,
-    (state) => state.turns[entry?.turnId ?? ""]?.status === "running",
-  );
+  const turn = useStore(live, (state) => state.turns[entry?.turnId ?? ""]);
+  const streaming = turn?.status === "running";
   if (!entry) return null;
   return entry.kind === "message" || entry.kind === "steer" ? (
     <div
@@ -456,6 +466,8 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
     </div>
   ) : entry.kind === "brief" ? (
     <BriefLine id={id} text={entry.text} />
+  ) : entry.kind === "reasoning" ? (
+    <Thinking entry={entry} turn={turn} />
   ) : entry.kind === "activity" ? (
     <p
       data-entry={id}
@@ -469,6 +481,56 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
     </p>
   ) : (
     <Reply id={id} text={entry.text} streaming={streaming} />
+  );
+}
+
+/**
+ * A time the AI thought, as the core says: while it thinks, "Thinking…" and
+ * its summary's latest heading; then "Thought for 8s", which opens the whole
+ * summary. A finished one with no summary has nothing to open, so it shows
+ * nothing. A step cut by its reply's end runs until that end; after a crash
+ * (a reply interrupted with no reason) nobody knows when it ended.
+ */
+function Thinking({ entry, turn }: { entry: Entry; turn: Turn | undefined }) {
+  if (entry.status === "running") {
+    const heading = latestHeading(entry.text);
+    return (
+      <p
+        data-entry={entry.id}
+        className="relative flex min-w-0 items-center gap-1.5 text-muted"
+      >
+        <LoaderCircle size={13} className="shrink-0 animate-spin" aria-hidden />
+        <span className="shrink-0">Thinking…</span>
+        {heading !== "" && <span className="truncate text-xs">{heading}</span>}
+      </p>
+    );
+  }
+  if (entry.text.trim() === "") return null;
+  const stopped = entry.status === "stopped";
+  const end = stopped ? turn?.endedAt : entry.updatedAt;
+  const unknownEnd =
+    stopped &&
+    (end == null ||
+      (turn?.status === "interrupted" && turn.endReason === null));
+  return (
+    <details data-entry={entry.id} className="group text-muted">
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-md hover:text-ink [&::-webkit-details-marker]:hidden">
+        <Brain size={13} className="shrink-0" aria-hidden />
+        <span>
+          {unknownEnd
+            ? "Thinking stopped"
+            : thoughtFor(entry.createdAt, end ?? entry.updatedAt)}
+        </span>
+        <ChevronRight
+          size={12}
+          className="shrink-0 transition-transform group-open:rotate-90"
+          aria-hidden
+        />
+      </summary>
+      <div className="thought mt-1.5 rounded-lg border border-line bg-side px-3 py-2 text-[13px] break-words text-ink">
+        <Marked text={entry.text} />
+      </div>
+    </details>
   );
 }
 
