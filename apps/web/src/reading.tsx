@@ -23,7 +23,7 @@ const documentsPath = (personId: string) =>
   `/api/people/${encodeURIComponent(personId)}/documents`;
 
 /** The person's readings that wait or run, for the strip. */
-const useReadings = (personId: string) =>
+export const useReadings = (personId: string) =>
   useQuery({
     queryKey: ["readings", personId],
     queryFn: async () =>

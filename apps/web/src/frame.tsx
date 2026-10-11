@@ -1,8 +1,9 @@
 // The frame around every page: the sidebar (with the person's record by
-// kind), the toolbar, the chat bar on the Overview, and what the connection
-// to Rufi is doing. It holds the person's live stream on every page, so a
-// save shows wherever you are. It stays when a page fails. Until first run is known to be done, it shows first run only, over
-// the whole window, whatever the address.
+// kind), the toolbar, the chat bar at the bottom right of the pages where
+// you read your health, and what the connection to Rufi is doing. It holds
+// the person's live stream on every page, so a save shows wherever you are.
+// It stays when a page fails. Until first run is known to be done, it shows
+// first run only, over the whole window, whatever the address.
 import {
   Link,
   Outlet,
@@ -25,6 +26,7 @@ import { CHAT_TITLE, ChatDock } from "./chat.tsx";
 import { ReadingSheet } from "./reading.tsx";
 import { FirstRun } from "./first-run.tsx";
 import { retain } from "./live.ts";
+import { resetPanel } from "./panel.ts";
 import { isPageKind, KIND_TITLES } from "./record.tsx";
 import { useFirstRun, useOverview, usePeople, useStatus } from "./reads.ts";
 
@@ -62,6 +64,17 @@ const isFollowUpsPage = (pathname: string) =>
 const isDocumentsPage = (pathname: string) =>
   /^\/people\/[^/]+\/documents(\/[^/]+)?$/.test(pathname);
 
+/**
+ * Whether the page has the chat bar: the pages where you read your health.
+ * Not the chat's page (it has its own box), Help, Settings or Sign in.
+ */
+const hasBar = (pathname: string) =>
+  pathname === "/" ||
+  recordKind(pathname) !== undefined ||
+  isFollowUpsPage(pathname) ||
+  isDocumentsPage(pathname) ||
+  isBriefPage(pathname);
+
 export function Frame() {
   useAppearance();
   const connection = useConnection();
@@ -76,6 +89,8 @@ export function Frame() {
   const person =
     people?.find((p) => p.id === personAt(pathname)) ?? people?.[0];
   const onChat = isChatPage(pathname);
+  const bar =
+    person !== undefined && connection !== "ended" && hasBar(pathname);
   const kind = recordKind(pathname);
   // Their stream on every page: a save, an undo or a reading shows at once.
   const streaming = welcomed && connection !== "ended" ? person?.id : undefined;
@@ -83,6 +98,11 @@ export function Frame() {
     () => (streaming === undefined ? undefined : retain(streaming)),
     [streaming],
   );
+  // Another page, or another person's: the panel closes, and forgets where
+  // focus was.
+  useEffect(() => {
+    resetPanel();
+  }, [pathname]);
   // During first run, another page's address leads home, where Rufi opens
   // once first run is done.
   const navigate = useNavigate();
@@ -171,13 +191,15 @@ export function Frame() {
           </h1>
         </header>
         <Offline shown={connection === "offline"} />
-        <main className="flex-1 overflow-auto">
+        {/* With the bar, the page ends above the room it floats in, so it
+            never covers a row or a button. */}
+        <main
+          className={`min-h-0 flex-1 overflow-auto ${bar ? "pb-[76px]" : ""}`}
+        >
           {connection === "ended" ? <Ended alone={false} /> : <Outlet />}
         </main>
       </div>
-      {person && connection !== "ended" && pathname === "/" && (
-        <ChatDock person={person} />
-      )}
+      {bar && <ChatDock person={person} />}
       <ReadingSheet />
     </div>
   );

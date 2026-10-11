@@ -1182,6 +1182,32 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     };
   },
   /**
+   * Ask Rufi on a report: its one chip, and the AI reads exactly that
+   * report's results (get_records with report): the amended TSH and the
+   * Free T4 of 1 Sep, and answers about them.
+   */
+  report_chip: async (api, home) => {
+    const c = chat(api);
+    await c.say("What does this report show?", [
+      { type: "report", id: "rep-asha-sep" },
+    ]);
+    const snapshot = await c.read();
+    const reply = lastReply(snapshot);
+    return {
+      checks: {
+        read_that_report: recordReads(home).some(
+          (call) =>
+            (JSON.parse(call.input) as { report?: unknown }).report ===
+            "rep-asha-sep",
+        ),
+        mentions_the_tsh: /4\.6/.test(reply),
+        mentions_the_free_t4: /free t4/i.test(reply) && /1\.1/.test(reply),
+        nothing_saved: record(home).saves === 0,
+      },
+      snapshot,
+    };
+  },
+  /**
    * A report that says "repeat in 3 months": the AI sees it on the page,
    * offers to add a follow-up (a person's verdict: the words vary) and saves
    * it only on a yes that names the month

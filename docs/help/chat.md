@@ -4,13 +4,15 @@ The chat is where you talk with Rufi's AI about your record. You have one chat w
 
 ## The chat bar
 
-The chat bar is the box at the bottom right of the Overview. It says "Ask or tell Rufi about" and your name, and shows the model and effort that answer, such as "GPT-6-Astra Medium". It is your chat, the same as the panel and the page, and the same in every browser tab. Help and Settings have no chat bar: to talk to Rufi from there, click **Chat with Rufi** in the sidebar.
+The chat bar is the box at the bottom right of the pages where you read your health: Overview, each page of your record, Follow-ups, Documents, a document's page and a visit brief. It says "Ask or tell Rufi about" and your name, and shows the model and effort that answer, such as "GPT-6-Astra Medium". It is your chat, the same as the panel and the page, and the same in every browser tab. These pages leave room at their bottom for the bar, so it never covers a row or a button. Help and Settings have no chat bar: to talk to Rufi from there, click **Chat with Rufi** in the sidebar. The chat page has its own box.
 
-Under the box, in every size of the chat, "AI can make mistakes. Check important info." reminds you to check what the AI says. To see the ChatGPT plan the AI uses, and its usage, open **Settings** › **ChatGPT plan** (see [Signing in with ChatGPT](signing-in.md#your-plan-in-settings)).
+The bar is always the same size: one line. When you add something to your message with **Ask Rufi** (see [Adding to a message](#adding-to-a-message)), the bar shows the first one's name and how many more, such as "CRP <5 mg/L · 12 Aug 2026 +2", and lights up for a moment. After that, it shows the start of what you typed. When Rufi has something to tell you, such as why it couldn't add something, the bar shows that for the moment, in grey. Click the bar to see it all in the panel, and to write your message.
+
+Under the box, in the panel and on the chat page, "AI can make mistakes. Check important info." reminds you to check what the AI says. To see the ChatGPT plan the AI uses, and its usage, open **Settings** › **ChatGPT plan** (see [Signing in with ChatGPT](signing-in.md#your-plan-in-settings)).
 
 ## The chat panel
 
-Click the bar, or press ⌘J, to open the chat panel over the page. The panel is always the same size, and the page stays as it is behind it.
+Click the bar, or press ⌘J, to open the chat panel over the page. The panel is always the same size, and the page stays as it is behind it. The cursor is in the box, ready for typing.
 
 A thin bar at the top of the panel has:
 
@@ -18,7 +20,7 @@ A thin bar at the top of the panel has:
 - **Chat with Rufi**, the chat's name.
 - **Open as page** (the arrows), which shows the chat as a page.
 
-Press ⌘J again, or click anywhere outside the panel, to close it. What you typed stays in the box.
+Press ⌘J again, or click anywhere outside the panel, to close it. What you typed stays in the box. Going to another page also closes it.
 
 ## The chat page
 
@@ -46,9 +48,26 @@ A message can have up to 10,000 characters. When the box has more, it says so, a
 
 You can add your records and documents to a message, so the AI knows exactly what you mean by "this" or "these". Each one shows in the box as a chip, above your text: a record such as a result with its value and date, or a document with its name. Point at a chip to see what it is.
 
-- **A record:** on its kind's page (see [Your record](record.md)), point at its row and click **Ask Rufi**. To add several, tick their boxes, then click **Add 2 to chat** (with the number you chose). **Clear** unticks them all.
-- **A document:** on the Documents page, point at its row and click **+ Add to chat**.
+- **A record:** on its kind's page (see [Your record](record.md)), point at its row and click **Ask Rufi**.
+- **A report:** on Results, click **Ask Rufi** in a report's heading. Its results go in as one chip, such as "Sunrise Labs · 12 Aug 2026 · 3 results", and the AI reads exactly that report's results. Results you typed in the chat have no such heading button.
+- **A follow-up or a document that needs you:** on Overview, click **Ask Rufi** on its line in **Needs you**.
+- **A document:** on the Documents page, point at its row and click **Ask Rufi**.
+- **A result the reader read:** on a document's page, point at its row and click **Ask Rufi** (see [Documents](documents.md#add-some-results-to-the-chat)).
 - **A new file:** click the paperclip next to the box, or drop files on the chat panel or the chat page. Each file is added as a document at once, the same as on the Documents page (see [Documents](documents.md#add-documents)), and its chip goes in the box. Rufi starts to read it then, not when you send. A file you already added gives the chip of the document you have, and the box says so.
+
+**Ask Rufi** never takes you away from the page, and doesn't open the panel: collect what you want to ask about while you read, then click the bar to write and send. When the panel is open, **Ask Rufi** adds to its box, and the panel stays open. If Rufi can't add it at that moment, the bar says why and what to do: the box is still loading, a message is being sent, or your last message may not have reached Rufi (send it again or change it first).
+
+A document's chip in the box says what Rufi is doing with that document:
+
+| The chip says                                   | It means                                                                                 |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| **Reading…**, such as **Reading… 2 of 3 pages** | Rufi is reading it now, with the pages read so far.                                      |
+| **Waiting to read**                             | The reading waits for its turn, for you to sign in, or for a usage limit.                |
+| **Read**                                        | The reading ended. This doesn't mean anything is saved.                                  |
+| **Read · some pages unclear**                   | The reading ended, but some pages couldn't be read. **Retry** is on the document's page. |
+| **Couldn't read**                               | The reading failed.                                                                      |
+
+A document that was never read, or whose state Rufi doesn't know yet, shows no state. While a file you added is on its way, the box says "Adding" and its name until its chip comes. A chip in a message you sent shows no state.
 
 To take a chip out, click its **×**. This changes nothing in your record. The chips are kept with what you typed, also when you reload or Rufi starts again, and they go with the message: your message in the chat shows them too.
 

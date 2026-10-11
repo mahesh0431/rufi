@@ -12,7 +12,7 @@ Overview is the first page you see. It has three parts, in this order:
    - a document whose reading couldn't finish says so;
    - a follow-up says when it is due, for example "overdue, was due Sep 2026" (see [Follow-ups](follow-ups.md)).
 
-   Click **Open** to go to the document's page (see [Documents](documents.md)), or to that follow-up on Follow-ups. A document read with nothing to save isn't here. When nothing waits, this part isn't shown.
+   Click **Open** to go to the document's page (see [Documents](documents.md)), or to that follow-up on Follow-ups. Click **Ask Rufi** to put it in the chat's box and ask about it (see [Adding to a message](chat.md#adding-to-a-message)). A document read with nothing to save isn't here. When nothing waits, this part isn't shown.
 
 2. **Your record:** one tile for each kind of record, with its count and a short summary. Click a tile to open that kind's page. A kind with nothing in it says **None yet**.
 3. **Recent changes:** your last 5 saves and undos, newest first. Click one to see its receipt, the same as in the chat.
@@ -58,9 +58,9 @@ Click a record's name to open it in place. Click again to close it.
 
 ## Ask Rufi about a row
 
-Point at a row and click **Ask Rufi**. The record goes in the chat's box as a chip, and the chat opens. Say what you want, for example "this stopped last week", and send. The AI changes your record only after you say yes, and the chat shows a receipt.
+Point at a row and click **Ask Rufi**. The record goes in the chat's box as a chip, and you stay on the page: the chat bar shows what you added (see [The chat bar](chat.md#the-chat-bar)). Add more rows the same way if you like. Then click the bar, say what you want, for example "this stopped last week", and send. The AI changes your record only after you say yes, and the chat shows a receipt.
 
-To ask about several records, tick their boxes, then click **Add 2 to chat** (with the number you chose). **Clear** unticks them all.
+On Results, a report's heading has its own **Ask Rufi**: it adds that report's results as one chip, and the AI reads exactly those.
 
 ## When your record changes
 

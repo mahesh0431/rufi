@@ -4,7 +4,8 @@
 // switch to make them separate and their order to change; a PDF is always
 // a document of its own. A row opens the document's page; its original
 // opens from there in a popup: a PDF in the browser's own PDF viewer,
-// photos one under the other (a HEIC through its JPEG copy).
+// photos one under the other (a HEIC through its JPEG copy). Ask Rufi on a
+// row puts its chip in the chat box.
 import { Dialog } from "@base-ui/react/dialog";
 import { Switch } from "@base-ui/react/switch";
 import type { Person } from "@rufi/contracts";
@@ -26,9 +27,8 @@ import {
   useState,
 } from "react";
 import { fetchFile, upload } from "./api.ts";
-import { boxFor } from "./boxes.ts";
-import { useShowChat } from "./panel.ts";
-import type { BoxChip } from "./draft.ts";
+import { AskRufi } from "./ask.tsx";
+import { askRufi } from "./panel.ts";
 import { printedDate, printedDay } from "./dates.ts";
 import { queries, useDocuments } from "./reads.ts";
 import { openReading, RetryButton, TextButton } from "./reading.tsx";
@@ -363,22 +363,6 @@ function Status({
   );
 }
 
-/** "+ Add to chat" on a row: its chip goes in the chat box, and the chat opens. */
-function AddToChat({ personId, chip }: { personId: string; chip: BoxChip }) {
-  const showChat = useShowChat(personId);
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        if (boxFor(personId).append("", [chip])) showChat();
-      }}
-      className="rounded-lg border border-line bg-surface px-2 py-px text-xs whitespace-nowrap text-accent-ink opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus:opacity-100"
-    >
-      + Add to chat
-    </button>
-  );
-}
-
 function List({
   personId,
   documents,
@@ -400,7 +384,7 @@ function List({
               <th className="py-2 font-normal">Added</th>
               <th className="py-2 font-normal">Status</th>
               <th className="py-2 font-normal">
-                <span className="sr-only">Add to chat</span>
+                <span className="sr-only">Ask Rufi</span>
               </th>
             </tr>
           </thead>
@@ -444,12 +428,15 @@ function List({
                     <Status personId={personId} document={document} />
                   </td>
                   <td className="py-2.5 pl-2 text-right">
-                    <AddToChat
-                      personId={personId}
-                      chip={{
-                        pointer: { type: "document", id: document.id },
-                        label: name,
-                        detail: "",
+                    <AskRufi
+                      onClick={() => {
+                        askRufi(personId, [
+                          {
+                            pointer: { type: "document", id: document.id },
+                            label: name,
+                            detail: "",
+                          },
+                        ]);
                       }}
                     />
                   </td>

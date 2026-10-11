@@ -64,6 +64,7 @@ test("a save in one window refreshes Overview's tiles there and a kind's page in
   const tile = page.getByRole("main").getByRole("link", { name: /^Results 7/ });
   await expect(tile).toBeVisible();
   await accessible(page);
+  await chat(page).getByRole("button", { name: "Open the chat" }).click();
   await box(page).fill("Remove the CRP result");
   await box(page).press("Enter");
   await expect(chat(page).locator(".receipt")).toContainText("CRP");
@@ -115,6 +116,7 @@ test("a row's history shows a correction before and after, a time with its time"
     },
   });
   await page.goto(rufi.link());
+  await chat(page).getByRole("button", { name: "Open the chat" }).click();
   await box(page).fill("It was taken at 9:45, not 8:30");
   await box(page).press("Enter");
   await expect(chat(page).locator(".receipt")).toContainText("Blood pressure");
@@ -230,7 +232,7 @@ test("a reading that ends, with nothing saved, shows in Needs you on an open Ove
   await other.goto(rufi.link());
   await sidebar(other).getByRole("link", { name: "Documents" }).click();
   const add = async (name: string, mimeType: string, file: string) => {
-    await other.getByLabel("Choose documents").setInputFiles({
+    await other.getByLabel("Choose documents", { exact: true }).setInputFiles({
       name,
       mimeType,
       buffer: await readFile(

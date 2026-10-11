@@ -3,7 +3,8 @@
 // each for the other kinds), more as the person scrolls. A row opens in
 // place to its sources, its history and, for a result, its values over
 // time. The page only shows: changes start in the chat, with Ask Rufi on a
-// row, or several ticked at once.
+// row (or a report's heading): its chip goes in the chat box, and the page
+// stays.
 import type { Person } from "@rufi/contracts";
 import type {
   PageKind,
@@ -15,10 +16,10 @@ import type {
 } from "@rufi/contracts/record";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { boxFor } from "./boxes.ts";
+import { AskRufi } from "./ask.tsx";
 import { printedDate, printedTime } from "./dates.ts";
 import type { BoxChip } from "./draft.ts";
-import { useShowChat } from "./panel.ts";
+import { askRufi } from "./panel.ts";
 import { useRecordDetail, useRecordPages, useSeries } from "./reads.ts";
 import { Button, Problem } from "./ui.tsx";
 
@@ -194,6 +195,19 @@ export const chipOf = (row: RecordRow): BoxChip => ({
   detail: `${NOUNS[row.kind]} in your record`,
 });
 
+/**
+ * A report's group as one chip: the report, whose results the AI reads.
+ * The group's id is "report:" and the report's id; the core names the chip.
+ */
+const reportChip = (group: RecordGroup): BoxChip => {
+  const heading = groupHeading(group);
+  return {
+    pointer: { type: "report", id: group.id.slice("report:".length) },
+    label: `${heading.name} · ${heading.detail}`,
+    detail: "",
+  };
+};
+
 /** A group's heading: a report, results typed in the chat, or no date. */
 function groupHeading(group: RecordGroup) {
   const when = group.date === undefined ? undefined : printedDate(group.date);
@@ -229,9 +243,6 @@ export function RecordPage({
     opened === undefined ? null : `${kind}:${opened}`,
   );
   const sought = useRef(opened);
-  const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
-  const [problem, setProblem] = useState<string | null>(null);
-  const showChat = useShowChat(person.id);
   const more = useRef<HTMLButtonElement | null>(null);
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = pages;
 
@@ -273,22 +284,6 @@ export function RecordPage({
     }
   }, [loaded, kind, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  const addToChat = (rows: readonly RecordRow[]) => {
-    if (boxFor(person.id).append("", rows.map(chipOf))) {
-      setTicked(new Set());
-      setProblem(null);
-      showChat();
-    } else {
-      setProblem("A message is being sent: add these again in a moment.");
-    }
-  };
-  const tick = (row: RecordRow) => {
-    const next = new Set(ticked);
-    if (next.has(row.id)) next.delete(row.id);
-    else next.add(row.id);
-    setTicked(next);
-  };
-
   if (pages.data === undefined) {
     return (
       <div className="mx-auto max-w-[790px] px-6 py-8">
@@ -311,11 +306,8 @@ export function RecordPage({
         const key = `${shown.kind}:${shown.id}`;
         setOpen(open === key ? null : key);
       }}
-      ticked={ticked.has(shown.id)}
-      selecting={ticked.size > 0}
-      onTick={tick}
       onAsk={(chosen) => {
-        addToChat([chosen]);
+        askRufi(person.id, [chipOf(chosen)]);
       }}
     />
   );
@@ -338,11 +330,22 @@ export function RecordPage({
               aria-label={`${heading.name} · ${heading.detail}`}
               className="mb-3 rounded-xl border border-line bg-surface"
             >
-              <h2 className="border-b border-line px-3 py-2 font-semibold">
-                {heading.name}{" "}
-                <span className="font-normal text-muted">
-                  · {heading.detail}
+              <h2 className="group flex items-center gap-1 border-b border-line px-3 py-2 font-semibold">
+                <span className="min-w-0 flex-1">
+                  {heading.name}{" "}
+                  <span className="font-normal text-muted">
+                    · {heading.detail}
+                  </span>
                 </span>
+                {group.type === "report" && (
+                  <AskRufi
+                    aria-label={`Ask Rufi about this report: ${heading.name} · ${heading.detail}`}
+                    className="font-normal"
+                    onClick={() => {
+                      askRufi(person.id, [reportChip(group)]);
+                    }}
+                  />
+                )}
               </h2>
               <ul>{group.rows.map((shown) => row(shown, group.date))}</ul>
             </section>
@@ -369,39 +372,6 @@ export function RecordPage({
           <Problem error={pages.error} retry={() => void pages.refetch()} />
         </div>
       )}
-      {problem !== null && (
-        <p role="alert" className="mt-2 px-0.5 text-muted">
-          {problem}
-        </p>
-      )}
-      {ticked.size > 0 && (
-        <div className="sticky bottom-4 mt-3 flex items-center gap-2.5 rounded-xl bg-surface px-3 py-2 shadow-float">
-          <span className="flex-1 font-semibold">{ticked.size} chosen</span>
-          <Button
-            onClick={() => {
-              setTicked(new Set());
-            }}
-          >
-            Clear
-          </Button>
-          <Button
-            look="main"
-            onClick={() => {
-              // In the page's order, as the screen shows them.
-              addToChat(
-                groups
-                  .flatMap((group) => group.rows)
-                  .filter(
-                    (shown): shown is RecordRow =>
-                      ticked.has(shown.id) && !isBad(shown),
-                  ),
-              );
-            }}
-          >
-            Add {ticked.size} to chat
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
@@ -412,9 +382,6 @@ function RowView({
   groupDate,
   open,
   onOpen,
-  ticked,
-  selecting,
-  onTick,
   onAsk,
 }: {
   personId: string;
@@ -422,9 +389,6 @@ function RowView({
   groupDate: string | undefined;
   open: boolean;
   onOpen: () => void;
-  ticked: boolean;
-  selecting: boolean;
-  onTick: (row: RecordRow) => void;
   onAsk: (row: RecordRow) => void;
 }) {
   if (isBad(row)) {
@@ -442,17 +406,8 @@ function RowView({
       className="border-t border-line first:border-t-0"
     >
       <div
-        className={`group grid items-center gap-2 px-3 py-2 ${result ? "grid-cols-[20px_1.2fr_1fr_0.9fr_1fr_0.9fr_auto]" : "grid-cols-[20px_1.4fr_1fr_0.8fr_1fr_auto]"} ${open || ticked ? "bg-accent-soft" : "hover:bg-side"}`}
+        className={`group grid items-center gap-2 px-3 py-2 ${result ? "grid-cols-[1.2fr_1fr_0.9fr_1fr_0.9fr_auto]" : "grid-cols-[1.4fr_1fr_0.8fr_1fr_auto]"} ${open ? "bg-accent-soft" : "hover:bg-side"}`}
       >
-        <input
-          type="checkbox"
-          aria-label={`Choose ${cells.title}`}
-          checked={ticked}
-          onChange={() => {
-            onTick(row);
-          }}
-          className={`size-[15px] accent-accent ${selecting ? "" : "opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"}`}
-        />
         <button
           type="button"
           aria-expanded={open}
@@ -469,17 +424,11 @@ function RowView({
         <span>{cells.status}</span>
         <span className="text-muted">{cells.date}</span>
         <span className="text-right">
-          {!selecting && (
-            <button
-              type="button"
-              onClick={() => {
-                onAsk(row);
-              }}
-              className="rounded-lg border border-line bg-surface px-2 py-px text-xs whitespace-nowrap text-accent-ink opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus:opacity-100"
-            >
-              Ask Rufi
-            </button>
-          )}
+          <AskRufi
+            onClick={() => {
+              onAsk(row);
+            }}
+          />
         </span>
       </div>
       {open && <RowDetail personId={personId} row={row} />}

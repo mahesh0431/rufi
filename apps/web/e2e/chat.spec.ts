@@ -45,6 +45,9 @@ test.afterEach(async ({ page }) => {
 const chat = (page: Page) => page.getByRole("region", { name: "Chat" });
 const box = (scope: Page | Locator) =>
   scope.getByRole("textbox", { name: "Message to Rufi" });
+/** The closed bar: a pill that opens the chat panel. */
+const opener = (scope: Locator) =>
+  scope.getByRole("button", { name: "Open the chat" });
 const log = (scope: Page | Locator) =>
   scope.getByRole("log", { name: "Messages" });
 const sidebar = (page: Page) => page.getByRole("complementary");
@@ -74,9 +77,9 @@ const kept = (page: Page, text: string) =>
       (response.request().postData() ?? "").includes(text),
   );
 
-/** Opens the panel from the bar and sends a message from it. */
+/** Sends a message from the panel, opening it from the bar when it is closed. */
 async function send(page: Page, text: string) {
-  await box(chat(page)).click();
+  if (await opener(chat(page)).isVisible()) await opener(chat(page)).click();
   await box(chat(page)).fill(text);
   await box(chat(page)).press("Enter");
   await expect(box(chat(page))).toHaveValue("");
@@ -87,13 +90,11 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   rufi,
 }) => {
   await opened(page, rufi);
-  await expect(box(chat(page))).toHaveAttribute(
-    "placeholder",
+  await expect(opener(chat(page))).toHaveAccessibleDescription(
     "Ask or tell Rufi about Asha Fictional…",
   );
-  await expect(
-    chat(page).getByText("AI can make mistakes. Check important info."),
-  ).toBeVisible();
+  // The reminder is under the panel, where answers are read.
+  await expect(chat(page).getByText(/AI can make mistakes/)).toHaveCount(0);
   await expect(sidebar(page).getByRole("link")).toHaveText([
     "Chat with Rufi",
     "Overview",
@@ -112,7 +113,7 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   await accessible(page);
 
   // The panel: the chat's name; before the first message, nothing more.
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await expect(
     chat(page).getByRole("heading", { name: "Chat with Rufi" }),
   ).toBeVisible();
@@ -141,12 +142,20 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   await expect(
     chat(page).getByRole("button", { name: "Open as page" }),
   ).toHaveCount(0);
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await chat(page).getByRole("button", { name: "Open as page" }).click();
   await expect(page).toHaveURL(/\/people\/asha\/chat$/);
 
-  // The bar is on the Overview only; Chat with Rufi opens the chat from any
-  // page, as a page of its own.
+  // The bar is on the pages where you read your health, not Help or
+  // Settings; Chat with Rufi opens the chat from any page, as a page of its
+  // own.
+  for (const name of ["Results", "Follow-ups", "Documents"]) {
+    await sidebar(page)
+      .getByRole("link", { name: new RegExp(`^${name}`) })
+      .click();
+    await expect(toolbar(page)).toHaveText(name);
+    await expect(opener(chat(page))).toBeVisible();
+  }
   for (const name of ["Help", "Settings"]) {
     await sidebar(page).getByRole("link", { name }).click();
     await expect(toolbar(page)).toHaveText(name);
@@ -172,7 +181,7 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   await expect(page).toHaveURL(/\/people\/asha\/chat$/);
   await expect(log(page).locator(".reply")).toHaveText("ok:drip");
   await sidebar(page).getByRole("link", { name: "Overview" }).click();
-  await expect(box(chat(page))).toBeVisible();
+  await expect(opener(chat(page))).toBeVisible();
 });
 
 test("Stop keeps what the reply wrote so far", async ({ page, rufi }) => {
@@ -230,7 +239,7 @@ test("messages sent during a reply wait: edit, reorder, remove, and send one aft
   await chat(page).getByRole("button", { name: "Stop" }).click();
   await expect(answering).toHaveCount(0);
   await expect(chat(page).getByRole("button", { name: "Send" })).toBeVisible();
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await expect(log(chat(page))).toContainText("Stopped.");
   await expect(waiting).toContainText(
     "Stopped · these go when you send a message",
@@ -314,7 +323,7 @@ test("signed out, the model's menu signs in", async ({ page, rufi }) => {
     }),
   );
   await opened(page, rufi);
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await expect(
     chat(page).getByRole("heading", { name: "Chat with Rufi" }),
   ).toBeVisible();
@@ -405,7 +414,7 @@ test("a draft is saved as you type, silently; it survives a reload and a restart
   rufi,
 }) => {
   await opened(page, rufi);
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   const text = "Questions for the visit on 14 Oct: is the TSH amended?";
   await expect(box(chat(page))).toBeEditable();
   const saved = kept(page, text);
@@ -413,14 +422,14 @@ test("a draft is saved as you type, silently; it survives a reload and a restart
   await saved;
   await expect(chat(page).getByRole("status")).toHaveCount(0);
   await page.reload();
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await expect(box(chat(page))).toHaveValue(text);
 
   const { port } = rufi.core;
   await rufi.stop();
   await rufi.start({ port });
   await page.goto(rufi.link());
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await expect(box(chat(page))).toHaveValue(text);
   await expect(log(chat(page))).toHaveCount(0);
 });
@@ -472,7 +481,7 @@ test("a save whose answer is lost keeps what you typed after it", async ({
   rufi,
 }) => {
   await opened(page, rufi);
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await expect(box(chat(page))).toBeEditable();
   // The core keeps the first save, but its answer never reaches the page.
   const stored = Promise.withResolvers<undefined>();
@@ -495,7 +504,7 @@ test("a save whose answer is lost keeps what you typed after it", async ({
   await expect(box(chat(page))).toHaveValue("Start of question, and more");
   await expect(chat(page).getByRole("alert")).toHaveCount(0);
   await page.reload();
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await expect(box(chat(page))).toHaveValue("Start of question, and more");
 });
 
@@ -504,7 +513,7 @@ test("a quick send whose answer was lost keeps its id through Help and reload: t
   rufi,
 }) => {
   await opened(page, rufi);
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await expect(box(chat(page))).toBeEditable();
   // Send before the 400 ms draft save, without depending on machine speed.
   const clockTime = Date.now();
@@ -612,7 +621,7 @@ test("when Rufi stops while it hands a message to the AI, the message is not sur
   await rufi.stop();
   await rufi.start({ port });
   await page.goto(rufi.link());
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await expect(waiting).toContainText(
     "Not sure this reached the AI. Check the chat before you send it again.",
   );
@@ -636,7 +645,7 @@ test("a Rufi event shows as Rufi's line; after a Stop its note waits and goes wi
       VALUES ('q-e1', 'asha', 'c-asha', 'rufi', 'A lab report was read; one value is unsure.', 'e-1', 1, 'paused', '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');`);
   await rufi.start();
   await page.goto(rufi.link());
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await expect(log(chat(page))).toContainText(
     "RufiLab report · 12 Aug · 42 results read · 1 to check",
   );
@@ -661,14 +670,14 @@ test("a draft longer than Rufi takes says so, and isn't kept or sent", async ({
   rufi,
 }) => {
   await opened(page, rufi);
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await box(chat(page)).fill("x".repeat(10_001));
   await expect(chat(page).getByRole("alert")).toHaveText(
     "Too long to keep or send: at most 10,000 characters, and this is 10,001.",
   );
   await expect(chat(page).getByRole("button", { name: "Send" })).toBeDisabled();
   await page.reload();
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await expect(box(chat(page))).toHaveValue("");
 });
 
@@ -714,7 +723,7 @@ test("two tabs: the reply streams in both; the last save wins", async ({
   await send(page, "Hello");
   const other = await context.newPage();
   await other.goto((await runningLink(rufi.home)) ?? "");
-  await box(chat(other)).click();
+  await opener(chat(other)).click();
   await expect(log(chat(other)).locator(".reply")).toHaveText("ok:Hello");
 
   // Each tab saves over the other, and says nothing.
@@ -726,7 +735,7 @@ test("two tabs: the reply streams in both; the last save wins", async ({
   await second;
   await expect(chat(other).getByRole("alert")).toHaveCount(0);
   await page.reload();
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await expect(box(chat(page))).toHaveValue("Typed in the second tab");
   await box(chat(page)).press("Enter");
   await expect(log(chat(other)).locator(".reply").last()).toHaveText(
@@ -741,7 +750,7 @@ test("Markdown in a reply: tables and web links work; HTML, images and other lin
   await opened(page, rufi);
   const requests: string[] = [];
   page.on("request", (request) => requests.push(request.url()));
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await box(chat(page)).fill(
     [
       "![pixel](http://127.0.0.1:9/pixel.png) <img src=http://127.0.0.1:9/x.png>",
@@ -776,7 +785,7 @@ test("Markdown in a reply: tables and web links work; HTML, images and other lin
   expect(requests.filter((url) => url.includes("127.0.0.1:9"))).toEqual([]);
 });
 
-test("⌘J opens the panel; Esc steps back and returns focus", async ({
+test("⌘J opens the panel; Esc steps back and returns focus; another page closes it", async ({
   page,
   rufi,
 }) => {
@@ -798,6 +807,33 @@ test("⌘J opens the panel; Esc steps back and returns focus", async ({
   await page.keyboard.press("Escape");
   await expect(minimise).toHaveCount(0);
   await expect(settings).toBeFocused();
+
+  // Another page closes the panel: coming back shows the bar.
+  await sidebar(page)
+    .getByRole("link", { name: /^Results/ })
+    .click();
+  await page.keyboard.press("ControlOrMeta+j");
+  await expect(minimise).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(minimise).toHaveCount(0);
+  await page.goForward();
+  await expect(opener(chat(page))).toBeVisible();
+  await expect(minimise).toHaveCount(0);
+
+  // When what had the focus is gone, Esc puts it on the bar.
+  await page.evaluate(() => {
+    const gone = document.createElement("button");
+    gone.id = "gone";
+    document.body.append(gone);
+    gone.focus();
+  });
+  await page.keyboard.press("ControlOrMeta+j");
+  await expect(minimise).toBeVisible();
+  await page.evaluate(() => document.getElementById("gone")?.remove());
+  await page.keyboard.press("Escape");
+  await expect(minimise).toHaveCount(0);
+  await expect(opener(chat(page))).toBeFocused();
 });
 
 test("a click outside the panel steps back to the bar and keeps what you typed; a click in it, its menu, Stop or Based on doesn't", async ({
@@ -842,11 +878,13 @@ test("a click outside the panel steps back to the bar and keeps what you typed; 
   await box(chat(page)).fill("Half a thought");
   await page.getByRole("main").click({ position: { x: 20, y: 20 } });
   await expect(minimise).toHaveCount(0);
-  await expect(box(chat(page))).toHaveValue("Half a thought");
+  await expect(opener(chat(page))).toHaveAccessibleDescription(
+    "Half a thought",
+  );
   await expect(log(chat(page))).toHaveCount(0);
 
   // With the menu open, one click outside closes both.
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await chat(page)
     .getByRole("button", { name: /^Model and effort: / })
     .click();
@@ -859,7 +897,7 @@ test("a click outside the panel steps back to the bar and keeps what you typed; 
 test("a small window opens the chat as a page", async ({ page, rufi }) => {
   await page.setViewportSize({ width: 700, height: 700 });
   await opened(page, rufi);
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await expect(page).toHaveURL(/\/people\/asha\/chat$/);
   const at = page.url();
   await expect(toolbar(page)).toHaveText("Chat with Rufi");
@@ -927,7 +965,7 @@ test("a save to the record shows Rufi's receipt, also after a reload", async ({
   );
   await accessible(page);
   await page.reload();
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await shown(chat(page));
 
   // The chat's own page shows it the same way.
@@ -999,6 +1037,7 @@ test("a save made in another window while this one's connection was down shows o
 
   const other = await context.newPage();
   await other.goto(rufi.link());
+  await opener(chat(other)).click();
   await box(chat(other)).fill("Remove the CRP result");
   await box(chat(other)).press("Enter");
   await expect(log(chat(other)).locator(".receipt")).toContainText("CRP");
@@ -1067,7 +1106,7 @@ test("Based on, under an answer once it ended, opens How and Used; small talk ha
 
   // After a reload, the same.
   await page.reload();
-  await box(chat(page)).click();
+  await opener(chat(page)).click();
   await expect(basedOn).toHaveCount(2);
   await basedOn.first().click();
   await expect(

@@ -1,12 +1,15 @@
-// The home: what needs you, your record as one tile per kind, and the latest
-// saves, each opening to its receipt. A tile opens its kind's page. The
+// The home: what needs you (each line with Ask Rufi, for the chat box over
+// the page), your record as one tile per kind, and the latest saves, each
+// opening to its receipt. A tile opens its kind's page. The
 // tiles' words are worked out from the saved record, never by the AI.
 import type { Person } from "@rufi/contracts";
 import type { RecentChange, Tile } from "@rufi/contracts/record";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { AskRufi } from "./ask.tsx";
 import { dayLine, greeting, printedDate, printedTime, today } from "./dates.ts";
 import { whenDue } from "./follow-ups.tsx";
+import { askRufi } from "./panel.ts";
 import { KIND_TITLES } from "./record.tsx";
 import { useOverview } from "./reads.ts";
 import { Receipt } from "./transcript.tsx";
@@ -61,6 +64,19 @@ export function OverviewPage({ person }: { person: Person }) {
                                 .join(" · ")}
                       </span>
                     </span>
+                    <AskRufi
+                      shown
+                      aria-label={`Ask Rufi about ${document.name}`}
+                      onClick={() => {
+                        askRufi(person.id, [
+                          {
+                            pointer: { type: "document", id: document.id },
+                            label: document.name,
+                            detail: "",
+                          },
+                        ]);
+                      }}
+                    />
                     <Link
                       to="/people/$personId/documents/$documentId"
                       params={{ personId: person.id, documentId: document.id }}
@@ -89,6 +105,23 @@ export function OverviewPage({ person }: { person: Person }) {
                         )}
                       </span>
                     </span>
+                    <AskRufi
+                      shown
+                      aria-label={`Ask Rufi about ${followUp.title}`}
+                      onClick={() => {
+                        askRufi(person.id, [
+                          {
+                            pointer: {
+                              type: "record",
+                              kind: "follow_up",
+                              id: followUp.id,
+                            },
+                            label: followUp.title,
+                            detail: "",
+                          },
+                        ]);
+                      }}
+                    />
                     <Link
                       to="/people/$personId/follow-ups"
                       params={{ personId: person.id }}

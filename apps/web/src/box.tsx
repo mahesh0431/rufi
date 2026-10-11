@@ -5,7 +5,11 @@
 // only when the core took the message, and nothing is sent again by itself.
 // The model and effort are chosen beside Send; what waits shows above the
 // box. Chips (references to documents, draft items and records) sit above
-// the text and go with it; the paperclip adds files as documents.
+// the text and go with it; a document's chip says what Rufi is doing with
+// it. The paperclip adds files as documents. The bar is a pill of one fixed
+// size that opens the panel: on one line, what was added (the first chip's
+// name and how many more), then the text's start, or a reason when there is
+// one; the panel shows it whole.
 import {
   MAX_MESSAGE_CHARS,
   MAX_REFS,
@@ -20,17 +24,30 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { type ReactNode, type RefObject, useEffect, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useId,
+  useState,
+} from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
 import { AttachButton, AttachStatus } from "./attach.tsx";
 import { boxFor } from "./boxes.ts";
-import { ChipView } from "./chips.tsx";
-import { type BoxState, chipKey, tooLong, tooMany } from "./draft.ts";
+import { ChipView, useChipStates } from "./chips.tsx";
+import {
+  type BoxChip,
+  type BoxState,
+  chipKey,
+  tooLong,
+  tooMany,
+} from "./draft.ts";
 import { chatPath, type Live, messageOf } from "./live.ts";
 import { ReaderStrip } from "./reading.tsx";
 import { ModelMenu } from "./model-menu.tsx";
+import { usePanel } from "./panel.ts";
 import { isRunning } from "./transcript-state.ts";
 import { Button } from "./ui.tsx";
 
@@ -56,8 +73,8 @@ export function Box({
   size: "bar" | "panel" | "page";
   /** The bar: a click opens the chat. */
   onOpen?: () => void;
-  /** The box's text field, for focus. */
-  inputRef: RefObject<HTMLTextAreaElement | null>;
+  /** The box's text field, for focus; in the bar, the pill. */
+  inputRef: RefObject<HTMLElement | null>;
 }) {
   const box = boxFor(person.id);
   const text = useStore(box.store, (state) => state.text);
@@ -66,6 +83,8 @@ export function Box({
   const saved = useStore(box.store, saveState);
   const notice = useStore(box.store, (state) => state.notice);
   const chips = useStore(box.store, (state) => state.refs);
+  const refused = usePanel((state) => state.refused);
+  const stateOf = useChipStates(person.id);
   const running = useStore(live, isRunning);
   const [problem, setProblem] = useState<string | null>(null);
   const long = tooLong(text);
@@ -91,6 +110,19 @@ export function Box({
 
   const stop = () => act(() => request("POST", `${chatPath(person.id)}/stop`));
 
+  /**
+   * Why the box can't keep, send or add what it should, in words; an add
+   * refused just now comes first.
+   */
+  const why = long
+    ? `Too long to keep or send: at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters, and this is ${text.length.toLocaleString("en")}.`
+    : many
+      ? `Too many added to keep or send: at most ${String(MAX_REFS)}, and this has ${String(chips.length)}. Take some out.`
+      : (refused ?? notice ?? problem);
+  /** In the pill, for the moment, in place of the text. */
+  const reason = why ?? saved;
+  const pill = useId();
+
   // The box grows with its text up to a few lines, then scrolls.
   const field = (
     <div
@@ -98,7 +130,9 @@ export function Box({
       data-text={text}
     >
       <textarea
-        ref={inputRef}
+        ref={(element) => {
+          inputRef.current = element;
+        }}
         rows={1}
         aria-label="Message to Rufi"
         placeholder={
@@ -108,9 +142,9 @@ export function Box({
         }
         value={text}
         readOnly={!loaded || locked}
-        onClick={onOpen}
         onChange={(event) => {
           box.type(event.target.value);
+          if (refused !== null) usePanel.setState({ refused: null });
         }}
         onKeyDown={(event) => {
           if (
@@ -119,10 +153,7 @@ export function Box({
             !event.nativeEvent.isComposing
           ) {
             event.preventDefault();
-            if (hasText) {
-              onOpen?.();
-              submit(false);
-            }
+            if (hasText) submit(false);
           }
         }}
         className="resize-none overflow-hidden bg-transparent outline-none placeholder:text-muted"
@@ -170,18 +201,37 @@ export function Box({
       )}
       {size !== "bar" && <AttachStatus personId={person.id} />}
       {size === "bar" ? (
-        <div className="flex items-center gap-1.5 py-1.5 pr-1.5 pl-4">
-          {running ? (
-            <button
-              type="button"
-              onClick={onOpen}
-              className="min-w-0 flex-1 text-left"
+        <div className="flex h-11 items-center gap-1.5 pr-1.5">
+          <button
+            type="button"
+            ref={(element) => {
+              inputRef.current = element;
+            }}
+            aria-label="Open the chat"
+            aria-describedby={pill}
+            onClick={onOpen}
+            className="flex h-full min-w-0 flex-1 items-center rounded-l-full pl-3 text-left"
+          >
+            <span
+              id={pill}
+              className="flex min-w-0 flex-1 items-center gap-1.5"
             >
-              <Answering live={live} />
-            </button>
-          ) : (
-            field
-          )}
+              <Added chips={chips} />{" "}
+              {reason !== null ? (
+                <span className="truncate text-muted">{reason}</span>
+              ) : running ? (
+                <Answering live={live} />
+              ) : (
+                <span
+                  className={`truncate ${text.trim() === "" ? "text-muted" : ""}`}
+                >
+                  {text.trim() === ""
+                    ? `Ask or tell Rufi about ${person.displayName}…`
+                    : text}
+                </span>
+              )}
+            </span>
+          </button>
           {choice}
           {running ? stopButton : sendButton}
         </div>
@@ -198,6 +248,7 @@ export function Box({
                 <li key={chipKey(chip)} className="max-w-full">
                   <ChipView
                     chip={chip}
+                    state={stateOf(chip.pointer)}
                     {...(!locked && {
                       onRemove: () => {
                         box.remove(chip);
@@ -232,33 +283,57 @@ export function Box({
           </div>
         </div>
       )}
-      {saved !== null && (
-        <p
-          role="status"
-          className="flex items-center gap-1.5 px-3.5 pb-1 text-xs text-muted"
-        >
-          {saved}
-          {saved === "Not saved" && (
-            <button
-              type="button"
-              onClick={() => void box.saveNow()}
-              className="underline"
+      {size === "bar"
+        ? why !== null && (
+            <p role="alert" className="sr-only">
+              {why}
+            </p>
+          )
+        : saved !== null && (
+            <p
+              role="status"
+              className="flex items-center gap-1.5 px-3.5 pb-1 text-xs text-muted"
             >
-              Retry
-            </button>
+              {saved}
+              {saved === "Not saved" && (
+                <button
+                  type="button"
+                  onClick={() => void box.saveNow()}
+                  className="underline"
+                >
+                  Retry
+                </button>
+              )}
+            </p>
           )}
-        </p>
-      )}
-      {(notice || problem || long || many) && (
+      {size !== "bar" && why !== null && (
         <p role="alert" className="px-3.5 pb-2 text-muted">
-          {long
-            ? `Too long to keep or send: at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters, and this is ${text.length.toLocaleString("en")}.`
-            : many
-              ? `Too many added to keep or send: at most ${String(MAX_REFS)}, and this has ${String(chips.length)}. Take some out.`
-              : (notice ?? problem)}
+          {why}
         </p>
       )}
     </form>
+  );
+}
+
+/** In the bar: what is added to the message, as its first chip and how many more. */
+function Added({ chips }: { chips: readonly BoxChip[] }) {
+  const first = chips[0];
+  if (first === undefined) return null;
+  return (
+    <span
+      title={chips.map((chip) => chip.label).join("\n")}
+      className="inline-flex max-w-[180px] shrink-0 items-center gap-1 rounded-lg border border-line bg-side px-1.5 text-xs"
+    >
+      <span className="truncate">
+        {first.label === "" ? "Adding…" : first.label}
+      </span>
+      {chips.length > 1 && (
+        <span className="font-semibold text-accent-ink">
+          {" "}
+          +{chips.length - 1}
+        </span>
+      )}
+    </span>
   );
 }
 

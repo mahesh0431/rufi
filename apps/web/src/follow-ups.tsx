@@ -15,9 +15,9 @@ import type {
 } from "@rufi/contracts/record";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { boxFor } from "./boxes.ts";
+import { AskRufi } from "./ask.tsx";
 import { printedDate } from "./dates.ts";
-import { useShowChat } from "./panel.ts";
+import { askRufi } from "./panel.ts";
 import {
   cellsOf,
   chipOf,
@@ -107,8 +107,6 @@ export function FollowUpsPage({
 }) {
   const followUps = useFollowUps(person.id);
   const [open, setOpen] = useState<string | null>(opened ?? null);
-  const [problem, setProblem] = useState<string | null>(null);
-  const showChat = useShowChat(person.id);
   const loaded = followUps.data !== undefined;
 
   // The follow-up asked for, into view once the page has it.
@@ -132,14 +130,7 @@ export function FollowUpsPage({
       </div>
     );
   }
-  const ask = (row: RecordRow) => {
-    if (boxFor(person.id).append("", [chipOf(row)])) {
-      setProblem(null);
-      showChat();
-    } else {
-      setProblem("A message is being sent: add this again in a moment.");
-    }
-  };
+  const ask = (row: RecordRow) => askRufi(person.id, [chipOf(row)]);
   // Today and tomorrow as of this read, which comes each minute.
   const now = new Date(followUps.dataUpdatedAt);
   const { groups } = followUps.data;
@@ -186,11 +177,6 @@ export function FollowUpsPage({
           </ul>
         </section>
       ))}
-      {problem !== null && (
-        <p role="alert" className="mt-2 px-0.5 text-muted">
-          {problem}
-        </p>
-      )}
     </div>
   );
 }
@@ -259,15 +245,11 @@ function FollowUpView({
         <span className="whitespace-nowrap text-muted">
           {whenDue(group, row.due, now)}
         </span>
-        <button
-          type="button"
+        <AskRufi
           onClick={() => {
             onAsk(row);
           }}
-          className="rounded-lg border border-line bg-surface px-2 py-px text-xs whitespace-nowrap text-accent-ink opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus:opacity-100"
-        >
-          Ask Rufi
-        </button>
+        />
       </div>
       {open && <RowDetail personId={personId} row={row} />}
     </li>

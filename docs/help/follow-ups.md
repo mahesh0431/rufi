@@ -22,7 +22,7 @@ Everything else also starts in the chat:
 - **Not needed:** say so. The AI marks it dropped, with the reason.
 - **A new date:** say it. The follow-up is due on the new date, and Rufi tells you again then.
 
-On the Follow-ups page, **Ask Rufi** on a row puts that follow-up in the chat, so you can say what to change.
+On the Follow-ups page, **Ask Rufi** on a row puts that follow-up in the chat's box, so you can say what to change. You stay on the page; click the chat bar to write and send.
 
 ## When a follow-up is due
 
@@ -55,7 +55,7 @@ The page shows the new day by itself: when it is open over midnight, it changes 
 
 ## Needs you
 
-Overview's **Needs you** shows the follow-ups that are overdue, due now, or coming up in the next 30 days, after any documents that wait for you. **Open** opens that follow-up on the Follow-ups page. Needs you is always right, also when a notice didn't show.
+Overview's **Needs you** shows the follow-ups that are overdue, due now, or coming up in the next 30 days, after any documents that wait for you. **Open** opens that follow-up on the Follow-ups page. **Ask Rufi** puts it in the chat's box, the same as on the Follow-ups page. Needs you is always right, also when a notice didn't show.
 
 ## Notices on your Mac
 

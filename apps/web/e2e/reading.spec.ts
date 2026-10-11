@@ -1,8 +1,8 @@
 // Reading documents on the screens, on the real core with a scripted reader
 // (tests/fake-reader.ts): reading as a document is added, with the model and
-// effort chosen in Settings, the reader strip above the chat box, the start
-// and end lines, and Open with the reader's work and the
-// document's page.
+// effort chosen in Settings, the reader strip above the chat box, a chip's
+// state in the box, the start and end lines, and Open with the reader's
+// work and the document's page.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
@@ -47,7 +47,7 @@ async function start(
 /** Adds the fictional report on the Documents page. */
 async function add(page: Page) {
   await page.getByRole("link", { name: "Documents" }).click();
-  await page.getByLabel("Choose documents").setInputFiles({
+  await page.getByLabel("Choose documents", { exact: true }).setInputFiles({
     name: "sunrise-labs-august.pdf",
     mimeType: "application/pdf",
     buffer: await readFile(REPORT),
@@ -75,8 +75,20 @@ test("reads a report in the background as it is added: the strip, the lines and 
     page.getByRole("cell", { name: /Reading · read 1 of 2/ }),
   ).toBeVisible();
   await accessible(page);
+  // Its chip in the chat box says what Rufi is doing with it.
+  const row = page
+    .getByRole("row")
+    .filter({ hasText: "sunrise-labs-august.pdf" });
+  await row.hover();
+  await row.getByRole("button", { name: "Ask Rufi" }).click();
+  const chip = page
+    .getByRole("list", { name: "Added to this message" })
+    .getByRole("listitem");
 
   await page.getByRole("link", { name: "Chat with Rufi" }).click();
+  await expect(chip).toHaveText(
+    "sunrise-labs-august.pdf · Reading… 1 of 2 pages",
+  );
   await expect(
     page.getByText("Reading sunrise-labs-august.pdf · 2 pages"),
   ).toBeVisible();
@@ -96,6 +108,7 @@ test("reads a report in the background as it is added: the strip, the lines and 
   const end = page.getByText("Lab report · 12 Aug · 2 results read");
   await expect(end).toBeVisible();
   await expect(strip).toBeHidden();
+  await expect(chip).toHaveText("sunrise-labs-august.pdf · Read");
   // Open leads to the document's page; the reader's work is a button there.
   await page.getByRole("link", { name: "Open", exact: true }).click();
   await expect(page.getByRole("region", { name: "Items" })).toContainText(
