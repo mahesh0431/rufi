@@ -37,6 +37,11 @@ export interface ChatDeps {
   /** Makes the agent, given where its events go and how its tools run. */
   agent: (host: AgentHost) => AgentRuntime;
   allowlist: () => Promise<Allowlist>;
+  /**
+   * Rufi's current state for the person (open work), told before the
+   * words of every turn.
+   */
+  snapshot: (personId: string) => Promise<string>;
   tools: {
     /** Names the tool set; a thread keeps the one it started with. */
     version: string;
@@ -299,6 +304,19 @@ export function chat(deps: ChatDeps) {
     if (handOver !== undefined) await queue.unknown(chat, handOver);
   }
 
+  /**
+   * The current state for a turn. When it can't be read the turn still
+   * goes, and says so: the AI reads it with its tool then.
+   */
+  async function snapshotOf(personId: string): Promise<string> {
+    try {
+      return await deps.snapshot(personId);
+    } catch (error) {
+      log("chat.snapshot_failed", { error: errorCode(error) });
+      return SNAPSHOT_MISSING;
+    }
+  }
+
   /** Hands the chat's next rows over, after what is being saved. */
   function next(chat: ChatRow): void {
     if (closed) return;
@@ -350,13 +368,14 @@ export function chat(deps: ChatDeps) {
         return;
       }
       const context = pendingContext.get(fresh.id);
+      const state = await snapshotOf(fresh.personId);
       handing.set(threadId, handOver.id);
       try {
         await agent.send(
           threadId,
           {
             id: handOver.id,
-            input: inputOf(handOver, context),
+            input: inputOf(handOver, context, state),
             effort: fresh.effort,
           },
           signal,
@@ -721,10 +740,22 @@ const STEER_ENDED =
 const textOf = (error: unknown) =>
   error instanceof Error ? error.message : "The AI couldn't take it.";
 
-/** A turn's input: a new thread's earlier chat, Rufi's notes, the message. */
-function inputOf(handOver: HandOver, context: string | undefined): string[] {
+/** What a turn says when Rufi couldn't read its current state. */
+const SNAPSHOT_MISSING =
+  "Rufi's current state: Rufi couldn't read what is open just now. Read it with get_open_work before you rely on it.";
+
+/**
+ * A turn's input: a new thread's earlier chat, Rufi's current state, Rufi's
+ * notes, the message.
+ */
+function inputOf(
+  handOver: HandOver,
+  context: string | undefined,
+  state: string,
+): string[] {
   return [
     ...(context === undefined ? [] : [context]),
+    state,
     ...(handOver.notes.length === 0
       ? []
       : [`${NOTES_HEAD}\n\n${handOver.notes.join("\n\n")}`]),

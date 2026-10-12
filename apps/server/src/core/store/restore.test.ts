@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, it } from "vitest";
+import { OPEN_WORK } from "../../../tests/fixtures/open-work.ts";
 import { holdRufiLock } from "../../platform/files.ts";
 import { documents } from "../documents/documents.ts";
 import { backupsPath, makeBackup } from "./backup.ts";
@@ -23,6 +24,7 @@ beforeEach(async () => {
   store.db.exec(
     "INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional')",
   );
+  store.db.exec(OPEN_WORK);
   store.close();
   await writeFile(join(home, "chatgpt.json"), '{"hostId":"urn:uuid:fake"}');
   const made = await makeBackup(home, new Date("2026-10-08T09:14:03Z"));
@@ -109,6 +111,17 @@ describe("restore", () => {
     expect(db.prepare("SELECT id, display_name FROM people").all()).toEqual([
       { id: "asha", display_name: "Asha Fictional" },
     ]);
+    // Open work comes back as it was, with its history: nothing started by it.
+    const openWork = (of: DatabaseSync) =>
+      ["open_items", "open_item_changes", "turns", "chat_queue"].map((table) =>
+        of.prepare(`SELECT * FROM ${table} ORDER BY 1, 2, 3`).all(),
+      );
+    const source = new DatabaseSync(databasePath(join(root, "home")), {
+      readOnly: true,
+    });
+    expect(openWork(db)).toEqual(openWork(source));
+    expect(openWork(db)[0]).toHaveLength(3);
+    source.close();
     db.close();
     expect(
       JSON.parse(await readFile(join(target, "installed.json"), "utf8")),

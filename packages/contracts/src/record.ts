@@ -344,6 +344,34 @@ export const FollowUpNeed = Schema.Struct({
 });
 export type FollowUpNeed = typeof FollowUpNeed.Type;
 
+/**
+ * Open work Rufi keeps (docs/help/record.md): a question the AI asked the
+ * person, or a task the AI accepted that spans replies. Later is a time it
+ * shows again, while it is open; `saved` says a save answered it.
+ */
+export const OpenItem = Schema.Struct({
+  id: Id,
+  kind: Schema.Literals(["question", "task"]),
+  text: Schema.String,
+  status: Schema.Literals(["open", "done", "dropped"]),
+  /** Why it closed, in words; null while open. */
+  outcome: Schema.NullOr(Schema.String),
+  saved: Schema.Boolean,
+  showAgainAt: Schema.NullOr(Schema.String),
+  /** Rises with every change; an action names the version it was made on. */
+  version: Schema.Int,
+  createdAt: Schema.String,
+  closedAt: Schema.NullOr(Schema.String),
+});
+export type OpenItem = typeof OpenItem.Type;
+
+/** What the person does to an open item on Needs you, on the version they saw. */
+export const OpenItemAction = Schema.Struct({
+  change: Schema.Literals(["later", "bring_back", "drop", "reopen"]),
+  version: Schema.Int,
+});
+export type OpenItemAction = typeof OpenItemAction.Type;
+
 /** A person's Overview: what needs them, their record as tiles, the latest saves. */
 export const Overview = Schema.Struct({
   person: Schema.String,
@@ -351,6 +379,14 @@ export const Overview = Schema.Struct({
     documents: Schema.Array(WaitingDocument),
     /** Overdue first, then due now, then coming up. */
     followUps: Schema.Array(FollowUpNeed),
+    /** Open questions Rufi asked, not on Later; newest first. */
+    questions: Schema.Array(OpenItem),
+    /** The AI's unfinished tasks, not on Later; newest first. */
+    tasks: Schema.Array(OpenItem),
+    /** Open items on Later; the soonest back first. */
+    later: Schema.Array(OpenItem),
+    /** Items closed in the last 7 days; the latest first. */
+    closed: Schema.Array(OpenItem),
   }),
   tiles: Schema.Array(Tile),
   recent: Schema.Array(RecentChange),

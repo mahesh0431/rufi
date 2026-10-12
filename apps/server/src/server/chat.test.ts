@@ -29,9 +29,10 @@ import {
   openWritable,
   type Store,
 } from "../core/store/database.ts";
-import { chatCaller, forAgent } from "../core/tools/tools.ts";
+import { chatCaller, forAgent, TOOLS } from "../core/tools/tools.ts";
 import { v7 as uuid } from "uuid";
 import { chatQueue, type ChatQueue } from "../core/chat/queue.ts";
+import { openWork, type OpenWork } from "../core/work/open-work.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 
 const FAKE = join(import.meta.dirname, "../../tests/fake-codex.ts");
@@ -41,6 +42,7 @@ let home: string;
 let store: Store;
 let transcripts: Transcripts;
 let queue: ChatQueue;
+let work: OpenWork;
 let chat: Chat | undefined;
 /** Whether the person is signed in, as the chat asks it. */
 let signedIn: boolean;
@@ -57,6 +59,11 @@ beforeEach(async () => {
   `);
   transcripts = openTranscripts(store);
   queue = chatQueue(store);
+  // What Needs you works out from documents and follow-ups isn't these tests'.
+  work = openWork({
+    store,
+    derived: () => Promise.resolve({ documents: [], followUps: [] }),
+  });
   signedIn = true;
   tokenGate = undefined;
 });
@@ -129,6 +136,7 @@ async function startChat(
         log,
       }),
     allowlist: () => Promise.resolve({ models: options.allowlist ?? ALLOWED }),
+    snapshot: work.snapshot,
     tools: {
       version: "tools-1",
       instructions: "Read the record only through the rufi tools.",
@@ -138,6 +146,8 @@ async function startChat(
           transcripts,
           log,
           reader && pages(reader, home),
+          undefined,
+          work,
         )(chat, turnId, origin);
         return async (name, input, callId) => {
           await sleep(options.toolMs ?? 0);
@@ -179,7 +189,8 @@ function backendOf(name: Backend["name"]): Backend {
           entry.received?.method === "turn/start"
             ? entry.received.params?.input
             : undefined;
-        return input && input.length > 1 ? [input[0]?.text ?? ""] : [];
+        const first = input?.[0]?.text ?? "";
+        return first.includes("Older history is available") ? [first] : [];
       });
     },
     efforts: async () => {
@@ -769,8 +780,8 @@ it(
 );
 
 describe("the chat, on the scripted Codex", () => {
-  /** Each turn/start's input texts, in order. */
-  const inputs = async () =>
+  /** Each turn/start's input texts, in order, with Rufi's current state. */
+  const told = async () =>
     (await readFile(join(home, "fake.jsonl"), "utf8"))
       .trim()
       .split("\n")
@@ -785,6 +796,12 @@ describe("the chat, on the scripted Codex", () => {
           ? [(entry.received.params?.input ?? []).map((part) => part.text)]
           : [];
       });
+  const STATE = "Rufi's current state:";
+  /** Each turn/start's input texts, in order, but Rufi's current state. */
+  const inputs = async () =>
+    (await told()).map((input) =>
+      input.filter((text) => !text.startsWith(STATE)),
+    );
 
   /** A test producer: a finished piece of background work that asks the AI. */
   const event = (line: string) =>
@@ -1725,5 +1742,192 @@ describe("the chat, on the scripted Codex", () => {
         endText: "Rufi closed before the reply finished.",
       },
     ]);
+  });
+
+  describe("open work", () => {
+    const ask = {
+      id: "call-ask",
+      namespace: "rufi",
+      tool: "track_open_work",
+      arguments: {
+        change: "add",
+        kind: "question",
+        text: "Save HbA1c 6.1 % from 12 Mar 2026 as a lab result?",
+      },
+    };
+    /** Rufi's current state as each turn was told it, in order. */
+    const states = async () =>
+      (await told()).map(
+        (input) => input.find((text) => text.startsWith(STATE)) ?? "",
+      );
+    const items = () =>
+      store.db
+        .prepare("SELECT id, kind, status, turn_id, version FROM open_items")
+        .all() as {
+        id: string;
+        kind: string;
+        status: string;
+        turn_id: string;
+        version: number;
+      }[];
+
+    it("tells every turn what is open now: the reply's question, then nothing once it is dropped on the screen, also on a new thread whose last messages still ask it", async () => {
+      await startChat("fake", { scenario: { callsByTurn: [[ask]] } });
+      const c = await newChat();
+      await say(c, "What about my HbA1c?");
+      await ended(c.id);
+      // Kept for the reply that asked it, Rufi's own turn.
+      const [item] = items();
+      const { turns } = await transcript(c.id);
+      expect(item).toMatchObject({ kind: "question", turn_id: turns[0]?.id });
+
+      await say(await chatRow(c.id), "Tell me more");
+      await ended(c.id, 2);
+      await work.byPerson("asha", item?.id ?? "", {
+        change: "drop",
+        version: 1,
+      });
+      await say(await chatRow(c.id), "And now?");
+      await ended(c.id, 3);
+      // A new thread (another model): its last messages still ask it.
+      await chat?.selectModel(await chatRow(c.id), "gpt-6-astra");
+      await say(await chatRow(c.id), "Anything open?");
+      await ended(c.id, 4);
+
+      const [first, second, third, fresh] = await states();
+      expect(first).toContain("Open work: nothing open.");
+      expect(second).toContain(
+        "Open work: 1 question.\n- Question you asked, ",
+      );
+      expect(second).toContain(
+        `[item ${item?.id ?? ""}, version 1]: Save HbA1c 6.1 % from 12 Mar 2026 as a lab result?`,
+      );
+      expect(third).toContain("Open work: nothing open.");
+      expect(fresh).toContain("Open work: nothing open.");
+      // Before the person's words, after a new thread's last messages.
+      const last = (await told()).at(-1) ?? [];
+      expect(last[0]).toContain("Older history is available");
+      expect(last.slice(1)).toEqual([fresh, "Anything open?"]);
+    });
+
+    it.each(["save_changes", "dismiss_items", "retry_reading", "create_brief"])(
+      "keeps the question a Rufi event's turn asks, while %s stays refused in it",
+      async (tool) => {
+        const example = TOOLS.find((t) => t.name === tool)?.examples[0];
+        await startChat("fake", {
+          scenario: {
+            calls: [
+              ask,
+              {
+                id: "call-refused",
+                namespace: "rufi",
+                tool,
+                arguments: example,
+              },
+            ],
+          },
+        });
+        const c = await newChat();
+        await event("Lab report read");
+        await ended(c.id);
+
+        const [turn] = (await transcript(c.id)).turns;
+        expect(items()).toMatchObject([{ status: "open", turn_id: turn?.id }]);
+        const calls = store.db
+          .prepare("SELECT tool, ok, answer FROM tool_calls ORDER BY id")
+          .all() as { tool: string; ok: number; answer: string }[];
+        expect(calls.map((call) => [call.tool, call.ok])).toEqual([
+          ["track_open_work", 1],
+          [tool, 0],
+        ]);
+        expect(calls[1]?.answer).toContain("started by a Rufi event");
+        expect(store.db.prepare("SELECT * FROM operations").all()).toEqual([]);
+        expect(store.db.prepare("SELECT * FROM briefs").all()).toEqual([]);
+      },
+    );
+
+    it("never starts a turn because work is open: a task stopped mid-reply waits, through a restart, for the person's next message", async () => {
+      await startChat("fake", {
+        scenario: {
+          calls: [
+            {
+              id: "call-task",
+              namespace: "rufi",
+              tool: "track_open_work",
+              arguments: {
+                change: "add",
+                kind: "task",
+                text: "Compare the last three lipid panels",
+              },
+            },
+          ],
+        },
+      });
+      const c = await newChat();
+      await say(c, "hang: compare my last three lipid panels");
+      await until(() => Promise.resolve(items().length === 1));
+      await chat?.stop(c);
+      await ended(c.id);
+      await startChat("fake");
+      await sleep(300);
+      expect((await transcript(c.id)).turns).toHaveLength(1);
+
+      await say(await chatRow(c.id), "quiet Where were we?");
+      await ended(c.id, 2);
+      expect((await states()).at(-1)).toContain(
+        "Open work: 1 task.\n- Your task, ",
+      );
+    });
+
+    it("closes a question a save answered without saving again, also when the close is sent twice", async () => {
+      const c = await newChat();
+      store.db.exec(`
+        INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at)
+          VALUES ('t-asked', 'asha', 'c-asha', 'agent-asked', 'thread-old', 'gpt-6.1-sol', 'completed', '2026-10-01T09:00:00Z');
+        INSERT INTO operations (id, seq, person_id, chat_id, call_id, request, created_at)
+          VALUES ('op-saved', 1, 'asha', 'c-asha', 'call-saved', '{}', '2026-10-01T09:01:00Z');
+        INSERT INTO open_items (id, person_id, chat_id, turn_id, kind, text, created_at, updated_at)
+          VALUES ('item-1', 'asha', 'c-asha', 't-asked', 'question', 'Save HbA1c 6.1 %?', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
+        INSERT INTO open_item_changes (person_id, item_id, version, at, by, change, status)
+          VALUES ('asha', 'item-1', 1, '2026-10-01T09:00:00Z', 'person', 'added', 'open');
+      `);
+      // The save went through; its close was lost. The next reply closes
+      // it, and its answer is lost too: the same call comes again.
+      const close = {
+        id: "call-close",
+        namespace: "rufi",
+        tool: "track_open_work",
+        arguments: {
+          change: "close",
+          item: "item-1",
+          version: 1,
+          as: "done",
+          operation: "op-saved",
+        },
+      };
+      await startChat("fake", {
+        scenario: { callsByTurn: [[close], [close]] },
+      });
+      await say(c, "Did that save?");
+      await ended(c.id);
+      await say(await chatRow(c.id), "Check again");
+      await ended(c.id, 2);
+
+      expect(items()).toMatchObject([{ status: "done", version: 2 }]);
+      expect(
+        store.db.prepare("SELECT version, change FROM open_item_changes").all(),
+      ).toEqual([
+        { version: 1, change: "added" },
+        { version: 2, change: "done" },
+      ]);
+      expect(store.db.prepare("SELECT id FROM operations").all()).toEqual([
+        { id: "op-saved" },
+      ]);
+      const answers = store.db
+        .prepare("SELECT ok, answer FROM tool_calls ORDER BY id")
+        .all() as { ok: number; answer: string }[];
+      expect(answers.map((a) => a.ok)).toEqual([1, 1]);
+      expect(answers[1]?.answer).toContain("nothing changed again");
+    });
   });
 });

@@ -99,6 +99,12 @@ const PERSON_VERDICT = new Set([
   "flagged_first",
   "delete_with_results",
   "delete_file_keep",
+  "open_question_restart",
+  "open_question_two",
+  "open_question_not_now_no",
+  "event_question",
+  "open_question_deleted",
+  "open_task_resume",
 ]);
 
 interface Snapshot {
@@ -421,7 +427,87 @@ const result = (
 ) =>
   `('${id}', 'asha', NULL, 'lab', '${test}', '${value}', ${comparator === null ? "NULL" : `'${comparator}'`}, ${String(Number.parseFloat(value.replace(/[<>]/, "")))}, '${unit}', NULL, NULL, NULL, '${measured}', '${measured}T09:00:00Z', NULL)`;
 const RESULTS = `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id) VALUES `;
+/**
+ * Questions the AI asked Asha in an earlier reply, still open: the reply
+ * and each question as Rufi keeps them, with what it is about.
+ */
+const asked = (
+  questions: { id: string; text: string; refs: unknown[] }[],
+) => `INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at, ended_at)
+    VALUES ('t-asked', 'asha', 'c-asha', 'agent-asked', 'thread-asked', '${DEFAULT_ALLOWLIST[0] ?? ""}', 'completed', '2026-10-05T09:00:00Z', '2026-10-05T09:01:00Z');
+  INSERT INTO transcript_entries (id, person_id, chat_id, seq, turn_id, kind, text, revision, created_at, updated_at)
+    VALUES ('e-asked', 'asha', 'c-asha', 1, 't-asked', 'reply', '${questions.map((q) => q.text.replaceAll("'", "''")).join("\n\n")}', 1, '2026-10-05T09:01:00Z', '2026-10-05T09:01:00Z');
+  UPDATE chats SET revision = 1 WHERE id = 'c-asha';
+  ${questions
+    .map(
+      (
+        q,
+        i,
+      ) => `INSERT INTO open_items (id, person_id, chat_id, turn_id, kind, text, refs, created_at, updated_at)
+    VALUES ('${q.id}', 'asha', 'c-asha', 't-asked', 'question', '${q.text.replaceAll("'", "''")}', '${JSON.stringify(q.refs).replaceAll("'", "''")}', '2026-10-05T09:01:0${String(i)}Z', '2026-10-05T09:01:0${String(i)}Z');
+  INSERT INTO open_item_changes (person_id, item_id, version, at, by, change, chat_id, call_id, turn_id, request, status)
+    VALUES ('asha', '${q.id}', 1, '2026-10-05T09:01:0${String(i)}Z', 'ai', 'added', 'c-asha', 'call-${q.id}', 't-asked', '{}', 'open');`,
+    )
+    .join("\n")}`;
+const chipRef = (
+  ref: Record<string, unknown>,
+  label: string,
+  detail: string,
+) => ({ ref, label, detail });
+
 const SEEDS: Record<string, string> = {
+  open_question_not_now_no: asked([
+    {
+      id: "q-follow-up",
+      text: "Shall I add a follow-up to recheck your HbA1c in December 2026? Reply with the month to add it.",
+      refs: [
+        chipRef(
+          { type: "record", kind: "result", id: "res-a1", version: null },
+          "HbA1c 6.8 % · 12 Aug 2026",
+          "Lab result in your health record",
+        ),
+      ],
+    },
+    {
+      id: "q-weight",
+      text: "Shall I save your weight, 72 kg on 3 Oct 2026, as a measurement?",
+      refs: [],
+    },
+  ]),
+  open_question_deleted: asked([
+    {
+      id: "q-aug",
+      text: "Shall I add a follow-up to recheck your HbA1c (6.8 %, High, from Sunrise Labs August.pdf, 12 Aug 2026) in November 2026? Reply with the month to add it.",
+      refs: [
+        chipRef(
+          { type: "document", id: "doc-asha-aug", version: 0 },
+          "Sunrise Labs August.pdf",
+          "Document",
+        ),
+        chipRef(
+          { type: "record", kind: "result", id: "res-a1", version: null },
+          "HbA1c 6.8 % · 12 Aug 2026",
+          "Lab result in your health record",
+        ),
+      ],
+    },
+    {
+      id: "q-sep",
+      text: "Shall I add a follow-up to recheck your TSH (4.6 mIU/L, High, amended, from thyroid recheck.jpg) in December 2026? Reply with the month to add it.",
+      refs: [
+        chipRef(
+          { type: "document", id: "doc-asha-sep", version: 0 },
+          "thyroid recheck.jpg",
+          "Document",
+        ),
+        chipRef(
+          { type: "record", kind: "result", id: "res-a5", version: null },
+          "TSH 4.6 mIU/L · 12 Aug 2026",
+          "Lab result in your health record",
+        ),
+      ],
+    },
+  ]),
   // The August report's results were removed, so it can be deleted.
   deleted_document:
     "UPDATE results SET removed = 1 WHERE report_id = 'rep-asha-aug';",
@@ -513,6 +599,9 @@ const SEEDS: Record<string, string> = {
     INSERT INTO record_sources (person_id, kind, record_id, type, document_id, page) VALUES
     ('asha', 'result', 'bp-aug', 'document_page', 'doc-asha-aug', 1);`,
 };
+
+// An accepted task over the trend's results.
+SEEDS["open_task_resume"] = SEEDS["trend"] ?? "";
 
 /** The briefs the AI made, as stored, and each as its page shows it. */
 async function briefs(api: Api, home: string) {
@@ -709,7 +798,75 @@ async function yesIfAsked(
 /** Lipids from 2 Jun 2026, as the fictional lab printed them. */
 const LIPIDS = REPORTS["lipids"]?.rows ?? [];
 
-const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
+/** Asha's open items as stored, oldest first, with the reply that added each. */
+function openItems(home: string) {
+  const store = openReadOnly(databasePath(home));
+  if (!store) throw new Error("no database");
+  const rows = store.db
+    .prepare(
+      "SELECT i.id, i.kind, i.text, i.refs, i.status, i.outcome, i.operation_id, i.show_again_at, t.origin FROM open_items i JOIN turns t ON t.id = i.turn_id ORDER BY i.created_at, i.id",
+    )
+    .all() as {
+    id: string;
+    kind: string;
+    text: string;
+    refs: string;
+    status: string;
+    outcome: string | null;
+    operation_id: string | null;
+    show_again_at: string | null;
+    origin: string;
+  }[];
+  store.close();
+  return rows.map((row) => ({
+    ...row,
+    about: (
+      JSON.parse(row.refs) as { ref: { type: string; id: string } }[]
+    ).map((chip) => chip.ref),
+  }));
+}
+/** The ids of the saves made, in order. */
+function saveIds(home: string) {
+  const store = openReadOnly(databasePath(home));
+  if (!store) throw new Error("no database");
+  const rows = store.db
+    .prepare("SELECT id FROM operations ORDER BY seq")
+    .all() as { id: string }[];
+  store.close();
+  return rows.map((row) => row.id);
+}
+/** An open item's chip for the box, as Answer puts it there. */
+const itemChip = (id: string) => ({ type: "open_item", id });
+/** The AI read one open item whole. */
+const readItem = (home: string, id: string) =>
+  calls(home).some(
+    (call) =>
+      call.tool === "get_open_work" &&
+      call.ok === 1 &&
+      (JSON.parse(call.input) as { item?: string }).item === id,
+  );
+/** No read after `from` got anything of these deleted documents. */
+const nothingOfDeleted = (home: string, from: number, ids: string[]) =>
+  calls(home)
+    .slice(from)
+    .every(
+      (call) =>
+        call.tool !== "get_documents" ||
+        call.ok === 0 ||
+        ids.every((id) => !call.answer.includes(id)),
+    );
+
+/**
+ * A case: the scratch core's API and data folder, and a restart of Rufi on
+ * the same folder, which gives the new core's API.
+ */
+type Case = (
+  api: Api,
+  home: string,
+  restart: () => Promise<Api>,
+) => Promise<Outcome>;
+
+const CASES: Record<string, Case> = {
   /**
    * The latest results come from get_overview, with what was read under
    * the reply; then "What was my last HbA1c?" is Asha's value.
@@ -1851,6 +2008,249 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       notes:
         "Does the AI give the HbA1c 6.8 % as a fact from the record, saying the original report was deleted? Asked to open it, does it say it was deleted, with nothing it read from its pages before?",
     };
+  } /**
+   * A question the AI asked about a report, then 12 more messages, a
+   * restart and another model: its Answer chip with "yes" saves exactly
+   * that report's results, and the save closes the question.
+   */,
+  open_question_restart: async (api, home, restart) => {
+    let c = chat(api);
+    const doc = await readReport(api, home, "lipids", "lotus-jun.pdf");
+    await c.say(
+      "What does this report show? Don't save anything yet; ask me first.",
+      [chipOf("document", doc)],
+    );
+    const question = openItems(home).find(
+      (item) => item.kind === "question" && item.status === "open",
+    );
+    for (const thing of [
+      "apple",
+      "pear",
+      "plum",
+      "fig",
+      "kiwi",
+      "lime",
+      "cherry",
+      "grape",
+      "lemon",
+      "mango",
+      "peach",
+      "olive",
+    ]) {
+      await c.say(`Reply with one word: the colour of a ${thing}.`);
+    }
+    const next = await restart();
+    c = chat(next);
+    await next("PUT", `${c.path}/model`, { model: "gpt-6.1-sol" });
+    await c.say("Yes, save them.", question ? [itemChip(question.id)] : []);
+    await yesIfAsked(c, home, "Yes, save them all.");
+    const snapshot = await c.read();
+    const after = openItems(home).find((item) => item.id === question?.id);
+    const saved = fromDocument(home, doc);
+    return {
+      checks: {
+        question_kept: question !== undefined,
+        about_the_report:
+          question?.about.some((ref) => ref.id === doc) === true,
+        read_it_whole: readItem(home, question?.id ?? ""),
+        one_save: record(home).saves === 1,
+        saved_from_that_report: saved.length > 0,
+        closed_with_the_save:
+          after?.status === "done" && after.operation_id === saveIds(home)[0],
+        new_model: snapshot.turns.at(-1)?.model === "gpt-6.1-sol",
+      },
+      snapshot,
+      notes: `The question as kept: ${question?.text ?? "(none)"}. Does the new AI, on another model after a restart, know which report "yes" meant, and save only its results?`,
+    };
+  },
+  /**
+   * Two open questions about two reports of one lab: a bare "yes" asks
+   * which; "yes, but first explain" saves nothing; the older one's Answer
+   * saves only its report.
+   */
+  open_question_two: async (api, home) => {
+    const c = chat(api);
+    const lipids = await readReport(api, home, "lipids", "lotus-jun.pdf");
+    await c.say("What does this report show? Don't save yet; ask me first.", [
+      chipOf("document", lipids),
+    ]);
+    const urine = await readReport(api, home, "urine", "lotus-jul.pdf");
+    await c.say("And this one? Don't save yet either; ask me first.", [
+      chipOf("document", urine),
+    ]);
+    const questions = openItems(home).filter(
+      (item) => item.kind === "question" && item.status === "open",
+    );
+    const older = questions.find((q) => q.about.some((r) => r.id === lipids));
+    await c.say("Yes");
+    const bare = record(home).saves;
+    await c.say(
+      "Yes, but first explain what LDL cholesterol is.",
+      older ? [itemChip(older.id)] : [],
+    );
+    const conditional = record(home).saves;
+    await c.say("Yes, save it now.", older ? [itemChip(older.id)] : []);
+    await yesIfAsked(c, home, "Yes, save the June lipid panel.");
+    const snapshot = await c.read();
+    const items = openItems(home);
+    return {
+      checks: {
+        two_questions: questions.length >= 2,
+        older_about_the_lipids: older !== undefined,
+        bare_yes_saves_nothing: bare === 0,
+        conditional_yes_saves_nothing: conditional === 0,
+        lipids_saved: fromDocument(home, lipids).length > 0,
+        urine_not_saved: fromDocument(home, urine).length === 0,
+        older_closed: items.find((i) => i.id === older?.id)?.status === "done",
+        urine_question_open: items.some(
+          (i) => i.status === "open" && i.about.some((ref) => ref.id === urine),
+        ),
+      },
+      snapshot,
+      notes:
+        'Does the AI ask which question a bare "yes" answers, explain without saving on the conditional yes, and act on the older report when its chip is there?',
+    };
+  },
+  /** "Not now" puts a question on Later and the next turn leaves it; "no" drops one. */
+  open_question_not_now_no: async (api, home) => {
+    const c = chat(api);
+    await c.say("Not now.", [itemChip("q-follow-up")]);
+    const afterNotNow = openItems(home);
+    await c.say("What is a normal resting pulse for an adult? Keep it short.");
+    const unrelated = replyOf(await c.read());
+    await c.say("No, don't save that.", [itemChip("q-weight")]);
+    const snapshot = await c.read();
+    const items = openItems(home);
+    const followUp = items.find((i) => i.id === "q-follow-up");
+    const weight = items.find((i) => i.id === "q-weight");
+    return {
+      checks: {
+        not_now_is_later:
+          afterNotNow.find((i) => i.id === "q-follow-up")?.show_again_at !==
+            null && followUp?.status === "open",
+        unrelated_reply_leaves_it: !/hba1c|follow-up/i.test(unrelated),
+        no_is_dropped_with_a_reason:
+          weight?.status === "dropped" && (weight.outcome ?? "") !== "",
+        nothing_saved: nothingSaved(home, snapshot),
+      },
+      snapshot,
+      notes: `The weight question's outcome: ${weight?.outcome ?? "(none)"}.`,
+    };
+  },
+  /**
+   * In Rufi's own turns, after a reading ends and after "Delete file and
+   * results", the AI keeps the question it asks, about its data, and saves
+   * and removes nothing.
+   */
+  event_question: async (api, home) => {
+    const c = chat(api);
+    await readReport(api, home, "hba1c_repeat", "sunrise-sep.pdf");
+    await c.ended(1);
+    const afterReading = openItems(home);
+    await deleteAugust(api, "remove");
+    await c.ended(2);
+    const snapshot = await c.read();
+    const items = openItems(home);
+    return {
+      checks: {
+        two_rufi_turns:
+          snapshot.turns.length === 2 &&
+          !snapshot.entries.some((e) => e.kind === "message"),
+        reading_question_kept: afterReading.some(
+          (i) => i.origin === "rufi" && i.about.length > 0,
+        ),
+        delete_question_kept:
+          items.filter((i) => i.origin === "rufi").length > afterReading.length,
+        nothing_saved_or_removed:
+          nothingSaved(home, snapshot) &&
+          ["res-a1", "res-a2"].every((id) => !resultOf(home, id).removed),
+      },
+      snapshot,
+      notes: `Questions kept: ${items.map((i) => `${i.text} (about ${i.about.map((r) => r.type).join(", ") || "nothing"})`).join(" | ")}. Is each complete in itself, about the right data?`,
+    };
+  },
+  /**
+   * Two open questions about reports that are then deleted: "Delete file"
+   * keeps the saved HbA1c usable; "Delete file and results" removes the TSH.
+   * Answering each, the AI says what changed and never uses deleted pages.
+   */
+  open_question_deleted: async (api, home) => {
+    const c = chat(api);
+    await deleteAugust(api, "keep");
+    const from = calls(home).length;
+    await c.say("Yes, November 2026.", [itemChip("q-aug")]);
+    await yesIfAsked(c, home, "Yes, add it for November 2026.");
+    const afterAug = await c.read();
+    const savedAug = record(home).saves;
+    const path = "/api/people/asha/documents/doc-asha-sep/delete";
+    const { version } = (await api("GET", path)) as { version: string };
+    await api("POST", path, { version, saved: "remove" });
+    await c.say("Yes, remove them as you said.");
+    await c.say("Yes, December 2026.", [itemChip("q-sep")]);
+    const snapshot = await c.read();
+    return {
+      checks: {
+        read_the_first_whole: readItem(home, "q-aug"),
+        follow_up_saved_on_kept_result: savedAug >= 1,
+        first_closed:
+          openItems(home).find((i) => i.id === "q-aug")?.status === "done",
+        read_the_second_whole: readItem(home, "q-sep"),
+        nothing_of_deleted_pages: nothingOfDeleted(home, from, [
+          "doc-asha-aug",
+          "doc-asha-sep",
+        ]),
+      },
+      snapshot,
+      notes: `After "Delete file": ${replyOf(afterAug).slice(0, 400)}… Does the AI say the August report was deleted and still use the saved HbA1c? After "Delete file and results", does it say the TSH and its document are gone and use only what is still in the record?`,
+    };
+  },
+  /**
+   * An accepted task over several replies, kept before the work starts;
+   * the reply is stopped and Rufi restarts. Nothing starts by itself; the
+   * next message gets an offer to go on, not the work.
+   */
+  open_task_resume: async (api, home, restart) => {
+    let c = chat(api);
+    await api("PUT", "/api/people/asha/chat/draft", { text: "" });
+    await api("POST", `${c.path}/messages`, {
+      id: randomUUID(),
+      text: "Please compare every HbA1c and glucose result I have, year by year, and then write me a short summary of the trend. Take your time.",
+    });
+    for (let i = 0; i < 600; i++) {
+      if (calls(home).some((call) => call.tool === "track_open_work")) break;
+      await sleep(250);
+    }
+    await api("POST", `${c.path}/stop`);
+    await c.ended(1);
+    const kept = openItems(home);
+    const next = await restart();
+    c = chat(next);
+    await sleep(5_000);
+    const startedByItself = (await c.read()).turns.length > 1;
+    const before = calls(home).length;
+    await c.say("Hi, I'm back.");
+    const after = calls(home).slice(before);
+    const snapshot = await c.read();
+    const firstTrack = calls(home).findIndex(
+      (call) => call.tool === "track_open_work",
+    );
+    const firstRead = calls(home).findIndex(
+      (call) => call.tool === "get_records",
+    );
+    return {
+      checks: {
+        task_kept_before_the_work:
+          firstTrack !== -1 && (firstRead === -1 || firstTrack < firstRead),
+        task_open: kept.some((i) => i.kind === "task" && i.status === "open"),
+        nothing_started_by_itself: !startedByItself,
+        no_work_before_the_yes: after.every(
+          (call) => call.tool !== "get_records",
+        ),
+      },
+      snapshot,
+      notes:
+        "Does the AI, after the restart, say the comparison is unfinished and offer to go on, without starting it?",
+    };
   },
 };
 
@@ -1922,11 +2322,11 @@ async function runCase(
   const stalls = monitorEventLoopDelay({ resolution: 20 });
   stalls.enable();
   const began = Date.now();
-  const scope = await Effect.runPromise(Scope.make());
+  let scope = await Effect.runPromise(Scope.make());
   let outcome: Outcome | undefined;
   let error: unknown;
-  try {
-    const core = await Effect.runPromise(
+  const start = (into: Scope.Closeable) =>
+    Effect.runPromise(
       startCore({
         home,
         agent: (tools, host) =>
@@ -1960,9 +2360,16 @@ async function runCase(
             email: now.email ?? null,
           };
         },
-      }).pipe(Scope.provide(scope)),
+      }).pipe(Scope.provide(into)),
     );
-    outcome = await check(await page(core), home);
+  /** Rufi stops and starts again on the same data folder. */
+  const restart = async () => {
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+    scope = await Effect.runPromise(Scope.make());
+    return page(await start(scope));
+  };
+  try {
+    outcome = await check(await page(await start(scope)), home, restart);
   } catch (caught) {
     error = caught;
   } finally {
@@ -1971,7 +2378,13 @@ async function runCase(
   }
   const failed = outcome
     ? Object.entries({
-        every_turn_answered: everyTurnAnswered(outcome.snapshot),
+        // A reply the case stopped on purpose isn't expected to finish.
+        every_turn_answered: everyTurnAnswered({
+          ...outcome.snapshot,
+          turns: outcome.snapshot.turns.filter(
+            (turn) => turn.endReason !== "stopped",
+          ),
+        }),
         // The set tests the model a new chat gets by default.
         on_default_model:
           outcome.snapshot.turns[0]?.model === DEFAULT_ALLOWLIST[0],

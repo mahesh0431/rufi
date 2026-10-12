@@ -22,7 +22,7 @@ import {
 } from "@rufi/contracts";
 import { APPEARANCE_HEADER } from "@rufi/contracts/app";
 import type { Brief } from "@rufi/contracts/briefs";
-import type { Overview } from "@rufi/contracts/record";
+import { OpenItemAction, type Overview } from "@rufi/contracts/record";
 import { readFile } from "node:fs/promises";
 import { Option, Result, Schema } from "effect";
 import type { HttpBindings } from "@hono/node-server";
@@ -53,6 +53,11 @@ import { Refusal } from "../core/tools/registry.ts";
 import { DeleteDocument, FixItem } from "@rufi/contracts/documents";
 import { OriginalMissing } from "../core/documents/originals.ts";
 import type { BackupJob } from "../core/store/backup.ts";
+import {
+  NoSuchItem,
+  OpenWorkRefusal,
+  type OpenWork,
+} from "../core/work/open-work.ts";
 import type { Change, Transcripts } from "../core/chat/transcript.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { SUB_AGENT_MODELS } from "../agent/codex/subagent.ts";
@@ -71,6 +76,8 @@ export interface ApiDeps {
   port: () => number;
   /** A person's Overview: Needs you, the tiles and the latest saves. */
   overview: (personId: string) => Promise<Overview>;
+  /** Open work: the person's actions on Needs you, and its changes. */
+  work: Pick<OpenWork, "byPerson" | "subscribe">;
   /** The record's pages, rows and series, read only. */
   record: Pick<RecordViews, "page" | "detail" | "series" | "followUps">;
   /** A visit brief of the person's, with its Sources; undefined: none. */
@@ -466,6 +473,26 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     c.json({ overview: await deps.overview((await person(c)).id) }),
   );
 
+  // Open work on Needs you: Later, Bring back, Drop or Reopen, on the
+  // version the screen showed; a stale one gets the item as it is now.
+  app.post("/api/people/:personId/open-work/:itemId", async (c) => {
+    const { id } = await person(c);
+    const action = await body(c, OpenItemAction);
+    try {
+      return c.json({
+        item: await deps.work.byPerson(id, c.req.param("itemId"), action),
+      });
+    } catch (error) {
+      if (error instanceof NoSuchItem) throw new HttpError(404, error.message);
+      if (error instanceof OpenWorkRefusal) {
+        throw new HttpError(409, error.message, {
+          ...(error.current && { current: error.current }),
+        });
+      }
+      throw error;
+    }
+  });
+
   // The record, read only: a kind's page, a row, a test's series. Changes
   // start in the chat.
   app.get("/api/people/:personId/record/:kind", async (c) => {
@@ -815,6 +842,9 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       const unread = deps.readings.subscribe(found.personId, () => {
         push({ type: "documents" });
       });
+      const unwork = deps.work.subscribe(found.personId, () => {
+        push({ type: "open_work" });
+      });
       out.onAbort(() => {
         state.open = false;
         wake?.();
@@ -849,6 +879,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
         unsubscribe();
         unwatch();
         unread();
+        unwork();
       }
     });
   });

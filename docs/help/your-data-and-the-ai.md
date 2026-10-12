@@ -106,6 +106,8 @@ Then Rufi doesn't read or change the location file, and **Settings** › **Data 
 
 When the AI reads your record with Rufi's tools, it gets only the records of the person whose chat it is: Rufi chooses the person, and the AI can't name another one. The AI can't read the chat or Rufi's settings this way, and it can't change anything.
 
+The AI also sees the person's open work: with each message, Rufi tells it the questions it asked that wait for an answer, its unfinished tasks, and how many documents and follow-ups wait in **Needs you**. A tool gives it older and closed ones too. It can add, close, put off and reopen these, for that person only; that changes nothing in the health record (see [Questions and tasks Rufi keeps](chat.md#questions-and-tasks-rufi-keeps)).
+
 Rufi's tools aren't all that the chat's AI can do. It runs with the same access to this Mac as Codex has when you use it yourself: it can run commands and open the files your Mac account can open. Rufi tells it to use only Rufi's tools for your record, but that is an instruction, not a lock. Treat the chat as able to see your data folder. The [reader](#reading-your-documents) is different: Rufi locks it to two tools for one document.
 
 ## The pages the AI looks at
@@ -145,6 +147,8 @@ Rufi also keeps everything the AI did in a reply, so that an answer can be trace
 You see the reasoning summaries in the chat, behind each thinking line, and the rest only as **Based on** under each answer. Rufi keeps them as long as the chat. Work the AI gives to a sub-agent isn't kept.
 
 For each change to your record, Rufi also keeps the record before and after it, and the message of yours it came from.
+
+Rufi keeps the questions the AI asked and the tasks it took on, with each change to them: who made it (you or the AI), when, and how it closed. Nothing is deleted from that history.
 
 It also keeps what you typed in the chat but didn't send (the chat's draft). Drafts stay on your Mac until you send them.
 

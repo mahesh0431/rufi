@@ -25,15 +25,16 @@ const Id = Line(100);
 export const MAX_REFS = 100;
 
 /**
- * What the box points at: a document, a draft item, a saved record or a
- * report (its results) of the chat's person. Checked against the person when
- * added and when sent.
+ * What the box points at: a document, a draft item, a saved record, a
+ * report (its results) or an open item (a question Rufi asked, a task) of
+ * the chat's person. Checked against the person when added and when sent.
  */
 export const Pointer = Schema.Union([
   Schema.Struct({ type: Schema.Literal("document"), id: Id }),
   Schema.Struct({ type: Schema.Literal("draft_item"), id: Id }),
   Schema.Struct({ type: Schema.Literal("record"), kind: Line(40), id: Id }),
   Schema.Struct({ type: Schema.Literal("report"), id: Id }),
+  Schema.Struct({ type: Schema.Literal("open_item"), id: Id }),
 ]);
 export type Pointer = typeof Pointer.Type;
 
@@ -45,8 +46,9 @@ const Version = Schema.Int.check(Schema.isGreaterThan(0));
  * rises when its draft items change; a draft item's when it is fixed or
  * dismissed; a record's is the save that last changed it (null for one no
  * save has changed); a report's, the save that last changed any of its
- * results. The AI reads it with its tools; a save refuses an item
- * whose message's reference has moved on since.
+ * results; an open item's, its count of changes. The AI reads it with its
+ * tools; a save refuses an item whose message's reference has moved on
+ * since.
  */
 export const Ref = Schema.Union([
   Schema.Struct({
@@ -69,6 +71,11 @@ export const Ref = Schema.Union([
     type: Schema.Literal("report"),
     id: Id,
     version: Schema.NullOr(Id),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("open_item"),
+    id: Id,
+    version: Version,
   }),
 ]);
 export type Ref = typeof Ref.Type;
@@ -303,6 +310,8 @@ export const StreamLine = Schema.Union([
   Schema.Struct({ type: Schema.Literal("queue") }),
   /** The person's documents or their readings changed; read them again. */
   Schema.Struct({ type: Schema.Literal("documents") }),
+  /** The person's open work changed; read it again. */
+  Schema.Struct({ type: Schema.Literal("open_work") }),
   /** Nothing happened for a while; the stream is still open. */
   Schema.Struct({ type: Schema.Literal("ping") }),
 ]);

@@ -55,7 +55,7 @@ The page shows the new day by itself: when it is open over midnight, it changes 
 
 ## Needs you
 
-Overview's **Needs you** shows the follow-ups that are overdue, due now, or coming up in the next 30 days, after any documents that wait for you. **Open** opens that follow-up on the Follow-ups page. **Ask Rufi** puts it in the chat's box, the same as on the Follow-ups page. Needs you is always right, also when a notice didn't show.
+Overview's **Needs you** shows the follow-ups that are overdue, due now, or coming up in the next 30 days, after the questions Rufi asked and any documents that wait for you. **Open** opens that follow-up on the Follow-ups page. **Ask Rufi** puts it in the chat's box, the same as on the Follow-ups page. Needs you is always right, also when a notice didn't show.
 
 ## Notices on your Mac
 

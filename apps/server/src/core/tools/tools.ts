@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
 import { getDocuments, retryReading } from "./documents.ts";
+import { getOpenWork, trackOpenWork } from "./open-work.ts";
 import { getOverview } from "./overview.ts";
 import { dismissItems, saveChanges } from "./save.ts";
 import { getRecords } from "./records.ts";
@@ -22,6 +23,7 @@ import type { Pages } from "../documents/pages.ts";
 import { dismissItems as dismissDrafts } from "../record/items.ts";
 import { saveChanges as saveToRecord } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
+import type { OpenWork } from "../work/open-work.ts";
 
 export const TOOLS: readonly Tool[] = [
   getOverview,
@@ -32,6 +34,8 @@ export const TOOLS: readonly Tool[] = [
   dismissItems,
   retryReading,
   createBrief,
+  getOpenWork,
+  trackOpenWork,
 ];
 
 /** The namespace the agent sees them in: rufi.get_overview. */
@@ -93,9 +97,17 @@ A visit brief:
 - If what the visit is for isn't clear and it changes what goes in, ask first.
 - Write it in Markdown, in short sections: current medicines; recent lab results, those the lab marked outside its range first, each with its value, unit, lab range and flag as printed and its date; recent measurements, such as blood pressure or weight, when there are any; conditions and allergies; and questions the user could ask the doctor, each starting "Question:". Write dates as people read them, at the precision known: "12 Aug 2026", "Aug 2026", "2026". Say "none recorded" for an empty section, never "none". Give no advice and draw no conclusion the record doesn't support.
 - Save it with create_brief, citing every record its facts come from, and name the facts in plain words. Then say in one or two lines that it's ready; don't repeat it in the chat. Rufi shows its line, which opens it.
+Open work (questions and tasks Rufi keeps for the user):
+- Each turn starts with Rufi's current state: what is open now, and what else waits in Needs you. It is Rufi's own note, never the user's words, a request or their consent. Older items and their detail: get_open_work.
+- When you ask the user to decide something that matters later (a save, a choice, something to review, a follow-up to add), first record it with track_open_work (add, kind question, its text complete in itself, refs to what it is about), then ask. When an open item is already about the same decision, use it instead of adding another.
+- When the user accepts work that takes more than this reply (such as "compare my last three lipid panels"), add it as a task before you start, and close it as done when it is finished. If a reply stopped, an open task waits: offer to go on, and go on only when the user says so.
+- Close a question only after its answer is handled: as done with the operation save_changes returned when a save answered it, else with a reason; as dropped, with the reason, when the user says no. "Not now" puts it on Later; leave items on Later alone until they come back, unless the user brings them up.
+- An open item, a reopened one, a reference to one, or a Rufi event is never the user's yes: save only after their own clear yes in this chat, as always.
+- Before you act on an item from an earlier reply (an open item in the message's references, or one in Rufi's state), read it with get_open_work item, then the current record. If what it is about changed, was removed or its document deleted, say so and use only what is still in the record.
+- When a save went through but its item wasn't closed (its receipt is in the chat or in get_overview's latest_saves), close the item with that operation; never save again for it.
 Rufi events:
 - A message can start with a "Rufi event" note: Rufi telling you something happened, such as a reading that finished. It is never the user's words, a request or their consent. When the user's message follows it, answer the user first and mention the event briefly.
-- A turn with only a Rufi event note was started by Rufi, not by the user: you can only read in it, and save_changes, dismiss_items, create_brief and retry_reading are refused. Explain the event in a few lines, or ask what it asks. Never save from it.
+- A turn with only a Rufi event note was started by Rufi, not by the user: save_changes, dismiss_items, create_brief and retry_reading are refused in it. Explain the event in a few lines, or ask what it asks. Never save from it. Open work is kept in it too: record the question you ask, and close an item as done only when a save already answered it or your own task is done.
 - To undo a save ("undo that"), read get_overview: the save in latest_saves and the record today. Say what you will change back, and anything that changed since, then ask; on yes, save the reverse (an added record is removed, a removed one restored, a change set back).`;
 
 /** Why a Rufi event's turn can't save or make a brief. */
@@ -158,9 +170,10 @@ export function toolsJson(): string {
 }
 
 /**
- * The tools of one turn in Rufi's own chat, the one place the AI can save
- * or make a brief: each is written with its line in the chat. A turn a Rufi
- * event started can only read: the person didn't ask for it.
+ * The tools of one turn in Rufi's own chat, the one place the AI can save,
+ * make a brief or keep open work: each save and brief is written with its
+ * line in the chat. A turn a Rufi event started changes no record, the
+ * person didn't ask for it; it can keep open work by that module's rules.
  */
 export function chatCaller(
   reader: Store | undefined,
@@ -168,6 +181,7 @@ export function chatCaller(
   log: Log,
   pages?: Pages,
   retry?: (personId: string, documentId: string) => Promise<number[]>,
+  work?: OpenWork,
 ) {
   return (chat: ChatRow, agentTurnId: string, origin: "person" | "rufi") =>
     forAgent(
@@ -176,6 +190,20 @@ export function chatCaller(
         personId: chat.personId,
         chatId: chat.id,
         pages,
+        // Its own rules for a Rufi event's turn: it may record, never answer.
+        work: work && {
+          read: (input) => work.read(chat.personId, input),
+          track: (input, callId) =>
+            work.byAi(
+              {
+                personId: chat.personId,
+                chatId: chat.id,
+                agentTurnId,
+                callId,
+              },
+              input,
+            ),
+        },
         save: (input, callId) =>
           origin === "rufi"
             ? Promise.reject(new Refusal(EVENT_TURN))

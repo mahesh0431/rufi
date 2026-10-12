@@ -1,15 +1,16 @@
 // References in the chat (docs/help/chat.md): a message's chips, each an
 // exact pointer to the person's health data: a document, a draft item, a
-// saved record or a report (its results). They are checked against the
+// saved record, a report (its results) or an open item (a question Rufi
+// asked, a task it took on). They are checked against the
 // chat's person when added (the draft) and when sent, and named and
 // versioned from what is stored, never from what the screen sent: a sent
 // message keeps each one's version then.
 // The AI gets them as a short list after the message and reads them with
 // its tools.
-import type { Chip, Pointer } from "@rufi/contracts";
+import type { Chip, Pointer, Ref } from "@rufi/contracts";
 import { sql, type Kysely } from "kysely";
 import { DELETED_DOCUMENT } from "../documents/delete.ts";
-import { shownDate } from "../record/dates.ts";
+import { localTime, shownDate } from "../record/dates.ts";
 import { kindNamed, type Kind, type Row } from "../record/kinds.ts";
 import { isCurrent, recordVersions } from "../record/read.ts";
 import type { Tables } from "../store/tables.ts";
@@ -232,7 +233,60 @@ async function chipOf(
         detail: "Report in your health record",
       };
     }
+    case "open_item": {
+      const item = await db
+        .selectFrom("open_items")
+        .select(["kind", "text", "version", "created_at"])
+        .where("person_id", "=", personId)
+        .where("id", "=", ref.id)
+        .executeTakeFirst();
+      if (!item) return undefined;
+      return {
+        ref: { ...ref, version: item.version },
+        label:
+          item.text.length > LABEL_CHARS
+            ? `${item.text.slice(0, LABEL_CHARS - 1)}…`
+            : item.text,
+        detail: join(
+          item.kind === "question"
+            ? "A question Rufi asked"
+            : "A task Rufi took on",
+          shownDate(localTime(item.created_at).slice(0, 10)),
+        ),
+      };
+    }
   }
+}
+
+/** An open item's chip shows this much of its text; the AI reads it whole. */
+const LABEL_CHARS = 120;
+
+/**
+ * Where a reference stands now against the version it was stamped with:
+ * the same, changed since, removed from the record (still in its history),
+ * its document deleted, or no longer there.
+ */
+export async function refState(
+  db: Kysely<Tables>,
+  personId: string,
+  ref: Ref,
+): Promise<"same" | "changed" | "removed" | "deleted" | "gone"> {
+  const now = await chipOf(db, personId, ref);
+  if (!now) {
+    if (ref.type === "document" && (await deleted(db, personId, ref.id))) {
+      return "deleted";
+    }
+    return "gone";
+  }
+  if (ref.type === "record") {
+    const kind = kindNamed(ref.kind) as Kind;
+    const { rows } =
+      await sql<Row>`SELECT removed FROM ${sql.table(kind.table)} WHERE person_id = ${personId} AND id = ${ref.id}`.execute(
+        db,
+      );
+    if (rows[0]?.["removed"] === 1) return "removed";
+  }
+  return now.ref.version === ref.version ? "same" : "changed";
 }
 
 /** What a record is called on its chip: a result by its category. */
@@ -262,6 +316,8 @@ export function refsForAi(chips: readonly Chip[]): string | undefined {
         return `- ${kindNamed(ref.kind)?.noun ?? ref.kind} ${ref.id} (kind ${ref.kind}), version ${ref.version === null ? "null" : ref.version}: ${label}`;
       case "report":
         return `- report ${ref.id}, version ${ref.version === null ? "null" : ref.version}: ${label}`;
+      case "open_item":
+        return `- open item ${ref.id}, version ${String(ref.version)}: ${label} (read it whole with get_open_work)`;
     }
   });
   return `References the user added to this message (Rufi's, exact: read them with your tools):\n${lines.join("\n")}`;

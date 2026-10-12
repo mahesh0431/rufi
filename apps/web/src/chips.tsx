@@ -1,6 +1,6 @@
 // A chip: a reference to health data in the chat box or a sent message. Its
 // icon says what it is (a document, a draft item, a saved record, a
-// report's results), its name
+// report's results, an open item: a question Rufi asked or its task), its name
 // is what the page calls it, and the pointer shows where it comes from. In
 // the box, a document's chip also says what Rufi is doing with it. A chip
 // whose document was deleted keeps its name, says so, and is dimmed.
@@ -9,6 +9,7 @@ import {
   Activity,
   FileText,
   FlaskConical,
+  ListTodo,
   LoaderCircle,
   Table2,
   X,
@@ -23,6 +24,7 @@ const ICONS = {
   draft_item: FlaskConical,
   record: Activity,
   report: Table2,
+  open_item: ListTodo,
 } as const;
 
 /**

@@ -5,6 +5,7 @@
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import type { Status } from "@rufi/contracts";
 import type { RunSubAgent } from "../../server/src/agent/runtime.ts";
 import { test as base } from "@playwright/test";
@@ -47,6 +48,16 @@ export class Rufi {
 
   constructor(home: string) {
     this.home = home;
+  }
+
+  /** The rows a read of the data folder's database finds now; read only. */
+  query(sql: string): unknown[] {
+    const db = new DatabaseSync(databasePath(this.home), { readOnly: true });
+    try {
+      return db.prepare(sql).all();
+    } finally {
+      db.close();
+    }
   }
 
   /**

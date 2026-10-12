@@ -95,8 +95,16 @@ Taking a document out of Rufi, on its page, not in the chat: its original, the p
 _Avoid_: remove (for a document), erase, purge
 
 **Needs you**:
-The top of a person's Overview: what is waiting for the user, such as a document read and not saved, one that couldn't be read, or a follow-up that is overdue, due now or coming up in the next 30 days. It hides when nothing waits.
-_Avoid_: inbox, notifications, tasks
+The top of a person's Overview: their **open work**. First the questions Rufi asked (**Rufi asked**), then documents read and not saved or that couldn't be read, and follow-ups that are overdue, due now or coming up in the next 30 days; then quiet lines for the AI's unfinished tasks, what is on Later, and what was closed this week. It hides when nothing waits.
+_Avoid_: inbox, notifications
+
+**Open work**:
+What Rufi helps you finish, or keeps for you to come back to: what, for whom, who acts next (you or the AI), what is happening, when, and where it came from. Most of it is worked out each time from its own data: documents to save, readings that failed, follow-ups due. What has no other home is kept as **open items**. The AI sees what is open with each message. Open work is not the health record: changing it saves nothing and is never your yes.
+_Avoid_: inbox, to-dos, reminders
+
+**Open item**:
+One piece of **open work** Rufi keeps because it has no other home: a **question** the AI asked you that waits for your answer, or a **task** the AI agreed to do that takes more than one reply and waits for the AI. It has its text, complete in itself, and what it is about (documents, draft items, records, reports, as they were then). It is open, done or dropped; an open one can be on **Later**, hidden until a day. Each change is kept in its history, by you or the AI.
+_Avoid_: ticket, to-do, reminder (for a question)
 
 **Tile**:
 One page of the health record on the Overview, such as Lab results or Medicines: its count of current records and a short summary that says what it counts, such as how many medicines you take now and how many are in your history. Rufi works it out from the saved record, never with the AI. It opens that page.
@@ -148,7 +156,7 @@ What the queue holds, shown above the box. Your messages sent while the AI repli
 _Avoid_: backlog, pending messages
 
 **Rufi event**:
-Rufi's own note that something happened outside your chat, such as a reading that finished: a line in the chat, and sometimes a note for the AI. It is never your words, a request or your yes: a reply it starts can only read, never save. After a Stop, its note goes with your next message.
+Rufi's own note that something happened outside your chat, such as a reading that finished: a line in the chat, and sometimes a note for the AI. It is never your words, a request or your yes: a reply it starts can only read, never save; it can keep the question the AI asks you as an **open item**. After a Stop, its note goes with your next message.
 _Avoid_: notification, system message
 
 **Stop**:
@@ -160,7 +168,7 @@ A reply that didn't finish because you stopped it or Rufi closed. What it wrote 
 _Avoid_: cancelled, aborted
 
 **Chip**:
-Something from the record added to a message in the chat: a record (such as a result, with **Ask Rufi** on its row), a report's results (with **Ask Rufi** in its heading), a document or a draft item, shown by its name. **Ask Rufi** adds it and the page stays. In the box, a document's chip also says what Rufi is doing with it (Reading…, Waiting to read, Read, Read · some pages unclear, Couldn't read); this is worked out each time, never stored. It points at exactly that one, for this person; the AI gets its id and its version when the message is sent. Taking a chip out of the box changes nothing in the record.
+Something from the record added to a message in the chat: a record (such as a result, with **Ask Rufi** on its row), a report's results (with **Ask Rufi** in its heading), a document, a draft item, or an **open item** (with **Answer** or **Continue** in Needs you), shown by its name. **Ask Rufi** adds it and the page stays. In the box, a document's chip also says what Rufi is doing with it (Reading…, Waiting to read, Read, Read · some pages unclear, Couldn't read); this is worked out each time, never stored. It points at exactly that one, for this person; the AI gets its id and its version when the message is sent. Taking a chip out of the box changes nothing in the record.
 _Avoid_: attachment, tag, mention
 
 **Draft**:

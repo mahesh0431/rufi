@@ -564,7 +564,7 @@ describe("follow-ups", () => {
       ["dropped", ["f-dropped"]],
     ]);
     expect(
-      overview?.needsYou.followUps.map(({ state, followUp }) => [
+      (await views.followUpNeeds("asha")).map(({ state, followUp }) => [
         state,
         followUp.id,
       ]),

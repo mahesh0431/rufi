@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, it } from "vitest";
+import { OPEN_WORK } from "../../../tests/fixtures/open-work.ts";
 import { documents } from "../documents/documents.ts";
 import { filesPath } from "../documents/originals.ts";
 import { databasePath, openWritable } from "./database.ts";
@@ -150,6 +151,42 @@ second line', NULL, '');
     expect(
       strFromU8(files[`${FOLDER}/csv/people.csv`] ?? new Uint8Array()),
     ).toBe('"id","display_name"\r\n"asha","Asha ""Ammu"", Fictional"\r\n');
+  });
+
+  it("holds open work and its history as stored, in JSON and CSV", async () => {
+    const store = openWritable(databasePath(home));
+    store.db.exec(
+      "INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional')",
+    );
+    store.db.exec(OPEN_WORK);
+    const stored = (table: string) =>
+      store.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all();
+    const items = stored("open_items");
+    const changes = stored("open_item_changes");
+    store.close();
+
+    const files = await unzipped();
+
+    const json = (table: string) =>
+      (
+        JSON.parse(
+          strFromU8(files[`${FOLDER}/json/${table}.json`] ?? new Uint8Array()),
+        ) as { rows: unknown[] }
+      ).rows;
+    for (const [table, rows] of [
+      ["open_items", items],
+      ["open_item_changes", changes],
+    ] as const) {
+      expect(json(table)).toEqual(expect.arrayContaining(rows));
+      expect(json(table)).toHaveLength(rows.length);
+    }
+    const csv = strFromU8(
+      files[`${FOLDER}/csv/open_item_changes.csv`] ?? new Uint8Array(),
+    ).split("\r\n");
+    expect(csv).toHaveLength(changes.length + 2);
+    expect(csv).toContain(
+      '"asha","item-reopened",2,"2026-10-02T09:00:00.000Z","ai","done","c-asha","call-4","t-1","{""change"":""close""}","done",,"Compared","op-1"',
+    );
   });
 
   it("holds every table, a README and its own record, and nothing of the sign-in, the AI's files or logs", async () => {

@@ -7,6 +7,7 @@ import type { Pages } from "../documents/pages.ts";
 import type { DismissInput, Dismissed } from "../record/items.ts";
 import type { SaveRequest, Saved } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
+import type { ReadRequest, TrackRequest } from "../work/open-work.ts";
 
 /** What a tool gets from Rufi, never from the model. */
 export interface ToolContext {
@@ -36,6 +37,16 @@ export interface ToolContext {
   retryReading?: ((documentId: string) => Promise<number[]>) | undefined;
   /** Makes a visit brief with its line: only in Rufi's own chat. */
   brief?: ((input: BriefInput, callId: string) => Promise<Made>) | undefined;
+  /**
+   * The person's open work, read and changed in this reply: only in Rufi's
+   * own chat, which gives the reply and the call.
+   */
+  work?:
+    | {
+        read: (input: ReadRequest) => Promise<unknown>;
+        track: (input: TrackRequest, callId: string) => Promise<unknown>;
+      }
+    | undefined;
 }
 
 /** A tool's input: decoded without services, like JSON. */

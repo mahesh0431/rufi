@@ -6,13 +6,13 @@ Rufi shows your whole health record: Overview at a glance, and a page for each k
 
 Overview is the first page you see. It has three parts, in this order:
 
-1. **Needs you:** documents that wait for you, then follow-ups that are overdue, due now or coming up in the next 30 days:
+1. **Needs you:** the questions Rufi asked you (see [Questions Rufi asked](#questions-rufi-asked)), then documents that wait for you, then follow-ups that are overdue, due now or coming up in the next 30 days:
    - a document that was read, with results not saved yet, says how many it has and how many to check;
    - a document with pages that couldn't be read says "couldn't be read · try a clearer scan". Add a clearer scan or photo, or click **Retry** on its page;
    - a document whose reading couldn't finish says so;
    - a follow-up says when it is due, for example "overdue, was due Sep 2026" (see [Follow-ups](follow-ups.md)).
 
-   Click **Open** to go to the document's page (see [Documents](documents.md)), or to that follow-up on Follow-ups. Click **Ask Rufi** to put it in the chat's box and ask about it (see [Adding to a message](chat.md#adding-to-a-message)). A document read with nothing to save isn't here. When nothing waits, this part isn't shown.
+   Click **Open** to go to the document's page (see [Documents](documents.md)), or to that follow-up on Follow-ups. Click **Ask Rufi** to put it in the chat's box and ask about it (see [Adding to a message](chat.md#adding-to-a-message)). A document read with nothing to save isn't here. Under them, quiet lines show the AI's unfinished tasks, what you put off for later, and what was closed this week. When nothing waits, this part isn't shown.
 
 2. **Health record:** one tile for each of its pages, with its count and a short summary. Click a tile to open that page. A page with nothing in it says **None yet**.
 3. **Recent changes:** your last 5 saves and undos, newest first. Click one to see its receipt, the same as in the chat.
@@ -29,6 +29,26 @@ Rufi works out the tiles from your saved health record, not with the AI. Each ti
 | Prescriptions, Symptoms, Care events | The latest one and its date                                                                                                                   |
 
 A stopped medicine is still in your health record: its tile counts it in your history, and its page shows it.
+
+## Questions Rufi asked
+
+When the AI asks you to decide something that matters later, such as "Save HbA1c 6.1 % from Sunrise Labs, 12 Mar 2026?", Rufi keeps the question. It waits in **Needs you** under **Rufi asked**, newest first, with the day it was asked, until it is answered or dropped. It stays also after many more messages, a restart of Rufi, or a change of model. A long question shows two lines: click **More** to read all of it.
+
+Each question has three buttons:
+
+- **Answer** puts the question in the chat's box as a chip. Type your answer and send it. The chip only tells the AI which question you mean: it is never your yes. The AI reads the question again, with what it is about as it is now, before it acts (see [Questions and tasks Rufi keeps](chat.md#questions-and-tasks-rufi-keeps)).
+- **Later** hides the question for 7 days. It comes back by itself at the start of that day.
+- **Drop** closes the question without an answer.
+
+When you answer in the chat, the AI closes the question itself: "Saved" when a save answered it, or with its reason. When you say "not now", it puts the question on Later.
+
+Under the questions, quiet lines open short lists:
+
+- **Rufi has 1 unfinished task:** work the AI agreed to do for you that takes more than one reply, such as comparing your last three lipid panels. **Continue** puts the task in the chat's box: send a message to go on. **Drop** closes it. A task never starts by itself.
+- **Later (2):** what you put off, with the day each comes back. **Bring back** shows it again now.
+- **Closed this week (3):** what was closed in the last 7 days, with how it closed, for example "Saved" or "Dropped: not wanted". **Reopen** opens it again. Reopening never saves anything: the AI asks you again.
+
+These buttons change only Rufi's list of open work, never your health record. When another Rufi window changed a question first, Rufi says so, for example "… changed in another window. It is dropped now.", and the row shows it as it is now.
 
 ## The sidebar
 
@@ -78,4 +98,4 @@ On Lab results, a report's heading has its own **Ask Rufi**: it adds the whole r
 
 ## When your health record changes
 
-When a save or an undo happens in the chat, Overview, the sidebar's counts and the open pages show it at once, in every Rufi window and tab. When a reading of a document ends or fails, **Needs you** shows it. When you come back to a Rufi window, Overview reads your health record again. While it shows, it also reads again each minute, so Needs you shows the new day after midnight.
+When a save or an undo happens in the chat, Overview, the sidebar's counts and the open pages show it at once, in every Rufi window and tab. When a reading of a document ends or fails, or a question or task changes, **Needs you** shows it. When you come back to a Rufi window, Overview reads your health record again. While it shows, it also reads again each minute, so Needs you shows the new day after midnight.

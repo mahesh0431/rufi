@@ -38,6 +38,7 @@ import { openRecord } from "../core/store/install.ts";
 import { claimNotices } from "../core/record/notices.ts";
 import { recordViews, waiting } from "../core/record/views.ts";
 import { pages } from "../core/documents/pages.ts";
+import { openWork } from "../core/work/open-work.ts";
 import { chatCaller, forAgent, toolsVersion } from "../core/tools/tools.ts";
 import { holdRufiLock, readJson, writePrivateJson } from "../platform/files.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
@@ -191,6 +192,28 @@ export const startCore = (options: CoreOptions) =>
     // Readings Rufi stopped in the middle continue from their notebook.
     yield* attempt(() => readings.recover());
 
+    // The Mac's local time, for when follow-ups are due.
+    const clock = () =>
+      options.now === undefined ? new Date() : new Date(options.now());
+    const record = recordViews(reader ?? writer, clock);
+    const personDocuments = documents(
+      writer,
+      home,
+      options.now,
+      readings,
+      gate,
+    );
+    // Open work: what Needs you works out, and the items Rufi keeps.
+    const work = openWork({
+      store: writer,
+      reader,
+      derived: async (personId) => ({
+        documents: waiting(await personDocuments.list(personId)),
+        followUps: await record.followUpNeeds(personId),
+      }),
+      ...(options.now && { now: options.now }),
+    });
+
     const tools = forAgent(() => ({ store: reader, personId: undefined }), log);
     const allowlist = allowlistFile(home);
     const account =
@@ -217,8 +240,10 @@ export const startCore = (options: CoreOptions) =>
               log,
               reader && pages(reader, home, gate),
               (personId, documentId) => readings.retry(personId, documentId),
+              work,
             ),
           },
+          snapshot: work.snapshot,
           log,
         }),
       ),
@@ -252,17 +277,6 @@ export const startCore = (options: CoreOptions) =>
     // The token is in the fragment: the browser never sends it in a request.
     const launchUrl = () =>
       `http://127.0.0.1:${String(port)}/#launch=${access.launch()}`;
-    // The Mac's local time, for when follow-ups are due.
-    const clock = () =>
-      options.now === undefined ? new Date() : new Date(options.now());
-    const record = recordViews(reader ?? writer, clock);
-    const personDocuments = documents(
-      writer,
-      home,
-      options.now,
-      readings,
-      gate,
-    );
     const app = api({
       transcripts,
       drafts,
@@ -272,14 +286,9 @@ export const startCore = (options: CoreOptions) =>
       overview: async (personId) => {
         const overview = await record.overview(personId);
         if (!overview) throw new Error("The person isn't in the record.");
-        return {
-          ...overview,
-          needsYou: {
-            ...overview.needsYou,
-            documents: waiting(await personDocuments.list(personId)),
-          },
-        };
+        return { ...overview, needsYou: await work.needsYou(personId) };
       },
+      work,
       record,
       brief: async (personId, briefId) =>
         reader && (await readBrief(reader.query, personId, briefId)),

@@ -51,6 +51,7 @@ You can add your records and documents to a message, so the AI knows exactly wha
 - **A record:** on its page (see [Your health record](record.md)), click **Ask Rufi** on its row.
 - **A report:** on Lab results, click **Ask Rufi** in a report's heading. Its results, with any measurements it printed, go in as one chip, such as "Sunrise Labs · 12 Aug 2026 · 3 results", and the AI reads exactly that report's results. Lab results you typed in the chat, and days of measurements, have no such heading button.
 - **A follow-up or a document that needs you:** on Overview, click **Ask Rufi** on its line in **Needs you**.
+- **A question Rufi asked, or its unfinished task:** on Overview, click **Answer** or **Continue** on it in **Needs you** (see [Questions and tasks Rufi keeps](#questions-and-tasks-rufi-keeps)).
 - **A document:** on the Documents page, click **Ask Rufi** on its row.
 - **A result the reader read:** on a document's page, click **Ask Rufi** on its row (see [Documents](documents.md#add-some-results-to-the-chat)).
 - **A new file:** click the paperclip next to the box, or drop files on the chat panel or the chat page. Each file is added as a document at once, the same as on the Documents page (see [Documents](documents.md#add-documents)), and its chip goes in the box. Rufi starts to read it then, not when you send. A file you already added gives the chip of the document you have, and the box says so.
@@ -159,6 +160,18 @@ Say "undo that". The AI reads the save and your health record as it is now. It t
 
 If you stop the reply while the AI saves, the save can still finish. Then its receipt shows in the chat, and the AI sees it the next time you write. Say "undo that" if you don't want it.
 
+## Questions and tasks Rufi keeps
+
+Some of what the AI says needs you later. When the AI asks you to decide something, such as a save, a choice or something to review, it records the question first, with what it is about: a document, its results, or records. When you ask for work that takes more than one reply, such as "compare my last three lipid panels", the AI records it as a task before it starts. Rufi keeps these as **open work**: questions wait for you, and tasks wait for the AI. They show in **Needs you** on Overview (see [Questions Rufi asked](record.md#questions-rufi-asked)).
+
+- **The AI always knows what is open.** With each message, Rufi tells the AI what is open now, also after a restart or a change of model, when the AI starts afresh. When nothing is open, Rufi tells it that too, so a question you dropped doesn't come back.
+- **Answer from Needs you.** Click **Answer** on a question: it goes in the box as a chip. Type your answer, such as "yes", and send. The AI reads the question and what it is about as they are now. If the document was deleted or a record changed since, it says so and uses only what is still in your health record.
+- **Your yes is still needed.** A question that waits, a question you reopen, or a chip is never your yes. The AI saves only after you say yes in the chat, as always. When your answer isn't clear, for example a bare "yes" while two questions wait, the AI asks which one you mean.
+- **"Not now" puts the question on Later,** for 7 days, and the AI doesn't bring it up again before then. "No" drops it.
+- **The AI closes it.** When it has saved what you said yes to, it closes the question with that save. If a reply stopped after the save but before the close, the AI closes it next time, without saving again.
+- **Unfinished tasks wait.** If a reply stops in the middle of a task, the task waits. The AI never starts by itself: the next time you write, it offers to go on, and goes on only when you say so. Work the AI didn't record as a task before the stop is not kept: ask for it again.
+- **In its own short replies**, the ones a Rufi line starts, the AI can record a question it asks you. It can't answer, drop or put off your question for you there.
+
 ## While the AI replies
 
 While the AI replies, the box and the chat bar say "Rufi is answering" and how many seconds it has taken so far.
@@ -201,7 +214,7 @@ Some things happen outside your chat. Rufi tells you with its own line in the ch
 
 When the AI should know too, Rufi gives it a note:
 
-- **When nothing runs**, the AI gets the note at once, in a short reply of its own. In that reply the AI can only read your health record: it can explain or ask, but it can't save anything. Only your own messages can save.
+- **When nothing runs**, the AI gets the note at once, in a short reply of its own. In that reply the AI can only read your health record: it can explain or ask, but it can't save anything. Only your own messages can save. It can keep the question it asks you, so it waits in **Needs you** (see [Questions and tasks Rufi keeps](#questions-and-tasks-rufi-keeps)).
 - **When a reply runs**, the note waits until the reply has ended. Notes that wait together go to the AI together, in one reply.
 - **After a Stop, or when you're signed out**, the note waits above the box as "Rufi's note", marked **Rufi**, with "Goes to the AI with your next message." It goes once, with your next message, never as a reply of its own later. **Remove** it if the AI doesn't need it.
 
@@ -217,7 +230,7 @@ Rufi keeps the model and effort for your chat. You can't change them while a rep
 
 ## The AI's memory of the chat
 
-The AI keeps its own memory of the chat while you talk. When that memory gets long, the AI compacts it. Rufi starts the AI afresh only when it must: when you change the model, when Rufi's tools change, or when the AI's own copy of the chat is lost. Then the AI gets the chat's last 10 messages, and it can read further back in the chat when it needs to.
+The AI keeps its own memory of the chat while you talk. When that memory gets long, the AI compacts it. Rufi starts the AI afresh only when it must: when you change the model, when Rufi's tools change, or when the AI's own copy of the chat is lost. Then the AI gets the chat's last 10 messages, and it can read further back in the chat when it needs to. It also knows every question and task that is open, however old (see [Questions and tasks Rufi keeps](#questions-and-tasks-rufi-keeps)).
 
 Each place where the AI started afresh or compacted its memory shows the quiet line "The AI started afresh here. It can still read earlier messages." It shows above the first reply that really came from the new start: a model you chose but didn't use shows no line. If the AI finishes compacting while Rufi isn't running, that place shows no line.
 

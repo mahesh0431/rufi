@@ -197,6 +197,39 @@ export interface Tables {
     asserted: string | null;
     removed: number;
   };
+  open_item_changes: {
+    person_id: string;
+    item_id: string;
+    version: number;
+    at: string;
+    by: string;
+    change: string;
+    chat_id: string | null;
+    call_id: string | null;
+    turn_id: string | null;
+    request: string | null;
+    status: string;
+    show_again_at: string | null;
+    outcome: string | null;
+    operation_id: string | null;
+  };
+  open_items: {
+    id: string;
+    person_id: string;
+    chat_id: string;
+    turn_id: string;
+    kind: string;
+    text: string;
+    refs: string;
+    status: string;
+    outcome: string | null;
+    operation_id: string | null;
+    show_again_at: string | null;
+    version: number;
+    created_at: string;
+    updated_at: string;
+    closed_at: string | null;
+  };
   operations: {
     id: string;
     seq: number;

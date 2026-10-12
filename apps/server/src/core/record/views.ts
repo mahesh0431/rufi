@@ -690,46 +690,43 @@ export function recordViews(store: Store, now: () => Date = () => new Date()) {
     store.query.transaction().execute(work);
   return {
     /**
-     * Overview with the follow-ups that need the person, but not the
-     * documents; undefined when the person isn't in Rufi.
+     * Overview but Needs you (open work's, core/work/open-work.ts);
+     * undefined when the person isn't in Rufi.
      */
     overview: (personId: string) =>
-      read(
-        async (
-          db,
-        ): Promise<
-          | (Omit<Overview, "needsYou"> & {
-              needsYou: Pick<Overview["needsYou"], "followUps">;
-            })
-          | undefined
-        > => {
-          const person = await db
-            .selectFrom("people")
-            .select("display_name")
-            .where("id", "=", personId)
-            .executeTakeFirst();
-          if (!person) return undefined;
-          const tiles = [];
-          for (const kind of Object.keys(PAGES) as PageKind[]) {
-            tiles.push(await tile(db, personId, kind));
-          }
-          const placed = await followUps(db, personId, now());
-          return {
-            person: person.display_name,
-            needsYou: {
-              followUps: placed.flatMap(({ group, row }): FollowUpNeed[] =>
-                isNeed(group) && !("problem" in row) && row.kind === "follow_up"
-                  ? [{ state: group, followUp: row }]
-                  : [],
-              ),
-            },
-            tiles,
-            recent: await recent(db, personId),
-            openFollowUps: placed.filter(
-              ({ group }) => group !== "done" && group !== "dropped",
-            ).length,
-          };
-        },
+      read(async (db): Promise<Omit<Overview, "needsYou"> | undefined> => {
+        const person = await db
+          .selectFrom("people")
+          .select("display_name")
+          .where("id", "=", personId)
+          .executeTakeFirst();
+        if (!person) return undefined;
+        const tiles = [];
+        for (const kind of Object.keys(PAGES) as PageKind[]) {
+          tiles.push(await tile(db, personId, kind));
+        }
+        const placed = await followUps(db, personId, now());
+        return {
+          person: person.display_name,
+          tiles,
+          recent: await recent(db, personId),
+          openFollowUps: placed.filter(
+            ({ group }) => group !== "done" && group !== "dropped",
+          ).length,
+        };
+      }),
+    /**
+     * The open follow-ups that need the person now (Needs you): overdue,
+     * due now or coming up, in that order.
+     */
+    followUpNeeds: (personId: string) =>
+      read(async (db) =>
+        (await followUps(db, personId, now())).flatMap(
+          ({ group, row }): FollowUpNeed[] =>
+            isNeed(group) && !("problem" in row) && row.kind === "follow_up"
+              ? [{ state: group, followUp: row }]
+              : [],
+        ),
       ),
     /** The person's follow-ups in the Follow-ups page's groups. */
     followUps: (personId: string) =>

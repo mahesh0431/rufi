@@ -453,6 +453,53 @@ it("upgrades a record of version 4 so a document can be deleted, every document 
   expect(after.pages).toEqual(before.pages);
 });
 
+it("upgrades a record of version 5 to keep open work: every table as it was, and the new ones take an item for a reply of its chat", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 5));
+  const tables = (db: DatabaseSync) =>
+    (
+      db
+        .prepare("SELECT name FROM sqlite_schema WHERE type = 'table'")
+        .all() as { name: string }[]
+    ).map(({ name }) => name);
+  const before = new DatabaseSync(path, { readOnly: true });
+  const kept = Object.fromEntries(
+    tables(before).map((name) => [
+      name,
+      before.prepare(`SELECT * FROM ${name} ORDER BY rowid`).all(),
+    ]),
+  );
+  before.close();
+
+  const store = await openRecord(home);
+  try {
+    for (const [name, rows] of Object.entries(kept)) {
+      expect(
+        store.db.prepare(`SELECT * FROM ${name} ORDER BY rowid`).all(),
+      ).toEqual(rows);
+    }
+    expect(store.db.prepare("SELECT * FROM open_items").all()).toEqual([]);
+    const turn = store.db
+      .prepare("SELECT id, person_id, chat_id FROM turns LIMIT 1")
+      .get() as { id: string; person_id: string; chat_id: string };
+    store.db
+      .prepare(
+        "INSERT INTO open_items (id, person_id, chat_id, turn_id, kind, text, created_at, updated_at) VALUES ('item-1', ?, ?, ?, 'question', 'Save it?', '2026-10-12T09:00:00Z', '2026-10-12T09:00:00Z')",
+      )
+      .run(turn.person_id, turn.chat_id, turn.id);
+    // Another person's reply can't be its origin.
+    expect(() =>
+      store.db
+        .prepare(
+          "INSERT INTO open_items (id, person_id, chat_id, turn_id, kind, text, created_at, updated_at) VALUES ('item-2', 'nobody', ?, ?, 'question', 'Save it?', '2026-10-12T09:00:00Z', '2026-10-12T09:00:00Z')",
+        )
+        .run(turn.chat_id, turn.id),
+    ).toThrow("FOREIGN KEY");
+  } finally {
+    store.close();
+  }
+});
+
 it.each([
   {
     record: "a record from a newer Rufi",

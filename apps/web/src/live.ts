@@ -138,6 +138,10 @@ function open(personId: string): Opened {
       documentsChanged();
       return;
     }
+    if (line.type === "open_work") {
+      void queries.invalidateQueries({ queryKey: ["overview", personId] });
+      return;
+    }
     const next = apply(store.getState(), line);
     if (line.type === "snapshot") {
       // A reconnect: the latest page only; an older page on its way is dropped.

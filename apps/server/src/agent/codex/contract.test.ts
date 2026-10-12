@@ -202,6 +202,18 @@ describe("the pinned Codex", () => {
       // Its fields reach the model in its description.
       expect(cut[0]?.description).toContain(FIELDS);
       expect(exec).toContain(cut[0]?.description);
+      // The others' schemas, as generated, stay under the 5,000 bytes.
+      const bytes = Object.fromEntries(
+        tools.specs.map((spec) => [
+          spec.name,
+          Buffer.byteLength(JSON.stringify(spec.inputSchema)),
+        ]),
+      );
+      expect(
+        Object.entries(bytes).filter(
+          ([name, size]) => name !== "save_changes" && size >= 5_000,
+        ),
+      ).toEqual([]);
     },
   );
 });

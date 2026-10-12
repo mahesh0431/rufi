@@ -1,6 +1,7 @@
-// The home: what needs you (each line with Ask Rufi, for the chat box over
-// the page), your health record as one tile per page, and the latest saves,
-// each opening to its receipt. A tile opens its page. The
+// The home: what needs you (the questions Rufi asked and its open work,
+// ./open-work.tsx; documents and follow-ups, each line with Ask Rufi, for
+// the chat box over the page), your health record as one tile per page, and
+// the latest saves, each opening to its receipt. A tile opens its page. The
 // tiles' words are worked out from the saved record, never by the AI.
 import type { Person } from "@rufi/contracts";
 import type { RecentChange, Tile } from "@rufi/contracts/record";
@@ -10,6 +11,7 @@ import { useState } from "react";
 import { AskRufi } from "./ask.tsx";
 import { dayLine, greeting, printedDate, printedTime, today } from "./dates.ts";
 import { whenDue } from "./follow-ups.tsx";
+import { hasOpenWork, OpenWork } from "./open-work.tsx";
 import { askRufi } from "./panel.ts";
 import { KIND_TITLES } from "./record.tsx";
 import { useOverview } from "./reads.ts";
@@ -37,104 +39,115 @@ export function OverviewPage({ person }: { person: Person }) {
       ) : (
         <>
           {(data.needsYou.documents.length > 0 ||
-            data.needsYou.followUps.length > 0) && (
+            data.needsYou.followUps.length > 0 ||
+            hasOpenWork(data.needsYou)) && (
             <section aria-labelledby="needs-you" className="mb-6">
               <h2 id="needs-you" className="mb-2 px-0.5 font-semibold">
                 Needs you
               </h2>
-              <ul className="rounded-xl border border-line bg-surface">
-                {data.needsYou.documents.map((document) => (
-                  <li
-                    key={document.id}
-                    className="flex items-center gap-2.5 border-t border-line px-3 py-2 first:border-t-0"
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="font-semibold">{document.name}</span>{" "}
-                      <span className="text-muted">
-                        ·{" "}
-                        {document.state === "failed"
-                          ? "couldn't finish reading"
-                          : document.state === "unread_pages"
-                            ? "couldn't be read · try a clearer scan"
-                            : [
-                                `${String(document.results)} ${document.results === 1 ? "result" : "results"} read, not saved`,
-                                document.toCheck > 0 &&
-                                  `${String(document.toCheck)} to check`,
-                              ]
-                                .filter(Boolean)
-                                .join(" · ")}
-                      </span>
-                    </span>
-                    <AskRufi
-                      aria-label={`Ask Rufi about ${document.name}`}
-                      onClick={() => {
-                        askRufi(person.id, [
-                          {
-                            pointer: { type: "document", id: document.id },
-                            label: document.name,
-                            detail: "",
-                          },
-                        ]);
-                      }}
-                    />
-                    <Link
-                      to="/people/$personId/documents/$documentId"
-                      params={{ personId: person.id, documentId: document.id }}
-                      aria-label={`Open ${document.name}`}
-                      className={buttonLook({ look: "quiet" })}
-                    >
-                      <ArrowUpRight size={ICON} aria-hidden />
-                      Open
-                    </Link>
-                  </li>
-                ))}
-                {data.needsYou.followUps.map(({ state, followUp }) => (
-                  <li
-                    key={followUp.id}
-                    className="flex items-center gap-2.5 border-t border-line px-3 py-2 first:border-t-0"
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="font-semibold">{followUp.title}</span>{" "}
-                      <span className="text-muted">
-                        · {state === "coming_up" && "coming up, "}
-                        {lower(
-                          whenDue(
-                            state,
-                            followUp.due,
-                            new Date(overview.dataUpdatedAt),
-                          ).replace(" · ", ", "),
-                        )}
-                      </span>
-                    </span>
-                    <AskRufi
-                      aria-label={`Ask Rufi about ${followUp.title}`}
-                      onClick={() => {
-                        askRufi(person.id, [
-                          {
-                            pointer: {
-                              type: "record",
-                              kind: "follow_up",
-                              id: followUp.id,
-                            },
-                            label: followUp.title,
-                            detail: "",
-                          },
-                        ]);
-                      }}
-                    />
-                    <Link
-                      to="/people/$personId/follow-ups"
-                      params={{ personId: person.id }}
-                      search={{ open: followUp.id }}
-                      aria-label={`Open ${followUp.title}`}
-                      className={buttonLook({ look: "quiet" })}
-                    >
-                      <ArrowUpRight size={ICON} aria-hidden />
-                      Open
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+              <OpenWork personId={person.id} needs={data.needsYou}>
+                {(data.needsYou.documents.length > 0 ||
+                  data.needsYou.followUps.length > 0) && (
+                  <ul className="mb-2 rounded-xl border border-line bg-surface">
+                    {data.needsYou.documents.map((document) => (
+                      <li
+                        key={document.id}
+                        className="flex items-center gap-2.5 border-t border-line px-3 py-2 first:border-t-0"
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="font-semibold">{document.name}</span>{" "}
+                          <span className="text-muted">
+                            ·{" "}
+                            {document.state === "failed"
+                              ? "couldn't finish reading"
+                              : document.state === "unread_pages"
+                                ? "couldn't be read · try a clearer scan"
+                                : [
+                                    `${String(document.results)} ${document.results === 1 ? "result" : "results"} read, not saved`,
+                                    document.toCheck > 0 &&
+                                      `${String(document.toCheck)} to check`,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                          </span>
+                        </span>
+                        <AskRufi
+                          aria-label={`Ask Rufi about ${document.name}`}
+                          onClick={() => {
+                            askRufi(person.id, [
+                              {
+                                pointer: { type: "document", id: document.id },
+                                label: document.name,
+                                detail: "",
+                              },
+                            ]);
+                          }}
+                        />
+                        <Link
+                          to="/people/$personId/documents/$documentId"
+                          params={{
+                            personId: person.id,
+                            documentId: document.id,
+                          }}
+                          aria-label={`Open ${document.name}`}
+                          className={buttonLook({ look: "quiet" })}
+                        >
+                          <ArrowUpRight size={ICON} aria-hidden />
+                          Open
+                        </Link>
+                      </li>
+                    ))}
+                    {data.needsYou.followUps.map(({ state, followUp }) => (
+                      <li
+                        key={followUp.id}
+                        className="flex items-center gap-2.5 border-t border-line px-3 py-2 first:border-t-0"
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="font-semibold">
+                            {followUp.title}
+                          </span>{" "}
+                          <span className="text-muted">
+                            · {state === "coming_up" && "coming up, "}
+                            {lower(
+                              whenDue(
+                                state,
+                                followUp.due,
+                                new Date(overview.dataUpdatedAt),
+                              ).replace(" · ", ", "),
+                            )}
+                          </span>
+                        </span>
+                        <AskRufi
+                          aria-label={`Ask Rufi about ${followUp.title}`}
+                          onClick={() => {
+                            askRufi(person.id, [
+                              {
+                                pointer: {
+                                  type: "record",
+                                  kind: "follow_up",
+                                  id: followUp.id,
+                                },
+                                label: followUp.title,
+                                detail: "",
+                              },
+                            ]);
+                          }}
+                        />
+                        <Link
+                          to="/people/$personId/follow-ups"
+                          params={{ personId: person.id }}
+                          search={{ open: followUp.id }}
+                          aria-label={`Open ${followUp.title}`}
+                          className={buttonLook({ look: "quiet" })}
+                        >
+                          <ArrowUpRight size={ICON} aria-hidden />
+                          Open
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </OpenWork>
             </section>
           )}
           <section aria-labelledby="health-record" className="mb-6">

@@ -109,7 +109,7 @@ export const useDataFolder = () =>
 const OverviewAnswer = Schema.Struct({ overview: Overview });
 
 /** The person's path in the local API. */
-const personPath = (personId: string) =>
+export const personPath = (personId: string) =>
   `/api/people/${encodeURIComponent(personId)}`;
 
 // A window that comes back to the front reads again (the queries that ask
