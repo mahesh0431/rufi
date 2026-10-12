@@ -1,8 +1,8 @@
-// Deleting a document on the real core, with the fictional family: a
-// document with saved results is blocked, its preview lists them and Ask
-// Rufi puts it in the chat; one whose results were removed goes, and an
-// old message's chip of it says it was deleted. The strict CSP refuses
-// nothing.
+// Deleting a document on the real core, with the fictional family: one
+// with nothing saved from it goes with Delete, and an old message's chip of
+// it says it was deleted; one with saved results lists them and offers
+// Delete file or Delete file and results, which opens the chat where the AI
+// starts. The strict CSP refuses nothing.
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./rufi.ts";
@@ -43,7 +43,7 @@ async function openDocument(page: Page, name: string) {
   await page.getByRole("link", { name, exact: true }).click();
 }
 
-test("a document with saved results is blocked with Ask Rufi; one without goes, its old chip says deleted, and its open tab says so", async ({
+test("a document with nothing saved from it goes with Delete, the AI hears at once, its old chip and its open tab say so; one with saved results offers both choices, and with its results the chat opens and the AI starts", async ({
   page,
   rufi,
   context,
@@ -65,28 +65,8 @@ test("a document with saved results is blocked with Ask Rufi; one without goes, 
   await rufi.start();
   await page.goto(rufi.link());
 
-  // Blocked: the September photo's results are in the record.
-  await openDocument(page, "thyroid recheck.jpg");
-  await page.getByRole("button", { name: "Delete", exact: true }).click();
-  const dialog = page.getByRole("dialog");
-  await expect(
-    dialog.getByRole("heading", {
-      name: "thyroid recheck.jpg can't be deleted yet",
-    }),
-  ).toBeVisible();
-  await expect(
-    dialog
-      .getByRole("list", { name: "Saved results from this document" })
-      .getByRole("listitem"),
-  ).toHaveText(["TSH 4.6 mIU/L12 Aug 2026", "Free T4 1.1 ng/dL1 Sep 2026"]);
-  await accessible(page);
-  await dialog.getByRole("button", { name: "Ask Rufi" }).click();
-  await expect(dialog).toHaveCount(0);
-  // The closed chat bar says what is added.
-  const opener = page.getByRole("button", { name: "Open the chat" });
-  await expect(opener).toHaveAccessibleDescription(/^thyroid recheck\.jpg /);
-
-  // Deletable: what goes, what stays, and what Rufi can't reach.
+  // Nothing saved from it: one Delete. What goes, what stays, and what
+  // Rufi can't reach.
   await openDocument(page, "Sunrise Labs August.pdf");
   // Another tab has it open.
   const other = await context.newPage();
@@ -96,6 +76,7 @@ test("a document with saved results is blocked with Ask Rufi; one without goes, 
     other.getByRole("button", { name: "Delete", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
+  const dialog = page.getByRole("dialog");
   await expect(
     dialog.getByRole("heading", { name: "Delete Sunrise Labs August.pdf?" }),
   ).toBeVisible();
@@ -103,6 +84,9 @@ test("a document with saved results is blocked with Ask Rufi; one without goes, 
   await expect(dialog).toContainText(
     "Its backups keep this document until they age out",
   );
+  await expect(dialog.getByRole("button", { name: /^Delete/ })).toHaveText([
+    "Delete",
+  ]);
   await accessible(page);
   await dialog.getByRole("button", { name: "Delete", exact: true }).click();
 
@@ -110,6 +94,7 @@ test("a document with saved results is blocked with Ask Rufi; one without goes, 
   await expect(
     page.getByRole("link", { name: "Sunrise Labs August.pdf", exact: true }),
   ).toHaveCount(0);
+  const opener = page.getByRole("button", { name: "Open the chat" });
   await opener.click();
   const messages = page.getByRole("log", { name: "Messages" });
   await expect(messages).toContainText("Deleted Sunrise Labs August.pdf");
@@ -118,13 +103,11 @@ test("a document with saved results is blocked with Ask Rufi; one without goes, 
       .getByRole("listitem")
       .filter({ hasText: "Sunrise Labs August.pdf" }),
   ).toContainText("document deleted");
-  // The AI hears of it with the next message, and no reply starts now.
-  const waiting = page.getByRole("region", { name: "Waiting messages" });
-  await expect(waiting).toContainText(
-    "Rufi's note: Deleted Sunrise Labs August.pdf",
-  );
-  await expect(waiting).toContainText("Goes to the AI with your next message.");
-  await expect(waiting).not.toContainText("Not sent");
+  // The AI hears of it at once, in a reply of its own; nothing waits.
+  await expect(messages.locator(".reply")).toHaveCount(1);
+  await expect(
+    page.getByRole("region", { name: "Waiting messages" }),
+  ).toHaveCount(0);
   // The other tab, and the address opened again, say it was deleted.
   const gone = "This document was deleted.";
   await expect(other.getByText(gone)).toBeVisible();
@@ -137,6 +120,42 @@ test("a document with saved results is blocked with Ask Rufi; one without goes, 
     other.getByText("There is no such document. It may have been deleted."),
   ).toBeVisible();
   await other.close();
+
+  // Saved results from it: the person chooses, with no default.
+  await openDocument(page, "thyroid recheck.jpg");
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(
+    dialog.getByRole("heading", { name: "Delete thyroid recheck.jpg?" }),
+  ).toBeVisible();
+  await expect(dialog).toContainText(
+    "2 results in your health record come from it:",
+  );
+  // The two choices say what goes and stays; the copies Rufi can't reach too.
+  await expect(dialog).not.toContainText("Goes from Rufi");
+  await expect(dialog).toContainText("Rufi can't reach copies outside it.");
+  await expect(
+    dialog
+      .getByRole("list", { name: "Saved results from this document" })
+      .getByRole("listitem"),
+  ).toHaveText(["TSH 4.6 mIU/L12 Aug 2026", "Free T4 1.1 ng/dL1 Sep 2026"]);
+  await expect(dialog.getByRole("button", { name: /^Delete/ })).toHaveText([
+    "Delete file",
+    "Delete file and results",
+  ]);
+  await expect(
+    dialog.getByRole("button", { name: /^Delete/ }).first(),
+  ).not.toBeFocused();
+  await accessible(page);
+  await dialog.getByRole("button", { name: "Delete file and results" }).click();
+
+  // The chat opens on the Documents page, and the AI starts by itself.
+  await expect(page).toHaveURL(/\/documents$/);
+  await expect(messages).toContainText("Deleted thyroid recheck.jpg");
+  await expect(page.getByText(/^Rufi is answering/)).toBeVisible();
+  // Nothing is removed by the delete: the results wait for the person.
+  await expect(page.getByRole("link", { name: /^Lab results/ })).toContainText(
+    "4",
+  );
 });
 
 test("a report with many saved results keeps the dialog's buttons in view, its list scrolling", async ({
@@ -169,16 +188,15 @@ test("a report with many saved results keeps the dialog's buttons in view, its l
     .getByRole("listitem");
   await expect(results).toHaveCount(42);
 
-  await expect(dialog.getByRole("heading")).toBeInViewport();
   await expect(
-    dialog.getByRole("button", { name: "Ask Rufi" }),
+    dialog.getByRole("heading", { name: "Delete thyroid recheck.jpg?" }),
   ).toBeInViewport();
+  const both = dialog.getByRole("button", { name: "Delete file and results" });
+  await expect(both).toBeInViewport();
   await results.last().scrollIntoViewIfNeeded();
   await expect(results.last()).toBeInViewport();
-  await expect(
-    dialog.getByRole("button", { name: "Ask Rufi" }),
-  ).toBeInViewport();
+  await expect(both).toBeInViewport();
   await accessible(page);
-  await dialog.getByRole("button", { name: "Ask Rufi" }).click();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toHaveCount(0);
 });

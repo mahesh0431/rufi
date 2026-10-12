@@ -91,7 +91,7 @@ Taking a record out of the current record, by a save in the chat: it stays in th
 _Avoid_: delete (for a record), erase
 
 **Delete**:
-Taking a document out of Rufi, on its page, not in the chat: its original, the pages Rufi drew from it, the reader's work, its readings and its draft items go. Its name and page numbers stay, so the history, sources and chips that point at it say "document deleted". It can't be undone. While a saved record that isn't removed comes from the document, it can't be deleted: the user removes that record, or takes the document off it, in the chat first. Rufi's backups keep the document until they age out.
+Taking a document out of Rufi, on its page, not in the chat: its original, the pages Rufi drew from it, the reader's work, its readings and its draft items go. Its name and page numbers stay, so the history, sources and chips that point at it say "document deleted". It can't be undone. When saved records come from the document, the user chooses: **Delete file** keeps them, and **Delete file and results** opens the chat, where the AI goes through them and removes each one on the user's yes. The delete itself never changes the record. Rufi's backups keep the document until they age out.
 _Avoid_: remove (for a document), erase, purge
 
 **Needs you**:

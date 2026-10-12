@@ -192,25 +192,26 @@ The originals are in the `files` folder in your data folder, each named by its c
 
 ## Delete a document
 
-Delete a document that you added by mistake, for example someone else's report or a blurred copy. This removes the document from Rufi. To take one wrong result out of your health record and keep the document, ask the AI in the chat instead (see [Undo](chat.md#undo)).
+Delete a document that you added by mistake, for example someone else's report or a blurred copy, or a file you no longer want to keep in Rufi. This removes the document from Rufi. To take one wrong result out of your health record and keep the document, ask the AI in the chat instead (see [Undo](chat.md#undo)).
 
 1. Open the document's page: click its name on the Documents page.
 2. Click **Delete**. Rufi shows what goes and what stays.
 3. Click **Delete** again.
 
-Rufi goes back to the Documents page, and a line in the chat says **Deleted Sunrise Labs August.pdf**.
+Rufi goes back to the Documents page, and a line in the chat says **Deleted Sunrise Labs August.pdf**. Rufi tells the AI at once, and it answers in a short line.
 
 ### When results from it are in your health record
 
-If you saved results from the document, Rufi doesn't delete it. It says **… can't be deleted yet** and lists each saved result that comes from it. A result that an amended result replaced is in the list too, marked **replaced**: it comes back if the amended one is removed. A result you already removed isn't in the list.
+If you saved results from the document, Rufi lists each saved result that comes from it. A result that an amended result replaced is in the list too, marked **replaced**: it comes back if the amended one is removed. A result you already removed isn't in the list. Choose one of the two buttons; neither is chosen for you:
 
-Fix these in the chat first:
+- **Delete file:** the file goes, and the results stay in your health record. Use this when the results are right and you only want the file gone, for example a second copy of a report. Their sources say **Document deleted (Sunrise Labs August.pdf, page 2)**.
+- **Delete file and results:** the file goes, and the chat opens. The AI starts by itself: it lists the results from the document and asks you about them. When you say yes, it removes them from your health record. For a result that you also gave in another way (you told the AI, or another document has it), it asks to take only this document off it: the result stays, with its other sources. The AI removes nothing before your yes.
 
-1. Click **Ask Rufi**. The document goes in the chat box.
-2. Tell the AI what to do. For a result that came only from this document, say "remove these results". For a result that you also gave in another way (you told the AI, or another document has it), say "take this document off it": the result stays, with its other sources.
-3. When the AI has saved that, delete the document.
+Your health record changes only in the chat, with your yes. The delete itself removes no result.
 
-This keeps your health record in your hands: it changes only in the chat, with your yes.
+**If you stop halfway.** The file is already gone. The results that the AI didn't remove stay in your health record, as with **Delete file**. The AI's question stays in the chat: answer it when you like, or ask the AI about the document's results later. If Rufi closed before the AI could ask, Rufi's note waits above the chat box until you send a message (see [Waiting messages](chat.md#waiting-messages)).
+
+**Undo.** "Undo that" in the chat brings back a result the AI removed. It doesn't bring back the file, or a page that the AI took off a result.
 
 ### What goes, and what stays
 
@@ -234,4 +235,4 @@ A delete removes the document from Rufi's data folder. Copies outside it stay:
 - **Rufi's backups** keep the document until they age out, in about 5 weeks. Backups made before an update keep it until you remove them (see [Backups and export](backups-and-export.md#deleted-documents-in-backups)).
 - **Exports** you saved keep it.
 - **Time Machine** and other backups of your Mac keep it.
-- **The AI** may remember what it already read in this chat. Rufi's tools no longer show it the document. With your next message, Rufi tells it that you deleted the document, and not to use or quote what it read from it.
+- **The AI** may remember what it already read in this chat. Rufi's tools no longer show it the document's pages, and Rufi tells it at once that you deleted the document, and not to use or quote what it read from its pages. Results that you kept stay facts in your health record: the AI reads them as it reads any result, and says the document was deleted.

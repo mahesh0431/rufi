@@ -35,7 +35,11 @@ import { Stopped } from "../agent/runtime.ts";
 import type { Drafts } from "../core/chat/drafts.ts";
 import { RefRefusal } from "../core/chat/refs.ts";
 import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
-import { StalePreview, type Deletions } from "../core/documents/delete.ts";
+import {
+  NoChoice,
+  StalePreview,
+  type Deletions,
+} from "../core/documents/delete.ts";
 import { NotADocument, type Documents } from "../core/documents/documents.ts";
 import type { Readings } from "../core/documents/reading.ts";
 import { StaleFix, type DraftItems } from "../core/documents/items.ts";
@@ -601,11 +605,17 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   });
   app.post(`${documentsPath}/:documentId/delete`, async (c) => {
     const found = await person(c);
-    const { version } = await body(c, DeleteDocument);
+    const { version, saved } = await body(c, DeleteDocument);
     const started = Date.now();
     try {
-      await deps.deletions.remove(found.id, c.req.param("documentId"), version);
+      await deps.deletions.remove(
+        found.id,
+        c.req.param("documentId"),
+        version,
+        saved,
+      );
     } catch (error) {
+      if (error instanceof NoChoice) throw new HttpError(400, error.message);
       if (error instanceof StalePreview) {
         throw new HttpError(409, error.message, { preview: error.preview });
       }

@@ -8,6 +8,7 @@
 // its tools.
 import type { Chip, Pointer } from "@rufi/contracts";
 import { sql, type Kysely } from "kysely";
+import { DELETED_DOCUMENT } from "../documents/delete.ts";
 import { shownDate } from "../record/dates.ts";
 import { kindNamed, type Kind, type Row } from "../record/kinds.ts";
 import { isCurrent, recordVersions } from "../record/read.ts";
@@ -250,7 +251,7 @@ export function refsForAi(chips: readonly Chip[]): string | undefined {
   if (chips.length === 0) return undefined;
   const lines = chips.map(({ ref, label, deleted }) => {
     if (deleted) {
-      return `- ${ref.type === "document" ? "document" : "draft item"} ${ref.id}: ${label} (its document was deleted: don't use or quote anything you read from it before)`;
+      return `- ${ref.type === "document" ? "document" : "draft item"} ${ref.id}: ${label} (its document was deleted. ${DELETED_DOCUMENT})`;
     }
     switch (ref.type) {
       case "document":
