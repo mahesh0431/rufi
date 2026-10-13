@@ -1,5 +1,8 @@
 // Codex's items and turn endings in Rufi's words: one activity line per thing
-// the agent did, and why a reply ended. Plain functions, no state.
+// the agent did, and why a reply ended. Skill reads verify the files before
+// quieting a command; other items need no filesystem access.
+import { realpathSync, statSync } from "node:fs";
+import { relative, resolve } from "node:path";
 import type {
   ActivityKind,
   AgentEvent,
@@ -53,15 +56,117 @@ function statusOf(status: string | undefined, ended: boolean) {
 }
 
 /**
+ * Literal shell words only: quoting and escaping, without shell operations;
+ * in a shell's script, also one `{a,b}` group of skill-folder names.
+ */
+const PART =
+  /"((?:[^"\\$`]|\\["\\$`])*)"|'([^']*)'|\\([^\r\n])|\{([a-z0-9-]+(?:,[a-z0-9-]+)+)\}|([^\s"'\\$`;&|<>()*?[\]{}~#!]+)/y;
+
+/** The words of a command, each group expanded in place; undefined for any other. */
+function literalWords(script: string, braces = false): string[] | undefined {
+  // Space around the words, a final newline too, is no part of them. A
+  // newline between them is no literal word, so it ends the check.
+  const command = script.trim();
+  const words: string[] = [];
+  // The word so far, as each of its expansions, and whether it has a group.
+  let word: string[] | undefined;
+  let grouped = false;
+  for (let at = 0; at < command.length;) {
+    if (/[ \t]/.test(command[at] ?? "")) {
+      if (word !== undefined) words.push(...word);
+      word = undefined;
+      grouped = false;
+      at++;
+      continue;
+    }
+    PART.lastIndex = at;
+    const part = PART.exec(command);
+    if (!part) return undefined;
+    const so = word ?? [""];
+    if (part[4] !== undefined) {
+      if (!braces || grouped) return undefined;
+      grouped = true;
+      const names = part[4].split(",");
+      word = so.flatMap((start) => names.map((name) => start + name));
+    } else {
+      const text =
+        part[1]?.replace(/\\(["\\$`])/g, "$1") ??
+        part[2] ??
+        part[3] ??
+        part[5] ??
+        "";
+      word = so.map((start) => start + text);
+    }
+    at = PART.lastIndex;
+  }
+  if (word !== undefined) words.push(...word);
+  return words;
+}
+
+/** `a`, `a and b`, `a, b and c`. */
+const and = (words: readonly string[]) =>
+  words.length < 2
+    ? (words[0] ?? "")
+    : `${words.slice(0, -1).join(", ")} and ${words.at(-1) ?? ""}`;
+
+/**
+ * The skills a command only reads, by name: exactly `cat` and regular skill
+ * files under the canonical root (a shell's script may name several with
+ * one `{a,b}` group in a path); undefined for any other command.
+ */
+function skillsRead(
+  item: Extract<ThreadItem, { type: "commandExecution" }>,
+  root: string | undefined,
+): string[] | undefined {
+  if (root === undefined) return undefined;
+  let words = literalWords(item.command);
+  // Codex presents its argv as a shell-quoted command. Unwrap only its
+  // ordinary shell invocation, then check the whole script again.
+  if (
+    words?.length === 3 &&
+    /^\/bin\/(?:zsh|bash)$/.test(words[0] ?? "") &&
+    (words[1] === "-lc" || words[1] === "-c")
+  ) {
+    words = literalWords(words[2] ?? "", true);
+  }
+  if (words?.[0] !== "cat" || words.length < 2) return undefined;
+  const names: string[] = [];
+  for (const path of words.slice(1)) {
+    if (path.startsWith("-")) return undefined;
+    try {
+      const full = realpathSync(resolve(item.cwd, path));
+      const name = /^([a-z0-9-]+)\/SKILL\.md$/.exec(relative(root, full))?.[1];
+      if (name === undefined || !statSync(full).isFile()) return undefined;
+      names.push(name);
+    } catch {
+      // An unverifiable file keeps the ordinary command and its details.
+      return undefined;
+    }
+  }
+  return [...new Set(names)];
+}
+
+/** Rufi's skills and their names on screen. */
+export interface SkillFiles {
+  /** Their canonical folder, once Rufi has prepared it. */
+  folder: string | undefined;
+  /** Each one's heading, by name. */
+  headings: ReadonlyMap<string, string>;
+}
+
+/**
  * The activity line for an item, as it starts (`ended` false) or ends;
  * undefined for what isn't activity: messages, replies and reasoning. A
  * tool's name is never shown: Rufi's own tools say what they did, in plain
- * words and with no detail, and any other is "Used a tool".
+ * words and with no detail, and any other is "Used a tool". A command that
+ * only reads Rufi's skills says which, by their headings (their names
+ * when they have none); any other shows the command.
  */
 export function activityOf(
   item: ThreadItem,
   ended: boolean,
   tools?: AgentTools,
+  skills: SkillFiles = { folder: undefined, headings: new Map() },
 ): Activity | undefined {
   switch (item.type) {
     case "userMessage":
@@ -87,13 +192,22 @@ export function activityOf(
         argumentsOf(item.arguments),
         item.success === false ? "failed" : statusOf(item.status, ended),
       );
-    case "commandExecution":
-      return line(
-        "command",
-        "Ran a command",
-        item.command,
-        statusOf(item.status, ended),
-      );
+    case "commandExecution": {
+      const read = skillsRead(item, skills.folder);
+      return read
+        ? line(
+            "command",
+            `Read Rufi's instructions: ${and(read.map((name) => skills.headings.get(name) ?? name))}`,
+            undefined,
+            statusOf(item.status, ended),
+          )
+        : line(
+            "command",
+            "Ran a command",
+            item.command,
+            statusOf(item.status, ended),
+          );
+    }
     case "webSearch":
       // The words or the page may only be known once it has finished.
       return item.action?.type === "openPage" ||

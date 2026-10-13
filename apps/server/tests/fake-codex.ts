@@ -453,6 +453,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
           id: "item-cmd",
           type: "commandExecution",
           command: "sleep 301",
+          commandActions: [],
           status: "inProgress",
         },
       });
@@ -544,6 +545,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
         id: "item-ls",
         type: "commandExecution",
         command: "ls",
+        commandActions: [],
         status: "completed",
         aggregatedOutput: "notes.txt\n",
         exitCode: 0,

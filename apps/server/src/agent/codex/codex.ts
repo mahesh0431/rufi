@@ -7,6 +7,8 @@
 // running. Each thread gets Rufi's tools from Rufi's MCP server, with its own
 // key (settings.ts); Codex calls the server itself, and Rufi binds each call
 // to the reply it was made in (activeTurn).
+import { realpath } from "node:fs/promises";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
   NotReloaded,
@@ -29,7 +31,7 @@ import {
   type CodexCommand,
   type Deadlines,
 } from "./appserver.ts";
-import { activityOf, endOf, messageText } from "./events.ts";
+import { activityOf, endOf, messageText, type SkillFiles } from "./events.ts";
 import type { JsonValue } from "./protocol/serde_json/JsonValue.ts";
 import type { AccountRateLimitsUpdatedNotification } from "./protocol/v2/AccountRateLimitsUpdatedNotification.ts";
 import type { AgentMessageDeltaNotification } from "./protocol/v2/AgentMessageDeltaNotification.ts";
@@ -114,6 +116,19 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   const lifetime = new AbortController();
   let server: AppServer | undefined;
   let starting: Promise<AppServer> | undefined;
+  /**
+   * The skills' canonical folder, once written, and each skill's heading
+   * without what follows in brackets.
+   */
+  const skills: SkillFiles = {
+    folder: undefined,
+    headings: new Map(
+      deps.skills.flatMap((skill) => {
+        const heading = /^# ([^(\n]+)/m.exec(skill.text)?.[1]?.trim();
+        return heading ? [[skill.name, heading] as const] : [];
+      }),
+    ),
+  };
   const loaded = new Set<string>(); // threads open in the current app-server
   /** Threads Rufi let go of, until Codex says they are closed. */
   const closing = new Map<string, PromiseWithResolvers<undefined>>();
@@ -156,6 +171,10 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       sandbox: deps.sandbox,
       skills: deps.skills,
     });
+    skills.folder =
+      deps.skills.length > 0
+        ? await realpath(join(paths.codexHome, "skills"))
+        : undefined;
     const started = await startAppServer({
       command: deps.command,
       env: { ...deps.env, HOME: paths.processHome },
@@ -438,7 +457,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           return;
         }
         if (item.type === "commandExecution") void track();
-        const activity = activityOf(item, false, deps.tools);
+        const activity = activityOf(item, false, deps.tools, skills);
         if (activity) {
           emit({
             type: "activity",
@@ -514,7 +533,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           });
           return;
         }
-        const activity = activityOf(item, true, deps.tools);
+        const activity = activityOf(item, true, deps.tools, skills);
         if (activity) {
           emit({
             type: "activity",

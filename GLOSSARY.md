@@ -224,7 +224,7 @@ Something Rufi offers the AI, such as reading a person's Overview. Tools are how
 _Avoid_: function, plugin
 
 **Skill**:
-Rufi's instructions to the AI for one job, such as saving a document or making a visit brief, in a file the AI reads when the job comes up. Rufi's other rules, such as safety, go with every message.
+Rufi's instructions to the AI for one job, such as saving a document or making a visit brief, in a file the AI reads when the job comes up. Rufi's other rules, such as safety, go with every message. On screen, a skill read shows as "Read Rufi's instructions".
 _Avoid_: guide, prompt, plugin
 
 **Overview**:
