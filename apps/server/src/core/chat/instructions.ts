@@ -47,16 +47,20 @@ export function coreInstructions(region: string | undefined): string {
 }
 
 /**
- * Names what a thread was told: the core and the skills' index. A thread
- * told another must be told again (server/chat.ts); a skill's body is read
- * when it is needed, so it isn't part of it.
+ * Names what a thread was told: the core and every skill's metadata and
+ * text. A changed skill body must replace what the thread read before,
+ * just as a changed core does (server/chat.ts).
  */
 export function rulesVersion(region: string | undefined): string {
   return createHash("sha256")
     .update(
       JSON.stringify({
         core: coreInstructions(region),
-        skills: SKILLS.map(({ name, description }) => ({ name, description })),
+        skills: SKILLS.map(({ name, description, text }) => ({
+          name,
+          description,
+          text,
+        })),
       }),
     )
     .digest("hex")

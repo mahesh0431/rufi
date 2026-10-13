@@ -288,6 +288,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       );
     }
     if (problems.length > 0) {
+      loaded.delete(response.thread.id);
       throw new Error(
         `Codex didn't take Rufi's thread settings: ${problems.join("; ")}.`,
       );
@@ -703,8 +704,8 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         ).catch(toolsFailed),
         signal,
       );
-      loaded.add(response.thread.id);
       check(response, settings);
+      loaded.add(response.thread.id);
       return { threadId: response.thread.id, model: response.model };
     },
 
@@ -718,10 +719,10 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         }).catch(toolsFailed),
         signal,
       );
-      loaded.add(threadId);
       const running =
         response.thread.status.type === "active" || turns.has(threadId);
       check(response, settings);
+      loaded.add(threadId);
       return { model: response.model, running };
     },
 
@@ -763,8 +764,8 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         }).catch(toolsFailed),
         signal,
       );
-      loaded.add(threadId);
       check(response, settings);
+      loaded.add(threadId);
       // The history still holds the instructions the thread was first given
       // (0.159.3); a summary of it starts again from the new ones.
       const summarised = Promise.withResolvers<string>();

@@ -61,9 +61,11 @@ export const AI_PROFILE = "rufi-ai";
 
 const key = (path: string) => JSON.stringify(path);
 
-function aiProfile(sandbox: AgentSandbox): string {
+function aiProfile(sandbox: AgentSandbox, skills: string): string {
   const entries = [
     `${key(sandbox.folder)} = "write"`,
+    // The data folder may itself be under a writable temp root.
+    `${key(skills)} = "read"`,
     ...sandbox.unreadable.map((path) => `${key(path)} = "deny"`),
   ];
   return `
@@ -78,7 +80,7 @@ enabled = true
 `;
 }
 
-function configToml(options: CodexHomeOptions): string {
+function configToml(options: CodexHomeOptions, skills: string): string {
   const features = Object.entries(SETTINGS.features)
     .map(([name, on]) => `${name} = ${String(on)}`)
     .join("\n");
@@ -110,7 +112,7 @@ ${
 [shell_environment_policy.set]
 HOME = ${JSON.stringify(options.userHome)}
 `
-}${options.sandbox ? aiProfile(options.sandbox) : ""}
+}${options.sandbox ? aiProfile(options.sandbox, skills) : ""}
 ${PROVIDER}
 `;
 }
@@ -158,9 +160,13 @@ export async function prepareCodexHome(
       mode: 0o600,
     });
   }
-  await writeFile(join(paths.codexHome, "config.toml"), configToml(options), {
-    mode: 0o600,
-  });
+  await writeFile(
+    join(paths.codexHome, "config.toml"),
+    configToml(options, skills),
+    {
+      mode: 0o600,
+    },
+  );
   return paths;
 }
 

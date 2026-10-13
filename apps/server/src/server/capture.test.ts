@@ -6,7 +6,7 @@
 // skills, the sandbox) and that one thread keeps it across a model change, a
 // Rufi update and a compaction.
 import { existsSync, realpathSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -49,8 +49,8 @@ let served: { port: number; close: () => Promise<void> } | undefined;
 /** What reached Rufi's MCP server over HTTP. */
 let seen: { auth: string | null; origin: string | null; method: string }[];
 
-beforeEach(async () => {
-  home = await mkdtemp(join(tmpdir(), "rufi-capture-"));
+async function makeRecord(root: string) {
+  home = await mkdtemp(join(root, "rufi-capture-"));
   store = openWritable(databasePath(home));
   store.db.exec(`
     INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
@@ -58,6 +58,10 @@ beforeEach(async () => {
       VALUES ('c-asha', 'asha', '2026-10-01T09:00:00Z');
   `);
   transcripts = openTranscripts(store);
+}
+
+beforeEach(async () => {
+  await makeRecord(tmpdir());
   seen = [];
 });
 afterEach(async () => {
@@ -68,6 +72,7 @@ afterEach(async () => {
   await model?.close();
   model = undefined;
   store.close();
+  await rm(home, { recursive: true, force: true });
 });
 
 /**
@@ -430,7 +435,7 @@ describe("What the AI is given, on the pinned Codex", () => {
   );
 
   it(
-    "keeps one thread across a model change, a Rufi update and a compaction; each reply has the core and tools of its time",
+    "keeps one thread across a model change, core and skill-body updates and a compaction; each reply has the rules and tools of its time",
     { timeout: 180_000 },
     async () => {
       const opened = await start([{ text: "One." }, { text: "Two." }]);
@@ -476,6 +481,23 @@ describe("What the AI is given, on the pinned Codex", () => {
       expect(developer(fourth)).toContain(coreInstructions("IN"));
       expect(developer(fourth)).not.toContain(coreInstructions(undefined));
       expect(userWords(fourth)).toContain("fourth");
+
+      // A release changes only a bundled skill's body: the name,
+      // description and core stay the same. It must reload too.
+      const skill = SKILLS.find((skill) => skill.name === "analysis");
+      if (!skill) throw new Error("no analysis skill");
+      const previous = skill.text;
+      try {
+        skill.text +=
+          "\n- New rule in this release: show each calculation's inputs.\n";
+        await start([{ text: "Five." }]);
+        await say("fifth");
+        await replies(5);
+        expect((model?.requests.length ?? 0) - answering().length).toBe(1);
+        expect(userWords(answering().at(-1))).toContain("fifth");
+      } finally {
+        skill.text = previous;
+      }
       expect(threadsUsed()).toBe(1);
     },
   );
@@ -504,87 +526,108 @@ const commands = (cmds: readonly string[]): Step => ({
 describe.runIf(process.platform === "darwin")(
   "The AI's sandbox on macOS (the canary)",
   () => {
-    it(
-      "keeps the record's database and Rufi's other ways in unreadable and every write in the AI's folder, with no secret in the environment; also after a model change and a resume",
+    it.each([
+      { location: "the system temp folder", root: tmpdir() },
+      { location: "/tmp", root: "/tmp" },
+    ])(
+      "keeps the record unreadable, the skills read-only and writes in the AI's folder or temp, with data in $location; also after a model change, resume and reload",
       { timeout: 180_000 },
-      async () => {
-        const { folder, unreadable } = aiSandbox(home);
-        // Each way in, there to be read (the database is in WAL mode).
-        await mkdir(join(home, "backups"), { recursive: true });
-        await writeFile(join(home, "backups", "copy.sqlite"), "a copy");
-        await writeFile(join(home, "core.json"), '{"launcher":"secret"}');
-        expect(existsSync(`${databasePath(home)}-wal`)).toBe(true);
-        const outside = join(home, "outside.txt");
-        const skill = join(home, "codex", "skills", "analysis", "SKILL.md");
-        const q = (path: string) => JSON.stringify(path);
-        // Each one that is there now; a journal isn't, in WAL mode.
-        const journal = `${databasePath(home)}-journal`;
-        const denied = [...unreadable, join(home, "backups", "copy.sqlite")]
-          .filter((path) => existsSync(path))
-          .map((path) => `cat ${q(path)}`);
-        expect(denied).toHaveLength(unreadable.length);
-        const others = (url: string) => ({
-          outside: `echo no > ${q(outside)}`,
-          journal: `echo no > ${q(journal)}`,
-          skillWrite: `echo no > ${q(skill)}`,
-          inside: "echo yes > inside.txt && cat inside.txt",
-          skillRead: `head -2 ${q(skill)}`,
-          env: "env",
-          // The network is on: the local model answers (404: no page there).
-          network: `curl -s -o /dev/null -w "%{http_code}" ${q(url)}`,
-        });
-        /** Runs every command in a reply, and checks what each got back. */
-        const run = async (n: number, text: string) => {
-          const url = model?.url ?? "";
-          const named = others(url);
-          model?.script.push(commands([...denied, ...Object.values(named)]), {
-            text: "Ran.",
+      async ({ root }) => {
+        if (root !== tmpdir()) {
+          store.close();
+          await rm(home, { recursive: true, force: true });
+          await makeRecord(root);
+        }
+        // Outside both the AI's folder and all temp roots. Prove that a
+        // refusal isn't just the Mac's ordinary file permissions.
+        const outsideRoot = await mkdtemp("/Users/Shared/rufi-canary-");
+        const outside = join(outsideRoot, "outside.txt");
+        try {
+          await writeFile(outside, "the test process can write here");
+          await rm(outside);
+          const { folder, unreadable } = aiSandbox(home);
+          // Each way in, there to be read (the database is in WAL mode).
+          await mkdir(join(home, "backups"), { recursive: true });
+          await writeFile(join(home, "backups", "copy.sqlite"), "a copy");
+          await writeFile(join(home, "core.json"), '{"launcher":"secret"}');
+          expect(existsSync(`${databasePath(home)}-wal`)).toBe(true);
+          const skill = join(home, "codex", "skills", "analysis", "SKILL.md");
+          const q = (path: string) => JSON.stringify(path);
+          // Each one that is there now; a journal isn't, in WAL mode.
+          const journal = `${databasePath(home)}-journal`;
+          const denied = [...unreadable, join(home, "backups", "copy.sqlite")]
+            .filter((path) => existsSync(path))
+            .map((path) => `cat ${q(path)}`);
+          expect(denied).toHaveLength(unreadable.length);
+          const others = (url: string) => ({
+            outside: `echo no > ${q(outside)}`,
+            journal: `echo no > ${q(journal)}`,
+            skillWrite: `echo no > ${q(skill)}`,
+            inside: "echo yes > inside.txt && cat inside.txt",
+            skillRead: `head -2 ${q(skill)}`,
+            temp: "echo yes > /tmp/rufi-canary-$$ && cat /tmp/rufi-canary-$$ && rm /tmp/rufi-canary-$$",
+            env: "env",
+            // The network is on: the local model answers (404: no page there).
+            network: `curl -s -o /dev/null -w "%{http_code}" ${q(url)}`,
           });
-          await say(text);
-          await replies(n);
-          const output = answering()
-            .flatMap((request) => request.input)
-            .filter((item) => item.type === "custom_tool_call_output")
-            .at(-1)?.output;
-          const ran = JSON.parse(
-            (Array.isArray(output) ? output : [])
-              .map((part) => part.text ?? "")
-              .at(-1) ?? "[]",
-          ) as Ran[];
-          const by = (cmd: string) => ran.find((r) => r.cmd === cmd);
-          for (const cmd of denied) {
-            expect(by(cmd)?.output).toMatch(/Operation not permitted/);
-          }
-          for (const write of [named.outside, named.journal]) {
-            expect(by(write)?.output).toMatch(/operation not permitted/);
-          }
-          expect(existsSync(outside)).toBe(false);
-          expect(existsSync(journal)).toBe(false);
-          expect(by(named.skillWrite)?.exit_code).not.toBe(0);
-          expect(by(named.inside)?.output).toBe("yes\n");
-          expect(by(named.skillRead)?.output).toBe("---\nname: analysis\n");
-          const env = by(named.env)?.output ?? "";
-          const key = (seen.at(-1)?.auth ?? "").replace("Bearer ", "");
-          expect(key).not.toBe("");
-          expect(env).toContain("PATH=");
-          expect(env).not.toMatch(/TOKEN|not-a-real-token/);
-          expect(env).not.toContain(key);
-          expect(by(named.network)?.output).toBe("404");
-        };
+          /** Runs every command in a reply, and checks what each got back. */
+          const run = async (n: number, text: string) => {
+            const url = model?.url ?? "";
+            const named = others(url);
+            model?.script.push(commands([...denied, ...Object.values(named)]), {
+              text: "Ran.",
+            });
+            await say(text);
+            await replies(n);
+            const output = answering()
+              .flatMap((request) => request.input)
+              .filter((item) => item.type === "custom_tool_call_output")
+              .at(-1)?.output;
+            const ran = JSON.parse(
+              (Array.isArray(output) ? output : [])
+                .map((part) => part.text ?? "")
+                .at(-1) ?? "[]",
+            ) as Ran[];
+            const by = (cmd: string) => ran.find((r) => r.cmd === cmd);
+            for (const cmd of denied) {
+              expect(by(cmd)?.output).toMatch(/Operation not permitted/);
+            }
+            for (const write of [named.outside, named.journal]) {
+              expect(by(write)?.output).toMatch(/operation not permitted/);
+            }
+            expect(existsSync(outside)).toBe(false);
+            expect(existsSync(journal)).toBe(false);
+            expect(by(named.skillWrite)?.exit_code).not.toBe(0);
+            expect(by(named.inside)?.output).toBe("yes\n");
+            expect(by(named.temp)?.output).toBe("yes\n");
+            expect(by(named.skillRead)?.output).toBe("---\nname: analysis\n");
+            const env = by(named.env)?.output ?? "";
+            const key = (seen.at(-1)?.auth ?? "").replace("Bearer ", "");
+            expect(key).not.toBe("");
+            expect(env).toContain("PATH=");
+            expect(env).not.toMatch(/TOKEN|not-a-real-token/);
+            expect(env).not.toContain(key);
+            expect(by(named.network)?.output).toBe("404");
+          };
 
-        const opened = await start([]);
-        await run(1, "Run them.");
-        expect(await readFile(join(folder, "inside.txt"), "utf8")).toBe(
-          "yes\n",
-        );
-        const row = await transcripts.chat("asha");
-        if (!row) throw new Error("no chat");
-        await opened.chat.selectModel(row, "gpt-6.1-sol");
-        await run(2, "Run them again.");
-        // Rufi starts again: the thread is resumed, with a new key.
-        await start([]);
-        await run(3, "And once more.");
-        expect(threadsUsed()).toBe(1);
+          const opened = await start([]);
+          await run(1, "Run them.");
+          expect(await readFile(join(folder, "inside.txt"), "utf8")).toBe(
+            "yes\n",
+          );
+          const row = await transcripts.chat("asha");
+          if (!row) throw new Error("no chat");
+          await opened.chat.selectModel(row, "gpt-6.1-sol");
+          await run(2, "Run them again.");
+          // Rufi starts again: the thread is resumed, with a new key.
+          await start([]);
+          await run(3, "And once more.");
+          await transcripts.saveSetting("emergency_region", "IN");
+          await run(4, "After reloading the rules.");
+          expect(threadsUsed()).toBe(1);
+        } finally {
+          await rm(outsideRoot, { recursive: true, force: true });
+        }
       },
     );
   },

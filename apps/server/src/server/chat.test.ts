@@ -1928,6 +1928,32 @@ describe("the chat, on the scripted Codex", () => {
     expect(started).toHaveLength(1);
   });
 
+  it("keeps a message held on Send now when its resumed thread failed the permission check", async () => {
+    await startChat("fake");
+    const c = await newChat();
+    await say(c, "first");
+    await ended(c.id);
+    await startChat("fake", { scenario: { profile: ":workspace" } });
+    await say(await chatRow(c.id), "second");
+    await until(async () => (await queue.list(c)).items[0]?.held === "failed");
+    const held = (await queue.list(c)).items[0];
+    if (!held) throw new Error("no held message");
+    const reason =
+      "Codex didn't take Rufi's thread settings: its permissions are :workspace.";
+    expect(held.heldText).toBe(reason);
+
+    await chat?.queue.sendNow(await chatRow(c.id), held.id);
+    await until(
+      async () =>
+        (await transcript(c.id)).turns.length > 1 ||
+        (await queue.list(c)).items[0]?.held === "failed",
+    );
+    expect((await transcript(c.id)).turns).toHaveLength(1);
+    expect((await queue.list(c)).items).toMatchObject([
+      { id: held.id, text: "second", held: "failed", heldText: reason },
+    ]);
+  });
+
   it("never reuses another agent's thread", async () => {
     await startChat("fake");
     const c = await newChat();
