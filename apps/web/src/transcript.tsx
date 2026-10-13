@@ -114,6 +114,10 @@ const replyComponents = (streaming: boolean): Components => ({
   },
 });
 
+/** Made once each, so a reply's pictures don't draw again as it grows. */
+const WRITING = replyComponents(true);
+const ENDED = replyComponents(false);
+
 /** A file's path, kept as written (file: too); the parts above check it. */
 const keepFiles = (url: string) =>
   /^file:/i.test(url) ? url : defaultUrlTransform(url);
@@ -136,7 +140,7 @@ export function Marked({
     return (
       <Markdown
         remarkPlugins={[remarkGfm]}
-        components={replyComponents(reply.streaming)}
+        components={reply.streaming ? WRITING : ENDED}
         urlTransform={keepFiles}
         skipHtml
       >

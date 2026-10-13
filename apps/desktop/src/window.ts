@@ -12,6 +12,7 @@ import {
   nativeTheme,
   type Session,
   shell,
+  type WebFrameMain,
 } from "electron";
 
 /** Chromium's built-in PDF viewer, which Electron runs as an extension. */
@@ -130,11 +131,22 @@ export function openWindow(
   // itself never leaves Rufi, and opens no other window.
   //
   // A popup's opener isn't told, so one goes to the browser only while the
-  // page has no frame. Rufi has none: its pages refuse to be framed, and its
-  // CSP blocks frames from elsewhere, but script can still make a blank or
-  // srcdoc frame, which takes the page's CSP.
+  // page has no frame but Rufi's locked ones: a page the AI made, or a
+  // diagram, served from Rufi under policies that sandbox them without
+  // popups, so a popup never comes from them. Rufi's pages refuse to be
+  // framed, and its CSP blocks frames from elsewhere, but script can still
+  // make a blank or srcdoc frame, which takes the page's CSP.
+  const locked = (frame: WebFrameMain) =>
+    frame.origin === "null" &&
+    (frame.url.startsWith(`${link.origin}/files/`) ||
+      frame.url.startsWith(`${link.origin}/diagram.html#`));
   contents.setWindowOpenHandler(({ url }) => {
-    if (contents.mainFrame.frames.length === 0) toBrowser(url);
+    const frames = contents.mainFrame.framesInSubtree;
+    if (
+      frames.every((frame) => frame === contents.mainFrame || locked(frame))
+    ) {
+      toBrowser(url);
+    }
     return { action: "deny" };
   });
   // Only Rufi's own pages, in any frame, and the built-in PDF viewer inside

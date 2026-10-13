@@ -15,7 +15,7 @@ import { request as httpRequest } from "node:http";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { parseArgs } from "node:util";
 import { DatabaseSync } from "node:sqlite";
 import { monitorEventLoopDelay } from "node:perf_hooks";
@@ -901,6 +901,50 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: { how_present: basis(snapshot).how !== null },
       snapshot,
+    };
+  },
+  /**
+   * The analysis story: the AI reads the record, makes a chart with a
+   * program in its folder, and shows it in the reply as a picture Rufi
+   * serves (the file route says it's a picture, and it is a PNG).
+   */
+  chart_in_reply: async (api, home) => {
+    const c = chat(api);
+    await c.ask(
+      "Is my fasting glucose linked to my HbA1c over the years? Make a chart and show it here.",
+    );
+    const snapshot = await c.read();
+    const reply = replyOf(snapshot);
+    const pictures = [...reply.matchAll(/!\[[^\]]*\]\(<?([^)>\s]+)>?\)/g)].map(
+      (found) => decodeURI(found[1] ?? ""),
+    );
+    const shown = await Promise.all(
+      pictures.map(async (path) => {
+        const file = await api(
+          "GET",
+          `/api/files?path=${encodeURIComponent(path)}`,
+        ).catch(() => undefined);
+        const bytes = await readFile(
+          isAbsolute(path) ? path : join(home, "ai", path),
+        ).catch(() => undefined);
+        return (
+          file?.["shape"] === "picture" &&
+          bytes?.subarray(0, 4).toString("hex") === "89504e47"
+        );
+      }),
+    );
+    return {
+      checks: {
+        read_records: recordReads(home).length > 0,
+        ran_a_program: snapshot.entries.some(
+          (e) => e.kind === "activity" && e.activity === "command",
+        ),
+        shows_a_picture: pictures.length > 0,
+        every_picture_is_a_png_rufi_serves: shown.every(Boolean),
+        how_present: basis(snapshot).how !== null,
+      },
+      snapshot,
+      notes: `Pictures in the reply: ${pictures.join(", ") || "none"}`,
     };
   },
   /** An urgent message gets the emergency number first. */

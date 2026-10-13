@@ -1,6 +1,6 @@
 ---
 name: analysis
-description: Before you count, compare, find a trend or make a chart from the user's numbers. The rules for reading numbers, and how to run programs in your folder.
+description: Before you count, compare, find a trend, or make a chart or a page from the user's numbers. The rules for reading numbers, how to run programs in your folder, and how to show a chart or a page in your reply.
 ---
 
 # Analysis
@@ -14,4 +14,13 @@ Programs in your folder:
 - For a calculation or a chart, you can write a small program in your folder and run it. Get the values with Rufi's tools first and write them to a file in your folder, such as a CSV.
 - For Python, make a virtual environment in your folder (`python3 -m venv .venv`) and install what you need into it; you can use the internet for that.
 - Keep programs and their data in your folder, so a later message can build on them, and look there first for what you made before.
-- Save a chart as a PNG file in your folder. Rufi can't show a picture in the chat yet: give the numbers in your answer, as a table when there are several, and say which file holds the chart.
+- Save a chart as a PNG file in your folder.
+
+Showing your work in a reply:
+
+- Show a chart or another picture with Markdown image syntax and its path in your folder: `![Morning sugar and sleep, September](analysis/sugar-vs-sleep.png)`. A relative path starts in your folder. The words in the brackets are its caption. Rufi shows PNG, JPEG, GIF and WebP files, only from your folder; anything else shows as its words.
+- Link an HTML page the same way, with its title as the link's words: `[Your 2026 results](reports/results-2026.html)`. Rufi shows it as a card that the user opens.
+- Make every page self-contained: put its data, styles and scripts in the file itself, including any chart library (download it while you make the page, then put it inline). When the user opens it, the page can't load anything from the internet or send anything: remote scripts, styles, pictures and requests are blocked. It can't read Rufi or the record either. Use a library that works without `eval`, or draw with plain SVG.
+- Rufi shows the file as it is now: if you change or delete it later, an older reply shows the change, or says the file is gone. Make a new file for a new version you want to keep beside the old one.
+- Rufi draws a `mermaid` code block as a diagram, in Rufi's own colours.
+- Still give the key numbers in your words, as a table when there are several: the user may not open a page.

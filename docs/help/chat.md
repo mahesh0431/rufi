@@ -78,7 +78,7 @@ When you delete a document (see [Documents](documents.md#delete-a-document)), it
 ## What you see
 
 - **Your messages**, on the right, with the chips you added to them.
-- **The AI's replies**, which appear as the AI writes them. Replies can have lists and tables. Links in a reply open in your browser, outside Rufi. A reply never shows pictures.
+- **The AI's replies**, which appear as the AI writes them. Replies can have lists and tables, and the pictures, pages and diagrams the AI makes (see [Pictures, pages and diagrams](#pictures-pages-and-diagrams)). Links to web pages open in your browser, outside Rufi. A reply never shows a picture from the internet.
 - **One line for each thing the AI did**, such as reading your Overview or running a command. A tick means it was done. Other signs mean it is running, it failed, or it stopped.
 - **A line for each time the AI thought**, such as "Thought for 8s". Click it to read the AI's summary of its thinking; click again to close it. See [While the AI replies](#while-the-ai-replies).
 - **Based on**, a link under an answer once the reply has ended. It opens where the answer comes from. See [Where an answer comes from](#where-an-answer-comes-from).
@@ -87,6 +87,24 @@ When you delete a document (see [Documents](documents.md#delete-a-document)), it
 - **Rufi's lines**, with a bell and "Rufi" above them, when something happened outside the chat. Rufi writes them, never the AI, and they are never your words. See [Rufi's lines](#rufis-lines).
 - **How a reply ended**, when it didn't finish: for example "Stopped.", or that your ChatGPT plan's usage limit has been reached, with the time it resets.
 - **A quiet line**, "The AI started afresh here. It can still read earlier messages.", where the AI started again with a new memory of the chat: when the AI's own copy of the chat was lost (for example after a restore or a move), or where the AI compacted its memory of a long chat. From there, the AI has the chat's last messages, and it reads further back when it needs to. See [The AI's memory of the chat](#the-ais-memory-of-the-chat).
+
+## Pictures, pages and diagrams
+
+When the AI makes something in its folder to show you (see [What the AI can do in its folder](your-data-and-the-ai.md#what-the-ai-can-do-in-its-folder)), the reply shows it:
+
+- **A picture**, such as a chart that the AI's program drew, shows in the reply at its own size, up to the reply's width, with the AI's caption under it. Click it to see it full size; press Esc or click again to go back. Rufi shows PNG, JPEG, GIF and WebP pictures.
+- **A picture the AI generated** shows the same way, with "Made by the AI" under it. When the reply also shows that picture, it shows once.
+- **A page**, an HTML file that the AI made, such as a page of your results to show your doctor, is a card with its title, its file name and **Open**. **Open** shows the page over the chat. **Close** or Esc goes back to the chat where you were.
+- **A diagram** that the AI explains something with shows as a drawing, in Rufi's colours. While the reply is written, and when the diagram can't be drawn, it shows as its text.
+
+Rufi shows files only from the AI's folder and from the folder where the AI keeps the pictures it generates. A link to any other file shows as its words.
+
+A page runs in a locked frame:
+
+- **It is self-contained.** It shows only what is in its own file. It can't load anything from the internet or send anything, so it shows the same with no connection, and your health data in it stays on your Mac. The AI can use the internet while it makes a page, and puts in the file what the page needs.
+- **It can't reach Rufi.** Its scripts run (for example tabs, or a chart that shows a value when you point at it), but they can't read Rufi's pages, your record or anything Rufi answers, and they can't change anything.
+
+A reply shows the file as it is now, not as it was when the AI wrote the reply. If the AI changes the file later, an older reply shows the new version. If the file is no longer there, the reply keeps its title and says "This file is no longer in the AI's folder."
 
 ## Asking about your health record
 

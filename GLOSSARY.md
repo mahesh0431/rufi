@@ -128,8 +128,12 @@ Where the AI began a new memory of the chat (after its own copy of the chat was 
 _Avoid_: reset, new session, new conversation
 
 **Activity**:
-One line in a transcript for something the AI did: read the record with a tool, ran a command, searched the web, changed a file, worked with a sub-agent, or did something Rufi can't display yet. The line shows a short title and one short detail (the search words, the command); Rufi also keeps everything the activity sent and got back, such as the records a read got back or a command's output.
+One line in a transcript for something the AI did: read the record with a tool, ran a command, searched the web, changed a file, worked with a sub-agent, generated a picture (the reply shows it), or did something Rufi can't display yet. The line shows a short title and one short detail (the search words, the command); Rufi also keeps everything the activity sent and got back, such as the records a read got back or a command's output.
 _Avoid_: trace, steps, log
+
+**Picture, page, diagram (in a reply)**:
+What a reply shows besides its words. A picture is a chart from the AI's program or a picture the AI generated; a page is an HTML file the AI made, shown as a card that opens over the chat in a locked frame, self-contained (it loads nothing from the internet and can't reach Rufi); a diagram is drawn from the AI's Mermaid text. Pictures and pages are files in the AI's folder (or where it keeps the pictures it generates), shown as they are now: Rufi keeps no copy, and a file that is gone shows as such.
+_Avoid_: artifact, attachment, image (say picture), HTML (say page)
 
 **Basis**:
 What an answer rests on, shown as **Based on** under the answer once the reply has ended. **How** is the AI's own words on where the answer comes from (your record, read in this reply or earlier in the chat, the web, or general knowledge) and how it got there; **Used** is what Rufi saw the AI read in that reply, built by Rufi. Small talk has none.

@@ -171,12 +171,14 @@ export function Picture({ path, caption }: { path: string; caption: string }) {
  */
 export function PageCard({ path, title }: { path: string; title: string }) {
   const client = useQueryClient();
+  // Asked when shown, so a page that is gone says so before it is opened.
+  const file = useQuery(fileQuery(path));
   const [opened, setOpened] = useState<ShownFile | null>(null);
-  const [state, setState] = useState<"idle" | "opening" | "gone" | "failed">(
-    "idle",
-  );
+  const [state, setState] = useState<"idle" | "opening" | "failed">("idle");
   const name = title === "" ? nameOf(path) : title;
-  if (state === "gone") return <Gone title={name} />;
+  const problem = file.isError ? problemOf(file.error) : undefined;
+  if (problem === "gone") return <Gone title={name} />;
+  if (problem === "refused") return <span>{name}</span>;
   return (
     <span className="my-1 flex items-center gap-3 rounded-xl border border-line bg-side px-3 py-2.5">
       <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-accent-ink">
@@ -205,7 +207,8 @@ export function PageCard({ path, title }: { path: string; title: string }) {
               setOpened(file);
             })
             .catch((error: unknown) => {
-              setState(problemOf(error) === "gone" ? "gone" : "failed");
+              // A page gone meanwhile shows its gone card (the query says).
+              setState(problemOf(error) === "gone" ? "idle" : "failed");
             });
         }}
       >

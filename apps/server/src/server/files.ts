@@ -12,7 +12,7 @@ import { basename, extname, isAbsolute, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** How long an address for a file works; the screens ask again after. */
-export const FILE_URL_MS = 10 * 60_000;
+const FILE_URL_MS = 10 * 60_000;
 
 /** The types Rufi shows: pictures inline, pages in a locked frame. */
 const TYPES: Record<string, { type: string; shape: Shape }> = {
@@ -28,7 +28,7 @@ const TYPES: Record<string, { type: string; shape: Shape }> = {
 type Shape = "picture" | "page";
 
 /** A file a reply may show, as the disk has it now. */
-export interface ShownFile {
+interface ShownFile {
   /** The file as the disk resolves it. */
   path: string;
   /** Its name, as the reply wrote it. */
@@ -42,10 +42,7 @@ export interface ShownFile {
  * both roots, a link leading out, not a regular file, or a type Rufi doesn't
  * show.
  */
-export type Lookup =
-  | { found: ShownFile }
-  | { missing: true }
-  | { refused: true };
+type Lookup = { found: ShownFile } | { missing: true } | { refused: true };
 
 export interface AiFiles {
   /** The file a reply's path names, checked now. */
