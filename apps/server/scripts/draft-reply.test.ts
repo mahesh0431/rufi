@@ -16,7 +16,15 @@ describe("a reply about a value only in a document's drafts", () => {
     "I couldn't find an LDL cholesterol result in your saved health record, so I can't confirm your last LDL value.",
     "I couldn't find an LDL cholesterol result saved in your health record, so I can't tell you your last value.",
     "Your last LDL cholesterol was 109 mg/dL on 2 June 2026, from your report.",
+    "Your saved LDL cholesterol is 109 mg/dL from the Lotus report. It isn't in your target range.",
+    "Your last LDL was 109 mg/dL from the Lotus report. The draft has already been saved in your health record.",
   ])("fails when it answers from the saved record alone: %s", (reply) => {
     expect(saysDraftNotSaved(reply)).toBe(false);
+  });
+  it.each([
+    "The Lotus report shows LDL 109 mg/dL. There are no unsaved drafts.",
+    "Your last LDL was 109 mg/dL from the Lotus report. Other results are not yet saved.",
+  ])("leaves ambiguous draft wording for a person's verdict: %s", (reply) => {
+    expect(saysDraftNotSaved(reply)).toBeUndefined();
   });
 });

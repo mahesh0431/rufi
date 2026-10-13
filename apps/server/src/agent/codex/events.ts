@@ -1,5 +1,7 @@
 // Codex's items and turn endings in Rufi's words: one activity line per thing
-// the agent did, and why a reply ended. Plain functions, no state.
+// the agent did, and why a reply ended. Skill reads verify the files before
+// quieting a command; other items need no filesystem access.
+import { realpathSync, statSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import type {
   ActivityKind,
@@ -53,8 +55,36 @@ function statusOf(status: string | undefined, ended: boolean) {
   return "running";
 }
 
-/** A shell word: double-quoted or single-quoted as is, or bare. */
-const WORD = /"([^"\\$`]*)"|'([^']*)'|([^\s"'\\$`;&|<>()]+)/g;
+/** Literal shell words only: quoting and escaping, without shell operations. */
+const PART =
+  /"((?:[^"\\$`]|\\["\\$`])*)"|'([^']*)'|\\([^\r\n])|([^\s"'\\$`;&|<>()*?[\]{}~#!]+)/y;
+
+function literalWords(command: string): string[] | undefined {
+  if (/[\r\n]/.test(command)) return undefined;
+  const words: string[] = [];
+  let word: string | undefined;
+  for (let at = 0; at < command.length;) {
+    if (/[ \t]/.test(command[at] ?? "")) {
+      if (word !== undefined) words.push(word);
+      word = undefined;
+      at++;
+      continue;
+    }
+    PART.lastIndex = at;
+    const part = PART.exec(command);
+    if (!part) return undefined;
+    word =
+      (word ?? "") +
+      (part[1]?.replace(/\\(["\\$`])/g, "$1") ??
+        part[2] ??
+        part[3] ??
+        part[4] ??
+        "");
+    at = PART.lastIndex;
+  }
+  if (word !== undefined) words.push(word);
+  return words;
+}
 
 /** `a`, `a and b`, `a, b and c`. */
 const and = (words: readonly string[]) =>
@@ -62,53 +92,43 @@ const and = (words: readonly string[]) =>
     ? (words[0] ?? "")
     : `${words.slice(0, -1).join(", ")} and ${words.at(-1) ?? ""}`;
 
-/**
- * The skills a command only reads, by name; undefined when it does anything
- * else. Codex's own reading of the command says so: each part a read of a
- * skill's SKILL.md, or one `cat` of skill files alone (Codex marks a `cat`
- * of more than one file unknown).
- */
+/** Quiet only an exact cat of regular skill files under the canonical root. */
 function skillsRead(
   item: Extract<ThreadItem, { type: "commandExecution" }>,
-  skills: readonly string[],
+  root: string | undefined,
 ): string[] | undefined {
-  const nameOf = (path: string) => {
-    const full = resolve(item.cwd, path);
-    for (const root of skills) {
-      const match = /^([a-z0-9-]+)\/SKILL\.md$/.exec(relative(root, full));
-      if (match?.[1] !== undefined) return match[1];
-    }
-    return undefined;
-  };
+  if (root === undefined) return undefined;
+  let words = literalWords(item.command);
+  // Codex presents its argv as a shell-quoted command. Unwrap only its
+  // ordinary shell invocation, then check the whole script again.
+  if (
+    words?.length === 3 &&
+    /^\/bin\/(?:zsh|bash)$/.test(words[0] ?? "") &&
+    (words[1] === "-lc" || words[1] === "-c")
+  ) {
+    words = literalWords(words[2] ?? "");
+  }
+  if (words?.[0] !== "cat" || words.length < 2) return undefined;
   const names: string[] = [];
-  for (const action of item.commandActions) {
-    if (action.type === "read") {
-      const name = nameOf(action.path);
-      if (name === undefined) return undefined;
+  for (const path of words.slice(1)) {
+    if (path.startsWith("-")) return undefined;
+    try {
+      const full = realpathSync(resolve(item.cwd, path));
+      const name = /^([a-z0-9-]+)\/SKILL\.md$/.exec(relative(root, full))?.[1];
+      if (name === undefined || !statSync(full).isFile()) return undefined;
       names.push(name);
-    } else if (action.type === "unknown") {
-      const words = [...action.command.matchAll(WORD)];
-      // Every character is in a word: no operator, expansion or redirect.
-      if (words.map((word) => word[0]).join(" ") !== action.command.trim()) {
-        return undefined;
-      }
-      if (words[0]?.[0] !== "cat" || words.length < 2) return undefined;
-      for (const word of words.slice(1)) {
-        const name = nameOf(word[1] ?? word[2] ?? word[3] ?? "");
-        if (name === undefined) return undefined;
-        names.push(name);
-      }
-    } else {
+    } catch {
+      // An unverifiable file keeps the ordinary command and its details.
       return undefined;
     }
   }
-  return names.length === 0 ? undefined : [...new Set(names)];
+  return [...new Set(names)];
 }
 
-/** Rufi's skills as its commands may read them. */
+/** Rufi's skills and their names on screen. */
 export interface SkillFiles {
-  /** Their folder, by each path it may be given by. */
-  folder: readonly string[];
+  /** Their canonical folder, once Rufi has prepared it. */
+  folder: string | undefined;
   /** Each one's heading, by name. */
   headings: ReadonlyMap<string, string>;
 }
@@ -125,7 +145,7 @@ export function activityOf(
   item: ThreadItem,
   ended: boolean,
   tools?: AgentTools,
-  skills: SkillFiles = { folder: [], headings: new Map() },
+  skills: SkillFiles = { folder: undefined, headings: new Map() },
 ): Activity | undefined {
   switch (item.type) {
     case "userMessage":

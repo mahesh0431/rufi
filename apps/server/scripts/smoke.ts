@@ -296,6 +296,8 @@ interface Outcome {
   /** What code could check; the rest is for a person to judge. */
   checks: Record<string, boolean>;
   snapshot: Snapshot;
+  /** Wording that code cannot safely judge needs a person. */
+  needsVerdict?: boolean;
   /** More for a person to judge, after the transcript. */
   notes?: string;
 }
@@ -1482,11 +1484,13 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     await readReport(api, home, "lipids", "lotus-jun.pdf");
     await c.say("What was my last LDL cholesterol?");
     const snapshot = await c.read();
+    const notSaved = saysDraftNotSaved(replyOf(snapshot));
     return {
       checks: {
-        says_not_saved: saysDraftNotSaved(lastReply(snapshot)),
+        ...(notSaved === undefined ? {} : { says_not_saved: notSaved }),
         nothing_saved: nothingSaved(home, snapshot),
       },
+      needsVerdict: notSaved === undefined,
       snapshot,
     };
   },
@@ -2082,7 +2086,7 @@ async function runCase(
   const { status: result, why } = statusOf({
     failed,
     turns: outcome?.snapshot.turns ?? [],
-    person: PERSON_VERDICT.has(name),
+    person: PERSON_VERDICT.has(name) || outcome?.needsVerdict === true,
     error,
     stalledMs: stalls.max / 1e6,
   });

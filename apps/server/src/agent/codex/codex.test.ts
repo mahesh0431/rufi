@@ -22,8 +22,6 @@ import { checkExecutable } from "./binary.ts";
 import { codexRuntime } from "./codex.ts";
 import { activityOf, endOf } from "./events.ts";
 import { isRunning } from "./processes.ts";
-import type { CommandAction } from "./protocol/v2/CommandAction.ts";
-import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
 
 const FAKE = join(import.meta.dirname, "../../../tests/fake-codex.ts");
 const SETTINGS = { model: "gpt-6.1-sol", instructions: "Be careful." };
@@ -1194,72 +1192,6 @@ describe("Codex's items and endings in Rufi's words", () => {
     );
     expect(failed("serverOverloaded")).toBe("provider_failed");
     expect(failed("contextWindowExceeded")).toBe("provider_failed");
-  });
-
-  it("shows a command quietly only when it does nothing but read Rufi's skills", () => {
-    const skills = {
-      folder: ["/data/codex/skills", "/private/data/codex/skills"],
-      headings: new Map([
-        ["results", "Results"],
-        ["follow-ups", "Follow-ups"],
-      ]),
-    };
-    const ran = (...commandActions: CommandAction[]) =>
-      activityOf(
-        {
-          type: "commandExecution",
-          id: "c",
-          command: "the command as it ran",
-          cwd: "/data/codex/skills/results",
-          processId: null,
-          source: "agent",
-          status: "completed",
-          commandActions,
-          aggregatedOutput: null,
-          exitCode: 0,
-          durationMs: 1,
-        } as ThreadItem,
-        true,
-        undefined,
-        skills,
-      )?.title;
-    const unknown = (command: string): CommandAction => ({
-      type: "unknown",
-      command,
-    });
-    const read = (path: string): CommandAction => ({
-      type: "read",
-      command: `cat ${path}`,
-      name: "SKILL.md",
-      path,
-    });
-    // By either path, relative to where it ran, each named once, by its
-    // heading or, without one, its name.
-    expect(
-      ran(
-        read("SKILL.md"),
-        read("/private/data/codex/skills/follow-ups/SKILL.md"),
-        unknown(
-          `cat '/data/codex/skills/results/SKILL.md' "/data/codex/skills/visit-brief/SKILL.md"`,
-        ),
-      ),
-    ).toBe("Read Rufi's instructions: Results, Follow-ups and visit-brief");
-    for (const other of [
-      [read("/data/codex/skills/../core.json")],
-      [read("/data/ai/SKILL.md")],
-      [read("SKILL.md"), { type: "listFiles", command: "ls", path: null }],
-      [
-        unknown(
-          "cat /data/codex/skills/results/SKILL.md > /data/codex/skills/research/SKILL.md",
-        ),
-      ],
-      [unknown('cat "/data/codex/skills/$(id)/SKILL.md"')],
-      [unknown("cat /data/codex/skills/results/SKILL.md;rm x")],
-      [unknown("cp /data/codex/skills/results/SKILL.md x")],
-      [],
-    ] satisfies CommandAction[][]) {
-      expect(ran(...other)).toBe("Ran a command");
-    }
   });
 
   it("gives each item one line, and marks one it doesn't know", () => {

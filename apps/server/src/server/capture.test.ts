@@ -6,7 +6,14 @@
 // skills, the sandbox) and that one thread keeps it across a model change, a
 // Rufi update and a compaction.
 import { existsSync, realpathSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -528,18 +535,39 @@ describe("What a person sees of the AI's commands, on the pinned Codex", () => {
     "shows a read of Rufi's skills as one quiet line naming each, and any other command as it ran, with the command kept in its details",
     { timeout: 120_000 },
     async () => {
-      const skill = (name: string) =>
-        JSON.stringify(join(home, "codex", "skills", name, "SKILL.md"));
+      const skillPath = (name: string) =>
+        join(home, "codex", "skills", name, "SKILL.md");
+      const skill = (name: string) => JSON.stringify(skillPath(name));
+      const note = join(home, "ai", "note.txt");
+      const copy = join(home, "ai", "skill-copy.txt");
+      const visible = [
+        `cat ${skill("results")} && ls`,
+        `cat ${skill("results")}; cat ${skill("results")}`,
+        `cat ${skill("results")} | tee ${JSON.stringify(copy)}`,
+        `cat ${skill("results")} | head -n 3`,
+        `cat ${skill("results")} > ${JSON.stringify(join(home, "ai", "redirect.txt"))}`,
+        `cat -n ${skill("results")}`,
+        `cat ${skill("results")} ${JSON.stringify(note)}`,
+        `sed -n '1,2p' ${skill("results")} ${JSON.stringify(note)}`,
+        `cat ${skill("research")}`,
+      ];
       await start([
+        { text: "Ready." },
         commands([
           `cat ${skill("saving-a-document")}`,
           `cat ${skill("reading-the-record")} ${skill("changing-the-record")}`,
-          `cat ${skill("results")} && ls`,
+          `cat '${skillPath("results")}' ${skillPath("results")}`,
+          ...visible,
         ]),
         { text: "Read." },
       ]);
-      await say("Read them.");
+      await say("Hi.");
       await replies(1);
+      await writeFile(note, "Fictional working note, not instructions.\n");
+      await rm(skillPath("research"));
+      await symlink(note, skillPath("research"));
+      await say("Read them.");
+      await replies(2);
       const lines = store.db
         .prepare(
           "SELECT text, detail, details FROM transcript_entries WHERE activity = 'command' ORDER BY seq",
@@ -551,9 +579,27 @@ describe("What a person sees of the AI's commands, on the pinned Codex", () => {
           "Read Rufi's instructions: Reading the record and Changing the record",
           null,
         ],
-        ["Ran a command", expect.stringContaining("&& ls")],
+        ["Read Rufi's instructions: Results", null],
+        ...visible.map((): [string, unknown] => [
+          "Ran a command",
+          expect.any(String),
+        ]),
       ]);
-      expect(lines[0]?.details).toContain("saving-a-document/SKILL.md");
+      for (const line of lines) {
+        const item = JSON.parse(line.details) as { command: string };
+        expect(item.command).toContain("SKILL.md");
+      }
+      expect(await readFile(copy, "utf8")).toContain("name: results");
+      const row = await transcripts.chat("asha");
+      if (!row) throw new Error("No fictional chat.");
+      expect((await transcripts.page(row)).turns.at(-1)?.used).toEqual(
+        lines.map((line) => ({
+          title: line.text,
+          detail: line.detail,
+          outcome: "done",
+          note: null,
+        })),
+      );
     },
   );
 });

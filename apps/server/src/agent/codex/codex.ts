@@ -117,11 +117,11 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   let server: AppServer | undefined;
   let starting: Promise<AppServer> | undefined;
   /**
-   * The skills' folder, as written and as Codex may show it (resolved), and
+   * The canonical skills folder, and
    * each skill's heading, without what follows in brackets.
    */
   const skills: SkillFiles = {
-    folder: [],
+    folder: undefined,
     headings: new Map(
       deps.skills.flatMap((skill) => {
         const heading = /^# ([^(\n]+)/m.exec(skill.text)?.[1]?.trim();
@@ -171,10 +171,10 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       sandbox: deps.sandbox,
       skills: deps.skills,
     });
-    skills.folder = [
-      join(paths.codexHome, "skills"),
-      join(await realpath(paths.codexHome), "skills"),
-    ];
+    skills.folder =
+      deps.skills.length > 0
+        ? await realpath(join(paths.codexHome, "skills"))
+        : undefined;
     const started = await startAppServer({
       command: deps.command,
       env: { ...deps.env, HOME: paths.processHome },
