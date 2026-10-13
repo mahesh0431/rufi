@@ -376,8 +376,8 @@ CREATE TABLE transcript_entries (
   turn_id TEXT,                -- the reply it belongs to
   kind TEXT NOT NULL CHECK (kind IN ('message', 'steer', 'activity', 'reply', 'reasoning', 'receipt', 'event', 'brief')),
   text TEXT NOT NULL,          -- the message or the reply as it came; an activity's short title; the reasoning's summary; a receipt's, an event's or a brief's line
-  activity TEXT CHECK (activity IN ('tool', 'command', 'web_search', 'file_change', 'sub_agent', 'compaction', 'other')),
-  detail TEXT,                 -- an activity's one short detail: the query, the search words, the command
+  activity TEXT CHECK (activity IN ('tool', 'command', 'web_search', 'file_change', 'sub_agent', 'compaction', 'picture', 'other')),
+  detail TEXT,                 -- an activity's one short detail: the query, the search words, the command; a picture's path, whole
   details TEXT,                -- an activity's or reasoning's everything, as the agent gave it (JSON); an event's kind and facts (JSON); null: none
   refs TEXT,                   -- a message's references, its chips (JSON); null: none
   status TEXT CHECK (status IN ('running', 'done', 'failed', 'stopped')),
@@ -555,4 +555,4 @@ CREATE INDEX sources_by_record ON record_sources (person_id, record_id);
 CREATE INDEX drafts_by_document ON draft_items (person_id, document_id, page, seq);
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 5;
+PRAGMA user_version = 6;

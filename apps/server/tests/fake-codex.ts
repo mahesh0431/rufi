@@ -77,6 +77,12 @@ export interface Scenario {
    */
   reasoning?: string[];
   reasoningMs?: number;
+  /**
+   * The turn generates a picture before answering, as Codex's image
+   * generation does: started, then completed with its bytes and, unless
+   * null, the path it saved them at.
+   */
+  picture?: { savedPath: string | null };
   /** Codex compacts the thread's context during the turn, before answering. */
   compaction?: boolean;
   /** A compaction Rufi asks for (thread/compact/start) fails. */
@@ -479,6 +485,28 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   if (text.includes("slow"))
     await new Promise((resolve) => setTimeout(resolve, 300));
   if (thread.running?.turnId !== turnId) return;
+  if (scenario.picture) {
+    const item = {
+      id: "item-pic",
+      type: "imageGeneration",
+      status: "generating",
+      revisedPrompt: null,
+      result: "",
+      failure: null,
+    };
+    event("item/started", { item });
+    event("item/completed", {
+      item: {
+        ...item,
+        status: "completed",
+        revisedPrompt: "A fictional watercolour of a sleeping cat",
+        result: "iVBORw0KGgo".repeat(1_000),
+        ...(scenario.picture.savedPath !== null && {
+          savedPath: scenario.picture.savedPath,
+        }),
+      },
+    });
+  }
   if (text.includes("drip") || text.includes("long")) {
     const parts = text.includes("drip")
       ? ["ok:", "d", "r", "i", "p"]

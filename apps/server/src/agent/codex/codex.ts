@@ -446,7 +446,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
             turnId,
             itemId: item.id,
             ...activity,
-            details: item,
+            details: withoutImages(item),
           });
         }
         return;
@@ -966,10 +966,15 @@ function toolsFailed(error: unknown): never {
 }
 
 /**
- * A tool call as Rufi keeps it: a page image the AI was given is left out
- * (it is a copy of the document's page, and large).
+ * An item as Rufi keeps it: a page image the AI was given is left out (it is
+ * a copy of the document's page, and large), and so are a generated
+ * picture's bytes (Codex saved them as a file).
  */
 function withoutImages(item: ThreadItem): ThreadItem {
+  // A generated picture is its file; its bytes aren't kept twice.
+  if (item.type === "imageGeneration") {
+    return { ...item, result: "(a generated picture, not kept)" };
+  }
   if (item.type !== "mcpToolCall" || !item.result) return item;
   return {
     ...item,

@@ -47,6 +47,8 @@ import { holdRufiLock, readJson, writePrivateJson } from "../platform/files.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { api, LAUNCHER_HEADER } from "./api.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
+import { generatedImages } from "../agent/codex/settings.ts";
+import { aiFiles } from "./files.ts";
 import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
 import { reader as openReader, readerChoice } from "./reader.ts";
 import { secret, sessions } from "./session.ts";
@@ -347,6 +349,10 @@ export const startCore = (options: CoreOptions) =>
       readings,
       items: draftItems(writer, readings.changed),
       pages: pageService,
+      files: aiFiles({
+        folder: aiSandbox(home).folder,
+        generated: generatedImages(home),
+      }),
       signIn: signInFlow(options.signIn, log),
       launcher,
       launchUrl,

@@ -51,6 +51,11 @@
         "entry": [
           "e2e/fakes.ts"
         ]
+      },
+      "apps/web": {
+        "entry": [
+          "src/diagram/frame.ts"
+        ]
       }
     }
   }

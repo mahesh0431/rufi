@@ -687,9 +687,22 @@ test.describe("the page", () => {
       for (const frame of document.querySelectorAll("iframe")) frame.remove();
     });
 
-    // Web links that the page follows or opens go to the browser, once each.
+    // Web links that the page follows or opens go to the browser, once each,
+    // also while a reply shows a diagram in its locked frame.
+    await page.evaluate(() => {
+      const frame = document.createElement("iframe");
+      frame.sandbox.add("allow-scripts");
+      frame.src = `/diagram.html#${encodeURIComponent(JSON.stringify({ source: "flowchart LR\n A --> B", colours: {}, font: "sans-serif", dark: false }))}`;
+      document.body.append(frame);
+    });
+    await expect
+      .poll(() => page.frames().map((frame) => frame.url()))
+      .toContainEqual(expect.stringContaining("/diagram.html#"));
     await link("https://example.com/clicked");
     await link("https://example.com/new-tab", "_blank");
+    await page.evaluate(() => {
+      for (const frame of document.querySelectorAll("iframe")) frame.remove();
+    });
     // Another kind of link, a web link with a name and password in it, and a
     // link to Rufi that the network sends away, don't. (No link here ever
     // names a scheme the Mac itself would open.)

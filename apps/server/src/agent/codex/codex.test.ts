@@ -409,6 +409,58 @@ describe("a turn", () => {
     ]);
   });
 
+  it("shows a picture Codex generated as a picture line with its saved path whole, and keeps none of its bytes", async () => {
+    const savedPath = join(
+      home,
+      "codex",
+      "generated_images",
+      "thread-1",
+      `${"call_".repeat(80)}1.png`,
+    );
+    const thread = await ask(start({ picture: { savedPath } }), "Hello");
+    await ended(thread);
+    const lines = seen(thread).filter(
+      (e) => e.type === "activity" && e.itemId === "item-pic",
+    );
+    expect(lines).toMatchObject([
+      { activity: "picture", title: "Making a picture", status: "running" },
+      {
+        activity: "picture",
+        title: "Made a picture",
+        // Longer than a detail may be, and kept whole.
+        detail: savedPath,
+        status: "done",
+        details: {
+          type: "imageGeneration",
+          savedPath,
+          result: "(a generated picture, not kept)",
+        },
+      },
+    ]);
+    expect(JSON.stringify(lines)).not.toContain("iVBORw0KGgo");
+  });
+
+  it("says when a generated picture wasn't saved, or failed: nothing to show", () => {
+    const item = {
+      type: "imageGeneration" as const,
+      id: "g",
+      status: "completed",
+      revisedPrompt: null,
+      result: "",
+      failure: null,
+    };
+    expect(activityOf(item, true)).toEqual({
+      activity: "picture",
+      title: "Made a picture Rufi couldn't keep",
+      status: "done",
+    });
+    expect(activityOf({ ...item, status: "failed" }, true)).toEqual({
+      activity: "picture",
+      title: "Couldn't make a picture",
+      status: "failed",
+    });
+  });
+
   it("starts a thread with the model, in the AI's folder under Rufi's profile, with Rufi's instructions and Rufi's MCP server with the thread's key", async () => {
     const tools = await mcpServer();
     await start({}, TOOLS).startThread({ ...SETTINGS, tools });

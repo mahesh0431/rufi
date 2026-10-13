@@ -15,12 +15,16 @@
     "class-variance-authority": "0.7.1",
     "effect": "4.0.0",
     "lucide-react": "1.52.0",
+    "mermaid": "12.1.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1",
+    "remark-parse": "11.0.0",
+    "remark-rehype": "11.1.2",
     "remend": "1.4.0",
     "tailwind-merge": "3.7.0",
+    "unified": "11.0.5",
     "zustand": "5.0.15"
   },
   "devDependencies": {

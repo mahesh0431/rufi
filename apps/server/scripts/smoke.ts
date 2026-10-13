@@ -15,7 +15,7 @@ import { request as httpRequest } from "node:http";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { parseArgs } from "node:util";
 import { DatabaseSync } from "node:sqlite";
 import { monitorEventLoopDelay } from "node:perf_hooks";
@@ -901,6 +901,106 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: { how_present: basis(snapshot).how !== null },
       snapshot,
+    };
+  },
+  /**
+   * The analysis story: the AI reads the record, makes a chart with a
+   * program in its folder, and shows it in the reply as a picture Rufi
+   * serves (the file route says it's a picture, and it is a PNG).
+   */
+  chart_in_reply: async (api, home) => {
+    const c = chat(api);
+    await c.ask(
+      "Is my fasting glucose linked to my HbA1c over the years? Make a chart and show it here.",
+    );
+    const snapshot = await c.read();
+    const reply = replyOf(snapshot);
+    const pictures = [...reply.matchAll(/!\[[^\]]*\]\(<?([^)>\s]+)>?\)/g)].map(
+      (found) => decodeURI(found[1] ?? ""),
+    );
+    const shown = await Promise.all(
+      pictures.map(async (path) => {
+        const file = await api(
+          "GET",
+          `/api/files?path=${encodeURIComponent(path)}`,
+        ).catch(() => undefined);
+        const bytes = await readFile(
+          isAbsolute(path) ? path : join(home, "ai", path),
+        ).catch(() => undefined);
+        return (
+          file?.["shape"] === "picture" &&
+          bytes?.subarray(0, 4).toString("hex") === "89504e47"
+        );
+      }),
+    );
+    return {
+      checks: {
+        read_records: recordReads(home).length > 0,
+        ran_a_program: snapshot.entries.some(
+          (e) => e.kind === "activity" && e.activity === "command",
+        ),
+        shows_a_picture: pictures.length > 0,
+        every_picture_is_a_png_rufi_serves: shown.every(Boolean),
+        how_present: basis(snapshot).how !== null,
+      },
+      snapshot,
+      notes: `Pictures in the reply: ${pictures.join(", ") || "none"}`,
+    };
+  },
+  /**
+   * A page of results: linked as a card whose words are the page's title
+   * (not an action), self-contained (nothing remote), and without print,
+   * download or pop-up buttons, which the locked frame can't run.
+   */
+  page_in_reply: async (api, home) => {
+    const c = chat(api);
+    await c.ask(
+      "Make me a page of my lab results that I can show my doctor, and give it to me here.",
+    );
+    const snapshot = await c.read();
+    const links = [
+      ...replyOf(snapshot).matchAll(
+        /(?<!!)\[([^\]]+)\]\(<?([^)>\s]+\.html?)>?\)/g,
+      ),
+    ].map((found) => ({
+      words: found[1] ?? "",
+      path: decodeURI(found[2] ?? ""),
+    }));
+    const pages = await Promise.all(
+      links.map(async ({ path }) => {
+        const file = await api(
+          "GET",
+          `/api/files?path=${encodeURIComponent(path)}`,
+        ).catch(() => undefined);
+        const html = await readFile(
+          isAbsolute(path) ? path : join(home, "ai", path),
+          "utf8",
+        ).catch(() => "");
+        return { shown: file?.["shape"] === "page", html };
+      }),
+    );
+    return {
+      checks: {
+        read_records: recordReads(home).length > 0,
+        links_a_page: links.length > 0,
+        every_page_is_one_rufi_serves: pages.every((p) => p.shown),
+        titles_not_actions: links.every(
+          ({ words }) =>
+            !/^(open|view|see|click|download|print)\b/i.test(words),
+        ),
+        nothing_remote: pages.every(
+          ({ html }) =>
+            !/<(script|link|img)[^>]+(src|href)=["']?(https?:)?\/\//i.test(
+              html,
+            ),
+        ),
+        no_print_download_or_popup: pages.every(
+          ({ html }) => !/\bprint\(|window\.open|\sdownload[\s=>]/i.test(html),
+        ),
+        how_present: basis(snapshot).how !== null,
+      },
+      snapshot,
+      notes: `Pages: ${links.map((l) => `${l.words} (${l.path})`).join(", ") || "none"}`,
     };
   },
   /** An urgent message gets the emergency number first. */

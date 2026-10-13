@@ -1,7 +1,8 @@
 // The chat's transcript as the core stored it: your messages, one line per
 // thing the AI did, a line for each time it thought ("Thinking…" with its
 // latest heading, then "Thought for 8s", which opens its summary), the AI's
-// replies as Markdown with Based on under each
+// replies as Markdown, with the pictures, pages and diagrams they show
+// (files.tsx), each picture the AI generated, and Based on under each
 // answer once it ended, Rufi's receipt for each save to the record, Rufi's
 // own event lines (never your words), the line of each visit brief, which
 // opens it, and how a reply ended when it didn't finish. A line between days, and a quiet line
@@ -30,14 +31,18 @@ import {
   useRef,
   useState,
 } from "react";
-import Markdown, { type Components } from "react-markdown";
+import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkParse from "remark-parse";
+import remarkRehype from "remark-rehype";
+import { unified } from "unified";
 import remend from "remend";
 import type { Entry, Read, Turn } from "@rufi/contracts";
 import type { StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/shallow";
 import { ChipView } from "./chips.tsx";
+import { Diagram, fileIn, NativePicture, PageCard, Picture } from "./files.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import type { Live } from "./live.ts";
 import { RetryButton } from "./reading.tsx";
@@ -45,20 +50,110 @@ import { latestHeading, thoughtFor } from "./thinking.ts";
 import { isRunning } from "./transcript-state.ts";
 import { Button, buttonLook, ICON } from "./ui.tsx";
 
-// The AI's text is shown as Markdown, never as HTML: no raw HTML, no images,
-// and links only to http(s) pages, opened outside Rufi with no opener or
-// referrer. Anything else shows as its text.
+// The AI's text is shown as Markdown, never as HTML: no raw HTML, no remote
+// images, and links only to http(s) pages, opened outside Rufi with no opener
+// or referrer. A reply also shows a picture or a page in a file the AI made
+// (an image or a link to its path), and draws a Mermaid diagram once it has
+// ended. Anything else shows as its text.
 const WEB = /^https?:\/\//i;
-const components: Components = {
-  a: ({ href, children }) =>
-    href !== undefined && WEB.test(href) ? (
-      <a href={href} target="_blank" rel="noopener noreferrer">
-        {children}
-      </a>
+const webLink: Components["a"] = ({ href, children }) =>
+  href !== undefined && WEB.test(href) ? (
+    <a href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  ) : (
+    <span>{children}</span>
+  );
+const components: Components = { a: webLink };
+const REMARK = [remarkGfm];
+
+/** Text of a Markdown element, as written. */
+const textOf = (node: {
+  type: string;
+  value?: string;
+  children?: unknown[];
+}): string =>
+  node.type === "text"
+    ? (node.value ?? "")
+    : (node.children ?? [])
+        .map((child) => textOf(child as Parameters<typeof textOf>[0]))
+        .join("");
+
+/** A reply's parts; `streaming`: it is still being written. */
+const replyComponents = (streaming: boolean): Components => ({
+  a: ({ href, children, node, ...rest }) => {
+    const file = fileIn(href);
+    if (!file) return webLink({ href, children, node, ...rest });
+    const words = node ? textOf(node) : "";
+    return file.shape === "page" ? (
+      <PageCard path={file.path} title={words} />
     ) : (
-      <span>{children}</span>
-    ),
-};
+      <Picture path={file.path} caption={words} />
+    );
+  },
+  img: ({ src, alt }) => {
+    const file = fileIn(typeof src === "string" ? src : undefined);
+    if (!file) return null;
+    return file.shape === "page" ? (
+      <PageCard path={file.path} title={alt ?? ""} />
+    ) : (
+      <Picture path={file.path} caption={alt ?? ""} />
+    );
+  },
+  pre: ({ node, children }) => {
+    const code = node?.children[0];
+    const mermaid =
+      code?.type === "element" &&
+      code.tagName === "code" &&
+      Array.isArray(code.properties["className"]) &&
+      code.properties["className"].includes("language-mermaid");
+    // Half-written, a diagram stays its code until the reply ends.
+    return mermaid && !streaming ? (
+      <Diagram source={textOf(code)}>
+        <pre>{children}</pre>
+      </Diagram>
+    ) : (
+      <pre>{children}</pre>
+    );
+  },
+});
+
+/** Made once each, so a reply's pictures don't draw again as it grows. */
+const WRITING = replyComponents(true);
+const ENDED = replyComponents(false);
+
+/** A file's path, kept as written (file: too); the parts above check it. */
+const keepFiles = (url: string) =>
+  /^file:/i.test(url) ? url : defaultUrlTransform(url);
+
+/** The same Markdown tree and file rules as the reply renderer above. */
+const parser = unified()
+  .use(remarkParse)
+  .use(REMARK)
+  .use(remarkRehype, { allowDangerousHtml: true });
+function picturesIn(text: string): string[] {
+  const tree = parser.runSync(parser.parse(text));
+  const paths = new Set<string>();
+  const visit = (node: (typeof tree)["children"][number] | typeof tree) => {
+    if (
+      node.type === "element" &&
+      (node.tagName === "a" || node.tagName === "img")
+    ) {
+      const url = node.properties[node.tagName === "a" ? "href" : "src"];
+      const file = fileIn(typeof url === "string" ? keepFiles(url) : undefined);
+      if (file) {
+        if (file.shape === "picture") paths.add(file.path);
+        return; // A file renderer replaces this element and its children.
+      }
+    }
+    if ("children" in node) for (const child of node.children) visit(child);
+  };
+  visit(tree);
+  return [...paths];
+}
+
+const readableReply = (text: string, streaming: boolean) =>
+  streaming ? remend(text, { linkMode: "text-only" }) : text;
 
 /**
  * Markdown shown safely. Rufi's receipt shows no links at all: a web address
@@ -67,13 +162,28 @@ const components: Components = {
 export function Marked({
   text,
   links = true,
+  reply,
 }: {
   text: string;
   links?: boolean;
+  /** A reply: it shows the files it names; `streaming` while it is written. */
+  reply?: { streaming: boolean };
 }) {
+  if (reply) {
+    return (
+      <Markdown
+        remarkPlugins={REMARK}
+        components={reply.streaming ? WRITING : ENDED}
+        urlTransform={keepFiles}
+        skipHtml
+      >
+        {text}
+      </Markdown>
+    );
+  }
   return (
     <Markdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={REMARK}
       components={components}
       disallowedElements={links ? ["img"] : ["img", "a"]}
       unwrapDisallowed
@@ -97,9 +207,7 @@ function Reply({
     <div className="reply" data-entry={id}>
       {/* While it streams, half-written Markdown is closed so it reads right;
           a half-written link shows as its text. */}
-      <Marked
-        text={streaming ? remend(text, { linkMode: "text-only" }) : text}
-      />
+      <Marked text={readableReply(text, streaming)} reply={{ streaming }} />
     </div>
   );
 }
@@ -127,7 +235,9 @@ function lines(state: Live): string[] {
     if (!entry?.turnId) continue;
     if (!first.has(entry.turnId)) first.set(entry.turnId, id);
     last.set(entry.turnId, id);
-    if (entry.kind === "reply") lastReply.set(entry.turnId, id);
+    if (entry.kind === "reply") {
+      lastReply.set(entry.turnId, id);
+    }
   }
   /** Lines before an entry, and after one ("": before them all). */
   const before = new Map<string, string[]>();
@@ -467,6 +577,12 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
     <BriefLine id={id} text={entry.text} />
   ) : entry.kind === "reasoning" ? (
     <Thinking entry={entry} turn={turn} />
+  ) : entry.kind === "activity" &&
+    entry.activity === "picture" &&
+    entry.status === "done" &&
+    entry.detail !== null ? (
+    // A picture the AI generated, shown even when its reply doesn't.
+    <GeneratedPicture live={live} entry={entry} />
   ) : entry.kind === "activity" ? (
     <p
       data-entry={id}
@@ -480,6 +596,41 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
     </p>
   ) : (
     <Reply id={id} text={entry.text} streaming={streaming} />
+  );
+}
+
+/** Native pictures stay until an actual reference in this turn shows them. */
+function GeneratedPicture({
+  live,
+  entry,
+}: {
+  live: StoreApi<Live>;
+  entry: Entry;
+}) {
+  const references = useStore(
+    live,
+    useShallow((state) => [
+      ...new Set(
+        state.order.flatMap((id) => {
+          const reply = state.entries[id];
+          return reply?.kind === "reply" && reply.turnId === entry.turnId
+            ? picturesIn(
+                readableReply(
+                  reply.text,
+                  state.turns[entry.turnId ?? ""]?.status === "running",
+                ),
+              )
+            : [];
+        }),
+      ),
+    ]),
+  );
+  return (
+    <NativePicture
+      path={entry.detail ?? ""}
+      entryId={entry.id}
+      alsoShown={references}
+    />
   );
 }
 
