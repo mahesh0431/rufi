@@ -1,5 +1,6 @@
 // Codex's items and turn endings in Rufi's words: one activity line per thing
 // the agent did, and why a reply ended. Plain functions, no state.
+import { relative, resolve } from "node:path";
 import type {
   ActivityKind,
   AgentEvent,
@@ -52,16 +53,72 @@ function statusOf(status: string | undefined, ended: boolean) {
   return "running";
 }
 
+/** A shell word: double-quoted or single-quoted as is, or bare. */
+const WORD = /"([^"\\$`]*)"|'([^']*)'|([^\s"'\\$`;&|<>()]+)/g;
+
+/** `a`, `a and b`, `a, b and c`. */
+const and = (words: readonly string[]) =>
+  words.length < 2
+    ? (words[0] ?? "")
+    : `${words.slice(0, -1).join(", ")} and ${words.at(-1) ?? ""}`;
+
+/**
+ * The skills a command only reads, by name; undefined when it does anything
+ * else. Codex's own reading of the command says so: each part a read of a
+ * skill's SKILL.md, or one `cat` of skill files alone (Codex marks a `cat`
+ * of more than one file unknown). `skills` is the skills' folder, as each
+ * path it may be given by.
+ */
+function skillsRead(
+  item: Extract<ThreadItem, { type: "commandExecution" }>,
+  skills: readonly string[],
+): string[] | undefined {
+  const nameOf = (path: string) => {
+    const full = resolve(item.cwd, path);
+    for (const root of skills) {
+      const match = /^([a-z0-9-]+)\/SKILL\.md$/.exec(relative(root, full));
+      if (match?.[1] !== undefined) return match[1];
+    }
+    return undefined;
+  };
+  const names: string[] = [];
+  for (const action of item.commandActions) {
+    if (action.type === "read") {
+      const name = nameOf(action.path);
+      if (name === undefined) return undefined;
+      names.push(name);
+    } else if (action.type === "unknown") {
+      const words = [...action.command.matchAll(WORD)];
+      // Every character is in a word: no operator, expansion or redirect.
+      if (words.map((word) => word[0]).join(" ") !== action.command.trim()) {
+        return undefined;
+      }
+      if (words[0]?.[0] !== "cat" || words.length < 2) return undefined;
+      for (const word of words.slice(1)) {
+        const name = nameOf(word[1] ?? word[2] ?? word[3] ?? "");
+        if (name === undefined) return undefined;
+        names.push(name);
+      }
+    } else {
+      return undefined;
+    }
+  }
+  return names.length === 0 ? undefined : [...new Set(names)];
+}
+
 /**
  * The activity line for an item, as it starts (`ended` false) or ends;
  * undefined for what isn't activity: messages, replies and reasoning. A
  * tool's name is never shown: Rufi's own tools say what they did, in plain
- * words and with no detail, and any other is "Used a tool".
+ * words and with no detail, and any other is "Used a tool". A command that
+ * only reads Rufi's skills (in `skills`, the skills' folder) says which, in
+ * plain words; any other shows the command.
  */
 export function activityOf(
   item: ThreadItem,
   ended: boolean,
   tools?: AgentTools,
+  skills: readonly string[] = [],
 ): Activity | undefined {
   switch (item.type) {
     case "userMessage":
@@ -87,13 +144,22 @@ export function activityOf(
         argumentsOf(item.arguments),
         item.success === false ? "failed" : statusOf(item.status, ended),
       );
-    case "commandExecution":
-      return line(
-        "command",
-        "Ran a command",
-        item.command,
-        statusOf(item.status, ended),
-      );
+    case "commandExecution": {
+      const read = skillsRead(item, skills);
+      return read
+        ? line(
+            "command",
+            `Read Rufi's instructions: ${and(read.map((name) => name.replaceAll("-", " ")))}`,
+            undefined,
+            statusOf(item.status, ended),
+          )
+        : line(
+            "command",
+            "Ran a command",
+            item.command,
+            statusOf(item.status, ended),
+          );
+    }
     case "webSearch":
       // The words or the page may only be known once it has finished.
       return item.action?.type === "openPage" ||

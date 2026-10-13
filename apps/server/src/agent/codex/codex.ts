@@ -7,6 +7,8 @@
 // running. Each thread gets Rufi's tools from Rufi's MCP server, with its own
 // key (settings.ts); Codex calls the server itself, and Rufi binds each call
 // to the reply it was made in (activeTurn).
+import { realpath } from "node:fs/promises";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
   NotReloaded,
@@ -114,6 +116,8 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   const lifetime = new AbortController();
   let server: AppServer | undefined;
   let starting: Promise<AppServer> | undefined;
+  /** The skills' folder, as written and as Codex may show it (resolved). */
+  let skills: readonly string[] = [];
   const loaded = new Set<string>(); // threads open in the current app-server
   /** Threads Rufi let go of, until Codex says they are closed. */
   const closing = new Map<string, PromiseWithResolvers<undefined>>();
@@ -156,6 +160,8 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       sandbox: deps.sandbox,
       skills: deps.skills,
     });
+    const folder = join(paths.codexHome, "skills");
+    skills = [folder, await realpath(folder)];
     const started = await startAppServer({
       command: deps.command,
       env: { ...deps.env, HOME: paths.processHome },
@@ -438,7 +444,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           return;
         }
         if (item.type === "commandExecution") void track();
-        const activity = activityOf(item, false, deps.tools);
+        const activity = activityOf(item, false, deps.tools, skills);
         if (activity) {
           emit({
             type: "activity",
@@ -514,7 +520,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           });
           return;
         }
-        const activity = activityOf(item, true, deps.tools);
+        const activity = activityOf(item, true, deps.tools, skills);
         if (activity) {
           emit({
             type: "activity",

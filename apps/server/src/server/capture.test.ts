@@ -523,6 +523,41 @@ const commands = (cmds: readonly string[]): Step => ({
   ].join("\n"),
 });
 
+describe("What a person sees of the AI's commands, on the pinned Codex", () => {
+  it(
+    "shows a read of Rufi's skills as one quiet line naming each, and any other command as it ran, with the command kept in its details",
+    { timeout: 120_000 },
+    async () => {
+      const skill = (name: string) =>
+        JSON.stringify(join(home, "codex", "skills", name, "SKILL.md"));
+      await start([
+        commands([
+          `cat ${skill("saving-a-document")}`,
+          `cat ${skill("reading-the-record")} ${skill("changing-the-record")}`,
+          `cat ${skill("results")} && ls`,
+        ]),
+        { text: "Read." },
+      ]);
+      await say("Read them.");
+      await replies(1);
+      const lines = store.db
+        .prepare(
+          "SELECT text, detail, details FROM transcript_entries WHERE activity = 'command' ORDER BY seq",
+        )
+        .all() as { text: string; detail: string | null; details: string }[];
+      expect(lines.map((line) => [line.text, line.detail])).toEqual([
+        ["Read Rufi's instructions: saving a document", null],
+        [
+          "Read Rufi's instructions: reading the record and changing the record",
+          null,
+        ],
+        ["Ran a command", expect.stringContaining("&& ls")],
+      ]);
+      expect(lines[0]?.details).toContain("saving-a-document/SKILL.md");
+    },
+  );
+});
+
 describe.runIf(process.platform === "darwin")(
   "The AI's sandbox on macOS (the canary)",
   () => {

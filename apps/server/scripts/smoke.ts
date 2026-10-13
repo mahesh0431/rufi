@@ -24,6 +24,7 @@ import type { Entry, Turn } from "@rufi/contracts";
 import type { Brief } from "@rufi/contracts/briefs";
 import { Effect, Exit, Scope } from "effect";
 import { everyTurnAnswered } from "./answered.ts";
+import { saysDraftNotSaved } from "./draft-reply.ts";
 import {
   HarnessTimeout,
   outFolder,
@@ -1483,10 +1484,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     const snapshot = await c.read();
     return {
       checks: {
-        says_not_saved:
-          /draft|not (yet )?saved|isn.t saved|hasn.t been saved|not in your (saved )?record|not been saved/i.test(
-            lastReply(snapshot),
-          ),
+        says_not_saved: saysDraftNotSaved(lastReply(snapshot)),
         nothing_saved: nothingSaved(home, snapshot),
       },
       snapshot,
