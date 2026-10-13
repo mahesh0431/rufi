@@ -1197,7 +1197,13 @@ describe("Codex's items and endings in Rufi's words", () => {
   });
 
   it("shows a command quietly only when it does nothing but read Rufi's skills", () => {
-    const skills = ["/data/codex/skills", "/private/data/codex/skills"];
+    const skills = {
+      folder: ["/data/codex/skills", "/private/data/codex/skills"],
+      headings: new Map([
+        ["results", "Results"],
+        ["follow-ups", "Follow-ups"],
+      ]),
+    };
     const ran = (...commandActions: CommandAction[]) =>
       activityOf(
         {
@@ -1227,7 +1233,8 @@ describe("Codex's items and endings in Rufi's words", () => {
       name: "SKILL.md",
       path,
     });
-    // By either path, relative to where it ran, each named once.
+    // By either path, relative to where it ran, each named once, by its
+    // heading or, without one, its name.
     expect(
       ran(
         read("SKILL.md"),
@@ -1236,7 +1243,7 @@ describe("Codex's items and endings in Rufi's words", () => {
           `cat '/data/codex/skills/results/SKILL.md' "/data/codex/skills/visit-brief/SKILL.md"`,
         ),
       ),
-    ).toBe("Read Rufi's instructions: results, follow ups and visit brief");
+    ).toBe("Read Rufi's instructions: Results, Follow-ups and visit-brief");
     for (const other of [
       [read("/data/codex/skills/../core.json")],
       [read("/data/ai/SKILL.md")],

@@ -31,7 +31,7 @@ import {
   type CodexCommand,
   type Deadlines,
 } from "./appserver.ts";
-import { activityOf, endOf, messageText } from "./events.ts";
+import { activityOf, endOf, messageText, type SkillFiles } from "./events.ts";
 import type { JsonValue } from "./protocol/serde_json/JsonValue.ts";
 import type { AccountRateLimitsUpdatedNotification } from "./protocol/v2/AccountRateLimitsUpdatedNotification.ts";
 import type { AgentMessageDeltaNotification } from "./protocol/v2/AgentMessageDeltaNotification.ts";
@@ -116,8 +116,19 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   const lifetime = new AbortController();
   let server: AppServer | undefined;
   let starting: Promise<AppServer> | undefined;
-  /** The skills' folder, as written and as Codex may show it (resolved). */
-  let skills: readonly string[] = [];
+  /**
+   * The skills' folder, as written and as Codex may show it (resolved), and
+   * each skill's heading, without what follows in brackets.
+   */
+  const skills: SkillFiles = {
+    folder: [],
+    headings: new Map(
+      deps.skills.flatMap((skill) => {
+        const heading = /^# ([^(\n]+)/m.exec(skill.text)?.[1]?.trim();
+        return heading ? [[skill.name, heading] as const] : [];
+      }),
+    ),
+  };
   const loaded = new Set<string>(); // threads open in the current app-server
   /** Threads Rufi let go of, until Codex says they are closed. */
   const closing = new Map<string, PromiseWithResolvers<undefined>>();
@@ -160,7 +171,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       sandbox: deps.sandbox,
       skills: deps.skills,
     });
-    skills = [
+    skills.folder = [
       join(paths.codexHome, "skills"),
       join(await realpath(paths.codexHome), "skills"),
     ];

@@ -546,9 +546,9 @@ describe("What a person sees of the AI's commands, on the pinned Codex", () => {
         )
         .all() as { text: string; detail: string | null; details: string }[];
       expect(lines.map((line) => [line.text, line.detail])).toEqual([
-        ["Read Rufi's instructions: saving a document", null],
+        ["Read Rufi's instructions: Saving a document", null],
         [
-          "Read Rufi's instructions: reading the record and changing the record",
+          "Read Rufi's instructions: Reading the record and Changing the record",
           null,
         ],
         ["Ran a command", expect.stringContaining("&& ls")],

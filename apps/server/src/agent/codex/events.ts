@@ -66,8 +66,7 @@ const and = (words: readonly string[]) =>
  * The skills a command only reads, by name; undefined when it does anything
  * else. Codex's own reading of the command says so: each part a read of a
  * skill's SKILL.md, or one `cat` of skill files alone (Codex marks a `cat`
- * of more than one file unknown). `skills` is the skills' folder, as each
- * path it may be given by.
+ * of more than one file unknown).
  */
 function skillsRead(
   item: Extract<ThreadItem, { type: "commandExecution" }>,
@@ -106,19 +105,27 @@ function skillsRead(
   return names.length === 0 ? undefined : [...new Set(names)];
 }
 
+/** Rufi's skills as its commands may read them. */
+export interface SkillFiles {
+  /** Their folder, by each path it may be given by. */
+  folder: readonly string[];
+  /** Each one's heading, by name. */
+  headings: ReadonlyMap<string, string>;
+}
+
 /**
  * The activity line for an item, as it starts (`ended` false) or ends;
  * undefined for what isn't activity: messages, replies and reasoning. A
  * tool's name is never shown: Rufi's own tools say what they did, in plain
  * words and with no detail, and any other is "Used a tool". A command that
- * only reads Rufi's skills (in `skills`, the skills' folder) says which, in
- * plain words; any other shows the command.
+ * only reads Rufi's skills says which, by their headings (their names
+ * when they have none); any other shows the command.
  */
 export function activityOf(
   item: ThreadItem,
   ended: boolean,
   tools?: AgentTools,
-  skills: readonly string[] = [],
+  skills: SkillFiles = { folder: [], headings: new Map() },
 ): Activity | undefined {
   switch (item.type) {
     case "userMessage":
@@ -145,11 +152,11 @@ export function activityOf(
         item.success === false ? "failed" : statusOf(item.status, ended),
       );
     case "commandExecution": {
-      const read = skillsRead(item, skills);
+      const read = skillsRead(item, skills.folder);
       return read
         ? line(
             "command",
-            `Read Rufi's instructions: ${and(read.map((name) => name.replaceAll("-", " ")))}`,
+            `Read Rufi's instructions: ${and(read.map((name) => skills.headings.get(name) ?? name))}`,
             undefined,
             statusOf(item.status, ended),
           )
