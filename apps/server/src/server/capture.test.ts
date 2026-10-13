@@ -17,6 +17,7 @@ import {
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexRuntime } from "../agent/codex/codex.ts";
 import { chatQueue } from "../core/chat/queue.ts";
+import { DEFAULT_ALLOWLIST } from "../core/chat/models.ts";
 import {
   transcripts as openTranscripts,
   type Transcripts,
@@ -62,7 +63,7 @@ afterEach(async () => {
 });
 
 /** The chat on the real Codex, as the core runs it; `refuse` breaks its MCP. */
-async function start(script: Step[], refuse = false) {
+async function start(script: Step[], refuse = false, modelId = "gpt-6-astra") {
   model = await fakeModel({ script });
   const reader = openReadOnly(databasePath(home));
   const log = () => undefined;
@@ -100,7 +101,7 @@ async function start(script: Step[], refuse = false) {
         host,
         log,
       }),
-    allowlist: () => Promise.resolve({ models: ["gpt-6-astra"] }),
+    allowlist: () => Promise.resolve({ models: [modelId] }),
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
     tools: {
       version: toolsVersion(),
@@ -156,16 +157,20 @@ const RUFI_TOOLS = [
 ];
 
 describe("Rufi's tools on the pinned Codex, over MCP", () => {
-  it(
-    "registers over HTTP with the thread's key and no Origin, and the code runner gets every tool with its input typed",
+  it.each(DEFAULT_ALLOWLIST)(
+    "on %s registers over HTTP with the thread's key and no Origin, and the code runner gets every tool with its input typed",
     { timeout: 120_000 },
-    async () => {
-      await start([
-        {
-          exec: `text(JSON.stringify(ALL_TOOLS.filter((t) => t.name.startsWith("mcp__rufi__"))))`,
-        },
-        { text: "Done." },
-      ]);
+    async (modelId) => {
+      await start(
+        [
+          {
+            exec: `text(JSON.stringify(ALL_TOOLS.filter((t) => t.name.startsWith("mcp__rufi__"))))`,
+          },
+          { text: "Done." },
+        ],
+        false,
+        modelId,
+      );
       await say("What can you do?");
       await until(() => turns().some((t) => t["status"] !== "running"));
       expect(turns()).toMatchObject([{ status: "completed" }]);

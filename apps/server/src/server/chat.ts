@@ -182,6 +182,9 @@ export function chat(deps: ChatDeps) {
       };
       callers.set(threadId, caller);
     }
+    if (caller.chat.id !== chatId) {
+      return refuse("no_reply", "No reply is running.");
+    }
     const startedAt = transcripts.now();
     const answer = await caller.call(call.tool, call.input, callId);
     // Kept before the AI has it: Used must show every read the AI got.

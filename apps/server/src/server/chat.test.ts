@@ -1481,7 +1481,7 @@ describe("the chat, on the scripted Codex", () => {
     ).agent_turn_id;
 
   /** Rufi's MCP server as the chat's thread got it, with its key. */
-  const threadMcp = async () => {
+  const threadMcp = async (index = 0) => {
     const lines = (await readFile(join(home, "fake.jsonl"), "utf8"))
       .trim()
       .split("\n")
@@ -1496,11 +1496,71 @@ describe("the chat, on the scripted Codex", () => {
             };
           },
       );
-    const start = lines.find((l) => l.received?.method === "thread/start");
+    const start = lines.filter((l) => l.received?.method === "thread/start")[
+      index
+    ];
     const server = start?.received?.params?.config?.mcp_servers?.rufi;
     if (!server) throw new Error("the thread got no MCP server");
     return server;
   };
+
+  it("refuses another chat's key for a cached caller, for reads and saves", async () => {
+    await startChat("fake", { scenario: { bare: true } });
+    store.db.exec(`
+      INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
+      INSERT INTO chats (id, person_id, created_at)
+        VALUES ('c-ravi', 'ravi', '2026-10-01T09:00:00Z');
+    `);
+    const asha = await newChat();
+    const ravi = await transcripts.chat("ravi");
+    if (!ravi) throw new Error("no chat");
+    await say(asha, "hang quiet: I have a headache");
+    await running(asha.id);
+    await say(ravi, "hang quiet: hello");
+    await until(async () => {
+      const row = await transcripts.chat("ravi");
+      return (
+        row?.threadId !== null &&
+        row?.threadId !== undefined &&
+        chat?.agent.activeTurn(row.threadId) !== undefined
+      );
+    });
+    const { threadId } = await chatRow();
+    const reply = { threadId: threadId ?? "", turnId: agentTurn() };
+    const own = await threadMcp();
+    const other = await threadMcp(1);
+    const read = { name: "get_overview", arguments: {}, ...reply };
+    const before = await callTool(other, { ...read, callId: "wrong-before" });
+    const proper = await callTool(own, { ...read, callId: "proper-read" });
+    const after = await callTool(other, { ...read, callId: "wrong-after" });
+    const save = await callTool(other, {
+      name: "save_changes",
+      arguments: saveHeadache.arguments,
+      ...reply,
+      callId: "wrong-save",
+    });
+    expect(proper.result?.["isError"]).not.toBe(true);
+    const refused = {
+      content: [
+        { type: "text", text: '{"ok":false,"error":"No reply is running."}' },
+      ],
+      isError: true,
+    };
+    expect([before.result, after.result, save.result]).toEqual([
+      refused,
+      refused,
+      refused,
+    ]);
+    expect(
+      store.db.prepare("SELECT tool, call_id FROM tool_calls").all(),
+    ).toEqual([{ tool: "get_overview", call_id: "proper-read" }]);
+    expect(store.db.prepare("SELECT * FROM symptoms").all()).toEqual([]);
+    expect(
+      (await transcript(asha.id)).entries.filter(
+        ([kind]) => kind === "receipt",
+      ),
+    ).toEqual([]);
+  });
 
   it("refuses a call with the thread's key when no reply is running, and keeps no trace of it as a call", async () => {
     await startChat("fake");
