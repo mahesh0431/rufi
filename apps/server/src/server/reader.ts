@@ -229,11 +229,17 @@ export function reader(deps: ReaderDeps) {
     const tools = forReader(started, deps.pages, deps.book, log);
     const { model, effort } = await deps.choice();
     const counts = { looks: 0, saves: 0 };
+    const toolStop = new AbortController();
+    let stopReason: string | undefined;
     // The attempt's key: its tools for this person, document and attempt.
     const key = deps.mcp.keys.issue({
       tools: tools.specs,
       call: async ({ tool, input, callId }) => {
         const answer = await tools.call(tool, input, callId);
+        if (answer.stopTurn !== undefined) {
+          stopReason ??= answer.stopTurn;
+          toolStop.abort();
+        }
         if (tool === "get_page") counts.looks++;
         if (tool === "save_page" && answer.ok) {
           counts.saves++;
@@ -242,7 +248,7 @@ export function reader(deps: ReaderDeps) {
         return answer;
       },
     });
-    const signal = AbortSignal.any([stop.signal, deleted]);
+    const signal = AbortSignal.any([stop.signal, deleted, toolStop.signal]);
     /** From a Stop, a delete or the end on, the attempt takes no more calls. */
     const close = () => {
       started.closed = true;
@@ -273,6 +279,10 @@ export function reader(deps: ReaderDeps) {
     } catch (error) {
       close();
       if (ended()) return;
+      if (stopReason !== undefined) {
+        await fail(started, stopReason);
+        return;
+      }
       log("reader.failed", { error: errorCode(error) });
       if (
         error instanceof ChatGptError &&
@@ -300,7 +310,10 @@ export function reader(deps: ReaderDeps) {
       return;
     }
     close();
-    const { end } = outcome;
+    const end: TurnEnd =
+      stopReason === undefined
+        ? outcome.end
+        : { status: "failed", text: stopReason };
     log("reader.ended", {
       status: end.status,
       ms: Date.now() - t0,
@@ -346,7 +359,7 @@ export function reader(deps: ReaderDeps) {
     } else {
       await fail(
         started,
-        (end.reason && WHY[end.reason]) ?? "the reader stopped",
+        stopReason ?? (end.reason && WHY[end.reason]) ?? "the reader stopped",
       );
     }
   };

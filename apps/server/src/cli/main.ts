@@ -15,10 +15,9 @@ import { Cause, Console, Effect, Layer } from "effect";
 import { signIn } from "../agent/chatgpt/signin.ts";
 import { accessToken, signOut, status } from "../agent/chatgpt/session.ts";
 import type { ChatGptDeps } from "../agent/chatgpt/openai.ts";
-import { v7 as uuid } from "uuid";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexRuntime } from "../agent/codex/codex.ts";
-import { agentCall, type AgentEvent, type TurnEnd } from "../agent/runtime.ts";
+import type { AgentEvent } from "../agent/runtime.ts";
 import { allowlistFile } from "../core/chat/models.ts";
 import { pages } from "../core/documents/pages.ts";
 import { coreInstructions } from "../core/chat/instructions.ts";
@@ -48,13 +47,7 @@ import {
   noEffectLogs,
 } from "../platform/logs.ts";
 import { agentSetup, runningLink, startCore } from "../server/core.ts";
-import {
-  mcpEndpoint,
-  mcpKeys,
-  serveMcp,
-  skillResources,
-} from "../server/mcp.ts";
-import { SKILLS } from "../core/skills/skills.ts";
+import { ask } from "./ask.ts";
 import { subAgentRunner } from "../agent/codex/subagent.ts";
 import { appChannel, closeAppChannel } from "./app.ts";
 
@@ -438,27 +431,12 @@ const askCommand = (question: string, person: string | undefined) =>
     const { version } = createRequire(import.meta.url)(
       "../../package.json",
     ) as { version: string };
-    const ended = Promise.withResolvers<TurnEnd>();
-    let threadId: string | undefined;
-    // Rufi's tools over MCP, on a listener of the command's own.
-    const keys = mcpKeys();
-    let port = 0;
-    const listening = yield* Effect.acquireRelease(
-      run(() =>
-        serveMcp(
-          mcpEndpoint({
-            keys,
-            port: () => port,
-            log,
-            resources: skillResources(SKILLS),
-          }),
-        ),
-      ),
-      (server) => Effect.promise(() => server.close()),
-    );
-    port = listening.port;
-    const agent = yield* Effect.acquireRelease(
-      Effect.sync(() =>
+    const started = Date.now();
+    const end = yield* ask(question, {
+      model: models[0] ?? "",
+      instructions: coreInstructions(undefined),
+      tools,
+      agent: (host) =>
         codexRuntime({
           home: deps.home,
           ...agentSetup(deps.home),
@@ -467,74 +445,15 @@ const askCommand = (question: string, person: string | undefined) =>
           token: (validForMs) => accessToken(deps, validForMs),
           version,
           tools: { server: tools.server, specs: tools.specs },
-          host: {
-            onEvent: (event) => {
-              show(event);
-              if (event.type === "turnEnded") ended.resolve(event.end);
-            },
-          },
+          host,
           log,
         }),
-      ),
-      (runtime) => Effect.promise(() => runtime.close()),
-    );
-    let caller:
-      | { turnId: string; call: ReturnType<typeof tools.forTurn> }
-      | undefined;
-    // The thread's key: its calls run only for its running reply.
-    const key = keys.issue({
-      tools: tools.specs,
-      call: (call) => {
-        if (
-          call.threadId === undefined ||
-          call.threadId !== threadId ||
-          call.turnId === undefined ||
-          agent.activeTurn(call.threadId) !== call.turnId
-        ) {
-          return Promise.resolve({
-            ok: false,
-            text: JSON.stringify({ ok: false, error: "No reply is running." }),
-          });
-        }
-        if (caller?.turnId !== call.turnId) {
-          caller = { turnId: call.turnId, call: tools.forTurn() };
-        }
-        return caller.call(call.tool, call.input, call.callId);
-      },
-    });
-    const op = new AbortController();
-    const started = Date.now();
-    const end = yield* agentCall(
-      async () => {
-        const thread = await agent.startThread(
-          {
-            model: models[0] ?? "",
-            instructions: coreInstructions(undefined),
-            tools: { url: `http://127.0.0.1:${String(port)}/mcp`, key },
-          },
-          op.signal,
-        );
-        threadId = thread.threadId;
-        await agent.send(
-          threadId,
-          { id: uuid(), input: [question] },
-          op.signal,
-        );
-        return ended.promise;
-      },
-      async () => {
-        op.abort();
-        if (threadId !== undefined) await agent.stop(threadId);
-        ended.resolve({
-          status: "interrupted",
-          reason: "stopped",
-          text: "Stopped.",
-        });
-      },
-      () => {
+      onEvent: show,
+      onStop: () => {
         console.error("\nStopping…");
       },
-    );
+      log,
+    });
     log("turn.ended", { status: end.status, ms: Date.now() - started });
     process.stdout.write("\n");
     if (end.status !== "completed") {

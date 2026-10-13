@@ -10,6 +10,10 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ChatGptError } from "../agent/chatgpt/openai.ts";
+import { codexBinary } from "../agent/codex/binary.ts";
+import { subAgentRunner } from "../agent/codex/subagent.ts";
+import type { RunSubAgent } from "../agent/runtime.ts";
+import { fakeModel, type Step } from "../../tests/fake-model.ts";
 import {
   readPage,
   scriptedReader,
@@ -86,6 +90,7 @@ async function startReader(
     deadlineMs?: number;
     signInPollMs?: number;
     log?: (event: string) => void;
+    run?: RunSubAgent;
   } = {},
 ) {
   const fake = scriptedReader(scripts);
@@ -105,7 +110,7 @@ async function startReader(
       if (!chat) throw new Error("No chat.");
       await transcripts.addEvent(chat, event, write);
     },
-    run: fake.run,
+    run: options.run ?? fake.run,
     signedIn: () => Promise.resolve(signedIn),
     choice: () => readerChoice(transcripts.setting),
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp/reader`, keys },
@@ -404,6 +409,115 @@ describe("a reading", () => {
 });
 
 describe("a restart or a failure", () => {
+  it("stops a reader that used its refusal allowance, keeps why, and publishes no drafts", async () => {
+    await transcripts.saveSetting("reader_model", "gpt-5.5");
+    let attempts = 0;
+    const late: number[] = [];
+    const bad: Step = {
+      call: {
+        namespace: "mcp__rufi",
+        name: "save_page",
+        arguments: { page: 1, entry: readPage() },
+      },
+    };
+    const { reader: running } = await startReader([], {
+      run: async (task, signal) => {
+        attempts++;
+        const model = await fakeModel({
+          script: [
+            {
+              call: {
+                namespace: "mcp__rufi",
+                name: "get_page",
+                arguments: { page: 2 },
+              },
+            },
+            {
+              call: {
+                namespace: "mcp__rufi",
+                name: "save_page",
+                arguments: { page: 2, entry: readPage() },
+              },
+            },
+            ...Array.from({ length: 10 }, () => bad),
+            {
+              call: {
+                namespace: "mcp__rufi",
+                name: "get_page",
+                arguments: { page: 1 },
+              },
+            },
+            {
+              call: {
+                namespace: "mcp__rufi",
+                name: "save_page",
+                arguments: { page: 1, entry: readPage() },
+              },
+            },
+            { text: "Done." },
+          ],
+        });
+        try {
+          const outcome = await subAgentRunner({
+            home,
+            command: {
+              file: await codexBinary(),
+              args: [
+                "-c",
+                `model_providers.openai_chatgpt_plan.base_url="${model.url}"`,
+              ],
+            },
+            env: { PATH: process.env["PATH"] ?? "" },
+            token: () => Promise.resolve("not-a-real-token"),
+            version: "0.0.0",
+          })(task, signal);
+          // Before returning to the owner: Stop must have revoked the key
+          // already, including while the runner is unwinding.
+          const refused = await callTool(
+            {
+              url: task.tools.url,
+              http_headers: { Authorization: `Bearer ${task.tools.key}` },
+            },
+            {
+              name: "save_page",
+              arguments: { page: 2, entry: readPage() },
+              callId: "call-late",
+              threadId: "ended",
+              turnId: "ended",
+            },
+          );
+          late.push(refused.status);
+          return outcome;
+        } finally {
+          await model.close();
+        }
+      },
+    });
+    try {
+      await addReport();
+      await until(
+        () => ["done", "failed"].includes(String(job()?.["state"])),
+        30_000,
+      );
+      expect(job()).toMatchObject({
+        state: "failed",
+        error: "The AI kept making requests Rufi couldn't accept.",
+      });
+      expect(attempts).toBe(2);
+      expect(late).toEqual([401, 401]);
+      expect(drafts()).toEqual([]);
+      const pages = rows(
+        "SELECT position, entry FROM document_pages ORDER BY position",
+      );
+      expect(pages[0]).toEqual({ position: 1, entry: null });
+      expect(JSON.parse(String(pages[1]?.["entry"]))).toMatchObject({
+        outcome: "read",
+        items: [{ test_name: "Haemoglobin", value_text: "13.2" }],
+      });
+    } finally {
+      await running.close();
+    }
+  }, 60_000);
   it("Retry reads a document never read (from before Rufi read each one as it came) in full", async () => {
     const id = await addReport();
     store.db.exec("DELETE FROM jobs");
