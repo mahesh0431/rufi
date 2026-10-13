@@ -544,6 +544,7 @@ describe("What a person sees of the AI's commands, on the pinned Codex", () => {
       const visible = [
         `cat ${skill("results")} && ls`,
         `cat ${skill("results")}; cat ${skill("results")}`,
+        `cat ${skill("results")}\ncat ${skill("results")}`,
         `cat ${skill("results")} | tee ${JSON.stringify(copy)}`,
         `cat ${skill("results")} | head -n 3`,
         `cat ${skill("results")} > ${JSON.stringify(join(home, "ai", "redirect.txt"))}`,
@@ -561,6 +562,8 @@ describe("What a person sees of the AI's commands, on the pinned Codex", () => {
           `cat ${skill("reading-the-record")} ${skill("changing-the-record")}`,
           `cat '${skillPath("results")}' ${skillPath("results")}`,
           `cat ${skills}/{reading-the-record,changing-the-record,results}/SKILL.md`,
+          // Space around the words is no part of them.
+          ` \tcat ${skillPath("follow-ups")} \n`,
           ...visible,
         ]),
         { text: "Read." },
@@ -588,6 +591,7 @@ describe("What a person sees of the AI's commands, on the pinned Codex", () => {
           "Read Rufi's instructions: Reading the record, Changing the record and Results",
           null,
         ],
+        ["Read Rufi's instructions: Follow-ups", null],
         ...visible.map((): [string, unknown] => [
           "Ran a command",
           expect.any(String),

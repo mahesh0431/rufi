@@ -63,8 +63,10 @@ const PART =
   /"((?:[^"\\$`]|\\["\\$`])*)"|'([^']*)'|\\([^\r\n])|\{([a-z0-9-]+(?:,[a-z0-9-]+)+)\}|([^\s"'\\$`;&|<>()*?[\]{}~#!]+)/y;
 
 /** The words of a command, each group expanded in place; undefined for any other. */
-function literalWords(command: string, braces = false): string[] | undefined {
-  if (/[\r\n]/.test(command)) return undefined;
+function literalWords(script: string, braces = false): string[] | undefined {
+  // Space around the words, a final newline too, is no part of them. A
+  // newline between them is no literal word, so it ends the check.
+  const command = script.trim();
   const words: string[] = [];
   // The word so far, as each of its expansions, and whether it has a group.
   let word: string[] | undefined;
