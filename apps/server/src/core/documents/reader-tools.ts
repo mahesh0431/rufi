@@ -7,9 +7,8 @@ import { Schema } from "effect";
 import type { Log } from "../../platform/logs.ts";
 import {
   defineTool,
-  inputSchema,
   Refusal,
-  shownFor,
+  specOf,
   toolCaller,
   WithImage,
   type Tool,
@@ -120,17 +119,11 @@ function readerTools(run: Run, pages: Pages, book: Notebook): readonly Tool[] {
   return [getPage, savePage];
 }
 
-/** The reader's tools as an agent takes them, and a caller for its turn. */
+/** The reader's tools: their catalog for its MCP endpoint, and its caller. */
 export function forReader(run: Run, pages: Pages, book: Notebook, log: Log) {
   const tools = readerTools(run, pages, book);
   return {
-    namespace: "rufi",
-    specs: tools.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      shown: (input: unknown) => shownFor(tool, input),
-      inputSchema: inputSchema(tool),
-    })),
+    specs: tools.map(specOf),
     call: toolCaller(
       tools,
       () => ({ store: undefined, personId: run.personId }),

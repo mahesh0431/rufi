@@ -6,7 +6,8 @@
 // it starts. Only a reader turn that completed normally finishes a reading; a turn that failed for a passing
 // reason gets one automatic retry, and anything else ends the reading as
 // failed, its notebook kept for Retry. When Rufi stops, a running reading
-// is left as it is: the next start queues it again.
+// is left as it is: the next start queues it again. The reader gets its two
+// tools from Rufi's MCP server, with a key for one attempt.
 import { Effort } from "@rufi/contracts";
 import { Option, Schema } from "effect";
 import { ChatGptError } from "../agent/chatgpt/openai.ts";
@@ -34,6 +35,7 @@ import {
 } from "../core/documents/reading.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import type { Chat } from "./chat.ts";
+import type { McpKeys } from "./mcp.ts";
 
 export interface ReaderDeps {
   readings: Readings;
@@ -46,6 +48,8 @@ export interface ReaderDeps {
   signedIn: () => Promise<boolean>;
   /** The model and effort chosen in Settings (readerChoice), read as a run starts. */
   choice: () => Promise<ReaderChoice>;
+  /** Rufi's MCP endpoint for the reader: its address and its keys. */
+  mcp: { url: () => string; keys: McpKeys };
   log: Log;
   /** How long one run of a reading may take, for its number of pages. */
   deadlineMs?: (pages: number) => number;
@@ -225,6 +229,26 @@ export function reader(deps: ReaderDeps) {
     const tools = forReader(started, deps.pages, deps.book, log);
     const { model, effort } = await deps.choice();
     const counts = { looks: 0, saves: 0 };
+    // The attempt's key: its tools for this person, document and attempt.
+    const key = deps.mcp.keys.issue({
+      tools: tools.specs,
+      call: async ({ tool, input, callId }) => {
+        const answer = await tools.call(tool, input, callId);
+        if (tool === "get_page") counts.looks++;
+        if (tool === "save_page" && answer.ok) {
+          counts.saves++;
+          readings.changed(started.personId);
+        }
+        return answer;
+      },
+    });
+    const signal = AbortSignal.any([stop.signal, deleted]);
+    /** From a Stop, a delete or the end on, the attempt takes no more calls. */
+    const close = () => {
+      started.closed = true;
+      deps.mcp.keys.revoke(key);
+    };
+    signal.addEventListener("abort", close, { once: true });
     const t0 = Date.now();
     let outcome: SubAgentOutcome;
     try {
@@ -234,25 +258,20 @@ export function reader(deps: ReaderDeps) {
           effort,
           instructions: READER_INSTRUCTIONS,
           input: readerInput(await readings.about(started)),
-          tools: { namespace: tools.namespace, specs: tools.specs },
-          callTool: async (name, input, callId) => {
-            const answer = await tools.call(name, input, callId);
-            if (name === "get_page") counts.looks++;
-            if (name === "save_page" && answer.ok) {
-              counts.saves++;
-              readings.changed(started.personId);
-            }
-            return answer;
+          tools: {
+            url: deps.mcp.url(),
+            key,
+            names: tools.specs.map((spec) => spec.name),
           },
           onCompaction: () => {
             started.lookedAt.clear();
           },
           deadlineMs: (deps.deadlineMs ?? deadlineFor)(job.targets.length),
         },
-        AbortSignal.any([stop.signal, deleted]),
+        signal,
       );
     } catch (error) {
-      started.closed = true;
+      close();
       if (ended()) return;
       log("reader.failed", { error: errorCode(error) });
       if (
@@ -280,7 +299,7 @@ export function reader(deps: ReaderDeps) {
       }
       return;
     }
-    started.closed = true;
+    close();
     const { end } = outcome;
     log("reader.ended", {
       status: end.status,

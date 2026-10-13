@@ -31,6 +31,8 @@ import {
   type Store,
 } from "../core/store/database.ts";
 import { chatCaller } from "../core/tools/tools.ts";
+import { callTool } from "../../tests/mcp-client.ts";
+import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
 import { reader, readerChoice } from "./reader.ts";
 
 const FIXTURES = join(import.meta.dirname, "../../tests/fixtures/documents");
@@ -44,6 +46,8 @@ let docs: Documents;
 let personId: string;
 let signedIn: boolean;
 let clock: number;
+/** Rufi's MCP servers the readers got, closed after each test. */
+let served: { close: () => Promise<void> }[];
 
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), "rufi-reader-"));
@@ -55,7 +59,9 @@ beforeEach(async () => {
   reads = readings(store, () => new Date(clock).toISOString());
   docs = documents(store, home, () => NOW, reads);
   signedIn = true;
-  return () => {
+  served = [];
+  return async () => {
+    await Promise.all(served.map((server) => server.close()));
     store.close();
   };
 });
@@ -74,7 +80,7 @@ async function addReport(): Promise<string> {
 }
 
 /** A reader running `scripts`, as the core starts it. */
-function startReader(
+async function startReader(
   scripts: Script[],
   options: {
     deadlineMs?: number;
@@ -83,6 +89,13 @@ function startReader(
   } = {},
 ) {
   const fake = scriptedReader(scripts);
+  const keys = mcpKeys();
+  let port = 0;
+  const server = await serveMcp(
+    mcpEndpoint({ keys, port: () => port, log: () => undefined }),
+  );
+  port = server.port;
+  served.push(server);
   const running = reader({
     readings: reads,
     book: notebook(store, () => NOW),
@@ -95,6 +108,7 @@ function startReader(
     run: fake.run,
     signedIn: () => Promise.resolve(signedIn),
     choice: () => readerChoice(transcripts.setting),
+    mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp/reader`, keys },
     log: options.log ?? (() => undefined),
     signInPollMs: options.signInPollMs ?? 20,
     now: () => clock,
@@ -147,7 +161,7 @@ describe("the reader's model and effort", () => {
   it("a run takes those chosen in Settings as it starts, and records them; a model the runner doesn't run is the default", async () => {
     await transcripts.saveSetting("reader_effort", "high");
     await transcripts.saveSetting("reader_model", "gpt-6-astra");
-    const { runs, reader: running } = startReader([
+    const { runs, reader: running } = await startReader([
       async (turn) => {
         await turn.look(1);
         await turn.save(1, readPage());
@@ -171,7 +185,7 @@ describe("the reader's model and effort", () => {
 describe("a reading", () => {
   it("writes a start line, then drafts, page states and an end line in one go", async () => {
     let midway: unknown;
-    const { runs, reader: running } = startReader([
+    const { runs, reader: running } = await startReader([
       async (turn) => {
         await turn.look(1);
         await turn.save(1, readPage(), "Collected date on page 1.");
@@ -244,7 +258,7 @@ describe("a reading", () => {
   });
 
   it("counts current results in the end line while keeping earlier values as drafts", async () => {
-    const { reader: running } = startReader([
+    const { reader: running } = await startReader([
       async (turn) => {
         await turn.look(1);
         await turn.save(
@@ -299,7 +313,7 @@ describe("a reading", () => {
   ])(
     "asks about an unsure value and a differing printed name: $printed",
     async ({ printed, askName }) => {
-      const { reader: running } = startReader([
+      const { reader: running } = await startReader([
         async (turn) => {
           await turn.look(1);
           // "13.8" isn't on the page: Rufi's check marks it unsure.
@@ -337,7 +351,7 @@ describe("a reading", () => {
   );
 
   it("marks pages the reader never saved as not looked at, and Retry reads only those", async () => {
-    const { runs, reader: running } = startReader([
+    const { runs, reader: running } = await startReader([
       async (turn) => {
         await turn.look(1);
         await turn.save(1, readPage());
@@ -401,7 +415,7 @@ describe("a restart or a failure", () => {
   });
 
   it("continues after a restart from the notebook: no second start line, one set of drafts", async () => {
-    const first = startReader([
+    const first = await startReader([
       async (turn) => {
         await turn.look(1);
         await turn.save(1, readPage());
@@ -425,7 +439,7 @@ describe("a restart or a failure", () => {
     expect(await reads.strip(personId)).toMatchObject([
       { state: "waiting", again: true, saved: 1, of: 2 },
     ]);
-    const second = startReader([
+    const second = await startReader([
       async (turn) => {
         await turn.look(2);
         await turn.save(2, readPage());
@@ -445,7 +459,7 @@ describe("a restart or a failure", () => {
   });
 
   it("finishes without a reader when every page was saved before a crash", async () => {
-    const first = startReader([
+    const first = await startReader([
       async (turn) => {
         await turn.look(1);
         await turn.save(1, readPage());
@@ -466,7 +480,7 @@ describe("a restart or a failure", () => {
     await first.reader.close();
     await reads.recover();
 
-    const second = startReader([]);
+    const second = await startReader([]);
     await until(done);
     expect(second.runs).toEqual([]);
     expect(lines()).toHaveLength(2);
@@ -475,7 +489,7 @@ describe("a restart or a failure", () => {
   });
 
   it("does not finish from failed entries after the retry is interrupted and Rufi restarts", async () => {
-    const first = startReader([
+    const first = await startReader([
       async (turn) => {
         await turn.look(1);
         await turn.save(1, readPage());
@@ -500,7 +514,7 @@ describe("a restart or a failure", () => {
     }
     await reads.recover();
     const completed = Promise.withResolvers<undefined>();
-    const second = startReader([() => completed.promise]);
+    const second = await startReader([() => completed.promise]);
     try {
       await until(() => second.runs.length === 1 || done());
       expect(second.runs).toHaveLength(1);
@@ -517,7 +531,7 @@ describe("a restart or a failure", () => {
   });
 
   it("a deadline fails the reading with its entries kept and no drafts; Retry continues it", async () => {
-    const { runs, reader: running } = startReader([
+    const { runs, reader: running } = await startReader([
       async (turn) => {
         await turn.look(1);
         await turn.save(1, readPage());
@@ -551,6 +565,43 @@ describe("a restart or a failure", () => {
     await running.close();
   });
 
+  it("refuses a call with an earlier attempt's key once that run has ended", async () => {
+    let refused: unknown;
+    const { runs, reader: running } = await startReader([
+      () =>
+        Promise.resolve({
+          end: { status: "failed", reason: "connection" },
+        }),
+      async (turn) => {
+        const first = runs[0]?.tools;
+        refused = await callTool(
+          {
+            url: first?.url ?? "",
+            http_headers: { Authorization: `Bearer ${first?.key ?? ""}` },
+          },
+          {
+            name: "save_page",
+            arguments: { page: 1, entry: readPage() },
+            callId: "call-old",
+            threadId: "old",
+            turnId: "old",
+          },
+        );
+        await turn.look(1);
+        await turn.save(1, readPage());
+        await turn.look(2);
+        await turn.save(2, readPage());
+        return undefined;
+      },
+    ]);
+    await addReport();
+    await until(done);
+    expect(runs[1]?.tools.key).not.toBe(runs[0]?.tools.key);
+    expect(refused).toEqual({ status: 401 });
+    expect(drafts().map((d) => d["page"])).toEqual([1, 2]);
+    await running.close();
+  });
+
   it.each(["timeout", "connection"] as const)(
     "keeps all entries without publishing after a %s failure; Retry needs a completed turn",
     async (reason) => {
@@ -558,7 +609,7 @@ describe("a restart or a failure", () => {
         Promise.resolve({
           end: { status: "failed", reason },
         });
-      const { runs, reader: running } = startReader([
+      const { runs, reader: running } = await startReader([
         async (turn) => {
           await turn.look(1);
           await turn.save(1, readPage());
@@ -602,7 +653,7 @@ describe("a restart or a failure", () => {
       Promise.resolve({
         end: { status: "failed" as const, reason: "connection" as const },
       });
-    const { runs, reader: running } = startReader([lost, lost]);
+    const { runs, reader: running } = await startReader([lost, lost]);
     await addReport();
     await until(() => job()?.["state"] === "failed");
     expect(runs).toHaveLength(2);
@@ -614,7 +665,7 @@ describe("a restart or a failure", () => {
 
   it("waits for the sign-in, and until a usage limit resets", async () => {
     signedIn = false;
-    const { runs, reader: running } = startReader([
+    const { runs, reader: running } = await startReader([
       () =>
         Promise.resolve({
           end: {
@@ -646,7 +697,7 @@ describe("a restart or a failure", () => {
   });
 
   it("waits visibly when the provider rejects a stored sign-in, then resumes at the poll time", async () => {
-    const { runs, reader: running } = startReader(
+    const { runs, reader: running } = await startReader(
       [
         () => Promise.resolve({ end: { status: "failed", reason: "sign_in" } }),
         async (turn) => {
@@ -692,7 +743,7 @@ describe("a restart or a failure", () => {
   });
 
   it("waits a minute when the sign-in can't be renewed yet, keeping its retry", async () => {
-    const { runs, reader: running } = startReader([
+    const { runs, reader: running } = await startReader([
       () =>
         Promise.reject(
           new ChatGptError("temporary", "Can't renew the sign-in yet."),
@@ -714,7 +765,7 @@ describe("a restart or a failure", () => {
 
 describe("the chat AI and a reading", () => {
   it("sees the drafts as not saved, and can read failed pages again only in the person's turn", async () => {
-    const { reader: running } = startReader([
+    const { reader: running } = await startReader([
       async (turn) => {
         await turn.look(1);
         await turn.save(1, readPage());
@@ -821,7 +872,7 @@ describe("a document deleted while it is read", () => {
         log: () => undefined,
         now: () => NOW,
       });
-      const { reader: started } = startReader(
+      const { reader: started } = await startReader(
         [
           async (turn) => {
             await turn.look(1);
@@ -829,7 +880,7 @@ describe("a document deleted while it is read", () => {
             const preview = await remover.preview(personId, id);
             await remover.remove(personId, id, preview?.version ?? "");
             stopped = turn.signal?.aborted;
-            late = (await turn.save(1, readPage("14.0"))).ok;
+            late = (await turn.save(1, readPage("14.0"))).json;
             return undefined;
           },
         ],
@@ -841,7 +892,17 @@ describe("a document deleted while it is read", () => {
       await started.close();
 
       expect(stopped).toBe(stop);
-      expect(late).toBe(false);
+      // Stopped, its key opens nothing: the call never reaches the tool.
+      // Otherwise the tool refuses it: the reading is gone.
+      expect(late).toMatchObject(
+        stop
+          ? { ok: false, error: "HTTP 401" }
+          : {
+              ok: false,
+              error:
+                "This reading isn't running any more; nothing more is saved.",
+            },
+      );
       expect(lines()).toEqual([
         "Reading sunrise-august.pdf · 2 pages",
         "Deleted sunrise-august.pdf",

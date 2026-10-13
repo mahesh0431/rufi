@@ -296,7 +296,6 @@ test("a save of a document's items shows its summary, with what was saved folded
       scenario: {
         calls: [
           {
-            namespace: "rufi",
             tool: "save_changes",
             arguments: {
               items: [1, 2, 3, 4, 5, 6, 7].map((n) => ({

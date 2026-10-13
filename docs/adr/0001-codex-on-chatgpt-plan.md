@@ -39,3 +39,5 @@ Rufi runs `codex app-server` over stdio with OpenAI's documented provider settin
 - A thread's tool set is fixed when it starts, so M2 stores a fingerprint of the tool set with each conversation's thread and starts a new thread (reseeded from Rufi's transcript) when it changes.
 - Research that needs the web goes through a chosen MCP server (Research, M5) or visible shell fetches, not Codex's web search, until the route supports it.
 - Each pin bump: regenerate the protocol types (`pnpm codex:types`), rerun the contract tests, and recheck the `HOME` split and web search here.
+
+**Amendment, 14 Oct 2026:** Rufi's tools no longer go as `dynamicTools`; they come from Rufi's own MCP server (ADR 0016). A change to the tools still starts a new thread for now.

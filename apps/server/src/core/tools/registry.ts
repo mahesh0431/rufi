@@ -1,5 +1,5 @@
 // Rufi's tools: plain functions with an Effect Schema, free of any agent's
-// types, so Codex now and an MCP host later are thin adapters over the same list.
+// types, so the MCP server (server/mcp.ts) is a thin adapter over the list.
 import { Result, Schema, SchemaIssue } from "effect";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import type { BriefInput, Made } from "../briefs/briefs.ts";
@@ -108,10 +108,30 @@ export interface ToolAnswer {
   ok: boolean;
   /** JSON, for the model. */
   text: string;
-  /** Images the model sees after the text, as data: URLs. Never stored. */
-  images?: readonly string[];
+  /** Images the model sees after the text, in base64. Never stored. */
+  images?: readonly { mimeType: string; data: string }[];
   stopTurn?: string;
 }
+
+/** A tool as an agent is told about it, and the words a person sees. */
+export interface ToolSpec {
+  name: string;
+  description: string;
+  /** What a person sees when the AI uses it, from what the AI sent. */
+  shown: (input: unknown) => string;
+  inputSchema: Record<string, unknown>;
+  readOnly: boolean;
+  destructive: boolean;
+}
+
+export const specOf = (tool: Tool): ToolSpec => ({
+  name: tool.name,
+  description: tool.description,
+  shown: (input) => shownFor(tool, input),
+  inputSchema: inputSchema(tool),
+  readOnly: tool.readOnly,
+  destructive: tool.destructive,
+});
 
 /** Rejections a turn may have before Rufi stops it, so the model can't loop. */
 export const REJECTIONS_PER_TURN = 3;
@@ -176,7 +196,10 @@ export function toolCaller(
           ok: true,
           text: JSON.stringify({ ok: true, result: result.result }),
           images: [
-            `data:${mediaType};base64,${Buffer.from(bytes).toString("base64")}`,
+            {
+              mimeType: mediaType,
+              data: Buffer.from(bytes).toString("base64"),
+            },
           ],
         };
       }

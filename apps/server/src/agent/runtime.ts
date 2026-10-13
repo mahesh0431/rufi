@@ -102,27 +102,23 @@ export interface Model {
   name: string;
 }
 
-/** Rufi's tools as an agent gets them; the registry in core/tools fills it. */
+/**
+ * Rufi's tools as the agent shows them, by the name it knows their MCP server
+ * by; the registry in core/tools fills it.
+ */
 export interface AgentTools {
-  /** Shown to the agent as `<namespace>.<tool>`. */
-  namespace: string;
+  server: string;
   specs: readonly {
     name: string;
-    description: string;
     /** What a person sees when the AI uses it, in plain words, from what the AI sent. */
     shown: (input: unknown) => string;
-    inputSchema: Record<string, unknown>;
   }[];
 }
 
-/** A tool's answer for the agent; `stopTurn` asks Rufi to end the turn. */
-export interface ToolAnswer {
-  ok: boolean;
-  /** JSON, for the model. */
-  text: string;
-  /** Images the model sees after the text, as data: URLs. */
-  images?: readonly string[];
-  stopTurn?: string;
+/** An MCP server of Rufi's for one thread: its address and the thread's key. */
+export interface McpServer {
+  url: string;
+  key: string;
 }
 
 /** What a thread starts with. The agent keeps it for the thread's life. */
@@ -135,6 +131,8 @@ export interface ThreadSettings {
   effort?: string;
   /** Rufi's instructions: safety first, then how to use the tools. */
   instructions: string;
+  /** Where the thread gets Rufi's tools, given again each time it is resumed. */
+  tools?: McpServer;
 }
 
 export interface AgentRuntime {
@@ -160,6 +158,11 @@ export interface AgentRuntime {
   /** Whether a reply is running in the thread now. */
   running: (threadId: string) => boolean;
   /**
+   * The running reply that may still use Rufi's tools: its turn id, or
+   * nothing when no reply runs or it is stopping.
+   */
+  activeTurn: (threadId: string) => string | undefined;
+  /**
    * Starts a reply to `input` (its parts in order: a new thread's earlier
    * chat, Rufi's notes, the person's message), by the id Rufi gives it. Only
    * when no reply runs. `effort` is how hard the AI thinks, from this reply
@@ -179,8 +182,11 @@ export interface AgentRuntime {
     threadId: string,
     message: { id: string; text: string },
   ) => Promise<{ turnId: string }>;
-  /** Stops the running reply (only when it is `turnId`, if given) and what it started. */
-  stop: (threadId: string, turnId?: string) => Promise<void>;
+  /**
+   * Stops the running reply (only when it is `turnId`, if given) and what it
+   * started; `end` says why, when Rufi decided it.
+   */
+  stop: (threadId: string, turnId?: string, end?: TurnEnd) => Promise<void>;
   /**
    * The messages the thread has run, oldest first, with the ids Rufi gave
    * them: to fill what a crash kept Rufi from saving.
@@ -195,17 +201,6 @@ export interface AgentRuntime {
 /** What the agent needs from Rufi while it runs. */
 export interface AgentHost {
   onEvent: (event: AgentEvent) => void;
-  /**
-   * Runs one of Rufi's tools for a turn; Rufi knows whose thread it is.
-   * `callId` is the agent's id for the call: the same call again has it too.
-   */
-  callTool: (
-    threadId: string,
-    turnId: string,
-    name: string,
-    input: unknown,
-    callId: string,
-  ) => Promise<ToolAnswer>;
 }
 
 /**
@@ -261,13 +256,11 @@ export interface SubAgentTask {
   instructions: string;
   /** Its one message: what to do. */
   input: string;
-  tools: AgentTools;
-  /** Runs one of its tools; the task's owner binds them to their data. */
-  callTool: (
-    name: string,
-    input: unknown,
-    callId: string,
-  ) => Promise<ToolAnswer>;
+  /**
+   * Its tools: an MCP server whose key the task's owner bound to their data,
+   * and the names of the only tools it may use there.
+   */
+  tools: McpServer & { names: readonly string[] };
   /** The agent summarised the thread: what the sub-agent saw before is gone. */
   onCompaction: () => void;
   /** How long the whole turn may take. */

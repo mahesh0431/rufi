@@ -26,6 +26,8 @@ const EVENTS = new Set([
   "codex.commands_left",
   "codex.interrupt_failed",
   "tool.failed",
+  "mcp.refused",
+  "mcp.failed",
   "subagent.ended",
   "subagent.unexpected",
   "reader.ended",
@@ -94,6 +96,12 @@ const FIELDS: Record<string, (value: unknown) => boolean> = {
   // A Codex thread item's type ("commandExecution"), as the binary sends it.
   item: (value) =>
     typeof value === "string" && /^[a-z][a-zA-Z]{0,40}$/.test(value),
+  // Why Rufi's MCP server refused a request or a call (server/mcp.ts, chat.ts).
+  reason: (value) =>
+    typeof value === "string" &&
+    ["forwarded", "host", "origin", "key", "no_call", "no_reply"].includes(
+      value,
+    ),
   status: (value) =>
     value === "completed" || value === "failed" || value === "interrupted",
   code: isCode,

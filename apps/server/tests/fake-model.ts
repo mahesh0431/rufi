@@ -190,7 +190,8 @@ export async function fakeModel(
           id: `ctc-${String(requests.length)}`,
           call_id: `call-${String(requests.length)}`,
           name: "exec",
-          input: "text(JSON.stringify(await tools.rufi__get_overview({})))",
+          input:
+            "text(JSON.stringify(await tools.mcp__rufi__get_overview({})))",
         };
         for (const type of [
           "response.output_item.added",

@@ -1,4 +1,6 @@
 import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -12,7 +14,6 @@ import {
   type AgentEvent,
   type AgentRuntime,
   type AgentTools,
-  type ToolAnswer,
   type TurnEnd,
 } from "../runtime.ts";
 import type { Deadlines } from "./appserver.ts";
@@ -33,9 +34,8 @@ let events: AgentEvent[];
 let runtime: AgentRuntime | undefined;
 /** While set, token requests wait for it. */
 let tokenGate: Promise<void> | undefined;
-/** What Rufi's tools are asked, and how they answer. */
-let toolCalls: [string, unknown][];
-let toolAnswer: (name: string) => Promise<ToolAnswer> | ToolAnswer;
+/** A stand-in for Rufi's MCP server, when a test starts one. */
+let mcp: Server | undefined;
 
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), "rufi-codex-"));
@@ -45,25 +45,49 @@ beforeEach(async () => {
   diagnostics = [];
   events = [];
   tokenGate = undefined;
-  toolCalls = [];
-  toolAnswer = () => ({ ok: true, text: '{"ok":true}' });
 });
 afterEach(async () => {
   await runtime?.close();
   runtime = undefined;
+  await new Promise((resolve) => {
+    if (mcp) mcp.close(resolve);
+    else resolve(null);
+  });
+  mcp = undefined;
 });
 
 const TOOLS: AgentTools = {
-  namespace: "rufi",
-  specs: [
-    {
-      name: "get_overview",
-      description: "The record at a glance.",
-      shown: () => "Read your overview",
-      inputSchema: { type: "object", properties: {} },
-    },
-  ],
+  server: "rufi",
+  specs: [{ name: "get_overview", shown: () => "Read your overview" }],
 };
+
+/**
+ * A stand-in for Rufi's MCP server that answers the session's start with
+ * `status`; returns the thread settings' tools for it.
+ */
+async function mcpServer(status = 200) {
+  mcp = createServer((request, response) => {
+    request.resume();
+    request.on("end", () => {
+      response.writeHead(status, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          result: {
+            protocolVersion: "2025-06-18",
+            capabilities: { tools: {} },
+            serverInfo: { name: "rufi", version: "1.0.0" },
+          },
+        }),
+      );
+    });
+  });
+  const server = mcp;
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  return { url: `http://127.0.0.1:${String(port)}/mcp`, key: "key-1" };
+}
 
 /*
  * Timing: a busy CI machine can be slow by a second or more. So a deadline the
@@ -109,13 +133,7 @@ function start(
       toolMs: 200,
       ...deadlines,
     },
-    host: {
-      onEvent: (event) => events.push(event),
-      callTool: async (_threadId, _turnId, name, input) => {
-        toolCalls.push([name, input]);
-        return toolAnswer(name);
-      },
-    },
+    host: { onEvent: (event) => events.push(event) },
     log: (event, fields) => diagnostics.push({ event, ...fields }),
   });
   return runtime;
@@ -385,8 +403,9 @@ describe("a turn", () => {
     ]);
   });
 
-  it("starts a thread with the model, full access, Rufi's instructions and tools", async () => {
-    await start({}, TOOLS).startThread(SETTINGS);
+  it("starts a thread with the model, full access, Rufi's instructions, and Rufi's MCP server with the thread's key", async () => {
+    const tools = await mcpServer();
+    await start({}, TOOLS).startThread({ ...SETTINGS, tools });
     expect(await sent("thread/start")).toEqual([
       {
         model: "gpt-6.1-sol",
@@ -394,23 +413,30 @@ describe("a turn", () => {
         approvalPolicy: "never",
         sandbox: "danger-full-access",
         developerInstructions: "Be careful.",
-        dynamicTools: [
-          {
-            type: "namespace",
-            name: "rufi",
-            description: "Rufi: the user's health record.",
-            tools: [
-              {
-                type: "function",
-                name: "get_overview",
-                description: "The record at a glance.",
-                inputSchema: { type: "object", properties: {} },
-              },
-            ],
+        config: {
+          mcp_servers: {
+            rufi: {
+              url: tools.url,
+              http_headers: { Authorization: "Bearer key-1" },
+              required: true,
+              default_tools_approval_mode: "approve",
+              startup_timeout_sec: 10,
+              tool_timeout_sec: 11,
+              tool_input_schema_max_bytes: 65_536,
+            },
           },
-        ],
+        },
       },
     ]);
+  });
+
+  it("says plainly when Rufi's tools didn't start for a thread", async () => {
+    const tools = await mcpServer(401);
+    await expect(
+      start({}, TOOLS).startThread({ ...SETTINGS, tools }),
+    ).rejects.toThrow(
+      "Rufi's tools didn't start for the AI, so it can't reply now. Try again; if it keeps happening, restart Rufi.",
+    );
   });
 
   it("starts a reply with Rufi's id, its parts in order and the effort", async () => {
@@ -511,7 +537,7 @@ describe("a turn", () => {
     ]);
   });
 
-  it("declines approvals, answers a tool call that isn't this turn's, and refuses other requests", async () => {
+  it("declines approvals and refuses other requests, also a dynamic tool call", async () => {
     const thread = await ask(
       start({
         ask: [
@@ -529,13 +555,11 @@ describe("a turn", () => {
     expect(replies.map((entry) => entry.reply)).toEqual([
       { decision: "decline" },
       {
-        contentItems: [
-          {
-            type: "inputText",
-            text: '{"ok":false,"error":"No turn is running."}',
-          },
-        ],
-        success: false,
+        id: 1001,
+        error: {
+          code: -32601,
+          message: "Rufi doesn't handle item/tool/call.",
+        },
       },
       {
         id: 1002,
@@ -988,117 +1012,48 @@ describe("token renewal", () => {
     expect(await pids()).toHaveLength(1);
   });
 
-  it("gives no tools again when a thread is resumed (Codex keeps them)", async () => {
+  it("gives a resumed thread Rufi's MCP server again (Codex keeps none)", async () => {
+    const tools = await mcpServer();
     const agent = start({ threads: { "old-1": {} } }, TOOLS);
-    await agent.resumeThread("old-1", SETTINGS);
+    await agent.resumeThread("old-1", { ...SETTINGS, tools });
     const [resumed] = await sent("thread/resume");
-    expect(resumed).toMatchObject({ developerInstructions: "Be careful." });
-    expect(resumed).not.toHaveProperty("dynamicTools");
+    expect(resumed).toMatchObject({
+      developerInstructions: "Be careful.",
+      config: { mcp_servers: { rufi: { url: tools.url } } },
+    });
   });
 });
 
-describe("Rufi's tools", () => {
-  const overview = { namespace: "rufi", tool: "get_overview", arguments: {} };
-  const replies = async () =>
-    (await entries())
-      .filter((entry) => entry.answered === "item/tool/call")
-      .map((entry) => entry.reply);
-
-  it("runs a call, answers with its result, and shows it", async () => {
-    const thread = await ask(start({ calls: [overview] }, TOOLS));
-    expect(await ended(thread)).toEqual({ status: "completed" });
-    expect(toolCalls).toEqual([["get_overview", {}]]);
-    expect(await replies()).toEqual([
-      {
-        contentItems: [{ type: "inputText", text: '{"ok":true}' }],
-        success: true,
-      },
-    ]);
-    expect(
-      seen(thread)
-        .filter((e) => e.type === "activity" && e.activity === "tool")
-        .map((e) => e.type === "activity" && [e.title, e.status]),
-    ).toEqual([
-      ["Read your overview", "running"],
-      ["Read your overview", "done"],
-    ]);
-  });
-
-  it("passes a call outside Rufi's namespace on as an unknown tool, never an RPC error", async () => {
-    toolAnswer = (name) => ({
-      ok: false,
-      text: JSON.stringify({ ok: false, error: `no ${name}` }),
-    });
-    const thread = await ask(
-      start({ calls: [{ ...overview, namespace: "other" }] }, TOOLS),
+describe("the reply Rufi's tools are for", () => {
+  it("is the running reply's turn, and none once Stop is pressed or it ended", async () => {
+    const agent = start({ ignoreInterrupt: true }, undefined, GIVE_UP);
+    const thread = await ask(agent, "hang");
+    await until(() => Promise.resolve(agent.running(thread)));
+    const started = seen(thread).find((e) => e.type === "turnStarted");
+    expect(agent.activeTurn(thread)).toBe(
+      started?.type === "turnStarted" ? started.turnId : "none",
     );
+    const stopping = agent.stop(thread);
+    // From the moment Stop is pressed, before Codex has stopped it.
+    expect(agent.running(thread)).toBe(true);
+    expect(agent.activeTurn(thread)).toBeUndefined();
+    await stopping;
     await ended(thread);
-    expect(toolCalls).toEqual([["other.get_overview", {}]]);
-    expect(await replies()).toEqual([
-      {
-        contentItems: [
-          {
-            type: "inputText",
-            text: '{"ok":false,"error":"no other.get_overview"}',
-          },
-        ],
-        success: false,
-      },
-    ]);
+    expect(agent.activeTurn(thread)).toBeUndefined();
   });
 
-  it("answers a tool that takes too long within the deadline", async () => {
-    let answered = false;
-    toolAnswer = async () => {
-      await sleep(2_000);
-      answered = true;
-      return { ok: true, text: "late" };
-    };
-    const thread = await ask(start({ calls: [overview] }, TOOLS));
-    expect(await ended(thread)).toEqual({ status: "completed" });
-    expect(answered).toBe(false);
-    expect(await replies()).toEqual([
-      {
-        contentItems: [
-          {
-            type: "inputText",
-            text: '{"ok":false,"error":"get_overview took too long."}',
-          },
-        ],
-        success: false,
-      },
-    ]);
-  });
-
-  it("stops the turn when the tools say so", async () => {
-    toolAnswer = () => ({
-      ok: false,
-      text: "{}",
-      stopTurn: "The AI kept making requests Rufi couldn't accept.",
+  it("ends a reply Rufi stops with the reason Rufi gives", async () => {
+    const agent = start();
+    const thread = await ask(agent, "hang");
+    await until(() => Promise.resolve(agent.running(thread)));
+    await agent.stop(thread, undefined, {
+      status: "failed",
+      text: "The AI kept making requests Rufi couldn't accept.",
     });
-    const thread = await ask(start({ calls: [overview] }, TOOLS), "hang");
     expect(await ended(thread)).toEqual({
       status: "failed",
       text: "The AI kept making requests Rufi couldn't accept.",
     });
-    expect(await sent("turn/interrupt")).toHaveLength(1);
-  });
-
-  it("doesn't run a tool for a turn after its Stop", async () => {
-    toolAnswer = async () => {
-      await sleep(100);
-      return { ok: true, text: "{}" };
-    };
-    const agent = start({ calls: [overview, overview] }, TOOLS);
-    const thread = await ask(agent, "hang");
-    await until(() => Promise.resolve(toolCalls.length === 1));
-    await agent.stop(thread);
-    await ended(thread);
-    await sleep(150);
-    expect(toolCalls).toHaveLength(1);
-    expect(
-      seen(thread).filter((e) => e.type === "activity" && e.status === "done"),
-    ).toEqual([]);
   });
 });
 
@@ -1186,30 +1141,23 @@ describe("Codex's items and endings in Rufi's words", () => {
   });
 
   it("says what Rufi's own tool did in its own words, with no detail; another tool gets its arguments", () => {
-    const call = (namespace: string, args: unknown) =>
+    const call = (server: string, args: unknown) =>
       activityOf(
         {
-          type: "dynamicToolCall",
+          type: "mcpToolCall",
           id: "t",
-          namespace,
+          server,
           tool: "save_changes",
           arguments: args,
           status: "completed",
-          contentItems: null,
-          success: true,
+          result: null,
+          error: null,
           durationMs: 1,
         } as never,
         true,
         {
-          namespace: "rufi",
-          specs: [
-            {
-              name: "save_changes",
-              description: "Saves changes.",
-              shown: () => "Save to your record",
-              inputSchema: {},
-            },
-          ],
+          server: "rufi",
+          specs: [{ name: "save_changes", shown: () => "Save to your record" }],
         },
       );
     const changes = { changes: [{ kind: "symptom", action: "add" }] };

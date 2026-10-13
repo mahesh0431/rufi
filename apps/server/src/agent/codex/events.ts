@@ -68,11 +68,10 @@ export function activityOf(
     case "agentMessage":
     case "reasoning":
       return undefined;
-    case "dynamicToolCall": {
-      const status =
-        item.success === false ? "failed" : statusOf(item.status, ended);
+    case "mcpToolCall": {
+      const status = statusOf(item.status, ended);
       const rufi =
-        item.namespace === tools?.namespace
+        item.server === tools?.server
           ? tools.specs.find((spec) => spec.name === item.tool)
           : undefined;
       // Rufi's own tools say what they did; their input stays out of the
@@ -81,12 +80,12 @@ export function activityOf(
         ? line("tool", rufi.shown(item.arguments), undefined, status)
         : line("tool", "Used a tool", argumentsOf(item.arguments), status);
     }
-    case "mcpToolCall":
+    case "dynamicToolCall":
       return line(
         "tool",
         "Used a tool",
         argumentsOf(item.arguments),
-        statusOf(item.status, ended),
+        item.success === false ? "failed" : statusOf(item.status, ended),
       );
     case "commandExecution":
       return line(

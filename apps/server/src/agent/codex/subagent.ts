@@ -4,20 +4,19 @@
 // thread is ephemeral (nothing saved), has Rufi's instructions in place of
 // Codex's, no environment (no shell, files or patches), no network, no
 // sub-agents, web search, goals, skills or questions to the user, and exactly
-// the tools the task gives (on a code-mode model, inside Codex's exec, with
-// the few tools Codex always adds there). Rufi checks the thread's model,
+// the tools the task gives, from the MCP server and key the task names (on a
+// code-mode model, inside Codex's exec, with the few tools Codex always adds
+// there and its helpers for MCP resources). Rufi checks the thread's model,
 // effort and access when it starts, and ends the turn as failed if Codex
 // shows any item Rufi didn't allow. The offline contract test
 // (subagent.test.ts) proves the complete set of tools each model gets on the
 // pinned Codex.
-import { setTimeout as sleep } from "node:timers/promises";
 import { join } from "node:path";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import type {
   RunSubAgent,
   SubAgentOutcome,
   SubAgentTask,
-  ToolAnswer,
   TurnEnd,
 } from "../runtime.ts";
 import {
@@ -27,14 +26,11 @@ import {
   type CodexCommand,
   type Deadlines,
 } from "./appserver.ts";
-import { dynamicTools } from "./codex.ts";
 import { endOf } from "./events.ts";
 import type { AccountRateLimitsUpdatedNotification } from "./protocol/v2/AccountRateLimitsUpdatedNotification.ts";
 import type { RateLimitSnapshot } from "./protocol/v2/RateLimitSnapshot.ts";
 import type { ConfigReadResponse } from "./protocol/v2/ConfigReadResponse.ts";
 import type { ConfigRequirementsReadResponse } from "./protocol/v2/ConfigRequirementsReadResponse.ts";
-import type { DynamicToolCallParams } from "./protocol/v2/DynamicToolCallParams.ts";
-import type { DynamicToolCallResponse } from "./protocol/v2/DynamicToolCallResponse.ts";
 import type { ItemCompletedNotification } from "./protocol/v2/ItemCompletedNotification.ts";
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
 import type { ThreadStartParams } from "./protocol/v2/ThreadStartParams.ts";
@@ -44,7 +40,7 @@ import type { TurnCompletedNotification } from "./protocol/v2/TurnCompletedNotif
 import type { TurnStartedNotification } from "./protocol/v2/TurnStartedNotification.ts";
 import type { TurnStartResponse } from "./protocol/v2/TurnStartResponse.ts";
 import { RpcError } from "./rpc.ts";
-import { prepareCodexHome } from "./settings.ts";
+import { mcpServers, prepareCodexHome, RUFI_SERVER } from "./settings.ts";
 
 export interface SubAgentDeps {
   /** Rufi's data folder; the runner uses `sub-agents/` inside it. */
@@ -71,6 +67,17 @@ export const SUB_AGENT_MODELS = [
   { id: "gpt-6.1-sol", name: "GPT-6.1-Sol", route: "code" },
   { id: "gpt-5.5", name: "GPT-5.5", route: "direct" },
 ] as const;
+
+/**
+ * Codex's helpers for MCP resources, which it adds beside any MCP server and
+ * shows as calls on its own server "codex" (0.159.3). They reach only the
+ * reader's endpoint, which offers no resources.
+ */
+const RESOURCE_HELPERS = [
+  "list_mcp_resources",
+  "list_mcp_resource_templates",
+  "read_mcp_resource",
+];
 
 /** Codex's id for a tool call made from a script in `exec` (0.159.3). */
 const VIA_EXEC = "exec-";
@@ -107,7 +114,7 @@ const LOCKED_CONFIG = {
  */
 function refusal(
   item: ThreadItem,
-  namespace: string,
+  names: readonly string[],
   route: "direct" | "code",
 ): string | undefined {
   if (item.type === "agentMessage" && item.questions !== null) {
@@ -118,8 +125,9 @@ function refusal(
     item.type === "agentMessage" ||
     item.type === "reasoning" ||
     item.type === "contextCompaction" ||
-    (item.type === "dynamicToolCall" &&
-      item.namespace === namespace &&
+    (item.type === "mcpToolCall" &&
+      ((item.server === RUFI_SERVER && names.includes(item.tool)) ||
+        (item.server === "codex" && RESOURCE_HELPERS.includes(item.tool))) &&
       (route === "code" || !item.id.startsWith(VIA_EXEC)))
   ) {
     return undefined;
@@ -198,52 +206,8 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
       if (stopped) interrupt(stopped);
     };
 
-    const callTool = async (
-      call: DynamicToolCallParams,
-    ): Promise<DynamicToolCallResponse> => {
-      const refuse = (text: string): DynamicToolCallResponse => ({
-        contentItems: [{ type: "inputText", text }],
-        success: false,
-      });
-      if (
-        call.threadId !== threadId ||
-        call.turnId !== turnId ||
-        call.namespace !== task.tools.namespace ||
-        (chosen.route === "direct" && call.callId.startsWith(VIA_EXEC)) ||
-        stopped
-      ) {
-        return refuse(
-          JSON.stringify({ ok: false, error: "No such tool here." }),
-        );
-      }
-      const slow: ToolAnswer = {
-        ok: false,
-        text: JSON.stringify({
-          ok: false,
-          error: `${call.tool} took too long.`,
-        }),
-      };
-      const answer = await Promise.race([
-        task.callTool(call.tool, call.arguments, call.callId),
-        sleep(deadlines.toolMs, slow, { ref: false }),
-      ]);
-      if (answer.stopTurn !== undefined) {
-        stop({ status: "failed", text: answer.stopTurn });
-      }
-      return {
-        contentItems: [
-          { type: "inputText", text: answer.text },
-          ...(answer.images ?? []).map((imageUrl) => ({
-            type: "inputImage" as const,
-            imageUrl,
-          })),
-        ],
-        success: answer.ok,
-      };
-    };
-
     const onItem = (item: ThreadItem, completed: boolean) => {
-      const refused = refusal(item, task.tools.namespace, chosen.route);
+      const refused = refusal(item, task.tools.names, chosen.route);
       if (refused !== undefined) {
         log("subagent.unexpected", { item: item.type });
         stop({ status: "failed", reason: "provider_failed", text: refused });
@@ -276,10 +240,7 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
         deadlines,
         ...(signal && { signal }),
         handlers: {
-          request: async (method, params) => {
-            if (method === "item/tool/call") {
-              return callTool(params as DynamicToolCallParams);
-            }
+          request: (method) => {
             throw new RpcError(-32601, `Rufi doesn't handle ${method}.`);
           },
           notification: (method, params) => {
@@ -368,8 +329,13 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
         environments: [],
         baseInstructions: task.instructions,
         developerInstructions: "",
-        config: { ...LOCKED_CONFIG, model_reasoning_effort: task.effort },
-        dynamicTools: dynamicTools(task.tools),
+        config: {
+          ...LOCKED_CONFIG,
+          model_reasoning_effort: task.effort,
+          // Its two tools at once, as the reader always had them: no search
+          // for them first, also after a compaction.
+          mcp_servers: mcpServers(task.tools, deadlines.toolMs, true),
+        },
       };
       const response = await app.rpc.request<ThreadStartResponse>(
         "thread/start",

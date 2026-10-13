@@ -48,6 +48,7 @@ import {
   noEffectLogs,
 } from "../platform/logs.ts";
 import { runningLink, startCore } from "../server/core.ts";
+import { mcpEndpoint, mcpKeys, serveMcp } from "../server/mcp.ts";
 import { subAgentRunner } from "../agent/codex/subagent.ts";
 import { appChannel, closeAppChannel } from "./app.ts";
 
@@ -431,9 +432,15 @@ const askCommand = (question: string, person: string | undefined) =>
       "../../package.json",
     ) as { version: string };
     const ended = Promise.withResolvers<TurnEnd>();
-    let caller:
-      | { turnId: string; call: ReturnType<typeof tools.forTurn> }
-      | undefined;
+    let threadId: string | undefined;
+    // Rufi's tools over MCP, on a listener of the command's own.
+    const keys = mcpKeys();
+    let port = 0;
+    const listening = yield* Effect.acquireRelease(
+      run(() => serveMcp(mcpEndpoint({ keys, port: () => port, log }))),
+      (server) => Effect.promise(() => server.close()),
+    );
+    port = listening.port;
     const agent = yield* Effect.acquireRelease(
       Effect.sync(() =>
         codexRuntime({
@@ -442,17 +449,11 @@ const askCommand = (question: string, person: string | undefined) =>
           env: childEnvironment(),
           token: (validForMs) => accessToken(deps, validForMs),
           version,
-          tools: { namespace: tools.namespace, specs: tools.specs },
+          tools: { server: tools.server, specs: tools.specs },
           host: {
             onEvent: (event) => {
               show(event);
               if (event.type === "turnEnded") ended.resolve(event.end);
-            },
-            callTool: (_threadId, turnId, name, input) => {
-              if (caller?.turnId !== turnId) {
-                caller = { turnId, call: tools.forTurn() };
-              }
-              return caller.call(name, input);
             },
           },
           log,
@@ -460,8 +461,31 @@ const askCommand = (question: string, person: string | undefined) =>
       ),
       (runtime) => Effect.promise(() => runtime.close()),
     );
+    let caller:
+      | { turnId: string; call: ReturnType<typeof tools.forTurn> }
+      | undefined;
+    // The thread's key: its calls run only for its running reply.
+    const key = keys.issue({
+      tools: tools.specs,
+      call: (call) => {
+        if (
+          call.threadId === undefined ||
+          call.threadId !== threadId ||
+          call.turnId === undefined ||
+          agent.activeTurn(call.threadId) !== call.turnId
+        ) {
+          return Promise.resolve({
+            ok: false,
+            text: JSON.stringify({ ok: false, error: "No reply is running." }),
+          });
+        }
+        if (caller?.turnId !== call.turnId) {
+          caller = { turnId: call.turnId, call: tools.forTurn() };
+        }
+        return caller.call(call.tool, call.input, call.callId);
+      },
+    });
     const op = new AbortController();
-    let threadId: string | undefined;
     const started = Date.now();
     const end = yield* agentCall(
       async () => {
@@ -469,6 +493,7 @@ const askCommand = (question: string, person: string | undefined) =>
           {
             model: models[0] ?? "",
             instructions: `${safetyInstructions(undefined)}\n\n${tools.instructions}`,
+            tools: { url: `http://127.0.0.1:${String(port)}/mcp`, key },
           },
           op.signal,
         );

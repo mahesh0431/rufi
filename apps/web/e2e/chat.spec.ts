@@ -857,7 +857,6 @@ test("a click outside the panel steps back to the bar and keeps what you typed; 
     scenario: {
       calls: [
         {
-          namespace: "rufi",
           tool: "get_records",
           arguments: { kind: "result", from: "2026-08", to: "2026-08" },
         },
@@ -944,7 +943,6 @@ test("a save to the record shows Rufi's receipt, also after a reload", async ({
     scenario: {
       calls: [
         {
-          namespace: "rufi",
           tool: "save_changes",
           arguments: {
             changes: [
@@ -1170,7 +1168,6 @@ test("a save made in another window while this one's connection was down shows o
     scenario: {
       calls: [
         {
-          namespace: "rufi",
           tool: "save_changes",
           arguments: {
             changes: [
@@ -1220,7 +1217,6 @@ test("Based on, under an answer once it ended, opens How and Used; small talk ha
     scenario: {
       calls: [
         {
-          namespace: "rufi",
           tool: "get_records",
           arguments: { kind: "result", from: "2026-08", to: "2026-08" },
         },
@@ -1288,7 +1284,6 @@ test("activity lines keep their sign beside a long detail; Rufi's own tool lines
     scenario: {
       calls: [
         {
-          namespace: "rufi",
           tool: "save_changes",
           arguments: {
             changes: [
@@ -1302,7 +1297,7 @@ test("activity lines keep their sign beside a long detail; Rufi's own tool lines
           },
         },
         {
-          namespace: "elsewhere",
+          server: "elsewhere",
           tool: "lookup",
           arguments: { query: "headache ".repeat(40) },
         },

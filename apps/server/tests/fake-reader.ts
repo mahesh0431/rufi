@@ -1,22 +1,27 @@
 // A scripted stand-in for the reader sub-agent, for tests of what Rufi does
 // around a reading: each run plays the next script with the reader's real
-// tools (get_page, save_page) and ends as the script says. The real runner
-// on the real Codex is proved in agent/codex/subagent.test.ts.
+// tools (get_page, save_page), through Rufi's MCP server with the run's key
+// as the real reader does, and ends as the script says. The real runner on
+// the real Codex is proved in agent/codex/subagent.test.ts.
 import type {
   RunSubAgent,
   SubAgentOutcome,
   SubAgentTask,
-  ToolAnswer,
 } from "../src/agent/runtime.ts";
+import { callTool } from "./mcp-client.ts";
+
+/** A tool's answer as the reader gets it: its text, parsed. */
+interface Answer {
+  ok: boolean;
+  text: string;
+  json: unknown;
+}
 
 interface ReaderTurn {
   /** Calls a reader tool; its answer, parsed. */
-  call: (
-    name: string,
-    input: unknown,
-  ) => Promise<ToolAnswer & { json: unknown }>;
+  call: (name: string, input: unknown) => Promise<Answer>;
   look: (page: number) => Promise<unknown>;
-  save: (page: number, entry: unknown, note?: string) => Promise<ToolAnswer>;
+  save: (page: number, entry: unknown, note?: string) => Promise<Answer>;
   task: SubAgentTask;
   signal: AbortSignal | undefined;
 }
@@ -33,13 +38,35 @@ export function scriptedReader(scripts: Script[]) {
     runs.push(task);
     const script = scripts.shift();
     if (!script) throw new Error("No script left for this run.");
-    const call = async (name: string, input: unknown) => {
-      const answer = await task.callTool(
-        name,
-        input,
-        `call-${String(Math.random())}`,
+    const call = async (name: string, input: unknown): Promise<Answer> => {
+      const { status, result } = await callTool(
+        {
+          url: task.tools.url,
+          http_headers: { Authorization: `Bearer ${task.tools.key}` },
+        },
+        {
+          name,
+          arguments: input,
+          callId: `call-${String(Math.random())}`,
+          threadId: "fake-reader",
+          turnId: "fake-reader-turn",
+        },
       );
-      return { ...answer, json: JSON.parse(answer.text) as unknown };
+      // A key that opens nothing any more: as Codex reports it to the model.
+      if (status !== 200 || !result) {
+        const text = JSON.stringify({
+          ok: false,
+          error: `HTTP ${String(status)}`,
+        });
+        return { ok: false, text, json: JSON.parse(text) as unknown };
+      }
+      const [first] = result["content"] as { text: string }[];
+      const text = first?.text ?? "";
+      return {
+        ok: result["isError"] !== true,
+        text,
+        json: JSON.parse(text) as unknown,
+      };
     };
     const turn: ReaderTurn = {
       call,

@@ -33,6 +33,7 @@ import { childEnvironment, rufiHome } from "../src/platform/config.ts";
 import { Secrets, secretsLayer } from "../src/platform/keychain.ts";
 import { diagnostics } from "../src/platform/logs.ts";
 import { reader, READER_SETTING, readerChoice } from "../src/server/reader.ts";
+import { mcpEndpoint, mcpKeys, serveMcp } from "../src/server/mcp.ts";
 import { drawn, photo, scan } from "../tests/pack/images.ts";
 import { scanPdf, textPdf } from "../tests/pack/pdf.ts";
 import {
@@ -295,6 +296,11 @@ async function readOne(item: Item) {
   const person = await transcripts.addFirstPerson("Asha Fictional");
   const reads = readings(store);
   const { log } = diagnostics(home);
+  // Rufi's MCP server for the reader's tools, as the core serves it.
+  const keys = mcpKeys();
+  let port = 0;
+  const served = await serveMcp(mcpEndpoint({ keys, port: () => port, log }));
+  port = served.port;
   const running = reader({
     readings: reads,
     book: notebook(store),
@@ -314,6 +320,7 @@ async function readOne(item: Item) {
     }),
     signedIn: () => Promise.resolve(true),
     choice: () => Promise.resolve(choice),
+    mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp/reader`, keys },
     log,
   });
   const { added } = await documents(store, home, undefined, reads).add(
@@ -336,6 +343,7 @@ async function readOne(item: Item) {
     await sleep(2_000);
   }
   await running.close();
+  await served.close();
   try {
     return score(item, store, documentId, home);
   } finally {
