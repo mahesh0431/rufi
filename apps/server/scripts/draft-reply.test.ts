@@ -24,6 +24,7 @@ describe("a reply about a value only in a document's drafts", () => {
   it.each([
     "The Lotus report shows LDL 109 mg/dL. There are no unsaved drafts.",
     "Your last LDL was 109 mg/dL from the Lotus report. Other results are not yet saved.",
+    "The report has a draft LDL result of 109 mg/dL. That value, now saved, is High.",
   ])("leaves ambiguous draft wording for a person's verdict: %s", (reply) => {
     expect(saysDraftNotSaved(reply)).toBeUndefined();
   });

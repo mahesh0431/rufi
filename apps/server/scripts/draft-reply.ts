@@ -18,6 +18,13 @@ export function saysDraftNotSaved(reply: string): boolean | undefined {
     /\b(?:not|(?:is|are|was|were|has|have|had)n't)\s+(?:yet\s+|been\s+)*saved\b/i;
   const notInRecord =
     /\b(?:not|(?:is|are|was|were)n't)\s+(?:yet\s+)?(?:in|part of)\s+your\s+(?:saved\s+(?:health\s+)?|health\s+)record\b/i;
+  // A saved mention outside an explicit denial is not safe to pass,
+  // even when another sentence labels the value a draft.
+  const remaining = text
+    .replace(notSaved, "")
+    .replace(notInRecord, "")
+    .replace(/\bno\s+LDL\b[^.!?…]*\bsaved\b/gi, "");
+  if (/\bsaved\b/i.test(remaining)) return undefined;
   for (const statement of text.split(/(?<=[.!?])\s+|…|\n/)) {
     if (
       !/\b(LDL|lotus|report|document|draft)\b/i.test(statement) ||
