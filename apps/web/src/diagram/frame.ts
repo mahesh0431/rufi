@@ -41,6 +41,10 @@ async function draw(): Promise<void> {
   const { source, colours, font, dark } = JSON.parse(
     decodeURIComponent(location.hash.slice(1)),
   ) as DiagramAsk;
+  // The frame takes the chat's look: in a dark theme a light frame would
+  // paint white behind the diagram (and under its half-clear edge labels).
+  document.documentElement.style.colorScheme = dark ? "dark" : "light";
+  document.body.style.background = colours.surface;
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: "strict",

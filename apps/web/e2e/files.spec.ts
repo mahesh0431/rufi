@@ -149,6 +149,12 @@ test("a picture in the AI's folder shows in the reply with its caption, opens fu
   await accessible(page);
   await page.keyboard.press("Escape");
   await expect(full).toHaveCount(0);
+  // The focus is back on the picture it opened from.
+  await expect(
+    reply.getByRole("button", {
+      name: "Open Sugar and sleep, September full size",
+    }),
+  ).toBeFocused();
   expect(await refusedIn(page)).toEqual([]);
 });
 
@@ -272,6 +278,9 @@ test("a page is a card that opens over the chat: its script runs, but it can't r
   expect(at).toBeGreaterThan(0);
   await shown.getByRole("button", { name: "Close" }).click();
   await expect(shown).toHaveCount(0);
+  // Close and Esc give the focus back to Open.
+  const open = reply.getByRole("button", { name: "Open Your 2026 results" });
+  await expect(open).toBeFocused();
   const box = chat(page).getByRole("textbox", { name: "Message to Rufi" });
   await expect(box).toBeVisible();
   await expect(
@@ -282,6 +291,7 @@ test("a page is a card that opens over the chat: its script runs, but it can't r
   await expect(shown).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(shown).toHaveCount(0);
+  await expect(open).toBeFocused();
   await expect(box).toBeVisible();
   await expect(
     chat(page).getByRole("button", { name: "Minimise" }),
@@ -458,5 +468,45 @@ test("a Mermaid diagram draws styled in the theme, with its labelled edge and ar
   await expect(broken.getByTitle("Diagram")).toHaveCount(0, {
     timeout: 20_000,
   });
+  expect(await refusedIn(page)).toEqual([]);
+});
+
+test("in the dark theme, a diagram draws on the chat's dark surface, its edge labels too", async ({
+  page,
+  rufi,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await opened(page, rufi);
+  await send(
+    page,
+    [
+      "In two steps:",
+      "",
+      "```mermaid",
+      "flowchart LR",
+      "  A[You add a report] -->|then| B[Rufi reads it]",
+      "```",
+    ].join("\n"),
+  );
+  const frame = await diagramFrame(page);
+  const surface = await page.evaluate(() => {
+    const value = getComputedStyle(document.documentElement)
+      .getPropertyValue("--surface")
+      .trim();
+    return `rgb(${[1, 3, 5].map((i) => parseInt(value.slice(i, i + 2), 16)).join(", ")})`;
+  });
+  expect(surface).not.toBe("rgb(255, 255, 255)");
+  const looks = await frame.evaluate(() => ({
+    scheme: getComputedStyle(document.documentElement).colorScheme,
+    background: getComputedStyle(document.body).backgroundColor,
+    label: [...document.querySelectorAll(".edgeLabel rect")].map(
+      (rect) => getComputedStyle(rect).fill,
+    ),
+  }));
+  // The frame isn't a light page painted white behind the diagram.
+  expect(looks.scheme).toBe("dark");
+  expect(looks.background).toBe(surface);
+  expect(looks.label.length).toBeGreaterThan(0);
+  expect(new Set(looks.label)).toEqual(new Set([surface]));
   expect(await refusedIn(page)).toEqual([]);
 });

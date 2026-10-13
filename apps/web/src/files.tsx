@@ -91,6 +91,8 @@ export function Picture({ path, caption }: { path: string; caption: string }) {
   // A picture that didn't load (gone meanwhile, or an old address) is asked
   // for again, once.
   const reloaded = useRef(false);
+  // Closed, the focus goes back to the picture it opened from.
+  const opener = useRef<HTMLButtonElement>(null);
   if (file.isPending) return <Loading />;
   if (file.isError) {
     const problem = problemOf(file.error);
@@ -104,6 +106,7 @@ export function Picture({ path, caption }: { path: string; caption: string }) {
   return (
     <span className="my-1 block w-fit max-w-full">
       <button
+        ref={opener}
         type="button"
         aria-label={`Open ${caption === "" ? file.data.name : caption} full size`}
         onClick={() => {
@@ -137,7 +140,10 @@ export function Picture({ path, caption }: { path: string; caption: string }) {
         >
           <Dialog.Portal container={portals}>
             <Dialog.Backdrop className="fixed inset-0 z-40 bg-ink/60" />
-            <Dialog.Popup className="fixed inset-6 z-40 flex flex-col items-center justify-center gap-2 outline-none">
+            <Dialog.Popup
+              finalFocus={opener}
+              className="fixed inset-6 z-40 flex flex-col items-center justify-center gap-2 outline-none"
+            >
               <Dialog.Title className="sr-only">
                 {caption === "" ? file.data.name : caption}
               </Dialog.Title>
@@ -219,6 +225,8 @@ export function NativePicture({
  */
 export function PageCard({ path, title }: { path: string; title: string }) {
   const client = useQueryClient();
+  // Closed, the focus goes back to Open.
+  const opener = useRef<HTMLButtonElement>(null);
   const portals = useContext(Menus);
   // Asked when shown, so a page that is gone says so before it is opened.
   const file = useQuery(fileQuery(path));
@@ -242,6 +250,7 @@ export function PageCard({ path, title }: { path: string; title: string }) {
         </span>
       </span>
       <Button
+        ref={opener}
         icon={ExternalLink}
         busy={state === "opening" && "Opening…"}
         aria-label={`Open ${name}`}
@@ -272,7 +281,10 @@ export function PageCard({ path, title }: { path: string; title: string }) {
         >
           <Dialog.Portal container={portals}>
             <Dialog.Backdrop className="fixed inset-0 z-40 bg-ink/25" />
-            <Dialog.Popup className="fixed inset-4 z-40 flex flex-col overflow-hidden rounded-[14px] bg-surface shadow-menu outline-none">
+            <Dialog.Popup
+              finalFocus={opener}
+              className="fixed inset-4 z-40 flex flex-col overflow-hidden rounded-[14px] bg-surface shadow-menu outline-none"
+            >
               <div className="flex items-center gap-2 border-b border-line px-3 py-2">
                 <FileCode
                   size={18}
