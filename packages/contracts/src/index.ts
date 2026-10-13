@@ -103,6 +103,8 @@ export const ActivityKind = Schema.Literals([
   "sub_agent",
   /** The AI compacted its memory of the chat (shown only once done). */
   "compaction",
+  /** A picture the AI generated: the reply shows it; `detail` is its path. */
+  "picture",
   "other",
 ]);
 export type ActivityKind = typeof ActivityKind.Type;
@@ -137,7 +139,10 @@ export const Entry = Schema.Struct({
    */
   text: Schema.String,
   activity: Schema.NullOr(ActivityKind),
-  /** An activity's one short detail: the query, the search words, the command. */
+  /**
+   * An activity's one short detail: the query, the search words, the
+   * command; a picture's path, whole.
+   */
   detail: Schema.NullOr(Schema.String),
   status: Schema.NullOr(
     Schema.Literals(["running", "done", "failed", "stopped"]),
@@ -407,6 +412,17 @@ export const DataFolder = Schema.Struct({
   source: Schema.Literals(["default", "moved", "RUFI_HOME"]),
 });
 export type DataFolder = typeof DataFolder.Type;
+
+/**
+ * A file a reply shows (a picture or a page the AI made), found now: a
+ * short-lived address for that one file, and its name.
+ */
+export const ShownFile = Schema.Struct({
+  url: Schema.String,
+  name: Schema.String,
+  shape: Schema.Literals(["picture", "page"]),
+});
+export type ShownFile = typeof ShownFile.Type;
 
 /** The first step of the first run not done yet, or done. */
 export const FirstRunStep = Schema.Literals([

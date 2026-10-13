@@ -12,6 +12,8 @@ export type ActivityKind =
   | "file_change"
   | "sub_agent"
   | "compaction"
+  /** A picture the agent made; its detail is the file's path, whole. */
+  | "picture"
   | "other";
 
 /** Why a reply didn't complete, as a screen can act on it. */

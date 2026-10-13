@@ -453,6 +453,39 @@ it("upgrades a record of version 4 so a document can be deleted, every document 
   expect(after.pages).toEqual(before.pages);
 });
 
+it("upgrades a record of version 5 so a generated picture can be a line of the chat, every line kept as it was", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 5));
+  const lines = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return db
+        .prepare("SELECT * FROM transcript_entries ORDER BY rowid")
+        .all();
+    } finally {
+      db.close();
+    }
+  };
+  const before = lines();
+  expect(before.length).toBeGreaterThan(0);
+
+  (await openRecord(home)).close();
+
+  expect(lines()).toEqual(before);
+  const db = new DatabaseSync(path);
+  try {
+    const turn = db
+      .prepare("SELECT person_id, chat_id, id FROM turns LIMIT 1")
+      .get() as { person_id: string; chat_id: string; id: string };
+    db.prepare(
+      `INSERT INTO transcript_entries (id, person_id, chat_id, seq, turn_id, kind, text, activity, detail, status, revision, created_at, updated_at)
+       VALUES ('picture-1', ?, ?, 9999, ?, 'activity', 'Made a picture', 'picture', '/fictional/generated_images/t/c.png', 'done', 1, '2026-10-14T09:00:00Z', '2026-10-14T09:00:00Z')`,
+    ).run(turn.person_id, turn.chat_id, turn.id);
+  } finally {
+    db.close();
+  }
+});
+
 it.each([
   {
     record: "a record from a newer Rufi",

@@ -154,10 +154,33 @@ export function activityOf(
         undefined,
         statusOf(undefined, ended),
       );
+    case "imageGeneration": {
+      // A picture Codex generated and saved shows in the reply: its path is
+      // kept whole, never shortened like a detail.
+      const failed =
+        item.failure !== null || statusOf(item.status, ended) === "failed";
+      if (failed) {
+        return line("picture", "Couldn't make a picture", undefined, "failed");
+      }
+      if (!ended)
+        return line("picture", "Making a picture", undefined, "running");
+      return item.savedPath
+        ? {
+            activity: "picture",
+            title: "Made a picture",
+            detail: item.savedPath,
+            status: "done",
+          }
+        : line(
+            "picture",
+            "Made a picture Rufi couldn't keep",
+            undefined,
+            "done",
+          );
+    }
     case "hookPrompt":
     case "functionCallOutput":
     case "sleep":
-    case "imageGeneration":
     case "enteredReviewMode":
     case "exitedReviewMode":
       return cantDisplay(item.type, ended);

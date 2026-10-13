@@ -25,6 +25,7 @@
   --accent-ink: #1d4ed8; /* links and selected text */
   --danger: #b42318; /* the last step of a delete: its text and icon */
   --danger-soft: #fdecea; /* the last step of a delete: its fill */
+  --paper: #ffffff; /* behind a page the AI made: white in every theme, as pages are made */
   --edge: rgb(0 0 0 / 0.06); /* the hairline around floating panels */
   --shade: rgb(
     0 0 0 / 0.1
@@ -49,6 +50,7 @@
   --accent-ink: #adc9fc; /* AA on the Mac's dark sidebar material too */
   --danger: #f2a29a;
   --danger-soft: #3a2224;
+  --paper: #ffffff;
   --edge: rgb(255 255 255 / 0.08);
   --shade: rgb(0 0 0 / 0.45);
   --shade-menu: rgb(0 0 0 / 0.5);
@@ -76,6 +78,7 @@
   --color-accent-ink: var(--accent-ink);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
+  --color-paper: var(--paper);
   --shadow-sm: 0 1px 3px 0 var(--shade), 0 1px 2px -1px var(--shade);
   --shadow-float: 0 0 0 1px var(--edge), 0 8px 28px var(--shade);
   --shadow-menu: 0 0 0 1px var(--edge), 0 8px 28px var(--shade-menu);

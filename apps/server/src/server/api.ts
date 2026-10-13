@@ -58,6 +58,7 @@ import { errorCode, type Log } from "../platform/logs.ts";
 import { SUB_AGENT_MODELS } from "../agent/codex/subagent.ts";
 import { ChatRefusal, type Chat } from "./chat.ts";
 import { READER_SETTING, readerChoice } from "./reader.ts";
+import type { AiFiles } from "./files.ts";
 import { screen } from "./screens.ts";
 import { sameSecret, type Sessions } from "./session.ts";
 import type { SignInFlow } from "./signin.ts";
@@ -94,6 +95,8 @@ export interface ApiDeps {
   items: DraftItems;
   /** A document's pages as the reader saw them. */
   pages: Pages;
+  /** The pictures and pages the AI made, that replies show. */
+  files: AiFiles;
   /** The secret `pnpm start` shows to get a fresh link while Rufi runs. */
   launcher: string;
   /** A fresh single-use link that opens Rufi. */
@@ -136,8 +139,37 @@ const PING_MS = 15_000;
 /** Updates a screen may fall behind by before its stream is closed; it reconnects. */
 const BEHIND_MAX = 1_000;
 
-const CSP =
-  "default-src 'self'; img-src 'self' data: blob:; frame-src blob:; connect-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+/**
+ * The screens' policy: only Rufi's own code and styles. Frames: a document's
+ * original (a blob the page made), a page the AI made and a diagram, both
+ * from this origin and locked by their own policies below.
+ */
+const appCsp = (origin: string) =>
+  `default-src 'self'; img-src 'self' data: blob:; frame-src blob: ${origin}/files/ ${origin}${DIAGRAM}; connect-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`;
+
+/**
+ * A page the AI made, in place of the screens' policy (two policies would
+ * both apply): it runs in an opaque origin, framed or opened on its own, so
+ * it can't read Rufi's pages or an answer of its API. Self-contained: its
+ * own inline scripts, styles and data pictures, nothing remote, nothing
+ * sent out, and only Rufi's screens may frame it.
+ */
+const pageCsp = (origin: string) =>
+  `sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors ${origin}`;
+
+/**
+ * The diagram frame: Mermaid lays a diagram out with inline styles, which
+ * the screens' policy refuses, so it draws in a locked frame of its own
+ * that runs only Rufi's diagram script.
+ */
+const diagramCsp = (origin: string) =>
+  `sandbox allow-scripts; default-src 'none'; script-src ${origin}/assets/diagram/; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors ${origin}`;
+
+/** The diagram frame's page, among the built screens. */
+const DIAGRAM = "/diagram.html";
+
+/** What a page that is gone says, in its frame. */
+const GONE_PAGE = `<!doctype html><html lang="en"><meta charset="utf-8"><title>File not found</title><body style="font:14px/1.5 -apple-system,sans-serif;margin:24px"><p>This file is no longer in the AI's folder.</p></body></html>`;
 const FORWARDING = [
   "forwarded",
   "x-forwarded-for",
@@ -178,7 +210,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
 
   // Every response: no framing, no sniffing, no referrer, no caching of API data.
   app.use("*", async (c, next) => {
-    c.header("Content-Security-Policy", CSP);
+    c.header("Content-Security-Policy", appCsp(origin()));
     c.header("X-Content-Type-Options", "nosniff");
     c.header("Referrer-Policy", "no-referrer");
     c.header("Cross-Origin-Opener-Policy", "same-origin");
@@ -455,6 +487,24 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     c.header("Content-Type", "application/zip");
     c.header("Content-Disposition", `attachment; filename="${made.name}"`);
     return c.body(new Uint8Array(made.bytes));
+  });
+
+  // A file a reply shows: a short-lived address for that one file.
+  app.get("/api/files", async (c) => {
+    const granted = await deps.files.grant(c.req.query("path") ?? "");
+    if ("refused" in granted) {
+      throw new HttpError(403, "Rufi shows only files in the AI's folder.");
+    }
+    if ("missing" in granted) {
+      throw new HttpError(404, "This file is no longer in the AI's folder.", {
+        missing: true,
+      });
+    }
+    return c.json({
+      url: `/files/${granted.token}/${encodeURIComponent(granted.file.name)}`,
+      name: granted.file.name,
+      shape: granted.file.shape,
+    });
   });
 
   app.get("/api/models", async (c) => {
@@ -853,6 +903,32 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     });
   });
 
+  // A file a reply shows, by its address from /api/files; checked again now.
+  // Never cached as unchanging: a reply shows the file as it is now.
+  app.get("/files/:token/:name", async (c) => {
+    const found = await deps.files.open(c.req.param("token"));
+    if (found === undefined || "refused" in found) {
+      throw new HttpError(404, "Not found.");
+    }
+    c.header("Cache-Control", "no-store");
+    c.header("Cross-Origin-Resource-Policy", "same-origin");
+    if ("missing" in found) {
+      // The file went between the check and this load: a page's frame says so.
+      c.header("Content-Security-Policy", pageCsp(origin()));
+      return c.html(GONE_PAGE, 404);
+    }
+    const { path, type, shape } = found.found;
+    const bytes = await readFile(path).catch((error: unknown) => {
+      deps.log("api.failed", { error: errorCode(error) });
+      throw new HttpError(404, "Not found.");
+    });
+    if (shape === "page") {
+      c.header("Content-Security-Policy", pageCsp(origin()));
+    }
+    c.header("Content-Type", type);
+    return c.body(new Uint8Array(bytes));
+  });
+
   // The screens: every page path that isn't the API.
   app.get("*", async (c) => {
     if (c.req.path.startsWith("/api/") || deps.screens === undefined) {
@@ -861,6 +937,9 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     const found = await screen(deps.screens, c.req.path);
     if (!found) throw new HttpError(404, "Not found.");
     c.header("Content-Type", found.type);
+    if (c.req.path === DIAGRAM) {
+      c.header("Content-Security-Policy", diagramCsp(origin()));
+    }
     c.header(
       "Cache-Control",
       found.immutable ? "public, max-age=31536000, immutable" : "no-cache",

@@ -134,6 +134,13 @@ export interface CodexPaths {
 }
 
 /**
+ * Where Codex saves the images it generates, one folder per thread
+ * (CODEX_HOME/generated_images, 0.159.3); replies show them.
+ */
+export const generatedImages = (home: string) =>
+  join(home, "codex", "generated_images");
+
+/**
  * Writes Rufi's CODEX_HOME and creates the folders Codex uses: the skills
  * are written again from Rufi's copy, so they always match this Rufi, and
  * the AI's folder is made when there is one.

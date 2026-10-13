@@ -128,7 +128,9 @@ function call(
         res.setEncoding("utf8");
         res.on("data", (chunk: string) => (text += chunk));
         res.on("end", () => {
+          // A HEAD answer has no body.
           const json =
+            text !== "" &&
             res.headers["content-type"]?.startsWith("application/json");
           resolve({
             status: res.statusCode ?? 0,
@@ -1441,6 +1443,210 @@ describe("the screens", () => {
   it("serves the API only, when it has no screens", async () => {
     const core = await start();
     expect((await call(core.port, "GET", "/")).status).toBe(404);
+  });
+});
+
+describe("the files a reply shows", () => {
+  const PNG = Buffer.from(
+    "89504e470d0a1a0a0000000d4948445200000001000000010806000000",
+    "hex",
+  );
+  let outside: string;
+
+  beforeEach(async () => {
+    const ai = join(home, "ai");
+    await mkdir(join(ai, "analysis"), { recursive: true });
+    await writeFile(join(ai, "analysis", "sugar-vs-sleep.png"), PNG);
+    await writeFile(
+      join(ai, "results.html"),
+      "<!doctype html><title>Fictional results</title><p>HbA1c",
+    );
+    await writeFile(join(ai, "notes.md"), "# Fictional notes");
+    await writeFile(join(ai, "drawing.svg"), "<svg/>");
+    const generated = join(home, "codex", "generated_images", "thread-1");
+    await mkdir(generated, { recursive: true });
+    await writeFile(join(generated, "call-1.png"), PNG);
+    // Beside the data folder, and in it but outside the two roots.
+    outside = await mkdtemp(join(tmpdir(), "rufi-outside-"));
+    await writeFile(join(outside, "elsewhere.png"), PNG);
+    await mkdir(join(home, "codex", "sessions"), { recursive: true });
+    await writeFile(join(home, "codex", "sessions", "other.png"), PNG);
+    await symlink(join(outside, "elsewhere.png"), join(ai, "escape.png"));
+    await symlink(outside, join(ai, "up"));
+    await mkdir(join(ai, "folder.png"));
+  });
+  afterEach(async () => {
+    await rm(outside, { recursive: true, force: true });
+  });
+
+  const fileOf = (page: Awaited<ReturnType<typeof session>>, path: string) =>
+    page.api("GET", `/api/files?path=${encodeURIComponent(path)}`);
+
+  it("gives a short-lived address for a picture or a page in the AI's folder or Codex's generated images, and serves only by it", async () => {
+    const core = await start();
+    const page = await session(core);
+
+    // A relative path is in the AI's folder; an absolute one as written.
+    const chart = await fileOf(page, "analysis/sugar-vs-sleep.png");
+    expect(chart.status).toBe(200);
+    expect(chart.body).toMatchObject({
+      name: "sugar-vs-sleep.png",
+      shape: "picture",
+    });
+    const url = String(chart.body["url"]);
+    expect(url).toMatch(/^\/files\/[\w-]{43}\/sugar-vs-sleep\.png$/);
+    const picture = await call(core.port, "GET", url);
+    expect(picture.status).toBe(200);
+    expect(picture.headers["content-type"]).toBe("image/png");
+    expect(picture.headers["x-content-type-options"]).toBe("nosniff");
+    expect(picture.headers["cache-control"]).toBe("no-store");
+    expect(picture.headers["access-control-allow-origin"]).toBeUndefined();
+    expect((await call(core.port, "HEAD", url)).status).toBe(200);
+
+    const generated = await fileOf(
+      page,
+      join(home, "codex", "generated_images", "thread-1", "call-1.png"),
+    );
+    expect(generated.body["shape"]).toBe("picture");
+    expect(
+      (await call(core.port, "GET", String(generated.body["url"]))).status,
+    ).toBe(200);
+
+    const results = await fileOf(page, join(home, "ai", "results.html"));
+    expect(results.body["shape"]).toBe("page");
+
+    // Without the screens' proofs there is no address; a made-up one, or
+    // one for another file, serves nothing.
+    expect(
+      (
+        await call(
+          core.port,
+          "GET",
+          `/api/files?path=${encodeURIComponent("results.html")}`,
+        )
+      ).status,
+    ).toBe(401);
+    const token = url.split("/")[2] ?? "";
+    for (const path of [
+      `/files/${"a".repeat(43)}/sugar-vs-sleep.png`,
+      `/files/${token}`,
+      "/files/",
+    ]) {
+      expect((await call(core.port, "GET", path)).status).toBe(404);
+      expect((await call(core.port, "HEAD", path)).status).toBe(404);
+    }
+    // The name in the address is only a name: the address names one file.
+    expect(
+      (await call(core.port, "GET", `/files/${token}/results.html`)).headers[
+        "content-type"
+      ],
+    ).toBe("image/png");
+  });
+
+  it("refuses what is outside the two places, a link leading out, and what it doesn't show", async () => {
+    const core = await start();
+    const page = await session(core);
+    for (const path of [
+      join(outside, "elsewhere.png"),
+      "../codex/sessions/other.png",
+      join(home, "codex", "sessions", "other.png"),
+      join(home, "rufi.sqlite"),
+      "escape.png",
+      "up/elsewhere.png",
+      "folder.png",
+      "notes.md",
+      "drawing.svg",
+      "https://example.com/chart.png",
+      "data:image/png;base64,AAAA",
+      "",
+    ]) {
+      const refused = await fileOf(page, path);
+      expect(refused.status, path).toBe(403);
+      expect(refused.body["url"], path).toBeUndefined();
+    }
+  });
+
+  it("says a file is gone when it was, also after its address was given", async () => {
+    const core = await start();
+    const page = await session(core);
+    const gone = await fileOf(page, "reports/old-results.html");
+    expect(gone.status).toBe(404);
+    expect(gone.body).toMatchObject({
+      missing: true,
+      error: "This file is no longer in the AI's folder.",
+    });
+
+    const results = await fileOf(page, "results.html");
+    const chart = await fileOf(page, "analysis/sugar-vs-sleep.png");
+    await rm(join(home, "ai", "results.html"));
+    await rm(join(home, "ai", "analysis", "sugar-vs-sleep.png"));
+    // A page's frame says so; the picture is simply not there.
+    const frame = await call(core.port, "GET", String(results.body["url"]));
+    expect(frame.status).toBe(404);
+    expect(frame.text).toContain("This file is no longer in the AI's folder.");
+    expect(frame.headers["content-security-policy"]).toMatch(
+      /^sandbox allow-scripts;/,
+    );
+    expect(
+      (await call(core.port, "GET", String(chart.body["url"]))).status,
+    ).toBe(404);
+  });
+
+  it("checks the file again on every request: a file swapped for a link leading out is refused", async () => {
+    const core = await start();
+    const page = await session(core);
+    const chart = await fileOf(page, "analysis/sugar-vs-sleep.png");
+    const target = join(home, "ai", "analysis", "sugar-vs-sleep.png");
+    await rm(target);
+    await symlink(join(outside, "elsewhere.png"), target);
+    expect(
+      (await call(core.port, "GET", String(chart.body["url"]))).status,
+    ).toBe(404);
+  });
+
+  it("stops serving an address after its time", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const core = await start();
+      const page = await session(core);
+      const url = String((await fileOf(page, "results.html")).body["url"]);
+      expect((await call(core.port, "GET", url)).status).toBe(200);
+      vi.setSystemTime(Date.now() + 10 * 60_000 + 1);
+      expect((await call(core.port, "GET", url)).status).toBe(404);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("serves a page under its own policy in place of the screens': locked, self-contained, framed only by Rufi", async () => {
+    const core = await start();
+    const page = await session(core);
+    const origin = `http://127.0.0.1:${String(core.port)}`;
+    const url = String((await fileOf(page, "results.html")).body["url"]);
+    const served = await call(core.port, "GET", url);
+    expect(served.headers["content-type"]).toBe("text/html; charset=utf-8");
+    const policy = String(served.headers["content-security-policy"]);
+    // One policy, not the screens' as well.
+    expect(policy).not.toContain("script-src 'self'");
+    expect(policy.split(/;\s*/)).toEqual(
+      expect.arrayContaining([
+        "sandbox allow-scripts",
+        "default-src 'none'",
+        "script-src 'unsafe-inline'",
+        "connect-src 'none'",
+        "form-action 'none'",
+        "base-uri 'none'",
+        `frame-ancestors ${origin}`,
+      ]),
+    );
+    expect(policy).not.toMatch(/https?:(?!\/\/127\.0\.0\.1)|allow-same-origin/);
+    // The screens may frame only these, and only from Rufi itself.
+    const screens = (await page.api("GET", "/api/people")).headers[
+      "content-security-policy"
+    ];
+    expect(screens).toContain(
+      `frame-src blob: ${origin}/files/ ${origin}/diagram.html;`,
+    );
   });
 });
 
