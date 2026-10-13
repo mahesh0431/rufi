@@ -42,14 +42,13 @@ import {
   openReadOnly,
   openWritable,
 } from "../src/core/store/database.ts";
-import { readChat } from "../src/core/tools/chat.ts";
 import { getOverview } from "../src/core/tools/overview.ts";
 import { shownFor, type Tool } from "../src/core/tools/registry.ts";
 import { childEnvironment, rufiHome } from "../src/platform/config.ts";
 import { Secrets, secretsLayer } from "../src/platform/keychain.ts";
 import { diagnostics } from "../src/platform/logs.ts";
 import { PROOF_HEADER } from "../src/server/api.ts";
-import { startCore, type Core } from "../src/server/core.ts";
+import { agentSetup, startCore, type Core } from "../src/server/core.ts";
 import { FAMILY, familyFiles } from "../tests/fixtures/golden.ts";
 import { textPdf } from "../tests/pack/pdf.ts";
 import { layout, PRESCRIPTION, REPORTS } from "../tests/pack/reports.ts";
@@ -1119,7 +1118,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       snapshot,
     };
   },
-  /** After a model change, an earlier detail is found through read_chat. */
+  /** After a model change, the AI still has the chat, in the same thread. */
   model_change: async (api) => {
     const c = chat(api);
     await c.ask(
@@ -1133,7 +1132,8 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     const snapshot = await c.read();
     return {
       checks: {
-        used_read_chat: usedTool(snapshot, readChat),
+        // The same thread: the AI has the whole chat, nothing started afresh.
+        same_thread: snapshot.turns.every((turn) => !turn.afresh),
         says_biscuit: /biscuit/i.test(lastReply(snapshot)),
         new_model: snapshot.turns.at(-1)?.model === "gpt-6.1-sol",
       },
@@ -1932,6 +1932,7 @@ async function runCase(
         agent: (tools, host) =>
           codexRuntime({
             home,
+            ...agentSetup(home),
             command: { file, args: [] },
             env: childEnvironment(),
             token,

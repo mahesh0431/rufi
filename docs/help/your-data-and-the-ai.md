@@ -38,8 +38,8 @@ Your sign-in's secrets aren't in the data folder: they are in your Mac's Keychai
 | `chatgpt.json`     | Your sign-in details, without secrets (see [Signing in with ChatGPT](signing-in.md))                                                                                                                                |
 | `models.json`      | The AI models Rufi may use, in the order Rufi shows them; the chat uses the first one until you choose another. It starts with the strongest ones, and you can edit the list                                        |
 | `logs/`            | Rufi's log (see below)                                                                                                                                                                                              |
-| `codex/`           | The AI's own files: its settings, its own copy of your chat with what its tools returned, and the messages that wait for the AI                                                                                     |
-| `workspace/`       | The folder where the AI works                                                                                                                                                                                       |
+| `codex/`           | The AI's own files: its settings, Rufi's skills (Rufi's instructions for each job, written again each time Rufi starts), and its own copy of your chat with what its tools returned                                 |
+| `ai/`              | The AI's folder: where the AI works, with its programs, notes and research files (see [What the AI can do in its folder](#what-the-ai-can-do-in-its-folder))                                                        |
 | `sub-agents/`      | The settings and the empty working folder of Rufi's document reader (see below); it holds no document                                                                                                               |
 | `core.json`        | There while Rufi runs: how `pnpm start` finds the running Rufi to open it again. Rufi removes it when it stops                                                                                                      |
 | `rufi.lock`        | A folder that is there while Rufi or a Rufi command uses the data folder, so only one of them does at a time                                                                                                        |
@@ -64,9 +64,9 @@ You can move your data folder to another folder: on your Mac, or on a disk that 
 
 3. Start Rufi as usual. It opens on the new folder.
 
-Rufi copies everything in your data folder into the new folder: your health record and your chat, your documents, your backups, your sign-in and the AI's workspace. It checks the copy (the record, and each file against the old one) and only then uses the new folder. You stay signed in.
+Rufi copies everything in your data folder into the new folder: your health record and your chat, your documents, your backups and your sign-in. It checks the copy (the record, and each file against the old one) and only then uses the new folder. You stay signed in.
 
-The AI's own files (`codex/` and `sub-agents/`) stay in the old folder, because they name the old folder. Your chat is in your record, so nothing is lost: your next message starts the AI afresh with the chat's last messages, and the chat shows a quiet line there.
+The AI's own files (`codex/` and `sub-agents/`) and the AI's folder (`ai/`) stay in the old folder, because they name the old folder. Your chat is in your record, so nothing of it is lost: your next message starts the AI afresh with the chat's last messages, and the chat shows a quiet line there. The AI's programs and notes stay in the old folder's `ai/`; copy what you want to keep.
 
 The old folder stays as it was, with a `moved-to.json` file that names the new folder. Rufi doesn't open the old folder any more, also not with `RUFI_HOME`, so that you never change two copies. Delete it when you're ready.
 
@@ -106,7 +106,22 @@ Then Rufi doesn't read or change the location file, and **Settings** › **Data 
 
 When the AI reads your record with Rufi's tools, it gets only the records of the person whose chat it is: Rufi chooses the person, and the AI can't name another one. The AI can't read the chat or Rufi's settings this way, and it can't change anything.
 
-Rufi's tools aren't all that the chat's AI can do. It runs with the same access to this Mac as Codex has when you use it yourself: it can run commands and open the files your Mac account can open. Rufi tells it to use only Rufi's tools for your record, but that is an instruction, not a lock. Treat the chat as able to see your data folder. The [reader](#reading-your-documents) is different: Rufi locks it to two tools for one document.
+Rufi's tools aren't all that the chat's AI can do: it also works in its own folder (see below). The [reader](#reading-your-documents) is different: Rufi locks it to two tools for one document.
+
+## What the AI can do in its folder
+
+The chat's AI works like a coding agent, in its own folder: the AI's folder, `ai/` in your data folder. There it can write and run small programs, for example to compare two kinds of results, and keep its notes and research files between messages and days. It can use the internet from there, for example to look something up or to install what a program needs. Settings says this too.
+
+Rufi limits what the AI's programs can reach. This is a lock, not only an instruction: Codex's sandbox on your Mac holds it.
+
+- They can write only in the AI's folder and in your Mac's folders for temporary files.
+- They can't open your record's database (`rufi.sqlite` and its other files), your backups or `core.json`. So the AI reads and changes your health record only through Rufi's tools: each read shows under the answer as **Based on**, and each save with its receipt.
+- They get none of the sign-in's secrets.
+- They can read the other files that your Mac account can read. Rufi tells the AI to use only Rufi's tools for your record, but it doesn't lock the rest yet.
+
+Rufi doesn't check what the AI sends to the internet or gets from it. Text from a web page is data for the AI, never an instruction or your yes.
+
+The AI's folder isn't part of your health record. What you want to keep goes in your record, through the chat, after your yes. The folder isn't in your backups, your export or a move yet, and Rufi doesn't remove anything in it: when you delete a document, notes that the AI made about it stay.
 
 ## The pages the AI looks at
 

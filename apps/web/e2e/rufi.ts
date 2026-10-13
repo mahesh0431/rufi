@@ -23,7 +23,11 @@ import {
   openWritable,
 } from "../../server/src/core/store/database.ts";
 import type { FolderSource } from "../../server/src/core/store/data-folder.ts";
-import { startCore, type Core } from "../../server/src/server/core.ts";
+import {
+  agentSetup,
+  startCore,
+  type Core,
+} from "../../server/src/server/core.ts";
 
 const SERVER = join(import.meta.dirname, "../../server");
 const FAKE = join(SERVER, "tests/fake-codex.ts");
@@ -103,6 +107,7 @@ export class Rufi {
         agent: (tools, host) =>
           codexRuntime({
             home: this.home,
+            ...agentSetup(this.home),
             command,
             env: {
               PATH: process.env["PATH"] ?? "",

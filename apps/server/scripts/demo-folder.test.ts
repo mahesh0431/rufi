@@ -39,7 +39,7 @@ async function used() {
     "INSERT INTO people (id, display_name) VALUES ('old', 'Old Fictional')",
   );
   store.close();
-  for (const made of ["backups", "logs", "codex", "workspace"]) {
+  for (const made of ["backups", "logs", "codex", "ai"]) {
     await mkdir(join(folder, made));
     await writeFile(join(folder, made, "left.txt"), "from the last run");
   }

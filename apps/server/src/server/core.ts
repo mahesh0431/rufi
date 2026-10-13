@@ -12,6 +12,7 @@ import { Effect } from "effect";
 import type {
   AgentHost,
   AgentRuntime,
+  AgentSandbox,
   AgentTools,
   RunSubAgent,
 } from "../agent/runtime.ts";
@@ -38,12 +39,15 @@ import { openRecord } from "../core/store/install.ts";
 import { claimNotices } from "../core/record/notices.ts";
 import { recordViews, waiting } from "../core/record/views.ts";
 import { pages } from "../core/documents/pages.ts";
-import { chatCaller, forAgent, toolsVersion } from "../core/tools/tools.ts";
+import { chatCaller, forAgent } from "../core/tools/tools.ts";
+import { coreInstructions, rulesVersion } from "../core/chat/instructions.ts";
+import { SKILLS } from "../core/skills/skills.ts";
+import { backupsPath } from "../core/store/backup.ts";
 import { holdRufiLock, readJson, writePrivateJson } from "../platform/files.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { api, LAUNCHER_HEADER } from "./api.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
-import { mcpEndpoint, mcpKeys } from "./mcp.ts";
+import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
 import { reader as openReader, readerChoice } from "./reader.ts";
 import { secret, sessions } from "./session.ts";
 import { signInFlow, type SignIn } from "./signin.ts";
@@ -80,6 +84,31 @@ export interface CoreOptions {
 
 /** What `pnpm start` reads to reach the running Rufi; there while it runs. */
 export const coreFile = (home: string) => join(home, "core.json");
+
+/**
+ * Where the chat's AI works (ADR 0016): the AI's folder, in the data folder,
+ * the only place its commands can write; nothing in it is part of the
+ * record. They can't read the record's database, its backups or this
+ * file's secret, so the record is reached only through Rufi's tools.
+ */
+export function aiSandbox(home: string): AgentSandbox {
+  const database = databasePath(home);
+  return {
+    folder: join(home, "ai"),
+    unreadable: [
+      database,
+      ...["-wal", "-shm", "-journal"].map((end) => `${database}${end}`),
+      backupsPath(home),
+      coreFile(home),
+    ],
+  };
+}
+
+/** What the chat's agent needs from Rufi to start: its sandbox and the skills. */
+export const agentSetup = (home: string) => ({
+  sandbox: aiSandbox(home),
+  skills: SKILLS,
+});
 
 /** Where Rufi's MCP server takes the chat's calls, and the reader's. */
 const MCP_CHAT = "/mcp";
@@ -217,10 +246,12 @@ export const startCore = (options: CoreOptions) =>
             options.agent({ server: tools.server, specs: tools.specs }, host),
           allowlist: allowlist.read,
           mcp: { url: () => mcpUrl(MCP_CHAT), keys: chatKeys },
+          rules: (region) => ({
+            instructions: coreInstructions(region),
+            version: rulesVersion(region),
+          }),
           tools: {
-            version: toolsVersion(),
             specs: tools.specs,
-            instructions: tools.instructions,
             caller: chatCaller(
               reader,
               transcripts,
@@ -326,7 +357,12 @@ export const startCore = (options: CoreOptions) =>
     // Outside the screens' checks: the agent sends no Origin, and each
     // endpoint has its own (server/mcp.ts).
     const mcp: Record<string, (request: Request) => Promise<Response>> = {
-      [MCP_CHAT]: mcpEndpoint({ keys: chatKeys, port: () => port, log }),
+      [MCP_CHAT]: mcpEndpoint({
+        keys: chatKeys,
+        port: () => port,
+        log,
+        resources: skillResources(SKILLS),
+      }),
       [MCP_READER]: mcpEndpoint({ keys: readerKeys, port: () => port, log }),
     };
     const server = yield* Effect.acquireRelease(

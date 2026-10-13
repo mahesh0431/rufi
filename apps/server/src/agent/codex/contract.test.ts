@@ -45,6 +45,12 @@ afterEach(async () => {
 
 const env = () => ({ PATH: process.env["PATH"] ?? "", HOME: fakeHome });
 
+/** The AI's folder in a data folder, and its database kept from it. */
+const sandboxOf = (home: string) => ({
+  folder: join(home, "ai"),
+  unreadable: [join(home, "rufi.sqlite")],
+});
+
 /** Rufi's Codex runtime on the real binary, with a fake token. */
 async function real(
   options: {
@@ -55,6 +61,8 @@ async function real(
 ): Promise<AgentRuntime> {
   runtime = codexRuntime({
     home: join(root, "rufi"),
+    sandbox: sandboxOf(join(root, "rufi")),
+    skills: [],
     command: { file: await codexBinary(), args: options.args ?? [] },
     ...(options.tools && { tools: options.tools }),
     env: env(),
@@ -69,7 +77,7 @@ async function real(
 async function bare(): Promise<Rpc> {
   const { codexHome, processHome } = await prepareCodexHome(
     join(root, "bare"),
-    fakeHome,
+    { userHome: fakeHome, sandbox: sandboxOf(join(root, "bare")) },
   );
   const child = spawn(
     await codexBinary(),
@@ -151,7 +159,8 @@ describe("the pinned Codex", () => {
       {
         command: ["sh", "-c", 'printf %s "$HOME"'],
         cwd: root,
-        // Rufi's agent runs with full access (PLAN.md §4).
+        // Only the commands' HOME here; the canary in capture.test.ts
+        // checks the sandbox Rufi gives them.
         sandboxPolicy: { type: "dangerFullAccess" },
       },
       DEADLINES.requestMs,
@@ -221,7 +230,7 @@ describe.each(["fake", "real"] as const)(
         const model = await fakeModel();
         const { codexHome, processHome } = await prepareCodexHome(
           join(root, "gone"),
-          fakeHome,
+          { userHome: fakeHome, sandbox: sandboxOf(join(root, "gone")) },
         );
         // Started as Rufi starts it (appserver.ts): its own process group, pipes.
         const codex = spawn(

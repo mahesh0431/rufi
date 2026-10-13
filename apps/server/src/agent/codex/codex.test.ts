@@ -10,6 +10,7 @@ import type { Scenario } from "../../../tests/fake-codex.ts";
 import { childEnvironment } from "../../platform/config.ts";
 import {
   agentCall,
+  NotReloaded,
   NotSent,
   type AgentEvent,
   type AgentRuntime,
@@ -111,6 +112,8 @@ function start(
   runtime = codexRuntime({
     ...(tools && { tools }),
     home,
+    sandbox: { folder: join(home, "ai"), unreadable: [] },
+    skills: [],
     command: { file: process.execPath, args: [FAKE] },
     env: {
       PATH: process.env["PATH"] ?? "",
@@ -150,6 +153,9 @@ interface Entry {
   reply?: unknown;
   command?: number;
   child?: number;
+  /** A turn the fake ran, with the instructions its history held. */
+  turn?: string;
+  told?: string | null;
 }
 const entries = async (): Promise<Entry[]> =>
   (await readFile(log, "utf8").catch(() => ""))
@@ -403,15 +409,15 @@ describe("a turn", () => {
     ]);
   });
 
-  it("starts a thread with the model, full access, Rufi's instructions, and Rufi's MCP server with the thread's key", async () => {
+  it("starts a thread with the model, in the AI's folder under Rufi's profile, with Rufi's instructions and Rufi's MCP server with the thread's key", async () => {
     const tools = await mcpServer();
     await start({}, TOOLS).startThread({ ...SETTINGS, tools });
     expect(await sent("thread/start")).toEqual([
       {
         model: "gpt-6.1-sol",
-        cwd: join(home, "workspace"),
+        cwd: join(home, "ai"),
         approvalPolicy: "never",
-        sandbox: "danger-full-access",
+        permissions: "rufi-ai",
         developerInstructions: "Be careful.",
         config: {
           mcp_servers: {
@@ -430,6 +436,14 @@ describe("a turn", () => {
     ]);
   });
 
+  it("refuses a thread Codex runs under another permission profile than Rufi's", async () => {
+    await expect(
+      start({ profile: ":workspace" }).startThread(SETTINGS),
+    ).rejects.toThrow(
+      "Codex didn't take Rufi's thread settings: its permissions are :workspace.",
+    );
+  });
+
   it("says plainly when Rufi's tools didn't start for a thread", async () => {
     const tools = await mcpServer(401);
     await expect(
@@ -445,6 +459,7 @@ describe("a turn", () => {
     await agent.send(threadId, {
       id: "m-1",
       input: ["Earlier: hello", "Hi"],
+      model: "gpt-6-astra",
       effort: "high",
     });
     await ended(threadId);
@@ -456,6 +471,7 @@ describe("a turn", () => {
           { type: "text", text: "Earlier: hello", text_elements: [] },
           { type: "text", text: "Hi", text_elements: [] },
         ],
+        model: "gpt-6-astra",
         effort: "high",
       },
     ]);
@@ -722,12 +738,51 @@ describe("starting a reply", () => {
         threadId: "old-1",
         excludeTurns: true,
         model: "gpt-6.1-sol",
-        cwd: join(home, "workspace"),
+        cwd: join(home, "ai"),
         approvalPolicy: "never",
-        sandbox: "danger-full-access",
+        permissions: "rufi-ai",
         developerInstructions: "Be careful.",
       },
     ]);
+  });
+
+  it("gives an open thread new instructions: lets it go, picks it up with them, then has it summarised, showing nothing of the summary", async () => {
+    const agent = start();
+    const { threadId } = await agent.startThread(SETTINGS);
+    await expect(
+      agent.reloadThread(threadId, { ...SETTINGS, instructions: "Be kind." }),
+    ).resolves.toEqual({ model: "gpt-6.1-sol" });
+    expect(
+      (await entries()).flatMap((entry) => {
+        const method = entry.received?.method;
+        return method?.startsWith("thread/") ? [method] : [];
+      }),
+    ).toEqual([
+      "thread/start",
+      "thread/unsubscribe",
+      "thread/resume",
+      "thread/compact/start",
+    ]);
+    expect(await sent("thread/resume")).toMatchObject([
+      { threadId, developerInstructions: "Be kind." },
+    ]);
+    expect(seen(threadId)).toEqual([]);
+    expect(agent.loaded(threadId)).toBe(true);
+    // The next reply runs with them.
+    await agent.send(threadId, { id: "m-1", input: ["Hi"] });
+    await ended(threadId);
+    expect((await entries()).filter((entry) => entry.turn)).toMatchObject([
+      { told: "Be kind." },
+    ]);
+  });
+
+  it("says the thread didn't take its new instructions when its summary fails", async () => {
+    const agent = start({ compactFails: true });
+    const { threadId } = await agent.startThread(SETTINGS);
+    await expect(
+      agent.reloadThread(threadId, { ...SETTINGS, instructions: "Be kind." }),
+    ).rejects.toThrow(NotReloaded);
+    expect(seen(threadId)).toEqual([]);
   });
 });
 

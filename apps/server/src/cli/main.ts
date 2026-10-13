@@ -21,7 +21,7 @@ import { codexRuntime } from "../agent/codex/codex.ts";
 import { agentCall, type AgentEvent, type TurnEnd } from "../agent/runtime.ts";
 import { allowlistFile } from "../core/chat/models.ts";
 import { pages } from "../core/documents/pages.ts";
-import { safetyInstructions } from "../core/chat/safety.ts";
+import { coreInstructions } from "../core/chat/instructions.ts";
 import {
   onlyPersonId,
   RecordStore,
@@ -47,8 +47,14 @@ import {
   logsLayer,
   noEffectLogs,
 } from "../platform/logs.ts";
-import { runningLink, startCore } from "../server/core.ts";
-import { mcpEndpoint, mcpKeys, serveMcp } from "../server/mcp.ts";
+import { agentSetup, runningLink, startCore } from "../server/core.ts";
+import {
+  mcpEndpoint,
+  mcpKeys,
+  serveMcp,
+  skillResources,
+} from "../server/mcp.ts";
+import { SKILLS } from "../core/skills/skills.ts";
 import { subAgentRunner } from "../agent/codex/subagent.ts";
 import { appChannel, closeAppChannel } from "./app.ts";
 
@@ -356,6 +362,7 @@ const startCommand = (open: boolean) =>
       agent: (tools, host) =>
         codexRuntime({
           home,
+          ...agentSetup(home),
           command: { file, args: [] },
           env: childEnvironment(),
           token: (validForMs) => accessToken(deps, validForMs),
@@ -437,7 +444,16 @@ const askCommand = (question: string, person: string | undefined) =>
     const keys = mcpKeys();
     let port = 0;
     const listening = yield* Effect.acquireRelease(
-      run(() => serveMcp(mcpEndpoint({ keys, port: () => port, log }))),
+      run(() =>
+        serveMcp(
+          mcpEndpoint({
+            keys,
+            port: () => port,
+            log,
+            resources: skillResources(SKILLS),
+          }),
+        ),
+      ),
       (server) => Effect.promise(() => server.close()),
     );
     port = listening.port;
@@ -445,6 +461,7 @@ const askCommand = (question: string, person: string | undefined) =>
       Effect.sync(() =>
         codexRuntime({
           home: deps.home,
+          ...agentSetup(deps.home),
           command: { file, args: [] },
           env: childEnvironment(),
           token: (validForMs) => accessToken(deps, validForMs),
@@ -492,7 +509,7 @@ const askCommand = (question: string, person: string | undefined) =>
         const thread = await agent.startThread(
           {
             model: models[0] ?? "",
-            instructions: `${safetyInstructions(undefined)}\n\n${tools.instructions}`,
+            instructions: coreInstructions(undefined),
             tools: { url: `http://127.0.0.1:${String(port)}/mcp`, key },
           },
           op.signal,

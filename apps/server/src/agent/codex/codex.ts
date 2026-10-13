@@ -1,5 +1,7 @@
 // The Codex implementation of AgentRuntime: one app-server for every thread,
-// full access as PLAN.md §4 sets it. Rufi starts each reply with turn/start
+// each working in the AI's folder under Rufi's permission profile (it writes
+// only there, reads anything but the record, and uses the network; ADR
+// 0016), with Rufi's skills in its CODEX_HOME. Rufi starts each reply with turn/start
 // when none runs; Codex's own queue is not used (Rufi keeps what waits). A
 // new app-server starts when the access token changes and no reply is
 // running. Each thread gets Rufi's tools from Rufi's MCP server, with its own
@@ -7,11 +9,14 @@
 // to the reply it was made in (activeTurn).
 import { setTimeout as sleep } from "node:timers/promises";
 import {
+  NotReloaded,
   NotSent,
   Stopped,
   type AgentEvent,
   type AgentHost,
   type AgentRuntime,
+  type AgentSandbox,
+  type AgentSkill,
   type AgentTools,
   type Model,
   type ThreadSettings,
@@ -38,6 +43,7 @@ import type { ThreadResumeResponse } from "./protocol/v2/ThreadResumeResponse.ts
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
 import type { ThreadStartResponse } from "./protocol/v2/ThreadStartResponse.ts";
 import type { ThreadTurnsListResponse } from "./protocol/v2/ThreadTurnsListResponse.ts";
+import type { ThreadUnsubscribeResponse } from "./protocol/v2/ThreadUnsubscribeResponse.ts";
 import type { TurnCompletedNotification } from "./protocol/v2/TurnCompletedNotification.ts";
 import type { TurnStartParams } from "./protocol/v2/TurnStartParams.ts";
 import type { TurnSteerResponse } from "./protocol/v2/TurnSteerResponse.ts";
@@ -45,11 +51,15 @@ import type { TurnStartedNotification } from "./protocol/v2/TurnStartedNotificat
 import type { UserInput } from "./protocol/v2/UserInput.ts";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import { RpcError } from "./rpc.ts";
-import { mcpServers, prepareCodexHome } from "./settings.ts";
+import { AI_PROFILE, mcpServers, prepareCodexHome } from "./settings.ts";
 
 export interface CodexDeps {
-  /** Rufi's data folder; Codex gets `codex/` and `workspace/` inside it. */
+  /** Rufi's data folder; Codex gets `codex/` inside it. */
   home: string;
+  /** The AI's folder, its working folder, and what its commands can't read. */
+  sandbox: AgentSandbox;
+  /** Rufi's skills, written into CODEX_HOME at each start. */
+  skills: readonly AgentSkill[];
   command: CodexCommand;
   /** The child's environment, without secrets (platform/config.ts). */
   env: Readonly<Record<string, string>>;
@@ -104,8 +114,14 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   const lifetime = new AbortController();
   let server: AppServer | undefined;
   let starting: Promise<AppServer> | undefined;
-  let workspace = "";
   const loaded = new Set<string>(); // threads open in the current app-server
+  /** Threads Rufi let go of, until Codex says they are closed. */
+  const closing = new Map<string, PromiseWithResolvers<undefined>>();
+  /**
+   * Threads Codex is summarising for Rufi, until it ends: how it ended. Its
+   * turn is Rufi's own, never shown as a reply.
+   */
+  const compacting = new Map<string, PromiseWithResolvers<string>>();
   const turns = new Map<string, Running>(); // the running turn of each thread
   /** Threads where a Stop came during a send: the reply it starts is stopped. */
   const stopNext = new Set<string>();
@@ -135,8 +151,11 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
 
   async function start(token: string): Promise<AppServer> {
     await shutDown();
-    const paths = await prepareCodexHome(deps.home, deps.env["HOME"]);
-    workspace = paths.workspace;
+    const paths = await prepareCodexHome(deps.home, {
+      userHome: deps.env["HOME"],
+      sandbox: deps.sandbox,
+      skills: deps.skills,
+    });
     const started = await startAppServer({
       command: deps.command,
       env: { ...deps.env, HOME: paths.processHome },
@@ -157,7 +176,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         // Rufi clears `server` before ending one itself; only a crash gets here.
         if (!server || server.running()) return;
         server = undefined;
-        loaded.clear();
+        forgetThreads();
         endAll({
           status: "failed",
           reason: "provider_failed",
@@ -176,13 +195,22 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   async function shutDown(): Promise<void> {
     const old = server;
     server = undefined;
-    loaded.clear();
+    forgetThreads();
     await old?.stop();
     endAll({
       status: "failed",
       reason: "provider_failed",
       text: "Codex stopped.",
     });
+  }
+
+  /** The app-server is gone, and with it every thread it had open. */
+  function forgetThreads(): void {
+    loaded.clear();
+    for (const waiting of closing.values()) waiting.resolve(undefined);
+    closing.clear();
+    for (const waiting of compacting.values()) waiting.resolve("failed");
+    compacting.clear();
   }
 
   /** Ends every running turn the same way; their app-server is gone. */
@@ -225,9 +253,11 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     };
     return {
       model: settings.model,
-      cwd: workspace,
+      cwd: deps.sandbox.folder,
       approvalPolicy: "never",
-      sandbox: "danger-full-access",
+      // The named profile, never the legacy `sandbox`: only a profile can
+      // deny reads.
+      permissions: AI_PROFILE,
       developerInstructions: settings.instructions,
       ...(Object.keys(config).length > 0 && { config }),
     };
@@ -250,8 +280,12 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     if (response.approvalPolicy !== "never") {
       problems.push("it asks for approvals");
     }
-    if (response.sandbox.type !== "dangerFullAccess") {
-      problems.push(`its access is ${response.sandbox.type}`);
+    // The profile Codex says is active, not the legacy projection of it,
+    // which can't show denied reads.
+    if (response.activePermissionProfile?.id !== AI_PROFILE) {
+      problems.push(
+        `its permissions are ${response.activePermissionProfile?.id ?? "unknown"}`,
+      );
     }
     if (problems.length > 0) {
       throw new Error(
@@ -283,11 +317,27 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           ...(params as AccountRateLimitsUpdatedNotification).rateLimits,
         };
         return;
-      case "turn/started": {
-        const { turn } = params as TurnStartedNotification;
-        if (typeof threadId === "string") started(threadId, turn.id);
+      case "thread/closed":
+        if (typeof threadId === "string") {
+          loaded.delete(threadId);
+          closing.get(threadId)?.resolve(undefined);
+        }
         return;
+    }
+    // A summary Rufi asked for: nothing of it is shown, only how it ended.
+    const summarising =
+      typeof threadId === "string" ? compacting.get(threadId) : undefined;
+    if (summarising && typeof threadId === "string") {
+      if (method === "turn/completed") {
+        compacting.delete(threadId);
+        summarising.resolve((params as TurnCompletedNotification).turn.status);
       }
+      return;
+    }
+    if (method === "turn/started") {
+      const { turn } = params as TurnStartedNotification;
+      if (typeof threadId === "string") started(threadId, turn.id);
+      return;
     }
     const running =
       typeof threadId === "string" ? turns.get(threadId) : undefined;
@@ -675,6 +725,65 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       return { model: response.model, running };
     },
 
+    reloadThread: async (threadId, settings, signal) => {
+      const app = await ready(signal);
+      // Still summarising after a Stop: the thread is there, but busy.
+      if (turns.has(threadId) || compacting.has(threadId)) {
+        throw new NotReloaded(
+          "The AI is busy in this chat. Try again in a moment.",
+        );
+      }
+      // Codex ignores new settings for a thread it has open: it is let go
+      // of first, and closes at once (thread_unload_delay_secs = 0).
+      if (loaded.has(threadId)) {
+        const closed = Promise.withResolvers<undefined>();
+        closing.set(threadId, closed);
+        try {
+          const { status } = await request<ThreadUnsubscribeResponse>(
+            app,
+            "thread/unsubscribe",
+            { threadId },
+          );
+          if (status === "unsubscribed") {
+            await within(closed.promise, deadlines.requestMs, signal);
+          }
+        } catch (error) {
+          if (error instanceof Stopped) throw error;
+          throw new NotReloaded(undefined, { cause: error });
+        } finally {
+          closing.delete(threadId);
+        }
+        loaded.delete(threadId);
+      }
+      const response = await abortable(
+        request<ThreadResumeResponse>(app, "thread/resume", {
+          threadId,
+          excludeTurns: true,
+          ...settingsFor(settings),
+        }).catch(toolsFailed),
+        signal,
+      );
+      loaded.add(threadId);
+      check(response, settings);
+      // The history still holds the instructions the thread was first given
+      // (0.159.3); a summary of it starts again from the new ones.
+      const summarised = Promise.withResolvers<string>();
+      compacting.set(threadId, summarised);
+      let status: string;
+      try {
+        await request(app, "thread/compact/start", { threadId });
+        status = await within(summarised.promise, deadlines.turnMs, signal);
+      } catch (error) {
+        if (error instanceof Stopped) throw error;
+        // Codex didn't start it, or it took too long: nothing more is waited for.
+        if (compacting.get(threadId) === summarised)
+          compacting.delete(threadId);
+        throw new NotReloaded(undefined, { cause: error });
+      }
+      if (status !== "completed") throw new NotReloaded();
+      return { model: response.model };
+    },
+
     loaded: (threadId) => loaded.has(threadId) && server?.running() === true,
 
     running: (threadId) => turns.has(threadId),
@@ -704,6 +813,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
             threadId,
             input: message.input.map(textInput),
             clientUserMessageId: message.id,
+            ...(message.model !== undefined && { model: message.model }),
             ...(message.effort !== undefined && { effort: message.effort }),
           } satisfies TurnStartParams);
         } catch (error) {
@@ -794,6 +904,33 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
 
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : "Codex couldn't take the message.";
+
+/**
+ * Waits for `promise` (something Codex sends later), at most `ms`, or
+ * until `signal` aborts: then it's a Stop.
+ */
+async function within<T>(
+  promise: Promise<T>,
+  ms: number,
+  signal?: AbortSignal,
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await abortable(
+      Promise.race([
+        promise,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(new Error("Codex didn't answer in time."));
+          }, ms);
+        }),
+      ]),
+      signal,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /** Waits for `promise`, or until `signal` aborts: then it's a Stop. */
 function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {

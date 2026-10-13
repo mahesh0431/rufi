@@ -109,6 +109,9 @@ beforeEach(async () => {
     await mkdir(join(from, path, ".."), { recursive: true });
     await writeFile(join(from, path), text);
   }
+  // The AI's folder, with a link as a program's virtual environment has.
+  await mkdir(join(from, "ai", ".venv", "bin"), { recursive: true });
+  await symlink("/usr/bin/python3", join(from, "ai", ".venv", "bin", "python"));
   // A file only its owner may read: copied, synced and kept read-only.
   await writeFile(join(from, "workspace/readonly.md"), "fictional, read-only");
   await chmod(join(from, "workspace/readonly.md"), 0o444);
@@ -183,6 +186,7 @@ describe("a move", () => {
     // The AI's own files and the old Rufi's address stay behind; the chat
     // goes on in a fresh AI thread.
     expect(await readdir(to)).not.toContain("codex");
+    expect(await readdir(to)).not.toContain("ai");
     expect(await readdir(to)).not.toContain("core.json");
     const db = new DatabaseSync(databasePath(to), { readOnly: true });
     expect(

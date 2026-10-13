@@ -7,6 +7,7 @@
 // each call is bound to the reply it was made in.
 import type { Chip, Effort, Pointer } from "@rufi/contracts";
 import {
+  NotReloaded,
   NotSent,
   Stopped,
   type AgentEvent,
@@ -23,7 +24,6 @@ import {
   type HandOver,
 } from "../core/chat/queue.ts";
 import { refsForAi, RefRefusal } from "../core/chat/refs.ts";
-import { safetyInstructions } from "../core/chat/safety.ts";
 import type { ChatRow, Transcripts } from "../core/chat/transcript.ts";
 import type { ToolAnswer, ToolSpec } from "../core/tools/registry.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
@@ -42,13 +42,17 @@ export interface ChatDeps {
   allowlist: () => Promise<Allowlist>;
   /** Rufi's MCP endpoint for the chat: its address and its keys. */
   mcp: { url: () => string; keys: McpKeys };
-  tools: {
-    /** Names the tool set; a thread keeps the one it started with. */
+  /**
+   * What the AI is told in every thread, for the emergency region chosen,
+   * and its version: a thread told another version is told again.
+   */
+  rules: (region: string | undefined) => {
+    instructions: string;
     version: string;
+  };
+  tools: {
     /** What the MCP server lists. */
     specs: readonly ToolSpec[];
-    /** How the AI uses them, after the safety instructions. */
-    instructions: string;
     /**
      * A caller for one turn of a chat; the agent gives each call's id. A
      * turn a Rufi event started can only read.
@@ -259,10 +263,12 @@ export function chat(deps: ChatDeps) {
         const handOver = handing.get(event.threadId);
         handing.delete(event.threadId);
         if (handOver !== undefined) handedTo.set(event.turnId, handOver);
+        // The model it was sent with: the chat's, which can't change while
+        // a reply starts or runs.
         await transcripts.startTurn(
           chat,
           event.turnId,
-          { id: event.threadId, model: chat.threadModel ?? chat.model ?? "" },
+          { id: event.threadId, model: chat.model ?? chat.threadModel ?? "" },
           handOver,
         );
         if (handOver !== undefined) queue.changed(chat.id);
@@ -407,6 +413,8 @@ export function chat(deps: ChatDeps) {
           {
             id: handOver.id,
             input: inputOf(handOver, context),
+            // A new model goes with the next reply, in the same thread.
+            ...(fresh.model !== null && { model: fresh.model }),
             effort: fresh.effort,
           },
           signal,
@@ -469,55 +477,72 @@ export function chat(deps: ChatDeps) {
     return run;
   }
 
-  async function settings(chat: ChatRow): Promise<ThreadSettings> {
-    const region = await transcripts.setting("emergency_region");
+  /** What the chat's thread is given now, and the version of its rules. */
+  async function settings(
+    chat: ChatRow,
+  ): Promise<{ settings: ThreadSettings; version: string }> {
+    const { instructions, version } = deps.rules(
+      await transcripts.setting("emergency_region"),
+    );
     return {
-      // Set before a thread starts: the first message chooses one.
-      model: chat.model ?? "",
-      effort: chat.effort,
-      instructions: `${safetyInstructions(region)}\n\n${deps.tools.instructions}`,
+      settings: {
+        // Set before a thread starts: the first message chooses one.
+        model: chat.model ?? "",
+        effort: chat.effort,
+        instructions,
+      },
+      version,
     };
   }
 
-  /** Whether the chat's thread can go on: same agent, model and tools. */
+  /**
+   * Whether the chat's thread is the agent's. A thread keeps its tools from
+   * Rufi's MCP server and takes a new model with a reply, so neither starts
+   * a new one.
+   */
   const current = (chat: ChatRow) =>
-    chat.threadId !== null &&
-    chat.threadProvider === agent.provider &&
-    chat.threadModel === chat.model &&
-    chat.threadTools === deps.tools.version;
+    chat.threadId !== null && chat.threadProvider === agent.provider;
 
   /**
-   * The chat's thread, open in the agent. A thread is picked up again
-   * only here, when the person acts; a new one starts when it's missing, can't
-   * be resumed, or the agent, model or tools changed.
+   * The chat's thread, open in the agent and told the current rules. A
+   * thread is picked up again only here, when the person acts: told again
+   * when its rules changed (a Rufi update, a new emergency region), and a
+   * new one starts only when it's missing or can't be picked up.
    */
   async function threadFor(
     chat: ChatRow,
     signal: AbortSignal,
   ): Promise<string> {
-    const threadSettings = await settings(chat);
+    const { settings: threadSettings, version } = await settings(chat);
     if (current(chat) && chat.threadId !== null) {
       const threadId = chat.threadId;
-      if (agent.loaded(threadId)) return threadId;
+      const told = chat.threadTools === version;
+      if (told && agent.loaded(threadId)) return threadId;
+      const wasLoaded = agent.loaded(threadId);
+      const resumed = { ...threadSettings, tools: toolsOf(chat, threadId) };
       try {
-        await agent.resumeThread(
-          threadId,
-          { ...threadSettings, tools: toolsOf(chat, threadId) },
-          signal,
-        );
+        if (told) {
+          await agent.resumeThread(threadId, resumed, signal);
+        } else {
+          await agent.reloadThread(threadId, resumed, signal);
+          await transcripts.setThreadRules(chat, version);
+          chat.threadTools = version;
+        }
         // What a crash kept Rufi from saving, from the agent's own record.
-        fillGaps(chat, threadId);
+        if (!wasLoaded) fillGaps(chat, threadId);
         return threadId;
       } catch (error) {
-        if (error instanceof Stopped) throw error;
+        // The thread is there but didn't take its new rules: the message
+        // waits with the reason, rather than going to a thread told otherwise.
+        if (error instanceof Stopped || error instanceof NotReloaded) {
+          throw error;
+        }
         log("chat.resume_failed", { error: errorCode(error) });
       }
     }
     // The old thread's events are saved first: once the pointer moves, they
     // can't find the chat, and the new thread's seed needs them.
     await saving;
-    const modelChanged =
-      chat.threadModel !== null && chat.threadModel !== chat.model;
     const key = issueKey(chat);
     let started: { threadId: string; model: string };
     try {
@@ -539,15 +564,15 @@ export function chat(deps: ChatDeps) {
       id: threadId,
       provider: agent.provider,
       model,
-      tools: deps.tools.version,
+      tools: version,
     });
     chat.threadId = threadId;
     chat.threadProvider = agent.provider;
     chat.threadModel = model;
-    chat.threadTools = deps.tools.version;
+    chat.threadTools = version;
     const earlier = await transcripts.lastMessages(chat, NEW_THREAD_MESSAGES);
     if (earlier.length > 0) {
-      pendingContext.set(chat.id, newThreadContext(earlier, modelChanged));
+      pendingContext.set(chat.id, newThreadContext(earlier));
     } else {
       pendingContext.delete(chat.id);
     }
@@ -715,7 +740,7 @@ export function chat(deps: ChatDeps) {
 
     /**
      * Chooses the chat's model. Only when no reply runs or is starting:
-     * the new model comes with a new thread, and waiting rows go to it.
+     * the next reply runs on it, in the same thread.
      */
     selectModel: (chat: ChatRow, model: string) =>
       inLane(chat, async (chat) => {
@@ -819,9 +844,9 @@ function newThreadContext(
     text: string;
     unfinished?: boolean;
   }[],
-  modelChanged: boolean,
 ): string {
-  const note = `${modelChanged ? "The model changed and a new thread started." : "A new thread started."} Older history is available through read_chat.`;
+  const note =
+    "A new thread started. Older history is available through read_chat.";
   const messages = earlier
     .map(
       ({ from, text, unfinished }) =>
