@@ -1632,7 +1632,7 @@ describe("the files a reply shows", () => {
       expect.arrayContaining([
         "sandbox allow-scripts",
         "default-src 'none'",
-        "script-src 'unsafe-inline'",
+        "script-src 'unsafe-inline' 'unsafe-eval'",
         "connect-src 'none'",
         "form-action 'none'",
         "base-uri 'none'",

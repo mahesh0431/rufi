@@ -73,6 +73,7 @@ const TRYING = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <script>
 const out = (line) => { const li = document.createElement("li"); li.textContent = line; document.getElementById("out").append(li); };
 out("script ran");
+out("eval: " + eval("6 * 7"));
 try { out("parent: " + parent.document.title); } catch { out("parent: blocked"); }
 try { out("storage: " + sessionStorage.length); } catch { out("storage: blocked"); }
 out("origin: " + self.origin);
@@ -227,6 +228,7 @@ test("a page is a card that opens over the chat: its script runs, but it can't r
   const out = frame.locator("#out");
   // Its script ran first, so what it couldn't do proves the locks.
   await expect(out).toContainText("script ran");
+  await expect(out).toContainText("eval: 42");
   await expect(out).toContainText("parent: blocked");
   await expect(out).toContainText("storage: blocked");
   await expect(out).toContainText("origin: null");
@@ -244,6 +246,7 @@ test("a page is a card that opens over the chat: its script runs, but it can't r
   await alone.goto(frame.url());
   const own = alone.locator("#out");
   await expect(own).toContainText("script ran");
+  await expect(own).toContainText("eval: 42");
   await expect(own).toContainText("storage: blocked");
   await expect(own).toContainText("origin: null");
   await expect(own).toContainText("api: blocked");

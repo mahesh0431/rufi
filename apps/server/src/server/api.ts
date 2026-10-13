@@ -152,10 +152,12 @@ const appCsp = (origin: string) =>
  * both apply): it runs in an opaque origin, framed or opened on its own, so
  * it can't read Rufi's pages or an answer of its API. Self-contained: its
  * own inline scripts, styles and data pictures, nothing remote, nothing
- * sent out, and only Rufi's screens may frame it.
+ * sent out, and only Rufi's screens may frame it. Its scripts may use eval,
+ * as chart libraries do: in the sandbox, with nothing remote, that reaches
+ * nothing more.
  */
 const pageCsp = (origin: string) =>
-  `sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors ${origin}`;
+  `sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors ${origin}`;
 
 /**
  * The diagram frame: Mermaid lays a diagram out with inline styles, which
