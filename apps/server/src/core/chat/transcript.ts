@@ -42,7 +42,12 @@ export interface ChatRow extends Chat {
   personId: string;
   threadId: string | null;
   threadProvider: string | null;
+  /** The model the thread started with; each turn keeps its own. */
   threadModel: string | null;
+  /**
+   * The version of the rules the thread was last told (core/chat/
+   * instructions.ts); the column's name is from when it named the tools.
+   */
   threadTools: string | null;
   /** Nothing goes to the AI until the person sends (core/chat/queue.ts). */
   paused: "stopped" | "restarted" | null;
@@ -559,6 +564,15 @@ export function transcripts(
         .where("thread_id", "=", threadId)
         .executeTakeFirst();
       return row && toChat(row);
+    },
+
+    /** The rules the chat's thread was told again (`thread_tools`). */
+    setThreadRules: async (chat: ChatRow, version: string) => {
+      await db
+        .updateTable("chats")
+        .set({ thread_tools: version })
+        .where("id", "=", chat.id)
+        .execute();
     },
 
     /** The thread the chat now uses, and what it started with. */

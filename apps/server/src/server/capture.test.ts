@@ -2,16 +2,20 @@
 // offline (decision 28 of the AI setup): the real Codex binary, a local fake
 // model that records every request, and the real chat, MCP server, tools and
 // record on fictional data. It is the upgrade gate for Codex: a new pin must
-// pass it. Later steps add the instructions, skills and sandbox.
-import { mkdtemp } from "node:fs/promises";
+// pass it. It checks what the model is given (Codex's prompt, Rufi's core and
+// skills, the sandbox) and that one thread keeps it across a model change, a
+// Rufi update and a compaction.
+import { existsSync, realpathSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { v7 as uuid } from "uuid";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   fakeModel,
   type FakeModel,
+  type ModelRequest,
   type Step,
 } from "../../tests/fake-model.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
@@ -28,8 +32,12 @@ import {
   openWritable,
   type Store,
 } from "../core/store/database.ts";
-import { chatCaller, forAgent, toolsVersion } from "../core/tools/tools.ts";
+import { coreInstructions, rulesVersion } from "../core/chat/instructions.ts";
+import { SKILLS } from "../core/skills/skills.ts";
+import type { ToolSpec } from "../core/tools/registry.ts";
+import { chatCaller, forAgent } from "../core/tools/tools.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
+import { agentSetup, aiSandbox } from "./core.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
 
 let home: string;
@@ -41,8 +49,8 @@ let served: { port: number; close: () => Promise<void> } | undefined;
 /** What reached Rufi's MCP server over HTTP. */
 let seen: { auth: string | null; origin: string | null; method: string }[];
 
-beforeEach(async () => {
-  home = await mkdtemp(join(tmpdir(), "rufi-capture-"));
+async function makeRecord(root: string) {
+  home = await mkdtemp(join(root, "rufi-capture-"));
   store = openWritable(databasePath(home));
   store.db.exec(`
     INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
@@ -50,6 +58,10 @@ beforeEach(async () => {
       VALUES ('c-asha', 'asha', '2026-10-01T09:00:00Z');
   `);
   transcripts = openTranscripts(store);
+}
+
+beforeEach(async () => {
+  await makeRecord(tmpdir());
   seen = [];
 });
 afterEach(async () => {
@@ -60,14 +72,38 @@ afterEach(async () => {
   await model?.close();
   model = undefined;
   store.close();
+  await rm(home, { recursive: true, force: true });
 });
 
-/** The chat on the real Codex, as the core runs it; `refuse` breaks its MCP. */
-async function start(script: Step[], refuse = false, modelId = "gpt-6-astra") {
+/**
+ * The chat on the real Codex, as the core runs it (again, as after a
+ * restart, when it ran); `refuse` breaks its MCP, `update` changes what an
+ * update of Rufi would: a tool's description. `model` is the only one
+ * allowed; without it, two are.
+ */
+async function start(
+  script: Step[],
+  options: { refuse?: boolean; update?: string; model?: string } = {},
+) {
+  await chat?.close();
+  await served?.close();
+  await model?.close();
   model = await fakeModel({ script });
   const reader = openReadOnly(databasePath(home));
   const log = () => undefined;
-  const tools = forAgent(() => ({ store: reader, personId: undefined }), log);
+  const agentTools = forAgent(
+    () => ({ store: reader, personId: undefined }),
+    log,
+  );
+  const update = options.update;
+  const tools = {
+    ...agentTools,
+    specs: agentTools.specs.map((spec): ToolSpec =>
+      update !== undefined && spec.name === "get_overview"
+        ? { ...spec, description: `${spec.description} ${update}` }
+        : spec,
+    ),
+  };
   const keys = mcpKeys();
   let port = 0;
   const endpoint = mcpEndpoint({ keys, port: () => port, log });
@@ -78,7 +114,9 @@ async function start(script: Step[], refuse = false, modelId = "gpt-6-astra") {
       origin: request.headers.get("origin"),
       method: body.method ?? "",
     });
-    return refuse ? new Response(null, { status: 401 }) : endpoint(request);
+    return options.refuse
+      ? new Response(null, { status: 401 })
+      : endpoint(request);
   });
   port = served.port;
   const command = {
@@ -92,6 +130,7 @@ async function start(script: Step[], refuse = false, modelId = "gpt-6-astra") {
     agent: (host) =>
       codexRuntime({
         home,
+        ...agentSetup(home),
         command,
         env: { PATH: process.env["PATH"] ?? "" },
         token: () => Promise.resolve("not-a-real-token"),
@@ -101,12 +140,19 @@ async function start(script: Step[], refuse = false, modelId = "gpt-6-astra") {
         host,
         log,
       }),
-    allowlist: () => Promise.resolve({ models: [modelId] }),
+    allowlist: () =>
+      Promise.resolve({
+        models: options.model
+          ? [options.model]
+          : ["gpt-6-astra", "gpt-6.1-sol"],
+      }),
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
+    rules: (region) => ({
+      instructions: coreInstructions(region),
+      version: rulesVersion(region),
+    }),
     tools: {
-      version: toolsVersion(),
       specs: tools.specs,
-      instructions: tools.instructions,
       caller: chatCaller(reader, transcripts, log),
     },
     log,
@@ -168,8 +214,7 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
           },
           { text: "Done." },
         ],
-        false,
-        modelId,
+        { model: modelId },
       );
       await say("What can you do?");
       await until(() => turns().some((t) => t["status"] !== "running"));
@@ -281,7 +326,7 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
     "holds the message with a plain reason when Rufi's tools don't start",
     { timeout: 120_000 },
     async () => {
-      await start([{ text: "Not reached." }], true);
+      await start([{ text: "Not reached." }], { refuse: true });
       await say("Hello");
       const row = await transcripts.chat("asha");
       if (!row) throw new Error("no chat");
@@ -302,3 +347,288 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
     },
   );
 });
+
+/** Over any model's compaction limit: Codex summarises the thread. */
+const OVER_LIMIT = 10_000_000;
+
+/** Each part of the developer messages a request carries, in order. */
+const developer = (request: ModelRequest | undefined) =>
+  (request?.input ?? [])
+    .filter((item) => item.role === "developer" && item.type === "message")
+    .flatMap((item) => item.content ?? [])
+    .map((part) => part.text ?? "");
+
+/** The user's own words a request carries, in order. */
+const userWords = (request: ModelRequest | undefined) =>
+  (request?.input ?? [])
+    .filter((item) => item.role === "user")
+    .flatMap((item) => item.content ?? [])
+    .map((part) => part.text ?? "")
+    .filter((text) => !text.startsWith("<"));
+
+/** The requests that ask the model to answer, not to summarise. */
+const answering = () =>
+  (model?.requests ?? []).filter(
+    (request) =>
+      !userWords(request).some((text) =>
+        text.startsWith("You are performing a CONTEXT CHECKPOINT COMPACTION"),
+      ),
+  );
+
+const threadsUsed = () =>
+  (
+    store.db
+      .prepare("SELECT COUNT(DISTINCT thread_id) AS n FROM turns")
+      .get() as { n: number }
+  ).n;
+
+const replies = async (n: number) => {
+  await until(
+    () => turns().filter((turn) => turn["status"] !== "running").length >= n,
+  );
+  expect(turns().map((turn) => turn["status"])).toEqual(
+    Array<string>(n).fill("completed"),
+  );
+};
+
+describe("What the AI is given, on the pinned Codex", () => {
+  it(
+    "is Codex's own prompt with no personality, Rufi's core whole, Rufi's skills and none of Codex's, in the AI's folder under Rufi's profile",
+    { timeout: 120_000 },
+    async () => {
+      await start([{ text: "Hello." }]);
+      await say("Hi");
+      await replies(1);
+      const given = developer(model?.requests[0]);
+      expect(given[0]).toMatch(/^You are Codex/);
+      expect(given.join("\n")).not.toMatch(/^# Personality$/m);
+      expect(given).toContain(coreInstructions(undefined));
+
+      const catalog = given.find((text) =>
+        text.startsWith("<skills_instructions>"),
+      );
+      const listed = [
+        ...(catalog ?? "").matchAll(/^- ([\w-]+): (.+) \(file: [^)]+\)$/gm),
+      ].map(([, name, description]) => ({ name, description }));
+      expect(listed).toEqual(
+        SKILLS.map(({ name, description }) => ({ name, description })),
+      );
+
+      // The sandbox as Codex tells the model, and its working folder.
+      const sandbox = aiSandbox(home);
+      const real = (path: string) =>
+        join(realpathSync(dirname(path)), basename(path));
+      const permissions =
+        given.find((text) => text.startsWith("<permissions instructions>")) ??
+        "";
+      expect(permissions).toContain("Network access is enabled.");
+      expect(permissions).toContain(real(sandbox.folder));
+      for (const path of sandbox.unreadable) {
+        expect(permissions).toContain(`- path \`${real(path)}\``);
+      }
+      const environment = (model?.requests[0]?.input ?? [])
+        .flatMap((item) => item.content ?? [])
+        .map((part) => part.text ?? "")
+        .find((text) => text.startsWith("<environment_context>"));
+      expect(environment).toContain(`<cwd>${sandbox.folder}</cwd>`);
+    },
+  );
+
+  it(
+    "keeps one thread across a model change, core and skill-body updates and a compaction; each reply has the rules and tools of its time",
+    { timeout: 180_000 },
+    async () => {
+      const opened = await start([{ text: "One." }, { text: "Two." }]);
+      await say("first");
+      await replies(1);
+      const row = await transcripts.chat("asha");
+      if (!row) throw new Error("no chat");
+      await opened.chat.selectModel(row, "gpt-6.1-sol");
+      await say("second");
+      await replies(2);
+      const changed = answering().at(-1);
+      expect(changed?.model).toBe("gpt-6.1-sol");
+      expect(userWords(changed)).toEqual(["first", "second"]);
+
+      // Rufi is updated: a tool says more, and the core names the region.
+      await transcripts.saveSetting("emergency_region", "IN");
+      const update = "Changed in this update.";
+      await start(
+        [
+          {
+            exec: 'text(ALL_TOOLS.find((t) => t.name === "mcp__rufi__get_overview").description)',
+          },
+          { text: "Three.", tokens: OVER_LIMIT },
+          { text: "Four." },
+        ],
+        { update },
+      );
+      await say("third");
+      await replies(3);
+      const [described, third] = answering().slice(-2);
+      expect(developer(described)).toContain(coreInstructions("IN"));
+      expect(developer(described)).not.toContain(coreInstructions(undefined));
+      expect(userWords(described)).toContain("third");
+      const output = JSON.stringify(third?.input.at(-1)?.output ?? "");
+      expect(output).toContain(update);
+
+      // The answer was over the limit: Codex summarises, the core stays.
+      await say("fourth");
+      await replies(4);
+      const summaries = (model?.requests.length ?? 0) - answering().length;
+      expect(summaries).toBe(2);
+      const fourth = answering().at(-1);
+      expect(developer(fourth)).toContain(coreInstructions("IN"));
+      expect(developer(fourth)).not.toContain(coreInstructions(undefined));
+      expect(userWords(fourth)).toContain("fourth");
+
+      // A release changes only a bundled skill's body: the name,
+      // description and core stay the same. It must reload too.
+      const skill = SKILLS.find((skill) => skill.name === "analysis");
+      if (!skill) throw new Error("no analysis skill");
+      const previous = skill.text;
+      try {
+        skill.text +=
+          "\n- New rule in this release: show each calculation's inputs.\n";
+        await start([{ text: "Five." }]);
+        await say("fifth");
+        await replies(5);
+        expect((model?.requests.length ?? 0) - answering().length).toBe(1);
+        expect(userWords(answering().at(-1))).toContain("fifth");
+      } finally {
+        skill.text = previous;
+      }
+      expect(threadsUsed()).toBe(1);
+    },
+  );
+});
+
+/** A shell command the AI runs, and what it got back. */
+interface Ran {
+  cmd: string;
+  exit_code: number;
+  output: string;
+}
+
+/** An exec step that runs each command in the AI's folder and prints all. */
+const commands = (cmds: readonly string[]): Step => ({
+  exec: [
+    `const cmds = ${JSON.stringify(cmds)};`,
+    "const ran = [];",
+    "for (const cmd of cmds) {",
+    "  const r = await tools.exec_command({ cmd });",
+    "  ran.push({ cmd, exit_code: r.exit_code, output: r.output });",
+    "}",
+    "text(JSON.stringify(ran));",
+  ].join("\n"),
+});
+
+describe.runIf(process.platform === "darwin")(
+  "The AI's sandbox on macOS (the canary)",
+  () => {
+    it.each([
+      { location: "the system temp folder", root: tmpdir() },
+      { location: "/tmp", root: "/tmp" },
+    ])(
+      "keeps the record unreadable, the skills read-only and writes in the AI's folder or temp, with data in $location; also after a model change, resume and reload",
+      { timeout: 180_000 },
+      async ({ root }) => {
+        if (root !== tmpdir()) {
+          store.close();
+          await rm(home, { recursive: true, force: true });
+          await makeRecord(root);
+        }
+        // Outside both the AI's folder and all temp roots. Prove that a
+        // refusal isn't just the Mac's ordinary file permissions.
+        const outsideRoot = await mkdtemp("/Users/Shared/rufi-canary-");
+        const outside = join(outsideRoot, "outside.txt");
+        try {
+          await writeFile(outside, "the test process can write here");
+          await rm(outside);
+          const { folder, unreadable } = aiSandbox(home);
+          // Each way in, there to be read (the database is in WAL mode).
+          await mkdir(join(home, "backups"), { recursive: true });
+          await writeFile(join(home, "backups", "copy.sqlite"), "a copy");
+          await writeFile(join(home, "core.json"), '{"launcher":"secret"}');
+          expect(existsSync(`${databasePath(home)}-wal`)).toBe(true);
+          const skill = join(home, "codex", "skills", "analysis", "SKILL.md");
+          const q = (path: string) => JSON.stringify(path);
+          // Each one that is there now; a journal isn't, in WAL mode.
+          const journal = `${databasePath(home)}-journal`;
+          const denied = [...unreadable, join(home, "backups", "copy.sqlite")]
+            .filter((path) => existsSync(path))
+            .map((path) => `cat ${q(path)}`);
+          expect(denied).toHaveLength(unreadable.length);
+          const others = (url: string) => ({
+            outside: `echo no > ${q(outside)}`,
+            journal: `echo no > ${q(journal)}`,
+            skillWrite: `echo no > ${q(skill)}`,
+            inside: "echo yes > inside.txt && cat inside.txt",
+            skillRead: `head -2 ${q(skill)}`,
+            temp: "echo yes > /tmp/rufi-canary-$$ && cat /tmp/rufi-canary-$$ && rm /tmp/rufi-canary-$$",
+            env: "env",
+            // The network is on: the local model answers (404: no page there).
+            network: `curl -s -o /dev/null -w "%{http_code}" ${q(url)}`,
+          });
+          /** Runs every command in a reply, and checks what each got back. */
+          const run = async (n: number, text: string) => {
+            const url = model?.url ?? "";
+            const named = others(url);
+            model?.script.push(commands([...denied, ...Object.values(named)]), {
+              text: "Ran.",
+            });
+            await say(text);
+            await replies(n);
+            const output = answering()
+              .flatMap((request) => request.input)
+              .filter((item) => item.type === "custom_tool_call_output")
+              .at(-1)?.output;
+            const ran = JSON.parse(
+              (Array.isArray(output) ? output : [])
+                .map((part) => part.text ?? "")
+                .at(-1) ?? "[]",
+            ) as Ran[];
+            const by = (cmd: string) => ran.find((r) => r.cmd === cmd);
+            for (const cmd of denied) {
+              expect(by(cmd)?.output).toMatch(/Operation not permitted/);
+            }
+            for (const write of [named.outside, named.journal]) {
+              expect(by(write)?.output).toMatch(/operation not permitted/);
+            }
+            expect(existsSync(outside)).toBe(false);
+            expect(existsSync(journal)).toBe(false);
+            expect(by(named.skillWrite)?.exit_code).not.toBe(0);
+            expect(by(named.inside)?.output).toBe("yes\n");
+            expect(by(named.temp)?.output).toBe("yes\n");
+            expect(by(named.skillRead)?.output).toBe("---\nname: analysis\n");
+            const env = by(named.env)?.output ?? "";
+            const key = (seen.at(-1)?.auth ?? "").replace("Bearer ", "");
+            expect(key).not.toBe("");
+            expect(env).toContain("PATH=");
+            expect(env).not.toMatch(/TOKEN|not-a-real-token/);
+            expect(env).not.toContain(key);
+            expect(by(named.network)?.output).toBe("404");
+          };
+
+          const opened = await start([]);
+          await run(1, "Run them.");
+          expect(await readFile(join(folder, "inside.txt"), "utf8")).toBe(
+            "yes\n",
+          );
+          const row = await transcripts.chat("asha");
+          if (!row) throw new Error("no chat");
+          await opened.chat.selectModel(row, "gpt-6.1-sol");
+          await run(2, "Run them again.");
+          // Rufi starts again: the thread is resumed, with a new key.
+          await start([]);
+          await run(3, "And once more.");
+          await transcripts.saveSetting("emergency_region", "IN");
+          await run(4, "After reloading the rules.");
+          expect(threadsUsed()).toBe(1);
+        } finally {
+          await rm(outsideRoot, { recursive: true, force: true });
+        }
+      },
+    );
+  },
+);

@@ -2,11 +2,14 @@
 // standard behaviour. Codex sees none of the user's own setup: CODEX_HOME is
 // Rufi's (so no ~/.codex), and the app-server process gets its own HOME (so no
 // personal skills from ~/.agents/skills), while the agent's commands still get
-// the real HOME. MCP servers arrive one by one, chosen here (PLAN.md §3.1):
-// today only Rufi's own, given to each thread (mcpServers).
-import { mkdir, writeFile } from "node:fs/promises";
+// the real HOME. The skills are Rufi's own, written into CODEX_HOME at each
+// start; Codex's bundled ones are off. MCP servers arrive one by one, chosen
+// here (PLAN.md §3.1): today only Rufi's own, given to each thread
+// (mcpServers). The chat's AI works in its folder, sandboxed by one named
+// permission profile (aiProfile, docs/adr/0016).
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { McpServer } from "../runtime.ts";
+import type { AgentSandbox, AgentSkill, McpServer } from "../runtime.ts";
 import type { ConfigReadResponse } from "./protocol/v2/ConfigReadResponse.ts";
 import type { ExperimentalFeatureListResponse } from "./protocol/v2/ExperimentalFeatureListResponse.ts";
 import type { ModelProviderCapabilitiesReadResponse } from "./protocol/v2/ModelProviderCapabilitiesReadResponse.ts";
@@ -28,6 +31,8 @@ supports_websockets = false`;
 const SETTINGS = {
   /** Medium effort for chat: better answers matter more than the speed of low. */
   model_reasoning_effort: "medium",
+  /** Codex's own prompt stays, without a personality: Rufi's words set the tone. */
+  personality: "none",
   /**
    * Rufi keeps the AI's reasoning summaries with the reply (docs/adr/0004);
    * Codex's models send none unless asked.
@@ -45,7 +50,37 @@ const SETTINGS = {
   },
 } as const;
 
-function configToml(userHome: string | undefined): string {
+/**
+ * The permission profile the chat's AI runs under: Codex's workspace profile
+ * (it writes in its working folder, the AI's folder, and the temp folders;
+ * it reads the rest), with the network on and Rufi's unreadable paths
+ * denied. Threads select it by name; the legacy sandbox setting has no
+ * denied reads.
+ */
+export const AI_PROFILE = "rufi-ai";
+
+const key = (path: string) => JSON.stringify(path);
+
+function aiProfile(sandbox: AgentSandbox, skills: string): string {
+  const entries = [
+    `${key(sandbox.folder)} = "write"`,
+    // The data folder may itself be under a writable temp root.
+    `${key(skills)} = "read"`,
+    ...sandbox.unreadable.map((path) => `${key(path)} = "deny"`),
+  ];
+  return `
+[permissions.${AI_PROFILE}]
+extends = ":workspace"
+
+[permissions.${AI_PROFILE}.filesystem]
+${entries.join("\n")}
+
+[permissions.${AI_PROFILE}.network]
+enabled = true
+`;
+}
+
+function configToml(options: CodexHomeOptions, skills: string): string {
   const features = Object.entries(SETTINGS.features)
     .map(([name, on]) => `${name} = ${String(on)}`)
     .join("\n");
@@ -54,47 +89,84 @@ function configToml(userHome: string | undefined): string {
 model_provider = "openai_chatgpt_plan"
 model_reasoning_effort = "${SETTINGS.model_reasoning_effort}"
 model_reasoning_summary = "${SETTINGS.model_reasoning_summary}"
-
+personality = "${SETTINGS.personality}"
+# A thread Rufi lets go of (to give it new instructions) closes at once.
+thread_unload_delay_secs = 0
+${options.sandbox ? `default_permissions = "${AI_PROFILE}"\n` : ""}
 [features]
 ${features}
 
-${PROVIDER}
+# Only Rufi's skills: none of Codex's own.
+[skills.bundled]
+enabled = false
+
+# The agent's commands get no variable named like a secret (*KEY*, *SECRET*,
+# *TOKEN*), such as the access token Codex itself runs with.
+[shell_environment_policy]
+ignore_default_excludes = false
 ${
-  userHome === undefined
+  options.userHome === undefined
     ? ""
     : `
 # The agent's commands run with the user's real HOME.
 [shell_environment_policy.set]
-HOME = ${JSON.stringify(userHome)}
+HOME = ${JSON.stringify(options.userHome)}
 `
-}`;
+}${options.sandbox ? aiProfile(options.sandbox, skills) : ""}
+${PROVIDER}
+`;
+}
+
+export interface CodexHomeOptions {
+  /** The user's real HOME, for the agent's commands. */
+  userHome?: string | undefined;
+  /** The AI's folder and what its commands may never read. */
+  sandbox?: AgentSandbox;
+  /** Rufi's skills, written into CODEX_HOME/skills. */
+  skills?: readonly AgentSkill[];
 }
 
 export interface CodexPaths {
-  /** CODEX_HOME: Codex's config and threads. */
+  /** CODEX_HOME: Codex's config, skills and threads. */
   codexHome: string;
   /** HOME for the app-server process only, so it finds none of the user's setup. */
   processHome: string;
-  /** Where the agent works. */
-  workspace: string;
 }
 
-/** Writes Rufi's CODEX_HOME and creates the folders Codex uses. */
+/**
+ * Writes Rufi's CODEX_HOME and creates the folders Codex uses: the skills
+ * are written again from Rufi's copy, so they always match this Rufi, and
+ * the AI's folder is made when there is one.
+ */
 export async function prepareCodexHome(
   home: string,
-  userHome: string | undefined,
+  options: CodexHomeOptions = {},
 ): Promise<CodexPaths> {
   const paths = {
     codexHome: join(home, "codex"),
     processHome: join(home, "codex", "home"),
-    workspace: join(home, "workspace"),
   };
-  for (const dir of Object.values(paths)) {
+  for (const dir of [
+    ...Object.values(paths),
+    ...(options.sandbox ? [options.sandbox.folder] : []),
+  ]) {
     await mkdir(dir, { recursive: true, mode: 0o700 });
   }
-  await writeFile(join(paths.codexHome, "config.toml"), configToml(userHome), {
-    mode: 0o600,
-  });
+  const skills = join(paths.codexHome, "skills");
+  await rm(skills, { recursive: true, force: true });
+  for (const skill of options.skills ?? []) {
+    await mkdir(join(skills, skill.name), { recursive: true, mode: 0o700 });
+    await writeFile(join(skills, skill.name, "SKILL.md"), skill.text, {
+      mode: 0o600,
+    });
+  }
+  await writeFile(
+    join(paths.codexHome, "config.toml"),
+    configToml(options, skills),
+    {
+      mode: 0o600,
+    },
+  );
   return paths;
 }
 
@@ -124,6 +196,9 @@ export async function checkSettings(
     problems.push(
       `model_reasoning_summary is ${String(config.model_reasoning_summary)}`,
     );
+  }
+  if (config["personality"] !== SETTINGS.personality) {
+    problems.push(`personality is ${JSON.stringify(config["personality"])}`);
   }
   // Without namespace support Codex drops Rufi's tools without a word.
   const capabilities: ModelProviderCapabilitiesReadResponse = await rpc.request(

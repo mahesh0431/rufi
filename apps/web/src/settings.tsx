@@ -123,6 +123,11 @@ function PlanSection() {
             </p>
           )
         )}
+        <p className="mt-2 text-muted">
+          The AI can use the internet from its own folder, such as to look
+          something up or to install what a program needs. It reaches your
+          health record only through Rufi.
+        </p>
       </div>
     </>
   );

@@ -92,6 +92,19 @@ export class Stopped extends Error {
 }
 
 /**
+ * A thread that is there but didn't take its new instructions: it must not
+ * reply until it has them.
+ */
+export class NotReloaded extends Error {
+  constructor(
+    message = "The AI couldn't take Rufi's new instructions, so it can't reply now. Try again.",
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+  }
+}
+
+/**
  * A message the agent surely didn't get: Rufi never asked it, or the agent
  * refused it. Any other failure of a send leaves it unknown.
  */
@@ -121,7 +134,27 @@ export interface McpServer {
   key: string;
 }
 
-/** What a thread starts with. The agent keeps it for the thread's life. */
+/**
+ * Where the chat's AI works: its folder, the only place its commands can
+ * write, and the paths they can never read (the record's database and
+ * Rufi's other ways in to it).
+ */
+export interface AgentSandbox {
+  folder: string;
+  unreadable: readonly string[];
+}
+
+/** One of Rufi's skills, as the agent reads it: its SKILL.md, by name. */
+export interface AgentSkill {
+  name: string;
+  text: string;
+}
+
+/**
+ * What a thread starts or is picked up with. The agent keeps its
+ * instructions in the thread's history: new ones reach it only by
+ * reloadThread.
+ */
 export interface ThreadSettings {
   model: string;
   /**
@@ -129,7 +162,7 @@ export interface ThreadSettings {
    * resume starts by itself; without it, the agent's default.
    */
   effort?: string;
-  /** Rufi's instructions: safety first, then how to use the tools. */
+  /** Rufi's core instructions: safety first, then the rules and the skills' index. */
   instructions: string;
   /** Where the thread gets Rufi's tools, given again each time it is resumed. */
   tools?: McpServer;
@@ -146,13 +179,23 @@ export interface AgentRuntime {
   ) => Promise<{ threadId: string; model: string }>;
   /**
    * Picks an existing thread up again; `running` says a reply is running in
-   * it. It starts nothing.
+   * it. It starts nothing. A thread already open keeps what it was given.
    */
   resumeThread: (
     threadId: string,
     settings: ThreadSettings,
     signal?: AbortSignal,
   ) => Promise<{ model: string; running: boolean }>;
+  /**
+   * Gives an idle thread new instructions: it is closed if open, picked up
+   * again with `settings`, and its history summarised so the AI works from
+   * them. Throws when any part of that didn't happen.
+   */
+  reloadThread: (
+    threadId: string,
+    settings: ThreadSettings,
+    signal?: AbortSignal,
+  ) => Promise<{ model: string }>;
   /** Whether the thread is open in the agent now. */
   loaded: (threadId: string) => boolean;
   /** Whether a reply is running in the thread now. */
@@ -165,13 +208,13 @@ export interface AgentRuntime {
   /**
    * Starts a reply to `input` (its parts in order: a new thread's earlier
    * chat, Rufi's notes, the person's message), by the id Rufi gives it. Only
-   * when no reply runs. `effort` is how hard the AI thinks, from this reply
-   * on; without it, the thread keeps its own. Throws NotSent when the agent
-   * surely didn't get it.
+   * when no reply runs. `model` and `effort` are the AI's from this reply
+   * on, in the same thread; without them, the thread keeps its own. Throws
+   * NotSent when the agent surely didn't get it.
    */
   send: (
     threadId: string,
-    message: { id: string; input: string[]; effort?: string },
+    message: { id: string; input: string[]; model?: string; effort?: string },
     signal?: AbortSignal,
   ) => Promise<void>;
   /**
@@ -245,14 +288,15 @@ export const agentCall = <A>(
 
 /**
  * A Rufi sub-agent's one task: a locked-down AI thread that Rufi starts for
- * background work (a document's reader). It sees only its own instructions,
- * its input and exactly the tools it is given; it has no chat history, no
- * workspace and no network, and saves nothing of its own.
+ * background work (a document's reader). It sees only the agent's own
+ * prompt, its instructions, its input and exactly the tools it is given; it
+ * has no chat history, no folder and no network, and saves nothing of its
+ * own.
  */
 export interface SubAgentTask {
   model: string;
   effort: string;
-  /** Its whole instructions: they replace the agent's own, not add to them. */
+  /** Its instructions, after the agent's own prompt. */
   instructions: string;
   /** Its one message: what to do. */
   input: string;

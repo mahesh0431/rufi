@@ -1,5 +1,6 @@
 // One terminal ask: its MCP listener, thread and turn end with the command.
-// The command chooses the person, record and sign-in at its composition root.
+// The command chooses the person, record and sign-in at its composition root;
+// the MCP listener offers Rufi's skills as the chat's does.
 import { Effect } from "effect";
 import { v7 as uuid } from "uuid";
 import {
@@ -11,7 +12,13 @@ import {
 } from "../agent/runtime.ts";
 import type { forAgent } from "../core/tools/tools.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
-import { mcpEndpoint, mcpKeys, serveMcp } from "../server/mcp.ts";
+import { SKILLS } from "../core/skills/skills.ts";
+import {
+  mcpEndpoint,
+  mcpKeys,
+  serveMcp,
+  skillResources,
+} from "../server/mcp.ts";
 
 /** Runs one reply; only the command's chosen person can be read. */
 export const ask = (
@@ -35,7 +42,15 @@ export const ask = (
     let port = 0;
     const listening = yield* Effect.acquireRelease(
       Effect.tryPromise({
-        try: () => serveMcp(mcpEndpoint({ keys, port: () => port, log })),
+        try: () =>
+          serveMcp(
+            mcpEndpoint({
+              keys,
+              port: () => port,
+              log,
+              resources: skillResources(SKILLS),
+            }),
+          ),
         catch: (error) => error,
       }),
       (server) => Effect.promise(() => server.close()),

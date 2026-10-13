@@ -389,16 +389,16 @@ describe("the reader on the pinned Codex", () => {
             ],
       );
     }
-    // Rufi's instructions only, and no history: the first request is just the task.
-    expect(requests[0]?.instructions).toBe(INSTRUCTIONS);
-    expect(requests[0]?.input).toEqual([
-      {
-        type: "message",
-        role: "user",
-        id: expect.any(String) as unknown,
-        content: [{ type: "input_text", text: INPUT }],
-      },
-    ]);
+    // Codex's own prompt with no personality, then Rufi's instructions only,
+    // and no history: then just the task.
+    expect(requests[0]?.instructions).toMatch(/^You are Codex/);
+    expect(requests[0]?.instructions).not.toMatch(/^# Personality$/m);
+    expect(requests[0]?.input.map((item) => [item.role, item.content])).toEqual(
+      [
+        ["developer", [{ type: "input_text", text: INSTRUCTIONS }]],
+        ["user", [{ type: "input_text", text: INPUT }]],
+      ],
+    );
 
     // Codex's resource helper reached nothing: the endpoint offers none.
     expect(requests[1]?.input.at(-1)).toMatchObject({
@@ -563,13 +563,17 @@ describe("the reader on the pinned Codex", () => {
         "read_mcp_resource",
       ]);
     }
-    // Rufi's instructions only (this model takes them as a developer
-    // message), and no history: then just the task.
-    expect(
-      requests[0]?.input
-        .filter((item) => item.type === "message")
-        .map((item) => [item.role, item.content]),
-    ).toEqual([
+    // Codex's own prompt with no personality (this model takes it as a
+    // developer message), then Rufi's instructions only, and no history:
+    // then just the task.
+    const messages = requests[0]?.input
+      .filter((item) => item.type === "message")
+      .map((item) => [item.role, item.content]);
+    expect(messages?.[0]?.[0]).toBe("developer");
+    const prompt = JSON.stringify(messages?.[0]?.[1]);
+    expect(prompt).toMatch(/^\[\{"type":"input_text","text":"You are Codex/);
+    expect(prompt).not.toContain("# Personality\\n");
+    expect(messages?.slice(1)).toEqual([
       ["developer", [{ type: "input_text", text: INSTRUCTIONS }]],
       ["user", [{ type: "input_text", text: INPUT }]],
     ]);

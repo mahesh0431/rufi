@@ -41,6 +41,7 @@ import { holdRufiLock } from "../platform/files.ts";
 import { diagnostics } from "../platform/logs.ts";
 import { LAUNCHER_HEADER, PROOF_HEADER } from "./api.ts";
 import {
+  agentSetup,
   coreFile,
   runningLink,
   startCore,
@@ -71,6 +72,7 @@ async function start(options: Partial<CoreOptions> = {}): Promise<Core> {
       agent: (tools, host) =>
         codexRuntime({
           home,
+          ...agentSetup(home),
           command: { file: process.execPath, args: [FAKE] },
           env: { PATH: process.env["PATH"] ?? "", FAKE_CODEX: "{}" },
           token: () => Promise.resolve("token"),
@@ -203,6 +205,7 @@ const scripted =
   (...[tools, host]: Parameters<CoreOptions["agent"]>) =>
     codexRuntime({
       home,
+      ...agentSetup(home),
       command: { file: process.execPath, args: [FAKE] },
       env: {
         PATH: process.env["PATH"] ?? "",
@@ -443,6 +446,7 @@ describe("the core", () => {
       agent: (tools, host) => {
         agent = codexRuntime({
           home,
+          ...agentSetup(home),
           command: { file: process.execPath, args: [FAKE] },
           env: { PATH: process.env["PATH"] ?? "", FAKE_CODEX: "{}" },
           token: () => Promise.resolve("token"),
@@ -1087,6 +1091,7 @@ describe("the local API", () => {
     const agent: CoreOptions["agent"] = (tools, host) =>
       codexRuntime({
         home,
+        ...agentSetup(home),
         command: { file: process.execPath, args: [FAKE] },
         env: {
           PATH: process.env["PATH"] ?? "",

@@ -5,7 +5,7 @@
 import { join } from "node:path";
 import { Effect, Scope } from "effect";
 import { codexRuntime } from "../src/agent/codex/codex.ts";
-import { startCore } from "../src/server/core.ts";
+import { agentSetup, startCore } from "../src/server/core.ts";
 
 const home = process.argv[2] ?? "";
 const scope = await Effect.runPromise(Scope.make());
@@ -15,6 +15,7 @@ await Effect.runPromise(
     agent: (tools, host) =>
       codexRuntime({
         home,
+        ...agentSetup(home),
         command: {
           file: process.execPath,
           args: [join(import.meta.dirname, "fake-codex.ts")],

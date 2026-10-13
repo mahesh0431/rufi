@@ -41,3 +41,5 @@ Rufi runs `codex app-server` over stdio with OpenAI's documented provider settin
 - Each pin bump: regenerate the protocol types (`pnpm codex:types`), rerun the contract tests, and recheck the `HOME` split and web search here.
 
 **Amendment, 14 Oct 2026:** Rufi's tools no longer go as `dynamicTools`; they come from Rufi's own MCP server (ADR 0016). A change to the tools still starts a new thread for now.
+
+**Amendment, 14 Oct 2026:** a change to the tools no longer starts a new thread, and the chat runs in the AI's folder under Rufi's permission profile, not with full access (ADR 0016, its extension).

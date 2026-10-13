@@ -124,7 +124,7 @@ Rufi's own stored copy of the chat: your messages, the AI's replies and its reas
 _Avoid_: log, history
 
 **Started afresh**:
-Where the AI began a new memory of the chat (after a new model, new tools or a lost thread, with the chat's last 10 messages) or compacted its own memory of a long chat. The chat shows a quiet line there: "The AI started afresh here. It can still read earlier messages."
+Where the AI began a new memory of the chat (after its own copy of the chat was lost, with the chat's last 10 messages) or compacted its own memory of a long chat. The chat shows a quiet line there: "The AI started afresh here. It can still read earlier messages."
 _Avoid_: reset, new session, new conversation
 
 **Activity**:
@@ -168,7 +168,7 @@ The message you started in the chat and haven't sent, with its chips, saved quie
 _Avoid_: note, unsent
 
 **Model**:
-The version of the AI that answers, such as GPT-6-Astra, chosen for the chat from the allowlist, with its **effort**, in the box. A new model starts the AI afresh with the chat's last 10 messages; it can read further back.
+The version of the AI that answers, such as GPT-6-Astra, chosen for the chat from the allowlist, with its **effort**, in the box. A new model answers from the next reply and has the whole chat; the AI doesn't start afresh.
 _Avoid_: engine, brain
 
 **Effort**:
@@ -208,12 +208,20 @@ _Avoid_: medical ID card
 ## Rufi and the AI
 
 **The AI**:
-The AI agent that answers in the chat and works with the record through Rufi's tools. Screens and help say "the AI"; "Codex" appears only where its folder is named.
+The AI agent that answers in the chat and works with the record through Rufi's tools. It works in the AI's folder, where it can write and run programs and use the internet. Screens and help say "the AI"; "Codex" appears only where its folder is named.
 _Avoid_: assistant, bot; "model" only for a version of the AI (see Model)
+
+**The AI's folder**:
+The folder where the AI works: `ai/` in the data folder. It keeps its programs, notes and research files there between messages, and it is the only place where the AI's programs can write. Nothing in it is part of the record. It isn't in backups, the export or a move yet.
+_Avoid_: workspace, sandbox, scratch folder
 
 **Tool**:
 Something Rufi offers the AI, such as reading a person's Overview. Tools are how the AI works with the record.
-_Avoid_: function, plugin, skill
+_Avoid_: function, plugin
+
+**Skill**:
+Rufi's instructions to the AI for one job, such as saving a document or making a visit brief, in a file the AI reads when the job comes up. Rufi's other rules, such as safety, go with every message.
+_Avoid_: guide, prompt, plugin
 
 **Overview**:
 A short view of one person's health record. On screen it is the first page you see: **Needs you**, a **tile** for each page of the record, and the recent changes. The AI reads its own short view through a tool: who the person is, how much is in it, and their current results as printed.
@@ -231,7 +239,7 @@ _Avoid_: login, API key
 The permission you give Rufi when you sign in, so it can use your ChatGPT plan. Without it the AI can't answer.
 
 **Data folder**:
-The one folder on your Mac where Rufi keeps everything for your records: the record, the sign-in details, the log and the AI's own files. Rufi makes it at its first start, `~/.rufi/data`, and remembers it in the location file; `RUFI_HOME` picks another one for one run.
+The one folder on your Mac where Rufi keeps everything for your records: the record, the sign-in details, the log, the AI's own files and the AI's folder. Rufi makes it at its first start, `~/.rufi/data`, and remembers it in the location file; `RUFI_HOME` picks another one for one run.
 _Avoid_: vault, profile, workspace, home
 
 **Location file**:

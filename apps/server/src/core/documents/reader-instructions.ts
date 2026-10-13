@@ -1,4 +1,4 @@
-// What the reader is told: its whole instructions (they replace Codex's),
+// What the reader is told: its instructions (after Codex's own prompt),
 // its one message for a run, and the reader version stored with each
 // reading, so a reading can be traced to how it was read.
 import { createHash } from "node:crypto";
@@ -75,6 +75,8 @@ const hash = (value: string) =>
  */
 export const READER_VERSION = {
   instructions: hash(READER_INSTRUCTIONS),
+  /** Where they go: Codex's own prompt stays, without a personality. */
+  prompt: "Codex's own, then the instructions as developer instructions",
   entry: hash(JSON.stringify(Schema.toJsonSchemaDocument(Entry))),
   model: READER_MODEL,
   effort: READER_EFFORT,

@@ -34,6 +34,10 @@ Anything that changes what an answer means, such as only two readings, a gap or 
 
 The AI doesn't help anyone harm themselves or someone else, for example with doses or methods, however the question is asked. It says it can't help with that and points to the emergency number or a doctor.
 
+## It reaches your health record only through Rufi
+
+The AI works in its own folder, where it can run programs and use the internet. Its programs can't open your record's database or your backups, so it reads and changes your health record only through Rufi's tools: each read shows under the answer as **Based on**, and each save with Rufi's receipt. See [What the AI can do in its folder](your-data-and-the-ai.md#what-the-ai-can-do-in-its-folder).
+
 ## It asks before it saves, and says "saved" only when Rufi saved it
 
 The AI says what it will save and asks you first. It saves only after you say yes, and only what you said about yourself: nothing from a question, an "if" or someone else's news. It says that something was saved only when Rufi confirmed it, and Rufi shows its own receipt for each save. See [Changing your health record](chat.md#changing-your-health-record).

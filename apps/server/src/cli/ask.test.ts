@@ -8,7 +8,9 @@ import { expect, it } from "vitest";
 import { fakeModel, type Step } from "../../tests/fake-model.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexRuntime } from "../agent/codex/codex.ts";
+import { coreInstructions } from "../core/chat/instructions.ts";
 import { forAgent } from "../core/tools/tools.ts";
+import { agentSetup } from "../server/core.ts";
 import { ask } from "./ask.ts";
 
 it("fails a terminal ask when its tool refusal allowance is used, with the caller's reason", async () => {
@@ -28,11 +30,12 @@ it("fails a terminal ask when its tool refusal allowance is used, with the calle
       Effect.scoped(
         ask("Read the record.", {
           model: "gpt-6.1-sol",
-          instructions: tools.instructions,
+          instructions: coreInstructions(undefined),
           tools,
           agent: (host) =>
             codexRuntime({
               home,
+              ...agentSetup(home),
               command: {
                 file,
                 args: [

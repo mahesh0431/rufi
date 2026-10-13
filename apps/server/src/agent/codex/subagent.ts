@@ -1,8 +1,9 @@
 // Rufi's private sub-agent runner on Codex: one locked-down thread, one turn,
-// in an app-server of its own (its own CODEX_HOME and an empty workspace in
-// the data folder's sub-agents/), so it shares nothing with the chat. The
-// thread is ephemeral (nothing saved), has Rufi's instructions in place of
-// Codex's, no environment (no shell, files or patches), no network, no
+// in an app-server of its own (its own CODEX_HOME and an empty working folder
+// in the data folder's sub-agents/), so it shares nothing with the chat. The
+// thread is ephemeral (nothing saved), has Codex's own prompt with no
+// personality and Rufi's instructions as its developer instructions, no
+// environment (no shell, files or patches), no network, no
 // sub-agents, web search, goals, skills or questions to the user, and exactly
 // the tools the task gives, from the MCP server and key the task names (on a
 // code-mode model, inside Codex's exec, with the few tools Codex always adds
@@ -11,6 +12,7 @@
 // shows any item Rufi didn't allow. The offline contract test
 // (subagent.test.ts) proves the complete set of tools each model gets on the
 // pinned Codex.
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import type {
@@ -101,7 +103,7 @@ const LOCKED_CONFIG = {
   /** request_user_input: a sub-agent has nobody to ask. */
   tools: { experimental_request_user_input: { enabled: false } },
   web_search: "disabled",
-  /** Codex's own instruction blocks: Rufi's instructions are the only ones. */
+  /** Codex's added instruction blocks: after its prompt, Rufi's are the only ones. */
   skills: { include_instructions: false, bundled: { enabled: false } },
   include_permissions_instructions: false,
   include_environment_context: false,
@@ -152,10 +154,11 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
       };
     }
     const started = Date.now();
-    const paths = await prepareCodexHome(
-      join(deps.home, "sub-agents"),
-      undefined,
-    );
+    const home = join(deps.home, "sub-agents");
+    const paths = await prepareCodexHome(home);
+    // Its working folder, empty: with no environment it can't look in it.
+    const cwd = join(home, "workspace");
+    await mkdir(cwd, { recursive: true, mode: 0o700 });
     const token = await deps.token(task.deadlineMs + TOKEN_MARGIN_MS);
     signal?.throwIfAborted();
 
@@ -299,7 +302,7 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
       // than parsing files or relying only on its instruction-file list.
       const config = await app.rpc.request<ConfigReadResponse>(
         "config/read",
-        { cwd: paths.workspace, includeLayers: true },
+        { cwd, includeLayers: true },
         deadlines.requestMs,
       );
       const { requirements } =
@@ -322,13 +325,12 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
       }
       const params: ThreadStartParams = {
         model: task.model,
-        cwd: paths.workspace,
+        cwd,
         approvalPolicy: "never",
         sandbox: "read-only",
         ephemeral: true,
         environments: [],
-        baseInstructions: task.instructions,
-        developerInstructions: "",
+        developerInstructions: task.instructions,
         config: {
           ...LOCKED_CONFIG,
           model_reasoning_effort: task.effort,

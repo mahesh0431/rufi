@@ -13,7 +13,10 @@
 // answers "ok:<text>".
 // Like Codex, it calls Rufi's tools on the MCP server a thread was given
 // (its config's mcp_servers.rufi), checking it answers when the thread starts
-// or resumes. The test passes a scenario in FAKE_CODEX and reads what
+// or resumes. Like Codex, a thread keeps the developer instructions it was
+// first given in its history: a resume of a thread it has open changes
+// nothing, and new ones take effect only after thread/compact/start (each
+// turn logs the ones it ran with, as `told`). The test passes a scenario in FAKE_CODEX and reads what
 // happened from the JSON lines written to FAKE_CODEX_LOG.
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -76,6 +79,10 @@ export interface Scenario {
   reasoningMs?: number;
   /** Codex compacts the thread's context during the turn, before answering. */
   compaction?: boolean;
+  /** A compaction Rufi asks for (thread/compact/start) fails. */
+  compactFails?: boolean;
+  /** The permission profile Codex says a thread runs under, whatever Rufi asked. */
+  profile?: string;
   /**
    * Calls of Rufi's tools the model makes during a turn, before answering;
    * `id` is Codex's call id (`call-<n>`; `exec-…` for a call made from exec).
@@ -158,6 +165,11 @@ interface Thread {
   effort?: string;
   ephemeral?: boolean;
   sandbox?: string;
+  /** The named permission profile it runs with. */
+  permissions?: string;
+  /** The developer instructions it was last given, and those its history holds. */
+  given?: string;
+  told?: string;
   /** Rufi's MCP server, as the thread was last given it. */
   mcp?: McpServerConfig;
   running:
@@ -167,6 +179,8 @@ interface Thread {
   history: { id: string; status: string; messages: Queued[] }[];
 }
 const threads = new Map<string, Thread>();
+/** Threads open in this process, as Codex has them loaded. */
+const loaded = new Set<string>();
 // Like Codex, threads outlive the process: a restarted fake finds them in
 // CODEX_HOME. A reply that was running when it was killed is interrupted.
 const STATE = join(process.env["CODEX_HOME"] ?? ".", "fake-threads.json");
@@ -186,6 +200,10 @@ function persist() {
   renameSync(aside, STATE);
 }
 let threadCount = 0;
+let compactCount = 0;
+/** `{[key]: value}` when it is a string, else nothing. */
+const optional = (key: string, value: unknown) =>
+  typeof value === "string" ? { [key]: value } : {};
 let queuedCount = 0;
 let command: ReturnType<typeof spawn> | undefined;
 let commandRunning = false;
@@ -244,7 +262,12 @@ function dispatch(thread: Thread, next: Queued) {
     [...threads.values()].reduce((n, t) => n + t.history.length, 0) + 1,
   )}-${RUN}`;
   thread.running = { turnId, steers: [], interrupted: false };
-  record({ turn: turnId, effort: thread.effort ?? null });
+  record({
+    turn: turnId,
+    effort: thread.effort ?? null,
+    model: thread.model,
+    told: thread.told ?? null,
+  });
   // Like Codex: the message is in its record once it is recorded, a moment
   // after the turn starts (`userMessageMs`); ended before, it is lost.
   thread.history.push({
@@ -603,7 +626,19 @@ function threadResponse(thread: Thread) {
     sandbox:
       thread.sandbox === "read-only"
         ? { type: "readOnly", networkAccess: false }
-        : { type: "dangerFullAccess" },
+        : thread.permissions !== undefined
+          ? {
+              type: "workspaceWrite",
+              writableRoots: [],
+              networkAccess: true,
+              excludeTmpdirEnvVar: false,
+              excludeSlashTmp: false,
+            }
+          : { type: "dangerFullAccess" },
+    activePermissionProfile:
+      thread.permissions === undefined
+        ? null
+        : { id: scenario.profile ?? thread.permissions, extends: ":workspace" },
   };
 }
 
@@ -641,6 +676,7 @@ async function handle(
           model_provider: "openai_chatgpt_plan",
           model_reasoning_effort: "medium",
           model_reasoning_summary: "detailed",
+          personality: "none",
           ...scenario.config,
         },
       };
@@ -669,17 +705,30 @@ async function handle(
         effort: configEffort(params),
         ephemeral: params["ephemeral"] === true,
         sandbox: String(params["sandbox"]),
+        ...optional("permissions", params["permissions"]),
+        ...optional("given", params["developerInstructions"]),
+        ...optional("told", params["developerInstructions"]),
         mcp: configMcp(params),
         running: undefined,
         history: [],
       };
       threads.set(thread.id, thread);
+      loaded.add(thread.id);
       persist();
       return threadResponse(thread);
     }
     case "thread/resume": {
       const thread = threadOf(params);
+      // Like Codex: a thread it has open keeps its settings.
+      if (loaded.has(thread.id)) return threadResponse(thread);
       await checkMcp(configMcp(params), "resuming");
+      loaded.add(thread.id);
+      Object.assign(
+        thread,
+        optional("permissions", params["permissions"]),
+        optional("given", params["developerInstructions"]),
+      );
+      persist();
       thread.mcp = configMcp(params);
       thread.model = scenario.model ?? String(params["model"]);
       // Like Codex: resumed with a model, the effort is the config's again.
@@ -688,6 +737,42 @@ async function handle(
     }
     case "thread/read":
       return threadResponse(threadOf(params));
+    case "thread/unsubscribe": {
+      const thread = threadOf(params);
+      if (!loaded.delete(thread.id)) return { status: "notLoaded" };
+      // Like Codex with thread_unload_delay_secs = 0: idle, it closes at once.
+      setImmediate(() => {
+        send({ method: "thread/closed", params: { threadId: thread.id } });
+      });
+      return { status: "unsubscribed" };
+    }
+    case "thread/compact/start": {
+      const thread = threadOf(params);
+      const turnId = `compact-${RUN}-${String(++compactCount)}`;
+      setImmediate(() => {
+        const event = (method: string, item: object) => {
+          send({ method, params: { threadId: thread.id, turnId, item } });
+        };
+        send({
+          method: "turn/started",
+          params: {
+            threadId: thread.id,
+            turn: turnObject(turnId, "inProgress"),
+          },
+        });
+        const item = { type: "contextCompaction", id: `${turnId}-item` };
+        event("item/started", item);
+        event("item/completed", item);
+        const status = scenario.compactFails ? "failed" : "completed";
+        if (!scenario.compactFails) thread.told = thread.given;
+        persist();
+        send({
+          method: "turn/completed",
+          params: { threadId: thread.id, turn: turnObject(turnId, status) },
+        });
+      });
+      return {};
+    }
     case "turn/start": {
       const thread = threadOf(params);
       const entry: Queued = {
@@ -700,9 +785,11 @@ async function handle(
         thread.running.steers.push(entry);
         return { turn: turnObject(thread.running.turnId, "inProgress") };
       }
-      // Like Codex: the effort holds for this turn and the ones after.
+      // Like Codex: the model and effort hold for this turn and the ones after.
       if (typeof params["effort"] === "string")
         thread.effort = params["effort"];
+      if (typeof params["model"] === "string")
+        thread.model = scenario.model ?? params["model"];
       return { turn: dispatch(thread, entry) };
     }
     case "thread/turns/list": {

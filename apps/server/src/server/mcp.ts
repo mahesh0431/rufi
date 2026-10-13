@@ -27,6 +27,28 @@ export interface McpCall {
   turnId: string | undefined;
 }
 
+/**
+ * A text the endpoint offers to read, whatever the key: a skill, under
+ * `skill://<name>/SKILL.md` (the same text as the agent's skill files).
+ */
+export interface McpResource {
+  uri: string;
+  name: string;
+  description: string;
+  text: string;
+}
+
+/** Rufi's skills as the endpoint offers them. */
+export const skillResources = (
+  skills: readonly { name: string; description: string; text: string }[],
+): McpResource[] =>
+  skills.map((skill) => ({
+    uri: `skill://${skill.name}/SKILL.md`,
+    name: skill.name,
+    description: skill.description,
+    text: skill.text,
+  }));
+
 /** What a key opens: a catalog, and how its calls run. */
 export interface McpScope {
   tools: readonly ToolSpec[];
@@ -79,14 +101,17 @@ export function mcpEndpoint(options: {
   log: Log;
   /** How long a call may take before the agent is told it took too long. */
   toolMs?: number;
+  /** What it offers to read; nothing when not given. */
+  resources?: readonly McpResource[];
 }): (request: Request) => Promise<Response> {
   const { keys, log } = options;
   const toolMs = options.toolMs ?? DEADLINES.toolMs;
+  const resources = options.resources ?? [];
   const handler = createMcpHandler(
     (context) => {
       const scope = context.authInfo?.extra?.["scope"] as McpScope | undefined;
       if (!scope) throw new Error("An MCP request came without its scope.");
-      return serverFor(scope, toolMs);
+      return serverFor(scope, toolMs, resources);
     },
     {
       onerror: (error) => {
@@ -146,13 +171,43 @@ export function mcpEndpoint(options: {
  * tools bring their own JSON Schema and check their own input, so the SDK's
  * high-level one, which checks input itself, isn't used.
  */
-// oxlint-disable-next-line typescript/no-deprecated -- see above
-function serverFor(scope: McpScope, toolMs: number): Server {
+function serverFor(
+  scope: McpScope,
+  toolMs: number,
+  resources: readonly McpResource[],
+  // oxlint-disable-next-line typescript/no-deprecated -- see above
+): Server {
   // oxlint-disable-next-line typescript/no-deprecated -- see above
   const server = new Server(
     { name: "rufi", version: VERSION },
-    { capabilities: { tools: {} } },
+    {
+      capabilities: {
+        tools: {},
+        ...(resources.length > 0 && { resources: {} }),
+      },
+    },
   );
+  if (resources.length > 0) {
+    server.setRequestHandler("resources/list", () => ({
+      resources: resources.map(({ uri, name, description }) => ({
+        uri,
+        name,
+        description,
+        mimeType: "text/markdown",
+      })),
+    }));
+    server.setRequestHandler("resources/read", (request) => {
+      const found = resources.find(
+        (resource) => resource.uri === request.params.uri,
+      );
+      if (!found) throw new Error(`Rufi has no ${request.params.uri}.`);
+      return {
+        contents: [
+          { uri: found.uri, mimeType: "text/markdown", text: found.text },
+        ],
+      };
+    });
+  }
   server.setRequestHandler("tools/list", () => ({
     tools: scope.tools.map((tool) => ({
       name: tool.name,

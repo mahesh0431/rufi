@@ -17,6 +17,7 @@ import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
 export interface ModelRequest {
+  model?: string;
   instructions?: string;
   input: {
     type?: string;
@@ -45,6 +46,8 @@ export interface FakeModel {
   url: string;
   /** Every request body Codex sent, in order. */
   requests: ModelRequest[];
+  /** The steps still to come; a test can add more. */
+  script: Step[];
   close: () => Promise<void>;
 }
 
@@ -264,6 +267,7 @@ export async function fakeModel(
   return {
     url: `http://127.0.0.1:${String(port)}/v1`,
     requests,
+    script,
     close: () =>
       new Promise<void>((resolve) => {
         for (const response of open) response.destroy();
