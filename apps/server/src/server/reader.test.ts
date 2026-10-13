@@ -420,9 +420,7 @@ describe("a restart or a failure", () => {
         await turn.look(1);
         await turn.save(1, readPage());
         // Rufi stops here, before page 2.
-        await new Promise((resolve) =>
-          turn.signal?.addEventListener("abort", resolve),
-        );
+        await turn.stopped();
         return { end: { status: "interrupted", reason: "stopped" } };
       },
     ]);
@@ -465,9 +463,7 @@ describe("a restart or a failure", () => {
         await turn.save(1, readPage());
         await turn.look(2);
         await turn.save(2, readPage());
-        await new Promise((resolve) =>
-          turn.signal?.addEventListener("abort", resolve),
-        );
+        await turn.stopped();
         return { end: { status: "interrupted", reason: "stopped" } };
       },
     ]);
@@ -498,9 +494,7 @@ describe("a restart or a failure", () => {
         return { end: { status: "failed", reason: "connection" } };
       },
       async (turn) => {
-        await new Promise((resolve) =>
-          turn.signal?.addEventListener("abort", resolve),
-        );
+        await turn.stopped();
         return { end: { status: "interrupted", reason: "stopped" } };
       },
     ]);

@@ -24,6 +24,8 @@ interface ReaderTurn {
   save: (page: number, entry: unknown, note?: string) => Promise<Answer>;
   task: SubAgentTask;
   signal: AbortSignal | undefined;
+  /** Waits for Rufi to stop the run, also when it already has. */
+  stopped: () => Promise<void>;
 }
 
 /** One run: what it does, and how it ends (completed when it returns nothing). */
@@ -75,6 +77,13 @@ export function scriptedReader(scripts: Script[]) {
         call("save_page", { page, entry, ...(note !== undefined && { note }) }),
       task,
       signal,
+      stopped: () =>
+        new Promise((resolve) => {
+          if (signal?.aborted) resolve();
+          signal?.addEventListener("abort", () => {
+            resolve();
+          });
+        }),
     };
     const ended = await script(turn);
     return {
