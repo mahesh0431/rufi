@@ -420,6 +420,8 @@ export type DataFolder = typeof DataFolder.Type;
 export const ShownFile = Schema.Struct({
   url: Schema.String,
   name: Schema.String,
+  /** The canonical path from the resolver: aliases name the same file. */
+  path: Schema.String,
   shape: Schema.Literals(["picture", "page"]),
 });
 export type ShownFile = typeof ShownFile.Type;

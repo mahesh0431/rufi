@@ -149,7 +149,7 @@ const appCsp = (origin: string) =>
 
 /**
  * A page the AI made, in place of the screens' policy (two policies would
- * both apply): it runs in an opaque origin, framed or opened on its own, so
+ * both apply): it runs in an opaque origin inside Rufi's frame, so
  * it can't read Rufi's pages or an answer of its API. Self-contained: its
  * own inline scripts, styles and data pictures, nothing remote, nothing
  * sent out, and only Rufi's screens may frame it. Its scripts may use eval,
@@ -172,6 +172,8 @@ const DIAGRAM = "/diagram.html";
 
 /** What a page that is gone says, in its frame. */
 const GONE_PAGE = `<!doctype html><html lang="en"><meta charset="utf-8"><title>File not found</title><body style="font:14px/1.5 -apple-system,sans-serif;margin:24px"><p>This file is no longer in the AI's folder.</p></body></html>`;
+/** A standalone request never receives the generated page's active content. */
+const OPEN_IN_RUFI = `<!doctype html><html lang="en"><meta charset="utf-8"><title>Open in Rufi</title><body><p>Open this page from the chat in Rufi.</p></body></html>`;
 const FORWARDING = [
   "forwarded",
   "x-forwarded-for",
@@ -500,11 +502,13 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     if ("missing" in granted) {
       throw new HttpError(404, "This file is no longer in the AI's folder.", {
         missing: true,
+        path: granted.path,
       });
     }
     return c.json({
       url: `/files/${granted.token}/${encodeURIComponent(granted.file.name)}`,
       name: granted.file.name,
+      path: granted.file.path,
       shape: granted.file.shape,
     });
   });
@@ -920,6 +924,15 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       return c.html(GONE_PAGE, 404);
     }
     const { path, type, shape } = found.found;
+    // The browser sets this header. The page's ancestor policy admits only
+    // Rufi, whose frame-src also stops a frame navigating to another origin.
+    if (shape === "page" && c.req.header("Sec-Fetch-Dest") !== "iframe") {
+      c.header(
+        "Content-Security-Policy",
+        "sandbox; default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+      );
+      return c.html(OPEN_IN_RUFI);
+    }
     const bytes = await readFile(path).catch((error: unknown) => {
       deps.log("api.failed", { error: errorCode(error) });
       throw new HttpError(404, "Not found.");

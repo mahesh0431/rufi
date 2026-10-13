@@ -4,7 +4,7 @@
 // the chat in a locked frame, and a diagram draws in one (diagram/frame.ts).
 // A file that is gone keeps its card and says so.
 import { Dialog } from "@base-ui/react/dialog";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ShownFile } from "@rufi/contracts";
 import {
   ExternalLink,
@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import {
   useEffect,
+  useContext,
   useRef,
   useState,
   useSyncExternalStore,
@@ -29,6 +30,7 @@ import {
   type DiagramAsk,
 } from "./diagram/message.ts";
 import { Button } from "./ui.tsx";
+import { Menus } from "./model-menu.tsx";
 
 const PICTURE = /\.(png|jpe?g|gif|webp)$/i;
 const PAGE = /\.html?$/i;
@@ -59,10 +61,6 @@ export function fileIn(
   return undefined;
 }
 
-/** Whether a reply's text shows the file at `path` itself. */
-export const shows = (text: string, path: string) =>
-  text.includes(path) || text.includes(encodeURI(path));
-
 /** A file's address lasts 10 minutes; one older than this is asked again. */
 const FRESH_MS = 4 * 60_000;
 
@@ -88,6 +86,7 @@ const nameOf = (path: string) => path.split("/").at(-1) ?? path;
 /** A picture the AI made, its caption under it; a click opens it full size. */
 export function Picture({ path, caption }: { path: string; caption: string }) {
   const file = useQuery(fileQuery(path));
+  const portals = useContext(Menus);
   const [open, setOpen] = useState(false);
   // A picture that didn't load (gone meanwhile, or an old address) is asked
   // for again, once.
@@ -136,7 +135,7 @@ export function Picture({ path, caption }: { path: string; caption: string }) {
             if (!next) setOpen(false);
           }}
         >
-          <Dialog.Portal>
+          <Dialog.Portal container={portals}>
             <Dialog.Backdrop className="fixed inset-0 z-40 bg-ink/60" />
             <Dialog.Popup className="fixed inset-6 z-40 flex flex-col items-center justify-center gap-2 outline-none">
               <Dialog.Title className="sr-only">
@@ -165,12 +164,62 @@ export function Picture({ path, caption }: { path: string; caption: string }) {
   );
 }
 
+/** A resolver's identity, including the checked name of a file that is gone. */
+function identityOf(file: {
+  data?: ShownFile;
+  error: unknown;
+}): string | undefined {
+  if (file.data) return file.data.path;
+  if (file.error instanceof ApiError && file.error.status === 404) {
+    const body = file.error.body;
+    if (
+      typeof body === "object" &&
+      body !== null &&
+      "path" in body &&
+      typeof body.path === "string"
+    )
+      return body.path;
+  }
+  return undefined;
+}
+
+/** A native picture is omitted only when Markdown shows the same file. */
+export function NativePicture({
+  path,
+  alsoShown,
+  entryId,
+}: {
+  path: string;
+  alsoShown: string[];
+  entryId: string;
+}) {
+  const file = useQuery(fileQuery(path));
+  const references = useQueries({ queries: alsoShown.map(fileQuery) });
+  const identity = identityOf(file);
+  if (
+    identity !== undefined &&
+    references.some(
+      (reference) =>
+        (reference.data?.shape === "picture" ||
+          problemOf(reference.error) === "gone") &&
+        identityOf(reference) === identity,
+    )
+  )
+    return null;
+  return (
+    <div data-entry={entryId} className="reply">
+      <Picture path={path} caption="Made by the AI" />
+    </div>
+  );
+}
+
 /**
  * A page the AI made, as a card with its title (the reply's words for it, or
  * its file name) and Open; it runs only once opened, over the chat.
  */
 export function PageCard({ path, title }: { path: string; title: string }) {
   const client = useQueryClient();
+  const portals = useContext(Menus);
   // Asked when shown, so a page that is gone says so before it is opened.
   const file = useQuery(fileQuery(path));
   const [opened, setOpened] = useState<ShownFile | null>(null);
@@ -221,7 +270,7 @@ export function PageCard({ path, title }: { path: string; title: string }) {
             if (!next) setOpened(null);
           }}
         >
-          <Dialog.Portal>
+          <Dialog.Portal container={portals}>
             <Dialog.Backdrop className="fixed inset-0 z-40 bg-ink/25" />
             <Dialog.Popup className="fixed inset-4 z-40 flex flex-col overflow-hidden rounded-[14px] bg-surface shadow-menu outline-none">
               <div className="flex items-center gap-2 border-b border-line px-3 py-2">

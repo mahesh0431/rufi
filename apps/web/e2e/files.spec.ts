@@ -3,10 +3,11 @@
 // links it, also after a reload), a page it made (a card that opens in a
 // locked frame), a Mermaid diagram (drawn styled, in its own frame), and a
 // file that is gone. A page's script runs, but can't read Rufi's page or an
-// API answer, stays locked when opened on its own, and loads nothing remote.
+// API answer or the network. Standalone requests receive an inert page.
 // The screens' strict CSP refuses nothing.
 import { AxeBuilder } from "@axe-core/playwright";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { join } from "node:path";
 import { crc32, deflateSync } from "node:zlib";
 import type { Frame, Locator, Page } from "@playwright/test";
@@ -170,12 +171,21 @@ test("a picture the AI generated shows even without a link, and once when its re
   await expect(log(page).getByText("ok:a fictional cat")).toBeVisible();
   await send(page, `There: ![A cat](${saved})`);
   await expect(log(page).getByRole("img", { name: "A cat" })).toBeVisible();
+  await send(page, `I saved the picture at ${saved}`);
+  await expect(log(page).getByRole("img")).toHaveCount(3);
+  await send(
+    page,
+    `There: ![A cat via alias](${saved.replace("/call-1.png", "/./call-1.png")})`,
+  );
+  await expect(
+    log(page).getByRole("img", { name: "A cat via alias" }),
+  ).toBeVisible();
 
   const check = async () => {
-    // One picture for each reply: the first shows the generated one, the
-    // second shows it where its reply links it, not twice.
-    await expect(log(page).getByRole("img")).toHaveCount(2);
-    await expect(log(page).getByText("Made by the AI")).toHaveCount(1);
+    // Plain words keep the native picture. A Markdown reference, including
+    // an equivalent path, shows it once. Intentional reuse in a later turn stays.
+    await expect(log(page).getByRole("img")).toHaveCount(4);
+    await expect(log(page).getByText("Made by the AI")).toHaveCount(2);
     for (const img of await log(page).getByRole("img").all()) {
       await expect.poll(() => drawn(img)).toBe(200);
     }
@@ -184,6 +194,13 @@ test("a picture the AI generated shows even without a link, and once when its re
   await page.reload();
   await chat(page).getByRole("button", { name: "Open the chat" }).click();
   await check();
+  // Deleting the file still leaves one missing-file card per turn after reload.
+  await unlink(saved);
+  await page.reload();
+  await chat(page).getByRole("button", { name: "Open the chat" }).click();
+  await expect(
+    log(page).getByText("This file is no longer in the AI's folder."),
+  ).toHaveCount(4);
   expect(await refusedIn(page)).toEqual([]);
 });
 
@@ -198,7 +215,7 @@ async function pageFrame(page: Page): Promise<Frame> {
   return frame;
 }
 
-test("a page is a card that opens over the chat: its script runs, but it can't reach Rufi, its API or anything remote, also when opened on its own", async ({
+test("a page is a card that opens over the chat: its script runs, but it can't reach Rufi, its API or anything remote, and a standalone request is inert", async ({
   page,
   rufi,
 }) => {
@@ -215,7 +232,19 @@ test("a page is a card that opens over the chat: its script runs, but it can't r
   page.context().on("response", (response) => {
     if (response.url().includes("127.0.0.1:9/")) remote.push("answered");
   });
-  await send(page, "Your page: [Your 2026 results](reports/results-2026.html)");
+  // Put the card among enough text to check the reading position after closing.
+  const notes = Array.from(
+    { length: 8 },
+    (_, i) => `Fictional note ${String(i + 1)}: checked.`,
+  );
+  await send(
+    page,
+    [
+      ...notes,
+      "Your page: [Your 2026 results](reports/results-2026.html)",
+      ...notes,
+    ].join("\n\n"),
+  );
   const reply = log(page).locator(".reply");
   await expect(reply).toContainText("Your 2026 results");
   await expect(reply).toContainText("reports/results-2026.html");
@@ -237,27 +266,101 @@ test("a page is a card that opens over the chat: its script runs, but it can't r
   await expect(out).toContainText("remote image: blocked");
   await expect(out).toContainText("remote script: blocked");
   await accessible(page);
+  const fileUrl = frame.url();
+  const scroll = page.locator('[aria-label="Messages"]').locator("../..");
+  const at = await scroll.evaluate((element) => element.scrollTop);
+  expect(at).toBeGreaterThan(0);
   await shown.getByRole("button", { name: "Close" }).click();
   await expect(shown).toHaveCount(0);
+  const box = chat(page).getByRole("textbox", { name: "Message to Rufi" });
+  await expect(box).toBeVisible();
+  await expect(
+    chat(page).getByRole("button", { name: "Minimise" }),
+  ).toBeVisible();
+  expect(await scroll.evaluate((element) => element.scrollTop)).toBe(at);
+  await reply.getByRole("button", { name: "Open Your 2026 results" }).click();
+  await expect(shown).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(shown).toHaveCount(0);
+  await expect(box).toBeVisible();
+  await expect(
+    chat(page).getByRole("button", { name: "Minimise" }),
+  ).toBeVisible();
+  expect(await scroll.evaluate((element) => element.scrollTop)).toBe(at);
   expect(await refusedIn(page)).toEqual([]);
 
-  // Opened on its own, at its address: still locked.
+  // A standalone request gets an inert instruction, never the file's script.
   const alone = await page.context().newPage();
-  await alone.goto(frame.url());
-  const own = alone.locator("#out");
-  await expect(own).toContainText("script ran");
-  await expect(own).toContainText("eval: 42");
-  await expect(own).toContainText("storage: blocked");
-  await expect(own).toContainText("origin: null");
-  await expect(own).toContainText("api: blocked");
-  await expect(own).toContainText("send: blocked");
-  await expect(own).toContainText("remote image: blocked");
-  await expect(own).toContainText("remote script: blocked");
+  await alone.goto(fileUrl);
+  await expect(
+    alone.getByText("Open this page from the chat in Rufi."),
+  ).toBeVisible();
+  await expect(alone.locator("script, #out")).toHaveCount(0);
+  await alone.close();
 
   expect(remote.length).toBeGreaterThan(0);
   expect(new Set(remote)).toEqual(new Set(["csp"]));
   // The page itself asked nothing of Rufi's API.
   expect(asked.filter((url) => url.endsWith("/api/people"))).toEqual([]);
+
+  // An automatic navigation is different from fetch. The parent policy
+  // must stop it before it reaches a second, reachable origin.
+  const received: string[] = [];
+  const outside = createServer((request, response) => {
+    received.push(request.url ?? "");
+    response.end("Fictional external page");
+  });
+  await new Promise<void>((resolve) => outside.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = outside.address();
+    if (address === null || typeof address === "string")
+      throw new Error("No listener");
+    const origin = `http://127.0.0.1:${String(address.port)}`;
+    expect((await page.context().request.get(`${origin}/ready`)).status()).toBe(
+      200,
+    );
+    const destination = `${origin}/navigate`;
+    let ran = 0;
+    page.on("console", (message) => {
+      if (message.text() === "navigation script ran") ran++;
+    });
+    await writeFile(
+      join(rufi.home, "ai", "reports", "navigation.html"),
+      `<!doctype html><html lang="en"><title>Fictional navigation</title><script>console.log("navigation script ran"); location.href = ${JSON.stringify(destination)};</script></html>`,
+    );
+    await send(page, "[Fictional navigation](reports/navigation.html)");
+    await log(page)
+      .getByRole("button", { name: "Open Fictional navigation" })
+      .click();
+    const navigating = page.getByRole("dialog", {
+      name: "Fictional navigation",
+    });
+    const url = new URL(
+      (await navigating.locator("iframe").getAttribute("src")) ?? "",
+      page.url(),
+    ).href;
+    await expect.poll(() => ran).toBe(1);
+    await expect.poll(() => refusedIn(page)).toEqual([`frame-src ${origin}`]);
+    expect(received).toEqual(["/ready"]);
+    await navigating.getByRole("button", { name: "Close" }).click();
+    const direct = await page.context().newPage();
+    await direct.goto(url);
+    await expect(
+      direct.getByText("Open this page from the chat in Rufi."),
+    ).toBeVisible();
+    await expect(direct.locator("script")).toHaveCount(0);
+    expect(ran).toBe(1);
+    expect(received).toEqual(["/ready"]);
+    await direct.close();
+    expect(await refusedIn(page)).toEqual([`frame-src ${origin}`]);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      outside.close((error) => {
+        if (error) reject(error);
+        else resolve();
+      }),
+    );
+  }
 });
 
 test("a file that is gone keeps its card and says so", async ({

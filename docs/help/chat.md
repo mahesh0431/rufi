@@ -94,7 +94,7 @@ When the AI makes something in its folder to show you (see [What the AI can do i
 
 - **A picture**, such as a chart that the AI's program drew, shows in the reply at its own size, up to the reply's width, with the AI's caption under it. Click it to see it full size; press Esc or click again to go back. Rufi shows PNG, JPEG, GIF and WebP pictures.
 - **A picture the AI generated** shows the same way, with "Made by the AI" under it. When the reply also shows that picture, it shows once.
-- **A page**, an HTML file that the AI made, such as a page of your results to show your doctor, is a card with its title, its file name and **Open**. **Open** shows the page over the chat. **Close** or Esc goes back to the chat where you were.
+- **A page**, an HTML file that the AI made, such as a page of your results to show your doctor, is a card with its title, its file name and **Open**. **Open** shows the page over the chat. **Close** or Esc goes back to the chat where you were. Open a page from its card in the chat. Opening its address by itself says "Open this page from the chat in Rufi."
 - **A diagram** that the AI explains something with shows as a drawing, in Rufi's colours. While the reply is written, and when the diagram can't be drawn, it shows as its text.
 
 Rufi shows files only from the AI's folder and from the folder where the AI keeps the pictures it generates. A link to any other file shows as its words.

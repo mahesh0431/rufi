@@ -315,12 +315,21 @@ importers:
       remark-gfm:
         specifier: 4.0.1
         version: 4.0.1
+      remark-parse:
+        specifier: 11.0.0
+        version: 11.0.0
+      remark-rehype:
+        specifier: 11.1.2
+        version: 11.1.2
       remend:
         specifier: 1.4.0
         version: 1.4.0
       tailwind-merge:
         specifier: 3.7.0
         version: 3.7.0
+      unified:
+        specifier: 11.0.5
+        version: 11.0.5
       zustand:
         specifier: 5.0.15
         version: 5.0.15(@types/react@19.3.0)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))

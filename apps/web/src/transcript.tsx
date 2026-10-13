@@ -33,13 +33,16 @@ import {
 } from "react";
 import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkParse from "remark-parse";
+import remarkRehype from "remark-rehype";
+import { unified } from "unified";
 import remend from "remend";
 import type { Entry, Read, Turn } from "@rufi/contracts";
 import type { StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/shallow";
 import { ChipView } from "./chips.tsx";
-import { Diagram, fileIn, PageCard, Picture, shows } from "./files.tsx";
+import { Diagram, fileIn, NativePicture, PageCard, Picture } from "./files.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import type { Live } from "./live.ts";
 import { RetryButton } from "./reading.tsx";
@@ -62,6 +65,7 @@ const webLink: Components["a"] = ({ href, children }) =>
     <span>{children}</span>
   );
 const components: Components = { a: webLink };
+const REMARK = [remarkGfm];
 
 /** Text of a Markdown element, as written. */
 const textOf = (node: {
@@ -122,6 +126,35 @@ const ENDED = replyComponents(false);
 const keepFiles = (url: string) =>
   /^file:/i.test(url) ? url : defaultUrlTransform(url);
 
+/** The same Markdown tree and file rules as the reply renderer above. */
+const parser = unified()
+  .use(remarkParse)
+  .use(REMARK)
+  .use(remarkRehype, { allowDangerousHtml: true });
+function picturesIn(text: string): string[] {
+  const tree = parser.runSync(parser.parse(text));
+  const paths = new Set<string>();
+  const visit = (node: (typeof tree)["children"][number] | typeof tree) => {
+    if (
+      node.type === "element" &&
+      (node.tagName === "a" || node.tagName === "img")
+    ) {
+      const url = node.properties[node.tagName === "a" ? "href" : "src"];
+      const file = fileIn(typeof url === "string" ? keepFiles(url) : undefined);
+      if (file) {
+        if (file.shape === "picture") paths.add(file.path);
+        return; // A file renderer replaces this element and its children.
+      }
+    }
+    if ("children" in node) for (const child of node.children) visit(child);
+  };
+  visit(tree);
+  return [...paths];
+}
+
+const readableReply = (text: string, streaming: boolean) =>
+  streaming ? remend(text, { linkMode: "text-only" }) : text;
+
 /**
  * Markdown shown safely. Rufi's receipt shows no links at all: a web address
  * saved in a record is its text, not a link Rufi vouches for.
@@ -139,7 +172,7 @@ export function Marked({
   if (reply) {
     return (
       <Markdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={REMARK}
         components={reply.streaming ? WRITING : ENDED}
         urlTransform={keepFiles}
         skipHtml
@@ -150,7 +183,7 @@ export function Marked({
   }
   return (
     <Markdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={REMARK}
       components={components}
       disallowedElements={links ? ["img"] : ["img", "a"]}
       unwrapDisallowed
@@ -174,10 +207,7 @@ function Reply({
     <div className="reply" data-entry={id}>
       {/* While it streams, half-written Markdown is closed so it reads right;
           a half-written link shows as its text. */}
-      <Marked
-        text={streaming ? remend(text, { linkMode: "text-only" }) : text}
-        reply={{ streaming }}
-      />
+      <Marked text={readableReply(text, streaming)} reply={{ streaming }} />
     </div>
   );
 }
@@ -200,8 +230,6 @@ function lines(state: Live): string[] {
   const first = new Map<string, string>();
   const last = new Map<string, string>();
   const lastReply = new Map<string, string>();
-  /** Each turn's replies, for the generated pictures they show themselves. */
-  const replies = new Map<string, string[]>();
   for (const id of order) {
     const entry = entries[id];
     if (!entry?.turnId) continue;
@@ -209,19 +237,8 @@ function lines(state: Live): string[] {
     last.set(entry.turnId, id);
     if (entry.kind === "reply") {
       lastReply.set(entry.turnId, id);
-      replies.set(entry.turnId, [
-        ...(replies.get(entry.turnId) ?? []),
-        entry.text,
-      ]);
     }
   }
-  /** A generated picture its own reply shows: shown there, once. */
-  const inReply = (entry: Entry) =>
-    entry.activity === "picture" &&
-    entry.detail !== null &&
-    (replies.get(entry.turnId ?? "") ?? []).some((text) =>
-      shows(text, entry.detail ?? ""),
-    );
   /** Lines before an entry, and after one ("": before them all). */
   const before = new Map<string, string[]>();
   const after = new Map<string, string[]>();
@@ -262,7 +279,7 @@ function lines(state: Live): string[] {
     if (entry.activity === "compaction") {
       // Only a compaction the AI completed: one started or cut shows nothing.
       if (entry.status === "done") shown.push(`c:${id}`);
-    } else if (!inReply(entry)) shown.push(`e:${id}`);
+    } else shown.push(`e:${id}`);
     shown.push(...(after.get(id) ?? []));
   }
   return shown;
@@ -565,9 +582,7 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
     entry.status === "done" &&
     entry.detail !== null ? (
     // A picture the AI generated, shown even when its reply doesn't.
-    <div data-entry={id} className="reply">
-      <Picture path={entry.detail} caption="Made by the AI" />
-    </div>
+    <GeneratedPicture live={live} entry={entry} />
   ) : entry.kind === "activity" ? (
     <p
       data-entry={id}
@@ -581,6 +596,41 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
     </p>
   ) : (
     <Reply id={id} text={entry.text} streaming={streaming} />
+  );
+}
+
+/** Native pictures stay until an actual reference in this turn shows them. */
+function GeneratedPicture({
+  live,
+  entry,
+}: {
+  live: StoreApi<Live>;
+  entry: Entry;
+}) {
+  const references = useStore(
+    live,
+    useShallow((state) => [
+      ...new Set(
+        state.order.flatMap((id) => {
+          const reply = state.entries[id];
+          return reply?.kind === "reply" && reply.turnId === entry.turnId
+            ? picturesIn(
+                readableReply(
+                  reply.text,
+                  state.turns[entry.turnId ?? ""]?.status === "running",
+                ),
+              )
+            : [];
+        }),
+      ),
+    ]),
+  );
+  return (
+    <NativePicture
+      path={entry.detail ?? ""}
+      entryId={entry.id}
+      alsoShown={references}
+    />
   );
 }
 

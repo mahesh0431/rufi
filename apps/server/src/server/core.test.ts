@@ -1623,7 +1623,12 @@ describe("the files a reply shows", () => {
     const page = await session(core);
     const origin = `http://127.0.0.1:${String(core.port)}`;
     const url = String((await fileOf(page, "results.html")).body["url"]);
-    const served = await call(core.port, "GET", url);
+    const direct = await call(core.port, "GET", url);
+    expect(direct.text).toContain("Open this page from the chat in Rufi.");
+    expect(direct.text).not.toContain("Fictional results");
+    const served = await call(core.port, "GET", url, {
+      "Sec-Fetch-Dest": "iframe",
+    });
     expect(served.headers["content-type"]).toBe("text/html; charset=utf-8");
     const policy = String(served.headers["content-security-policy"]);
     // One policy, not the screens' as well.

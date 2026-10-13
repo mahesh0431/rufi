@@ -8,7 +8,14 @@
 // shows the file as it is now.
 import { randomBytes } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
-import { basename, extname, isAbsolute, resolve, sep } from "node:path";
+import {
+  basename,
+  extname,
+  isAbsolute,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** How long an address for a file works; the screens ask again after. */
@@ -42,7 +49,10 @@ interface ShownFile {
  * both roots, a link leading out, not a regular file, or a type Rufi doesn't
  * show.
  */
-type Lookup = { found: ShownFile } | { missing: true } | { refused: true };
+type Lookup =
+  | { found: ShownFile }
+  | { missing: true; path: string }
+  | { refused: true };
 
 export interface AiFiles {
   /** The file a reply's path names, checked now. */
@@ -98,13 +108,26 @@ export function aiFiles(options: {
     );
     if (within.length === 0) return { refused: true };
     const file = await resolved(asked);
-    if (file === undefined) return { missing: true };
+    if (file === undefined) {
+      // No file to resolve: keep its normalized name under the real root,
+      // so a native picture and its Markdown alias share one gone card.
+      const index = roots.findIndex((root) => under(root, asked));
+      const root = roots[index];
+      const actual = real[index];
+      return {
+        missing: true,
+        path:
+          root !== undefined && actual !== undefined
+            ? resolve(actual, relative(root, asked))
+            : asked,
+      };
+    }
     if (!real.some((root) => root !== undefined && under(root, file))) {
       return { refused: true };
     }
     const found = TYPES[extname(file).toLowerCase()];
     const info = await stat(file).catch(() => undefined);
-    if (info === undefined) return { missing: true };
+    if (info === undefined) return { missing: true, path: file };
     if (!info.isFile() || found === undefined) return { refused: true };
     return { found: { path: file, name: basename(asked), ...found } };
   };
