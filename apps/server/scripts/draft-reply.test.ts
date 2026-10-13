@@ -8,6 +8,8 @@ describe("a reply about a value only in a document's drafts", () => {
     "There's **no LDL cholesterol result saved in your health record** … The recently read lotus-jun.pdf results aren't saved in your record yet.",
     "The June report shows LDL 109 mg/dL, but its results aren't part of your health record until you save them.",
     "Your lotus-jun.pdf document has LDL 109 mg/dL; it hasn't been saved yet.",
+    "**High (H), lab range <100 mg/dL:** your latest available LDL cholesterol was **109 mg/dL**, collected **2 June 2026**.\n\nThis is a **draft from lotus-jun.pdf**, not yet saved to your health record. No saved LDL result was found.",
+    "**High — LDL cholesterol: 109 mg/dL** (lab range: **<100 mg/dL**), collected **2 June 2026**.\n\nThis is a **draft result from lotus-jun.pdf, not yet saved** in your health record. I found no saved LDL result.",
   ])("passes when it says the document's value isn't saved: %s", (reply) => {
     expect(saysDraftNotSaved(reply)).toBe(true);
   });

@@ -117,8 +117,8 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   let server: AppServer | undefined;
   let starting: Promise<AppServer> | undefined;
   /**
-   * The canonical skills folder, and
-   * each skill's heading, without what follows in brackets.
+   * The skills' canonical folder, once written, and each skill's heading
+   * without what follows in brackets.
    */
   const skills: SkillFiles = {
     folder: undefined,

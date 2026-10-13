@@ -540,6 +540,7 @@ describe("What a person sees of the AI's commands, on the pinned Codex", () => {
       const skill = (name: string) => JSON.stringify(skillPath(name));
       const note = join(home, "ai", "note.txt");
       const copy = join(home, "ai", "skill-copy.txt");
+      const skills = join(home, "codex", "skills");
       const visible = [
         `cat ${skill("results")} && ls`,
         `cat ${skill("results")}; cat ${skill("results")}`,
@@ -550,6 +551,8 @@ describe("What a person sees of the AI's commands, on the pinned Codex", () => {
         `cat ${skill("results")} ${JSON.stringify(note)}`,
         `sed -n '1,2p' ${skill("results")} ${JSON.stringify(note)}`,
         `cat ${skill("research")}`,
+        // One group of plain names only: a nested one stays a command.
+        `cat ${skills}/{results,{analysis,documents}}/SKILL.md`,
       ];
       await start([
         { text: "Ready." },
@@ -557,6 +560,7 @@ describe("What a person sees of the AI's commands, on the pinned Codex", () => {
           `cat ${skill("saving-a-document")}`,
           `cat ${skill("reading-the-record")} ${skill("changing-the-record")}`,
           `cat '${skillPath("results")}' ${skillPath("results")}`,
+          `cat ${skills}/{reading-the-record,changing-the-record,results}/SKILL.md`,
           ...visible,
         ]),
         { text: "Read." },
@@ -580,6 +584,10 @@ describe("What a person sees of the AI's commands, on the pinned Codex", () => {
           null,
         ],
         ["Read Rufi's instructions: Results", null],
+        [
+          "Read Rufi's instructions: Reading the record, Changing the record and Results",
+          null,
+        ],
         ...visible.map((): [string, unknown] => [
           "Ran a command",
           expect.any(String),

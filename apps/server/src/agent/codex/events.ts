@@ -55,34 +55,49 @@ function statusOf(status: string | undefined, ended: boolean) {
   return "running";
 }
 
-/** Literal shell words only: quoting and escaping, without shell operations. */
+/**
+ * Literal shell words only: quoting and escaping, without shell operations;
+ * in a shell's script, also one `{a,b}` group of skill-folder names.
+ */
 const PART =
-  /"((?:[^"\\$`]|\\["\\$`])*)"|'([^']*)'|\\([^\r\n])|([^\s"'\\$`;&|<>()*?[\]{}~#!]+)/y;
+  /"((?:[^"\\$`]|\\["\\$`])*)"|'([^']*)'|\\([^\r\n])|\{([a-z0-9-]+(?:,[a-z0-9-]+)+)\}|([^\s"'\\$`;&|<>()*?[\]{}~#!]+)/y;
 
-function literalWords(command: string): string[] | undefined {
+/** The words of a command, each group expanded in place; undefined for any other. */
+function literalWords(command: string, braces = false): string[] | undefined {
   if (/[\r\n]/.test(command)) return undefined;
   const words: string[] = [];
-  let word: string | undefined;
+  // The word so far, as each of its expansions, and whether it has a group.
+  let word: string[] | undefined;
+  let grouped = false;
   for (let at = 0; at < command.length;) {
     if (/[ \t]/.test(command[at] ?? "")) {
-      if (word !== undefined) words.push(word);
+      if (word !== undefined) words.push(...word);
       word = undefined;
+      grouped = false;
       at++;
       continue;
     }
     PART.lastIndex = at;
     const part = PART.exec(command);
     if (!part) return undefined;
-    word =
-      (word ?? "") +
-      (part[1]?.replace(/\\(["\\$`])/g, "$1") ??
+    const so = word ?? [""];
+    if (part[4] !== undefined) {
+      if (!braces || grouped) return undefined;
+      grouped = true;
+      const names = part[4].split(",");
+      word = so.flatMap((start) => names.map((name) => start + name));
+    } else {
+      const text =
+        part[1]?.replace(/\\(["\\$`])/g, "$1") ??
         part[2] ??
         part[3] ??
-        part[4] ??
-        "");
+        part[5] ??
+        "";
+      word = so.map((start) => start + text);
+    }
     at = PART.lastIndex;
   }
-  if (word !== undefined) words.push(word);
+  if (word !== undefined) words.push(...word);
   return words;
 }
 
@@ -92,7 +107,11 @@ const and = (words: readonly string[]) =>
     ? (words[0] ?? "")
     : `${words.slice(0, -1).join(", ")} and ${words.at(-1) ?? ""}`;
 
-/** Quiet only an exact cat of regular skill files under the canonical root. */
+/**
+ * The skills a command only reads, by name: exactly `cat` and regular skill
+ * files under the canonical root (a shell's script may name several with
+ * one `{a,b}` group in a path); undefined for any other command.
+ */
 function skillsRead(
   item: Extract<ThreadItem, { type: "commandExecution" }>,
   root: string | undefined,
@@ -106,7 +125,7 @@ function skillsRead(
     /^\/bin\/(?:zsh|bash)$/.test(words[0] ?? "") &&
     (words[1] === "-lc" || words[1] === "-c")
   ) {
-    words = literalWords(words[2] ?? "");
+    words = literalWords(words[2] ?? "", true);
   }
   if (words?.[0] !== "cat" || words.length < 2) return undefined;
   const names: string[] = [];
