@@ -160,8 +160,10 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       sandbox: deps.sandbox,
       skills: deps.skills,
     });
-    const folder = join(paths.codexHome, "skills");
-    skills = [folder, await realpath(folder)];
+    skills = [
+      join(paths.codexHome, "skills"),
+      join(await realpath(paths.codexHome), "skills"),
+    ];
     const started = await startAppServer({
       command: deps.command,
       env: { ...deps.env, HOME: paths.processHome },
