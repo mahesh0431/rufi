@@ -9,7 +9,7 @@ import { getRecords } from "./records.ts";
 import {
   inputSchema,
   Refusal,
-  shownFor,
+  specOf,
   toolCaller,
   type Tool,
   type ToolContext,
@@ -34,8 +34,11 @@ export const TOOLS: readonly Tool[] = [
   createBrief,
 ];
 
-/** The namespace the agent sees them in: rufi.get_overview. */
-const NAMESPACE = "rufi";
+/**
+ * The name the agent knows Rufi's MCP server by: on a code-mode model the AI
+ * calls `tools.mcp__rufi__get_overview`. tools.json names them rufi.<tool>.
+ */
+const SERVER = "rufi";
 
 /** PLAN.md §3.5: tools are the only way in to the record; docs/adr/0005. */
 const TOOL_INSTRUCTIONS = `The user's health record lives in Rufi. Read it only through the rufi tools, and change it only with rufi.save_changes. Never open, copy or query Rufi's database or files directly, by code, SQL or shell. When you talk to the user about it, call it their health record.
@@ -106,28 +109,26 @@ const EVENT_TURN =
 const EVENT_TURN_RETRY =
   "This turn was started by a Rufi event, not by the user, so no reading can start in it. Ask the user; they can ask you to read it again in a message of their own.";
 
-/** The model's tools, in the shape an agent adapter takes (AgentTools). */
+/** The model's tools: their catalog for the MCP server, and a caller per turn. */
 export function forAgent(context: () => ToolContext, log: Log) {
   const tools = TOOLS.filter((tool) => tool.callers !== "ui");
   return {
-    namespace: NAMESPACE,
-    specs: tools.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      shown: (input: unknown) => shownFor(tool, input),
-      inputSchema: inputSchema(tool),
-    })),
+    server: SERVER,
+    specs: tools.map(specOf),
     instructions: TOOL_INSTRUCTIONS,
     forTurn: () => toolCaller(tools, context, log),
   };
 }
 
+/** How the agent gets Rufi's tools; part of the tools version. */
+const TRANSPORT = "mcp";
+
 /**
- * Names the tool set an agent thread started with: a thread keeps its tools,
- * so a different set needs a new thread.
+ * Names the tool set an agent thread started with, and how it gets them: a
+ * different set or transport needs a new thread.
  */
 export function toolsVersion(): string {
-  const { namespace, specs, instructions } = forAgent(
+  const { server, specs, instructions } = forAgent(
     () => ({ store: undefined, personId: undefined }),
     () => undefined,
   );
@@ -138,7 +139,14 @@ export function toolsVersion(): string {
     inputSchema: input,
   }));
   return createHash("sha256")
-    .update(JSON.stringify({ namespace, specs: told, instructions }))
+    .update(
+      JSON.stringify({
+        transport: TRANSPORT,
+        server,
+        specs: told,
+        instructions,
+      }),
+    )
     .digest("hex")
     .slice(0, 16);
 }
@@ -146,7 +154,7 @@ export function toolsVersion(): string {
 /** tools.json: every tool as documentation, generated (pnpm tools:json). */
 export function toolsJson(): string {
   const tools = TOOLS.map((tool) => ({
-    name: `${NAMESPACE}.${tool.name}`,
+    name: `${SERVER}.${tool.name}`,
     description: tool.description,
     callers: tool.callers,
     readOnly: tool.readOnly,

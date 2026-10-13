@@ -15,10 +15,9 @@ import { Cause, Console, Effect, Layer } from "effect";
 import { signIn } from "../agent/chatgpt/signin.ts";
 import { accessToken, signOut, status } from "../agent/chatgpt/session.ts";
 import type { ChatGptDeps } from "../agent/chatgpt/openai.ts";
-import { v7 as uuid } from "uuid";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexRuntime } from "../agent/codex/codex.ts";
-import { agentCall, type AgentEvent, type TurnEnd } from "../agent/runtime.ts";
+import type { AgentEvent } from "../agent/runtime.ts";
 import { allowlistFile } from "../core/chat/models.ts";
 import { pages } from "../core/documents/pages.ts";
 import { safetyInstructions } from "../core/chat/safety.ts";
@@ -48,6 +47,7 @@ import {
   noEffectLogs,
 } from "../platform/logs.ts";
 import { runningLink, startCore } from "../server/core.ts";
+import { ask } from "./ask.ts";
 import { subAgentRunner } from "../agent/codex/subagent.ts";
 import { appChannel, closeAppChannel } from "./app.ts";
 
@@ -430,69 +430,28 @@ const askCommand = (question: string, person: string | undefined) =>
     const { version } = createRequire(import.meta.url)(
       "../../package.json",
     ) as { version: string };
-    const ended = Promise.withResolvers<TurnEnd>();
-    let caller:
-      | { turnId: string; call: ReturnType<typeof tools.forTurn> }
-      | undefined;
-    const agent = yield* Effect.acquireRelease(
-      Effect.sync(() =>
+    const started = Date.now();
+    const end = yield* ask(question, {
+      model: models[0] ?? "",
+      instructions: `${safetyInstructions(undefined)}\n\n${tools.instructions}`,
+      tools,
+      agent: (host) =>
         codexRuntime({
           home: deps.home,
           command: { file, args: [] },
           env: childEnvironment(),
           token: (validForMs) => accessToken(deps, validForMs),
           version,
-          tools: { namespace: tools.namespace, specs: tools.specs },
-          host: {
-            onEvent: (event) => {
-              show(event);
-              if (event.type === "turnEnded") ended.resolve(event.end);
-            },
-            callTool: (_threadId, turnId, name, input) => {
-              if (caller?.turnId !== turnId) {
-                caller = { turnId, call: tools.forTurn() };
-              }
-              return caller.call(name, input);
-            },
-          },
+          tools: { server: tools.server, specs: tools.specs },
+          host,
           log,
         }),
-      ),
-      (runtime) => Effect.promise(() => runtime.close()),
-    );
-    const op = new AbortController();
-    let threadId: string | undefined;
-    const started = Date.now();
-    const end = yield* agentCall(
-      async () => {
-        const thread = await agent.startThread(
-          {
-            model: models[0] ?? "",
-            instructions: `${safetyInstructions(undefined)}\n\n${tools.instructions}`,
-          },
-          op.signal,
-        );
-        threadId = thread.threadId;
-        await agent.send(
-          threadId,
-          { id: uuid(), input: [question] },
-          op.signal,
-        );
-        return ended.promise;
-      },
-      async () => {
-        op.abort();
-        if (threadId !== undefined) await agent.stop(threadId);
-        ended.resolve({
-          status: "interrupted",
-          reason: "stopped",
-          text: "Stopped.",
-        });
-      },
-      () => {
+      onEvent: show,
+      onStop: () => {
         console.error("\nStopping…");
       },
-    );
+      log,
+    });
     log("turn.ended", { status: end.status, ms: Date.now() - started });
     process.stdout.write("\n");
     if (end.status !== "completed") {

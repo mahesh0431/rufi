@@ -43,6 +43,7 @@ import { holdRufiLock, readJson, writePrivateJson } from "../platform/files.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { api, LAUNCHER_HEADER } from "./api.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
+import { mcpEndpoint, mcpKeys } from "./mcp.ts";
 import { reader as openReader, readerChoice } from "./reader.ts";
 import { secret, sessions } from "./session.ts";
 import { signInFlow, type SignIn } from "./signin.ts";
@@ -55,7 +56,7 @@ export interface CoreOptions {
    * Finder; RUFI_HOME, and nothing to show, when not given.
    */
   folder?: { source: FolderSource; show: (path: string) => Promise<void> };
-  /** Makes the agent, with Rufi's tools and the host its events go to. */
+  /** Makes the agent, with Rufi's tools (to show) and the host its events go to. */
   agent: (tools: AgentTools, host: AgentHost) => AgentRuntime;
   /** Runs the document reader; without it, readings wait. */
   reader?: RunSubAgent;
@@ -79,6 +80,10 @@ export interface CoreOptions {
 
 /** What `pnpm start` reads to reach the running Rufi; there while it runs. */
 export const coreFile = (home: string) => join(home, "core.json");
+
+/** Where Rufi's MCP server takes the chat's calls, and the reader's. */
+const MCP_CHAT = "/mcp";
+const MCP_READER = "/mcp/reader";
 
 /** How long `pnpm start` waits for a running Rufi to answer. */
 const REOPEN_MS = 3_000;
@@ -192,6 +197,12 @@ export const startCore = (options: CoreOptions) =>
     yield* attempt(() => readings.recover());
 
     const tools = forAgent(() => ({ store: reader, personId: undefined }), log);
+    let port = 0;
+    // Rufi's MCP server, one endpoint for the chat and one for the reader,
+    // each with its own keys (server/mcp.ts).
+    const chatKeys = mcpKeys();
+    const readerKeys = mcpKeys();
+    const mcpUrl = (path: string) => `http://127.0.0.1:${String(port)}${path}`;
     const allowlist = allowlistFile(home);
     const account =
       options.account ??
@@ -203,13 +214,12 @@ export const startCore = (options: CoreOptions) =>
           queue,
           signedIn: async () => (await account()).account === "signed_in",
           agent: (host) =>
-            options.agent(
-              { namespace: tools.namespace, specs: tools.specs },
-              host,
-            ),
+            options.agent({ server: tools.server, specs: tools.specs }, host),
           allowlist: allowlist.read,
+          mcp: { url: () => mcpUrl(MCP_CHAT), keys: chatKeys },
           tools: {
             version: toolsVersion(),
+            specs: tools.specs,
             instructions: tools.instructions,
             caller: chatCaller(
               reader,
@@ -237,16 +247,15 @@ export const startCore = (options: CoreOptions) =>
           run: options.reader,
           signedIn: async () => (await account()).account === "signed_in",
           choice: () => readerChoice(transcripts.setting),
+          mcp: { url: () => mcpUrl(MCP_READER), keys: readerKeys },
           log,
         });
         readings.watch(opened.poke);
-        opened.start();
         return opened;
       }),
       (opened) => Effect.promise(() => opened.close()),
     );
 
-    let port = 0;
     const access = sessions();
     const launcher = secret();
     // The token is in the fragment: the browser never sends it in a request.
@@ -314,6 +323,12 @@ export const startCore = (options: CoreOptions) =>
       log,
       ...(options.behindMax !== undefined && { behindMax: options.behindMax }),
     });
+    // Outside the screens' checks: the agent sends no Origin, and each
+    // endpoint has its own (server/mcp.ts).
+    const mcp: Record<string, (request: Request) => Promise<Response>> = {
+      [MCP_CHAT]: mcpEndpoint({ keys: chatKeys, port: () => port, log }),
+      [MCP_READER]: mcpEndpoint({ keys: readerKeys, port: () => port, log }),
+    };
     const server = yield* Effect.acquireRelease(
       attempt(
         () =>
@@ -321,7 +336,10 @@ export const startCore = (options: CoreOptions) =>
             const started = serve(
               {
                 fetch: (request, env) => {
-                  const answer = Promise.resolve(app.fetch(request, env));
+                  const endpoint = mcp[new URL(request.url).pathname];
+                  const answer = Promise.resolve(
+                    endpoint ? endpoint(request) : app.fetch(request, env),
+                  );
                   const done = () => answering.delete(answer);
                   answering.add(answer);
                   answer.then(done, done);
@@ -352,6 +370,8 @@ export const startCore = (options: CoreOptions) =>
         ),
     );
     port = (server.address() as AddressInfo).port;
+    // Its tools need the port.
+    documentReader.start();
     yield* Effect.acquireRelease(
       attempt(() => writePrivateJson(coreFile(home), { port, launcher })),
       () => Effect.promise(() => rm(coreFile(home), { force: true })),

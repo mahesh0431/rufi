@@ -2,9 +2,11 @@
 // standard behaviour. Codex sees none of the user's own setup: CODEX_HOME is
 // Rufi's (so no ~/.codex), and the app-server process gets its own HOME (so no
 // personal skills from ~/.agents/skills), while the agent's commands still get
-// the real HOME. MCP servers arrive one by one, chosen here (PLAN.md §3.1).
+// the real HOME. MCP servers arrive one by one, chosen here (PLAN.md §3.1):
+// today only Rufi's own, given to each thread (mcpServers).
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { McpServer } from "../runtime.ts";
 import type { ConfigReadResponse } from "./protocol/v2/ConfigReadResponse.ts";
 import type { ExperimentalFeatureListResponse } from "./protocol/v2/ExperimentalFeatureListResponse.ts";
 import type { ModelProviderCapabilitiesReadResponse } from "./protocol/v2/ModelProviderCapabilitiesReadResponse.ts";
@@ -156,4 +158,37 @@ export async function checkSettings(
       `Codex didn't take Rufi's settings: ${problems.join("; ")}.`,
     );
   }
+}
+
+/** The name Codex knows Rufi's MCP server by, in the chat and the reader. */
+export const RUFI_SERVER = "rufi";
+
+/**
+ * Codex cuts a tool's input schema over this to `unknown` before the model
+ * sees it (5,000 bytes unless set, 0.159.3). Rufi's largest, save_changes, is
+ * about 19 KB: it is kept whole, and the code runner's declaration uses it.
+ */
+const SCHEMA_MAX_BYTES = 64 * 1024;
+
+/**
+ * A thread's MCP settings: Rufi's server with the thread's key. Codex can't
+ * start the thread without it (`required`), runs its tools without asking
+ * (with approvals off it would refuse a tool that isn't read-only), and gives
+ * up on a call a little after Rufi's own deadline for it. Codex defers an MCP
+ * server's tools: the model finds them first (in exec's ALL_TOOLS, or with
+ * tool_search on a direct model). `eager` gives them to the model at once.
+ */
+export function mcpServers(server: McpServer, toolMs: number, eager = false) {
+  return {
+    [RUFI_SERVER]: {
+      url: server.url,
+      http_headers: { Authorization: `Bearer ${server.key}` },
+      required: true,
+      default_tools_approval_mode: "approve",
+      startup_timeout_sec: 10,
+      tool_timeout_sec: Math.ceil(toolMs / 1000) + 10,
+      tool_input_schema_max_bytes: SCHEMA_MAX_BYTES,
+      ...(eager && { omit_tools_from: ["deferred"] }),
+    },
+  };
 }

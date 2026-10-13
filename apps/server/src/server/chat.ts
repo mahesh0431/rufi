@@ -2,7 +2,9 @@
 // saved first and shown from what was saved. What waits to go to the AI is
 // in Rufi's own queue (core/chat/queue.ts): the dispatcher here hands the AI
 // one turn's rows at a time, claimed in the database before the AI is
-// called, and the next only after that turn and its writes have ended.
+// called, and the next only after that turn and its writes have ended. The
+// AI calls Rufi's tools through Rufi's MCP server, with a key for its thread;
+// each call is bound to the reply it was made in.
 import type { Chip, Effort, Pointer } from "@rufi/contracts";
 import {
   NotSent,
@@ -12,7 +14,6 @@ import {
   type AgentRuntime,
   type Model,
   type ThreadSettings,
-  type ToolAnswer,
 } from "../agent/runtime.ts";
 import type { Allowlist } from "../core/chat/models.ts";
 import { allowedModels } from "../core/chat/models.ts";
@@ -24,7 +25,9 @@ import {
 import { refsForAi, RefRefusal } from "../core/chat/refs.ts";
 import { safetyInstructions } from "../core/chat/safety.ts";
 import type { ChatRow, Transcripts } from "../core/chat/transcript.ts";
+import type { ToolAnswer, ToolSpec } from "../core/tools/registry.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
+import type { McpCall, McpKeys } from "./mcp.ts";
 
 /** How many earlier messages a new thread starts with. */
 const NEW_THREAD_MESSAGES = 10;
@@ -34,12 +37,16 @@ export interface ChatDeps {
   queue: ChatQueue;
   /** Whether the AI can be reached with the person's sign-in now. */
   signedIn: () => Promise<boolean>;
-  /** Makes the agent, given where its events go and how its tools run. */
+  /** Makes the agent, given where its events go. */
   agent: (host: AgentHost) => AgentRuntime;
   allowlist: () => Promise<Allowlist>;
+  /** Rufi's MCP endpoint for the chat: its address and its keys. */
+  mcp: { url: () => string; keys: McpKeys };
   tools: {
     /** Names the tool set; a thread keeps the one it started with. */
     version: string;
+    /** What the MCP server lists. */
+    specs: readonly ToolSpec[];
     /** How the AI uses them, after the safety instructions. */
     instructions: string;
     /**
@@ -95,6 +102,8 @@ export function chat(deps: ChatDeps) {
       ) => Promise<ToolAnswer>;
     }
   >();
+  /** Each thread's key to Rufi's MCP server, for this run of Rufi. */
+  const keys = new Map<string, string>();
   /** The hand-over each thread's next turn starts with, by thread. */
   const handing = new Map<string, string>();
   /** The hand-over each running turn started with, by agent turn. */
@@ -129,58 +138,101 @@ export function chat(deps: ChatDeps) {
         }),
       );
     },
-    callTool: async (threadId, turnId, name, input, callId) => {
-      // What the agent did before the call is stored first: the user's
-      // message a save rests on, and the turn its receipt belongs to.
-      await saving;
-      let caller = callers.get(threadId);
-      if (caller?.turnId !== turnId) {
-        const chat = await transcripts.byThread(threadId);
-        if (!chat) {
-          return {
-            ok: false,
-            text: JSON.stringify({
-              ok: false,
-              error: "No chat is open.",
-            }),
-          };
-        }
-        caller = {
-          turnId,
-          chat,
-          call: deps.tools.caller(
-            chat,
-            turnId,
-            await transcripts.origin(chat, turnId),
-          ),
-        };
-        callers.set(threadId, caller);
-      }
-      const startedAt = transcripts.now();
-      const answer = await caller.call(name, input, callId);
-      // Kept before the AI has it: Used must show every read the AI got.
-      try {
-        await transcripts.recordToolCall(caller.chat, turnId, {
-          callId,
-          tool: name,
-          input,
-          answer,
-          startedAt,
-        });
-      } catch (error) {
-        log("chat.save_failed", { kind: "tool_call", error: errorCode(error) });
-        lost(threadId, turnId);
-        return {
-          ok: false,
-          text: JSON.stringify({
-            ok: false,
-            error: "Rufi couldn't keep this call, so it stopped the reply.",
-          }),
-        };
-      }
-      return answer;
-    },
   };
+
+  /**
+   * One call to Rufi's tools through the MCP server, with a key of `chatId`.
+   * It is admitted only for the reply running in the chat's thread now, and
+   * not once Stop was pressed; it then runs for that reply, whatever comes
+   * after. Origin and what the reply may do come from Rufi's own record.
+   */
+  async function callTool(chatId: string, call: McpCall): Promise<ToolAnswer> {
+    const { threadId, turnId, callId } = call;
+    const refuse = (reason: "no_call" | "no_reply", error: string) => {
+      log("mcp.refused", { reason });
+      return { ok: false, text: JSON.stringify({ ok: false, error }) };
+    };
+    if (
+      threadId === undefined ||
+      turnId === undefined ||
+      callId === undefined
+    ) {
+      return refuse("no_call", "Rufi's tools take calls only from a reply.");
+    }
+    if (agent.activeTurn(threadId) !== turnId) {
+      return refuse("no_reply", "No reply is running.");
+    }
+    // What the agent did before the call is stored first: the user's
+    // message a save rests on, and the turn its receipt belongs to.
+    await saving;
+    let caller = callers.get(threadId);
+    if (caller?.turnId !== turnId) {
+      const chat = await transcripts.byThread(threadId);
+      if (!chat) return refuse("no_reply", "No reply is running.");
+      caller = {
+        turnId,
+        chat,
+        call: deps.tools.caller(
+          chat,
+          turnId,
+          await transcripts.origin(chat, turnId),
+        ),
+      };
+      callers.set(threadId, caller);
+    }
+    // The thread is the key's own chat's, also for a caller kept from before.
+    if (caller.chat.id !== chatId) {
+      return refuse("no_reply", "No reply is running.");
+    }
+    const startedAt = transcripts.now();
+    const answer = await caller.call(call.tool, call.input, callId);
+    // Kept before the AI has it: Used must show every read the AI got.
+    try {
+      await transcripts.recordToolCall(caller.chat, turnId, {
+        callId,
+        tool: call.tool,
+        input: call.input,
+        answer,
+        startedAt,
+      });
+    } catch (error) {
+      log("chat.save_failed", { kind: "tool_call", error: errorCode(error) });
+      lost(threadId, turnId);
+      return {
+        ok: false,
+        text: JSON.stringify({
+          ok: false,
+          error: "Rufi couldn't keep this call, so it stopped the reply.",
+        }),
+      };
+    }
+    if (answer.stopTurn !== undefined) {
+      agent
+        .stop(threadId, turnId, { status: "failed", text: answer.stopTurn })
+        .catch((error: unknown) => {
+          log("chat.save_failed", { kind: "stop", error: errorCode(error) });
+        });
+    }
+    return answer;
+  }
+
+  /** A key that opens the chat's tools, for one of its threads. */
+  const issueKey = (chat: ChatRow) =>
+    deps.mcp.keys.issue({
+      tools: deps.tools.specs,
+      call: (call) => callTool(chat.id, call),
+    });
+
+  /** The thread's tools: its key from this run, or a new one. */
+  function toolsOf(chat: ChatRow, threadId: string) {
+    let key = keys.get(threadId);
+    if (key === undefined) {
+      key = issueKey(chat);
+      keys.set(threadId, key);
+    }
+    return { url: deps.mcp.url(), key };
+  }
+
   const agent = deps.agent(host);
 
   /** Stores one agent event; listeners see it once stored. */
@@ -450,7 +502,11 @@ export function chat(deps: ChatDeps) {
       const threadId = chat.threadId;
       if (agent.loaded(threadId)) return threadId;
       try {
-        await agent.resumeThread(threadId, threadSettings, signal);
+        await agent.resumeThread(
+          threadId,
+          { ...threadSettings, tools: toolsOf(chat, threadId) },
+          signal,
+        );
         // What a crash kept Rufi from saving, from the agent's own record.
         fillGaps(chat, threadId);
         return threadId;
@@ -464,7 +520,23 @@ export function chat(deps: ChatDeps) {
     await saving;
     const modelChanged =
       chat.threadModel !== null && chat.threadModel !== chat.model;
-    const { threadId, model } = await agent.startThread(threadSettings, signal);
+    const key = issueKey(chat);
+    let started: { threadId: string; model: string };
+    try {
+      started = await agent.startThread(
+        { ...threadSettings, tools: { url: deps.mcp.url(), key } },
+        signal,
+      );
+    } catch (error) {
+      deps.mcp.keys.revoke(key);
+      throw error;
+    }
+    const { threadId, model } = started;
+    // The old thread's key opens nothing any more.
+    const old = chat.threadId === null ? undefined : keys.get(chat.threadId);
+    if (old !== undefined) deps.mcp.keys.revoke(old);
+    if (chat.threadId !== null) keys.delete(chat.threadId);
+    keys.set(threadId, key);
     await transcripts.setThread(chat, {
       id: threadId,
       provider: agent.provider,

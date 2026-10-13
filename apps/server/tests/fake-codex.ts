@@ -11,8 +11,10 @@
 // apart, "long" streams 200 parts of 1,000 characters, "think" streams a
 // reasoning summary (fake-model.ts's THINKING) before it answers, and anything else
 // answers "ok:<text>".
-// The test passes a scenario in FAKE_CODEX and reads what happened from the
-// JSON lines written to FAKE_CODEX_LOG.
+// Like Codex, it calls Rufi's tools on the MCP server a thread was given
+// (its config's mcp_servers.rufi), checking it answers when the thread starts
+// or resumes. The test passes a scenario in FAKE_CODEX and reads what
+// happened from the JSON lines written to FAKE_CODEX_LOG.
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
@@ -26,6 +28,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import { THINKING } from "./fake-model.ts";
+import { callTool, initialize, type McpServerConfig } from "./mcp-client.ts";
 
 export interface Scenario {
   /** Methods the fake never answers. */
@@ -74,12 +77,13 @@ export interface Scenario {
   /** Codex compacts the thread's context during the turn, before answering. */
   compaction?: boolean;
   /**
-   * Tool calls the model makes during a turn, before answering; `id` is
-   * Codex's call id (`call-<n>`; `exec-…` for a call made from exec).
+   * Calls of Rufi's tools the model makes during a turn, before answering;
+   * `id` is Codex's call id (`call-<n>`; `exec-…` for a call made from exec).
    */
   calls?: {
     id?: string;
-    namespace: string | null;
+    /** Another MCP server than Rufi's: the call is answered without Rufi. */
+    server?: string;
     tool: string;
     arguments: unknown;
   }[];
@@ -154,6 +158,8 @@ interface Thread {
   effort?: string;
   ephemeral?: boolean;
   sandbox?: string;
+  /** Rufi's MCP server, as the thread was last given it. */
+  mcp?: McpServerConfig;
   running:
     | { turnId: string; steers: Queued[]; interrupted: boolean }
     | undefined;
@@ -307,32 +313,48 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     ? []
     : (scenario.callsByTurn?.[turnIndex] ?? scenario.calls ?? []);
   for (const [i, { id, ...call }] of calls.entries()) {
-    // Like Codex: the item starts, then Rufi is asked to run it.
+    // Like Codex: the item starts, then the call goes to Rufi's MCP server.
     const item = {
       id: id ?? `call-${String(i)}`,
-      type: "dynamicToolCall",
-      namespace: call.namespace,
+      type: "mcpToolCall",
+      server: call.server ?? "rufi",
       tool: call.tool,
       arguments: call.arguments,
       status: "inProgress",
-      contentItems: null,
-      success: null,
+      result: null,
+      error: null,
       durationMs: null,
     };
     event("item/started", { item });
-    const reply = (await askRufi("item/tool/call", {
-      threadId,
-      turnId,
-      callId: item.id,
-      ...call,
-    })) as { success?: boolean };
-    record({ answered: "item/tool/call", reply });
+    const reply =
+      item.server !== "rufi"
+        ? { status: 200, result: { content: [] } }
+        : thread.mcp
+          ? await callTool(thread.mcp, {
+              name: call.tool,
+              arguments: call.arguments,
+              callId: item.id,
+              threadId,
+              turnId,
+            })
+          : { status: 0 };
+    record({ answered: "tools/call", reply });
     if (thread.running?.turnId !== turnId) return;
+    const failed = !reply.result || reply.result["isError"] === true;
     event("item/completed", {
       item: {
         ...item,
-        status: reply.success ? "completed" : "failed",
-        success: reply.success ?? null,
+        status: failed ? "failed" : "completed",
+        result: reply.result
+          ? {
+              content: reply.result["content"],
+              structuredContent: null,
+              _meta: null,
+            }
+          : null,
+        error: reply.result
+          ? null
+          : { message: `HTTP ${String(reply.status)}` },
       },
     });
   }
@@ -533,6 +555,30 @@ function featureList() {
   }));
 }
 
+/** Rufi's MCP server a thread/start or thread/resume gives in its config. */
+function configMcp(
+  params: Record<string, unknown>,
+): McpServerConfig | undefined {
+  const config = params["config"] as
+    | { mcp_servers?: Record<string, McpServerConfig> }
+    | undefined;
+  return config?.mcp_servers?.["rufi"];
+}
+
+/**
+ * Like Codex with a required server: the thread doesn't start or resume when
+ * Rufi's MCP server doesn't take the session.
+ */
+async function checkMcp(server: McpServerConfig | undefined, what: string) {
+  if (!server) return;
+  const { status } = await initialize(server);
+  if (status !== 200) {
+    throw new Error(
+      `error ${what} thread: Fatal error: Failed to initialize session: required MCP servers failed to initialize: rufi: unexpected server response: HTTP ${String(status)}`,
+    );
+  }
+}
+
 /** The effort a thread/start or thread/resume asks for in its config. */
 function configEffort(params: Record<string, unknown>): string | undefined {
   const config = params["config"] as Record<string, unknown> | undefined;
@@ -567,7 +613,10 @@ function threadOf(params: Record<string, unknown>): Thread {
   return thread;
 }
 
-function handle(method: string, params: Record<string, unknown>): unknown {
+async function handle(
+  method: string,
+  params: Record<string, unknown>,
+): Promise<unknown> {
   switch (method) {
     case "initialize":
       return { userAgent: "fake", codexHome: process.env["CODEX_HOME"] };
@@ -612,6 +661,7 @@ function handle(method: string, params: Record<string, unknown>): unknown {
             nextCursor: "page-2",
           };
     case "thread/start": {
+      await checkMcp(configMcp(params), "creating");
       const thread: Thread = {
         // Unique across fakes, as Codex's ids are.
         id: `thread-${String(process.pid)}-${String(++threadCount)}`,
@@ -619,6 +669,7 @@ function handle(method: string, params: Record<string, unknown>): unknown {
         effort: configEffort(params),
         ephemeral: params["ephemeral"] === true,
         sandbox: String(params["sandbox"]),
+        mcp: configMcp(params),
         running: undefined,
         history: [],
       };
@@ -628,6 +679,8 @@ function handle(method: string, params: Record<string, unknown>): unknown {
     }
     case "thread/resume": {
       const thread = threadOf(params);
+      await checkMcp(configMcp(params), "resuming");
+      thread.mcp = configMcp(params);
       thread.model = scenario.model ?? String(params["model"]);
       // Like Codex: resumed with a model, the effort is the config's again.
       thread.effort = configEffort(params);
@@ -762,19 +815,25 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   if (scenario.hang?.includes(message.method)) return;
   const { id, method } = message;
   const reply = () => {
-    try {
-      const result = handle(method, message.params ?? {});
-      if (result !== undefined) send({ id, result });
-    } catch (error) {
-      send({ id, error: { code: -32600, message: (error as Error).message } });
-    }
+    handle(method, message.params ?? {}).then(
+      (result) => {
+        if (result !== undefined) send({ id, result });
+      },
+      (error: unknown) => {
+        send({
+          id,
+          error: { code: -32600, message: (error as Error).message },
+        });
+      },
+    );
   };
   if (scenario.slow?.includes(method)) {
     setTimeout(reply, scenario.slowMs ?? 200);
   } else if (scenario.answerLate?.includes(method)) {
-    const result = handle(method, message.params ?? {});
-    setTimeout(() => {
-      send({ id, result });
-    }, scenario.slowMs ?? 200);
+    void handle(method, message.params ?? {}).then((result) => {
+      setTimeout(() => {
+        send({ id, result });
+      }, scenario.slowMs ?? 200);
+    });
   } else reply();
 });

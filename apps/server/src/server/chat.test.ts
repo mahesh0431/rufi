@@ -10,6 +10,7 @@ import type { Entry } from "@rufi/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Scenario } from "../../tests/fake-codex.ts";
 import { fakeModel, THINKING, type FakeModel } from "../../tests/fake-model.ts";
+import { callTool, type McpServerConfig } from "../../tests/mcp-client.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexRuntime } from "../agent/codex/codex.ts";
 import type { Deadlines } from "../agent/codex/appserver.ts";
@@ -33,6 +34,7 @@ import { chatCaller, forAgent } from "../core/tools/tools.ts";
 import { v7 as uuid } from "uuid";
 import { chatQueue, type ChatQueue } from "../core/chat/queue.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
+import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
 
 const FAKE = join(import.meta.dirname, "../../tests/fake-codex.ts");
 const ALLOWED = ["gpt-6.1-sol", "gpt-6-astra"];
@@ -46,6 +48,8 @@ let chat: Chat | undefined;
 let signedIn: boolean;
 let model: FakeModel | undefined;
 let tokenGate: Promise<void> | undefined;
+/** Rufi's MCP server for this run of the chat, as the core serves it. */
+let served: { port: number; close: () => Promise<void> } | undefined;
 
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), "rufi-chat-"));
@@ -63,6 +67,8 @@ beforeEach(async () => {
 afterEach(async () => {
   await chat?.close();
   chat = undefined;
+  await served?.close();
+  served = undefined;
   await model?.close();
   model = undefined;
   store.close();
@@ -89,11 +95,16 @@ async function startChat(
 ): Promise<Chat> {
   const again = chat !== undefined;
   await chat?.close();
+  await served?.close();
   // As the core does when it starts again.
   if (again) await queue.endStopped();
   const reader = openReadOnly(databasePath(home));
   const log = () => undefined;
   const tools = forAgent(() => ({ store: reader, personId: undefined }), log);
+  const keys = mcpKeys();
+  let port = 0;
+  served = await serveMcp(mcpEndpoint({ keys, port: () => port, log }));
+  port = served.port;
   if (backend === "real") model ??= await fakeModel();
   const command =
     backend === "fake"
@@ -124,13 +135,15 @@ async function startChat(
         },
         version: "0.0.0",
         deadlines: { requestMs: 10_000, turnMs: 20_000, ...options.deadlines },
-        tools: { namespace: tools.namespace, specs: tools.specs },
+        tools: { server: tools.server, specs: tools.specs },
         host,
         log,
       }),
     allowlist: () => Promise.resolve({ models: options.allowlist ?? ALLOWED }),
+    mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
     tools: {
       version: "tools-1",
+      specs: tools.specs,
       instructions: "Read the record only through the rufi tools.",
       caller: (chat, turnId, origin) => {
         const call = chatCaller(
@@ -201,7 +214,6 @@ function backendOf(name: Backend["name"]): Backend {
 
 /** The AI saves a headache the user told it about. */
 const saveHeadache = {
-  namespace: "rufi",
   tool: "save_changes",
   arguments: {
     changes: [
@@ -728,7 +740,7 @@ it(
     model = await fakeModel({
       script: [
         {
-          exec: `const result = await tools.rufi__get_documents({document: ${JSON.stringify(documentId)}, page: 1}); image(result.split('\\n')[1]);`,
+          exec: `const result = await tools.mcp__rufi__get_documents({document: ${JSON.stringify(documentId)}, page: 1}); for (const part of result.content) if (part.type === "image") image(part);`,
         },
         { text: "Done." },
       ],
@@ -895,7 +907,6 @@ describe("the chat, on the scripted Codex", () => {
           calls: [
             {
               id: callId,
-              namespace: "rufi",
               tool: "save_changes",
               arguments: input,
             },
@@ -1283,7 +1294,7 @@ describe("the chat, on the scripted Codex", () => {
   it("keeps everything each activity sent and got back, the AI's reasoning, and each call to Rufi's tools as answered", async () => {
     await startChat("fake", {
       scenario: {
-        calls: [{ namespace: "rufi", tool: "get_overview", arguments: {} }],
+        calls: [{ tool: "get_overview", arguments: {} }],
         reasoning: ["**Reading the record**"],
       },
     });
@@ -1316,7 +1327,7 @@ describe("the chat, on the scripted Codex", () => {
       [
         "activity",
         "Read your overview",
-        { type: "dynamicToolCall", tool: "get_overview" },
+        { type: "mcpToolCall", server: "rufi", tool: "get_overview" },
       ],
       [
         "reasoning",
@@ -1363,7 +1374,6 @@ describe("the chat, on the scripted Codex", () => {
       scenario: {
         calls: [
           {
-            namespace: "rufi",
             tool: "get_records",
             arguments: { kind: "result", from: "2024" },
           },
@@ -1419,7 +1429,7 @@ describe("the chat, on the scripted Codex", () => {
   it("stops a reply when Rufi can't keep a call to its tools, and tells the AI", async () => {
     await startChat("fake", {
       scenario: {
-        calls: [{ namespace: "rufi", tool: "get_overview", arguments: {} }],
+        calls: [{ tool: "get_overview", arguments: {} }],
       },
     });
     const c = await newChat();
@@ -1434,7 +1444,7 @@ describe("the chat, on the scripted Codex", () => {
     ]);
     const answered = (await readFile(join(home, "fake.jsonl"), "utf8"))
       .split("\n")
-      .filter((line) => line.includes('"answered":"item/tool/call"'));
+      .filter((line) => line.includes('"answered":"tools/call"'));
     expect(answered).toHaveLength(1);
     expect(answered[0]).toContain("Rufi couldn't keep this call");
     expect(answered[0]).not.toContain("Asha Fictional");
@@ -1443,7 +1453,7 @@ describe("the chat, on the scripted Codex", () => {
   it("keeps a tool's late result out: the activity is stopped, not done", async () => {
     await startChat("fake", {
       scenario: {
-        calls: [{ namespace: "rufi", tool: "get_overview", arguments: {} }],
+        calls: [{ tool: "get_overview", arguments: {} }],
       },
       toolMs: 500,
     });
@@ -1460,6 +1470,209 @@ describe("the chat, on the scripted Codex", () => {
         .filter((e) => e.kind === "activity")
         .map((e) => e.status),
     ).toEqual(["stopped"]);
+  });
+
+  /** The agent's id of the chat's only reply. */
+  const agentTurn = () =>
+    (
+      store.db.prepare("SELECT agent_turn_id FROM turns").get() as {
+        agent_turn_id: string;
+      }
+    ).agent_turn_id;
+
+  /** Rufi's MCP server as the chat's thread got it, with its key. */
+  const threadMcp = async (index = 0) => {
+    const lines = (await readFile(join(home, "fake.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            received?: {
+              method?: string;
+              params?: {
+                config?: { mcp_servers?: { rufi?: McpServerConfig } };
+              };
+            };
+          },
+      );
+    const start = lines.filter((l) => l.received?.method === "thread/start")[
+      index
+    ];
+    const server = start?.received?.params?.config?.mcp_servers?.rufi;
+    if (!server) throw new Error("the thread got no MCP server");
+    return server;
+  };
+
+  it("refuses another chat's key for a cached caller, for reads and saves", async () => {
+    await startChat("fake", { scenario: { bare: true } });
+    store.db.exec(`
+      INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
+      INSERT INTO chats (id, person_id, created_at)
+        VALUES ('c-ravi', 'ravi', '2026-10-01T09:00:00Z');
+    `);
+    const asha = await newChat();
+    const ravi = await transcripts.chat("ravi");
+    if (!ravi) throw new Error("no chat");
+    await say(asha, "hang quiet: I have a headache");
+    await running(asha.id);
+    await say(ravi, "hang quiet: hello");
+    await until(async () => {
+      const row = await transcripts.chat("ravi");
+      return (
+        row?.threadId !== null &&
+        row?.threadId !== undefined &&
+        chat?.agent.activeTurn(row.threadId) !== undefined
+      );
+    });
+    const { threadId } = await chatRow();
+    const reply = { threadId: threadId ?? "", turnId: agentTurn() };
+    const own = await threadMcp();
+    const other = await threadMcp(1);
+    const read = { name: "get_overview", arguments: {}, ...reply };
+    const before = await callTool(other, { ...read, callId: "wrong-before" });
+    const proper = await callTool(own, { ...read, callId: "proper-read" });
+    const after = await callTool(other, { ...read, callId: "wrong-after" });
+    const save = await callTool(other, {
+      name: "save_changes",
+      arguments: saveHeadache.arguments,
+      ...reply,
+      callId: "wrong-save",
+    });
+    expect(proper.result?.["isError"]).not.toBe(true);
+    const refused = {
+      content: [
+        { type: "text", text: '{"ok":false,"error":"No reply is running."}' },
+      ],
+      isError: true,
+    };
+    expect([before.result, after.result, save.result]).toEqual([
+      refused,
+      refused,
+      refused,
+    ]);
+    expect(
+      store.db.prepare("SELECT tool, call_id FROM tool_calls").all(),
+    ).toEqual([{ tool: "get_overview", call_id: "proper-read" }]);
+    expect(store.db.prepare("SELECT * FROM symptoms").all()).toEqual([]);
+    expect(
+      (await transcript(asha.id)).entries.filter(
+        ([kind]) => kind === "receipt",
+      ),
+    ).toEqual([]);
+  });
+
+  it("refuses a call with the thread's key when no reply is running, and keeps no trace of it as a call", async () => {
+    await startChat("fake");
+    const c = await newChat();
+    await say(c, "Hello");
+    await ended(c.id);
+    const { threadId } = await chatRow();
+    const { result } = await callTool(await threadMcp(), {
+      name: "save_changes",
+      arguments: saveHeadache.arguments,
+      callId: "call-late",
+      threadId: threadId ?? "",
+      turnId: agentTurn(),
+    });
+    expect(result).toEqual({
+      content: [
+        { type: "text", text: '{"ok":false,"error":"No reply is running."}' },
+      ],
+      isError: true,
+    });
+    expect(store.db.prepare("SELECT * FROM tool_calls").all()).toEqual([]);
+    expect(store.db.prepare("SELECT * FROM symptoms").all()).toEqual([]);
+  });
+
+  it("refuses the stopped reply's calls from the moment Stop is pressed; a save admitted before lands under it", async () => {
+    await startChat("fake", {
+      // The reply doesn't end at once: Codex holds it back.
+      scenario: { calls: [saveHeadache], ignoreInterrupt: true },
+      toolMs: 500,
+      deadlines: { interruptAckMs: 1_000, interruptEndMs: 1_000 },
+    });
+    const c = await newChat();
+    await say(c, "hang: I have a headache");
+    await until(async () =>
+      (await transcript(c.id)).entries.some(([kind]) => kind === "activity"),
+    );
+    const { threadId } = await chatRow();
+    const turnId = agentTurn();
+    const stopping = chat?.stop(c);
+    await until(() =>
+      Promise.resolve(chat?.agent.activeTurn(threadId ?? "") === undefined),
+    );
+    expect((await transcript(c.id)).turns).toMatchObject([
+      { status: "running" },
+    ]);
+    const { result } = await callTool(await threadMcp(), {
+      name: "save_changes",
+      arguments: saveHeadache.arguments,
+      callId: "call-after-stop",
+      threadId: threadId ?? "",
+      turnId,
+    });
+    expect(result?.["isError"]).toBe(true);
+    await stopping;
+    await ended(c.id);
+    await until(async () =>
+      (await transcript(c.id)).entries.some(([kind]) => kind === "receipt"),
+    );
+    const { entries, turns } = await transcript(c.id);
+    expect(turns).toHaveLength(1);
+    expect(entries.filter(([kind]) => kind === "receipt")).toEqual([
+      ["receipt", "**Saved**\n\n- Added symptom **Headache**"],
+    ]);
+    expect(store.db.prepare("SELECT call_id FROM tool_calls").all()).toEqual([
+      { call_id: "call-0" },
+    ]);
+  });
+
+  it("saves once when the same call comes again by its id, and answers it with the same receipt", async () => {
+    await startChat("fake", {
+      scenario: {
+        calls: [
+          { ...saveHeadache, id: "call-same" },
+          { ...saveHeadache, id: "call-same" },
+        ],
+      },
+    });
+    const c = await newChat();
+    await say(c, "I have a headache");
+    await ended(c.id);
+    expect(store.db.prepare("SELECT name FROM symptoms").all()).toEqual([
+      { name: "Headache" },
+    ]);
+    const answers = store.db
+      .prepare("SELECT call_id, ok, answer FROM tool_calls ORDER BY started_at")
+      .all() as { call_id: string; ok: number; answer: string }[];
+    expect(answers).toHaveLength(2);
+    expect(answers.map((a) => [a.call_id, a.ok])).toEqual([
+      ["call-same", 1],
+      ["call-same", 1],
+    ]);
+    const [first, again] = answers.map(
+      (a) => JSON.parse(a.answer) as { result: Record<string, unknown> },
+    );
+    expect(again?.result).toEqual({
+      ...first?.result,
+      note: "This call was already saved.",
+    });
+  });
+
+  it("stops a reply whose AI keeps making calls Rufi can't accept, and says why", async () => {
+    const wrong = { tool: "read_database", arguments: {} };
+    await startChat("fake", { scenario: { calls: [wrong, wrong, wrong] } });
+    const c = await newChat();
+    await say(c, "hang");
+    await ended(c.id);
+    expect((await transcript(c.id)).turns).toMatchObject([
+      {
+        status: "failed",
+        endText: "The AI kept making requests Rufi couldn't accept.",
+      },
+    ]);
   });
 
   it("keeps a save that lands after Stop, with its receipt", async () => {

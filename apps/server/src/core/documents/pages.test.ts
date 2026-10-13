@@ -264,8 +264,12 @@ describe("get_documents", () => {
         text: expect.stringContaining("page 1") as unknown,
       },
     });
-    expect(page.images).toHaveLength(1);
-    expect(page.images?.[0]).toMatch(/^data:image\/png;base64,iVBORw0KGgo/);
+    expect(page.images).toEqual([
+      {
+        mimeType: "image/png",
+        data: expect.stringMatching(/^iVBORw0KGgo/) as unknown,
+      },
+    ]);
   });
 
   it("reads only the active person's documents, and refuses a page past the end", async () => {

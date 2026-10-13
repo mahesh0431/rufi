@@ -28,7 +28,6 @@ test("a save in one window refreshes Overview's tiles there and a kind's page in
     scenario: {
       calls: [
         {
-          namespace: "rufi",
           tool: "save_changes",
           arguments: {
             changes: [
@@ -98,7 +97,6 @@ test("a row's history shows a correction before and after, a time with its time"
     scenario: {
       calls: [
         {
-          namespace: "rufi",
           tool: "save_changes",
           arguments: {
             changes: [

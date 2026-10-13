@@ -31,6 +31,7 @@ import {
   openWritable,
   type Store,
 } from "../../core/store/database.ts";
+import { mcpEndpoint, mcpKeys, serveMcp } from "../../server/mcp.ts";
 import type { SubAgentOutcome } from "../runtime.ts";
 import { codexBinary } from "./binary.ts";
 import { subAgentRunner } from "./subagent.ts";
@@ -47,6 +48,9 @@ const OVER_LIMIT = 10_000_000;
 let root: string;
 let store: Store;
 let model: FakeModel | undefined;
+/** Rufi's MCP server, as the core serves the reader's endpoint. */
+let served: { port: number; close: () => Promise<void> } | undefined;
+let keys: ReturnType<typeof mcpKeys>;
 let documentId: string;
 let jobId: string;
 
@@ -78,7 +82,33 @@ beforeEach(async () => {
 afterEach(async () => {
   await model?.close();
   model = undefined;
+  await served?.close();
+  served = undefined;
 });
+
+/** Tools for a run on the fake Codex: a key whose calls only count. */
+async function counted(onCall: () => void) {
+  const url = await endpoint();
+  const key = keys.issue({
+    tools: [],
+    call: () => {
+      onCall();
+      return Promise.resolve({ ok: true, text: "{}" });
+    },
+  });
+  return { url, key, names: ["get_page", "save_page"] };
+}
+
+/** The reader's endpoint; its address, for a key. */
+async function endpoint() {
+  keys = mcpKeys();
+  let port = 0;
+  served = await serveMcp(
+    mcpEndpoint({ keys, port: () => port, log: () => undefined }),
+  );
+  port = served.port;
+  return `http://127.0.0.1:${String(port)}/mcp/reader`;
+}
 
 /** A running job for Asha's report: its attempt, and the pages it reads. */
 function job(targets: number[], attempt = 1): Run {
@@ -130,6 +160,16 @@ async function read(
   );
   const answers: unknown[] = [];
   let calls = 0;
+  const url = await endpoint();
+  const key = keys.issue({
+    tools: reader.specs,
+    call: async ({ tool, input, callId }) => {
+      before?.(++calls);
+      const answer = await reader.call(tool, input, callId);
+      answers.push(JSON.parse(answer.text));
+      return answer;
+    },
+  });
   const runner = subAgentRunner({
     home: root,
     command: {
@@ -149,13 +189,7 @@ async function read(
     effort: "low",
     instructions: INSTRUCTIONS,
     input: INPUT,
-    tools: { namespace: reader.namespace, specs: reader.specs },
-    callTool: async (name, input) => {
-      before?.(++calls);
-      const answer = await reader.call(name, input);
-      answers.push(JSON.parse(answer.text));
-      return answer;
-    },
+    tools: { url, key, names: reader.specs.map((spec) => spec.name) },
     onCompaction: () => {
       run.lookedAt.clear();
     },
@@ -207,21 +241,26 @@ const isCompaction = (request: ModelRequest) =>
   );
 
 const call = (name: string, args: unknown, tokens?: number): Step => ({
-  call: { namespace: "rufi", name, arguments: args },
+  call: { namespace: "mcp__rufi", name, arguments: args },
   ...(tokens !== undefined && { tokens }),
 });
 
-/** A script for exec: look at a page, then show its text and its image. */
+/**
+ * A script for exec: look at a page, then show its text and its image (an
+ * MCP image block reaches the model only when the script shows it).
+ */
 const look = (page: number): Step => ({
-  exec: `const answer = await tools.rufi__get_page({ page: ${String(page)} });
-const at = answer.lastIndexOf("\\ndata:");
-text(answer.slice(0, at));
-image(answer.slice(at + 1));`,
+  exec: `const answer = await tools.mcp__rufi__get_page({ page: ${String(page)} });
+for (const part of answer.content) {
+  if (part.type === "text") text(part.text);
+  if (part.type === "image") image(part);
+}`,
 });
 
 /** A script for exec: save a page, and show Rufi's answer. */
 const save = (page: number, entry: unknown, tokens?: number): Step => ({
-  exec: `text(await tools.rufi__save_page(${JSON.stringify({ page, entry })}));`,
+  exec: `const answer = await tools.mcp__rufi__save_page(${JSON.stringify({ page, entry })});
+text(answer.content[0].text);`,
   ...(tokens !== undefined && { tokens }),
 });
 
@@ -294,12 +333,13 @@ describe("the reader on the pinned Codex", () => {
     expect(model?.requests).toEqual([]);
   }, 120_000);
 
-  it("can call only get_page and save_page, sees the page image, and its tools hold", async () => {
+  it("can call only get_page, save_page and Codex's resource helpers (which find nothing), sees the page image, and its tools hold", async () => {
     const run = job([1, 2]);
     const before = stored();
     const { outcome, answers } = await read(
       run,
       [
+        { call: { name: "list_mcp_resources", arguments: {} } },
         call("save_page", { page: 1, entry: entry("13.2") }),
         call("get_page", { page: 1 }),
         call("get_page", { page: 9 }),
@@ -338,7 +378,15 @@ describe("the reader on the pinned Codex", () => {
         callable(request),
         JSON.stringify(request.input.at(-1)).slice(0, 80),
       ).toEqual(
-        isCompaction(request) ? [] : ["rufi.get_page", "rufi.save_page"],
+        isCompaction(request)
+          ? []
+          : [
+              "list_mcp_resource_templates",
+              "list_mcp_resources",
+              "mcp__rufi.get_page",
+              "mcp__rufi.save_page",
+              "read_mcp_resource",
+            ],
       );
     }
     // Rufi's instructions only, and no history: the first request is just the task.
@@ -352,8 +400,13 @@ describe("the reader on the pinned Codex", () => {
       },
     ]);
 
+    // Codex's resource helper reached nothing: the endpoint offers none.
+    expect(requests[1]?.input.at(-1)).toMatchObject({
+      type: "function_call_output",
+      output: '{"resources":[]}',
+    });
     // The page image reached the model with the page's text, as Rufi drew it.
-    const shown = requests[2]?.input.at(-1);
+    const shown = requests[3]?.input.at(-1);
     expect(shown?.type).toBe("function_call_output");
     const output = shown?.output as {
       type: string;
@@ -362,9 +415,10 @@ describe("the reader on the pinned Codex", () => {
     }[];
     expect(output.map((part) => part.type)).toEqual([
       "input_text",
+      "input_text",
       "input_image",
     ]);
-    expect(output[0]?.text).toContain("Sunrise Labs · Test report · page 1");
+    expect(output[1]?.text).toContain("Sunrise Labs · Test report · page 1");
     const drawn = await readFile(
       pagePath(
         root,
@@ -374,7 +428,7 @@ describe("the reader on the pinned Codex", () => {
         1,
       ),
     );
-    expect(output[1]?.image_url).toBe(
+    expect(output[2]?.image_url).toBe(
       `data:image/png;base64,${drawn.toString("base64")}`,
     );
 
@@ -464,7 +518,7 @@ describe("the reader on the pinned Codex", () => {
     expect(stored().notes.every((n) => n["reader_note"] === null)).toBe(true);
   }, 120_000);
 
-  it("on a code-mode model, can reach only its two tools and Codex's pinned set through exec, and sees the page image", async () => {
+  it("on a code-mode model, can reach only its two tools and Codex's pinned set through exec, and sees the page image it shows", async () => {
     const run = job([1, 2]);
     const { outcome } = await read(
       run,
@@ -484,7 +538,9 @@ describe("the reader on the pinned Codex", () => {
     expect(outcome.compactions).toBe(1);
 
     // The complete exposed set, in every request, also after the compaction:
-    // exec and wait run Rufi's tools; the async question fails the turn.
+    // exec and wait run Rufi's tools (declared in exec's description, not
+    // deferred) and Codex's resource helpers; the async question fails the
+    // turn.
     const requests = model?.requests ?? [];
     expect(requests.filter(isCompaction)).toHaveLength(1);
     for (const request of requests) {
@@ -500,8 +556,11 @@ describe("the reader on the pinned Codex", () => {
       ]);
       expect(inExec(request), where).toEqual([
         "clock__curr_time",
-        "rufi__get_page",
-        "rufi__save_page",
+        "list_mcp_resource_templates",
+        "list_mcp_resources",
+        "mcp__rufi__get_page",
+        "mcp__rufi__save_page",
+        "read_mcp_resource",
       ]);
     }
     // Rufi's instructions only (this model takes them as a developer
@@ -581,23 +640,18 @@ describe("the reader on the pinned Codex", () => {
 
 describe("the reader's tool route", () => {
   it.each([
-    [MODEL, { status: "failed", reason: "provider_failed" }, 0],
-    [CODE_MODEL, { status: "completed" }, 1],
+    [MODEL, { status: "failed", reason: "provider_failed" }],
+    [CODE_MODEL, { status: "completed" }],
   ] as const)(
-    "a call made through exec, on %s: %o, tool runs %i",
-    async (readerModel, end, runs) => {
+    "a call made through exec, on %s: %o",
+    async (readerModel, end) => {
       const scenario: Scenario = {
         bare: true,
-        calls: [
-          {
-            id: "exec-1",
-            namespace: "rufi",
-            tool: "get_page",
-            arguments: { page: 1 },
-          },
-        ],
+        calls: [{ id: "exec-1", tool: "get_page", arguments: { page: 1 } }],
       };
-      let called = 0;
+      // Codex calls Rufi's server itself, so the call reaches the tool on
+      // either route; on the direct route it fails the turn (no drafts).
+      const tools = await counted(() => undefined);
       const outcome = await subAgentRunner({
         home: root,
         command: {
@@ -615,16 +669,11 @@ describe("the reader's tool route", () => {
         effort: "low",
         instructions: INSTRUCTIONS,
         input: INPUT,
-        tools: { namespace: "rufi", specs: [] },
-        callTool: () => {
-          called++;
-          return Promise.resolve({ ok: true, text: "{}" });
-        },
+        tools,
         onCompaction: () => undefined,
         deadlineMs: 60_000,
       });
       expect(outcome.end, outcome.end.text).toMatchObject(end);
-      expect(called).toBe(runs);
     },
     // It starts the fake Codex: a busy machine can take seconds.
     120_000,
@@ -659,10 +708,9 @@ describe("the reader's provider outcomes", () => {
         effort: "low",
         instructions: INSTRUCTIONS,
         input: "fail",
-        tools: { namespace: "rufi", specs: [] },
-        callTool: () => {
+        tools: await counted(() => {
           throw new Error("No tool call expected.");
-        },
+        }),
         onCompaction: () => undefined,
         deadlineMs: 60_000,
       });
@@ -682,7 +730,7 @@ describe("the reader's turn when Codex's lines come together", () => {
   // Codex's answer to turn/start, turn/started and the turn's first lines
   // can arrive in one read: the turn is still the reader's.
   const log = () => join(root, "fake-codex.jsonl");
-  const run = (
+  const run = async (
     scenario: Scenario,
     input: string,
     callTool: () => void,
@@ -707,11 +755,7 @@ describe("the reader's turn when Codex's lines come together", () => {
         effort: "low",
         instructions: INSTRUCTIONS,
         input,
-        tools: { namespace: "rufi", specs: [] },
-        callTool: () => {
-          callTool();
-          return Promise.resolve({ ok: true, text: "{}" });
-        },
+        tools: await counted(callTool),
         onCompaction: () => undefined,
         // Well under the test's own timeout: an end missed waits for this.
         deadlineMs: 20_000,
@@ -735,9 +779,7 @@ describe("the reader's turn when Codex's lines come together", () => {
     const outcome = await run(
       {
         bare: true,
-        calls: [
-          { namespace: "rufi", tool: "get_page", arguments: { page: 1 } },
-        ],
+        calls: [{ tool: "get_page", arguments: { page: 1 } }],
       },
       INPUT,
       () => called++,

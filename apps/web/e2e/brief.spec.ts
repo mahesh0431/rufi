@@ -59,7 +59,6 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
       callsByTurn: [
         [
           {
-            namespace: "rufi",
             tool: "create_brief",
             arguments: {
               markdown: MARKDOWN,
@@ -74,7 +73,6 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
         ],
         [
           {
-            namespace: "rufi",
             tool: "save_changes",
             arguments: {
               changes: [

@@ -2,7 +2,9 @@
 // full access as PLAN.md §4 sets it. Rufi starts each reply with turn/start
 // when none runs; Codex's own queue is not used (Rufi keeps what waits). A
 // new app-server starts when the access token changes and no reply is
-// running.
+// running. Each thread gets Rufi's tools from Rufi's MCP server, with its own
+// key (settings.ts); Codex calls the server itself, and Rufi binds each call
+// to the reply it was made in (activeTurn).
 import { setTimeout as sleep } from "node:timers/promises";
 import {
   NotSent,
@@ -13,7 +15,6 @@ import {
   type AgentTools,
   type Model,
   type ThreadSettings,
-  type ToolAnswer,
   type TurnEnd,
 } from "../runtime.ts";
 import {
@@ -27,9 +28,6 @@ import { activityOf, endOf, messageText } from "./events.ts";
 import type { JsonValue } from "./protocol/serde_json/JsonValue.ts";
 import type { AccountRateLimitsUpdatedNotification } from "./protocol/v2/AccountRateLimitsUpdatedNotification.ts";
 import type { AgentMessageDeltaNotification } from "./protocol/v2/AgentMessageDeltaNotification.ts";
-import type { DynamicToolCallParams } from "./protocol/v2/DynamicToolCallParams.ts";
-import type { DynamicToolCallResponse } from "./protocol/v2/DynamicToolCallResponse.ts";
-import type { DynamicToolSpec } from "./protocol/v2/DynamicToolSpec.ts";
 import type { ItemCompletedNotification } from "./protocol/v2/ItemCompletedNotification.ts";
 import type { ItemStartedNotification } from "./protocol/v2/ItemStartedNotification.ts";
 import type { ModelListResponse } from "./protocol/v2/ModelListResponse.ts";
@@ -47,7 +45,7 @@ import type { TurnStartedNotification } from "./protocol/v2/TurnStartedNotificat
 import type { UserInput } from "./protocol/v2/UserInput.ts";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import { RpcError } from "./rpc.ts";
-import { prepareCodexHome } from "./settings.ts";
+import { mcpServers, prepareCodexHome } from "./settings.ts";
 
 export interface CodexDeps {
   /** Rufi's data folder; Codex gets `codex/` and `workspace/` inside it. */
@@ -59,9 +57,9 @@ export interface CodexDeps {
   token: (validForMs: number) => Promise<string>;
   version: string;
   deadlines?: Partial<Deadlines>;
-  /** Rufi's tools; a thread keeps the ones it started with. */
+  /** Rufi's tools, for the words a person sees when the AI uses one. */
   tools?: AgentTools;
-  /** Where events go and tools run. */
+  /** Where events go. */
   host: AgentHost;
   /** Diagnostics: what Rufi ignored or refused, as event names and codes. */
   log?: Log;
@@ -212,19 +210,28 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   }
 
   /** The settings a thread starts or resumes with; checked against Codex's answer. */
-  const settingsFor = (settings: ThreadSettings) => ({
-    model: settings.model,
-    cwd: workspace,
-    approvalPolicy: "never",
-    sandbox: "danger-full-access",
-    developerInstructions: settings.instructions,
-    // Resumed with a model, Codex takes the effort from its config again,
-    // not the thread's own: it is given here, before the resume runs
-    // anything that waits.
-    ...(settings.effort !== undefined && {
-      config: { model_reasoning_effort: settings.effort },
-    }),
-  });
+  const settingsFor = (settings: ThreadSettings) => {
+    const config = {
+      // Resumed with a model, Codex takes the effort from its config again,
+      // not the thread's own: it is given here, before the resume runs
+      // anything that waits.
+      ...(settings.effort !== undefined && {
+        model_reasoning_effort: settings.effort,
+      }),
+      // Codex keeps no MCP settings with a thread: given on every resume.
+      ...(settings.tools && {
+        mcp_servers: mcpServers(settings.tools, deadlines.toolMs),
+      }),
+    };
+    return {
+      model: settings.model,
+      cwd: workspace,
+      approvalPolicy: "never",
+      sandbox: "danger-full-access",
+      developerInstructions: settings.instructions,
+      ...(Object.keys(config).length > 0 && { config }),
+    };
+  };
 
   function check(
     response: ThreadStartResponse | ThreadResumeResponse,
@@ -253,71 +260,18 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     }
   }
 
-  /** Codex asked Rufi something. Approvals are declined; tools are run. */
-  async function answer(method: string, params: unknown): Promise<unknown> {
+  /** Codex asked Rufi something. Approvals are declined. */
+  function answer(method: string): Promise<unknown> {
     log("codex.request", { method });
     switch (method) {
       case "item/commandExecution/requestApproval":
       case "item/fileChange/requestApproval":
-        return { decision: "decline" };
-      case "item/tool/call":
-        return callTool(params as DynamicToolCallParams);
+        return Promise.resolve({ decision: "decline" });
       default:
-        throw new RpcError(-32601, `Rufi doesn't handle ${method}.`);
+        return Promise.reject(
+          new RpcError(-32601, `Rufi doesn't handle ${method}.`),
+        );
     }
-  }
-
-  /**
-   * Runs one of Rufi's tools for a running turn. Always a result, never a
-   * JSON-RPC error: Codex would turn that into a bare "request failed".
-   */
-  async function callTool(
-    call: DynamicToolCallParams,
-  ): Promise<DynamicToolCallResponse> {
-    const reply = (
-      ok: boolean,
-      text: string,
-      images: readonly string[] = [],
-    ): DynamicToolCallResponse => ({
-      contentItems: [
-        { type: "inputText", text },
-        ...images.map((imageUrl) => ({
-          type: "inputImage" as const,
-          imageUrl,
-        })),
-      ],
-      success: ok,
-    });
-    const running = turns.get(call.threadId);
-    if (!running || running.turnId !== call.turnId || running.stopping) {
-      return reply(
-        false,
-        JSON.stringify({ ok: false, error: "No turn is running." }),
-      );
-    }
-    const name =
-      call.namespace === deps.tools?.namespace
-        ? call.tool
-        : `${call.namespace ?? ""}.${call.tool}`;
-    const timedOut: ToolAnswer = {
-      ok: false,
-      text: JSON.stringify({ ok: false, error: `${name} took too long.` }),
-    };
-    const answer = await Promise.race([
-      deps.host.callTool(
-        call.threadId,
-        call.turnId,
-        name,
-        call.arguments,
-        call.callId,
-      ),
-      sleep(deadlines.toolMs, timedOut, { ref: false }),
-    ]);
-    if ("stopTurn" in answer && answer.stopTurn !== undefined) {
-      running.end ??= { status: "failed", text: answer.stopTurn };
-      void stopTurn(running);
-    }
-    return reply(answer.ok, answer.text, answer.images);
   }
 
   function onNotification(method: string, params: unknown): void {
@@ -691,13 +645,12 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
 
     startThread: async (settings, signal) => {
       const app = await ready(signal);
-      // Codex keeps a thread's tools and restores them on resume; they can
-      // only be given when it starts.
       const response = await abortable(
-        request<ThreadStartResponse>(app, "thread/start", {
-          ...settingsFor(settings),
-          ...(deps.tools && { dynamicTools: dynamicTools(deps.tools) }),
-        }),
+        request<ThreadStartResponse>(
+          app,
+          "thread/start",
+          settingsFor(settings),
+        ).catch(toolsFailed),
         signal,
       );
       loaded.add(response.thread.id);
@@ -712,7 +665,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           threadId,
           excludeTurns: true,
           ...settingsFor(settings),
-        }),
+        }).catch(toolsFailed),
         signal,
       );
       loaded.add(threadId);
@@ -725,6 +678,11 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     loaded: (threadId) => loaded.has(threadId) && server?.running() === true,
 
     running: (threadId) => turns.has(threadId),
+
+    activeTurn: (threadId) => {
+      const running = turns.get(threadId);
+      return running && !running.stopping ? running.turnId : undefined;
+    },
 
     send: async (threadId, message, signal) => {
       let app: AppServer;
@@ -781,9 +739,10 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       }
     },
 
-    stop: async (threadId, turnId) => {
+    stop: async (threadId, turnId, end) => {
       const running = turns.get(threadId);
       if (running && (turnId === undefined || running.turnId === turnId)) {
+        running.end ??= end;
         await stopTurn(running);
       }
     },
@@ -852,36 +811,43 @@ function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
 }
 
 /**
+ * Codex couldn't start or resume a thread because Rufi's MCP server didn't
+ * start for it (a required server, 0.159.3): said plainly, the cause kept.
+ */
+function toolsFailed(error: unknown): never {
+  if (
+    error instanceof RpcError &&
+    error.message.includes("required MCP servers failed to initialize")
+  ) {
+    throw new Error(
+      "Rufi's tools didn't start for the AI, so it can't reply now. Try again; if it keeps happening, restart Rufi.",
+      { cause: error },
+    );
+  }
+  throw error;
+}
+
+/**
  * A tool call as Rufi keeps it: a page image the AI was given is left out
  * (it is a copy of the document's page, and large).
  */
 function withoutImages(item: ThreadItem): ThreadItem {
-  if (item.type !== "dynamicToolCall" || !item.contentItems) return item;
+  if (item.type !== "mcpToolCall" || !item.result) return item;
   return {
     ...item,
-    contentItems: item.contentItems.map((content) =>
-      content.type === "inputImage"
-        ? { ...content, imageUrl: "(a page image, not kept)" }
-        : content,
-    ),
+    result: {
+      ...item.result,
+      content: item.result.content.map((content) =>
+        isImage(content)
+          ? { ...content, data: "(a page image, not kept)" }
+          : content,
+      ),
+    },
   };
 }
 
-/** Rufi's tools in Codex's shape: one namespace. */
-export function dynamicTools(tools: AgentTools): DynamicToolSpec[] {
-  if (tools.specs.length === 0) return [];
-  return [
-    {
-      type: "namespace",
-      name: tools.namespace,
-      description: "Rufi: the user's health record.",
-      tools: tools.specs.map((spec) => ({
-        type: "function",
-        name: spec.name,
-        description: spec.description,
-        // A JSON Schema made by Effect Schema: plain JSON.
-        inputSchema: spec.inputSchema as JsonValue,
-      })),
-    },
-  ];
-}
+const isImage = (content: JsonValue): content is { [key: string]: JsonValue } =>
+  typeof content === "object" &&
+  content !== null &&
+  !Array.isArray(content) &&
+  content["type"] === "image";
