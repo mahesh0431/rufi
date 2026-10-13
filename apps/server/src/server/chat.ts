@@ -168,9 +168,7 @@ export function chat(deps: ChatDeps) {
     let caller = callers.get(threadId);
     if (caller?.turnId !== turnId) {
       const chat = await transcripts.byThread(threadId);
-      if (chat?.id !== chatId) {
-        return refuse("no_reply", "No reply is running.");
-      }
+      if (!chat) return refuse("no_reply", "No reply is running.");
       caller = {
         turnId,
         chat,
@@ -182,6 +180,7 @@ export function chat(deps: ChatDeps) {
       };
       callers.set(threadId, caller);
     }
+    // The thread is the key's own chat's, also for a caller kept from before.
     if (caller.chat.id !== chatId) {
       return refuse("no_reply", "No reply is running.");
     }
