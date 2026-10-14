@@ -105,6 +105,8 @@ async function startChat(
     allowlist?: string[];
     /** Names this Rufi's rules: another one is an update. */
     rules?: string;
+    /** The sign-in's token decision, at the external edge. */
+    tokenProvider?: () => Promise<string>;
   } = {},
 ): Promise<Chat> {
   const again = chat !== undefined;
@@ -146,7 +148,7 @@ async function startChat(
         },
         token: async () => {
           await tokenGate;
-          return token;
+          return options.tokenProvider?.() ?? token;
         },
         version: "0.0.0",
         deadlines: { requestMs: 10_000, turnMs: 20_000, ...options.deadlines },
@@ -336,11 +338,22 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   const backend = backendOf(name);
   const timeout = { timeout: 60_000 };
 
-  it(
-    "sends the next message once in the same thread after the sign-in renews, with its record tools",
+  it.each(["before its first turn", "between messages"])(
+    "sends once in the same thread when the sign-in renews %s, with its record tools",
     timeout,
-    async () => {
+    async (when) => {
+      // A selected model makes thread creation the first readiness decision.
+      await transcripts.setModel(await chatRow(), "gpt-6.1-sol");
+      let tokenCalls = 0;
       await startChat(name, {
+        tokenProvider: () =>
+          Promise.resolve(
+            when === "before its first turn"
+              ? ++tokenCalls === 1
+                ? "token"
+                : "renewed-token"
+              : token,
+          ),
         scenario: {
           callsByTurn: [
             [{ id: "read-first", tool: "get_overview", arguments: {} }],
@@ -350,6 +363,14 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       });
       const c = await newChat();
       await say(c, "overview first");
+      await until(
+        async () =>
+          (await transcript(c.id)).turns.length > 0 ||
+          (await queue.list(c)).items.some((item) => item.held !== null),
+      );
+      expect((await queue.list(c)).items.map((item) => item.heldText)).toEqual(
+        [],
+      );
       await ended(c.id);
       const thread = (await chatRow()).threadId;
       expect(thread).not.toBeNull();

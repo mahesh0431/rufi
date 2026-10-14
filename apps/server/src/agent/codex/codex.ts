@@ -119,6 +119,8 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   const lifetime = new AbortController();
   let server: AppServer | undefined;
   let starting: Promise<AppServer> | undefined;
+  /** One cancellable prepare/send operation uses one readiness decision. */
+  const prepared = new WeakMap<AbortSignal, AppServer>();
   const loaded = new Set<string>(); // threads open in the current app-server
   /** Settings to pick a known thread up after its app-server is replaced. */
   const threads = new Map<string, ThreadSettings>();
@@ -141,19 +143,29 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   /**
    * Codex with a token that outlasts a turn. The token is always awaited to
    * the end (a renewed one must be saved); after it, a Stop ends the wait.
+   * Thread preparation and its hand-over share a signal: a new thread has
+   * no saved rollout to resume if a second decision replaces its server.
    */
   async function ready(signal?: AbortSignal): Promise<AppServer> {
     if (lifetime.signal.aborted) throw new Error("Codex is closed.");
+    const previous = signal && prepared.get(signal);
+    if (previous === server && previous?.running()) {
+      if (signal?.aborted) throw new Stopped();
+      return previous;
+    }
     const token = await deps.token(deadlines.turnMs + TOKEN_MARGIN_MS);
     if (signal?.aborted) throw new Stopped();
     // A running reply keeps its app-server: Codex keeps the turn in it.
     if (server?.running() && (server.token === token || turns.size > 0)) {
+      if (signal) prepared.set(signal, server);
       return server;
     }
     starting ??= start(token).finally(() => {
       starting = undefined;
     });
-    return abortable(starting, signal);
+    const app = await abortable(starting, signal);
+    if (signal) prepared.set(signal, app);
+    return app;
   }
 
   async function start(token: string): Promise<AppServer> {
@@ -846,6 +858,8 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         app = await open(threadId, signal);
       } catch (error) {
         throw new NotSent(errorText(error), { cause: error });
+      } finally {
+        if (signal) prepared.delete(signal);
       }
       if (signal?.aborted)
         throw new NotSent("Stopped.", { cause: new Stopped() });
