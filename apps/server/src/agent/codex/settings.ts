@@ -80,6 +80,30 @@ enabled = true
 `;
 }
 
+/**
+ * What the agent's commands get set on top of their environment: the user's
+ * real HOME, and caches in the AI's folder, the only place they can write
+ * (on macOS, pip's and matplotlib's own are in HOME). Never a secret.
+ */
+function commandsEnvironment(options: CodexHomeOptions): string {
+  const cache = options.sandbox && join(options.sandbox.folder, ".cache");
+  const set = [
+    ...(options.userHome === undefined
+      ? []
+      : [`HOME = ${key(options.userHome)}`]),
+    ...(cache === undefined
+      ? []
+      : [
+          `XDG_CACHE_HOME = ${key(cache)}`,
+          `PIP_CACHE_DIR = ${key(join(cache, "pip"))}`,
+          `MPLCONFIGDIR = ${key(join(cache, "matplotlib"))}`,
+        ]),
+  ];
+  return set.length === 0
+    ? ""
+    : `\n# The real HOME, and caches where the commands can write.\n[shell_environment_policy.set]\n${set.join("\n")}\n`;
+}
+
 function configToml(options: CodexHomeOptions, skills: string): string {
   const features = Object.entries(SETTINGS.features)
     .map(([name, on]) => `${name} = ${String(on)}`)
@@ -104,15 +128,7 @@ enabled = false
 # *TOKEN*), such as the access token Codex itself runs with.
 [shell_environment_policy]
 ignore_default_excludes = false
-${
-  options.userHome === undefined
-    ? ""
-    : `
-# The agent's commands run with the user's real HOME.
-[shell_environment_policy.set]
-HOME = ${JSON.stringify(options.userHome)}
-`
-}${options.sandbox ? aiProfile(options.sandbox, skills) : ""}
+${commandsEnvironment(options)}${options.sandbox ? aiProfile(options.sandbox, skills) : ""}
 ${PROVIDER}
 `;
 }

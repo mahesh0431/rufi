@@ -6,9 +6,9 @@ Before a doctor's visit, you can ask Rufi for a visit brief: a dated page with y
 
 In the chat, ask for it in your own words, for example "Make a brief for my visit with Dr Mehra on Friday". You can say what the visit is about ("mostly about my sugar"). When the AI can't tell what the visit is for and that changes what goes in, it asks you first.
 
-The AI reads your record, writes the brief and saves it. The chat then shows Rufi's line for it, with a page sign:
+The AI reads your record, writes the brief and saves it. The chat then shows Rufi's line for it, with a page sign and the day it was made:
 
-> Visit brief · 10 Oct 2026 · 9 records cited · **Open**
+> Visit brief · Made 10 Oct 2026 · 9 records cited · **Open**
 
 Rufi writes this line, not the AI. Click **Open** to see the brief.
 

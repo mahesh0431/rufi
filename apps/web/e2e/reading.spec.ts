@@ -89,6 +89,15 @@ test("reads a report in the background as it is added: the strip, the lines and 
   await expect(chip).toHaveText(
     "sunrise-labs-august.pdf · Reading… 1 of 2 pages",
   );
+  // As laid out, the state stands apart from the name.
+  const gap = await chip.evaluate((item) => {
+    const [name, state] = item.querySelectorAll(":scope > span > span");
+    return (
+      (state?.getBoundingClientRect().left ?? 0) -
+      (name?.getBoundingClientRect().right ?? 0)
+    );
+  });
+  expect(gap).toBeGreaterThanOrEqual(3);
   await expect(
     page.getByText("Reading sunrise-labs-august.pdf · 2 pages"),
   ).toBeVisible();
@@ -118,6 +127,79 @@ test("reads a report in the background as it is added: the strip, the lines and 
   await expect(sheet).toContainText("sunrise-labs-august.pdf · read");
   // Page 1 open, page 2 folded: both read.
   await expect(sheet.getByText(/^read · 1 item · Sunrise Labs/)).toHaveCount(2);
+});
+
+test("View reading says where a reading is while the reader's work loads, also on a retry of one page", async ({
+  page,
+  rufi,
+}) => {
+  const first = Promise.withResolvers<undefined>();
+  const again = Promise.withResolvers<undefined>();
+  const reader = scriptedReader([
+    async (turn) => {
+      await first.promise;
+      await turn.look(1);
+      await turn.save(1, readPage());
+      await turn.look(2);
+      await turn.save(2, { outcome: "unreadable", why: "Blurred.", items: [] });
+      return undefined;
+    },
+    // Retry reads only page 2.
+    async (turn) => {
+      await again.promise;
+      await turn.look(2);
+      await turn.save(2, readPage());
+      return undefined;
+    },
+  ]);
+  await start(page, rufi, reader);
+  // The reader's work comes only when the test lets it.
+  const held = { work: Promise.withResolvers<undefined>() };
+  await page.route("**/documents/*/reading", async (route) => {
+    await held.work.promise;
+    await route.continue();
+  });
+  const strip = page.getByRole("region", { name: "Reading documents" });
+  const sheet = page.getByRole("dialog");
+  const title = sheet.getByRole("heading", { level: 2 });
+  const view = async () => {
+    await page.getByRole("link", { name: "Chat with Rufi" }).click();
+    await strip.getByRole("button", { name: "View reading" }).click();
+  };
+
+  await view();
+  await expect(title).toHaveText(
+    /^sunrise-labs-august\.pdf · read 0 of 2 · under a minute$/,
+  );
+  await expect(sheet).toContainText("Reading… 0 of 2 pages");
+  await accessible(page);
+  held.work.resolve(undefined);
+  await expect(title).toHaveText(
+    /^sunrise-labs-august\.pdf · reading · read 0 of 2 · under a minute$/,
+  );
+  await expect(sheet).not.toContainText("Reading… 0 of 2 pages");
+  await expect(sheet.getByText("not read yet")).toHaveCount(2);
+  await sheet.getByRole("button", { name: "Close" }).click();
+  first.resolve(undefined);
+  await expect(strip).toBeHidden();
+
+  // A retry reads only page 2: its progress counts one page, never "page 1".
+  held.work = Promise.withResolvers<undefined>();
+  await page.getByRole("link", { name: "Documents" }).click();
+  await page
+    .getByRole("row", { name: /sunrise-labs-august.pdf/ })
+    .getByRole("button", { name: "Retry" })
+    .click();
+  await view();
+  await expect(title).toHaveText(
+    /^sunrise-labs-august\.pdf · read 0 of 1 · under a minute$/,
+  );
+  await expect(sheet).toContainText("Reading… 0 of 1 page");
+  held.work.resolve(undefined);
+  await sheet.getByRole("button", { name: "Close" }).click();
+  // The reading ends before Rufi stops.
+  again.resolve(undefined);
+  await expect(strip).toBeHidden();
 });
 
 test("Settings keeps the reader's model and effort, and the next reading runs with them", async ({

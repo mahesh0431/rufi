@@ -18,7 +18,7 @@ export function chipState(
     return {
       text:
         reading.of > 0
-          ? `Reading… ${String(reading.saved)} of ${String(reading.of)} pages`
+          ? `Reading… ${String(reading.saved)} of ${String(reading.of)} ${reading.of === 1 ? "page" : "pages"}`
           : "Reading…",
       busy: true,
     };

@@ -57,7 +57,9 @@ export function SettingsPage() {
         <p className="text-muted">
           What the AI did for each reply: its notes, its thinking and its steps.
           Show while working opens it while the AI works and folds it when the
-          answer comes. You can fold or open it under any reply.
+          answer comes. Always show keeps it open after the answer. Always hide
+          keeps it folded, with one line while the AI works. You can fold or
+          open it under any reply.
         </p>
       </div>
       <h2 className="mt-8 mb-2 px-0.5 font-semibold">Emergency</h2>
