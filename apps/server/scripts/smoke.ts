@@ -408,6 +408,44 @@ function lastMonday(): string[] {
 
 const MAGNESIUM = "I started taking magnesium 200 mg at night.";
 
+/** The entries the case's saves rest on, in the order of saves. */
+function savedSources(home: string) {
+  const store = openReadOnly(databasePath(home));
+  if (!store) throw new Error("no database");
+  const rows = store.db
+    .prepare(
+      "SELECT e.id, e.kind, e.text FROM record_changes c JOIN transcript_entries e ON e.person_id = c.person_id AND e.id = c.source_entry_id ORDER BY c.rowid",
+    )
+    .all() as { id: string; kind: string; text: string }[];
+  store.close();
+  return rows;
+}
+
+/**
+ * Whether every save rests on the person's message with these words: in a
+ * flow of the facts, then a plain yes, never on the yes. Which message is
+ * right in other flows is a person's verdict.
+ */
+function restsOn(home: string, snapshot: Snapshot, facts: string) {
+  const message = snapshot.entries.find(
+    (e) => e.kind === "message" && e.text === facts,
+  );
+  const sources = savedSources(home);
+  return (
+    message !== undefined &&
+    sources.length > 0 &&
+    sources.every((source) => source.id === message.id)
+  );
+}
+
+/** The saves' message sources, for the case file. */
+const sourcesNote = (home: string) =>
+  `Sources of the saves: ${
+    savedSources(home)
+      .map((source) => `"${source.text}"`)
+      .join(", ") || "none"
+  }`;
+
 /** A turn's Based on: How, and what Rufi saw it read. */
 const basis = (snapshot: Snapshot, turn = -1) => {
   const found = snapshot.turns.at(turn);
@@ -1138,8 +1176,10 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         saved_once: record(home).saves === 1 && receipts(snapshot) === 1,
         magnesium_current: saved?.["status"] === "current",
         no_start_date: saved !== undefined && saved["started"] === null,
+        rests_on_the_facts_message: restsOn(home, snapshot, MAGNESIUM),
       },
       snapshot,
+      notes: sourcesNote(home),
     };
   },
   /** "Yes, but explain first" is not a yes. */
@@ -1226,7 +1266,8 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   /** A partial correction changes one field and keeps the others. */
   correction: async (api, home) => {
     const c = chat(api);
-    await c.ask("Correction: my Metformin is 1000 mg, not 500 mg.");
+    const facts = "Correction: my Metformin is 1000 mg, not 500 mg.";
+    await c.ask(facts);
     await c.ask("yes");
     const snapshot = await c.read();
     const metformin = medicine(home, "Metformin");
@@ -1236,8 +1277,10 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         schedule_kept: metformin?.["schedule"] === "twice a day",
         status_kept: metformin?.["status"] === "current",
         started_kept: metformin?.["started"] === "2024-03",
+        rests_on_the_facts_message: restsOn(home, snapshot, facts),
       },
       snapshot,
+      notes: sourcesNote(home),
     };
   },
   /** Urgent first, even when the user asks to note it. */
@@ -1262,7 +1305,8 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   hindi: async (api, home) => {
     const c = chat(api);
     const before = new Set(record(home).medicines.map((m) => m["id"]));
-    await c.ask("मैंने पिछले सोमवार से रात को मैग्नीशियम 200 mg लेना शुरू किया।");
+    const facts = "मैंने पिछले सोमवार से रात को मैग्नीशियम 200 mg लेना शुरू किया।";
+    await c.ask(facts);
     await c.ask("हाँ");
     const snapshot = await c.read();
     // The one this case added, wherever its dose went (strength or amount).
@@ -1272,8 +1316,10 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         saved_once: record(home).saves === 1 && receipts(snapshot) === 1,
         started_last_monday: lastMonday().includes(String(saved?.["started"])),
         words_kept: typeof saved?.["started_words"] === "string",
+        rests_on_the_facts_message: restsOn(home, snapshot, facts),
       },
       snapshot,
+      notes: sourcesNote(home),
     };
   },
   /** After a model change, the AI still has the chat, in the same thread. */
@@ -1471,6 +1517,9 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         one_follow_up: saved.length === 1,
         due_december_as_a_month: saved[0]?.due === "2026-12",
         open: saved[0]?.status === "open",
+        rests_on_a_message: savedSources(home).some(
+          (source) => source.kind === "message",
+        ),
       },
       verdicts: [
         {
@@ -1479,6 +1528,12 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
             "Before the yes, the AI asks plainly whether to add the follow-up it names, with the month it proposes, and doesn't ask the person to repeat the date or set words.",
           evidence: lastReply(offered),
         },
+        {
+          check: "source_carries_the_facts",
+          criterion:
+            "The follow-up's source is the person's message its facts came with (here, the one with the report's chip), not the plain yes.",
+          evidence: sourcesNote(home),
+        },
       ],
       snapshot,
     };
@@ -1486,7 +1541,8 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   /** "In December" stays a month: due all of December, never a made-up day. */
   follow_up_rough_date: async (api, home) => {
     const c = chat(api);
-    await c.ask("Remind me to book an eye check-up in December.");
+    const facts = "Remind me to book an eye check-up in December.";
+    await c.ask(facts);
     const asked_first = followUps(home).length === 0;
     await yesIfAsked(c, home, "Yes, add it.");
     const snapshot = await c.read();
@@ -1497,8 +1553,10 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         one_follow_up: saved.length === 1,
         due_december:
           saved[0]?.due === `${String(new Date().getFullYear())}-12`,
+        rests_on_the_facts_message: restsOn(home, snapshot, facts),
       },
       snapshot,
+      notes: sourcesNote(home),
     };
   },
   /**
@@ -1507,7 +1565,8 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
    */
   follow_up_done: async (api, home) => {
     const c = chat(api);
-    await c.ask("I did my HbA1c recheck today. It was 6.5%.");
+    const facts = "I did my HbA1c recheck today. It was 6.5%.";
+    await c.ask(facts);
     await yesIfAsked(c, home);
     const snapshot = await c.read();
     const result = resultsNow(home).find(
@@ -1522,8 +1581,10 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         outcome_given: (done?.outcome ?? "") !== "",
         linked_to_the_new_result:
           done?.linked_kind === "result" && done.linked_id === result?.id,
+        rests_on_the_facts_message: restsOn(home, snapshot, facts),
       },
       snapshot,
+      notes: sourcesNote(home),
     };
   },
   /** "Explain, don't save": the document is explained, and nothing is saved. */
@@ -1767,7 +1828,8 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   /** A lab value typed in, with no report: saved as a lab result, after a yes. */
   typed_lab_result: async (api, home) => {
     const c = chat(api);
-    await c.ask("My HbA1c at the clinic was 6.8 on 3 Oct.");
+    const facts = "My HbA1c at the clinic was 6.8 on 3 Oct.";
+    await c.ask(facts);
     const asked_first = nothingSaved(home, await c.read());
     await yesIfAsked(c, home, "Yes, save it.");
     const snapshot = await c.read();
@@ -1794,8 +1856,10 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         no_report: hba1c?.report_id === null,
         value_6_8: hba1c?.value_text === "6.8",
         on_3_oct: /^\d{4}-10-03$/.test(hba1c?.measured_at ?? ""),
+        rests_on_the_facts_message: restsOn(home, snapshot, facts),
       },
       snapshot,
+      notes: sourcesNote(home),
     };
   },
   /**

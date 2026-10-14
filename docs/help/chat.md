@@ -178,7 +178,7 @@ The AI can save medicines you take, prescriptions, symptoms, conditions, allergi
 What Rufi does when it saves:
 
 - **Only what you said.** A detail you didn't give stays unknown. A date is saved only when you gave one, at the precision you gave it: "since 2019" stays a year. Rufi keeps the words the date came from, such as "last Monday", and the AI counts them from when you sent the message, not from when you said yes. A result always needs a date: when a report has none, the AI asks you for one, and a rough date is fine (see [Save results to your health record](documents.md#save-results-to-your-health-record)).
-- **Where it came from.** Each change points to your message: the one where you said yes, or the earlier message it came from. A record's **Sources** show that message's words (see [Your health record](record.md)).
+- **Where it came from.** The source of a change is your message the change came from: the one where you told the AI the facts, not your "yes". A record's **Sources** show that message's words (see [Your health record](record.md)).
 - **Dates to come.** A date after your message, such as a planned visit or a recheck in December, is saved as you gave it. When a date that should already have happened, such as when a symptom started, is later than your message, Rufi still saves it, and the AI may check with you in case it is a slip, such as a wrong year.
 - **All or nothing.** When one part can't be saved, nothing is saved, and the AI tells you why.
 - **Nothing is deleted.** A record you remove leaves your current health record, and Rufi keeps its history.

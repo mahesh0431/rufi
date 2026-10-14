@@ -26,7 +26,7 @@ const DateSaid = Schema.Struct({
 /** Which message of the user's a change rests on: a change's and a fix's source. */
 export const Position = Schema.Int.check(Schema.isGreaterThan(0)).annotate({
   description:
-    "The user's message this rests on. Leave it out for their message in this turn (where they said yes). For an earlier message of theirs, give its position, as read_chat shows it.",
+    "The user's message with the facts this rests on, as its position in read_chat. Leave it out when the facts are in their message in this turn, where they said yes.",
 });
 
 export interface Field {
