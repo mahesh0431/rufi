@@ -147,18 +147,20 @@ export function toolCaller(
   log: Log,
   rejections: number | (() => Promise<number>) = REJECTIONS_PER_TURN,
 ): (name: string, input: unknown, callId?: string) => Promise<ToolAnswer> {
-  let budget: Promise<{ left: number }> | undefined;
+  // Counted as each refusal comes, before any wait: refusals made at the
+  // same time each use one. The limit is read once, at the first.
+  let refused = 0;
+  let limit: Promise<number> | undefined;
   const reject = async (
     error: string,
     issues: Issue[] = [],
     example?: unknown,
   ): Promise<ToolAnswer> => {
-    budget ??= Promise.resolve(
+    const count = ++refused;
+    limit ??= Promise.resolve(
       typeof rejections === "number" ? rejections : rejections(),
-    ).then((left) => ({ left }));
-    const remaining = await budget;
-    const left = Math.max(0, remaining.left - 1);
-    remaining.left = left;
+    );
+    const left = Math.max(0, (await limit) - count);
     return {
       ok: false,
       text: JSON.stringify({
