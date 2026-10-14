@@ -16,7 +16,7 @@ import {
 } from "../../../scripts/codex-types.ts";
 import { fakeModel } from "../../../tests/fake-model.ts";
 import { DEFAULT_ALLOWLIST } from "../../core/chat/models.ts";
-import type { AgentEvent, AgentRuntime, AgentTools } from "../runtime.ts";
+import type { AgentEvent, AgentRuntime } from "../runtime.ts";
 import { DEADLINES } from "./appserver.ts";
 import { codexBinary } from "./binary.ts";
 import { codexRuntime } from "./codex.ts";
@@ -55,7 +55,6 @@ const sandboxOf = (home: string) => ({
 async function real(
   options: {
     args?: string[];
-    tools?: AgentTools;
     onEvent?: (event: AgentEvent) => void;
   } = {},
 ): Promise<AgentRuntime> {
@@ -64,7 +63,6 @@ async function real(
     sandbox: sandboxOf(join(root, "rufi")),
     skills: [],
     command: { file: await codexBinary(), args: options.args ?? [] },
-    ...(options.tools && { tools: options.tools }),
     env: env(),
     token: () => Promise.resolve("not-a-real-token"),
     version: "0.0.0",

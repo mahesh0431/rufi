@@ -301,6 +301,15 @@ export function chat(deps: ChatDeps) {
           event.delta,
         );
         return;
+      case "note":
+        await transcripts.appendNote(
+          chat,
+          event.turnId,
+          event.itemId,
+          event.delta,
+          event.done === true,
+        );
+        return;
       case "question": {
         // The question is part of the reply, so it is never lost.
         const options = event.options.map((option) => `\n- ${option}`).join("");
@@ -837,12 +846,17 @@ function withRefs(text: string, chips: readonly Chip[]): string {
   return list === undefined ? text : `${text}\n\n${list}`;
 }
 
-const WHO = { user: "User", ai: "AI", rufi: "Rufi" } as const;
+const WHO = {
+  user: "User",
+  ai: "AI",
+  note: "AI (a progress note)",
+  rufi: "Rufi",
+} as const;
 
 /** What a new thread is told first: the note, then the last messages. */
 function newThreadContext(
   earlier: readonly {
-    from: "user" | "ai" | "rufi";
+    from: keyof typeof WHO;
     text: string;
     unfinished?: boolean;
   }[],

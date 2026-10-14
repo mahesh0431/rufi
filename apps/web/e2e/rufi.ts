@@ -104,7 +104,7 @@ export class Rufi {
     this.#core = await Effect.runPromise(
       startCore({
         home: this.home,
-        agent: (tools, host) =>
+        agent: (host) =>
           codexRuntime({
             home: this.home,
             ...agentSetup(this.home),
@@ -116,7 +116,6 @@ export class Rufi {
             },
             token: () => Promise.resolve("token"),
             version: "0.0.0",
-            tools,
             host,
           }),
         log: () => undefined,

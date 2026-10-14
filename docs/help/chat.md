@@ -79,14 +79,35 @@ When you delete a document (see [Documents](documents.md#delete-a-document)), it
 
 - **Your messages**, on the right, with the chips you added to them.
 - **The AI's replies**, which appear as the AI writes them. Replies can have lists and tables, and the pictures, pages and diagrams the AI makes (see [Pictures, pages and diagrams](#pictures-pages-and-diagrams)). Links to web pages open in your browser, outside Rufi. A reply never shows a picture from the internet.
-- **One line for each thing the AI did**, such as reading your Overview or running a command. A tick means it was done. Other signs mean it is running, it failed, or it stopped.
-- **A line for each time the AI thought**, such as "Thought for 8s". Click it to read the AI's summary of its thinking; click again to close it. See [While the AI replies](#while-the-ai-replies).
+- **Activity**, under an answer: what the AI did for that reply, folded into one line, such as "Activity · 12 steps · 1 failed · 1m 36s". Click it to open it. While the AI works, it is open, and you can read along. See [Activity](#activity).
 - **Based on**, a link under an answer once the reply has ended. It opens where the answer comes from. See [Where an answer comes from](#where-an-answer-comes-from).
 - **Receipts**, with a tick, each time the AI saved something to your health record: "Saved", then one line for each change. A save from a document starts with a summary, such as "Saved 42 results from Sunrise Labs August.pdf · 40 new · 1 more source · 1 correction"; when the list is long, click **Show what was saved** to see it. Rufi writes them. See [Changing your health record](#changing-your-health-record).
 - **A visit brief's line**, with a page sign and **Open**, when the AI made a brief for you. Rufi writes it. See [Visit brief](visit-brief.md).
 - **Rufi's lines**, with a bell and "Rufi" above them, when something happened outside the chat. Rufi writes them, never the AI, and they are never your words. See [Rufi's lines](#rufis-lines).
 - **How a reply ended**, when it didn't finish: for example "Stopped.", or that your ChatGPT plan's usage limit has been reached, with the time it resets.
 - **A quiet line**, "The AI started afresh here. It can still read earlier messages.", where the AI started again with a new memory of the chat: when the AI's own copy of the chat was lost (for example after a restore or a move), or where the AI compacted its memory of a long chat. From there, the AI has the chat's last messages, and it reads further back when it needs to. See [The AI's memory of the chat](#the-ais-memory-of-the-chat).
+
+## Activity
+
+Activity shows what the AI did for a reply, as the AI's agent reported it. Rufi doesn't put it in other words.
+
+- **The AI's notes**, in full, such as "I'll check your fasting glucose and HbA1c first." The AI writes these while it works. They are part of Activity, not answers.
+- **The AI's thinking**, as the headings the AI service sends, such as "Comparing the reports", in their place among the steps. When a heading has more under it, click it to read the AI's summary. When the AI service sends nothing, there is no line.
+- **The steps**, each as it was reported: a command, such as `/bin/zsh -lc 'cat …/skills/analysis/SKILL.md'`, with its exit code; one of Rufi's tools, such as `rufi.get_records`, with what the AI asked for; the files the AI changed; a web search. A long step is cut in the middle, so the start and the file name show. A tick means it was done. Other signs mean it is running, it failed, or it stopped.
+
+Click a step to open everything the agent reported about it: for a command, the whole command, its folder, its exit code, how long it took and what it printed; for a tool, what the AI sent and what came back. Long output shows 12 lines, then **Show all**. A step from before Rufi kept these says "Rufi kept no details for this step."
+
+While the AI works, Activity is open, says "Activity · working" and how many steps, and grows as the AI goes. When the answer comes, it folds into one line under the answer: how many steps, how many failed or stopped, and how long the reply took. Click the line to fold or open it at any time, also while the AI works. When you fold it while the AI works, its line says "Working", how many steps, and the newest step.
+
+Choose how Activity opens in **Settings** › **Activity**:
+
+- **Show while working** (the start): open while the AI works, folded when the answer comes.
+- **Always show**: open while the AI works, and still open after the answer.
+- **Always hide**: folded. While the AI works, one line says "Working", how many steps, and the newest step.
+
+In each one, you can still fold or open a reply's Activity yourself. That holds on this page until the reply ends; after a reload, Activity follows the setting again. Another tab or window shows the same steps and folds by itself.
+
+A reply that has no steps, such as an answer to "thanks", has no Activity line. In replies from before this version of Rufi, the AI's notes show as replies, and each step keeps the words Rufi gave it then.
 
 ## Pictures, pages and diagrams
 
@@ -126,9 +147,9 @@ If your health record changes while the AI answers, for example because the AI s
 Under an answer, once the reply has ended, the **Based on** link opens two parts:
 
 - **How**: the AI's own words on where the answer comes from: your health record, read in this reply or earlier in the chat, the web, or general knowledge. It also says how the AI got the answer, for example which results it compared.
-- **Used**: which reads the AI made in that reply, and how each one ended: your Overview, your records of one kind (for example "Read your lab results in 2026 · 8 records"), a web search or a web page, a command, or Rufi's instructions for a job (for example "Read Rufi's instructions: Saving a document"). Rufi makes this list itself, not from the AI's words. What each read got back isn't shown here; Rufi keeps it with the chat.
+- **Used**: the reads of your health record that Rufi handled in that reply, and how each one ended: your Overview, or your records of one kind (for example "Read your lab results in 2026 · 8 records"). Rufi makes this list from its own record of the reads, not from the AI's words. What each read got back isn't shown here; Rufi keeps it with the chat.
 
-Used is what the AI read, not proof that each read supports the answer. For the web, Rufi sees what was searched or opened, not the text of the page. When a read failed, stopped or was capped, its line says so. When the AI answers from something it read earlier in the chat, Used is empty for that reply, and How says so. If How and Used don't agree, ask the AI.
+Used is what the AI read, not proof that each read supports the answer. When a read failed or was capped, its line says so. A read that a Stop cut off before it got its answer is a stopped step in [Activity](#activity), not in Used. Commands, web searches and other steps are in Activity, not in Used. When the AI answers from something it read earlier in the chat, Used is empty for that reply, and How says so. If How and Used don't agree, ask the AI.
 
 Anything that changes what an answer means, such as only two readings or a missing month, is in the answer itself, not only under Based on.
 
@@ -181,9 +202,9 @@ If you stop the reply while the AI saves, the save can still finish. Then its re
 
 While the AI replies, the box and the chat bar say "Rufi is answering" and how many seconds it has taken so far.
 
-**Thinking.** While the AI thinks, a line in the chat says "Thinking…". When the AI service sends a short summary of the thinking, the line also shows what the AI thinks about now, for example "Thinking… Comparing the reports". When the AI stops thinking, the line becomes "Thought for 8s", with the time it thought. Click it to read the whole summary. A reply can have more than one of these lines, in the order things happened. When the AI service sent no summary, the line goes away when the AI stops thinking, because there is nothing to read. After a reload, and in older replies, the lines are the same.
+**What the AI does.** Activity shows the AI's notes, its thinking and its steps as they happen (see [Activity](#activity)). After a reload, or in another tab, it shows the same.
 
-If you click Stop while the AI thinks, its summary so far stays, with the time up to Stop. If Rufi closed before the thinking finished, its line says "Thinking stopped": Rufi doesn't know when it ended. Click the line to read the summary it kept.
+If you click Stop, what the AI did so far stays in Activity, and the folded line says how many steps stopped. If Rufi closed before the reply finished, its Activity shows no time, because Rufi doesn't know when the reply ended.
 
 **Stop.** The stop button (the square, where the send button was) ends the reply now, in every size of the chat. What the AI wrote so far stays.
 

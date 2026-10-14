@@ -6,14 +6,7 @@
 // skills, the sandbox) and that one thread keeps it across a model change, a
 // Rufi update and a compaction.
 import { existsSync, realpathSync } from "node:fs";
-import {
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -143,7 +136,6 @@ async function start(
         token: () => Promise.resolve("not-a-real-token"),
         version: "0.0.0",
         deadlines: { requestMs: 20_000, turnMs: 60_000 },
-        tools: { server: tools.server, specs: tools.specs },
         host,
         log,
       }),
@@ -313,7 +305,7 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
       }
       expect(
         lines.find((line) => line.agent_item_id === calls[0]?.call_id)?.text,
-      ).toBe("Read your overview");
+      ).toBe("rufi.get_overview");
 
       const row = await transcripts.chat("asha");
       if (!row) throw new Error("no chat");
@@ -530,88 +522,76 @@ const commands = (cmds: readonly string[]): Step => ({
   ].join("\n"),
 });
 
-describe("What a person sees of the AI's commands, on the pinned Codex", () => {
+describe("What a person sees of the AI's steps, on the pinned Codex", () => {
   it(
-    "shows a read of Rufi's skills as one quiet line naming each, and any other command as it ran, with the command kept in its details",
+    "shows each step as Codex reported it, whole: a command with its exit code (a skill read too), Rufi's tool with its arguments, and a progress note as a step, not a reply",
     { timeout: 120_000 },
     async () => {
-      const skillPath = (name: string) =>
-        join(home, "codex", "skills", name, "SKILL.md");
-      const skill = (name: string) => JSON.stringify(skillPath(name));
-      const note = join(home, "ai", "note.txt");
-      const copy = join(home, "ai", "skill-copy.txt");
-      const skills = join(home, "codex", "skills");
-      const visible = [
-        `cat ${skill("results")} && ls`,
-        `cat ${skill("results")}; cat ${skill("results")}`,
-        `cat ${skill("results")}\ncat ${skill("results")}`,
-        `cat ${skill("results")} | tee ${JSON.stringify(copy)}`,
-        `cat ${skill("results")} | head -n 3`,
-        `cat ${skill("results")} > ${JSON.stringify(join(home, "ai", "redirect.txt"))}`,
-        `cat -n ${skill("results")}`,
-        `cat ${skill("results")} ${JSON.stringify(note)}`,
-        `sed -n '1,2p' ${skill("results")} ${JSON.stringify(note)}`,
-        `cat ${skill("research")}`,
-        // One group of plain names only: a nested one stays a command.
-        `cat ${skills}/{results,{analysis,documents}}/SKILL.md`,
-      ];
+      const skill = join(home, "codex", "skills", "results", "SKILL.md");
+      const long = `echo ${"fictional ".repeat(40)}done`;
       await start([
-        { text: "Ready." },
-        commands([
-          `cat ${skill("saving-a-document")}`,
-          `cat ${skill("reading-the-record")} ${skill("changing-the-record")}`,
-          `cat '${skillPath("results")}' ${skillPath("results")}`,
-          `cat ${skills}/{reading-the-record,changing-the-record,results}/SKILL.md`,
-          // Space around the words is no part of them.
-          ` \tcat ${skillPath("follow-ups")} \n`,
-          ...visible,
-        ]),
-        { text: "Read." },
+        {
+          note: "I'll read the results skill first.",
+          ...commands([
+            `cat ${JSON.stringify(skill)}`,
+            long,
+            "ls /fictional-folder-that-is-not-there",
+          ]),
+        },
+        { exec: 'await tools.mcp__rufi__get_records({ kind: "result" });' },
+        { text: "Done." },
       ]);
       await say("Hi.");
       await replies(1);
-      await writeFile(note, "Fictional working note, not instructions.\n");
-      await rm(skillPath("research"));
-      await symlink(note, skillPath("research"));
-      await say("Read them.");
-      await replies(2);
       const lines = store.db
         .prepare(
-          "SELECT text, detail, details FROM transcript_entries WHERE activity = 'command' ORDER BY seq",
+          "SELECT activity, text, detail, status, details FROM transcript_entries WHERE kind = 'activity' ORDER BY seq",
         )
-        .all() as { text: string; detail: string | null; details: string }[];
-      expect(lines.map((line) => [line.text, line.detail])).toEqual([
-        ["Read Rufi's instructions: Saving a document", null],
-        [
-          "Read Rufi's instructions: Reading the record and Changing the record",
-          null,
-        ],
-        ["Read Rufi's instructions: Results", null],
-        [
-          "Read Rufi's instructions: Reading the record, Changing the record and Results",
-          null,
-        ],
-        ["Read Rufi's instructions: Follow-ups", null],
-        ...visible.map((): [string, unknown] => [
-          "Ran a command",
-          expect.any(String),
-        ]),
-      ]);
-      for (const line of lines) {
-        const item = JSON.parse(line.details) as { command: string };
-        expect(item.command).toContain("SKILL.md");
+        .all() as {
+        activity: string;
+        text: string;
+        detail: string | null;
+        status: string;
+        details: string | null;
+      }[];
+      const commandLines = lines.filter((line) => line.activity === "command");
+      expect(commandLines).toHaveLength(3);
+      for (const line of commandLines) {
+        // The command and exit code as Codex gave them, nothing cut.
+        const item = JSON.parse(line.details ?? "{}") as {
+          command: string;
+          exitCode: number;
+        };
+        expect(line.text).toBe(item.command);
+        expect(line.detail).toBe(`exit ${String(item.exitCode)}`);
       }
-      expect(await readFile(copy, "utf8")).toContain("name: results");
+      const [read, echoed, missing] = commandLines;
+      expect(read?.text).toContain("skills/results/SKILL.md");
+      expect(read?.status).toBe("done");
+      expect(echoed?.text.length).toBeGreaterThan(300);
+      expect(echoed?.text).toContain(long);
+      expect(missing?.status).toBe("failed");
+      expect(missing?.detail).not.toBe("exit 0");
+      expect(
+        lines
+          .filter((line) => line.activity !== "command")
+          .map((line) => [line.activity, line.text, line.detail, line.status]),
+      ).toEqual([
+        ["note", "I'll read the results skill first.", null, "done"],
+        ["tool", "rufi.get_records", '{"kind":"result"}', "done"],
+      ]);
       const row = await transcripts.chat("asha");
       if (!row) throw new Error("No fictional chat.");
-      expect((await transcripts.page(row)).turns.at(-1)?.used).toEqual(
-        lines.map((line) => ({
-          title: line.text,
-          detail: line.detail,
-          outcome: "done",
-          note: null,
-        })),
-      );
+      const page = await transcripts.page(row);
+      expect(
+        page.entries
+          .filter((entry) => entry.kind === "reply")
+          .map((entry) => entry.text),
+      ).toEqual(["Done."]);
+      // Used: the health-record read only, never the commands.
+      expect(page.turns[0]?.used).toEqual([
+        { title: "Read your results", outcome: "done", note: "0 records" },
+      ]);
     },
   );
 });

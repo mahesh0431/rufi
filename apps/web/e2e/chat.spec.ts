@@ -58,6 +58,17 @@ const opener = (scope: Locator) =>
 const log = (scope: Page | Locator) =>
   scope.getByRole("log", { name: "Messages" });
 const sidebar = (page: Page) => page.getByRole("complementary");
+/** The line that folds or opens a reply's Activity (the last one). */
+const activity = (scope: Page | Locator) =>
+  log(scope)
+    .getByRole("button", { name: /^(Activity|Working) · / })
+    .last();
+/** The rows of the open Activity (the last one). */
+const steps = (scope: Page | Locator) =>
+  log(scope)
+    .getByRole("list", { name: "Activity" })
+    .last()
+    .locator(":scope > li");
 const toolbar = (page: Page) => page.getByRole("banner");
 
 /** Rufi with the fictional family, opened at its Overview. */
@@ -140,7 +151,8 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   expect(await reply.textContent()).not.toBe("ok:drip");
   await expect(reply).toHaveText("ok:drip");
   await expect(log(chat(page))).toContainText("drip: my thyroid results");
-  await expect(log(chat(page))).toContainText("Ran a commandls");
+  // What the AI did is folded under the answer.
+  await expect(activity(chat(page))).toHaveText(/^Activity · 2 steps · /);
   await expect(log(chat(page))).toContainText("Today");
 
   // The panel's top bar: – makes it the bar again, which has none; ⤢ opens
@@ -986,10 +998,16 @@ test("a save to the record shows Rufi's receipt, also after a reload", async ({
   await accessible(page);
 });
 
-test("while the AI thinks, a line shows its latest heading; after the reply it folds, and opens to the whole summary, also after a reload", async ({
+test("Activity is open and live while the AI works, its notes in full and its thinking in place; it folds when the answer comes, opens again, and a step opens to its whole output; a second tab shows the same", async ({
   page,
   rufi,
+  context,
 }) => {
+  const output = Array.from(
+    { length: 30 },
+    (_, i) => `fictional line ${String(i + 1)}`,
+  ).join("\n");
+  const command = `/bin/zsh -lc 'cat ${"/fictional/folder".repeat(8)}/skills/analysis/SKILL.md'`;
   await opened(page, rufi, {
     scenario: {
       reasoning: [
@@ -997,56 +1015,135 @@ test("while the AI thinks, a line shows its latest heading; after the reply it f
         "**Comparing the reports**\n\nTwo reports, one lab.",
       ],
       reasoningMs: 1_500,
+      ls: { command, output },
     },
   });
-  await send(page, "How are my results?");
-  const live = log(chat(page)).locator("p", { hasText: "Thinking…" });
-  await expect(live).toHaveText("Thinking…Comparing the reports");
+  await send(page, "drip commentary");
+  // While it thinks: open, live, the latest heading in its place.
+  await expect(activity(chat(page))).toHaveText("Activity · working · 1 step");
+  await expect(activity(chat(page))).toHaveAttribute("aria-expanded", "true");
+  await expect(steps(chat(page))).toHaveText([/^Comparing the reports/]);
   await accessible(page);
-
-  /** The folded line, closed; a click opens the summary, Markdown as shown. */
-  const folded = async (scope: Page | Locator) => {
-    const thought = log(scope).locator("details", { hasText: "Thought for" });
-    await expect(thought.locator("summary")).toHaveText(/^Thought for \d+s$/);
-    await expect(thought.locator(".thought")).toBeHidden();
-    await thought.locator("summary").click();
-    await expect(thought.locator(".thought strong")).toHaveText([
-      "Reading the record",
-      "Comparing the reports",
-    ]);
-    await expect(thought.locator(".thought")).toContainText(
-      "Two reports, one lab.",
-    );
-    await expect(log(scope).getByText("Thinking…")).toHaveCount(0);
-  };
-  await expect(log(chat(page)).locator(".reply")).toHaveText(
-    "ok:How are my results?",
+  // When the answer comes, it folds under it, with what took how long.
+  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:drip");
+  await expect(activity(chat(page))).toHaveText(
+    /^Activity · 4 steps · \d+(\.\d)?s$/,
   );
-  await folded(chat(page));
+  await expect(activity(chat(page))).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    log(chat(page)).getByRole("list", { name: "Activity" }),
+  ).toHaveCount(0);
+
+  /** Opens it: the rows as reported, in order, the note in full. */
+  const open = async (scope: Page | Locator) => {
+    await activity(scope).click();
+    await expect(steps(scope)).toHaveText([
+      /Comparing the reports/,
+      "Checking your record first.",
+      // The whole command: only the view cuts it.
+      `done:${command} · exit 0`,
+      /^done:teleport$/,
+    ]);
+  };
+  await open(chat(page));
+  // In the narrow panel, the long command is cut in its middle, on one
+  // line: its file's name and exit code stay in view.
+  const row = steps(chat(page)).nth(2).getByRole("button");
+  const shown = await row.evaluate((button) => {
+    const edge = button.getBoundingClientRect().right;
+    const parts = [...button.querySelectorAll("span > span")].map((part) => ({
+      text: part.textContent,
+      whole: part.scrollWidth <= part.clientWidth,
+      inside: part.getBoundingClientRect().right <= edge,
+    }));
+    return {
+      cut: parts[0]?.whole === false,
+      end: parts.slice(1),
+      oneLine: button.getBoundingClientRect().height < 24,
+    };
+  });
+  expect(shown).toEqual({
+    cut: true,
+    end: [
+      {
+        text: "older/skills/analysis/SKILL.md' · exit 0",
+        whole: true,
+        inside: true,
+      },
+    ],
+    oneLine: true,
+  });
+  // The thinking opens to its whole summary.
+  await steps(chat(page)).first().locator("summary").click();
+  await expect(steps(chat(page)).first()).toContainText(
+    "Two reports, one lab.",
+  );
+  // A step opens to everything the agent gave: 12 lines, then all of them.
+  await steps(chat(page)).nth(2).getByRole("button").click();
+  const opened1 = steps(chat(page)).nth(2);
+  await expect(opened1.getByText(command, { exact: true })).toBeVisible();
+  await expect(opened1).toContainText("Exit code: 0 · Took 0.0s");
+  await expect(opened1).toContainText("fictional line 12");
+  await expect(opened1).not.toContainText("fictional line 13");
+  await opened1.getByRole("button", { name: "Show all 30 lines" }).click();
+  await expect(opened1).toContainText("fictional line 30");
   await accessible(page);
 
+  // Another tab, and a reload: the same rows, folded again.
+  const other = await context.newPage();
+  await other.goto(rufi.link());
+  await opener(chat(other)).click();
+  await expect(activity(chat(other))).toHaveText(/^Activity · 4 steps · /);
+  await open(chat(other));
   await page.reload();
   await opener(chat(page)).click();
-  await folded(chat(page));
-  await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
-  await expect(chat(page)).toHaveCount(0);
-  await folded(page);
+  await expect(activity(chat(page))).toHaveAttribute("aria-expanded", "false");
+  await open(chat(page));
 });
 
-test("thinking with no summary shows while it runs, and nothing once it ends", async ({
+test("folded by hand while the AI works, Activity stays folded and shows the newest step; a reload shows the same live rows; Stop ends it stopped, with its time, also after a reload", async ({
   page,
   rufi,
 }) => {
+  let now = "2026-10-11T09:00:00.000Z";
+  const summary = "**Checking the record**\n\nThe summary so far.";
   await opened(page, rufi, {
-    scenario: { reasoning: [], reasoningMs: 1_000 },
+    now: () => now,
+    scenario: { reasoning: [summary], reasoningMs: 30_000 },
   });
-  await send(page, "Hello");
-  await expect(
-    log(chat(page)).locator("p", { hasText: "Thinking…" }),
-  ).toHaveText("Thinking…");
-  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
-  await expect(log(chat(page))).not.toContainText("Thinking…");
-  await expect(log(chat(page))).not.toContainText("Thought");
+  await send(page, "Check my results");
+  await expect(steps(chat(page))).toHaveText([/^Checking the record/]);
+  await activity(chat(page)).click();
+  await expect(activity(chat(page))).toHaveText(
+    "Working · 1 stepChecking the record",
+  );
+  await expect(activity(chat(page))).toHaveAttribute("aria-expanded", "false");
+  // A reload rebuilds it from what was stored: the same live row, open
+  // again as the setting says.
+  await page.reload();
+  await opener(chat(page)).click();
+  await expect(activity(chat(page))).toHaveText("Activity · working · 1 step");
+  await expect(steps(chat(page))).toHaveText([/^Checking the record/]);
+  now = "2026-10-11T09:00:08.000Z";
+  await chat(page).getByRole("button", { name: "Stop", exact: true }).click();
+  await expect
+    .poll(async () =>
+      (await chatPage(page)).entries
+        .filter((entry) => entry.kind === "reasoning")
+        .map((entry) => [entry.status, entry.text]),
+    )
+    .toEqual([["stopped", summary]]);
+  await expect(activity(chat(page))).toHaveText(
+    "Activity · 1 step · 1 stopped · 8.0s",
+  );
+  await page.reload();
+  await opener(chat(page)).click();
+  await expect(activity(chat(page))).toHaveText(
+    "Activity · 1 step · 1 stopped · 8.0s",
+  );
+  await activity(chat(page)).click();
+  await steps(chat(page)).first().locator("summary").click();
+  await expect(steps(chat(page)).first()).toContainText("The summary so far.");
 });
 
 /** The real API, with this fictional tab's session proof. */
@@ -1063,41 +1160,22 @@ async function chatPage(page: Page) {
   return Schema.decodeUnknownSync(ChatPage)(body);
 }
 
-test("Stop ends partial thinking at the Stop time, keeping its summary after reload", async ({
+test("thinking with no summary shows no line, while it runs or after", async ({
   page,
   rufi,
 }) => {
-  let now = "2026-10-11T09:00:00.000Z";
-  const summary = "**Checking the record**\n\nThe summary so far.";
   await opened(page, rufi, {
-    now: () => now,
-    scenario: { reasoning: [summary], reasoningMs: 30_000 },
+    scenario: { reasoning: [], reasoningMs: 1_000, bare: true },
   });
-  await send(page, "Check my results");
-  await expect(log(chat(page))).toContainText("Thinking…Checking the record");
-  now = "2026-10-11T09:00:08.000Z";
-  await chat(page).getByRole("button", { name: "Stop", exact: true }).click();
-  await expect
-    .poll(async () =>
-      (await chatPage(page)).entries
-        .filter((entry) => entry.kind === "reasoning")
-        .map((entry) => [entry.status, entry.text]),
-    )
-    .toEqual([["stopped", summary]]);
-  const thought = log(chat(page)).locator("details", {
-    hasText: "Thought for",
-  });
-  await expect(thought.locator("summary")).toHaveText("Thought for 8s");
-  await thought.locator("summary").click();
-  await expect(thought.locator(".thought")).toContainText(
-    "The summary so far.",
-  );
-  await page.reload();
-  await opener(chat(page)).click();
-  await expect(thought.locator("summary")).toHaveText("Thought for 8s");
+  await send(page, "Hello");
+  await expect(
+    chat(page).getByRole("button", { name: "Stop", exact: true }),
+  ).toBeVisible();
+  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
+  await expect(activity(chat(page))).toHaveCount(0);
 });
 
-test("a restart keeps partial thinking and shows Thinking stopped without guessing its duration", async ({
+test("after a restart, a reply a crash cut off shows its Activity folded, stopped, with no time it can't know", async ({
   page,
   rufi,
 }) => {
@@ -1121,22 +1199,110 @@ test("a restart keeps partial thinking and shows Thinking stopped without guessi
   await rufi.start({ now: () => "2026-10-11T10:00:00.000Z" });
   await page.goto(rufi.link());
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
-  expect(
-    (await chatPage(page)).entries
-      .filter((entry) => entry.kind === "reasoning")
-      .map((entry) => [entry.status, entry.text]),
-  ).toEqual([["stopped", summary]]);
-  const thought = log(page).locator("details", { hasText: "Thinking stopped" });
-  await expect(thought.locator("summary")).toHaveText("Thinking stopped");
-  await thought.locator("summary").click();
-  await expect(thought.locator(".thought")).toContainText(
+  await expect(activity(page)).toHaveText("Activity · 1 step · 1 stopped");
+  await activity(page).click();
+  await steps(page).first().locator("summary").click();
+  await expect(steps(page).first()).toContainText(
     "The summary before the crash.",
   );
   await expect(log(page)).toContainText(
     "Rufi closed before the reply finished.",
   );
-  await page.reload();
-  await expect(thought.locator("summary")).toHaveText("Thinking stopped");
+});
+
+test("the Activity setting: show while working folds at the end; always show stays open; always hide shows one working line, then folds, and still opens by hand; it is kept after a restart", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi, {
+    scenario: { reasoning: ["**Reading the record**"], reasoningMs: 1_500 },
+  });
+  const choose = async (name: string) => {
+    await page.goto(`${new URL(page.url()).origin}/settings`);
+    const group = page.getByRole("radiogroup", { name: "Activity" });
+    await group.getByRole("radio", { name }).check();
+    await expect(group.getByRole("radio", { name })).toBeChecked();
+    await page.goto(`${new URL(page.url()).origin}/`);
+  };
+  // Show while working, the default: open, then folded.
+  await send(page, "Hello");
+  await expect(activity(chat(page))).toHaveAttribute("aria-expanded", "true");
+  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
+  await expect(activity(chat(page))).toHaveAttribute("aria-expanded", "false");
+
+  await choose("Always show");
+  await send(page, "Again");
+  await expect(log(chat(page)).locator(".reply").last()).toHaveText("ok:Again");
+  await expect(activity(chat(page))).toHaveAttribute("aria-expanded", "true");
+  await expect(steps(chat(page))).toHaveCount(3);
+
+  await choose("Always hide");
+  await send(page, "Once more");
+  await expect(activity(chat(page))).toHaveText(
+    "Working · 1 stepReading the record",
+  );
+  await expect(log(chat(page)).locator(".reply").last()).toHaveText(
+    "ok:Once more",
+  );
+  await expect(activity(chat(page))).toHaveText(/^Activity · 3 steps · /);
+  await expect(activity(chat(page))).toHaveAttribute("aria-expanded", "false");
+  await activity(chat(page)).click();
+  await expect(steps(chat(page))).toHaveCount(3);
+  await accessible(page);
+
+  await rufi.stop();
+  await rufi.start({
+    scenario: { reasoning: ["**Reading the record**"], reasoningMs: 1_500 },
+  });
+  await page.goto(rufi.link());
+  await page.goto(`${new URL(page.url()).origin}/settings`);
+  await expect(
+    page
+      .getByRole("radiogroup", { name: "Activity" })
+      .getByRole("radio", { name: "Always hide" }),
+  ).toBeChecked();
+});
+
+test("an old chat shows as it was stored: its replies in order, and its steps folded under the last, with their stored words and no details", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  const store = openWritable(databasePath(rufi.home));
+  const saved = transcripts(store, () => "2026-10-11T09:00:00.000Z");
+  const found = await saved.chat("asha");
+  if (!found) throw new Error("The fictional chat is missing.");
+  try {
+    // As Rufi stored a reply before notes were steps.
+    await saved.startTurn(found, "old-turn", {
+      id: "old-thread",
+      model: "gpt-6-astra",
+    });
+    await saved.appendReply(found, "old-turn", "old-1", "I'll check first.");
+    await saved.setActivity(found, "old-turn", "old-2", {
+      activity: "command",
+      title: "Ran a command",
+      detail: "ls",
+      status: "done",
+    });
+    await saved.appendReply(found, "old-turn", "old-3", "Here is the answer.");
+    await saved.endTurn(found, "old-turn", { status: "completed" });
+  } finally {
+    store.close();
+  }
+  await rufi.start();
+  await page.goto(rufi.link());
+  await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
+  await expect(log(page).locator(".reply")).toHaveText([
+    "I'll check first.",
+    "Here is the answer.",
+  ]);
+  await activity(page).click();
+  await expect(steps(page)).toHaveText(["done:Ran a command · ls"]);
+  await steps(page).first().getByRole("button").click();
+  await expect(steps(page).first()).toContainText(
+    "Rufi kept no details for this step.",
+  );
 });
 
 test("a save made in another window while this one's connection was down shows on Overview once it connects again", async ({
@@ -1232,8 +1398,6 @@ test("Based on, under an answer once it ended, opens How and Used; small talk ha
   await expect(log(chat(page)).locator(".reply")).toHaveText(
     "ok:Your last HbA1c",
   );
-  // The activity line and Used name the read in the same plain words.
-  await expect(log(chat(page))).toContainText("Read your results in Aug 2026");
   await expect(basedOn).toHaveCount(1);
   // A link that opens from the keyboard too.
   await basedOn.focus();
@@ -1242,9 +1406,9 @@ test("Based on, under an answer once it ended, opens How and Used; small talk ha
   await expect(
     opened1.getByText("From your record, read now.", { exact: true }),
   ).toBeVisible();
+  // Used: the health-record read only; the command is in Activity.
   await expect(opened1.getByRole("listitem")).toHaveText([
     "Read your results in Aug 2026 · 6 records",
-    "Ran a commandls",
   ]);
   await accessible(page);
 
@@ -1276,7 +1440,7 @@ test("Based on, under an answer once it ended, opens How and Used; small talk ha
   ).toBeVisible();
 });
 
-test("activity lines keep their sign beside a long detail; Rufi's own tool lines say only what they did", async ({
+test("a tool step shows the tool and its arguments as reported, and opens to its result; its sign keeps its size beside a long line", async ({
   page,
   rufi,
 }) => {
@@ -1284,17 +1448,8 @@ test("activity lines keep their sign beside a long detail; Rufi's own tool lines
     scenario: {
       calls: [
         {
-          tool: "save_changes",
-          arguments: {
-            changes: [
-              {
-                kind: "symptom",
-                action: "add",
-                source: "I have a headache",
-                fields: { name: "Headache" },
-              },
-            ],
-          },
+          tool: "get_records",
+          arguments: { kind: "result", from: "2026-08", to: "2026-08" },
         },
         {
           server: "elsewhere",
@@ -1304,21 +1459,24 @@ test("activity lines keep their sign beside a long detail; Rufi's own tool lines
       ],
     },
   });
-  await send(page, "I have a headache");
-  await expect(log(chat(page)).locator(".reply")).toHaveText(
-    "ok:I have a headache",
+  await send(page, "My results");
+  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:My results");
+  await activity(chat(page)).click();
+  const own = steps(chat(page)).first();
+  await expect(own).toHaveText(
+    'done:rufi.get_records · {"kind":"result","from":"2026-08","to":"2026-08"}',
   );
-  const own = log(chat(page)).locator("p", {
-    hasText: "Save to your health record",
-  });
-  await expect(own).toHaveText("done:Save to your health record");
-  const other = log(chat(page)).locator("p", { hasText: "Used a tool" });
-  await expect(other).toContainText('{"query":"headache headache');
-  // The sign keeps its 13 px beside a detail longer than the line.
+  const other = steps(chat(page)).nth(1);
+  await expect(other).toContainText('elsewhere.lookup · {"query":"headache');
+  // The sign keeps its 13 px beside a line longer than the chat.
   for (const line of [own, other]) {
-    const sign = await line.locator("svg").boundingBox();
+    const sign = await line.locator("svg").first().boundingBox();
     expect(sign?.width).toBe(13);
   }
+  await own.getByRole("button").click();
+  await expect(own.getByText("Arguments", { exact: true })).toBeVisible();
+  await expect(own.getByText("Result", { exact: true })).toBeVisible();
+  await expect(own).toContainText('"kind": "result"');
 });
 
 test.describe("on the real Codex binary, with a local fake model", () => {
@@ -1327,12 +1485,15 @@ test.describe("on the real Codex binary, with a local fake model", () => {
     rufi,
   }) => {
     await opened(page, rufi, { codex: "real" });
-    // The model reads Rufi's overview first: one line says so, in plain words.
+    // The model reads Rufi's overview first: a step says so, as reported.
     await send(page, "Read my overview");
     await expect(log(chat(page)).locator(".reply")).toHaveText(
       "ok:Read my overview",
     );
-    await expect(log(chat(page))).toContainText("Read your overview");
+    await activity(chat(page)).click();
+    await expect(
+      log(chat(page)).getByRole("list", { name: "Activity" }),
+    ).toContainText("rufi.get_overview");
 
     await send(page, "hang");
     await expect(

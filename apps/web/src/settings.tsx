@@ -1,4 +1,5 @@
-// Settings: the ChatGPT plan the AI uses, how Rufi looks, the region whose
+// Settings: the ChatGPT plan the AI uses, how Rufi looks, when a reply's
+// Activity opens by itself, the region whose
 // emergency number the AI gives, the model and effort documents are read
 // with, backups, the export of your data, and where Rufi keeps it.
 import { Backups, DataFolder } from "@rufi/contracts";
@@ -7,6 +8,7 @@ import { Link } from "@tanstack/react-router";
 import { DatabaseBackup, Download, FolderOpen } from "lucide-react";
 import { download, read } from "./api.ts";
 import { AppearanceChoice } from "./appearance.tsx";
+import { SettingChoice } from "./choice.tsx";
 import { printedTime } from "./dates.ts";
 import { EFFORTS } from "./model-menu.tsx";
 import {
@@ -36,6 +38,26 @@ export function SettingsPage() {
         <AppearanceChoice labelledBy="appearance" />
         <p className="text-muted">
           System follows your Mac's light or dark appearance.
+        </p>
+      </div>
+      <h2 id="activity" className="mt-8 mb-2 px-0.5 font-semibold">
+        Activity
+      </h2>
+      <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
+        <SettingChoice
+          setting="activity"
+          label="Activity"
+          labelledBy="activity"
+          choices={[
+            { value: "working", label: "Show while working" },
+            { value: "shown", label: "Always show" },
+            { value: "hidden", label: "Always hide" },
+          ]}
+        />
+        <p className="text-muted">
+          What the AI did for each reply: its notes, its thinking and its steps.
+          Show while working opens it while the AI works and folds it when the
+          answer comes. You can fold or open it under any reply.
         </p>
       </div>
       <h2 className="mt-8 mb-2 px-0.5 font-semibold">Emergency</h2>

@@ -352,7 +352,7 @@ const startCommand = (open: boolean) =>
     const core = yield* startCore({
       home,
       folder: { source, show: showInFinder },
-      agent: (tools, host) =>
+      agent: (host) =>
         codexRuntime({
           home,
           ...agentSetup(home),
@@ -360,7 +360,6 @@ const startCommand = (open: boolean) =>
           env: childEnvironment(),
           token: (validForMs) => accessToken(deps, validForMs),
           version,
-          tools,
           host,
           log,
         }),
@@ -444,7 +443,6 @@ const askCommand = (question: string, person: string | undefined) =>
           env: childEnvironment(),
           token: (validForMs) => accessToken(deps, validForMs),
           version,
-          tools: { server: tools.server, specs: tools.specs },
           host,
           log,
         }),
@@ -466,8 +464,10 @@ let midLine = false;
 let lastReply: string | undefined;
 const shown = new Set<string>();
 function show(event: AgentEvent): void {
-  if (event.type === "text") {
-    // A new reply after an earlier one starts on a new paragraph.
+  // The AI's notes stream as its reply does: in the terminal, both are its
+  // words.
+  if (event.type === "text" || event.type === "note") {
+    // A new reply or note after an earlier one starts on a new paragraph.
     const gap =
       lastReply !== undefined && lastReply !== event.itemId ? "\n\n" : "";
     lastReply = event.itemId;
@@ -479,12 +479,7 @@ function show(event: AgentEvent): void {
   if (event.type === "activity") {
     if (shown.has(event.itemId)) return;
     // The words of a web search may come only when it ends.
-    if (
-      event.activity === "web_search" &&
-      event.detail === undefined &&
-      event.status === "running"
-    )
-      return;
+    if (event.activity === "web_search" && event.status === "running") return;
     shown.add(event.itemId);
     line = `· ${event.title}${event.detail === undefined ? "" : `: ${event.detail}`}`;
   } else if (event.type === "question") {

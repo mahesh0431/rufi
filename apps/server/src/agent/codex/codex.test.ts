@@ -14,7 +14,6 @@ import {
   NotSent,
   type AgentEvent,
   type AgentRuntime,
-  type AgentTools,
   type TurnEnd,
 } from "../runtime.ts";
 import type { Deadlines } from "./appserver.ts";
@@ -56,11 +55,6 @@ afterEach(async () => {
   });
   mcp = undefined;
 });
-
-const TOOLS: AgentTools = {
-  server: "rufi",
-  specs: [{ name: "get_overview", shown: () => "Read your overview" }],
-};
 
 /**
  * A stand-in for Rufi's MCP server that answers the session's start with
@@ -106,11 +100,9 @@ const GIVE_UP = { interruptAckMs: 300, interruptEndMs: 300 };
 
 function start(
   scenario: Scenario = {},
-  tools?: AgentTools,
   deadlines?: Partial<Deadlines>,
 ): AgentRuntime {
   runtime = codexRuntime({
-    ...(tools && { tools }),
     home,
     sandbox: { folder: join(home, "ai"), unreadable: [] },
     skills: [],
@@ -291,7 +283,6 @@ describe("starting Codex", () => {
       await expect(
         start(
           { hang: [method] },
-          undefined,
           method === "initialize" ? { startMs: 1_000 } : {},
         ).startThread(SETTINGS),
       ).rejects.toThrow(`didn't answer ${method} within 1 s`);
@@ -340,8 +331,9 @@ describe("a turn", () => {
         turnId: TURN_1,
         itemId: "item-ls",
         activity: "command",
-        title: "Ran a command",
-        detail: "ls",
+        // The command and its exit code, as Codex reported them.
+        title: "ls",
+        detail: "exit 0",
         status: "done",
         // Everything Codex gave, as it came.
         details: {
@@ -359,9 +351,9 @@ describe("a turn", () => {
         type: "activity",
         turnId: TURN_1,
         itemId: "item-tp",
+        // An item Rufi doesn't know: Codex's own word for it.
         activity: "other",
-        title: "The AI did something Rufi can't display",
-        detail: "teleport",
+        title: "teleport",
         status: "done",
         details: { id: "item-tp", type: "teleport" },
       },
@@ -424,10 +416,10 @@ describe("a turn", () => {
       (e) => e.type === "activity" && e.itemId === "item-pic",
     );
     expect(lines).toMatchObject([
-      { activity: "picture", title: "Making a picture", status: "running" },
+      { activity: "picture", title: "imageGeneration", status: "running" },
       {
         activity: "picture",
-        title: "Made a picture",
+        title: "A fictional watercolour of a sleeping cat",
         // Longer than a detail may be, and kept whole.
         detail: savedPath,
         status: "done",
@@ -441,7 +433,7 @@ describe("a turn", () => {
     expect(JSON.stringify(lines)).not.toContain("iVBORw0KGgo");
   });
 
-  it("says when a generated picture wasn't saved, or failed: nothing to show", () => {
+  it("keeps a generated picture that wasn't saved, or failed, as a step with nothing to show", () => {
     const item = {
       type: "imageGeneration" as const,
       id: "g",
@@ -452,19 +444,19 @@ describe("a turn", () => {
     };
     expect(activityOf(item, true)).toEqual({
       activity: "picture",
-      title: "Made a picture Rufi couldn't keep",
+      title: "imageGeneration",
       status: "done",
     });
     expect(activityOf({ ...item, status: "failed" }, true)).toEqual({
       activity: "picture",
-      title: "Couldn't make a picture",
+      title: "imageGeneration",
       status: "failed",
     });
   });
 
   it("starts a thread with the model, in the AI's folder under Rufi's profile, with Rufi's instructions and Rufi's MCP server with the thread's key", async () => {
     const tools = await mcpServer();
-    await start({}, TOOLS).startThread({ ...SETTINGS, tools });
+    await start({}).startThread({ ...SETTINGS, tools });
     expect(await sent("thread/start")).toEqual([
       {
         model: "gpt-6.1-sol",
@@ -499,9 +491,7 @@ describe("a turn", () => {
 
   it("says plainly when Rufi's tools didn't start for a thread", async () => {
     const tools = await mcpServer(401);
-    await expect(
-      start({}, TOOLS).startThread({ ...SETTINGS, tools }),
-    ).rejects.toThrow(
+    await expect(start({}).startThread({ ...SETTINGS, tools })).rejects.toThrow(
       "Rufi's tools didn't start for the AI, so it can't reply now. Try again; if it keeps happening, restart Rufi.",
     );
   });
@@ -595,7 +585,7 @@ describe("a turn", () => {
   });
 
   it("stops a turn that runs past its deadline", async () => {
-    const thread = await ask(start({}, undefined, { turnMs: 300 }), "hang");
+    const thread = await ask(start({}, { turnMs: 300 }), "hang");
     expect(await ended(thread)).toEqual({
       status: "failed",
       reason: "timeout",
@@ -748,7 +738,7 @@ describe("starting a reply", () => {
   });
 
   it("refuses a steer as not sent while the reply is stopping", async () => {
-    const agent = start({ ignoreInterrupt: true }, undefined, GIVE_UP);
+    const agent = start({ ignoreInterrupt: true }, GIVE_UP);
     const thread = await ask(agent, "hang");
     await until(() => Promise.resolve(agent.running(thread)));
     const stopping = agent.stop(thread);
@@ -868,7 +858,6 @@ describe("Stop", () => {
   it("ends Codex when it can't clean up after an interrupt", async () => {
     const agent = start(
       { hang: ["thread/backgroundTerminals/clean"] },
-      undefined,
       GIVE_UP,
     );
     const thread = await ask(agent, "command");
@@ -882,7 +871,7 @@ describe("Stop", () => {
   });
 
   it("ends Codex and the programs it started when the interrupt is ignored", async () => {
-    const agent = start({ ignoreInterrupt: true }, undefined, GIVE_UP);
+    const agent = start({ ignoreInterrupt: true }, GIVE_UP);
     const thread = await ask(agent, "command");
     await until(async () => (await entries()).some((entry) => entry.child));
     const programs = (await entries()).find((entry) => entry.child);
@@ -902,7 +891,7 @@ describe("Stop", () => {
     scenario: Scenario,
     deadlines?: Partial<Deadlines>,
   ) {
-    const agent = start(scenario, undefined, deadlines);
+    const agent = start(scenario, deadlines);
     const thread = await ask(agent, "command");
     await until(async () => (await entries()).some((entry) => entry.child));
     // The process shows up in the fake's log before Rufi hears of the turn
@@ -968,8 +957,7 @@ describe("Stop", () => {
         turnId: TURN_1,
         itemId: "item-cmd",
         activity: "command",
-        title: "Ran a command",
-        detail: "sleep 301",
+        title: "sleep 301",
         status: "running",
         // What Codex gave as it started; the end would replace it.
         details: {
@@ -1123,7 +1111,7 @@ describe("token renewal", () => {
 
   it("gives a resumed thread Rufi's MCP server again (Codex keeps none)", async () => {
     const tools = await mcpServer();
-    const agent = start({ threads: { "old-1": {} } }, TOOLS);
+    const agent = start({ threads: { "old-1": {} } });
     await agent.resumeThread("old-1", { ...SETTINGS, tools });
     const [resumed] = await sent("thread/resume");
     expect(resumed).toMatchObject({
@@ -1135,7 +1123,7 @@ describe("token renewal", () => {
 
 describe("the reply Rufi's tools are for", () => {
   it("is the running reply's turn, and none once Stop is pressed or it ended", async () => {
-    const agent = start({ ignoreInterrupt: true }, undefined, GIVE_UP);
+    const agent = start({ ignoreInterrupt: true }, GIVE_UP);
     const thread = await ask(agent, "hang");
     await until(() => Promise.resolve(agent.running(thread)));
     const started = seen(thread).find((e) => e.type === "turnStarted");
@@ -1194,25 +1182,28 @@ describe("Codex's items and endings in Rufi's words", () => {
     expect(failed("contextWindowExceeded")).toBe("provider_failed");
   });
 
-  it("gives each item one line, and marks one it doesn't know", () => {
+  it("gives each item one line with what Codex reported, and names one it doesn't know by its type", () => {
+    // Another server's tool that failed, with no arguments.
     expect(
       activityOf(
         {
-          type: "webSearch",
-          id: "w",
-          query: "HbA1c",
-          action: null,
-          results: null,
-        },
+          type: "mcpToolCall",
+          id: "t",
+          server: "elsewhere",
+          tool: "get_records",
+          arguments: {},
+          status: "failed",
+          result: null,
+          error: { message: "no" },
+          durationMs: 1,
+        } as never,
         true,
       ),
     ).toEqual({
-      activity: "web_search",
-      title: "Searched the web",
-      detail: "HbA1c",
-      status: "done",
+      activity: "tool",
+      title: "elsewhere.get_records",
+      status: "failed",
     });
-    // A page the AI opened is named by its address.
     expect(
       activityOf(
         {
@@ -1221,19 +1212,29 @@ describe("Codex's items and endings in Rufi's words", () => {
           query: "open https://example.org/hba1c",
           action: { type: "openPage", url: "https://example.org/hba1c" },
           results: null,
-        },
+        } as never,
         true,
       ),
     ).toEqual({
       activity: "web_search",
-      title: "Opened a web page",
+      title: "open https://example.org/hba1c",
       detail: "https://example.org/hba1c",
       status: "done",
     });
-    expect(activityOf({ type: "contextCompaction", id: "c" }, false)).toEqual({
-      activity: "compaction",
-      title: "Compacted its memory of the chat",
-      status: "running",
+    expect(
+      activityOf(
+        {
+          type: "fileChange",
+          id: "f",
+          changes: [{ path: "/ai/a.py" }, { path: "/ai/b.csv" }],
+          status: "completed",
+        } as never,
+        true,
+      ),
+    ).toEqual({
+      activity: "file_change",
+      title: "/ai/a.py, /ai/b.csv",
+      status: "done",
     });
     expect(
       activityOf(
@@ -1243,64 +1244,9 @@ describe("Codex's items and endings in Rufi's words", () => {
     ).toBeUndefined();
     expect(activityOf({ type: "hologram", id: "h" } as never, true)).toEqual({
       activity: "other",
-      title: "The AI did something Rufi can't display",
-      detail: "hologram",
+      title: "hologram",
       status: "done",
     });
-  });
-
-  it("says what Rufi's own tool did in its own words, with no detail; another tool gets its arguments", () => {
-    const call = (server: string, args: unknown) =>
-      activityOf(
-        {
-          type: "mcpToolCall",
-          id: "t",
-          server,
-          tool: "save_changes",
-          arguments: args,
-          status: "completed",
-          result: null,
-          error: null,
-          durationMs: 1,
-        } as never,
-        true,
-        {
-          server: "rufi",
-          specs: [{ name: "save_changes", shown: () => "Save to your record" }],
-        },
-      );
-    const changes = { changes: [{ kind: "symptom", action: "add" }] };
-    expect(call("rufi", changes)).toEqual({
-      activity: "tool",
-      title: "Save to your record",
-      status: "done",
-    });
-    expect(call("other", changes)).toEqual({
-      activity: "tool",
-      title: "Used a tool",
-      detail: '{"changes":[{"kind":"symptom","action":"add"}]}',
-      status: "done",
-    });
-    expect(call("other", {})).toEqual({
-      activity: "tool",
-      title: "Used a tool",
-      status: "done",
-    });
-  });
-
-  it("keeps an activity's detail to one short line", () => {
-    const line = activityOf(
-      {
-        type: "commandExecution",
-        id: "c",
-        command: `echo ${"x".repeat(400)}\nls`,
-        commandActions: [],
-        status: "completed",
-      } as never,
-      true,
-    );
-    expect(line?.detail).toHaveLength(300);
-    expect(line?.detail).not.toContain("\n");
   });
 });
 

@@ -46,10 +46,11 @@ export interface Tool<In extends Input = Input> {
   /** Written for the model; every limit the tool enforces is stated here. */
   description: string;
   /**
-   * What a person sees when the AI uses it, in plain words; from what the
-   * AI sent when the words depend on it ("Read your results in 2026").
+   * A read tool's words in Used, Based on's list of what a reply read, in
+   * plain words; from what the AI sent when the words depend on it ("Read
+   * your results in 2026").
    */
-  shown: string | ((input: unknown) => string);
+  shown?: string | ((input: unknown) => string);
   input: In;
   /** Who may call it; maps to MCP Apps' `visibility` later. */
   callers: "model" | "ui" | "both";
@@ -72,9 +73,11 @@ export class Refusal extends Error {
   }
 }
 
-/** A tool's words for one call, from what the AI sent. */
+/** A read tool's words for one call in Used, from what the AI sent. */
 export const shownFor = (tool: Tool, input: unknown) =>
-  typeof tool.shown === "string" ? tool.shown : tool.shown(input);
+  typeof tool.shown === "function"
+    ? tool.shown(input)
+    : (tool.shown ?? tool.name);
 
 /** Kept generic per tool, then stored in one list. */
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- one list of differently typed tools
@@ -113,12 +116,10 @@ export interface ToolAnswer {
   stopTurn?: string;
 }
 
-/** A tool as an agent is told about it, and the words a person sees. */
+/** A tool as an agent is told about it. */
 export interface ToolSpec {
   name: string;
   description: string;
-  /** What a person sees when the AI uses it, from what the AI sent. */
-  shown: (input: unknown) => string;
   inputSchema: Record<string, unknown>;
   readOnly: boolean;
   destructive: boolean;
@@ -127,7 +128,6 @@ export interface ToolSpec {
 export const specOf = (tool: Tool): ToolSpec => ({
   name: tool.name,
   description: tool.description,
-  shown: (input) => shownFor(tool, input),
   inputSchema: inputSchema(tool),
   readOnly: tool.readOnly,
   destructive: tool.destructive,
