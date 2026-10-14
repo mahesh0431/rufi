@@ -44,6 +44,12 @@ describe("a document chip's state, from the document and its reading job", () =>
       "Reading… 2 of 3 pages",
     ],
     [
+      "running, with its one page",
+      summary("reading"),
+      job("running", null, 0, 1),
+      "Reading… 0 of 1 page",
+    ],
+    [
       "running, before it knows its pages",
       summary("reading"),
       job("running"),

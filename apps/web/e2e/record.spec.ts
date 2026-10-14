@@ -18,7 +18,18 @@ const chat = (page: Page) => page.getByRole("region", { name: "Chat" });
 const box = (page: Page) =>
   chat(page).getByRole("textbox", { name: "Message to Rufi" });
 
-test("a save in one window refreshes Overview's tiles there and a kind's page in another", async ({
+/** A save that removes the CRP result, or puts it back. */
+const crpSave = (action: "remove" | "restore", source: string) => [
+  {
+    id: `call-${action}`,
+    tool: "save_changes",
+    arguments: {
+      changes: [{ kind: "result", action, id: "res-a3", source }],
+    },
+  },
+];
+
+test("a save in one window refreshes Overview's tiles there and a kind's page in another; a put-back record says so everywhere", async ({
   page,
   rufi,
   context,
@@ -26,20 +37,9 @@ test("a save in one window refreshes Overview's tiles there and a kind's page in
   await rufi.family();
   await rufi.start({
     scenario: {
-      calls: [
-        {
-          tool: "save_changes",
-          arguments: {
-            changes: [
-              {
-                kind: "result",
-                action: "remove",
-                id: "res-a3",
-                source: "Remove the CRP result",
-              },
-            ],
-          },
-        },
+      callsByTurn: [
+        crpSave("remove", "Remove the CRP result"),
+        crpSave("restore", "Put the CRP result back"),
       ],
     },
   });
@@ -83,6 +83,25 @@ test("a save in one window refreshes Overview's tiles there and a kind's page in
       name: "Sunrise Labs · 12 Aug 2026 · 2 results",
     }),
   ).toBeVisible();
+
+  // Put back: one word on the receipt, on Overview and in its history.
+  await chat(page).getByRole("button", { name: "Open the chat" }).click();
+  await box(page).fill("Put the CRP result back");
+  await box(page).press("Enter");
+  await expect(chat(page).locator(".receipt").last()).toContainText(
+    "Put back result CRP",
+  );
+  await page.keyboard.press("Escape");
+  await expect(
+    page
+      .getByRole("region", { name: "Recent changes" })
+      .locator("summary")
+      .first(),
+  ).toHaveText(/^Today \d\d:\d\dPut back result CRP <5 mg\/L$/);
+  await crp.click();
+  await expect(
+    results.getByRole("listitem").filter({ hasText: / · (Removed|Put back)$/ }),
+  ).toHaveText([/ · Removed$/, / · Put back$/]);
 });
 
 test("a row's history shows a correction before and after, a time with its time", async ({

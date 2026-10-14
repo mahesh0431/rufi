@@ -193,7 +193,7 @@ export async function createBrief(
   const count = cited.length;
   return {
     id,
-    line: `Visit brief · ${shownDate(localTime(where.now).slice(0, 10))} · ${String(count)} ${count === 1 ? "record" : "records"} cited`,
+    line: `Visit brief · Made ${shownDate(localTime(where.now).slice(0, 10))} · ${String(count)} ${count === 1 ? "record" : "records"} cited`,
     fresh: true,
   };
 }
