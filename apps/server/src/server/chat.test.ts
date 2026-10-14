@@ -53,6 +53,7 @@ let chat: Chat | undefined;
 /** Whether the person is signed in, as the chat asks it. */
 let signedIn: boolean;
 let model: FakeModel | undefined;
+let token: string;
 let tokenGate: Promise<void> | undefined;
 /** Rufi's MCP server for this run of the chat, as the core serves it. */
 let served: { port: number; close: () => Promise<void> } | undefined;
@@ -68,6 +69,7 @@ beforeEach(async () => {
   transcripts = openTranscripts(store);
   queue = chatQueue(store);
   signedIn = true;
+  token = "token";
   tokenGate = undefined;
 });
 afterEach(async () => {
@@ -103,6 +105,8 @@ async function startChat(
     allowlist?: string[];
     /** Names this Rufi's rules: another one is an update. */
     rules?: string;
+    /** The sign-in's token decision, at the external edge. */
+    tokenProvider?: () => Promise<string>;
   } = {},
 ): Promise<Chat> {
   const again = chat !== undefined;
@@ -144,7 +148,7 @@ async function startChat(
         },
         token: async () => {
           await tokenGate;
-          return "token";
+          return options.tokenProvider?.() ?? token;
         },
         version: "0.0.0",
         deadlines: { requestMs: 10_000, turnMs: 20_000, ...options.deadlines },
@@ -333,6 +337,79 @@ const running = (id: string) =>
 describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   const backend = backendOf(name);
   const timeout = { timeout: 60_000 };
+
+  it.each(["before its first turn", "between messages"])(
+    "sends once in the same thread when the sign-in renews %s, with its record tools",
+    timeout,
+    async (when) => {
+      // A selected model makes thread creation the first readiness decision.
+      await transcripts.setModel(await chatRow(), "gpt-6.1-sol");
+      let tokenCalls = 0;
+      await startChat(name, {
+        tokenProvider: () =>
+          Promise.resolve(
+            when === "before its first turn"
+              ? ++tokenCalls === 1
+                ? "token"
+                : "renewed-token"
+              : token,
+          ),
+        scenario: {
+          callsByTurn: [
+            [{ id: "read-first", tool: "get_overview", arguments: {} }],
+            [{ id: "read-second", tool: "get_overview", arguments: {} }],
+          ],
+        },
+      });
+      const c = await newChat();
+      await say(c, "overview first");
+      await until(
+        async () =>
+          (await transcript(c.id)).turns.length > 0 ||
+          (await queue.list(c)).items.some((item) => item.held !== null),
+      );
+      expect((await queue.list(c)).items.map((item) => item.heldText)).toEqual(
+        [],
+      );
+      await ended(c.id);
+      const thread = (await chatRow()).threadId;
+      expect(thread).not.toBeNull();
+
+      token = "renewed-token";
+      await say(await chatRow(), "overview second");
+      await until(async () => {
+        const waiting = await queue.list(await chatRow());
+        return (
+          (await transcript(c.id)).turns.length === 2 ||
+          waiting.items.some((item) => item.held !== null)
+        );
+      });
+      // A failed hand-over reports its reason here instead of answering.
+      expect(
+        (await queue.list(await chatRow())).items.map((item) => item.heldText),
+      ).toEqual([]);
+      await ended(c.id, 2);
+      expect((await chatRow()).threadId).toBe(thread);
+      const { all, turns } = await transcript(c.id);
+      expect(
+        all
+          .filter((entry) => entry.kind === "message" || entry.kind === "reply")
+          .map((entry) => [entry.kind, entry.text]),
+      ).toEqual([
+        ["message", "overview first"],
+        ["reply", "ok:overview first"],
+        ["message", "overview second"],
+        ["reply", "ok:overview second"],
+      ]);
+      const read = { title: "Read your overview", outcome: "done", note: null };
+      expect(
+        turns.map((turn) => [turn.status, turn.afresh, turn.used]),
+      ).toEqual([
+        ["completed", false, [read]],
+        ["completed", false, [read]],
+      ]);
+    },
+  );
 
   it("stores each part of a reply before it is shown", timeout, async () => {
     await startChat(name);

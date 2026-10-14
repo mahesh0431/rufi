@@ -176,7 +176,10 @@ export interface AgentRuntime {
   provider: string;
   /** The models the provider offers now. */
   models: (signal?: AbortSignal) => Promise<Model[]>;
-  /** Starts a thread with Rufi's tools; returns its id and the model it got. */
+  /**
+   * Starts a thread with Rufi's tools; returns its id and the model it got.
+   * Its preparation and first send share a signal and readiness decision.
+   */
   startThread: (
     settings: ThreadSettings,
     signal?: AbortSignal,

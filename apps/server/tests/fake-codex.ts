@@ -193,8 +193,9 @@ interface Thread {
 const threads = new Map<string, Thread>();
 /** Threads open in this process, as Codex has them loaded. */
 const loaded = new Set<string>();
-// Like Codex, threads outlive the process: a restarted fake finds them in
-// CODEX_HOME. A reply that was running when it was killed is interrupted.
+// Like Codex, a thread outlives the process only after its first turn: a
+// restarted fake finds its saved rollout in CODEX_HOME. A reply that was
+// running when it was killed is interrupted.
 const STATE = join(process.env["CODEX_HOME"] ?? ".", "fake-threads.json");
 if (existsSync(STATE)) {
   for (const thread of JSON.parse(readFileSync(STATE, "utf8")) as Thread[]) {
@@ -208,7 +209,12 @@ if (existsSync(STATE)) {
 // aside, then renames them into place, so a restart never finds half a file.
 function persist() {
   const aside = `${STATE}.${String(process.pid)}`;
-  writeFileSync(aside, JSON.stringify([...threads.values()]));
+  writeFileSync(
+    aside,
+    JSON.stringify(
+      [...threads.values()].filter((thread) => thread.history.length > 0),
+    ),
+  );
   renameSync(aside, STATE);
 }
 let threadCount = 0;
