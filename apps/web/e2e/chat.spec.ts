@@ -1479,6 +1479,96 @@ test("a tool step shows the tool and its arguments as reported, and opens to its
   await expect(own).toContainText('"kind": "result"');
 });
 
+/**
+ * Its bottom is at or above the top of the box beside it; with
+ * toBeInViewport, the row is in view in the transcript, not under the box.
+ */
+async function aboveTheBox(row: Locator, scope: Page | Locator) {
+  const [bottom, top] = await Promise.all([
+    row.evaluate((element) => element.getBoundingClientRect().bottom),
+    box(scope).evaluate(
+      (field) => field.closest("form")?.getBoundingClientRect().top ?? 0,
+    ),
+  ]);
+  return bottom <= top + 1;
+}
+
+test("the transcript follows a growing Activity to its newest row, above the box, on the chat's page in a tall window and in the panel; a scroll up stops it until the next reply; a scroll down past the end moves nothing else", async ({
+  page,
+  rufi,
+}) => {
+  const calls = (count: number) =>
+    Array.from({ length: count }, () => ({
+      tool: "get_records",
+      arguments: { kind: "result" },
+    }));
+  // Each reply: its steps, then thinking for 2 s, then a note's first word,
+  // and it works on until it is stopped.
+  const message = "Check my results, think, cut commentary";
+  await page.setViewportSize({ width: 1280, height: 1400 });
+  await opened(page, rufi, {
+    scenario: {
+      callsByTurn: [calls(80), calls(80), calls(40)],
+      reasoningMs: 2_000,
+    },
+  });
+  const stop = page.getByRole("button", { name: "Stop", exact: true });
+  // Each step is a call to the core; with the whole suite running, a reply's
+  // steps can take longer than the usual wait to all come in.
+  const allIn = { timeout: 15_000 };
+  await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
+  await box(page).fill(message);
+  await box(page).press("Enter");
+  await expect(steps(page)).toHaveCount(81, allIn);
+  await expect(steps(page).last()).toBeInViewport();
+  await expect.poll(() => aboveTheBox(steps(page).last(), page)).toBe(true);
+  await expect(steps(page)).toHaveCount(82);
+  await expect(steps(page).last()).toHaveText("Checking");
+  await expect(steps(page).last()).toBeInViewport();
+  await expect.poll(() => aboveTheBox(steps(page).last(), page)).toBe(true);
+  await stop.click();
+
+  // Its Activity opened again and read from further up, the next reply is
+  // followed all the same.
+  await activity(page).click();
+  await log(page).hover();
+  await page.mouse.wheel(0, -1_000);
+  await expect(log(page).getByText(message).first()).toBeInViewport();
+  await box(page).fill(message);
+  await box(page).press("Enter");
+  await expect(steps(page)).toHaveCount(81, allIn);
+  await expect(steps(page).last()).toBeInViewport();
+  await expect.poll(() => aboveTheBox(steps(page).last(), page)).toBe(true);
+  // A scroll down past the transcript's end, as a trackpad does, moves
+  // nothing else on the page: the box stays at the window's bottom.
+  await log(page).hover();
+  for (let i = 0; i < 3; i++) await page.mouse.wheel(0, 1_000);
+  await expect
+    .poll(() =>
+      box(page).evaluate(
+        (field) =>
+          1400 - (field.closest("form")?.getBoundingClientRect().bottom ?? 0),
+      ),
+    )
+    .toBeLessThan(80);
+  await expect(steps(page).last()).toBeInViewport();
+  // A scroll up while it works keeps what you read where it is.
+  await page.mouse.wheel(0, -600);
+  await expect(steps(page)).toHaveCount(82);
+  await expect(steps(page).last()).not.toBeInViewport();
+  await stop.click();
+
+  // The panel follows the same way.
+  await sidebar(page).getByRole("link", { name: "Overview" }).click();
+  await send(page, message);
+  await expect(steps(chat(page))).toHaveCount(42, allIn);
+  await expect(steps(chat(page)).last()).toBeInViewport();
+  await expect
+    .poll(() => aboveTheBox(steps(chat(page)).last(), chat(page)))
+    .toBe(true);
+  await chat(page).getByRole("button", { name: "Stop", exact: true }).click();
+});
+
 test.describe("on the real Codex binary, with a local fake model", () => {
   test("a reply streams after Rufi's tool; Stop; a message waits; Add to reply", async ({
     page,

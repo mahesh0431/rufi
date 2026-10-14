@@ -47,6 +47,7 @@ import type { StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/shallow";
 import { MiddleCut, StepDetails, took } from "./activity.tsx";
+import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
 import { Diagram, fileIn, NativePicture, PageCard, Picture } from "./files.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
@@ -324,6 +325,25 @@ function lines(state: Live): string[] {
   return shown;
 }
 
+/** Where a scrolling area is, how tall its content is, and how tall its view. */
+type View = { top: number; height: number; view: number };
+const viewOf = (element: HTMLElement): View => ({
+  top: element.scrollTop,
+  height: element.scrollHeight,
+  view: element.clientHeight,
+});
+/**
+ * It moved up further than the browser moves it to keep the end in view
+ * when the view grows (the box shrinks after a send) or the content gets
+ * shorter (Activity folds): you scrolled.
+ */
+const scrolledUp = (was: View, now: View) =>
+  now.top <
+  was.top -
+    Math.max(0, now.view - was.view) -
+    Math.max(0, was.height - now.height) -
+    1;
+
 export function TranscriptView({
   live,
   personId,
@@ -353,20 +373,19 @@ export function TranscriptView({
   const scroller = useRef<HTMLDivElement>(null);
   const log = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
+  const seen = useRef<View>({ top: 0, height: 0, view: 0 });
   useEffect(() => {
     const element = scroller.current;
     if (!element) return;
-    let followedTo = 0;
     const follow = () => {
       if (!pinned.current) return;
       // Scrolled up since, before the scroll was even reported: you read.
-      const end = element.scrollHeight - element.clientHeight;
-      if (element.scrollTop < Math.min(followedTo, end) - 1) {
+      if (scrolledUp(seen.current, viewOf(element))) {
         pinned.current = false;
         return;
       }
       element.scrollTop = element.scrollHeight;
-      followedTo = element.scrollTop;
+      seen.current = viewOf(element);
     };
     follow();
     // New text, and a smaller view (waiting messages above the box).
@@ -383,6 +402,17 @@ export function TranscriptView({
       resizes.disconnect();
     };
   }, []);
+  // What you send is followed, also if you had scrolled up before it.
+  useEffect(() => {
+    const element = scroller.current;
+    if (!element) return;
+    return boxFor(personId).store.subscribe((state, before) => {
+      if (!state.sending || before.sending) return;
+      pinned.current = true;
+      element.scrollTop = element.scrollHeight;
+      seen.current = viewOf(element);
+    });
+  }, [personId]);
 
   // Near the top, the page before loads; again after each one, until the
   // view is full or the chat's start is there.
@@ -427,14 +457,23 @@ export function TranscriptView({
     anchor.current = node ? { node, top: topOf(node) } : null;
   });
 
+  // Positioned, so what is placed in the transcript (the screen-reader words
+  // of each step) scrolls with it and never makes the page around it scroll.
   return (
     <div
       ref={scroller}
-      className={`${className ?? ""} [overflow-anchor:none]`}
+      className={`${className ?? ""} relative [overflow-anchor:none]`}
       onScroll={(event) => {
         const element = event.currentTarget;
-        pinned.current =
-          element.scrollHeight - element.scrollTop - element.clientHeight < 40;
+        const now = viewOf(element);
+        if (now.height - now.top - now.view < 40) pinned.current = true;
+        else if (scrolledUp(seen.current, now)) pinned.current = false;
+        seen.current = now;
+      }}
+      // A wheel up is you reading, also before its scroll is reported.
+      onWheel={(event) => {
+        if (event.deltaY < 0 && event.currentTarget.scrollTop > 0)
+          pinned.current = false;
       }}
     >
       <div className={inner}>
