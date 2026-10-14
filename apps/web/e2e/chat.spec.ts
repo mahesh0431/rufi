@@ -1479,6 +1479,42 @@ test("a tool step shows the tool and its arguments as reported, and opens to its
   await expect(own).toContainText('"kind": "result"');
 });
 
+test("on the chat's page, a growing Activity stays in the transcript: the box stays at the window's bottom and the newest row in view, also after a scroll down", async ({
+  page,
+  rufi,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await opened(page, rufi, {
+    scenario: {
+      calls: Array.from({ length: 40 }, () => ({
+        tool: "get_records",
+        arguments: { kind: "result" },
+      })),
+      reasoning: ["**Reading the record**"],
+      reasoningMs: 30_000,
+    },
+  });
+  await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
+  await box(page).fill("My results");
+  await box(page).press("Enter");
+  await expect(steps(page)).toHaveCount(41);
+  // A scroll down past the transcript's end, as a trackpad does, moves
+  // nothing else on the page.
+  await log(page).hover();
+  for (let i = 0; i < 3; i++) await page.mouse.wheel(0, 1_000);
+  await expect(steps(page).last()).toHaveText(/^Reading the record/);
+  await expect(steps(page).last()).toBeInViewport();
+  await expect
+    .poll(async () => {
+      const bottom = await box(page).evaluate(
+        (field) => field.closest("form")?.getBoundingClientRect().bottom ?? 0,
+      );
+      return 800 - bottom < 80;
+    })
+    .toBe(true);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+});
+
 test.describe("on the real Codex binary, with a local fake model", () => {
   test("a reply streams after Rufi's tool; Stop; a message waits; Add to reply", async ({
     page,

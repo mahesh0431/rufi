@@ -427,10 +427,12 @@ export function TranscriptView({
     anchor.current = node ? { node, top: topOf(node) } : null;
   });
 
+  // Positioned, so what is placed in the transcript (the screen-reader words
+  // of each step) scrolls with it and never makes the page around it scroll.
   return (
     <div
       ref={scroller}
-      className={`${className ?? ""} [overflow-anchor:none]`}
+      className={`${className ?? ""} relative [overflow-anchor:none]`}
       onScroll={(event) => {
         const element = event.currentTarget;
         pinned.current =
