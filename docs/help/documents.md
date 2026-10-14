@@ -81,7 +81,7 @@ The strip item goes, and a line in the chat says what was read, for example **La
 
 When something needs you, the AI asks about it in the chat, in a few lines: a value the reader marked unsure, a page that couldn't be read or wasn't looked at, and what the reader noted, such as a report that may be someone else's or an unclear date. The reader judges the name on the report: your own name printed another way (initials, another order, a title, another script) doesn't need a question. The AI only reads and asks; it never saves on its own.
 
-The results are kept as **draft items**: they wait for you and stay across restarts, but they aren't part of your health record yet, so they don't count in your Overview or the AI's answers until you save them (see [Save results to your health record](#save-results-to-your-health-record)).
+The results are kept as **draft items**: they wait for you and stay across restarts, but they aren't part of your health record yet, so they don't count in your Overview or your trends until you save them (see [Save results to your health record](#save-results-to-your-health-record)). When you ask about a result, the AI also reads the drafts of your documents, and it says that a value it gives from one isn't saved yet.
 
 ### What the marks mean
 
