@@ -14,6 +14,7 @@ import { RotateCw, ScanText, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { create } from "zustand/react";
 import { read, request } from "./api.ts";
+import { chipState } from "./chip-state.ts";
 import { printedTime } from "./dates.ts";
 import { messageOf } from "./live.ts";
 import { queries } from "./reads.ts";
@@ -246,12 +247,18 @@ function Sheet({
         "GET",
         `${documentsPath(personId)}/${encodeURIComponent(documentId)}/reading`,
       ),
+    // Closed, its work is let go: opened again, it never shows an earlier run.
+    gcTime: 0,
   });
   const reading = view.data;
-  const elapsed = useElapsed(reading?.runAt ?? null);
+  // Until its work comes, what the strip knows: its name and where it is.
+  const now = useReadings(personId).data?.find(
+    (r) => r.documentId === documentId,
+  );
+  const elapsed = useElapsed(reading?.runAt ?? now?.runAt ?? null);
   const status =
     reading === undefined
-      ? ""
+      ? now && stateOf(now, elapsed)
       : reading.status === "reading"
         ? [
             "reading",
@@ -274,8 +281,10 @@ function Sheet({
     <>
       <div className="flex items-center gap-2.5 border-b border-line px-4 py-2.5">
         <Dialog.Title className="min-w-0 flex-1 truncate">
-          <b className="text-[14px]">{reading?.name ?? "Reading"}</b>{" "}
-          <span className="text-muted">· {status}</span>
+          <b className="text-[14px]">
+            {reading?.name ?? now?.name ?? "Reading"}
+          </b>
+          {status && <span className="text-muted"> · {status}</span>}
         </Dialog.Title>
         {canRetry && (
           <RetryButton personId={personId} documentId={documentId} />
@@ -292,6 +301,10 @@ function Sheet({
           <p role="alert" className="text-muted">
             {view.error.message}
           </p>
+        )}
+        {!reading && now?.state === "running" && (
+          // Progress in the chip's words: no page can be named yet.
+          <p className="text-muted">{chipState(undefined, now)?.text}</p>
         )}
         {reading && (
           <>

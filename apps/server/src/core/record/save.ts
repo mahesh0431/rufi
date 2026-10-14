@@ -1084,7 +1084,7 @@ function receiptText(written: readonly Written[], links: Links): string {
       add: "Added",
       change: "Changed",
       remove: "Removed",
-      restore: "Restored",
+      restore: "Put back",
     }[action];
     if (action === "remove" || action === "restore") return `- ${verb} ${name}`;
     const details: string[] = [];

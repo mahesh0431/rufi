@@ -87,8 +87,12 @@ Saving the reverse of an earlier save, by chat: the user says "undo that", the A
 _Avoid_: revert, rollback
 
 **Remove**:
-Taking a record out of the current record, by a save in the chat: it stays in the history, shows as removed, and "undo that" brings it back. A record is never deleted.
+Taking a record out of the current record, by a save in the chat: it stays in the history, shows as removed, and "undo that" puts it back. A record is never deleted.
 _Avoid_: delete (for a record), erase
+
+**Put back**:
+Bringing a removed record back into the current record, by a save in the chat, usually to undo a removal. Its receipt line and its history say "Put back".
+_Avoid_: restore (that is for a backup), recover
 
 **Delete**:
 Taking a document out of Rufi, on its page, not in the chat: its original, the pages Rufi drew from it, the reader's work, its readings and its draft items go. Its name and page numbers stay, so the history, sources and chips that point at it say "document deleted". It can't be undone. When saved records come from the document, the user chooses: **Delete file** keeps them, and **Delete file and results** opens the chat, where the AI goes through them and removes each one on the user's yes. The delete itself never changes the record. Rufi's backups keep the document until they age out.
@@ -220,7 +224,7 @@ The AI agent that answers in the chat and works with the record through Rufi's t
 _Avoid_: assistant, bot; "model" only for a version of the AI (see Model)
 
 **The AI's folder**:
-The folder where the AI works: `ai/` in the data folder. It keeps its programs, notes and research files there between messages, and it is the only place where the AI's programs can write. Nothing in it is part of the record. It isn't in backups, the export or a move yet.
+The folder where the AI works: `ai/` in the data folder. It keeps its programs, notes and research files there between messages, with their caches in `ai/.cache`, and it is the only place where the AI's programs can write. Nothing in it is part of the record. It isn't in backups, the export or a move yet.
 _Avoid_: workspace, sandbox, scratch folder
 
 **Tool**:

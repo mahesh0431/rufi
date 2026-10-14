@@ -326,6 +326,15 @@ test("a save of a document's items shows its summary, with what was saved folded
     'Added result Test 1 1: category lab, measured 12 Aug 2026 ("Collected 12 Aug 2026") · page 1',
   );
   await accessible(page);
+  // Overview's Recent changes names it by its summary alone.
+  await expect(
+    page
+      .getByRole("region", { name: "Recent changes" })
+      .locator("summary")
+      .first(),
+  ).toHaveText(
+    /^Today \d\d:\d\dSaved 7 results from Sunrise Labs August\.pdf · 7 new$/,
+  );
 });
 
 test("a document's draft items go into the chat as chips, and the AI gets their exact ids", async ({

@@ -102,7 +102,7 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
     .getByRole("log", { name: "Messages" })
     .locator("[data-entry]", { hasText: "records cited" });
   await expect(line).toHaveText(
-    /^RufiVisit brief · \d{1,2} \w{3} \d{4} · 3 records citedOpen$/,
+    /^RufiVisit brief · Made \d{1,2} \w{3} \d{4} · 3 records citedOpen$/,
   );
   await accessible(page);
   await line.getByRole("link", { name: /^Open Visit brief/ }).click();

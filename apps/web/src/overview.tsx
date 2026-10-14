@@ -262,20 +262,23 @@ function TileView({ personId, tile }: { personId: string; tile: Tile }) {
   );
 }
 
-/** A receipt's first line as plain words: its summary, or its only change. */
+/**
+ * A receipt's first line as plain words: its summary ("Saved 7 results
+ * from …"), which already counts the changes under it, or its first change
+ * and how many more.
+ */
 function summaryOf(receipt: string): string {
+  const plain = (line: string) =>
+    line
+      .replace(/^- /, "")
+      .replace(/\\(.)|\*/g, (_, kept?: string) => kept ?? "");
   const lines = receipt
     .split("\n")
-    .map((line) =>
-      line
-        .replace(/^- /, "")
-        .replace(/\\(.)|\*/g, (_, kept?: string) => kept ?? ""),
-    )
-    .filter((line) => line.trim() !== "" && line !== "Saved");
-  const [first = "Saved", ...rest] = lines;
-  return rest.length === 0
-    ? first
-    : `${first} · and ${String(rest.length)} more`;
+    .filter((line) => line.trim() !== "" && plain(line) !== "Saved");
+  const [first, ...rest] = lines;
+  if (first === undefined) return "Saved";
+  if (!first.startsWith("- ") || rest.length === 0) return plain(first);
+  return `${plain(first)} · and ${String(rest.length)} more`;
 }
 
 /** When a save was: "Today 01:45", "Yesterday 18:02", else "18:31 on 3 Sep 2026". */
