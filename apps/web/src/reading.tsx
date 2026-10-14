@@ -14,6 +14,7 @@ import { RotateCw, ScanText, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { create } from "zustand/react";
 import { read, request } from "./api.ts";
+import { chipState } from "./chip-state.ts";
 import { printedTime } from "./dates.ts";
 import { messageOf } from "./live.ts";
 import { queries } from "./reads.ts";
@@ -246,6 +247,8 @@ function Sheet({
         "GET",
         `${documentsPath(personId)}/${encodeURIComponent(documentId)}/reading`,
       ),
+    // Closed, its work is let go: opened again, it never shows an earlier run.
+    gcTime: 0,
   });
   const reading = view.data;
   // Until its work comes, what the strip knows: its name and where it is.
@@ -300,11 +303,8 @@ function Sheet({
           </p>
         )}
         {!reading && now?.state === "running" && (
-          <p className="text-muted">
-            {now.of > 0
-              ? `Reading page ${String(Math.min(now.saved + 1, now.of))} of ${String(now.of)}…`
-              : "Reading…"}
-          </p>
+          // Progress in the chip's words: no page can be named yet.
+          <p className="text-muted">{chipState(undefined, now)?.text}</p>
         )}
         {reading && (
           <>
