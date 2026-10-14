@@ -324,6 +324,21 @@ function lines(state: Live): string[] {
   return shown;
 }
 
+/** Where a scrolling area is, how tall its content is, and how tall its view. */
+type View = { top: number; height: number; view: number };
+const viewOf = (element: HTMLElement): View => ({
+  top: element.scrollTop,
+  height: element.scrollHeight,
+  view: element.clientHeight,
+});
+/**
+ * It moved up with its view the same size and nothing taken out: you
+ * scrolled. A view that grows (the box shrinks after a send), or content
+ * that folds, moves it up too; that is the browser keeping the end in view.
+ */
+const scrolledUp = (was: View, now: View) =>
+  now.top < was.top - 1 && now.view === was.view && now.height >= was.height;
+
 export function TranscriptView({
   live,
   personId,
@@ -353,20 +368,14 @@ export function TranscriptView({
   const scroller = useRef<HTMLDivElement>(null);
   const log = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
+  const seen = useRef<View>({ top: 0, height: 0, view: 0 });
   useEffect(() => {
     const element = scroller.current;
     if (!element) return;
-    let followedTo = 0;
     const follow = () => {
       if (!pinned.current) return;
-      // Scrolled up since, before the scroll was even reported: you read.
-      const end = element.scrollHeight - element.clientHeight;
-      if (element.scrollTop < Math.min(followedTo, end) - 1) {
-        pinned.current = false;
-        return;
-      }
       element.scrollTop = element.scrollHeight;
-      followedTo = element.scrollTop;
+      seen.current = viewOf(element);
     };
     follow();
     // New text, and a smaller view (waiting messages above the box).
@@ -383,6 +392,13 @@ export function TranscriptView({
       resizes.disconnect();
     };
   }, []);
+  // A new reply is followed, also if you had scrolled up before it.
+  useEffect(() => {
+    const element = scroller.current;
+    if (!running || !element) return;
+    pinned.current = true;
+    element.scrollTop = element.scrollHeight;
+  }, [running]);
 
   // Near the top, the page before loads; again after each one, until the
   // view is full or the chat's start is there.
@@ -435,8 +451,15 @@ export function TranscriptView({
       className={`${className ?? ""} relative [overflow-anchor:none]`}
       onScroll={(event) => {
         const element = event.currentTarget;
-        pinned.current =
-          element.scrollHeight - element.scrollTop - element.clientHeight < 40;
+        const now = viewOf(element);
+        if (now.height - now.top - now.view < 40) pinned.current = true;
+        else if (scrolledUp(seen.current, now)) pinned.current = false;
+        seen.current = now;
+      }}
+      // A wheel up is you reading, also before its scroll is reported.
+      onWheel={(event) => {
+        if (event.deltaY < 0 && event.currentTarget.scrollTop > 0)
+          pinned.current = false;
       }}
     >
       <div className={inner}>
