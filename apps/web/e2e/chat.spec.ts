@@ -1513,10 +1513,13 @@ test("the transcript follows a growing Activity to its newest row, above the box
     },
   });
   const stop = page.getByRole("button", { name: "Stop", exact: true });
+  // Each step is a call to the core; with the whole suite running, a reply's
+  // steps can take longer than the usual wait to all come in.
+  const allIn = { timeout: 15_000 };
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
   await box(page).fill(message);
   await box(page).press("Enter");
-  await expect(steps(page)).toHaveCount(81);
+  await expect(steps(page)).toHaveCount(81, allIn);
   await expect(steps(page).last()).toBeInViewport();
   await expect.poll(() => aboveTheBox(steps(page).last(), page)).toBe(true);
   await expect(steps(page)).toHaveCount(82);
@@ -1533,7 +1536,7 @@ test("the transcript follows a growing Activity to its newest row, above the box
   await expect(log(page).getByText(message).first()).toBeInViewport();
   await box(page).fill(message);
   await box(page).press("Enter");
-  await expect(steps(page)).toHaveCount(81);
+  await expect(steps(page)).toHaveCount(81, allIn);
   await expect(steps(page).last()).toBeInViewport();
   await expect.poll(() => aboveTheBox(steps(page).last(), page)).toBe(true);
   // A scroll down past the transcript's end, as a trackpad does, moves
@@ -1558,7 +1561,7 @@ test("the transcript follows a growing Activity to its newest row, above the box
   // The panel follows the same way.
   await sidebar(page).getByRole("link", { name: "Overview" }).click();
   await send(page, message);
-  await expect(steps(chat(page))).toHaveCount(42);
+  await expect(steps(chat(page))).toHaveCount(42, allIn);
   await expect(steps(chat(page)).last()).toBeInViewport();
   await expect
     .poll(() => aboveTheBox(steps(chat(page)).last(), chat(page)))
