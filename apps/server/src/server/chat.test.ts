@@ -401,15 +401,15 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     },
   );
 
-  it(
-    "keeps the AI's progress note as a step of the reply's Activity, as it streams, and its answer as the one reply, with How",
+  it.each(["commentary", "seeded commentary"])(
+    "keeps the AI's progress note as a step of the reply's Activity, as it streams, and its answer as the one reply, with How (%s)",
     timeout,
-    async () => {
+    async (text) => {
       await startChat(name);
       const c = await newChat();
       const shown: Entry[] = [];
       transcripts.subscribe(c.id, (change) => shown.push(...change.entries));
-      await say(c, "commentary\n\n```rufi-basis\nFrom the note test.\n```");
+      await say(c, `${text}\n\n\`\`\`rufi-basis\nFrom the note test.\n\`\`\``);
       await ended(c.id);
       const { all, turns } = await transcript(c.id);
       expect(
@@ -418,7 +418,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
           .map((e) => [e.kind, e.activity, e.text, e.status]),
       ).toEqual([
         ["activity", "note", NOTE, "done"],
-        ["reply", null, "ok:commentary", null],
+        ["reply", null, `ok:${text}`, null],
       ]);
       expect(turns[0]?.how).toBe("From the note test.");
       // Never a reply, not even while it streamed; it grew as it came.
@@ -455,13 +455,13 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     },
   );
 
-  it(
-    "keeps half a progress note as a stopped step when the reply is stopped, also after a restart",
+  it.each(["cut commentary", "seeded cut commentary"])(
+    "keeps half a progress note as a stopped step when the reply is stopped, also after a restart (%s)",
     timeout,
-    async () => {
+    async (text) => {
       await startChat(name);
       const c = await newChat();
-      await say(c, "cut commentary");
+      await say(c, text);
       await until(async () =>
         (await transcript(c.id)).all.some((e) => e.activity === "note"),
       );

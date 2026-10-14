@@ -82,7 +82,7 @@ interface Running {
   turnId: string;
   /** How it ended, when Rufi decided it (a deadline, a tool loop). */
   end: TurnEnd | undefined;
-  /** Agent messages that streamed; the others arrive whole at their end. */
+  /** Messages with text delivered at their start or in deltas; others arrive whole at the end. */
   streamed: Set<string>;
   /**
    * Agent messages Codex marked as its progress notes (commentary), by item:
@@ -442,6 +442,9 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         }
         if (item.type === "agentMessage") {
           if (item.phase === "commentary") running.notes.add(item.id);
+          if (item.text && !running.streamed.has(item.id)) {
+            textDelta(running, item.id, item.text);
+          }
           return;
         }
         if (item.type === "commandExecution") void track();
@@ -460,14 +463,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       }
       case "item/agentMessage/delta": {
         const { itemId, delta } = params as AgentMessageDeltaNotification;
-        running.streamed.add(itemId);
-        emit({
-          type: running.notes.has(itemId) ? "note" : "text",
-          threadId,
-          turnId,
-          itemId,
-          delta,
-        });
+        textDelta(running, itemId, delta);
         return;
       }
       case "item/reasoning/summaryTextDelta": {
@@ -555,6 +551,18 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       default:
         log("codex.notification_ignored", { method });
     }
+  }
+
+  /** Text already present at an item's start follows the same path as its later deltas. */
+  function textDelta(running: Running, itemId: string, delta: string): void {
+    running.streamed.add(itemId);
+    emit({
+      type: running.notes.has(itemId) ? "note" : "text",
+      threadId: running.threadId,
+      turnId: running.turnId,
+      itemId,
+      delta,
+    });
   }
 
   async function track(): Promise<void> {

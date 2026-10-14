@@ -8,7 +8,9 @@
 // command" runs the same command and the reply ends while it runs, "think"
 // streams a reasoning summary (THINKING) before it answers, "commentary"
 // writes a progress note (NOTE) before it answers ("whole commentary": in one
-// piece, never streamed; "cut commentary": half of it, and never answers),
+// piece, never streamed; "seeded": initial note and reply text is included
+// when the item is added, before the deltas; "cut commentary": half of it,
+// and never answers),
 // and anything else answers "ok:<text>". No sign-in and no AI.
 // With a `script`, it answers each request with the script's next step
 // instead (a call of a direct tool, or text), reporting the step's tokens as
@@ -269,14 +271,23 @@ export async function fakeModel(
           };
           event({
             type: "response.output_item.added",
-            item: last.includes("whole") ? whole : { ...whole, content: [] },
+            item: last.includes("whole")
+              ? whole
+              : {
+                  ...whole,
+                  content: last.includes("seeded")
+                    ? [{ type: "output_text", text: NOTE.slice(0, 9) }]
+                    : [],
+                },
           } as { type: string });
           if (!last.includes("whole")) {
-            event({
-              type: "response.output_text.delta",
-              delta: NOTE.slice(0, 9),
-              item_id: note,
-            } as { type: string });
+            if (!last.includes("seeded")) {
+              event({
+                type: "response.output_text.delta",
+                delta: NOTE.slice(0, 9),
+                item_id: note,
+              } as { type: string });
+            }
             if (last.includes("cut")) {
               open.add(response);
               return;
@@ -295,9 +306,19 @@ export async function fakeModel(
         const text = `ok:${last}`;
         event({
           type: "response.output_item.added",
-          item: { type: "message", role: "assistant", id: item, content: [] },
+          item: {
+            type: "message",
+            role: "assistant",
+            id: item,
+            content: last.includes("seeded")
+              ? [{ type: "output_text", text: text.slice(0, 3) }]
+              : [],
+          },
         } as { type: string });
-        for (const delta of [text.slice(0, 3), text.slice(3)]) {
+        const deltas = last.includes("seeded")
+          ? [text.slice(3)]
+          : [text.slice(0, 3), text.slice(3)];
+        for (const delta of deltas) {
           event({
             type: "response.output_text.delta",
             delta,

@@ -11,7 +11,8 @@
 // apart, "long" streams 200 parts of 1,000 characters, "think" streams a
 // reasoning summary (fake-model.ts's THINKING) before it answers, "commentary"
 // writes a progress note (fake-model.ts's NOTE) before it answers ("whole
-// commentary": only when it completes; "cut commentary": half of it,
+// commentary": only when it completes; "seeded": initial note and reply
+// text comes with item/started, before the deltas; "cut commentary": half of it,
 // and the turn never ends), and anything else answers "ok:<text>".
 // Like Codex, it calls Rufi's tools on the MCP server a thread was given
 // (its config's mcp_servers.rufi), checking it answers when the thread starts
@@ -441,11 +442,17 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
       questions: null,
     };
     if (!text.includes("whole")) {
-      event("item/started", { item: { ...note, text: "" } });
-      event("item/agentMessage/delta", {
-        itemId: note.id,
-        delta: NOTE.slice(0, 9),
+      const initial = NOTE.slice(0, 9);
+      const seeded = text.includes("seeded");
+      event("item/started", {
+        item: { ...note, text: seeded ? initial : "" },
       });
+      if (!seeded) {
+        event("item/agentMessage/delta", {
+          itemId: note.id,
+          delta: initial,
+        });
+      }
       if (text.includes("cut")) return;
       event("item/agentMessage/delta", {
         itemId: note.id,
@@ -559,7 +566,13 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
       },
     });
   } else {
-    answer(thread, turnId, "item-1", `ok:${text}`);
+    answer(
+      thread,
+      turnId,
+      "item-1",
+      `ok:${text}`,
+      text.includes("seeded") ? 3 : 0,
+    );
   }
   // Steers that came meanwhile are taken in, and answered, in the same turn.
   for (const [i, steer] of thread.running.steers.entries()) {
@@ -596,16 +609,29 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   complete(thread, turnId, "completed");
 }
 
-function answer(thread: Thread, turnId: string, itemId: string, text: string) {
+function answer(
+  thread: Thread,
+  turnId: string,
+  itemId: string,
+  text: string,
+  initial = 0,
+) {
   const params = { threadId: thread.id, turnId };
   send({
     method: "item/started",
     params: {
       ...params,
-      item: { id: itemId, type: "agentMessage", text: "", questions: null },
+      item: {
+        id: itemId,
+        type: "agentMessage",
+        text: text.slice(0, initial),
+        questions: null,
+      },
     },
   });
-  for (const delta of [text.slice(0, 3), text.slice(3)]) {
+  for (const delta of initial
+    ? [text.slice(initial)]
+    : [text.slice(0, 3), text.slice(3)]) {
     send({
       method: "item/agentMessage/delta",
       params: { ...params, itemId, delta },
