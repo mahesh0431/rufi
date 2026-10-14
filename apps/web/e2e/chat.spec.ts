@@ -1479,7 +1479,10 @@ test("a tool step shows the tool and its arguments as reported, and opens to its
   await expect(own).toContainText('"kind": "result"');
 });
 
-/** Its bottom is at or above the top of the box beside it. */
+/**
+ * Its bottom is at or above the top of the box beside it; with
+ * toBeInViewport, the row is in view in the transcript, not under the box.
+ */
 async function aboveTheBox(row: Locator, scope: Page | Locator) {
   const [bottom, top] = await Promise.all([
     row.evaluate((element) => element.getBoundingClientRect().bottom),
@@ -1514,9 +1517,11 @@ test("the transcript follows a growing Activity to its newest row, above the box
   await box(page).fill(message);
   await box(page).press("Enter");
   await expect(steps(page)).toHaveCount(81);
+  await expect(steps(page).last()).toBeInViewport();
   await expect.poll(() => aboveTheBox(steps(page).last(), page)).toBe(true);
   await expect(steps(page)).toHaveCount(82);
   await expect(steps(page).last()).toHaveText("Checking");
+  await expect(steps(page).last()).toBeInViewport();
   await expect.poll(() => aboveTheBox(steps(page).last(), page)).toBe(true);
   await stop.click();
 
@@ -1528,6 +1533,7 @@ test("the transcript follows a growing Activity to its newest row, above the box
   await box(page).fill(message);
   await box(page).press("Enter");
   await expect(steps(page)).toHaveCount(81);
+  await expect(steps(page).last()).toBeInViewport();
   await expect.poll(() => aboveTheBox(steps(page).last(), page)).toBe(true);
   // A scroll down past the transcript's end, as a trackpad does, moves
   // nothing else on the page: the box stays at the window's bottom.
