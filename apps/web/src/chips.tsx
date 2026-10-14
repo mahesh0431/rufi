@@ -76,10 +76,10 @@ export function ChipView({
       <Icon size={13} className="shrink-0 text-muted" aria-hidden />
       <span className="max-w-[220px] truncate">{label}</span>
       {chip.deleted && (
-        <span className="shrink-0 whitespace-nowrap">· document deleted</span>
+        <span className="shrink-0 whitespace-nowrap"> · document deleted</span>
       )}
       {state !== undefined && (
-        <span className="-ml-1.5 shrink-0 whitespace-nowrap text-muted">
+        <span className="shrink-0 whitespace-nowrap text-muted">
           {" · "}
           {state.busy && (
             <LoaderCircle

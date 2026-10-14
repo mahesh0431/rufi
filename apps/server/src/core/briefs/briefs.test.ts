@@ -145,7 +145,9 @@ describe("create_brief", () => {
 
     expect(made).toMatchObject({
       ok: true,
-      body: { result: { brief: "Visit brief · 4 Oct 2026 · 4 records cited" } },
+      body: {
+        result: { brief: "Visit brief · Made 4 Oct 2026 · 4 records cited" },
+      },
     });
     const [brief] = rows("SELECT * FROM briefs") as {
       id: string;
@@ -169,7 +171,7 @@ describe("create_brief", () => {
       {
         id: brief?.id,
         turn_id: brief?.turn_id,
-        text: "Visit brief · 4 Oct 2026 · 4 records cited",
+        text: "Visit brief · Made 4 Oct 2026 · 4 records cited",
       },
     ]);
 
