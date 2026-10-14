@@ -123,13 +123,6 @@ function agreed<T>(values: readonly (T | undefined)[]): T | undefined {
   return stated.every((v) => v === first) ? first : undefined;
 }
 
-/** Only case and whitespace differences count as an equal printed name. */
-function sameName(printed: string, person: string): boolean {
-  const normalize = (text: string) =>
-    text.trim().replace(/\s+/gu, " ").toLowerCase();
-  return normalize(printed) === normalize(person);
-}
-
 /** A page's first printed date: the collection date when there is one. */
 const firstDate = (entry: Entry) => entry.facts?.dates?.[0];
 
@@ -252,6 +245,7 @@ export function readings(
         facts: { ...facts(0, 0), action: "retry" },
       };
     }
+    // An entry saved by an older Rufi keeps the checks it stored with it.
     const entries = mine.map((p) => ({
       position: p.position,
       entry: JSON.parse(p.entry ?? "{}") as Entry,
@@ -288,19 +282,6 @@ export function readings(
     const incomplete = entries.filter((e) => e.checks.incomplete);
     const issues = entries.flatMap(({ position, entry }) =>
       (entry.issues ?? []).map((i) => `page ${String(position)}: ${i}`),
-    );
-    const person = await db
-      .selectFrom("people")
-      .select("display_name")
-      .where("id", "=", run.personId)
-      .executeTakeFirst();
-    const names = [
-      ...new Set(
-        all.flatMap((e) => (e.facts?.name?.trim() ? [e.facts.name] : [])),
-      ),
-    ];
-    const otherNames = names.filter(
-      (n) => !sameName(n, person?.display_name ?? ""),
     );
 
     // The line: what it is, when, what was read, what needs a look.
@@ -368,7 +349,6 @@ export function readings(
           `page ${String(e.position)} may be incomplete: ${String(e.checks.incomplete?.rows_seen)} rows seen, ${String(e.checks.incomplete?.items)} read`,
       ),
       ...issues.map((i) => `the reader noted: ${i}`),
-      ...otherNames.map((n) => `the name on the report is "${n}"`),
     ];
     const ask =
       needs.length === 0
@@ -605,8 +585,17 @@ export function readings(
     startRun: (job: Job): Promise<Run> =>
       db.transaction().execute((trx) => begin(trx, job)),
 
-    /** What a run's reader is told: the document's pages, what it saved, its note. */
+    /**
+     * What a run's reader is told: the document's pages, what it saved, its
+     * note, and the display name of the run's person, to compare with the
+     * name on the report.
+     */
     about: async (run: Run) => {
+      const person = await db
+        .selectFrom("people")
+        .select("display_name")
+        .where("id", "=", run.personId)
+        .executeTakeFirstOrThrow();
       const pages = await db
         .selectFrom("document_pages")
         .select(["position", "file_name", "entry_job_id"])
@@ -621,6 +610,7 @@ export function readings(
         .where("id", "=", run.documentId)
         .executeTakeFirst();
       return {
+        person: person.display_name,
         pages: pages.length,
         files: pages.map((p) => p.file_name),
         targets: run.targets,
@@ -761,6 +751,7 @@ export function readings(
           page.entry_job_id === run.jobId && page.entry
             ? (JSON.parse(page.entry) as Entry)
             : undefined;
+        // Only an entry an older Rufi saved has checks.
         const checks = JSON.parse(
           page.entry_checks ?? '{"items":[]}',
         ) as Checks;

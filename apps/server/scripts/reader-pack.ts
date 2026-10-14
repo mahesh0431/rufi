@@ -1,6 +1,7 @@
 // The reader's fictional test pack, read by the real reader and scored
-// against its answer key: items missed, wrong values not marked unsure,
-// wrong person or date, and time per page. The numbers are for the bar the
+// against its answer key: items missed, wrong values (the printed text, the
+// number or the comparator) not marked unsure, wrong person or date, time
+// per page, and the question for the chat AI, for a person to judge. The numbers are for the bar the
 // person sets before dogfood, not pass or fail. Only the sign-in comes from
 // RUFI_HOME (the test sign-in). Every document is read at the same time,
 // each on its own scratch data folder, person and reader, with the reader's
@@ -163,6 +164,7 @@ const PACK: Item[] = [
     "amended",
     "ambiguous_date",
     "other_name",
+    "name_variant",
     "five_pages",
     "eight_pages",
     "big_300",
@@ -382,12 +384,11 @@ function score(
   }));
   const pageRows = store.db
     .prepare(
-      "SELECT position, entry, entry_checks, state FROM document_pages WHERE document_id = ? ORDER BY position",
+      "SELECT position, entry, state FROM document_pages WHERE document_id = ? ORDER BY position",
     )
     .all(documentId) as {
     position: number;
     entry: string | null;
-    entry_checks: string | null;
     state: string | null;
   }[];
   const line = (
@@ -423,8 +424,6 @@ function score(
       wrongDate++;
   }
   const flags = {
-    incomplete: pageRows.filter((p) => p.entry_checks?.includes("incomplete"))
-      .length,
     notLooked: pageRows.filter((p) => p.state === "not_looked_at").length,
     unreadable: pageRows.filter((p) => p.state === "unreadable").length,
   };
@@ -480,7 +479,7 @@ function score(
       String(score.wrongItemDates),
       String(wrongPerson),
       `${String(wrongDate)} / ${String(noDate)}`,
-      `${String(flags.incomplete)} / ${String(flags.notLooked)} / ${String(flags.unreadable)}`,
+      `${String(flags.notLooked)} / ${String(flags.unreadable)}`,
       pageCount > 0 ? `${(ms / pageCount / 1000).toFixed(1)} s` : "—",
       usage ? `${String(usage.totalTokens)} / ${String(usage.looks)}` : "—",
       asked ? "yes" : "no",
@@ -488,6 +487,9 @@ function score(
     ].join(" | "),
   );
   if (wrong.length > 0) rows.push(`  wrong: ${wrong.join("; ")}`);
+  // For a person to judge: is each doubt real, and is a question about
+  // whose report it is right?
+  if (asked !== undefined) rows.push(`  asked: ${asked.replace(/\n/g, " / ")}`);
   rows.push(`  scratch data folder: ${home}`);
   return rows;
 }
@@ -518,7 +520,7 @@ const text = [
   "",
   `${String(chosen.length)} documents at once, ${set}; wall time ${String(Math.round((Date.now() - started) / 1000))} s.`,
   "",
-  "Columns: document | kind | outcome | pages | expected items | correct | missed | wrong, marked unsure | wrong, not marked | extra | items with a wrong date of their own | pages with another name | pages with a wrong / no date | pages may be incomplete / not looked at / unreadable | time per page | tokens / looks | AI asked | end line",
+  "Columns: document | kind | outcome | pages | expected items | correct | missed | wrong, marked unsure | wrong, not marked | extra | items with a wrong date of their own | pages with another name | pages with a wrong / no date | pages not looked at / unreadable | time per page | tokens / looks | AI asked | end line",
   "",
   ...rows.map((r) => `- ${r}`),
   "",

@@ -8,6 +8,8 @@ export interface Draft {
   fields: {
     test_name: string;
     value_text: string;
+    value_number?: number;
+    comparator?: string;
     column?: string;
     date?: { iso?: string };
   };
@@ -21,7 +23,8 @@ export const norm = (text: string) =>
 /**
  * The drafts against the answer key: values correct, missed, wrong (marked
  * unsure or not), extra, and items whose own date the key scores and the
- * reader got wrong (a measurement's: the visit's, or none).
+ * reader got wrong (a measurement's: the visit's, or none). A value is
+ * correct when its printed text, its number and its comparator all are.
  */
 export function scoreItems(key: readonly Expected[], drafts: readonly Draft[]) {
   const score = {
@@ -54,12 +57,28 @@ export function scoreItems(key: readonly Expected[], drafts: readonly Draft[]) {
         `p${String(want.page)} ${want.test}: date ${date ?? "none"} for ${want.date ?? "none"}`,
       );
     }
-    if (norm(found.fields.value_text) === norm(want.value)) score.correct++;
+    const { value_text, value_number, comparator } = found.fields;
+    const problems = [
+      ...(norm(value_text) === norm(want.value)
+        ? []
+        : [`"${value_text}" for "${want.value}"`]),
+      ...((value_number ?? null) === want.number
+        ? []
+        : [
+            `number ${String(value_number ?? "none")} for ${String(want.number ?? "none")}`,
+          ]),
+      ...(comparator === want.comparator
+        ? []
+        : [
+            `comparator ${comparator ?? "none"} for ${want.comparator ?? "none"}`,
+          ]),
+    ];
+    if (problems.length === 0) score.correct++;
     else {
       if (found.unsure) score.wrongFlagged++;
       else score.wrongSilent++;
       score.wrong.push(
-        `p${String(want.page)} ${want.test}: "${found.fields.value_text}" for "${want.value}"${found.unsure ? " (unsure)" : ""}`,
+        `p${String(want.page)} ${want.test}: ${problems.join(", ")}${found.unsure ? " (unsure)" : ""}`,
       );
     }
   }

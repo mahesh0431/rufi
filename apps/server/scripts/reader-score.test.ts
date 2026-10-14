@@ -2,12 +2,19 @@ import { describe, expect, it } from "vitest";
 import { PRESCRIPTION } from "../tests/pack/reports.ts";
 import { chooseItems, scoreItems, type Draft } from "./reader-score.ts";
 
-const draft = (test: string, value: string, iso?: string): Draft => ({
+const draft = (
+  test: string,
+  value: string,
+  iso?: string,
+  more: Partial<Draft["fields"]> = {},
+): Draft => ({
   page: 1,
   fields: {
     test_name: test,
     value_text: value,
+    ...(Number.isFinite(Number(value)) && { value_number: Number(value) }),
     ...(iso !== undefined && { date: { iso } }),
+    ...more,
   },
   unsure: false,
 });
@@ -31,6 +38,39 @@ describe("the reader pack's score", () => {
       wrong: [
         "p1 Blood pressure: date 2026-10-01 for 2026-10-05",
         "p1 Height: date 2026-10-01 for none",
+      ],
+    });
+  });
+  it("counts a value wrong when its number or comparator isn't the key's, also when its printed text is right", () => {
+    const key = [
+      { page: 1, test: "TSH", value: "4,6", number: 4.6 },
+      {
+        page: 1,
+        test: "CRP",
+        value: "<5",
+        number: 5,
+        comparator: "<" as const,
+      },
+      { page: 1, test: "Protein", value: "Trace", number: null },
+      { page: 1, test: "pH", value: "6.0", number: 6 },
+    ];
+    const score = scoreItems(key, [
+      draft("TSH", "4,6", undefined, { value_number: 46 }),
+      draft("CRP", "<5", undefined, { value_number: 5 }),
+      {
+        ...draft("Protein", "Trace", undefined, { value_number: 1 }),
+        unsure: true,
+      },
+      draft("pH", "6.0"),
+    ]);
+    expect(score).toMatchObject({
+      correct: 1,
+      wrongFlagged: 1,
+      wrongSilent: 2,
+      wrong: [
+        "p1 TSH: number 46 for 4.6",
+        "p1 CRP: comparator none for <",
+        "p1 Protein: number 1 for none (unsure)",
       ],
     });
   });

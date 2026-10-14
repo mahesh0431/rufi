@@ -266,7 +266,6 @@ text(answer.content[0].text);`,
 
 const entry = (value: string) => ({
   outcome: "read",
-  rows_seen: 1,
   items: [{ test_name: "Haemoglobin", value_text: value, unit: "g/dL" }],
 });
 

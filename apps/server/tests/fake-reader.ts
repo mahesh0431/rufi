@@ -111,7 +111,6 @@ export const readPage = (value = "13.2", extra: object = {}) => ({
     issuer: "Sunrise Labs",
     name: "Asha Fictional",
   },
-  rows_seen: 1,
   items: [
     {
       test_name: "Haemoglobin",

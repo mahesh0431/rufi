@@ -55,7 +55,9 @@ To show one kind only, choose it in the list at the top left.
 
 ## How Rufi reads a document
 
-Rufi's reader is an AI that reads one document at a time, page by page, in the background. It copies what each page says: every result exactly as printed, lab results and measurements such as a blood pressure taken at a visit (`<5` stays `<5`, `130/85` stays `130/85`), with its unit, range and the lab's own flag, and the dates, lab and name printed on the page. When the page dates a measurement, such as the day of a visit, the reader copies that date with it. It doesn't judge your results, doesn't decide which are lab results and which are measurements, and saves nothing to your health record. It sees only that document's pages: not your health record, your chat, other documents or the internet.
+Rufi's reader is an AI that reads one document at a time, page by page, in the background. It copies what each page says: every result exactly as printed, lab results and measurements such as a blood pressure taken at a visit (`<5` stays `<5`, `130/85` stays `130/85`), with its unit, range and the lab's own flag, and the dates, lab and name printed on the page. When the page dates a measurement, such as the day of a visit, the reader copies that date with it. It doesn't judge your results, doesn't decide which are lab results and which are measurements, and saves nothing to your health record.
+
+The reader reads each page from its image. When a PDF also has its own text, the reader uses that text as extra help with the exact characters; a scan or a photo is read from its image alone, with the same care. The reader sees only that document's pages and the name of the person you added it for, as Rufi shows it, so it can tell when a report may be someone else's. It doesn't see your health record, your chat, other documents or the internet.
 
 Rufi reads each document as soon as you add it. It sends the document's pages to the AI you signed in with (your ChatGPT plan) to read them. The first run tells you this once.
 
@@ -71,26 +73,28 @@ Your choice is used by the next reading that starts. A reading that runs keeps t
 
 - A line in the chat says the reading started: **Reading thyrocare-aug.pdf · 5 pages**.
 - Above the chat box, the reader strip shows each reading: the one at work with its pages read and time (**read 3 of 5 · 1 min**), and those that wait their turn (**waiting**). You can keep chatting meanwhile.
-- Click **View reading** to see the reader's work as it goes: each page it read, with the facts and results it read, its one note for the whole document, Rufi's checks (below) and how much of your plan it used. **View reading** shows only; you check and fix results on the document's page (see [Check a report](#check-a-report)).
+- Click **View reading** to see the reader's work as it goes: each page it read, with the facts and results it read, its one note for the whole document, its marks and notes (below) and how much of your plan it used. **View reading** shows only; you check and fix results on the document's page (see [Check a report](#check-a-report)).
 
 ### When the reading ends
 
 The strip item goes, and a line in the chat says what was read, for example **Lab report · 12 Aug · 42 results read · 1 to check · Open**. **Open** goes to the document's page. A document with reports of several dates says so: **6 reports · 4 dates**. The result count includes current values. Earlier-column values stay as draft items but do not add to this count.
 
-When something needs you, the AI asks about it in the chat, in a few lines: a value marked unsure, a page that couldn't be read, a name on the report that differs from yours, an unclear date. Case and spacing differences do not need a question. Other differences, including an extra name or a title, do. It only reads and asks; it never saves on its own.
+When something needs you, the AI asks about it in the chat, in a few lines: a value the reader marked unsure, a page that couldn't be read or wasn't looked at, and what the reader noted, such as a report that may be someone else's or an unclear date. The reader judges the name on the report: your own name printed another way (initials, another order, a title, another script) doesn't need a question. The AI only reads and asks; it never saves on its own.
 
-The results are kept as **draft items**: they wait for you and stay across restarts, but they aren't part of your health record yet, so they don't count in your Overview or the AI's answers until you save them (see [Save results to your health record](#save-results-to-your-health-record)).
+The results are kept as **draft items**: they wait for you and stay across restarts, but they aren't part of your health record yet, so they don't count in your Overview or your trends until you save them (see [Save results to your health record](#save-results-to-your-health-record)). When you ask about a result, the AI also reads the drafts of your documents, and it says that a value it gives from one isn't saved yet.
 
 ### What the marks mean
 
-Rufi checks each page the reader reads. A check never changes what the reader read; it marks it, so you look at it:
+The reader marks what it isn't sure of, and says why. A mark never changes what the reader read; it shows you where to look:
 
-| Mark                  | Why                                                                                                         |
-| --------------------- | ----------------------------------------------------------------------------------------------------------- |
-| **unsure**            | The reader wasn't sure, a number doesn't match the value as printed, or a value isn't in the PDF's own text |
-| **may be incomplete** | The reader counted more (or fewer) rows on the page than it read                                            |
-| **couldn't be read**  | The reader couldn't read the page, and says why                                                             |
-| **not looked at**     | The reading ended without this page                                                                         |
+| Mark                  | Why                                                                                                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **unsure**            | The reader wasn't sure of the value, and says why. On a reading from an older Rufi, the reason may come from Rufi's own checks, such as a number that didn't match the printed value |
+| **couldn't be read**  | The reader couldn't read the page, and says why                                                                                                                                      |
+| **not looked at**     | The reading ended without this page                                                                                                                                                  |
+| **may be incomplete** | Only on a reading from an older Rufi: the reader counted more (or fewer) rows on the page than it read                                                                               |
+
+Something else about a page, such as rows the reader couldn't read, shows as the reader's note on that page in **View reading**.
 
 ## Save results to your health record
 
