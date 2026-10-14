@@ -196,6 +196,7 @@ async function call(
       already_saved?: unknown[];
       note?: string;
       dismissed?: string[];
+      warnings?: string[];
     };
     error?: string;
     issues: { path: string; fix: string }[];
@@ -534,7 +535,7 @@ describe("saving draft items", () => {
       }
     ).seq;
     await say("Save both");
-    const saved = await call("save_changes", {
+    const input = {
       items: [
         { item: HbA1c, version: 1, as: "new", category: "lab" },
         {
@@ -548,18 +549,29 @@ describe("saving draft items", () => {
           },
         },
       ],
-    });
+    };
+    const saved = await call("save_changes", input, "person", "future-items");
     expect(saved.ok).toBe(true);
-    expect((saved.result as { warnings?: string[] }).warnings).toEqual([
+    const warned = [
       "result HbA1c 7.1 %: measured 12 Nov 2026 is later than the day it was saved (11 Oct 2026). It is saved as given; if it may be a slip, check with the user.",
       "result TSH 2.1 mIU/L: measured Dec 2026 is later than the user's message it rests on (11 Oct 2026). It is saved as given; if it may be a slip, check with the user.",
-    ]);
+    ];
+    expect(saved.result.warnings).toEqual(warned);
     expect(
       rows(
         "SELECT entry_id FROM record_sources WHERE type = 'message' AND record_id = ?",
         saved.result.changes[1]?.id,
       ),
     ).toEqual([{ entry_id: earlier }]);
+    // The save and the fix's message are on 10 October in this zone.
+    process.env["TZ"] = "America/Los_Angeles";
+    try {
+      const again = await call("save_changes", input, "person", "future-items");
+      expect(again.result.warnings).toEqual(warned);
+      expect(again.result.note).toBe("This call was already saved.");
+    } finally {
+      process.env["TZ"] = "Asia/Kolkata";
+    }
   });
 
   it("adds the page as another source of a result already saved, changing no value; undo takes off only that link", async () => {

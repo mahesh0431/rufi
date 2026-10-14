@@ -860,33 +860,43 @@ describe("the error envelope", () => {
     expect(left(next.text)).toBe(REJECTIONS_PER_TURN - 1);
   });
 
-  it("ends a reply in Rufi's chat after the refused calls its setting allows", async () => {
-    makeDatabase(family).close();
-    const chats = transcripts(openWritable(path), () => "2026-10-14T10:00:00Z");
-    const chat = (await chats.chat("asha")) as ChatRow;
-    /** Each refused call's rejections_left, until Rufi ends the reply. */
-    const refusals = async () => {
-      const caller = chatCaller(undefined, chats, record)(
-        chat,
-        "t-1",
-        "person",
-      );
-      const lefts: number[] = [];
-      for (;;) {
-        const answer = await caller("nope", {});
-        lefts.push(left(answer.text));
-        if (answer.stopTurn !== undefined) return lefts;
+  it.each([
+    { value: undefined, lefts: [2, 1, 0], parallel: false },
+    { value: "5", lefts: [4, 3, 2, 1, 0], parallel: false },
+    ...["0", "2.5", "lots"].map((value) => ({
+      value,
+      lefts: [2, 1, 0],
+      parallel: false,
+    })),
+    { value: undefined, lefts: [2, 1, 0], parallel: true },
+    { value: "2", lefts: [1, 0], parallel: true },
+    { value: "lots", lefts: [2, 1, 0], parallel: true },
+  ])(
+    "ends a reply after its refused calls (setting $value, parallel $parallel)",
+    async ({ value, lefts, parallel }) => {
+      makeDatabase(family).close();
+      const store = openWritable(path);
+      try {
+        const chats = transcripts(store, () => "2026-10-14T10:00:00Z");
+        const chat = (await chats.chat("asha")) as ChatRow;
+        if (value !== undefined)
+          await chats.saveSetting(REJECTIONS_SETTING, value);
+        const caller = chatCaller(store, chats, record)(chat, "t-1", "person");
+        const refuse = () => caller("get_documents", { page: 1 });
+        const answers = [];
+        if (parallel) answers.push(...(await Promise.all(lefts.map(refuse))));
+        else {
+          for (const _ of lefts) answers.push(await refuse());
+        }
+        expect(answers.map((answer) => left(answer.text))).toEqual(lefts);
+        expect(answers.map((answer) => answer.stopTurn !== undefined)).toEqual(
+          lefts.map((remaining) => remaining === 0),
+        );
+      } finally {
+        store.close();
       }
-    };
-    expect(await refusals()).toEqual([2, 1, 0]);
-    await chats.saveSetting(REJECTIONS_SETTING, "5");
-    expect(await refusals()).toEqual([4, 3, 2, 1, 0]);
-    // Not a whole number above 0: the default.
-    for (const wrong of ["0", "2.5", "lots"]) {
-      await chats.saveSetting(REJECTIONS_SETTING, wrong);
-      expect(await refusals()).toEqual([2, 1, 0]);
-    }
-  });
+    },
+  );
 
   it("tells the model only that a tool failed, and logs only its name and error code", async () => {
     const broken = defineTool({

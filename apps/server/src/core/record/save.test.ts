@@ -1462,6 +1462,16 @@ describe("dates", () => {
     const again = await save(changes);
     expect(again.body.result.warnings).toEqual(warned);
     expect(again.body.result.note).toBe("This call was already saved.");
+    // The measurement is no longer later than the message in this zone.
+    // A replay keeps the warning from the original local comparison.
+    process.env["TZ"] = "Pacific/Kiritimati";
+    try {
+      const travelled = await save(changes);
+      expect(travelled.body.result.warnings).toEqual(warned);
+      expect(travelled.body.result.note).toBe("This call was already saved.");
+    } finally {
+      process.env["TZ"] = "Asia/Kolkata";
+    }
   });
 
   it("gives no warning for the minute the message was sent, in the Mac's time zone, nor for a date the change didn't set", async () => {

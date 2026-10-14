@@ -147,14 +147,18 @@ export function toolCaller(
   log: Log,
   rejections: number | (() => Promise<number>) = REJECTIONS_PER_TURN,
 ): (name: string, input: unknown, callId?: string) => Promise<ToolAnswer> {
-  let left: number | undefined;
+  let budget: Promise<{ left: number }> | undefined;
   const reject = async (
     error: string,
     issues: Issue[] = [],
     example?: unknown,
   ): Promise<ToolAnswer> => {
-    left ??= typeof rejections === "number" ? rejections : await rejections();
-    left = Math.max(0, left - 1);
+    budget ??= Promise.resolve(
+      typeof rejections === "number" ? rejections : rejections(),
+    ).then((left) => ({ left }));
+    const remaining = await budget;
+    const left = Math.max(0, remaining.left - 1);
+    remaining.left = left;
     return {
       ok: false,
       text: JSON.stringify({

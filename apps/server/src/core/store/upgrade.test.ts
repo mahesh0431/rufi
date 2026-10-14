@@ -174,6 +174,13 @@ describe("a record of version 1", () => {
         SOURCES,
       );
       expect(await saves()).toEqual(RAVIS_SAVES);
+      expect(
+        await store.query
+          .selectFrom("operations")
+          .select("warnings")
+          .distinct()
+          .execute(),
+      ).toEqual([{ warnings: "[]" }]);
 
       store.db.exec("VACUUM");
       expect((await readBrief(store.query, "asha", BRIEF))?.sources).toEqual(

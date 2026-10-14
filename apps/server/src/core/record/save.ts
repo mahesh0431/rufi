@@ -195,7 +195,7 @@ export interface Saved {
   changes: { kind: string; action: Action; id: string }[];
   /** Items saved before at the version named, with their earlier save. */
   earlier: Earlier[];
-  /** What the AI may want to check with the user; never a refusal (warningsOf). */
+  /** Stored with the save: what the AI may want to check; never a refusal. */
   warnings: string[];
 }
 
@@ -250,7 +250,7 @@ export async function saveChanges(
   const request = JSON.stringify(input);
   const earlier = await trx
     .selectFrom("operations")
-    .select(["id", "request"])
+    .select(["id", "request", "warnings"])
     .where("chat_id", "=", where.chatId)
     .where("call_id", "=", where.callId)
     .executeTakeFirst();
@@ -260,7 +260,7 @@ export async function saveChanges(
         "This call was already used for another save, so nothing was saved. Make a new call.",
       );
     }
-    return replay(trx, where.personId, earlier.id);
+    return replay(trx, where.personId, earlier);
   }
 
   const messageAt = messagesOf(trx, where);
@@ -466,6 +466,7 @@ export async function saveChanges(
       chat_id: where.chatId,
       call_id: where.callId,
       request,
+      warnings: "[]",
       created_at: where.now,
     })
     .execute();
@@ -513,6 +514,13 @@ export async function saveChanges(
   ) {
     await checkAllergies(trx, where.personId);
   }
+  const warnings = await warningsOf(trx, where.personId, id);
+  await trx
+    .updateTable("operations")
+    .set({ warnings: JSON.stringify(warnings) })
+    .where("person_id", "=", where.personId)
+    .where("id", "=", id)
+    .execute();
   return {
     id,
     receipt: receiptText(written, await linksOf(trx, where.personId, written)),
@@ -523,7 +531,7 @@ export async function saveChanges(
       id: String(w.after["id"]),
     })),
     earlier: items.earlier,
-    warnings: await warningsOf(trx, where.personId, id),
+    warnings,
   };
 }
 
@@ -587,8 +595,8 @@ const ENTRY_KINDS: Record<string, string> = {
  * done care) but are later than the user's message the change rests on, or
  * than the save itself for a document's item with no fix: each a warning for
  * the AI, which decides with the user whether it is a slip. Only a date the
- * change set, or made one that must have happened. Worked out from what the
- * save stored, so the same call again warns the same.
+ * change set, or made one that must have happened. Computed once in the
+ * save's transaction; a replay reads the stored warnings.
  */
 async function warningsOf(
   trx: Transaction<Tables>,
@@ -958,8 +966,9 @@ async function checkAllergies(trx: Transaction<Tables>, personId: string) {
 async function replay(
   trx: Transaction<Tables>,
   personId: string,
-  id: string,
+  operation: { id: string; warnings: string },
 ): Promise<Saved> {
+  const { id } = operation;
   const rows = await trx
     .selectFrom("record_changes")
     .select(["kind", "record_id", "action"])
@@ -983,7 +992,7 @@ async function replay(
       id: row.record_id,
     })),
     earlier: [],
-    warnings: await warningsOf(trx, personId, id),
+    warnings: JSON.parse(operation.warnings) as string[],
   };
 }
 

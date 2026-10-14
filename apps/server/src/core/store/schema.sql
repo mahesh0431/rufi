@@ -468,6 +468,7 @@ CREATE TABLE operations (
   chat_id TEXT NOT NULL,
   call_id TEXT NOT NULL,       -- the agent's id for the call: the same call again is the same save
   request TEXT NOT NULL,       -- the changes as the AI sent them (JSON)
+  warnings TEXT NOT NULL DEFAULT '[]', -- the warnings returned by the save (JSON)
   created_at TEXT NOT NULL,
   UNIQUE (person_id, id),
   UNIQUE (chat_id, call_id),
@@ -555,4 +556,4 @@ CREATE INDEX sources_by_record ON record_sources (person_id, record_id);
 CREATE INDEX drafts_by_document ON draft_items (person_id, document_id, page, seq);
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 7;
+PRAGMA user_version = 8;
