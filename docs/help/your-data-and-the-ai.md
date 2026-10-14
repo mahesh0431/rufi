@@ -114,7 +114,7 @@ The chat's AI works like a coding agent, in its own folder: the AI's folder, `ai
 
 Rufi limits what the AI's programs can reach. This is a lock, not only an instruction: Codex's sandbox on your Mac holds it.
 
-- They can write only in the AI's folder and in your Mac's folders for temporary files.
+- They can write only in the AI's folder and in your Mac's folders for temporary files. So their caches, such as the downloads of Python's installer, are in `ai/.cache`.
 - They can't open your record's database (`rufi.sqlite` and its other files), your backups or `core.json`. So the AI reads and changes your health record only through Rufi's tools: each read shows under the answer as **Based on**, and each save with its receipt.
 - They get none of the sign-in's secrets.
 - They can read the other files that your Mac account can read. Rufi tells the AI to use only Rufi's tools for your record, but it doesn't lock the rest yet.

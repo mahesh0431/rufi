@@ -248,10 +248,14 @@ function Sheet({
       ),
   });
   const reading = view.data;
-  const elapsed = useElapsed(reading?.runAt ?? null);
+  // Until its work comes, what the strip knows: its name and where it is.
+  const now = useReadings(personId).data?.find(
+    (r) => r.documentId === documentId,
+  );
+  const elapsed = useElapsed(reading?.runAt ?? now?.runAt ?? null);
   const status =
     reading === undefined
-      ? ""
+      ? now && stateOf(now, elapsed)
       : reading.status === "reading"
         ? [
             "reading",
@@ -274,8 +278,10 @@ function Sheet({
     <>
       <div className="flex items-center gap-2.5 border-b border-line px-4 py-2.5">
         <Dialog.Title className="min-w-0 flex-1 truncate">
-          <b className="text-[14px]">{reading?.name ?? "Reading"}</b>{" "}
-          <span className="text-muted">· {status}</span>
+          <b className="text-[14px]">
+            {reading?.name ?? now?.name ?? "Reading"}
+          </b>
+          {status && <span className="text-muted"> · {status}</span>}
         </Dialog.Title>
         {canRetry && (
           <RetryButton personId={personId} documentId={documentId} />
@@ -291,6 +297,13 @@ function Sheet({
         {view.error && (
           <p role="alert" className="text-muted">
             {view.error.message}
+          </p>
+        )}
+        {!reading && now?.state === "running" && (
+          <p className="text-muted">
+            {now.of > 0
+              ? `Reading page ${String(Math.min(now.saved + 1, now.of))} of ${String(now.of)}…`
+              : "Reading…"}
           </p>
         )}
         {reading && (

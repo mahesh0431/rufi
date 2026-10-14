@@ -603,7 +603,7 @@ describe.runIf(process.platform === "darwin")(
       { location: "the system temp folder", root: tmpdir() },
       { location: "/tmp", root: "/tmp" },
     ])(
-      "keeps the record unreadable, the skills read-only and writes in the AI's folder or temp, with data in $location; also after a model change, resume and reload",
+      "keeps the record unreadable, the skills read-only and writes in the AI's folder (its caches too) or temp, with data in $location; also after a model change, resume and reload",
       { timeout: 180_000 },
       async ({ root }) => {
         if (root !== tmpdir()) {
@@ -640,6 +640,9 @@ describe.runIf(process.platform === "darwin")(
             skillRead: `head -2 ${q(skill)}`,
             temp: "echo yes > /tmp/rufi-canary-$$ && cat /tmp/rufi-canary-$$ && rm /tmp/rufi-canary-$$",
             env: "env",
+            // Caches go in the AI's folder, where commands can write.
+            cache:
+              'mkdir -p "$PIP_CACHE_DIR" && echo yes > "$PIP_CACHE_DIR/x" && cat "$PIP_CACHE_DIR/x" && echo "$XDG_CACHE_HOME"',
             // The network is on: the local model answers (404: no page there).
             network: `curl -s -o /dev/null -w "%{http_code}" ${q(url)}`,
           });
@@ -680,6 +683,9 @@ describe.runIf(process.platform === "darwin")(
             expect(env).toContain("PATH=");
             expect(env).not.toMatch(/TOKEN|not-a-real-token/);
             expect(env).not.toContain(key);
+            expect(by(named.cache)?.output).toBe(
+              `yes\n${join(folder, ".cache")}\n`,
+            );
             expect(by(named.network)?.output).toBe("404");
           };
 
