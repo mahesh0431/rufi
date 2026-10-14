@@ -18,8 +18,7 @@ import {
 import { originalPath } from "../../src/core/documents/originals.ts";
 import { shownDate } from "../../src/core/record/dates.ts";
 import { sha256 } from "../../src/platform/files.ts";
-import { shownFor } from "../../src/core/tools/registry.ts";
-import { chatCaller, TOOLS } from "../../src/core/tools/tools.ts";
+import { chatCaller } from "../../src/core/tools/tools.ts";
 
 export const FAMILY = join(import.meta.dirname, "fictional-family.sql");
 
@@ -115,13 +114,16 @@ async function ashasChat(home: string, store: Store, today: Date) {
     for (const { tool, input } of calls) {
       clock = new Date(clock.getTime() + 2_000);
       const callId = uuid();
-      const title = shownFor(
-        TOOLS.find((t) => t.name === tool) as (typeof TOOLS)[number],
-        input,
-      );
-      await chats.setActivity(chat, agentTurn, callId, {
+      // As the AI's agent reports the call: Rufi's server and the tool.
+      const line = {
         activity: "tool",
-        title,
+        title: `rufi.${tool}`,
+        ...(JSON.stringify(input) !== "{}" && {
+          detail: JSON.stringify(input),
+        }),
+      } as const;
+      await chats.setActivity(chat, agentTurn, callId, {
+        ...line,
         status: "running",
       });
       const startedAt = chats.now();
@@ -139,8 +141,7 @@ async function ashasChat(home: string, store: Store, today: Date) {
         startedAt,
       });
       await chats.setActivity(chat, agentTurn, callId, {
-        activity: "tool",
-        title,
+        ...line,
         status: "done",
       });
     }

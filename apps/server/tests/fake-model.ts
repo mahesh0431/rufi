@@ -6,7 +6,9 @@
 // "command" runs a long command (as the fake's does, it ignores TERM and
 // leaves a program in the background) and Codex waits for it, "background
 // command" runs the same command and the reply ends while it runs, "think"
-// streams a reasoning summary (THINKING) before it answers,
+// streams a reasoning summary (THINKING) before it answers, "commentary"
+// writes a progress note (NOTE) before it answers ("whole commentary": in one
+// piece, never streamed; "cut commentary": half of it, and never answers),
 // and anything else answers "ok:<text>". No sign-in and no AI.
 // With a `script`, it answers each request with the script's next step
 // instead (a call of a direct tool, or text), reporting the step's tokens as
@@ -39,6 +41,8 @@ export type Step = (
 ) & {
   /** The usage the answer reports; over Codex's limit, it compacts. */
   tokens?: number;
+  /** A progress note (commentary) the answer starts with, as a model writes one. */
+  note?: string;
 };
 
 export interface FakeModel {
@@ -53,6 +57,9 @@ export interface FakeModel {
 
 /** The reasoning summary "think" streams, in two parts. */
 export const THINKING = ["**Thinking it over**", "The user asked me to think."];
+
+/** The progress note "commentary" writes before its answer. */
+export const NOTE = "Checking your record first.";
 
 /** The prompt Codex sends to have the thread summarised (0.159.3). */
 const COMPACTION = "You are performing a CONTEXT CHECKPOINT COMPACTION";
@@ -155,6 +162,21 @@ export async function fakeModel(
           return;
         }
         const step = script.shift() ?? { text: "done" };
+        if (step.note !== undefined) {
+          const item = {
+            type: "message",
+            role: "assistant",
+            id: `note-${String(requests.length)}`,
+            phase: "commentary",
+            content: [{ type: "output_text", text: step.note }],
+          };
+          for (const type of [
+            "response.output_item.added",
+            "response.output_item.done",
+          ]) {
+            event({ type, item } as { type: string });
+          }
+        }
         if ("text" in step) {
           say(step.text, step.tokens);
           return;
@@ -236,6 +258,39 @@ export async function fakeModel(
       const delay = last.includes("slow") ? 1_500 : 0;
       setTimeout(() => {
         if (last.includes("think")) think(`rs-${String(requests.length)}`);
+        if (last.includes("commentary")) {
+          const note = `note-${String(requests.length)}`;
+          const whole = {
+            type: "message",
+            role: "assistant",
+            id: note,
+            phase: "commentary",
+            content: [{ type: "output_text", text: NOTE }],
+          };
+          event({
+            type: "response.output_item.added",
+            item: last.includes("whole") ? whole : { ...whole, content: [] },
+          } as { type: string });
+          if (!last.includes("whole")) {
+            event({
+              type: "response.output_text.delta",
+              delta: NOTE.slice(0, 9),
+              item_id: note,
+            } as { type: string });
+            if (last.includes("cut")) {
+              open.add(response);
+              return;
+            }
+            event({
+              type: "response.output_text.delta",
+              delta: NOTE.slice(9),
+              item_id: note,
+            } as { type: string });
+          }
+          event({ type: "response.output_item.done", item: whole } as {
+            type: string;
+          });
+        }
         const item = `msg-${String(requests.length)}`;
         const text = `ok:${last}`;
         event({

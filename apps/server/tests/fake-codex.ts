@@ -9,8 +9,10 @@
 // starts a long command ("background command": and the turn ends while it
 // runs), "drip" streams its answer in five parts 100 ms
 // apart, "long" streams 200 parts of 1,000 characters, "think" streams a
-// reasoning summary (fake-model.ts's THINKING) before it answers, and anything else
-// answers "ok:<text>".
+// reasoning summary (fake-model.ts's THINKING) before it answers, "commentary"
+// writes a progress note (fake-model.ts's NOTE) before it answers ("whole
+// commentary": only when it completes; "cut commentary": half of it,
+// and the turn never ends), and anything else answers "ok:<text>".
 // Like Codex, it calls Rufi's tools on the MCP server a thread was given
 // (its config's mcp_servers.rufi), checking it answers when the thread starts
 // or resumes. Like Codex, a thread keeps the developer instructions it was
@@ -30,7 +32,7 @@ import {
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
-import { THINKING } from "./fake-model.ts";
+import { NOTE, THINKING } from "./fake-model.ts";
 import { callTool, initialize, type McpServerConfig } from "./mcp-client.ts";
 
 export interface Scenario {
@@ -65,6 +67,8 @@ export interface Scenario {
   late?: boolean;
   /** What the provider supports, over what Codex reports by default. */
   capabilities?: { namespaceTools?: boolean };
+  /** The command each reply runs after its answer, and what it printed (ls). */
+  ls?: { command: string; output: string };
   /** A last message that arrives only completed, never streamed. */
   unstreamed?: {
     text: string;
@@ -427,6 +431,29 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     event("item/started", { item });
     event("item/completed", { item });
   }
+  if (text.includes("commentary")) {
+    // As Codex does: the phase comes with the item; its deltas carry only
+    // the item's id.
+    const note = {
+      id: "item-note",
+      type: "agentMessage",
+      phase: "commentary",
+      questions: null,
+    };
+    if (!text.includes("whole")) {
+      event("item/started", { item: { ...note, text: "" } });
+      event("item/agentMessage/delta", {
+        itemId: note.id,
+        delta: NOTE.slice(0, 9),
+      });
+      if (text.includes("cut")) return;
+      event("item/agentMessage/delta", {
+        itemId: note.id,
+        delta: NOTE.slice(9),
+      });
+    }
+    event("item/completed", { item: { ...note, text: NOTE } });
+  }
   if (text.includes("hang")) return;
   if (text.includes("partial")) {
     event("item/started", {
@@ -544,10 +571,10 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
       item: {
         id: "item-ls",
         type: "commandExecution",
-        command: "ls",
+        command: scenario.ls?.command ?? "ls",
         commandActions: [],
         status: "completed",
-        aggregatedOutput: "notes.txt\n",
+        aggregatedOutput: scenario.ls?.output ?? "notes.txt\n",
         exitCode: 0,
         durationMs: 4,
       },

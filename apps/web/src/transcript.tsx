@@ -1,15 +1,19 @@
-// The chat's transcript as the core stored it: your messages, one line per
-// thing the AI did, a line for each time it thought ("Thinking…" with its
-// latest heading, then "Thought for 8s", which opens its summary), the AI's
+// The chat's transcript as the core stored it: your messages, the AI's
 // replies as Markdown, with the pictures, pages and diagrams they show
-// (files.tsx), each picture the AI generated, and Based on under each
-// answer once it ended, Rufi's receipt for each save to the record, Rufi's
-// own event lines (never your words), the line of each visit brief, which
-// opens it, and how a reply ended when it didn't finish. A line between days, and a quiet line
-// where the AI started afresh or compacted its memory. It opens at the latest
-// page; older pages load as you scroll up, and the view stays where it is.
-// Each entry reads only itself from the live store, so a streaming reply
-// re-renders alone.
+// (files.tsx), each picture the AI generated, and under each answer its
+// Activity and, once it ended, Based on; Rufi's receipt for each save to the
+// record, Rufi's own event lines (never your words), the line of each visit
+// brief, which opens it, and how a reply ended when it didn't finish. A line
+// between days, and a quiet line where the AI started afresh or compacted
+// its memory. Activity is what the AI's agent reported, in order: its
+// progress notes in full, its thinking headings and its steps, each step
+// opening to all the agent gave about it (activity.tsx). While the AI works
+// it is open and live; once the reply ended it folds into one line, as the
+// Activity setting says; a click folds or opens it. It is plain content in
+// the chat, never a box of its own. The chat opens at the latest page; older
+// pages load as you scroll up, and the view stays where it is. Each entry
+// reads only itself from the live store, so a streaming reply re-renders
+// alone.
 import { Link } from "@tanstack/react-router";
 import {
   ArrowUpRight,
@@ -27,6 +31,7 @@ import {
   createContext,
   use,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -37,16 +42,18 @@ import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import remend from "remend";
-import type { Entry, Read, Turn } from "@rufi/contracts";
+import type { ActivityShown, Entry, Read, Turn } from "@rufi/contracts";
 import type { StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/shallow";
+import { middleCut, StepDetails, took } from "./activity.tsx";
 import { ChipView } from "./chips.tsx";
 import { Diagram, fileIn, NativePicture, PageCard, Picture } from "./files.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import type { Live } from "./live.ts";
 import { RetryButton } from "./reading.tsx";
-import { latestHeading, thoughtFor } from "./thinking.ts";
+import { useSettings } from "./reads.ts";
+import { latestHeading } from "./thinking.ts";
 import { isRunning } from "./transcript-state.ts";
 import { Button, buttonLook, ICON } from "./ui.tsx";
 
@@ -220,23 +227,46 @@ const cut = (turn: Turn) =>
   turn.status !== "running" && turn.status !== "completed";
 
 /**
+ * Whether an entry is part of its reply's Activity: the AI's thinking, its
+ * notes and its steps; not a compaction (a quiet line of its own) or a
+ * picture the reply shows.
+ */
+const inActivity = (entry: Entry) =>
+  entry.kind === "reasoning" ||
+  (entry.kind === "activity" &&
+    entry.activity !== "compaction" &&
+    !(
+      entry.activity === "picture" &&
+      entry.status === "done" &&
+      entry.detail !== null
+    ));
+
+/** An Activity line shows: thinking with no summary has nothing to show. */
+const shows = (entry: Entry) =>
+  entry.kind !== "reasoning" || entry.text.trim() !== "";
+
+/**
  * What the transcript shows, in order, each as a key: "d:" a day's line
  * before an entry, "a:" the AI started afresh for a turn, "c:" a compaction
- * it completed, "e:" an entry, "b:" a turn's Based on, "x:" how a turn
- * ended. Keys, so the list draws again only when what it shows changes.
+ * it completed, "e:" an entry, "s:" a turn's Activity, "b:" a turn's Based
+ * on, "x:" how a turn ended. A turn's Activity takes the place of its first
+ * line while it runs, and sits under its answer once it ended. Keys, so the
+ * list draws again only when what it shows changes.
  */
 function lines(state: Live): string[] {
   const { order, entries } = state;
   const first = new Map<string, string>();
   const last = new Map<string, string>();
   const lastReply = new Map<string, string>();
+  const firstStep = new Map<string, string>();
   for (const id of order) {
     const entry = entries[id];
     if (!entry?.turnId) continue;
     if (!first.has(entry.turnId)) first.set(entry.turnId, id);
     last.set(entry.turnId, id);
-    if (entry.kind === "reply") {
-      lastReply.set(entry.turnId, id);
+    if (entry.kind === "reply") lastReply.set(entry.turnId, id);
+    if (inActivity(entry) && !firstStep.has(entry.turnId)) {
+      firstStep.set(entry.turnId, id);
     }
   }
   /** Lines before an entry, and after one ("": before them all). */
@@ -262,9 +292,14 @@ function lines(state: Live): string[] {
       continue;
     }
     if (turn.afresh) add(before, opens, `a:${turn.id}`);
-    if (based(turn)) {
-      add(after, lastReply.get(turn.id) ?? closes, `b:${turn.id}`);
+    const step = firstStep.get(turn.id);
+    const answer = lastReply.get(turn.id);
+    if (step !== undefined) {
+      if (turn.status !== "running" && answer !== undefined) {
+        add(after, answer, `s:${turn.id}`);
+      } else add(before, step, `s:${turn.id}`);
     }
+    if (based(turn)) add(after, answer ?? closes, `b:${turn.id}`);
     if (cut(turn)) add(after, closes, `x:${turn.id}`);
   }
   const shown = [...(after.get("") ?? [])];
@@ -272,14 +307,18 @@ function lines(state: Live): string[] {
   for (const id of order) {
     const entry = entries[id];
     if (!entry) continue;
-    const today = dayOf(entry.createdAt);
-    if (today !== day) shown.push(`d:${id}`);
-    day = today;
     shown.push(...(before.get(id) ?? []));
-    if (entry.activity === "compaction") {
-      // Only a compaction the AI completed: one started or cut shows nothing.
-      if (entry.status === "done") shown.push(`c:${id}`);
-    } else shown.push(`e:${id}`);
+    // A line of a turn's Activity shows in it.
+    const stepOf = entry.turnId !== null && state.turns[entry.turnId];
+    if (!(stepOf && inActivity(entry))) {
+      const today = dayOf(entry.createdAt);
+      if (today !== day) shown.push(`d:${id}`);
+      day = today;
+      if (entry.activity === "compaction") {
+        // Only a compaction the AI completed: one started or cut shows nothing.
+        if (entry.status === "done") shown.push(`c:${id}`);
+      } else shown.push(`e:${id}`);
+    }
     shown.push(...(after.get(id) ?? []));
   }
   return shown;
@@ -455,6 +494,8 @@ function Line({ live, line }: { live: StoreApi<Live>; line: string }) {
     case "a:":
     case "c:":
       return <QuietLine />;
+    case "s:":
+      return <ActivityView live={live} turnId={id} />;
     case "b:":
       return <BasedOn live={live} turnId={id} />;
     case "x:":
@@ -575,25 +616,14 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
     </div>
   ) : entry.kind === "brief" ? (
     <BriefLine id={id} text={entry.text} />
-  ) : entry.kind === "reasoning" ? (
-    <Thinking entry={entry} turn={turn} />
   ) : entry.kind === "activity" &&
     entry.activity === "picture" &&
     entry.status === "done" &&
     entry.detail !== null ? (
     // A picture the AI generated, shown even when its reply doesn't.
     <GeneratedPicture live={live} entry={entry} />
-  ) : entry.kind === "activity" ? (
-    <p
-      data-entry={id}
-      className="relative flex min-w-0 items-center gap-1.5 text-muted"
-    >
-      <ActivityIcon status={entry.status} />
-      <span className="shrink-0">{entry.text}</span>
-      {entry.detail !== null && (
-        <span className="truncate text-xs">{entry.detail}</span>
-      )}
-    </p>
+  ) : entry.kind === "activity" || entry.kind === "reasoning" ? (
+    <Step live={live} id={id} />
   ) : (
     <Reply id={id} text={entry.text} streaming={streaming} />
   );
@@ -634,58 +664,207 @@ function GeneratedPicture({
   );
 }
 
+const steps = (n: number) => `${String(n)} ${n === 1 ? "step" : "steps"}`;
+
 /**
- * A time the AI thought, as the core says: while it thinks, "Thinking…" and
- * its summary's latest heading; then "Thought for 8s", which opens the whole
- * summary. A finished one with no summary has nothing to open, so it shows
- * nothing. A step cut by its reply's end runs until that end; after a crash
- * (a reply interrupted with no reason) nobody knows when it ended.
+ * A reply's Activity: its lines in order, open while the AI works and folded
+ * into one line once the reply ended, as the Activity setting says ("always
+ * show": open after too; "always hide": one working line, then folded). A
+ * click folds or opens it; that choice holds until the reply ends, and is
+ * this page's own. No line when there is nothing to show.
  */
-function Thinking({ entry, turn }: { entry: Entry; turn: Turn | undefined }) {
-  if (entry.status === "running") {
-    const heading = latestHeading(entry.text);
-    return (
-      <p
-        data-entry={entry.id}
-        className="relative flex min-w-0 items-center gap-1.5 text-muted"
+function ActivityView({
+  live,
+  turnId,
+}: {
+  live: StoreApi<Live>;
+  turnId: string;
+}) {
+  const ids = useStore(
+    live,
+    useShallow((state) =>
+      state.order.filter((id) => {
+        const entry = state.entries[id];
+        return entry?.turnId === turnId && inActivity(entry) && shows(entry);
+      }),
+    ),
+  );
+  const [failed, stopped] = useStore(
+    live,
+    useShallow((state) => [
+      ids.filter((id) => state.entries[id]?.status === "failed").length,
+      ids.filter((id) => state.entries[id]?.status === "stopped").length,
+    ]),
+  );
+  const newest = useStore(live, (state) => state.entries[ids.at(-1) ?? ""]);
+  const turn = useStore(live, (state) => state.turns[turnId]);
+  const setting: ActivityShown = useSettings().data?.activity ?? "working";
+  const running = turn?.status === "running";
+  const [chosen, choose] = useState<{ open: boolean; running: boolean }>();
+  const list = useId();
+  if (!turn || ids.length === 0) return null;
+  const open =
+    chosen?.running === running
+      ? chosen.open
+      : running
+        ? setting !== "hidden"
+        : setting === "shown";
+  // A crash's end is a restart's time, not when the reply stopped.
+  const end =
+    turn.status === "interrupted" && turn.endReason === null
+      ? null
+      : turn.endedAt;
+  const label = running
+    ? open
+      ? `Activity · working · ${steps(ids.length)}`
+      : `Working · ${steps(ids.length)}`
+    : [
+        `Activity · ${steps(ids.length)}`,
+        failed > 0 && `${String(failed)} failed`,
+        stopped > 0 && `${String(stopped)} stopped`,
+        end !== null && took(Date.parse(end) - Date.parse(turn.startedAt)),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5" data-activity={turnId}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={list}
+        onClick={() => {
+          choose({ open: !open, running });
+        }}
+        className="flex min-h-8 w-fit max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md text-left text-muted hover:text-ink"
       >
-        <LoaderCircle
-          size={ICON}
-          className="shrink-0 animate-spin"
-          aria-hidden
-        />
-        <span className="shrink-0">Thinking…</span>
-        {heading !== "" && <span className="truncate text-xs">{heading}</span>}
-      </p>
+        {running ? (
+          <LoaderCircle
+            size={ICON}
+            className="shrink-0 animate-spin"
+            aria-hidden
+          />
+        ) : (
+          <ChevronRight
+            size={ICON}
+            className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+            aria-hidden
+          />
+        )}
+        <span className="shrink-0">{label}</span>
+        {running && !open && newest && (
+          <span className="truncate text-xs">
+            {middleCut(
+              newest.kind === "reasoning"
+                ? latestHeading(newest.text)
+                : newest.text,
+            )}
+          </span>
+        )}
+      </button>
+      {open && (
+        <ol
+          id={list}
+          aria-label="Activity"
+          className="flex flex-col gap-1.5 pl-5.5"
+        >
+          {ids.map((id) => (
+            <li key={id} className="min-w-0">
+              <Step live={live} id={id} />
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One line of Activity, as the agent reported it: a progress note in full;
+ * a thinking heading, which opens to the whole summary when it has more; a
+ * step with its sign, its text cut in the middle and its detail, which
+ * opens to everything the agent gave about it.
+ */
+function Step({ live, id }: { live: StoreApi<Live>; id: string }) {
+  const entry = useStore(live, (state) => state.entries[id]);
+  const personId = use(Whose);
+  const [open, setOpen] = useState(false);
+  const details = useId();
+  if (!entry) return null;
+  if (entry.activity === "note") {
+    return (
+      <div data-entry={id} className="note break-words text-ink">
+        <Marked text={readableReply(entry.text, entry.status === "running")} />
+      </div>
     );
   }
-  if (entry.text.trim() === "") return null;
-  const stopped = entry.status === "stopped";
-  const end = stopped ? turn?.endedAt : entry.updatedAt;
-  const unknownEnd =
-    stopped &&
-    (end == null ||
-      (turn?.status === "interrupted" && turn.endReason === null));
+  if (entry.kind === "reasoning") {
+    const heading = latestHeading(entry.text);
+    const sign =
+      entry.status === "running" ? (
+        <LoaderCircle size={13} className="shrink-0 animate-spin" aria-hidden />
+      ) : (
+        <Brain size={13} className="shrink-0" aria-hidden />
+      );
+    // Only a heading: nothing more to open.
+    if (entry.text.replaceAll("*", "").trim() === heading) {
+      return (
+        <p
+          data-entry={id}
+          className="flex min-w-0 items-center gap-1.5 text-muted"
+        >
+          {sign}
+          <span className="truncate">{heading}</span>
+        </p>
+      );
+    }
+    return (
+      <details data-entry={id} className="group text-muted">
+        <summary className="flex w-fit max-w-full min-w-0 cursor-pointer list-none items-center gap-1.5 hover:text-ink [&::-webkit-details-marker]:hidden">
+          {sign}
+          <span className="truncate">{heading}</span>
+          <ChevronRight
+            size={13}
+            className="shrink-0 transition-transform group-open:rotate-90"
+            aria-hidden
+          />
+        </summary>
+        <div className="thought mt-1 text-[13px] break-words text-ink">
+          <Marked text={entry.text} />
+        </div>
+      </details>
+    );
+  }
   return (
-    <details data-entry={entry.id} className="group text-muted">
-      {/* It opens like a button: the same icon size and at least 32 px high. */}
-      <summary className="flex min-h-8 w-fit cursor-pointer list-none items-center gap-1.5 rounded-md hover:text-ink [&::-webkit-details-marker]:hidden">
-        <Brain size={ICON} className="shrink-0" aria-hidden />
-        <span>
-          {unknownEnd
-            ? "Thinking stopped"
-            : thoughtFor(entry.createdAt, end ?? entry.updatedAt)}
+    <div data-entry={id} className="min-w-0 text-muted">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={details}
+        title={entry.text}
+        onClick={() => {
+          setOpen(!open);
+        }}
+        className="flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-left hover:text-ink"
+      >
+        <ActivityIcon status={entry.status} />
+        <span className="min-w-0 shrink truncate font-mono text-xs">
+          {middleCut(entry.text)}
         </span>
-        <ChevronRight
-          size={ICON}
-          className="shrink-0 transition-transform group-open:rotate-90"
-          aria-hidden
-        />
-      </summary>
-      <div className="thought mt-1.5 rounded-lg border border-line bg-side px-3 py-2 text-[13px] break-words text-ink">
-        <Marked text={entry.text} />
-      </div>
-    </details>
+        {entry.detail !== null && (
+          <span className="min-w-0 shrink-[8] truncate text-xs">
+            · {entry.detail}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div
+          id={details}
+          className="mt-1 mb-1 flex flex-col gap-1.5 pl-5 text-xs"
+        >
+          <StepDetails personId={personId} id={id} version={entry.updatedAt} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -835,25 +1014,15 @@ function BasedOn({ live, turnId }: { live: StoreApi<Live>; turnId: string }) {
 }
 
 /**
- * One read on one line, what and what came back or why not ("Read your
- * results in 2026 · 8 records"), and the command, search words or address
- * under it.
+ * One read of the health record on one line, what and what came back or why
+ * not ("Read your results in 2026 · 8 records").
  */
 function UsedLine({ read }: { read: Read }) {
-  const said =
-    read.note ??
-    (read.outcome === "failed"
-      ? "It failed."
-      : read.outcome === "stopped"
-        ? "It stopped before it finished."
-        : null);
+  const said = read.note ?? (read.outcome === "failed" ? "It failed." : null);
   return (
     <li className="min-w-0">
       <span className="text-ink">{read.title}</span>
       {said !== null && <span> · {said}</span>}
-      {read.detail !== null && (
-        <span className="block font-mono text-xs break-all">{read.detail}</span>
-      )}
     </li>
   );
 }

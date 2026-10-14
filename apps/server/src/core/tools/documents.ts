@@ -322,7 +322,6 @@ export const getDocuments = defineTool({
 
 export const retryReading = defineTool({
   name: "retry_reading",
-  shown: "Asked Rufi to read a document again",
   description:
     "Reads a document again where its reading failed, when the user asks you to: a reading that failed continues where it stopped; a finished reading reads only its pages that couldn't be read or weren't looked at, and never changes the draft items already read; a document never read is read in full. Only in a message from the user, never in a turn a Rufi event started. The reading runs in the background; its line comes in the chat when it ends.",
   input: Schema.Struct({

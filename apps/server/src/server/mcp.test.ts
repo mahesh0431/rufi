@@ -14,7 +14,6 @@ import { mcpEndpoint, mcpKeys, serveMcp, type McpCall } from "./mcp.ts";
 const OVERVIEW: ToolSpec = {
   name: "get_overview",
   description: "The record at a glance.",
-  shown: () => "Read your overview",
   inputSchema: { type: "object", properties: {} },
   readOnly: true,
   destructive: false,

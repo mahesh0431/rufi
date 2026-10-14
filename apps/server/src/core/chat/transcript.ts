@@ -172,7 +172,7 @@ async function entriesOut(trx: Db, rows: EntryRow[]): Promise<Entry[]> {
 
 /**
  * Turns as the screens get them, each with its Based on built from its own
- * entries and calls: How from its replies once it completed, and Used. A
+ * replies and calls: How from its replies once it completed, and Used. A
  * turn on another agent thread than the turn before it started afresh;
  * the chat's first turn didn't.
  */
@@ -210,28 +210,18 @@ async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
         .execute()
     ).map((row) => [row.id, row.thread_before]),
   );
-  const entries = await trx
+  const replies = await trx
     .selectFrom("transcript_entries")
-    .select([
-      "turn_id",
-      "kind",
-      "text",
-      "activity",
-      "detail",
-      "status",
-      "agent_item_id",
-      sql<number>`details IS NOT NULL`.as("captured"),
-    ])
+    .select(["turn_id", "text"])
     .where("person_id", "=", first.person_id)
     .where("turn_id", "in", ids)
-    .where("kind", "in", ["reply", "activity"])
+    .where("kind", "=", "reply")
     .orderBy("seq")
     .execute();
   const calls = await trx
     .selectFrom("tool_calls")
     .select([
       "turn_id",
-      "call_id",
       "tool",
       "ok",
       "input",
@@ -249,12 +239,11 @@ async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
     .orderBy("id")
     .execute();
   return rows.map((row) => {
-    const own = entries.filter((entry) => entry.turn_id === row.id);
     const how =
       row.status === "completed"
-        ? own
-            .filter((entry) => entry.kind === "reply")
-            .map((entry) => splitBasis(entry.text, true).how)
+        ? replies
+            .filter((reply) => reply.turn_id === row.id)
+            .map((reply) => splitBasis(reply.text, true).how)
             .findLast((found) => found !== undefined)
         : undefined;
     const threadBefore = before.get(row.id) ?? null;
@@ -269,10 +258,7 @@ async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
       endedAt: row.ended_at,
       afresh: threadBefore !== null && threadBefore !== row.thread_id,
       how: how ?? null,
-      used: usedOf(
-        own.filter((entry) => entry.kind === "activity"),
-        calls.filter((call) => call.turn_id === row.id),
-      ),
+      used: usedOf(calls.filter((call) => call.turn_id === row.id)),
     };
   });
 }
@@ -966,6 +952,50 @@ export function transcripts(
       }),
 
     /**
+     * More of the AI's progress note, a step of its reply's Activity: the
+     * line is made by its first part, running until `done`. Its text is
+     * the note's words as they came.
+     */
+    appendNote: (
+      chat: ChatRow,
+      agentTurnId: string,
+      itemId: string,
+      text: string,
+      done: boolean,
+    ) =>
+      change(chat.id, async (trx, revision) => {
+        const turn = await turnOf(trx, chat.id, agentTurnId);
+        if (turn?.status !== "running") return undefined;
+        const note = await itemOf(trx, turn, itemId, "activity");
+        const status = done ? "done" : "running";
+        if (!note) {
+          const id = await insertEntry(trx, chat, revision, {
+            turnId: turn.id,
+            kind: "activity",
+            text,
+            activity: "note",
+            status,
+            agentItemId: itemId,
+          });
+          return { entries: [id], turns: [] };
+        }
+        if (note.status !== "running" || (text === "" && !done)) {
+          return undefined;
+        }
+        await trx
+          .updateTable("transcript_entries")
+          .set({
+            text: sql<string>`text || ${text}`,
+            status,
+            revision,
+            updated_at: now(),
+          })
+          .where("id", "=", note.id)
+          .execute();
+        return { entries: [note.id], turns: [] };
+      }),
+
+    /**
      * A save to the record (or a dismissal of draft items) and its
      * receipt, in one transaction (docs/adr/0005): `save` writes it, given
      * the references of the user's messages in this turn. The line is added
@@ -1248,11 +1278,12 @@ export function transcripts(
     },
 
     /**
-     * The last `count` messages (the user's, the AI's replies, Rufi's
-     * receipts, events and brief lines) from replies that have ended, oldest
-     * first: what a new thread starts with. A reply that completed is as it came, with its
-     * rufi-basis block, so the new thread sees the convention; one that
-     * didn't is its answer only, marked unfinished.
+     * The last `count` messages (the user's, the AI's replies and progress
+     * notes, Rufi's receipts, events and brief lines) from replies that have
+     * ended, oldest first: what a new thread starts with. A reply that
+     * completed is as it came, with its rufi-basis block, so the new thread
+     * sees the convention; one that didn't is its answer only, marked
+     * unfinished, as are its notes. Commands and thinking are left out.
      */
     lastMessages: async (chat: ChatRow, count: number) => {
       const rows = await db
@@ -1262,17 +1293,25 @@ export function transcripts(
             .onRef("t.person_id", "=", "e.person_id")
             .onRef("t.id", "=", "e.turn_id"),
         )
-        .select(["e.kind", "e.text", "t.status"])
+        .select(["e.kind", "e.text", "e.activity", "t.status"])
         .where("e.person_id", "=", chat.personId)
         .where("e.chat_id", "=", chat.id)
-        .where("e.kind", "in", [
-          "message",
-          "steer",
-          "reply",
-          "receipt",
-          "event",
-          "brief",
-        ])
+        .where((eb) =>
+          eb.or([
+            eb("e.kind", "in", [
+              "message",
+              "steer",
+              "reply",
+              "receipt",
+              "event",
+              "brief",
+            ]),
+            eb.and([
+              eb("e.kind", "=", "activity"),
+              eb("e.activity", "=", "note"),
+            ]),
+          ]),
+        )
         .where((eb) =>
           eb.or([eb("t.status", "is", null), eb("t.status", "!=", "running")]),
         )
@@ -1280,6 +1319,14 @@ export function transcripts(
         .limit(count)
         .execute();
       return rows.reverse().map((row) => {
+        const finished = row.status === "completed";
+        if (row.kind === "activity") {
+          return {
+            from: "note" as const,
+            text: row.text,
+            ...(!finished && { unfinished: true }),
+          };
+        }
         if (row.kind !== "reply") {
           return {
             from:
@@ -1291,13 +1338,29 @@ export function transcripts(
             text: row.text,
           };
         }
-        const finished = row.status === "completed";
         return {
           from: "ai" as const,
           text: finished ? row.text : splitBasis(row.text, false).answer,
           ...(!finished && { unfinished: true }),
         };
       });
+    },
+
+    /**
+     * Everything the agent gave about one activity line of the chat (plain
+     * JSON, as it came); null when none was kept, undefined when the chat
+     * has no such line.
+     */
+    details: async (chat: ChatRow, entryId: string) => {
+      const row = await db
+        .selectFrom("transcript_entries")
+        .select("details")
+        .where("person_id", "=", chat.personId)
+        .where("chat_id", "=", chat.id)
+        .where("id", "=", entryId)
+        .where("kind", "=", "activity")
+        .executeTakeFirst();
+      return row && { details: JSON.parse(row.details ?? "null") as unknown };
     },
 
     /** Whether a message was saved, by the id the agent got. */

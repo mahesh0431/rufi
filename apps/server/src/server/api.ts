@@ -3,6 +3,7 @@
 // chat, and only theirs is found.
 import {
   AddPerson,
+  ActivityShown,
   Appearance,
   FinishStep,
   MessageText,
@@ -352,6 +353,10 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     c.header(APPEARANCE_HEADER, chosen);
     return {
       appearance: chosen,
+      // Open while the AI works, until another is chosen.
+      activity: Schema.decodeUnknownOption(ActivityShown)(
+        await transcripts.setting("activity"),
+      ).pipe(Option.getOrElse(() => "working" as const)),
       emergencyRegion: known?.region ?? null,
       emergency: known ? { name: known.name, number: known.number } : null,
       regions: emergencyRegions(),
@@ -419,6 +424,9 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     }
     if (changed.appearance !== undefined) {
       await transcripts.saveSetting("appearance", changed.appearance);
+    }
+    if (changed.activity !== undefined) {
+      await transcripts.saveSetting("activity", changed.activity);
     }
     const model = changed.readerModel;
     if (model !== undefined && !SUB_AGENT_MODELS.some((m) => m.id === model)) {
@@ -759,6 +767,16 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
         before === undefined ? undefined : Number(before),
       ),
     );
+  });
+  // Everything the agent gave about one step of Activity, when it opens:
+  // never sent with the chat, so a long chat stays light.
+  app.get(`${one}/entries/:entryId`, async (c) => {
+    const found = await transcripts.details(
+      await chatOf(c),
+      c.req.param("entryId"),
+    );
+    if (!found) throw new HttpError(404, "Not found.");
+    return c.json(found);
   });
   // Send: the box's text into the queue, and the box emptied, in one step.
   // The same id again (a retry) finds the message it made.

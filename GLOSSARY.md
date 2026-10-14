@@ -120,23 +120,27 @@ _Avoid_: drawer, popup, sidebar
 The chat at its own address, opened with **Chat with Rufi** in the sidebar. A small window opens the chat as a page.
 
 **Transcript**:
-Rufi's own stored copy of the chat: your messages, the AI's replies and its reasoning, a receipt for each save, and one activity line for each thing the AI did, with everything that activity sent and got back. Each part is saved before it is shown. The reasoning shows as a line for each time the AI thought ("Thinking…", then "Thought for 8s", which opens its summary; none when the AI service gave no summary). A cut step keeps its partial summary; after a crash, with no known end time, its line says "Thinking stopped". What each activity sent and got back isn't shown yet. The chat shows its latest page first, and older pages as the user scrolls up, with a line between days and a quiet line where the AI **started afresh**; Rufi works out both lines from the transcript when it shows it.
+Rufi's own stored copy of the chat: your messages, the AI's replies, its notes and its reasoning, a receipt for each save, and one activity line for each thing the AI did, with everything that activity sent and got back. Each part is saved before it is shown. The notes, the reasoning's headings and the activity lines show in each reply's **Activity**; a cut step keeps what it had. The chat shows its latest page first, and older pages as the user scrolls up, with a line between days and a quiet line where the AI **started afresh**; Rufi works out both lines from the transcript when it shows it.
 _Avoid_: log, history
 
 **Started afresh**:
-Where the AI began a new memory of the chat (after its own copy of the chat was lost, with the chat's last 10 messages) or compacted its own memory of a long chat. The chat shows a quiet line there: "The AI started afresh here. It can still read earlier messages."
+Where the AI began a new memory of the chat (after its own copy of the chat was lost, with the chat's last 10 messages, the AI's **notes** among them, but not its steps or thinking) or compacted its own memory of a long chat. The chat shows a quiet line there: "The AI started afresh here. It can still read earlier messages."
 _Avoid_: reset, new session, new conversation
 
 **Activity**:
-One line in a transcript for something the AI did: read the record with a tool, ran a command, searched the web, changed a file, worked with a sub-agent, generated a picture (the reply shows it), or did something Rufi can't display yet. The line shows a short title and one short detail (the search words, the command); Rufi also keeps everything the activity sent and got back, such as the records a read got back or a command's output.
-_Avoid_: trace, steps, log
+What the AI did for one reply, as the AI's agent reported it, in order: its **notes**, its thinking's headings, and one step for each thing it did (read the record with one of Rufi's tools, ran a command, searched the web, changed a file, worked with a sub-agent, generated a picture, which the reply shows). Each step shows what was reported, such as the command and its exit code, or `rufi.get_records` and what the AI asked for, never Rufi's words for it; it opens to everything the agent gave about it, such as a command's output. Open and live while the AI works; folded into one line under the answer once the reply ended ("Activity · 12 steps · 1 failed · 1m 36s"), as the Activity setting says (**Show while working**, **Always show**, **Always hide**). Plain lines in the chat, not a box.
+_Avoid_: trace, log, tool calls
+
+**Note (the AI's)**:
+What the AI writes while it works, before its answer, such as "I'll check your results first": a line of **Activity**, kept in full, never an answer. The AI's agent marks it as such; Rufi doesn't guess it from the words. In replies from before Rufi kept notes, they show as replies.
+_Avoid_: commentary, progress message, interim reply
 
 **Picture, page, diagram (in a reply)**:
 What a reply shows besides its words. A picture is a chart from the AI's program or a picture the AI generated; a page is an HTML file the AI made, shown as a card that opens over the chat in a locked frame, self-contained (it loads nothing from the internet and can't reach Rufi); a diagram is drawn from the AI's Mermaid text. Pictures and pages are files in the AI's folder (or where it keeps the pictures it generates), shown as they are now: Rufi keeps no copy, and a file that is gone shows as such.
 _Avoid_: artifact, attachment, image (say picture), HTML (say page)
 
 **Basis**:
-What an answer rests on, shown as **Based on** under the answer once the reply has ended. **How** is the AI's own words on where the answer comes from (your record, read in this reply or earlier in the chat, the web, or general knowledge) and how it got there; **Used** is what Rufi saw the AI read in that reply, built by Rufi. Small talk has none.
+What an answer rests on, shown as **Based on** under the answer once the reply has ended. **How** is the AI's own words on where the answer comes from (your record, read in this reply or earlier in the chat, the web, or general knowledge) and how it got there; **Used** is the reads of the health record that Rufi handled in that reply and got an answer for (failed and capped ones too), built by Rufi from its own record of them. Commands and web searches are in **Activity**, not in Used. Small talk has none.
 _Avoid_: reason, rationale, citation; "reasoning" is the AI's thinking, and a **source** is what a record rests on
 
 **Steer**:

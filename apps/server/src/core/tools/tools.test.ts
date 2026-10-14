@@ -19,6 +19,7 @@ import {
   NoInput,
   REJECTIONS_PER_TURN,
   Refusal,
+  shownFor,
   toolCaller,
   type ToolContext,
 } from "./registry.ts";
@@ -640,11 +641,8 @@ describe("get_records", () => {
   });
 
   it("names each read in plain words, with its dates", () => {
-    const { specs } = forAgent(
-      () => ({ store: undefined, personId: undefined }),
-      record,
-    );
-    const shown = specs.find((spec) => spec.name === "get_records")?.shown;
+    const tool = TOOLS.find((one) => one.name === "get_records");
+    if (!tool) throw new Error("get_records is missing");
     expect(
       [
         { kind: "result" },
@@ -658,7 +656,7 @@ describe("get_records", () => {
         { kind: "result", report: "rep-asha-aug" },
         { kind: "rash" },
         "not an object",
-      ].map((input) => shown?.(input)),
+      ].map((input) => shownFor(tool, input)),
     ).toEqual([
       "Read your results",
       "Read your symptoms in 2026",

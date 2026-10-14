@@ -7,8 +7,6 @@
 // running. Each thread gets Rufi's tools from Rufi's MCP server, with its own
 // key (settings.ts); Codex calls the server itself, and Rufi binds each call
 // to the reply it was made in (activeTurn).
-import { realpath } from "node:fs/promises";
-import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
   NotReloaded,
@@ -19,7 +17,6 @@ import {
   type AgentRuntime,
   type AgentSandbox,
   type AgentSkill,
-  type AgentTools,
   type Model,
   type ThreadSettings,
   type TurnEnd,
@@ -31,7 +28,7 @@ import {
   type CodexCommand,
   type Deadlines,
 } from "./appserver.ts";
-import { activityOf, endOf, messageText, type SkillFiles } from "./events.ts";
+import { activityOf, endOf, messageText } from "./events.ts";
 import type { JsonValue } from "./protocol/serde_json/JsonValue.ts";
 import type { AccountRateLimitsUpdatedNotification } from "./protocol/v2/AccountRateLimitsUpdatedNotification.ts";
 import type { AgentMessageDeltaNotification } from "./protocol/v2/AgentMessageDeltaNotification.ts";
@@ -69,8 +66,6 @@ export interface CodexDeps {
   token: (validForMs: number) => Promise<string>;
   version: string;
   deadlines?: Partial<Deadlines>;
-  /** Rufi's tools, for the words a person sees when the AI uses one. */
-  tools?: AgentTools;
   /** Where events go. */
   host: AgentHost;
   /** Diagnostics: what Rufi ignored or refused, as event names and codes. */
@@ -89,6 +84,11 @@ interface Running {
   end: TurnEnd | undefined;
   /** Agent messages that streamed; the others arrive whole at their end. */
   streamed: Set<string>;
+  /**
+   * Agent messages Codex marked as its progress notes (commentary), by item:
+   * known from `item/started`, as the deltas carry only the item's id.
+   */
+  notes: Set<string>;
   /** The summary part each reasoning item streams now, by item. */
   thinking: Map<string, number>;
   /** Settles once the turn has ended. */
@@ -116,19 +116,6 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   const lifetime = new AbortController();
   let server: AppServer | undefined;
   let starting: Promise<AppServer> | undefined;
-  /**
-   * The skills' canonical folder, once written, and each skill's heading
-   * without what follows in brackets.
-   */
-  const skills: SkillFiles = {
-    folder: undefined,
-    headings: new Map(
-      deps.skills.flatMap((skill) => {
-        const heading = /^# ([^(\n]+)/m.exec(skill.text)?.[1]?.trim();
-        return heading ? [[skill.name, heading] as const] : [];
-      }),
-    ),
-  };
   const loaded = new Set<string>(); // threads open in the current app-server
   /** Threads Rufi let go of, until Codex says they are closed. */
   const closing = new Map<string, PromiseWithResolvers<undefined>>();
@@ -171,10 +158,6 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       sandbox: deps.sandbox,
       skills: deps.skills,
     });
-    skills.folder =
-      deps.skills.length > 0
-        ? await realpath(join(paths.codexHome, "skills"))
-        : undefined;
     const started = await startAppServer({
       command: deps.command,
       env: { ...deps.env, HOME: paths.processHome },
@@ -404,6 +387,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       turnId,
       end: undefined,
       streamed: new Set(),
+      notes: new Set(),
       thinking: new Map(),
       messaged: Promise.withResolvers(),
       ended: Promise.withResolvers(),
@@ -456,8 +440,12 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           });
           return;
         }
+        if (item.type === "agentMessage") {
+          if (item.phase === "commentary") running.notes.add(item.id);
+          return;
+        }
         if (item.type === "commandExecution") void track();
-        const activity = activityOf(item, false, deps.tools, skills);
+        const activity = activityOf(item, false);
         if (activity) {
           emit({
             type: "activity",
@@ -473,7 +461,13 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       case "item/agentMessage/delta": {
         const { itemId, delta } = params as AgentMessageDeltaNotification;
         running.streamed.add(itemId);
-        emit({ type: "text", threadId, turnId, itemId, delta });
+        emit({
+          type: running.notes.has(itemId) ? "note" : "text",
+          threadId,
+          turnId,
+          itemId,
+          delta,
+        });
         return;
       }
       case "item/reasoning/summaryTextDelta": {
@@ -499,9 +493,21 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         const { item } = params as ItemCompletedNotification;
         if (item.type === "userMessage") return;
         if (item.type === "agentMessage") {
+          // A note ends whole, with its text when it didn't stream.
+          if (running.notes.has(item.id) || item.phase === "commentary") {
+            emit({
+              type: "note",
+              threadId,
+              turnId,
+              itemId: item.id,
+              delta: running.streamed.has(item.id) ? "" : item.text,
+              done: true,
+            });
+          }
           // Text that didn't stream, and questions the AI asks the user
-          // (Codex's request_user_input_async), arrive only here.
-          if (!running.streamed.has(item.id) && item.text) {
+          // (Codex's request_user_input_async), arrive only here; a
+          // question is always part of the reply, so it is never lost.
+          else if (!running.streamed.has(item.id) && item.text) {
             emit({
               type: "text",
               threadId,
@@ -533,7 +539,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           });
           return;
         }
-        const activity = activityOf(item, true, deps.tools, skills);
+        const activity = activityOf(item, true);
         if (activity) {
           emit({
             type: "activity",

@@ -14,6 +14,8 @@ export type ActivityKind =
   | "compaction"
   /** A picture the agent made; its detail is the file's path, whole. */
   | "picture"
+  /** The agent's progress note: its words, as they came. */
+  | "note"
   | "other";
 
 /** Why a reply didn't complete, as a screen can act on it. */
@@ -44,6 +46,17 @@ export type AgentEvent = { threadId: string } & (
   | { type: "message"; turnId: string; id: string; text: string }
   /** Part of a reply, as it streams; `itemId` tells replies apart. */
   | { type: "text"; turnId: string; itemId: string; delta: string }
+  /**
+   * Part of the agent's progress note (a message the agent marks as
+   * commentary, not its answer), as it streams; `done` once it is whole.
+   */
+  | {
+      type: "note";
+      turnId: string;
+      itemId: string;
+      delta: string;
+      done?: true;
+    }
   /** A question for the user; the answer is their next message. */
   | {
       type: "question";
@@ -53,9 +66,11 @@ export type AgentEvent = { threadId: string } & (
       options: string[];
     }
   /**
-   * One thing the agent did, when it starts and again when it ends.
-   * `details` is everything the agent gave about it so far (what it sent and
-   * got back), as it came; plain JSON, in the agent's own shape.
+   * One thing the agent did, when it starts and again when it ends: its
+   * `title` and `detail` as the agent reported them (the command and its
+   * exit code, the tool and its arguments). `details` is everything the
+   * agent gave about it so far (what it sent and got back), as it came;
+   * plain JSON, in the agent's own shape.
    */
   | {
       type: "activity";
@@ -115,19 +130,6 @@ export class NotSent extends Error {}
 export interface Model {
   id: string;
   name: string;
-}
-
-/**
- * Rufi's tools as the agent shows them, by the name it knows their MCP server
- * by; the registry in core/tools fills it.
- */
-export interface AgentTools {
-  server: string;
-  specs: readonly {
-    name: string;
-    /** What a person sees when the AI uses it, in plain words, from what the AI sent. */
-    shown: (input: unknown) => string;
-  }[];
 }
 
 /** An MCP server of Rufi's for one thread: its address and the thread's key. */

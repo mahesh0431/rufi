@@ -90,66 +90,66 @@ body {
 }
 
 /* The AI's replies and its thinking's summaries: Markdown at the chat's size. */
-:is(.reply, .thought) > :last-child {
+:is(.reply, .thought, .note) > :last-child {
   margin-bottom: 0;
 }
-:is(.reply, .thought) p,
-:is(.reply, .thought) ul,
-:is(.reply, .thought) ol,
-:is(.reply, .thought) table,
-:is(.reply, .thought) pre,
-:is(.reply, .thought) blockquote {
+:is(.reply, .thought, .note) p,
+:is(.reply, .thought, .note) ul,
+:is(.reply, .thought, .note) ol,
+:is(.reply, .thought, .note) table,
+:is(.reply, .thought, .note) pre,
+:is(.reply, .thought, .note) blockquote {
   margin: 0 0 8px;
 }
-:is(.reply, .thought) h1,
-:is(.reply, .thought) h2,
-:is(.reply, .thought) h3,
-:is(.reply, .thought) h4 {
+:is(.reply, .thought, .note) h1,
+:is(.reply, .thought, .note) h2,
+:is(.reply, .thought, .note) h3,
+:is(.reply, .thought, .note) h4 {
   font-size: 14px;
   font-weight: 600;
   margin: 12px 0 4px;
 }
-:is(.reply, .thought) ul {
+:is(.reply, .thought, .note) ul {
   list-style: disc;
   padding-left: 20px;
 }
-:is(.reply, .thought) ol {
+:is(.reply, .thought, .note) ol {
   list-style: decimal;
   padding-left: 20px;
 }
-:is(.reply, .thought) a {
+:is(.reply, .thought, .note) a {
   color: var(--accent-ink);
   text-decoration: underline;
 }
-:is(.reply, .thought) code {
+:is(.reply, .thought, .note) code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   background: var(--side);
   padding: 1px 4px;
   border-radius: 4px;
 }
-:is(.reply, .thought) pre {
+:is(.reply, .thought, .note) pre {
   overflow-x: auto;
   background: var(--side);
   padding: 8px 10px;
   border-radius: 8px;
 }
-:is(.reply, .thought) pre code {
+:is(.reply, .thought, .note) pre code {
   padding: 0;
 }
-:is(.reply, .thought) table {
+:is(.reply, .thought, .note) table {
   border-collapse: collapse;
   display: block;
   overflow-x: auto;
 }
-:is(.reply, .thought) th,
-:is(.reply, .thought) td {
+:is(.reply, .thought, .note) th,
+:is(.reply, .thought, .note) td {
   border-bottom: 1px solid var(--line);
   padding: 4px 8px;
   text-align: left;
   vertical-align: top;
 }
-:is(.reply, .thought) blockquote {
+:is(.reply, .thought, .note) blockquote {
   border-left: 3px solid var(--line);
   padding-left: 10px;
   color: var(--muted);

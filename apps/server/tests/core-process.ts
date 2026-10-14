@@ -12,7 +12,7 @@ const scope = await Effect.runPromise(Scope.make());
 await Effect.runPromise(
   startCore({
     home,
-    agent: (tools, host) =>
+    agent: (host) =>
       codexRuntime({
         home,
         ...agentSetup(home),
@@ -26,7 +26,6 @@ await Effect.runPromise(
         },
         token: () => Promise.resolve("token"),
         version: "0.0.0",
-        tools,
         host,
       }),
     log: () => undefined,

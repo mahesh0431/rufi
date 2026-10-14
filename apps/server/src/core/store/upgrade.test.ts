@@ -486,6 +486,54 @@ it("upgrades a record of version 5 so a generated picture can be a line of the c
   }
 });
 
+it("upgrades a record of version 6 so the AI's notes can be steps of its Activity, every line kept as it was, in order", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 6));
+  // A command line as Rufi of version 6 stored it: its words, the command
+  // cut to one line, and everything Codex gave about it.
+  const old = new DatabaseSync(path);
+  try {
+    const turn = old
+      .prepare("SELECT person_id, chat_id, id FROM turns LIMIT 1")
+      .get() as { person_id: string; chat_id: string; id: string };
+    old
+      .prepare(
+        `INSERT INTO transcript_entries (id, person_id, chat_id, seq, turn_id, kind, text, activity, detail, details, status, agent_item_id, revision, created_at, updated_at)
+         VALUES ('command-1', ?, ?, 9998, ?, 'activity', 'Ran a command', 'command', 'ls', '{"type":"commandExecution","command":"ls","aggregatedOutput":"notes.txt\\n","exitCode":0}', 'done', 'cmd-1', 1, '2026-10-13T09:00:00Z', '2026-10-13T09:00:01Z')`,
+      )
+      .run(turn.person_id, turn.chat_id, turn.id);
+  } finally {
+    old.close();
+  }
+  const lines = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return db.prepare("SELECT * FROM transcript_entries ORDER BY seq").all();
+    } finally {
+      db.close();
+    }
+  };
+  const before = lines();
+  expect(before.some((line) => line["kind"] === "reply")).toBe(true);
+  expect(before.at(-1)).toMatchObject({ id: "command-1", detail: "ls" });
+
+  (await openRecord(home)).close();
+
+  expect(lines()).toEqual(before);
+  const db = new DatabaseSync(path);
+  try {
+    const turn = db
+      .prepare("SELECT person_id, chat_id, id FROM turns LIMIT 1")
+      .get() as { person_id: string; chat_id: string; id: string };
+    db.prepare(
+      `INSERT INTO transcript_entries (id, person_id, chat_id, seq, turn_id, kind, text, activity, status, agent_item_id, revision, created_at, updated_at)
+       VALUES ('note-1', ?, ?, 9999, ?, 'activity', 'I''ll check your results first.', 'note', 'done', 'msg-1', 1, '2026-10-14T09:00:00Z', '2026-10-14T09:00:00Z')`,
+    ).run(turn.person_id, turn.chat_id, turn.id);
+  } finally {
+    db.close();
+  }
+});
+
 it.each([
   {
     record: "a record from a newer Rufi",

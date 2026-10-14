@@ -43,8 +43,6 @@ import {
   openReadOnly,
   openWritable,
 } from "../src/core/store/database.ts";
-import { getOverview } from "../src/core/tools/overview.ts";
-import { shownFor, type Tool } from "../src/core/tools/registry.ts";
 import { childEnvironment, rufiHome } from "../src/platform/config.ts";
 import { Secrets, secretsLayer } from "../src/platform/keychain.ts";
 import { diagnostics } from "../src/platform/logs.ts";
@@ -272,12 +270,17 @@ function chat(api: Api) {
   };
 }
 
-const lastReply = (snapshot: Snapshot) =>
-  snapshot.entries
-    .filter((e) => e.kind === "reply")
-    .slice(-3)
+/**
+ * The answer to the person's last message: the replies after it, also in a
+ * turn Rufi started after it (an event's). Progress notes are not replies.
+ */
+const lastReply = (snapshot: Snapshot) => {
+  const asked = snapshot.entries.findLast((e) => e.kind === "message");
+  return snapshot.entries
+    .filter((e) => e.kind === "reply" && e.seq > (asked?.seq ?? 0))
     .map((e) => e.text)
     .join("\n\n");
+};
 /** The last reply's words. */
 const replyOf = (snapshot: Snapshot) => {
   const last = snapshot.turns.at(-1)?.id;
@@ -286,11 +289,9 @@ const replyOf = (snapshot: Snapshot) => {
     .map((e) => e.text)
     .join("\n\n");
 };
-/** The tool's activity line, in the words the person sees. */
-const usedTool = (snapshot: Snapshot, tool: Tool) =>
-  snapshot.entries.some(
-    (e) => e.kind === "activity" && e.text === shownFor(tool, {}),
-  );
+/** Whether Rufi answered a call to the tool so far: its own record of calls. */
+const usedTool = (home: string, tool: string) =>
+  calls(home).some((call) => call.tool === tool && call.ok === 1);
 
 interface Outcome {
   /** What code could check; the rest is for a person to judge. */
@@ -716,15 +717,16 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
    * The latest results come from get_overview, with what was read under
    * the reply; then "What was my last HbA1c?" is Asha's value.
    */
-  last_hba1c: async (api) => {
+  last_hba1c: async (api, home) => {
     const c = chat(api);
     await c.ask("What are my latest results?");
     const latest = await c.read();
+    const overviewRead = usedTool(home, "get_overview");
     await c.ask("What was my last HbA1c?");
     const snapshot = await c.read();
     return {
       checks: {
-        used_get_overview: usedTool(latest, getOverview),
+        used_get_overview: overviewRead,
         mentions_hba1c: /hba1c/i.test(lastReply(latest)),
         how_present: basis(latest).how !== null,
         used_shows_the_read: basis(latest).used.length > 0,
@@ -1965,7 +1967,8 @@ function transcriptText(snapshot: Snapshot): string {
   return shown
     .map((e) => {
       let text: string;
-      if (e.kind === "activity")
+      if (e.activity === "note") text = `AI (progress note): ${e.text}`;
+      else if (e.kind === "activity")
         text = `· ${e.text}${e.detail ? `: ${e.detail}` : ""} (${e.status ?? ""})`;
       else if (e.kind === "reasoning")
         text = `AI thinking (${e.status ?? ""}): ${e.text}`;
@@ -1977,7 +1980,7 @@ function transcriptText(snapshot: Snapshot): string {
       if (!turn || last.get(e.turnId) !== e.id) return text;
       const used = turn.used.map(
         (read) =>
-          `  - ${read.title}${read.detail ? `: ${read.detail}` : ""} (${read.outcome}${read.note ? `: ${read.note}` : ""})`,
+          `  - ${read.title} (${read.outcome}${read.note ? `: ${read.note}` : ""})`,
       );
       return `${text}\n\n> Based on. How: ${turn.how ?? "(none)"}\n> Used:${used.length > 0 ? `\n${used.join("\n")}` : " (none)"}`;
     })
@@ -2031,7 +2034,7 @@ async function runCase(
     const core = await Effect.runPromise(
       startCore({
         home,
-        agent: (tools, host) =>
+        agent: (host) =>
           codexRuntime({
             home,
             ...agentSetup(home),
@@ -2039,7 +2042,6 @@ async function runCase(
             env: childEnvironment(),
             token,
             version,
-            tools,
             host,
             log: diagnostics(home).log,
           }),

@@ -21,13 +21,13 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { Status, StreamLine } from "@rufi/contracts";
+import type { Entry, Status, StreamLine } from "@rufi/contracts";
 import { APPEARANCE_HEADER } from "@rufi/contracts/app";
 import { createCanvas } from "@napi-rs/canvas";
 import { Effect, Exit, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { codexRuntime } from "../agent/codex/codex.ts";
-import type { AgentRuntime } from "../agent/runtime.ts";
+import type { AgentHost, AgentRuntime } from "../agent/runtime.ts";
 import {
   databasePath,
   openReadOnly,
@@ -69,7 +69,7 @@ async function start(options: Partial<CoreOptions> = {}): Promise<Core> {
   const core = await Effect.runPromise(
     startCore({
       home,
-      agent: (tools, host) =>
+      agent: (host) =>
         codexRuntime({
           home,
           ...agentSetup(home),
@@ -77,7 +77,6 @@ async function start(options: Partial<CoreOptions> = {}): Promise<Core> {
           env: { PATH: process.env["PATH"] ?? "", FAKE_CODEX: "{}" },
           token: () => Promise.resolve("token"),
           version: "0.0.0",
-          tools,
           host,
         }),
       log: (event) => logged.push(event),
@@ -204,7 +203,7 @@ async function session(core: Pick<Core, "port" | "launchUrl">) {
 /** The scripted Codex playing `scenario` (FAKE_CODEX), for start(). */
 const scripted =
   (scenario: object, more: { requestMs?: number } = {}) =>
-  (...[tools, host]: Parameters<CoreOptions["agent"]>) =>
+  (host: AgentHost) =>
     codexRuntime({
       home,
       ...agentSetup(home),
@@ -218,7 +217,6 @@ const scripted =
       ...(more.requestMs !== undefined && {
         deadlines: { requestMs: more.requestMs },
       }),
-      tools,
       host,
     });
 
@@ -445,7 +443,7 @@ describe("the core", () => {
   it("closes every part when it stops, even when one of them fails", async () => {
     let agent: AgentRuntime | undefined;
     const core = await start({
-      agent: (tools, host) => {
+      agent: (host) => {
         agent = codexRuntime({
           home,
           ...agentSetup(home),
@@ -453,7 +451,6 @@ describe("the core", () => {
           env: { PATH: process.env["PATH"] ?? "", FAKE_CODEX: "{}" },
           token: () => Promise.resolve("token"),
           version: "0.0.0",
-          tools,
           host,
         });
         return {
@@ -565,6 +562,61 @@ describe("the local API", () => {
         })
       ).status,
     ).toBe(404);
+  });
+
+  it("gives a step's details when it opens, only from the person's own chat; a step kept without them has none", async () => {
+    const core = await start();
+    const page = await session(core);
+    const c = await chat(page);
+    await page.say(c.path, "Hello");
+    let entries: Entry[] = [];
+    await until(async () => {
+      entries = (await page.api("GET", c.path)).body["entries"] as Entry[];
+      return entries.some((e) => e.activity === "command");
+    });
+    // The chat itself never carries them.
+    expect(JSON.stringify(entries)).not.toContain("notes.txt");
+    const command = entries.find((e) => e.activity === "command");
+    const message = entries.find((e) => e.kind === "message");
+    const details = (id = "") => `${c.path}/entries/${id}`;
+    expect((await page.api("GET", details(command?.id))).body).toEqual({
+      details: {
+        id: "item-ls",
+        type: "commandExecution",
+        command: "ls",
+        commandActions: [],
+        status: "completed",
+        aggregatedOutput: "notes.txt\n",
+        exitCode: 0,
+        durationMs: 4,
+      },
+    });
+    const ravi = addRavi();
+    expect(
+      (
+        await page.api(
+          "GET",
+          `/api/people/${ravi.id}/chat/entries/${command?.id ?? ""}`,
+        )
+      ).status,
+    ).toBe(404);
+    expect((await page.api("GET", details(message?.id))).status).toBe(404);
+    // A line stored before Rufi kept details.
+    const store = openWritable(databasePath(home));
+    try {
+      store.db
+        .prepare(
+          `INSERT INTO transcript_entries (id, person_id, chat_id, seq, turn_id, kind, text, activity, detail, status, revision, created_at, updated_at)
+           SELECT 'old-step', person_id, chat_id, 9999, turn_id, 'activity', 'Ran a command', 'command', 'ls', 'done', 1, created_at, created_at
+           FROM transcript_entries WHERE id = ?`,
+        )
+        .run(command?.id ?? "");
+    } finally {
+      store.close();
+    }
+    expect((await page.api("GET", details("old-step"))).body).toEqual({
+      details: null,
+    });
   });
 
   it("reads the record only for the person in the path, and only by GET", async () => {
@@ -1090,7 +1142,7 @@ describe("the local API", () => {
     const log = join(userHome, "fake.jsonl");
     // Started from the data folder in use: after the move, the moved one,
     // whose AI folder (codex/) is new.
-    const agent: CoreOptions["agent"] = (tools, host) =>
+    const agent: CoreOptions["agent"] = (host) =>
       codexRuntime({
         home,
         ...agentSetup(home),
@@ -1102,7 +1154,6 @@ describe("the local API", () => {
         },
         token: () => Promise.resolve("token"),
         version: "0.0.0",
-        tools,
         host,
       });
     const turns = async (page: Awaited<ReturnType<typeof session>>) =>
@@ -1270,6 +1321,28 @@ describe("what the screens read", () => {
         (await page.api("PUT", "/api/settings", { appearance })).status,
       ).toBe(400);
     }
+  });
+
+  it("keeps when Activity opens by itself: while the AI works until one is chosen, also after a restart", async () => {
+    let core = await start();
+    let page = await session(core);
+    expect((await page.api("GET", "/api/settings")).body["activity"]).toBe(
+      "working",
+    );
+    expect(
+      (await page.api("PUT", "/api/settings", { activity: "hidden" })).body,
+    ).toMatchObject({ activity: "hidden", appearance: "system" });
+    for (const activity of ["folded", null]) {
+      expect(
+        (await page.api("PUT", "/api/settings", { activity })).status,
+      ).toBe(400);
+    }
+    await stop();
+    core = await start();
+    page = await session(core);
+    expect((await page.api("GET", "/api/settings")).body["activity"]).toBe(
+      "hidden",
+    );
   });
 });
 

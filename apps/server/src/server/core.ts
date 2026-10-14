@@ -13,7 +13,6 @@ import type {
   AgentHost,
   AgentRuntime,
   AgentSandbox,
-  AgentTools,
   RunSubAgent,
 } from "../agent/runtime.ts";
 import { readBrief } from "../core/briefs/briefs.ts";
@@ -63,7 +62,7 @@ export interface CoreOptions {
    */
   folder?: { source: FolderSource; show: (path: string) => Promise<void> };
   /** Makes the agent, with Rufi's tools (to show) and the host its events go to. */
-  agent: (tools: AgentTools, host: AgentHost) => AgentRuntime;
+  agent: (host: AgentHost) => AgentRuntime;
   /** Runs the document reader; without it, readings wait. */
   reader?: RunSubAgent;
   /** 0 (the default) picks a free port. */
@@ -244,8 +243,7 @@ export const startCore = (options: CoreOptions) =>
           transcripts,
           queue,
           signedIn: async () => (await account()).account === "signed_in",
-          agent: (host) =>
-            options.agent({ server: tools.server, specs: tools.specs }, host),
+          agent: options.agent,
           allowlist: allowlist.read,
           mcp: { url: () => mcpUrl(MCP_CHAT), keys: chatKeys },
           rules: (region) => ({

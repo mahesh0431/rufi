@@ -93,7 +93,7 @@ const Pointers = Schema.Array(Pointer).check(Schema.isMaxLength(MAX_REFS));
 // --- What the screens get ---
 
 // TODO: drop the kind if it gets complicated. To an agent everything is a
-// tool call; the title and detail already say what it did. Keep this list
+// tool call; the text and detail already say what it did. Keep this list
 // only while it stays small and each adapter can fill it in one line.
 export const ActivityKind = Schema.Literals([
   "tool",
@@ -105,6 +105,8 @@ export const ActivityKind = Schema.Literals([
   "compaction",
   /** A picture the AI generated: the reply shows it; `detail` is its path. */
   "picture",
+  /** The AI's progress note, its words as they came: a step, not a reply. */
+  "note",
   "other",
 ]);
 export type ActivityKind = typeof ActivityKind.Type;
@@ -134,14 +136,17 @@ export const Entry = Schema.Struct({
   ]),
   /**
    * The message; the reply's answer (without its rufi-basis blocks, which
-   * the turn's How holds); an activity's short title; the reasoning's
-   * summary so far; a receipt's, an event's or a brief's line.
+   * the turn's How holds); an activity's text as the agent reported it (the
+   * command, `server.tool`, the paths, a note's words; a line stored before
+   * notes, its title); the reasoning's summary so far; a receipt's, an
+   * event's or a brief's line.
    */
   text: Schema.String,
   activity: Schema.NullOr(ActivityKind),
   /**
-   * An activity's one short detail: the query, the search words, the
-   * command; a picture's path, whole.
+   * An activity's second reported part: a tool's arguments, a command's exit
+   * code, a page's address; a picture's path, whole. Everything the agent
+   * gave about it comes only on request (EntryDetails).
    */
   detail: Schema.NullOr(Schema.String),
   status: Schema.NullOr(
@@ -174,21 +179,15 @@ export const EndReason = Schema.Literals([
 export type EndReason = typeof EndReason.Type;
 
 /**
- * One thing Rufi saw the AI read in a reply, for Based on's Used: a read of
- * the record by one of Rufi's tools, a web search or page, a command, a
- * sub-agent. What was read, not proof that it supports the answer.
+ * One read of the health record in a reply, for Based on's Used: a call to
+ * one of Rufi's read tools that Rufi answered, from its own record of the
+ * call. What was read, not proof that it supports the answer.
  */
 export const Read = Schema.Struct({
-  /** What was read, in plain words: "Read your records", "Searched the web". */
+  /** What was read, in plain words: "Read your results in 2026". */
   title: Schema.String,
-  /** Which records and dates, the search words, the page or the command. */
-  detail: Schema.NullOr(Schema.String),
-  /**
-   * done; capped: a cap left some out; failed: nothing came back;
-   * stopped: it ended unfinished; unknown: the AI's agent didn't say what
-   * came back.
-   */
-  outcome: Schema.Literals(["done", "capped", "failed", "stopped", "unknown"]),
+  /** done; capped: a cap left some out; failed: nothing came back. */
+  outcome: Schema.Literals(["done", "capped", "failed"]),
   /** What came back, or why not, in Rufi's words: "12 records", the error. */
   note: Schema.NullOr(Schema.String),
 });
@@ -358,8 +357,16 @@ export type Region = typeof Region.Type;
 export const Appearance = Schema.Literals(["system", "light", "dark"]);
 export type Appearance = typeof Appearance.Type;
 
+/**
+ * When a reply's Activity is open by itself: while the AI works (working),
+ * always (shown), or never (hidden). It folds or opens by hand in each.
+ */
+export const ActivityShown = Schema.Literals(["working", "shown", "hidden"]);
+export type ActivityShown = typeof ActivityShown.Type;
+
 export const Settings = Schema.Struct({
   appearance: Appearance,
+  activity: ActivityShown,
   /** The chosen region; null when none is chosen. */
   emergencyRegion: Schema.NullOr(Schema.String),
   emergency: Schema.NullOr(
@@ -375,6 +382,14 @@ export const Settings = Schema.Struct({
   }),
 });
 export type Settings = typeof Settings.Type;
+
+/**
+ * Everything the agent gave about one step of a reply's Activity, as it
+ * came (plain JSON, in the agent's own shape), read when the step opens;
+ * null when Rufi kept none.
+ */
+export const EntryDetails = Schema.Struct({ details: Schema.Unknown });
+export type EntryDetails = typeof EntryDetails.Type;
 
 /** The ChatGPT sign-in, as the screens need it. */
 export const Status = Schema.Struct({
@@ -444,6 +459,7 @@ export const AddPerson = Schema.Struct({ displayName: Line(200) });
 /** The settings to change; the others stay as they are. */
 export const SaveSettings = Schema.Struct({
   appearance: Schema.optionalKey(Appearance),
+  activity: Schema.optionalKey(ActivityShown),
   /** A region code Rufi knows, such as "IN"; null clears it. */
   emergencyRegion: Schema.optionalKey(Schema.NullOr(Line(10))),
   /** The document reader's model: one of the models it can run on. */

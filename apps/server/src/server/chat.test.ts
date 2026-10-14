@@ -9,7 +9,12 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { Entry } from "@rufi/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Scenario } from "../../tests/fake-codex.ts";
-import { fakeModel, THINKING, type FakeModel } from "../../tests/fake-model.ts";
+import {
+  fakeModel,
+  NOTE,
+  THINKING,
+  type FakeModel,
+} from "../../tests/fake-model.ts";
 import { callTool, type McpServerConfig } from "../../tests/mcp-client.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexRuntime } from "../agent/codex/codex.ts";
@@ -143,7 +148,6 @@ async function startChat(
         },
         version: "0.0.0",
         deadlines: { requestMs: 10_000, turnMs: 20_000, ...options.deadlines },
-        tools: { server: tools.server, specs: tools.specs },
         host,
         log,
       }),
@@ -393,6 +397,86 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
         ["message", "think"],
         ["reasoning", whole],
         ["reply", "ok:think"],
+      ]);
+    },
+  );
+
+  it(
+    "keeps the AI's progress note as a step of the reply's Activity, as it streams, and its answer as the one reply, with How",
+    timeout,
+    async () => {
+      await startChat(name);
+      const c = await newChat();
+      const shown: Entry[] = [];
+      transcripts.subscribe(c.id, (change) => shown.push(...change.entries));
+      await say(c, "commentary\n\n```rufi-basis\nFrom the note test.\n```");
+      await ended(c.id);
+      const { all, turns } = await transcript(c.id);
+      expect(
+        all
+          .filter((e) => e.kind === "reply" || e.activity === "note")
+          .map((e) => [e.kind, e.activity, e.text, e.status]),
+      ).toEqual([
+        ["activity", "note", NOTE, "done"],
+        ["reply", null, "ok:commentary", null],
+      ]);
+      expect(turns[0]?.how).toBe("From the note test.");
+      // Never a reply, not even while it streamed; it grew as it came.
+      expect(
+        shown.some((e) => e.kind === "reply" && e.text.includes("Checking")),
+      ).toBe(false);
+      const note = shown.filter((e) => e.activity === "note");
+      expect(note[0]?.status).toBe("running");
+      expect(note.map((e) => e.text)).toContain(NOTE.slice(0, 9));
+      // The new thread's seed has it as the AI's progress note.
+      expect(await transcripts.lastMessages(c, 10)).toContainEqual({
+        from: "note",
+        text: NOTE,
+      });
+    },
+  );
+
+  it(
+    "keeps a progress note that arrives only whole as a step, not a reply",
+    timeout,
+    async () => {
+      await startChat(name);
+      const c = await newChat();
+      await say(c, "whole commentary");
+      await ended(c.id);
+      expect(
+        (await transcript(c.id)).all
+          .filter((e) => e.kind === "reply" || e.activity === "note")
+          .map((e) => [e.kind, e.activity, e.text, e.status]),
+      ).toEqual([
+        ["activity", "note", NOTE, "done"],
+        ["reply", null, "ok:whole commentary", null],
+      ]);
+    },
+  );
+
+  it(
+    "keeps half a progress note as a stopped step when the reply is stopped, also after a restart",
+    timeout,
+    async () => {
+      await startChat(name);
+      const c = await newChat();
+      await say(c, "cut commentary");
+      await until(async () =>
+        (await transcript(c.id)).all.some((e) => e.activity === "note"),
+      );
+      await chat?.stop(c);
+      await ended(c.id);
+      const notes = async () =>
+        (await transcript(c.id)).all
+          .filter((e) => e.kind !== "message")
+          .map((e) => [e.kind, e.activity, e.text, e.status]);
+      expect(await notes()).toEqual([
+        ["activity", "note", NOTE.slice(0, 9), "stopped"],
+      ]);
+      await startChat(name);
+      expect(await notes()).toEqual([
+        ["activity", "note", NOTE.slice(0, 9), "stopped"],
       ]);
     },
   );
@@ -824,9 +908,7 @@ it(
     ]);
     expect(
       snapshot.all.filter((entry) => entry.activity === "tool"),
-    ).toMatchObject([
-      { text: "Looked at page 1 of a document", status: "done" },
-    ]);
+    ).toMatchObject([{ text: "rufi.get_documents", status: "done" }]);
     // Both stored forms and the activity a person can read must omit the payload.
     const persisted = store.db
       .prepare("SELECT * FROM transcript_entries WHERE chat_id = ?")
@@ -1361,16 +1443,17 @@ describe("the chat, on the scripted Codex", () => {
     await say(c, "What's new?");
     await ended(c.id);
     const { all, turns } = await transcript(c.id);
-    // The screens get the lines and the reasoning's summary, never details.
+    // The screens get the lines as Codex reported them and the reasoning's
+    // summary, never details.
     expect(
       all
         .filter((e) => e.kind !== "message" && e.kind !== "reply")
         .map((e) => [e.activity, e.text, e.detail, e.status]),
     ).toEqual([
-      ["tool", "Read your overview", null, "done"],
+      ["tool", "rufi.get_overview", null, "done"],
       [null, "**Reading the record**", null, "done"],
-      ["command", "Ran a command", "ls", "done"],
-      ["other", "The AI did something Rufi can't display", "teleport", "done"],
+      ["command", "ls", "exit 0", "done"],
+      ["other", "teleport", null, "done"],
     ]);
     const kept = store.db
       .prepare(
@@ -1385,7 +1468,7 @@ describe("the chat, on the scripted Codex", () => {
     expect(kept).toMatchObject([
       [
         "activity",
-        "Read your overview",
+        "rufi.get_overview",
         { type: "mcpToolCall", server: "rufi", tool: "get_overview" },
       ],
       [
@@ -1393,16 +1476,8 @@ describe("the chat, on the scripted Codex", () => {
         "**Reading the record**",
         { summary: ["**Reading the record**"] },
       ],
-      [
-        "activity",
-        "Ran a command",
-        { aggregatedOutput: "notes.txt\n", exitCode: 0 },
-      ],
-      [
-        "activity",
-        "The AI did something Rufi can't display",
-        { type: "teleport" },
-      ],
+      ["activity", "ls", { aggregatedOutput: "notes.txt\n", exitCode: 0 }],
+      ["activity", "teleport", { type: "teleport" }],
     ]);
     const [call] = store.db
       .prepare("SELECT tool, input, answer, ok, turn_id FROM tool_calls")
@@ -1417,18 +1492,13 @@ describe("the chat, on the scripted Codex", () => {
       ok: true,
       result: { person: "Asha Fictional" },
     });
+    // Used: the health-record read only; the command is in Activity.
     expect(turns[0]?.used).toEqual([
-      {
-        title: "Read your overview",
-        detail: null,
-        outcome: "done",
-        note: null,
-      },
-      { title: "Ran a command", detail: "ls", outcome: "done", note: null },
+      { title: "Read your overview", outcome: "done", note: null },
     ]);
   });
 
-  it("shows How only from a completed reply, and each reply's Used is its own", async () => {
+  it("shows How only from a completed reply, and each reply's Used is its own: its health-record reads, failed ones too", async () => {
     await startChat("fake", {
       scenario: {
         calls: [
@@ -1436,6 +1506,7 @@ describe("the chat, on the scripted Codex", () => {
             tool: "get_records",
             arguments: { kind: "result", from: "2024" },
           },
+          { tool: "get_records", arguments: { kind: "rash" } },
         ],
       },
     });
@@ -1450,11 +1521,8 @@ describe("the chat, on the scripted Codex", () => {
     await say(await chatRow(c.id), "quiet thanks");
     await ended(c.id, 2);
     const { entries, turns } = await transcript(c.id);
-    // The activity line names the read in the same words as Used.
-    expect(entries).toContainEqual([
-      "activity",
-      "Read your results since 2024",
-    ]);
+    // Activity names the read as Codex reported it.
+    expect(entries).toContainEqual(["activity", "rufi.get_records"]);
     expect(entries.filter(([kind]) => kind === "reply")).toEqual([
       ["reply", "ok:Your HbA1c"],
       ["reply", "ok:quiet thanks"],
@@ -1474,11 +1542,14 @@ describe("the chat, on the scripted Codex", () => {
         [
           {
             title: "Read your results since 2024",
-            detail: null,
             outcome: "done",
             note: "0 records",
           },
-          { title: "Ran a command", detail: "ls", outcome: "done", note: null },
+          {
+            title: "Read your records",
+            outcome: "failed",
+            note: "The input for get_records isn't valid.",
+          },
         ],
       ],
       [null, []],
@@ -1861,7 +1932,7 @@ describe("the chat, on the scripted Codex", () => {
       (entry) => entry.activity === "compaction",
     );
     expect(compacted).toMatchObject([
-      { text: "Compacted its memory of the chat", status: "done" },
+      { text: "contextCompaction", status: "done" },
     ]);
   });
 
@@ -1983,7 +2054,7 @@ describe("the chat, on the scripted Codex", () => {
     );
   });
 
-  it("shows a cut reply's answer without How or half a block, with what it had read, and passes it on marked", async () => {
+  it("shows a cut reply's answer without How or half a block, with what it had read, and passes it on marked, with its progress note", async () => {
     const c = await newChat();
     await transcripts.startTurn(c, "t-1", {
       id: "thread-cut",
@@ -2002,6 +2073,14 @@ describe("the chat, on the scripted Codex", () => {
       },
       startedAt: "2026-10-08T10:00:00Z",
     });
+    // A note can hold a fact the AI said; the new thread keeps it.
+    await transcripts.appendNote(
+      c,
+      "t-1",
+      "note-1",
+      "Your record has one HbA1c, from August.",
+      false,
+    );
     await transcripts.appendReply(
       c,
       "t-1",
@@ -2010,14 +2089,16 @@ describe("the chat, on the scripted Codex", () => {
     );
     await openTranscripts(store).interruptRunning();
     const { entries, turns } = await transcript(c.id);
-    expect(entries).toEqual([["reply", "Your HbA1c was 6.8 %."]]);
+    expect(entries).toEqual([
+      ["activity", "Your record has one HbA1c, from August."],
+      ["reply", "Your HbA1c was 6.8 %."],
+    ]);
     expect(turns).toMatchObject([
       {
         how: null,
         used: [
           {
             title: "Read your results up to Aug 2026",
-            detail: null,
             outcome: "failed",
             note: "Rufi couldn't run get_records.",
           },
@@ -2025,14 +2106,19 @@ describe("the chat, on the scripted Codex", () => {
       },
     ]);
     expect(await transcripts.lastMessages(c, 10)).toEqual([
+      {
+        from: "note",
+        text: "Your record has one HbA1c, from August.",
+        unfinished: true,
+      },
       { from: "ai", text: "Your HbA1c was 6.8 %.", unfinished: true },
     ]);
-    // A new thread hears it as unfinished.
+    // A new thread hears both, marked unfinished.
     await startChat("fake");
     await say(await chatRow(c.id), "And?");
     await ended(c.id, 2);
     expect((await backendOf("fake").contexts()).at(-1)).toContain(
-      "AI (this reply didn't finish): Your HbA1c was 6.8 %.",
+      "AI (a progress note) (this reply didn't finish): Your record has one HbA1c, from August.\n\nAI (this reply didn't finish): Your HbA1c was 6.8 %.",
     );
   });
 
