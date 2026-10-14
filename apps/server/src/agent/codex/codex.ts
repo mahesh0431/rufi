@@ -120,6 +120,8 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   let server: AppServer | undefined;
   let starting: Promise<AppServer> | undefined;
   const loaded = new Set<string>(); // threads open in the current app-server
+  /** Settings to pick a known thread up after its app-server is replaced. */
+  const threads = new Map<string, ThreadSettings>();
   /** Threads Rufi let go of, until Codex says they are closed. */
   const closing = new Map<string, PromiseWithResolvers<undefined>>();
   /**
@@ -700,11 +702,40 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     await shutDown();
   }
 
-  /** Codex with the thread open in it; Rufi opens threads only when asked. */
-  async function open(threadId: string): Promise<AppServer> {
-    const app = await ready();
+  /** Picks a thread up with the same checked settings and MCP registration. */
+  async function resume(
+    app: AppServer,
+    threadId: string,
+    settings: ThreadSettings,
+    signal?: AbortSignal,
+  ) {
+    const response = await abortable(
+      request<ThreadResumeResponse>(app, "thread/resume", {
+        threadId,
+        excludeTurns: true,
+        ...settingsFor(settings),
+      }).catch(toolsFailed),
+      signal,
+    );
+    const running =
+      response.thread.status.type === "active" || turns.has(threadId);
+    check(response, settings);
+    loaded.add(threadId);
+    threads.set(threadId, settings);
+    return { model: response.model, running };
+  }
+
+  /** A renewed sign-in replaces Codex, so its known thread is picked up again. */
+  async function open(
+    threadId: string,
+    signal?: AbortSignal,
+  ): Promise<AppServer> {
+    const previous = server;
+    const app = await ready(signal);
     if (!loaded.has(threadId)) {
-      throw new Error("Open the chat's thread first.");
+      const settings = previous !== app ? threads.get(threadId) : undefined;
+      if (!settings) throw new Error("Open the chat's thread first.");
+      await resume(app, threadId, settings, signal);
     }
     return app;
   }
@@ -741,24 +772,13 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       );
       check(response, settings);
       loaded.add(response.thread.id);
+      threads.set(response.thread.id, settings);
       return { threadId: response.thread.id, model: response.model };
     },
 
     resumeThread: async (threadId, settings, signal) => {
       const app = await ready(signal);
-      const response = await abortable(
-        request<ThreadResumeResponse>(app, "thread/resume", {
-          threadId,
-          excludeTurns: true,
-          ...settingsFor(settings),
-        }).catch(toolsFailed),
-        signal,
-      );
-      const running =
-        response.thread.status.type === "active" || turns.has(threadId);
-      check(response, settings);
-      loaded.add(threadId);
-      return { model: response.model, running };
+      return resume(app, threadId, settings, signal);
     },
 
     reloadThread: async (threadId, settings, signal) => {
@@ -791,16 +811,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         }
         loaded.delete(threadId);
       }
-      const response = await abortable(
-        request<ThreadResumeResponse>(app, "thread/resume", {
-          threadId,
-          excludeTurns: true,
-          ...settingsFor(settings),
-        }).catch(toolsFailed),
-        signal,
-      );
-      check(response, settings);
-      loaded.add(threadId);
+      const response = await resume(app, threadId, settings, signal);
       // The history still holds the instructions the thread was first given
       // (0.159.3); a summary of it starts again from the new ones.
       const summarised = Promise.withResolvers<string>();
@@ -832,7 +843,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     send: async (threadId, message, signal) => {
       let app: AppServer;
       try {
-        app = await open(threadId);
+        app = await open(threadId, signal);
       } catch (error) {
         throw new NotSent(errorText(error), { cause: error });
       }
