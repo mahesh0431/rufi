@@ -1530,6 +1530,7 @@ test("the transcript follows a growing Activity to its newest row, above the box
   await activity(page).click();
   await log(page).hover();
   await page.mouse.wheel(0, -1_000);
+  await expect(log(page).getByText(message).first()).toBeInViewport();
   await box(page).fill(message);
   await box(page).press("Enter");
   await expect(steps(page)).toHaveCount(81);

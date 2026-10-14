@@ -47,6 +47,7 @@ import type { StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/shallow";
 import { MiddleCut, StepDetails, took } from "./activity.tsx";
+import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
 import { Diagram, fileIn, NativePicture, PageCard, Picture } from "./files.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
@@ -332,12 +333,16 @@ const viewOf = (element: HTMLElement): View => ({
   view: element.clientHeight,
 });
 /**
- * It moved up with its view the same size and nothing taken out: you
- * scrolled. A view that grows (the box shrinks after a send), or content
- * that folds, moves it up too; that is the browser keeping the end in view.
+ * It moved up further than the browser moves it to keep the end in view
+ * when the view grows (the box shrinks after a send) or the content gets
+ * shorter (Activity folds): you scrolled.
  */
 const scrolledUp = (was: View, now: View) =>
-  now.top < was.top - 1 && now.view === was.view && now.height >= was.height;
+  now.top <
+  was.top -
+    Math.max(0, now.view - was.view) -
+    Math.max(0, was.height - now.height) -
+    1;
 
 export function TranscriptView({
   live,
@@ -374,6 +379,11 @@ export function TranscriptView({
     if (!element) return;
     const follow = () => {
       if (!pinned.current) return;
+      // Scrolled up since, before the scroll was even reported: you read.
+      if (scrolledUp(seen.current, viewOf(element))) {
+        pinned.current = false;
+        return;
+      }
       element.scrollTop = element.scrollHeight;
       seen.current = viewOf(element);
     };
@@ -392,13 +402,17 @@ export function TranscriptView({
       resizes.disconnect();
     };
   }, []);
-  // A new reply is followed, also if you had scrolled up before it.
+  // What you send is followed, also if you had scrolled up before it.
   useEffect(() => {
     const element = scroller.current;
-    if (!running || !element) return;
-    pinned.current = true;
-    element.scrollTop = element.scrollHeight;
-  }, [running]);
+    if (!element) return;
+    return boxFor(personId).store.subscribe((state, before) => {
+      if (!state.sending || before.sending) return;
+      pinned.current = true;
+      element.scrollTop = element.scrollHeight;
+      seen.current = viewOf(element);
+    });
+  }, [personId]);
 
   // Near the top, the page before loads; again after each one, until the
   // view is full or the chat's start is there.
