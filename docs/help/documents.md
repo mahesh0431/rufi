@@ -87,12 +87,12 @@ The results are kept as **draft items**: they wait for you and stay across resta
 
 The reader marks what it isn't sure of, and says why. A mark never changes what the reader read; it shows you where to look:
 
-| Mark                  | Why                                                                                                    |
-| --------------------- | ------------------------------------------------------------------------------------------------------ |
-| **unsure**            | The reader wasn't sure of the value, and says why                                                      |
-| **couldn't be read**  | The reader couldn't read the page, and says why                                                        |
-| **not looked at**     | The reading ended without this page                                                                    |
-| **may be incomplete** | Only on a reading from an older Rufi: the reader counted more (or fewer) rows on the page than it read |
+| Mark                  | Why                                                                                                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **unsure**            | The reader wasn't sure of the value, and says why. On a reading from an older Rufi, the reason may come from Rufi's own checks, such as a number that didn't match the printed value |
+| **couldn't be read**  | The reader couldn't read the page, and says why                                                                                                                                      |
+| **not looked at**     | The reading ended without this page                                                                                                                                                  |
+| **may be incomplete** | Only on a reading from an older Rufi: the reader counted more (or fewer) rows on the page than it read                                                                               |
 
 Something else about a page, such as rows the reader couldn't read, shows as the reader's note on that page in **View reading**.
 
