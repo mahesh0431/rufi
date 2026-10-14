@@ -642,7 +642,7 @@ describe.runIf(process.platform === "darwin")(
             env: "env",
             // Caches go in the AI's folder, where commands can write.
             cache:
-              'mkdir -p "$PIP_CACHE_DIR" && echo yes > "$PIP_CACHE_DIR/x" && cat "$PIP_CACHE_DIR/x" && echo "$XDG_CACHE_HOME"',
+              'for d in "$PIP_CACHE_DIR" "$MPLCONFIGDIR"; do mkdir -p "$d" && echo yes > "$d/x" && cat "$d/x"; done; echo "$XDG_CACHE_HOME"',
             // The network is on: the local model answers (404: no page there).
             network: `curl -s -o /dev/null -w "%{http_code}" ${q(url)}`,
           });
@@ -684,7 +684,7 @@ describe.runIf(process.platform === "darwin")(
             expect(env).not.toMatch(/TOKEN|not-a-real-token/);
             expect(env).not.toContain(key);
             expect(by(named.cache)?.output).toBe(
-              `yes\n${join(folder, ".cache")}\n`,
+              `yes\nyes\n${join(folder, ".cache")}\n`,
             );
             expect(by(named.network)?.output).toBe("404");
           };

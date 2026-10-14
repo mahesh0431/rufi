@@ -83,7 +83,7 @@ enabled = true
 /**
  * What the agent's commands get set on top of their environment: the user's
  * real HOME, and caches in the AI's folder, the only place they can write
- * (pip's own on macOS is ~/Library/Caches/pip). Never a secret.
+ * (on macOS, pip's and matplotlib's own are in HOME). Never a secret.
  */
 function commandsEnvironment(options: CodexHomeOptions): string {
   const cache = options.sandbox && join(options.sandbox.folder, ".cache");
@@ -96,6 +96,7 @@ function commandsEnvironment(options: CodexHomeOptions): string {
       : [
           `XDG_CACHE_HOME = ${key(cache)}`,
           `PIP_CACHE_DIR = ${key(join(cache, "pip"))}`,
+          `MPLCONFIGDIR = ${key(join(cache, "matplotlib"))}`,
         ]),
   ];
   return set.length === 0
