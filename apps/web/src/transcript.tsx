@@ -46,7 +46,7 @@ import type { ActivityShown, Entry, Read, Turn } from "@rufi/contracts";
 import type { StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/shallow";
-import { middleCut, StepDetails, took } from "./activity.tsx";
+import { MiddleCut, StepDetails, took } from "./activity.tsx";
 import { ChipView } from "./chips.tsx";
 import { Diagram, fileIn, NativePicture, PageCard, Picture } from "./files.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
@@ -752,13 +752,14 @@ function ActivityView({
         )}
         <span className="shrink-0">{label}</span>
         {running && !open && newest && (
-          <span className="truncate text-xs">
-            {middleCut(
+          <MiddleCut
+            text={
               newest.kind === "reasoning"
                 ? latestHeading(newest.text)
-                : newest.text,
-            )}
-          </span>
+                : newest.text
+            }
+            mono={newest.kind === "activity" && newest.activity !== "note"}
+          />
         )}
       </button>
       {open && (
@@ -792,7 +793,9 @@ function Step({ live, id }: { live: StoreApi<Live>; id: string }) {
   if (!entry) return null;
   if (entry.activity === "note") {
     return (
-      <div data-entry={id} className="note break-words text-ink">
+      // The AI's working words: in the steps' colour and at their text's
+      // indent, so the answer stands out when it comes.
+      <div data-entry={id} className="note pl-[19px] break-words text-muted">
         <Marked text={readableReply(entry.text, entry.status === "running")} />
       </div>
     );
@@ -847,14 +850,14 @@ function Step({ live, id }: { live: StoreApi<Live>; id: string }) {
         className="flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-left hover:text-ink"
       >
         <ActivityIcon status={entry.status} />
-        <span className="min-w-0 shrink truncate font-mono text-xs">
-          {middleCut(entry.text)}
-        </span>
-        {entry.detail !== null && (
-          <span className="min-w-0 shrink-[8] truncate text-xs">
-            · {entry.detail}
-          </span>
-        )}
+        <MiddleCut
+          text={
+            entry.detail === null
+              ? entry.text
+              : `${entry.text} · ${entry.detail}`
+          }
+          mono
+        />
       </button>
       {open && (
         <div

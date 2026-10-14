@@ -82,7 +82,10 @@ interface Running {
   turnId: string;
   /** How it ended, when Rufi decided it (a deadline, a tool loop). */
   end: TurnEnd | undefined;
-  /** Messages with text delivered at their start or in deltas; others arrive whole at the end. */
+  /**
+   * Agent messages whose text came as they started or in deltas; the others
+   * arrive whole at their end.
+   */
   streamed: Set<string>;
   /**
    * Agent messages Codex marked as its progress notes (commentary), by item:
@@ -442,9 +445,8 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         }
         if (item.type === "agentMessage") {
           if (item.phase === "commentary") running.notes.add(item.id);
-          if (item.text && !running.streamed.has(item.id)) {
-            textDelta(running, item.id, item.text);
-          }
+          // Codex can give a message's first words as it starts.
+          if (item.text) textDelta(running, item.id, item.text);
           return;
         }
         if (item.type === "commandExecution") void track();
@@ -553,7 +555,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     }
   }
 
-  /** Text already present at an item's start follows the same path as its later deltas. */
+  /** Part of an agent message: to its note, or to its reply. */
   function textDelta(running: Running, itemId: string, delta: string): void {
     running.streamed.add(itemId);
     emit({

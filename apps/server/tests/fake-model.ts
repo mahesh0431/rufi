@@ -8,10 +8,9 @@
 // command" runs the same command and the reply ends while it runs, "think"
 // streams a reasoning summary (THINKING) before it answers, "commentary"
 // writes a progress note (NOTE) before it answers ("whole commentary": in one
-// piece, never streamed; "seeded": initial note and reply text is included
-// when the item is added, before the deltas; "cut commentary": half of it,
-// and never answers),
-// and anything else answers "ok:<text>". No sign-in and no AI.
+// piece, never streamed; "cut commentary": half of it, and never answers),
+// "seeded" gives the first words of the note and the answer as each is
+// added, before their deltas, and anything else answers "ok:<text>". No sign-in and no AI.
 // With a `script`, it answers each request with the script's next step
 // instead (a call of a direct tool, or text), reporting the step's tokens as
 // the usage, so a test can drive a whole sub-agent turn and force a

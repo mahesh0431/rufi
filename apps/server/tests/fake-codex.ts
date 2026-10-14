@@ -11,9 +11,10 @@
 // apart, "long" streams 200 parts of 1,000 characters, "think" streams a
 // reasoning summary (fake-model.ts's THINKING) before it answers, "commentary"
 // writes a progress note (fake-model.ts's NOTE) before it answers ("whole
-// commentary": only when it completes; "seeded": initial note and reply
-// text comes with item/started, before the deltas; "cut commentary": half of it,
-// and the turn never ends), and anything else answers "ok:<text>".
+// commentary": only when it completes; "cut commentary": half of it, and
+// the turn never ends), "seeded" gives the first words of the note and the
+// answer as each starts, before their deltas, and anything else answers
+// "ok:<text>".
 // Like Codex, it calls Rufi's tools on the MCP server a thread was given
 // (its config's mcp_servers.rufi), checking it answers when the thread starts
 // or resumes. Like Codex, a thread keeps the developer instructions it was

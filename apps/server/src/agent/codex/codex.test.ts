@@ -1182,51 +1182,26 @@ describe("Codex's items and endings in Rufi's words", () => {
     expect(failed("contextWindowExceeded")).toBe("provider_failed");
   });
 
-  it("gives each item one line with what Codex reported, whole, and names one it doesn't know by its type", () => {
-    const mcp = (server: string, args: unknown, error: unknown = null) =>
+  it("gives each item one line with what Codex reported, and names one it doesn't know by its type", () => {
+    // Another server's tool that failed, with no arguments.
+    expect(
       activityOf(
         {
           type: "mcpToolCall",
           id: "t",
-          server,
+          server: "elsewhere",
           tool: "get_records",
-          arguments: args,
-          status: error ? "failed" : "completed",
-          result: null,
-          error,
-          durationMs: 1,
-        } as never,
-        true,
-      );
-    expect(mcp("rufi", { kind: "result" })).toEqual({
-      activity: "tool",
-      title: "rufi.get_records",
-      detail: '{"kind":"result"}',
-      status: "done",
-    });
-    expect(mcp("elsewhere", {}, { message: "no" })).toEqual({
-      activity: "tool",
-      title: "elsewhere.get_records",
-      status: "failed",
-    });
-    // A long command, over several lines, is kept as it ran.
-    const command = `cat ${"/fictional/skills/".repeat(30)}SKILL.md\nls`;
-    expect(
-      activityOf(
-        {
-          type: "commandExecution",
-          id: "c",
-          command,
-          commandActions: [],
+          arguments: {},
           status: "failed",
-          exitCode: 1,
+          result: null,
+          error: { message: "no" },
+          durationMs: 1,
         } as never,
         true,
       ),
     ).toEqual({
-      activity: "command",
-      title: command,
-      detail: "exit 1",
+      activity: "tool",
+      title: "elsewhere.get_records",
       status: "failed",
     });
     expect(

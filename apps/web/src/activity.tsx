@@ -13,12 +13,31 @@ import { Problem } from "./ui.tsx";
 /** Lines a long output shows before "Show all". */
 const FOLDED_LINES = 12;
 
-/** A long line cut in its middle, so its start and its end (a file's name) show. */
-export function middleCut(text: string, max = 64): string {
+/** Characters at a line's end that always stay in view: a file's name, an exit code. */
+const END_CHARS = 40;
+
+/**
+ * A line cut in its middle to the width there is: its start gives way and
+ * its last characters (a file's name, an exit code) stay in view. The whole
+ * text is there; only the view cuts it.
+ */
+export function MiddleCut({
+  text,
+  mono = false,
+}: {
+  text: string;
+  mono?: boolean;
+}) {
   const line = text.replace(/\s+/g, " ").trim();
-  if (line.length <= max) return line;
-  const head = Math.floor(max * 0.4);
-  return `${line.slice(0, head)}…${line.slice(line.length - (max - head - 1))}`;
+  const at = Math.max(0, line.length - END_CHARS);
+  return (
+    <span
+      className={`flex min-w-0 overflow-hidden text-xs whitespace-pre ${mono ? "font-mono" : ""}`}
+    >
+      <span className="min-w-0 truncate">{line.slice(0, at)}</span>
+      <span className="shrink-0">{line.slice(at)}</span>
+    </span>
+  );
 }
 
 /** How long something took, from milliseconds: "0.4s", "9.1s", "1m 36s". */

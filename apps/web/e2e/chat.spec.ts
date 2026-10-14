@@ -1040,12 +1040,39 @@ test("Activity is open and live while the AI works, its notes in full and its th
     await expect(steps(scope)).toHaveText([
       /Comparing the reports/,
       "Checking your record first.",
-      // A long command is cut in its middle: its file's name shows.
-      /^done:\/bin\/zsh -lc 'cat .*….*skills\/analysis\/SKILL\.md'· exit 0$/,
+      // The whole command: only the view cuts it.
+      `done:${command} · exit 0`,
       /^done:teleport$/,
     ]);
   };
   await open(chat(page));
+  // In the narrow panel, the long command is cut in its middle, on one
+  // line: its file's name and exit code stay in view.
+  const row = steps(chat(page)).nth(2).getByRole("button");
+  const shown = await row.evaluate((button) => {
+    const edge = button.getBoundingClientRect().right;
+    const parts = [...button.querySelectorAll("span > span")].map((part) => ({
+      text: part.textContent,
+      whole: part.scrollWidth <= part.clientWidth,
+      inside: part.getBoundingClientRect().right <= edge,
+    }));
+    return {
+      cut: parts[0]?.whole === false,
+      end: parts.slice(1),
+      oneLine: button.getBoundingClientRect().height < 24,
+    };
+  });
+  expect(shown).toEqual({
+    cut: true,
+    end: [
+      {
+        text: "older/skills/analysis/SKILL.md' · exit 0",
+        whole: true,
+        inside: true,
+      },
+    ],
+    oneLine: true,
+  });
   // The thinking opens to its whole summary.
   await steps(chat(page)).first().locator("summary").click();
   await expect(steps(chat(page)).first()).toContainText(
@@ -1271,7 +1298,7 @@ test("an old chat shows as it was stored: its replies in order, and its steps fo
     "Here is the answer.",
   ]);
   await activity(page).click();
-  await expect(steps(page)).toHaveText(["done:Ran a command· ls"]);
+  await expect(steps(page)).toHaveText(["done:Ran a command · ls"]);
   await steps(page).first().getByRole("button").click();
   await expect(steps(page).first()).toContainText(
     "Rufi kept no details for this step.",
@@ -1437,10 +1464,10 @@ test("a tool step shows the tool and its arguments as reported, and opens to its
   await activity(chat(page)).click();
   const own = steps(chat(page)).first();
   await expect(own).toHaveText(
-    'done:rufi.get_records· {"kind":"result","from":"2026-08","to":"2026-08"}',
+    'done:rufi.get_records · {"kind":"result","from":"2026-08","to":"2026-08"}',
   );
   const other = steps(chat(page)).nth(1);
-  await expect(other).toContainText('elsewhere.lookup· {"query":"headache');
+  await expect(other).toContainText('elsewhere.lookup · {"query":"headache');
   // The sign keeps its 13 px beside a line longer than the chat.
   for (const line of [own, other]) {
     const sign = await line.locator("svg").first().boundingBox();
