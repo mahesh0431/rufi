@@ -998,14 +998,20 @@ export function transcripts(
     /**
      * A save to the record (or a dismissal of draft items) and its
      * receipt, in one transaction (docs/adr/0005): `save` writes it, given
-     * the references of the user's messages in this turn. The line is added
+     * the references of the user's messages in this turn and the turn's id
+     * (the turn its messages belong to). The line is added
      * also when the reply has ended meanwhile (a Stop, a deadline): what is
      * saved is shown. The same call saved before adds no second line.
      */
     saveWithReceipt: async <T extends Receipted = Saved>(
       chat: ChatRow,
       agentTurnId: string,
-      save: (trx: Transaction<Tables>, at: string, refs: Ref[]) => Promise<T>,
+      save: (
+        trx: Transaction<Tables>,
+        at: string,
+        refs: Ref[],
+        turnId: string | undefined,
+      ) => Promise<T>,
     ): Promise<T> => {
       let saved: T | undefined;
       await change(chat.id, async (trx, revision) => {
@@ -1027,6 +1033,7 @@ export function transcripts(
           messages.flatMap((m) =>
             (JSON.parse(m.refs ?? "[]") as Chip[]).map((chip) => chip.ref),
           ),
+          turn?.id,
         );
         if (!saved.fresh) return undefined;
         const id = await insertEntry(trx, chat, revision, {

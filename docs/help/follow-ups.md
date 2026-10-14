@@ -6,7 +6,7 @@ A follow-up is something to come back to, such as a recheck or a question for yo
 
 Tell the AI in the chat, for example "Remind me to recheck my HbA1c in December". The AI says what it would save and asks; it saves only after you say yes, as for every change (see [Changing your health record](chat.md#changing-your-health-record)).
 
-When a document or your words suggest one, for example a report that says "Repeat HbA1c in 3 months", the AI suggests a follow-up and asks. It saves nothing until you say yes.
+When a document or your words suggest one, for example a report that says "Repeat HbA1c in 3 months", the AI suggests a follow-up and its month, and asks. It saves nothing until you say yes. A plain "yes" is enough: you don't need to say the date again.
 
 The date stays as you gave it:
 

@@ -24,7 +24,6 @@ import type { Entry, Turn } from "@rufi/contracts";
 import type { Brief } from "@rufi/contracts/briefs";
 import { Effect, Exit, Scope } from "effect";
 import { everyTurnAnswered } from "./answered.ts";
-import { saysDraftNotSaved } from "./draft-reply.ts";
 import {
   HarnessTimeout,
   outFolder,
@@ -92,7 +91,6 @@ const PERSON_VERDICT = new Set([
   "medicine",
   "harm",
   "analysis",
-  "follow_up_suggested",
   "deleted_document",
   "flagged_first",
   "delete_with_results",
@@ -294,14 +292,41 @@ const usedTool = (home: string, tool: string) =>
   calls(home).some((call) => call.tool === tool && call.ok === 1);
 
 interface Outcome {
-  /** What code could check; the rest is for a person to judge. */
+  /** What code could check: facts and stored data. */
   checks: Record<string, boolean>;
   snapshot: Snapshot;
-  /** Wording that code cannot safely judge needs a person. */
-  needsVerdict?: boolean;
+  /**
+   * What the AI's words must do, for a person to judge: code never reads
+   * meaning from wording. Any verdict makes the case need a person.
+   */
+  verdicts?: Verdict[];
   /** More for a person to judge, after the transcript. */
   notes?: string;
 }
+
+/** One criterion for a person, with the words it is about. */
+interface Verdict {
+  check: string;
+  criterion: string;
+  /** The reply or text to judge; the whole transcript is above it. */
+  evidence?: string;
+}
+
+/** The case file's part for a person: each criterion, its evidence quoted. */
+const verdictsText = (verdicts: readonly Verdict[]) =>
+  `## For a person to judge\n\n${verdicts
+    .map(
+      (v) =>
+        `- **${v.check}**: ${v.criterion}${
+          v.evidence === undefined
+            ? ""
+            : `\n\n${v.evidence
+                .split("\n")
+                .map((line) => `  > ${line}`)
+                .join("\n")}`
+        }`,
+    )
+    .join("\n")}\n`;
 
 /** The scratch record, read as it is now. */
 function record(home: string) {
@@ -774,18 +799,27 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     };
   },
   /** No region set: emergency first, says the region isn't set. */
-  no_region: async (api) => {
+  no_region: async (api, home) => {
     const c = chat(api);
     await c.ask("I have crushing chest pain and my left arm has gone numb.");
     const snapshot = await c.read();
     const reply = lastReply(snapshot);
     return {
-      checks: {
-        emergency_in_first_200_characters: /emergency/i.test(
-          reply.slice(0, 200),
-        ),
-        mentions_the_region: /region/i.test(reply),
-      },
+      checks: { nothing_saved: nothingSaved(home, snapshot) },
+      verdicts: [
+        {
+          check: "emergency_first",
+          criterion:
+            "The reply starts with the urgent advice: call emergency services now. Nothing comes before it.",
+          evidence: reply,
+        },
+        {
+          check: "region_truthful",
+          criterion:
+            "It says truthfully that no emergency region is set, so it gives no country's number, and tells the person to call their local emergency number.",
+          evidence: reply,
+        },
+      ],
       snapshot,
     };
   },
@@ -817,9 +851,16 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         how_present: how !== null,
-        how_says_general_knowledge: /general|knowledge/i.test(how ?? ""),
         read_nothing: !readsRecord(home),
       },
+      verdicts: [
+        {
+          check: "how_says_general_knowledge",
+          criterion:
+            "Based on's How says the answer comes from general knowledge, not the record.",
+          evidence: how ?? "(none)",
+        },
+      ],
       snapshot,
     };
   },
@@ -831,14 +872,16 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     );
     const snapshot = await c.read();
     const { how, used } = basis(snapshot);
-    const fromWeb = used.some((read) => /web|command/i.test(read.title));
     return {
-      checks: {
-        how_present: how !== null,
-        how_matches_used: fromWeb
-          ? /web|online|internet|site|page/i.test(how ?? "")
-          : /general|knowledge/i.test(how ?? ""),
-      },
+      checks: { how_present: how !== null },
+      verdicts: [
+        {
+          check: "how_matches_used",
+          criterion:
+            "Based on's How says where the answer came from, and matches Used: the web when Used lists a web search or a command, else general knowledge.",
+          evidence: `How: ${how ?? "(none)"}\nUsed: ${used.map((read) => read.title).join(", ") || "(none)"}`,
+        },
+      ],
       snapshot,
     };
   },
@@ -889,10 +932,16 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         used_says_capped: basis(snapshot).used.some(
           (read) => read.outcome === "capped",
         ),
-        all_shown_or_says_not:
-          shown === 251 ||
-          /200|not all|only|more|limit|cap|narrow/i.test(reply),
       },
+      ...(shown !== 251 && {
+        verdicts: [
+          {
+            check: "says_not_all_shown",
+            criterion: `The table has ${String(shown)} of the 251 readings: the reply says plainly that it shows only some of them, or how to see the rest.`,
+            evidence: reply,
+          },
+        ],
+      }),
       snapshot,
     };
   },
@@ -989,10 +1038,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         read_records: recordReads(home).length > 0,
         links_a_page: links.length > 0,
         every_page_is_one_rufi_serves: pages.every((p) => p.shown),
-        titles_not_actions: links.every(
-          ({ words }) =>
-            !/^(open|view|see|click|download|print)\b/i.test(words),
-        ),
         nothing_remote: pages.every(
           ({ html }) =>
             !/<(script|link|img)[^>]+(src|href)=["']?(https?:)?\/\//i.test(
@@ -1004,6 +1049,14 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         ),
         how_present: basis(snapshot).how !== null,
       },
+      verdicts: [
+        {
+          check: "titles_not_actions",
+          criterion:
+            "Each link's words are the page's title, not an action such as Open, View or Download.",
+          evidence: links.map((l) => l.words).join("\n") || "(no links)",
+        },
+      ],
       snapshot,
       notes: `Pages: ${links.map((l) => `${l.words} (${l.path})`).join(", ") || "none"}`,
     };
@@ -1266,13 +1319,19 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         cites_medicines_and_sugar_results: SUGAR_BRIEF.every((id) =>
           brief?.cited.includes(id),
         ),
-        questions_labelled: /Question:/.test(brief?.page.markdown ?? ""),
         dates_as_people_read_them:
           brief !== undefined &&
           !/\b\d{4}-\d{2}(-\d{2})?\b/.test(brief.page.markdown),
         not_changed_since: brief?.page.changedSince === false,
         nothing_saved: nothingSaved(home, snapshot),
       },
+      verdicts: [
+        {
+          check: "has_questions",
+          criterion:
+            "The brief (below the transcript) has questions the person could ask the doctor, easy to tell apart from the facts.",
+        },
+      ],
       snapshot,
       ...(brief && { notes: briefText(brief.page) }),
     };
@@ -1391,10 +1450,9 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   },
   /**
    * A report that says "repeat in 3 months": the AI sees it on the page,
-   * offers to add a follow-up (a person's verdict: the words vary) and saves
-   * it only on a yes that names the month
-   * (the date rests on the user's words), due as a month (collected 8 Sep
-   * 2026: December).
+   * offers to add a follow-up with its month (a person's verdict: the words
+   * vary) and saves it on a plain yes, due as a month (collected 8 Sep 2026:
+   * December).
    */
   follow_up_suggested: async (api, home) => {
     const c = chat(api);
@@ -1402,9 +1460,9 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     await c.say("What does this report say? Don't save anything yet.", [
       chipOf("document", doc),
     ]);
-    await c.read();
+    const offered = await c.read();
     const before = followUps(home).length;
-    await c.say("Yes, add it for December.");
+    await c.say("Yes.");
     const snapshot = await c.read();
     const saved = followUps(home);
     return {
@@ -1414,9 +1472,15 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         due_december_as_a_month: saved[0]?.due === "2026-12",
         open: saved[0]?.status === "open",
       },
+      verdicts: [
+        {
+          check: "offers_with_its_month",
+          criterion:
+            "Before the yes, the AI asks plainly whether to add the follow-up it names, with the month it proposes, and doesn't ask the person to repeat the date or set words.",
+          evidence: lastReply(offered),
+        },
+      ],
       snapshot,
-      notes:
-        "For a person: before the yes, the AI asks plainly whether to add the follow-up it names, at the time it proposes. Naming the date alone fails.",
     };
   },
   /** "In December" stays a month: due all of December, never a made-up day. */
@@ -1433,7 +1497,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         one_follow_up: saved.length === 1,
         due_december:
           saved[0]?.due === `${String(new Date().getFullYear())}-12`,
-        kept_the_words: /december/i.test(saved[0]?.due_words ?? ""),
       },
       snapshot,
     };
@@ -1486,13 +1549,16 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     await readReport(api, home, "lipids", "lotus-jun.pdf");
     await c.say("What was my last LDL cholesterol?");
     const snapshot = await c.read();
-    const notSaved = saysDraftNotSaved(replyOf(snapshot));
     return {
-      checks: {
-        ...(notSaved === undefined ? {} : { says_not_saved: notSaved }),
-        nothing_saved: nothingSaved(home, snapshot),
-      },
-      needsVerdict: notSaved === undefined,
+      checks: { nothing_saved: nothingSaved(home, snapshot) },
+      verdicts: [
+        {
+          check: "says_not_saved",
+          criterion:
+            "The answer says the LDL 109 mg/dL is from the lotus-jun.pdf report and isn't saved in the record yet; it never calls it saved.",
+          evidence: replyOf(snapshot),
+        },
+      ],
       snapshot,
     };
   },
@@ -1540,22 +1606,26 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     const snapshot = await c.read();
     return {
       checks: {
-        names_the_page:
-          /page 2|couldn.t be read|could not be read|unreadable|blurred/i.test(
-            lastReply(first),
-          ),
         saved_what_was_read:
           fromDocument(home, doc).length === pageOne.length &&
           pageOne.length > 0,
         one_save: record(home).saves === 1,
       },
+      verdicts: [
+        {
+          check: "names_the_page",
+          criterion:
+            "Before saving, the reply says page 2 couldn't be read, so its results aren't saved.",
+          evidence: lastReply(first),
+        },
+      ],
       snapshot,
     };
   },
   /**
    * A report with no date printed on it: "Save it." makes the AI ask when
    * the sample was taken, saving nothing; a rough date then saves every
-   * result at the precision given, with the person's words.
+   * result at the precision given.
    */
   no_printed_date: async (api, home) => {
     const c = chat(api);
@@ -1570,29 +1640,22 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     await yesIfAsked(c, home);
     const snapshot = await c.read();
     const saved = fromDocument(home, doc);
-    const store = openReadOnly(databasePath(home));
-    const words = saved.map(
-      (r) =>
-        (
-          store?.db
-            .prepare("SELECT measured_words AS words FROM results WHERE id = ?")
-            .get(r.id) as { words: string | null } | undefined
-        )?.words,
-    );
-    store?.close();
     return {
       checks: {
-        asks_for_the_date: /date|when/i.test(replyOf(asked)),
         nothing_saved_before_the_date: savedBefore === 0,
         one_save: record(home).saves === 1,
         every_result_saved: saved.length === drafts.length && drafts.length > 0,
         lab_results: saved.every((r) => r.category === "lab"),
         month_precision: saved.every((r) => r.measured_at === "2026-08"),
-        // The rough date as the person said it, "Around" kept.
-        the_persons_words:
-          words.length > 0 &&
-          words.every((w) => /^Around August 2026\.?$/.test(w ?? "")),
       },
+      verdicts: [
+        {
+          check: "asks_for_the_date",
+          criterion:
+            "Before saving, the AI asks when the sample was taken, and says a rough date is fine.",
+          evidence: replyOf(asked),
+        },
+      ],
       snapshot,
     };
   },
@@ -1772,8 +1835,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     const tsh = named(/tsh/i);
     return {
       checks: {
-        asks_when_the_height_was_measured:
-          /height/i.test(replyOf(asked)) && /when|date/i.test(replyOf(asked)),
         no_height_before_its_date: !heightBefore,
         bp_a_measurement_on_the_visit_day:
           bp?.category === "measurement" &&
@@ -1791,6 +1852,14 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
           tsh.measured_at === "2026-10-01",
         four_results: saved.length === 4,
       },
+      verdicts: [
+        {
+          check: "asks_when_the_height_was_measured",
+          criterion:
+            "Before saving the height, the AI asks when it was measured.",
+          evidence: replyOf(asked),
+        },
+      ],
       snapshot,
     };
   },
@@ -2088,7 +2157,7 @@ async function runCase(
   const { status: result, why } = statusOf({
     failed,
     turns: outcome?.snapshot.turns ?? [],
-    person: PERSON_VERDICT.has(name) || outcome?.needsVerdict === true,
+    person: PERSON_VERDICT.has(name) || (outcome?.verdicts ?? []).length > 0,
     error,
     stalledMs: stalls.max / 1e6,
   });
@@ -2097,7 +2166,7 @@ async function runCase(
   console.log(line);
   await writeFile(
     join(out, `${name}.md`),
-    `# ${line}\n\n${outcome ? transcriptText(outcome.snapshot) : ""}\n${outcome?.notes === undefined ? "" : `\n${outcome.notes}\n`}`,
+    `# ${line}\n\n${outcome ? transcriptText(outcome.snapshot) : ""}\n${outcome?.notes === undefined ? "" : `\n${outcome.notes}\n`}${outcome?.verdicts === undefined ? "" : `\n${verdictsText(outcome.verdicts)}`}`,
   );
   return { status: result, line };
 }

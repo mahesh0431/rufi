@@ -152,7 +152,6 @@ async function ravisSave(store: Store, at: string): Promise<void> {
           {
             kind: "medicine_use",
             action: "add",
-            source: words,
             fields: { name: "Fish oil", status: "current" },
           },
         ],

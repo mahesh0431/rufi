@@ -261,7 +261,6 @@ const saveHeadache = {
       {
         kind: "symptom",
         action: "add",
-        source: "I have a headache",
         fields: { name: "Headache" },
       },
     ],
@@ -909,6 +908,31 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
+    "saves the first message after a restart with its own turn, never as a gap the history read found",
+    timeout,
+    async () => {
+      await startChat(name);
+      const c = await newChat();
+      await say(c, "first");
+      await ended(c.id);
+      await startChat(name); // Rufi restarts.
+      await say(await chatRow(c.id), "after restart");
+      await ended(c.id, 2);
+      expect(
+        store.db
+          .prepare(
+            "SELECT e.text, t.agent_turn_id IS NOT NULL AS in_turn FROM transcript_entries e LEFT JOIN turns t ON t.id = e.turn_id WHERE e.kind = 'message' ORDER BY e.seq",
+          )
+          .all()
+          .map((row) => ({ ...row })),
+      ).toEqual([
+        { text: "first", in_turn: 1 },
+        { text: "after restart", in_turn: 1 },
+      ]);
+    },
+  );
+
+  it(
     "fills a message a crash kept from the transcript, once, from the agent's own record",
     timeout,
     async () => {
@@ -1140,7 +1164,7 @@ describe("the chat, on the scripted Codex", () => {
         ok: boolean;
         result: { changes: { id: string }[] };
       };
-      expect(answer.ok).toBe(true);
+      expect(answer).toMatchObject({ ok: true });
       const receipt = (await transcript(c.id)).all
         .filter((e) => e.kind === "receipt")
         .at(-1);
@@ -1171,7 +1195,6 @@ describe("the chat, on the scripted Codex", () => {
             {
               kind: "result",
               action: "add",
-              source: "The lab corrected my glucose to 116",
               fields: {
                 test: "Glucose",
                 value: "116",
@@ -1206,19 +1229,17 @@ describe("the chat, on the scripted Codex", () => {
             kind: "result",
             action: "remove",
             id: added.id,
-            source: "Undo that amendment",
           },
         ],
       });
       expect(undone.version).not.toBe(added.version);
       await checkReport(undone.version, amendment.count + 1);
-      const restored = await save("Restore that amendment", {
+      const restored = await save("Put that amendment back", {
         changes: [
           {
             kind: "result",
             action: "restore",
             id: added.id,
-            source: "Restore that amendment",
           },
         ],
       });

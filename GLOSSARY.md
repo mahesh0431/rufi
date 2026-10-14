@@ -69,7 +69,7 @@ A result the lab issued again, replacing an earlier version; its value or any ot
 _Avoid_: corrected, updated, overwritten
 
 **Source**:
-Where a saved record came from: the user's own message in the chat, or a document and its page. A record can have several, such as a result the user told the AI and then added in a lab report; the same result from another copy is another source, not another result. Undo of another source takes only that source off. A date said in words ("last Monday") counts from when the source message was sent.
+Where a saved record came from: the user's own message in the chat, or a document and its page. A message source is the user's message itself, the one where they said yes or an earlier one the AI names by its place in the chat, never words the AI quotes. A record can have several, such as a result the user told the AI and then added in a lab report; the same result from another copy is another source, not another result. Undo of another source takes only that source off. A date keeps the words it came from ("last Monday"), which count from when the source message was sent.
 _Avoid_: origin, provenance, attachment
 
 ## Changes
@@ -87,8 +87,12 @@ Saving the reverse of an earlier save, by chat: the user says "undo that", the A
 _Avoid_: revert, rollback
 
 **Remove**:
-Taking a record out of the current record, by a save in the chat: it stays in the history, shows as removed, and "undo that" brings it back. A record is never deleted.
+Taking a record out of the current record, by a save in the chat: it stays in the history, shows as removed, and "undo that" or **put back** makes it current again. A record is never deleted.
 _Avoid_: delete (for a record), erase
+
+**Put back**:
+Making a removed record current again, by a save in the chat ("put it back", or "undo that" after a remove), with its values as they were. Its receipt line says "Put back".
+_Avoid_: restore (for a record: a restore puts back a backup), undelete
 
 **Delete**:
 Taking a document out of Rufi, on its page, not in the chat: its original, the pages Rufi drew from it, the reader's work, its readings and its draft items go. Its name and page numbers stay, so the history, sources and chips that point at it say "document deleted". It can't be undone. When saved records come from the document, the user chooses: **Delete file** keeps them, and **Delete file and results** opens the chat, where the AI goes through them and removes each one on the user's yes. The delete itself never changes the record. Rufi's backups keep the document until they age out.

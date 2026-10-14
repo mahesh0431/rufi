@@ -80,7 +80,6 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
                   kind: "medicine_use",
                   action: "change",
                   id: "med-a1",
-                  source: "I stopped Metformin",
                   fields: { status: "stopped" },
                 },
               ],

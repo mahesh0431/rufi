@@ -8,6 +8,7 @@ import { dismissItems, saveChanges } from "./save.ts";
 import { getRecords } from "./records.ts";
 import {
   inputSchema,
+  REJECTIONS_PER_TURN,
   Refusal,
   specOf,
   toolCaller,
@@ -47,14 +48,35 @@ const EVENT_TURN =
 const EVENT_TURN_RETRY =
   "This turn was started by a Rufi event, not by the user, so no reading can start in it. Ask the user; they can ask you to read it again in a message of their own.";
 
-/** The model's tools: their catalog for the MCP server, and a caller per turn. */
-export function forAgent(context: () => ToolContext, log: Log) {
+/**
+ * The model's tools: their catalog for the MCP server, and a caller per
+ * turn, which ends the turn after `rejections` refused calls.
+ */
+export function forAgent(
+  context: () => ToolContext,
+  log: Log,
+  rejections?: () => Promise<number>,
+) {
   const tools = TOOLS.filter((tool) => tool.callers !== "ui");
   return {
     server: SERVER,
     specs: tools.map(specOf),
-    forTurn: () => toolCaller(tools, context, log),
+    forTurn: () => toolCaller(tools, context, log, rejections),
   };
+}
+
+/**
+ * The setting for how many refused calls end a reply in Rufi's chat: a
+ * whole number above 0, else REJECTIONS_PER_TURN. A limit on loops, not a
+ * rule about health data; it isn't on the Settings screen.
+ */
+export const REJECTIONS_SETTING = "rejections_per_reply";
+
+async function rejectionsPerReply(
+  setting: (key: string) => Promise<string | undefined>,
+): Promise<number> {
+  const value = Number(await setting(REJECTIONS_SETTING));
+  return Number.isInteger(value) && value > 0 ? value : REJECTIONS_PER_TURN;
 }
 
 /** tools.json: every tool as documentation, generated (pnpm tools:json). */
@@ -93,18 +115,22 @@ export function chatCaller(
         save: (input, callId) =>
           origin === "rufi"
             ? Promise.reject(new Refusal(EVENT_TURN))
-            : transcripts.saveWithReceipt(chat, agentTurnId, (trx, at, refs) =>
-                saveToRecord(
-                  trx,
-                  {
-                    personId: chat.personId,
-                    chatId: chat.id,
-                    callId,
-                    now: at,
-                    refs,
-                  },
-                  input,
-                ),
+            : transcripts.saveWithReceipt(
+                chat,
+                agentTurnId,
+                (trx, at, refs, turnId) =>
+                  saveToRecord(
+                    trx,
+                    {
+                      personId: chat.personId,
+                      chatId: chat.id,
+                      turnId,
+                      callId,
+                      now: at,
+                      refs,
+                    },
+                    input,
+                  ),
               ),
         dismiss: (input, callId) =>
           origin === "rufi"
@@ -140,5 +166,6 @@ export function chatCaller(
               ),
       }),
       log,
+      () => rejectionsPerReply(transcripts.setting),
     ).forTurn();
 }

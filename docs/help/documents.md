@@ -96,7 +96,7 @@ Rufi checks each page the reader reads. A check never changes what the reader re
 
 1. Add the document to a message (**Ask Rufi** on its row on the Documents page, **Save in chat** on its page, or its chip from the paperclip), and say "save it". To save only some results, add them on the document's page (see [Add some results to the chat](#add-some-results-to-the-chat)) and say "save these".
 2. The AI reads all the document's draft items and the results you already saved for the same tests and dates. Then it says, in a few lines, how many results are new, which are lab results and which are measurements, and names each one that isn't plainly new. It asks you about:
-   - **another source**: the same result is already in your health record, for example because you told the AI, or you added another copy of the report. The saved result stays as it is, and this page becomes one more source of it.
+   - **another source**: the same result is already in your health record, for example because you told the AI, or you added another copy of the report. The saved result stays as it is, and this page becomes one more source of it. When you say a result is a duplicate, the AI asks in one question whether to add this page as another source or to set the result aside.
    - **a correction**: the lab amended a result you saved. The new result replaces the old one, and the old one stays in its history, marked as replaced.
    - a value marked **unsure**, a page that **couldn't be read**, or a date that isn't clear.
    - **another name** on the report. If the report isn't yours, the AI saves nothing from it. It never saves a report for someone else.

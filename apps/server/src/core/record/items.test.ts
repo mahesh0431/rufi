@@ -447,7 +447,6 @@ describe("saving draft items", () => {
           as: "new",
           category: "lab",
           fix: {
-            source: "The LDL is 132",
             fields: { value: "132", number: 132 },
           },
         },
@@ -490,7 +489,7 @@ describe("saving draft items", () => {
     });
     expect(refused.ok).toBe(false);
     expect(refused.issues[0]?.fix).toBe(
-      "This item has no date Rufi can store (\"Collected 03/04/2026\": the order of day and month isn't certain). Ask the user when the sample was taken; a rough date such as 'around August 2026' is fine. Give it in fix.fields.measured at the precision they gave, with their words; never make one up.",
+      "This item has no date Rufi can store (\"Collected 03/04/2026\": the order of day and month isn't certain). Ask the user when the sample was taken; a rough date such as 'around August 2026' is fine. Give it in fix.fields.measured at the precision they gave, with the words it came from; never make one up.",
     );
     const saved = await call("save_changes", {
       items: [
@@ -500,7 +499,6 @@ describe("saving draft items", () => {
           as: "new",
           category: "lab",
           fix: {
-            source: "it was taken on 3 April",
             fields: { measured: { date: "2026-04-03", words: "3 April" } },
           },
         },
@@ -513,6 +511,55 @@ describe("saving draft items", () => {
         saved.result.changes[0]?.id,
       ),
     ).toEqual({ measured_at: "2026-04-03", measured_words: "3 April" });
+  });
+
+  it("saves an item dated later than the save, or than the fix's message, and warns the AI", async () => {
+    const page = PAGES[1] as Entry;
+    await read({
+      1: {
+        ...page,
+        facts: {
+          ...page.facts,
+          dates: [
+            { label: "Collected", date: "12/11/2026", iso: "2026-11-12" },
+          ],
+        },
+      },
+    });
+    const { HbA1c = "", TSH = "" } = drafts();
+    const earlier = await say("The TSH was taken in December");
+    const position = (
+      one("SELECT seq FROM transcript_entries WHERE id = ?", earlier) as {
+        seq: number;
+      }
+    ).seq;
+    await say("Save both");
+    const saved = await call("save_changes", {
+      items: [
+        { item: HbA1c, version: 1, as: "new", category: "lab" },
+        {
+          item: TSH,
+          version: 1,
+          as: "new",
+          category: "lab",
+          fix: {
+            source: position,
+            fields: { measured: { date: "2026-12", words: "in December" } },
+          },
+        },
+      ],
+    });
+    expect(saved.ok).toBe(true);
+    expect((saved.result as { warnings?: string[] }).warnings).toEqual([
+      "result HbA1c 7.1 %: measured 12 Nov 2026 is later than the day it was saved (11 Oct 2026). It is saved as given; if it may be a slip, check with the user.",
+      "result TSH 2.1 mIU/L: measured Dec 2026 is later than the user's message it rests on (11 Oct 2026). It is saved as given; if it may be a slip, check with the user.",
+    ]);
+    expect(
+      rows(
+        "SELECT entry_id FROM record_sources WHERE type = 'message' AND record_id = ?",
+        saved.result.changes[1]?.id,
+      ),
+    ).toEqual([{ entry_id: earlier }]);
   });
 
   it("adds the page as another source of a result already saved, changing no value; undo takes off only that link", async () => {
@@ -587,7 +634,6 @@ describe("saving draft items", () => {
           kind: "result",
           action: "remove_source",
           id: "res-typed",
-          source: "Undo that",
           from: { document: "doc-asha-aug", page: 1 },
         },
       ],
@@ -709,7 +755,7 @@ describe("saving draft items", () => {
       {
         path: "items.1.item",
         got: expect.any(String) as unknown,
-        fix: "This measurement has no date Rufi can store (none is printed for it, and a report's collection date isn't when it was measured). Ask the user when it was measured; a rough date such as 'around August 2026' is fine. Give it in fix.fields.measured at the precision they gave, with their words; never make one up.",
+        fix: "This measurement has no date Rufi can store (none is printed for it, and a report's collection date isn't when it was measured). Ask the user when it was measured; a rough date such as 'around August 2026' is fine. Give it in fix.fields.measured at the precision they gave, with the words it came from; never make one up.",
       },
     ]);
     expect(written()).toEqual(before);
@@ -723,7 +769,6 @@ describe("saving draft items", () => {
           as: "new",
           category: "measurement",
           fix: {
-            source: "I was weighed on 4 Oct",
             fields: { measured: { date: "2026-10-04", words: "4 Oct" } },
           },
         },
@@ -913,7 +958,7 @@ describe("saving draft items", () => {
     const id = saved.result.changes[0]?.id ?? "";
     await say("Undo that");
     const undone = await call("save_changes", {
-      changes: [{ kind: "result", action: "remove", id, source: "Undo that" }],
+      changes: [{ kind: "result", action: "remove", id }],
     });
     expect(undone.ok).toBe(true);
     expect(one("SELECT removed FROM results WHERE id = ?", id)).toEqual({

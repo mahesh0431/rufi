@@ -52,7 +52,7 @@ const named = (fields: Record<string, Field>, names: readonly string[]) =>
  * (0.159.3), but keeps the description whole.
  */
 export const FIELDS = [
-  'Fields by kind, in changes[].fields (a date is {"date": "2026-09-28", "words": "last Monday"}: YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM in local time, at the precision the user gave, with their own words):',
+  'Fields by kind, in changes[].fields (a date is {"date": "2026-09-28", "words": "last Monday"}: YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM in local time, at the precision the user gave, with the words it came from):',
   ...KINDS.map(
     (kind) => `- ${kind.name}: ${named(kind.fields, Object.keys(kind.fields))}`,
   ),
@@ -62,9 +62,9 @@ export const FIELDS = [
 export const saveChanges = defineTool({
   name: "save_changes",
   description: `Saves to the active person's record, all or nothing, after the user clearly said yes to exactly this in this chat. Two parts, either or both:
-- changes: typed changes from the user's own words. Each is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history), restore a removed one, or remove_source (take a document page off a record's sources, to undo "another source": the page goes in from, as {document, page} from the record's sources in get_records); ids come from get_overview or get_records. Give only what the user said: a field they didn't give stays out, and a date needs their own words from the source message. A result's category (lab or measurement) is the one field you choose, with the user: every added result needs one, except an amended result, which keeps the category of the one it replaces unless you give one. A result read from a document changes in place only its category, in a change of its own; what it prints and its date change only by amendment. source is the user's own words the change rests on, copied from their message.
-- items: draft items of the user's documents (get_documents), each with the version you read and how it goes in: new, another_source (the same result is already saved: its values stay, and the document page becomes another source) or correction (it corrects a saved result: a new result replaces it); record names the saved result, with its version from get_records. category: lab or measurement, for new; a correction keeps the corrected result's unless you give one; never for another_source. Rufi takes each item's values from the stored item, never from you, and its date from the item or, for a lab result, its page; a measurement is dated only by its own date or the user's; fix holds only a value the user corrected in the chat, or the date they gave for an item with none (a rough one is fine, at their precision), with their words. An item already saved at that version returns its earlier save; a dismissed item, or one whose version changed, is refused, and nothing is saved.
-No count limit. Rufi refuses a save with any problem and says each one; nothing is saved then. On success Rufi adds its own receipt to the chat and returns it; the same call again returns the same receipt. Never say something was saved without this tool's answer.
+- changes: typed changes from the user's own words. Each is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history), restore a removed one, or remove_source (take a document page off a record's sources, to undo "another source": the page goes in from, as {document, page} from the record's sources in get_records); ids come from get_overview or get_records. Give only what the user said: a field they didn't give stays out, and a date comes with the words it came from. A result's category (lab or measurement) is the one field you choose, with the user: every added result needs one, except an amended result, which keeps the category of the one it replaces unless you give one. A result read from a document changes in place only its category, in a change of its own; what it prints and its date change only by amendment. source is the user's message the change rests on: leave it out for their message in this turn (where they said yes); for an earlier message of theirs, give its position as read_chat shows it.
+- items: draft items of the user's documents (get_documents), each with the version you read and how it goes in: new, another_source (the same result is already saved: its values stay, and the document page becomes another source) or correction (it corrects a saved result: a new result replaces it); record names the saved result, with its version from get_records. category: lab or measurement, for new; a correction keeps the corrected result's unless you give one; never for another_source. Rufi takes each item's values from the stored item, never from you, and its date from the item or, for a lab result, its page; a measurement is dated only by its own date or the user's; fix holds only a value the user corrected in the chat, or the date they gave for an item with none (a rough one is fine, at their precision), with the words it came from; its source is as a change's. An item already saved at that version returns its earlier save; a dismissed item, or one whose version changed, is refused, and nothing is saved.
+No count limit. Rufi refuses a save with any problem and says each one; nothing is saved then. On success Rufi adds its own receipt to the chat and returns it; the same call again returns the same receipt. warnings name a date that should have happened by then (an onset, a measurement, done care) but is later than the message it rests on: it is saved as given; if it may be a slip, check with the user. Never say something was saved without this tool's answer.
 ${FIELDS}`,
   input: SaveInput,
   callers: "model",
@@ -76,7 +76,6 @@ ${FIELDS}`,
         {
           kind: "medicine_use",
           action: "add",
-          source: "I started magnesium 200 mg at night last Monday",
           fields: {
             name: "Magnesium",
             strength: "200 mg",
@@ -93,13 +92,11 @@ ${FIELDS}`,
           kind: "medicine_use",
           action: "change",
           id: "0199a0f2-7c1e-7d3a-9b1e-3f5c2a1d4e6f",
-          source: "I stopped creatine because of a stomach upset",
           fields: { status: "stopped" },
         },
         {
           kind: "symptom",
           action: "add",
-          source: "I stopped creatine because of a stomach upset",
           fields: { name: "Stomach upset" },
         },
       ],
@@ -109,7 +106,6 @@ ${FIELDS}`,
         {
           kind: "result",
           action: "add",
-          source: "my HbA1c at the clinic was 6.8 on 3 Oct",
           fields: {
             test: "HbA1c",
             value: "6.8",
@@ -127,7 +123,7 @@ ${FIELDS}`,
           kind: "result",
           action: "change",
           id: "0199a0f2-0000-7000-8000-00000000000b",
-          source: "that's a measurement",
+          source: 41,
           fields: { category: "measurement" },
         },
       ],
@@ -138,7 +134,6 @@ ${FIELDS}`,
           kind: "result",
           action: "remove_source",
           id: "0199a0f2-0000-7000-8000-00000000000a",
-          source: "Undo that",
           from: { document: "0199a0f2-0000-7000-8000-0000000000d1", page: 2 },
         },
       ],
@@ -162,10 +157,7 @@ ${FIELDS}`,
           version: 2,
           as: "new",
           category: "lab",
-          fix: {
-            source: "the LDL is 132, not 142",
-            fields: { value: "132", number: 132 },
-          },
+          fix: { fields: { value: "132", number: 132 } },
         },
       ],
     },
@@ -185,6 +177,7 @@ ${FIELDS}`,
         ...(saved.receipt !== "" && { receipt }),
         changes: saved.changes,
         ...(saved.earlier.length > 0 && { already_saved: saved.earlier }),
+        ...(saved.warnings.length > 0 && { warnings: saved.warnings }),
         ...(!saved.fresh &&
           (saved.receipt === ""
             ? {

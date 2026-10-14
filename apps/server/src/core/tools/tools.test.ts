@@ -10,8 +10,10 @@ import {
   databasePath,
   onlyPersonId,
   openReadOnly,
+  openWritable,
   type Store,
 } from "../store/database.ts";
+import { transcripts, type ChatRow } from "../chat/transcript.ts";
 import { RESULTS_SHOWN } from "./overview.ts";
 import { FIELDS } from "./save.ts";
 import {
@@ -24,7 +26,13 @@ import {
   type ToolContext,
 } from "./registry.ts";
 import { LIMITS } from "./records.ts";
-import { forAgent, TOOLS, toolsJson } from "./tools.ts";
+import {
+  chatCaller,
+  forAgent,
+  REJECTIONS_SETTING,
+  TOOLS,
+  toolsJson,
+} from "./tools.ts";
 import type { Log } from "../../platform/logs.ts";
 
 const read = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
@@ -850,6 +858,34 @@ describe("the error envelope", () => {
     await tools.forTurn()("nope", {});
     const next = await tools.forTurn()("nope", {});
     expect(left(next.text)).toBe(REJECTIONS_PER_TURN - 1);
+  });
+
+  it("ends a reply in Rufi's chat after the refused calls its setting allows", async () => {
+    makeDatabase(family).close();
+    const chats = transcripts(openWritable(path), () => "2026-10-14T10:00:00Z");
+    const chat = (await chats.chat("asha")) as ChatRow;
+    /** Each refused call's rejections_left, until Rufi ends the reply. */
+    const refusals = async () => {
+      const caller = chatCaller(undefined, chats, record)(
+        chat,
+        "t-1",
+        "person",
+      );
+      const lefts: number[] = [];
+      for (;;) {
+        const answer = await caller("nope", {});
+        lefts.push(left(answer.text));
+        if (answer.stopTurn !== undefined) return lefts;
+      }
+    };
+    expect(await refusals()).toEqual([2, 1, 0]);
+    await chats.saveSetting(REJECTIONS_SETTING, "5");
+    expect(await refusals()).toEqual([4, 3, 2, 1, 0]);
+    // Not a whole number above 0: the default.
+    for (const wrong of ["0", "2.5", "lots"]) {
+      await chats.saveSetting(REJECTIONS_SETTING, wrong);
+      expect(await refusals()).toEqual([2, 1, 0]);
+    }
   });
 
   it("tells the model only that a tool failed, and logs only its name and error code", async () => {

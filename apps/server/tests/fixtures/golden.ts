@@ -94,18 +94,22 @@ async function ashasChat(home: string, store: Store, today: Date) {
   const tools = chatCaller(reader, chats, () => undefined);
   const thread = { id: "golden-thread", model: DEFAULT_ALLOWLIST[0] ?? "" };
 
-  /** One reply: her message, Rufi's tools as the AI called them, the answer. */
+  /**
+   * One reply: her message, Rufi's tools as the AI called them, the answer.
+   * Gives her message's position in the chat.
+   */
   const turn = async (
     at: Date,
     message: string,
     calls: { tool: string; input: unknown }[],
     reply: string,
-  ) => {
+  ): Promise<number> => {
     clock = at;
     const agentTurn = uuid();
+    const id = uuid();
     await chats.startTurn(chat, agentTurn, thread);
     await chats.addMessage(chat, {
-      id: uuid(),
+      id,
       kind: "message",
       text: message,
       agentTurnId: agentTurn,
@@ -148,6 +152,12 @@ async function ashasChat(home: string, store: Store, today: Date) {
     clock = new Date(clock.getTime() + 8_000);
     await chats.appendReply(chat, agentTurn, uuid(), reply);
     await chats.endTurn(chat, agentTurn, { status: "completed" });
+    const { seq } = await store.query
+      .selectFrom("transcript_entries")
+      .select("seq")
+      .where("id", "=", id)
+      .executeTakeFirstOrThrow();
+    return seq;
   };
 
   try {
@@ -171,10 +181,9 @@ From the record, read now: the results of the Sunrise Labs report collected on 1
 
     const said = daysBefore(today, 3, 20, 40);
     const started = daysBefore(today, 5, 0, 0);
-    const words = "I started magnesium 200 mg at night two days ago";
-    await turn(
+    const told = await turn(
       said,
-      words,
+      "I started magnesium 200 mg at night two days ago",
       [{ tool: "get_overview", input: {} }],
       `Shall I add this to your record?
 
@@ -199,7 +208,8 @@ From your message in this chat, and the record read now: magnesium isn't in it y
               {
                 kind: "medicine_use",
                 action: "add",
-                source: words,
+                // Her yes is this turn's; the medicine is in her message before.
+                source: told,
                 fields: {
                   name: "Magnesium",
                   strength: "200 mg",

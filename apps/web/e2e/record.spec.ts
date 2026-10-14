@@ -35,7 +35,6 @@ test("a save in one window refreshes Overview's tiles there and a kind's page in
                 kind: "result",
                 action: "remove",
                 id: "res-a3",
-                source: "Remove the CRP result",
               },
             ],
           },
@@ -104,7 +103,6 @@ test("a row's history shows a correction before and after, a time with its time"
                 kind: "result",
                 action: "change",
                 id: "res-bp",
-                source: "It was taken at 9:45, not 8:30",
                 fields: {
                   measured: { date: "2026-05-20T09:45", words: "at 9:45" },
                 },

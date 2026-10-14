@@ -1,7 +1,7 @@
 // A save in a process of its own, killed as a crash would kill it just
 // before or just after the save's commit. Usage:
 //   node save-process.ts <database> <chat id> before|after
-// The chat's person must have said "I have a headache".
+// The chat's person must have said "I have a headache" in its turn t-1.
 import { transcripts as openTranscripts } from "../src/core/chat/transcript.ts";
 import { openReadOnly, openWritable } from "../src/core/store/database.ts";
 import { chatCaller } from "../src/core/tools/tools.ts";
@@ -42,7 +42,6 @@ await chatCaller(openReadOnly(path), transcripts, () => undefined)(
       {
         kind: "symptom",
         action: "add",
-        source: "I have a headache",
         fields: { name: "Headache" },
       },
     ],

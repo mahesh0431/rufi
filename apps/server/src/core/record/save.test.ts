@@ -57,7 +57,12 @@ beforeEach(async () => {
 /** The user says it in the chat; returns the message's id. */
 async function say(text: string, to = chat): Promise<string> {
   const id = `msg-${String(++said)}`;
-  await transcripts.addMessage(to, { id, kind: "message", text });
+  await transcripts.addMessage(to, {
+    id,
+    kind: "message",
+    text,
+    agentTurnId: "t-1",
+  });
   return id;
 }
 
@@ -71,7 +76,12 @@ async function save(changes: unknown[], callId = "call-1", to = chat) {
   return {
     ok: answer.ok,
     body: JSON.parse(answer.text) as Record<string, unknown> & {
-      result: { receipt: string; changes: { kind: string; id: string }[] };
+      result: {
+        receipt: string;
+        changes: { kind: string; id: string }[];
+        warnings?: string[];
+        note?: string;
+      };
       issues: { path: string; fix: string }[];
     },
   };
@@ -428,7 +438,7 @@ describe("saving each kind of record", () => {
     async (c) => {
       const source = await say(c.said);
       const added = await save([
-        { kind: c.kind, action: "add", source: c.said, fields: c.add },
+        { kind: c.kind, action: "add", fields: c.add },
       ]);
       expect(added.body).toMatchObject({ ok: true });
       expect(lines(added.body.result.receipt)).toEqual(c.added);
@@ -461,7 +471,6 @@ describe("saving each kind of record", () => {
               kind: c.kind,
               action: "change",
               id,
-              source: c.change.said,
               fields: c.change.fields,
             },
           ],
@@ -481,7 +490,7 @@ describe("saving each kind of record", () => {
       }
 
       const gone = await save(
-        [{ kind: c.kind, action: "remove", id, source: c.said }],
+        [{ kind: c.kind, action: "remove", id }],
         `call-${String(calls + 1)}`,
       );
       expect(lines(gone.body.result.receipt)).toEqual(c.removed);
@@ -522,13 +531,11 @@ describe("a save", () => {
         kind: "medicine_use",
         action: "change",
         id: "med-a2",
-        source: said,
         fields: { status: "stopped" },
       },
       {
         kind: "symptom",
         action: "add",
-        source: "stomach upset",
         fields: { name: "Stomach upset" },
       },
     ]);
@@ -548,10 +555,9 @@ describe("a save", () => {
           kind: "medicine_use",
           action: "change",
           id: "med-a2",
-          source: "undo that",
           fields: { status: "current" },
         },
-        { kind: "symptom", action: "remove", id: symptom, source: "undo that" },
+        { kind: "symptom", action: "remove", id: symptom },
       ],
       "call-2",
     );
@@ -569,6 +575,21 @@ describe("a save", () => {
     expect(receipts()).toHaveLength(2);
   });
 
+  it("says a removed record was put back", async () => {
+    await say("Remove my creatine");
+    await save([{ kind: "medicine_use", action: "remove", id: "med-a2" }]);
+    await say("Put it back");
+    const back = await save(
+      [{ kind: "medicine_use", action: "restore", id: "med-a2" }],
+      "call-2",
+    );
+    expect(lines(back.body.result.receipt)).toEqual([
+      "Saved",
+      "Put back medicine use Creatine 5 g",
+    ]);
+    expect(row("medicine_uses", "med-a2")["removed"]).toBe(0);
+  });
+
   it("shows every changed field and link on the receipt, compared on what was stored", async () => {
     const prefix =
       "Headache after meals, mild pain, lasts about an hour, no nausea, no vision changes;";
@@ -578,7 +599,6 @@ describe("a save", () => {
       {
         kind: "symptom",
         action: "add",
-        source: "headaches",
         fields: {
           name: "Headache",
           details: `${prefix} frequency once a week`,
@@ -587,19 +607,16 @@ describe("a save", () => {
       {
         kind: "symptom",
         action: "add",
-        source: "toothaches",
         fields: { name: "Toothache" },
       },
       {
         kind: "symptom",
         action: "add",
-        source: "sore back",
         fields: { name: "Back pain" },
       },
       {
         kind: "symptom",
         action: "add",
-        source: "sore back",
         fields: { name: "Back pain" },
       },
     ]);
@@ -611,7 +628,6 @@ describe("a save", () => {
         {
           kind: "follow_up",
           action: "add",
-          source: "Ask the doctor about my pain",
           fields: {
             title: "Discuss pain",
             about: { kind: "symptom", id: headache },
@@ -630,14 +646,12 @@ describe("a save", () => {
           kind: "symptom",
           action: "change",
           id: headache,
-          source: "every day now",
           fields: { details: `${prefix} frequency every day` },
         },
         {
           kind: "follow_up",
           action: "change",
           id,
-          source: "about my teeth",
           fields: { about: { kind: "symptom", id: toothache } },
         },
       ],
@@ -656,7 +670,6 @@ describe("a save", () => {
           kind: "follow_up",
           action: "change",
           id,
-          source: "about my back",
           fields: { about: { kind: "symptom", id: back } },
         },
       ],
@@ -668,7 +681,6 @@ describe("a save", () => {
           kind: "follow_up",
           action: "change",
           id,
-          source: "about my back",
           fields: { about: { kind: "symptom", id: otherBack } },
         },
       ],
@@ -692,7 +704,6 @@ describe("a save", () => {
           kind: "symptom",
           action: "change",
           id: back,
-          source: "report link",
           fields: { details: report(1) },
         },
       ],
@@ -704,7 +715,6 @@ describe("a save", () => {
           kind: "symptom",
           action: "change",
           id: back,
-          source: "version 2",
           fields: { details: report(2) },
         },
       ],
@@ -724,7 +734,6 @@ describe("a save", () => {
       {
         kind: "medicine_use",
         action: "add",
-        source: "since 2019",
         fields: {
           name: "**Fish oil**",
           schedule: "[daily](https://fictional.example) <b>with food</b>\nnow",
@@ -743,14 +752,12 @@ describe("a save", () => {
       {
         kind: "medicine_use",
         action: "add",
-        source: "I started magnesium",
         fields: { name: "Magnesium" },
       },
       {
         kind: "medicine_use",
         action: "change",
         id: "med-a2",
-        source: "stopped creatine",
         fields: {
           status: "stopped",
           ended: { date: "2026-02-30", words: "on 30 Feb" },
@@ -771,7 +778,7 @@ describe("a save", () => {
   it.each([
     {
       name: "a kind Rufi doesn't keep",
-      change: { kind: "diet", action: "add", source: "x", fields: {} },
+      change: { kind: "diet", action: "add", fields: {} },
       path: "changes.0",
     },
     {
@@ -779,7 +786,6 @@ describe("a save", () => {
       change: {
         kind: "symptom",
         action: "add",
-        source: "headache",
         fields: { name: "Headache", colour: "red" },
       },
       path: "changes.0.fields.colour",
@@ -789,7 +795,6 @@ describe("a save", () => {
       change: {
         kind: "symptom",
         action: "add",
-        source: "headache",
         fields: {},
       },
       path: "changes.0.fields.name",
@@ -799,7 +804,6 @@ describe("a save", () => {
       change: {
         kind: "symptom",
         action: "change",
-        source: "headache",
         fields: { status: "resolved" },
       },
       path: "changes.0.id",
@@ -810,7 +814,6 @@ describe("a save", () => {
         kind: "medicine_use",
         action: "change",
         id: "med-a1",
-        source: "headache",
         fields: { status: null },
       },
       path: "changes.0.fields.status",
@@ -821,7 +824,6 @@ describe("a save", () => {
         kind: "medicine_use",
         action: "change",
         id: "med-a1",
-        source: "headache",
         fields: { status: "finished" },
       },
       path: "changes.0.fields.status",
@@ -840,7 +842,6 @@ describe("a save", () => {
     const change = {
       kind: "symptom",
       action: "add",
-      source: "I have a headache",
       fields: { name: "Headache" },
     };
     const first = await save([change], "call-7");
@@ -861,32 +862,17 @@ describe("a save", () => {
     expect(rows("SELECT * FROM symptoms")).toHaveLength(1);
   });
 
-  it("refuses another person's record, and words the user didn't say in this chat", async () => {
-    await say("Stop my atorvastatin");
-    const ravis = await transcripts.chat("ravi");
-    if (!ravis) throw new Error("no chat");
-    await say("I have a toothache", ravis);
+  it("refuses another person's record, and nothing is saved", async () => {
+    await say("Stop my atorvastatin, and I have a toothache");
     const before = written();
     const refused = await save([
       {
         kind: "medicine_use",
         action: "change",
         id: "med-r1",
-        source: "Stop my atorvastatin",
         fields: { status: "stopped" },
       },
-      {
-        kind: "symptom",
-        action: "add",
-        source: "I have a toothache",
-        fields: { name: "Toothache" },
-      },
-      {
-        kind: "symptom",
-        action: "add",
-        source: "the AI's own idea",
-        fields: { name: "Fatigue" },
-      },
+      { kind: "symptom", action: "add", fields: { name: "Toothache" } },
     ]);
     expect(refused.body.issues).toEqual([
       {
@@ -894,11 +880,6 @@ describe("a save", () => {
         got: '"med-r1"',
         fix: "No medicine use with this id is in this person's record.",
       },
-      ...[1, 2].map((i) => ({
-        path: `changes.${String(i)}.source`,
-        got: expect.any(String) as string,
-        fix: "No message of the user's in this chat has these words. Copy the user's own words exactly from the message this change rests on.",
-      })),
     ]);
     expect(row("medicine_uses", "med-r1")["status"]).toBe("current");
     expect(written()).toEqual(before);
@@ -915,7 +896,6 @@ describe("a save", () => {
           {
             kind: "symptom",
             action: "add",
-            source: "x",
             fields: { name: "X" },
           },
         ],
@@ -937,7 +917,6 @@ describe("the health rules", () => {
       {
         kind: "prescription",
         action: "add",
-        source: "Dr Rao prescribed amoxicillin",
         fields: { item: "Amoxicillin", prescriber: "Dr Rao" },
       },
     ]);
@@ -951,7 +930,6 @@ describe("the health rules", () => {
       {
         kind: "medicine_use",
         action: "add",
-        source: "metformin 500 mg at night",
         fields: {
           name: "Metformin",
           strength: "500 mg",
@@ -968,7 +946,6 @@ describe("the health rules", () => {
           kind: "medicine_use",
           action: "change",
           id,
-          source: "stopped the night metformin",
           fields: { status: "stopped" },
         },
       ],
@@ -984,7 +961,6 @@ describe("the health rules", () => {
       {
         kind: "none_known",
         action: "add",
-        source: "no allergies",
         fields: { category: "allergies" },
       },
     ]);
@@ -993,7 +969,6 @@ describe("the health rules", () => {
     const allergy = {
       kind: "allergy",
       action: "add",
-      source: "allergic to penicillin",
       fields: { substance: "Penicillin" },
     };
     const refused = await save([allergy], "call-2");
@@ -1012,7 +987,6 @@ describe("the health rules", () => {
           kind: "none_known",
           action: "remove",
           id: statementId,
-          source: "allergic to penicillin",
         },
       ],
       "call-3",
@@ -1032,7 +1006,6 @@ describe("the health rules", () => {
         {
           kind: "symptom",
           action: "add",
-          source: "I have a headache",
           fields: { name: "Headache" },
         },
       ],
@@ -1048,7 +1021,6 @@ describe("the health rules", () => {
           kind: "none_known",
           action: "restore",
           id: statementId,
-          source: "I have no allergies",
         },
       ],
       "call-4",
@@ -1064,7 +1036,6 @@ describe("the health rules", () => {
         kind: "result",
         action: "change",
         id: "res-a1",
-        source: "corrected my HbA1c",
         fields: { value: "6.6" },
       },
     ]);
@@ -1076,7 +1047,6 @@ describe("the health rules", () => {
         {
           kind: "result",
           action: "add",
-          source: "corrected my HbA1c to 6.6",
           fields: {
             test: "HbA1c",
             value: "6.6",
@@ -1115,7 +1085,6 @@ describe("the health rules", () => {
           kind: "result",
           action: "remove",
           id: amendment,
-          source: "Undo that",
         },
       ],
       "call-3",
@@ -1150,7 +1119,6 @@ describe("the health rules", () => {
         {
           kind: "result",
           action: "add",
-          source: "it is 6.5",
           fields: {
             test: "HbA1c",
             value: "6.5",
@@ -1169,7 +1137,6 @@ describe("the health rules", () => {
           kind: "result",
           action: "restore",
           id: amendment,
-          source: "Undo that",
         },
       ],
       "call-5",
@@ -1187,7 +1154,6 @@ describe("the health rules", () => {
       {
         kind: "result",
         action: "add",
-        source: "My clinic HbA1c was 6.9 on 3 Oct",
         fields: { test: "HbA1c", value: "6.9" },
       },
     ]);
@@ -1200,19 +1166,16 @@ describe("the health rules", () => {
         {
           kind: "result",
           action: "add",
-          source: "the lab amended my HbA1c to 6.6",
           fields: { test: "HbA1c", value: "6.6", replaces: "res-a1" },
         },
         {
           kind: "result",
           action: "add",
-          source: "that weight was 61 kg",
           fields: { test: "Weight", value: "61", replaces: "res-a10" },
         },
         {
           kind: "result",
           action: "add",
-          source: "My clinic HbA1c was 6.9 on 3 Oct",
           fields: {
             test: "Glucose",
             value: "6.9",
@@ -1238,7 +1201,6 @@ describe("the health rules", () => {
         kind: "result",
         action: "change",
         id: "res-a1",
-        source: "That HbA1c is a measurement",
         fields: { category: "measurement" },
       },
     ]);
@@ -1260,7 +1222,6 @@ describe("the health rules", () => {
           kind: "result",
           action: "change",
           id: "res-a1",
-          source: "Move it back and make it 6.6",
           fields: { category: "lab", value: "6.6" },
         },
       ],
@@ -1278,7 +1239,6 @@ describe("the health rules", () => {
           kind: "result",
           action: "change",
           id: "res-a1",
-          source: "Undo that",
           fields: { category: "lab" },
         },
       ],
@@ -1300,14 +1260,12 @@ describe("the health rules", () => {
     const add = (value: string) => ({
       kind: "result",
       action: "add",
-      source,
       fields: { test: "HbA1c", value, unit: "%", replaces: "res-a1" },
     });
     const change = (action: string, id: string) => ({
       kind: "result",
       action,
       id,
-      source,
     });
     let first: string;
     let second: string;
@@ -1384,13 +1342,12 @@ describe("the health rules", () => {
     );
   });
 
-  it("keeps planned care apart from done care: done care has happened by the time the user says so", async () => {
+  it("keeps planned care apart from done care: a done visit later than the message is saved, with a warning", async () => {
     await say("I have a dentist visit on 20 Oct");
     const planned = await save([
       {
         kind: "care_event",
         action: "add",
-        source: "dentist visit on 20 Oct",
         fields: {
           type: "visit",
           name: "Dentist",
@@ -1399,7 +1356,7 @@ describe("the health rules", () => {
         },
       },
     ]);
-    expect(planned.ok).toBe(true);
+    expect(planned.body.result).not.toHaveProperty("warnings");
     const id = planned.body.result.changes[0]?.id ?? "";
     await say("I went to the dentist");
     const done = await save(
@@ -1408,20 +1365,15 @@ describe("the health rules", () => {
           kind: "care_event",
           action: "change",
           id,
-          source: "I went to the dentist",
           fields: { status: "done" },
         },
       ],
       "call-2",
     );
-    expect(done.body.issues).toEqual([
-      {
-        path: "changes.0.fields.date.date",
-        got: '"2026-10-20"',
-        fix: "20 Oct 2026 is after the user said it (4 Oct 2026 10:00). Count relative dates from when the message was sent.",
-      },
+    expect(done.body.result.warnings).toEqual([
+      "care event Dentist: date 20 Oct 2026 is later than the user's message it rests on (4 Oct 2026). It is saved as given; if it may be a slip, check with the user.",
     ]);
-    expect(row("care_events", id)["status"]).toBe("planned");
+    expect(row("care_events", id)["status"]).toBe("done");
   });
 });
 
@@ -1432,7 +1384,6 @@ describe("dates", () => {
       {
         kind: "condition",
         action: "add",
-        source: "asthma since 2019",
         fields: {
           name: "Asthma",
           recognised: { date: "2019", words: "since 2019" },
@@ -1446,59 +1397,217 @@ describe("dates", () => {
     ]);
   });
 
-  it("refuses a date whose words aren't in the source message, or that is later than it was said", async () => {
-    await say("I started magnesium");
-    // Said on Sunday 4 Oct at 10:00 in India; read days later.
-    clock = "2026-10-12T04:30:00.000Z";
-    await say("yes");
-    const refused = await save([
+  it("keeps a date's words as given, in any language, also when the message doesn't have them", async () => {
+    await say("हाँ, सेव करो");
+    const saved = await save([
+      {
+        kind: "follow_up",
+        action: "add",
+        fields: {
+          title: "Recheck haemoglobin",
+          due: { date: "2026-12", words: "दिसंबर" },
+        },
+      },
       {
         kind: "medicine_use",
         action: "add",
-        source: "I started magnesium",
         fields: {
           name: "Magnesium",
           started: { date: "2026-09-28", words: "last Monday" },
         },
       },
+    ]);
+    expect(saved.ok).toBe(true);
+    // A follow-up is due later: that is no warning.
+    expect(saved.body.result).not.toHaveProperty("warnings");
+    const [due, started] = saved.body.result.changes.map((c) => c.id);
+    expect([
+      row("follow_ups", due ?? "")["due_words"],
+      row("medicine_uses", started ?? "")["started_words"],
+    ]).toEqual(["दिसंबर", "last Monday"]);
+  });
+
+  it("saves a date that should have happened but is later than the message, and warns the AI the same way when the call comes again", async () => {
+    // Said on Sunday 4 Oct at 10:00 in India; saved days later.
+    await say("My cramps start in January, and I was weighed at 10:31");
+    clock = "2026-10-12T04:30:00.000Z";
+    const changes = [
       {
         kind: "symptom",
         action: "add",
-        source: "I started magnesium",
+        fields: { name: "Cramp", onset: { date: "2027-01", words: "January" } },
+      },
+      {
+        kind: "result",
+        action: "add",
+        fields: {
+          test: "Weight",
+          value: "61",
+          unit: "kg",
+          category: "measurement",
+          measured: { date: "2026-10-04T10:31", words: "at 10:31" },
+        },
+      },
+    ];
+    const warned = [
+      "symptom Cramp: onset Jan 2027 is later than the user's message it rests on (4 Oct 2026). It is saved as given; if it may be a slip, check with the user.",
+      "result Weight 61 kg: measured 4 Oct 2026 10:31 is later than the user's message it rests on (4 Oct 2026). It is saved as given; if it may be a slip, check with the user.",
+    ];
+    const saved = await save(changes);
+    expect(saved.body.result.warnings).toEqual(warned);
+    expect(
+      rows("SELECT name, onset FROM symptoms WHERE name = 'Cramp'"),
+    ).toEqual([{ name: "Cramp", onset: "2027-01" }]);
+    clock = "2027-03-01T04:30:00.000Z";
+    const again = await save(changes);
+    expect(again.body.result.warnings).toEqual(warned);
+    expect(again.body.result.note).toBe("This call was already saved.");
+  });
+
+  it("gives no warning for the minute the message was sent, in the Mac's time zone, nor for a date the change didn't set", async () => {
+    await say("I had a cramp just now");
+    const cramp = await save([
+      {
+        kind: "symptom",
+        action: "add",
         fields: {
           name: "Cramp",
-          onset: { date: "2026-10-04T10:31", words: "magnesium" },
+          onset: { date: "2026-10-04T10:00", words: "just now" },
         },
       },
     ]);
-    expect(refused.body.issues).toEqual([
-      {
-        path: "changes.0.fields.started.words",
-        got: '"last Monday"',
-        fix: "These words aren't in the source message. Give the user's own words for the date from the message you quote in source, or leave the date out if they didn't say one.",
-      },
-      {
-        path: "changes.1.fields.onset.date",
-        got: '"2026-10-04T10:31"',
-        fix: "4 Oct 2026 10:31 is after the user said it (4 Oct 2026 10:00). Count relative dates from when the message was sent.",
-      },
-    ]);
-    // The minute it was said, in the Mac's time zone, is not later.
-    const same = await save(
+    expect(cramp.body.result).not.toHaveProperty("warnings");
+    await say("The cramps start in January");
+    const later = await save(
       [
         {
           kind: "symptom",
-          action: "add",
-          source: "I started magnesium",
-          fields: {
-            name: "Cramp",
-            onset: { date: "2026-10-04T10:00", words: "magnesium" },
-          },
+          action: "change",
+          id: cramp.body.result.changes[0]?.id,
+          fields: { onset: { date: "2027-01", words: "in January" } },
         },
       ],
       "call-2",
     );
-    expect(same.ok).toBe(true);
+    expect(later.body.result.warnings).toHaveLength(1);
+    await say("It is severe");
+    const severe = await save(
+      [
+        {
+          kind: "symptom",
+          action: "change",
+          id: cramp.body.result.changes[0]?.id,
+          fields: { severity: "severe" },
+        },
+      ],
+      "call-3",
+    );
+    expect(severe.ok).toBe(true);
+    expect(severe.body.result).not.toHaveProperty("warnings");
+  });
+});
+
+describe("where a change comes from", () => {
+  const seqOf = (id: string) =>
+    (
+      store.db
+        .prepare("SELECT seq FROM transcript_entries WHERE id = ?")
+        .get(id) as { seq: number }
+    ).seq;
+  const headache = (source?: number) => ({
+    kind: "symptom",
+    action: "add",
+    ...(source !== undefined && { source }),
+    fields: { name: "Headache" },
+  });
+
+  it("is the user's newest message or steer in this turn when no position is given, never an earlier turn's", async () => {
+    await transcripts.addMessage(chat, {
+      id: "before",
+      kind: "message",
+      text: "I have a headache",
+    });
+    await say("Can you add it?");
+    await transcripts.addMessage(chat, {
+      id: "steer",
+      kind: "steer",
+      text: "ok, do it",
+      agentTurnId: "t-1",
+    });
+    const saved = await save([headache()]);
+    expect(sourcesOf(saved.body.result.changes[0]?.id ?? "")).toEqual([
+      { type: "message", entry_id: "steer" },
+    ]);
+    expect(rows("SELECT source_entry_id FROM record_changes")).toEqual([
+      { source_entry_id: "steer" },
+    ]);
+  });
+
+  it("is an earlier message of the user's, by its position in this chat", async () => {
+    const earlier = await say("I have a headache since this morning");
+    await transcripts.appendReply(chat, "t-1", "r-1", "Shall I add it?");
+    await say("Yes");
+    const saved = await save([headache(seqOf(earlier))]);
+    expect(sourcesOf(saved.body.result.changes[0]?.id ?? "")).toEqual([
+      { type: "message", entry_id: earlier },
+    ]);
+  });
+
+  it("refuses a position that isn't one of the user's messages in this chat, and saves nothing", async () => {
+    await say("I have a headache");
+    await transcripts.appendReply(chat, "t-1", "r-1", "Shall I add it?");
+    const reply = seqOf(
+      (
+        store.db
+          .prepare("SELECT id FROM transcript_entries WHERE kind = 'reply'")
+          .get() as { id: string }
+      ).id,
+    );
+    // Ravi's chat has entries beyond this chat's last position.
+    const ravis = (await transcripts.chat("ravi")) as ChatRow;
+    for (let i = 0; i < reply + 2; i++) await say(`Ravi ${String(i)}`, ravis);
+    const before = written();
+    const refused = await save([headache(reply), headache(reply + 2)]);
+    expect(refused.body.issues).toEqual([
+      {
+        path: "changes.0.source",
+        got: String(reply),
+        fix: `Position ${String(reply)} is your reply, not a message of the user's. Give the position of their message as read_chat shows it, or leave source out for their message in this turn.`,
+      },
+      {
+        path: "changes.1.source",
+        got: String(reply + 2),
+        fix: `Nothing in this chat is at position ${String(reply + 2)}. Give the position of the user's message as read_chat shows it, or leave source out for their message in this turn.`,
+      },
+    ]);
+    expect(written()).toEqual(before);
+  });
+
+  it("resolves a position only within this chat, when another chat has a message there too", async () => {
+    const ravis = (await transcripts.chat("ravi")) as ChatRow;
+    await say("Ravi's headache", ravis);
+    const mine = await say("I have a headache");
+    expect(seqOf(mine)).toBe(1);
+    const saved = await save([headache(1)]);
+    expect(sourcesOf(saved.body.result.changes[0]?.id ?? "")).toEqual([
+      { type: "message", entry_id: mine },
+    ]);
+  });
+
+  it("is refused with a fix when this turn has no message of the user's and no position is given", async () => {
+    await transcripts.addMessage(chat, {
+      id: "before",
+      kind: "message",
+      text: "I have a headache",
+    });
+    const refused = await save([headache()]);
+    expect(refused.body.issues).toEqual([
+      {
+        path: "changes.0.source",
+        got: "nothing",
+        fix: "This turn has no message of the user's. Give source: the position of the user's message this rests on, as read_chat shows it.",
+      },
+    ]);
   });
 });
 
@@ -1510,7 +1619,6 @@ describe("the AI's view of the record", () => {
         kind: "medicine_use",
         action: "change",
         id: "med-a2",
-        source: "I stopped creatine",
         fields: { status: "stopped" },
       },
     ]);
