@@ -4,10 +4,16 @@
 // dense small-print table). All names, labs and values are made up.
 import type { Text } from "./pdf.ts";
 
+type Comparator = "<" | "<=" | ">" | ">=";
+
 interface Row {
   test: string;
   /** The value as printed: "<5", "4,6", "Negative". */
   value: string;
+  /** The value as a number ("4,6" is 4.6, "<5" is 5), or null when it isn't one. */
+  number: number | null;
+  /** The comparator printed before the value, if any. */
+  comparator?: Comparator;
   unit: string;
   range: string;
   flag?: string;
@@ -42,6 +48,9 @@ export interface Expected {
   page: number;
   test: string;
   value: string;
+  /** Its value_number, or null when it must have none. */
+  number: number | null;
+  comparator?: Comparator;
   /**
    * The item's own date as it must be read: YYYY-MM-DD, or null when it
    * must have none. Left out when the pack doesn't score it.
@@ -419,6 +428,7 @@ const URINE: Row[] = [
   {
     test: "Colour",
     value: "Pale Yellow",
+    number: null,
     unit: "",
     range: "Pale Yellow",
     section: "Physical",
@@ -426,6 +436,7 @@ const URINE: Row[] = [
   {
     test: "Appearance",
     value: "Clear",
+    number: null,
     unit: "",
     range: "Clear",
     section: "Physical",
@@ -433,14 +444,23 @@ const URINE: Row[] = [
   {
     test: "Specific Gravity",
     value: "1.015",
+    number: 1.015,
     unit: "",
     range: "1.005-1.030",
     section: "Physical",
   },
-  { test: "pH", value: "6.0", unit: "", range: "4.6-8.0", section: "Chemical" },
+  {
+    test: "pH",
+    value: "6.0",
+    number: 6,
+    unit: "",
+    range: "4.6-8.0",
+    section: "Chemical",
+  },
   {
     test: "Protein",
     value: "Trace",
+    number: null,
     unit: "",
     range: "Negative",
     flag: "A",
@@ -449,6 +469,7 @@ const URINE: Row[] = [
   {
     test: "Glucose",
     value: "Negative",
+    number: null,
     unit: "",
     range: "Negative",
     section: "Chemical",
@@ -456,6 +477,7 @@ const URINE: Row[] = [
   {
     test: "Ketones",
     value: "Negative",
+    number: null,
     unit: "",
     range: "Negative",
     section: "Chemical",
@@ -463,6 +485,7 @@ const URINE: Row[] = [
   {
     test: "Bilirubin",
     value: "Negative",
+    number: null,
     unit: "",
     range: "Negative",
     section: "Chemical",
@@ -470,6 +493,7 @@ const URINE: Row[] = [
   {
     test: "Urobilinogen",
     value: "Normal",
+    number: null,
     unit: "",
     range: "Normal",
     section: "Chemical",
@@ -477,6 +501,7 @@ const URINE: Row[] = [
   {
     test: "Nitrite",
     value: "Negative",
+    number: null,
     unit: "",
     range: "Negative",
     section: "Chemical",
@@ -484,6 +509,7 @@ const URINE: Row[] = [
   {
     test: "Pus Cells",
     value: "2-4",
+    number: null,
     unit: "/hpf",
     range: "0-5",
     section: "Microscopy",
@@ -491,6 +517,7 @@ const URINE: Row[] = [
   {
     test: "Epithelial Cells",
     value: "1-2",
+    number: null,
     unit: "/hpf",
     range: "0-5",
     section: "Microscopy",
@@ -498,6 +525,7 @@ const URINE: Row[] = [
   {
     test: "RBCs",
     value: "Nil",
+    number: null,
     unit: "/hpf",
     range: "Nil",
     section: "Microscopy",
@@ -505,6 +533,7 @@ const URINE: Row[] = [
   {
     test: "Casts",
     value: "Absent",
+    number: null,
     unit: "",
     range: "Absent",
     section: "Microscopy",
@@ -512,6 +541,7 @@ const URINE: Row[] = [
   {
     test: "Crystals",
     value: "Absent",
+    number: null,
     unit: "",
     range: "Absent",
     section: "Microscopy",
@@ -519,6 +549,7 @@ const URINE: Row[] = [
   {
     test: "Bacteria",
     value: "Absent",
+    number: null,
     unit: "",
     range: "Absent",
     section: "Microscopy",
@@ -546,7 +577,8 @@ function rowsOf(
           : kind.low + span * random();
     const fix = (v: number) => Math.max(0, v).toFixed(kind.decimals);
     let value = fix(n);
-    if (kind.test === "CRP" && n < 5) value = "<5";
+    const below = kind.test === "CRP" && n < 5;
+    if (below) value = "<5";
     if (options.comma) value = value.replace(".", ",");
     const flag = value.startsWith("<")
       ? undefined
@@ -565,6 +597,8 @@ function rowsOf(
       test:
         round === 0 ? kind.test : `${kind.test} (sample ${String(round + 1)})`,
       value,
+      number: below ? 5 : Number(fix(n)),
+      ...(below && { comparator: "<" as const }),
       unit: kind.unit,
       range: options.comma ? range.replace(/\./g, ",") : range,
       ...(flag !== undefined && { flag }),
@@ -669,10 +703,18 @@ export const REPORTS: Record<string, Report> = {
     number: "SD-260908-0217",
     layout: "table",
     rows: [
-      { test: "HbA1c", value: "7.2", unit: "%", range: "4.0 - 5.6", flag: "H" },
+      {
+        test: "HbA1c",
+        value: "7.2",
+        number: 7.2,
+        unit: "%",
+        range: "4.0 - 5.6",
+        flag: "H",
+      },
       {
         test: "Glucose, Fasting",
         value: "126",
+        number: 126,
         unit: "mg/dL",
         range: "70 - 99",
         flag: "H",
@@ -701,6 +743,18 @@ export const REPORTS: Record<string, Report> = {
     number: "LPL/2026/80033",
     layout: "table",
     rows: rowsOf(8, 10, { start: 23 }),
+    rowsPerPage: 40,
+  },
+  // Asha's own report, her name printed another way.
+  name_variant: {
+    lab: "Lotus Path Labs",
+    patient: "ASHA F",
+    collected: "18 Sep 2026",
+    collectedIso: "2026-09-18",
+    reported: "18 Sep 2026",
+    number: "LPL/2026/81207",
+    layout: "table",
+    rows: rowsOf(8, 14, { start: 23 }),
     rowsPerPage: 40,
   },
   five_pages: {
@@ -792,7 +846,13 @@ export function expected(reports: readonly Report[]): {
       });
       const page = pages.length;
       for (const row of rows)
-        items.push({ page, test: row.test, value: row.value });
+        items.push({
+          page,
+          test: row.test,
+          value: row.value,
+          number: row.number,
+          ...(row.comparator !== undefined && { comparator: row.comparator }),
+        });
     }
   }
   return { items, pages };
@@ -960,10 +1020,16 @@ export const PRESCRIPTION = {
   ] satisfies Text[][],
   key: {
     items: [
-      { page: 1, test: "Blood pressure", value: "130/85", date: "2026-10-05" },
-      { page: 1, test: "Weight", value: "72", date: "2026-10-05" },
-      { page: 1, test: "Height", value: "160", date: null },
-      { page: 1, test: "TSH", value: "4.8" },
+      {
+        page: 1,
+        test: "Blood pressure",
+        value: "130/85",
+        number: null,
+        date: "2026-10-05",
+      },
+      { page: 1, test: "Weight", value: "72", number: 72, date: "2026-10-05" },
+      { page: 1, test: "Height", value: "160", number: 160, date: null },
+      { page: 1, test: "TSH", value: "4.8", number: 4.8 },
     ] satisfies Expected[],
     pages: [{ patient: ASHA, collectedIso: "2026-10-01" }],
   },

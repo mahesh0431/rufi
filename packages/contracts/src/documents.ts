@@ -131,6 +131,7 @@ const ReadEntry = Schema.Struct({
       report_status: Schema.optionalKey(Schema.String),
     }),
   ),
+  /** In an older Rufi's entries only. */
   rows_seen: Schema.optionalKey(Schema.Int),
   items: Schema.Array(ReadItem),
   issues: Schema.optionalKey(Schema.Array(Schema.String)),
@@ -161,7 +162,7 @@ export const ReadingView = Schema.Struct({
       ),
       why: Schema.NullOr(Schema.String),
       entry: Schema.NullOr(ReadEntry),
-      /** Rufi's checks of the entry: they flag, never change it. */
+      /** Checks an older Rufi stored with the entry (they flag, never change it); null for new entries. */
       checks: Schema.NullOr(
         Schema.Struct({
           incomplete: Schema.optionalKey(
@@ -226,7 +227,7 @@ export const DraftItem = Schema.Struct({
   fields: DraftFields,
   /** The reader's fields, never changed. */
   original: DraftFields,
-  /** Why it may be wrong: the reader's words and Rufi's checks. */
+  /** Why it may be wrong: the reader's words (and an older Rufi's checks). */
   unsure: Schema.Array(Schema.String),
 });
 export type DraftItem = typeof DraftItem.Type;
@@ -246,7 +247,7 @@ export const DocumentItems = Schema.Struct({
         ]),
       ),
       why: Schema.NullOr(Schema.String),
-      /** The reader counted more or fewer rows than it read. */
+      /** An older Rufi's check: the reader counted more or fewer rows than it read. */
       incomplete: Schema.NullOr(
         Schema.Struct({ rows_seen: Schema.Int, items: Schema.Int }),
       ),

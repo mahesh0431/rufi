@@ -36,10 +36,10 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
   const reader = scriptedReader([
     async (turn) => {
       await turn.look(1);
-      const first = readPage("13.2", { rows_seen: 2 });
+      const first = readPage("13.2");
       await turn.save(1, { ...first, items: [...first.items, PLATELETS] });
       await turn.look(2);
-      const second = readPage("13.2", { rows_seen: 3 });
+      const second = readPage("13.2");
       await turn.save(2, {
         ...second,
         items: [...second.items, { ...second.items[0], column: "earlier" }],
@@ -69,9 +69,7 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
   const shown = page.getByRole("region", { name: "Page" });
   // An earlier column's value is a row of its own, not a result.
   await expect(items).toContainText("3 results · 1 earlier · 1 unsure");
-  await expect(items).toContainText(
-    "Page 2 · read · 2 items · may be incomplete: the reader counted 3 rows and read 1",
-  );
+  await expect(items).toContainText("Page 2 · read · 2 items");
   await expect(items.getByRole("row", { name: /earlier/ })).toHaveCount(1);
   await expect(shown.getByRole("img", { name: "Page 1 of 2" })).toBeVisible();
   await items.getByRole("button", { name: "Haemoglobin" }).nth(1).click();

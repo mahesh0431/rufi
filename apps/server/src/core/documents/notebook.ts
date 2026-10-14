@@ -93,11 +93,6 @@ export const Entry = Schema.Struct({
       report_status: Printed("The report's status ('Final', 'Amended')"),
     }),
   ),
-  rows_seen: Schema.optionalKey(
-    Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).annotate({
-      description: "How many result rows you see on this page.",
-    }),
-  ),
   items: Schema.Array(Item),
   issues: Schema.optionalKey(
     Schema.Array(
@@ -114,74 +109,15 @@ export type Entry = typeof Entry.Type;
 export const Note = Text(2_000, "Your one short note for the whole document.");
 
 /**
- * Rufi's checks of a saved entry. They only flag: the entry stays as the
- * reader saved it, and a flagged item shows as unsure.
+ * Checks an older Rufi stored with an entry. Rufi doesn't check entries any
+ * more: the reader says itself what it isn't sure of. Old entries keep theirs,
+ * and they are still read and shown.
  */
 export interface Checks {
   /** The reader saw more or fewer rows than it saved items. */
   incomplete?: { rows_seen: number; items: number };
   /** Items (1, 2, 3... on the page) that may be wrong, and why. */
   items: { item: number; why: string }[];
-}
-
-/** Text compared loosely: case and spacing don't count. */
-const loose = (text: string) => text.toLowerCase().replace(/\s+/g, " ").trim();
-
-/** Whether `number` is a reading of the first number printed in `printed`. */
-function numberMatches(printed: string, number: number): boolean {
-  const found = /(-?)(\d[\d.,]*)/.exec(printed.replace(/\s/g, ""));
-  if (!found) return false;
-  const sign = found[1] === "-" ? -1 : 1;
-  const raw = (found[2] ?? "").replace(/[.,]$/, "");
-  // "4,6" is 4.6; "1,200" is 1200 (or 1.2); "1.20" is 1.2; "1.234,5" is 1234.5.
-  const readings = [raw.replace(",", ".")];
-  if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(raw))
-    readings.push(raw.replace(/,/g, ""));
-  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(raw)) {
-    readings.push(raw.replace(/\./g, "").replace(",", "."));
-  }
-  return readings.some((reading) => sign * Number(reading) === number);
-}
-
-/**
- * Rufi's checks of a page's entry: a row count that differs from the items
- * (an earlier result beside a row doesn't count),
- * a number that isn't its printed value, and, on a page with the PDF's own
- * text, a printed value that isn't in that text.
- */
-export function check(entry: Entry, text: string | undefined): Checks {
-  const checks: Checks = { items: [] };
-  // A row's earlier result is an item of its own, not a row.
-  const rows = entry.items.filter((item) => item.column !== "earlier").length;
-  if (entry.rows_seen !== undefined && entry.rows_seen !== rows) {
-    checks.incomplete = { rows_seen: entry.rows_seen, items: rows };
-  }
-  const pageText = text === undefined ? undefined : loose(text);
-  const bare = pageText?.replace(/ /g, "");
-  for (const [index, item] of entry.items.entries()) {
-    const why: string[] = [];
-    if (
-      item.value_number !== undefined &&
-      !numberMatches(item.value_text, item.value_number)
-    ) {
-      why.push(
-        `its number ${String(item.value_number)} isn't the printed value "${item.value_text}"`,
-      );
-    }
-    const value = loose(item.value_text);
-    if (
-      pageText !== undefined &&
-      bare !== undefined &&
-      pageText.trim() !== "" &&
-      !pageText.includes(value) &&
-      !bare.includes(value.replace(/ /g, ""))
-    ) {
-      why.push(`"${item.value_text}" isn't in the page's own text`);
-    }
-    if (why.length > 0)
-      checks.items.push({ item: index + 1, why: why.join("; ") });
-  }
-  return checks;
 }
 
 /**
@@ -272,7 +208,6 @@ export function notebook(
       position: number,
       entry: Entry,
       note: string | undefined,
-      checks: Checks = { items: [] },
     ) => {
       if (run.closed)
         throw new Refusal("This reading has ended; nothing more is saved.");
@@ -306,7 +241,7 @@ export function notebook(
             entry_job_id: run.jobId,
             entry_attempt: run.attempt,
             entry_at: now(),
-            entry_checks: JSON.stringify(checks),
+            entry_checks: null,
           })
           .where("person_id", "=", run.personId)
           .where("document_id", "=", run.documentId)

@@ -33,11 +33,11 @@ Rufi reading one document in the background with its reader, as soon as you add 
 _Avoid_: import, scan, parsing, extraction
 
 **Reader**:
-The AI that does a reading: a separate AI that Rufi starts for one document, with only two tools (look at a page, save what the page says) and no access to your record, chat, files or the internet. It copies what is printed; it never judges or saves to the record.
+The AI that does a reading: a separate AI that Rufi starts for one document, with only two tools (look at a page, save what the page says) and no access to your record, chat, files or the internet; it gets only the name of the person the document is for, to tell when a report may be someone else's. It copies what is printed, and says what it isn't sure of; it never judges your results or saves to the record.
 _Avoid_: parser, OCR, extractor
 
 **Draft item**:
-One thing a reading found, such as a result, kept exactly as printed and waiting for you: not part of your record, so it counts in no answer, Overview or trend until you save it. The reader's own values are kept beside any change. It points to its document and page, and may be marked unsure. It waits until it is saved (new, as another source of a saved result, or as a correction) or dismissed; a dismissed item is never saved.
+One thing a reading found, such as a result, kept exactly as printed and waiting for you: not part of your record, so it counts in no answer, Overview or trend until you save it. The reader's own values are kept beside any change. It points to its document and page, and may be marked unsure, with the reader's reason. It waits until it is saved (new, as another source of a saved result, or as a correction) or dismissed; a dismissed item is never saved.
 _Avoid_: pending result, unconfirmed record, extracted row
 
 **Report**:

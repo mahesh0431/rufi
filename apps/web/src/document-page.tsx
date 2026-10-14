@@ -1,6 +1,6 @@
 // A document's page: the items the reader read, beside the page they came
 // from. A click on a row shows its page; "Unsure only" keeps the items the
-// reader or Rufi's checks marked. A fix changes an item's printed fields and
+// reader (or an older Rufi's checks) marked. A fix changes an item's printed fields and
 // keeps the reader's; it names the item's version, so a fix made on an older
 // one (another tab fixed it first) is refused with the value as it is now.
 // Nothing here saves to the record: "Save in chat" puts the words
