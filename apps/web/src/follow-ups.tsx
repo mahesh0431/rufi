@@ -128,18 +128,22 @@ export function FollowUpsPage({
   // Today and tomorrow as of this read, which comes each minute.
   const now = new Date(followUps.dataUpdatedAt);
   const { groups } = followUps.data;
+  if (groups.length === 0) {
+    return (
+      <div className="mx-auto max-w-[790px] px-6 py-8">
+        <p className="text-muted">
+          Nothing to come back to yet. When a report or you mention a recheck,
+          Rufi offers to add it here.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="mx-auto max-w-[790px] px-6 py-8">
       <p className="mb-5 text-muted">
         What to do, and when. Changes start in the chat: <b>Ask Rufi</b> on a
         row.
       </p>
-      {groups.length === 0 && (
-        <p className="text-muted">
-          No follow-ups yet. Tell Rufi in the chat, for example “Remind me to
-          recheck my HbA1c in December”.
-        </p>
-      )}
       {groups.map(({ group, rows }) => (
         <section
           key={group}

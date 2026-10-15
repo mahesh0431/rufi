@@ -232,6 +232,47 @@ export function PageCard({ path, title }: { path: string; title: string }) {
   const file = useQuery(fileQuery(path));
   const [opened, setOpened] = useState<ShownFile | null>(null);
   const [state, setState] = useState<"idle" | "opening" | "failed">("idle");
+  const popup = useRef<HTMLDivElement>(null);
+  const frame = useRef<HTMLIFrameElement>(null);
+  // A click in the page gives its frame the focus, and Esc pressed there
+  // never reaches Rufi (the page has its own origin): the focus comes back
+  // to the dialog, and the click still reaches the page. Tab into the page
+  // leaves the focus there, so the keyboard reaches it.
+  useEffect(() => {
+    if (!opened) return;
+    /** A Tab not yet landed: in Rufi's page, or in the frame. */
+    let tabbing = false;
+    let later: ReturnType<typeof setTimeout> | undefined;
+    const onKey = (event: KeyboardEvent) => {
+      tabbing = event.key === "Tab";
+    };
+    const onFocus = (event: FocusEvent) => {
+      if (event.target !== frame.current) tabbing = false;
+    };
+    const onPointer = () => {
+      tabbing = false;
+    };
+    const onBlur = () => {
+      if (!tabbing && document.activeElement === frame.current) {
+        // After the click's own focus change, which would undo this one.
+        later = setTimeout(() => {
+          popup.current?.focus();
+        });
+      }
+      tabbing = false;
+    };
+    addEventListener("keydown", onKey, true);
+    addEventListener("focusin", onFocus, true);
+    addEventListener("pointerdown", onPointer, true);
+    addEventListener("blur", onBlur);
+    return () => {
+      removeEventListener("keydown", onKey, true);
+      removeEventListener("focusin", onFocus, true);
+      removeEventListener("pointerdown", onPointer, true);
+      removeEventListener("blur", onBlur);
+      clearTimeout(later);
+    };
+  }, [opened]);
   const name = title === "" ? nameOf(path) : title;
   const problem = file.isError ? problemOf(file.error) : undefined;
   if (problem === "gone") return <Gone title={name} />;
@@ -282,6 +323,7 @@ export function PageCard({ path, title }: { path: string; title: string }) {
           <Dialog.Portal container={portals}>
             <Dialog.Backdrop className="fixed inset-0 z-40 bg-ink/25" />
             <Dialog.Popup
+              ref={popup}
               finalFocus={opener}
               className="fixed inset-4 z-40 flex flex-col overflow-hidden rounded-[14px] bg-surface shadow-menu outline-none"
             >
@@ -301,6 +343,7 @@ export function PageCard({ path, title }: { path: string; title: string }) {
               </div>
               {/* Locked twice: this frame's sandbox and the page's own policy. */}
               <iframe
+                ref={frame}
                 src={opened.url}
                 title={name}
                 sandbox="allow-scripts"

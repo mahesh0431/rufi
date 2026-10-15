@@ -49,7 +49,8 @@ To show one kind only, choose it in the list at the top left.
 | ------------------- | ----------------------------------------------------------------------- |
 | **Not read yet**    | Never read (added before Rufi read each document); **Retry** reads it   |
 | **Reading**         | Rufi reads it now, or it waits its turn; it shows the pages read so far |
-| **To check**        | Results wait for you to check, or a page needs **Retry**                |
+| **Not saved**       | Results wait for you to check and save in the chat                      |
+| **To check**        | No results wait, but a page needs **Retry**                             |
 | **Nothing to save** | Read, and no results were found (a letter, for example)                 |
 | **Failed**          | The reading stopped before the end; **Retry** continues it              |
 
@@ -140,6 +141,8 @@ Say "undo that", as for any save (see [Undo](chat.md#undo)). The AI removes the 
 Each document has its own page, with the results the reader read beside the page they came from. Use it when you want to check a report carefully before you save it. To open it, click the document's name on the Documents page, or **Open** on the line in the chat.
 
 Nothing on this page saves to your health record. You fix what the reader read, then you save in the chat.
+
+When every result is saved or set aside, the page says **These results are in your health record.** Its count says what was saved and set aside, for example **2 saved · 1 set aside**, and it has no **Save in chat**. **View reading** says the same.
 
 ### Look at the results beside the page
 

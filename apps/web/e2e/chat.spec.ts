@@ -1209,12 +1209,18 @@ test("after a restart, a reply a crash cut off shows its Activity folded, stoppe
   );
 });
 
-test("the Activity setting: show while working folds at the end; always show stays open; always hide shows one working line, then folds, and still opens by hand; it is kept after a restart", async ({
+test("the Activity setting: show while working folds at the end; always show stays open; always hide shows one working line, with its spaces, then folds, and still opens by hand; it is kept after a restart", async ({
   page,
   rufi,
 }) => {
   await opened(page, rufi, {
-    scenario: { reasoning: ["**Reading the record**"], reasoningMs: 1_500 },
+    // Its last 40 characters, which always show, start just after a space.
+    scenario: {
+      reasoning: [
+        "**Reading the saved result and the fictional lab report page**",
+      ],
+      reasoningMs: 1_500,
+    },
   });
   const choose = async (name: string) => {
     await page.goto(`${new URL(page.url()).origin}/settings`);
@@ -1238,8 +1244,12 @@ test("the Activity setting: show while working folds at the end; always show sta
   await choose("Always hide");
   await send(page, "Once more");
   await expect(activity(chat(page))).toHaveText(
-    "Working · 1 stepReading the record",
+    "Working · 1 stepReading the saved result and the fictional lab report page",
   );
+  // As drawn: the line is cut just after a space, which stays.
+  await expect(activity(chat(page))).toHaveText(/the saved \s*result and/, {
+    useInnerText: true,
+  });
   await expect(log(chat(page)).locator(".reply").last()).toHaveText(
     "ok:Once more",
   );

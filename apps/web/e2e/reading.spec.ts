@@ -235,7 +235,7 @@ test("Settings keeps the reader's model and effort, and the next reading runs wi
 
   await add(page);
   await expect(
-    page.getByRole("cell", { name: /To check · 2 results/ }),
+    page.getByRole("cell", { name: /Not saved · 2 results/ }),
   ).toBeVisible({ timeout: 10_000 });
   expect(reader.runs.map(({ model, effort }) => ({ model, effort }))).toEqual([
     { model: "gpt-5.5", effort: "high" },

@@ -34,7 +34,10 @@ export function MiddleCut({
     <span
       className={`flex min-w-0 overflow-hidden text-xs whitespace-pre ${mono ? "font-mono" : ""}`}
     >
-      <span className="min-w-0 truncate">{line.slice(0, at)}</span>
+      {/* Its own spaces kept: a cut just after one would hide it. */}
+      <span className="min-w-0 overflow-hidden text-ellipsis">
+        {line.slice(0, at)}
+      </span>
       <span className="shrink-0">{line.slice(at)}</span>
     </span>
   );

@@ -39,7 +39,7 @@ Rufi uses your Mac's date and time. Before it is due, a follow-up is **coming up
 
 ## The Follow-ups page
 
-In the sidebar, click **Follow-ups**. The number next to it is how many follow-ups are open. The page lists them in groups, in this order:
+In the sidebar, click **Follow-ups**. The number next to it is how many follow-ups are open. With none yet, the page says **Nothing to come back to yet. When a report or you mention a recheck, Rufi offers to add it here.** Otherwise it lists them in groups, in this order:
 
 1. **Overdue**, for example "Overdue · was due Sep 2026".
 2. **Due now**, for example "Due this month" or "Due today at 14:30".

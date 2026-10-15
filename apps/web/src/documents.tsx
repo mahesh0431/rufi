@@ -341,7 +341,7 @@ function Status({
             ? reading.canRetry
               ? "To check"
               : "Nothing to save"
-            : `To check · ${reading.results === 1 ? "1 result" : `${String(reading.results)} results`}`;
+            : `Not saved · ${reading.results === 1 ? "1 result" : `${String(reading.results)} results`}`;
   return (
     <span className="flex flex-wrap items-center gap-1">
       <span className="rounded-full bg-side px-2 py-px text-xs text-muted">

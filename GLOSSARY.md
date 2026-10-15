@@ -37,7 +37,7 @@ The AI that does a reading: a separate AI that Rufi starts for one document, wit
 _Avoid_: parser, OCR, extractor
 
 **Draft item**:
-One thing a reading found, such as a result, kept exactly as printed and waiting for you: not part of your record, so it counts in no Overview or trend until you save it; when the AI gives one in an answer, it says it isn't saved yet. The reader's own values are kept beside any change. It points to its document and page, and may be marked unsure, with the reader's reason (on a reading from an older Rufi, the reason may come from Rufi's own checks of the entry). It waits until it is saved (new, as another source of a saved result, or as a correction) or dismissed; a dismissed item is never saved.
+One thing a reading found, such as a result, kept exactly as printed and waiting for you: not part of your record, so it counts in no Overview or trend until you save it; when the AI gives one in an answer, it says it isn't saved yet. The reader's own values are kept beside any change. It points to its document and page, and may be marked unsure, with the reader's reason (on a reading from an older Rufi, the reason may come from Rufi's own checks of the entry). It waits until it is saved (new, as another source of a saved result, or as a correction) or dismissed (set aside, as the document's page says); a dismissed item is never saved.
 _Avoid_: pending result, unconfirmed record, extracted row
 
 **Report**:

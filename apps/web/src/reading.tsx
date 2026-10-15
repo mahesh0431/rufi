@@ -4,6 +4,7 @@
 // also looks again while one reads.
 import { Dialog } from "@base-ui/react/dialog";
 import {
+  type DocumentItems,
   type ReadEntry,
   ReadingView,
   Readings,
@@ -17,7 +18,7 @@ import { read, request } from "./api.ts";
 import { chipState } from "./chip-state.ts";
 import { printedTime } from "./dates.ts";
 import { messageOf } from "./live.ts";
-import { queries } from "./reads.ts";
+import { queries, useDocumentItems } from "./reads.ts";
 import { Button, IconButton } from "./ui.tsx";
 
 const documentsPath = (personId: string) =>
@@ -52,6 +53,13 @@ async function retry(personId: string, documentId: string) {
   );
   readingsChanged(personId);
 }
+
+/** What a document's page and its reading say once nothing waits to be saved. */
+export const IN_RECORD = "These results are in your health record.";
+
+/** Every draft item of the document is saved or set aside. */
+export const inRecord = (items: DocumentItems) =>
+  items.items.length > 0 && items.items.every((i) => i.status !== "pending");
 
 /** Which reading View reading shows, over any screen. */
 const useOpen = create<{ personId: string; documentId: string } | null>(
@@ -251,6 +259,7 @@ function Sheet({
     gcTime: 0,
   });
   const reading = view.data;
+  const items = useDocumentItems(personId, documentId).data;
   // Until its work comes, what the strip knows: its name and where it is.
   const now = useReadings(personId).data?.find(
     (r) => r.documentId === documentId,
@@ -309,8 +318,9 @@ function Sheet({
         {reading && (
           <>
             <p className="text-xs text-muted">
-              What the reader read, not saved: these become part of your health
-              record only when you save them in the chat.
+              {items && inRecord(items)
+                ? IN_RECORD
+                : "What the reader read, not saved: these become part of your health record only when you save them in the chat."}
             </p>
             {reading.note && (
               <div>
