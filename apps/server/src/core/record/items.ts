@@ -628,7 +628,7 @@ export async function dismissItems(
       : `${String(names.length)} documents`;
   return {
     id: uuidv7(),
-    receipt: `**Dismissed** ${now.length === 1 ? "1 item" : `${String(now.length)} items`} from ${from}: not saved\n\n${lines.join("\n")}`,
+    receipt: `**Set aside** ${now.length === 1 ? "1 item" : `${String(now.length)} items`} from ${from}: not saved\n\n${lines.join("\n")}`,
     fresh: true,
     dismissed: now.map((r) => r.id),
     already,

@@ -928,7 +928,8 @@ export function Receipt({ text }: { text: string }) {
           <Marked text={head} links={false} />
           <details>
             <summary className="w-fit cursor-pointer text-[13px] text-accent-ink">
-              {head.startsWith("**Dismissed")
+              {/* A set-aside's receipt; an older one says Dismissed. */}
+              {/^\*\*(Set aside|Dismissed)\*\*/.test(head)
                 ? "Show the items"
                 : "Show what was saved"}
             </summary>
