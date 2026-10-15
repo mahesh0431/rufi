@@ -5,7 +5,8 @@
 // the items' outcome and nothing else are written in the caller's
 // transaction, with the receipt built from what was written. There is no
 // count limit: a big save is one transaction too. The same call again gives
-// the same save; any problem saves nothing.
+// the same save; any problem saves nothing. A change rests on a message of
+// the user's, found by where it is in the chat, never by its words.
 import type { Ref } from "@rufi/contracts";
 import { Schema } from "effect";
 import { sql, type Transaction } from "kysely";
@@ -19,6 +20,7 @@ import {
   KINDS,
   kindNamed,
   literal,
+  Position,
   wordsColumn,
   type Field,
   type Kind,
@@ -63,13 +65,7 @@ function changeOf(kind: Kind) {
         description: `The ${kind.noun}'s id, from get_overview; not when adding.`,
       }),
     ),
-    source: Schema.String.check(
-      Schema.isMinLength(1),
-      Schema.isMaxLength(1_000),
-    ).annotate({
-      description:
-        "The user's own words this change rests on, copied exactly from one of their messages in this chat (a sentence or part of one).",
-    }),
+    source: Schema.optionalKey(Position),
     from: Schema.optionalKey(
       Schema.Struct({
         document: Id,
@@ -199,11 +195,15 @@ export interface Saved {
   changes: { kind: string; action: Action; id: string }[];
   /** Items saved before at the version named, with their earlier save. */
   earlier: Earlier[];
+  /** Stored with the save: what the AI may want to check; never a refusal. */
+  warnings: string[];
 }
 
 interface Where {
   personId: string;
   chatId: string;
+  /** Rufi's id for the turn the call is in, when it has one. */
+  turnId?: string | undefined;
   /** The agent's id for the call. */
   callId: string;
   now: string;
@@ -214,10 +214,14 @@ interface Where {
 /** A message of the user's a change rests on. */
 export interface Source {
   id: string;
-  text: string;
   /** When it was sent, in the Mac's local time. */
   local: string;
 }
+
+/** The user's message at a position, or this turn's: a Source, or why there is none. */
+export type MessageAt = (
+  position: number | undefined,
+) => Promise<Source | string>;
 
 /** A page of a document a record rests on. */
 interface Page {
@@ -226,20 +230,6 @@ interface Page {
   /** Its file's name. */
   name: string;
 }
-
-/** Text compared as the words it shows: case, spacing and quote marks aside. */
-const plain = (text: string) =>
-  text
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[‘’`´]/g, "'")
-    .replace(/[“”«»]/g, '"')
-    .replace(/\s+/g, " ")
-    .trim();
-
-/** A quote without the marks around it. */
-const quoted = (text: string) =>
-  plain(text).replace(/^["'\s.,;:!?…-]+|["'\s.,;:!?…-]+$/gu, "");
 
 const describe = (value: unknown) => {
   if (value === undefined) return "nothing";
@@ -260,7 +250,7 @@ export async function saveChanges(
   const request = JSON.stringify(input);
   const earlier = await trx
     .selectFrom("operations")
-    .select(["id", "request"])
+    .select(["id", "request", "warnings"])
     .where("chat_id", "=", where.chatId)
     .where("call_id", "=", where.callId)
     .executeTakeFirst();
@@ -270,29 +260,10 @@ export async function saveChanges(
         "This call was already used for another save, so nothing was saved. Make a new call.",
       );
     }
-    return replay(trx, where.personId, earlier.id);
+    return replay(trx, where.personId, earlier);
   }
 
-  const messages = await trx
-    .selectFrom("transcript_entries")
-    .select(["id", "text", "created_at"])
-    .where("person_id", "=", where.personId)
-    .where("chat_id", "=", where.chatId)
-    .where("kind", "in", ["message", "steer"])
-    .orderBy("seq", "desc")
-    .execute();
-  const sourceOf = (words: string): Source | undefined => {
-    const wanted = quoted(words);
-    if (wanted === "") return undefined;
-    const found = messages.find((m) => plain(m.text).includes(wanted));
-    return (
-      found && {
-        id: found.id,
-        text: found.text,
-        local: localTime(found.created_at),
-      }
-    );
-  };
+  const messageAt = messagesOf(trx, where);
 
   const problems: Problem[] = [];
   const problem = (path: string, got: unknown, fix: string) =>
@@ -306,13 +277,9 @@ export async function saveChanges(
     const at = `changes.${String(index)}`;
     const kind = kindNamed(change.kind) as Kind;
     const given = (change.fields ?? {}) as Record<string, unknown>;
-    const source = sourceOf(change.source);
-    if (!source) {
-      problem(
-        `${at}.source`,
-        change.source,
-        "No message of the user's in this chat has these words. Copy the user's own words exactly from the message this change rests on.",
-      );
+    const source = await messageAt(change.source);
+    if (typeof source === "string") {
+      problem(`${at}.source`, change.source, source);
       continue;
     }
 
@@ -399,14 +366,6 @@ export async function saveChanges(
     for (const [name, value] of Object.entries(given)) {
       const field = kind.fields[name] as Field;
       const path = `${at}.fields.${name}`;
-      const said = dateSaid(field, value);
-      if (said && !plain(source.text).includes(plain(said.words))) {
-        problem(
-          `${path}.words`,
-          said.words,
-          "These words aren't in the source message. Give the user's own words for the date from the message you quote in source, or leave the date out if they didn't say one.",
-        );
-      }
       if (field.type === "link" && value !== null) {
         const link = value as { kind: string; id: string };
         const linked = kindNamed(link.kind) as Kind;
@@ -454,19 +413,6 @@ export async function saveChanges(
     if (change.action === "add" && kind.asserted) {
       columns.asserted = source.local.slice(0, 10);
     }
-    const after: Row = { ...before, ...columns };
-    for (const [name, field] of Object.entries(kind.fields)) {
-      const date = after[field.column];
-      const past =
-        typeof field.past === "function" ? field.past(after) : field.past;
-      if (past && typeof date === "string" && isAfter(date, source.local)) {
-        problem(
-          `${at}.fields.${name}.date`,
-          date,
-          `${shownDate(date)} is after the user said it (${shownDate(source.local)}). Count relative dates from when the message was sent.`,
-        );
-      }
-    }
     planned.push({
       kind,
       action: change.action,
@@ -483,9 +429,7 @@ export async function saveChanges(
           trx,
           {
             personId: where.personId,
-            now: where.now,
-            messageWith: sourceOf,
-            says: (source, words) => plain(source.text).includes(plain(words)),
+            messageAt,
             refs: where.refs ?? [],
             problem,
             touched,
@@ -507,6 +451,7 @@ export async function saveChanges(
       fresh: false,
       changes: [],
       earlier: items.earlier,
+      warnings: [],
     };
   }
 
@@ -521,6 +466,7 @@ export async function saveChanges(
       chat_id: where.chatId,
       call_id: where.callId,
       request,
+      warnings: "[]",
       created_at: where.now,
     })
     .execute();
@@ -568,6 +514,13 @@ export async function saveChanges(
   ) {
     await checkAllergies(trx, where.personId);
   }
+  const warnings = await warningsOf(trx, where.personId, id);
+  await trx
+    .updateTable("operations")
+    .set({ warnings: JSON.stringify(warnings) })
+    .where("person_id", "=", where.personId)
+    .where("id", "=", id)
+    .execute();
   return {
     id,
     receipt: receiptText(written, await linksOf(trx, where.personId, written)),
@@ -578,7 +531,119 @@ export async function saveChanges(
       id: String(w.after["id"]),
     })),
     earlier: items.earlier,
+    warnings,
   };
+}
+
+/**
+ * The user's messages a save can rest on, by position in this chat or, with
+ * none, the newest of theirs in this turn, as stored now. Only a message or
+ * a steer of this person's chat: a position never reaches another chat.
+ */
+function messagesOf(trx: Transaction<Tables>, where: Where): MessageAt {
+  const found = new Map<number | undefined, Promise<Source | string>>();
+  const entries = trx
+    .selectFrom("transcript_entries")
+    .select(["id", "kind", "created_at"])
+    .where("person_id", "=", where.personId)
+    .where("chat_id", "=", where.chatId);
+  const look = async (position: number | undefined) => {
+    if (position === undefined) {
+      const newest =
+        where.turnId === undefined
+          ? undefined
+          : await entries
+              .where("turn_id", "=", where.turnId)
+              .where("kind", "in", ["message", "steer"])
+              .orderBy("seq", "desc")
+              .executeTakeFirst();
+      return newest
+        ? { id: newest.id, local: localTime(newest.created_at) }
+        : "This turn has no message of the user's. Give source: the position of the user's message this rests on, as read_chat shows it.";
+    }
+    const entry = await entries.where("seq", "=", position).executeTakeFirst();
+    if (!entry) {
+      return `Nothing in this chat is at position ${String(position)}. Give the position of the user's message as read_chat shows it, or leave source out for their message in this turn.`;
+    }
+    if (entry.kind !== "message" && entry.kind !== "steer") {
+      return `Position ${String(position)} is ${ENTRY_KINDS[entry.kind] ?? `a ${entry.kind}`}, not a message of the user's. Give the position of their message as read_chat shows it, or leave source out for their message in this turn.`;
+    }
+    return { id: entry.id, local: localTime(entry.created_at) };
+  };
+  return (position) => {
+    let answer = found.get(position);
+    if (!answer) {
+      answer = look(position);
+      found.set(position, answer);
+    }
+    return answer;
+  };
+}
+
+/** What an entry that isn't the user's message is, for the AI. */
+const ENTRY_KINDS: Record<string, string> = {
+  reply: "your reply",
+  activity: "one of your activities",
+  reasoning: "your reasoning",
+  receipt: "Rufi's receipt for a save",
+  event: "a Rufi event",
+  brief: "Rufi's line for a visit brief",
+};
+
+/**
+ * A save's dates that should have happened by then (an onset, a measurement,
+ * done care) but are later than the user's message the change rests on, or
+ * than the save itself for a document's item with no fix: each a warning for
+ * the AI, which decides with the user whether it is a slip. Only a date the
+ * change set, or made one that must have happened. Computed once in the
+ * save's transaction; a replay reads the stored warnings.
+ */
+async function warningsOf(
+  trx: Transaction<Tables>,
+  personId: string,
+  operation: string,
+): Promise<string[]> {
+  const rows = await trx
+    .selectFrom("record_changes as c")
+    .innerJoin("operations as o", "o.id", "c.operation_id")
+    .leftJoin("transcript_entries as e", (join) =>
+      join
+        .onRef("e.person_id", "=", "c.person_id")
+        .onRef("e.id", "=", "c.source_entry_id"),
+    )
+    .select([
+      "c.kind",
+      "c.before",
+      "c.after",
+      "e.created_at as said",
+      "o.created_at as saved",
+    ])
+    .where("c.person_id", "=", personId)
+    .where("c.operation_id", "=", operation)
+    .orderBy("c.seq")
+    .execute();
+  const warnings: string[] = [];
+  for (const row of rows) {
+    const kind = kindNamed(row.kind) as Kind;
+    const after = JSON.parse(row.after) as Row;
+    const before =
+      row.before === null ? undefined : (JSON.parse(row.before) as Row);
+    const anchor = localTime(row.said ?? row.saved);
+    for (const field of Object.values(kind.fields)) {
+      if (field.past === undefined) continue;
+      const past = (r: Row) =>
+        typeof field.past === "function" ? field.past(r) : field.past === true;
+      const date = after[field.column];
+      if (!past(after) || typeof date !== "string" || !isAfter(date, anchor)) {
+        continue;
+      }
+      if (before && past(before) && before[field.column] === date) continue;
+      warnings.push(
+        `${kind.noun} ${kind.label(after)}: ${field.shown} ${shownDate(date)} is later than ${row.said === null ? "the day it was saved" : "the user's message it rests on"} (${shownDate(anchor.slice(0, 10))}). It is saved as given; if it may be a slip, check with the user.`,
+      );
+    }
+  }
+  return warnings;
 }
 
 /** One change to write, checked. */
@@ -713,14 +778,6 @@ async function replacedProblem(
   if (!row) return "No result with this id is in this person's record.";
   if (row["removed"] === 1) return "That result is removed.";
   return undefined;
-}
-
-/** The date the user said, when the value is one. */
-function dateSaid(field: Field, value: unknown): { words: string } | undefined {
-  if (field.type !== "date" && field.type !== "due") return undefined;
-  return typeof value === "object" && value !== null
-    ? (value as { words: string })
-    : undefined;
 }
 
 /**
@@ -909,8 +966,9 @@ async function checkAllergies(trx: Transaction<Tables>, personId: string) {
 async function replay(
   trx: Transaction<Tables>,
   personId: string,
-  id: string,
+  operation: { id: string; warnings: string },
 ): Promise<Saved> {
+  const { id } = operation;
   const rows = await trx
     .selectFrom("record_changes")
     .select(["kind", "record_id", "action"])
@@ -934,6 +992,7 @@ async function replay(
       id: row.record_id,
     })),
     earlier: [],
+    warnings: JSON.parse(operation.warnings) as string[],
   };
 }
 

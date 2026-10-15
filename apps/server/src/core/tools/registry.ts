@@ -138,21 +138,29 @@ export const REJECTIONS_PER_TURN = 3;
 
 /**
  * A caller for one turn. Bad input, an unknown tool and a refusal each come
- * back as the error envelope and use up one of the turn's `rejections`.
+ * back as the error envelope and use up one of the turn's `rejections`: a
+ * number, or a setting read at the turn's first refusal.
  */
 export function toolCaller(
   tools: readonly Tool[],
   context: () => ToolContext,
   log: Log,
-  rejections = REJECTIONS_PER_TURN,
+  rejections: number | (() => Promise<number>) = REJECTIONS_PER_TURN,
 ): (name: string, input: unknown, callId?: string) => Promise<ToolAnswer> {
-  let left = rejections;
-  const reject = (
+  // Counted as each refusal comes, before any wait: refusals made at the
+  // same time each use one. The limit is read once, at the first.
+  let refused = 0;
+  let limit: Promise<number> | undefined;
+  const reject = async (
     error: string,
     issues: Issue[] = [],
     example?: unknown,
-  ): ToolAnswer => {
-    left = Math.max(0, left - 1);
+  ): Promise<ToolAnswer> => {
+    const count = ++refused;
+    limit ??= Promise.resolve(
+      typeof rejections === "number" ? rejections : rejections(),
+    );
+    const left = Math.max(0, (await limit) - count);
     return {
       ok: false,
       text: JSON.stringify({

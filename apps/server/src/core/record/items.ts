@@ -3,24 +3,26 @@
 // another source for a result the person has, or a correction of one) and
 // any fix the user gave in the chat; Rufi takes the values from the stored
 // item, never retyped by the AI. Code checks whose it is, versions, the
-// item's state and the date; the AI decides with the user what each item is.
+// item's state and that it has a date; the AI decides with the user what
+// each item is.
 import type { Ref } from "@rufi/contracts";
 import { Schema } from "effect";
 import type { Transaction } from "kysely";
 import { v7 as uuidv7 } from "uuid";
 import type { Entry } from "../documents/notebook.ts";
 import type { Tables } from "../store/tables.ts";
-import { dateProblem, isAfter, localTime, shownDate } from "./dates.ts";
+import { dateProblem } from "./dates.ts";
 import {
   columnsOf,
   kindNamed,
   literal,
+  Position,
   type Field,
   type Kind,
   type Row,
 } from "./kinds.ts";
 import { recordVersions } from "./read.ts";
-import type { Planned, Source } from "./save.ts";
+import type { MessageAt, Planned, Source } from "./save.ts";
 
 const Id = Schema.String.check(
   Schema.isTrimmed(),
@@ -90,16 +92,10 @@ export const ItemSave = Schema.Struct({
   ),
   fix: Schema.optionalKey(
     Schema.Struct({
-      source: Schema.String.check(
-        Schema.isMinLength(1),
-        Schema.isMaxLength(1_000),
-      ).annotate({
-        description:
-          "The user's own words that give the fix, copied exactly from their message in this chat.",
-      }),
+      source: Schema.optionalKey(Position),
       fields: fixFields.annotate({
         description:
-          "Only the fields the user corrected; the rest come from the item as stored. measured needs the user's own words for the date.",
+          "Only the fields the user corrected; the rest come from the item as stored. measured comes with the words its date came from.",
       }),
     }).annotate({
       description:
@@ -163,12 +159,8 @@ function reportsOf(
 
 interface Context {
   personId: string;
-  /** Now, as an ISO time. */
-  now: string;
-  /** The user's message with these words, if any. */
-  messageWith: (words: string) => Source | undefined;
-  /** Whether a message has these words. */
-  says: (source: Source, words: string) => boolean;
+  /** The user's message a fix rests on. */
+  messageAt: MessageAt;
   /** The references of the user's messages in this turn. */
   refs: readonly Ref[];
   problem: (path: string, got: unknown, fix: string) => void;
@@ -436,27 +428,14 @@ export async function planItems(
       columns["measured_words"] = `${date.label} ${date.date}`;
     }
     if (save.fix !== undefined) {
-      source = context.messageWith(save.fix.source);
-      if (!source) {
-        problem(
-          `${at}.fix.source`,
-          save.fix.source,
-          "No message of the user's in this chat has these words. Copy the user's own words exactly from the message that gives the fix.",
-        );
+      const found = await context.messageAt(save.fix.source);
+      if (typeof found === "string") {
+        problem(`${at}.fix.source`, save.fix.source, found);
         continue;
       }
+      source = found;
       for (const [name, value] of Object.entries(save.fix.fields)) {
-        const field = result.fields[name] as Field;
-        const said =
-          field.type === "date" ? (value as { words: string } | null) : null;
-        if (said && !context.says(source, said.words)) {
-          problem(
-            `${at}.fix.fields.${name}.words`,
-            said.words,
-            "These words aren't in the fix's source message. Give the user's own words for the date.",
-          );
-        }
-        Object.assign(columns, columnsOf(field, value));
+        Object.assign(columns, columnsOf(result.fields[name] as Field, value));
       }
     }
     const measured = columns["measured_at"];
@@ -465,17 +444,8 @@ export async function planItems(
         `${at}.item`,
         save.item,
         measurement
-          ? `This measurement has no date Rufi can store (${date ? `"${date.label} ${date.date}": the order of day and month isn't certain` : "none is printed for it, and a report's collection date isn't when it was measured"}). Ask the user when it was measured; a rough date such as 'around August 2026' is fine. Give it in fix.fields.measured at the precision they gave, with their words; never make one up.`
-          : `This item has no date Rufi can store (${date ? `"${date.label} ${date.date}": the order of day and month isn't certain` : "none is printed for it"}). Ask the user when the sample was taken; a rough date such as 'around August 2026' is fine. Give it in fix.fields.measured at the precision they gave, with their words; never make one up.`,
-      );
-      continue;
-    }
-    const anchor = source?.local ?? localTime(context.now);
-    if (isAfter(measured, anchor)) {
-      problem(
-        `${at}.item`,
-        save.item,
-        `Its date ${shownDate(measured)} is later than now: ask the user for the right date.`,
+          ? `This measurement has no date Rufi can store (${date ? `"${date.label} ${date.date}": the order of day and month isn't certain` : "none is printed for it, and a report's collection date isn't when it was measured"}). Ask the user when it was measured; a rough date such as 'around August 2026' is fine. Give it in fix.fields.measured at the precision they gave, with the words it came from; never make one up.`
+          : `This item has no date Rufi can store (${date ? `"${date.label} ${date.date}": the order of day and month isn't certain` : "none is printed for it"}). Ask the user when the sample was taken; a rough date such as 'around August 2026' is fine. Give it in fix.fields.measured at the precision they gave, with the words it came from; never make one up.`,
       );
       continue;
     }

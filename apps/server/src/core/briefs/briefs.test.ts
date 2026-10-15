@@ -77,10 +77,11 @@ async function saveSaid(text: string, change: Record<string, unknown>) {
     id: `msg-${String(++said)}`,
     kind: "message",
     text,
+    agentTurnId: "t-1",
   });
   const saved = await use(
     "save_changes",
-    { changes: [{ ...change, source: text }] },
+    { changes: [change] },
     `save-${String(said)}`,
   );
   expect(saved.ok).toBe(true);

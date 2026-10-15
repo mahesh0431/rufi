@@ -120,7 +120,12 @@ const there = (path: string) =>
 /** The AI saves in Asha's chat, after the user said `said`. */
 async function save(said: string, changes: unknown[]) {
   const id = `msg-${String(Math.random())}`;
-  await transcripts.addMessage(chat, { id, kind: "message", text: said });
+  await transcripts.addMessage(chat, {
+    id,
+    kind: "message",
+    text: said,
+    agentTurnId: "t-1",
+  });
   const answer = await chatCaller(reader, transcripts, () => undefined)(
     chat,
     "t-1",
@@ -261,7 +266,6 @@ describe("a document with saved results", () => {
         kind: "result",
         action: "remove_source",
         id: "res-a7",
-        source: "That report isn't mine: take it off my vitamin D",
         from: { document: AUG, page: 2 },
       },
     ]);
@@ -271,7 +275,6 @@ describe("a document with saved results", () => {
         kind: "result",
         action: "remove",
         id,
-        source: "And remove the results it gave",
       })),
     );
     expect(
@@ -344,7 +347,6 @@ describe("a document with saved results", () => {
         kind: "result",
         action: "restore",
         id: "res-a1",
-        source: "Undo that for HbA1c",
       },
     ]);
     const restored = await views.detail("asha", "result", "res-a1");

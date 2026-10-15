@@ -961,7 +961,6 @@ test("a save to the record shows Rufi's receipt, also after a reload", async ({
               {
                 kind: "symptom",
                 action: "add",
-                source: "I have a headache",
                 fields: { name: "Headache" },
               },
             ],
@@ -1341,7 +1340,6 @@ test("a save made in another window while this one's connection was down shows o
                 kind: "result",
                 action: "remove",
                 id: "res-a3",
-                source: "Remove the CRP result",
               },
             ],
           },

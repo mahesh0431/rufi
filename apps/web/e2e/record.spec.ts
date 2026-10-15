@@ -19,12 +19,12 @@ const box = (page: Page) =>
   chat(page).getByRole("textbox", { name: "Message to Rufi" });
 
 /** A save that removes the CRP result, or puts it back. */
-const crpSave = (action: "remove" | "restore", source: string) => [
+const crpSave = (action: "remove" | "restore") => [
   {
     id: `call-${action}`,
     tool: "save_changes",
     arguments: {
-      changes: [{ kind: "result", action, id: "res-a3", source }],
+      changes: [{ kind: "result", action, id: "res-a3" }],
     },
   },
 ];
@@ -37,10 +37,7 @@ test("a save in one window refreshes Overview's tiles there and a kind's page in
   await rufi.family();
   await rufi.start({
     scenario: {
-      callsByTurn: [
-        crpSave("remove", "Remove the CRP result"),
-        crpSave("restore", "Put the CRP result back"),
-      ],
+      callsByTurn: [crpSave("remove"), crpSave("restore")],
     },
   });
   // One window on the Lab results page, with no chat on it.
@@ -123,7 +120,6 @@ test("a row's history shows a correction before and after, a time with its time"
                 kind: "result",
                 action: "change",
                 id: "res-bp",
-                source: "It was taken at 9:45, not 8:30",
                 fields: {
                   measured: { date: "2026-05-20T09:45", words: "at 9:45" },
                 },

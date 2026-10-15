@@ -1,7 +1,7 @@
-// Dates in the record: a date or time only as the user said it, at the
-// precision they said it, with their words kept. The AI turns the words into
-// a date; Rufi checks the date is a real one and is no later than the
-// message it rests on, where the date must have happened by then.
+// Dates in the record: a date or time at the precision it was said, with
+// the words it came from kept. The AI turns the words into a date; Rufi
+// checks the date is a real one, and warns the AI when one that must have
+// happened by then is later than the message it rests on.
 
 /** 'YYYY', 'YYYY-MM', 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:MM' (local time). */
 const SHAPE = /^(\d{4})(?:-(\d{2})(?:-(\d{2})(?:T(\d{2}):(\d{2}))?)?)?$/;

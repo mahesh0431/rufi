@@ -247,7 +247,7 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
       expect(save).toContain('as: "new" | "another_source" | "correction";');
       // Required stays required, and every field keeps its type: none is left
       // to the model to guess ("unknown" is only ever a value here).
-      expect(save).toMatch(/\n {2}source: string;/);
+      expect(save).toMatch(/\n {2}source\?: number;/);
       expect(save).toMatch(/\n {2}version: number;/);
       expect(save).toMatch(/\btest\?: string;/);
       expect(save).toMatch(/\bvalue\?: string;/);
@@ -264,7 +264,7 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
           exec: [
             "const read = await tools.mcp__rufi__get_overview({});",
             "const saved = await tools.mcp__rufi__save_changes({ changes: [",
-            '  { kind: "symptom", action: "add", source: "I have a headache",',
+            '  { kind: "symptom", action: "add",',
             '    fields: { name: "Headache" } }] });',
             "text(JSON.stringify([read.isError ?? false, saved.isError ?? false]));",
           ].join("\n"),

@@ -152,7 +152,6 @@ async function ravisSave(store: Store, at: string): Promise<void> {
           {
             kind: "medicine_use",
             action: "add",
-            source: words,
             fields: { name: "Fish oil", status: "current" },
           },
         ],
@@ -175,6 +174,13 @@ describe("a record of version 1", () => {
         SOURCES,
       );
       expect(await saves()).toEqual(RAVIS_SAVES);
+      expect(
+        await store.query
+          .selectFrom("operations")
+          .select("warnings")
+          .distinct()
+          .execute(),
+      ).toEqual([{ warnings: "[]" }]);
 
       store.db.exec("VACUUM");
       expect((await readBrief(store.query, "asha", BRIEF))?.sources).toEqual(

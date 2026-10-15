@@ -58,16 +58,13 @@ async function saveSaid(text: string, changes: object[]) {
     id: `msg-${String(++said)}`,
     kind: "message",
     text,
+    agentTurnId: "t-1",
   });
   const answer = await chatCaller(reader, transcripts, () => undefined)(
     chat,
     "t-1",
     "person",
-  )(
-    "save_changes",
-    { changes: changes.map((change) => ({ source: text, ...change })) },
-    `call-${String(++calls)}`,
-  );
+  )("save_changes", { changes }, `call-${String(++calls)}`);
   expect(answer.ok).toBe(true);
 }
 

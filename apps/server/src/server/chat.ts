@@ -599,6 +599,9 @@ export function chat(deps: ChatDeps) {
     const fill = async () => {
       for (const message of await agent.startedMessages(threadId)) {
         if (await transcripts.hasMessage(message.id)) continue;
+        // The hand-over starting now is no gap: it is saved with its turn,
+        // where a save in that turn finds the user's message.
+        if (handing.get(threadId) === message.id) continue;
         // Rows Rufi handed over are filled from the queue, by their origin.
         if (await transcripts.fillHandOver(chat, message.id)) {
           queue.changed(chat.id);

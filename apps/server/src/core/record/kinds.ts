@@ -19,9 +19,15 @@ const DateSaid = Schema.Struct({
   }).check(Schema.makeFilter((text: string) => dateProblem(text))),
   words: Text(100).annotate({
     description:
-      "The user's own words for this date, copied from the source message: 'last Monday', 'since 2019', '28 Sep'.",
+      "The words the date came from, as the user or the document said them: 'last Monday', 'since 2019', 'December'.",
   }),
 }).annotate({ identifier: "DateSaid" });
+
+/** Which message of the user's a change rests on: a change's and a fix's source. */
+export const Position = Schema.Int.check(Schema.isGreaterThan(0)).annotate({
+  description:
+    "The user's message with the facts this rests on, as its position in read_chat. Leave it out when the facts are in their message in this turn, where they said yes.",
+});
 
 export interface Field {
   /** The column it is stored in. */

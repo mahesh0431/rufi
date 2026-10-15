@@ -163,7 +163,7 @@ You change your health record by telling the AI in the chat. Nothing changes unt
 
 1. Tell the AI, for example "I stopped creatine because of a stomach upset".
 2. The AI reads your health record, then says what it will save and asks you. Nothing is saved yet.
-3. Say yes to save it. If you say no, ask a question, or say "yes, but explain first", the AI saves nothing.
+3. Say yes to save it, in your own words and in any language: "yes" or "ok, do it" is enough. If you say no, ask a question, or say "yes, but explain first", the AI saves nothing.
 4. The chat shows a receipt with a tick: "Saved", then one line for each change, with the record's name in bold and each changed detail as old → new. For example:
 
    > **Saved**
@@ -177,7 +177,9 @@ The AI can save medicines you take, prescriptions, symptoms, conditions, allergi
 
 What Rufi does when it saves:
 
-- **Only what you said.** A detail you didn't give stays unknown. A date is saved only when you gave one, at the precision you gave it: "since 2019" stays a year. Rufi keeps your words for the date, such as "last Monday", and counts them from when you sent the message, not from when you said yes. A result always needs a date: when a report has none, the AI asks you for one, and a rough date is fine (see [Save results to your health record](documents.md#save-results-to-your-health-record)).
+- **Only what you said.** A detail you didn't give stays unknown. A date is saved only when you gave one, at the precision you gave it: "since 2019" stays a year. Rufi keeps the words the date came from, such as "last Monday", and the AI counts them from when you sent the message, not from when you said yes. A result always needs a date: when a report has none, the AI asks you for one, and a rough date is fine (see [Save results to your health record](documents.md#save-results-to-your-health-record)).
+- **Where it came from.** The source of a change is your message the change came from: the one where you told the AI the facts, not your "yes". A record's **Sources** show that message's words (see [Your health record](record.md)).
+- **Dates to come.** A date after your message, such as a planned visit or a recheck in December, is saved as you gave it. When a date that should already have happened, such as when a symptom started, is later than your message, Rufi still saves it, and the AI may check with you in case it is a slip, such as a wrong year.
 - **All or nothing.** When one part can't be saved, nothing is saved, and the AI tells you why.
 - **Nothing is deleted.** A record you remove leaves your current health record, and Rufi keeps its history.
 - **One medicine, one use.** When you take a medicine in two ways, such as a morning and a night dose, stopping one doesn't stop the other. A prescription doesn't add a medicine you take.

@@ -204,6 +204,7 @@ export interface Tables {
     chat_id: string;
     call_id: string;
     request: string;
+    warnings: string;
     created_at: string;
   };
   people: {
