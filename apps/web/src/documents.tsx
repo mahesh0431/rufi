@@ -340,8 +340,10 @@ function Status({
         ? `Reading · read ${String(reading.saved)} of ${String(reading.of)}`
         : document.status === "failed"
           ? `Failed · read ${String(reading.saved)} of ${String(reading.of)}`
-          : reading.results > 0
-            ? `Not saved · ${results(reading.results)}`
+          : reading.hasPending
+            ? reading.results > 0
+              ? `Not saved · ${results(reading.results)}`
+              : "Not saved"
             : reading.canRetry
               ? "To check"
               : reading.itemsSaved > 0

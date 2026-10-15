@@ -266,6 +266,70 @@ const DRAFTS = `
   FROM (SELECT 1 AS n UNION SELECT 2 UNION SELECT 3);
 `;
 
+test("the list stays Not saved while an earlier value waits, then shows Saved when it is set aside", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family(
+    DRAFTS,
+    `DELETE FROM draft_items WHERE id = 'drf-3';
+     UPDATE draft_items SET fields = json_set(fields, '$.column', 'earlier'),
+       original = json_set(original, '$.column', 'earlier')
+       WHERE id = 'drf-2';
+     UPDATE document_pages
+       SET entry = json_set(json_remove(entry, '$.items[2]'), '$.items[1].column', 'earlier')
+       WHERE document_id = 'doc-asha-aug' AND position = 1;`,
+  );
+  await rufi.start({
+    scenario: {
+      callsByTurn: [
+        [
+          {
+            id: "save-current",
+            tool: "save_changes",
+            arguments: {
+              items: [
+                { item: "drf-1", version: 2, as: "new", category: "lab" },
+              ],
+            },
+          },
+        ],
+        [
+          {
+            id: "set-aside-earlier",
+            tool: "dismiss_items",
+            arguments: { items: [{ item: "drf-2", version: 1 }] },
+          },
+        ],
+      ],
+    },
+  });
+  await page.goto(rufi.link());
+  const document = page.getByRole("row").filter({
+    has: page.getByRole("link", { name: "Sunrise Labs August.pdf" }),
+  });
+  await page.getByRole("link", { name: "Documents" }).click();
+  await expect(document).toContainText("Not saved · 1 result");
+
+  await page.getByRole("link", { name: "Chat with Rufi" }).click();
+  const box = page.getByRole("textbox", { name: "Message to Rufi" });
+  await box.fill("Save only the current result");
+  await box.press("Enter");
+  await expect(page.locator(".receipt")).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: "Stop", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("link", { name: "Documents" }).click();
+  await expect(document.getByText("Not saved", { exact: true })).toBeVisible();
+
+  await page.getByRole("link", { name: "Chat with Rufi" }).click();
+  await box.fill("Set the earlier value aside");
+  await box.press("Enter");
+  await expect(page.locator(".receipt")).toHaveCount(2);
+  await page.getByRole("link", { name: "Documents" }).click();
+  await expect(document).toContainText("Saved · 1 result");
+});
+
 test("once nothing waits, the page says its results are in the health record, counts what was saved and set aside, has no Save in chat, and opens without the earlier state", async ({
   page,
   rufi,

@@ -18,6 +18,7 @@ const summary = (
           saved: 2,
           of: 2,
           results: 3,
+          hasPending: true,
           toCheck: 0,
           itemsSaved: 0,
           itemsSetAside: 0,
