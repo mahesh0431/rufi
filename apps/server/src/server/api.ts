@@ -174,12 +174,15 @@ const DIAGRAM = "/diagram.html";
 
 /** What a page that is gone says, in its frame. */
 const GONE_PAGE = `<!doctype html><html lang="en"><meta charset="utf-8"><title>File not found</title><body style="font:14px/1.5 -apple-system,sans-serif;margin:24px"><p>This file is no longer in the AI's folder.</p></body></html>`;
-/** Appended after the file: keep its doctype and leave its bytes on disk alone. */
+/**
+ * Esc in a generated page, told to its dialog: the page has its own origin,
+ * so Rufi never hears its keys. Appended to what is served, after the file,
+ * so its doctype stays first and its bytes on disk stay as they are.
+ */
 const pageEscape = (origin: string) => `
 <script>
 addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
-    event.preventDefault();
     parent.postMessage(${JSON.stringify(PAGE_ESCAPE)}, ${JSON.stringify(origin)});
   }
 }, true);
@@ -950,13 +953,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     if ("missing" in found) {
       // The file went between the check and this load: a page's frame says so.
       c.header("Content-Security-Policy", pageCsp(origin()));
-      return c.html(
-        GONE_PAGE +
-          (c.req.header("Sec-Fetch-Dest") === "iframe"
-            ? pageEscape(origin())
-            : ""),
-        404,
-      );
+      return c.html(GONE_PAGE, 404);
     }
     const { path, type, shape } = found.found;
     // The browser sets this header. The page's ancestor policy admits only

@@ -330,6 +330,14 @@ test("once nothing waits, the page says its results are in the health record, co
   await expect(page.getByText(inRecord)).toBeVisible();
   await expect(page.getByText(waiting)).toHaveCount(0);
   await expect(items).toContainText("2 saved · 1 set aside");
+  // Each row says the same: saved, or set aside.
+  const row = (test: string) =>
+    items.getByRole("row").filter({
+      has: page.getByRole("button", { name: test, exact: true }),
+    });
+  await expect(row("Test 1")).toContainText("saved");
+  await expect(row("Test 3")).toContainText("set aside");
+  await expect(items).not.toContainText("dismissed");
   await expect(items).not.toContainText("0 results");
   await expect(page.getByText("Nothing here waits to be saved.")).toBeVisible();
   await expect(save).toHaveCount(0);

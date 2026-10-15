@@ -521,7 +521,7 @@ function Row({
           {fields.column === "earlier" && <Tag>earlier</Tag>}
           {fixes.length > 0 && <Tag strong>fixed by you</Tag>}
           {item.unsure.length > 0 && <Tag>unsure</Tag>}
-          {done && <Tag>{item.status}</Tag>}
+          {done && <Tag>{item.status === "saved" ? "saved" : "set aside"}</Tag>}
           {selected && !done && !fixing && (
             <Button
               look="quiet"

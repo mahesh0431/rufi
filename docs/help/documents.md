@@ -160,7 +160,7 @@ When every result is saved or set aside, the page says **These results are in yo
 
 The result shows **fixed by you** and what the reader read (**The reader read: value 2.1**). Rufi keeps the reader's value beside your fix. A fix doesn't take away the **unsure** mark, so the AI still sees why the reader wasn't sure when you save. To fix a date, tell the AI in the chat.
 
-A result you already saved or dismissed can't be fixed here.
+A result you already saved or set aside can't be fixed here.
 
 ### When another tab changed it first
 
@@ -170,7 +170,7 @@ Fields you didn't change take their current values from the other tab. Saving ag
 
 ### Add some results to the chat
 
-To ask about or save only some results, add them to the chat as chips: click **Ask Rufi** on a result's row, for each one you want. You stay on the page, and the chat bar shows what you added. Then click the bar, type your message, for example "save these", and send it. Results you already saved or dismissed have no **Ask Rufi**.
+To ask about or save only some results, add them to the chat as chips: click **Ask Rufi** on a result's row, for each one you want. You stay on the page, and the chat bar shows what you added. Then click the bar, type your message, for example "save these", and send it. Results you already saved or set aside have no **Ask Rufi**.
 
 ### Save in chat
 
