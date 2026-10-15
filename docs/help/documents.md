@@ -49,7 +49,8 @@ To show one kind only, choose it in the list at the top left.
 | ------------------- | ----------------------------------------------------------------------- |
 | **Not read yet**    | Never read (added before Rufi read each document); **Retry** reads it   |
 | **Reading**         | Rufi reads it now, or it waits its turn; it shows the pages read so far |
-| **To check**        | Results wait for you to check, or a page needs **Retry**                |
+| **Not saved**       | Results wait for you to check and save in the chat                      |
+| **To check**        | No results wait, but a page needs **Retry**                             |
 | **Nothing to save** | Read, and no results were found (a letter, for example)                 |
 | **Failed**          | The reading stopped before the end; **Retry** continues it              |
 
@@ -119,7 +120,7 @@ What Rufi does when it saves a document's results:
 
 ### Results you don't want
 
-If a result isn't yours, or was read by mistake, tell the AI. When you say yes, it sets the result aside: the chat shows a receipt such as **Dismissed 1 item from Sunrise Labs August.pdf: not saved**, and that result is never saved later. A result you already saved can't be set aside: ask the AI to remove it from your health record instead.
+If a result isn't yours, or was read by mistake, tell the AI. When you say yes, it sets the result aside: the chat shows a receipt such as **Set aside 1 item from Sunrise Labs August.pdf: not saved**, and that result is never saved later. A result you already saved can't be set aside: ask the AI to remove it from your health record instead.
 
 ### Undo
 
@@ -141,6 +142,8 @@ Each document has its own page, with the results the reader read beside the page
 
 Nothing on this page saves to your health record. You fix what the reader read, then you save in the chat.
 
+When every result is saved or set aside, the page says **These results are in your health record.** Its count says what was saved and set aside, for example **2 saved · 1 set aside**, and it has no **Save in chat**. **View reading** says the same.
+
 ### Look at the results beside the page
 
 - The results are in a list, grouped by page. Each page's heading says how its reading went, with the marks from [What the marks mean](#what-the-marks-mean). A page that couldn't be read or wasn't looked at has **Retry**.
@@ -157,7 +160,7 @@ Nothing on this page saves to your health record. You fix what the reader read, 
 
 The result shows **fixed by you** and what the reader read (**The reader read: value 2.1**). Rufi keeps the reader's value beside your fix. A fix doesn't take away the **unsure** mark, so the AI still sees why the reader wasn't sure when you save. To fix a date, tell the AI in the chat.
 
-A result you already saved or dismissed can't be fixed here.
+A result you already saved or set aside can't be fixed here.
 
 ### When another tab changed it first
 
@@ -167,7 +170,7 @@ Fields you didn't change take their current values from the other tab. Saving ag
 
 ### Add some results to the chat
 
-To ask about or save only some results, add them to the chat as chips: click **Ask Rufi** on a result's row, for each one you want. You stay on the page, and the chat bar shows what you added. Then click the bar, type your message, for example "save these", and send it. Results you already saved or dismissed have no **Ask Rufi**.
+To ask about or save only some results, add them to the chat as chips: click **Ask Rufi** on a result's row, for each one you want. You stay on the page, and the chat bar shows what you added. Then click the bar, type your message, for example "save these", and send it. Results you already saved or set aside have no **Ask Rufi**.
 
 ### Save in chat
 

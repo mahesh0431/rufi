@@ -4,6 +4,7 @@
 // also looks again while one reads.
 import { Dialog } from "@base-ui/react/dialog";
 import {
+  type DocumentItems,
   type ReadEntry,
   ReadingView,
   Readings,
@@ -17,8 +18,8 @@ import { read, request } from "./api.ts";
 import { chipState } from "./chip-state.ts";
 import { printedTime } from "./dates.ts";
 import { messageOf } from "./live.ts";
-import { queries } from "./reads.ts";
-import { Button, IconButton } from "./ui.tsx";
+import { queries, useDocumentItems } from "./reads.ts";
+import { Button, IconButton, Problem } from "./ui.tsx";
 
 const documentsPath = (personId: string) =>
   `/api/people/${encodeURIComponent(personId)}/documents`;
@@ -52,6 +53,13 @@ async function retry(personId: string, documentId: string) {
   );
   readingsChanged(personId);
 }
+
+/** What a document's page and its reading say once nothing waits to be saved. */
+export const IN_RECORD = "These results are in your health record.";
+
+/** Every draft item of the document is saved or set aside. */
+export const inRecord = (items: DocumentItems) =>
+  items.items.length > 0 && items.items.every((i) => i.status !== "pending");
 
 /** Which reading View reading shows, over any screen. */
 const useOpen = create<{ personId: string; documentId: string } | null>(
@@ -251,6 +259,7 @@ function Sheet({
     gcTime: 0,
   });
   const reading = view.data;
+  const items = useDocumentItems(personId, documentId);
   // Until its work comes, what the strip knows: its name and where it is.
   const now = useReadings(personId).data?.find(
     (r) => r.documentId === documentId,
@@ -302,16 +311,22 @@ function Sheet({
             {view.error.message}
           </p>
         )}
+        {items.error && (
+          <Problem error={items.error} retry={() => void items.refetch()} />
+        )}
         {!reading && now?.state === "running" && (
           // Progress in the chip's words: no page can be named yet.
           <p className="text-muted">{chipState(undefined, now)?.text}</p>
         )}
         {reading && (
           <>
-            <p className="text-xs text-muted">
-              What the reader read, not saved: these become part of your health
-              record only when you save them in the chat.
-            </p>
+            {items.data && !items.error && (
+              <p className="text-xs text-muted">
+                {inRecord(items.data)
+                  ? IN_RECORD
+                  : "What the reader read, not saved: these become part of your health record only when you save them in the chat."}
+              </p>
+            )}
             {reading.note && (
               <div>
                 <h3 className="mb-1 text-xs font-semibold text-muted">

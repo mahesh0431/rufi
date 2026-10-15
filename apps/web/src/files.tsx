@@ -5,7 +5,7 @@
 // A file that is gone keeps its card and says so.
 import { Dialog } from "@base-ui/react/dialog";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShownFile } from "@rufi/contracts";
+import { PAGE_ESCAPE, ShownFile } from "@rufi/contracts";
 import {
   ExternalLink,
   FileCode,
@@ -232,6 +232,24 @@ export function PageCard({ path, title }: { path: string; title: string }) {
   const file = useQuery(fileQuery(path));
   const [opened, setOpened] = useState<ShownFile | null>(null);
   const [state, setState] = useState<"idle" | "opening" | "failed">("idle");
+  const frame = useRef<HTMLIFrameElement>(null);
+  // The served page relays only Esc. Its opaque origin cannot reach this
+  // dialog's keys, so check the sender frame instead of moving its focus.
+  useEffect(() => {
+    if (!opened) return;
+    const heard = (event: MessageEvent) => {
+      if (
+        event.source === frame.current?.contentWindow &&
+        event.data === PAGE_ESCAPE
+      ) {
+        setOpened(null);
+      }
+    };
+    addEventListener("message", heard);
+    return () => {
+      removeEventListener("message", heard);
+    };
+  }, [opened]);
   const name = title === "" ? nameOf(path) : title;
   const problem = file.isError ? problemOf(file.error) : undefined;
   if (problem === "gone") return <Gone title={name} />;
@@ -301,6 +319,7 @@ export function PageCard({ path, title }: { path: string; title: string }) {
               </div>
               {/* Locked twice: this frame's sandbox and the page's own policy. */}
               <iframe
+                ref={frame}
                 src={opened.url}
                 title={name}
                 sandbox="allow-scripts"

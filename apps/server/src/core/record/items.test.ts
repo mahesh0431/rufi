@@ -989,7 +989,7 @@ describe("dismissing draft items", () => {
     });
     expect(done.ok).toBe(true);
     expect(lines(done.result.receipt)).toEqual([
-      "Dismissed 1 item from Sunrise Labs August.pdf: not saved",
+      "Set aside 1 item from Sunrise Labs August.pdf: not saved",
       "Vitamin D 18 ng/mL · page 2",
     ]);
     expect(

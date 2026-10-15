@@ -11,7 +11,7 @@ import {
   Status,
 } from "@rufi/contracts";
 import { BriefPage } from "@rufi/contracts/briefs";
-import { Documents } from "@rufi/contracts/documents";
+import { DocumentItems, Documents } from "@rufi/contracts/documents";
 import {
   FollowUps,
   type PageKind,
@@ -225,6 +225,22 @@ export const useDocuments = (personId: string) =>
           `/api/people/${encodeURIComponent(personId)}/documents`,
         )
       ).documents,
+  });
+
+/**
+ * A document's pages and draft items. Let go once nothing shows them, so
+ * opened again they never show an earlier state, such as items since saved.
+ */
+export const useDocumentItems = (personId: string, documentId: string) =>
+  useQuery({
+    queryKey: ["items", personId, documentId],
+    queryFn: () =>
+      read(
+        DocumentItems,
+        "GET",
+        `${personPath(personId)}/documents/${encodeURIComponent(documentId)}/items`,
+      ),
+    gcTime: 0,
   });
 
 /** A visit brief of the person's, with its Sources as Rufi built them. */

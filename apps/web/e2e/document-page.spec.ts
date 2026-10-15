@@ -60,7 +60,7 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
     buffer: await readFile(REPORT),
   });
   await expect(
-    page.getByRole("cell", { name: /To check · 3 results/ }),
+    page.getByRole("cell", { name: /Not saved · 3 results/ }),
   ).toBeVisible({ timeout: 10_000 });
 
   // Items beside the page; a row shows its page.
@@ -241,4 +241,161 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
   expect(submitted).toEqual([submitted[0], submitted[0]]);
   expect(page.url()).toBe(documentPage);
   await expect(save).toBeEnabled();
+});
+
+/** Three draft items read from page 1 of Asha's August report. */
+const DRAFTS = `
+  INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at)
+    VALUES ('job-aug', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1,2]', '2026-10-01T09:00:00Z');
+  UPDATE document_pages SET state = 'read', entry_job_id = 'job-aug',
+    entry = '{"outcome":"read","facts":{"issuer":"Sunrise Labs","dates":[{"label":"Collected","date":"12 Aug 2026","iso":"2026-08-12"}]},"items":[]}'
+    WHERE document_id = 'doc-asha-aug';
+  UPDATE documents SET version = 1 WHERE id = 'doc-asha-aug';
+  INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, fields, original, created_at)
+  SELECT 'drf-' || n, 'asha', 'doc-asha-aug', 1, n, 'job-aug', 'lab_result',
+    json_object('test_name', 'Test ' || n, 'value_text', '' || n),
+    json_object('test_name', 'Test ' || n, 'value_text', '' || n),
+    '2026-10-01T09:00:00Z'
+  FROM (SELECT 1 AS n UNION SELECT 2 UNION SELECT 3);
+`;
+
+test("once nothing waits, the page says its results are in the health record, counts what was saved and set aside, has no Save in chat, and opens without the earlier state", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family(DRAFTS);
+  await rufi.start({
+    scenario: {
+      calls: [
+        {
+          tool: "save_changes",
+          arguments: {
+            items: [1, 2].map((n) => ({
+              item: `drf-${String(n)}`,
+              version: 1,
+              as: "new",
+              category: "lab",
+            })),
+          },
+        },
+        {
+          tool: "dismiss_items",
+          arguments: { items: [{ item: "drf-3", version: 1 }] },
+        },
+      ],
+    },
+  });
+  await page.goto(rufi.link());
+  const open = async () => {
+    await page.getByRole("link", { name: "Documents" }).click();
+    await page.getByRole("link", { name: "Sunrise Labs August.pdf" }).click();
+  };
+  await open();
+  const items = page.getByRole("region", { name: "Items" });
+  const save = page.getByRole("button", { name: "Save in chat" });
+  const waiting =
+    "What the reader read, not saved. These become part of your health record only when you save them in the chat.";
+  const inRecord = "These results are in your health record.";
+  await expect(page.getByText(waiting)).toBeVisible();
+  await expect(items).toContainText("3 results · 0 unsure");
+  await expect(page.getByText("Not saved yet: 3 results.")).toBeVisible();
+  await expect(save).toBeVisible();
+
+  // Saved and set aside in the chat while the page is closed.
+  await page.getByRole("link", { name: "Chat with Rufi" }).click();
+  const box = page.getByRole("textbox", { name: "Message to Rufi" });
+  await box.fill("Save the first two; the third isn't mine");
+  await box.press("Enter");
+  await expect(page.locator(".receipt")).toHaveCount(2);
+
+  // Opened again, it shows nothing until its items come: never the
+  // earlier "not saved" state.
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let asked = false;
+  await page.route("**/items", async (route) => {
+    asked = true;
+    await held;
+    await route.continue();
+  });
+  await open();
+  await expect.poll(() => asked).toBe(true);
+  await expect(page.getByText(waiting)).toHaveCount(0);
+  await expect(page.getByText(inRecord)).toHaveCount(0);
+  await expect(save).toHaveCount(0);
+  release();
+
+  await expect(page.getByText(inRecord)).toBeVisible();
+  await expect(page.getByText(waiting)).toHaveCount(0);
+  await expect(items).toContainText("2 saved · 1 set aside");
+  // Each row says the same: saved, or set aside.
+  const row = (test: string) =>
+    items.getByRole("row").filter({
+      has: page.getByRole("button", { name: test, exact: true }),
+    });
+  await expect(row("Test 1")).toContainText("saved");
+  await expect(row("Test 3")).toContainText("set aside");
+  await expect(items).not.toContainText("dismissed");
+  await expect(items).not.toContainText("0 results");
+  await expect(page.getByText("Nothing here waits to be saved.")).toBeVisible();
+  await expect(save).toHaveCount(0);
+  await accessible(page);
+  // The reader's work says the same.
+  await page.getByRole("button", { name: "View reading" }).click();
+  const reading = page.getByRole("dialog");
+  await expect(reading.getByText(inRecord)).toBeVisible();
+  await expect(reading.getByText(/not saved/)).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.unrouteAll({ behavior: "wait" });
+
+  // From Documents there is no mounted items query to share. The reading
+  // may arrive first, but it must not guess that these results are unsaved.
+  await page.getByRole("link", { name: "Documents", exact: true }).click();
+  const document = page.getByRole("row").filter({
+    has: page.getByRole("link", { name: "Sunrise Labs August.pdf" }),
+  });
+  const requested = Promise.withResolvers<undefined>();
+  const delayed = Promise.withResolvers<undefined>();
+  await page.route("**/items", async (route) => {
+    requested.resolve(undefined);
+    await delayed.promise;
+    await route.continue();
+  });
+  try {
+    await document.getByRole("button", { name: "View reading" }).click();
+    await requested.promise;
+    await expect(reading.getByRole("heading", { name: "Pages" })).toBeVisible();
+    await expect(reading.getByText(inRecord)).toHaveCount(0);
+    await expect(
+      reading.getByText(/What the reader read, not saved/),
+    ).toHaveCount(0);
+  } finally {
+    delayed.resolve(undefined);
+    await page.unrouteAll({ behavior: "wait" });
+  }
+  await expect(reading.getByText(inRecord)).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // A failed items read is an error to retry, not an unsaved claim. Retry
+  // reaches the real core and restores the saved state without reopening.
+  await page.route(
+    "**/items",
+    (route) =>
+      route.fulfill({
+        status: 500,
+        json: { error: "Fictional items read failed." },
+      }),
+    { times: 1 },
+  );
+  await document.getByRole("button", { name: "View reading" }).click();
+  const problem = reading.getByRole("alert");
+  await expect(problem).toContainText("Fictional items read failed.");
+  await expect(
+    reading.getByText(/What the reader read, not saved/),
+  ).toHaveCount(0);
+  await problem.getByRole("button", { name: "Retry" }).click();
+  await expect(problem).toHaveCount(0);
+  await expect(reading.getByText(inRecord)).toBeVisible();
 });

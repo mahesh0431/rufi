@@ -70,10 +70,12 @@ function png(width: number, height: number, [r, g, b]: number[]): Buffer {
 /** A page the AI made that tries what a page mustn't, and writes what happened. */
 const TRYING = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>Fictional results</title></head><body>
-<h1>Asha's fictional results</h1><ul id="out"></ul>
+<h1>Asha's fictional results</h1><button id="tab" type="button">2025</button>
+<label>Filter <input id="filter"></label><ul id="out"></ul>
 <script>
 const out = (line) => { const li = document.createElement("li"); li.textContent = line; document.getElementById("out").append(li); };
 out("script ran");
+document.getElementById("tab").onclick = () => out("tab clicked");
 out("eval: " + eval("6 * 7"));
 try { out("parent: " + parent.document.title); } catch { out("parent: blocked"); }
 try { out("storage: " + sessionStorage.length); } catch { out("storage: blocked"); }
@@ -271,6 +273,20 @@ test("a page is a card that opens over the chat: its script runs, but it can't r
   await expect(out).toContainText("send: blocked");
   await expect(out).toContainText("remote image: blocked");
   await expect(out).toContainText("remote script: blocked");
+  // The Escape signal from any sender except this page's frame is ignored.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const heard = (event: MessageEvent) => {
+          if (event.data !== "rufi-page-escape") return;
+          removeEventListener("message", heard);
+          resolve();
+        };
+        addEventListener("message", heard);
+        postMessage("rufi-page-escape", location.origin);
+      }),
+  );
+  await expect(shown).toBeVisible();
   await accessible(page);
   const fileUrl = frame.url();
   const scroll = page.locator('[aria-label="Messages"]').locator("../..");
@@ -289,6 +305,38 @@ test("a page is a card that opens over the chat: its script runs, but it can't r
   expect(await scroll.evaluate((element) => element.scrollTop)).toBe(at);
   await reply.getByRole("button", { name: "Open Your 2026 results" }).click();
   await expect(shown).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(shown).toHaveCount(0);
+  await expect(open).toBeFocused();
+  // A person can click, pause, and type inside the page without losing focus.
+  await open.click();
+  const filter = (await pageFrame(page)).getByRole("textbox", {
+    name: "Filter",
+  });
+  await filter.click();
+  await page.waitForTimeout(300);
+  await page.keyboard.type("HbA1c");
+  await expect(filter).toHaveValue("HbA1c");
+  // Esc closes it after a click inside the page, and the click still works.
+  await (await pageFrame(page)).locator("#tab").click();
+  await expect((await pageFrame(page)).locator("#out")).toContainText(
+    "tab clicked",
+  );
+  await page.keyboard.press("Escape");
+  await expect(shown).toHaveCount(0);
+  await expect(open).toBeFocused();
+  // Tab reaches the page, Enter activates its control, and Esc closes it.
+  await open.click();
+  await expect((await pageFrame(page)).locator("#out")).toContainText(
+    "script ran",
+  );
+  await shown.getByRole("button", { name: "Close" }).focus();
+  await page.keyboard.press("Tab");
+  await expect((await pageFrame(page)).locator("#tab")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect((await pageFrame(page)).locator("#out")).toContainText(
+    "tab clicked",
+  );
   await page.keyboard.press("Escape");
   await expect(shown).toHaveCount(0);
   await expect(open).toBeFocused();

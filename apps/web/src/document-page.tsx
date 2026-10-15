@@ -4,7 +4,8 @@
 // keeps the reader's; it names the item's version, so a fix made on an older
 // one (another tab fixed it first) is refused with the value as it is now.
 // Nothing here saves to the record: "Save in chat" puts the words
-// in the chat box, and the person sends them. An item goes
+// in the chat box, and the person sends them; once nothing waits, the page
+// says what was saved and set aside, and has no Save in chat. An item goes
 // into the chat as a chip too: Ask Rufi on its row. The page stays, to read
 // beside what you write.
 import {
@@ -37,8 +38,8 @@ import { describe, KIND_NAMES, Viewer } from "./documents.tsx";
 import type { BoxChip } from "./draft.ts";
 import { messageOf, retain } from "./live.ts";
 import { askRufi } from "./panel.ts";
-import { queries, useDocuments } from "./reads.ts";
-import { openReading, RetryButton } from "./reading.tsx";
+import { queries, useDocumentItems, useDocuments } from "./reads.ts";
+import { IN_RECORD, inRecord, openReading, RetryButton } from "./reading.tsx";
 import { Button, IconButton, Problem } from "./ui.tsx";
 
 const documentPath = (personId: string, documentId: string) =>
@@ -81,15 +82,7 @@ export function DocumentPage({
   // The chat's stream: a fix in another tab shows here at once.
   useEffect(() => retain(person.id), [person.id]);
   const documents = useDocuments(person.id);
-  const items = useQuery({
-    queryKey: ["items", person.id, documentId],
-    queryFn: () =>
-      read(
-        DocumentItems,
-        "GET",
-        `${documentPath(person.id, documentId)}/items`,
-      ),
-  });
+  const items = useDocumentItems(person.id, documentId);
   const document = documents.data?.find((d) => d.id === documentId);
   // The list says it isn't there: its items' refusal is no problem to try
   // again.
@@ -172,6 +165,9 @@ function Checking({
     plural(results.length, "result"),
     ...(earlier > 0 ? [`${String(earlier)} earlier`] : []),
   ].join(" · ");
+  const settled = inRecord(items);
+  const saved = items.items.filter((i) => i.status === "saved").length;
+  const setAside = items.items.filter((i) => i.status === "dismissed").length;
   const about = [
     ...(document.kind ? [KIND_NAMES[document.kind]] : []),
     ...(document.date ? [printedDate(document.date)] : []),
@@ -188,8 +184,9 @@ function Checking({
             <span className="text-muted">· {about}</span>
           </h2>
           <p className="text-xs text-muted">
-            What the reader read, not saved. These become part of your health
-            record only when you save them in the chat.
+            {settled
+              ? IN_RECORD
+              : "What the reader read, not saved. These become part of your health record only when you save them in the chat."}
           </p>
         </div>
         {(document.status === "not_read" ||
@@ -240,13 +237,19 @@ function Checking({
             </label>
             <span className="flex-1" />
             <span className="text-xs text-muted">
-              {[
-                left,
-                `${String(unsure.length)} unsure`,
-                ...(fixed.length > 0
-                  ? [`${String(fixed.length)} fixed by you`]
-                  : []),
-              ].join(" · ")}
+              {(settled
+                ? [
+                    ...(saved > 0 ? [`${String(saved)} saved`] : []),
+                    ...(setAside > 0 ? [`${String(setAside)} set aside`] : []),
+                  ]
+                : [
+                    left,
+                    `${String(unsure.length)} unsure`,
+                    ...(fixed.length > 0
+                      ? [`${String(fixed.length)} fixed by you`]
+                      : []),
+                  ]
+              ).join(" · ")}
             </span>
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
@@ -288,12 +291,14 @@ function Checking({
             : `Not saved yet: ${left}.`}
         </span>
         <span className="flex-1" />
-        <SaveInChat
-          personId={person.id}
-          document={document}
-          name={name}
-          count={results.length}
-        />
+        {pending.length > 0 && (
+          <SaveInChat
+            personId={person.id}
+            document={document}
+            name={name}
+            count={results.length}
+          />
+        )}
       </div>
 
       {original && (
@@ -516,7 +521,7 @@ function Row({
           {fields.column === "earlier" && <Tag>earlier</Tag>}
           {fixes.length > 0 && <Tag strong>fixed by you</Tag>}
           {item.unsure.length > 0 && <Tag>unsure</Tag>}
-          {done && <Tag>{item.status}</Tag>}
+          {done && <Tag>{item.status === "saved" ? "saved" : "set aside"}</Tag>}
           {selected && !done && !fixing && (
             <Button
               look="quiet"

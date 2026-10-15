@@ -73,6 +73,20 @@ test("a window coming back to the front reads Follow-ups again, with the page vi
   expect(await page.evaluate(() => document.visibilityState)).toBe("visible");
 });
 
+test("an empty Follow-ups page is accessible", async ({ page, rufi }) => {
+  await rufi.family();
+  await rufi.start();
+  await page.goto(rufi.link());
+  await page
+    .getByRole("complementary")
+    .getByRole("link", { name: /^Follow-ups/ })
+    .click();
+  // Loaded: its empty state says something.
+  await expect(page.getByRole("main")).toHaveText(/\S/);
+  const { violations } = await new AxeBuilder({ page }).analyze();
+  expect(violations.map((violation) => violation.id)).toEqual([]);
+});
+
 test("a done follow-up shows the result it is about, which opens on Lab results", async ({
   page,
   rufi,

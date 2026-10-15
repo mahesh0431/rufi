@@ -337,6 +337,44 @@ test("a save of a document's items shows its summary, with what was saved folded
   );
 });
 
+test("setting a document's items aside shows its receipt, with the items folded", async ({
+  page,
+  rufi,
+}) => {
+  await opened(
+    page,
+    rufi,
+    {
+      scenario: {
+        calls: [
+          {
+            tool: "dismiss_items",
+            arguments: {
+              items: [1, 2, 3, 4, 5, 6, 7].map((n) => ({
+                item: `drf-${String(n)}`,
+                version: 1,
+              })),
+            },
+          },
+        ],
+      },
+    },
+    DRAFTS,
+  );
+  await opener(chat(page)).click();
+  await box(chat(page)).fill("None of these are mine");
+  await box(chat(page)).press("Enter");
+  const receipt = log(chat(page)).locator(".receipt");
+  await expect(receipt.locator("p").first()).toHaveText(
+    "Set aside 7 items from Sunrise Labs August.pdf: not saved",
+  );
+  const list = receipt.getByRole("listitem");
+  await expect(list.first()).toBeHidden();
+  await receipt.getByText("Show the items").click();
+  await expect(list).toHaveCount(7);
+  await expect(list.first()).toHaveText("Test 1 1 · page 1");
+});
+
 test("a document's draft items go into the chat as chips, and the AI gets their exact ids", async ({
   page,
   rufi,
