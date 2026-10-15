@@ -2,7 +2,7 @@
 
 **Date:** 14 Oct 2026 · **Status:** accepted
 
-The AI works in its folder (ADR 0016): its programs draw charts, and it can make an HTML page of results to show a doctor. A reply must show these without letting what the AI made reach Rufi, the record or the network. Three trust levels stay apart: the reply's Markdown (sanitized, no HTML, no remote pictures), a page that runs script with no way to Rufi, and nothing the AI made that can call Rufi's tools or API.
+The AI works in its folder (ADR 0016): its programs draw charts, and it can make an HTML page of results to show a doctor. A reply must show these without letting what the AI made read Rufi's data, change the record or reach the network. Three trust levels stay apart: the reply's Markdown (sanitized, no HTML, no remote pictures), a page that runs script without access to Rufi's data, and nothing the AI made that can call Rufi's tools or API.
 
 **Files from two places, found again on every request.** A reply keeps the path as the AI wrote it; nothing is copied. Rufi shows a file only from the AI's folder (`ai/`, where a relative path starts) and from Codex's generated-image folder (`codex/generated_images/`), never the rest of Codex's home. `server/files.ts` resolves the path as the disk does (links followed) and refuses anything outside those roots, anything that isn't a regular file, and types other than PNG, JPEG, GIF, WebP and HTML (no SVG, which is a document of its own when opened). So a reply shows the file as it is now: a changed file changes an old reply, and a file that is gone keeps its card with "This file is no longer in the AI's folder." Rejected for now: a frozen copy of each file (a copy store, for a case the person can see and fix).
 
@@ -14,7 +14,7 @@ The AI works in its folder (ADR 0016): its programs draw charts, and it can make
 
 **A generated picture is its own line.** Codex's image generation saves a PNG and reports an `imageGeneration` item with its path. Rufi keeps it as an activity of kind `picture` (migration 6), its path whole in `detail` and its bytes left out of `details`, and shows it as a picture, "Made by the AI", even when the reply doesn't link it; when Markdown in the same turn shows that file, it shows there only. Only supported Markdown file references count, never a plain mention or a code block. The file resolver's canonical path identifies aliases of the same file.
 
-**Closing a viewer.** Picture and page viewers use the chat's portal host, inside its dismissal boundary. Close and Esc return to the open panel at the same reading position.
+**Closing a viewer.** Picture and page viewers use the chat's portal host, inside its dismissal boundary. Close and Esc return to the open panel at the same reading position. The core appends a small Escape relay to a served generated page, after its bytes so its doctype stays first. The relay sends only a fixed Escape signal to Rufi's origin. The screens accept it only from the currently open frame. Focus stays in the page, so mouse text entry and keyboard controls work. The frame's sandbox and policy stay the same.
 
 **The Rufi app.** A popup still goes to the browser only while the page has no frame, but Rufi's locked frames (`/files/` and `/diagram.html`, opaque origins whose policies forbid popups) don't count, so a web link in a reply still opens while a diagram shows.
 

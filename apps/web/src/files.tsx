@@ -5,7 +5,7 @@
 // A file that is gone keeps its card and says so.
 import { Dialog } from "@base-ui/react/dialog";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShownFile } from "@rufi/contracts";
+import { PAGE_ESCAPE, ShownFile } from "@rufi/contracts";
 import {
   ExternalLink,
   FileCode,
@@ -232,45 +232,22 @@ export function PageCard({ path, title }: { path: string; title: string }) {
   const file = useQuery(fileQuery(path));
   const [opened, setOpened] = useState<ShownFile | null>(null);
   const [state, setState] = useState<"idle" | "opening" | "failed">("idle");
-  const popup = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
-  // A click in the page gives its frame the focus, and Esc pressed there
-  // never reaches Rufi (the page has its own origin): the focus comes back
-  // to the dialog, and the click still reaches the page. Tab into the page
-  // leaves the focus there, so the keyboard reaches it.
+  // The served page relays only Esc. Its opaque origin cannot reach this
+  // dialog's keys, so check the sender frame instead of moving its focus.
   useEffect(() => {
     if (!opened) return;
-    /** A Tab not yet landed: in Rufi's page, or in the frame. */
-    let tabbing = false;
-    let later: ReturnType<typeof setTimeout> | undefined;
-    const onKey = (event: KeyboardEvent) => {
-      tabbing = event.key === "Tab";
-    };
-    const onFocus = (event: FocusEvent) => {
-      if (event.target !== frame.current) tabbing = false;
-    };
-    const onPointer = () => {
-      tabbing = false;
-    };
-    const onBlur = () => {
-      if (!tabbing && document.activeElement === frame.current) {
-        // After the click's own focus change, which would undo this one.
-        later = setTimeout(() => {
-          popup.current?.focus();
-        });
+    const heard = (event: MessageEvent) => {
+      if (
+        event.source === frame.current?.contentWindow &&
+        event.data === PAGE_ESCAPE
+      ) {
+        setOpened(null);
       }
-      tabbing = false;
     };
-    addEventListener("keydown", onKey, true);
-    addEventListener("focusin", onFocus, true);
-    addEventListener("pointerdown", onPointer, true);
-    addEventListener("blur", onBlur);
+    addEventListener("message", heard);
     return () => {
-      removeEventListener("keydown", onKey, true);
-      removeEventListener("focusin", onFocus, true);
-      removeEventListener("pointerdown", onPointer, true);
-      removeEventListener("blur", onBlur);
-      clearTimeout(later);
+      removeEventListener("message", heard);
     };
   }, [opened]);
   const name = title === "" ? nameOf(path) : title;
@@ -323,7 +300,6 @@ export function PageCard({ path, title }: { path: string; title: string }) {
           <Dialog.Portal container={portals}>
             <Dialog.Backdrop className="fixed inset-0 z-40 bg-ink/25" />
             <Dialog.Popup
-              ref={popup}
               finalFocus={opener}
               className="fixed inset-4 z-40 flex flex-col overflow-hidden rounded-[14px] bg-surface shadow-menu outline-none"
             >

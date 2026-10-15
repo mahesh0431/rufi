@@ -8,6 +8,7 @@ import {
   FinishStep,
   MessageText,
   MAX_MESSAGE_CHARS,
+  PAGE_ESCAPE,
   ReorderQueue,
   SaveDraft,
   SaveSettings,
@@ -173,6 +174,16 @@ const DIAGRAM = "/diagram.html";
 
 /** What a page that is gone says, in its frame. */
 const GONE_PAGE = `<!doctype html><html lang="en"><meta charset="utf-8"><title>File not found</title><body style="font:14px/1.5 -apple-system,sans-serif;margin:24px"><p>This file is no longer in the AI's folder.</p></body></html>`;
+/** Appended after the file: keep its doctype and leave its bytes on disk alone. */
+const pageEscape = (origin: string) => `
+<script>
+addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    parent.postMessage(${JSON.stringify(PAGE_ESCAPE)}, ${JSON.stringify(origin)});
+  }
+}, true);
+</script>`;
 /** A standalone request never receives the generated page's active content. */
 const OPEN_IN_RUFI = `<!doctype html><html lang="en"><meta charset="utf-8"><title>Open in Rufi</title><body><p>Open this page from the chat in Rufi.</p></body></html>`;
 const FORWARDING = [
@@ -939,7 +950,13 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     if ("missing" in found) {
       // The file went between the check and this load: a page's frame says so.
       c.header("Content-Security-Policy", pageCsp(origin()));
-      return c.html(GONE_PAGE, 404);
+      return c.html(
+        GONE_PAGE +
+          (c.req.header("Sec-Fetch-Dest") === "iframe"
+            ? pageEscape(origin())
+            : ""),
+        404,
+      );
     }
     const { path, type, shape } = found.found;
     // The browser sets this header. The page's ancestor policy admits only
@@ -955,10 +972,15 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       deps.log("api.failed", { error: errorCode(error) });
       throw new HttpError(404, "Not found.");
     });
+    c.header("Content-Type", type);
     if (shape === "page") {
       c.header("Content-Security-Policy", pageCsp(origin()));
+      return c.body(
+        new Uint8Array(
+          Buffer.concat([bytes, Buffer.from(pageEscape(origin()))]),
+        ),
+      );
     }
-    c.header("Content-Type", type);
     return c.body(new Uint8Array(bytes));
   });
 

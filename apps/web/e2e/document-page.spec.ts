@@ -339,4 +339,55 @@ test("once nothing waits, the page says its results are in the health record, co
   const reading = page.getByRole("dialog");
   await expect(reading.getByText(inRecord)).toBeVisible();
   await expect(reading.getByText(/not saved/)).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.unrouteAll({ behavior: "wait" });
+
+  // From Documents there is no mounted items query to share. The reading
+  // may arrive first, but it must not guess that these results are unsaved.
+  await page.getByRole("link", { name: "Documents", exact: true }).click();
+  const document = page.getByRole("row").filter({
+    has: page.getByRole("link", { name: "Sunrise Labs August.pdf" }),
+  });
+  const requested = Promise.withResolvers<undefined>();
+  const delayed = Promise.withResolvers<undefined>();
+  await page.route("**/items", async (route) => {
+    requested.resolve(undefined);
+    await delayed.promise;
+    await route.continue();
+  });
+  try {
+    await document.getByRole("button", { name: "View reading" }).click();
+    await requested.promise;
+    await expect(reading.getByRole("heading", { name: "Pages" })).toBeVisible();
+    await expect(reading.getByText(inRecord)).toHaveCount(0);
+    await expect(
+      reading.getByText(/What the reader read, not saved/),
+    ).toHaveCount(0);
+  } finally {
+    delayed.resolve(undefined);
+    await page.unrouteAll({ behavior: "wait" });
+  }
+  await expect(reading.getByText(inRecord)).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // A failed items read is an error to retry, not an unsaved claim. Retry
+  // reaches the real core and restores the saved state without reopening.
+  await page.route(
+    "**/items",
+    (route) =>
+      route.fulfill({
+        status: 500,
+        json: { error: "Fictional items read failed." },
+      }),
+    { times: 1 },
+  );
+  await document.getByRole("button", { name: "View reading" }).click();
+  const problem = reading.getByRole("alert");
+  await expect(problem).toContainText("Fictional items read failed.");
+  await expect(
+    reading.getByText(/What the reader read, not saved/),
+  ).toHaveCount(0);
+  await problem.getByRole("button", { name: "Retry" }).click();
+  await expect(problem).toHaveCount(0);
+  await expect(reading.getByText(inRecord)).toBeVisible();
 });
