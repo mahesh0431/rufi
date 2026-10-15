@@ -321,6 +321,9 @@ export function describe(document: DocumentSummary): {
   return { name: first?.name ?? "Document", more };
 }
 
+const results = (count: number) =>
+  count === 1 ? "1 result" : `${String(count)} results`;
+
 /** A document's reading, in words, with what can be done about it. */
 function Status({
   personId,
@@ -337,11 +340,15 @@ function Status({
         ? `Reading · read ${String(reading.saved)} of ${String(reading.of)}`
         : document.status === "failed"
           ? `Failed · read ${String(reading.saved)} of ${String(reading.of)}`
-          : reading.results === 0
-            ? reading.canRetry
+          : reading.results > 0
+            ? `Not saved · ${results(reading.results)}`
+            : reading.canRetry
               ? "To check"
-              : "Nothing to save"
-            : `Not saved · ${reading.results === 1 ? "1 result" : `${String(reading.results)} results`}`;
+              : reading.itemsSaved > 0
+                ? `Saved · ${results(reading.itemsSaved)}`
+                : reading.itemsSetAside > 0
+                  ? `Set aside · ${results(reading.itemsSetAside)}`
+                  : "Nothing to save";
   return (
     <span className="flex flex-wrap items-center gap-1">
       <span className="rounded-full bg-side px-2 py-px text-xs text-muted">

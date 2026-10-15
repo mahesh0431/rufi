@@ -48,6 +48,9 @@ export const DocumentSummary = Schema.Struct({
       results: Schema.Int,
       /** Of those, the ones marked unsure. */
       toCheck: Schema.Int,
+      /** Draft items saved to the record, and set aside (every column, as the document's page counts them). */
+      itemsSaved: Schema.Int,
+      itemsSetAside: Schema.Int,
       /** Retry would read something: a failed reading, or failed pages. */
       canRetry: Schema.Boolean,
       /** Why it failed, in words for the person. */

@@ -237,6 +237,8 @@ export function documents(
                   of: reading.of,
                   results: reading.results,
                   toCheck: reading.toCheck,
+                  itemsSaved: reading.itemsSaved,
+                  itemsSetAside: reading.itemsSetAside,
                   canRetry: reading.canRetry,
                   error: reading.error,
                 }

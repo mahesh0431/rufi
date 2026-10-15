@@ -882,6 +882,8 @@ export function readings(
           of: number;
           results: number;
           toCheck: number;
+          itemsSaved: number;
+          itemsSetAside: number;
           canRetry: boolean;
           error: string | null;
         }
@@ -897,6 +899,10 @@ export function readings(
             d.status === "pending" &&
             (JSON.parse(d.fields) as { column?: string }).column !== "earlier",
         );
+        const done = (status: "saved" | "dismissed") =>
+          drafts.filter(
+            (d) => d.document_id === job.documentId && d.status === status,
+          ).length;
         statuses.set(job.documentId, {
           status:
             job.state === "queued" || job.state === "running"
@@ -909,6 +915,8 @@ export function readings(
           of: job.targets.length,
           results: pending.length,
           toCheck: pending.filter((d) => d.unsure !== "[]").length,
+          itemsSaved: done("saved"),
+          itemsSetAside: done("dismissed"),
           canRetry:
             job.state === "failed" ||
             (job.state === "done" &&

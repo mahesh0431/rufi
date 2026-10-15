@@ -5,6 +5,8 @@
 import { Dialog } from "@base-ui/react/dialog";
 import {
   type DocumentItems,
+  type DraftItem,
+  type Fixable,
   type ReadEntry,
   ReadingView,
   Readings,
@@ -54,12 +56,47 @@ async function retry(personId: string, documentId: string) {
   readingsChanged(personId);
 }
 
-/** What a document's page and its reading say once nothing waits to be saved. */
-export const IN_RECORD = "These results are in your health record.";
-
 /** Every draft item of the document is saved or set aside. */
-export const inRecord = (items: DocumentItems) =>
+export const nothingWaits = (items: DocumentItems) =>
   items.items.length > 0 && items.items.every((i) => i.status !== "pending");
+
+/** What a document's page and its reading say once nothing waits to be saved. */
+export const settledLine = (items: DocumentItems) =>
+  items.items.some((i) => i.status === "saved")
+    ? "These results are in your health record."
+    : "Nothing from this document is in your health record.";
+
+/** The fields a fix can change, in the form's order. */
+export const FIELDS: readonly { id: Fixable; name: string; wide?: boolean }[] =
+  [
+    { id: "test_name", name: "Test", wide: true },
+    { id: "value_text", name: "Value" },
+    { id: "unit", name: "Unit" },
+    { id: "reference_range", name: "Range", wide: true },
+    { id: "flag_text", name: "Flag" },
+    { id: "context_text", name: "Context" },
+  ];
+
+/** The item's fields the person changed: each with the reader's value. */
+export const fixesOf = (item: DraftItem) =>
+  FIELDS.filter(({ id }) => item.fields[id] !== item.original[id]);
+
+/** Under a fixed item's name: what the reader read in each field fixed. */
+export function ReaderRead({ item }: { item: DraftItem }) {
+  const fixes = fixesOf(item);
+  if (fixes.length === 0) return null;
+  return (
+    <span className="block text-xs text-muted">
+      The reader read:{" "}
+      {fixes
+        .map(
+          ({ id, name }) =>
+            `${name.toLowerCase()} ${item.original[id] ?? "(empty)"}`,
+        )
+        .join(" · ")}
+    </span>
+  );
+}
 
 /** Which reading View reading shows, over any screen. */
 const useOpen = create<{ personId: string; documentId: string } | null>(
@@ -322,8 +359,8 @@ function Sheet({
           <>
             {items.data && !items.error && (
               <p className="text-xs text-muted">
-                {inRecord(items.data)
-                  ? IN_RECORD
+                {nothingWaits(items.data)
+                  ? settledLine(items.data)
                   : "What the reader read, not saved: these become part of your health record only when you save them in the chat."}
               </p>
             )}
@@ -344,6 +381,9 @@ function Sheet({
                   <PageWork
                     key={page.position}
                     page={page}
+                    drafts={items.data?.items.filter(
+                      (i) => i.page === page.position,
+                    )}
                     first={page.position === reading.pages[0]?.position}
                   />
                 ))}
@@ -380,9 +420,12 @@ function Sheet({
 
 function PageWork({
   page,
+  drafts,
   first,
 }: {
   page: ReadingView["pages"][number];
+  /** The page's draft items, in the entry's order, once they came. */
+  drafts: readonly DraftItem[] | undefined;
   first: boolean;
 }) {
   const { entry, checks } = page;
@@ -420,7 +463,7 @@ function PageWork({
         </span>
         {checks?.incomplete && <Tag>may be incomplete</Tag>}
       </summary>
-      {entry && <EntryTable entry={entry} flagged={flagged} />}
+      {entry && <EntryTable entry={entry} drafts={drafts} flagged={flagged} />}
       {checks?.incomplete && (
         <p className="border-t border-line px-2.5 py-1 text-xs text-muted">
           The reader counted {checks.incomplete.rows_seen} rows and read{" "}
@@ -444,11 +487,18 @@ function PageWork({
   );
 }
 
+/**
+ * A page's items as the reader read them; an item the person fixed shows
+ * their fix, with the reader's value under its name, as the document's page
+ * does.
+ */
 function EntryTable({
   entry,
+  drafts,
   flagged,
 }: {
   entry: ReadEntry;
+  drafts: readonly DraftItem[] | undefined;
   flagged: (index: number) => string | undefined;
 }) {
   if (entry.items.length === 0) return null;
@@ -469,11 +519,14 @@ function EntryTable({
         </tr>
       </thead>
       <tbody>
-        {entry.items.map((item, index) => {
-          const why = [item.unsure, flagged(index)].filter(Boolean).join("; ");
+        {entry.items.map((read, index) => {
+          const draft = drafts?.[index];
+          const fixed = draft !== undefined && fixesOf(draft).length > 0;
+          const item = fixed ? draft.fields : read;
+          const why = [read.unsure, flagged(index)].filter(Boolean).join("; ");
           return (
             <tr
-              key={`${item.test_name}-${String(index)}`}
+              key={`${read.test_name}-${String(index)}`}
               className="align-top"
             >
               <td className="border-t border-line px-2.5 py-1">
@@ -482,6 +535,7 @@ function EntryTable({
                   <span className="text-muted"> (earlier)</span>
                 )}
                 {why && <span className="block text-xs text-muted">{why}</span>}
+                {fixed && <ReaderRead item={draft} />}
               </td>
               <td className="border-t border-line px-2.5 py-1">
                 {item.value_text}
@@ -492,6 +546,7 @@ function EntryTable({
               </td>
               <td className="border-t border-line px-2.5 py-1 text-right whitespace-nowrap">
                 {item.flag_text && <Tag>{item.flag_text}</Tag>}
+                {fixed && <Tag strong>fixed by you</Tag>}
                 {why && <Tag>unsure</Tag>}
               </td>
             </tr>
@@ -502,9 +557,17 @@ function EntryTable({
   );
 }
 
-function Tag({ children }: { children: string }) {
+export function Tag({
+  children,
+  strong,
+}: {
+  children: string;
+  strong?: boolean;
+}) {
   return (
-    <span className="ml-1 rounded-full border border-line px-1.5 text-[11px] whitespace-nowrap text-muted">
+    <span
+      className={`ml-1 rounded-full border px-1.5 text-[11px] whitespace-nowrap ${strong ? "border-transparent bg-accent-soft text-accent-ink" : "border-line text-muted"}`}
+    >
       {children}
     </span>
   );

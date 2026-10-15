@@ -243,18 +243,25 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
   await expect(save).toBeEnabled();
 });
 
-/** Three draft items read from page 1 of Asha's August report. */
+/**
+ * Three draft items read from page 1 of Asha's August report; the person
+ * fixed the first one's value (the reader read 13.2).
+ */
 const DRAFTS = `
   INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at)
     VALUES ('job-aug', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1,2]', '2026-10-01T09:00:00Z');
   UPDATE document_pages SET state = 'read', entry_job_id = 'job-aug',
     entry = '{"outcome":"read","facts":{"issuer":"Sunrise Labs","dates":[{"label":"Collected","date":"12 Aug 2026","iso":"2026-08-12"}]},"items":[]}'
     WHERE document_id = 'doc-asha-aug';
+  UPDATE document_pages
+    SET entry = json_set(entry, '$.items', json('[{"test_name":"Test 1","value_text":"13.2"},{"test_name":"Test 2","value_text":"2"},{"test_name":"Test 3","value_text":"3"}]'))
+    WHERE document_id = 'doc-asha-aug' AND position = 1;
   UPDATE documents SET version = 1 WHERE id = 'doc-asha-aug';
-  INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, fields, original, created_at)
+  INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, version, fields, original, created_at)
   SELECT 'drf-' || n, 'asha', 'doc-asha-aug', 1, n, 'job-aug', 'lab_result',
-    json_object('test_name', 'Test ' || n, 'value_text', '' || n),
-    json_object('test_name', 'Test ' || n, 'value_text', '' || n),
+    CASE n WHEN 1 THEN 2 ELSE 1 END,
+    json_object('test_name', 'Test ' || n, 'value_text', CASE n WHEN 1 THEN '13.4' ELSE '' || n END),
+    json_object('test_name', 'Test ' || n, 'value_text', CASE n WHEN 1 THEN '13.2' ELSE '' || n END),
     '2026-10-01T09:00:00Z'
   FROM (SELECT 1 AS n UNION SELECT 2 UNION SELECT 3);
 `;
@@ -272,7 +279,7 @@ test("once nothing waits, the page says its results are in the health record, co
           arguments: {
             items: [1, 2].map((n) => ({
               item: `drf-${String(n)}`,
-              version: 1,
+              version: n === 1 ? 2 : 1,
               as: "new",
               category: "lab",
             })),
@@ -297,7 +304,7 @@ test("once nothing waits, the page says its results are in the health record, co
     "What the reader read, not saved. These become part of your health record only when you save them in the chat.";
   const inRecord = "These results are in your health record.";
   await expect(page.getByText(waiting)).toBeVisible();
-  await expect(items).toContainText("3 results · 0 unsure");
+  await expect(items).toContainText("3 results · 0 unsure · 1 fixed by you");
   await expect(page.getByText("Not saved yet: 3 results.")).toBeVisible();
   await expect(save).toBeVisible();
 
@@ -347,6 +354,11 @@ test("once nothing waits, the page says its results are in the health record, co
   const reading = page.getByRole("dialog");
   await expect(reading.getByText(inRecord)).toBeVisible();
   await expect(reading.getByText(/not saved/)).toHaveCount(0);
+  // What was saved is the person's fix, shown beside the reader's value.
+  const read = reading.getByRole("row").filter({ hasText: "Test 1" });
+  await expect(read.getByRole("cell").nth(1)).toHaveText("13.4");
+  await expect(read).toContainText("The reader read: value 13.2");
+  await expect(read).toContainText("fixed by you");
   await page.keyboard.press("Escape");
   await page.unrouteAll({ behavior: "wait" });
 
@@ -356,6 +368,8 @@ test("once nothing waits, the page says its results are in the health record, co
   const document = page.getByRole("row").filter({
     has: page.getByRole("link", { name: "Sunrise Labs August.pdf" }),
   });
+  // The list counts what was saved, not "nothing to save".
+  await expect(document).toContainText("Saved · 2 results");
   const requested = Promise.withResolvers<undefined>();
   const delayed = Promise.withResolvers<undefined>();
   await page.route("**/items", async (route) => {
@@ -398,4 +412,55 @@ test("once nothing waits, the page says its results are in the health record, co
   await problem.getByRole("button", { name: "Retry" }).click();
   await expect(problem).toHaveCount(0);
   await expect(reading.getByText(inRecord)).toBeVisible();
+});
+
+test("once every result is set aside, the page, View reading and the list say nothing from it is in the health record", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family(DRAFTS);
+  await rufi.start({
+    scenario: {
+      calls: [
+        {
+          tool: "dismiss_items",
+          arguments: {
+            items: [1, 2, 3].map((n) => ({
+              item: `drf-${String(n)}`,
+              version: n === 1 ? 2 : 1,
+            })),
+          },
+        },
+      ],
+    },
+  });
+  await page.goto(rufi.link());
+  await page.getByRole("link", { name: "Chat with Rufi" }).click();
+  const box = page.getByRole("textbox", { name: "Message to Rufi" });
+  await box.fill("None of these are mine");
+  await box.press("Enter");
+  await expect(page.locator(".receipt")).toHaveCount(1);
+
+  await page.getByRole("link", { name: "Documents" }).click();
+  const document = page.getByRole("row").filter({
+    has: page.getByRole("link", { name: "Sunrise Labs August.pdf" }),
+  });
+  await expect(document).toContainText("Set aside · 3 results");
+  await expect(document).not.toContainText("Saved");
+
+  await page.getByRole("link", { name: "Sunrise Labs August.pdf" }).click();
+  const nothing = "Nothing from this document is in your health record.";
+  await expect(page.getByText(nothing)).toBeVisible();
+  await expect(
+    page.getByText("These results are in your health record."),
+  ).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Items" })).toContainText(
+    "3 set aside",
+  );
+  await page.getByRole("button", { name: "View reading" }).click();
+  const reading = page.getByRole("dialog");
+  await expect(reading.getByText(nothing)).toBeVisible();
+  await expect(
+    reading.getByText("These results are in your health record."),
+  ).toHaveCount(0);
 });

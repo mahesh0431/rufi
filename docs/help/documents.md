@@ -45,14 +45,16 @@ The Documents page lists everything you added, newest first:
 
 To show one kind only, choose it in the list at the top left.
 
-| Status              | What it means                                                           |
-| ------------------- | ----------------------------------------------------------------------- |
-| **Not read yet**    | Never read (added before Rufi read each document); **Retry** reads it   |
-| **Reading**         | Rufi reads it now, or it waits its turn; it shows the pages read so far |
-| **Not saved**       | Results wait for you to check and save in the chat                      |
-| **To check**        | No results wait, but a page needs **Retry**                             |
-| **Nothing to save** | Read, and no results were found (a letter, for example)                 |
-| **Failed**          | The reading stopped before the end; **Retry** continues it              |
+| Status              | What it means                                                                                                        |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **Not read yet**    | Never read (added before Rufi read each document); **Retry** reads it                                                |
+| **Reading**         | Rufi reads it now, or it waits its turn; it shows the pages read so far                                              |
+| **Not saved**       | Results wait for you to check and save in the chat                                                                   |
+| **To check**        | No results wait, but a page needs **Retry**                                                                          |
+| **Saved**           | Nothing waits, and results are in your health record; it counts the results saved, for example **Saved · 2 results** |
+| **Set aside**       | Nothing waits, and every result was set aside: none is in your health record                                         |
+| **Nothing to save** | Read, and no results were found (a letter, for example)                                                              |
+| **Failed**          | The reading stopped before the end; **Retry** continues it                                                           |
 
 ## How Rufi reads a document
 
@@ -74,7 +76,7 @@ Your choice is used by the next reading that starts. A reading that runs keeps t
 
 - A line in the chat says the reading started: **Reading thyrocare-aug.pdf · 5 pages**.
 - Above the chat box, the reader strip shows each reading: the one at work with its pages read and time (**read 3 of 5 · 1 min**), and those that wait their turn (**waiting**). You can keep chatting meanwhile.
-- Click **View reading** to see the reader's work as it goes: each page it read, with the facts and results it read, its one note for the whole document, its marks and notes (below) and how much of your plan it used. **View reading** shows only; you check and fix results on the document's page (see [Check a report](#check-a-report)).
+- Click **View reading** to see the reader's work as it goes: each page it read, with the facts and results it read, its one note for the whole document, its marks and notes (below) and how much of your plan it used. **View reading** shows only; you check and fix results on the document's page (see [Check a report](#check-a-report)). A result you fixed shows your fix there too, with what the reader read under it.
 
 ### When the reading ends
 
@@ -142,7 +144,7 @@ Each document has its own page, with the results the reader read beside the page
 
 Nothing on this page saves to your health record. You fix what the reader read, then you save in the chat.
 
-When every result is saved or set aside, the page says **These results are in your health record.** Its count says what was saved and set aside, for example **2 saved · 1 set aside**, and it has no **Save in chat**. **View reading** says the same.
+When every result is saved or set aside, the page says **These results are in your health record.** If you set every result aside, it says **Nothing from this document is in your health record.** Its count says what was saved and set aside, for example **2 saved · 1 set aside**, and it has no **Save in chat**. **View reading** says the same.
 
 ### Look at the results beside the page
 
