@@ -1,7 +1,7 @@
 // The page service and get_documents on a real database and real files: a
 // PDF page drawn once with its own text and kept as a cache, photos as they
-// are, a page that can't be drawn, whose documents can be read, and lists in
-// parts with a continuation.
+// are, a page that can't be drawn, whose documents can be read, lists in
+// parts with a continuation, and the person's fix beside what the reader read.
 import { readFile, rm } from "node:fs/promises";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,6 +13,7 @@ import { PART } from "../tools/documents.ts";
 import type { ToolContext } from "../tools/registry.ts";
 import { forAgent } from "../tools/tools.ts";
 import { documents, type NewFile } from "./documents.ts";
+import { draftItems } from "./items.ts";
 import { displayPath, originalPath, pagePath } from "./originals.ts";
 import { pages, type PageView } from "./pages.ts";
 
@@ -268,6 +269,58 @@ describe("get_documents", () => {
       {
         mimeType: "image/png",
         data: expect.stringMatching(/^iVBORw0KGgo/) as unknown,
+      },
+    ]);
+  });
+
+  it("gives a fixed item what the reader read beside the person's fix, and an unfixed item as it is", async () => {
+    const [id = ""] = await add(
+      "asha",
+      await fixture("sunrise-labs-august.pdf"),
+    );
+    const at = "2026-10-10T09:00:00.000Z";
+    store.db
+      .exec(`INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at)
+      VALUES ('j1', 'asha', 'document_read', '${id}', 'done', 1, '[1,2]', '${at}')`);
+    const haemoglobin = JSON.stringify({
+      test_name: "Haemoglobin",
+      value_text: "13.2",
+      value_number: 13.2,
+    });
+    const insert = store.db.prepare(
+      `INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, fields, original, created_at)
+       VALUES (?, 'asha', ?, ?, 1, 'j1', 'lab_result', ?, ?, '${at}')`,
+    );
+    insert.run("i1", id, 1, haemoglobin, haemoglobin);
+    insert.run("i2", id, 2, haemoglobin, haemoglobin);
+    await draftItems(store, () => undefined).fix("asha", id, "i1", {
+      version: 1,
+      fields: { value_text: "12.8", unit: "g/dL" },
+    });
+
+    const { body } = await call({ personId: "asha" }, { document: id });
+    const { items } = body["result"] as { items: Record<string, unknown>[] };
+    expect(items).toEqual([
+      {
+        id: "i1",
+        version: 2,
+        page: 1,
+        status: "not saved",
+        test_name: "Haemoglobin",
+        value_text: "12.8",
+        value_number: 12.8,
+        unit: "g/dL",
+        fixed_by_user: true,
+        reader_read: { value_text: "13.2", unit: null },
+      },
+      {
+        id: "i2",
+        version: 1,
+        page: 2,
+        status: "not saved",
+        test_name: "Haemoglobin",
+        value_text: "13.2",
+        value_number: 13.2,
       },
     ]);
   });

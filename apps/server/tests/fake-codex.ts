@@ -115,6 +115,8 @@ export interface Scenario {
   callsByTurn?: NonNullable<Scenario["calls"]>[];
   /** A usage-limit snapshot sent before a failed turn. */
   resetsAt?: number;
+  /** The message Codex gives a failed turn (a usage-limit message). */
+  failMessage?: string;
   /** Sparse account rate-limit updates following that snapshot. */
   rateLimitUpdates?: Record<string, unknown>[];
   /** Threads the fake knows from before, as a restarted Codex would. */
@@ -245,6 +247,10 @@ for (const [id, known] of Object.entries(scenario.threads ?? {})) {
   });
 }
 
+/** What Codex says when a turn fails on the plan's usage limit. */
+const USAGE_LIMIT =
+  "You’ve hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again later.";
+
 const turnObject = (id: string, status: string) => ({
   id,
   items: [],
@@ -253,7 +259,7 @@ const turnObject = (id: string, status: string) => ({
   error:
     status === "failed"
       ? {
-          message: "boom",
+          message: scenario.failMessage ?? USAGE_LIMIT,
           codexErrorInfo: "usageLimitExceeded",
           additionalDetails: null,
           misalignment: null,

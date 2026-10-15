@@ -4,11 +4,12 @@
 // document's. It names the version it was made on, so a fix from a tab that
 // holds an older version is refused with the item as it is now. Saved and
 // dismissed items can't be fixed. Nothing here writes the record.
-import type {
-  DocumentItems,
-  DraftItem,
-  Fixable,
-  FixItem,
+import {
+  FIXABLE,
+  type DocumentItems,
+  type DraftItem,
+  type Fixable,
+  type FixItem,
 } from "@rufi/contracts/documents";
 import type { Store } from "../store/database.ts";
 import { Refusal } from "../tools/registry.ts";
@@ -24,6 +25,21 @@ export class StaleFix extends Error {
 }
 
 type Fields = DraftItem["fields"];
+
+/**
+ * What the reader read in each field the person fixed (null where it read
+ * nothing); empty when the item is as the reader read it.
+ */
+export function readerValues(
+  fields: Fields,
+  original: Fields,
+): Partial<Record<Fixable, string | null>> {
+  return Object.fromEntries(
+    (Object.keys(FIXABLE) as Fixable[])
+      .filter((field) => fields[field] !== original[field])
+      .map((field) => [field, original[field] ?? null]),
+  );
+}
 
 /** The fields every lab result has: a fix can't empty them. */
 const REQUIRED: readonly Fixable[] = ["test_name", "value_text"];

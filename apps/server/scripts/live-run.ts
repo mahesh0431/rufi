@@ -120,7 +120,7 @@ export type Status = "passed" | "FAILED" | "needs a person's verdict" | "INFRA";
  */
 export function statusOf(outcome: {
   failed: readonly string[];
-  turns: readonly Pick<Turn, "endReason">[];
+  turns: readonly Pick<Turn, "endReason" | "endText">[];
   person: boolean;
   error?: unknown;
   stalledMs?: number;
@@ -133,7 +133,9 @@ export function statusOf(outcome: {
   if (ended)
     return {
       status: "INFRA",
-      why: `a reply ended: ${String(ended.endReason)}`,
+      why: [`a reply ended (${String(ended.endReason)})`, ended.endText]
+        .filter(Boolean)
+        .join(": "),
     };
   if (error !== undefined)
     return { status: "FAILED", why: `error: ${message}` };

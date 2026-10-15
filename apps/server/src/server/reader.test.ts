@@ -879,17 +879,21 @@ describe("a restart or a failure", () => {
     },
   );
 
-  it("retries once by itself for a passing reason, then fails visibly", async () => {
+  it("retries once by itself for a passing reason, then fails visibly with the service's words", async () => {
     const lost = () =>
       Promise.resolve({
-        end: { status: "failed" as const, reason: "connection" as const },
+        end: {
+          status: "failed" as const,
+          reason: "connection" as const,
+          text: "exceeded retry limit, last status: 429 Too Many Requests",
+        },
       });
     const { runs, reader: running } = await startReader([lost, lost]);
     await addReport();
     await until(() => job()?.["state"] === "failed");
     expect(runs).toHaveLength(2);
     expect(lines().at(-1)).toBe(
-      "Couldn't finish reading sunrise-august.pdf · the AI connection was lost · read 0 of 2",
+      "Couldn't finish reading sunrise-august.pdf · exceeded retry limit, last status: 429 Too Many Requests · read 0 of 2",
     );
     await running.close();
   });
