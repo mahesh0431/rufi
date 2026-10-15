@@ -933,17 +933,31 @@ test("a small window opens the chat as a page", async ({ page, rufi }) => {
   expect(page.url()).toBe(at);
 });
 
-test("a reply stopped by the usage limit says when it resets", async ({
+test("a reply stopped by the usage limit shows the service's words alone", async ({
   page,
   rufi,
 }) => {
-  const resets = new Date(2026, 9, 5, 9, 30);
+  const resets = Math.floor(new Date(2026, 9, 5, 9, 30).getTime() / 1000);
+  await opened(page, rufi, { scenario: { resetsAt: resets } });
+  await send(page, "fail");
+  await expect(log(chat(page))).toContainText(
+    "You’ve hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again later.",
+  );
+  // The service's words already say when: Rufi doesn't say it again.
+  await expect(log(chat(page))).not.toContainText("It resets");
+});
+
+test("a reply stopped by the usage limit with no words from the service says when it resets", async ({
+  page,
+  rufi,
+}) => {
+  const resets = Math.floor(new Date(2026, 9, 5, 9, 30).getTime() / 1000);
   await opened(page, rufi, {
-    scenario: { resetsAt: Math.floor(resets.getTime() / 1000) },
+    scenario: { resetsAt: resets, failMessage: "" },
   });
   await send(page, "fail");
   await expect(log(chat(page))).toContainText(
-    "Your ChatGPT plan's usage limit has been reached. It resets at 09:30 on 5 Oct 2026.",
+    "This reply didn't finish. It resets at 09:30 on 5 Oct 2026.",
   );
 });
 

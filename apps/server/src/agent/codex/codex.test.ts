@@ -580,7 +580,7 @@ describe("a turn", () => {
     expect(await ended(thread)).toEqual({
       status: "failed",
       reason: "usage_limit",
-      text: "Your ChatGPT plan's usage limit has been reached.",
+      text: "You’ve hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again later.",
     });
   });
 
@@ -1154,7 +1154,7 @@ describe("the reply Rufi's tools are for", () => {
   });
 });
 
-describe("Codex's items and endings in Rufi's words", () => {
+describe("Codex's items and endings for Rufi", () => {
   it("counts only `completed` as success", () => {
     expect(endOf({ status: "completed", error: null })).toEqual({
       status: "completed",
@@ -1180,6 +1180,35 @@ describe("Codex's items and endings in Rufi's words", () => {
     );
     expect(failed("serverOverloaded")).toBe("provider_failed");
     expect(failed("contextWindowExceeded")).toBe("provider_failed");
+  });
+
+  it("shows the service's own error as it came", () => {
+    const failed = (message: string, codexErrorInfo: unknown) =>
+      endOf({
+        status: "failed",
+        error: {
+          message,
+          codexErrorInfo: codexErrorInfo as null,
+          additionalDetails: null,
+          misalignment: null,
+        },
+      });
+    // Codex 0.159.3's words when it gives up retrying a 429.
+    expect(
+      failed(
+        "exceeded retry limit, last status: 429 Too Many Requests, request id: req-1",
+        { responseTooManyFailedAttempts: { httpStatusCode: 429 } },
+      ),
+    ).toEqual({
+      status: "failed",
+      reason: "connection",
+      text: "exceeded retry limit, last status: 429 Too Many Requests, request id: req-1",
+    });
+    // Codex gave no words: none of Rufi's in their place.
+    expect(failed("", "serverOverloaded")).toEqual({
+      status: "failed",
+      reason: "provider_failed",
+    });
   });
 
   it("gives each item one line with what Codex reported, and names one it doesn't know by its type", () => {

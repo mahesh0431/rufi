@@ -720,7 +720,7 @@ describe("the reader's provider outcomes", () => {
       expect(outcome.end).toEqual({
         status: "failed",
         reason: "usage_limit",
-        text: "Your ChatGPT plan's usage limit has been reached.",
+        text: "You’ve hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again later.",
         ...(reported && { resetsAt: "2026-10-10T07:35:00.000Z" }),
       });
     },

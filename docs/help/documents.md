@@ -131,7 +131,7 @@ Say "undo that", as for any save (see [Undo](chat.md#undo)). The AI removes the 
 - **You're signed out, or ChatGPT rejects the sign-in:** the reading waits (**waiting for sign-in**). Sign in again. Rufi checks again every 30 seconds.
 - **Your plan's usage limit:** the reading waits until the limit resets (**waiting until 14:30**), then goes on.
 - **The AI connection was lost or restarted:** Rufi tries once more by itself.
-- **It took too long, or failed again:** the line says **Couldn't finish reading … · read 3 of 5**, with **Retry**. The pages read so far are kept, and no results are made until a reading finishes.
+- **It took too long, or failed again:** the line says **Couldn't finish reading … · read 3 of 5**, with **Retry**. Between them is why: "the reading took too long", or the AI service's error as the service reported it, such as "exceeded retry limit, last status: 429 Too Many Requests". The pages read so far are kept, and no results are made until a reading finishes.
 
 **Retry** (on the line, in **View reading**, or on the Documents page) continues a reading that failed. For a document that was read with pages that couldn't be read or weren't looked at, it reads only those pages again; the results already read, and any you changed, stay as they are. You can also ask the AI in the chat to read a document again.
 
