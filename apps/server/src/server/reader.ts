@@ -100,14 +100,6 @@ export async function readerChoice(
   };
 }
 
-/** Why a run ended, in words for the person, when it fails the reading. */
-const WHY: Partial<Record<NonNullable<TurnEnd["reason"]>, string>> = {
-  timeout: "the reading took too long",
-  connection: "the AI connection was lost",
-  provider_failed: "the AI connection restarted",
-  rate_limit: "the AI was busy",
-};
-
 export function reader(deps: ReaderDeps) {
   const { readings, log } = deps;
   const now = deps.now ?? Date.now;
@@ -359,7 +351,11 @@ export function reader(deps: ReaderDeps) {
     } else {
       await fail(
         started,
-        stopReason ?? (end.reason && WHY[end.reason]) ?? "the reader stopped",
+        // Rufi's own deadline in Rufi's words; anything else as the service
+        // or Codex said it.
+        stopReason ??
+          (end.reason === "timeout" ? "the reading took too long" : end.text) ??
+          "the reader stopped",
       );
     }
   };

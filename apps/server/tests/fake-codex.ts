@@ -245,6 +245,10 @@ for (const [id, known] of Object.entries(scenario.threads ?? {})) {
   });
 }
 
+/** What Codex says when a turn fails on the plan's usage limit. */
+const USAGE_LIMIT =
+  "You’ve hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again later.";
+
 const turnObject = (id: string, status: string) => ({
   id,
   items: [],
@@ -253,7 +257,7 @@ const turnObject = (id: string, status: string) => ({
   error:
     status === "failed"
       ? {
-          message: "boom",
+          message: USAGE_LIMIT,
           codexErrorInfo: "usageLimitExceeded",
           additionalDetails: null,
           misalignment: null,

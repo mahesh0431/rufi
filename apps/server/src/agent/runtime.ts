@@ -33,7 +33,10 @@ type EndReason =
 export interface TurnEnd {
   status: "completed" | "interrupted" | "failed";
   reason?: EndReason;
-  /** Why it didn't complete, in plain words. */
+  /**
+   * Why it didn't complete: an error from the service in its own words,
+   * else Rufi's.
+   */
   text?: string;
   /** When a usage limit resets (ISO 8601), when the provider says. */
   resetsAt?: string;

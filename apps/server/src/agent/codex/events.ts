@@ -2,7 +2,9 @@
 // agent did, with what the agent reported about it, and why a reply ended.
 // Nothing is reworded or cut: a screen shows the line, and opens to all the
 // agent gave about it.
+import { homedir } from "node:os";
 import type { ActivityKind, AgentEvent, TurnEnd } from "../runtime.ts";
+import type { CodexErrorInfo } from "./protocol/v2/CodexErrorInfo.ts";
 import type { RateLimitSnapshot } from "./protocol/v2/RateLimitSnapshot.ts";
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
 import type { Turn } from "./protocol/v2/Turn.ts";
@@ -194,57 +196,36 @@ export function endOf(
   }
 }
 
+/**
+ * A failed turn: the service's own words, as Codex gave them (Rufi's only
+ * when it gave none), with the person's home folder as `~`; and Rufi's
+ * reason, for what it does next (wait for the sign-in or the limit, retry).
+ */
 function failure(
   error: TurnError | null,
   limits: RateLimitSnapshot | undefined,
 ): TurnEnd {
-  const info = error?.codexErrorInfo;
-  const failed = (reason: TurnEnd["reason"], text: string): TurnEnd => ({
+  const reason = reasonOf(error?.codexErrorInfo ?? null);
+  const resetsAt = reason === "usage_limit" ? resetOf(limits) : undefined;
+  return {
     status: "failed",
-    ...(reason && { reason }),
-    text,
-  });
-  if (info === "unauthorized") {
-    return failed(
-      "sign_in",
-      "ChatGPT didn't accept Rufi's sign-in. Sign in again.",
-    );
+    reason,
+    text: error?.message
+      ? error.message.replaceAll(homedir(), "~")
+      : "The AI couldn't finish.",
+    ...(resetsAt && { resetsAt }),
+  };
+}
+
+function reasonOf(info: CodexErrorInfo | null): TurnEnd["reason"] {
+  if (info === "unauthorized") return "sign_in";
+  if (info === "usageLimitExceeded") return "usage_limit";
+  if (info === "rateLimitExceeded") return "rate_limit";
+  // A connection that failed, with the HTTP status when there was one.
+  if (typeof info === "object" && info !== null) {
+    return "activeTurnNotSteerable" in info ? "provider_failed" : "connection";
   }
-  if (info === "usageLimitExceeded") {
-    const resetsAt = resetOf(limits);
-    return {
-      ...failed(
-        "usage_limit",
-        "Your ChatGPT plan's usage limit has been reached.",
-      ),
-      ...(resetsAt && { resetsAt }),
-    };
-  }
-  if (info === "rateLimitExceeded") {
-    return failed(
-      "rate_limit",
-      "ChatGPT is limiting requests right now. Try again shortly.",
-    );
-  }
-  if (
-    typeof info === "object" &&
-    info !== null &&
-    !("activeTurnNotSteerable" in info)
-  ) {
-    return failed(
-      "connection",
-      "Couldn't reach ChatGPT. Check the connection and try again.",
-    );
-  }
-  if (info === "contextWindowExceeded") {
-    return failed("provider_failed", "The chat is too long for the model.");
-  }
-  return failed(
-    "provider_failed",
-    info === "serverOverloaded" || info === "internalServerError"
-      ? "ChatGPT is having trouble. Try again shortly."
-      : error?.message || "The AI couldn't finish.",
-  );
+  return "provider_failed";
 }
 
 /** The reset time of a window that is used up, as ISO 8601. */

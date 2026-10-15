@@ -1,7 +1,7 @@
 import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Effect, Fiber } from "effect";
@@ -580,7 +580,7 @@ describe("a turn", () => {
     expect(await ended(thread)).toEqual({
       status: "failed",
       reason: "usage_limit",
-      text: "Your ChatGPT plan's usage limit has been reached.",
+      text: "You’ve hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again later.",
     });
   });
 
@@ -1154,7 +1154,7 @@ describe("the reply Rufi's tools are for", () => {
   });
 });
 
-describe("Codex's items and endings in Rufi's words", () => {
+describe("Codex's items and endings for Rufi", () => {
   it("counts only `completed` as success", () => {
     expect(endOf({ status: "completed", error: null })).toEqual({
       status: "completed",
@@ -1180,6 +1180,40 @@ describe("Codex's items and endings in Rufi's words", () => {
     );
     expect(failed("serverOverloaded")).toBe("provider_failed");
     expect(failed("contextWindowExceeded")).toBe("provider_failed");
+  });
+
+  it("shows the service's own error as it came, with the person's home folder as ~", () => {
+    const failed = (message: string, codexErrorInfo: unknown) =>
+      endOf({
+        status: "failed",
+        error: {
+          message,
+          codexErrorInfo: codexErrorInfo as null,
+          additionalDetails: null,
+          misalignment: null,
+        },
+      });
+    // Codex 0.159.3's words when it gives up retrying a 429.
+    expect(
+      failed(
+        "exceeded retry limit, last status: 429 Too Many Requests, request id: req-1",
+        { responseTooManyFailedAttempts: { httpStatusCode: 429 } },
+      ),
+    ).toEqual({
+      status: "failed",
+      reason: "connection",
+      text: "exceeded retry limit, last status: 429 Too Many Requests, request id: req-1",
+    });
+    expect(
+      failed(
+        `failed to localize granted filesystem paths: ${homedir()}/.rufi/data/ai is not a path`,
+        null,
+      ).text,
+    ).toBe(
+      "failed to localize granted filesystem paths: ~/.rufi/data/ai is not a path",
+    );
+    // Codex gave no words: Rufi's own.
+    expect(failed("", "serverOverloaded").text).toBe("The AI couldn't finish.");
   });
 
   it("gives each item one line with what Codex reported, and names one it doesn't know by its type", () => {

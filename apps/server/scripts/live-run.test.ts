@@ -191,4 +191,15 @@ describe("a case's status", () => {
   ])("%s", (_, outcome, status) => {
     expect(statusOf(outcome).status).toBe(status);
   });
+
+  it("says why a reply ended in the service's words", () => {
+    const ended = {
+      ...turn("connection"),
+      endText: "exceeded retry limit, last status: 429 Too Many Requests",
+    };
+    expect(statusOf({ ...clean, turns: [ended] })).toEqual({
+      status: "INFRA",
+      why: "a reply ended (connection): exceeded retry limit, last status: 429 Too Many Requests",
+    });
+  });
 });
