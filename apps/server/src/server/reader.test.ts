@@ -70,13 +70,13 @@ beforeEach(async () => {
   };
 });
 
-/** Adds the fictional two-page report; returns its document's id. */
-async function addReport(): Promise<string> {
+/** Adds the fictional two-page report for a person; returns its document's id. */
+async function addReport(person = personId): Promise<string> {
   const bytes = new Uint8Array(
     await readFile(join(FIXTURES, "sunrise-labs-august.pdf")),
   );
   const { added } = await docs.add(
-    personId,
+    person,
     [{ name: "sunrise-august.pdf", bytes }],
     true,
   );
@@ -217,7 +217,7 @@ describe("a reading", () => {
       },
     ]);
     expect(runs[0]?.input).toBe(
-      "Read this document: 2 pages (sunrise-august.pdf).\nSave these pages: 1–2.",
+      "Read this document: 2 pages (sunrise-august.pdf).\nIt was added for Asha Fictional.\nSave these pages: 1–2.",
     );
     expect(lines()).toEqual([
       "Reading sunrise-august.pdf · 2 pages",
@@ -310,50 +310,118 @@ describe("a reading", () => {
     }
   });
 
-  it.each([
-    { printed: "Meera Fictional", askName: true },
-    { printed: "Dr Asha Fictional", askName: true },
-    { printed: "  ASHA   Fictional  ", askName: false },
-    { printed: " ", askName: false },
-  ])(
-    "asks about an unsure value and a differing printed name: $printed",
-    async ({ printed, askName }) => {
-      const { reader: running } = await startReader([
-        async (turn) => {
-          await turn.look(1);
-          // "13.8" isn't on the page: Rufi's check marks it unsure.
-          await turn.save(1, readPage("13.8"));
-          await turn.look(2);
+  it("asks only about what the reader raised: Rufi adds no flags of its own", async () => {
+    const answers: unknown[] = [];
+    const { reader: running } = await startReader([
+      async (turn) => {
+        await turn.look(1);
+        // Not on the page's own text, and a number that isn't the printed
+        // value: the reader didn't say it was unsure, so it isn't.
+        answers.push(
+          (
+            await turn.save(
+              1,
+              readPage("13.8", {
+                items: [
+                  {
+                    test_name: "Haemoglobin",
+                    value_text: "4,6",
+                    value_number: 46,
+                  },
+                ],
+              }),
+            )
+          ).json,
+        );
+        await turn.look(2);
+        await turn.save(
+          2,
+          readPage("13.2", {
+            facts: { kind: "lab_report", name: "Meera Fictional" },
+            items: [
+              {
+                test_name: "Haemoglobin",
+                value_text: "13.2",
+                unsure: "the last digit is smudged",
+              },
+            ],
+            issues: ["The name on the report is Meera Fictional."],
+          }),
+        );
+        return undefined;
+      },
+    ]);
+    const id = await addReport();
+    await until(done);
+
+    expect(answers[0]).toEqual({
+      ok: true,
+      result: { saved: "1", still_to_save: "2", note: null },
+    });
+    expect(
+      rows("SELECT entry_checks FROM document_pages ORDER BY position"),
+    ).toEqual([{ entry_checks: null }, { entry_checks: null }]);
+    expect(
+      drafts().map((d) => JSON.parse(d["unsure"] as string) as string[]),
+    ).toEqual([[], ["the last digit is smudged"]]);
+    expect(lines().at(-1)).toBe(
+      "Lab report · 12 Aug · 2 results read · 1 to check",
+    );
+    expect(asks()).toEqual([
+      [
+        `A document reading finished: sunrise-august.pdf (document ${id}), 2 draft items read, not saved.`,
+        "What needs the user:",
+        `- unsure: page 2: Haemoglobin "13.2" (the last digit is smudged)`,
+        "- the reader noted: page 2: The name on the report is Meera Fictional.",
+        "Read the document with get_documents if you need to, then tell the user in a few lines and ask what it needs. Don't save anything.",
+      ].join("\n"),
+    ]);
+    await running.close();
+  });
+
+  it("doesn't ask about a printed name the reader raised no issue for", async () => {
+    const { reader: running } = await startReader([
+      async (turn) => {
+        for (const page of [1, 2]) {
+          await turn.look(page);
           await turn.save(
-            2,
+            page,
             readPage("13.2", {
-              facts: { kind: "lab_report", name: printed },
+              facts: { kind: "lab_report", name: "Meera Fictional" },
             }),
           );
-          return undefined;
-        },
-      ]);
-      const id = await addReport();
-      await until(done);
+        }
+        return undefined;
+      },
+    ]);
+    await addReport();
+    await until(done);
+    expect(lines().at(-1)).toBe("Lab report · 2 results read");
+    expect(asks()).toEqual([]);
+    await running.close();
+  });
 
-      expect(lines().at(-1)).toBe(
-        "Lab report · 12 Aug · 2 results read · 1 to check",
-      );
-      expect(asks()).toEqual([
-        [
-          `A document reading finished: sunrise-august.pdf (document ${id}), 2 draft items read, not saved.`,
-          "What needs the user:",
-          `- unsure: page 1: Haemoglobin "13.8" ("13.8" isn't in the page's own text)`,
-          ...(askName ? [`- the name on the report is "${printed}"`] : []),
-          "Read the document with get_documents if you need to, then tell the user in a few lines and ask what it needs. Don't save anything.",
-        ].join("\n"),
-      ]);
-      expect(JSON.parse(drafts()[0]?.["unsure"] as string)).toEqual([
-        `"13.8" isn't in the page's own text`,
-      ]);
-      await running.close();
-    },
-  );
+  it("tells the reader only the name of the person the document was added for", async () => {
+    store.db.exec(
+      `INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
+       INSERT INTO chats (id, person_id, created_at) VALUES ('c-ravi', 'ravi', '${NOW}');`,
+    );
+    const { runs, reader: running } = await startReader([
+      async (turn) => {
+        for (const page of [1, 2]) {
+          await turn.look(page);
+          await turn.save(page, readPage());
+        }
+        return undefined;
+      },
+    ]);
+    await addReport("ravi");
+    await until(done);
+    expect(runs[0]?.input).toBe(
+      "Read this document: 2 pages (sunrise-august.pdf).\nIt was added for Ravi Fictional.\nSave these pages: 1–2.",
+    );
+    await running.close();
+  });
 
   it("marks pages the reader never saved as not looked at, and Retry reads only those", async () => {
     const { runs, reader: running } = await startReader([
@@ -595,6 +663,61 @@ describe("a restart or a failure", () => {
     expect(second.runs).toEqual([]);
     expect(lines()).toHaveLength(2);
     expect(drafts()).toHaveLength(2);
+    await second.reader.close();
+  });
+
+  it("finishes a reading an older Rufi saved, with the checks it stored, and leaves its entries as they are", async () => {
+    const first = await startReader([
+      async (turn) => {
+        for (const page of [1, 2]) {
+          await turn.look(page);
+          await turn.save(page, readPage());
+        }
+        await turn.stopped();
+        return { end: { status: "interrupted", reason: "stopped" } };
+      },
+    ]);
+    const id = await addReport();
+    await until(
+      () =>
+        rows("SELECT entry FROM document_pages WHERE entry IS NOT NULL")
+          .length === 2,
+    );
+    await first.reader.close();
+    // Page 1 as an older Rufi saved it: a row count in the entry, and its
+    // own checks beside it.
+    store.db.exec(
+      `UPDATE document_pages SET
+         entry = json_set(entry, '$.rows_seen', 2),
+         entry_checks = '{"incomplete":{"rows_seen":2,"items":1},"items":[{"item":1,"why":"its number 13.2 isn''t the printed value"}]}'
+       WHERE position = 1`,
+    );
+    const before = rows(
+      "SELECT entry, entry_checks FROM document_pages ORDER BY position",
+    );
+    await reads.recover();
+
+    const second = await startReader([]);
+    await until(done);
+    expect(second.runs).toEqual([]);
+    expect(lines().at(-1)).toBe(
+      "Lab report · 12 Aug · 2 results read · 1 to check · 1 page may be incomplete",
+    );
+    expect(asks()).toEqual([
+      [
+        `A document reading finished: sunrise-august.pdf (document ${id}), 2 draft items read, not saved.`,
+        "What needs the user:",
+        `- unsure: page 1: Haemoglobin "13.2" (its number 13.2 isn't the printed value)`,
+        "- page 1 may be incomplete: 2 rows seen, 1 read",
+        "Read the document with get_documents if you need to, then tell the user in a few lines and ask what it needs. Don't save anything.",
+      ].join("\n"),
+    ]);
+    expect(JSON.parse(drafts()[0]?.["unsure"] as string)).toEqual([
+      "its number 13.2 isn't the printed value",
+    ]);
+    expect(
+      rows("SELECT entry, entry_checks FROM document_pages ORDER BY position"),
+    ).toEqual(before);
     await second.reader.close();
   });
 

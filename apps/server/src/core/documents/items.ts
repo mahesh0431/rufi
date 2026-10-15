@@ -118,7 +118,8 @@ export function draftItems(
           position: p.position,
           state: p.state as DocumentItems["pages"][number]["state"],
           why: p.state_why,
-          // Only a page whose reading ended says what its checks found.
+          // Only a page whose reading ended says what its checks found
+          // (an older Rufi's; new entries have none).
           incomplete:
             p.state !== null && p.entry_checks
               ? ((JSON.parse(p.entry_checks) as Checks).incomplete ?? null)

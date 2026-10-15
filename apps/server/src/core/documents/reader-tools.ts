@@ -13,7 +13,7 @@ import {
   WithImage,
   type Tool,
 } from "../tools/registry.ts";
-import { check, Entry, Note, type Notebook, type Run } from "./notebook.ts";
+import { Entry, Note, type Notebook, type Run } from "./notebook.ts";
 import type { Pages } from "./pages.ts";
 
 const Page = Schema.Int.check(Schema.isGreaterThan(0)).annotate({
@@ -27,12 +27,10 @@ const Page = Schema.Int.check(Schema.isGreaterThan(0)).annotate({
 const READER_REJECTIONS = 10;
 
 function readerTools(run: Run, pages: Pages, book: Notebook): readonly Tool[] {
-  /** Each page's own text as get_page last showed it, for save_page's checks. */
-  const texts = new Map<number, string | undefined>();
   const getPage = defineTool({
     name: "get_page",
     description:
-      "Look at one page of the document you are reading: its image, the page's own text when the PDF has text (use it for exact characters), the entry you saved for it (if any), your note and which pages are saved. Look at a page before you save it, and again after your earlier context was summarised.",
+      "Look at one page of the document you are reading: its image, the page's own text when the PDF has text (extra help with exact characters; the image is the source), the entry you saved for it (if any), your note and which pages are saved. Look at a page before you save it, and again after your earlier context was summarised.",
     shown: "Looked at a page",
     input: Schema.Struct({ page: Page }),
     callers: "model",
@@ -49,7 +47,6 @@ function readerTools(run: Run, pages: Pages, book: Notebook): readonly Tool[] {
         );
       }
       run.lookedAt.add(page);
-      texts.set(page, view.ok ? view.text : undefined);
       const about = {
         page,
         of: view.pages,
@@ -72,7 +69,7 @@ function readerTools(run: Run, pages: Pages, book: Notebook): readonly Tool[] {
   const savePage = defineTool({
     name: "save_page",
     description:
-      "Save a page's entry in your notebook: what the page says, with every result as printed. Saving a page again replaces its entry. `note` is your one note for the whole document; give it whole when it changes, or leave it out to keep it. Save every page you were asked to read, also an empty one. Rufi checks the entry and tells you what it flagged.",
+      "Save a page's entry in your notebook: what the page says, with every result as printed. Saving a page again replaces its entry. `note` is your one note for the whole document; give it whole when it changes, or leave it out to keep it. Save every page you were asked to read, also an empty one.",
     shown: "Saved a page",
     input: Schema.Struct({
       page: Page,
@@ -87,7 +84,6 @@ function readerTools(run: Run, pages: Pages, book: Notebook): readonly Tool[] {
         page: 1,
         entry: {
           outcome: "read",
-          rows_seen: 1,
           items: [
             {
               test_name: "Haemoglobin",
@@ -101,19 +97,7 @@ function readerTools(run: Run, pages: Pages, book: Notebook): readonly Tool[] {
         note: "Collected date is on page 1.",
       },
     ],
-    run: async ({ page, entry, note }) => {
-      const checks = check(entry, texts.get(page));
-      const progress = await book.save(run, page, entry, note, checks);
-      if (!checks.incomplete && checks.items.length === 0) return progress;
-      return {
-        ...progress,
-        checks: {
-          ...checks,
-          about:
-            "Rufi's checks flagged this page. Look at it again and save it again if you misread something; otherwise leave it: flagged items show as unsure.",
-        },
-      };
-    },
+    run: ({ page, entry, note }) => book.save(run, page, entry, note),
   });
 
   return [getPage, savePage];
