@@ -1069,13 +1069,18 @@ function UsedLine({ read }: { read: Read }) {
   );
 }
 
-/** How a reply ended, when it didn't finish, in the core's words. */
+/**
+ * How a reply ended, when it didn't finish, in the core's words: the
+ * service's own, when it gave some, else Rufi's, with a usage limit's reset.
+ */
 function Ending({ live, turnId }: { live: StoreApi<Live>; turnId: string }) {
   const turn = useStore(live, (state) => state.turns[turnId]);
   if (!turn) return null;
+  if (turn.endText !== null)
+    return <p className="text-muted">{turn.endText}</p>;
   return (
     <p className="text-muted">
-      {turn.endText ?? "This reply didn't finish."}
+      This reply didn't finish.
       {turn.endReason === "usage_limit" && turn.resetsAt !== null && (
         <> It resets {printedTime(turn.resetsAt)}.</>
       )}

@@ -1,7 +1,7 @@
 import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Effect, Fiber } from "effect";
@@ -1182,7 +1182,7 @@ describe("Codex's items and endings for Rufi", () => {
     expect(failed("contextWindowExceeded")).toBe("provider_failed");
   });
 
-  it("shows the service's own error as it came, with the person's home folder as ~", () => {
+  it("shows the service's own error as it came", () => {
     const failed = (message: string, codexErrorInfo: unknown) =>
       endOf({
         status: "failed",
@@ -1204,16 +1204,11 @@ describe("Codex's items and endings for Rufi", () => {
       reason: "connection",
       text: "exceeded retry limit, last status: 429 Too Many Requests, request id: req-1",
     });
-    expect(
-      failed(
-        `failed to localize granted filesystem paths: ${homedir()}/.rufi/data/ai is not a path`,
-        null,
-      ).text,
-    ).toBe(
-      "failed to localize granted filesystem paths: ~/.rufi/data/ai is not a path",
-    );
-    // Codex gave no words: Rufi's own.
-    expect(failed("", "serverOverloaded").text).toBe("The AI couldn't finish.");
+    // Codex gave no words: none of Rufi's in their place.
+    expect(failed("", "serverOverloaded")).toEqual({
+      status: "failed",
+      reason: "provider_failed",
+    });
   });
 
   it("gives each item one line with what Codex reported, and names one it doesn't know by its type", () => {

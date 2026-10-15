@@ -2,7 +2,6 @@
 // agent did, with what the agent reported about it, and why a reply ended.
 // Nothing is reworded or cut: a screen shows the line, and opens to all the
 // agent gave about it.
-import { homedir } from "node:os";
 import type { ActivityKind, AgentEvent, TurnEnd } from "../runtime.ts";
 import type { CodexErrorInfo } from "./protocol/v2/CodexErrorInfo.ts";
 import type { RateLimitSnapshot } from "./protocol/v2/RateLimitSnapshot.ts";
@@ -197,9 +196,9 @@ export function endOf(
 }
 
 /**
- * A failed turn: the service's own words, as Codex gave them (Rufi's only
- * when it gave none), with the person's home folder as `~`; and Rufi's
- * reason, for what it does next (wait for the sign-in or the limit, retry).
+ * A failed turn: the service's own words, as Codex gave them (none when it
+ * gave none: the screen says the reply didn't finish); and Rufi's reason,
+ * for what it does next (wait for the sign-in or the limit, retry).
  */
 function failure(
   error: TurnError | null,
@@ -210,9 +209,7 @@ function failure(
   return {
     status: "failed",
     reason,
-    text: error?.message
-      ? error.message.replaceAll(homedir(), "~")
-      : "The AI couldn't finish.",
+    ...(error?.message && { text: error.message }),
     ...(resetsAt && { resetsAt }),
   };
 }

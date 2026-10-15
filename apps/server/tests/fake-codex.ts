@@ -115,6 +115,8 @@ export interface Scenario {
   callsByTurn?: NonNullable<Scenario["calls"]>[];
   /** A usage-limit snapshot sent before a failed turn. */
   resetsAt?: number;
+  /** The message Codex gives a failed turn (a usage-limit message). */
+  failMessage?: string;
   /** Sparse account rate-limit updates following that snapshot. */
   rateLimitUpdates?: Record<string, unknown>[];
   /** Threads the fake knows from before, as a restarted Codex would. */
@@ -257,7 +259,7 @@ const turnObject = (id: string, status: string) => ({
   error:
     status === "failed"
       ? {
-          message: USAGE_LIMIT,
+          message: scenario.failMessage ?? USAGE_LIMIT,
           codexErrorInfo: "usageLimitExceeded",
           additionalDetails: null,
           misalignment: null,
