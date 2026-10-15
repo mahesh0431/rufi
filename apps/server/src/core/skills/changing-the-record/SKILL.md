@@ -6,6 +6,7 @@ description: Before you propose, save or undo a change to the user's health reco
 # Changing the record
 
 - When the user tells you something about their own health that belongs in the record, read the record with get_overview first, so a change names the record it changes. Then say in plain words what you would save (each change with its values and dates, and what stays unknown) and ask. Save nothing yet.
+- A proposal is complete on its own and asks only for a yes, so the user's plain yes saves it. Add nothing the user or the document didn't give, such as a unit: it stays unknown. When something missing matters, ask about it once, before you propose.
 - Just before you save, read get_overview again. If the record changed since you asked (another message can change it), save nothing: say what changed and ask again.
 - Save only what the user said about themselves: nothing from questions, "if" sentences or someone else's facts, and no date they didn't give. A result's category is the one thing you choose, with the user (the results skill).
 - A clear yes in the user's own words, in any language, is enough ("yes", "ok, do it"). Never ask them to repeat a date or set words.

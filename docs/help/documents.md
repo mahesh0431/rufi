@@ -171,7 +171,7 @@ To ask about or save only some results, add them to the chat as chips: click **A
 
 ### Save in chat
 
-Click **Save in chat**. Rufi puts **Save these 42 results.** in the chat box, after anything you already typed there, with the document's chip. You stay on the page, so you can read the results beside it. Click the chat bar, read the message, then send it: this message goes to the AI only when you send it. The AI reads the results with your fixes, then checks them with you and saves them (see [Save results to your health record](#save-results-to-your-health-record)).
+Click **Save in chat**. Rufi puts **Save these 42 results.** in the chat box, after anything you already typed there, with the document's chip. You stay on the page, so you can read the results beside it. Click the chat bar, read the message, then send it: this message goes to the AI only when you send it. The AI reads the results with your fixes, and what the reader read beside each fix, then checks them with you and saves them (see [Save results to your health record](#save-results-to-your-health-record)).
 
 While a message of yours is being sent, Rufi says **Wait: a message is being sent.** beside the button.
 

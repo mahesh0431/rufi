@@ -4,11 +4,15 @@
 // some), from the same page service the reader uses. Lists come in parts
 // with a continuation, so a read can always be finished. The person is
 // Rufi's choice; the AI names only a document of theirs and a page.
+import type { DraftItem } from "@rufi/contracts/documents";
 import { Schema } from "effect";
 import { DELETED_DOCUMENT } from "../documents/delete.ts";
+import { readerValues } from "../documents/items.ts";
 import type { Entry } from "../documents/notebook.ts";
 import { readings } from "../documents/reading.ts";
 import { defineTool, Refusal, WithImage } from "./registry.ts";
+
+type Fields = DraftItem["fields"];
 
 /** Documents, pages or draft items in one answer at most; the description says the same. */
 export const PART = { documents: 50, pages: 100, items: 100 };
@@ -46,7 +50,7 @@ function shown(input: unknown): string {
 export const getDocuments = defineTool({
   name: "get_documents",
   shown,
-  description: `The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its files and pages, and its reading's status: "not_read" (never read; retry_reading reads it), "reading" (Rufi's reader is reading it now; its items come when it ends), "done" or "failed". With document: its version (it rises when a reading or a fix changes its draft items), its pages (each with what the reader found: its state, its facts such as dates, lab, report number and the name printed on it, and its issues) and its draft items: what the reader read, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed (a date on the item is its own; without one, the page's first printed date is used when it is saved), and why it may be unsure. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page as an image, with the page's own text when the PDF has some (use it for exact characters); a photo or a scan is the image alone. At most ${String(PART.documents)} documents, ${String(PART.pages)} pages or ${String(PART.items)} draft items come back; when there are more, the answer has "next": pass it as after to read on. Rufi chooses the person, not you.`,
+  description: `The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its files and pages, and its reading's status: "not_read" (never read; retry_reading reads it), "reading" (Rufi's reader is reading it now; its items come when it ends), "done" or "failed". With document: its version (it rises when a reading or a fix changes its draft items), its pages (each with what the reader found: its state, its facts such as dates, lab, report number and the name printed on it, and its issues) and its draft items: what the reader read, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed or as the user fixed them on the document's page (a fixed item has fixed_by_user, and reader_read: what the reader read in each field the user changed, null where it read nothing; a date on the item is its own; without one, the page's first printed date is used when it is saved), and why it may be unsure. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page as an image, with the page's own text when the PDF has some (use it for exact characters); a photo or a scan is the image alone. At most ${String(PART.documents)} documents, ${String(PART.pages)} pages or ${String(PART.items)} draft items come back; when there are more, the answer has "next": pass it as after to read on. Rufi chooses the person, not you.`,
   input: Input,
   callers: "model",
   readOnly: true,
@@ -233,6 +237,7 @@ export const getDocuments = defineTool({
           "page",
           "status",
           "fields",
+          "original",
           "unsure",
           "saved_as",
           "record_id",
@@ -249,6 +254,8 @@ export const getDocuments = defineTool({
       return {
         items: shown.map((d) => {
           const unsure = JSON.parse(d.unsure) as string[];
+          const fields = JSON.parse(d.fields) as Fields;
+          const read = readerValues(fields, JSON.parse(d.original) as Fields);
           return {
             id: d.id,
             version: d.version,
@@ -258,7 +265,11 @@ export const getDocuments = defineTool({
               saved_as: d.saved_as,
               record: d.record_id,
             }),
-            ...(JSON.parse(d.fields) as object),
+            ...fields,
+            ...(Object.keys(read).length > 0 && {
+              fixed_by_user: true,
+              reader_read: read,
+            }),
             ...(unsure.length > 0 && { unsure }),
           };
         }),
