@@ -117,7 +117,7 @@ What Rufi does when it saves a document's results:
 - **Its report.** Results with the same printed lab, report number and collection date go in one report, even when they came from different documents. If any of these is missing, Rufi keeps reports from different documents apart. A page that prints none of these belongs to the report of the page before it.
 - **Its sources.** Each result keeps where it came from: the document and its page, your message, or both. The receipt, the AI's reads and a visit brief show them.
 - **All or nothing.** Rufi saves all the results in one step, however many there are. If one can't be saved, nothing is saved, and the AI tells you why.
-- **Each result once.** A result you already saved isn't saved again: the AI gets the earlier save back.
+- **Each result once.** A result you already saved isn't saved again: the AI gets the earlier save back. After an undo, you can ask the AI to save it again.
 - **Nothing changed since.** If a result changed after the AI read it (the reading went on, or you changed it), Rufi refuses the save. The AI reads the document again and asks you again.
 
 ### Results you don't want
@@ -126,7 +126,7 @@ If a result isn't yours, or was read by mistake, tell the AI. When you say yes, 
 
 ### Undo
 
-Say "undo that", as for any save (see [Undo](chat.md#undo)). The AI removes the results the save added, and they stay in the history. When a result became **another source**, the undo takes only that page off its sources: the result stays.
+Say "undo that", as for any save (see [Undo](chat.md#undo)). The AI removes the results the save added, and they stay in the history. When a result became **another source**, the undo takes only that page off its sources: the result stays. To save it again, ask the AI, for example "save page 2 as a source again". It asks first, and the chat shows a new receipt.
 
 ## When a reading stops
 

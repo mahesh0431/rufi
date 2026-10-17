@@ -157,6 +157,32 @@ function reportsOf(
   return keys;
 }
 
+/** Whether a saved item's page is still a source of its result, not removed. */
+async function stillSaved(
+  trx: Transaction<Tables>,
+  personId: string,
+  row: { document_id: string; page: number; record_id: string | null },
+): Promise<boolean> {
+  const found = await trx
+    .selectFrom("record_sources as s")
+    .innerJoin("results as r", (join) =>
+      join
+        .onRef("r.person_id", "=", "s.person_id")
+        .onRef("r.id", "=", "s.record_id"),
+    )
+    .select("s.record_id")
+    .where("s.person_id", "=", personId)
+    .where("s.kind", "=", "result")
+    .where("s.record_id", "=", row.record_id ?? "")
+    .where("s.type", "=", "document_page")
+    .where("s.document_id", "=", row.document_id)
+    .where("s.page", "=", row.page)
+    .where("s.removed_by", "is", null)
+    .where("r.removed", "=", 0)
+    .executeTakeFirst();
+  return found !== undefined;
+}
+
 interface Context {
   personId: string;
   /** The user's message a fix rests on. */
@@ -170,8 +196,8 @@ interface Context {
 
 /**
  * Checks each item and plans its write; problems go to `problem`. Items
- * saved before at the named version aren't planned: they come back as
- * `earlier`.
+ * saved before at the named version, and still in the record so, aren't
+ * planned: they come back as `earlier`.
  */
 export async function planItems(
   trx: Transaction<Tables>,
@@ -269,7 +295,10 @@ export async function planItems(
       );
       continue;
     }
-    if (row.status === "saved") {
+    // Saved, and still in the record as it was saved: the earlier save. After
+    // an undo took its page off the result, or removed the result, it can
+    // be saved again.
+    if (row.status === "saved" && (await stillSaved(trx, personId, row))) {
       earlier.push({
         item: row.id,
         as: row.saved_as ?? "new",
