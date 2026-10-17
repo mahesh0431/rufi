@@ -71,9 +71,10 @@ function png(width: number, height: number, [r, g, b]: number[]): Buffer {
 const TRYING = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>Fictional results</title></head><body>
 <h1>Asha's fictional results</h1><button id="tab" type="button">2025</button>
-<label>Filter <input id="filter"></label><ul id="out"></ul>
+<label>Filter <input id="filter" autofocus></label><ul id="out"></ul>
 <script>
 const out = (line) => { const li = document.createElement("li"); li.textContent = line; document.getElementById("out").append(li); };
+document.getElementById("filter").focus();
 out("script ran");
 document.getElementById("tab").onclick = () => out("tab clicked");
 out("eval: " + eval("6 * 7"));
@@ -240,6 +241,16 @@ test("a page draws in the reply at a fixed height and opens large over the chat:
   page.context().on("response", (response) => {
     if (response.url().includes("127.0.0.1:9/")) remote.push("answered");
   });
+  // Keep the first page load pending while the person starts another draft.
+  const loading = Promise.withResolvers<undefined>();
+  await page.route(
+    "**/files/**",
+    async (route) => {
+      await loading.promise;
+      await route.continue();
+    },
+    { times: 1 },
+  );
   // Put the page among enough text to check the reading position after closing.
   const notes = Array.from(
     { length: 8 },
@@ -253,6 +264,8 @@ test("a page draws in the reply at a fixed height and opens large over the chat:
       ...notes,
     ].join("\n\n"),
   );
+  const message = chat(page).getByRole("textbox", { name: "Message to Rufi" });
+  await message.fill("Next draft");
   const reply = log(page).locator(".reply");
   // It draws in the reply without a click: the reply's width, a fixed height.
   const inline = reply.locator('iframe[title="Your 2026 results"]');
@@ -261,12 +274,16 @@ test("a page draws in the reply at a fixed height and opens large over the chat:
   const width = await reply.evaluate((element) => element.clientWidth);
   expect(box?.height).toBe(480);
   expect(box?.width).toBe(width);
-  await accessible(page);
+  loading.resolve(undefined);
   const inlineFrame = await (await inline.elementHandle()).contentFrame();
   if (!inlineFrame) throw new Error("No page frame in the reply");
   const out = inlineFrame.locator("#out");
   // Its script ran first, so what it couldn't do proves the locks.
   await expect(out).toContainText("script ran");
+  await expect(message).toBeFocused();
+  await page.keyboard.type(" stays here");
+  await expect(message).toHaveValue("Next draft stays here");
+  await accessible(page);
   await expect(out).toContainText("eval: 42");
   await expect(out).toContainText("parent: blocked");
   await expect(out).toContainText("storage: blocked");
@@ -275,6 +292,17 @@ test("a page draws in the reply at a fixed height and opens large over the chat:
   await expect(out).toContainText("send: blocked");
   await expect(out).toContainText("remote image: blocked");
   await expect(out).toContainText("remote script: blocked");
+  // A deliberate click or Tab can still put the focus inside the page.
+  const inlineFilter = inlineFrame.getByRole("textbox", { name: "Filter" });
+  await inlineFilter.click();
+  await page.keyboard.type("HbA1c");
+  await expect(inlineFilter).toHaveValue("HbA1c");
+  const open = reply.getByRole("button", { name: "Open Your 2026 results" });
+  await open.focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(inlineFilter).toBeFocused();
+  await page.keyboard.type("Glucose");
+  await expect(inlineFilter).toHaveValue("Glucose");
   // Clicked in the reply, the page keeps what it shows while it opens large.
   await inlineFrame.locator("#tab").click();
   await expect(out).toContainText("tab clicked");
@@ -306,9 +334,7 @@ test("a page draws in the reply at a fixed height and opens large over the chat:
   await shown.getByRole("button", { name: "Close" }).click();
   await expect(shown).toHaveCount(0);
   // Close and Esc give the focus back to Open.
-  const open = reply.getByRole("button", { name: "Open Your 2026 results" });
   await expect(open).toBeFocused();
-  const message = chat(page).getByRole("textbox", { name: "Message to Rufi" });
   await expect(message).toBeVisible();
   await expect(
     chat(page).getByRole("button", { name: "Minimise" }),

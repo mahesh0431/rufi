@@ -219,6 +219,21 @@ export function NativePicture({
   );
 }
 
+/** Keep an inline page's automatic first load from taking the focus. */
+function keepFocusOnLoad(frame: HTMLIFrameElement | null) {
+  if (!frame) return;
+  const before = document.activeElement;
+  const loaded = () => {
+    if (document.activeElement === frame && before instanceof HTMLElement) {
+      before.focus({ preventScroll: true });
+    }
+  };
+  frame.addEventListener("load", loaded, { once: true });
+  return () => {
+    frame.removeEventListener("load", loaded);
+  };
+}
+
 /**
  * A page the AI made, drawn in the reply at a fixed height (it scrolls inside
  * its frame), with its title (the reply's words for it, or its file name)
@@ -267,6 +282,7 @@ export function Page({ path, title }: { path: string; title: string }) {
     <span className="my-1 block">
       {/* Locked twice: this frame's sandbox and the page's own policy. */}
       <iframe
+        ref={keepFocusOnLoad}
         src={src}
         title={name}
         sandbox="allow-scripts"
