@@ -24,7 +24,6 @@ const Input = Schema.Struct({
 
 export const readChat = defineTool({
   name: "read_chat",
-  shown: "Read earlier in the chat",
   description: `Earlier parts of this chat, newest first. Each entry's kind is "message" (the user's), "steer" (the user's, sent while you were replying), "reply" (yours), "activity" (one thing you did: a title and one short detail, never its output), "receipt" (Rufi's line for a save to the record: what was saved), "event" (Rufi's own line about something that happened, never the user's words) or "brief" (Rufi's line for a visit brief made with create_brief). "at" is when it was written. At most ${String(PAGE_MAX)} entries a page; pass the page's next_before to read further back. Rufi chooses the chat, not you.`,
   input: Input,
   callers: "model",

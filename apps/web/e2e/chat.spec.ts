@@ -883,8 +883,10 @@ test("a click outside the panel steps back to the bar and keeps what you typed; 
   await expect(log(chat(page)).locator(".reply")).toHaveText(
     "ok:Your last HbA1c",
   );
-  await log(chat(page)).getByText("Based on", { exact: true }).click();
-  await expect(log(chat(page))).toContainText("From your record, read now.");
+  await log(chat(page)).getByRole("button", { name: "Based on" }).click();
+  await expect(page.getByRole("dialog", { name: "Based on" })).toContainText(
+    "From your record, read now.",
+  );
   await expect(minimise).toBeVisible();
   // A reply that runs until it is stopped.
   await send(page, "partial");
@@ -1397,7 +1399,7 @@ test("a save made in another window while this one's connection was down shows o
   await expect(results(6)).toBeVisible();
 });
 
-test("Based on, under an answer once it ended, opens How and Used; small talk has none; a stopped reply has no How", async ({
+test("Based on, beside Activity once a reply ended, opens the AI's own words and Esc closes it; small talk and a stopped reply have none", async ({
   page,
   rufi,
 }) => {
@@ -1411,7 +1413,7 @@ test("Based on, under an answer once it ended, opens How and Used; small talk ha
       ],
     },
   });
-  const basedOn = log(chat(page)).getByText("Based on", { exact: true });
+  const basedOn = log(chat(page)).getByRole("button", { name: "Based on" });
   // The fake answers with the message's own words: here, a rufi-basis block.
   await send(
     page,
@@ -1420,46 +1422,45 @@ test("Based on, under an answer once it ended, opens How and Used; small talk ha
   await expect(log(chat(page)).locator(".reply")).toHaveText(
     "ok:Your last HbA1c",
   );
-  await expect(basedOn).toHaveCount(1);
-  // A link that opens from the keyboard too.
+  // On Activity's line.
+  await expect(
+    log(chat(page))
+      .locator("[data-activity]")
+      .getByRole("button", { name: "Based on" }),
+  ).toHaveCount(1);
   await basedOn.focus();
   await page.keyboard.press("Enter");
-  const opened1 = log(chat(page)).locator("details[open]");
+  const popover = page.getByRole("dialog", { name: "Based on" });
   await expect(
-    opened1.getByText("From your record, read now.", { exact: true }),
+    popover.getByText("From your record, read now.", { exact: true }),
   ).toBeVisible();
-  // Used: the health-record read only; the command is in Activity.
-  await expect(opened1.getByRole("listitem")).toHaveText([
-    "Read your results in Aug 2026 · 6 records",
-  ]);
   await accessible(page);
+  // Esc closes the popover only, and the focus goes back to Based on.
+  await page.keyboard.press("Escape");
+  await expect(popover).toHaveCount(0);
+  await expect(basedOn).toBeFocused();
+  await expect(
+    chat(page).getByRole("button", { name: "Minimise" }),
+  ).toBeVisible();
+  // Also from Close, reached with Tab.
+  await page.keyboard.press("Enter");
+  await expect(popover).toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(popover.getByRole("button", { name: "Close" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(popover).toHaveCount(0);
+  await expect(basedOn).toBeFocused();
 
   await send(page, "quiet thanks");
   await expect(log(chat(page)).locator(".reply").nth(1)).toHaveText(
     "ok:quiet thanks",
   );
   await expect(basedOn).toHaveCount(1);
-
-  // While a reply runs, it has no Based on; stopped, it shows what was read.
   await send(page, "partial");
   await expect(log(chat(page)).locator(".reply").nth(2)).toHaveText("ok:part");
-  await expect(basedOn).toHaveCount(1);
   await chat(page).getByRole("button", { name: "Stop" }).click();
   await expect(log(chat(page)).getByText("Stopped.")).toBeVisible();
-  await expect(basedOn).toHaveCount(2);
-  await basedOn.nth(1).click();
-  const stopped = log(chat(page)).locator("details").nth(1);
-  await expect(stopped.getByText("How", { exact: true })).toHaveCount(0);
-  await expect(stopped.getByRole("listitem")).toHaveCount(1);
-
-  // After a reload, the same.
-  await page.reload();
-  await opener(chat(page)).click();
-  await expect(basedOn).toHaveCount(2);
-  await basedOn.first().click();
-  await expect(
-    log(chat(page)).getByText("From your record, read now.", { exact: true }),
-  ).toBeVisible();
+  await expect(basedOn).toHaveCount(1);
 });
 
 test("a tool step shows the tool and its arguments as reported, and opens to its result; its sign keeps its size beside a long line", async ({

@@ -195,7 +195,7 @@ export function chat(deps: ChatDeps) {
     }
     const startedAt = transcripts.now();
     const answer = await caller.call(call.tool, call.input, callId);
-    // Kept before the AI has it: Used must show every read the AI got.
+    // Kept before the AI has it: Rufi keeps every answer the AI got.
     try {
       await transcripts.recordToolCall(caller.chat, turnId, {
         callId,

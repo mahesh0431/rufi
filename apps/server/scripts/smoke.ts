@@ -446,11 +446,10 @@ const sourcesNote = (home: string) =>
       .join(", ") || "none"
   }`;
 
-/** A turn's Based on: How, and what Rufi saw it read. */
-const basis = (snapshot: Snapshot, turn = -1) => {
-  const found = snapshot.turns.at(turn);
-  return { how: found?.how ?? null, used: found?.used ?? [] };
-};
+/** A turn's Based on: How, in the AI's words. */
+const basis = (snapshot: Snapshot, turn = -1) => ({
+  how: snapshot.turns.at(turn)?.how ?? null,
+});
 /** Rufi's own record of each call the AI made to its tools. */
 function calls(home: string) {
   const store = openReadOnly(databasePath(home));
@@ -792,7 +791,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         used_get_overview: overviewRead,
         mentions_hba1c: /hba1c/i.test(lastReply(latest)),
         how_present: basis(latest).how !== null,
-        used_shows_the_read: basis(latest).used.length > 0,
         says_6_8: /6\.8/.test(replyOf(snapshot)),
         how_present_for_the_hba1c: basis(snapshot).how !== null,
       },
@@ -809,10 +807,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         read_records: recordReads(home).length > 0,
         mentions_the_2024_value: /7\.9/.test(lastReply(snapshot)),
         how_present: basis(snapshot).how !== null,
-        used_shows_the_read: basis(snapshot).used.some(
-          (read) =>
-            /^Read your (lab )?results/.test(read.title) && read.note !== null,
-        ),
       },
       snapshot,
     };
@@ -902,22 +896,25 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       snapshot,
     };
   },
-  /** A web answer: How says where it came from (a person checks it against Used). */
+  /** A web answer: How says where it came from (a person checks it against Activity). */
   web: async (api) => {
     const c = chat(api);
     await c.ask(
       "Look up on the web what the American Diabetes Association currently recommends as the HbA1c target for most adults, and give me the source.",
     );
     const snapshot = await c.read();
-    const { how, used } = basis(snapshot);
+    const { how } = basis(snapshot);
+    const steps = snapshot.entries
+      .filter((e) => e.kind === "activity" && e.activity !== "note")
+      .map((e) => e.text);
     return {
       checks: { how_present: how !== null },
       verdicts: [
         {
-          check: "how_matches_used",
+          check: "how_matches_activity",
           criterion:
-            "Based on's How says where the answer came from, and matches Used: the web when Used lists a web search or a command, else general knowledge.",
-          evidence: `How: ${how ?? "(none)"}\nUsed: ${used.map((read) => read.title).join(", ") || "(none)"}`,
+            "Based on's How says where the answer came from, and matches Activity: the web when Activity shows a web search or a command, else general knowledge.",
+          evidence: `How: ${how ?? "(none)"}\nActivity: ${steps.join(", ") || "(none)"}`,
         },
       ],
       snapshot,
@@ -951,7 +948,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       snapshot,
     };
   },
-  /** A read over the cap: Used says capped, and the answer has them all or says not. */
+  /** A read over the cap, and the answer has them all or says not. */
   capped: async (api, home) => {
     const c = chat(api);
     await c.ask(
@@ -967,9 +964,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         a_read_was_capped: capped,
-        used_says_capped: basis(snapshot).used.some(
-          (read) => read.outcome === "capped",
-        ),
       },
       ...(shown !== 251 && {
         verdicts: [
@@ -2110,11 +2104,7 @@ function transcriptText(snapshot: Snapshot): string {
         text = `${e.kind === "reply" ? "AI" : e.kind === "steer" ? "You (steer)" : "You"}: ${e.text}`;
       const turn = snapshot.turns.find((t) => t.id === e.turnId);
       if (!turn || last.get(e.turnId) !== e.id) return text;
-      const used = turn.used.map(
-        (read) =>
-          `  - ${read.title} (${read.outcome}${read.note ? `: ${read.note}` : ""})`,
-      );
-      return `${text}\n\n> Based on. How: ${turn.how ?? "(none)"}\n> Used:${used.length > 0 ? `\n${used.join("\n")}` : " (none)"}`;
+      return `${text}\n\n> Based on: ${turn.how ?? "(none)"}`;
     })
     .join("\n\n");
 }

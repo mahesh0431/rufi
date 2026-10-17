@@ -36,7 +36,7 @@ The AI doesn't help anyone harm themselves or someone else, for example with dos
 
 ## It reaches your health record only through Rufi
 
-The AI works in its own folder, where it can run programs and use the internet. Its programs can't open your record's database or your backups, so it reads and changes your health record only through Rufi's tools: each read shows under the answer as **Based on**, and each save with Rufi's receipt. See [What the AI can do in its folder](your-data-and-the-ai.md#what-the-ai-can-do-in-its-folder).
+The AI works in its own folder, where it can run programs and use the internet. Its programs can't open your record's database or your backups, so it reads and changes your health record only through Rufi's tools: each read shows as a step in the answer's **Activity**, and each save with Rufi's receipt. See [What the AI can do in its folder](your-data-and-the-ai.md#what-the-ai-can-do-in-its-folder).
 
 ## It asks before it saves, and says "saved" only when Rufi saved it
 

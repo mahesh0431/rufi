@@ -115,7 +115,7 @@ The chat's AI works like a coding agent, in its own folder: the AI's folder, `ai
 Rufi limits what the AI's programs can reach. This is a lock, not only an instruction: Codex's sandbox on your Mac holds it.
 
 - They can write only in the AI's folder and in your Mac's folders for temporary files. So their caches, such as the downloads of Python's installer and the fonts of its chart library, are in `ai/.cache`.
-- They can't open your record's database (`rufi.sqlite` and its other files), your backups or `core.json`. So the AI reads and changes your health record only through Rufi's tools: each read shows under the answer as **Based on**, and each save with its receipt.
+- They can't open your record's database (`rufi.sqlite` and its other files), your backups or `core.json`. So the AI reads and changes your health record only through Rufi's tools: each read shows as a step in the answer's **Activity**, and each save with its receipt.
 - They get none of the sign-in's secrets.
 - They can read the other files that your Mac account can read. Rufi tells the AI to use only Rufi's tools for your record, but it doesn't lock the rest yet.
 
@@ -159,7 +159,7 @@ Rufi also keeps everything the AI did in a reply, so that an answer can be trace
 - For each read or save with Rufi's own tools, what the AI asked and exactly what Rufi answered, except the page images it looked at: Rufi keeps which page it was, not the image.
 - The AI's reasoning summaries: a short account of its thinking, when the AI service gives one. Rufi asks for them.
 
-You see the reasoning summaries in the chat, behind each thinking line, and the rest only as **Based on** under each answer. Rufi keeps them as long as the chat. Work the AI gives to a sub-agent isn't kept.
+You see the reasoning summaries in the chat, behind each thinking line, and what each step sent and got back when you open it in **Activity**. Rufi's own copy of what its tools answered isn't shown: it is there so that an answer can be traced. Rufi keeps them as long as the chat. Work the AI gives to a sub-agent isn't kept.
 
 For each change to your record, Rufi also keeps the record before and after it, and the message of yours it came from.
 
