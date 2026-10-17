@@ -477,7 +477,7 @@ for (const { system, chosen } of [
   { system: "dark", chosen: "Light" },
   { system: "light", chosen: "Dark" },
 ] as const) {
-  test(`a page follows Rufi's appearance, ${chosen} with the system ${system}, a change in another tab while it shows, and the system with System`, async ({
+  test(`a page follows Rufi's appearance, ${chosen} with the system ${system}, a change in another tab while it shows open large, and the system with System`, async ({
     page,
     rufi,
     context,
@@ -496,9 +496,10 @@ for (const { system, chosen } of [
         .check();
       await page.getByRole("link", { name: "Chat with Rufi" }).click();
     };
+    const inline = page.locator('.reply iframe[title="Colours"]');
     /** What the page shows, and what its scripts saw, loading and later. */
-    const looks = async () => {
-      const frame = page.frameLocator('iframe[title="Colours"]');
+    const looks = async (shown = inline) => {
+      const frame = shown.contentFrame();
       await expect(frame.locator("#seen")).not.toHaveText("…");
       return {
         ...(await frame.locator("body").evaluate((body) => {
@@ -528,8 +529,11 @@ for (const { system, chosen } of [
     await box.press("Enter");
     expect(await looks()).toEqual(chosen === "Dark" ? black : white);
 
-    // Another tab chooses the other look; this one stays on its chat, and
-    // its page follows.
+    // Another tab chooses the other look; this one stays on its chat with
+    // the page open large, which stays open, and both frames follow.
+    await page.getByRole("button", { name: "Open Colours" }).click();
+    const large = page.getByRole("dialog", { name: "Colours" });
+    await expect(large).toBeVisible();
     const other = await context.newPage();
     await other.goto(rufi.link());
     await other.getByRole("link", { name: "Settings" }).click();
@@ -544,12 +548,16 @@ for (const { system, chosen } of [
       .check();
     expect((await saved).ok()).toBe(true);
     await other.close();
-    await expect
-      .poll(() => page.locator('iframe[title="Colours"]').getAttribute("src"))
-      .toMatch(
-        chosen === "Dark" ? /\?appearance=light$/ : /\?appearance=dark$/,
-      );
-    await expect.poll(looks).toEqual(chosen === "Dark" ? white : black);
+    const now =
+      chosen === "Dark" ? /\?appearance=light$/ : /\?appearance=dark$/;
+    for (const shown of [inline, large.locator("iframe")]) {
+      await expect.poll(() => shown.getAttribute("src")).toMatch(now);
+      await expect
+        .poll(() => looks(shown))
+        .toEqual(chosen === "Dark" ? white : black);
+    }
+    await expect(large).toBeVisible();
+    await large.getByRole("button", { name: "Close" }).click();
 
     await choose("System");
     expect(await looks()).toEqual(system === "dark" ? black : white);

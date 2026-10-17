@@ -234,40 +234,18 @@ function keepFocusOnLoad(frame: HTMLIFrameElement | null) {
   };
 }
 
-/**
- * A page the AI made, drawn in the reply at a fixed height (it scrolls inside
- * its frame), with its title (the reply's words for it, or its file name)
- * and Open, which shows it large over the chat.
- */
-export function Page({ path, title }: { path: string; title: string }) {
-  // Rufi's appearance, when it is light or dark, goes in the page's address:
-  // a frame follows the system's otherwise. A new one loads the page again.
-  const appearance = useRootData("appearance", "system");
-  return (
-    <ShownPage
-      key={appearance}
-      path={path}
-      title={title}
-      appearance={appearance}
-    />
-  );
-}
-
 /** A page's address, with Rufi's appearance when it is light or dark. */
 const inAppearance = (url: string, appearance: string) =>
   appearance === "light" || appearance === "dark"
     ? `${url}${url.includes("?") ? "&" : "?"}appearance=${appearance}`
     : url;
 
-function ShownPage({
-  path,
-  title,
-  appearance,
-}: {
-  path: string;
-  title: string;
-  appearance: string;
-}) {
+/**
+ * A page the AI made, drawn in the reply at a fixed height (it scrolls inside
+ * its frame), with its title (the reply's words for it, or its file name)
+ * and Open, which shows it large over the chat.
+ */
+export function Page({ path, title }: { path: string; title: string }) {
   const client = useQueryClient();
   // Closed, the focus goes back to Open.
   const opener = useRef<HTMLButtonElement>(null);
@@ -277,10 +255,34 @@ function ShownPage({
   // Open) doesn't load the page again and lose what it shows. A stale address
   // may have run out; the query is asking for a fresh one.
   const [src, setSrc] = useState<string>();
-  if (src === undefined && file.data && !file.isStale) {
-    setSrc(inAppearance(file.data.url, appearance));
-  }
+  if (src === undefined && file.data && !file.isStale) setSrc(file.data.url);
   const [opened, setOpened] = useState<ShownFile | null>(null);
+  // Rufi's appearance, when it is light or dark, goes in the page's address:
+  // a frame follows the system's otherwise. A new one loads the page again
+  // in place, also open large, from a fresh address: an old one may have
+  // run out. Until then the page keeps its look.
+  const appearance = useRootData("appearance", "system");
+  const [lookedIn, setLookedIn] = useState(appearance);
+  useEffect(() => {
+    if (appearance === lookedIn) return;
+    let gone = false;
+    client.query({ ...fileQuery(path), staleTime: 0 }).then(
+      (fresh) => {
+        if (gone) return;
+        setSrc(fresh.url);
+        setOpened((now) => now && fresh);
+        setLookedIn(appearance);
+      },
+      // Gone, refused or failed: the card says so (the query holds why);
+      // the frames take the new look on the address they have.
+      () => {
+        if (!gone) setLookedIn(appearance);
+      },
+    );
+    return () => {
+      gone = true;
+    };
+  }, [appearance, lookedIn, client, path]);
   const [state, setState] = useState<"idle" | "opening" | "failed">("idle");
   const frame = useRef<HTMLIFrameElement>(null);
   // The served page relays only Esc. Its opaque origin cannot reach this
@@ -313,7 +315,7 @@ function ShownPage({
       {/* Locked twice: this frame's sandbox and the page's own policy. */}
       <iframe
         ref={keepFocusOnLoad}
-        src={src}
+        src={inAppearance(src, lookedIn)}
         title={name}
         sandbox="allow-scripts"
         className="block h-100 w-full rounded-[10px] border border-line bg-paper"
@@ -380,7 +382,7 @@ function ShownPage({
               {/* Locked twice: this frame's sandbox and the page's own policy. */}
               <iframe
                 ref={frame}
-                src={inAppearance(opened.url, appearance)}
+                src={inAppearance(opened.url, lookedIn)}
                 title={name}
                 sandbox="allow-scripts"
                 className="m-2.5 min-h-0 flex-1 rounded-lg border border-line bg-paper"
