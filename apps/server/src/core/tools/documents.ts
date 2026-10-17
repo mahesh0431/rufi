@@ -1,7 +1,9 @@
 // get_documents: the active person's documents, read only. No document: the
-// list, newest first. A document: its pages. A document and a page: that
-// page as the AI sees it (the image, and the PDF's own text when it has
-// some), from the same page service the reader uses. Lists come in parts
+// list, newest first. A document: its pages, its add and its drafts. A
+// document and a page: that page as the AI sees it (the image, the PDF's own
+// text when it has some, and the reader's copy), from the same page service
+// the reader uses. A document and copies: the reader's copies of its add's
+// pages, for sorting (sort_documents). Lists come in parts
 // with a continuation, so a read can always be finished. The person is
 // Rufi's choice; the AI names only a document of theirs and a page.
 import type { DraftItem } from "@rufi/contracts/documents";
@@ -9,13 +11,22 @@ import { Schema } from "effect";
 import { DELETED_DOCUMENT } from "../documents/delete.ts";
 import { readerValues } from "../documents/items.ts";
 import type { Entry } from "../documents/notebook.ts";
-import { readings } from "../documents/reading.ts";
+import { ranges, readings } from "../documents/reading.ts";
+import {
+  addOf,
+  documentsOf,
+  notSorted,
+  pagesOf,
+  placesOf,
+  sorting,
+  SortInput,
+} from "../documents/sorting.ts";
 import { defineTool, Refusal, WithImage } from "./registry.ts";
 
 type Fields = DraftItem["fields"];
 
 /** Documents, pages or draft items in one answer at most; the description says the same. */
-export const PART = { documents: 50, pages: 100, items: 100 };
+export const PART = { documents: 50, pages: 100, items: 100, copies: 20 };
 
 const Input = Schema.Struct({
   document: Schema.optionalKey(
@@ -26,7 +37,13 @@ const Input = Schema.Struct({
   page: Schema.optionalKey(
     Schema.Int.check(Schema.isGreaterThan(0)).annotate({
       description:
-        "A page of that document, 1, 2, 3...: you get the page's image and its own text when it has some.",
+        "A page of that document, by its number: you get the page's image, its own text when it has some, and the reader's copy.",
+    }),
+  ),
+  copies: Schema.optionalKey(
+    Schema.Boolean.annotate({
+      description:
+        "true with document: the reader's copy of every page of what the user added with it (its add), for sorting it.",
     }),
   ),
   after: Schema.optionalKey(
@@ -38,7 +55,7 @@ const Input = Schema.Struct({
 
 export const getDocuments = defineTool({
   name: "get_documents",
-  description: `The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its files and pages, and its reading's status: "not_read" (never read; retry_reading reads it), "reading" (Rufi's reader is reading it now; its items come when it ends), "done" or "failed". With document: its version (it rises when a reading or a fix changes its draft items), its pages (each with what the reader found: its state, its facts such as dates, lab, report number and the name printed on it, and its issues) and its draft items: what the reader read, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed or as the user fixed them on the document's page (a fixed item has fixed_by_user, and reader_read: what the reader read in each field the user changed, null where it read nothing; a date on the item is its own; without one, the page's first printed date is used when it is saved), and why it may be unsure. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page as an image, with the page's own text when the PDF has some (use it for exact characters); a photo or a scan is the image alone. At most ${String(PART.documents)} documents, ${String(PART.pages)} pages or ${String(PART.items)} draft items come back; when there are more, the answer has "next": pass it as after to read on. Rufi chooses the person, not you.`,
+  description: `The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its kind and date (as sorted), its files and pages, its reading's status: "not_read" (never read; retry_reading reads it), "reading" (Rufi's reader is copying its pages now), "done" or "failed", and its sorting when it waits for it: "sorting" (Rufi asked you to sort it) or "not sorted yet". One add (what the user added at once: a PDF, or photos together) can be several documents once sorted: such a document names its pages in the add ("pages 3–4 of 5"). With document: its version (it rises when a sort, a reading or a fix changes its draft items or pages), kind, date, lab and report number, its add (every document of it, with their pages, and the pages not sorted yet), its pages (each with its number in the add, its state and whether it is sorted; an older reading's facts and issues) and its draft items: what you or an older reader drafted, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed or as the user fixed them on the document's page (a fixed item has fixed_by_user, and drafted: what was drafted in each field the user changed, null where none), the words it came from (quote), why it is worth a look, and out_of_date when its page was read again since. An older reader's item without a date of its own is saved with its page's first printed date. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page as an image, with the page's own text when the PDF has some and the reader's copy (use them for exact characters); a photo or a scan is the image and the copy. With document and copies: the reader's copy of every page of its add, as Markdown, exactly as printed, with the reader's marks where something is unclear (2[3?]6, [unclear: ...], ~~crossed out~~, [handwritten: ...]). At most ${String(PART.documents)} documents, ${String(PART.pages)} pages, ${String(PART.items)} draft items or ${String(PART.copies)} copies come back; when there are more, the answer has "next": pass it as after to read on. Rufi chooses the person, not you.`,
   input: Input,
   callers: "model",
   readOnly: true,
@@ -50,6 +67,7 @@ export const getDocuments = defineTool({
       document: "01a12345-0000-7000-8000-000000000000",
       page: 1,
     },
+    { document: "01a12345-0000-7000-8000-000000000000", copies: true },
   ],
   run: async (input, { store, personId, pages }) => {
     if (!store) return { note: "Rufi has no documents yet." };
@@ -107,6 +125,8 @@ export const getDocuments = defineTool({
         .orderBy((eb) => eb.fn.min("position"))
         .execute();
       const statuses = await readings(store).statuses(personId);
+      const sorts = await sorting(store).states(personId);
+      const places = await placesOf(db, personId);
       return {
         documents: part.map((d) => ({
           id: d.id,
@@ -114,6 +134,11 @@ export const getDocuments = defineTool({
           kind: d.kind,
           date: d.date,
           status: statuses.get(d.id)?.status ?? "not_read",
+          ...(sorts.has(d.id) && {
+            sorting:
+              sorts.get(d.id)?.state === "sorting" ? "sorting" : "not sorted yet",
+          }),
+          ...(places.get(d.id)?.words && { pages: places.get(d.id)?.words }),
           files: files
             .filter((f) => f.document_id === d.id)
             .map((f) => ({ name: f.file_name, pages: f.pages })),
@@ -124,7 +149,16 @@ export const getDocuments = defineTool({
 
     const document = await db
       .selectFrom("documents")
-      .select(["id", "added_at", "kind", "date", "version", "deleted_at"])
+      .select([
+        "id",
+        "added_at",
+        "kind",
+        "date",
+        "issuer",
+        "report_number",
+        "version",
+        "deleted_at",
+      ])
       .where("person_id", "=", personId)
       .where("id", "=", input.document)
       .executeTakeFirst();
@@ -148,11 +182,18 @@ export const getDocuments = defineTool({
           `This document has no page ${String(input.page)}; its pages are 1–${String(count)}.`,
         );
       }
+      const copy = (await pagesOf(db, personId, [document.id])).find(
+        (p) => p.position === input.page,
+      )?.copy;
       const about = {
         document: document.id,
         page: view.position,
         of: view.pages,
         file: view.fileName,
+        ...(copy && {
+          copy: copy.text,
+          ...(copy.outcome !== "read" && { copied_as: copy.outcome }),
+        }),
       };
       if (!view.ok) {
         return {
@@ -164,6 +205,47 @@ export const getDocuments = defineTool({
         { ...about, ...(view.text !== undefined && { text: view.text }) },
         view.image,
       );
+    }
+
+    // The reader's copies of the add's pages, in parts: "copies:N".
+    const add = await addOf(db, personId, document.id);
+    const siblings = add ? await documentsOf(db, personId, add.id) : [];
+    const addPages = await pagesOf(
+      db,
+      personId,
+      siblings.map((d) => d.id),
+      input.copies === true,
+    );
+    if (input.copies === true) {
+      if (input.after !== undefined && !/^copies:\d{1,9}$/.test(input.after)) {
+        throw new Refusal("That `after` isn't from these copies.");
+      }
+      const from = input.after === undefined ? 0 : Number(input.after.slice(7));
+      const shown = addPages
+        .filter((p) => p.position > from)
+        .slice(0, PART.copies);
+      const more = addPages.some(
+        (p) => p.position > (shown.at(-1)?.position ?? from),
+      );
+      return {
+        add: add?.id,
+        copies: shown.map((p) => ({
+          page: p.position,
+          document: p.documentId,
+          file: p.fileName,
+          page_in_file: p.pageInFile,
+          ...(p.copy
+            ? {
+                outcome: p.copy.outcome,
+                sorted: p.copy.sorted,
+                copy: p.copy.text,
+              }
+            : { copy: null, note: "The reader has no copy of this page." }),
+        })),
+        ...(more && {
+          next: `copies:${String(shown.at(-1)?.position ?? from)}`,
+        }),
+      };
     }
 
     // Pages first, then draft items, each in parts: "pages:N", "items:N".
@@ -203,12 +285,14 @@ export const getDocuments = defineTool({
         pages: shown.map((p) => {
           const entry =
             p.state && p.entry ? (JSON.parse(p.entry) as Entry) : undefined;
+          const copy = addPages.find((a) => a.position === p.position)?.copy;
           return {
             page: p.position,
             file: p.file_name,
             page_in_file: p.page_in_file,
             ...(p.state !== null && { state: p.state }),
             ...(p.state_why !== null && { why: p.state_why }),
+            ...(copy && { sorted: copy.sorted }),
             ...(entry?.facts && { facts: entry.facts }),
             ...(entry?.issues && { issues: entry.issues }),
           };
@@ -227,6 +311,8 @@ export const getDocuments = defineTool({
           "fields",
           "original",
           "unsure",
+          "quote",
+          "job_id",
           "saved_as",
           "record_id",
         ])
@@ -243,7 +329,11 @@ export const getDocuments = defineTool({
         items: shown.map((d) => {
           const unsure = JSON.parse(d.unsure) as string[];
           const fields = JSON.parse(d.fields) as Fields;
-          const read = readerValues(fields, JSON.parse(d.original) as Fields);
+          const drafted = readerValues(
+            fields,
+            JSON.parse(d.original) as Fields,
+          );
+          const copy = addPages.find((p) => p.position === d.page)?.copy;
           return {
             id: d.id,
             version: d.version,
@@ -254,26 +344,55 @@ export const getDocuments = defineTool({
               record: d.record_id,
             }),
             ...fields,
-            ...(Object.keys(read).length > 0 && {
+            ...(d.quote !== null && { quote: d.quote }),
+            ...(Object.keys(drafted).length > 0 && {
               fixed_by_user: true,
-              reader_read: read,
+              drafted,
             }),
-            ...(unsure.length > 0 && { unsure }),
+            ...(unsure.length > 0 && { worth_a_look: unsure }),
+            ...(d.quote !== null &&
+              copy !== undefined &&
+              copy.jobId !== d.job_id && { out_of_date: true }),
           };
         }),
         more: rows.length > PART.items ? offset + PART.items : undefined,
       };
     };
+    const waiting = notSorted(addPages);
     const about = {
       id: document.id,
       added_at: document.added_at,
       kind: document.kind,
       date: document.date,
+      ...(document.issuer !== null && { lab: document.issuer }),
+      ...(document.report_number !== null && {
+        report_number: document.report_number,
+      }),
       version: document.version,
       status: status?.status ?? "not_read",
       ...(status?.status === "reading" && {
-        reading: `saved ${String(status.saved)} of ${String(status.of)} pages so far; its draft items come when it ends`,
+        reading: `copied ${String(status.saved)} of ${String(status.of)} pages so far; it is sorted when the reading ends`,
       }),
+      ...(add &&
+        (siblings.length > 1 || waiting.length > 0) && {
+          add: {
+            id: add.id,
+            pages: addPages.length,
+            documents: siblings.map((d) => ({
+              id: d.id,
+              kind: d.kind,
+              date: d.date,
+              pages: ranges(
+                addPages
+                  .filter((p) => p.documentId === d.id)
+                  .map((p) => p.position),
+              ),
+            })),
+            ...(waiting.length > 0 && {
+              not_sorted: ranges(waiting.map((p) => p.position)),
+            }),
+          },
+        }),
       ...(status?.error && { failed: status.error }),
       draft_items: counted.items,
     };
@@ -340,5 +459,57 @@ export const retryReading = defineTool({
       pages,
       note: "The reading runs in the background; Rufi shows its line in the chat when it ends.",
     };
+  },
+});
+
+export const sortDocuments = defineTool({
+  name: "sort_documents",
+  description: `Sorts what the user added into documents and writes its drafts, from the reader's page copies (get_documents with copies), as the sorting-documents skill says. One call for the whole add: documents (each with its pages by their number in the add, its kind, its date, and a report's lab and number) and drafts (each a current lab result or a measurement as printed, with its page, its date, the words it comes from and, when it is worth the user's look, why). Every page not sorted yet goes in one document; pages you don't name stay where they are. A draft's value_text must be in its page's copy exactly as the copy prints it, marks included, or the whole call is refused; give your reading of an unclear digit in value_number. The drafts replace the drafts of the named pages that the user hasn't fixed or set aside. A page that a saved result cites stays in its document. Nothing is saved to the record: drafts wait for the user. In a turn Rufi started for a sort, you sort only the pages not sorted yet, and nothing else changes; in the user's own turn you can also change how pages were sorted ("pages 3 and 4 are one letter"). All or nothing; the same call again gets the same answer.`,
+  input: SortInput,
+  callers: "model",
+  readOnly: false,
+  destructive: false,
+  examples: [
+    {
+      document: "01a12345-0000-7000-8000-000000000000",
+      documents: [
+        {
+          pages: [1, 2],
+          kind: "lab_report",
+          date: "2026-05-04",
+          lab: "Example Clinic Lab",
+          report_number: "EX-100",
+        },
+        { pages: [3], kind: "prescription", date: "2026-05-10" },
+      ],
+      drafts: [
+        {
+          page: 1,
+          test_name: "Sodium",
+          value_text: "139",
+          value_number: 139,
+          unit: "mmol/L",
+          reference_range: "135 – 145",
+          date: { label: "Collected", date: "04/05/2026", iso: "2026-05-04" },
+          quote: "Sodium 139 mmol/L 135 – 145",
+        },
+        {
+          page: 1,
+          test_name: "Potassium",
+          value_text: "4.[2?]",
+          value_number: 4.2,
+          unit: "mmol/L",
+          date: { label: "Collected", date: "04/05/2026", iso: "2026-05-04" },
+          quote: "Potassium 4.[2?] mmol/L",
+          worth_a_look: "a digit is unclear",
+        },
+      ],
+    },
+  ],
+  run: async (input, { sort, callId }) => {
+    if (!sort || callId === undefined) {
+      throw new Refusal("Documents can be sorted only in Rufi's own chat.");
+    }
+    return sort(input, callId);
   },
 });

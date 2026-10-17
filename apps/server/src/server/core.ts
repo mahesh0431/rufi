@@ -23,8 +23,9 @@ import { transcripts as openTranscripts } from "../core/chat/transcript.ts";
 import { deletions, sweepFiles } from "../core/documents/delete.ts";
 import { documents } from "../core/documents/documents.ts";
 import { fileGate } from "../core/documents/gate.ts";
-import { notebook } from "../core/documents/notebook.ts";
-import { entryReader } from "../core/documents/reader-tools.ts";
+import { copies } from "../core/documents/copies.ts";
+import { copyReader } from "../core/documents/copy-reader.ts";
+import { sorting as openSorting } from "../core/documents/sorting.ts";
 import { readings as openReadings } from "../core/documents/reading.ts";
 import { draftItems } from "../core/documents/items.ts";
 import { backupJob } from "../core/store/backup.ts";
@@ -51,6 +52,7 @@ import { generatedImages } from "../agent/codex/settings.ts";
 import { aiFiles } from "./files.ts";
 import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
 import { reader as openReader, readerChoice } from "./reader.ts";
+import { sorter as openSorter } from "./sorter.ts";
 import { secret, sessions } from "./session.ts";
 import { signInFlow, type SignIn } from "./signin.ts";
 
@@ -210,6 +212,9 @@ export const startCore = (options: CoreOptions) =>
     const drafts = openDrafts(writer, options.now);
     const queue = chatQueue(writer, options.now);
     const readings = openReadings(writer, options.now);
+    const sorting = openSorting(writer, options.now);
+    /** The sorter's poke, once it runs: a turn ended or a sort was made. */
+    const sorts = { poke: () => {} };
     // Before anything uses the files: what a delete left when Rufi stopped.
     yield* attempt(() => sweepFiles(writer, home));
     const gate = fileGate();
@@ -258,9 +263,18 @@ export const startCore = (options: CoreOptions) =>
               log,
               reader && pages(reader, home, gate),
               (personId, documentId) => readings.retry(personId, documentId),
+              async (scope, input) => {
+                const sorted = await sorting.sort(scope, input);
+                readings.changed(scope.personId);
+                sorts.poke();
+                return sorted;
+              },
             ),
           },
           log,
+          ended: () => {
+            sorts.poke();
+          },
         }),
       ),
       (opened) => Effect.promise(() => opened.close()),
@@ -272,14 +286,24 @@ export const startCore = (options: CoreOptions) =>
       Effect.sync(() => {
         const opened = openReader({
           readings,
-          kind: entryReader(pageService, notebook(writer, options.now)),
+          kind: copyReader(pageService, copies(writer, options.now)),
           event: chat.event,
+          sort: sorting.ask,
           run: options.reader,
           choice: () => readerChoice(transcripts.setting),
           mcp: { url: () => mcpUrl(MCP_READER), keys: readerKeys },
           log,
         });
         readings.watch(opened.poke);
+        return opened;
+      }),
+      (opened) => Effect.promise(() => opened.close()),
+    );
+
+    const sortLoop = yield* Effect.acquireRelease(
+      Effect.sync(() => {
+        const opened = openSorter({ sorting, wake: chat.wake, log });
+        sorts.poke = opened.poke;
         return opened;
       }),
       (opened) => Effect.promise(() => opened.close()),
@@ -410,6 +434,7 @@ export const startCore = (options: CoreOptions) =>
     port = (server.address() as AddressInfo).port;
     // Its tools need the port.
     documentReader.start();
+    sortLoop.start();
     yield* Effect.acquireRelease(
       attempt(() => writePrivateJson(coreFile(home), { port, launcher })),
       () => Effect.promise(() => rm(coreFile(home), { force: true })),

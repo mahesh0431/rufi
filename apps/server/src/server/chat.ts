@@ -70,6 +70,8 @@ export interface ChatDeps {
     ) => (name: string, input: unknown, callId: string) => Promise<ToolAnswer>;
   };
   log: Log;
+  /** Told when a turn of the person's chat has ended (Rufi's sorting looks). */
+  ended?: (personId: string) => void;
 }
 
 /** A request the chat can't do now, in words for the person. */
@@ -363,6 +365,7 @@ export function chat(deps: ChatDeps) {
         }
         await transcripts.endTurn(chat, event.turnId, event.end);
         await endHandOver(chat, event.turnId);
+        deps.ended?.(chat.personId);
         // The turn and its writes have ended: the next rows may go.
         next(chat);
         return;
@@ -808,6 +811,17 @@ export function chat(deps: ChatDeps) {
       const chat = await transcripts.chat(personId);
       if (!chat) throw new ChatRefusal("That person has no chat.");
       await transcripts.addEvent(chat, event, write);
+      queue.changed(chat.id);
+      next(chat);
+    },
+
+    /**
+     * Rufi's own work put rows in the person's queue (a sort tried again):
+     * the next rows go, when no reply runs.
+     */
+    wake: async (personId: string) => {
+      const chat = await transcripts.chat(personId);
+      if (!chat) return;
       queue.changed(chat.id);
       next(chat);
     },

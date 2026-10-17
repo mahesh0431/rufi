@@ -2,7 +2,7 @@
 // using them is in the core (core/chat/instructions.ts) and the skills.
 import { createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
-import { getDocuments, retryReading } from "./documents.ts";
+import { getDocuments, retryReading, sortDocuments } from "./documents.ts";
 import { getOverview } from "./overview.ts";
 import { dismissItems, saveChanges } from "./save.ts";
 import { getRecords } from "./records.ts";
@@ -19,6 +19,11 @@ import type { Log } from "../../platform/logs.ts";
 import type { ChatRow, Transcripts } from "../chat/transcript.ts";
 import { createBrief as makeBrief } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
+import type {
+  SortAnswer,
+  SortInput,
+  SortScope,
+} from "../documents/sorting.ts";
 import { dismissItems as dismissDrafts } from "../record/items.ts";
 import { saveChanges as saveToRecord } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
@@ -30,6 +35,7 @@ export const TOOLS: readonly Tool[] = [
   readChat,
   saveChanges,
   dismissItems,
+  sortDocuments,
   retryReading,
   createBrief,
 ];
@@ -94,9 +100,11 @@ export function toolsJson(): string {
 }
 
 /**
- * The tools of one turn in Rufi's own chat, the one place the AI can save
- * or make a brief: each is written with its line in the chat. A turn a Rufi
- * event started can only read: the person didn't ask for it.
+ * The tools of one turn in Rufi's own chat, the one place the AI can save,
+ * sort or make a brief: each is written with its line in the chat. A turn a
+ * Rufi event started can only read: the person didn't ask for it. The one
+ * exception is a sort's own turn, which can sort its add (and nothing
+ * else): Rufi asked for it.
  */
 export function chatCaller(
   reader: Store | undefined,
@@ -104,6 +112,7 @@ export function chatCaller(
   log: Log,
   pages?: Pages,
   retry?: (personId: string, documentId: string) => Promise<number[]>,
+  sort?: (scope: SortScope, input: SortInput) => Promise<SortAnswer>,
 ) {
   return (chat: ChatRow, agentTurnId: string, origin: "person" | "rufi") =>
     forAgent(
@@ -142,6 +151,20 @@ export function chatCaller(
                   input,
                 ),
               ),
+        // A Rufi-started turn may sort only for its own request: sorting.ts
+        // checks that, in the sort's transaction.
+        sort: (input, callId) =>
+          sort
+            ? sort(
+                {
+                  personId: chat.personId,
+                  chatId: chat.id,
+                  agentTurnId,
+                  callId,
+                },
+                input,
+              )
+            : Promise.reject(new Refusal("Rufi can't sort documents here.")),
         retryReading: (documentId) =>
           origin === "rufi"
             ? Promise.reject(new Refusal(EVENT_TURN_RETRY))

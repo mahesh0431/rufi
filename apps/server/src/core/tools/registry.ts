@@ -4,6 +4,7 @@ import { Result, Schema, SchemaIssue } from "effect";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import type { BriefInput, Made } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
+import type { SortAnswer, SortInput } from "../documents/sorting.ts";
 import type { DismissInput, Dismissed } from "../record/items.ts";
 import type { SaveRequest, Saved } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
@@ -34,6 +35,12 @@ export interface ToolContext {
    * in Rufi's own chat, in a turn the person started.
    */
   retryReading?: ((documentId: string) => Promise<number[]>) | undefined;
+  /**
+   * Sorts an add into documents and writes its drafts (sort_documents):
+   * only in Rufi's own chat; in a Rufi-started turn only its request's
+   * pages.
+   */
+  sort?: ((input: SortInput, callId: string) => Promise<SortAnswer>) | undefined;
   /** Makes a visit brief with its line: only in Rufi's own chat. */
   brief?: ((input: BriefInput, callId: string) => Promise<Made>) | undefined;
 }
