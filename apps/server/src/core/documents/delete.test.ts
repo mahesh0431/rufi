@@ -417,6 +417,33 @@ describe("a delete", () => {
     expect((await docs.list("asha")).map((d) => d.id)).toContain(again);
   });
 
+  it("takes the reader's copies of its own pages with its readings; another document's copies stay", async () => {
+    const id = await add("asha", "ravi-lipid-panel.pdf", "lipid.pdf");
+    // A reader that copies read it, and Asha's September photo.
+    store.db.exec(`
+      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at) VALUES
+        ('job-copy-lipid', 'asha', 'document_read', '${id}', 'done', 1, '[1]', '${NOW}'),
+        ('job-copy-sep', 'asha', 'document_read', 'doc-asha-sep', 'done', 1, '[1]', '${NOW}');
+      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at) VALUES
+        ('asha', '${RAVI_FILE}', 1, 'job-copy-lipid', 1, 'read', '# Lipid panel', '${NOW}'),
+        ('asha', '${SEP_FILE}', 1, 'job-copy-sep', 1, 'read', '# Thyroid recheck', '${NOW}');
+    `);
+    const remover = deleting();
+
+    await remover.remove(
+      "asha",
+      id,
+      (await remover.preview("asha", id))?.version ?? "",
+    );
+
+    expect(rows("SELECT job_id, copy FROM page_copies")).toEqual([
+      { job_id: "job-copy-sep", copy: "# Thyroid recheck" },
+    ]);
+    expect(
+      rows("SELECT id FROM jobs WHERE id LIKE 'job-copy-%' ORDER BY id"),
+    ).toEqual([{ id: "job-copy-sep" }]);
+  });
+
   it("marks the chat's chips of the document and its draft items as deleted, takes Open off its reading's line, and brief sources say so", async () => {
     const id = await add("asha", "ravi-lipid-panel.pdf", "lipid.pdf");
     const [job] = rows("SELECT id FROM jobs WHERE document_id = ?", id);

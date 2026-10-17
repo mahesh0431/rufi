@@ -4,6 +4,8 @@
 // every request Codex sends the model and fails on any tool but get_page and
 // save_page, also after a compaction; it checks a page image reaches the
 // model, and that the tools' binding and the notebook's write boundary hold.
+// The reader that copies (core/documents/copy-reader.ts) gets the same
+// proof, with its copies' write boundary.
 import {
   mkdir,
   mkdtemp,
@@ -22,6 +24,8 @@ import {
 } from "../../../tests/fake-model.ts";
 import type { Scenario } from "../../../tests/fake-codex.ts";
 import { documents } from "../../core/documents/documents.ts";
+import { copies } from "../../core/documents/copies.ts";
+import { forCopying } from "../../core/documents/copy-reader.ts";
 import { notebook, type Run } from "../../core/documents/notebook.ts";
 import { pagePath } from "../../core/documents/originals.ts";
 import { pages } from "../../core/documents/pages.ts";
@@ -150,14 +154,13 @@ async function read(
   before?: (call: number) => void,
   readerModel = MODEL,
   config: readonly string[] = [],
+  kind: "entries" | "copies" = "entries",
 ): Promise<{ outcome: SubAgentOutcome; answers: unknown[] }> {
   model = await fakeModel({ script });
-  const reader = forReader(
-    run,
-    pages(store, root),
-    notebook(store),
-    () => undefined,
-  );
+  const reader =
+    kind === "entries"
+      ? forReader(run, pages(store, root), notebook(store), () => undefined)
+      : forCopying(run, pages(store, root), copies(store), () => undefined);
   const answers: unknown[] = [];
   let calls = 0;
   const url = await endpoint();
@@ -638,6 +641,212 @@ describe("the reader on the pinned Codex", () => {
     });
     expect(model?.requests).toEqual([]);
     expect(answers).toEqual([]);
+  }, 120_000);
+});
+
+/** The reader's page copies as stored, by file page and reading. */
+const storedCopies = () =>
+  store.db
+    .prepare(
+      "SELECT person_id, page_in_file, job_id, attempt, outcome, copy FROM page_copies ORDER BY person_id, page_in_file",
+    )
+    .all()
+    .map((row) => ({ ...row }));
+
+/** A script for exec: save a page's copy, and show Rufi's answer. */
+const saveCopy = (page: number, copy: string, tokens?: number): Step => ({
+  exec: `const answer = await tools.mcp__rufi__save_page(${JSON.stringify({ page, outcome: "read", copy })});
+text(answer.content[0].text);`,
+  ...(tokens !== undefined && { tokens }),
+});
+
+describe("the reader that copies, on the pinned Codex", () => {
+  it("can call only get_page, save_page and Codex's resource helpers, also after a compaction, sees the page image, and its copies hold", async () => {
+    const run = job([1, 2]);
+    const final = "# Sunrise Labs\n\n| Haemoglobin | 13.2 |";
+    const { outcome, answers } = await read(
+      run,
+      [
+        call("save_page", { page: 1, outcome: "read", copy: "# Sunrise Labs" }),
+        call("get_page", { page: 1 }),
+        call("save_page", { page: 1, copy: "# Sunrise Labs" }),
+        call("save_page", {
+          page: 1,
+          outcome: "read",
+          copy: "# Sunrise Labs\n\n| Haemoglobin | 1[3?].2 |",
+        }),
+        // The answer to this save reports usage over the limit: Codex compacts.
+        call(
+          "save_page",
+          { page: 1, outcome: "read", copy: final },
+          OVER_LIMIT,
+        ),
+        call("save_page", { page: 1, outcome: "read", copy: "lost" }),
+        call("get_page", { page: 1 }),
+        { text: "Done." },
+      ],
+      undefined,
+      MODEL,
+      [],
+      "copies",
+    );
+
+    expect(outcome.end).toEqual({ status: "completed" });
+    expect(outcome.compactions).toBe(1);
+    const requests = model?.requests ?? [];
+    expect(requests.filter(isCompaction)).toHaveLength(1);
+    for (const request of requests) {
+      expect(
+        callable(request),
+        JSON.stringify(request.input.at(-1)).slice(0, 80),
+      ).toEqual(
+        isCompaction(request)
+          ? []
+          : [
+              "list_mcp_resource_templates",
+              "list_mcp_resources",
+              "mcp__rufi.get_page",
+              "mcp__rufi.save_page",
+              "read_mcp_resource",
+            ],
+      );
+    }
+    // The page image reached the model with the page's text.
+    const output = requests[2]?.input.at(-1)?.output as {
+      type: string;
+      text?: string;
+    }[];
+    expect(output.map((part) => part.type)).toEqual([
+      "input_text",
+      "input_text",
+      "input_image",
+    ]);
+    expect(output[1]?.text).toContain("Sunrise Labs · Test report · page 1");
+
+    const errors = answers.map((a) => (a as { error?: string }).error);
+    expect(errors[0]).toBe("Look at page 1 with get_page first, then save it.");
+    expect(errors[2]).toBe("The input for save_page isn't valid.");
+    // After the compaction, page 1 must be looked at again before a save.
+    expect(errors[5]).toBe("Look at page 1 with get_page first, then save it.");
+    // Replaced in place within the reading: one copy, the last saved
+    // before the compaction, by its file page and this reading.
+    expect(storedCopies()).toEqual([
+      {
+        person_id: "asha",
+        page_in_file: 1,
+        job_id: jobId,
+        attempt: 1,
+        outcome: "read",
+        copy: final,
+      },
+    ]);
+    // The page's notebook says this run saved it, with no entry.
+    expect(stored().pages[0]).toEqual({
+      person_id: "asha",
+      position: 1,
+      entry: null,
+      entry_job_id: jobId,
+    });
+    // The look after the compaction shows the saved copy.
+    expect(answers[6]).toMatchObject({
+      ok: true,
+      result: {
+        page: 1,
+        saved_copy: { outcome: "read", copy: final },
+        saved: "1",
+        still_to_save: "2",
+      },
+    });
+  }, 120_000);
+
+  it("saves no copy for a page outside the job's targets, another run, or a closed run", async () => {
+    const run = job([1]);
+    const copy = (page: number, text: string) =>
+      call("save_page", { page, outcome: "read", copy: text });
+    const { outcome, answers } = await read(
+      run,
+      [
+        call("get_page", { page: 2 }),
+        copy(2, "page two"),
+        call("get_page", { page: 1 }),
+        // Before this call, another run of the job has started.
+        copy(1, "another run"),
+        // Before this call, Rufi has closed the run.
+        copy(1, "closed"),
+        { text: "Done." },
+      ],
+      (n) => {
+        if (n === 4) store.db.exec("UPDATE jobs SET attempt = 2");
+        if (n === 5) {
+          store.db.exec("UPDATE jobs SET attempt = 1");
+          run.closed = true;
+        }
+      },
+      MODEL,
+      [],
+      "copies",
+    );
+    expect(outcome.end).toEqual({ status: "completed" });
+    expect(answers.map((a) => (a as { error?: string }).error)).toEqual([
+      undefined,
+      "Page 2 isn't one of the pages this reading saves (1).",
+      undefined,
+      "This reading isn't running any more; nothing more is saved.",
+      "This reading has ended; nothing more is saved.",
+    ]);
+    expect(storedCopies()).toEqual([]);
+    expect(stored().pages.every((p) => p["entry_job_id"] === null)).toBe(true);
+  }, 120_000);
+
+  it("on a code-mode model, can reach only its two tools and Codex's pinned set through exec, also after a compaction", async () => {
+    const run = job([1, 2]);
+    const { outcome } = await read(
+      run,
+      [
+        look(1),
+        saveCopy(1, "# Sunrise Labs"),
+        // The answer to this save reports usage over the limit: Codex compacts.
+        saveCopy(1, "# Sunrise Labs\n\nHaemoglobin 13.2 g/dL", OVER_LIMIT),
+        look(1),
+        { text: "Done." },
+      ],
+      undefined,
+      CODE_MODEL,
+      [],
+      "copies",
+    );
+
+    expect(outcome.end).toEqual({ status: "completed" });
+    expect(outcome.compactions).toBe(1);
+    const requests = model?.requests ?? [];
+    expect(requests.filter(isCompaction)).toHaveLength(1);
+    for (const request of requests) {
+      const where = JSON.stringify(request.input.at(-1)).slice(0, 80);
+      if (isCompaction(request)) {
+        expect(callable(request), where).toEqual([]);
+        continue;
+      }
+      expect(callable(request), where).toEqual([
+        "functions.exec",
+        "functions.request_user_input_async",
+        "functions.wait",
+      ]);
+      expect(inExec(request), where).toEqual([
+        "clock__curr_time",
+        "list_mcp_resource_templates",
+        "list_mcp_resources",
+        "mcp__rufi__get_page",
+        "mcp__rufi__save_page",
+        "read_mcp_resource",
+      ]);
+    }
+    // The saves through exec reached the copies.
+    expect(storedCopies()).toEqual([
+      expect.objectContaining({
+        job_id: jobId,
+        copy: "# Sunrise Labs\n\nHaemoglobin 13.2 g/dL",
+      }),
+    ]);
   }, 120_000);
 });
 

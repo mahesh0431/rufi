@@ -663,6 +663,68 @@ it("upgrades a record of version 9 so a chat keeps the context its thread used a
   }
 });
 
+it("upgrades a record of version 10 so the reader can keep page copies: every page, reading and draft kept as it was, and a copy only of the person's own file page", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 10));
+  // A reading as Rufi of version 10 left it: a page's entry in its notebook.
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, retries, created_at) VALUES
+        ('job-aug', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1,2]', 0, '2026-10-16T08:00:00Z');
+      UPDATE document_pages SET entry = '{"outcome":"read","items":[]}', entry_job_id = 'job-aug', entry_attempt = 1, entry_at = '2026-10-16T08:01:30Z', state = 'read'
+        WHERE document_id = 'doc-asha-aug' AND position = 1;
+    `);
+  } finally {
+    old.close();
+  }
+  const stored = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return {
+        jobs: db.prepare("SELECT * FROM jobs ORDER BY id").all(),
+        pages: db
+          .prepare(
+            "SELECT * FROM document_pages ORDER BY person_id, document_id, position",
+          )
+          .all(),
+        drafts: db.prepare("SELECT * FROM draft_items ORDER BY id").all(),
+      };
+    } finally {
+      db.close();
+    }
+  };
+  const before = stored();
+
+  const store = await openRecord(home);
+  try {
+    expect(stored()).toEqual(before);
+    const page = store.db
+      .prepare(
+        "SELECT file_id FROM document_pages WHERE document_id = 'doc-asha-aug' AND position = 1",
+      )
+      .get() as { file_id: string };
+    const copy = (person: string) => {
+      store.db
+        .prepare(
+          `INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
+           VALUES (?, ?, 1, 'job-aug', 1, 'read', '# Sunrise Labs', '2026-10-17T09:00:00Z')`,
+        )
+        .run(person, page.file_id);
+    };
+    // Ravi has no page of Asha's file, nor her reading.
+    expect(() => {
+      copy("ravi");
+    }).toThrow(/FOREIGN KEY constraint failed/);
+    copy("asha");
+    expect(store.db.prepare("SELECT copy FROM page_copies").all()).toEqual([
+      { copy: "# Sunrise Labs" },
+    ]);
+  } finally {
+    store.close();
+  }
+});
+
 it.each([
   {
     record: "a record from a newer Rufi",
