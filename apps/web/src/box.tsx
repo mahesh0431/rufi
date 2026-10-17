@@ -1,9 +1,10 @@
 // The chat's box, the same in every size: what you type is the chat's
 // draft, kept by the core, saved quietly; the box says only when it couldn't
-// be. Enter sends into Rufi's queue; while a reply runs the box says so, the
-// message waits, and Add to reply passes it into the reply instead. The box
-// clears only when the core took the message, and nothing is sent again by
-// itself. Signed out, the core takes nothing: the box says so, with Sign in.
+// be. Enter sends into Rufi's queue; while a reply runs Stop is beside the
+// box (Activity shows what the AI does; the bar, where it doesn't show, has
+// a busy sign), the message waits, and Add to reply passes it into the reply
+// instead. The box clears only when the core took the message, and nothing
+// is sent again by itself. Signed out, the core takes nothing: the box says so, with Sign in.
 // The model and effort are chosen beside Send; what waits shows above the
 // box. Chips (references to documents, draft items and records) sit above
 // the text and go with it; a document's chip says what Rufi is doing with
@@ -11,6 +12,23 @@
 // size that opens the panel: on one line, what was added (the first chip's
 // name and how many more), then the text's start, or a reason when there is
 // one; the panel shows it whole.
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  type Modifier,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   MAX_MESSAGE_CHARS,
   MAX_REFS,
@@ -20,10 +38,9 @@ import {
 } from "@rufi/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  ArrowDown,
-  ArrowUp,
   Check,
   CornerUpRight,
+  GripVertical,
   LoaderCircle,
   LogIn,
   type LucideProps,
@@ -33,7 +50,13 @@ import {
   Square,
   X,
 } from "lucide-react";
-import { type RefObject, useEffect, useId, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useId,
+  useState,
+} from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
@@ -52,7 +75,7 @@ import { ReaderStrip } from "./reading.tsx";
 import { ModelMenu } from "./model-menu.tsx";
 import { usePanel } from "./panel.ts";
 import { isRunning } from "./transcript-state.ts";
-import { Button, IconButton } from "./ui.tsx";
+import { Button, buttonLook, ICON, IconButton } from "./ui.tsx";
 
 /**
  * What the box says under it: a send on its way, or a draft that couldn't be
@@ -94,6 +117,9 @@ export function Box({
   const long = tooLong(text);
   const many = tooMany(chips);
   const hasText = text.trim() !== "" && !long && !many;
+  const placeholder = running
+    ? "Type to queue your next message…"
+    : `Ask or tell Rufi about ${person.displayName}…`;
 
   // Leaving the screen, the box saves at once what isn't saved yet.
   useEffect(() => () => void box.saveNow(), [box]);
@@ -139,11 +165,7 @@ export function Box({
         }}
         rows={1}
         aria-label="Message to Rufi"
-        placeholder={
-          running
-            ? "Type to queue your next message…"
-            : `Ask or tell Rufi about ${person.displayName}…`
-        }
+        placeholder={placeholder}
         value={text}
         readOnly={!loaded || locked}
         onChange={(event) => {
@@ -219,18 +241,21 @@ export function Box({
               id={pill}
               className="flex min-w-0 flex-1 items-center gap-1.5"
             >
+              {running && (
+                <LoaderCircle
+                  size={14}
+                  className="shrink-0 animate-spin text-muted"
+                  aria-hidden
+                />
+              )}
               <Added chips={chips} />{" "}
               {reason !== null ? (
                 <span className="truncate text-muted">{reason}</span>
-              ) : running ? (
-                <Answering live={live} />
               ) : (
                 <span
                   className={`truncate ${text.trim() === "" ? "text-muted" : ""}`}
                 >
-                  {text.trim() === ""
-                    ? `Ask or tell Rufi about ${person.displayName}…`
-                    : text}
+                  {text.trim() === "" ? placeholder : text}
                 </span>
               )}
             </span>
@@ -265,7 +290,6 @@ export function Box({
           <div className="flex">{field}</div>
           <div className="mt-1 flex items-center gap-1.5">
             <AttachButton personId={person.id} />
-            {running && <Answering live={live} />}
             <span className="flex-1" />
             {running && hasText && (
               <Button
@@ -351,35 +375,6 @@ function Added({ chips }: { chips: readonly BoxChip[] }) {
   );
 }
 
-/** While a reply runs: how long Rufi has been answering, counting up. */
-function Answering({ live }: { live: StoreApi<Live> }) {
-  const started = useStore(
-    live,
-    (state) =>
-      Object.values(state.turns).find((turn) => turn.status === "running")
-        ?.startedAt,
-  );
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const tick = setInterval(() => {
-      setNow(Date.now());
-    }, 1_000);
-    return () => {
-      clearInterval(tick);
-    };
-  }, []);
-  const seconds =
-    started === undefined
-      ? 0
-      : Math.max(0, Math.floor((now - Date.parse(started)) / 1_000));
-  return (
-    <span className="flex items-center gap-2 text-[13px] whitespace-nowrap text-muted">
-      <LoaderCircle size={14} className="animate-spin" aria-hidden />
-      Rufi is answering · {seconds}s
-    </span>
-  );
-}
-
 /** Rufi's note that goes with the person's next message. */
 const rides = (item: QueueItem) =>
   item.origin === "rufi" &&
@@ -409,8 +404,8 @@ function whyHeld(item: QueueItem): string | null {
 
 /**
  * What waits to go to the AI: your messages and Rufi's notes, in order. A
- * waiting message can be edited, moved or removed; a held one says why,
- * and goes only when you Send it.
+ * waiting message can be edited, moved by its handle (dragged, or by
+ * keyboard) or removed; a held one says why, and goes only when you Send it.
  */
 function QueueView({
   live,
@@ -428,23 +423,36 @@ function QueueView({
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(
     null,
   );
+  // A dropped order shows until the queue is read again, or is refused.
+  const [dropped, setDropped] = useState<{
+    from: readonly QueueItem[];
+    ids: readonly string[];
+  } | null>(null);
   if (items.length === 0 && error === null) return null;
-  const waiting = items.filter((item) => item.state === "waiting");
-  const ids = waiting.map((item) => item.id);
-  const move = (id: string, by: -1 | 1) => {
-    const next = [...ids];
-    const index = next.indexOf(id);
-    next.splice(index, 1);
-    next.splice(index + by, 0, id);
-    void act(() => request("PUT", `${path}/queue`, { ids: next }));
+  const shown = dropped?.from === items ? inOrder(items, dropped.ids) : items;
+  const ids = shown
+    .filter((item) => item.state === "waiting")
+    .map((item) => item.id);
+  const reorder = (next: readonly string[]) => {
+    setDropped({ from: items, ids: next });
+    void act(async () => {
+      try {
+        await request("PUT", `${path}/queue`, { ids: next });
+      } catch (refused) {
+        setDropped(null);
+        throw refused;
+      }
+    });
   };
   const one = (item: QueueItem) =>
     `${path}/queue/${encodeURIComponent(item.id)}`;
   const send = (item: QueueItem) =>
     void act(() => request("POST", `${one(item)}/send`));
   // What goes on when you say: the first row that only waits for the pause.
-  const first = waiting.find(
-    (item) => item.held === null || item.held === "paused",
+  const first = shown.find(
+    (item) =>
+      item.state === "waiting" &&
+      (item.held === null || item.held === "paused"),
   );
   const heading = running
     ? "Waiting · these go in order after the reply"
@@ -480,15 +488,19 @@ function QueueView({
         )}
       </h3>
       {error !== null && <p className="text-muted">{error}</p>}
-      <ol className="mt-1 flex flex-col gap-1">
-        {items.map((item) => {
+      <MovableList ids={ids} onMove={reorder}>
+        {shown.map((item) => {
           const why = whyHeld(item);
-          const index = ids.indexOf(item.id);
           const isWaiting = item.state === "waiting";
           const free =
             isWaiting && (item.held === null || item.held === "paused");
           return (
-            <li key={item.id} className="flex items-start gap-1.5">
+            <Row
+              key={item.id}
+              id={item.id}
+              waiting={isWaiting}
+              movable={free && ids.length > 1}
+            >
               {editing?.id === item.id ? (
                 <div className="flex flex-1 flex-col gap-1">
                   <textarea
@@ -562,24 +574,6 @@ function QueueView({
                       {item.state === "not_sure" ? "Send again" : "Send"}
                     </Button>
                   )}
-                  {free && index > 0 && (
-                    <IconButton
-                      label="Move up"
-                      icon={ArrowUp}
-                      onClick={() => {
-                        move(item.id, -1);
-                      }}
-                    />
-                  )}
-                  {free && index >= 0 && index < ids.length - 1 && (
-                    <IconButton
-                      label="Move down"
-                      icon={ArrowDown}
-                      onClick={() => {
-                        move(item.id, 1);
-                      }}
-                    />
-                  )}
                   {isWaiting && item.origin === "person" && (
                     <IconButton
                       label="Edit"
@@ -600,11 +594,124 @@ function QueueView({
                   )}
                 </>
               )}
-            </li>
+            </Row>
           );
         })}
-      </ol>
+      </MovableList>
     </section>
+  );
+}
+
+/**
+ * The queue's list, whose waiting rows (`ids`, in order) change places by
+ * their handles, dragged or by keyboard; `onMove` gets the new order.
+ */
+function MovableList({
+  ids,
+  onMove,
+  children,
+}: {
+  ids: string[];
+  onMove: (ids: string[]) => void;
+  children: ReactNode;
+}) {
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      modifiers={[upOrDown]}
+      onDragEnd={({ active, over }) => {
+        if (over === null || active.id === over.id) return;
+        onMove(
+          arrayMove(
+            ids,
+            ids.indexOf(String(active.id)),
+            ids.indexOf(String(over.id)),
+          ),
+        );
+      }}
+    >
+      <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+        <ol className="mt-1 flex flex-col gap-1">{children}</ol>
+      </SortableContext>
+    </DndContext>
+  );
+}
+
+/** A dragged row moves only up or down. */
+const upOrDown: Modifier = ({ transform }) => ({ ...transform, x: 0 });
+
+/** The waiting rows in the order `ids` gives; the others stay where they are. */
+function inOrder(items: readonly QueueItem[], ids: readonly string[]) {
+  const waiting = ids.flatMap((id) => items.filter((item) => item.id === id));
+  let next = 0;
+  return items.map((item) =>
+    item.state === "waiting" ? (waiting[next++] ?? item) : item,
+  );
+}
+
+/**
+ * A row of the queue; a movable one has its handle on the left. Escape
+ * while it moves puts it back and leaves the chat open.
+ */
+function Row({
+  id,
+  waiting,
+  movable,
+  children,
+}: {
+  id: string;
+  /** Only waiting rows change places. */
+  waiting: boolean;
+  movable: boolean;
+  children: ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id,
+    disabled: { draggable: !movable, droppable: !waiting },
+  });
+  return (
+    <li
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      onKeyDown={(event) => {
+        if (isDragging && event.key === "Escape") event.preventDefault();
+      }}
+      className={`flex items-start gap-1.5 ${isDragging ? "relative z-10 rounded-lg bg-surface shadow-menu" : ""}`}
+    >
+      {movable && (
+        // No tooltip: its Escape would end before the move's.
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          aria-label="Move"
+          {...attributes}
+          {...listeners}
+          className={buttonLook({
+            look: "quiet",
+            shape: "icon",
+            className: "cursor-grab touch-none active:cursor-grabbing",
+          })}
+        >
+          <GripVertical size={ICON} aria-hidden />
+        </button>
+      )}
+      {children}
+    </li>
   );
 }
 

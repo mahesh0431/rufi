@@ -151,7 +151,7 @@ test("a document with nothing saved from it goes with Delete, the AI hears at on
   // The chat opens on the Documents page, and the AI starts by itself.
   await expect(page).toHaveURL(/\/documents$/);
   await expect(messages).toContainText("Deleted thyroid recheck.jpg");
-  await expect(page.getByText(/^Rufi is answering/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
   // Nothing is removed by the delete: the results wait for the person.
   await expect(page.getByRole("link", { name: /^Lab results/ })).toContainText(
     "4",
