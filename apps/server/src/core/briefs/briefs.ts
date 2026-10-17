@@ -245,7 +245,15 @@ export async function readBrief(
       kind: capital(kind.noun),
       what: summary(kind, row),
       from: await sourceOf(query, personId, kind, row, record.version),
-      changedSince: now.get(`${record.kind}:${record.id}`) !== record.version,
+      changedSince:
+        now.get(`${record.kind}:${record.id}`) !== record.version ||
+        (kind.name === "result" &&
+          (await amendedSince(
+            query,
+            personId,
+            record.id,
+            brief.record_version,
+          ))),
       record: await toOpen(query, kind, personId, record.id),
     });
   }
@@ -299,6 +307,32 @@ async function toOpen(
 }
 
 /**
+ * A save after the brief's record version changed a result that amends this
+ * one, or one that amends that (added, changed or removed since).
+ */
+async function amendedSince(
+  query: Kysely<Tables>,
+  personId: string,
+  id: string,
+  recordVersion: number,
+): Promise<boolean> {
+  const { rows } = await sql<{ id: string }>`
+    WITH RECURSIVE amending(id) AS (
+      SELECT id FROM results WHERE person_id = ${personId} AND replaces_id = ${id}
+      UNION
+      SELECT r.id FROM results r JOIN amending a ON r.replaces_id = a.id
+      WHERE r.person_id = ${personId}
+    )
+    SELECT id FROM amending`.execute(query);
+  const amending = rows.map((row) => ({ kind: "result", id: row.id }));
+  const then = await recordVersions(query, personId, amending, recordVersion);
+  const now = await recordVersions(query, personId, amending);
+  return amending.some(
+    ({ kind, id }) => then.get(`${kind}:${id}`) !== now.get(`${kind}:${id}`),
+  );
+}
+
+/**
  * A cited record as it was when cited: as its version's save left it; with
  * no version, as it was before its first save, or as it is when no save has
  * changed it. A later add has no before row: it did not exist then.
@@ -340,7 +374,8 @@ function summary(kind: Kind, row: Row): string {
   const date = row[column];
   const state = row["status"];
   return [
-    kind.label(row),
+    // A statement's label carries its date; here it shows once, after it.
+    kind.label(kind.name === "none_known" ? { ...row, asserted: null } : row),
     typeof date === "string" && date !== "next_visit" && shownDate(date),
     typeof state === "string" && state !== "unknown" && state,
     kind.name === "result" && row["replaces_id"] !== null && "amended",
