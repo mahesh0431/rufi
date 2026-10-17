@@ -56,6 +56,8 @@ let signedIn: boolean;
 let model: FakeModel | undefined;
 let token: string;
 let tokenGate: Promise<void> | undefined;
+/** Calls of Rufi's tools the chat admitted, as they start. */
+let admitted: string[];
 /** Rufi's MCP server for this run of the chat, as the core serves it. */
 let served: { port: number; close: () => Promise<void> } | undefined;
 
@@ -72,6 +74,7 @@ beforeEach(async () => {
   signedIn = true;
   token = "token";
   tokenGate = undefined;
+  admitted = [];
 });
 afterEach(async () => {
   await chat?.close();
@@ -172,6 +175,7 @@ async function startChat(
           reader && pages(reader, home),
         )(chat, turnId, origin);
         return async (name, input, callId) => {
+          admitted.push(name);
           await sleep(options.toolMs ?? 0);
           return call(name, input, callId);
         };
@@ -1935,9 +1939,9 @@ describe("the chat, on the scripted Codex", () => {
     });
     const c = await newChat();
     await say(c, "hang: I have a headache");
-    await until(async () =>
-      (await transcript(c.id)).entries.some(([kind]) => kind === "activity"),
-    );
+    // Codex shows the call before it reaches Rufi: a Stop before then
+    // refuses it (ADR 0016). This one is under way when Stop comes.
+    await until(() => Promise.resolve(admitted.includes("save_changes")));
     await chat?.stop(c);
     await ended(c.id);
     await until(async () =>
