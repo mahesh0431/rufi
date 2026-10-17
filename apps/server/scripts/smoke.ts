@@ -2331,7 +2331,7 @@ async function playCase(name: string, home: string) {
         .filter(([, ok]) => !ok)
         .map(([check]) => check)
     : [];
-  const { status, why } = statusOf({
+  const { status: result, why } = statusOf({
     failed,
     turns: outcome?.snapshot.turns ?? [],
     person: PERSON_VERDICT.has(name) || (outcome?.verdicts ?? []).length > 0,
@@ -2339,7 +2339,7 @@ async function playCase(name: string, home: string) {
     stalledMs: stalls.max / 1e6,
   });
   const seconds = Math.round((Date.now() - began) / 1000);
-  return { status, why, seconds, outcome };
+  return { status: result, why, seconds, outcome };
 }
 
 const results = await runAll(names, jobs, runCase);
