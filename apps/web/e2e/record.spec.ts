@@ -202,6 +202,59 @@ test("the Lab results page shows lab results as the lab printed them, by report,
   await accessible(page);
 });
 
+test("a result's values over time: a small trend on its row, and the large one with the table when it opens", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family(
+    `INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, reference_range, flag_text, measured_at, entered_at) VALUES
+       ('fer-1', 'asha', 'lab', 'Ferritin', '31', 31, 'µg/L', '30 - 400', NULL, '2025-10-12', '2026-10-01T10:00:00Z'),
+       ('fer-2', 'asha', 'lab', 'Ferritin', '18', 18, 'µg/L', '30 - 400', 'Low', '2026-03-04', '2026-10-01T10:00:00Z'),
+       ('fer-3', 'asha', 'lab', 'Ferritin', '26', 26, 'µg/L', '30 - 400', 'Low', '2026-09-01', '2026-10-01T10:00:00Z');`,
+  );
+  await rufi.start();
+  await page.goto(rufi.link());
+  await sidebar(page)
+    .getByRole("link", { name: /^Lab results/ })
+    .click();
+  const newest = page
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("button", { name: "Ferritin" }) })
+    .first();
+  await expect(
+    newest.getByRole("img", {
+      name: "Ferritin over time: 31 on 12 Oct 2025, 18 on 4 Mar 2026, 26 on 1 Sep 2026. Lab range 30 - 400",
+    }),
+  ).toBeVisible();
+  // The first value has no line to show yet.
+  await expect(
+    page
+      .getByRole("listitem")
+      .filter({ has: page.getByRole("button", { name: "Ferritin" }) })
+      .last()
+      .getByRole("img"),
+  ).toHaveCount(0);
+
+  await newest.getByRole("button", { name: "Ferritin" }).click();
+  const chart = newest.getByRole("img", {
+    name: "Ferritin (µg/L) over time: 31 on 12 Oct 2025, 18 on 4 Mar 2026, 26 on 1 Sep 2026. Lab range 30 - 400",
+  });
+  await expect(chart).toBeVisible();
+  // The scale fits the values: the near edge of the range has its number, the far one doesn't.
+  await expect(chart).toContainText("Lab range 30 - 400");
+  await expect(chart.locator("text").filter({ hasText: /^30$/ })).toHaveCount(
+    1,
+  );
+  await expect(chart.locator("text").filter({ hasText: /^400$/ })).toHaveCount(
+    0,
+  );
+  // The table stays, with the lab's note as printed.
+  await expect(newest.getByRole("table")).toContainText(
+    "4 Mar 202618 µg/L30 - 400Low",
+  );
+  await accessible(page);
+});
+
 test("Measurements shows them by the day taken, at its precision; an older results address and a follow-up's About open the page of the result's category", async ({
   page,
   rufi,

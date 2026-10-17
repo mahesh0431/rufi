@@ -387,6 +387,55 @@ describe("series", () => {
   });
 });
 
+describe("a row's small trend", () => {
+  it("has its series' latest values up to it, read for the whole page, with a date and a number", async () => {
+    // Eight ferritin values typed in, one a month apart, one not a number,
+    // one in another unit, and one on the other page.
+    const months = Array.from({ length: 8 }, (_, i) => {
+      const month = String(i + 1).padStart(2, "0");
+      return `('fer-${month}', 'asha', 'lab', 'Ferritin', '${String(20 + i)}', ${String(20 + i)}, 'µg/L', '30 - 400', '2025-${month}-15', '2025-12-01T10:00:00Z')`;
+    });
+    store.db.exec(`
+      INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, reference_range, measured_at, entered_at) VALUES
+        ${months.join(",\n")},
+        ('fer-word', 'asha', 'lab', 'Ferritin', 'Haemolysed', NULL, 'µg/L', NULL, '2025-09-15', '2025-12-01T10:00:00Z'),
+        ('fer-unit', 'asha', 'lab', 'Ferritin', '2.6', 2.6, 'nmol/L', NULL, '2025-10-15', '2025-12-01T10:00:00Z'),
+        ('fer-meas', 'asha', 'measurement', 'Ferritin', '25', 25, 'µg/L', NULL, '2025-11-15', '2025-12-01T10:00:00Z');`);
+    const trends = Object.assign(
+      {},
+      ...(await allPages("lab_result")).map((page) => page.trends),
+    ) as Record<string, { id: string }[]>;
+    const ids = (id: string) => trends[id]?.map((value) => value.id);
+    // The newest: the six latest values, oldest first, ending at it.
+    expect(ids("fer-08")).toEqual([
+      "fer-03",
+      "fer-04",
+      "fer-05",
+      "fer-06",
+      "fer-07",
+      "fer-08",
+    ]);
+    // An older row's trend ends at its own value.
+    expect(ids("fer-02")).toEqual(["fer-01", "fer-02"]);
+    // The first value alone, a word, another unit alone: no trend.
+    expect(trends["fer-01"]).toBeUndefined();
+    expect(trends["fer-word"]).toBeUndefined();
+    expect(trends["fer-unit"]).toBeUndefined();
+    // On Measurements, the weights: one known by its month, then the day.
+    const measured = Object.assign(
+      {},
+      ...(await allPages("measurement")).map((page) => page.trends),
+    ) as Record<string, { id: string }[]>;
+    expect(measured["res-a10"]?.map((value) => value.id)).toEqual([
+      "res-a11",
+      "res-a10",
+    ]);
+    expect(measured["fer-meas"]).toBeUndefined();
+    // Other pages have none.
+    expect((await views.page("asha", "medicine_use")).trends).toBeUndefined();
+  });
+});
+
 describe("lab results and measurements", () => {
   it("show each category on its page: a report's lab results whole on Lab results, measurements by the day taken at its precision, undated last", async () => {
     store.db.exec(`
