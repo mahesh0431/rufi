@@ -456,7 +456,7 @@ export const notSorted = (pages: readonly AddPage[]) =>
   pages.filter((p) => p.copy !== undefined && !p.copy.sorted);
 
 /** Waits between a failed sorting turn and the next try. */
-export const SORT_WAITS_MS = [30_000, 60_000, 120_000];
+const SORT_WAITS_MS = [30_000, 60_000, 120_000];
 
 /** Rufi's note for the AI that asks for a sort, with the reading's end. */
 export function sortNote(about: {
