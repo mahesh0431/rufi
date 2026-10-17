@@ -245,12 +245,18 @@ test("messages sent during a reply wait: edit, reorder, remove, and send one aft
   await accessible(page);
 
   // Each moves by its handle: dragged, or by keyboard (Space, the arrows,
-  // Space; Escape puts it back and leaves the chat open).
+  // Space; Escape puts it back and leaves the chat open). A dropped order
+  // shows at once; the next move waits for its save, as a person's would.
   const handle = (n: number) =>
     items.nth(n).getByRole("button", { name: "Move", exact: true });
   const from = await handle(1).boundingBox();
   const above = await items.nth(0).boundingBox();
   if (from === null || above === null) throw new Error("not shown");
+  const saved = page.waitForResponse(
+    (response) =>
+      response.request().method() === "PUT" &&
+      response.url().endsWith("/queue"),
+  );
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
   await page.mouse.down();
   await page.mouse.move(from.x + from.width / 2, above.y + above.height / 10, {
@@ -258,17 +264,23 @@ test("messages sent during a reply wait: edit, reorder, remove, and send one aft
   });
   await page.mouse.up();
   await expect(items).toHaveText(["Third", "Second"]);
+  expect((await saved).ok()).toBe(true);
 
-  const top = async (n: number) => (await items.nth(n).boundingBox())?.y;
+  const top = async (n: number) => (await items.nth(n).boundingBox())?.y ?? 0;
   const liftUp = async (n: number) => {
     await handle(n).focus();
     await page.keyboard.press("Space");
     await expect(handle(n)).toHaveAttribute("aria-pressed", "true");
-    // The arrows count from the page's next task, as for a person.
-    await page.evaluate(() => new Promise((done) => setTimeout(done)));
-    const was = (await top(n)) ?? 0;
-    await page.keyboard.press("ArrowUp");
-    await expect.poll(() => top(n)).toBeLessThan(was);
+    // The handle hears the arrows from just after it is picked up: until the
+    // row above makes room, press again, as a person would. At the top, a
+    // press does nothing.
+    const was = await top(n - 1);
+    await expect(async () => {
+      await page.keyboard.press("ArrowUp");
+      await expect
+        .poll(() => top(n - 1), { timeout: 1_000 })
+        .toBeGreaterThan(was);
+    }).toPass();
   };
   await liftUp(1);
   await page.keyboard.press("Space");
