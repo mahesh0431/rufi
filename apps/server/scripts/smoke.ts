@@ -604,9 +604,6 @@ async function briefs(api: Api, home: string) {
 const briefText = (brief: Brief) =>
   `## The brief\n\n${brief.markdown}\n\n## Sources${brief.changedSince ? " (the record changed since)" : ""}\n\n${brief.sources.map((s) => `- ${s.kind}: ${s.what} (${s.from})${s.changedSince ? " · changed since" : ""}`).join("\n")}`;
 
-/** Asha's current medicines and the sugar results a brief about sugar needs. */
-const SUGAR_BRIEF = ["med-a1", "med-a2", "res-a1", "res-a2"];
-
 /**
  * Adds a fictional report as a document (Rufi reads it at once), waits
  * for its reading to end, and gives the document's id. `undated`: the
@@ -1378,9 +1375,9 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     };
   },
   /**
-   * A brief for a visit about sugar: made once from the saved record, citing
-   * the current medicines and the sugar results. Its shape is the AI's: a
-   * person judges whether it fits the visit.
+   * A brief for a visit about sugar: made once from the saved record. What
+   * goes in and its shape are the AI's: a person judges whether it fits the
+   * visit.
    */
   brief: async (api, home) => {
     const c = chat(api);
@@ -1396,9 +1393,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         one_line:
           snapshot.entries.filter((e) => e.kind === "brief").length === 1,
         took_the_record_version: brief?.recordVersion === 0,
-        cites_medicines_and_sugar_results: SUGAR_BRIEF.every((id) =>
-          brief?.cited.includes(id),
-        ),
         not_changed_since: brief?.page.changedSince === false,
         nothing_saved: nothingSaved(home, snapshot),
       },
@@ -1407,12 +1401,12 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         {
           check: "fits_the_visit",
           criterion:
-            "The brief's period, contents and form suit a visit mostly about blood sugar, and leave out nothing such a visit needs.",
+            "The brief's period, contents and form suit a visit mostly about blood sugar, and leave out nothing such a visit needs, such as the medicines that matter for it.",
         },
         {
           check: "results_as_printed",
           criterion:
-            'Each result has its value, unit, lab range, flag and date as printed, with dates as people read them; what the record lacks says "none recorded".',
+            "Each fact is as printed, with its date at the precision known and in a form people read; nothing missing is filled in; and a gap that matters reads as unknown, never as a recorded absence.",
         },
         {
           check: "has_questions",

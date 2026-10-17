@@ -18,8 +18,8 @@ The AI shapes each brief for what the visit is for: the period it covers, what g
 
 Whatever its shape:
 
-- **Each lab result is as the lab printed it**: its value, unit, lab range, flag (such as High) and date.
-- **What your record doesn't have is said plainly.** When the brief covers something your record has nothing on, it says "none recorded". That doesn't mean you have none.
+- **Each fact is as it was printed or saved**, such as a result's value, unit, lab range, flag (such as High) and date. The AI fills in nothing your record doesn't have.
+- **A gap isn't a no.** When something that matters for the visit isn't in your record, the brief says so, for example "none recorded". That doesn't mean you have none.
 - **Questions to ask are kept apart from the facts.**
 
 A brief uses only what is saved in your record. A document that Rufi read but that you haven't saved yet isn't in it. The AI gives no advice that your record doesn't support.
