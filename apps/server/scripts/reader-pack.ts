@@ -13,17 +13,19 @@
 //
 //
 // --copies reads the copy set (tests/pack/copy-set.ts, five pages in two
-// files) with the reader that copies (core/documents/copy-reader.ts) and
-// scores each page's copy against the rows it must hold, each cell in its
-// column: rows found, missed (a page with no copy too), changed (marked
-// unclear or not), copied more than once, numbers invented, and what each
-// copy did with the smudged digit and the handwritten correction. --runs n reads the set n times, one round after another, and
-// reports every round; each copy is written to the output folder.
+// files) with the reader that copies (core/documents/copy-reader.ts);
+// --runs n reads it n times, one round after another, and writes each copy
+// to the output folder. Whether a copy is faithful is a judgement, so an
+// AI judge (copy-judge.ts) gives each row of each copied page a verdict
+// against its key; code counts only the facts (pages copied, rows on pages
+// with no copy) and the verdicts. --judge <folder> judges the copies saved
+// by an earlier run again, with no new reading.
 //
 //   RUFI_HOME=<test sign-in folder> node apps/server/scripts/reader-pack.ts [--all | --only a,b] [--model id] [--effort level] [--out empty-dir]
 //   RUFI_HOME=<test sign-in folder> node apps/server/scripts/reader-pack.ts --copies [--runs n] [--model id] [--effort level] [--out empty-dir]
+//   RUFI_HOME=<test sign-in folder> node apps/server/scripts/reader-pack.ts --judge <folder of round-n copies> [--out empty-dir]
 //   node apps/server/scripts/reader-pack.ts [--copies] --make <dir>    (only writes the pack's files)
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -56,7 +58,7 @@ import { diagnostics } from "../src/platform/logs.ts";
 import { reader, READER_SETTING, readerChoice } from "../src/server/reader.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "../src/server/mcp.ts";
 import { drawn, photo, scan } from "../tests/pack/images.ts";
-import { copySetFiles, KEY, type KeyPage } from "../tests/pack/copy-set.ts";
+import { copySetFiles, KEY } from "../tests/pack/copy-set.ts";
 import { scanPdf, textPdf } from "../tests/pack/pdf.ts";
 import {
   BUNDLE,
@@ -67,15 +69,14 @@ import {
   type Report,
 } from "../tests/pack/reports.ts";
 import { outFolder, runAll, sharedToken } from "./live-run.ts";
+import { chooseItems, norm, scoreItems, type Draft } from "./reader-score.ts";
 import {
-  chooseItems,
-  norm,
-  scoreCopy,
-  scoreItems,
-  silent,
+  JUDGE,
+  judgePage,
   tally,
-  type Draft,
-} from "./reader-score.ts";
+  type JudgeDeps,
+  type PageResult,
+} from "./copy-judge.ts";
 
 const { values } = parseArgs({
   options: {
@@ -87,6 +88,7 @@ const { values } = parseArgs({
     effort: { type: "string" },
     copies: { type: "boolean", default: false },
     runs: { type: "string", default: "1" },
+    judge: { type: "string" },
   },
 });
 
@@ -553,15 +555,29 @@ function score(
   return rows;
 }
 
+if (values.judge !== undefined) {
+  await judgeSaved(values.judge);
+  process.exit(0);
+}
 if (values.copies) {
   await readCopies(Number(values.runs));
   process.exit(0);
 }
 
+/** Copies the judge reads at once. */
+const JUDGES_AT_ONCE = 4;
+
+/** A round of the copy set: what the reader did, and each page's copy. */
+interface Round {
+  name: string;
+  lines: string[];
+  pages: PageResult[];
+}
+
 /**
  * Reads the copy set `runs` times, a round after another (each round's two
- * files at once), scores every page's copy, writes each copy to the output
- * folder, and reports every round.
+ * files at once), writes each copy to the output folder, has the judge give
+ * its verdicts on every copy, and reports every round.
  */
 async function readCopies(runs: number) {
   if (!Number.isInteger(runs) || runs < 1) {
@@ -570,9 +586,7 @@ async function readCopies(runs: number) {
   }
   const files = await copySetFiles();
   const begun = Date.now();
-  const lines: string[] = [];
-  const scored: { key: KeyPage; copy: string | undefined }[] = [];
-  const doubts = new Map<string, string[]>();
+  const rounds: Round[] = [];
   for (let round = 1; round <= runs; round++) {
     const results = await runAll(
       ["mixed", "photo"],
@@ -589,13 +603,19 @@ async function readCopies(runs: number) {
         }
       },
     );
-    lines.push(`## Round ${String(round)}`, "");
+    const done: Round = {
+      name: `Round ${String(round)}`,
+      lines: [],
+      pages: [],
+    };
     for (const name of ["mixed", "photo"] as const) {
+      const keys = KEY.filter((k) => k.file === name);
       const result = results.get(name);
       if (result?.status !== "fulfilled") {
-        lines.push(`- ${name}: the harness failed: ${String(result?.reason)}`);
-        for (const key of KEY.filter((k) => k.file === name))
-          scored.push({ key, copy: undefined });
+        done.lines.push(
+          `- ${name}: the harness failed: ${String(result?.reason)}`,
+        );
+        done.pages.push(...keys.map((key) => ({ key, copy: undefined })));
         continue;
       }
       const { job, saved } = result.value;
@@ -606,72 +626,178 @@ async function readCopies(runs: number) {
       const usage = job.usage
         ? (JSON.parse(job.usage) as { totalTokens: number; looks: number })
         : undefined;
-      lines.push(
+      done.lines.push(
         `- ${name}: ${job.state}${job.error ? ` (${job.error})` : ""} · ${String(saved.length)} pages copied · ${saved.length > 0 ? (ms / saved.length / 1000).toFixed(1) : "—"} s a page · ${usage ? `${String(usage.totalTokens)} tokens, ${String(usage.looks)} looks` : "—"}`,
       );
-      for (const key of KEY.filter((k) => k.file === name)) {
+      for (const key of keys) {
         const copy = saved.find((c) => c.position === key.page);
-        scored.push({ key, copy: copy?.copy });
-        if (!copy) {
-          lines.push(
-            `  - page ${String(key.page)}: no copy (its ${String(key.rows.length)} rows count as missed)`,
-          );
-          continue;
-        }
+        done.pages.push({ key, copy: copy?.copy });
+        if (!copy) continue;
         const folder = join(out, `round-${String(round)}`);
         await mkdir(folder, { recursive: true });
         await writeFile(
           join(folder, `${name}-${String(key.page)}.md`),
           copy.copy,
         );
-        const score = scoreCopy(key, copy.copy);
-        const changed = (marked: boolean) =>
-          score.changed.filter((c) => (c.wrong.length === 0) === marked);
-        const named = (label: string, list: readonly string[]) =>
-          list.length > 0 ? [`${label}: ${list.join("; ")}`] : [];
-        lines.push(
-          `  - page ${String(key.page)} (${copy.outcome}): ${String(score.found)} of ${String(score.rows)} rows whole · silent errors ${String(silent(score))}`,
-          ...[
-            ...named("missed", score.missed),
-            ...named(
-              "changed, not marked",
-              changed(false).map(
-                (c) =>
-                  `${c.row} (${c.wrong.join(", ")}${c.marked.length > 0 ? `; marked ${c.marked.join(", ")}` : ""})`,
-              ),
-            ),
-            ...named(
-              "changed, marked",
-              changed(true).map((c) => `${c.row} (${c.marked.join(", ")})`),
-            ),
-            ...named("copied twice", score.duplicated),
-            ...named("numbers not on the page", score.invented),
-            ...score.doubts.map(
-              (d) => `${d.row}: ${d.outcome}${d.line ? ` — "${d.line}"` : ""}`,
-            ),
-          ].map((l) => `    - ${l}`),
+      }
+    }
+    rounds.push(done);
+  }
+  await judgeAll(rounds);
+  await writeCopyReport(
+    `# Reader pack: the copy set, ${new Date(begun).toISOString()}`,
+    `Reader: the reader that copies, ${choice.model}, ${choice.effort}. ${String(runs)} ${runs === 1 ? "round" : "rounds"}, one after another; wall time ${String(Math.round((Date.now() - begun) / 1000))} s. Each copy is in this folder, by round.`,
+    rounds,
+  );
+}
+
+/**
+ * Has the judge give its verdicts again on copies saved by an earlier run
+ * (a folder of round-n folders of <file>-<page>.md), with no new reading.
+ * A page with no file there counts as not copied.
+ */
+async function judgeSaved(folder: string) {
+  const names = (await readdir(folder, { withFileTypes: true }))
+    .filter((e) => e.isDirectory() && /^round-\d+$/.test(e.name))
+    .map((e) => e.name)
+    .sort((a, b) => Number(a.slice(6)) - Number(b.slice(6)));
+  if (names.length === 0) {
+    console.error(`${folder} has no round-n folders of copies.`);
+    process.exit(2);
+  }
+  const rounds: Round[] = [];
+  for (const name of names) {
+    const pages: PageResult[] = [];
+    for (const key of KEY) {
+      const copy = await readFile(
+        join(folder, name, `${key.file}-${String(key.page)}.md`),
+        "utf8",
+      ).catch(() => undefined);
+      pages.push({ key, copy });
+    }
+    rounds.push({ name: `Round ${name.slice(6)}`, lines: [], pages });
+  }
+  const begun = Date.now();
+  await judgeAll(rounds);
+  await writeCopyReport(
+    `# Reader pack: the copy set judged again, ${new Date(begun).toISOString()}`,
+    `The copies in ${folder}, judged again; no new reading.`,
+    rounds,
+  );
+}
+
+/** Has the judge give its verdicts on every copied page of the rounds. */
+async function judgeAll(rounds: readonly Round[]) {
+  const home = await mkdtemp(join(tmpdir(), "rufi-judge-"));
+  const { log } = diagnostics(home);
+  const keys = mcpKeys();
+  let port = 0;
+  const served = await serveMcp(mcpEndpoint({ keys, port: () => port, log }));
+  port = served.port;
+  const deps: JudgeDeps = {
+    run: (judgeHome) =>
+      subAgentRunner({
+        home: judgeHome,
+        command: { file, args: [] },
+        env: childEnvironment(),
+        token,
+        version,
+        log,
+      }),
+    mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp/judge`, keys },
+    log,
+  };
+  const copied = rounds.flatMap((r) =>
+    r.pages.filter((p) => p.copy !== undefined),
+  );
+  try {
+    await runAll(
+      copied.map((_, i) => String(i)),
+      JUDGES_AT_ONCE,
+      async (i) => {
+        const page = copied[Number(i)];
+        if (page?.copy === undefined) return;
+        page.judged = await judgePage(deps, page.key, page.copy);
+        console.log(
+          `judged ${page.key.file} page ${String(page.key.page)}${"failed" in page.judged ? `: ${page.judged.failed}` : ""}`,
         );
-        for (const d of score.doubts) {
-          doubts.set(d.row, [...(doubts.get(d.row) ?? []), d.outcome]);
-        }
+      },
+    );
+  } finally {
+    await served.close();
+  }
+}
+
+/** Writes the report of the rounds' copies and verdicts to the output folder. */
+async function writeCopyReport(
+  title: string,
+  about: string,
+  rounds: readonly Round[],
+) {
+  const totals = tally(rounds.flatMap((r) => r.pages));
+  /** Rows with a hard part, verdict by round. */
+  const hard = new Map<string, string[]>();
+  const forPerson: string[] = [];
+  const lines: string[] = [];
+  for (const round of rounds) {
+    lines.push(`## ${round.name}`, "", ...round.lines);
+    for (const { key, copy, judged } of round.pages) {
+      const where = `${key.file} page ${String(key.page)}`;
+      if (copy === undefined) {
+        lines.push(
+          `- ${where}: no copy (its ${String(key.rows.length)} rows count as missed)`,
+        );
+        continue;
+      }
+      if (judged === undefined || "failed" in judged) {
+        const why = judged?.failed ?? "not judged";
+        lines.push(
+          `- ${where}: no verdicts (${why}); its rows count as unsure`,
+        );
+        forPerson.push(`- ${round.name}, ${where}: no verdicts (${why})`);
+        continue;
+      }
+      const one = tally([{ key, copy, judged }]);
+      lines.push(
+        `- ${where}: ${String(one.same)} same · ${String(one.changedMarked)} changed and marked · ${String(one.changedSilently)} changed silently · ${String(one.missed)} missing · ${String(one.unsure)} unsure · ${String(one.notInKey)} not in the key`,
+        ...judged.rows
+          .filter((r) => r.verdict !== "same")
+          .map(
+            (r) => `  - ${r.label}: ${r.verdict}${r.why ? ` — ${r.why}` : ""}`,
+          ),
+        ...judged.notInKey.map(
+          (v) => `  - not in the key: ${v.value} — ${v.where}`,
+        ),
+      );
+      for (const r of judged.rows) {
+        if (r.verdict === "unsure")
+          forPerson.push(
+            `- ${round.name}, ${where}, ${r.label}: ${r.why ?? "unsure"}`,
+          );
+        if (key.doubts.some((d) => d.row === r.label))
+          hard.set(r.label, [...(hard.get(r.label) ?? []), r.verdict]);
       }
     }
     lines.push("");
   }
-  const totals = tally(scored);
   const text = [
-    `# Reader pack: the copy set, ${new Date(begun).toISOString()}`,
+    title,
     "",
-    `Reader: the reader that copies, ${choice.model}, ${choice.effort}. ${String(runs)} ${runs === 1 ? "round" : "rounds"}, one after another; wall time ${String(Math.round((Date.now() - begun) / 1000))} s. Each copy is in this folder, by round.`,
+    about,
     "",
-    `Totals: ${String(totals.pages)} pages (${String(totals.copied)} copied), ${String(totals.rows)} rows, ${String(totals.found)} whole, ${String(totals.missed)} missed, ${String(totals.changedSilent)} changed and not marked, ${String(totals.changedMarked)} changed and marked, ${String(totals.duplicated)} copied more than once, ${String(totals.invented)} numbers not on the page; ${String(totals.silent)} silent errors.`,
+    `Judge: ${JUDGE.model}, ${JUDGE.effort}, one turn for each copied page, with the page's hand-checked copy and the rows it must hold.`,
     "",
-    "The key checks chosen rows of each page (every test row, the report's names, numbers and dates), each cell in its column and with its sign; it doesn't check every word. A cell in a part the copy marks as unclear counts as marked, not wrong.",
+    `**Silent errors: ${String(totals.silent)}** (${String(totals.changedSilently)} rows changed silently, ${String(totals.notInKey)} values not in the key). **Unsure, for a person: ${String(totals.unsure)} rows.**`,
     "",
-    "Hard-to-read parts, round by round:",
-    ...[...doubts].map(
-      ([row, outcomes]) => `- ${row}: ${outcomes.join(" · ")}`,
-    ),
+    `Totals: ${String(totals.pages)} pages (${String(totals.copied)} copied), ${String(totals.rows)} rows: ${String(totals.same)} same, ${String(totals.changedMarked)} changed and marked, ${String(totals.changedSilently)} changed silently, ${String(totals.missed)} missed, ${String(totals.unsure)} unsure.`,
+    "",
+    "The key holds chosen rows of each page (every test row, the report's names, numbers and dates), not every word.",
+    "",
+    "Rows with a hard part, round by round:",
+    ...[...hard].map(([row, verdicts]) => `- ${row}: ${verdicts.join(" · ")}`),
+    "",
+    "For a person:",
+    ...(forPerson.length > 0 ? forPerson : ["- nothing"]),
     "",
     ...lines,
   ].join("\n");
