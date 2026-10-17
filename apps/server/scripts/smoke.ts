@@ -2233,30 +2233,31 @@ const started = Date.now();
 
 /**
  * One case on its own scratch data folder and core; its line for the
- * report. The data folder goes once the case has passed or waits only for
- * a person's verdict; otherwise its logs, record and Codex's files stay, and
- * the line names them.
+ * report, after its transcript is written to the output folder. The data
+ * folder goes then if the case passed or waits only for a person's verdict;
+ * otherwise its logs, record and Codex's files stay, and the line names
+ * them.
  */
 async function runCase(
   name: string,
 ): Promise<{ status: Status; line: string }> {
-  const {
-    result: { status, why, seconds, outcome },
-    kept,
-  } = await onScratch(
+  const keeps = (status: Status) =>
+    status !== "passed" && status !== "needs a person's verdict";
+  const { result } = await onScratch(
     "rufi-smoke-",
-    (home) => playCase(name, home),
-    (played) =>
-      played.status === "passed" ||
-      played.status === "needs a person's verdict",
+    async (home) => {
+      const { status, why, seconds, outcome } = await playCase(name, home);
+      const line = `${name}: ${status}${why ? ` (${why})` : ""}, ${String(seconds)} s${keeps(status) ? `; data folder: ${home}` : ""}`;
+      console.log(line);
+      await writeFile(
+        join(out, `${name}.md`),
+        `# ${line}\n\n${outcome ? transcriptText(outcome.snapshot) : ""}\n${outcome?.notes === undefined ? "" : `\n${outcome.notes}\n`}${outcome?.verdicts === undefined ? "" : `\n${verdictsText(outcome.verdicts)}`}`,
+      );
+      return { status, line };
+    },
+    ({ status }) => !keeps(status),
   );
-  const line = `${name}: ${status}${why ? ` (${why})` : ""}, ${String(seconds)} s${kept === undefined ? "" : `; data folder: ${kept}`}`;
-  console.log(line);
-  await writeFile(
-    join(out, `${name}.md`),
-    `# ${line}\n\n${outcome ? transcriptText(outcome.snapshot) : ""}\n${outcome?.notes === undefined ? "" : `\n${outcome.notes}\n`}${outcome?.verdicts === undefined ? "" : `\n${verdictsText(outcome.verdicts)}`}`,
-  );
-  return { status, line };
+  return result;
 }
 
 /** Plays case `name` on the data folder `home`: its status and outcome. */

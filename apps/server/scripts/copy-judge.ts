@@ -215,26 +215,30 @@ export async function judgePage(
     call: ({ tool: name, input, callId }) => call(name, input, callId),
   });
   try {
-    // The judge's data folder stays, named, when it gave no verdicts.
-    const { result: outcome, kept } = await onScratch(
+    const { result: judged, kept } = await onScratch(
       "rufi-judge-",
-      (home) =>
-        deps.run(home)({
+      async (home): Promise<Judged | { failed: string }> => {
+        const outcome = await deps.run(home)({
           ...JUDGE,
           instructions: JUDGE_INSTRUCTIONS,
           input: judgeInput(key, copy),
           tools: { url: deps.mcp.url(), key: mcpKey, names: [tool.name] },
           onCompaction: () => undefined,
           deadlineMs: 10 * 60_000,
-        }),
-      (ended) => ended.end.status === "completed" && answer !== undefined,
+        });
+        // Only a turn that ended normally gives verdicts.
+        if (outcome.end.status !== "completed" || answer === undefined)
+          return {
+            failed: `The judge gave no verdicts (${outcome.end.status}${outcome.end.text ? `: ${outcome.end.text}` : ""}${answer === undefined ? "" : ", after it saved some"}).`,
+          };
+        return readAnswer(key, answer);
+      },
+      (judged) => !("failed" in judged),
     );
-    // Only a turn that ended normally gives verdicts.
-    if (outcome.end.status !== "completed" || answer === undefined)
-      return {
-        failed: `The judge gave no verdicts (${outcome.end.status}${outcome.end.text ? `: ${outcome.end.text}` : ""}${answer === undefined ? "" : ", after it saved some"}; data folder: ${String(kept)}).`,
-      };
-    return readAnswer(key, answer);
+    // The judge's data folder stays, named, when it gave no usable verdicts.
+    return "failed" in judged && kept !== undefined
+      ? { failed: `${judged.failed} Its data folder: ${kept}` }
+      : judged;
   } catch (error) {
     return {
       failed: `The judge didn't run: ${error instanceof Error ? error.message : String(error)}`,

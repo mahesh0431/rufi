@@ -1,3 +1,4 @@
+import { access } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { EXPECTED, KEY, type KeyPage } from "../tests/pack/copy-set.ts";
 import type { SubAgentOutcome } from "../src/agent/runtime.ts";
@@ -151,6 +152,29 @@ describe("the reader pack's judge of a page", () => {
       unsure: key.rows.length,
       silent: 0,
     });
+  });
+
+  it("keeps the judge's data folder, and names it, when a completed turn's answer can't be used", async () => {
+    const key = page("mixed", 1);
+    const given = answer(key);
+    const judged = await judgeWith(
+      key,
+      {
+        ...given,
+        rows: [
+          ...given.rows,
+          { row: 99, verdict: "changed silently", why: "An unmarked row." },
+        ],
+      },
+      { status: "completed" },
+    );
+    const folder = /Its data folder: (.*)$/.exec(
+      "failed" in judged ? judged.failed : "",
+    )?.[1];
+    expect(judged).toEqual({
+      failed: expect.stringContaining("99") as unknown,
+    });
+    await access(folder ?? "");
   });
 });
 

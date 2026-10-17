@@ -143,14 +143,20 @@ describe("the output folder", () => {
 });
 
 describe("a case's scratch data folder", () => {
-  /** A case that writes a fictional record in its folder, then ends as `how`. */
-  const play = (how: "passes" | "fails" | "throws") =>
+  /**
+   * A case that writes a fictional record in its folder, then ends as `how`;
+   * a case that passes writes its transcript to an output folder that's
+   * gone.
+   */
+  const play = (how: "passes" | "fails" | "can't save its transcript") =>
     onScratch(
       "rufi-smoke-",
       async (home) => {
         await writeFile(join(home, "rufi.db"), "a fictional record");
-        if (how === "throws") throw new Error("the core didn't start");
-        return { home, passed: how === "passes" };
+        if (how === "can't save its transcript") {
+          await writeFile(join(`${home}-gone`, "case.md"), "AI: …");
+        }
+        return { home, passed: how !== "fails" };
       },
       (result) => result.passed,
     );
@@ -168,13 +174,15 @@ describe("a case's scratch data folder", () => {
     expect(await record(result.home)).toBe("a fictional record");
   });
 
-  it("stays when the case throws, and the error names it", async () => {
-    const error: unknown = await play("throws").catch((e: unknown) => e);
+  it("stays when the case's transcript couldn't be saved, and the error names it", async () => {
+    const error: unknown = await play("can't save its transcript").catch(
+      (e: unknown) => e,
+    );
     expect(error).toMatchObject({
       message: expect.stringMatching(
-        /^the core didn't start \(data folder: .*rufi-smoke-\w+\)$/,
+        /^ENOENT: .* \(data folder: .*rufi-smoke-\w+\)$/,
       ) as unknown,
-      cause: new Error("the core didn't start"),
+      cause: { code: "ENOENT" },
     });
     const home = /data folder: (.*)\)$/.exec((error as Error).message)?.[1];
     expect(await record(home ?? "")).toBe("a fictional record");

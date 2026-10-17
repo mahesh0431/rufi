@@ -606,11 +606,24 @@ async function readCopies(runs: number) {
               [name === "mixed" ? files.mixed : files.photo],
               (store, home) => copyReader(pages(store, home), copies(store)),
             );
+            let read: ReturnType<typeof copiesOf>;
             try {
-              return copiesOf(store, documentId);
+              read = copiesOf(store, documentId);
             } finally {
               store.close();
             }
+            // The copies are in the output folder before the data folder goes.
+            const folder = join(out, `round-${String(round)}`);
+            for (const key of KEY.filter((k) => k.file === name)) {
+              const copy = read.saved.find((c) => c.position === key.page);
+              if (!copy) continue;
+              await mkdir(folder, { recursive: true });
+              await writeFile(
+                join(folder, `${name}-${String(key.page)}.md`),
+                copy.copy,
+              );
+            }
+            return read;
           },
           ({ job }) => job.state === "done",
         );
@@ -646,13 +659,6 @@ async function readCopies(runs: number) {
       for (const key of keys) {
         const copy = saved.find((c) => c.position === key.page);
         done.pages.push({ key, copy: copy?.copy });
-        if (!copy) continue;
-        const folder = join(out, `round-${String(round)}`);
-        await mkdir(folder, { recursive: true });
-        await writeFile(
-          join(folder, `${name}-${String(key.page)}.md`),
-          copy.copy,
-        );
       }
     }
     rounds.push(done);
