@@ -85,7 +85,8 @@ test("checks a report against its pages: worth a look only, a fix, a fix from an
       const first = readPage("13.2");
       await turn.save(1, {
         ...first,
-        copy: `${first.copy}\n| Platelet count | 2.1 | lakh/µL | 1.5-4.1 |`,
+        // A row the reader wrote as HTML: its quote is the row's words.
+        copy: `${first.copy}\n\n<table><tr><td>Platelet count</td><td><strong>2.1</strong></td><td>lakh/µL</td><td>1.5-4.1</td></tr></table>`,
       });
       await turn.look(2);
       await turn.save(2, readPage("13.2"));
@@ -117,6 +118,7 @@ test("checks a report against its pages: worth a look only, a fix, a fix from an
   await expect(items).toContainText(
     "From the page: “Platelet count | 2.1 | lakh/µL”",
   );
+  await expect(items).not.toContainText("<td>");
   await expect(shown.getByRole("img", { name: "Page 1 of 2" })).toBeVisible();
   await items.getByRole("button", { name: "Haemoglobin" }).nth(1).click();
   await expect(shown.getByRole("img", { name: "Page 2 of 2" })).toBeVisible();

@@ -494,7 +494,7 @@ export const sortDocuments = defineTool({
           unit: "mmol/L",
           reference_range: "135 – 145",
           date: { label: "Collected", date: "04/05/2026", iso: "2026-05-04" },
-          quote: "Sodium 139 mmol/L 135 – 145",
+          quote: "Sodium | 139 | mmol/L | 135 – 145",
         },
         {
           page: 1,
@@ -503,7 +503,7 @@ export const sortDocuments = defineTool({
           value_number: 4.2,
           unit: "mmol/L",
           date: { label: "Collected", date: "04/05/2026", iso: "2026-05-04" },
-          quote: "Potassium 4.[2?] mmol/L",
+          quote: "Potassium | 4.[2?] | mmol/L",
           worth_a_look: "a digit is unclear",
         },
       ],

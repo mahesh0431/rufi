@@ -128,7 +128,7 @@ const Draft = Schema.Struct({
   ),
   quote: Text(
     300,
-    "The words it comes from, as in the page's copy (its row), for the person to see beside it.",
+    'The words it comes from, for the person to see beside it: its row\'s words as printed, cells separated by " | ", without the copy\'s HTML or Markdown ("TSH | ~~5.3 H~~ [handwritten: 5.8] | mIU/L", not "<td>TSH</td><td><s>5.3 H</s>…"), with the reader\'s marks kept.',
   ),
   worth_a_look: Schema.optionalKey(
     Text(

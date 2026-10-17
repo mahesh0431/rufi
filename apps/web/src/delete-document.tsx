@@ -31,6 +31,12 @@ const deletePath = (personId: string, documentId: string) =>
 const plural = (count: number, one: string, many = `${one}s`) =>
   `${String(count)} ${count === 1 ? one : many}`;
 
+/** "2 other documents use it": the file stays while they do. */
+const othersUse = (others: number) =>
+  others === 1
+    ? "1 other document uses it"
+    : `${String(others)} other documents use it`;
+
 /** "1 PDF, 3 pages", "2 photos". */
 function filesIn(preview: DeletePreview): string {
   const pages = preview.files.reduce((sum, f) => sum + f.pages, 0);
@@ -212,6 +218,13 @@ function Preview({
                 </li>
               ))}
             </ul>
+            {/* One document of a split file: only its part goes. */}
+            {preview.others > 0 && preview.place !== null && (
+              <ul className="mt-2.5 list-disc pl-[18px]">
+                <li>Its part of the file: {preview.place}</li>
+                <li>The file stays: {othersUse(preview.others)}</li>
+              </ul>
+            )}
             <ul className="mt-2.5 flex flex-col gap-1.5">
               <li>
                 <strong className="font-semibold">Delete file</strong>: the
@@ -253,12 +266,7 @@ function Preview({
             </h3>
             <ul className="list-disc pl-[18px]">
               {preview.others > 0 && (
-                <li>
-                  The file:{" "}
-                  {preview.others === 1
-                    ? "1 other document uses it"
-                    : `${String(preview.others)} other documents use it`}
-                </li>
+                <li>The file: {othersUse(preview.others)}</li>
               )}
               <li>Your health record and its history</li>
               <li>

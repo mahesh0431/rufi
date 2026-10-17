@@ -898,6 +898,21 @@ describe("a sort in the chat's queue", () => {
     expect(await queue.claim(chat, true)).toBeUndefined();
   });
 
+  it("after a restart while signed out, it waits for the sign-in, not for a message", async () => {
+    const queue = chatQueue(store, now);
+    await asked();
+    await queue.claim(chat, true);
+    await queue.endStopped();
+    expect(await queue.claim(chat, false)).toBeUndefined();
+    expect(rows("SELECT held FROM chat_queue")).toEqual([
+      { held: "signed_out" },
+    ]);
+    expect(
+      (await openDocuments(store, home, now).list("asha"))[0]?.sorting,
+    ).toMatchObject({ state: "signed_out" });
+    expect(await handOver("turn-a")).toMatchObject({ origin: "rufi" });
+  });
+
   it("a Stop holds it, and it goes after the person's next message", async () => {
     const queue = chatQueue(store, now);
     await asked();

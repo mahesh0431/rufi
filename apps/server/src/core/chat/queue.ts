@@ -471,7 +471,7 @@ export function chatQueue(
     claim: (chat: ChatOf, signedIn: boolean): Promise<HandOver | undefined> =>
       write(chat, async (trx) => {
         const at = now();
-        const holdEvents = (held: string) =>
+        const holdEvents = (held: string, keep: readonly string[] = []) =>
           trx
             .updateTable("chat_queue")
             .set({ held, updated_at: at })
@@ -480,6 +480,7 @@ export function chatQueue(
             .where("origin", "=", "rufi")
             .where("state", "=", "waiting")
             .where("held", "is", null)
+            .$if(keep.length > 0, (q) => q.where("id", "not in", keep))
             .execute();
         const paused = await pausedOf(trx, chat);
         if (paused === "stopped") {
@@ -515,7 +516,9 @@ export function chatQueue(
             (row) => isSort(row) && RIDES.includes(row.held ?? ""),
           ),
         ];
-        if (paused !== null) await holdEvents("paused");
+        // The pause after a restart holds no sort: signed out, the sort waits
+        // for the sign-in instead.
+        if (paused !== null) await holdEvents("paused", [...sorts]);
         const head = free[0];
         if (!head) return undefined;
         if (!signedIn) {
