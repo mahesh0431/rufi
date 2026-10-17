@@ -612,3 +612,80 @@ describe("Rufi's work on the requests", () => {
     ]);
   });
 });
+
+describe("a sort in the chat's queue", () => {
+  it("goes in a turn of its own: the events before it go together, a person's message after it goes alone", async () => {
+    const queue = chatQueue(store, now);
+    await transcripts.addEvent(chat, {
+      kind: "backup",
+      line: "Backed up.",
+      ask: "A backup was made.",
+    });
+    await asked();
+    await queue.accept(chat, uuid(), "What did the reports say?");
+
+    const turns: { origin: string; notes: string[]; text?: string }[] = [];
+    for (const turn of ["turn-a", "turn-b", "turn-c"]) {
+      const given = await handOver(turn);
+      turns.push({
+        origin: given.origin,
+        notes: given.notes.map((n) => n.slice(0, 18)),
+        ...(given.text !== undefined && { text: given.text }),
+      });
+      await transcripts.endTurn(chat, turn, { status: "completed" });
+    }
+    expect(turns).toEqual([
+      { origin: "rufi", notes: ["A backup was made."] },
+      { origin: "rufi", notes: ["A document reading"] },
+      { origin: "person", notes: [], text: "What did the reports say?" },
+    ]);
+  });
+
+  it("after a restart, a sort Rufi was handing over waits again and goes, while the chat's other events wait for the person", async () => {
+    const queue = chatQueue(store, now);
+    await asked();
+    await transcripts.addEvent(chat, {
+      kind: "backup",
+      line: "Backed up.",
+      ask: "A backup was made.",
+    });
+    // Rufi stopped while handing the sort over.
+    expect(await queue.claim(chat, true)).toMatchObject({ origin: "rufi" });
+    expect(await queue.endStopped()).toBe(0);
+    expect(rows("SELECT paused FROM chats WHERE id = 'c-asha'")).toEqual([
+      { paused: "restarted" },
+    ]);
+    expect(
+      rows(
+        "SELECT substr(text, 1, 18) AS text, state, held FROM chat_queue ORDER BY position",
+      ),
+    ).toEqual([
+      { text: "A document reading", state: "waiting", held: null },
+      { text: "A backup was made.", state: "waiting", held: "paused" },
+    ]);
+    // The pause after a restart doesn't hold the sort; the backup's note
+    // rides with the person's next message.
+    expect(await handOver("turn-a")).toMatchObject({
+      origin: "rufi",
+      notes: [expect.stringMatching(/^A document reading/) as string],
+    });
+    await transcripts.endTurn(chat, "turn-a", { status: "completed" });
+    expect(await queue.claim(chat, true)).toBeUndefined();
+  });
+
+  it("a Stop holds it, and it goes after the person's next message", async () => {
+    const queue = chatQueue(store, now);
+    await asked();
+    await queue.pause(chat);
+    expect(await queue.claim(chat, true)).toBeUndefined();
+    expect(rows("SELECT held FROM chat_queue")).toEqual([{ held: "paused" }]);
+    await queue.accept(chat, uuid(), "Go on");
+    expect(await handOver("turn-a")).toMatchObject({
+      origin: "person",
+      notes: [],
+      text: "Go on",
+    });
+    await transcripts.endTurn(chat, "turn-a", { status: "completed" });
+    expect(await handOver("turn-b")).toMatchObject({ origin: "rufi" });
+  });
+});

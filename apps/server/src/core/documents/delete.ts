@@ -406,12 +406,14 @@ export function deletions(deps: {
             .execute();
           // Its readings, but one whose copies or drafts another document
           // of its add still has (a split document's pages were read with
-          // the add): it stays while they do.
+          // the add): it stays while they do, and goes with the last of
+          // them.
+          const root = await addOf(trx, personId, documentId);
           const gone = trx
             .selectFrom("jobs as j")
             .select("j.id")
             .where("j.person_id", "=", personId)
-            .where("j.document_id", "=", documentId)
+            .where("j.document_id", "in", [documentId, root?.id ?? documentId])
             .where(
               sql<boolean>`NOT EXISTS (SELECT 1 FROM page_copies c WHERE c.person_id = j.person_id AND c.job_id = j.id)`,
             )
