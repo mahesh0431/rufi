@@ -81,7 +81,7 @@ One data folder holds everything (default `~/.rufi/data`). The core finds it onc
 
 | In the data folder                                   | What it is                                                                                                                  |
 | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `rufi.sqlite`                                        | The record, each chat's transcript and queue, the reader's notebooks and draft items, settings                              |
+| `rufi.sqlite`                                        | The record, each chat's transcript and queue, the reader's notebooks, page copies and draft items, settings                 |
 | `files/`                                             | Each document's original, named by the SHA-256 of its content                                                               |
 | `cache/`                                             | Copies made again when missing: HEIC photos as JPEG, PDF pages drawn for the AI                                             |
 | `backups/`                                           | Checked backups; `backups/before-upgrade/` is never pruned                                                                  |
@@ -165,6 +165,7 @@ Rufi reads each document as it is added, with its own sub-agent, one document at
 - **The notebook survives.** What each page says is saved in the reading's notebook as the reader goes, so a compaction, a stop or a restart loses nothing; the next attempt goes on from it.
 - **Drafts only at the end.** Only a reader turn that completed normally finishes a reading, or, after a crash, a start that finds every target page already saved. It finishes in one transaction: the page states, the draft items, the document's version, and the end line in the chat. Draft items are never the record; the person saves them in the chat.
 - **Retries.** A passing failure is tried again by itself after 30 seconds, 1 minute and 2 minutes. An account problem (signed out, a usage limit) or a fourth failure ends the reading as failed, with the notebook kept for **Retry**.
+- **The reader that copies (not run by Rufi yet).** The next reader copies each page as Markdown, exactly as printed, marks what is unclear, and decides nothing: no kind, dates, reports or draft items; Rufi AI will work from its copies. It has the same lock-down, the same two tools (its `save_page` takes the page's copy) and the same runs, retries and end, without the person's name. Its page copies are kept in `page_copies`, one for each page of a file and reading (known by the file, the page in the file and the reading, never by the document the page is in); a reading's runs replace a page's copy until it ends. They go with their document when it is deleted, and are in backups and the export. Until Rufi AI drafts from copies, Rufi runs the reader that writes the notebook; the reader pack (`--copies`) measures the one that copies.
 
 ## Documents' originals
 
