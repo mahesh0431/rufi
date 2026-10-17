@@ -319,7 +319,20 @@ test("a reading that failed signed out gives its reason in full, in View reading
   await sheet.getByRole("button", { name: "Close" }).click();
 
   await row.getByRole("link", { name: "sunrise-labs-august.pdf" }).click();
-  await whole(`Failed · ${why}`);
+  const items = page.getByRole("region", { name: "Items" });
+  // Also in a small window, the reason leaves room for the Items list.
+  for (const size of [
+    { width: 1280, height: 720 },
+    { width: 800, height: 600 },
+  ]) {
+    await page.setViewportSize(size);
+    await whole(`Failed · ${why}`);
+    for (const position of [1, 2]) {
+      await expect(
+        items.getByRole("cell", { name: `Page ${String(position)} · ` }),
+      ).toBeInViewport({ ratio: 1 });
+    }
+  }
   await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
   await accessible(page);
 });

@@ -172,7 +172,9 @@ function Checking({
   return (
     <div className="flex h-full min-h-[420px] flex-col">
       <div className="flex flex-wrap items-center gap-2.5 px-5 pt-3.5 pb-2.5">
-        <div className="min-w-0 flex-1">
+        {/* The name and its lines keep room to read; in a small window the
+            actions go below them. */}
+        <div className="min-w-0 flex-1 basis-80">
           <h2 className="truncate">
             <b className="text-[14px]">{name}</b>{" "}
             <span className="text-muted">· {about}</span>
