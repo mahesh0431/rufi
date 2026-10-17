@@ -125,8 +125,11 @@ test("reads a report in the background as it is added: the strip, the lines and 
   );
   await page.getByRole("button", { name: "View reading" }).click();
   await expect(sheet).toContainText("sunrise-labs-august.pdf · read");
-  // Page 1 open, page 2 folded: both read.
+  // Both pages read, each showing its item.
   await expect(sheet.getByText(/^read · 1 item · Sunrise Labs/)).toHaveCount(2);
+  await expect(
+    sheet.getByRole("cell", { name: "Haemoglobin" }).nth(1),
+  ).toBeVisible();
 });
 
 test("View reading says where a reading is while the reader's work loads, also on a retry of one page", async ({

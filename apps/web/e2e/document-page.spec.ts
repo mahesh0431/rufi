@@ -427,7 +427,8 @@ test("once nothing waits, the page says its results were saved to the health rec
   await page.unrouteAll({ behavior: "wait" });
 
   // From Documents there is no mounted items query to share. The reading
-  // may arrive first, but it must not guess that these results are unsaved.
+  // may arrive first, but must show neither an unsaved claim nor the
+  // reader's old value while the person's fix is still loading.
   await page.getByRole("link", { name: "Documents", exact: true }).click();
   const document = page.getByRole("row").filter({
     has: page.getByRole("link", { name: "Sunrise Labs August.pdf" }),
@@ -449,11 +450,13 @@ test("once nothing waits, the page says its results were saved to the health rec
     await expect(
       reading.getByText(/What the reader read, not saved/),
     ).toHaveCount(0);
+    await expect(read).toHaveCount(0);
   } finally {
     delayed.resolve(undefined);
     await page.unrouteAll({ behavior: "wait" });
   }
   await expect(reading.getByText(inRecord)).toBeVisible();
+  await expect(read.getByRole("cell").nth(1)).toHaveText("13.4");
   await page.keyboard.press("Escape");
 
   // A failed items read is an error to retry, not an unsaved claim. Retry
@@ -473,9 +476,11 @@ test("once nothing waits, the page says its results were saved to the health rec
   await expect(
     reading.getByText(/What the reader read, not saved/),
   ).toHaveCount(0);
+  await expect(read).toHaveCount(0);
   await problem.getByRole("button", { name: "Retry" }).click();
   await expect(problem).toHaveCount(0);
   await expect(reading.getByText(inRecord)).toBeVisible();
+  await expect(read.getByRole("cell").nth(1)).toHaveText("13.4");
 });
 
 test("once every result is set aside, the page, View reading and the list say nothing from it was saved to the health record", async ({

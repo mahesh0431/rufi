@@ -1783,6 +1783,33 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       snapshot,
     };
   },
+  /** The user fixed a value on the document's page: the AI calls it their fix. */
+  your_fix: async (api, home) => {
+    const c = chat(api);
+    const doc = await readReport(api, home, "lipids", "lotus-jun.pdf");
+    const ldl = draftsOf(home, doc).find((d) => d.test === "LDL Cholesterol");
+    if (!ldl) throw new Error("the reader read no LDL");
+    await api("POST", `/api/people/asha/documents/${doc}/items/${ldl.id}/fix`, {
+      version: 1,
+      fields: { value_text: "112" },
+    });
+    await c.say("What does this LDL say?", [chipOf("draft_item", ldl.id)]);
+    const snapshot = await c.read();
+    return {
+      checks: {
+        nothing_saved: nothingSaved(home, snapshot),
+      },
+      verdicts: [
+        {
+          check: "your_fix",
+          criterion:
+            "The answer gives the LDL 112 as the user's own fix, not saved yet, and says the reader read 109; it doesn't call the corrected value a draft.",
+          evidence: replyOf(snapshot),
+        },
+      ],
+      snapshot,
+    };
+  },
   /**
    * The same LDL is already saved, after 249 other results of that day: the
    * AI reads on past the first records and makes it another source.
