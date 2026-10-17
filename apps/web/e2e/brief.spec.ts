@@ -177,3 +177,65 @@ test("a brief that isn't there says so", async ({ page, rufi }) => {
     "There is no such brief.",
   );
 });
+
+test("the chat bar leaves the last Sources row of a long brief in view", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  // Every result of Asha's cited: a page longer than the window.
+  const cited = [
+    { kind: "medicine_use", id: "med-a1" },
+    ...Array.from({ length: 11 }, (_, i) => ({
+      kind: "result",
+      id: `res-a${String(i + 1)}`,
+    })),
+  ];
+  await rufi.start({
+    scenario: {
+      callsByTurn: [
+        [
+          {
+            tool: "create_brief",
+            arguments: { markdown: MARKDOWN, record_version: 0, cited },
+          },
+        ],
+      ],
+    },
+  });
+  await page.goto(rufi.link());
+  const chat = page.getByRole("region", { name: "Chat" });
+  const box = chat.getByRole("textbox", { name: "Message to Rufi" });
+  await chat.getByRole("button", { name: "Open the chat" }).click();
+  await box.fill("Make a brief for my visit on Friday");
+  await box.press("Enter");
+  await chat.getByRole("link", { name: /^Open Visit brief/ }).click();
+  const sources = page
+    .getByRole("region", { name: "Sources" })
+    .getByRole("listitem");
+  await expect(sources).toHaveCount(cited.length);
+
+  for (const size of [
+    { width: 1280, height: 720 },
+    { width: 800, height: 600 },
+  ]) {
+    await page.setViewportSize(size);
+    await page.getByRole("main").evaluate((main) => {
+      main.scrollTop = main.scrollHeight;
+    });
+    const last = await sources.last().boundingBox();
+    // The bar: the box floating over the page's bottom right.
+    const bar = await chat
+      .getByRole("button", { name: "Open the chat" })
+      .evaluate((element) => {
+        let shown: Element | null = element;
+        while (shown && getComputedStyle(shown).position !== "fixed") {
+          shown = shown.parentElement;
+        }
+        return shown?.getBoundingClientRect().top;
+      });
+    expect(last).not.toBeNull();
+    expect(bar).toBeDefined();
+    expect((last?.y ?? 0) + (last?.height ?? 0)).toBeLessThanOrEqual(bar ?? 0);
+  }
+});

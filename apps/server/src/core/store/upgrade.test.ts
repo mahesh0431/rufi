@@ -603,6 +603,66 @@ it("upgrades a record of version 8 so a reading no longer waits for the account:
   }
 });
 
+it("upgrades a record of version 9 so a chat keeps the context its thread used and a message can wait on its thread's open error: every chat and waiting message kept as it was", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 9));
+  // A chat on its AI thread, and a message as Rufi of version 9 held it
+  // after its thread didn't open.
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      UPDATE chats SET thread_id = 'thread-asha', thread_provider = 'codex', thread_model = 'gpt-6.1-sol', thread_tools = 'rules-1'
+        WHERE person_id = 'asha';
+      INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, held, held_text, created_at, updated_at)
+        SELECT 'held-1', person_id, id, 'person', 'Is my HbA1c better?', 1, 'waiting', 'failed', 'Codex stopped.', '2026-10-17T09:00:00Z', '2026-10-17T09:00:00Z'
+        FROM chats WHERE person_id = 'asha';
+    `);
+  } finally {
+    old.close();
+  }
+  const stored = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return {
+        chats: db.prepare("SELECT * FROM chats ORDER BY id").all(),
+        queue: db.prepare("SELECT * FROM chat_queue ORDER BY id").all(),
+      };
+    } finally {
+      db.close();
+    }
+  };
+  const before = stored();
+
+  const store = await openRecord(home);
+  try {
+    const after = stored();
+    expect(after.chats).toEqual(
+      before.chats.map((chat) => ({
+        ...chat,
+        context_tokens: null,
+        context_window: null,
+        context_thread: null,
+      })),
+    );
+    expect(after.queue).toEqual(
+      before.queue.map((row) => ({ ...row, hold_id: null })),
+    );
+    // No meter until the thread reports again.
+    expect((await transcripts(store).chat("asha"))?.context).toBeNull();
+    // An open error's hold names its occurrence; no other hold has one.
+    expect(() => {
+      store.db.exec(
+        "UPDATE chat_queue SET held = 'open_failed' WHERE id = 'held-1'",
+      );
+    }).toThrow(/CHECK constraint failed/);
+    store.db.exec(
+      "UPDATE chat_queue SET held = 'open_failed', hold_id = 'hold-1' WHERE id = 'held-1'",
+    );
+  } finally {
+    store.close();
+  }
+});
+
 it.each([
   {
     record: "a record from a newer Rufi",

@@ -1,7 +1,7 @@
 // A long chat on the real core: it opens at its latest page, older pages
 // load as you scroll up without moving what you read, each day has its line
-// in the Mac's time zone, and a quiet line shows where the AI started afresh
-// or compacted its memory. The Mac here is in India on Thu 8 Oct 2026.
+// in the Mac's time zone, and a quiet line shows where a new AI thread
+// started or Codex compacted the chat history. The Mac here is in India on Thu 8 Oct 2026.
 import type { Page } from "@playwright/test";
 import { expect, test, type Rufi } from "./rufi.ts";
 
@@ -147,19 +147,22 @@ test("a long chat opens at its latest page; older pages load as you scroll up, i
     "Today",
   ]);
 
-  // Quiet lines: before question 120 (a new thread), at the compaction in
-  // 90's reply, and before the new message (the AI's thread is new after a
-  // restart here); none for the cut compaction or the chat's first turn.
-  const quiet = log(page).getByText(
-    "The AI started afresh here. It can still read earlier messages.",
-  );
-  await expect(quiet).toHaveCount(3);
+  // Quiet lines: a new thread before question 120 and before the new
+  // message (Codex has no record of the seeded thread), the compaction in
+  // 90's reply; none for the cut compaction or the chat's first turn.
+  const newThread = log(page).getByText("New thread started", { exact: true });
+  await expect(newThread).toHaveCount(2);
   await expect(
-    quiet.nth(1).locator("xpath=following-sibling::*[1]"),
+    newThread.nth(0).locator("xpath=following-sibling::*[1]"),
   ).toHaveText("Fictional question 120");
-  await expect(
-    quiet.nth(0).locator("xpath=preceding-sibling::*[1]"),
-  ).toHaveText("Fictional question 90");
+  const compacted = log(page).getByText("Chat history compacted", {
+    exact: true,
+  });
+  await expect(compacted).toHaveCount(1);
+  await expect(compacted.locator("xpath=preceding-sibling::*[1]")).toHaveText(
+    "Fictional question 90",
+  );
+  await expect(log(page)).not.toContainText("Compacting chat history");
 
   // A reload opens at the latest page again.
   await page.reload();

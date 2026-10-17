@@ -1,6 +1,7 @@
 // The chat on the real core: the bar, the panel and the page of the
 // person's one chat; streaming, Stop, waiting messages, Add to reply, the model and
-// drafts; older pages, day lines and where the AI started afresh; and what
+// drafts; older pages, day lines and the AI's memory (its lines, the
+// meter, a thread that doesn't open); and what
 // the AI's Markdown may and may not do. Each test checks that the strict CSP
 // refused nothing the screens need.
 import { AxeBuilder } from "@axe-core/playwright";
@@ -405,7 +406,7 @@ test("signed out, the model's menu signs in", async ({ page, rufi }) => {
   ).toBeVisible();
 });
 
-test("the model and effort are chosen in the box, also in the bar, and kept for the chat; a new effort doesn't start the AI afresh; neither changes while a reply runs", async ({
+test("the model and effort are chosen in the box, also in the bar, and kept for the chat; a new effort doesn't start a new thread; neither changes while a reply runs", async ({
   page,
   rufi,
 }) => {
@@ -434,7 +435,7 @@ test("the model and effort are chosen in the box, also in the bar, and kept for 
   await expect(choice("GPT-6.1-Sol, High")).toBeVisible();
   await send(page, "Again");
   await expect(log(chat(page)).locator(".reply").last()).toHaveText("ok:Again");
-  await expect(log(chat(page))).not.toContainText("started afresh");
+  await expect(log(chat(page))).not.toContainText("New thread started");
 
   // Neither changes while a reply runs.
   await send(page, "hang");
@@ -779,6 +780,82 @@ test("a failed send keeps your text and says why; nothing is sent again by itsel
   await expect(log(chat(page)).locator(".reply").last()).toHaveText(
     "ok:Keep this",
   );
+});
+
+test("the AI's memory: a compaction shows while it runs, then as done; the meter shows after a reply and after a reload; a thread that doesn't open holds the message with Try again and New thread", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi, {
+    scenario: {
+      compaction: true,
+      compactionMs: 1_500,
+      usage: { tokens: 38_000, window: 100_000 },
+    },
+  });
+  const meter = chat(page).getByRole("button", { name: /^Context used/ });
+  if (await opener(chat(page)).isVisible()) await opener(chat(page)).click();
+  // No meter before the AI reported anything.
+  await expect(meter).toHaveCount(0);
+  await send(page, "Hello");
+  const quiet = (text: string) =>
+    log(chat(page)).getByText(text, { exact: true });
+  await expect(quiet("Compacting chat history…")).toBeVisible();
+  await expect(quiet("Chat history compacted")).toBeVisible();
+  await expect(quiet("Compacting chat history…")).toHaveCount(0);
+  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
+  await expect(log(chat(page))).not.toContainText("New thread started");
+
+  await expect(meter).toHaveAccessibleName("Context used: 38%");
+  await expect(meter).toHaveText("38%");
+  await meter.hover();
+  await expect(
+    page.getByText(
+      "Of the AI's memory for this chat. Near full, Codex compacts the chat history.",
+    ),
+  ).toBeVisible();
+  await accessible(page);
+  await page.reload();
+  if (await opener(chat(page)).isVisible()) await opener(chat(page)).click();
+  await expect(meter).toHaveText("38%");
+
+  // Rufi starts again, and the AI's thread doesn't open twice.
+  await rufi.stop();
+  await rufi.start({ scenario: { resumeFails: 2 } });
+  await page.goto(rufi.link());
+  await send(page, "Again");
+  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
+  const why =
+    "Codex refused thread/resume: failed to read thread: a fictional read error";
+  await expect(waiting).toContainText(why);
+  await accessible(page);
+  await waiting.getByRole("button", { name: "Try again" }).click();
+  // Held again, with the error as it came.
+  await expect(
+    waiting.getByRole("button", { name: "New thread" }),
+  ).toBeVisible();
+  await expect(waiting).toContainText(why);
+  // The thread opens for a later message: while its reply runs, New thread
+  // doesn't show, so that reply keeps its thread.
+  await send(page, "hang");
+  const stop = chat(page).getByRole("button", { name: "Stop" });
+  await expect(stop).toBeVisible();
+  await expect(
+    waiting.getByRole("button", { name: "Try again" }),
+  ).toBeVisible();
+  await expect(waiting.getByRole("button", { name: "New thread" })).toHaveCount(
+    0,
+  );
+  await stop.click();
+  await waiting.getByRole("button", { name: "New thread" }).click();
+  await expect(log(chat(page)).locator(".reply").last()).toHaveText("ok:Again");
+  await expect(quiet("New thread started")).toHaveCount(1);
+  await expect(
+    quiet("New thread started").locator("xpath=following-sibling::*[1]"),
+  ).toContainText("Again");
+  await expect(waiting).toHaveCount(0);
+  // The new thread hasn't said how full it is.
+  await expect(meter).toHaveCount(0);
 });
 
 test("two tabs: the reply streams in both; the last save wins", async ({

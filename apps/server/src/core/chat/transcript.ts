@@ -58,7 +58,7 @@ export interface Change {
   revision: number;
   entries: Entry[];
   turns: Turn[];
-  /** The chat, when its model changed. */
+  /** The chat, when its model, effort or context used changed. */
   chat?: Chat;
 }
 
@@ -127,13 +127,31 @@ function linkOf(details: string | null): Pick<Entry, "link"> {
 }
 
 /** A chat as the screens get it, without its thread. */
-const shown = ({ model, effort }: Chat): Chat => ({ model, effort });
+const shown = ({ model, effort, context }: Chat): Chat => ({
+  model,
+  effort,
+  context,
+});
+
+/**
+ * The context the chat's thread used, as last reported: only a report of
+ * the thread it uses now, with a window.
+ */
+const contextOf = (row: Selectable<Tables["chats"]>): Chat["context"] =>
+  row.context_thread !== null &&
+  row.context_thread === row.thread_id &&
+  row.context_tokens !== null &&
+  row.context_window !== null &&
+  row.context_window > 0
+    ? { tokens: row.context_tokens, window: row.context_window }
+    : null;
 
 const toChat = (row: Selectable<Tables["chats"]>): ChatRow => ({
   id: row.id,
   personId: row.person_id,
   model: row.model,
   effort: (row.effort as Effort | null) ?? DEFAULT_EFFORT,
+  context: contextOf(row),
   threadId: row.thread_id,
   threadProvider: row.thread_provider,
   threadModel: row.thread_model,
@@ -172,8 +190,8 @@ async function entriesOut(trx: Db, rows: EntryRow[]): Promise<Entry[]> {
 /**
  * Turns as the screens get them, each with its How from its own replies
  * once it completed. A
- * turn on another agent thread than the turn before it started afresh;
- * the chat's first turn didn't.
+ * turn on another agent thread than the turn before it is on a new thread;
+ * the chat's first turn isn't.
  */
 async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
   const first = rows[0];
@@ -235,7 +253,7 @@ async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
       resetsAt: row.resets_at,
       startedAt: row.started_at,
       endedAt: row.ended_at,
-      afresh: threadBefore !== null && threadBefore !== row.thread_id,
+      newThread: threadBefore !== null && threadBefore !== row.thread_id,
       how: how ?? null,
     };
   });
@@ -497,6 +515,9 @@ export function transcripts(
             thread_model: null,
             thread_tools: null,
             revision: 0,
+            context_tokens: null,
+            context_window: null,
+            context_thread: null,
             created_at: now(),
           })
           .execute();
@@ -539,22 +560,53 @@ export function transcripts(
         .execute();
     },
 
-    /** The thread the chat now uses, and what it started with. */
-    setThread: async (
+    /**
+     * The thread the chat now uses, and what it started with; the screens
+     * hear of it, as the context used was the old thread's.
+     */
+    setThread: (
       chat: ChatRow,
       thread: { id: string; provider: string; model: string; tools: string },
-    ) => {
-      await db
-        .updateTable("chats")
-        .set({
-          thread_id: thread.id,
-          thread_provider: thread.provider,
-          thread_model: thread.model,
-          thread_tools: thread.tools,
-        })
-        .where("id", "=", chat.id)
-        .execute();
-    },
+    ) =>
+      change(chat.id, async (trx) => {
+        await trx
+          .updateTable("chats")
+          .set({
+            thread_id: thread.id,
+            thread_provider: thread.provider,
+            thread_model: thread.model,
+            thread_tools: thread.tools,
+          })
+          .where("id", "=", chat.id)
+          .execute();
+        return { entries: [], turns: [], chat: true };
+      }),
+
+    /**
+     * How much of the model's context `threadId` used, as the agent last
+     * reported it; a report of a thread the chat no longer uses changes
+     * nothing.
+     */
+    setContext: (
+      chat: ChatRow,
+      threadId: string,
+      used: { tokens: number; window: number | null },
+    ) =>
+      change(chat.id, async (trx) => {
+        const { numUpdatedRows } = await trx
+          .updateTable("chats")
+          .set({
+            context_tokens: used.tokens,
+            context_window: used.window,
+            context_thread: threadId,
+          })
+          .where("id", "=", chat.id)
+          .where("thread_id", "=", threadId)
+          .executeTakeFirst();
+        return numUpdatedRows === 0n
+          ? undefined
+          : { entries: [], turns: [], chat: true };
+      }),
 
     setModel: (chat: ChatRow, model: string) =>
       change(chat.id, async (trx) => {

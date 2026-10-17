@@ -57,7 +57,7 @@ You can move your data folder to another folder: on your Mac, or on a disk that 
 
 Rufi copies everything in your data folder into the new folder: your health record and your chat, your documents, your backups and your sign-in. It checks the copy (the record, and each file against the old one) and only then uses the new folder. You stay signed in.
 
-The AI's own files (`codex/` and `sub-agents/`) and the AI's folder (`ai/`) stay in the old folder, because they name the old folder. Your chat is in your record, so nothing of it is lost: your next message starts the AI afresh with the chat's last messages, and the chat shows a quiet line there. The AI's programs and notes stay in the old folder's `ai/`; copy what you want to keep.
+The AI's own files (`codex/` and `sub-agents/`) and the AI's folder (`ai/`) stay in the old folder, because they name the old folder. Your chat is in your record, so nothing of it is lost: your next message starts a new thread for the AI with the chat's last messages, and the chat shows "New thread started" there. The AI's programs and notes stay in the old folder's `ai/`; copy what you want to keep.
 
 The old folder stays as it was, with a `moved-to.json` file that names the new folder. Rufi doesn't open the old folder any more, also not with `RUFI_HOME`, so that you never change two copies. Delete it when you're ready.
 
