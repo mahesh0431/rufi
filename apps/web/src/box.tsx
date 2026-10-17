@@ -51,7 +51,6 @@ import { chatPath, type Live, messageOf } from "./live.ts";
 import { ReaderStrip } from "./reading.tsx";
 import { ModelMenu } from "./model-menu.tsx";
 import { usePanel } from "./panel.ts";
-import { useStatus } from "./reads.ts";
 import { isRunning } from "./transcript-state.ts";
 import { Button, IconButton } from "./ui.tsx";
 
@@ -90,7 +89,6 @@ export function Box({
   const refused = usePanel((state) => state.refused);
   const stateOf = useChipStates(person.id);
   const running = useStore(live, isRunning);
-  const account = useStatus().data?.account;
   const navigate = useNavigate();
   const [problem, setProblem] = useState<string | null>(null);
   const long = tooLong(text);
@@ -116,19 +114,15 @@ export function Box({
 
   const stop = () => act(() => request("POST", `${chatPath(person.id)}/stop`));
 
-  const told = refused ?? notice ?? problem;
   /**
    * Why the box can't keep, send or add what it should, in words; an add
-   * refused just now comes first. A send refused signed out is past once
-   * signed in.
+   * refused just now comes first.
    */
   const why = long
     ? `Too long to keep or send: at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters, and this is ${text.length.toLocaleString("en")}.`
     : many
       ? `Too many added to keep or send: at most ${String(MAX_REFS)}, and this has ${String(chips.length)}. Take some out.`
-      : told === SIGNED_OUT && account === "signed_in"
-        ? null
-        : told;
+      : (refused ?? notice ?? problem);
   /** In the pill, for the moment, in place of the text. */
   const reason = why ?? saved;
   const pill = useId();

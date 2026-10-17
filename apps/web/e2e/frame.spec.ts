@@ -366,10 +366,13 @@ test.describe("first run", () => {
     // The person's chat was made with them: the bar works at once.
     const bar = page.getByRole("region", { name: "Chat" });
     await bar.getByRole("button", { name: "Open the chat" }).click();
-    await bar
-      .getByRole("textbox", { name: "Message to Rufi" })
-      .fill("Hello from the first page");
     const box = bar.getByRole("textbox", { name: "Message to Rufi" });
+    await expect(box).toBeEditable();
+    // Send before autosave, independently of machine speed.
+    const clockTime = Date.now();
+    await page.clock.install({ time: clockTime });
+    await page.clock.pauseAt(clockTime + 10_000);
+    await box.fill("Hello from the first page");
     await box.press("Enter");
     // Signed out, nothing goes and nothing waits: the text stays in the box.
     await expect(bar.getByRole("alert")).toHaveText(
@@ -379,6 +382,17 @@ test.describe("first run", () => {
     await expect(
       bar.getByRole("region", { name: "Waiting messages" }),
     ).toHaveCount(0);
+    // The refused send must not cancel saving the draft, or clear its reason.
+    await page.clock.runFor(1_000);
+    await expect(bar.getByRole("alert")).toContainText("You're signed out.");
+    await page.clock.resume();
+    await page.reload();
+    await bar.getByRole("button", { name: "Open the chat" }).click();
+    await expect(box).toHaveValue("Hello from the first page");
+    await expect(
+      bar.getByRole("region", { name: "Waiting messages" }),
+    ).toHaveCount(0);
+    await box.press("Enter");
     await accessible(page);
     await bar.getByRole("button", { name: "Sign in" }).click();
     await expect(
@@ -396,6 +410,28 @@ test.describe("first run", () => {
     await expect(page.locator(".reply")).toHaveText(
       "ok:Hello from the first page",
     );
+    // An open page's cached sign-in must not hide a newer send refusal.
+    const status = page.waitForResponse((response) =>
+      response.url().endsWith("/api/status"),
+    );
+    await page.reload();
+    expect(await (await status).json()).toMatchObject({ account: "signed_in" });
+    const chatBox = page.getByRole("textbox", { name: "Message to Rufi" });
+    await expect(chatBox).toBeEditable();
+    rufi.account = { account: "signed_out", email: null };
+    await chatBox.fill("My next question");
+    await chatBox.press("Enter");
+    await expect(page.getByRole("alert")).toContainText(
+      "You're signed out. Sign in with ChatGPT to chat.",
+    );
+    await expect(
+      page.getByRole("button", { name: "Sign in", exact: true }),
+    ).toBeVisible();
+    await expect(chatBox).toHaveValue("My next question");
+    await expect(
+      page.getByRole("region", { name: "Waiting messages" }),
+    ).toHaveCount(0);
+
     await sidebar(page).getByRole("link", { name: "Settings" }).click();
     await expect(
       page.getByRole("combobox", { name: "Emergency region" }),
