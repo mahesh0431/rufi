@@ -1442,6 +1442,14 @@ test("Based on, beside Activity once a reply ended, opens the AI's own words and
   await expect(
     chat(page).getByRole("button", { name: "Minimise" }),
   ).toBeVisible();
+  // Also from Close, reached with Tab.
+  await page.keyboard.press("Enter");
+  await expect(popover).toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(popover.getByRole("button", { name: "Close" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(popover).toHaveCount(0);
+  await expect(basedOn).toBeFocused();
 
   await send(page, "quiet thanks");
   await expect(log(chat(page)).locator(".reply").nth(1)).toHaveText(

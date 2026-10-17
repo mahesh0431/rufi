@@ -59,7 +59,7 @@ import { useSettings } from "./reads.ts";
 import { Menus } from "./model-menu.tsx";
 import { latestHeading } from "./thinking.ts";
 import { isRunning } from "./transcript-state.ts";
-import { Button, buttonLook, ICON, IconButton } from "./ui.tsx";
+import { Button, buttonLook, ICON } from "./ui.tsx";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no remote
 // images, and links only to http(s) pages, opened outside Rufi with no opener
@@ -1028,8 +1028,7 @@ function ActivityIcon({
  */
 function BasedOn({ how }: { how: string }) {
   const portals = use(Menus);
-  // Opened, the popover itself has the focus: on Close, its tooltip would
-  // take the first Esc.
+  // Opened, the popover itself has the focus, so its words come first.
   const popup = useRef<HTMLDivElement>(null);
   return (
     <Popover.Root>
@@ -1053,7 +1052,13 @@ function BasedOn({ how }: { how: string }) {
               <Popover.Title className="text-xs font-normal text-muted">
                 Based on
               </Popover.Title>
-              <Popover.Close render={<IconButton label="Close" icon={X} />} />
+              {/* No tooltip: one would take the first Esc. */}
+              <Popover.Close
+                aria-label="Close"
+                className={buttonLook({ look: "quiet", shape: "icon" })}
+              >
+                <X size={ICON} aria-hidden />
+              </Popover.Close>
             </div>
             <p className="pr-1.5 break-words whitespace-pre-wrap text-ink">
               {how}

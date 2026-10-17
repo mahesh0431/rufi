@@ -65,9 +65,8 @@ export interface Kind {
   /** The name the AI uses. */
   name: string;
   table: string;
-  /** Its words for a person: one, and several. */
+  /** Its word for a person, for one record. */
   noun: string;
-  nouns: string;
   /** Fields by the name the AI uses. */
   fields: Record<string, Field>;
   /** What a receipt calls one, from its row. */
@@ -123,7 +122,6 @@ export const KINDS: readonly Kind[] = [
     name: "medicine_use",
     table: "medicine_uses",
     noun: "medicine use",
-    nouns: "medicine uses",
     fields: {
       name: required(text("name")),
       strength: text("strength"),
@@ -149,7 +147,6 @@ export const KINDS: readonly Kind[] = [
     name: "prescription",
     table: "prescriptions",
     noun: "prescription",
-    nouns: "prescriptions",
     fields: {
       item: required(text("item")),
       strength: text("strength"),
@@ -168,7 +165,6 @@ export const KINDS: readonly Kind[] = [
     name: "symptom",
     table: "symptoms",
     noun: "symptom",
-    nouns: "symptoms",
     fields: {
       name: required(text("name")),
       status: state("status", ["ongoing", "resolved", "unknown"]),
@@ -192,7 +188,6 @@ export const KINDS: readonly Kind[] = [
     name: "condition",
     table: "conditions",
     noun: "condition",
-    nouns: "conditions",
     fields: {
       name: required(text("name")),
       certainty: state("certainty", ["suspected", "diagnosed", "unknown"]),
@@ -209,7 +204,6 @@ export const KINDS: readonly Kind[] = [
     name: "allergy",
     table: "allergies",
     noun: "allergy",
-    nouns: "allergies",
     fields: {
       substance: required(text("substance")),
       reaction: text("reaction"),
@@ -226,7 +220,6 @@ export const KINDS: readonly Kind[] = [
     name: "result",
     table: "results",
     noun: "result",
-    nouns: "results",
     fields: {
       test: required(text("test_name", "test")),
       value: required(text("value_text", "value")),
@@ -262,7 +255,6 @@ export const KINDS: readonly Kind[] = [
     name: "care_event",
     table: "care_events",
     noun: "care event",
-    nouns: "care events",
     fields: {
       type: required(choice("type", ["visit", "procedure", "immunisation"])),
       name: required(text("name")),
@@ -284,7 +276,6 @@ export const KINDS: readonly Kind[] = [
     name: "none_known",
     table: "none_known",
     noun: "statement",
-    nouns: "“none known” statements",
     fields: {
       category: required(choice("category", ["allergies"])),
     },
@@ -298,7 +289,6 @@ export const KINDS: readonly Kind[] = [
     name: "follow_up",
     table: "follow_ups",
     noun: "follow-up",
-    nouns: "follow-ups",
     fields: {
       title: required(text("title")),
       due: {
