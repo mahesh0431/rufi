@@ -1,6 +1,6 @@
 // A visit brief on the real core: the AI's create_brief call (scripted),
-// Rufi's line in the chat, and the brief's page with its Sources and Copy,
-// in both themes; a later save shows the record changed since. Each test
+// Rufi's line in the chat, and the brief's page with its Sources, Copy and
+// Print, in both themes; a later save shows the record changed since. Each test
 // checks that the strict CSP refused nothing the screens need.
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
@@ -141,6 +141,43 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
   expect(copied).toContain(
     "\n- Result: HbA1c 6.8 % · 12 Aug 2026 (Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf, page 1)",
   );
+
+  // Print: the system's print, of the page alone, light on the dark theme,
+  // on one A4 sheet.
+  await page.evaluate(() => {
+    const counted = globalThis as unknown as { printed: number };
+    counted.printed = 0;
+    window.print = () => {
+      counted.printed += 1;
+    };
+  });
+  await page.getByRole("button", { name: "Print" }).click();
+  expect(
+    await page.evaluate(
+      () => (globalThis as unknown as { printed: number }).printed,
+    ),
+  ).toBe(1);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.emulateMedia({ media: "print" });
+  for (const part of [
+    page.getByRole("complementary"),
+    page.getByRole("banner"),
+    page.getByRole("region", { name: "Chat" }),
+    page.getByRole("button", { name: "Copy" }),
+    page.getByRole("button", { name: "Print" }),
+  ]) {
+    await expect(part).toBeHidden();
+  }
+  await expect(brief).toBeVisible();
+  await expect(sources.last()).toBeVisible();
+  await expect(page.locator('main [data-dog="light"]')).toBeVisible();
+  await expect(page.locator('main [data-dog="dark"]')).toBeHidden();
+  // The light theme's ink (packages/brand/tokens.css).
+  await expect(brief).toHaveCSS("color", "rgb(29, 35, 41)");
+  const pdf = (await page.pdf()).toString("latin1");
+  expect(pdf.match(/\/Type\s*\/Page\b/g)).toHaveLength(1);
+  await page.emulateMedia({ media: "screen" });
+  await expect(brief).toHaveCSS("color", "rgb(228, 232, 236)");
 
   // The second scripted turn changes the record through the running chat.
   await page.getByRole("link", { name: "Chat with Rufi" }).click();
