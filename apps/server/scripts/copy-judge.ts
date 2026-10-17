@@ -37,7 +37,7 @@ type Verdict = (typeof VERDICTS)[number];
 
 const JUDGE_INSTRUCTIONS = `You check a copy of one page of a medical document against its answer key, for Rufi's tests. The data is fictional. Rufi's document reader wrote the copy: it is told to copy each page as Markdown, exactly as printed, and to mark what is unclear right where it is. The answer key is the same page, copied and checked by hand. You judge; you change nothing.
 
-Your tool: give_verdicts(rows, not_in_key) saves your verdicts. Call it once, when you have judged every row, then end with one short line.
+Your tool: give_verdicts(rows, not_in_key) saves your verdicts. Call it when you have judged every row; calling it again replaces all your verdicts. Then end with one short line.
 
 For each numbered row of the key, give one verdict:
 - same: the copy has the row with every cell as printed: the same values, signs, comparators, decimal marks, flags, units and ranges, each in its own column. The layout may differ: a Markdown or an HTML table, bold or not, other spacing, a dash written another way.
@@ -95,10 +95,19 @@ export interface Judged {
 
 /**
  * The judge's answer as one verdict for each row of the key: a row with no
- * verdict, or with verdicts that differ, is unsure; a number past the key
- * is left out.
+ * verdict, or with verdicts that differ, is unsure. A verdict for a row the
+ * key doesn't have fails the whole answer: code doesn't guess which row
+ * the judge meant.
  */
-export function readAnswer(key: KeyPage, answer: Answer): Judged {
+export function readAnswer(
+  key: KeyPage,
+  answer: Answer,
+): Judged | { failed: string } {
+  const unknown = answer.rows.filter((r) => r.row > key.rows.length);
+  if (unknown.length > 0)
+    return {
+      failed: `The judge gave verdicts for rows the key doesn't have: ${unknown.map((r) => `${String(r.row)} ${r.verdict}${r.why ? ` (${r.why})` : ""}`).join("; ")}.`,
+    };
   return {
     rows: key.rows.map((row, i) => {
       const given = answer.rows.filter((r) => r.row === i + 1);
@@ -155,7 +164,7 @@ function verdictTool(saved: (answer: Answer) => void): Tool {
   return defineTool({
     name: "give_verdicts",
     description:
-      "Save your verdicts for this copy: one for every numbered row of the key, and the values in the copy that the key doesn't have. Calling it again replaces them.",
+      "Save your verdicts for this copy: one for every numbered row of the key, and the values in the copy that the key doesn't have. Calling it again replaces all of them.",
     input: GiveVerdicts,
     callers: "model",
     readOnly: false,
@@ -217,9 +226,10 @@ export async function judgePage(
       onCompaction: () => undefined,
       deadlineMs: 10 * 60_000,
     });
-    if (answer === undefined)
+    // Only a turn that ended normally gives verdicts.
+    if (outcome.end.status !== "completed" || answer === undefined)
       return {
-        failed: `The judge gave no verdicts (${outcome.end.status}${outcome.end.text ? `: ${outcome.end.text}` : ""}).`,
+        failed: `The judge gave no verdicts (${outcome.end.status}${outcome.end.text ? `: ${outcome.end.text}` : ""}${answer === undefined ? "" : ", after it saved some"}).`,
       };
     return readAnswer(key, answer);
   } catch (error) {

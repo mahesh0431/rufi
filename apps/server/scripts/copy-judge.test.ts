@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { EXPECTED, KEY, type KeyPage } from "../tests/pack/copy-set.ts";
-import { readAnswer, tally, type Answer } from "./copy-judge.ts";
+import type { SubAgentOutcome } from "../src/agent/runtime.ts";
+import { mcpKeys } from "../src/server/mcp.ts";
+import {
+  judgePage,
+  readAnswer,
+  tally,
+  type Answer,
+  type Judged,
+} from "./copy-judge.ts";
 
 const page = (file: KeyPage["file"], n: number): KeyPage => {
   const found = KEY.find((p) => p.file === file && p.page === n);
@@ -23,10 +31,17 @@ const answer = (
   not_in_key: notInKey,
 });
 
+/** The answer read, for a test that expects it to hold. */
+const read = (key: KeyPage, given: Answer): Judged => {
+  const judged = readAnswer(key, given);
+  if ("failed" in judged) throw new Error(judged.failed);
+  return judged;
+};
+
 describe("the reader pack's reading of the judge's answer", () => {
   it("gives each row of the key its verdict, in the key's order, whatever order the judge gave them in", () => {
     const key = page("mixed", 3);
-    const judged = readAnswer(
+    const judged = read(
       key,
       answer(key, [
         { row: 2, verdict: "changed silently", why: "the name differs" },
@@ -42,13 +57,12 @@ describe("the reader pack's reading of the judge's answer", () => {
     });
   });
 
-  it("makes a row unsure when the judge gave it no verdict, or verdicts that differ, and leaves out a row past the key", () => {
+  it("makes a row unsure when the judge gave it no verdict, or verdicts that differ", () => {
     const key = page("mixed", 4);
-    const judged = readAnswer(key, {
+    const judged = read(key, {
       rows: [
         ...answer(key).rows.filter((r) => r.row !== 1),
         { row: 2, verdict: "changed silently", why: "a second copy differs" },
-        { row: 99, verdict: "same" },
       ],
       not_in_key: [],
     });
@@ -57,6 +71,82 @@ describe("the reader pack's reading of the judge's answer", () => {
     expect(judged.rows[1]).toMatchObject({ verdict: "unsure" });
     expect(judged.rows[1]?.why).toContain("a second copy differs");
     expect(judged.rows.slice(2).every((r) => r.verdict === "same")).toBe(true);
+  });
+
+  it("fails the whole answer when it gives a verdict for a row the key doesn't have, also when every known row is fine", () => {
+    const key = page("mixed", 1);
+    const given = answer(key);
+    given.rows.push({
+      row: 99,
+      verdict: "changed silently",
+      why: "The copy adds an unmarked Sodium row.",
+    });
+    const judged = readAnswer(key, given);
+    expect(judged).toEqual({
+      failed: expect.stringContaining("99") as unknown,
+    });
+    expect(tally([{ key, copy: key.hand, judged }])).toMatchObject({
+      same: 0,
+      unsure: key.rows.length,
+    });
+  });
+});
+
+describe("the reader pack's judge of a page", () => {
+  /** judgePage with a runner that saves `given` through the judge's tool, then ends as `end`. */
+  const judgeWith = async (
+    key: KeyPage,
+    given: Answer,
+    end: SubAgentOutcome["end"],
+  ) => {
+    const keys = mcpKeys();
+    return judgePage(
+      {
+        run: () => async (task) => {
+          const scope = keys.resolve(task.tools.key);
+          if (!scope) throw new Error("No scope");
+          const saved = await scope.call({
+            tool: "give_verdicts",
+            input: given,
+            callId: "call-1",
+            threadId: undefined,
+            turnId: undefined,
+          });
+          expect(saved.ok).toBe(true);
+          return { end, compactions: 0 };
+        },
+        mcp: { url: () => "http://127.0.0.1:1/mcp/judge", keys },
+        log: () => undefined,
+      },
+      key,
+      key.hand,
+    );
+  };
+
+  it("takes the verdicts of a turn that ended normally", async () => {
+    const key = page("mixed", 3);
+    const judged = await judgeWith(key, answer(key), { status: "completed" });
+    expect(tally([{ key, copy: key.hand, judged }])).toMatchObject({
+      same: key.rows.length,
+      unsure: 0,
+    });
+  });
+
+  it("counts every row unsure when the turn failed after the judge saved its verdicts", async () => {
+    const key = page("mixed", 1);
+    const judged = await judgeWith(key, answer(key), {
+      status: "failed",
+      reason: "timeout",
+      text: "The reading took too long, so Rufi stopped it.",
+    });
+    expect(judged).toEqual({
+      failed: expect.stringContaining("took too long") as unknown,
+    });
+    expect(tally([{ key, copy: key.hand, judged }])).toMatchObject({
+      same: 0,
+      unsure: key.rows.length,
+      silent: 0,
+    });
   });
 });
 
@@ -101,7 +191,7 @@ describe("the reader pack's totals of a set", () => {
       {
         key: first,
         copy: first.hand,
-        judged: readAnswer(first, answer(first)),
+        judged: read(first, answer(first)),
       },
       { key: second, copy: undefined },
       { key: third, copy: third.hand, judged: { failed: "no verdicts" } },
