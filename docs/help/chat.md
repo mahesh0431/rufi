@@ -38,6 +38,8 @@ Type in the box and press Enter, or click the send button. Shift-Enter starts a 
 
 When you send, Rufi takes your message into its queue and empties the box, in one step. While it does, the box says "Sending…" for a moment and you can't change it. Rufi sends the text in this box, also when another tab saved other text just before. Then the message goes to the AI: at once when nothing else runs, or in its turn (see [Waiting messages](#waiting-messages)). It shows in the chat when the AI starts on it.
 
+If you aren't signed in when you send, nothing goes to the AI and nothing waits: your text stays in the box, which says "You're signed out. Sign in with ChatGPT to chat." Click **Sign in** (see [Signing in with ChatGPT](signing-in.md)), then send again.
+
 If Rufi can't be reached when you send, your text stays in the box with the reason, also when you leave the chat or reload the page in this tab. Press Enter again: if Rufi did take the first one, it knows this is the same message and doesn't take it twice.
 
 Rufi never sends a message again by itself. If something goes wrong after Rufi took your message, the message shows above the box with the reason, and you choose: **Send** it (again) or **Remove** it.
@@ -232,7 +234,6 @@ The line above them says what happens next:
 A held message says why under it, and goes only when you click **Send** (or **Send again**) on it:
 
 - **"Not sure this reached the AI."** Rufi stopped, or the AI didn't answer, while Rufi gave it the message. The AI may have it. Check the chat before you send it again. After this, nothing more goes to the AI until you send a message.
-- **"You're signed out. Sign in, then Send."** Signing in alone sends nothing.
 - **"From a backup: it waited when the backup was made."** After a restore, nothing from the past goes to the AI by itself.
 - **The AI's reason**, when the AI couldn't take it, for example when none of your allowed models is offered.
 

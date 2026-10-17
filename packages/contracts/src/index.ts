@@ -10,6 +10,9 @@ import { Schema } from "effect";
  */
 export const MAX_MESSAGE_CHARS = 10_000;
 
+/** Why nothing goes to the AI without a sign-in; the box adds Sign in. */
+export const SIGNED_OUT = "You're signed out. Sign in with ChatGPT to chat.";
+
 const Text = (max: number) => Schema.String.check(Schema.isMaxLength(max));
 const Line = (max: number) =>
   Schema.String.check(
@@ -265,8 +268,8 @@ export const QueueItem = Schema.Struct({
   text: Schema.String,
   state: Schema.Literals(["waiting", "handing_over", "not_sure"]),
   /**
-   * Why a waiting row doesn't go by itself: paused (an event that rides
-   * with the person's next message), signed_out, restored (from a backup),
+   * Why a waiting row doesn't go by itself: paused or signed_out (an event
+   * that rides with the person's next message), restored (from a backup),
    * failed (the AI refused it; heldText says why).
    */
   held: Schema.NullOr(

@@ -3,7 +3,7 @@
 // be. Enter sends into Rufi's queue; while a reply runs the box says so, the
 // message waits, and Add to reply passes it into the reply instead. The box
 // clears only when the core took the message, and nothing is sent again by
-// itself.
+// itself. Signed out, the core takes nothing: the box says so, with Sign in.
 // The model and effort are chosen beside Send; what waits shows above the
 // box. Chips (references to documents, draft items and records) sit above
 // the text and go with it; a document's chip says what Rufi is doing with
@@ -15,14 +15,17 @@ import {
   MAX_MESSAGE_CHARS,
   MAX_REFS,
   type Person,
+  SIGNED_OUT,
   type QueueItem,
 } from "@rufi/contracts";
+import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowDown,
   ArrowUp,
   Check,
   CornerUpRight,
   LoaderCircle,
+  LogIn,
   type LucideProps,
   Pencil,
   RotateCw,
@@ -48,6 +51,7 @@ import { chatPath, type Live, messageOf } from "./live.ts";
 import { ReaderStrip } from "./reading.tsx";
 import { ModelMenu } from "./model-menu.tsx";
 import { usePanel } from "./panel.ts";
+import { useStatus } from "./reads.ts";
 import { isRunning } from "./transcript-state.ts";
 import { Button, IconButton } from "./ui.tsx";
 
@@ -86,6 +90,8 @@ export function Box({
   const refused = usePanel((state) => state.refused);
   const stateOf = useChipStates(person.id);
   const running = useStore(live, isRunning);
+  const account = useStatus().data?.account;
+  const navigate = useNavigate();
   const [problem, setProblem] = useState<string | null>(null);
   const long = tooLong(text);
   const many = tooMany(chips);
@@ -110,15 +116,19 @@ export function Box({
 
   const stop = () => act(() => request("POST", `${chatPath(person.id)}/stop`));
 
+  const told = refused ?? notice ?? problem;
   /**
    * Why the box can't keep, send or add what it should, in words; an add
-   * refused just now comes first.
+   * refused just now comes first. A send refused signed out is past once
+   * signed in.
    */
   const why = long
     ? `Too long to keep or send: at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters, and this is ${text.length.toLocaleString("en")}.`
     : many
       ? `Too many added to keep or send: at most ${String(MAX_REFS)}, and this has ${String(chips.length)}. Take some out.`
-      : (refused ?? notice ?? problem);
+      : told === SIGNED_OUT && account === "signed_in"
+        ? null
+        : told;
   /** In the pill, for the moment, in place of the text. */
   const reason = why ?? saved;
   const pill = useId();
@@ -305,8 +315,20 @@ export function Box({
             </p>
           )}
       {size !== "bar" && why !== null && (
-        <p role="alert" className="px-3.5 pb-2 text-muted">
+        <p
+          role="alert"
+          className="flex items-center gap-1.5 px-3.5 pb-2 text-muted"
+        >
           {why}
+          {why === SIGNED_OUT && (
+            <Button
+              look="quiet"
+              icon={LogIn}
+              onClick={() => void navigate({ to: "/sign-in" })}
+            >
+              Sign in
+            </Button>
+          )}
         </p>
       )}
     </form>
@@ -378,9 +400,10 @@ function whyHeld(item: QueueItem): string | null {
   switch (item.held) {
     case "paused":
     case "signed_out":
+      // A message an older Rufi held signed out says no more: Send or Remove.
       return item.origin === "rufi"
         ? "Goes to the AI with your next message."
-        : "You're signed out. Sign in, then Send.";
+        : null;
     case "restored":
       return "From a backup: it waited when the backup was made.";
     case "failed":
