@@ -5,7 +5,6 @@
 // writes entries, but the old ones are kept and shown as they are.
 import { Schema } from "effect";
 import type { Transaction } from "kysely";
-import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 import { Refusal } from "../tools/registry.ts";
 

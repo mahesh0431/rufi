@@ -15,6 +15,7 @@ import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 import { Refusal } from "../tools/registry.ts";
 import type { Checks, Entry, Run } from "./notebook.ts";
+import { documentName, ranges } from "./naming.ts";
 import { pagesOf, sortLine, sortNote } from "./sorting.ts";
 
 export interface Job {
@@ -90,28 +91,8 @@ const jobOf = (row: Tables["jobs"]): Job => ({
   startedAt: row.started_at,
 });
 
-/** A document's name for a person: its file, or "3 photos". */
-export function documentName(files: readonly string[]): string {
-  const distinct = [...new Set(files)];
-  if (distinct.length <= 1) return distinct[0] ?? "A document";
-  return `${String(distinct.length)} photos`;
-}
-
 const plural = (n: number, one: string, many = `${one}s`) =>
   `${String(n)} ${n === 1 ? one : many}`;
-
-/** Pages as "1–4, 6". */
-export function ranges(positions: readonly number[]): string {
-  const parts: [number, number][] = [];
-  for (const p of [...positions].sort((a, b) => a - b)) {
-    const last = parts.at(-1);
-    if (last && last[1] === p - 1) last[1] = p;
-    else parts.push([p, p]);
-  }
-  return parts
-    .map(([a, b]) => (a === b ? String(a) : `${String(a)}–${String(b)}`))
-    .join(", ");
-}
 
 export function readings(
   store: Store,

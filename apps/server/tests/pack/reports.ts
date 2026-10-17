@@ -793,35 +793,6 @@ export const REPORTS: Record<string, Report> = {
   },
 };
 
-const named = (name: string): Report => {
-  const found = REPORTS[name];
-  if (!found) throw new Error(`No report ${name}`);
-  return found;
-};
-
-/** The bundle: six reports of five dates in one 19-page PDF. */
-export const BUNDLE: Report[] = [
-  { ...named("cbc"), rows: rowsOf(40, 21), rowsPerPage: 14 },
-  {
-    ...named("lipids"),
-    rows: rowsOf(30, 22, { start: 14 }),
-    rowsPerPage: 10,
-  },
-  {
-    ...named("thyroid"),
-    rows: rowsOf(24, 23, { start: 30, previous: true }),
-    rowsPerPage: 8,
-  },
-  { ...named("urine"), rowsPerPage: 6 },
-  { ...named("liver_dense"), rows: rowsOf(60, 24), rowsPerPage: 20 },
-  {
-    ...named("cbc"),
-    number: "SD-260812-0442",
-    rows: rowsOf(48, 25, { start: 20 }),
-    rowsPerPage: 12,
-  },
-];
-
 /** A report's rows, page by page. */
 function paged(report: Report): Row[][] {
   const pages: Row[][] = [];
@@ -829,33 +800,6 @@ function paged(report: Report): Row[][] {
     pages.push(report.rows.slice(i, i + report.rowsPerPage));
   }
   return pages;
-}
-
-/** The answer key for a document made of these reports, in order. */
-export function expected(reports: readonly Report[]): {
-  items: Expected[];
-  pages: { patient: string; collectedIso: string | null }[];
-} {
-  const items: Expected[] = [];
-  const pages: { patient: string; collectedIso: string | null }[] = [];
-  for (const report of reports) {
-    for (const rows of paged(report)) {
-      pages.push({
-        patient: report.patient,
-        collectedIso: report.collectedIso,
-      });
-      const page = pages.length;
-      for (const row of rows)
-        items.push({
-          page,
-          test: row.test,
-          value: row.value,
-          number: row.number,
-          ...(row.comparator !== undefined && { comparator: row.comparator }),
-        });
-    }
-  }
-  return { items, pages };
 }
 
 /** A report laid out as printed pages of text. */

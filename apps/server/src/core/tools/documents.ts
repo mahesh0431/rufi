@@ -8,10 +8,10 @@
 // Rufi's choice; the AI names only a document of theirs and a page.
 import type { DraftItem } from "@rufi/contracts/documents";
 import { Schema } from "effect";
-import { DELETED_DOCUMENT } from "../documents/delete.ts";
+import { DELETED_DOCUMENT, ranges } from "../documents/naming.ts";
 import { readerValues } from "../documents/items.ts";
 import type { Entry } from "../documents/notebook.ts";
-import { ranges, readings } from "../documents/reading.ts";
+import { readings } from "../documents/reading.ts";
 import {
   addOf,
   documentsOf,

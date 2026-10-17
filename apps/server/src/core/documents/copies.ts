@@ -13,7 +13,7 @@ import { Schema } from "effect";
 import type { Store } from "../store/database.ts";
 import { Refusal } from "../tools/registry.ts";
 import { mayWrite, stillRunning, type Run } from "./notebook.ts";
-import { ranges } from "./reading.ts";
+import { ranges } from "./naming.ts";
 
 /** What the reader saves for a page: how the copy went, and the copy. */
 export const PageCopy = {

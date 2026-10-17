@@ -1,7 +1,7 @@
 // The skills as shipped: each file names itself, and the words Rufi says the
 // same everywhere stay the same in them.
 import { describe, expect, it } from "vitest";
-import { DELETED_DOCUMENT } from "../documents/delete.ts";
+import { DELETED_DOCUMENT } from "../documents/naming.ts";
 import { SKILLS } from "./skills.ts";
 
 describe("Rufi's skills", () => {

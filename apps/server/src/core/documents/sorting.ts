@@ -22,7 +22,7 @@ import { addRow } from "../chat/queue.ts";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 import { Refusal, type Issue } from "../tools/registry.ts";
-import { documentName, ranges } from "./reading.ts";
+import { documentName, ranges } from "./naming.ts";
 
 type Trx = Transaction<Tables>;
 type Db = Kysely<Tables> | Trx;
@@ -241,13 +241,6 @@ interface AddPage {
     | { jobId: string; outcome: string; text: string; sorted: boolean }
     | undefined;
 }
-
-const KIND_WORDS = {
-  lab_report: "lab report",
-  prescription: "prescription",
-  letter: "letter",
-  other: "document",
-} as const;
 
 /** The add a document belongs to: the document as added. */
 export async function addOf(
@@ -593,7 +586,7 @@ export function sorting(
       const waiting = notSorted(pages);
       const problems: Issue[] = [];
       const problem = (path: string, got: unknown, fix: string) =>
-        problems.push({ path, got: JSON.stringify(got) ?? "", fix });
+        problems.push({ path, got: JSON.stringify(got), fix });
 
       // Every page named once, of this add.
       const named = new Map<number, number>();
@@ -1249,7 +1242,7 @@ export function sorting(
 export type Sorting = ReturnType<typeof sorting>;
 
 /** "pages 1–2 of 5", "page 5 of 5", or "" for a document that is its whole add. */
-export function pagesWords(positions: readonly number[], of: number): string {
+function pagesWords(positions: readonly number[], of: number): string {
   if (positions.length === of) return "";
   return `${positions.length === 1 ? "page" : "pages"} ${ranges(positions)} of ${String(of)}`;
 }
@@ -1282,5 +1275,3 @@ export function sortLine(about: {
   ];
   return `${parts.join(" · ")}. Rufi AI is sorting it.`;
 }
-
-export { KIND_WORDS };

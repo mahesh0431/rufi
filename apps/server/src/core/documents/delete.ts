@@ -19,7 +19,7 @@ import type { Tables } from "../store/tables.ts";
 import { Refusal } from "../tools/registry.ts";
 import type { FileGate } from "./gate.ts";
 import { removeBytes, sweepBytes } from "./originals.ts";
-import { documentName } from "./reading.ts";
+import { DELETED_DOCUMENT, documentName } from "./naming.ts";
 import { addOf, documentsOf, notSorted, pagesOf } from "./sorting.ts";
 
 type Db = Kysely<Tables> | Transaction<Tables>;
@@ -39,13 +39,6 @@ export class NoChoice extends Error {
     super("Choose whether the results saved from it stay or go.");
   }
 }
-
-/**
- * What the AI is told of a deleted document, wherever it meets one: its
- * instructions, its reads and a deleted chip. The same words everywhere.
- */
-export const DELETED_DOCUMENT =
-  "Its pages are unavailable: don't use or quote anything you read from them before, also when the user asks. Records saved from it are facts like any other until the user removes them: read them with get_records, as they are now, and say the original was deleted. A deleted file doesn't mean its records are wrong.";
 
 /** What the delete writes its Rufi event with: the chat's own (server/chat.ts). */
 export type WriteEvent = (
