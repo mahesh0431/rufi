@@ -835,6 +835,18 @@ test("the AI's memory: a compaction shows while it runs, then as done; the meter
     waiting.getByRole("button", { name: "New thread" }),
   ).toBeVisible();
   await expect(waiting).toContainText(why);
+  // The thread opens for a later message: while its reply runs, New thread
+  // doesn't show, so that reply keeps its thread.
+  await send(page, "hang");
+  const stop = chat(page).getByRole("button", { name: "Stop" });
+  await expect(stop).toBeVisible();
+  await expect(
+    waiting.getByRole("button", { name: "Try again" }),
+  ).toBeVisible();
+  await expect(waiting.getByRole("button", { name: "New thread" })).toHaveCount(
+    0,
+  );
+  await stop.click();
   await waiting.getByRole("button", { name: "New thread" }).click();
   await expect(log(chat(page)).locator(".reply").last()).toHaveText("ok:Again");
   await expect(quiet("New thread started")).toHaveCount(1);

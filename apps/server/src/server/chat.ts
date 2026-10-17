@@ -772,7 +772,9 @@ export function chat(deps: ChatDeps) {
         await mustBeSignedIn();
         await inLane(chat, async (fresh) => {
           const newThread = choice === "new_thread";
-          if (newThread && !(await idle(fresh))) {
+          // Never while a reply runs: it would lose that reply's thread. The
+          // hold stays, and the screens read the queue again.
+          if (newThread && (await busy(fresh))) {
             queue.changed(fresh.id);
             return;
           }
@@ -845,22 +847,22 @@ export function chat(deps: ChatDeps) {
     },
   };
 
-  /**
-   * Whether no reply runs or is starting; what the thread did is saved
-   * first. With `what`, a busy chat refuses the change with its reason.
-   */
-  async function idle(chat: ChatRow, what?: string): Promise<boolean> {
+  /** Whether a reply runs or is starting; what the thread did is saved first. */
+  async function busy(chat: ChatRow): Promise<boolean> {
     const threadId = threadOf(chat);
     await saving;
     const { items } = await queue.list(chat);
-    if (
+    return (
       (threadId !== null && agent.running(threadId)) ||
       items.some((item) => item.state === "handing_over")
-    ) {
-      if (what === undefined) return false;
+    );
+  }
+
+  /** Refuses to change `what` while a reply runs or is starting. */
+  async function idle(chat: ChatRow, what: string): Promise<void> {
+    if (await busy(chat)) {
       throw new ChatRefusal(`Stop the reply before changing ${what}.`);
     }
-    return true;
   }
 
   async function offered(): Promise<Model[]> {

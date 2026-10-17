@@ -587,15 +587,18 @@ function QueueView({
                       >
                         Try again
                       </Button>
-                      <Button
-                        look="quiet"
-                        icon={MessageSquarePlus}
-                        onClick={() => {
-                          recover(item, hold, "new_thread");
-                        }}
-                      >
-                        New thread
-                      </Button>
+                      {/* Not while a reply runs: its thread stays. */}
+                      {!running && (
+                        <Button
+                          look="quiet"
+                          icon={MessageSquarePlus}
+                          onClick={() => {
+                            recover(item, hold, "new_thread");
+                          }}
+                        >
+                          New thread
+                        </Button>
+                      )}
                     </>
                   ) : (
                     (item.state === "not_sure" || (isWaiting && !free)) && (
