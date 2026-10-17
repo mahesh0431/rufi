@@ -7,9 +7,6 @@
 // copied, which weren't (all their rows missed), and the count of each
 // verdict. A row the judge leaves out, or gives two verdicts, is unsure: a
 // person looks at it, and it never counts as fine.
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { Schema } from "effect";
 import type { RunSubAgent } from "../src/agent/runtime.ts";
 import {
@@ -21,6 +18,7 @@ import {
 import type { Log } from "../src/platform/logs.ts";
 import type { McpKeys } from "../src/server/mcp.ts";
 import type { KeyPage } from "../tests/pack/copy-set.ts";
+import { onScratch } from "./live-run.ts";
 
 /** The judge's model and effort: a judgement, so the reader's model at high. */
 export const JUDGE = { model: "gpt-6.1-sol", effort: "high" } as const;
@@ -217,21 +215,30 @@ export async function judgePage(
     call: ({ tool: name, input, callId }) => call(name, input, callId),
   });
   try {
-    const home = await mkdtemp(join(tmpdir(), "rufi-judge-"));
-    const outcome = await deps.run(home)({
-      ...JUDGE,
-      instructions: JUDGE_INSTRUCTIONS,
-      input: judgeInput(key, copy),
-      tools: { url: deps.mcp.url(), key: mcpKey, names: [tool.name] },
-      onCompaction: () => undefined,
-      deadlineMs: 10 * 60_000,
-    });
-    // Only a turn that ended normally gives verdicts.
-    if (outcome.end.status !== "completed" || answer === undefined)
-      return {
-        failed: `The judge gave no verdicts (${outcome.end.status}${outcome.end.text ? `: ${outcome.end.text}` : ""}${answer === undefined ? "" : ", after it saved some"}).`,
-      };
-    return readAnswer(key, answer);
+    const { result: judged, kept } = await onScratch(
+      "rufi-judge-",
+      async (home): Promise<Judged | { failed: string }> => {
+        const outcome = await deps.run(home)({
+          ...JUDGE,
+          instructions: JUDGE_INSTRUCTIONS,
+          input: judgeInput(key, copy),
+          tools: { url: deps.mcp.url(), key: mcpKey, names: [tool.name] },
+          onCompaction: () => undefined,
+          deadlineMs: 10 * 60_000,
+        });
+        // Only a turn that ended normally gives verdicts.
+        if (outcome.end.status !== "completed" || answer === undefined)
+          return {
+            failed: `The judge gave no verdicts (${outcome.end.status}${outcome.end.text ? `: ${outcome.end.text}` : ""}${answer === undefined ? "" : ", after it saved some"}).`,
+          };
+        return readAnswer(key, answer);
+      },
+      (judged) => !("failed" in judged),
+    );
+    // The judge's data folder stays, named, when it gave no usable verdicts.
+    return "failed" in judged && kept !== undefined
+      ? { failed: `${judged.failed} Its data folder: ${kept}` }
+      : judged;
   } catch (error) {
     return {
       failed: `The judge didn't run: ${error instanceof Error ? error.message : String(error)}`,
