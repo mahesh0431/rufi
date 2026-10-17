@@ -772,6 +772,10 @@ export function chat(deps: ChatDeps) {
         await mustBeSignedIn();
         await inLane(chat, async (fresh) => {
           const newThread = choice === "new_thread";
+          if (newThread && !(await idle(fresh))) {
+            queue.changed(fresh.id);
+            return;
+          }
           await refused(() => queue.recover(fresh, id, hold, newThread));
           // The old thread's key opens nothing any more.
           const old = fresh.threadId;
@@ -842,10 +846,10 @@ export function chat(deps: ChatDeps) {
   };
 
   /**
-   * Refuses to change `what` while a reply runs or is starting; what the
-   * thread did is saved first.
+   * Whether no reply runs or is starting; what the thread did is saved
+   * first. With `what`, a busy chat refuses the change with its reason.
    */
-  async function idle(chat: ChatRow, what: string): Promise<void> {
+  async function idle(chat: ChatRow, what?: string): Promise<boolean> {
     const threadId = threadOf(chat);
     await saving;
     const { items } = await queue.list(chat);
@@ -853,8 +857,10 @@ export function chat(deps: ChatDeps) {
       (threadId !== null && agent.running(threadId)) ||
       items.some((item) => item.state === "handing_over")
     ) {
+      if (what === undefined) return false;
       throw new ChatRefusal(`Stop the reply before changing ${what}.`);
     }
+    return true;
   }
 
   async function offered(): Promise<Model[]> {

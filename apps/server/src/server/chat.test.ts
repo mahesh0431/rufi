@@ -2364,6 +2364,58 @@ describe("When the AI's thread doesn't open", () => {
     expect(threadsUsed()).toBe(1);
   });
 
+  it("keeps an open-error hold and the current thread when New thread meets another running reply, then recovers once after Stop", async () => {
+    const thread = await afterOneReply({ resumeFails: 1 });
+    await say(await chatRow(), "held message");
+    const item = await held();
+
+    // A later message opens the same thread once the transient error passes.
+    await say(await chatRow(), "partial");
+    await until(async () =>
+      (await transcript("c-asha")).entries.some(
+        ([kind, text]) => kind === "reply" && text === "ok:part",
+      ),
+    );
+    const before = await queue.list(await chatRow());
+    await chat?.queue.recover(
+      await chatRow(),
+      item.id,
+      item.holdId,
+      "new_thread",
+    );
+    expect(await queue.list(await chatRow())).toEqual(before);
+    expect((await chatRow()).threadId).toBe(thread);
+    expect(
+      (await transcript("c-asha")).turns.map((turn) => turn.status),
+    ).toEqual(["completed", "running"]);
+
+    // Stop still reaches that reply; the same hold can then be recovered.
+    await chat?.stop(await chatRow());
+    await ended("c-asha", 2);
+    await chat?.queue.recover(
+      await chatRow(),
+      item.id,
+      item.holdId,
+      "new_thread",
+    );
+    await ended("c-asha", 3);
+    await expect(
+      chat?.queue.recover(await chatRow(), item.id, item.holdId, "new_thread"),
+    ).rejects.toThrow("The waiting messages changed meanwhile.");
+    const { entries, turns } = await transcript("c-asha");
+    expect(
+      entries.filter(([kind]) => kind === "message").map(([, text]) => text),
+    ).toEqual(["first", "partial", "held message"]);
+    expect(turns.map((turn) => [turn.status, turn.newThread])).toEqual([
+      ["completed", false],
+      ["interrupted", false],
+      ["completed", true],
+    ]);
+    expect((await chatRow()).threadId).not.toBe(thread);
+    expect((await queue.list(await chatRow())).items).toEqual([]);
+    expect(threadsUsed()).toBe(2);
+  });
+
   it("after New thread, a restart before the message went keeps it waiting once, and the next send starts the new thread", async () => {
     const thread = await afterOneReply({ resumeFails: 5 });
     await say(await chatRow(), "second");
