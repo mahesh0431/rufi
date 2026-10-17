@@ -249,6 +249,7 @@ const SPLIT = {
     document: "$document",
     documents: [
       {
+        id: "$document",
         pages: [1],
         kind: "lab_report",
         date: "2026-08-12",

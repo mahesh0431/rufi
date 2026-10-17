@@ -735,7 +735,7 @@ describe("a document Rufi AI split from an add", () => {
       {
         document: "pile",
         documents: [
-          { pages: [1], kind: "lab_report" },
+          { id: "pile", pages: [1], kind: "lab_report" },
           { pages: [2], kind: "lab_report" },
         ],
         drafts: [

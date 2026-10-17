@@ -1757,6 +1757,13 @@
             "items": {
               "type": "object",
               "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "description": "Which of the add's documents this is (its id from get_documents; the add's own id for its first document), each named once. Leave it out to make a new document, such as a page read again that is a paper of its own."
+                },
                 "pages": {
                   "type": "array",
                   "items": {
@@ -1765,7 +1772,7 @@
                   },
                   "minItems": 1,
                   "maxItems": 1000,
-                  "description": "Its pages, by their number in the add (as get_documents gives them)."
+                  "description": "The pages it gets, by their number in the add (as get_documents gives them). A named document keeps the pages it has that you don't give elsewhere."
                 },
                 "kind": {
                   "type": "string",
@@ -1774,28 +1781,28 @@
                     "prescription",
                     "letter",
                     "other"
-                  ]
+                  ],
+                  "description": "Its kind: needed for a new document; for a named one, left out it stays as it is."
                 },
                 "date": {
                   "type": "string",
-                  "description": "Its date at the precision known (YYYY-MM-DD, YYYY-MM or YYYY): a report's collection date, a prescription's or letter's own date. Leave it out when none is printed."
+                  "description": "Its date at the precision known (YYYY-MM-DD, YYYY-MM or YYYY): a report's collection date, a prescription's or letter's own date. Leave it out when none is printed, or to keep a named document's."
                 },
                 "lab": {
                   "type": "string",
-                  "description": "A report's lab or clinic, exactly as printed.",
+                  "description": "A report's lab or clinic (left out, a named document keeps its own), exactly as printed.",
                   "minLength": 1,
                   "maxLength": 200
                 },
                 "report_number": {
                   "type": "string",
-                  "description": "A report's number, exactly as printed.",
+                  "description": "A report's number (left out, a named document keeps its own), exactly as printed.",
                   "minLength": 1,
                   "maxLength": 200
                 }
               },
               "required": [
-                "pages",
-                "kind"
+                "pages"
               ],
               "additionalProperties": false
             },

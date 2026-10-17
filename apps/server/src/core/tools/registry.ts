@@ -111,6 +111,8 @@ export interface ToolAnswer {
   /** Images the model sees after the text, in base64. Never stored. */
   images?: readonly { mimeType: string; data: string }[];
   stopTurn?: string;
+  /** Kept already, with what the call changed: the chat keeps it no more. */
+  kept?: true;
 }
 
 /** A tool as an agent is told about it. */

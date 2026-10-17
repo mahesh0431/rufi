@@ -145,6 +145,12 @@ async function read(
   pages: Record<number, Entry> = PAGES,
   documentId = "doc-asha-aug",
 ) {
+  const sorted = await call("sort_documents", copied(pages, documentId));
+  expect(sorted.ok, JSON.stringify(sorted)).toBe(true);
+}
+
+/** The reader's copies of these pages, and the sort Rufi AI would call. */
+function copied(pages: Record<number, Entry>, documentId: string) {
   const jobId = `job-${documentId}`;
   const targets = Object.keys(pages).map(Number);
   store.db
@@ -186,10 +192,11 @@ async function read(
   );
   const issuer = facts.find((f) => f.issuer)?.issuer;
   const number = facts.find((f) => f.report_number)?.report_number;
-  const sorted = await call("sort_documents", {
+  return {
     document: documentId,
     documents: [
       {
+        id: documentId,
         pages: targets,
         kind: facts.find((f) => f.kind)?.kind ?? "lab_report",
         ...(dated?.iso !== undefined && { date: dated.iso }),
@@ -198,8 +205,7 @@ async function read(
       },
     ],
     drafts,
-  });
-  expect(sorted.ok, JSON.stringify(sorted)).toBe(true);
+  };
 }
 
 /**
@@ -304,9 +310,13 @@ async function call(
     () => undefined,
     undefined,
     undefined,
-    (scope, sort) => sorting(store, () => SUNDAY_10AM).sort(scope, sort),
+    { run: sorting(store, () => SUNDAY_10AM).sort, done: () => undefined },
   )(chat, "t-1", origin)(tool, input, callId);
-  return JSON.parse(answer.text) as {
+  return {
+    ...(JSON.parse(answer.text) as object),
+    kept: answer.kept,
+  } as {
+    kept?: true;
     ok: boolean;
     result: {
       receipt?: string;
@@ -1361,6 +1371,96 @@ describe("saving draft items", () => {
     expect(one("SELECT removed FROM results WHERE id = ?", id)).toEqual({
       removed: 1,
     });
+  });
+});
+
+describe("a sort again", () => {
+  it("keeps the lab, number and date it leaves out: a later save from the same report lands in the same report", async () => {
+    await read();
+    const save = async (item: string) => {
+      const saved = await call("save_changes", {
+        items: [{ item, version: 1, as: "new", category: "lab" }],
+      });
+      expect(saved.ok, JSON.stringify(saved)).toBe(true);
+      return saved.result.changes[0]?.id ?? "";
+    };
+    await say("Save the HbA1c");
+    const hba1c = await save(drafts()["HbA1c"] ?? "");
+    // Page 2 sorted again into its document, naming nothing else of it.
+    const again = await call("sort_documents", {
+      document: "doc-asha-aug",
+      documents: [{ id: "doc-asha-aug", pages: [2] }],
+      drafts: [
+        {
+          page: 2,
+          test_name: "LDL cholesterol",
+          value_text: "142",
+          unit: "mg/dL",
+          date: COLLECTED,
+          quote: "LDL cholesterol 142",
+        },
+      ],
+    });
+    expect(again.ok, JSON.stringify(again)).toBe(true);
+    await say("Save the LDL too");
+    const ldl = await save(drafts()["LDL cholesterol"] ?? "");
+    const report = (id: string) =>
+      rows(
+        "SELECT p.id, p.issuer, p.report_number, p.collected FROM results r JOIN reports p ON p.person_id = r.person_id AND p.id = r.report_id WHERE r.id = ?",
+        id,
+      );
+    expect(report(hba1c)).toEqual([
+      {
+        id: expect.any(String) as string,
+        issuer: "Sunrise Labs",
+        report_number: "SL-1042",
+        collected: "2026-08-12",
+      },
+    ]);
+    expect(report(ldl)).toEqual(report(hba1c));
+  });
+});
+
+describe("a sort's trace", () => {
+  it("is kept with the sort, in its transaction: when it can't be kept, nothing is sorted", async () => {
+    const input = copied(PAGES, "doc-asha-aug");
+    const before = rows("SELECT * FROM documents WHERE id = 'doc-asha-aug'");
+    store.db.exec(
+      "CREATE TRIGGER no_trace BEFORE INSERT ON tool_calls BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+    );
+    const failed = await call("sort_documents", input, "person", "call-sort");
+    expect(failed.ok).toBe(false);
+    expect(rows("SELECT * FROM documents WHERE id = 'doc-asha-aug'")).toEqual(
+      before,
+    );
+    expect(drafts()).toEqual({});
+    expect(rows("SELECT id FROM sort_requests")).toEqual([]);
+    expect(
+      rows("SELECT sorted_at FROM jobs WHERE id = 'job-doc-asha-aug'"),
+    ).toEqual([{ sorted_at: null }]);
+
+    store.db.exec("DROP TRIGGER no_trace");
+    const { kept: given, ...sorted } = await call(
+      "sort_documents",
+      input,
+      "person",
+      "call-sort",
+    );
+    expect(sorted.ok).toBe(true);
+    // Kept with the sort, exactly as the AI gets it: the chat keeps it no
+    // more.
+    expect(given).toBe(true);
+    const kept = rows(
+      "SELECT tool, input, answer, ok FROM tool_calls WHERE call_id = 'call-sort'",
+    );
+    expect(kept).toEqual([
+      {
+        tool: "sort_documents",
+        input: JSON.stringify(input),
+        answer: JSON.stringify(sorted),
+        ok: 1,
+      },
+    ]);
   });
 });
 

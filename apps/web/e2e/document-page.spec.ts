@@ -52,6 +52,7 @@ const SORT = {
           document: "$document",
           documents: [
             {
+              id: "$document",
               pages: [1, 2],
               kind: "lab_report",
               date: "2026-08-12",

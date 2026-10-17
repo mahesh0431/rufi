@@ -63,21 +63,38 @@ const PrintedDate = Schema.Struct({
 
 /** One document of the add, as Rufi AI sorts it. */
 const SortedDocument = Schema.Struct({
+  id: Schema.optionalKey(
+    Id.annotate({
+      description:
+        "Which of the add's documents this is (its id from get_documents; the add's own id for its first document), each named once. Leave it out to make a new document, such as a page read again that is a paper of its own.",
+    }),
+  ),
   pages: Schema.Array(Page)
     .check(Schema.isMinLength(1), Schema.isMaxLength(1_000))
     .annotate({
       description:
-        "Its pages, by their number in the add (as get_documents gives them).",
+        "The pages it gets, by their number in the add (as get_documents gives them). A named document keeps the pages it has that you don't give elsewhere.",
     }),
-  kind: Schema.Literals(["lab_report", "prescription", "letter", "other"]),
+  kind: Schema.optionalKey(
+    Schema.Literals(["lab_report", "prescription", "letter", "other"]).annotate(
+      {
+        description:
+          "Its kind: needed for a new document; for a named one, left out it stays as it is.",
+      },
+    ),
+  ),
   date: Schema.optionalKey(
     PrecisionDate.annotate({
       description:
-        "Its date at the precision known (YYYY-MM-DD, YYYY-MM or YYYY): a report's collection date, a prescription's or letter's own date. Leave it out when none is printed.",
+        "Its date at the precision known (YYYY-MM-DD, YYYY-MM or YYYY): a report's collection date, a prescription's or letter's own date. Leave it out when none is printed, or to keep a named document's.",
     }),
   ),
-  lab: Printed("A report's lab or clinic"),
-  report_number: Printed("A report's number"),
+  lab: Printed(
+    "A report's lab or clinic (left out, a named document keeps its own)",
+  ),
+  report_number: Printed(
+    "A report's number (left out, a named document keeps its own)",
+  ),
 });
 
 /** One draft: a current result or a measurement, as printed on its page. */
@@ -544,409 +561,474 @@ export function sorting(
   const sort = async (
     scope: SortScope,
     input: SortInput,
+    within?: Trx,
   ): Promise<SortAnswer> =>
-    db.transaction().execute(async (trx) => {
-      const { personId } = scope;
-      const earlier = await trx
-        .selectFrom("sort_requests")
-        .select("answer")
-        .where("person_id", "=", personId)
-        .where("call_id", "=", scope.callId)
-        .executeTakeFirst();
-      if (earlier?.answer) return JSON.parse(earlier.answer) as SortAnswer;
+    within
+      ? sortIn(within, scope, input)
+      : db.transaction().execute((trx) => sortIn(trx, scope, input));
 
-      // Pages move between documents below; their drafts move with them in
-      // the same transaction, and the links are checked at its end.
-      await sql`PRAGMA defer_foreign_keys = ON`.execute(trx);
+  const sortIn = async (
+    trx: Trx,
+    scope: SortScope,
+    input: SortInput,
+  ): Promise<SortAnswer> => {
+    const { personId } = scope;
+    const earlier = await trx
+      .selectFrom("sort_requests")
+      .select("answer")
+      .where("person_id", "=", personId)
+      .where("call_id", "=", scope.callId)
+      .executeTakeFirst();
+    if (earlier?.answer) return JSON.parse(earlier.answer) as SortAnswer;
 
-      const add = await addOf(trx, personId, input.document);
-      const given = await trx
-        .selectFrom("documents")
-        .select("deleted_at")
-        .where("person_id", "=", personId)
-        .where("id", "=", input.document)
-        .executeTakeFirst();
-      if (!add || given?.deleted_at !== null) {
-        throw new Refusal(
-          "There is no such document for this person: read the list with get_documents for its id.",
-        );
-      }
-      const reading = await trx
-        .selectFrom("jobs as j")
-        .innerJoin("documents as d", (join) =>
-          join
-            .onRef("d.person_id", "=", "j.person_id")
-            .onRef("d.id", "=", "j.document_id"),
-        )
-        .select("j.id")
-        .where("j.person_id", "=", personId)
-        .where("j.state", "in", ["queued", "running"])
-        .where((eb) =>
-          eb.or([eb("d.id", "=", add.id), eb("d.from_document", "=", add.id)]),
-        )
-        .executeTakeFirst();
-      if (reading) {
-        throw new Refusal(
-          "The reader is reading pages of this add now. Sort it once its reading has ended: Rufi asks you then.",
-        );
-      }
-      const turn = await requestOfTurn(trx, scope);
-      if (turn.origin === "rufi") {
-        if (turn.request?.documentId !== add.id) {
-          throw new Refusal(
-            "This turn was started by Rufi, not by the user, and it isn't the sort of this add, so nothing can be sorted in it. Explain or ask; the user asks in a message of their own.",
-          );
-        }
-      }
+    // Pages move between documents below; their drafts move with them in
+    // the same transaction, and the links are checked at its end.
+    await sql`PRAGMA defer_foreign_keys = ON`.execute(trx);
 
-      const documents = await documentsOf(trx, personId, add.id);
-      const pages = await pagesOf(
-        trx,
-        personId,
-        documents.map((d) => d.id),
+    const add = await addOf(trx, personId, input.document);
+    const given = await trx
+      .selectFrom("documents")
+      .select("deleted_at")
+      .where("person_id", "=", personId)
+      .where("id", "=", input.document)
+      .executeTakeFirst();
+    if (!add || given?.deleted_at !== null) {
+      throw new Refusal(
+        "There is no such document for this person: read the list with get_documents for its id.",
       );
-      const waiting = notSorted(pages);
-      const problems: Issue[] = [];
-      const problem = (path: string, got: unknown, fix: string) =>
-        problems.push({ path, got: JSON.stringify(got), fix });
-
-      // Every page named once, of this add.
-      const named = new Map<number, number>();
-      for (const [index, group] of input.documents.entries()) {
-        for (const page of group.pages) {
-          const at = `documents.${String(index)}.pages`;
-          if (!pages.some((p) => p.position === page)) {
-            problem(
-              at,
-              page,
-              `This add has no page ${String(page)}; its pages are ${ranges(pages.map((p) => p.position))}.`,
-            );
-          } else if (named.has(page)) {
-            problem(
-              at,
-              page,
-              `documents.${String(named.get(page))} already holds page ${String(page)}: every page goes in one document.`,
-            );
-          } else named.set(page, index);
-        }
+    }
+    const reading = await trx
+      .selectFrom("jobs as j")
+      .innerJoin("documents as d", (join) =>
+        join
+          .onRef("d.person_id", "=", "j.person_id")
+          .onRef("d.id", "=", "j.document_id"),
+      )
+      .select("j.id")
+      .where("j.person_id", "=", personId)
+      .where("j.state", "in", ["queued", "running"])
+      .where((eb) =>
+        eb.or([eb("d.id", "=", add.id), eb("d.from_document", "=", add.id)]),
+      )
+      .executeTakeFirst();
+    if (reading) {
+      throw new Refusal(
+        "The reader is reading pages of this add now. Sort it once its reading has ended: Rufi asks you then.",
+      );
+    }
+    const turn = await requestOfTurn(trx, scope);
+    if (turn.origin === "rufi") {
+      if (turn.request?.documentId !== add.id) {
+        throw new Refusal(
+          "This turn was started by Rufi, not by the user, and it isn't the sort of this add, so nothing can be sorted in it. Explain or ask; the user asks in a message of their own.",
+        );
       }
-      const left = waiting.filter((p) => !named.has(p.position));
-      if (left.length > 0) {
+    }
+
+    const documents = await documentsOf(trx, personId, add.id);
+    const pages = await pagesOf(
+      trx,
+      personId,
+      documents.map((d) => d.id),
+    );
+    const waiting = notSorted(pages);
+    const problems: Issue[] = [];
+    const problem = (path: string, got: unknown, fix: string) =>
+      problems.push({ path, got: JSON.stringify(got), fix });
+
+    // Every page named once, of this add.
+    const named = new Map<number, number>();
+    for (const [index, group] of input.documents.entries()) {
+      for (const page of group.pages) {
+        const at = `documents.${String(index)}.pages`;
+        if (!pages.some((p) => p.position === page)) {
+          problem(
+            at,
+            page,
+            `This add has no page ${String(page)}; its pages are ${ranges(pages.map((p) => p.position))}.`,
+          );
+        } else if (named.has(page)) {
+          problem(
+            at,
+            page,
+            `documents.${String(named.get(page))} already holds page ${String(page)}: every page goes in one document.`,
+          );
+        } else named.set(page, index);
+      }
+    }
+    const left = waiting.filter((p) => !named.has(p.position));
+    if (left.length > 0) {
+      problem(
+        "documents",
+        ranges(left.map((p) => p.position)),
+        `Pages ${ranges(left.map((p) => p.position))} aren't sorted yet: put each of them in one of the documents too.`,
+      );
+    }
+    if (turn.origin === "rufi") {
+      const placed = [...named.keys()].filter(
+        (page) => !waiting.some((p) => p.position === page),
+      );
+      if (placed.length > 0) {
         problem(
           "documents",
-          ranges(left.map((p) => p.position)),
-          `Pages ${ranges(left.map((p) => p.position))} aren't sorted yet: put each of them in one of the documents too.`,
+          ranges(placed),
+          `Pages ${ranges(placed)} were sorted before. In a turn Rufi started you sort only the pages not sorted yet; the user can ask you to change the others.`,
         );
       }
-      if (turn.origin === "rufi") {
-        const placed = [...named.keys()].filter(
-          (page) => !waiting.some((p) => p.position === page),
+    }
+    if (waiting.length === 0 && named.size === 0) {
+      throw new Refusal("Nothing in this add is left to sort.");
+    }
+
+    // Each group is the document it names, or a new one.
+    const holder = new Map(pages.map((p) => [p.position, p.documentId]));
+    const claimed = new Map<string, number>();
+    for (const [index, group] of input.documents.entries()) {
+      const at = `documents.${String(index)}`;
+      if (group.id === undefined) {
+        if (group.kind === undefined) {
+          problem(
+            `${at}.kind`,
+            undefined,
+            "A new document needs its kind. To add these pages to one of the add's documents, give its id instead.",
+          );
+        }
+        continue;
+      }
+      const document = documents.find((d) => d.id === group.id);
+      if (!document) {
+        problem(
+          `${at}.id`,
+          group.id,
+          `This add has no document with this id; its documents are ${documents.map((d) => d.id).join(", ")}. Leave id out to make a new document.`,
         );
-        if (placed.length > 0) {
-          problem(
-            "documents",
-            ranges(placed),
-            `Pages ${ranges(placed)} were sorted before. In a turn Rufi started you sort only the pages not sorted yet; the user can ask you to change the others.`,
-          );
-        }
+        continue;
       }
-      if (waiting.length === 0 && named.size === 0) {
-        throw new Refusal("Nothing in this add is left to sort.");
+      const twice = claimed.get(group.id);
+      if (twice !== undefined) {
+        problem(
+          `${at}.id`,
+          group.id,
+          `documents.${String(twice)} already names this document: name each document once.`,
+        );
+        continue;
       }
-
-      // Which document each group becomes: the add for the group with most
-      // of its pages, then each other document for the group with most of
-      // its pages; any other group is a new document of the add.
-      const holder = new Map(pages.map((p) => [p.position, p.documentId]));
-      const chosen = new Map<number, string>();
-      const taken = new Set<string>();
-      const choose = (documentId: string) => {
-        let best: number | undefined;
-        let most = 0;
-        for (const [index, group] of input.documents.entries()) {
-          if (chosen.has(index)) continue;
-          const held = group.pages.filter(
-            (page) => holder.get(page) === documentId,
-          ).length;
-          if (held > most) {
-            most = held;
-            best = index;
-          }
-        }
-        if (best !== undefined) {
-          chosen.set(best, documentId);
-          taken.add(documentId);
-        }
-      };
-      for (const document of documents) choose(document.id);
-
-      // A page a saved result cites stays in its document.
-      const moves = [...named].flatMap(([page, index]) => {
-        const from = holder.get(page);
-        const to = chosen.get(index);
-        return from !== undefined && from !== to ? [{ page, from, index }] : [];
-      });
-      if (moves.length > 0) {
-        const cited = await trx
-          .selectFrom("record_sources")
-          .select(["document_id", "page"])
-          .where("person_id", "=", personId)
-          .where("type", "=", "document_page")
-          .where("document_id", "in", [...new Set(moves.map((m) => m.from))])
-          .execute();
-        for (const move of moves) {
-          if (
-            cited.some(
-              (c) => c.document_id === move.from && c.page === move.page,
-            )
-          ) {
-            problem(
-              `documents.${String(move.index)}.pages`,
-              move.page,
-              `Page ${String(move.page)} is a source of results saved in the record, so it stays in the document it is in: sort it there, or tell the user it can't move.`,
-            );
-          }
-        }
+      claimed.set(group.id, index);
+      // A turn Rufi started changes nothing of a document that holds
+      // pages sorted before: its pages join it as it is.
+      const sorted = pages.some(
+        (p) =>
+          p.documentId === document.id &&
+          !waiting.some((w) => w.position === p.position),
+      );
+      const changes = [
+        ["kind", group.kind, document.kind],
+        ["date", group.date, document.date],
+        ["lab", group.lab, document.issuer],
+        ["report_number", group.report_number, document.report_number],
+      ].filter(([, given, now]) => given !== undefined && given !== now);
+      if (turn.origin === "rufi" && sorted && changes.length > 0) {
+        problem(
+          `${at}.${String(changes[0]?.[0])}`,
+          changes[0]?.[1],
+          "This document holds pages sorted before, so in a turn Rufi started its kind, date, lab and report number stay as they are: leave them out to add these pages to it, or leave id out to make a new document. The user can ask you to change it.",
+        );
       }
+    }
+    // The add's own document stays: it holds the add's readings.
+    if (
+      !claimed.has(add.id) &&
+      pages.some((p) => p.documentId === add.id) &&
+      pages
+        .filter((p) => p.documentId === add.id)
+        .every((p) => named.has(p.position))
+    ) {
+      problem(
+        "documents",
+        add.id,
+        `Every page of the add's first document moves to a new one. Name it (id ${add.id}) for one of the documents instead.`,
+      );
+    }
+    const ids = input.documents.map((group) => group.id ?? uuid());
 
-      // Each draft on a named page that has a copy, its value on that copy.
-      for (const [index, draft] of input.drafts.entries()) {
-        const at = `drafts.${String(index)}`;
-        const page = pages.find((p) => p.position === draft.page);
-        if (!named.has(draft.page)) {
-          problem(
-            `${at}.page`,
-            draft.page,
-            `Page ${String(draft.page)} isn't in any of the documents of this call: a draft goes with its page's document.`,
-          );
-        } else if (!page?.copy) {
-          problem(
-            `${at}.page`,
-            draft.page,
-            `Page ${String(draft.page)} has no copy from the reader, so nothing can be drafted from it. Look at it with get_documents and tell the user.`,
-          );
-        } else if (
-          !onPage(draft.value_text, page.copy.text) &&
-          // Rufi AI's reading of a marked digit, for a draft worth a look.
-          !(
-            draft.worth_a_look !== undefined &&
-            onPage(draft.value_text, unmarked(page.copy.text))
-          )
+    // A page a saved result cites stays in its document.
+    const moves = [...named].flatMap(([page, index]) => {
+      const from = holder.get(page);
+      const to = ids[index];
+      return from !== undefined && from !== to ? [{ page, from, index }] : [];
+    });
+    if (moves.length > 0) {
+      const cited = await trx
+        .selectFrom("record_sources")
+        .select(["document_id", "page"])
+        .where("person_id", "=", personId)
+        .where("type", "=", "document_page")
+        .where("document_id", "in", [...new Set(moves.map((m) => m.from))])
+        .execute();
+      for (const move of moves) {
+        if (
+          cited.some((c) => c.document_id === move.from && c.page === move.page)
         ) {
           problem(
-            `${at}.value_text`,
-            draft.value_text,
-            `"${draft.value_text}" isn't in page ${String(draft.page)}'s copy. Give the value as the copy prints it; where the reader marked a digit unclear ("1[0?]4"), give your reading ("104") and say why in worth_a_look. Or leave the draft out.`,
+            `documents.${String(move.index)}.pages`,
+            move.page,
+            `Page ${String(move.page)} is a source of results saved in the record, so it stays in the document it is in: sort it there, or tell the user it can't move.`,
           );
         }
       }
-      if (problems.length > 0) {
-        throw new Refusal(
-          "Nothing was sorted. Fix these and try again.",
-          problems,
+    }
+
+    // Each draft on a named page that has a copy, its value on that copy.
+    for (const [index, draft] of input.drafts.entries()) {
+      const at = `drafts.${String(index)}`;
+      const page = pages.find((p) => p.position === draft.page);
+      if (!named.has(draft.page)) {
+        problem(
+          `${at}.page`,
+          draft.page,
+          `Page ${String(draft.page)} isn't in any of the documents of this call: a draft goes with its page's document.`,
+        );
+      } else if (!page?.copy) {
+        problem(
+          `${at}.page`,
+          draft.page,
+          `Page ${String(draft.page)} has no copy from the reader, so nothing can be drafted from it. Look at it with get_documents and tell the user.`,
+        );
+      } else if (
+        !onPage(draft.value_text, page.copy.text) &&
+        // Rufi AI's reading of a marked digit, for a draft worth a look.
+        !(
+          draft.worth_a_look !== undefined &&
+          onPage(draft.value_text, unmarked(page.copy.text))
+        )
+      ) {
+        problem(
+          `${at}.value_text`,
+          draft.value_text,
+          `"${draft.value_text}" isn't in page ${String(draft.page)}'s copy. Give the value as the copy prints it; where the reader marked a digit unclear ("1[0?]4"), give your reading ("104") and say why in worth_a_look. Or leave the draft out.`,
         );
       }
-
-      // The documents: the chosen ones changed, the others new.
-      const at = now();
-      const ids = input.documents.map(
-        (_, index) => chosen.get(index) ?? uuid(),
+    }
+    if (problems.length > 0) {
+      throw new Refusal(
+        "Nothing was sorted. Fix these and try again.",
+        problems,
       );
-      for (const [index, group] of input.documents.entries()) {
-        const id = ids[index] ?? "";
-        const values = {
-          kind: group.kind,
-          date: group.date ?? null,
-          issuer: group.lab ?? null,
-          report_number: group.report_number ?? null,
-        };
-        if (chosen.has(index)) {
-          await trx
-            .updateTable("documents")
-            .set((eb) => ({ ...values, version: eb("version", "+", 1) }))
-            .where("person_id", "=", personId)
-            .where("id", "=", id)
-            .execute();
-        } else {
-          await trx
-            .insertInto("documents")
-            .values({
-              id,
-              person_id: personId,
-              added_at: add.addedAt,
-              added_from: add.addedFrom,
-              ...values,
-              version: 1,
-              from_document: add.id,
-            })
-            .execute();
-        }
-      }
+    }
 
-      // Pages that move go with their drafts the person kept (fixed, set
-      // aside); untouched drafts of every named page give way to the call's.
-      for (const [page, index] of named) {
-        const from = holder.get(page) ?? "";
-        const to = ids[index] ?? "";
-        await trx
-          .deleteFrom("draft_items")
-          .where("person_id", "=", personId)
-          .where("document_id", "=", from)
-          .where("page", "=", page)
-          .where("status", "=", "pending")
-          .where("version", "=", 1)
-          .execute();
-        if (from === to) continue;
-        await trx
-          .updateTable("document_pages")
-          .set({ document_id: to })
-          .where("person_id", "=", personId)
-          .where("document_id", "=", from)
-          .where("position", "=", page)
-          .execute();
-        await trx
-          .updateTable("draft_items")
-          .set((eb) => ({ document_id: to, version: eb("version", "+", 1) }))
-          .where("person_id", "=", personId)
-          .where("document_id", "=", from)
-          .where("page", "=", page)
-          .execute();
+    // The documents: the named ones with the fields given, the others new.
+    const at = now();
+    for (const [index, group] of input.documents.entries()) {
+      const id = ids[index] ?? "";
+      const given = {
+        ...(group.kind !== undefined && { kind: group.kind }),
+        ...(group.date !== undefined && { date: group.date }),
+        ...(group.lab !== undefined && { issuer: group.lab }),
+        ...(group.report_number !== undefined && {
+          report_number: group.report_number,
+        }),
+      };
+      if (group.id !== undefined) {
         await trx
           .updateTable("documents")
-          .set((eb) => ({ version: eb("version", "+", 1) }))
+          .set((eb) => ({ ...given, version: eb("version", "+", 1) }))
           .where("person_id", "=", personId)
-          .where("id", "=", from)
-          .where("id", "not in", ids)
-          .execute();
-      }
-      // A document of the add left with no page is gone: its pages and their
-      // drafts are in the others now.
-      for (const document of documents) {
-        if (ids.includes(document.id)) continue;
-        const still = await trx
-          .selectFrom("document_pages")
-          .select("position")
-          .where("person_id", "=", personId)
-          .where("document_id", "=", document.id)
-          .executeTakeFirst();
-        if (!still) {
-          await trx
-            .updateTable("documents")
-            .set({ deleted_at: at })
-            .where("person_id", "=", personId)
-            .where("id", "=", document.id)
-            .execute();
-        }
-      }
-
-      const seq = new Map<number, number>();
-      for (const draft of input.drafts) {
-        const page = pages.find((p) => p.position === draft.page);
-        const index = named.get(draft.page) ?? 0;
-        const next =
-          seq.get(draft.page) ??
-          (
-            await trx
-              .selectFrom("draft_items")
-              .select((eb) => eb.fn.max<number | null>("seq").as("last"))
-              .where("person_id", "=", personId)
-              .where("page", "=", draft.page)
-              .where("document_id", "in", ids)
-              .executeTakeFirst()
-          )?.last ??
-          0;
-        seq.set(draft.page, next + 1);
-        const { page: _page, quote, worth_a_look, ...fields } = draft;
-        await trx
-          .insertInto("draft_items")
-          .values({
-            id: uuid(),
-            person_id: personId,
-            document_id: ids[index] ?? "",
-            page: draft.page,
-            seq: next + 1,
-            job_id: page?.copy?.jobId ?? "",
-            kind: "lab_result",
-            version: 1,
-            status: "pending",
-            fields: JSON.stringify(fields),
-            original: JSON.stringify(fields),
-            unsure: JSON.stringify(
-              worth_a_look === undefined ? [] : [worth_a_look],
-            ),
-            quote,
-            report: null,
-            created_at: at,
-          })
-          .execute();
-      }
-
-      // The readings whose pages are sorted now, and the request it answers.
-      const jobs = [
-        ...new Set(waiting.flatMap((p) => (p.copy ? [p.copy.jobId] : []))),
-      ];
-      if (jobs.length > 0) {
-        await trx
-          .updateTable("jobs")
-          .set({ sorted_at: at })
-          .where("person_id", "=", personId)
-          .where("id", "in", jobs)
-          .execute();
-      }
-      const answer: SortAnswer = {
-        sorted: true,
-        documents: input.documents.map((group, index) => {
-          const drafts = input.drafts.filter(
-            (d) => named.get(d.page) === index,
-          );
-          return {
-            id: ids[index] ?? "",
-            kind: group.kind,
-            date: group.date ?? null,
-            pages: ranges(group.pages),
-            drafts: drafts.length,
-            worth_a_look: drafts.filter((d) => d.worth_a_look !== undefined)
-              .length,
-          };
-        }),
-        note: "Sorted. Nothing is saved: the drafts wait for the user on each document's page. Tell the user in a few lines what you found.",
-      };
-      const request = turn.origin === "rufi" ? turn.request?.id : undefined;
-      if (request !== undefined) {
-        await trx
-          .updateTable("sort_requests")
-          .set({
-            state: "done",
-            call_id: scope.callId,
-            answer: JSON.stringify(answer),
-            retry_at: null,
-            error: null,
-            ended_at: at,
-          })
-          .where("person_id", "=", personId)
-          .where("id", "=", request)
+          .where("id", "=", id)
           .execute();
       } else {
         await trx
-          .insertInto("sort_requests")
+          .insertInto("documents")
           .values({
-            id: uuid(),
+            id,
             person_id: personId,
-            document_id: add.id,
-            job_id: null,
-            state: "done",
-            queue_id: null,
-            tries: 0,
-            call_id: scope.callId,
-            answer: JSON.stringify(answer),
-            created_at: at,
-            ended_at: at,
+            added_at: add.addedAt,
+            added_from: add.addedFrom,
+            kind: group.kind ?? "other",
+            date: null,
+            issuer: null,
+            report_number: null,
+            ...given,
+            version: 1,
+            from_document: add.id,
           })
           .execute();
       }
-      await closeOthers(trx, personId, add.id, request);
-      return answer;
-    });
+    }
+
+    // Pages that move go with their drafts the person kept (fixed, set
+    // aside); untouched drafts of every named page give way to the call's.
+    for (const [page, index] of named) {
+      const from = holder.get(page) ?? "";
+      const to = ids[index] ?? "";
+      await trx
+        .deleteFrom("draft_items")
+        .where("person_id", "=", personId)
+        .where("document_id", "=", from)
+        .where("page", "=", page)
+        .where("status", "=", "pending")
+        .where("version", "=", 1)
+        .execute();
+      if (from === to) continue;
+      await trx
+        .updateTable("document_pages")
+        .set({ document_id: to })
+        .where("person_id", "=", personId)
+        .where("document_id", "=", from)
+        .where("position", "=", page)
+        .execute();
+      await trx
+        .updateTable("draft_items")
+        .set((eb) => ({ document_id: to, version: eb("version", "+", 1) }))
+        .where("person_id", "=", personId)
+        .where("document_id", "=", from)
+        .where("page", "=", page)
+        .execute();
+      await trx
+        .updateTable("documents")
+        .set((eb) => ({ version: eb("version", "+", 1) }))
+        .where("person_id", "=", personId)
+        .where("id", "=", from)
+        .where("id", "not in", ids)
+        .execute();
+    }
+    // A document of the add left with no page is gone: its pages and their
+    // drafts are in the others now.
+    for (const document of documents) {
+      if (ids.includes(document.id)) continue;
+      const still = await trx
+        .selectFrom("document_pages")
+        .select("position")
+        .where("person_id", "=", personId)
+        .where("document_id", "=", document.id)
+        .executeTakeFirst();
+      if (!still) {
+        await trx
+          .updateTable("documents")
+          .set({ deleted_at: at })
+          .where("person_id", "=", personId)
+          .where("id", "=", document.id)
+          .execute();
+      }
+    }
+
+    const seq = new Map<number, number>();
+    for (const draft of input.drafts) {
+      const page = pages.find((p) => p.position === draft.page);
+      const index = named.get(draft.page) ?? 0;
+      const next =
+        seq.get(draft.page) ??
+        (
+          await trx
+            .selectFrom("draft_items")
+            .select((eb) => eb.fn.max<number | null>("seq").as("last"))
+            .where("person_id", "=", personId)
+            .where("page", "=", draft.page)
+            .where("document_id", "in", ids)
+            .executeTakeFirst()
+        )?.last ??
+        0;
+      seq.set(draft.page, next + 1);
+      const { page: _page, quote, worth_a_look, ...fields } = draft;
+      await trx
+        .insertInto("draft_items")
+        .values({
+          id: uuid(),
+          person_id: personId,
+          document_id: ids[index] ?? "",
+          page: draft.page,
+          seq: next + 1,
+          job_id: page?.copy?.jobId ?? "",
+          kind: "lab_result",
+          version: 1,
+          status: "pending",
+          fields: JSON.stringify(fields),
+          original: JSON.stringify(fields),
+          unsure: JSON.stringify(
+            worth_a_look === undefined ? [] : [worth_a_look],
+          ),
+          quote,
+          report: null,
+          created_at: at,
+        })
+        .execute();
+    }
+
+    // The readings whose pages are sorted now, and the request it answers.
+    const jobs = [
+      ...new Set(waiting.flatMap((p) => (p.copy ? [p.copy.jobId] : []))),
+    ];
+    if (jobs.length > 0) {
+      await trx
+        .updateTable("jobs")
+        .set({ sorted_at: at })
+        .where("person_id", "=", personId)
+        .where("id", "in", jobs)
+        .execute();
+    }
+    // Each document as it is now, with all its pages.
+    const after = await documentsOf(trx, personId, add.id);
+    const held = await trx
+      .selectFrom("document_pages")
+      .select(["document_id", "position"])
+      .where("person_id", "=", personId)
+      .where("document_id", "in", ids)
+      .execute();
+    const answer: SortAnswer = {
+      sorted: true,
+      documents: input.documents.map((_, index) => {
+        const id = ids[index] ?? "";
+        const document = after.find((d) => d.id === id);
+        const drafts = input.drafts.filter((d) => named.get(d.page) === index);
+        return {
+          id,
+          kind: document?.kind ?? "other",
+          date: document?.date ?? null,
+          pages: ranges(
+            held.filter((p) => p.document_id === id).map((p) => p.position),
+          ),
+          drafts: drafts.length,
+          worth_a_look: drafts.filter((d) => d.worth_a_look !== undefined)
+            .length,
+        };
+      }),
+      note: "Sorted. Nothing is saved: the drafts wait for the user on each document's page. Tell the user in a few lines what you found.",
+    };
+    const request = turn.origin === "rufi" ? turn.request?.id : undefined;
+    if (request !== undefined) {
+      await trx
+        .updateTable("sort_requests")
+        .set({
+          state: "done",
+          call_id: scope.callId,
+          answer: JSON.stringify(answer),
+          retry_at: null,
+          error: null,
+          ended_at: at,
+        })
+        .where("person_id", "=", personId)
+        .where("id", "=", request)
+        .execute();
+    } else {
+      await trx
+        .insertInto("sort_requests")
+        .values({
+          id: uuid(),
+          person_id: personId,
+          document_id: add.id,
+          job_id: null,
+          state: "done",
+          queue_id: null,
+          tries: 0,
+          call_id: scope.callId,
+          answer: JSON.stringify(answer),
+          created_at: at,
+          ended_at: at,
+        })
+        .execute();
+    }
+    await closeOthers(trx, personId, add.id, request);
+    return answer;
+  };
 
   /**
    * At a reading's normal end, inside its end line's transaction: a request

@@ -32,7 +32,12 @@ const SORT: Scenario = {
         arguments: {
           document: "$document",
           documents: [
-            { pages: [1, 2], kind: "lab_report", date: "2026-08-12" },
+            {
+              id: "$document",
+              pages: [1, 2],
+              kind: "lab_report",
+              date: "2026-08-12",
+            },
           ],
           drafts: [1, 2].map((page) => ({
             page,
@@ -199,7 +204,7 @@ test("View reading says where a reading is while the reader's work loads, also o
           tool: "sort_documents",
           arguments: {
             document: "$document",
-            documents: [{ pages: [1, 2], kind: "lab_report" }],
+            documents: [{ id: "$document", pages: [1, 2], kind: "lab_report" }],
             drafts: [],
           },
         },
@@ -320,14 +325,17 @@ test("keeps unreadable pages to check and reserves Nothing to save for a complet
       return undefined;
     },
   ]);
-  // Rufi AI sorts each reading: nothing to draft either time.
-  const sort = (pages: number[], kind: string) => [
+  // Rufi AI sorts each reading: nothing to draft either time. The page
+  // read again joins its document as it is.
+  const sort = (id: string, pages: number[], kind?: string) => [
     {
-      id: `sort-${kind}`,
+      id,
       tool: "sort_documents",
       arguments: {
         document: "$document",
-        documents: [{ pages, kind }],
+        documents: [
+          { id: "$document", pages, ...(kind !== undefined && { kind }) },
+        ],
         drafts: [],
       },
     },
@@ -338,7 +346,12 @@ test("keeps unreadable pages to check and reserves Nothing to save for a complet
   );
   await rufi.start({
     reader: reader.run,
-    scenario: { callsByTurn: [sort([1, 2], "other"), sort([1], "letter")] },
+    scenario: {
+      callsByTurn: [
+        sort("sort-first", [1, 2], "other"),
+        sort("sort-again", [1]),
+      ],
+    },
   });
   await page.goto(rufi.link());
   await add(page);

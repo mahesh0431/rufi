@@ -289,7 +289,7 @@ test("a reading that ends, with nothing saved, shows in Needs you on an open Ove
       tool: "sort_documents",
       arguments: {
         document: "$document",
-        documents: [{ pages: [1], kind }],
+        documents: [{ id: "$document", pages: [1], kind }],
         drafts,
       },
     },

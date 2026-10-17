@@ -20,7 +20,6 @@ import { documents as openDocuments } from "./documents.ts";
 import {
   comparable,
   onPage,
-  SORT_WAITS_MS,
   sorting,
   type SortInput,
   type SortScope,
@@ -116,6 +115,7 @@ const THREE: SortInput = {
   document: "pile",
   documents: [
     {
+      id: "pile",
       pages: [1, 2],
       kind: "lab_report",
       date: "2026-03-12",
@@ -443,6 +443,36 @@ describe("a sort", () => {
     expect(rows("SELECT id FROM sort_requests")).toEqual([]);
   });
 
+  it("refuses a document id not of this add or named twice, a new document without its kind, and the add's own document left out", async () => {
+    await expect(
+      sorts.sort(personal(), {
+        document: "pile",
+        documents: [
+          { id: "doc-other", pages: [1] },
+          { id: "pile", pages: [2] },
+          { id: "pile", pages: [3] },
+          { pages: [4, 5] },
+        ],
+        drafts: [],
+      }),
+    ).rejects.toMatchObject({
+      issues: [
+        expect.objectContaining({ path: "documents.0.id", got: '"doc-other"' }),
+        expect.objectContaining({ path: "documents.2.id", got: '"pile"' }),
+        expect.objectContaining({ path: "documents.3.kind" }),
+      ],
+    });
+    await expect(
+      sorts.sort(personal(), {
+        ...THREE,
+        documents: THREE.documents.map(({ id: _id, ...group }) => group),
+      }),
+    ).rejects.toMatchObject({
+      issues: [expect.objectContaining({ path: "documents", got: '"pile"' })],
+    });
+    expect(documents()).toHaveLength(1);
+  });
+
   it("refuses another person's add, and an add that is being read", async () => {
     await expect(
       sorts.sort({ ...personal(), personId: "ravi", chatId: "c-ravi" }, THREE),
@@ -471,8 +501,8 @@ describe("a sort", () => {
       sorts.sort(personal(), {
         document: "pile",
         documents: [
-          { pages: [1, 2, 3], kind: "lab_report" },
-          { pages: [4], kind: "lab_report" },
+          { id: "pile", pages: [1, 2, 3] },
+          { id, pages: [4] },
         ],
         drafts: [],
       }),
@@ -485,18 +515,29 @@ describe("a sort", () => {
     });
 
     // Page 4 is a report of its own: its fixed draft goes with it, at a
-    // new version; page 3's untouched drafts give way to the call's.
-    await sorts.sort(personal(), {
+    // new version; page 3's untouched drafts give way to the call's. What
+    // the call leaves out of Lakeside's stays.
+    const answer = await sorts.sort(personal(), {
       document: "pile",
       documents: [
-        { pages: [3], kind: "lab_report", lab: "Lakeside Diagnostics" },
+        { id, pages: [3], report_number: "LD-9" },
         { pages: [4], kind: "lab_report", lab: "Lakeside Diagnostics" },
       ],
       drafts: [draft(3, "Glucose", "104")],
     });
     const after = documents();
     expect(after).toHaveLength(4);
+    expect(after[1]).toMatchObject({
+      kind: "lab_report",
+      date: "2026-08-20",
+      issuer: "Lakeside Diagnostics",
+      report_number: "LD-9",
+    });
     const own = String(after[3]?.["id"]);
+    expect(answer.documents.map((d) => [d.kind, d.date, d.pages])).toEqual([
+      ["lab_report", "2026-08-20", "3"],
+      ["lab_report", null, "4"],
+    ]);
     expect(pagesOfEach().slice(2)).toEqual([
       { document_id: id, position: 3 },
       { document_id: own, position: 4 },
@@ -588,12 +629,79 @@ describe("a turn Rufi started", () => {
         }),
       ]) as unknown,
     });
-    await sorts.sort(again, {
+    // Joining the first report, it may not change it.
+    await expect(
+      sorts.sort(again, {
+        document: "pile",
+        documents: [{ id: "pile", pages: [2], date: "2026-03-13" }],
+        drafts: [],
+      }),
+    ).rejects.toMatchObject({
+      issues: [
+        expect.objectContaining({
+          path: "documents.0.date",
+          got: '"2026-03-13"',
+        }),
+      ],
+    });
+    const joined = await sorts.sort(again, {
       document: "pile",
-      documents: [{ pages: [2], kind: "lab_report" }],
+      documents: [{ id: "pile", pages: [2], lab: "Sunrise Labs" }],
       drafts: [draft(2, "Ferritin", "1,26")],
     });
+    expect(joined.documents).toMatchObject([
+      { id: "pile", kind: "lab_report", date: "2026-03-12", pages: "1–2" },
+    ]);
+    expect(documents()[0]).toMatchObject({
+      kind: "lab_report",
+      date: "2026-03-12",
+      issuer: "Sunrise Labs",
+      report_number: "SL-1",
+    });
     expect(requests().map((r) => r["state"])).toEqual(["done", "done"]);
+  });
+
+  it("places a page read again as a new document, and the document it was in keeps its pages, lab and date", async () => {
+    await asked();
+    await handOver("turn-rufi");
+    await sorts.sort(
+      { ...personal("call-rufi"), agentTurnId: "turn-rufi" },
+      THREE,
+    );
+    const lakeside = documents()[1];
+    // Page 4 read again is a letter.
+    store.db.exec(`
+      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
+        VALUES ('job-2', 'asha', 'document_read', 'pile', 'done', 1, '[4]', '${T0}', '${T0}');
+      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
+        VALUES ('asha', 'f-pile', 4, 'job-2', 1, 'read', 'Dear Asha, see you on 21/08/2026.', '${T0}');
+    `);
+    await asked("job-2");
+    await handOver("turn-rufi-2");
+    const answer = await sorts.sort(
+      { ...personal("call-rufi-2"), agentTurnId: "turn-rufi-2" },
+      {
+        document: "pile",
+        documents: [{ pages: [4], kind: "letter", date: "2026-08-21" }],
+        drafts: [],
+      },
+    );
+    const [, before, , letter] = documents();
+    // A page left it: its version goes up, nothing else.
+    expect(before).toEqual({ ...lakeside, version: 2 });
+    expect(letter).toMatchObject({
+      kind: "letter",
+      date: "2026-08-21",
+      from_document: "pile",
+    });
+    expect(pagesOfEach().slice(2)).toEqual([
+      { document_id: lakeside?.["id"], position: 3 },
+      { document_id: letter?.["id"], position: 4 },
+      { document_id: expect.any(String) as string, position: 5 },
+    ]);
+    expect(answer.documents).toMatchObject([
+      { id: letter?.["id"], kind: "letter", pages: "4" },
+    ]);
   });
 });
 
@@ -606,7 +714,7 @@ describe("Rufi's work on the requests", () => {
       wake: undefined,
     });
 
-    for (const [index, wait] of SORT_WAITS_MS.entries()) {
+    for (const [index, wait] of [30_000, 60_000, 120_000].entries()) {
       // The hand-over failed.
       store.db.exec(
         "UPDATE chat_queue SET held = 'failed', held_text = 'The AI could not start.' WHERE state = 'waiting'",
@@ -685,7 +793,7 @@ describe("Rufi's work on the requests", () => {
       text: "The connection to ChatGPT dropped.",
     });
     expect((await sorts.tend()).wake).toBe(
-      new Date(Date.parse(T0) + (SORT_WAITS_MS[0] ?? 0)).toISOString(),
+      new Date(Date.parse(T0) + 30_000).toISOString(),
     );
     expect(rows("SELECT tries, error FROM sort_requests")).toEqual([
       { tries: 1, error: "The connection to ChatGPT dropped." },

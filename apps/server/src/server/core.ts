@@ -263,11 +263,12 @@ export const startCore = (options: CoreOptions) =>
               log,
               reader && pages(reader, home, gate),
               (personId, documentId) => readings.retry(personId, documentId),
-              async (scope, input) => {
-                const sorted = await sorting.sort(scope, input);
-                readings.changed(scope.personId);
-                sorts.poke();
-                return sorted;
+              {
+                run: sorting.sort,
+                done: (personId) => {
+                  readings.changed(personId);
+                  sorts.poke();
+                },
               },
             ),
           },
