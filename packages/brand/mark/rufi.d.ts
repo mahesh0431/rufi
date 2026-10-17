@@ -3,14 +3,14 @@
 
 // Types for rufi.js, the dog's one source.
 
-/** Three colours make a palette (ground, paper, fold), plus the face and the tongue. */
+/** A palette: the ground, the paper, the folds, the face and the signs. */
 export interface Palette {
   name?: string;
   bg: string;
   paper: string;
   accent: string;
   ink: string;
-  tongue: string;
+  sign?: string;
 }
 
 export type PaletteKey = "inkApricot" | "onApricot" | "onPeriwinkle";
@@ -35,7 +35,9 @@ export type ExpressionKey =
 
 export interface Expression {
   name: string;
+  /** smile, small, grin, flat or frown */
   mouth: string;
+  /** The CSS moves in motion.css. */
   motion: string;
   use: string;
   sign?: string;
@@ -57,8 +59,14 @@ export const EXPRESSIONS: Record<ExpressionKey, Expression>;
 /** A complete <svg> of the dog, named "Rufi" for screen readers. */
 export function svg(options?: SvgOptions): string;
 
-/** The eyes follow the pointer; returns a function that stops it. Still under reduced motion. */
+/** The face moves on an <svg> made by svg(): smooth changes between expressions, blinks, glances, the pointer. Still under reduced motion. */
+export function live(
+  svg: Element,
+  options?: { expression?: ExpressionKey; pointer?: boolean; max?: number },
+): { set(expression: ExpressionKey): void; readonly expression: ExpressionKey | undefined; stop(): void };
+
+/** The eyes follow the pointer (live() with that expression); returns a function that stops it. Still under reduced motion. */
 export function follow(
   svg: Element,
-  options?: { max?: number; rest?: number },
+  options?: { max?: number; expression?: ExpressionKey },
 ): () => void;

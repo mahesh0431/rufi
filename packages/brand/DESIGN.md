@@ -65,7 +65,7 @@ Rufi is a dog folded from one sheet of white paper. The facets, the creases and 
 **Draw it only from the source.** `mark/rufi.js` is the one source: `svg(options)` returns a complete SVG, named "Rufi" for screen readers. Import it (`@rufi/brand/mark`), or use the generated files in `mark/assets/`. Never redraw, trace or copy the shapes into another file or project. To change the dog, change `rufi.js` once; every palette, size and expression follows.
 
 ```js
-import { svg, follow } from "@rufi/brand/mark";
+import { svg, live, follow } from "@rufi/brand/mark";
 svg({
   palette: "inkApricot", // or "onApricot", "onPeriwinkle"
   expression: "calm", // see below
@@ -73,10 +73,13 @@ svg({
   ground: "tile", // "tile" (the app icon), "circle" (a badge) or "none"
   motion: false, // leave out for the expression's own motion
 });
-const stop = follow(svgElement); // the eyes follow the pointer; stop() ends it
+const rufi = live(svgElement, { expression: "calm" }); // the face moves: blinks, glances, follows the pointer
+rufi.set("thinking"); // the eyes and the mouth change shape smoothly into the new expression
+rufi.stop();
+const stop = follow(svgElement); // or only the pointer: stop() ends it
 ```
 
-Motion needs `@rufi/brand/mark/motion.css` on the page. At 32 px and below the source draws the flat version by itself and hides the signs.
+Motion needs `@rufi/brand/mark/motion.css` on the page. Without `live()` the drawing still moves by CSS alone (blinks, ears, looks); `live()` adds the smooth changes between expressions and the pointer, with one animation frame per screen refresh, so use it for a large dog people look at (an empty page, the website), not for a small one in a list or the sidebar. Under reduced motion both keep it still. At 32 px and below the source draws the flat version by itself and hides the signs.
 
 ### Palettes
 
@@ -94,7 +97,7 @@ Motion needs `@rufi/brand/mark/motion.css` on the page. At 32 px and below the s
 
 ### Expressions and motion
 
-The face reacts to Rufi's own work, never to a person's health: no sad or alarmed face about a result. The eyes only blink, squeeze or look; the ears fold, lift and twitch. The default face is the open smile.
+The face reacts to Rufi's own work, never to a person's health: no sad or alarmed face about a result. The face is slim pill eyes, a rounded triangle nose and a line mouth (a smile, a small smile, a grin, a flat line, a small frown): no open mouth or tongue. The eyes blink, soften, squeeze or look; the ears fold, lift and twitch. The default face is the smile.
 
 | Key         | When                                                 |
 | ----------- | ---------------------------------------------------- |

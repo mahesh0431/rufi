@@ -7,7 +7,7 @@
 
 .rufi .under { opacity: 0 }
 .rufi .back { opacity: 0 }
-.rufi .eye { transform-box: fill-box; transform-origin: center }
+.rufi .eye, .rufi .eye-shape { transform-box: fill-box; transform-origin: center }
 /* each flap turns on its crease; --a is the crease angle, the origin is the ear's top point */
 .rufi .flapL { transform-box: fill-box; transform-origin: 100% 0; --a: 118.7deg }
 .rufi .flapR { transform-box: fill-box; transform-origin: 0 0; --a: 61.3deg }
@@ -25,6 +25,22 @@
 .rufi.m-blink2 .eye { animation: rufi-blink2 4.4s infinite }
 .rufi.m-look .eye { animation: rufi-look 4s ease-in-out infinite }
 .rufi.m-read .eye { animation: rufi-read 1.8s ease-in-out infinite }
+/* the pill eyes, when live() is not running: the eye moves (rufi-look, rufi-read) and gets narrower or shorter, the far eye more; the nose and mouth follow by half (values from turnScale() in rufi.js) */
+@keyframes rufi-pill-look-0 { 0%, 25% { transform: scale(1.000, 1.000) } 35%, 60% { transform: scale(0.921, 0.880) } 70%, 100% { transform: scale(0.853, 0.874) } }
+@keyframes rufi-pill-read-0 { 0%, 100% { transform: scale(0.830, 0.887) } 50% { transform: scale(0.915, 0.887) } }
+@keyframes rufi-pill-look-1 { 0%, 25% { transform: scale(1.000, 1.000) } 35%, 60% { transform: scale(0.842, 0.880) } 70%, 100% { transform: scale(0.926, 0.874) } }
+@keyframes rufi-pill-read-1 { 0%, 100% { transform: scale(0.915, 0.887) } 50% { transform: scale(0.830, 0.887) } }
+@keyframes rufi-feat-look { 0%, 25% { transform: translate(0px, 0px) } 35%, 60% { transform: translate(9px, -8px) } 70%, 100% { transform: translate(-8px, -8px) } }
+@keyframes rufi-feat-read { 0%, 100% { transform: translate(-9px, 7px) } 50% { transform: translate(9px, 7px) } }
+.rufi.m-look .eye:nth-of-type(1) .eye-shape { animation: rufi-pill-look-0 4s ease-in-out infinite }
+.rufi.m-look .eye:nth-of-type(2) .eye-shape { animation: rufi-pill-look-1 4s ease-in-out infinite }
+.rufi.m-read .eye:nth-of-type(1) .eye-shape { animation: rufi-pill-read-0 1.8s ease-in-out infinite }
+.rufi.m-read .eye:nth-of-type(2) .eye-shape { animation: rufi-pill-read-1 1.8s ease-in-out infinite }
+.rufi.m-look .feat[data-turn] { animation: rufi-feat-look 4s ease-in-out infinite }
+.rufi.m-read .feat[data-turn] { animation: rufi-feat-read 1.8s ease-in-out infinite }
+/* live() in rufi.js moves the pill eyes and the mouth itself; a new sign fades in */
+@keyframes rufi-appear { from { opacity: 0 } }
+.rufi .signs > g { animation: rufi-appear .35s ease-out }
 .rufi.m-happy .eye { transform-origin: 50% 0; animation: rufi-squeeze 2.6s ease-in-out infinite }   /* closes from below, like cheeks lifting */
 .rufi.m-wink .eye:nth-of-type(2) { transform-origin: 50% 0; animation: rufi-squeeze 2.4s ease-in-out infinite }
 .rufi.m-sleepy .eye { transform-origin: 50% 100%; animation: rufi-sleepy 4.2s ease-in-out infinite }   /* the heavy lid slides down and up */
