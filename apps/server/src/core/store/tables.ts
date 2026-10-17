@@ -47,6 +47,7 @@ export interface Tables {
     state: string;
     held: string | null;
     held_text: string | null;
+    hold_id: string | null;
     sent_as: string | null;
     turn_id: string | null;
     created_at: string;
@@ -63,6 +64,9 @@ export interface Tables {
     thread_tools: string | null;
     paused: string | null;
     revision: number;
+    context_tokens: number | null;
+    context_window: number | null;
+    context_thread: string | null;
     created_at: string;
   };
   conditions: {

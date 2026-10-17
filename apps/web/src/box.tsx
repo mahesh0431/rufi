@@ -43,6 +43,7 @@ import {
   GripVertical,
   LoaderCircle,
   LogIn,
+  MessageSquarePlus,
   type LucideProps,
   Pencil,
   RotateCw,
@@ -63,6 +64,7 @@ import { request } from "./api.ts";
 import { AttachButton, AttachStatus } from "./attach.tsx";
 import { boxFor } from "./boxes.ts";
 import { ChipView, useChipStates } from "./chips.tsx";
+import { ContextMeter } from "./context-meter.tsx";
 import {
   type BoxChip,
   type BoxState,
@@ -304,6 +306,7 @@ export function Box({
               </Button>
             )}
             {choice}
+            <ContextMeter live={live} />
             {(!running || hasText) && sendButton}
             {running && stopButton}
           </div>
@@ -396,6 +399,7 @@ function whyHeld(item: QueueItem): string | null {
     case "restored":
       return "From a backup: it waited when the backup was made.";
     case "failed":
+    case "open_failed":
       return item.heldText;
     case null:
       return null;
@@ -448,6 +452,13 @@ function QueueView({
     `${path}/queue/${encodeURIComponent(item.id)}`;
   const send = (item: QueueItem) =>
     void act(() => request("POST", `${one(item)}/send`));
+  /** The person's choice for a message whose AI thread didn't open. */
+  const recover = (
+    item: QueueItem,
+    hold: string,
+    choice: "retry" | "new_thread",
+  ) =>
+    void act(() => request("POST", `${one(item)}/recover`, { hold, choice }));
   // What goes on when you say: the first row that only waits for the pause.
   const first = shown.find(
     (item) =>
@@ -491,6 +502,8 @@ function QueueView({
       <MovableList ids={ids} onMove={reorder}>
         {shown.map((item) => {
           const why = whyHeld(item);
+          // Its AI thread didn't open: the person chooses, for this hold.
+          const hold = item.held === "open_failed" ? item.holdId : null;
           const isWaiting = item.state === "waiting";
           const free =
             isWaiting && (item.held === null || item.held === "paused");
@@ -563,16 +576,39 @@ function QueueView({
                       Rufi
                     </span>
                   )}
-                  {(item.state === "not_sure" || (isWaiting && !free)) && (
-                    <Button
-                      look="quiet"
-                      icon={Send}
-                      onClick={() => {
-                        send(item);
-                      }}
-                    >
-                      {item.state === "not_sure" ? "Send again" : "Send"}
-                    </Button>
+                  {hold !== null ? (
+                    <>
+                      <Button
+                        look="quiet"
+                        icon={RotateCw}
+                        onClick={() => {
+                          recover(item, hold, "retry");
+                        }}
+                      >
+                        Try again
+                      </Button>
+                      <Button
+                        look="quiet"
+                        icon={MessageSquarePlus}
+                        onClick={() => {
+                          recover(item, hold, "new_thread");
+                        }}
+                      >
+                        New thread
+                      </Button>
+                    </>
+                  ) : (
+                    (item.state === "not_sure" || (isWaiting && !free)) && (
+                      <Button
+                        look="quiet"
+                        icon={Send}
+                        onClick={() => {
+                          send(item);
+                        }}
+                      >
+                        {item.state === "not_sure" ? "Send again" : "Send"}
+                      </Button>
+                    )
                   )}
                   {isWaiting && item.origin === "person" && (
                     <IconButton

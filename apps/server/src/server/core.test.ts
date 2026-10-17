@@ -1154,7 +1154,7 @@ describe("the local API", () => {
     const turns = async (page: Awaited<ReturnType<typeof session>>) =>
       (await page.api("GET", c.path)).body["turns"] as {
         status: string;
-        afresh: boolean;
+        newThread: boolean;
       }[];
     let page = await session(await start({ agent }));
     const c = await chat(page);
@@ -1172,7 +1172,7 @@ describe("the local API", () => {
     await page.say(c.path, "And my iron?");
     await until(async () => (await turns(page))[1]?.status === "completed");
 
-    expect((await turns(page)).map((turn) => turn.afresh)).toEqual([
+    expect((await turns(page)).map((turn) => turn.newThread)).toEqual([
       false,
       true,
     ]);
@@ -2140,7 +2140,7 @@ describe("backups and export over the API", () => {
   });
 
   it(
-    "restores a backup made during a reply: drafts and history are there, the reply shows interrupted, and the next message starts the AI afresh",
+    "restores a backup made during a reply: drafts and history are there, the reply shows interrupted, and the next message starts a new thread",
     { timeout: 30_000 },
     async () => {
       const page = await session(await start());
@@ -2209,13 +2209,13 @@ describe("backups and export over the API", () => {
       expect(
         (await restored.api("GET", `${c.path}/queue`)).body["items"],
       ).toMatchObject([{ held: "restored" }]);
-      // The chat shows where the AI started afresh.
+      // The chat shows where a new thread started.
       expect(
         (
           (await restored.api("GET", c.path)).body["turns"] as {
-            afresh: boolean;
+            newThread: boolean;
           }[]
-        ).map((turn) => turn.afresh),
+        ).map((turn) => turn.newThread),
       ).toEqual([false, false, true]);
     },
   );

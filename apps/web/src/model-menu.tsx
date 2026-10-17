@@ -1,7 +1,6 @@
 // The chat's model and effort, chosen in its box: one button that says
 // both, and one menu with the allowed models, then the effort. Both are kept
-// for the chat. A new model starts the AI afresh; a new effort applies from
-// the next reply.
+// for the chat. Both apply from the next reply, in the same AI thread.
 import { Menu } from "@base-ui/react/menu";
 import { DEFAULT_EFFORT, type Effort } from "@rufi/contracts";
 import { useNavigate } from "@tanstack/react-router";

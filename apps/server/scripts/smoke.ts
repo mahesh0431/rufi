@@ -1360,8 +1360,8 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     const snapshot = await c.read();
     return {
       checks: {
-        // The same thread: the AI has the whole chat, nothing started afresh.
-        same_thread: snapshot.turns.every((turn) => !turn.afresh),
+        // The same thread: the AI has the whole chat, no new thread.
+        same_thread: snapshot.turns.every((turn) => !turn.newThread),
         new_model: snapshot.turns.at(-1)?.model === "gpt-6.1-sol",
       },
       verdicts: [

@@ -19,9 +19,11 @@
 // (its config's mcp_servers.rufi), checking it answers when the thread starts
 // or resumes. Like Codex, a thread keeps the developer instructions it was
 // first given in its history: a resume of a thread it has open changes
-// nothing, and new ones take effect only after thread/compact/start (each
-// turn logs the ones it ran with, as `told`). The test passes a scenario in FAKE_CODEX and reads what
-// happened from the JSON lines written to FAKE_CODEX_LOG.
+// nothing, and a developer message thread/inject_items adds is the last
+// word (each turn logs the one it ran with, as `told`). Like Codex, it
+// answers a resume of a thread it has no record of with "no rollout found
+// for thread id <id>". The test passes a scenario in FAKE_CODEX and reads
+// what happened from the JSON lines written to FAKE_CODEX_LOG.
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
@@ -89,10 +91,23 @@ export interface Scenario {
    * null, the path it saved them at.
    */
   picture?: { savedPath: string | null };
-  /** Codex compacts the thread's context during the turn, before answering. */
+  /**
+   * Codex compacts the thread's context during the turn, before answering;
+   * the compaction ends `compactionMs` (0) after it starts.
+   */
   compaction?: boolean;
-  /** A compaction Rufi asks for (thread/compact/start) fails. */
-  compactFails?: boolean;
+  compactionMs?: number;
+  /** The first resumes of this run fail, with an error other than "not found". */
+  resumeFails?: number;
+  /** thread/inject_items fails. */
+  injectFails?: boolean;
+  /** A restarted fake has lost the threads it saved, as Codex with its files gone. */
+  forgets?: boolean;
+  /**
+   * The context each turn reports it used before it ends: the last
+   * request's tokens and the model's window (null: unknown).
+   */
+  usage?: { tokens: number; window: number | null };
   /** The permission profile Codex says a thread runs under, whatever Rufi asked. */
   profile?: string;
   /**
@@ -199,7 +214,7 @@ const loaded = new Set<string>();
 // restarted fake finds its saved rollout in CODEX_HOME. A reply that was
 // running when it was killed is interrupted.
 const STATE = join(process.env["CODEX_HOME"] ?? ".", "fake-threads.json");
-if (existsSync(STATE)) {
+if (existsSync(STATE) && !scenario.forgets) {
   for (const thread of JSON.parse(readFileSync(STATE, "utf8")) as Thread[]) {
     for (const turn of thread.history) {
       if (turn.status === "inProgress") turn.status = "interrupted";
@@ -220,7 +235,7 @@ function persist() {
   renameSync(aside, STATE);
 }
 let threadCount = 0;
-let compactCount = 0;
+let resumes = 0;
 /** `{[key]: value}` when it is a string, else nothing. */
 const optional = (key: string, value: unknown) =>
   typeof value === "string" ? { [key]: value } : {};
@@ -443,6 +458,8 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     // thread's history is replaced.
     const item = { id: "item-compact", type: "contextCompaction" };
     event("item/started", { item });
+    if (scenario.compactionMs) await sleep(scenario.compactionMs);
+    if (thread.running?.turnId !== turnId) return;
     event("item/completed", { item });
   }
   if (text.includes("commentary")) {
@@ -619,8 +636,27 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
       },
     });
   }
+  if (scenario.usage) {
+    event("thread/tokenUsage/updated", {
+      tokenUsage: {
+        total: usageOf(scenario.usage.tokens * 3),
+        last: usageOf(scenario.usage.tokens),
+        modelContextWindow: scenario.usage.window,
+      },
+    });
+  }
   complete(thread, turnId, "completed");
 }
+
+/** A usage breakdown as Codex reports it, of `totalTokens` tokens. */
+const usageOf = (totalTokens: number) => ({
+  totalTokens,
+  inputTokens: totalTokens - 10,
+  cachedInputTokens: 0,
+  cacheWriteInputTokens: 0,
+  outputTokens: 10,
+  reasoningOutputTokens: 0,
+});
 
 function answer(
   thread: Thread,
@@ -814,7 +850,15 @@ async function handle(
       return threadResponse(thread);
     }
     case "thread/resume": {
-      const thread = threadOf(params);
+      const id = String(params["threadId"]);
+      const thread = threads.get(id);
+      if (!thread) throw new Error(`no rollout found for thread id ${id}`);
+      if (++resumes <= (scenario.resumeFails ?? 0)) {
+        throw Object.assign(
+          new Error("failed to read thread: a fictional read error"),
+          { code: -32603 },
+        );
+      }
       // Like Codex: a thread it has open keeps its settings.
       if (loaded.has(thread.id)) return threadResponse(thread);
       await checkMcp(configMcp(params), "resuming");
@@ -842,31 +886,15 @@ async function handle(
       });
       return { status: "unsubscribed" };
     }
-    case "thread/compact/start": {
+    case "thread/inject_items": {
       const thread = threadOf(params);
-      const turnId = `compact-${RUN}-${String(++compactCount)}`;
-      setImmediate(() => {
-        const event = (method: string, item: object) => {
-          send({ method, params: { threadId: thread.id, turnId, item } });
-        };
-        send({
-          method: "turn/started",
-          params: {
-            threadId: thread.id,
-            turn: turnObject(turnId, "inProgress"),
-          },
-        });
-        const item = { type: "contextCompaction", id: `${turnId}-item` };
-        event("item/started", item);
-        event("item/completed", item);
-        const status = scenario.compactFails ? "failed" : "completed";
-        if (!scenario.compactFails) thread.told = thread.given;
-        persist();
-        send({
-          method: "turn/completed",
-          params: { threadId: thread.id, turn: turnObject(turnId, status) },
-        });
-      });
+      if (scenario.injectFails) throw new Error("fictional inject failure");
+      const [item] = params["items"] as {
+        role?: string;
+        content?: { text?: string }[];
+      }[];
+      if (item?.role === "developer") thread.told = item.content?.[0]?.text;
+      persist();
       return {};
     }
     case "turn/start": {
@@ -1005,7 +1033,10 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       (error: unknown) => {
         send({
           id,
-          error: { code: -32600, message: (error as Error).message },
+          error: {
+            code: (error as { code?: number }).code ?? -32600,
+            message: (error as Error).message,
+          },
         });
       },
     );

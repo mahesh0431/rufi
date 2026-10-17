@@ -87,7 +87,7 @@ When you delete a document (see [Documents](documents.md#delete-a-document)), it
 - **A visit brief's line**, with a page sign and **Open**, when the AI made a brief for you. Rufi writes it. See [Visit brief](visit-brief.md).
 - **Rufi's lines**, with a bell and "Rufi" above them, when something happened outside the chat. Rufi writes them, never the AI, and they are never your words. See [Rufi's lines](#rufis-lines).
 - **How a reply ended**, when it didn't finish: for example "Stopped.". When the AI service stopped the reply with an error, the line shows the error as the service reported it, such as "exceeded retry limit, last status: 429 Too Many Requests". Rufi doesn't put it in other words. When the service gave no words, the line says "This reply didn't finish.", and for your ChatGPT plan's usage limit, the time it resets.
-- **A quiet line**, "The AI started afresh here. It can still read earlier messages.", where the AI started again with a new memory of the chat: when the AI's own copy of the chat was lost (for example after a restore or a move), or where the AI compacted its memory of a long chat. From there, the AI has the chat's last messages, and it reads further back when it needs to. See [The AI's memory of the chat](#the-ais-memory-of-the-chat).
+- **Quiet lines** about the AI's memory of the chat: "Compacting chat history…" while the AI compacts it, "Chat history compacted" once it has, and "New thread started" where the AI started with a new memory of the chat. See [The AI's memory of the chat](#the-ais-memory-of-the-chat).
 
 ## Activity
 
@@ -228,11 +228,12 @@ The line above them says what happens next:
 - **Rufi restarted · these go when you send a message**: Rufi started again while messages waited. Nothing goes by itself after a restart: send a message, or click **Send now**.
 - **Not sent · Rufi sends these only when you say**: some messages are held, as below.
 
-A held message says why under it, and goes only when you click **Send** (or **Send again**) on it:
+A held message says why under it, and goes only when you click its button: **Send**, **Send again**, or **Try again** or **New thread**:
 
 - **"Not sure this reached the AI."** Rufi stopped, or the AI didn't answer, while Rufi gave it the message. The AI may have it. Check the chat before you send it again. After this, nothing more goes to the AI until you send a message.
 - **"From a backup: it waited when the backup was made."** After a restore, nothing from the past goes to the AI by itself.
 - **The AI's reason**, when the AI couldn't take it, for example when none of your allowed models is offered.
+- **The error, with Try again and New thread**, when Rufi couldn't open the AI's memory of the chat (its thread). The message shows the error as it came. **Try again** opens the same thread again, and the AI keeps its memory of the chat. **New thread** starts the AI with a new memory: your chat and your health record stay as they are, the AI gets the chat's last messages and reads further back when it needs to, and the chat shows "New thread started". If Try again meets an error again, the message waits again with both buttons. The message keeps waiting like this when you reload or Rufi starts again. When you click in two tabs, the first click counts, and the other tab shows what happened.
 
 ## Rufi's lines
 
@@ -250,17 +251,21 @@ The model and effort that answer show in the box, next to the send button, in ev
 
 **The model.** Your chat has one model at a time. To change it, choose another in the menu: a tick shows the one that answers now. The menu shows Rufi's models that your ChatGPT plan offers now: GPT-6-Astra and GPT-6.1-Sol. Before your first message, the chat shows the first of them, GPT-6-Astra when your plan offers it. Choose another before your first message if you like.
 
-**The effort** is how hard the AI thinks before it answers: Low is faster, Medium gives careful answers at a good speed, and High thinks longer. Your chat starts at Medium. A new effort applies from the next reply, and the AI doesn't start afresh.
+**The effort** is how hard the AI thinks before it answers: Low is faster, Medium gives careful answers at a good speed, and High thinks longer. Your chat starts at Medium. A new effort applies from the next reply, and the AI keeps its memory of the chat.
 
-Rufi keeps the model and effort for your chat. You can't change them while a reply runs. Rufi says so: stop the reply, then change them. A new model answers from your next message, and it has the whole chat: the AI doesn't start afresh. Messages that wait go to the new model.
+Rufi keeps the model and effort for your chat. You can't change them while a reply runs. Rufi says so: stop the reply, then change them. A new model answers from your next message, and it has the whole chat: the AI keeps its memory of the chat. Messages that wait go to the new model.
+
+**Context used.** In the chat's panel and page, a small grey ring with a percentage, such as "38%", shows beside the model and effort: how much of the AI's memory of the chat is in use, as the AI last reported it. Point at it, or move to it with Tab, to see what it means. It shows after the AI's first reply, and keeps its value when you reload. It changes after each step of a reply, not with each word. After a compaction or another model, it keeps the old value until the next reply. After a new thread, it shows nothing until the AI's first reply there. When the AI doesn't say how big its memory is, there is no ring. A full memory is normal: near full, the chat history is compacted.
 
 ## The AI's memory of the chat
 
-The AI keeps its own memory of the chat while you talk. When that memory gets long, the AI compacts it. Rufi starts the AI afresh only when the AI's own copy of the chat is lost. Then the AI gets the chat's last 10 messages, and it can read further back in the chat when it needs to. A new model, or new tools after a Rufi update, keep the same memory.
+Your chat is always kept whole in Rufi, and the AI can read all of it. The AI also keeps its own working memory of the chat, a thread, while you talk.
 
-When Rufi's rules for the AI change, after a Rufi update or when you choose another emergency region, the AI compacts its memory of the chat before your next message, so that it works from the new rules. That message can take a moment longer, and the chat shows no line there. If it fails, your message waits with "The AI couldn't take Rufi's new instructions, so it can't reply now. Try again."
+**Compacted.** When that memory gets near full, the AI compacts it: it replaces the older part with a summary, in the same thread. The chat shows "Compacting chat history…" while it runs, and "Chat history compacted" once it is done. A message you send meanwhile waits, as during any reply. If you stop the reply, or Rufi closes, while it compacts, the line goes away. Another model or effort keeps the same thread; if the new model has a smaller memory, the AI can compact, and the chat says so.
 
-Each place where the AI started afresh or compacted its memory shows the quiet line "The AI started afresh here. It can still read earlier messages." It shows above the first reply that really came from the new start: a model you chose but didn't use shows no line. If the AI finishes compacting while Rufi isn't running, that place shows no line.
+**New thread.** The AI starts a new thread only when its own copy of the chat is gone (for example after a restore, a move of Rufi's data, or when its files were deleted), or when you click **New thread** on a waiting message. The chat shows "New thread started" there. The new thread has the chat's last 10 messages, and the AI reads further back when it needs to. When Rufi can't open the AI's thread for another reason, it doesn't start a new one by itself: your message waits with the error, **Try again** and **New thread** (see [Waiting messages](#waiting-messages)).
+
+**New rules.** When Rufi's rules for the AI change, after a Rufi update or when you choose another emergency region, the AI gets the new rules with your next message. It goes at normal speed, and the chat shows no line. If the AI can't take them, your message waits with "The AI couldn't take Rufi's new instructions, so it can't reply now. Try again.", **Try again** and **New thread**.
 
 ## What you typed but didn't send
 

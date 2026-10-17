@@ -104,7 +104,7 @@ export const ActivityKind = Schema.Literals([
   "web_search",
   "file_change",
   "sub_agent",
-  /** The AI compacted its memory of the chat (shown only once done). */
+  /** Codex compacts the AI's memory of the chat: a line while it runs, and once done. */
   "compaction",
   /** A picture the AI generated: the reply shows it; `detail` is its path. */
   "picture",
@@ -194,10 +194,10 @@ export const Turn = Schema.Struct({
   startedAt: Schema.String,
   endedAt: Schema.NullOr(Schema.String),
   /**
-   * The AI started afresh for this reply: it ran on another agent thread
-   * than the reply before it (a model or tool change, a lost thread).
+   * A new thread started for this reply: it ran on another agent thread
+   * than the reply before it (a lost thread, a move, the person's choice).
    */
-  afresh: Schema.Boolean,
+  newThread: Schema.Boolean,
   /**
    * How, from the reply's last rufi-basis block: where the answer comes
    * from, in the AI's words. Only once the reply completed.
@@ -219,6 +219,15 @@ export const Chat = Schema.Struct({
   model: Schema.NullOr(Schema.String),
   /** The effort chosen for it, or the default. */
   effort: Effort,
+  /**
+   * How much of the model's context the AI's thread used, as the agent last
+   * reported it: the last request's tokens and the model's context window.
+   * Null before the first report of this thread, or when the agent didn't
+   * say the window.
+   */
+  context: Schema.NullOr(
+    Schema.Struct({ tokens: Schema.Int, window: Schema.Int }),
+  ),
 });
 export type Chat = typeof Chat.Type;
 
@@ -253,12 +262,22 @@ export const QueueItem = Schema.Struct({
   /**
    * Why a waiting row doesn't go by itself: paused or signed_out (an event
    * that rides with the person's next message), restored (from a backup),
-   * failed (the AI refused it; heldText says why).
+   * failed (the AI refused it; heldText says why), open_failed (the AI's
+   * thread didn't open; heldText says why, and the person chooses Try
+   * again or New thread).
    */
   held: Schema.NullOr(
-    Schema.Literals(["paused", "signed_out", "restored", "failed"]),
+    Schema.Literals([
+      "paused",
+      "signed_out",
+      "restored",
+      "failed",
+      "open_failed",
+    ]),
   ),
   heldText: Schema.NullOr(Schema.String),
+  /** Which open_failed hold it is: Try again and New thread name it. */
+  holdId: Schema.NullOr(Schema.String),
   /** A message's references, as its chips. */
   refs: Schema.Array(Chip),
 });
@@ -286,7 +305,7 @@ export const StreamLine = Schema.Union([
     revision: Schema.Int,
     entries: Schema.Array(Entry),
     turns: Schema.Array(Turn),
-    /** The chat, when its model changed. */
+    /** The chat, when its model, effort or context used changed. */
     chat: Schema.optionalKey(Chat),
   }),
   /** The queue changed; read it again. */
@@ -481,6 +500,15 @@ export const SaveDraft = Schema.Struct({
 });
 
 export const ReorderQueue = Schema.Struct({ ids: Schema.Array(Id) });
+
+/**
+ * The person's choice for a message whose AI thread didn't open, naming
+ * the hold they saw: try the same thread again, or start a new thread.
+ */
+export const RecoverMessage = Schema.Struct({
+  hold: Id,
+  choice: Schema.Literals(["retry", "new_thread"]),
+});
 
 /**
  * A first-run step done: welcome (ticked "not a doctor"), sign_in (skipped),
