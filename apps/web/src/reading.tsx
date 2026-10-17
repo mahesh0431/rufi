@@ -56,15 +56,19 @@ async function retry(personId: string, documentId: string) {
   readingsChanged(personId);
 }
 
-/** Every draft item of the document is saved or set aside. */
-export const nothingWaits = (items: DocumentItems) =>
-  items.items.length > 0 && items.items.every((i) => i.status !== "pending");
-
-/** What a document's page and its reading say once nothing waits to be saved. */
-export const settledLine = (items: DocumentItems) =>
-  items.items.some((i) => i.status === "saved")
-    ? "These results are in your health record."
-    : "Nothing from this document is in your health record.";
+/**
+ * What a document's page and its reading say once nothing waits, from its
+ * items' states: whether any was saved, or every one set aside. Null while
+ * an item waits, or before the reading found any. In the past tense, so an
+ * undo later keeps it true.
+ */
+export function settledLine(items: DocumentItems): string | null {
+  const states = items.items.map((i) => i.status);
+  if (states.length === 0 || states.includes("pending")) return null;
+  return states.includes("saved")
+    ? "These results were saved to your health record."
+    : "Nothing from this document was saved to your health record.";
+}
 
 /** The fields a fix can change, in the form's order. */
 export const FIELDS: readonly { id: Fixable; name: string; wide?: boolean }[] =
@@ -359,9 +363,8 @@ function Sheet({
           <>
             {items.data && !items.error && (
               <p className="text-xs text-muted">
-                {nothingWaits(items.data)
-                  ? settledLine(items.data)
-                  : "What the reader read, not saved: these become part of your health record only when you save them in the chat."}
+                {settledLine(items.data) ??
+                  "What the reader read, not saved: these become part of your health record only when you save them in the chat."}
               </p>
             )}
             {reading.note && (

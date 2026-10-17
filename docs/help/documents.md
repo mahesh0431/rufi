@@ -45,16 +45,16 @@ The Documents page lists everything you added, newest first:
 
 To show one kind only, choose it in the list at the top left.
 
-| Status              | What it means                                                                                                        |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| **Not read yet**    | Never read (added before Rufi read each document); **Retry** reads it                                                |
-| **Reading**         | Rufi reads it now, or it waits its turn; it shows the pages read so far                                              |
-| **Not saved**       | Results wait for you to check and save in the chat                                                                   |
-| **To check**        | No results wait, but a page needs **Retry**                                                                          |
-| **Saved**           | Nothing waits, and results are in your health record; it counts the results saved, for example **Saved · 2 results** |
-| **Set aside**       | Nothing waits, and every result was set aside: none is in your health record                                         |
-| **Nothing to save** | Read, and no results were found (a letter, for example)                                                              |
-| **Failed**          | The reading stopped before the end; **Retry** continues it                                                           |
+| Status              | What it means                                                                                                               |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **Not read yet**    | Never read (added before Rufi read each document); **Retry** reads it                                                       |
+| **Reading**         | Rufi reads it now, or it waits its turn; it shows the pages read so far                                                     |
+| **Not saved**       | Results wait for you to check and save in the chat (also values from a column of earlier results)                           |
+| **To check**        | No results wait, but a page needs **Retry**                                                                                 |
+| **Saved**           | Nothing waits, and results were saved to your health record; it counts the results saved, for example **Saved · 2 results** |
+| **Set aside**       | Nothing waits, and every result was set aside: none was saved to your health record                                         |
+| **Nothing to save** | Read, and no results were found (a letter, for example)                                                                     |
+| **Failed**          | The reading stopped before the end; **Retry** continues it                                                                  |
 
 ## How Rufi reads a document
 
@@ -144,7 +144,7 @@ Each document has its own page, with the results the reader read beside the page
 
 Nothing on this page saves to your health record. You fix what the reader read, then you save in the chat.
 
-When every result is saved or set aside, the page says **These results are in your health record.** If you set every result aside, it says **Nothing from this document is in your health record.** Its count says what was saved and set aside, for example **2 saved · 1 set aside**, and it has no **Save in chat**. **View reading** says the same.
+When every result is saved or set aside, the page says **These results were saved to your health record.** If you set every result aside, it says **Nothing from this document was saved to your health record.** Its count says what was saved and set aside, for example **2 saved · 1 set aside**, and it has no **Save in chat**. **View reading** says the same. These say what was saved from the document: if you later undo a saved result in the chat, the page and the Documents list still count it as saved.
 
 ### Look at the results beside the page
 

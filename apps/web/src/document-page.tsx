@@ -42,7 +42,6 @@ import { queries, useDocumentItems, useDocuments } from "./reads.ts";
 import {
   FIELDS,
   fixesOf,
-  nothingWaits,
   openReading,
   ReaderRead,
   RetryButton,
@@ -160,7 +159,7 @@ function Checking({
     plural(results.length, "result"),
     ...(earlier > 0 ? [`${String(earlier)} earlier`] : []),
   ].join(" · ");
-  const settled = nothingWaits(items);
+  const settled = settledLine(items);
   const saved = items.items.filter((i) => i.status === "saved").length;
   const setAside = items.items.filter((i) => i.status === "dismissed").length;
   const about = [
@@ -179,9 +178,8 @@ function Checking({
             <span className="text-muted">· {about}</span>
           </h2>
           <p className="text-xs text-muted">
-            {settled
-              ? settledLine(items)
-              : "What the reader read, not saved. These become part of your health record only when you save them in the chat."}
+            {settled ??
+              "What the reader read, not saved. These become part of your health record only when you save them in the chat."}
           </p>
         </div>
         {(document.status === "not_read" ||
@@ -232,7 +230,7 @@ function Checking({
             </label>
             <span className="flex-1" />
             <span className="text-xs text-muted">
-              {(settled
+              {(settled !== null
                 ? [
                     ...(saved > 0 ? [`${String(saved)} saved`] : []),
                     ...(setAside > 0 ? [`${String(setAside)} set aside`] : []),

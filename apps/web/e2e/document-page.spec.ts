@@ -330,7 +330,7 @@ test("the list stays Not saved while an earlier value waits, then shows Saved wh
   await expect(document).toContainText("Saved · 1 result");
 });
 
-test("once nothing waits, the page says its results are in the health record, counts what was saved and set aside, has no Save in chat, and opens without the earlier state", async ({
+test("once nothing waits, the page says its results were saved to the health record, counts what was saved and set aside, has no Save in chat, and opens without the earlier state", async ({
   page,
   rufi,
 }) => {
@@ -366,7 +366,7 @@ test("once nothing waits, the page says its results are in the health record, co
   const save = page.getByRole("button", { name: "Save in chat" });
   const waiting =
     "What the reader read, not saved. These become part of your health record only when you save them in the chat.";
-  const inRecord = "These results are in your health record.";
+  const inRecord = "These results were saved to your health record.";
   await expect(page.getByText(waiting)).toBeVisible();
   await expect(items).toContainText("3 results · 0 unsure · 1 fixed by you");
   await expect(page.getByText("Not saved yet: 3 results.")).toBeVisible();
@@ -478,7 +478,7 @@ test("once nothing waits, the page says its results are in the health record, co
   await expect(reading.getByText(inRecord)).toBeVisible();
 });
 
-test("once every result is set aside, the page, View reading and the list say nothing from it is in the health record", async ({
+test("once every result is set aside, the page, View reading and the list say nothing from it was saved to the health record", async ({
   page,
   rufi,
 }) => {
@@ -499,6 +499,12 @@ test("once every result is set aside, the page, View reading and the list say no
     },
   });
   await page.goto(rufi.link());
+  await page.getByRole("link", { name: "Documents" }).click();
+  const document = page.getByRole("row").filter({
+    has: page.getByRole("link", { name: "Sunrise Labs August.pdf" }),
+  });
+  await expect(document).toContainText("Not saved · 3 results");
+
   await page.getByRole("link", { name: "Chat with Rufi" }).click();
   const box = page.getByRole("textbox", { name: "Message to Rufi" });
   await box.fill("None of these are mine");
@@ -506,17 +512,14 @@ test("once every result is set aside, the page, View reading and the list say no
   await expect(page.locator(".receipt")).toHaveCount(1);
 
   await page.getByRole("link", { name: "Documents" }).click();
-  const document = page.getByRole("row").filter({
-    has: page.getByRole("link", { name: "Sunrise Labs August.pdf" }),
-  });
   await expect(document).toContainText("Set aside · 3 results");
   await expect(document).not.toContainText("Saved");
 
   await page.getByRole("link", { name: "Sunrise Labs August.pdf" }).click();
-  const nothing = "Nothing from this document is in your health record.";
+  const nothing = "Nothing from this document was saved to your health record.";
   await expect(page.getByText(nothing)).toBeVisible();
   await expect(
-    page.getByText("These results are in your health record."),
+    page.getByText("These results were saved to your health record."),
   ).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Items" })).toContainText(
     "3 set aside",
@@ -525,6 +528,60 @@ test("once every result is set aside, the page, View reading and the list say no
   const reading = page.getByRole("dialog");
   await expect(reading.getByText(nothing)).toBeVisible();
   await expect(
-    reading.getByText("These results are in your health record."),
+    reading.getByText("These results were saved to your health record."),
   ).toHaveCount(0);
+});
+
+test("once every result was saved, the page and the list say so, and still do after one is undone", async ({
+  page,
+  rufi,
+}) => {
+  // All three saved earlier, the third as the record's CRP result.
+  await rufi.family(
+    DRAFTS,
+    `INSERT INTO operations (id, seq, person_id, chat_id, call_id, request, created_at)
+       VALUES ('op-aug', 1, 'asha', 'c-asha', 'call-aug', '{}', '2026-10-01T09:05:00Z');
+     UPDATE draft_items SET status = 'saved', saved_as = 'new', record_kind = 'result',
+       record_id = 'res-a' || substr(id, 5), operation_id = 'op-aug'
+       WHERE document_id = 'doc-asha-aug';`,
+  );
+  await rufi.start({
+    scenario: {
+      calls: [
+        {
+          tool: "save_changes",
+          arguments: {
+            changes: [{ kind: "result", action: "remove", id: "res-a3" }],
+          },
+        },
+      ],
+    },
+  });
+  await page.goto(rufi.link());
+  const document = page.getByRole("row").filter({
+    has: page.getByRole("link", { name: "Sunrise Labs August.pdf" }),
+  });
+  const saved = "These results were saved to your health record.";
+  const check = async () => {
+    await page.getByRole("link", { name: "Documents" }).click();
+    await expect(document).toContainText("Saved · 3 results");
+    await page.getByRole("link", { name: "Sunrise Labs August.pdf" }).click();
+    await expect(page.getByText(saved)).toBeVisible();
+    await expect(page.getByRole("region", { name: "Items" })).toContainText(
+      "3 saved",
+    );
+    await expect(page.getByRole("region", { name: "Items" })).not.toContainText(
+      "set aside",
+    );
+  };
+  await check();
+
+  // An undo removes the result from the record; it was still saved from
+  // this document, so neither line turns into "set aside" or "nothing".
+  await page.getByRole("link", { name: "Chat with Rufi" }).click();
+  const box = page.getByRole("textbox", { name: "Message to Rufi" });
+  await box.fill("Undo the CRP");
+  await box.press("Enter");
+  await expect(page.locator(".receipt")).toHaveCount(1);
+  await check();
 });
