@@ -777,11 +777,13 @@ describe("a document Rufi AI split from an add", () => {
       const [first, second] =
         order === "the add first" ? ["pile", child] : [child, "pile"];
       const remover = deleting();
-      await remover.remove(
-        "asha",
-        first,
-        (await remover.preview("asha", first))?.version ?? "",
-      );
+      const preview = await remover.preview("asha", first);
+      // The file stays while the other document uses it.
+      expect(preview).toMatchObject({
+        place: `page ${first === "pile" ? "1" : "2"} of 2`,
+        others: 1,
+      });
+      await remover.remove("asha", first, preview?.version ?? "");
       const stays = second === "pile" ? 1 : 2;
       const kept = left();
       expect(kept.pages).toEqual([{ document_id: second, position: stays }]);
@@ -794,6 +796,10 @@ describe("a document Rufi AI split from an add", () => {
         expect.objectContaining({ status: "done", sorting: null }),
       ]);
 
+      expect(await remover.preview("asha", second)).toMatchObject({
+        place: `page ${String(stays)} of 2`,
+        others: 0,
+      });
       await remover.remove(
         "asha",
         second,

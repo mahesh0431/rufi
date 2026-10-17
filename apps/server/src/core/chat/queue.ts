@@ -189,6 +189,7 @@ export function chatQueue(
           .where("q.state", "in", ["waiting", "handing_over", "not_sure"])
           .orderBy("q.position")
           .execute();
+        const sorts = await sortRows(trx, chat);
         return {
           paused: await pausedOf(trx, chat),
           items: found.map((row): QueueItem => ({
@@ -201,6 +202,7 @@ export function chatQueue(
             heldText: row.held_text,
             holdId: row.hold_id,
             refs: JSON.parse(row.refs) as Chip[],
+            sort: sorts.has(row.id),
           })),
         };
       }),
@@ -499,11 +501,16 @@ export function chatQueue(
           .execute();
         const sorts = await sortRows(trx, chat);
         const isSort = (row: { id: string }) => sorts.has(row.id);
-        // Held sorts go once the rows that aren't held have gone.
+        // A person's message sent while a sort waits goes before it; a held
+        // sort goes once the rows that aren't held have gone.
+        const unheld = waiting.filter(
+          (row) => row.held === null && (paused === null || isSort(row)),
+        );
+        const cut = unheld.findLastIndex((row) => row.origin === "person") + 1;
         const free = [
-          ...waiting.filter(
-            (row) => row.held === null && (paused === null || isSort(row)),
-          ),
+          ...unheld.slice(0, cut).filter((row) => !isSort(row)),
+          ...unheld.slice(0, cut).filter(isSort),
+          ...unheld.slice(cut),
           ...waiting.filter(
             (row) => isSort(row) && RIDES.includes(row.held ?? ""),
           ),

@@ -196,26 +196,29 @@ const ENTITIES: Record<string, string> = {
 
 /**
  * Text as the page check compares it: HTML entities as their characters,
- * Markdown escapes and emphasis taken off, tags as a space, spacing made
+ * Markdown escapes and emphasis taken off, HTML tags as a space, spacing made
  * one space. Marks such as [?], [unclear: ...] and ~~...~~ stay.
  */
 export function comparable(text: string): string {
-  return text
-    .normalize("NFC")
-    .replace(/<[^<>\n]*>/g, " ")
-    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, name: string) => {
-      if (name.startsWith("#x") || name.startsWith("#X")) {
-        return String.fromCodePoint(Number.parseInt(name.slice(2), 16));
-      }
-      if (name.startsWith("#")) {
-        return String.fromCodePoint(Number.parseInt(name.slice(1), 10));
-      }
-      return ENTITIES[name.toLowerCase()] ?? whole;
-    })
-    .replace(/\\([!-/:-@[-`{-~])/g, "$1")
-    .replace(/\*\*|__/g, "")
-    .replace(/[\s ]+/g, " ")
-    .trim();
+  return (
+    text
+      .normalize("NFC")
+      // Only what looks like an HTML tag: in "<0.5 | >3.0" both values stay.
+      .replace(/<\/?[a-z][a-z0-9]*(\s[^<>\n]*)?\/?>/gi, " ")
+      .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, name: string) => {
+        if (name.startsWith("#x") || name.startsWith("#X")) {
+          return String.fromCodePoint(Number.parseInt(name.slice(2), 16));
+        }
+        if (name.startsWith("#")) {
+          return String.fromCodePoint(Number.parseInt(name.slice(1), 10));
+        }
+        return ENTITIES[name.toLowerCase()] ?? whole;
+      })
+      .replace(/\\([!-/:-@[-`{-~])/g, "$1")
+      .replace(/\*\*|__/g, "")
+      .replace(/[\s ]+/g, " ")
+      .trim()
+  );
 }
 
 const WORD = /[\p{L}\p{N}]/u;
@@ -1302,7 +1305,10 @@ export function sorting(
     states: async (
       personId: string,
     ): Promise<
-      Map<string, { state: "sorting" | "waiting"; why: string | null }>
+      Map<
+        string,
+        { state: "sorting" | "waiting" | "signed_out"; why: string | null }
+      >
     > => {
       const requests = await db
         .selectFrom("sort_requests as r")
@@ -1329,10 +1335,13 @@ export function sorting(
       );
       const states = new Map<
         string,
-        { state: "sorting" | "waiting"; why: string | null }
+        { state: "sorting" | "waiting" | "signed_out"; why: string | null }
       >();
       for (const request of requests) {
-        const state: { state: "sorting" | "waiting"; why: string | null } =
+        const state: {
+          state: "sorting" | "waiting" | "signed_out";
+          why: string | null;
+        } =
           request.state === "asked"
             ? {
                 state: "waiting",
@@ -1345,9 +1354,14 @@ export function sorting(
                     state: "waiting",
                     why: "It goes on after your next message in the chat",
                   }
-                : request.retry_at !== null
-                  ? { state: "waiting", why: request.error }
-                  : { state: "sorting", why: null };
+                : request.held === "signed_out"
+                  ? {
+                      state: "signed_out",
+                      why: "Sign in with ChatGPT; Rufi AI sorts it then",
+                    }
+                  : request.retry_at !== null
+                    ? { state: "waiting", why: request.error }
+                    : { state: "sorting", why: null };
         for (const document of documents) {
           if ((document.from_document ?? document.id) !== request.document_id)
             continue;

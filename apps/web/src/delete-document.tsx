@@ -235,7 +235,11 @@ function Preview({
               Goes from Rufi
             </h3>
             <ul className="list-disc pl-[18px]">
-              <li>The file: {filesIn(preview)}</li>
+              {preview.others > 0 && preview.place !== null ? (
+                <li>Its part of the file: {preview.place}</li>
+              ) : (
+                <li>The file: {filesIn(preview)}</li>
+              )}
               {preview.unsaved > 0 && (
                 <li>
                   What the reader read:{" "}
@@ -248,6 +252,14 @@ function Preview({
               Stays
             </h3>
             <ul className="list-disc pl-[18px]">
+              {preview.others > 0 && (
+                <li>
+                  The file:{" "}
+                  {preview.others === 1
+                    ? "1 other document uses it"
+                    : `${String(preview.others)} other documents use it`}
+                </li>
+              )}
               <li>Your health record and its history</li>
               <li>
                 The chat. Where it points at this document, it says "document

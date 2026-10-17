@@ -358,7 +358,7 @@ function statusOf(document: DocumentSummary): string {
   if (document.status === "reading") return `Reading · ${read}`;
   if (document.status === "failed") return `Failed · ${read}`;
   if (document.sorting?.state === "sorting") return "Sorting…";
-  if (document.sorting?.state === "waiting") return "Not sorted yet";
+  if (document.sorting) return "Not sorted yet";
   if (reading.hasPending) {
     return reading.results > 0
       ? `Not saved · ${results(reading.results)}`

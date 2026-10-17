@@ -146,7 +146,10 @@ function Checking({
   const [shown, setShown] = useState(items.items[0]?.page ?? 1);
   const [original, setOriginal] = useState(false);
   const { name } = describe(document);
-  const pending = items.items.filter((i) => i.status === "pending");
+  // A draft whose page was read again since can't be saved: it isn't counted.
+  const pending = items.items.filter(
+    (i) => i.status === "pending" && !i.outOfDate,
+  );
   // Results are current values only, as the Documents page and the chat's
   // line count them; an earlier column's values stay rows of their own.
   const results = pending.filter((i) => i.fields.column !== "earlier");

@@ -168,6 +168,10 @@ describe("the page check", () => {
     ["1.5", "| Potassium | 1\\.5 |", true],
     ["13.2", "| Haemoglobin | **13.2** |", true],
     ["5.6", "<td>5.6</td>", true],
+    ["5.6", '<td class="v">5.6</td><br/>', true],
+    // A value below a limit, with a range above one on its row.
+    ["<0.5", "| CRP | <0.5 | mg/L | >3.0 high |", true],
+    ["<8", "| Vitamin D | <8 | ng/mL | >30 |", true],
     // The doubt stays: a marked digit is not the plain number.
     ["104", "| Vitamin B12 | 1[0?]4 |", false],
     // Not inside a longer number.
@@ -800,6 +804,21 @@ describe("Rufi's work on the requests", () => {
     ]);
   });
 
+  it("signed out, it isn't sorted yet, says how to go on, and goes once the person signs in", async () => {
+    const list = async () =>
+      (await openDocuments(store, home, now).list("asha"))[0]?.sorting;
+    const queue = chatQueue(store, now);
+    await asked();
+    expect(await queue.claim(chat, false)).toBeUndefined();
+    expect(await list()).toEqual({
+      state: "signed_out",
+      why: "Sign in with ChatGPT; Rufi AI sorts it then",
+    });
+    expect(await sorts.retry("asha", "pile")).toBe(false);
+    expect(await handOver("turn-1")).toMatchObject({ origin: "rufi" });
+    expect(await list()).toEqual({ state: "sorting", why: null });
+  });
+
   it("a newer reading's request takes the place of the one that waited", async () => {
     await asked();
     await asked();
@@ -811,7 +830,7 @@ describe("Rufi's work on the requests", () => {
 });
 
 describe("a sort in the chat's queue", () => {
-  it("goes in a turn of its own: the events before it go together, a person's message after it goes alone", async () => {
+  it("goes in a turn of its own, after the events before it and a person's message sent while it waits", async () => {
     const queue = chatQueue(store, now);
     await transcripts.addEvent(chat, {
       kind: "backup",
@@ -833,8 +852,8 @@ describe("a sort in the chat's queue", () => {
     }
     expect(turns).toEqual([
       { origin: "rufi", notes: ["A backup was made."] },
-      { origin: "rufi", notes: ["A document reading"] },
       { origin: "person", notes: [], text: "What did the reports say?" },
+      { origin: "rufi", notes: ["A document reading"] },
     ]);
   });
 

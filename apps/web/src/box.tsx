@@ -392,7 +392,13 @@ function whyHeld(item: QueueItem): string | null {
   switch (item.held) {
     case "paused":
     case "signed_out":
-      // A message an older Rufi held signed out says no more: Send or Remove.
+      // A sort goes in a reply of its own. A message an older Rufi held
+      // signed out says no more: Send or Remove.
+      if (item.sort) {
+        return item.held === "paused"
+          ? "Goes after your next message, in a reply of its own."
+          : "Goes by itself once you sign in.";
+      }
       return item.origin === "rufi"
         ? "Goes to the AI with your next message."
         : null;

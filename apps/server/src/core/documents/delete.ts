@@ -20,7 +20,7 @@ import { Refusal } from "../tools/registry.ts";
 import type { FileGate } from "./gate.ts";
 import { removeBytes, sweepBytes } from "./originals.ts";
 import { DELETED_DOCUMENT, documentName } from "./naming.ts";
-import { addOf, documentsOf, notSorted, pagesOf } from "./sorting.ts";
+import { addOf, documentsOf, notSorted, pagesOf, placesOf } from "./sorting.ts";
 
 type Db = Kysely<Tables> | Transaction<Tables>;
 
@@ -144,9 +144,30 @@ async function previewIn(
     .where("status", "=", "pending")
     .executeTakeFirstOrThrow();
   const saved = await savedFrom(db, personId, documentId);
+  const ids = files.flatMap((f) => (f.id === null ? [] : [f.id]));
+  const others =
+    ids.length === 0
+      ? []
+      : await db
+          .selectFrom("document_pages as p")
+          .innerJoin("documents as d", (join) =>
+            join
+              .onRef("d.person_id", "=", "p.person_id")
+              .onRef("d.id", "=", "p.document_id"),
+          )
+          .select("p.document_id")
+          .distinct()
+          .where("p.person_id", "=", personId)
+          .where("p.file_id", "in", ids)
+          .where("p.document_id", "!=", documentId)
+          .where("d.deleted_at", "is", null)
+          .execute();
+  const place = (await placesOf(db, personId)).get(documentId)?.words ?? "";
   const shown = {
     name: documentName(pages.map((p) => p.file_name)),
     files: files.map(({ name, pages }) => ({ name, pages })),
+    place: place === "" ? null : place,
+    others: others.length,
     readings,
     unsaved,
     saved,

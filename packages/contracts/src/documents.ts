@@ -44,13 +44,14 @@ export const DocumentSummary = Schema.Struct({
     Schema.Struct({ pages: Schema.Array(Schema.Int), of: Schema.Int }),
   ),
   /**
-   * Its pages wait for Rufi AI to sort them: sorting (it goes or runs now)
-   * or waiting (Rufi tries again by itself, or it waits for the person),
-   * with why; null when nothing waits.
+   * Its pages wait for Rufi AI to sort them: sorting (it goes or runs now),
+   * waiting (Rufi tries again by itself, or it waits for the person: Retry)
+   * or signed_out (it goes once the person signs in), with why; null when
+   * nothing waits.
    */
   sorting: Schema.NullOr(
     Schema.Struct({
-      state: Schema.Literals(["sorting", "waiting"]),
+      state: Schema.Literals(["sorting", "waiting", "signed_out"]),
       why: Schema.NullOr(Schema.String),
     }),
   ),
@@ -312,6 +313,10 @@ export const DeletePreview = Schema.Struct({
   files: Schema.Array(
     Schema.Struct({ name: Schema.String, pages: Schema.Int }),
   ),
+  /** Its pages in what the person added ("pages 3–4 of 5"), when it is part of it. */
+  place: Schema.NullOr(Schema.String),
+  /** The other documents that use its files: the files stay while they do. */
+  others: Schema.Int,
   /** Readings that wait or run: the delete stops them. */
   readings: Schema.Int,
   /** Draft items not saved yet. */
