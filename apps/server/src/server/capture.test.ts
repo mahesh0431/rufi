@@ -198,6 +198,7 @@ const RUFI_TOOLS = [
   "mcp__rufi__read_chat",
   "mcp__rufi__retry_reading",
   "mcp__rufi__save_changes",
+  "mcp__rufi__sort_documents",
 ];
 
 describe("Rufi's tools on the pinned Codex, over MCP", () => {

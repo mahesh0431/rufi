@@ -15,6 +15,7 @@ describe("Rufi's skills", () => {
       "research",
       "results",
       "saving-a-document",
+      "sorting-documents",
       "visit-brief",
     ]);
     for (const skill of SKILLS) {

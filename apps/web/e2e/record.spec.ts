@@ -267,7 +267,7 @@ test("a reading that ends, with nothing saved, shows in Needs you on an open Ove
       await turn.save(1, {
         outcome: "unreadable",
         why: "The print is blurred.",
-        items: [],
+        copy: "",
       });
       return undefined;
     },
@@ -276,14 +276,42 @@ test("a reading that ends, with nothing saved, shows in Needs you on an open Ove
       await turn.look(1);
       await turn.save(1, {
         outcome: "read",
-        facts: { kind: "letter" },
-        items: [],
+        copy: "Dear Asha,\n\nYour results were normal.",
       });
       return undefined;
     },
   ]);
+  // Rufi AI sorts each reading that copied a page: the report, then the
+  // letter.
+  const sort = (kind: string, drafts: unknown[]) => [
+    {
+      id: `sort-${kind}`,
+      tool: "sort_documents",
+      arguments: {
+        document: "$document",
+        documents: [{ pages: [1], kind }],
+        drafts,
+      },
+    },
+  ];
   await rufi.family();
-  await rufi.start({ reader: reader.run });
+  await rufi.start({
+    reader: reader.run,
+    scenario: {
+      callsByTurn: [
+        sort("lab_report", [
+          {
+            page: 1,
+            test_name: "Haemoglobin",
+            value_text: "13.2",
+            unit: "g/dL",
+            quote: "Haemoglobin | 13.2 | g/dL",
+          },
+        ]),
+        sort("letter", []),
+      ],
+    },
+  });
   await page.goto(rufi.link());
   await expect(
     page.getByRole("heading", { name: "Health record" }),

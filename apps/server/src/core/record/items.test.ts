@@ -166,23 +166,23 @@ async function read(
       )
       .run(jobId, documentId, Number(position));
   }
-  const facts = Object.values(pages).flatMap((p) =>
-    p.facts ? [p.facts] : [],
-  );
+  const facts = Object.values(pages).flatMap((p) => (p.facts ? [p.facts] : []));
   const dated = facts.find((f) => f.dates?.[0] !== undefined)?.dates?.[0];
   const drafts = Object.entries(pages).flatMap(([position, entry]) =>
     entry.outcome !== "read"
       ? []
-      : entry.items.map(({ unsure, column, from_page: _from, date, ...item }) => {
-          const when = date ?? (column === "earlier" ? undefined : dated);
-          return {
-            page: Number(position),
-            ...item,
-            ...(when !== undefined && { date: when }),
-            quote: `${item.test_name} ${item.value_text}`,
-            ...(unsure !== undefined && { worth_a_look: unsure }),
-          };
-        }),
+      : entry.items.map(
+          ({ unsure, column, from_page: _from, date, ...item }) => {
+            const when = date ?? (column === "earlier" ? undefined : dated);
+            return {
+              page: Number(position),
+              ...item,
+              ...(when !== undefined && { date: when }),
+              quote: `${item.test_name} ${item.value_text}`,
+              ...(unsure !== undefined && { worth_a_look: unsure }),
+            };
+          },
+        ),
   );
   const issuer = facts.find((f) => f.issuer)?.issuer;
   const number = facts.find((f) => f.report_number)?.report_number;
@@ -356,82 +356,85 @@ describe("saving draft items", () => {
     "missing issuer",
     "missing number",
     "missing collected date",
-  ])("groups an older Rufi's reports across documents safely: %s", async (scenario) => {
-    const facts = {
-      ...(scenario !== "missing issuer" && { issuer: "Sunrise Labs" }),
-      ...(scenario !== "missing number" && { report_number: "SOL-SPLIT-1" }),
-      ...(scenario !== "missing collected date" && { dates: [COLLECTED] }),
-    };
-    // Another person's identical printed report must never be reused.
-    store.db
-      .prepare(
-        "UPDATE reports SET issuer = ?, report_number = ?, collected = ? WHERE id = 'rep-ravi-jul'",
-      )
-      .run(
-        facts.issuer ?? null,
-        facts.report_number ?? null,
-        facts.dates?.[0]?.iso ?? null,
-      );
-    readOld({
-      1: {
-        outcome: "read",
-        facts,
-        items: [{ test_name: "Ferritin", value_text: "42", date: COLLECTED }],
-      },
-    });
-    readOld(
-      {
+  ])(
+    "groups an older Rufi's reports across documents safely: %s",
+    async (scenario) => {
+      const facts = {
+        ...(scenario !== "missing issuer" && { issuer: "Sunrise Labs" }),
+        ...(scenario !== "missing number" && { report_number: "SOL-SPLIT-1" }),
+        ...(scenario !== "missing collected date" && { dates: [COLLECTED] }),
+      };
+      // Another person's identical printed report must never be reused.
+      store.db
+        .prepare(
+          "UPDATE reports SET issuer = ?, report_number = ?, collected = ? WHERE id = 'rep-ravi-jul'",
+        )
+        .run(
+          facts.issuer ?? null,
+          facts.report_number ?? null,
+          facts.dates?.[0]?.iso ?? null,
+        );
+      readOld({
         1: {
           outcome: "read",
           facts,
-          items: [
-            { test_name: "Vitamin B12", value_text: "510", date: COLLECTED },
-          ],
+          items: [{ test_name: "Ferritin", value_text: "42", date: COLLECTED }],
         },
-      },
-      "doc-asha-sep",
-    );
-    const { Ferritin = "", "Vitamin B12": B12 = "" } = drafts();
-    const items = [Ferritin, B12].map((item) => ({
-      item,
-      version: 1,
-      as: "new",
-      category: "lab",
-    }));
-    await say("Save Ferritin and Vitamin B12");
-    if (scenario === "later save") {
-      for (const item of items) {
-        expect((await call("save_changes", { items: [item] })).ok).toBe(true);
+      });
+      readOld(
+        {
+          1: {
+            outcome: "read",
+            facts,
+            items: [
+              { test_name: "Vitamin B12", value_text: "510", date: COLLECTED },
+            ],
+          },
+        },
+        "doc-asha-sep",
+      );
+      const { Ferritin = "", "Vitamin B12": B12 = "" } = drafts();
+      const items = [Ferritin, B12].map((item) => ({
+        item,
+        version: 1,
+        as: "new",
+        category: "lab",
+      }));
+      await say("Save Ferritin and Vitamin B12");
+      if (scenario === "later save") {
+        for (const item of items) {
+          expect((await call("save_changes", { items: [item] })).ok).toBe(true);
+        }
+      } else {
+        expect((await call("save_changes", { items })).ok).toBe(true);
       }
-    } else {
-      expect((await call("save_changes", { items })).ok).toBe(true);
-    }
-    const saved = rows(
-      "SELECT r.test_name, r.value_text, r.report_id, s.document_id, s.page FROM results r JOIN record_sources s ON s.person_id = r.person_id AND s.record_id = r.id WHERE r.test_name IN ('Ferritin', 'Vitamin B12') ORDER BY r.test_name",
-    );
-    expect(saved).toEqual([
-      {
-        test_name: "Ferritin",
-        value_text: "42",
-        report_id: expect.any(String) as string,
-        document_id: "doc-asha-aug",
-        page: 1,
-      },
-      {
-        test_name: "Vitamin B12",
-        value_text: "510",
-        report_id: expect.any(String) as string,
-        document_id: "doc-asha-sep",
-        page: 1,
-      },
-    ]);
-    expect(new Set(saved.map((row) => row["report_id"])).size).toBe(
-      scenario === "same save" || scenario === "later save" ? 1 : 2,
-    );
-    expect(saved.every((row) => row["report_id"] !== "rep-ravi-jul")).toBe(
-      true,
-    );
-  });
+      const saved = rows(
+        "SELECT r.test_name, r.value_text, r.report_id, s.document_id, s.page FROM results r JOIN record_sources s ON s.person_id = r.person_id AND s.record_id = r.id WHERE r.test_name IN ('Ferritin', 'Vitamin B12') ORDER BY r.test_name",
+      );
+      expect(saved).toEqual([
+        {
+          test_name: "Ferritin",
+          value_text: "42",
+          report_id: expect.any(String) as string,
+          document_id: "doc-asha-aug",
+          page: 1,
+        },
+        {
+          test_name: "Vitamin B12",
+          value_text: "510",
+          report_id: expect.any(String) as string,
+          document_id: "doc-asha-sep",
+          page: 1,
+        },
+      ]);
+      expect(new Set(saved.map((row) => row["report_id"])).size).toBe(
+        scenario === "same save" || scenario === "later save" ? 1 : 2,
+      );
+      expect(saved.every((row) => row["report_id"] !== "rep-ravi-jul")).toBe(
+        true,
+      );
+    },
+  );
 
   it("saves Rufi AI's drafts in their document's report, as sorted, and never in another document's with the same printed report", async () => {
     const page = (test: string, value: string): Record<number, Entry> => ({
@@ -486,13 +489,17 @@ describe("saving draft items", () => {
     const { HbA1c = "" } = drafts();
     // As if Rufi AI left the date out.
     store.db
-      .prepare("UPDATE draft_items SET fields = json_remove(fields, '$.date') WHERE id = ?")
+      .prepare(
+        "UPDATE draft_items SET fields = json_remove(fields, '$.date') WHERE id = ?",
+      )
       .run(HbA1c);
     await say("Save the HbA1c");
     const refused = await call("save_changes", {
       items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }],
     });
-    expect(refused.issues[0]?.fix).toMatch(/^This item has no date Rufi can store \(none is printed for it\)/);
+    expect(refused.issues[0]?.fix).toMatch(
+      /^This item has no date Rufi can store \(none is printed for it\)/,
+    );
   });
 
   it("refuses a draft whose page was read again since, and saves nothing", async () => {

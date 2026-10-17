@@ -613,7 +613,10 @@ describe("a restart or a failure", () => {
       completed.resolve(undefined);
       await until(done);
       expect(requests()).toHaveLength(1);
-      expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages", SORTING]);
+      expect(lines()).toEqual([
+        "Reading sunrise-august.pdf · 2 pages",
+        SORTING,
+      ]);
     } finally {
       completed.resolve(undefined);
       await second.reader.close();
@@ -818,7 +821,10 @@ describe("a restart or a failure", () => {
       expect(job()).toMatchObject({ retries: 1, error: null });
       expect(runs[1]?.input).toContain("You saved pages 1 in an earlier run");
       expect(copied()).toEqual([1, 2]);
-      expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages", SORTING]);
+      expect(lines()).toEqual([
+        "Reading sunrise-august.pdf · 2 pages",
+        SORTING,
+      ]);
     } finally {
       await running.close();
     }
@@ -929,7 +935,11 @@ describe("the chat AI and a reading", () => {
         await turn.look(1);
         await turn.save(1, readPage());
         await turn.look(2);
-        await turn.save(2, { outcome: "unreadable", why: "Blurred.", copy: "" });
+        await turn.save(2, {
+          outcome: "unreadable",
+          why: "Blurred.",
+          copy: "",
+        });
         return undefined;
       },
     ]);
@@ -978,8 +988,20 @@ describe("the chat AI and a reading", () => {
       result: {
         add: id,
         copies: [
-          { page: 1, document: id, outcome: "read", sorted: false, copy: readPage().copy },
-          { page: 2, document: id, outcome: "unreadable", sorted: false, copy: "" },
+          {
+            page: 1,
+            document: id,
+            outcome: "read",
+            sorted: false,
+            copy: readPage().copy,
+          },
+          {
+            page: 2,
+            document: id,
+            outcome: "unreadable",
+            sorted: false,
+            copy: "",
+          },
         ],
       },
     });

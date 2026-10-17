@@ -862,6 +862,26 @@ export function readings(
           p.copy,
         ]),
       );
+      // While it reads, the copies it saved so far.
+      const sofar = new Map(
+        job && (job.state === "queued" || job.state === "running")
+          ? (
+              await db
+                .selectFrom("page_copies as c")
+                .innerJoin("document_pages as p", (join) =>
+                  join
+                    .onRef("p.person_id", "=", "c.person_id")
+                    .onRef("p.file_id", "=", "c.file_id")
+                    .onRef("p.page_in_file", "=", "c.page_in_file"),
+                )
+                .select(["p.position", "c.copy"])
+                .where("c.person_id", "=", personId)
+                .where("p.document_id", "=", documentId)
+                .where("c.job_id", "=", job.id)
+                .execute()
+            ).map((c) => [c.position, c.copy])
+          : [],
+      );
       const targets =
         job?.targets.filter((t) => pages.some((p) => p.position === t)) ?? [];
       return {
@@ -886,7 +906,7 @@ export function readings(
           state: p.state,
           why: p.state_why,
           entry: p.entry ? (JSON.parse(p.entry) as Entry) : null,
-          copy: copies.get(p.position)?.text ?? null,
+          copy: sofar.get(p.position) ?? copies.get(p.position)?.text ?? null,
           checks: p.entry_checks
             ? (JSON.parse(p.entry_checks) as Checks)
             : null,
