@@ -119,7 +119,7 @@ sequenceDiagram
   M->>DB: read (read-only) or save (one transaction)
   M-->>X: the answer
   X-->>C: turn ended
-  C->>DB: end the turn; the next rows can go
+  C->>DB: end the turn, and the next rows can go
 ```
 
 - **Rufi owns the queue.** What waits to go to the AI (the person's messages, and notes from Rufi's events) is in Rufi's database, one queue per chat, never in the agent's own queue. A send moves the box's text into a row and empties the draft in one transaction, keyed by the send's id, so a resend after a lost answer is not taken twice. See [ADR 0004](adr/0004-conversations-are-rufis.md).
@@ -134,7 +134,7 @@ sequenceDiagram
 The AI reads and changes the record only through Rufi's tools (`core/tools/`, listed in `apps/server/tools.json`): read the Overview, records, documents and earlier chat; save changes; set draft items aside; retry a reading; make a visit brief.
 
 - **One person.** Rufi chooses the person whose chat it is. No tool takes a person, a table or SQL from the AI. See [ADR 0006](adr/0006-the-ai-reads-one-persons-record.md).
-- **Reads are read-only and bounded.** Tools read through their own read-only connection. One `get_records` answer holds at most 200 records and 32 KB; when there are more, it says where it stopped and the AI reads on. A failed read is an error, never an empty list.
+- **Reads are read-only and bounded.** Tools read through their own read-only connection. One `get_records` answer holds at most 200 records and 32 KB (a single larger record comes back on its own); when there are more, it says where it stopped and the AI reads on. A failed read is an error, never an empty list.
 - **A save is all or nothing, with a trace.** `save_changes` writes, in the chat only, in one transaction: the records, each one's before and after, its sources (the person's message or a document page), and an operation whose order is the order of saves. The receipt the person sees is built from what was stored, not from the AI's words. Records are never deleted, only marked removed. See [ADR 0005](adr/0005-the-record-changes-by-chat.md) and [ADR 0011](adr/0011-the-record-upgrades-by-migrations-and-keeps-the-order-of-saves.md).
 - **Code checks the shape, the AI judges the meaning.** Code checks a date's calendar shape, that a source is the person's message in this chat, and the health rules. Whether the person said yes, and what they meant, is the AI's judgement, written in its instructions and skills.
 - **Refusals end a reply.** A reply ends after three refused tool calls (the setting `rejections_per_reply`).
@@ -161,7 +161,7 @@ Rufi reads each document as it is added, with its own sub-agent, one document at
 - **Locked down.** Each attempt runs in a Codex app-server of its own, in an ephemeral thread, with no shell, files, network, web search, sub-agents or skills, and exactly two tools from `/mcp/reader`: look at a page (`get_page`) and save what it says (`save_page`). On GPT-6.1-Sol it calls them through code inside Codex's `exec`; on GPT-5.5 directly. The runner refuses other models, and fails a turn that shows anything it didn't allow.
 - **Pages.** One page service serves the reader and the chat's `get_documents`: a PDF page drawn as an image, with its own text when it has some; a photo as added, a HEIC as its JPEG copy. Images go to the AI and are never stored in the transcript.
 - **The notebook survives.** What each page says is saved in the reading's notebook as the reader goes, so a compaction, a stop or a restart loses nothing; the next attempt goes on from it.
-- **Drafts only at the end.** Only a reader turn that completed normally finishes a reading, in one transaction: the page states, the draft items, the document's version, and the end line in the chat. Draft items are never the record; the person saves them in the chat.
+- **Drafts only at the end.** Only a reader turn that completed normally finishes a reading, or, after a crash, a start that finds every target page already saved. It finishes in one transaction: the page states, the draft items, the document's version, and the end line in the chat. Draft items are never the record; the person saves them in the chat.
 - **Retries.** A passing failure is tried again by itself after 30 seconds, 1 minute and 2 minutes. An account problem (signed out, a usage limit) or a fourth failure ends the reading as failed, with the notebook kept for **Retry**.
 
 ## Documents' originals

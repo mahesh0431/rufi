@@ -20,9 +20,9 @@ A backup doesn't hold:
 
 Rufi keeps the newest backup of each of the last 7 days that had one, and of each of the last 4 weeks that had one: about 5 weeks. It removes older backups only after a new backup passed its check, so it never removes your last good backups, however long Rufi was closed.
 
-The backups are in the `backups` folder in your data folder, one folder for each backup, named by the date and time it was made (for example `2026-10-08-091403`). Each holds `rufi.sqlite`, the documents in `files`, and `backup.json`. On your Mac's own disk, a document in a backup takes no more space until the file changes.
+The backups are in the `backups` folder in your data folder, one folder for each backup, named by the date and time it was made (for example `2026-10-08-091403`). Each holds `rufi.sqlite`, the documents in `files`, and `backup.json`. Where your Mac's disk allows (as its own disk does), a document in a backup takes no more space until the file changes.
 
-Each hour Rufi checks that its newest backup is still whole. If it isn't, Settings says so (see [See your backups](#see-your-backups)).
+Each hour Rufi checks that its newest backup is still whole: the record, and that each document is there with its size. It reads each document's content again only when it makes a backup and when you restore one. If a backup isn't whole, Settings says so (see [See your backups](#see-your-backups)).
 
 ### The backup before an upgrade
 
