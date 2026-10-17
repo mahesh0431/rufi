@@ -29,25 +29,42 @@ export interface McpCall {
 
 /**
  * A text the endpoint offers to read, whatever the key: a skill, under
- * `skill://<name>/SKILL.md` (the same text as the agent's skill files).
+ * `skill://<name>/SKILL.md`, and the files beside it (the same texts as the
+ * agent's skill files).
  */
 export interface McpResource {
   uri: string;
   name: string;
   description: string;
+  mimeType: string;
   text: string;
 }
 
-/** Rufi's skills as the endpoint offers them. */
+/** Rufi's skills as the endpoint offers them, each file beside its SKILL.md too. */
 export const skillResources = (
-  skills: readonly { name: string; description: string; text: string }[],
+  skills: readonly {
+    name: string;
+    description: string;
+    text: string;
+    files: Readonly<Record<string, string>>;
+  }[],
 ): McpResource[] =>
-  skills.map((skill) => ({
-    uri: `skill://${skill.name}/SKILL.md`,
-    name: skill.name,
-    description: skill.description,
-    text: skill.text,
-  }));
+  skills.flatMap((skill) => [
+    {
+      uri: `skill://${skill.name}/SKILL.md`,
+      name: skill.name,
+      description: skill.description,
+      mimeType: "text/markdown",
+      text: skill.text,
+    },
+    ...Object.entries(skill.files).map(([file, text]) => ({
+      uri: `skill://${skill.name}/${file}`,
+      name: `${skill.name}/${file}`,
+      description: `A file of the ${skill.name} skill, named in its SKILL.md.`,
+      mimeType: file.endsWith(".css") ? "text/css" : "text/plain",
+      text,
+    })),
+  ]);
 
 /** What a key opens: a catalog, and how its calls run. */
 export interface McpScope {
@@ -189,11 +206,11 @@ function serverFor(
   );
   if (resources.length > 0) {
     server.setRequestHandler("resources/list", () => ({
-      resources: resources.map(({ uri, name, description }) => ({
+      resources: resources.map(({ uri, name, description, mimeType }) => ({
         uri,
         name,
         description,
-        mimeType: "text/markdown",
+        mimeType,
       })),
     }));
     server.setRequestHandler("resources/read", (request) => {
@@ -203,7 +220,7 @@ function serverFor(
       if (!found) throw new Error(`Rufi has no ${request.params.uri}.`);
       return {
         contents: [
-          { uri: found.uri, mimeType: "text/markdown", text: found.text },
+          { uri: found.uri, mimeType: found.mimeType, text: found.text },
         ],
       };
     });

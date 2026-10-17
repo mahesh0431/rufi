@@ -236,6 +236,9 @@ importers:
       '@openai/codex':
         specifier: 0.159.3
         version: 0.159.3
+      '@rufi/brand':
+        specifier: workspace:*
+        version: link:../../packages/brand
       '@rufi/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
