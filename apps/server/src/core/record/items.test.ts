@@ -721,6 +721,16 @@ describe("saving draft items", () => {
       expect((await call("save_changes", { changes: [change] })).ok).toBe(true);
     }
     await say("Save it again, with both pages");
+    // A removed result takes no page: it is put back first.
+    const removed = written();
+    const refused = await call("save_changes", { items: [await relink(id)] });
+    expect(refused.issues.map((i) => [i.path, i.fix])).toEqual([
+      [
+        "items.0.record",
+        "That result is removed. To save this item into it, put it back first with a restore change, in a save of its own, after the user's yes; then save the item.",
+      ],
+    ]);
+    expect(written()).toEqual(removed);
     expect(
       (
         await call("save_changes", {

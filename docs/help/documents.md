@@ -126,7 +126,7 @@ If a result isn't yours, or was read by mistake, tell the AI. When you say yes, 
 
 ### Undo
 
-Say "undo that", as for any save (see [Undo](chat.md#undo)). The AI removes the results the save added, and they stay in the history. When a result became **another source**, the undo takes only that page off its sources: the result stays. To save it again, ask the AI, for example "save page 2 as a source again". It asks first, and the chat shows a new receipt.
+Say "undo that", as for any save (see [Undo](chat.md#undo)). The AI removes the results the save added, and they stay in the history. When a result became **another source**, the undo takes only that page off its sources: the result stays. To save it again, ask the AI, for example "save page 2 as a source again". It asks first, and the chat shows a new receipt. When the undo removed the result, the AI puts it back first, so you see two receipts: one for the result put back, then one for the page added as its source.
 
 ## When a reading stops
 

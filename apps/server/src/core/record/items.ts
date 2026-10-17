@@ -377,7 +377,7 @@ export async function planItems(
       const wrong = !before
         ? "No result with this id is in this person's record."
         : before["removed"] === 1
-          ? "That result is removed."
+          ? "That result is removed. To save this item into it, put it back first with a restore change, in a save of its own, after the user's yes; then save the item."
           : target.version !== current
             ? `That result changed since you read it: its version is ${current === null ? "null" : `"${current}"`} now. Read it again with get_records, tell the user what changed and ask again.`
             : pointed.some((r) => r.version !== current)
