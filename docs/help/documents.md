@@ -66,7 +66,7 @@ Rufi reads each document as soon as you add it. It sends the document's pages to
 
 ### The reader's model and effort
 
-In **Settings** → **Documents**, choose the **Reader model**: **GPT-6.1-Sol** (the start) or **GPT-5.5**. These are the models where Rufi can lock the reader down to its two tools. On GPT-6.1-Sol, the reader uses its tools through small pieces of code, with no files and no internet (see [Your data and the AI](your-data-and-the-ai.md#reading-your-documents)).
+In **Settings** → **Documents**, choose the **Reader model**: **GPT-6.1-Sol** (the start) or **GPT-5.5**. These are the models where Rufi can lock the reader down to its two tools, with no files and no internet (see [Your data and the AI](your-data-and-the-ai.md#reading-your-documents)).
 
 Then choose its **Effort**: **Low**, **Medium** (the start) or **High**. Higher effort thinks longer on each page, and uses more of your plan.
 
@@ -117,7 +117,7 @@ What Rufi does when it saves a document's results:
 - **Its report.** Results with the same printed lab, report number and collection date go in one report, even when they came from different documents. If any of these is missing, Rufi keeps reports from different documents apart. A page that prints none of these belongs to the report of the page before it.
 - **Its sources.** Each result keeps where it came from: the document and its page, your message, or both. The receipt, the AI's reads and a visit brief show them.
 - **All or nothing.** Rufi saves all the results in one step, however many there are. If one can't be saved, nothing is saved, and the AI tells you why.
-- **Each result once.** A result you already saved isn't saved again: the AI gets the earlier save back.
+- **Each result once.** A result you already saved isn't saved again: the AI gets the earlier save back. After an undo, you can ask the AI to save it again.
 - **Nothing changed since.** If a result changed after the AI read it (the reading went on, or you changed it), Rufi refuses the save. The AI reads the document again and asks you again.
 
 ### Results you don't want
@@ -126,7 +126,7 @@ If a result isn't yours, or was read by mistake, tell the AI. When you say yes, 
 
 ### Undo
 
-Say "undo that", as for any save (see [Undo](chat.md#undo)). The AI removes the results the save added, and they stay in the history. When a result became **another source**, the undo takes only that page off its sources: the result stays.
+Say "undo that", as for any save (see [Undo](chat.md#undo)). The AI removes the results the save added, and they stay in the history. When a result became **another source**, the undo takes only that page off its sources: the result stays. To save it again, ask the AI, for example "save page 2 as a source again". It asks first, and the chat shows a new receipt. When the undo removed the result, the AI puts it back first, so you see two receipts: one for the result put back, then one for the page added as its source.
 
 ## When a reading stops
 
@@ -198,7 +198,7 @@ In a browser that has no PDF viewer, Rufi says so and offers **Save a copy**, to
 
 ## Where your documents are kept
 
-The originals are in the `files` folder in your data folder, each named by its content's fingerprint (its SHA-256 hash). Rufi writes each file to disk completely before the document shows in Rufi. Your backups and the export hold every original (see [Backups and export](backups-and-export.md)).
+The originals are in the `files` folder in your data folder, exactly as you added them. Your backups and the export hold every original (see [Backups and export](backups-and-export.md)).
 
 ## Delete a document
 

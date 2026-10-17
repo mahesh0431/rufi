@@ -667,6 +667,137 @@ describe("saving draft items", () => {
     });
   });
 
+  it("links a page again after an undo took it off the result, in a save of its own with a receipt and history", async () => {
+    // The same result printed on both pages of the report.
+    const haemoglobin = {
+      test_name: "Haemoglobin",
+      value_text: "13.4",
+      value_number: 13.4,
+      unit: "g/dL",
+    };
+    await read({
+      1: {
+        outcome: "read",
+        facts: { dates: [COLLECTED], issuer: "Sunrise Labs" },
+        items: [haemoglobin],
+      },
+      2: { outcome: "read", items: [haemoglobin] },
+    });
+    const [first = "", second = ""] = rows(
+      "SELECT id FROM draft_items ORDER BY page",
+    ).map((row) => String(row["id"]));
+    const versionOf = async (id: string) =>
+      (
+        (await call("get_records", { kind: "result", ids: [id] })).result as {
+          records?: { version: string | null }[];
+        }
+      ).records?.[0]?.version ?? null;
+    const relink = async (id: string) => ({
+      item: second,
+      version: 1,
+      as: "another_source",
+      record: { id, version: await versionOf(id) },
+    });
+
+    await say("Save it; page 2 is the same result");
+    const saved = await call("save_changes", {
+      items: [{ item: first, version: 1, as: "new", category: "lab" }],
+    });
+    const id = saved.result.changes[0]?.id ?? "";
+    const firstSave = (one("SELECT id FROM operations") as { id: string }).id;
+    expect((await call("save_changes", { items: [await relink(id)] })).ok).toBe(
+      true,
+    );
+    await say("Undo both");
+    for (const change of [
+      {
+        kind: "result",
+        action: "remove_source",
+        id,
+        from: { document: "doc-asha-aug", page: 2 },
+      },
+      { kind: "result", action: "remove", id },
+    ]) {
+      expect((await call("save_changes", { changes: [change] })).ok).toBe(true);
+    }
+    await say("Save it again, with both pages");
+    // A removed result takes no page: it is put back first.
+    const removed = written();
+    const refused = await call("save_changes", { items: [await relink(id)] });
+    expect(refused.issues.map((i) => [i.path, i.fix])).toEqual([
+      [
+        "items.0.record",
+        "That result is removed. To save this item into it, put it back first with a restore change, in a save of its own, after the user's yes; then save the item.",
+      ],
+    ]);
+    expect(written()).toEqual(removed);
+    expect(
+      (
+        await call("save_changes", {
+          changes: [{ kind: "result", action: "restore", id }],
+        })
+      ).ok,
+    ).toBe(true);
+    const again = await call("save_changes", { items: [await relink(id)] });
+    expect(again.ok).toBe(true);
+    expect(lines(again.result.receipt)).toEqual([
+      "Saved 1 result from Sunrise Labs August.pdf · 1 more source",
+      "Added a source to result Haemoglobin 13.4 g/dL: Sunrise Labs August.pdf, page 2 (its values stay as they are)",
+    ]);
+    expect(again.result.changes).toEqual([
+      { kind: "result", action: "link", id },
+    ]);
+    const save = (
+      one("SELECT id FROM operations ORDER BY seq DESC LIMIT 1") as {
+        id: string;
+      }
+    ).id;
+    expect(
+      one(
+        "SELECT status, saved_as, record_id, operation_id FROM draft_items WHERE id = ?",
+        second,
+      ),
+    ).toEqual({
+      status: "saved",
+      saved_as: "another_source",
+      record_id: id,
+      operation_id: save,
+    });
+    expect(
+      rows(
+        "SELECT c.action FROM record_changes c JOIN operations o ON o.id = c.operation_id WHERE c.record_id = ? ORDER BY o.seq, c.seq",
+        id,
+      ).map((row) => row["action"]),
+    ).toEqual(["add", "link", "unlink", "remove", "restore", "link"]);
+    expect(
+      rows(
+        "SELECT page FROM record_sources WHERE record_id = ? AND type = 'document_page' AND removed_by IS NULL ORDER BY page",
+        id,
+      ),
+    ).toEqual([{ page: 1 }, { page: 2 }]);
+
+    // Both pages are sources now, so both items are saved as they are.
+    const after = written();
+    const twice = await call("save_changes", {
+      items: [
+        { item: first, version: 1, as: "new", category: "lab" },
+        await relink(id),
+      ],
+    });
+    expect(twice.ok).toBe(true);
+    expect(twice.result.changes).toEqual([]);
+    expect(twice.result.already_saved).toEqual([
+      {
+        item: first,
+        as: "new",
+        record: id,
+        save: firstSave,
+      },
+      { item: second, as: "another_source", record: id, save },
+    ]);
+    expect(written()).toEqual(after);
+  });
+
   it("saves a correction as a new result that replaces the saved one", async () => {
     await read();
     const { HbA1c = "" } = drafts();
@@ -897,9 +1028,26 @@ describe("saving draft items", () => {
           save: (one("SELECT id FROM operations") as { id: string }).id,
         },
       ],
-      note: "Every item was saved before, so nothing new was saved and Rufi added no receipt.",
+      note: "Nothing was saved, and Rufi added no receipt: every item is in the record already, as its earlier save in already_saved put it. If the user asked for something else, read the result with get_records and tell them.",
     });
     expect(written()).toEqual(after);
+
+    // Beside an item saved now, it is named as not saved again.
+    const { TSH = "" } = drafts();
+    const mixed = await call("save_changes", {
+      items: [
+        { item: HbA1c, version: 1, as: "new", category: "lab" },
+        { item: TSH, version: 1, as: "new", category: "lab" },
+      ],
+    });
+    expect(mixed.ok).toBe(true);
+    expect(lines(mixed.result.receipt)[0]).toBe(
+      "Saved 1 result from Sunrise Labs August.pdf · 1 new",
+    );
+    expect(mixed.result.already_saved).toHaveLength(1);
+    expect(mixed.result.note).toBe(
+      "The items in already_saved weren't saved again: each is in the record already, as its earlier save put it.",
+    );
   });
 
   it("refuses a save when the document changed since the user's message pointed at it", async () => {
@@ -973,6 +1121,34 @@ describe("saving draft items", () => {
       changes: [{ kind: "result", action: "remove", id }],
     });
     expect(undone.ok).toBe(true);
+    expect(one("SELECT removed FROM results WHERE id = ?", id)).toEqual({
+      removed: 1,
+    });
+
+    // Asked again, the item goes in as a new result of its own.
+    await say("Save it again");
+    const again = await call("save_changes", {
+      items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }],
+    });
+    expect(again.ok).toBe(true);
+    expect(lines(again.result.receipt)[1]).toBe(
+      'Added result HbA1c 7.1 %: category lab, range 4.0 - 5.6, flag H, measured 12 Aug 2026 ("Collected 12/08/2026") · page 1',
+    );
+    const added = again.result.changes[0]?.id ?? "";
+    expect(added).not.toBe(id);
+    expect(
+      one(
+        "SELECT record_id, operation_id FROM draft_items WHERE id = ?",
+        HbA1c,
+      ),
+    ).toEqual({
+      record_id: added,
+      operation_id: (
+        one("SELECT id FROM operations ORDER BY seq DESC LIMIT 1") as {
+          id: string;
+        }
+      ).id,
+    });
     expect(one("SELECT removed FROM results WHERE id = ?", id)).toEqual({
       removed: 1,
     });
