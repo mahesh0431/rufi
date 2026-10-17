@@ -359,7 +359,7 @@ function Status({
 }) {
   const reading = document.reading;
   return (
-    <span className="flex flex-wrap items-center gap-1">
+    <>
       <span className="rounded-full bg-side px-2 py-px text-xs text-muted">
         {statusOf(document)}
       </span>
@@ -377,7 +377,7 @@ function Status({
           View reading
         </Button>
       )}
-    </span>
+    </>
   );
 }
 
@@ -390,27 +390,18 @@ function List({
 }) {
   return (
     <>
-      <div className="rounded-xl border border-line bg-surface px-3">
-        <table className="w-full table-fixed border-collapse">
-          {/* Fixed widths, so a longer status never moves the columns. */}
-          <colgroup>
-            <col />
-            <col className="w-[88px]" />
-            <col className="w-[68px]" />
-            <col className="w-[68px]" />
-            <col className="w-[280px]" />
-            <col className="w-[104px]" />
-          </colgroup>
+      {/* The name keeps a minimum width; the status asks for room for one
+          line and wraps first. Only a window too narrow for every column
+          scrolls sideways. */}
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface px-3">
+        <table className="w-full border-collapse">
           <thead>
             <tr className="text-left text-xs text-muted [&>th]:pr-3">
               <th className="py-2 font-normal">Document</th>
               <th className="py-2 font-normal">Kind</th>
               <th className="py-2 font-normal">Date</th>
               <th className="py-2 font-normal">Added</th>
-              <th className="py-2 font-normal">Status</th>
-              <th className="py-2 font-normal">
-                <span className="sr-only">Ask Rufi</span>
-              </th>
+              <th className="w-[376px] py-2 font-normal">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -429,7 +420,7 @@ function List({
                     <Link
                       to="/people/$personId/documents/$documentId"
                       params={{ personId, documentId: document.id }}
-                      className="flex w-fit items-center gap-2 text-left font-semibold hover:underline"
+                      className="flex w-fit min-w-36 items-center gap-2 text-left font-semibold hover:underline"
                     >
                       <Icon
                         size={16}
@@ -448,20 +439,22 @@ function List({
                   </td>
                   <td className="py-2.5">{printedDay(document.addedAt)}</td>
                   <td className="py-2.5">
-                    <Status personId={personId} document={document} />
-                  </td>
-                  <td className="py-2.5 text-right">
-                    <AskRufi
-                      onClick={() => {
-                        askRufi(personId, [
-                          {
-                            pointer: { type: "document", id: document.id },
-                            label: name,
-                            detail: "",
-                          },
-                        ]);
-                      }}
-                    />
+                    {/* The status, then what can be done: on one line when there is room. */}
+                    <div className="flex flex-wrap items-center gap-1">
+                      <Status personId={personId} document={document} />
+                      <AskRufi
+                        className="ml-auto"
+                        onClick={() => {
+                          askRufi(personId, [
+                            {
+                              pointer: { type: "document", id: document.id },
+                              label: name,
+                              detail: "",
+                            },
+                          ]);
+                        }}
+                      />
+                    </div>
                   </td>
                 </tr>
               );
