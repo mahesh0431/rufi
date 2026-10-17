@@ -1784,7 +1784,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       snapshot,
     };
   },
-  /** The user fixed a value on the document's page: the AI calls it their fix, not a draft. */
+  /** The user fixed a value on the document's page: the AI calls it their fix. */
   your_fix: async (api, home) => {
     const c = chat(api);
     const doc = await readReport(api, home, "lipids", "lotus-jun.pdf");
@@ -1799,13 +1799,12 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         nothing_saved: nothingSaved(home, snapshot),
-        no_draft: !/draft/i.test(lastReply(snapshot)),
       },
       verdicts: [
         {
           check: "your_fix",
           criterion:
-            "The answer gives the LDL 112 as the user's own fix, not saved yet, and says the reader read 109.",
+            "The answer gives the LDL 112 as the user's own fix, not saved yet, and says the reader read 109; it doesn't call the corrected value a draft.",
           evidence: replyOf(snapshot),
         },
       ],

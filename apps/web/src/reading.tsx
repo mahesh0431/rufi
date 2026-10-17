@@ -452,10 +452,10 @@ function PageWork({
       ? [`${facts.dates[0].label} ${facts.dates[0].date}`]
       : []),
   ].join(" · ");
-  // A read page waits for its own items, including the person's fix.
-  // Only a page whose reading hasn't made items yet uses the entry.
+  // A read page shows its own items, with the person's fix, once they
+  // came; a page still being read shows what the reader saved.
   const rows: readonly Row[] =
-    drafts?.length || page.state === "read"
+    page.state === "read"
       ? (drafts ?? []).map((draft) => ({
           key: draft.id,
           item: draft.fields,
