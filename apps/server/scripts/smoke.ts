@@ -7,14 +7,15 @@
 // needs a person's verdict (a part code can't check) or INFRA (a timeout, a
 // usage limit, the sign-in, the provider). Nothing is run again by itself.
 // Every case also checks that each reply completed with words. Anything but
-// passed or a person's verdict makes the exit code nonzero.
+// passed or a person's verdict makes the exit code nonzero. A case's data
+// folder goes when it ends; a FAILED or INFRA case's is kept in the output
+// folder as <case>.home, and its line says so.
 //
 //   RUFI_HOME=<test sign-in folder> pnpm smoke [--only a,b] [--jobs n] [--out empty-dir]
 import { randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { parseArgs } from "node:util";
 import { DatabaseSync } from "node:sqlite";
@@ -28,6 +29,7 @@ import {
   HarnessTimeout,
   outFolder,
   runAll,
+  scratchFolders,
   sharedToken,
   statusOf,
   type Status,
@@ -2236,7 +2238,7 @@ async function runCase(
   const check = CASES[name];
   if (!check) throw new Error(`no case ${name}`);
   // The fictional family, and the case's own rows.
-  const home = await mkdtemp(join(tmpdir(), "rufi-smoke-"));
+  const home = await scratchFolders.make("rufi-smoke-");
   const store = openWritable(databasePath(home));
   store.db.exec(await readFile(FAMILY, "utf8"));
   await familyFiles(home);
@@ -2312,7 +2314,14 @@ async function runCase(
     stalledMs: stalls.max / 1e6,
   });
   const seconds = Math.round((Date.now() - began) / 1000);
-  const line = `${name}: ${result}${why ? ` (${why})` : ""}, ${String(seconds)} s`;
+  // A failure's data folder is evidence: its logs, record and Codex's files.
+  let kept: string | undefined;
+  if (result === "FAILED" || result === "INFRA") {
+    kept = await scratchFolders.keep(home, join(out, `${name}.home`));
+  } else {
+    await scratchFolders.remove(home);
+  }
+  const line = `${name}: ${result}${why ? ` (${why})` : ""}, ${String(seconds)} s${kept === undefined ? "" : `; data folder kept: ${kept}`}`;
   console.log(line);
   await writeFile(
     join(out, `${name}.md`),

@@ -7,9 +7,6 @@
 // copied, which weren't (all their rows missed), and the count of each
 // verdict. A row the judge leaves out, or gives two verdicts, is unsure: a
 // person looks at it, and it never counts as fine.
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { Schema } from "effect";
 import type { RunSubAgent } from "../src/agent/runtime.ts";
 import {
@@ -21,6 +18,7 @@ import {
 import type { Log } from "../src/platform/logs.ts";
 import type { McpKeys } from "../src/server/mcp.ts";
 import type { KeyPage } from "../tests/pack/copy-set.ts";
+import { scratchFolders } from "./live-run.ts";
 
 /** The judge's model and effort: a judgement, so the reader's model at high. */
 export const JUDGE = { model: "gpt-6.1-sol", effort: "high" } as const;
@@ -216,8 +214,8 @@ export async function judgePage(
     tools: [specOf(tool)],
     call: ({ tool: name, input, callId }) => call(name, input, callId),
   });
+  const home = await scratchFolders.make("rufi-judge-");
   try {
-    const home = await mkdtemp(join(tmpdir(), "rufi-judge-"));
     const outcome = await deps.run(home)({
       ...JUDGE,
       instructions: JUDGE_INSTRUCTIONS,
@@ -238,6 +236,7 @@ export async function judgePage(
     };
   } finally {
     deps.mcp.keys.revoke(mcpKey);
+    await scratchFolders.remove(home);
   }
 }
 

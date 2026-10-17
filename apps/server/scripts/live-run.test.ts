@@ -1,6 +1,9 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Turn } from "@rufi/contracts";
 import { afterEach, describe, expect, it } from "vitest";
@@ -132,6 +135,65 @@ describe("the output folder", () => {
     await writeFile(join(dir, "report.md"), "an earlier run\n");
     await expect(outFolder("smoke", dir)).rejects.toThrow(/isn't empty/);
   });
+});
+
+describe("the cases' scratch data folders", () => {
+  /**
+   * A run that makes three case folders in its own temporary folder, removes
+   * the first, keeps the second as evidence and leaves the third, then ends
+   * as `how` says; its exit code, what is left in the temporary folder, and
+   * what is in the output folder.
+   */
+  async function run(how: "ends" | "crashes" | "is stopped") {
+    const temporary = await mkdtemp(join(tmpdir(), "rufi-scratch-"));
+    const out = await mkdtemp(join(tmpdir(), "rufi-out-"));
+    const script = `
+      import { writeFile } from "node:fs/promises";
+      import { join } from "node:path";
+      import { scratchFolders } from ${JSON.stringify(new URL("live-run.ts", import.meta.url).href)};
+      const [done, evidence, running] = [
+        await scratchFolders.make("rufi-smoke-"),
+        await scratchFolders.make("rufi-smoke-"),
+        await scratchFolders.make("rufi-smoke-"),
+      ];
+      await writeFile(join(running, "rufi.db"), "a fictional record");
+      await scratchFolders.remove(done);
+      await scratchFolders.keep(evidence, join(${JSON.stringify(out)}, "case.home"));
+      console.log("running");
+      if (${JSON.stringify(how)} === "crashes") throw new Error("the run crashed");
+      if (${JSON.stringify(how)} === "is stopped") setInterval(() => undefined, 1000);
+    `;
+    const child = spawn(
+      process.execPath,
+      ["--input-type=module", "--eval", script],
+      {
+        env: { ...process.env, TMPDIR: temporary },
+        stdio: ["ignore", "pipe", "ignore"],
+      },
+    );
+    const exited = once(child, "exit");
+    for await (const line of createInterface({ input: child.stdout })) {
+      if (line === "running") break;
+    }
+    if (how === "is stopped") child.kill("SIGINT");
+    const [code] = (await exited) as [number | null];
+    return {
+      code,
+      left: await readdir(temporary),
+      kept: await readdir(out),
+    };
+  }
+
+  it.each([
+    ["ends", 0],
+    ["crashes", 1],
+    ["is stopped", 130],
+  ] as const)(
+    "go when the run %s; one kept as evidence stays in the output folder",
+    async (how, code) => {
+      expect(await run(how)).toEqual({ code, left: [], kept: ["case.home"] });
+    },
+  );
 });
 
 describe("a case's status", () => {
