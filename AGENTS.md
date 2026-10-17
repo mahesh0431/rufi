@@ -44,8 +44,9 @@ If something is unclear, stop and ask; don't guess. Rules are added here when th
 
 ## Docs
 
-- Three places: `docs/help/` for people (also the in-app help and the website, as they are), `GLOSSARY.md` for everyone, `AGENTS.md` and `docs/adr/` for developers; otherwise the `project-docs` skill.
-- A change to behaviour, commands or settings updates its help page and the glossary in the same pull request; the step's plan names the pages, or says why none change.
+- Three places: `docs/help/` for people (also the in-app help and the website, as they are), `GLOSSARY.md` for everyone, and for developers `AGENTS.md`, `docs/how-rufi-works.md` (the parts and how data flows, high level) and `docs/adr/`; otherwise the `project-docs` skill.
+- Help says what a person sees and does, and why it matters to them. How it works inside (queues, hashes, locks, threads, limits) goes in `docs/how-rufi-works.md`, and the help keeps only its consequence, in plain words.
+- A change to behaviour, commands or settings updates its help page and the glossary in the same pull request; the step's plan names the pages, or says why none change. A change to a part, a border or how data flows updates `docs/how-rufi-works.md` in the same pull request.
 - Use the glossary's words everywhere: screens, docs, the AI's instructions and code.
 
 ## Data model
