@@ -227,11 +227,10 @@ test("messages sent during a reply wait: edit, reorder, remove, and send one aft
 }) => {
   await opened(page, rufi);
   await send(page, "hang");
-  // While Rufi answers, the box says so, with Stop where Send was, and
-  // typing queues the next message.
-  const answering = chat(page).getByText(/^Rufi is answering · \d+s$/);
-  await expect(answering).toBeVisible();
-  await expect(chat(page).getByRole("button", { name: "Stop" })).toBeVisible();
+  // While Rufi answers, Stop is where Send was, and typing queues the next
+  // message.
+  const stop = chat(page).getByRole("button", { name: "Stop" });
+  await expect(stop).toBeVisible();
   await expect(chat(page).getByRole("button", { name: "Send" })).toHaveCount(0);
   await expect(box(chat(page))).toHaveAttribute(
     "placeholder",
@@ -245,24 +244,55 @@ test("messages sent during a reply wait: edit, reorder, remove, and send one aft
   await expect(items).toHaveText(["Second", "Third"]);
   await accessible(page);
 
-  await items.nth(1).getByRole("button", { name: "Move up" }).click();
+  // Each moves by its handle: dragged, or by keyboard (Space, the arrows,
+  // Space; Escape puts it back and leaves the chat open).
+  const handle = (n: number) =>
+    items.nth(n).getByRole("button", { name: "Move", exact: true });
+  const from = await handle(1).boundingBox();
+  const above = await items.nth(0).boundingBox();
+  if (from === null || above === null) throw new Error("not shown");
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + from.width / 2, above.y + above.height / 10, {
+    steps: 10,
+  });
+  await page.mouse.up();
   await expect(items).toHaveText(["Third", "Second"]);
-  await items.nth(1).getByRole("button", { name: "Edit" }).click();
+
+  const top = async (n: number) => (await items.nth(n).boundingBox())?.y;
+  const liftUp = async (n: number) => {
+    await handle(n).focus();
+    await page.keyboard.press("Space");
+    await expect(handle(n)).toHaveAttribute("aria-pressed", "true");
+    // The arrows count from the page's next task, as for a person.
+    await page.evaluate(() => new Promise((done) => setTimeout(done)));
+    const was = (await top(n)) ?? 0;
+    await page.keyboard.press("ArrowUp");
+    await expect.poll(() => top(n)).toBeLessThan(was);
+  };
+  await liftUp(1);
+  await page.keyboard.press("Space");
+  await expect(items).toHaveText(["Second", "Third"]);
+  await liftUp(1);
+  await page.keyboard.press("Escape");
+  await expect(handle(1)).not.toHaveAttribute("aria-pressed");
+  await expect(items).toHaveText(["Second", "Third"]);
+  await expect(log(chat(page))).toBeVisible();
+
+  await items.nth(0).getByRole("button", { name: "Edit" }).click();
   await waiting
     .getByRole("textbox", { name: "Waiting message" })
     .fill("Second, edited");
   await waiting.getByRole("button", { name: "Save" }).click();
-  await expect(items).toHaveText(["Third", "Second, edited"]);
-  await items.nth(0).getByRole("button", { name: "Remove" }).click();
+  await expect(items).toHaveText(["Second, edited", "Third"]);
+  await items.nth(1).getByRole("button", { name: "Remove" }).click();
   await expect(items).toHaveText(["Second, edited"]);
 
-  // The bar says so too, with Stop. After a Stop they keep waiting, until
-  // you send.
+  // The bar has Stop too. After a Stop they keep waiting, until you send.
   await box(chat(page)).press("Escape");
   await expect(log(chat(page))).toHaveCount(0);
-  await expect(answering).toBeVisible();
-  await chat(page).getByRole("button", { name: "Stop" }).click();
-  await expect(answering).toHaveCount(0);
+  await stop.click();
+  await expect(stop).toHaveCount(0);
   await expect(chat(page).getByRole("button", { name: "Send" })).toBeVisible();
   await opener(chat(page)).click();
   await expect(log(chat(page))).toContainText("Stopped.");

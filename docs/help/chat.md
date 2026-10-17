@@ -201,7 +201,7 @@ If you stop the reply while the AI saves, the save can still finish. Then its re
 
 ## While the AI replies
 
-While the AI replies, the box and the chat bar say "Rufi is answering" and how many seconds it has taken so far.
+While the AI replies, the stop button (the square) is where the send button was. The chat bar also shows a turning circle before its text, because Activity doesn't show there.
 
 **What the AI does.** Activity shows the AI's notes, its thinking and its steps as they happen (see [Activity](#activity)). After a reload, or in another tab, it shows the same.
 
@@ -218,7 +218,7 @@ If you click Stop, what the AI did so far stays in Activity, and the folded line
 While the AI replies, the box says "Type to queue your next message…". When you send a message then, it waits in Rufi's queue, and goes to the AI after the reply, in order. What waits shows above the box, also after a reload, a restart of Rufi, or a change of model. For each of your waiting messages you can:
 
 - **Edit** it (the pencil), then **Save**.
-- **Move up** or **Move down**, to change the order.
+- **Move** it, to change the order: drag it up or down by its handle (the dots on its left). With the keyboard, go to the handle with Tab, press Space to pick the message up, the up and down arrows to move it, and Space to put it down. Esc puts it back where it was.
 - **Remove** it (the X). It never goes to the AI.
 
 The line above them says what happens next:
