@@ -116,8 +116,6 @@ interface KeyRow {
 interface KeyDoubt {
   row: string;
   truth: readonly string[];
-  /** A word a note about it would use, outside its row. */
-  mention: string;
   /** A printed value crossed out by hand, which a copy should show as crossed out. */
   crossed?: string;
 }
@@ -138,6 +136,13 @@ type DoubtOutcome =
 /** The ways a copy marks what it isn't sure of, as the reader is told to. */
 const MARK =
   /\?|~~|\[[^\]]*\]|unclear|illegible|unreadable|smudg|obscur|uncertain|handwrit|crossed|struck/i;
+
+/**
+ * A marked part of a line that isn't a table row: struck text, a token
+ * with a [note] or a "?" in it, or a note in brackets that says why.
+ */
+const MARKED_PART =
+  /~~[^~]*~~|\S*\[[^\]]*\]\S*|\S*\?\S*|\([^)]*(?:unclear|illegible|unreadable|smudg|obscur|uncertain|handwrit|crossed|struck)[^)]*\)/gi;
 
 /** How a copy shows text crossed out: struck through, or said in words. */
 const CROSSED = /~~|cross|struck|strike/i;
@@ -195,24 +200,123 @@ function plain(text: string): string {
     .trim();
 }
 
-/** Whether `line` holds `cell` as a whole: "6.8" isn't in "16.8" or "6.85". */
-function holds(line: string, cell: string): boolean {
+/**
+ * Where `text` holds `cell` whole, from `from` on: "6.8" isn't in "16.8",
+ * "6.85", "-6.8" or "<6.8", and "<0.5" isn't in "0.5".
+ */
+function find(text: string, cell: string, from = 0) {
   const escaped = plain(cell).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(
-    `(?<![\\p{L}\\p{N}]|\\p{N}[.,])${escaped}(?![\\p{L}\\p{N}]|[.,]\\p{N})`,
-    "iu",
-  ).test(line);
+  const whole = new RegExp(
+    `(?<![\\p{L}\\p{N}<>≤≥+\\-]|\\p{N}[.,])${escaped}(?![\\p{L}\\p{N}]|[.,\\-]\\p{N})`,
+    "giu",
+  );
+  whole.lastIndex = from;
+  const match = whole.exec(text);
+  return match
+    ? { at: match.index, end: match.index + match[0].length }
+    : undefined;
 }
 
 /** The numbers in a text: "12", "0.92", "12,9". */
 const numbers = (text: string) => text.match(/\d+(?:[.,]\d+)*/g) ?? [];
 
 /**
+ * A line's marked parts: in a table row each cell with a mark, elsewhere
+ * each marked token. A mark excuses only its own part.
+ */
+function markedParts(line: string) {
+  const parts: { at: number; end: number }[] = [];
+  if (line.includes("|")) {
+    let at = 0;
+    for (const cell of line.split("|")) {
+      if (MARK.test(cell)) parts.push({ at, end: at + cell.length });
+      at += cell.length + 1;
+    }
+  } else {
+    for (const m of line.matchAll(MARKED_PART))
+      parts.push({ at: m.index, end: m.index + m[0].length });
+  }
+  return parts;
+}
+
+/** The line with its marked parts blanked out, each character's place kept. */
+const unmarked = (
+  line: string,
+  parts: readonly { at: number; end: number }[],
+) =>
+  parts.reduce(
+    (text, p) =>
+      text.slice(0, p.at) + " ".repeat(p.end - p.at) + text.slice(p.end),
+    line,
+  );
+
+/** What a line holding a row's label did with each of its cells. */
+interface RowCopy {
+  line: string;
+  /** Cells copied as printed, in their order after the label. */
+  found: string[];
+  /** Cells in a marked part, or where a marked part stands for them. */
+  marked: string[];
+  /** Cells missing or changed, with no mark of their own. */
+  wrong: string[];
+}
+
+/**
+ * A line against a row of the key. Its cells are looked for in their
+ * order after the label, outside the marked parts: a value in another
+ * column, or with another sign or comparator, isn't the cell. A cell in a
+ * marked part is marked; a cell missing where a marked part stands
+ * between the cells around it is marked too (the reader's own reading of a
+ * smudge, "1[0?]4", holds no "104"). Any other cell is wrong.
+ */
+function rowCopy(row: KeyRow, line: string, label: { end: number }): RowCopy {
+  const parts = markedParts(line).filter((p) => p.end > label.end);
+  const clean = unmarked(line, parts);
+  type Place = { at: number; end: number; how: "found" | "marked" } | undefined;
+  const places: Place[] = [];
+  let cursor = label.end;
+  for (const cell of row.cells) {
+    const found = find(clean, cell, cursor);
+    if (found) {
+      places.push({ ...found, how: "found" });
+      cursor = found.end;
+      continue;
+    }
+    const inPart = parts
+      .map((p) => find(line.slice(0, p.end), cell, p.at))
+      .find((f) => f !== undefined);
+    if (inPart) {
+      places.push({ ...inPart, how: "marked" });
+      cursor = Math.max(cursor, inPart.end);
+      continue;
+    }
+    places.push(undefined);
+  }
+  const copy: RowCopy = { line, found: [], marked: [], wrong: [] };
+  row.cells.forEach((cell, i) => {
+    const place = places[i];
+    if (place) {
+      copy[place.how].push(cell);
+      return;
+    }
+    const before = places
+      .slice(0, i)
+      .reduce((end, p) => Math.max(end, p?.end ?? 0), label.end);
+    const after = places
+      .slice(i + 1)
+      .reduce((at, p) => Math.min(at, p?.at ?? line.length), line.length);
+    const standsIn = parts.some((p) => p.at >= before && p.at < after);
+    copy[standsIn ? "marked" : "wrong"].push(cell);
+  });
+  return copy;
+}
+
+/**
  * A page's copy against its key: rows found whole; rows missed (no line
- * holds the label with any of its cells); rows whose label is there with a
- * cell missing or changed (marked unclear or not); rows copied twice;
- * numbers on lines with no mark that the hand-checked copy doesn't hold
- * (invented or changed); and each doubt's outcome.
+ * holds the label with any of its cells); every line of a row with a cell
+ * missing or changed (marked unclear or not); rows copied more than once,
+ * the same or not; numbers outside the marked parts that the hand-checked
+ * copy doesn't hold (invented or changed); and each doubt's outcome.
  */
 export function scoreCopy(
   key: { rows: readonly KeyRow[]; doubts: readonly KeyDoubt[]; hand: string },
@@ -223,70 +327,107 @@ export function scoreCopy(
     rows: key.rows.length,
     found: 0,
     missed: [] as string[],
-    changed: [] as { row: string; missing: string[]; marked: boolean }[],
+    changed: [] as { row: string; wrong: string[]; marked: string[] }[],
     duplicated: [] as string[],
     invented: [] as string[],
     doubts: [] as { row: string; outcome: DoubtOutcome; line?: string }[],
   };
+  const copied = new Map<string, RowCopy[]>();
   for (const row of key.rows) {
-    const candidates = lines.filter((line) => holds(line, row.label));
-    const missingIn = (line: string) =>
-      row.cells.filter((cell) => !holds(line, cell));
-    const best = candidates.reduce<string | undefined>(
-      (a, b) =>
-        a === undefined || missingIn(b).length < missingIn(a).length ? b : a,
-      undefined,
-    );
-    const missing = best === undefined ? row.cells : missingIn(best);
     // Its name elsewhere (a note that names the test) isn't the row.
-    if (
-      best === undefined ||
-      (missing.length > 0 && missing.length === row.cells.length)
-    ) {
+    const candidates = lines.flatMap((line) => {
+      const label = find(line, row.label);
+      if (!label) return [];
+      const copy = rowCopy(row, line, label);
+      return row.cells.length === 0 || copy.wrong.length < row.cells.length
+        ? [copy]
+        : [];
+    });
+    copied.set(row.label, candidates);
+    if (candidates.length === 0) {
       score.missed.push(row.label);
       continue;
     }
-    if (missing.length === 0) score.found++;
-    else
-      score.changed.push({
-        row: row.label,
-        missing: [...missing],
-        marked: MARK.test(best),
-      });
-    const whole = candidates.filter((line) => missingIn(line).length === 0);
-    if (row.cells.length > 0 && whole.length > 1)
+    if (row.cells.length > 0 && candidates.length > 1)
       score.duplicated.push(row.label);
+    const changed = candidates.filter(
+      (c) => c.wrong.length > 0 || c.marked.length > 0,
+    );
+    if (changed.length === 0) score.found++;
+    for (const c of changed)
+      score.changed.push({ row: row.label, wrong: c.wrong, marked: c.marked });
   }
   const known = new Set(numbers(plain(key.hand)));
   score.invented = lines
-    .filter((line) => !MARK.test(line))
-    .flatMap(numbers)
+    .flatMap((line) => numbers(unmarked(line, markedParts(line))))
     .filter((n) => !known.has(n));
   for (const doubt of key.doubts) {
-    const line = lines.find((l) => holds(l, doubt.row));
-    if (line === undefined) {
+    const best = (copied.get(doubt.row) ?? []).reduce<RowCopy | undefined>(
+      (a, b) => (a === undefined || b.wrong.length < a.wrong.length ? b : a),
+      undefined,
+    );
+    if (best === undefined) {
       score.doubts.push({ row: doubt.row, outcome: "missing" });
       continue;
     }
-    // Its row, and any note that names it.
-    const about = lines.filter(
-      (l) =>
-        l === line || l.toLowerCase().includes(doubt.mention.toLowerCase()),
-    );
-    const outcome: DoubtOutcome = about.some((l) => MARK.test(l))
-      ? doubt.crossed !== undefined && !about.some((l) => CROSSED.test(l))
+    const outcome: DoubtOutcome = doubt.truth.some((t) =>
+      best.marked.includes(t),
+    )
+      ? doubt.crossed !== undefined && !CROSSED.test(best.line)
         ? "marked, crossing-out not shown"
         : "marked"
-      : doubt.truth.every((t) => holds(line, t))
+      : doubt.truth.every((t) => best.found.includes(t))
         ? "right, not marked"
         : "wrong, not marked";
-    score.doubts.push({ row: doubt.row, outcome, line });
+    score.doubts.push({ row: doubt.row, outcome, line: best.line });
   }
   return score;
 }
 
 /** A copy's silent errors: changed without a mark, invented numbers, wrong guesses. */
 export const silent = (score: ReturnType<typeof scoreCopy>) =>
-  score.changed.filter((c) => !c.marked).length +
+  score.changed.filter((c) => c.wrong.length > 0).length +
   score.invented.length +
   score.doubts.filter((d) => d.outcome === "wrong, not marked").length;
+
+/** A set's copies added up; a page with no copy counts all its rows missed. */
+export function tally(
+  pages: readonly {
+    key: Parameters<typeof scoreCopy>[0];
+    copy: string | undefined;
+  }[],
+) {
+  const totals = {
+    pages: pages.length,
+    copied: 0,
+    rows: 0,
+    found: 0,
+    missed: 0,
+    changedSilent: 0,
+    changedMarked: 0,
+    duplicated: 0,
+    invented: 0,
+    silent: 0,
+  };
+  for (const { key, copy } of pages) {
+    totals.rows += key.rows.length;
+    if (copy === undefined) {
+      totals.missed += key.rows.length;
+      continue;
+    }
+    const score = scoreCopy(key, copy);
+    totals.copied++;
+    totals.found += score.found;
+    totals.missed += score.missed.length;
+    totals.changedSilent += score.changed.filter(
+      (c) => c.wrong.length > 0,
+    ).length;
+    totals.changedMarked += score.changed.filter(
+      (c) => c.wrong.length === 0,
+    ).length;
+    totals.duplicated += score.duplicated.length;
+    totals.invented += score.invented.length;
+    totals.silent += silent(score);
+  }
+  return totals;
+}

@@ -14,10 +14,10 @@
 //
 // --copies reads the copy set (tests/pack/copy-set.ts, five pages in two
 // files) with the reader that copies (core/documents/copy-reader.ts) and
-// scores each page's copy against the rows it must hold: rows found,
-// missed, changed (marked unclear or not), copied twice, numbers invented,
-// and what each copy did with the smudged digit and the handwritten
-// correction. --runs n reads the set n times, one round after another, and
+// scores each page's copy against the rows it must hold, each cell in its
+// column: rows found, missed (a page with no copy too), changed (marked
+// unclear or not), copied more than once, numbers invented, and what each
+// copy did with the smudged digit and the handwritten correction. --runs n reads the set n times, one round after another, and
 // reports every round; each copy is written to the output folder.
 //
 //   RUFI_HOME=<test sign-in folder> node apps/server/scripts/reader-pack.ts [--all | --only a,b] [--model id] [--effort level] [--out empty-dir]
@@ -56,7 +56,7 @@ import { diagnostics } from "../src/platform/logs.ts";
 import { reader, READER_SETTING, readerChoice } from "../src/server/reader.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "../src/server/mcp.ts";
 import { drawn, photo, scan } from "../tests/pack/images.ts";
-import { copySetFiles, KEY } from "../tests/pack/copy-set.ts";
+import { copySetFiles, KEY, type KeyPage } from "../tests/pack/copy-set.ts";
 import { scanPdf, textPdf } from "../tests/pack/pdf.ts";
 import {
   BUNDLE,
@@ -73,6 +73,7 @@ import {
   scoreCopy,
   scoreItems,
   silent,
+  tally,
   type Draft,
 } from "./reader-score.ts";
 
@@ -570,16 +571,7 @@ async function readCopies(runs: number) {
   const files = await copySetFiles();
   const begun = Date.now();
   const lines: string[] = [];
-  const totals = {
-    pages: 0,
-    rows: 0,
-    found: 0,
-    missed: 0,
-    changedSilent: 0,
-    changedMarked: 0,
-    duplicated: 0,
-    invented: 0,
-  };
+  const scored: { key: KeyPage; copy: string | undefined }[] = [];
   const doubts = new Map<string, string[]>();
   for (let round = 1; round <= runs; round++) {
     const results = await runAll(
@@ -602,6 +594,8 @@ async function readCopies(runs: number) {
       const result = results.get(name);
       if (result?.status !== "fulfilled") {
         lines.push(`- ${name}: the harness failed: ${String(result?.reason)}`);
+        for (const key of KEY.filter((k) => k.file === name))
+          scored.push({ key, copy: undefined });
         continue;
       }
       const { job, saved } = result.value;
@@ -617,8 +611,11 @@ async function readCopies(runs: number) {
       );
       for (const key of KEY.filter((k) => k.file === name)) {
         const copy = saved.find((c) => c.position === key.page);
+        scored.push({ key, copy: copy?.copy });
         if (!copy) {
-          lines.push(`  - page ${String(key.page)}: no copy`);
+          lines.push(
+            `  - page ${String(key.page)}: no copy (its ${String(key.rows.length)} rows count as missed)`,
+          );
           continue;
         }
         const folder = join(out, `round-${String(round)}`);
@@ -629,15 +626,7 @@ async function readCopies(runs: number) {
         );
         const score = scoreCopy(key, copy.copy);
         const changed = (marked: boolean) =>
-          score.changed.filter((c) => c.marked === marked);
-        totals.pages++;
-        totals.rows += score.rows;
-        totals.found += score.found;
-        totals.missed += score.missed.length;
-        totals.changedSilent += changed(false).length;
-        totals.changedMarked += changed(true).length;
-        totals.duplicated += score.duplicated.length;
-        totals.invented += score.invented.length;
+          score.changed.filter((c) => (c.wrong.length === 0) === marked);
         const named = (label: string, list: readonly string[]) =>
           list.length > 0 ? [`${label}: ${list.join("; ")}`] : [];
         lines.push(
@@ -646,11 +635,14 @@ async function readCopies(runs: number) {
             ...named("missed", score.missed),
             ...named(
               "changed, not marked",
-              changed(false).map((c) => `${c.row} (${c.missing.join(", ")})`),
+              changed(false).map(
+                (c) =>
+                  `${c.row} (${c.wrong.join(", ")}${c.marked.length > 0 ? `; marked ${c.marked.join(", ")}` : ""})`,
+              ),
             ),
             ...named(
               "changed, marked",
-              changed(true).map((c) => `${c.row} (${c.missing.join(", ")})`),
+              changed(true).map((c) => `${c.row} (${c.marked.join(", ")})`),
             ),
             ...named("copied twice", score.duplicated),
             ...named("numbers not on the page", score.invented),
@@ -666,12 +658,15 @@ async function readCopies(runs: number) {
     }
     lines.push("");
   }
+  const totals = tally(scored);
   const text = [
     `# Reader pack: the copy set, ${new Date(begun).toISOString()}`,
     "",
     `Reader: the reader that copies, ${choice.model}, ${choice.effort}. ${String(runs)} ${runs === 1 ? "round" : "rounds"}, one after another; wall time ${String(Math.round((Date.now() - begun) / 1000))} s. Each copy is in this folder, by round.`,
     "",
-    `Totals: ${String(totals.pages)} pages, ${String(totals.rows)} rows, ${String(totals.found)} whole, ${String(totals.missed)} missed, ${String(totals.changedSilent)} changed and not marked, ${String(totals.changedMarked)} changed and marked, ${String(totals.duplicated)} copied twice, ${String(totals.invented)} numbers not on the page.`,
+    `Totals: ${String(totals.pages)} pages (${String(totals.copied)} copied), ${String(totals.rows)} rows, ${String(totals.found)} whole, ${String(totals.missed)} missed, ${String(totals.changedSilent)} changed and not marked, ${String(totals.changedMarked)} changed and marked, ${String(totals.duplicated)} copied more than once, ${String(totals.invented)} numbers not on the page; ${String(totals.silent)} silent errors.`,
+    "",
+    "The key checks chosen rows of each page (every test row, the report's names, numbers and dates), each cell in its column and with its sign; it doesn't check every word. A cell in a part the copy marks as unclear counts as marked, not wrong.",
     "",
     "Hard-to-read parts, round by round:",
     ...[...doubts].map(

@@ -416,8 +416,6 @@ interface Doubt {
   row: string;
   /** What is printed or written there: every value a faithful copy holds. */
   truth: readonly string[];
-  /** A word a note about it would use, outside its row. */
-  mention: string;
   /** A printed value crossed out by hand. */
   crossed?: string;
   what: string;
@@ -471,7 +469,7 @@ export const KEY: readonly KeyPage[] = [
     hand: hand("mixed-2"),
     rows: [
       row("LDL Cholesterol", "134", "H", "150", "mg/dL", "<100"),
-      row("TSH", "5.3", "5.8", "H", "4.9", "mIU/L", "0.4 – 4.0"),
+      row("TSH", "5.3", "H", "5.8", "4.9", "mIU/L", "0.4 – 4.0"),
       row("Free T4", "1.1", "1.2", "ng/dL", "0.8 – 1.8"),
       row("Vitamin D (25-OH)", "18", "L", "22", "ng/mL", "30 – 100"),
       row("Vitamin B12", "412", "380", "pg/mL", "200 – 900"),
@@ -482,7 +480,6 @@ export const KEY: readonly KeyPage[] = [
       {
         row: "TSH",
         truth: ["5.3", "5.8"],
-        mention: "TSH",
         crossed: "5.3",
         what: "a printed 5.3 crossed out, 5.8 written by hand",
       },
@@ -537,7 +534,6 @@ export const KEY: readonly KeyPage[] = [
       {
         row: "Glucose, Fasting",
         truth: ["104"],
-        mention: "glucose",
         what: "the middle digit of 104 smudged",
       },
     ],
