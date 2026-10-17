@@ -33,25 +33,35 @@ CREATE TABLE files (
 ) STRICT;
 
 -- What the user added for a person: one PDF, or one or more photos added
--- together. Its pages point to the files. A deleted document stays as a
--- tombstone (docs/adr/0015): its row and its pages' names and positions, for
--- the history and sources that point at them; its files, reader's work,
--- readings and draft items are gone.
+-- together (an add), or a document Rufi AI split from an add (from_document
+-- names the add). Its pages point to the files. Rufi AI says what it is
+-- when it sorts the add: its kind, its date, and for a report its lab and
+-- number. A deleted document stays as a tombstone (docs/adr/0015): its row
+-- and its pages' names and positions, for the history and sources that
+-- point at them; its files, reader's work, readings and draft items are
+-- gone.
 CREATE TABLE documents (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL REFERENCES people (id),
   added_at TEXT NOT NULL,
   added_from TEXT NOT NULL CHECK (added_from IN ('documents_page', 'chat')),
-  kind TEXT CHECK (kind IN ('lab_report', 'prescription', 'letter', 'other')), -- as read; null until read
-  date TEXT,             -- the document's date as read (precision date), when every page agrees; null until read
-  reader_note TEXT,      -- the reader's one note for the whole document, rewritten by the reader
-  version INTEGER NOT NULL DEFAULT 0, -- rises whenever its draft items change (a reading, a retry)
+  kind TEXT CHECK (kind IN ('lab_report', 'prescription', 'letter', 'other')), -- as Rufi AI sorted it (or an older Rufi read it); null until then
+  date TEXT,             -- its date, as Rufi AI sorted it (a report's collection date), at its precision; null until then
+  issuer TEXT,           -- a report's lab or clinic, as printed, as Rufi AI sorted it
+  report_number TEXT,    -- a report's number, as printed
+  reader_note TEXT,      -- an older reader's one note for the whole document
+  version INTEGER NOT NULL DEFAULT 0, -- rises whenever its draft items or pages change (a sort, a fix, a reading)
   deleted_at TEXT,       -- when the person deleted it: a tombstone, out of every list and action
-  UNIQUE (person_id, id)
+  from_document TEXT,    -- the add Rufi AI split it from; null for an add
+  UNIQUE (person_id, id),
+  FOREIGN KEY (person_id, from_document) REFERENCES documents (person_id, id)
 ) STRICT;
 
 -- A document's pages in order: a page of a PDF, or a whole photo (page 1).
--- The same content belongs to at most one live document per person.
+-- The same content belongs to at most one live document per person. A
+-- page's position is its place in the add, and a page keeps it when a split
+-- moves it to another document of the add: pages 3 and 4 of an add are
+-- pages 3 and 4 of the document split from it.
 CREATE TABLE document_pages (
   person_id TEXT NOT NULL,
   document_id TEXT NOT NULL,
@@ -100,31 +110,33 @@ CREATE TABLE jobs (
   error TEXT,                          -- why it failed, in words for the person
   usage TEXT,                          -- its runs' AI use as the agent reported it, summed (JSON)
   reader TEXT,                         -- the reader version of its last run (JSON)
+  sorted_at TEXT,                      -- when Rufi AI sorted the pages it copied; null until then
   created_at TEXT NOT NULL,
   UNIQUE (person_id, id),
   FOREIGN KEY (person_id, document_id) REFERENCES documents (person_id, id)
 ) STRICT;
 
--- What a reading found and the person hasn't saved yet: one row per item,
--- never part of the record (no answer, Overview or trend counts it). Made
--- from a job's notebook entries when the job finishes, at version 1. The
--- reader's fields are kept as they came (original); a fix changes fields
--- and raises the version.
+-- What Rufi AI drafted from a page copy (or an older reader read) and the
+-- person hasn't saved yet: one row per item, never part of the record (no
+-- answer, Overview or trend counts it). Written by a sort, at version 1,
+-- each naming its page and the reading whose copy it cites (job_id). Its
+-- fields as Rufi AI gave them are kept as they came (original); a fix
+-- changes fields and raises the version.
 CREATE TABLE draft_items (
   id TEXT PRIMARY KEY,         -- UUIDv7
   person_id TEXT NOT NULL,
   document_id TEXT NOT NULL,
-  page INTEGER NOT NULL,       -- the page's position in the document
+  page INTEGER NOT NULL,       -- the page's position
   seq INTEGER NOT NULL,        -- its order on the page
-  job_id TEXT NOT NULL,        -- the reading that made it
+  job_id TEXT NOT NULL,        -- the reading whose copy of the page it cites (an older Rufi's: the reading that made it)
   kind TEXT NOT NULL CHECK (kind IN ('lab_result')),
   version INTEGER NOT NULL DEFAULT 1,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'saved', 'dismissed')),
   fields TEXT NOT NULL,        -- the item's fields now (JSON, as printed)
-  original TEXT NOT NULL,      -- the reader's fields, never changed (JSON)
-  unsure TEXT NOT NULL DEFAULT '[]', -- why it may be wrong: the reader's words and Rufi's checks (JSON)
-  -- Once saved: how, into which record, by which save; the version saved is
-  -- its version (saving doesn't raise it). Once dismissed: by which call.
+  original TEXT NOT NULL,      -- Rufi AI's fields (an older Rufi's: the reader's), never changed (JSON)
+  unsure TEXT NOT NULL DEFAULT '[]', -- why it is worth a look: Rufi AI's reason (an older Rufi's: the reader's words and Rufi's checks) (JSON)
+  quote TEXT,                  -- the text it came from, as in the page copy, for the screen; null for an older Rufi's
+  report TEXT,                 -- an older Rufi's draft: its report and date as Rufi worked them out then (JSON); null for Rufi AI's, whose report is its document
   saved_as TEXT CHECK (saved_as IN ('new', 'another_source', 'correction')),
   record_kind TEXT,
   record_id TEXT,
@@ -139,8 +151,7 @@ CREATE TABLE draft_items (
   CHECK ((status = 'dismissed') = (dismissed_by IS NOT NULL))
 ) STRICT;
 
--- The reader's copy of a page (a reader that copies, not yet the one Rufi
--- runs): the page as Markdown, exactly as printed, with the reader's marks
+-- The reader's copy of a page: the page as Markdown, exactly as printed, with the reader's marks
 -- for what was unclear. One per page of a file and reading: known by the
 -- file page (person, file, page in file) and the reading's job, never by
 -- the document the page is in now. A run of the reading saves it again in
@@ -161,8 +172,43 @@ CREATE TABLE page_copies (
   FOREIGN KEY (person_id, job_id) REFERENCES jobs (person_id, id)
 ) STRICT;
 
--- A report as printed, made when its results are saved. A complete lab,
--- report number and collection date identifies it across the person's
+-- Rufi's own work of asking Rufi AI to sort an add (docs/adr/0019): one
+-- per reading that ended with pages to sort, and one for each sort a
+-- person's turn made. Rufi hands it to the AI as a row of the chat's queue
+-- (queue_id: its row now), in a turn of its own, and tries again after a
+-- failed turn, three times; a sort_documents call consumes it in the same
+-- transaction as the split and the drafts, and keeps its answer, so the
+-- same call again gets the same answer. Operational state, not the
+-- record: the stored tool call is the trace of a sort.
+CREATE TABLE sort_requests (
+  id TEXT PRIMARY KEY,         -- UUIDv7
+  person_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,   -- the add it sorts
+  job_id TEXT,                 -- the reading whose end asked for it; null: a person's sort, or a reading since deleted
+  -- open: waits, runs or will be tried again; asked: Rufi AI asked the
+  -- person instead, and it waits for them; failed: its tries are used,
+  -- Retry starts it again; done: sorted; void: nothing is left to sort.
+  state TEXT NOT NULL CHECK (state IN ('open', 'asked', 'failed', 'done', 'void')),
+  queue_id TEXT,               -- its row in the chat's queue now
+  tries INTEGER NOT NULL DEFAULT 0, -- failed turns since it was made or the person's Retry
+  retry_at TEXT,               -- its next try, after a failed turn
+  error TEXT,                  -- why its last turn failed, in words for the person
+  call_id TEXT,                -- the agent's id for the sort_documents call that did it
+  answer TEXT,                 -- what that call got back (JSON)
+  created_at TEXT NOT NULL,
+  ended_at TEXT,
+  UNIQUE (person_id, id),
+  UNIQUE (person_id, call_id),
+  FOREIGN KEY (person_id, document_id) REFERENCES documents (person_id, id),
+  FOREIGN KEY (person_id, job_id) REFERENCES jobs (person_id, id),
+  FOREIGN KEY (person_id, queue_id) REFERENCES chat_queue (person_id, id) DEFERRABLE INITIALLY DEFERRED,
+  CHECK ((state = 'done') = (call_id IS NOT NULL))
+) STRICT;
+
+-- A report as printed, made when its results are saved. Rufi AI's report
+-- is its document: every save from that document uses one report. An
+-- older Rufi's draft keeps the report Rufi worked out for it: a complete
+-- lab, report number and collection date identifies it across the person's
 -- documents; otherwise it stays within one document. document_id is its
 -- first document; each result's actual page is kept in record_sources.
 CREATE TABLE reports (
@@ -360,7 +406,7 @@ CREATE TABLE chats (
   thread_provider TEXT,        -- whose thread it is, so another agent never reuses it
   thread_model TEXT,           -- the model the thread started with
   thread_tools TEXT,           -- the tool set it started with (a thread keeps its tools)
-  paused TEXT CHECK (paused IN ('stopped', 'restarted')), -- nothing goes to the AI until the person sends: after a Stop, or Rufi started again with messages waiting
+  paused TEXT CHECK (paused IN ('stopped', 'restarted')), -- nothing goes to the AI until the person sends: after a Stop, or Rufi started again with messages waiting; only Rufi's own sorting goes on after a restart
   revision INTEGER NOT NULL DEFAULT 0, -- grows with every change to the transcript
   context_tokens INTEGER,      -- the tokens of the thread's last request to the model, as the agent last reported them
   context_window INTEGER,      -- the model's context window then; null: the agent didn't say
@@ -566,6 +612,7 @@ CREATE TABLE briefs (
 ) STRICT;
 
 CREATE INDEX documents_by_added ON documents (person_id, added_at);
+CREATE INDEX documents_by_add ON documents (person_id, from_document);
 CREATE INDEX jobs_by_state ON jobs (state, created_at);
 CREATE INDEX jobs_by_document ON jobs (person_id, document_id, created_at);
 CREATE INDEX page_copies_by_job ON page_copies (person_id, job_id);
@@ -582,6 +629,9 @@ CREATE INDEX operations_by_person ON operations (person_id, seq);
 CREATE INDEX changes_by_record ON record_changes (person_id, record_id);
 CREATE INDEX sources_by_record ON record_sources (person_id, record_id);
 CREATE INDEX drafts_by_document ON draft_items (person_id, document_id, page, seq);
+CREATE INDEX sort_requests_by_state ON sort_requests (state, retry_at);
+CREATE INDEX sort_requests_by_document ON sort_requests (person_id, document_id);
+CREATE INDEX sort_requests_by_queue ON sort_requests (person_id, queue_id);
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 11;
+PRAGMA user_version = 12;

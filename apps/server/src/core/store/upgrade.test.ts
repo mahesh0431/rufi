@@ -436,6 +436,27 @@ it("keeps the backup made before the category upgrade at version 3, and a restor
   );
 });
 
+/**
+ * Rows as a Rufi before sorting (version 11) had them: the columns
+ * migration 12 adds are left out, to compare an older test's rows.
+ */
+const beforeSorting = (rows: readonly object[]) =>
+  rows.map((row) =>
+    Object.fromEntries(
+      Object.entries(row).filter(
+        ([key]) =>
+          ![
+            "issuer",
+            "report_number",
+            "from_document",
+            "sorted_at",
+            "quote",
+            "report",
+          ].includes(key),
+      ),
+    ),
+  );
+
 /** The documents and their pages as stored. */
 function documentsIn(path: string) {
   const db = new DatabaseSync(path, { readOnly: true });
@@ -462,7 +483,7 @@ it("upgrades a record of version 4 so a document can be deleted, every document 
   (await openRecord(home)).close();
 
   const after = documentsIn(path);
-  expect(after.documents).toEqual(
+  expect(beforeSorting(after.documents)).toEqual(
     before.documents.map((row) => ({ ...row, deleted_at: null })),
   );
   expect(after.pages).toEqual(before.pages);
@@ -590,7 +611,7 @@ it("upgrades a record of version 8 so a reading no longer waits for the account:
   const store = await openRecord(home);
   try {
     const after = stored();
-    expect(after.jobs).toEqual(
+    expect(beforeSorting(after.jobs)).toEqual(
       before.jobs.map(
         ({ waiting: _waiting, wait_until: _until, retried, ...job }) => ({
           ...job,
@@ -600,7 +621,7 @@ it("upgrades a record of version 8 so a reading no longer waits for the account:
       ),
     );
     expect(after.pages).toEqual(before.pages);
-    expect(after.drafts).toEqual(before.drafts);
+    expect(beforeSorting(after.drafts)).toEqual(before.drafts);
     // Neither former wait waits any more: the oldest runs now, and no job
     // has a time to wake for.
     const next = await readings(store, () => "2026-10-17T09:00:00.000Z").next();
@@ -706,7 +727,10 @@ it("upgrades a record of version 10 so the reader can keep page copies: every pa
 
   const store = await openRecord(home);
   try {
-    expect(stored()).toEqual(before);
+    const after = stored();
+    expect(beforeSorting(after.jobs)).toEqual(before.jobs);
+    expect(after.pages).toEqual(before.pages);
+    expect(beforeSorting(after.drafts)).toEqual(before.drafts);
     const page = store.db
       .prepare(
         "SELECT file_id FROM document_pages WHERE document_id = 'doc-asha-aug' AND position = 1",
