@@ -135,6 +135,8 @@ export interface Scenario {
   resetsAt?: number;
   /** The message Codex gives a failed turn (a usage-limit message). */
   failMessage?: string;
+  /** Each thread's first turns fail, as on the usage limit. */
+  failTurns?: number;
   /** Sparse account rate-limit updates following that snapshot. */
   rateLimitUpdates?: Record<string, unknown>[];
   /** Threads the fake knows from before, as a restarted Codex would. */
@@ -538,7 +540,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     });
     return;
   }
-  if (text.includes("fail")) {
+  if (text.includes("fail") || turnIndex < (scenario.failTurns ?? 0)) {
     if (scenario.resetsAt !== undefined) {
       send({
         method: "account/rateLimits/updated",

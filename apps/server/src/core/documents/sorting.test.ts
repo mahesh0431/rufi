@@ -802,6 +802,15 @@ describe("Rufi's work on the requests", () => {
     expect(rows("SELECT tries, error FROM sort_requests")).toEqual([
       { tries: 1, error: "The connection to ChatGPT dropped." },
     ]);
+    // Its wait over, it goes again.
+    later(30_000);
+    expect((await sorts.tend()).people).toEqual(["asha"]);
+    expect(requests().at(-1)).toMatchObject({
+      state: "open",
+      retry_at: null,
+      row: "waiting",
+    });
+    expect(await handOver("turn-4")).toMatchObject({ origin: "rufi" });
   });
 
   it("signed out, it isn't sorted yet, says how to go on, and goes once the person signs in", async () => {

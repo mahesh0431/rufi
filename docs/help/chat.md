@@ -224,7 +224,7 @@ While the AI replies, the box says "Type to queue your next message…". When yo
 The line above them says what happens next:
 
 - **Waiting · these go in order after the reply**: they go by themselves.
-- **Stopped · these go when you send a message**: you stopped a reply. Send a message, or click **Send now**, to go on. They go first, in order, then your new message.
+- **Stopped · these go when you send a message**: you stopped a reply. Send a message, or click **Send now**, to go on. They go first, in order, then your new message. Rufi's request that Rufi AI sort a file goes after your message, in a reply of its own.
 - **Rufi restarted · these go when you send a message**: Rufi started again while messages waited. Nothing goes by itself after a restart: send a message, or click **Send now**. The one exception is Rufi's own request that Rufi AI sort a file: it goes on by itself (see [Documents](documents.md#how-rufi-ai-sorts-a-file)).
 - **Not sent · Rufi sends these only when you say**: some messages are held, as below.
 
@@ -243,7 +243,7 @@ When the AI should know too, Rufi gives it a note:
 
 - **When nothing runs**, the AI gets the note at once, in a short reply of its own. In that reply the AI can only read your health record: it can explain or ask, but it can't save anything. Only your own messages can save. The one thing it may do in such a reply is sort a file Rufi just read into documents and drafts, when Rufi asks it to (see [Documents](documents.md#how-rufi-ai-sorts-a-file)); a request to sort always gets a reply of its own, and Rufi tries it again by itself if the AI fails.
 - **When a reply runs**, the note waits until the reply has ended. Notes that wait together go to the AI together, in one reply.
-- **After a Stop, or when you're signed out**, the note waits above the box as "Rufi's note", marked **Rufi**, with "Goes to the AI with your next message." It goes once, with your next message, never as a reply of its own later. **Remove** it if the AI doesn't need it.
+- **After a Stop, or when you're signed out**, the note waits above the box as "Rufi's note", marked **Rufi**, with "Goes to the AI with your next message." It goes once, with your next message, never as a reply of its own later. **Remove** it if the AI doesn't need it. Rufi's request to sort a file is the exception: after a Stop it says "Goes after your next message, in a reply of its own.", and when you're signed out "Goes by itself once you sign in."
 
 ## The model and effort
 

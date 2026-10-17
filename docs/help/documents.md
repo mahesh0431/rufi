@@ -112,12 +112,13 @@ A file that waits to be sorted shows **Not sorted yet** on the Documents page an
 | **Rufi AI asked you about it in the chat**         | Answer in the chat; Rufi AI sorts it then. Or click **Retry** to have it try again.               |
 | **It goes on after your next message in the chat** | You stopped the AI while it sorted (**Stop**). It sorts again after your next message.            |
 | The AI's error, after Rufi tried three times       | Rufi tries again by itself after 30 seconds, then 1 minute, then 2 minutes. Then click **Retry**. |
+| **Sign in with ChatGPT; Rufi AI sorts it then**    | You're signed out. Sign in, and Rufi AI sorts it by itself. It has no **Retry**.                  |
 
-While a file is sorting or not sorted yet, it has no **Ask Rufi**. If Rufi closes while Rufi AI sorts, the sorting goes on when Rufi starts again.
+While a file is sorting or not sorted yet, it has no **Ask Rufi**. If Rufi closes while Rufi AI sorts, the sorting goes on when Rufi starts again. A message you send while a sort waits to start goes first; the sort goes after it, in a reply of its own.
 
 ### A file sorted wrong
 
-Tell the AI in the chat, for example "pages 3 and 4 are one letter". It sorts that file again in your turn, as you say: the drafts of the pages that change are made again. Drafts you fixed or set aside move with their page, as they are. A page that a saved result came from can't move to another document: the AI tells you so.
+Tell the AI in the chat, for example "pages 3 and 4 are one letter". It sorts that file again in your turn, as you say: the drafts of the pages that change are made again. Drafts you fixed, set aside or saved stay as they are, and move with their page. A document keeps the kind, lab and date you don't correct. A page that a saved result came from can't move to another document: the AI tells you so.
 
 ### What the marks mean
 
@@ -270,6 +271,8 @@ Your health record changes only in the chat, with your yes. The delete itself re
 After the delete, a chip of the document in an old message says **document deleted** and opens nothing. A reading's line about it has no **Open** or **Retry**. A saved result's sources say **Document deleted (Sunrise Labs August.pdf, page 2)**. A result you removed before can still come back with "undo that"; its source says **document deleted**. The document itself can't come back: add its file again if you need it.
 
 If another person in Rufi has the same file, Rufi keeps the file for them.
+
+**One document of a split file.** When Rufi AI split a file into documents, deleting one of them deletes its pages only: their copies and drafts. The preview shows them, for example **Its part of the file: pages 3–4 of 5**. The file stays while the file's other documents use it, and the preview says so, for example **The file: 2 other documents use it**. It goes with the last of them.
 
 If the document changed while you looked at its preview (for example, you saved a result from it in another tab), Rufi doesn't delete it. It says **Something changed since you opened this** and shows how it is now.
 

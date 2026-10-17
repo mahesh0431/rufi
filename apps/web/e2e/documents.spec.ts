@@ -7,6 +7,10 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
+import {
+  databasePath,
+  openWritable,
+} from "../../server/src/core/store/database.ts";
 import type { Scenario } from "../../server/tests/fake-codex.ts";
 import { readPage, scriptedReader } from "../../server/tests/fake-reader.ts";
 import { expect, test, type Rufi } from "./rufi.ts";
@@ -350,4 +354,58 @@ test("says a file Rufi AI hasn't sorted yet, and why; its Retry sorts it", async
   await expect(
     page.getByRole("row").filter({ hasText: "page 2 of 2" }),
   ).toContainText("Prescription");
+});
+
+test("says while Rufi AI sorts a file, and why it couldn't; its Retry sorts it", async ({
+  page,
+  rufi,
+}) => {
+  // The first turn takes a moment, and fails; the next one sorts.
+  await addReport(page, rufi, {
+    userMessageMs: 1_500,
+    failTurns: 1,
+    failMessage: "The AI couldn't answer.",
+    callsByTurn: [[], [{ id: "sort-retry", ...SPLIT }]],
+  });
+  const row = page
+    .getByRole("row")
+    .filter({ hasText: "sunrise-labs-august.pdf" });
+  await expect(row.getByText("Sorting…")).toBeVisible({ timeout: 10_000 });
+  await accessible(page);
+  // As if Rufi had tried three times already: this try is its last.
+  const store = openWritable(databasePath(rufi.home));
+  try {
+    store.db.exec("UPDATE sort_requests SET tries = 3");
+  } finally {
+    store.close();
+  }
+  const status = row.getByText("Not sorted yet");
+  await expect(status).toHaveAttribute("title", "The AI couldn't answer.", {
+    timeout: 10_000,
+  });
+  await row.getByRole("button", { name: "Retry" }).click();
+  await expect(
+    page.getByRole("row").filter({ hasText: "page 2 of 2" }),
+  ).toContainText("Prescription", { timeout: 10_000 });
+});
+
+test("says a file waits for the sign-in to be sorted, with no Retry", async ({
+  page,
+  rufi,
+}) => {
+  rufi.account = { account: "signed_out", email: null };
+  await addReport(page, rufi, {
+    callsByTurn: [[{ id: "sort-signed-in", ...SPLIT }]],
+  });
+  const row = page
+    .getByRole("row")
+    .filter({ hasText: "sunrise-labs-august.pdf" });
+  const status = row.getByText("Not sorted yet");
+  await expect(status).toHaveAttribute(
+    "title",
+    "Sign in with ChatGPT; Rufi AI sorts it then",
+    { timeout: 10_000 },
+  );
+  await expect(row.getByRole("button", { name: "Retry" })).toHaveCount(0);
+  await accessible(page);
 });
