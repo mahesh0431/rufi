@@ -51,6 +51,7 @@ import { FAMILY, familyFiles } from "../tests/fixtures/golden.ts";
 import { textPdf } from "../tests/pack/pdf.ts";
 import { layout, PRESCRIPTION, REPORTS } from "../tests/pack/reports.ts";
 import { copySetFiles, EXPECTED } from "../tests/pack/copy-set.ts";
+import { comparable } from "../src/core/documents/sorting.ts";
 import type { Text } from "../tests/pack/pdf.ts";
 import { subAgentRunner } from "../src/agent/codex/subagent.ts";
 
@@ -1543,14 +1544,23 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
               d.date === want.date,
           ),
         ),
+        // As printed: an unclear one may keep its marks ("1[0?]4").
         every_draft_made: EXPECTED.drafts.every((want) => {
           const got = found(want);
+          const value =
+            want.look === undefined
+              ? got?.value
+              : got?.value.replace(/[^\d.,<>-]|\[|\]/g, "");
           return (
             got !== undefined &&
-            [want.value, ...(want.or ?? [])].includes(got.value) &&
+            [want.value, ...(want.or ?? [])].includes(value ?? "") &&
             got.date === want.date
           );
         }),
+        // Characters, as the record keeps them: no HTML or Markdown.
+        values_as_characters: drafts.every(
+          (d) => comparable(d.value) === d.value,
+        ),
         only_current_values: drafts.length === EXPECTED.drafts.length,
         worth_a_look_where_unclear: EXPECTED.drafts
           .filter((want) => want.look !== undefined)

@@ -86,7 +86,7 @@ const Draft = Schema.Struct({
   test_name: Text(200, "The test's or measurement's name, exactly as printed."),
   value_text: Text(
     100,
-    "The value exactly as in the page's copy, marks included: '<0.5', '1,25', '1[0?]4'. Rufi checks it is in that page's copy.",
+    "The value exactly as in the page's copy, marks included: '<0.5', '1,25', '1[0?]4'; as characters, not the copy's HTML or Markdown ('<0.5', not '&lt;0.5'). Rufi checks it is in that page's copy.",
   ),
   comparator: Schema.optionalKey(
     Schema.Literals(["<", "<=", ">", ">="]).annotate({
