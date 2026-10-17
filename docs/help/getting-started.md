@@ -84,19 +84,20 @@ A page with nothing on it yet, such as Documents or Follow-ups in a new record, 
 
 Rufi, at the top of the sidebar, shows what it is doing. When more than one thing is going on, the first line here that applies sets its face:
 
-| When                                                                                        | Rufi              |
-| ------------------------------------------------------------------------------------------- | ----------------- |
-| The AI can't be used: you aren't signed in, or your ChatGPT plan can't be used              | Asleep (z z)      |
-| Your last answer from the AI didn't finish, until you send again                            | Sorry             |
-| A message of yours waits for you: after **Stop**, or when Rufi isn't sure it reached the AI | Asks (?)          |
-| A document is being read                                                                    | Reads             |
-| The AI is working on an answer                                                              | Thinks (dots)     |
-| An answer or a reading just finished, for a few seconds                                     | Happy, with a hop |
-| A follow-up is due, until you open Overview or Follow-ups                                   | One ear up        |
-| Your chat is new and empty                                                                  | Says hello        |
-| Anything else                                                                               | Calm              |
+| When                                                                                              | Rufi              |
+| ------------------------------------------------------------------------------------------------- | ----------------- |
+| Rufi can't be reached, or the AI can't be used (you aren't signed in, or your plan can't be used) | Asleep (z z)      |
+| Your last answer from the AI didn't finish, until you send again                                  | Sorry             |
+| The AI chose a face in its last answer, until the next answer starts                              | The AI's choice   |
+| A document is being read                                                                          | Reads             |
+| The AI is working on an answer                                                                    | Thinks (dots)     |
+| An answer or a reading just finished, for a few seconds                                           | Happy, with a hop |
+| Your chat is new and empty                                                                        | Says hello        |
+| Anything else                                                                                     | Calm              |
 
-Rufi's face is about Rufi's own work, never about your health results. When your Mac is set to reduce motion, Rufi doesn't move, but its face still changes.
+During a chat, the AI can choose Rufi's face for a moment of the conversation: asking you something, finding something worth a look, a tip, a light moment, or bringing up something new.
+
+Rufi's face is about Rufi's own work and your conversation, never about your health results. When your Mac is set to reduce motion, Rufi doesn't move, but its face still changes.
 
 ## How Rufi looks
 

@@ -1,19 +1,29 @@
 // The dog at the top of the sidebar: its face says what Rufi is doing
-// (mood.ts), from what the frame already reads: the sign-in, the person's
-// chat as its live stream holds it, the readings and Overview. It reads
-// nothing new and keeps nothing.
-import type { Person, Turn } from "@rufi/contracts";
+// (mood.ts), from what the frame already reads: the connection, the
+// sign-in, the person's chat as its live stream holds it (with the face
+// Rufi's AI chose in its reply) and the readings. It reads nothing new and
+// keeps nothing.
+import { Face, type Person, type Turn } from "@rufi/contracts";
+import { Option, Schema } from "effect";
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
+import { useConnection } from "./api.ts";
 import { Dog } from "./dog.tsx";
 import { liveStore, type Live } from "./live.ts";
 import { moodOf } from "./mood.ts";
 import { useReadings } from "./reading.tsx";
-import { useOverview, useStatus } from "./reads.ts";
+import { useStatus } from "./reads.ts";
 import { isRunning } from "./transcript-state.ts";
 
 /** How long the dog shows a job just finished. */
 const DONE_MS = 3_000;
+
+/** The show_face call's line in Activity, as the agent reports it. */
+const FACE_TOOL = "rufi.show_face";
+
+const faceOf = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Struct({ face: Face })),
+);
 
 /** The reply that started last, if any. */
 const lastTurn = (state: Live): Turn | undefined =>
@@ -23,40 +33,39 @@ const lastTurn = (state: Live): Turn | undefined =>
     undefined,
   );
 
-export function SidebarDog({
-  person,
-  seeing,
-}: {
-  person: Person;
-  /** The page shows the person's due follow-ups (Overview, Follow-ups). */
-  seeing: boolean;
-}) {
+/** The face Rufi's AI showed last in its latest reply, if it showed one. */
+function chosenFace(state: Live): Face | undefined {
+  const turn = lastTurn(state);
+  if (turn === undefined) return undefined;
+  for (let i = state.order.length - 1; i >= 0; i -= 1) {
+    const entry = state.entries[state.order[i] ?? ""];
+    if (
+      entry?.turnId === turn.id &&
+      entry.activity === "tool" &&
+      entry.text === FACE_TOOL &&
+      entry.status === "done"
+    ) {
+      const shown = faceOf(entry.detail ?? "");
+      if (Option.isSome(shown)) return shown.value.face;
+    }
+  }
+  return undefined;
+}
+
+export function SidebarDog({ person }: { person: Person }) {
+  const connection = useConnection();
   const account = useStatus().data?.account;
   const live = liveStore(person.id);
   const working = useStore(live, isRunning);
   const turn = useStore(live, lastTurn);
+  const chosen = useStore(live, chosenFace);
   const emptyChat = useStore(
     live,
     (state) => state.status === "open" && state.order.length === 0,
   );
-  const needsYou = useStore(live, (state) =>
-    state.queue.items.some(
-      (item) =>
-        item.origin === "person" &&
-        (item.state === "not_sure" || item.held !== null),
-    ),
-  );
   const reading =
     useReadings(person.id).data?.some((one) => one.state === "running") ===
     true;
-  const due = (useOverview(person.id).data?.needsYou.followUps ?? [])
-    .filter((need) => need.state !== "coming_up")
-    .map((need) => need.followUp.id);
-
-  // A follow-up due counts as seen once a page showed it.
-  const [seen, setSeen] = useState<ReadonlySet<string>>(new Set());
-  const unseen = due.filter((id) => !seen.has(id));
-  if (seeing && unseen.length > 0) setSeen(new Set([...seen, ...unseen]));
 
   // A reply or a reading that ended: done for a few seconds. A reply the
   // person stopped, or one that broke off, isn't done.
@@ -81,16 +90,16 @@ export function SidebarDog({
   }, [busy, live]);
 
   const mood = moodOf({
-    signedOut: account !== undefined && account !== "signed_in",
+    away:
+      connection !== "ok" || (account !== undefined && account !== "signed_in"),
     failed:
       turn !== undefined &&
       (turn.status === "failed" ||
         (turn.status === "interrupted" && turn.endReason !== "stopped")),
-    needsYou,
+    chosen,
     reading,
     working,
     justDone,
-    newNotice: !seeing && unseen.length > 0,
     emptyChat,
   });
   return <Dog mood={mood} size={36} />;

@@ -118,6 +118,8 @@ test.describe("opening Rufi", () => {
     await expect(page.getByRole("status")).toContainText(
       "Rufi can't be reached. If you stopped it, run pnpm start",
     );
+    // The sidebar dog rests while Rufi is away.
+    await expect.poll(face(page)).toBe(drawn("resting"));
     // What the page had read stays.
     await sidebar(page).getByRole("link", { name: "Overview" }).click();
     await expect(
@@ -176,13 +178,18 @@ test("follows the Mac's light or dark appearance, also when it changes while Ruf
   await expect.poll(dogTile(page)).toBe(PALETTES.onPeriwinkle.bg);
 });
 
-test("the sidebar dog thinks while a reply runs, then is calm again; an empty page shows the dog", async ({
+test("the sidebar dog shows the face Rufi's AI chose until the next reply, which it thinks through, then is calm again; an empty page shows the dog", async ({
   page,
   rufi,
 }) => {
   await rufi.family();
   await rufi.start({
-    scenario: { reasoning: ["**Reading the record**"], reasoningMs: 1_500 },
+    scenario: {
+      // The first reply shows a face; the second shows none.
+      callsByTurn: [[{ tool: "show_face", arguments: { face: "question" } }]],
+      reasoning: ["**Reading the record**"],
+      reasoningMs: 1_500,
+    },
   });
   await page.goto(rufi.link());
   await expect(
@@ -198,11 +205,23 @@ test("the sidebar dog thinks while a reply runs, then is calm again; an empty pa
   const chat = page.getByRole("region", { name: "Chat" });
   await chat.getByRole("button", { name: "Open the chat" }).click();
   const box = chat.getByRole("textbox", { name: "Message to Rufi" });
+  await box.fill("Should I recheck my ferritin?");
+  await box.press("Enter");
+  await expect.poll(face(page)).toBe(drawn("question"));
+  await expect(chat.locator(".reply")).toHaveText(
+    "ok:Should I recheck my ferritin?",
+  );
+  // The AI's face stays after its reply.
+  await expect(chat.getByRole("button", { name: "Stop" })).toHaveCount(0);
+  expect(await face(page)()).toBe(drawn("question"));
+
+  // The next reply: thinking, done a moment, then calm by itself.
   await box.fill("How is my ferritin?");
   await box.press("Enter");
   await expect.poll(face(page)).toBe(drawn("thinking"));
-  await expect(chat.locator(".reply")).toHaveText("ok:How is my ferritin?");
-  // Done a moment, then calm by itself.
+  await expect(chat.locator(".reply").nth(1)).toHaveText(
+    "ok:How is my ferritin?",
+  );
   await expect.poll(face(page)).toBe(drawn("done"));
   await expect.poll(face(page), { timeout: 6_000 }).toBe(drawn("calm"));
   await page.keyboard.press("Escape");

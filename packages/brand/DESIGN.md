@@ -119,7 +119,7 @@ The face reacts to Rufi's own work, never to a person's health: no sad or alarme
 | `alert`     | Something new came in                                |
 
 - **Always respect reduced motion:** nothing moves and the eyes don't follow, also when the setting changes while the page is open (`motion.css` and `follow()` do this). The face still changes.
-- In the app, the sidebar's dog (36 px) shows what Rufi is doing, by one rule from what the app already knows; it moves by CSS only. A large dog on an empty page or in the first run uses `live()`. The working line under a reply shows the thinking dog at 20 px.
+- In the app, the sidebar's dog (36 px) shows what Rufi is doing, by one rule from what the app already knows, and the chat's AI can choose a face for a moment of the conversation (the `show_face` tool); it moves by CSS only. A large dog on an empty page or in the first run uses `live()`. The working line under a reply shows the thinking dog at 20 px.
 - On the website the eyes follow the pointer only with a mouse or trackpad. A click on Rufi plays a laugh and a hop, with no sign.
 
 ### The generated files
