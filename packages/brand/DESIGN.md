@@ -29,13 +29,15 @@ A theme is one block of values: light in `:root`, dark when `<html data-theme="d
 
 Rufi's own colours, for light pages (the website); they have no dark values and the app doesn't use them:
 
-| Token                                | Its job                                                        |
-| ------------------------------------ | -------------------------------------------------------------- |
-| `--body-text`                        | Running text on a reading page                                 |
-| `--apricot`                          | The dog's folds; dots and lines                                |
-| `--apricot-text`                     | Accent words in a large heading (large text only: it is 3.9:1) |
-| `--apricot-icon` on `--apricot-tint` | An icon on a pale apricot square                               |
-| `--periwinkle`                       | The ground under the dog on a light page                       |
+| Token                                | Its job                                                                  |
+| ------------------------------------ | ------------------------------------------------------------------------ |
+| `--body-text`                        | Running text on a reading page                                           |
+| `--apricot`                          | The dog's folds; dots and lines                                          |
+| `--apricot-text`                     | Accent words in a large heading (large text only: it is 3.9:1)           |
+| `--apricot-icon` on `--apricot-tint` | An icon on a pale apricot square                                         |
+| `--periwinkle`                       | The ground under the dog on a light page                                 |
+| `--facet`                            | The faint paper facets behind the website's first screen                 |
+| `--facet-deep`                       | The faint paper facets behind the website's first screen, the deeper one |
 
 Rules:
 
