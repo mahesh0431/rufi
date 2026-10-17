@@ -111,7 +111,7 @@
     },
     {
       "name": "rufi.get_documents",
-      "description": "The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its files and pages, and its reading's status: \"not_read\" (never read; retry_reading reads it), \"reading\" (Rufi's reader is reading it now; its items come when it ends), \"done\" or \"failed\". With document: its version (it rises when a reading or a fix changes its draft items), its pages (each with what the reader found: its state, its facts such as dates, lab, report number and the name printed on it, and its issues) and its draft items: what the reader read, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed or as the user fixed them on the document's page (a fixed item has fixed_by_user, and reader_read: what the reader read in each field the user changed, null where it read nothing; a date on the item is its own; without one, the page's first printed date is used when it is saved), and why it may be unsure. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page as an image, with the page's own text when the PDF has some (use it for exact characters); a photo or a scan is the image alone. At most 50 documents, 100 pages or 100 draft items come back; when there are more, the answer has \"next\": pass it as after to read on. Rufi chooses the person, not you.",
+      "description": "The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its kind and date (as sorted), its files and pages, its reading's status: \"not_read\" (never read; retry_reading reads it), \"reading\" (Rufi's reader is copying its pages now), \"done\" or \"failed\", and its sorting when it waits for it: \"sorting\" (Rufi asked you to sort it) or \"not sorted yet\". One add (what the user added at once: a PDF, or photos together) can be several documents once sorted: such a document names its pages in the add (\"pages 3–4 of 5\"). With document: its version (it rises when a sort, a reading or a fix changes its draft items or pages), kind, date, lab and report number, its add (every document of it, with their pages, and the pages not sorted yet), its pages (each with its number in the add, its state and whether it is sorted; an older reading's facts and issues) and its draft items: what you or an older reader drafted, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed or as the user fixed them on the document's page (a fixed item has fixed_by_user, and drafted: what was drafted in each field the user changed, null where none), the words it came from (quote), why it is worth a look, and out_of_date when its page was read again since. An older reader's item without a date of its own is saved with its page's first printed date. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page as an image, with the page's own text when the PDF has some and the reader's copy (use them for exact characters); a photo or a scan is the image and the copy. With document and copies: the reader's copy of every page of its add, as Markdown, exactly as printed, with the reader's marks where something is unclear (2[3?]6, [unclear: ...], ~~crossed out~~, [handwritten: ...]). At most 50 documents, 100 pages, 100 draft items or 20 copies come back; when there are more, the answer has \"next\": pass it as after to read on. Rufi chooses the person, not you.",
       "callers": "model",
       "readOnly": true,
       "destructive": false,
@@ -125,7 +125,11 @@
           "page": {
             "type": "integer",
             "exclusiveMinimum": 0,
-            "description": "A page of that document, 1, 2, 3...: you get the page's image and its own text when it has some."
+            "description": "A page of that document, by its number: you get the page's image, its own text when it has some, and the reader's copy."
+          },
+          "copies": {
+            "type": "boolean",
+            "description": "true with document: the reader's copy of every page of what the user added with it (its add), for sorting it."
           },
           "after": {
             "type": "string",
@@ -142,6 +146,10 @@
         {
           "document": "01a12345-0000-7000-8000-000000000000",
           "page": 1
+        },
+        {
+          "document": "01a12345-0000-7000-8000-000000000000",
+          "copies": true
         }
       ]
     },
@@ -1723,6 +1731,247 @@
             {
               "item": "0199a0f2-0000-7000-8000-000000000004",
               "version": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "rufi.sort_documents",
+      "description": "Sorts what the user added into documents and writes its drafts, from the reader's page copies (get_documents with copies), as the sorting-documents skill says. One call for the whole add: documents (each with its pages by their number in the add, its kind, its date, and a report's lab and number) and drafts (each a current lab result or a measurement as printed, with its page, its date, the words it comes from and, when it is worth the user's look, why). Every page not sorted yet goes in one document; pages you don't name stay where they are. A draft's value_text must be in its page's copy exactly as the copy prints it, marks included, or the whole call is refused; give your reading of an unclear digit in value_number. The drafts replace the drafts of the named pages that the user hasn't fixed or set aside. A page that a saved result cites stays in its document. Nothing is saved to the record: drafts wait for the user. In a turn Rufi started for a sort, you sort only the pages not sorted yet, and nothing else changes; in the user's own turn you can also change how pages were sorted (\"pages 3 and 4 are one letter\"). All or nothing; the same call again gets the same answer.",
+      "callers": "model",
+      "readOnly": false,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "string",
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "A document of the add, from get_documents."
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "pages": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "minItems": 1,
+                  "maxItems": 1000,
+                  "description": "Its pages, by their number in the add (as get_documents gives them)."
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "lab_report",
+                    "prescription",
+                    "letter",
+                    "other"
+                  ]
+                },
+                "date": {
+                  "type": "string",
+                  "description": "Its date at the precision known (YYYY-MM-DD, YYYY-MM or YYYY): a report's collection date, a prescription's or letter's own date. Leave it out when none is printed."
+                },
+                "lab": {
+                  "type": "string",
+                  "description": "A report's lab or clinic, exactly as printed.",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "report_number": {
+                  "type": "string",
+                  "description": "A report's number, exactly as printed.",
+                  "minLength": 1,
+                  "maxLength": 200
+                }
+              },
+              "required": [
+                "pages",
+                "kind"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 500,
+            "description": "The documents the add holds, each with its pages. Every page not sorted yet must be in one of them."
+          },
+          "drafts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "description": "The page it is printed on."
+                },
+                "test_name": {
+                  "type": "string",
+                  "description": "The test's or measurement's name, exactly as printed.",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "value_text": {
+                  "type": "string",
+                  "description": "The value exactly as in the page's copy, marks included: '<0.5', '1,25', '1[0?]4'. Rufi checks it is in that page's copy.",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "comparator": {
+                  "type": "string",
+                  "enum": [
+                    "<",
+                    "<=",
+                    ">",
+                    ">="
+                  ],
+                  "description": "The comparator printed before the value, if any."
+                },
+                "value_number": {
+                  "type": "number",
+                  "description": "The value as a plain number, when it is one: '1,25' is 1.25. Your reading of a marked digit goes here."
+                },
+                "unit": {
+                  "type": "string",
+                  "description": "The unit, exactly as printed.",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "reference_range": {
+                  "type": "string",
+                  "description": "The reference range, exactly as printed.",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "flag_text": {
+                  "type": "string",
+                  "description": "The flag ('H', 'Low'), exactly as printed.",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "context_text": {
+                  "type": "string",
+                  "description": "The method or context ('Fasting', 'Calculated'), exactly as printed.",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "date": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "description": "The words printed with the date: 'Collected', 'Date'.",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "date": {
+                      "type": "string",
+                      "description": "The date exactly as printed: '14/08/2026 09:20'.",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "iso": {
+                      "type": "string",
+                      "description": "The same date as YYYY-MM-DD (or YYYY-MM, YYYY), when the order of day and month is certain; leave it out when it isn't."
+                    }
+                  },
+                  "required": [
+                    "label",
+                    "date"
+                  ],
+                  "additionalProperties": false,
+                  "description": "When the sample was taken or the measurement made, as printed: its report's collection date, or the visit's date."
+                },
+                "quote": {
+                  "type": "string",
+                  "description": "The words it comes from, as in the page's copy (its row), for the person to see beside it.",
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "worth_a_look": {
+                  "type": "string",
+                  "description": "Why the person should look at it, in a few plain words: a digit is unclear, written by hand, crossed out, far from earlier results. Leave it out when it is plain.",
+                  "minLength": 1,
+                  "maxLength": 300
+                }
+              },
+              "required": [
+                "page",
+                "test_name",
+                "value_text",
+                "quote"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 5000,
+            "description": "The drafts of the pages in documents, in page order and in the order printed. They replace those pages' drafts the person hasn't touched."
+          }
+        },
+        "required": [
+          "document",
+          "documents",
+          "drafts"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "document": "01a12345-0000-7000-8000-000000000000",
+          "documents": [
+            {
+              "pages": [
+                1,
+                2
+              ],
+              "kind": "lab_report",
+              "date": "2026-05-04",
+              "lab": "Example Clinic Lab",
+              "report_number": "EX-100"
+            },
+            {
+              "pages": [
+                3
+              ],
+              "kind": "prescription",
+              "date": "2026-05-10"
+            }
+          ],
+          "drafts": [
+            {
+              "page": 1,
+              "test_name": "Sodium",
+              "value_text": "139",
+              "value_number": 139,
+              "unit": "mmol/L",
+              "reference_range": "135 – 145",
+              "date": {
+                "label": "Collected",
+                "date": "04/05/2026",
+                "iso": "2026-05-04"
+              },
+              "quote": "Sodium 139 mmol/L 135 – 145"
+            },
+            {
+              "page": 1,
+              "test_name": "Potassium",
+              "value_text": "4.[2?]",
+              "value_number": 4.2,
+              "unit": "mmol/L",
+              "date": {
+                "label": "Collected",
+                "date": "04/05/2026",
+                "iso": "2026-05-04"
+              },
+              "quote": "Potassium 4.[2?] mmol/L",
+              "worth_a_look": "a digit is unclear"
             }
           ]
         }
