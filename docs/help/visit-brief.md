@@ -1,6 +1,6 @@
 # Visit brief
 
-Before a doctor's visit, you can ask Rufi for a visit brief: a dated page with your current medicines, recent lab results and measurements, conditions and allergies, and questions to ask. Every fact in it comes from your saved health record, and Rufi lists those records under the brief. You can copy it and paste it wherever you need it.
+Before a doctor's visit, you can ask Rufi for a visit brief: a dated page with what your doctor needs for that visit, such as your current medicines and recent lab results, and questions to ask. Every fact in it comes from your saved health record, and Rufi lists those records under the brief. You can copy it and paste it wherever you need it.
 
 ## Ask for a brief
 
@@ -14,13 +14,13 @@ Rufi writes this line, not the AI. Click **Open** to see the brief.
 
 ## What a brief has
 
-The AI picks what matters for this visit. A brief usually has:
+The AI shapes each brief for what the visit is for: the period it covers, what goes in and how it is laid out. A brief often has your current medicines, recent lab results and measurements, conditions and allergies, open follow-ups and questions to ask. A brief for a visit about your sugar may leave out what has nothing to do with it. To get something in or out, say so when you ask.
 
-- **Current medicines**, with their strength and when you take them.
-- **Recent lab results**, those the lab marked outside its range first. Each has its value, unit, lab range and date, as the lab printed them.
-- **Recent measurements**, such as blood pressure or weight, when you have any.
-- **Conditions and allergies.** When your record has none, the brief says "none recorded". That doesn't mean you have none.
-- **Questions to ask**, each starting with "Question:".
+Whatever its shape:
+
+- **Each lab result is as the lab printed it**: its value, unit, lab range, flag (such as High) and date.
+- **What your record doesn't have is said plainly.** When the brief covers something your record has nothing on, it says "none recorded". That doesn't mean you have none.
+- **Questions to ask are kept apart from the facts.**
 
 A brief uses only what is saved in your record. A document that Rufi read but that you haven't saved yet isn't in it. The AI gives no advice that your record doesn't support.
 

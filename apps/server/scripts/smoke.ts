@@ -789,11 +789,23 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         used_get_overview: overviewRead,
-        mentions_hba1c: /hba1c/i.test(lastReply(latest)),
         how_present: basis(latest).how !== null,
-        says_6_8: /6\.8/.test(replyOf(snapshot)),
         how_present_for_the_hba1c: basis(snapshot).how !== null,
       },
+      verdicts: [
+        {
+          check: "gives_the_latest_results",
+          criterion:
+            "The first answer gives Asha's latest results from the record, the HbA1c among them.",
+          evidence: lastReply(latest),
+        },
+        {
+          check: "gives_the_hba1c",
+          criterion:
+            "The second answer gives the last HbA1c: 6.8 %, 12 Aug 2026.",
+          evidence: replyOf(snapshot),
+        },
+      ],
       snapshot,
     };
   },
@@ -805,9 +817,16 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         read_records: recordReads(home).length > 0,
-        mentions_the_2024_value: /7\.9/.test(lastReply(snapshot)),
         how_present: basis(snapshot).how !== null,
       },
+      verdicts: [
+        {
+          check: "traces_it_from_2024",
+          criterion:
+            "The answer follows the HbA1c from 2024 (7.9 % in Jan 2024) to the latest (6.8 % in Aug 2026), from the records read.",
+          evidence: lastReply(snapshot),
+        },
+      ],
       snapshot,
     };
   },
@@ -862,13 +881,16 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       "How many headaches did I have in 2026, and when was the last one?",
     );
     const snapshot = await c.read();
-    const reply = lastReply(snapshot);
     return {
-      checks: {
-        says_4: /\b4\b|four/i.test(reply),
-        says_28_september: /28|09-28/.test(reply) && /sep|09-28/i.test(reply),
-        how_present: basis(snapshot).how !== null,
-      },
+      checks: { how_present: basis(snapshot).how !== null },
+      verdicts: [
+        {
+          check: "four_last_28_september",
+          criterion:
+            "The answer says 4 headaches in 2026 (the removed one not counted), the last on 28 Sep 2026.",
+          evidence: lastReply(snapshot),
+        },
+      ],
       snapshot,
     };
   },
@@ -940,11 +962,23 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     const snapshot = await c.read();
     return {
       checks: {
-        says_the_range: /4\.0\s*[-–]\s*5\.6/.test(replyOf(range)),
         how_present: basis(range).how !== null,
-        names_metformin: /metformin/i.test(replyOf(snapshot)),
         three_replies: snapshot.turns.length === 3,
       },
+      verdicts: [
+        {
+          check: "gives_the_range",
+          criterion:
+            "The second answer gives the HbA1c's lab range as printed: 4.0 - 5.6 %.",
+          evidence: replyOf(range),
+        },
+        {
+          check: "answers_the_new_subject",
+          criterion:
+            "The third answer takes the medicines as a new subject and lists the current ones, Metformin and Creatine.",
+          evidence: replyOf(snapshot),
+        },
+      ],
       snapshot,
     };
   },
@@ -1331,15 +1365,22 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       checks: {
         // The same thread: the AI has the whole chat, nothing started afresh.
         same_thread: snapshot.turns.every((turn) => !turn.afresh),
-        says_biscuit: /biscuit/i.test(lastReply(snapshot)),
         new_model: snapshot.turns.at(-1)?.model === "gpt-6.1-sol",
       },
+      verdicts: [
+        {
+          check: "remembers_biscuit",
+          criterion: "The last answer says the cat is called Biscuit.",
+          evidence: lastReply(snapshot),
+        },
+      ],
       snapshot,
     };
   },
   /**
    * A brief for a visit about sugar: made once from the saved record, citing
-   * the current medicines and the sugar results, with questions labelled.
+   * the current medicines and the sugar results. Its shape is the AI's: a
+   * person judges whether it fits the visit.
    */
   brief: async (api, home) => {
     const c = chat(api);
@@ -1358,17 +1399,30 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         cites_medicines_and_sugar_results: SUGAR_BRIEF.every((id) =>
           brief?.cited.includes(id),
         ),
-        dates_as_people_read_them:
-          brief !== undefined &&
-          !/\b\d{4}-\d{2}(-\d{2})?\b/.test(brief.page.markdown),
         not_changed_since: brief?.page.changedSince === false,
         nothing_saved: nothingSaved(home, snapshot),
       },
+      // The brief is below the transcript.
       verdicts: [
+        {
+          check: "fits_the_visit",
+          criterion:
+            "The brief's period, contents and form suit a visit mostly about blood sugar, and leave out nothing such a visit needs.",
+        },
+        {
+          check: "results_as_printed",
+          criterion:
+            'Each result has its value, unit, lab range, flag and date as printed, with dates as people read them; what the record lacks says "none recorded".',
+        },
         {
           check: "has_questions",
           criterion:
-            "The brief (below the transcript) has questions the person could ask the doctor, easy to tell apart from the facts.",
+            "The brief has questions the person could ask the doctor, easy to tell apart from the facts.",
+        },
+        {
+          check: "no_unsupported_conclusions",
+          criterion:
+            "The brief gives no advice and draws no conclusion the record doesn't support.",
         },
       ],
       snapshot,
@@ -1420,9 +1474,16 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         one_message_of_yours:
           snapshot.entries.filter((e) => e.kind === "message").length === 1,
         event_turn: snapshot.turns.length === 2,
-        asks_about_the_name: /meera/i.test(lastReply(snapshot)),
         nothing_saved: nothingSaved(home, snapshot),
       },
+      verdicts: [
+        {
+          check: "asks_about_the_name",
+          criterion:
+            "In the turn Rufi started for the reading, the AI says the report names Meera Fictional and asks whose it is.",
+          evidence: lastReply(snapshot),
+        },
+      ],
       snapshot,
     };
   },
@@ -1472,7 +1533,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       { type: "report", id: "rep-asha-sep" },
     ]);
     const snapshot = await c.read();
-    const reply = lastReply(snapshot);
     return {
       checks: {
         read_that_report: recordReads(home).some(
@@ -1480,10 +1540,16 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
             (JSON.parse(call.input) as { report?: unknown }).report ===
             "rep-asha-sep",
         ),
-        mentions_the_tsh: /4\.6/.test(reply),
-        mentions_the_free_t4: /free t4/i.test(reply) && /1\.1/.test(reply),
         nothing_saved: record(home).saves === 0,
       },
+      verdicts: [
+        {
+          check: "answers_about_that_report",
+          criterion:
+            "The answer is about that report's results: the amended TSH 4.6 mIU/L, flagged High, and the Free T4 1.1 ng/dL of 1 Sep 2026.",
+          evidence: lastReply(snapshot),
+        },
+      ],
       snapshot,
     };
   },
@@ -1590,10 +1656,15 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     );
     const snapshot = await c.read();
     return {
-      checks: {
-        explains: /haemoglobin|hemoglobin/i.test(lastReply(snapshot)),
-        nothing_saved: nothingSaved(home, snapshot),
-      },
+      checks: { nothing_saved: nothingSaved(home, snapshot) },
+      verdicts: [
+        {
+          check: "explains",
+          criterion:
+            "The answer explains what the blood count report shows, from its results, and saves nothing.",
+          evidence: lastReply(snapshot),
+        },
+      ],
       snapshot,
     };
   },
@@ -1626,13 +1697,20 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     const snapshot = await c.read();
     return {
       checks: {
-        names_meera: /meera/i.test(lastReply(asked)),
         nothing_saved: record(home).saves === 0,
         // Setting her results aside for good needs a yes of its own.
         nothing_dismissed: draftsOf(home, doc).every(
           (d) => d.status === "pending",
         ),
       },
+      verdicts: [
+        {
+          check: "asks_whose_it_is",
+          criterion:
+            "Before saving, the AI says the report names Meera Fictional, not Asha, and asks whose it is.",
+          evidence: lastReply(asked),
+        },
+      ],
       snapshot,
     };
   },
@@ -2081,7 +2159,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     const c = chat(api);
     await deleteAugust(api, "keep");
     await c.say("What was my HbA1c in August?");
-    const asked = await c.read();
     const before = calls(home).length;
     await c.say("Open the report it came from and read me its page 1.");
     const snapshot = await c.read();
@@ -2092,7 +2169,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
           snapshot,
           "Deleted Sunrise Labs August.pdf",
         ),
-        uses_the_kept_result: replyOf(asked).includes("6.8"),
         fresh_reads_get_nothing_of_it: after.every(
           (call) =>
             call.tool !== "get_documents" ||
