@@ -3,6 +3,7 @@
 // quitting and crashing leave behind, what the person is told when something
 // fails, new windows, and what the page can't do. Dock, menus, focus and the
 // looks are checked by hand on the Mac.
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -24,6 +25,7 @@ import {
   type Desktop,
   ended,
   expect,
+  naming,
   rufiStarts,
   test,
 } from "./app.ts";
@@ -378,6 +380,40 @@ test.describe("stopping", () => {
     app.process.kill("SIGKILL");
     await ended(pid);
     expect(await desktop.running()).toBe(false);
+  });
+
+  test("a test's end stops whatever can still write in its folder, before the folder goes", async ({
+    desktop,
+  }) => {
+    const app = await desktop.launch();
+    await working(await app.electron.firstWindow());
+    // Chromium's helpers (GPU, network, the page) name the app's profile.
+    expect((await naming(desktop.folder)).length).toBeGreaterThan(1);
+    // One that outlives the app, as a helper can for a moment; and one of
+    // another folder whose name only starts the same.
+    const stand = (profile: string) =>
+      spawn(
+        process.execPath,
+        [
+          "-e",
+          "setInterval(() => undefined, 1000)",
+          "--",
+          `--user-data-dir=${profile}`,
+        ],
+        { stdio: "ignore" },
+      );
+    const helper = stand(join(desktop.folder, "tmp", "profile"));
+    const gone = new Promise((resolve) => helper.once("exit", resolve));
+    const other = stand(`${desktop.folder}-other/tmp/profile`);
+
+    try {
+      await desktop.close();
+      expect(await naming(desktop.folder)).toEqual([]);
+      await gone;
+      expect(await naming(`${desktop.folder}-other`)).toEqual([other.pid]);
+    } finally {
+      other.kill("SIGKILL");
+    }
   });
 
   test("when the Rufi it started stops, the app says so and quits", async ({

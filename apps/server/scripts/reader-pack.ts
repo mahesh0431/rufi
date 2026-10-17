@@ -9,7 +9,9 @@
 // default it reads a small dense set: two pages each of the densest reports,
 // as a PDF and as photos. --all reads the whole pack (long and many
 // documents, about 20 minutes); --only names the documents to read, from
-// either.
+// either. A document's data folder goes once its reading is done; one whose
+// reading failed stays in the Mac's temporary folder, and the report names
+// it.
 //
 //
 // --copies reads the copy set (tests/pack/copy-set.ts, five pages in two
@@ -18,16 +20,15 @@
 // to the output folder. Whether a copy is faithful is a judgement, so an
 // AI judge (copy-judge.ts) gives each row of each copied page a verdict
 // against its key; code counts only the facts (pages copied, rows on pages
-// with no copy) and the verdicts. --judge <folder> judges the copies saved
+// with no copy) and the verdicts. Their data folders go the same way. --judge <folder> judges the copies saved
 // by an earlier run again, with no new reading.
 //
 //   RUFI_HOME=<test sign-in folder> node apps/server/scripts/reader-pack.ts [--all | --only a,b] [--model id] [--effort level] [--out empty-dir]
 //   RUFI_HOME=<test sign-in folder> node apps/server/scripts/reader-pack.ts --copies [--runs n] [--model id] [--effort level] [--out empty-dir]
 //   RUFI_HOME=<test sign-in folder> node apps/server/scripts/reader-pack.ts --judge <folder of round-n copies> [--out empty-dir]
 //   node apps/server/scripts/reader-pack.ts [--copies] --make <dir>    (only writes the pack's files)
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -68,7 +69,7 @@ import {
   REPORTS,
   type Report,
 } from "../tests/pack/reports.ts";
-import { outFolder, runAll, sharedToken } from "./live-run.ts";
+import { onScratch, outFolder, runAll, sharedToken } from "./live-run.ts";
 import { chooseItems, norm, scoreItems, type Draft } from "./reader-score.ts";
 import {
   JUDGE,
@@ -339,27 +340,37 @@ const byKind = new Map<string, typeof totals & { ms: number }>();
 
 /** Reads one document with the real reader, then scores it. */
 async function readOne(item: Item) {
-  const { store, documentId, home } = await readFiles(
-    await item.files(),
-    (store, home) => entryReader(pages(store, home), notebook(store)),
+  const { result, kept } = await onScratch(
+    "rufi-pack-",
+    async (home) => {
+      const { store, documentId } = await readFiles(
+        home,
+        await item.files(),
+        (store, home) => entryReader(pages(store, home), notebook(store)),
+      );
+      try {
+        return score(item, store, documentId);
+      } finally {
+        store.close();
+      }
+    },
+    ({ state }) => state === "done",
   );
-  try {
-    return score(item, store, documentId, home);
-  } finally {
-    store.close();
-  }
+  return kept === undefined
+    ? result.rows
+    : [...result.rows, `  data folder: ${kept}`];
 }
 
 /**
- * Reads files added as one document, on a scratch data folder of its own,
+ * Reads files added as one document, on the scratch data folder `home`,
  * with the reader `kind` makes, until its reading ends. The caller closes
  * the store.
  */
 async function readFiles(
+  home: string,
   files: NewFile[],
   kind: (store: Store, home: string) => ReaderKind,
 ) {
-  const home = await mkdtemp(join(tmpdir(), "rufi-pack-"));
   const store = openWritable(databasePath(home));
   const transcripts = openTranscripts(store);
   const person = await transcripts.addFirstPerson("Asha Fictional");
@@ -411,14 +422,13 @@ async function readFiles(
   }
   await running.close();
   await served.close();
-  return { store, documentId, home };
+  return { store, documentId };
 }
 
 function score(
   item: Item,
   store: ReturnType<typeof openWritable>,
   documentId: string,
-  home: string,
 ) {
   const rows: string[] = [];
   const job = store.db
@@ -551,8 +561,7 @@ function score(
   // For a person to judge: is each doubt real, and is a question about
   // whose report it is right?
   if (asked !== undefined) rows.push(`  asked: ${asked.replace(/\n/g, " / ")}`);
-  rows.push(`  scratch data folder: ${home}`);
-  return rows;
+  return { rows, state: job.state };
 }
 
 if (values.judge !== undefined) {
@@ -589,15 +598,36 @@ async function readCopies(runs: number) {
       ["mixed", "photo"],
       undefined,
       async (name) => {
-        const { store, documentId } = await readFiles(
-          [name === "mixed" ? files.mixed : files.photo],
-          (store, home) => copyReader(pages(store, home), copies(store)),
+        const { result, kept } = await onScratch(
+          "rufi-pack-",
+          async (home) => {
+            const { store, documentId } = await readFiles(
+              home,
+              [name === "mixed" ? files.mixed : files.photo],
+              (store, home) => copyReader(pages(store, home), copies(store)),
+            );
+            let read: ReturnType<typeof copiesOf>;
+            try {
+              read = copiesOf(store, documentId);
+            } finally {
+              store.close();
+            }
+            // The copies are in the output folder before the data folder goes.
+            const folder = join(out, `round-${String(round)}`);
+            for (const key of KEY.filter((k) => k.file === name)) {
+              const copy = read.saved.find((c) => c.position === key.page);
+              if (!copy) continue;
+              await mkdir(folder, { recursive: true });
+              await writeFile(
+                join(folder, `${name}-${String(key.page)}.md`),
+                copy.copy,
+              );
+            }
+            return read;
+          },
+          ({ job }) => job.state === "done",
         );
-        try {
-          return copiesOf(store, documentId);
-        } finally {
-          store.close();
-        }
+        return { ...result, kept };
       },
     );
     const done: Round = {
@@ -615,7 +645,7 @@ async function readCopies(runs: number) {
         done.pages.push(...keys.map((key) => ({ key, copy: undefined })));
         continue;
       }
-      const { job, saved } = result.value;
+      const { job, saved, kept } = result.value;
       const ms =
         job.started_at && job.ended_at
           ? Date.parse(job.ended_at) - Date.parse(job.started_at)
@@ -624,18 +654,11 @@ async function readCopies(runs: number) {
         ? (JSON.parse(job.usage) as { totalTokens: number; looks: number })
         : undefined;
       done.lines.push(
-        `- ${name}: ${job.state}${job.error ? ` (${job.error})` : ""} · ${String(saved.length)} pages copied · ${saved.length > 0 ? (ms / saved.length / 1000).toFixed(1) : "—"} s a page · ${usage ? `${String(usage.totalTokens)} tokens, ${String(usage.looks)} looks` : "—"}`,
+        `- ${name}: ${job.state}${job.error ? ` (${job.error})` : ""} · ${String(saved.length)} pages copied · ${saved.length > 0 ? (ms / saved.length / 1000).toFixed(1) : "—"} s a page · ${usage ? `${String(usage.totalTokens)} tokens, ${String(usage.looks)} looks` : "—"}${kept === undefined ? "" : ` · data folder: ${kept}`}`,
       );
       for (const key of keys) {
         const copy = saved.find((c) => c.position === key.page);
         done.pages.push({ key, copy: copy?.copy });
-        if (!copy) continue;
-        const folder = join(out, `round-${String(round)}`);
-        await mkdir(folder, { recursive: true });
-        await writeFile(
-          join(folder, `${name}-${String(key.page)}.md`),
-          copy.copy,
-        );
       }
     }
     rounds.push(done);
@@ -683,9 +706,19 @@ async function judgeSaved(folder: string) {
   );
 }
 
-/** Has the judge give its verdicts on every copied page of the rounds. */
+/**
+ * Has the judge give its verdicts on every copied page of the rounds. Its
+ * data folder holds only the log of Rufi's MCP server for the judge.
+ */
 async function judgeAll(rounds: readonly Round[]) {
-  const home = await mkdtemp(join(tmpdir(), "rufi-judge-"));
+  await onScratch(
+    "rufi-judge-",
+    (home) => judgeOn(home, rounds),
+    () => true,
+  );
+}
+
+async function judgeOn(home: string, rounds: readonly Round[]) {
   const { log } = diagnostics(home);
   const keys = mcpKeys();
   let port = 0;
