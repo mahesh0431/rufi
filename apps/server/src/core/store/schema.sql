@@ -61,6 +61,8 @@ CREATE TABLE document_pages (
   file_name TEXT NOT NULL,     -- the file's name as it was added
   -- The reader's notebook: this page's entry (JSON, as save_page checked it)
   -- and the job that saved it. A later save_page for the page replaces it.
+  -- The reader that copies keeps its copy in page_copies and sets only the
+  -- job, attempt and time here, with no entry.
   entry TEXT,
   entry_job_id TEXT,
   entry_attempt INTEGER,      -- run that saved it; 0 if that run failed
@@ -149,7 +151,7 @@ CREATE TABLE page_copies (
   file_id TEXT NOT NULL,
   page_in_file INTEGER NOT NULL,
   job_id TEXT NOT NULL,        -- the reading that copied it
-  attempt INTEGER NOT NULL,    -- the run that saved it
+  attempt INTEGER NOT NULL,    -- the run that saved it, for information only
   outcome TEXT NOT NULL CHECK (outcome IN ('read', 'nothing_here', 'unreadable')),
   copy TEXT NOT NULL,          -- the page as Markdown (HTML tables allowed), as the reader wrote it
   why TEXT,                    -- why it is unreadable
