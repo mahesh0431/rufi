@@ -1,19 +1,22 @@
 // Reading documents: the jobs that read them, one at a time, and what a
 // reading writes when it starts and when it ends. A job targets some pages
 // of its document (all of them first; a retry only the pages that failed).
-// Its runs write the notebook (notebook.ts), or page copies for a reader
-// that copies (copies.ts); only a run whose reader turn completed normally
-// finishes the job, in one transaction with its end line: page states, the
-// draft items from this job's entries (a copy makes none), the document's
-// kind, date and version, and the job done. A failed job keeps its entries
-// and copies and makes no drafts; Retry continues it. Nothing here writes
-// the record. Rufi reads each document as it is added.
+// Its runs write the reader's page copies (copies.ts); only a run whose
+// reader turn completed normally finishes the job, in one transaction with
+// its end line: page states, the document's version, the job done, and the
+// request that asks Rufi AI to sort the pages (sorting.ts), which makes the
+// drafts. A failed job keeps its copies; Retry continues it. Nothing here
+// writes the record or decides what a page means. Rufi reads each
+// document as it is added. Pages an older reader saved as notebook entries
+// keep them, and are shown as they are.
 import type { Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 import { Refusal } from "../tools/registry.ts";
 import type { Checks, Entry, Run } from "./notebook.ts";
+import { documentName, ranges } from "./naming.ts";
+import { pagesOf, sortLine, sortNote } from "./sorting.ts";
 
 export interface Job {
   id: string;
@@ -46,7 +49,7 @@ export interface Usage {
 export interface Ending {
   /** The chat's line. */
   line: string;
-  /** Rufi's note for the AI, only when something needs the person. */
+  /** Rufi's note that asks Rufi AI to sort the pages, when there are pages to sort. */
   ask: string | undefined;
   facts: {
     document: string;
@@ -88,57 +91,8 @@ const jobOf = (row: Tables["jobs"]): Job => ({
   startedAt: row.started_at,
 });
 
-/** A document's name for a person: its file, or "3 photos". */
-export function documentName(files: readonly string[]): string {
-  const distinct = [...new Set(files)];
-  if (distinct.length <= 1) return distinct[0] ?? "A document";
-  return `${String(distinct.length)} photos`;
-}
-
 const plural = (n: number, one: string, many = `${one}s`) =>
   `${String(n)} ${n === 1 ? one : many}`;
-
-const MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
-
-/** "12 Aug", "Aug 2025", "2024": a precision date in the line's words. */
-function shortDate(iso: string, today: string): string {
-  const [year = "", month, day] = iso.split("-");
-  const name = month === undefined ? undefined : MONTHS[Number(month) - 1];
-  if (name === undefined) return year;
-  const thisYear = today.slice(0, 4) === year;
-  if (day === undefined) return `${name} ${year}`;
-  return `${String(Number(day))} ${name}${thisYear ? "" : ` ${year}`}`;
-}
-
-const KIND_WORDS = {
-  lab_report: "Lab report",
-  prescription: "Prescription",
-  letter: "Letter",
-  other: "Document",
-} as const;
-
-/** The value every page that states one agrees on; undefined otherwise. */
-function agreed<T>(values: readonly (T | undefined)[]): T | undefined {
-  const stated = values.filter((v) => v !== undefined);
-  const [first] = stated;
-  return stated.every((v) => v === first) ? first : undefined;
-}
-
-/** A page's first printed date: the collection date when there is one. */
-const firstDate = (entry: Entry) => entry.facts?.dates?.[0];
-
-/** Pages as "1–4, 6". */
-export function ranges(positions: readonly number[]): string {
-  const parts: [number, number][] = [];
-  for (const p of [...positions].sort((a, b) => a - b)) {
-    const last = parts.at(-1);
-    if (last && last[1] === p - 1) last[1] = p;
-    else parts.push([p, p]);
-  }
-  return parts
-    .map(([a, b]) => (a === b ? String(a) : `${String(a)}–${String(b)}`))
-    .join(", ");
-}
 
 export function readings(
   store: Store,
@@ -192,25 +146,44 @@ export function readings(
         .execute()
     ).map((p) => p.position);
 
-  /** The document's latest job, if it has one. */
-  const latestJob = async (
+  /**
+   * The latest reading of any of the document's pages: a reading of its
+   * add (a split document's pages were read with the add) or of the
+   * document itself, whose targets include one of its pages.
+   */
+  const readingOf = async (
     trx: Trx | Store["query"],
     personId: string,
     documentId: string,
-  ) => {
-    const row = await trx
-      .selectFrom("jobs")
-      .selectAll()
+  ): Promise<Job | undefined> => {
+    const document = await trx
+      .selectFrom("documents")
+      .select(["id", "from_document"])
       .where("person_id", "=", personId)
-      .where("document_id", "=", documentId)
-      .orderBy("created_at", "desc")
-      .orderBy("id", "desc")
-      .limit(1)
+      .where("id", "=", documentId)
       .executeTakeFirst();
-    return row && jobOf(row);
+    if (!document) return undefined;
+    const add = document.from_document ?? document.id;
+    const mine = new Set(await positions(trx, personId, documentId));
+    const rows = await trx
+      .selectFrom("jobs as j")
+      .innerJoin("documents as d", (join) =>
+        join
+          .onRef("d.person_id", "=", "j.person_id")
+          .onRef("d.id", "=", "j.document_id"),
+      )
+      .selectAll("j")
+      .where("j.person_id", "=", personId)
+      .where((eb) =>
+        eb.or([eb("d.id", "=", add), eb("d.from_document", "=", add)]),
+      )
+      .orderBy("j.created_at", "desc")
+      .orderBy("j.id", "desc")
+      .execute();
+    return rows.map(jobOf).find((job) => job.targets.some((t) => mine.has(t)));
   };
 
-  /** The outcomes of a reader that copies: this job's page copies, by position. */
+  /** This job's page copies of the document, by position. */
   const copiedBy = async (
     trx: Trx | Store["query"],
     run: Pick<Run, "jobId" | "personId" | "documentId">,
@@ -233,53 +206,42 @@ export function readings(
       ).map((c) => [c.position, c] as const),
     );
 
-  /** The facts of a reading for its end line and its note for the AI. */
+  /**
+   * The facts of a reading for its end line and, when it has pages to
+   * sort, Rufi's note that asks Rufi AI to sort them. A reading that
+   * copied nothing but unreadable pages has nothing to sort.
+   */
   const ending = async (
     run: Pick<Run, "jobId" | "personId" | "documentId" | "targets">,
     failure?: string,
   ): Promise<Ending> => {
     const pages = await db
       .selectFrom("document_pages")
-      .select([
-        "position",
-        "file_name",
-        "entry",
-        "entry_job_id",
-        "entry_checks",
-        "state",
-      ])
+      .select(["position", "file_name"])
       .where("person_id", "=", run.personId)
       .where("document_id", "=", run.documentId)
       .orderBy("position")
       .execute();
-    const name = documentName(pages.map((p) => p.file_name));
-    const targets = new Set(run.targets);
-    const saved = pages.filter(
-      (p) => targets.has(p.position) && p.entry_job_id === run.jobId,
-    );
-    const mine = saved.filter((p) => p.entry);
-    const facts = (results: number, unsure: number) => ({
-      document: run.documentId,
-      results,
-      unsure,
-    });
+    const files = pages.map((p) => p.file_name);
+    const name = documentName(files);
+    const copied = await copiedBy(db, run);
+    const facts = { document: run.documentId, results: 0, unsure: 0 };
     if (failure !== undefined) {
       return {
-        line: `Couldn't finish reading ${name} · ${failure} · read ${String(saved.length)} of ${String(targets.size)}`,
+        line: `Couldn't finish reading ${name} · ${failure} · read ${String(copied.size)} of ${String(run.targets.length)}`,
         ask: undefined,
-        facts: { ...facts(0, 0), action: "retry" },
+        facts: { ...facts, action: "retry" },
       };
     }
-    // A reader that copies: what it copied, and nothing it decided.
-    const copied = await copiedBy(db, run);
-    if (copied.size > 0) {
-      const outcomes = [...copied.values()];
-      const unreadable = outcomes.filter((c) => c.outcome === "unreadable");
-      const notLooked = run.targets.filter((t) => !copied.has(t));
+    const unreadable = run.targets.filter(
+      (t) => copied.get(t)?.outcome === "unreadable",
+    );
+    const notLooked = run.targets.filter((t) => !copied.has(t));
+    const sortable = copied.size - unreadable.length;
+    if (sortable === 0) {
       return {
         line: [
-          name,
-          `${plural(copied.size - unreadable.length, "page")} copied`,
+          `Couldn't read ${name}`,
           ...(unreadable.length > 0
             ? [`${plural(unreadable.length, "page")} couldn't be read`]
             : []),
@@ -288,127 +250,25 @@ export function readings(
             : []),
         ].join(" · "),
         ask: undefined,
-        facts: { ...facts(0, 0), action: "open" },
+        facts: { ...facts, action: "retry" },
       };
     }
-    // An entry saved by an older Rufi keeps the checks it stored with it.
-    const entries = mine.map((p) => ({
-      position: p.position,
-      entry: JSON.parse(p.entry ?? "{}") as Entry,
-      checks: JSON.parse(p.entry_checks ?? '{"items":[]}') as Checks,
-    }));
-    // The whole document's pages for its kind and dates: those read before
-    // (a retry reads only some) and this job's.
-    const all = pages
-      .filter((p) => p.entry && (p.state !== null || targets.has(p.position)))
-      .map((p) => JSON.parse(p.entry ?? "{}") as Entry);
-    const items = entries.flatMap((e) =>
-      e.entry.outcome === "read" ? e.entry.items : [],
-    );
-    const results = items.filter((item) => item.column !== "earlier").length;
-    const unsureItems = entries.flatMap(({ position, entry, checks }) =>
-      entry.outcome !== "read"
-        ? []
-        : entry.items.flatMap((item, index) => {
-            const flagged = checks.items.find((c) => c.item === index + 1);
-            const why = [item.unsure, flagged?.why].filter(
-              (w) => w !== undefined,
-            );
-            return why.length === 0
-              ? []
-              : [
-                  `page ${String(position)}: ${item.test_name} "${item.value_text}" (${why.join("; ")})`,
-                ];
-          }),
-    );
-    const unreadable = entries.filter((e) => e.entry.outcome === "unreadable");
-    const notLooked = run.targets.filter(
-      (t) => !entries.some((e) => e.position === t),
-    );
-    const incomplete = entries.filter((e) => e.checks.incomplete);
-    const issues = entries.flatMap(({ position, entry }) =>
-      (entry.issues ?? []).map((i) => `page ${String(position)}: ${i}`),
-    );
-
-    // The line: what it is, when, what was read, what needs a look.
-    const kind = agreed(all.map((e) => e.facts?.kind));
-    const dates = all.map((e) => {
-      const date = firstDate(e);
-      return date?.iso ?? date?.date;
-    });
-    const date = agreed(dates);
-    const distinctDates = new Set(dates.filter((d) => d !== undefined));
-    // A report per lab, number and date printed; a page that prints none
-    // (a table that goes on) is part of the one before.
-    const reports = new Set(
-      all
-        .map((e) => [
-          e.facts?.issuer,
-          e.facts?.report_number,
-          firstDate(e)?.iso ?? firstDate(e)?.date,
-        ])
-        .filter((key) => key.some((part) => part !== undefined))
-        .map((key) => JSON.stringify(key)),
-    );
-    const today = now();
-    const head =
-      distinctDates.size > 1
-        ? `${reports.size > 1 ? plural(reports.size, "report") : name} · ${plural(distinctDates.size, "date")}`
-        : [
-            kind === undefined ? name : KIND_WORDS[kind],
-            ...(date === undefined
-              ? []
-              : [/^\d{4}/.test(date) ? shortDate(date, today) : date]),
-          ].join(" · ");
-    const retry = pages.length !== run.targets.length;
-    const parts = [
-      retry
-        ? `${head} · ${run.targets.length === 1 ? "page" : "pages"} ${ranges(run.targets)} read again`
-        : head,
-      results === 0 ? "no results read" : `${plural(results, "result")} read`,
-      ...(unsureItems.length > 0
-        ? [`${String(unsureItems.length)} to check`]
-        : []),
-      ...(unreadable.length > 0
-        ? [`${plural(unreadable.length, "page")} couldn't be read`]
-        : []),
-      ...(notLooked.length > 0
-        ? [`${plural(notLooked.length, "page")} not looked at`]
-        : []),
-      ...(incomplete.length > 0
-        ? [`${plural(incomplete.length, "page")} may be incomplete`]
-        : []),
-    ];
-
-    // The note for the AI: only when something needs the person.
-    const needs = [
-      ...unsureItems.map((u) => `unsure: ${u}`),
-      ...unreadable.map(
-        (e) =>
-          `page ${String(e.position)} couldn't be read${e.entry.why === undefined ? "" : ` (${e.entry.why})`}`,
-      ),
-      ...(notLooked.length > 0
-        ? [`pages ${ranges(notLooked)} weren't looked at`]
-        : []),
-      ...incomplete.map(
-        (e) =>
-          `page ${String(e.position)} may be incomplete: ${String(e.checks.incomplete?.rows_seen)} rows seen, ${String(e.checks.incomplete?.items)} read`,
-      ),
-      ...issues.map((i) => `the reader noted: ${i}`),
-    ];
-    const ask =
-      needs.length === 0
-        ? undefined
-        : [
-            `A document reading finished: ${name} (document ${run.documentId}), ${plural(items.length, "draft item")} read, not saved.`,
-            "What needs the user:",
-            ...needs.map((n) => `- ${n}`),
-            "Read the document with get_documents if you need to, then tell the user in a few lines and ask what it needs. Don't save anything.",
-          ].join("\n");
     return {
-      line: parts.join(" · "),
-      ask,
-      facts: { ...facts(results, unsureItems.length), action: "open" },
+      line: sortLine({
+        files,
+        targets: run.targets,
+        pages: pages.length,
+        unreadable: unreadable.length,
+        notLooked: notLooked.length,
+      }),
+      ask: sortNote({
+        name,
+        documentId: run.documentId,
+        copied: copied.size,
+        unreadable,
+        notLooked,
+      }),
+      facts: { ...facts, action: "open" },
     };
   };
 
@@ -507,7 +367,7 @@ export function readings(
           .executeTakeFirst();
         if (!exists)
           throw new Refusal("There is no such document for this person.");
-        const job = await latestJob(trx, personId, documentId);
+        const job = await readingOf(trx, personId, documentId);
         if (!job) {
           // Never read (added before Rufi read each document as it came).
           const all = await positions(trx, personId, documentId);
@@ -517,7 +377,7 @@ export function readings(
         if (job.state === "queued" || job.state === "running") {
           throw new Refusal("This document is being read now.");
         }
-        if (job.state === "failed") {
+        if (job.state === "failed" && job.documentId === documentId) {
           await trx
             .updateTable("jobs")
             .set({
@@ -589,15 +449,26 @@ export function readings(
       return { job, wake };
     },
 
-    /** Whether every target has an entry from a run not recorded as failed. */
+    /**
+     * Whether every target has this job's copy from a run not recorded as
+     * failed. A page an older reader saved in this job's notebook has no
+     * copy: the reader that copies reads it again.
+     */
     allSaved: async (job: Job) => {
       const rows = await db
-        .selectFrom("document_pages")
-        .select("position")
-        .where("person_id", "=", job.personId)
-        .where("document_id", "=", job.documentId)
-        .where("entry_job_id", "=", job.id)
-        .where("entry_attempt", ">", 0)
+        .selectFrom("document_pages as p")
+        .innerJoin("page_copies as c", (join) =>
+          join
+            .onRef("c.person_id", "=", "p.person_id")
+            .onRef("c.file_id", "=", "p.file_id")
+            .onRef("c.page_in_file", "=", "p.page_in_file"),
+        )
+        .select("p.position")
+        .where("p.person_id", "=", job.personId)
+        .where("p.document_id", "=", job.documentId)
+        .where("c.job_id", "=", job.id)
+        .where("p.entry_job_id", "=", job.id)
+        .where("p.entry_attempt", ">", 0)
         .execute();
       const saved = new Set(rows.map((r) => r.position));
       return job.targets.every((t) => saved.has(t));
@@ -629,9 +500,9 @@ export function readings(
       db.transaction().execute((trx) => begin(trx, job)),
 
     /**
-     * What a run's reader is told: the document's pages, what it saved, its
-     * note, and the display name of the run's person, to compare with the
-     * name on the report.
+     * What a run's reader is told: the document's pages and which of its
+     * targets this reading has copied, and the display name of the run's
+     * person.
      */
     about: async (run: Run) => {
       const person = await db
@@ -641,29 +512,18 @@ export function readings(
         .executeTakeFirstOrThrow();
       const pages = await db
         .selectFrom("document_pages")
-        .select(["position", "file_name", "entry_job_id"])
+        .select(["position", "file_name"])
         .where("person_id", "=", run.personId)
         .where("document_id", "=", run.documentId)
         .orderBy("position")
         .execute();
-      const note = await db
-        .selectFrom("documents")
-        .select("reader_note")
-        .where("person_id", "=", run.personId)
-        .where("id", "=", run.documentId)
-        .executeTakeFirst();
+      const copied = await copiedBy(db, run);
       return {
         person: person.display_name,
         pages: pages.length,
         files: pages.map((p) => p.file_name),
         targets: run.targets,
-        saved: pages
-          .filter(
-            (p) =>
-              p.entry_job_id === run.jobId && run.targets.includes(p.position),
-          )
-          .map((p) => p.position),
-        note: note?.reader_note ?? null,
+        saved: run.targets.filter((t) => copied.has(t)),
       };
     },
 
@@ -736,15 +596,21 @@ export function readings(
 
     /**
      * A reading's normal end, inside its end line's transaction, once per
-     * job: each target's state (its entry's outcome, or not looked at),
-     * draft items from this job's entries, the document's kind and date
-     * when every page agrees, its version raised, the job done.
+     * job: each target's state (its copy's outcome, or not looked at), the
+     * document's version raised, the job done. A reading with nothing to
+     * sort (`sorts` false: only unreadable pages) is sorted as it ends.
+     * Draft items come from Rufi AI's sort (sorting.ts), never from here.
      */
-    finish: async (trx: Trx, run: Run) => {
+    finish: async (trx: Trx, run: Run, sorts: boolean) => {
       const at = now();
       const ended = await trx
         .updateTable("jobs")
-        .set({ state: "done", ended_at: at, error: null })
+        .set({
+          state: "done",
+          ended_at: at,
+          error: null,
+          sorted_at: sorts ? null : at,
+        })
         .where("id", "=", run.jobId)
         .where("state", "=", "running")
         .where("attempt", "=", run.attempt)
@@ -756,92 +622,23 @@ export function readings(
           "The reading isn't running any more.",
         );
       }
-      const pages = await trx
-        .selectFrom("document_pages")
-        .select(["position", "entry", "entry_job_id", "entry_checks", "state"])
-        .where("person_id", "=", run.personId)
-        .where("document_id", "=", run.documentId)
-        .orderBy("position")
-        .execute();
       const copied = await copiedBy(trx, run);
       for (const target of run.targets) {
-        const page = pages.find((p) => p.position === target);
-        if (!page) continue;
-        // A reader that copies: the page's state, and no drafts.
         const copy = copied.get(target);
-        if (copy) {
-          page.state = copy.outcome;
-          await trx
-            .updateTable("document_pages")
-            .set({
-              state: page.state,
-              state_why: copy.outcome === "unreadable" ? copy.why : null,
-            })
-            .where("person_id", "=", run.personId)
-            .where("document_id", "=", run.documentId)
-            .where("position", "=", target)
-            .execute();
-          continue;
-        }
-        const entry =
-          page.entry_job_id === run.jobId && page.entry
-            ? (JSON.parse(page.entry) as Entry)
-            : undefined;
-        // Only an entry an older Rufi saved has checks.
-        const checks = JSON.parse(
-          page.entry_checks ?? '{"items":[]}',
-        ) as Checks;
-        page.state = entry?.outcome ?? "not_looked_at";
         await trx
           .updateTable("document_pages")
           .set({
-            state: page.state,
-            state_why:
-              entry?.outcome === "unreadable" ? (entry.why ?? null) : null,
+            state: copy?.outcome ?? "not_looked_at",
+            state_why: copy?.outcome === "unreadable" ? copy.why : null,
           })
           .where("person_id", "=", run.personId)
           .where("document_id", "=", run.documentId)
           .where("position", "=", target)
           .execute();
-        if (entry?.outcome !== "read") continue;
-        for (const [index, item] of entry.items.entries()) {
-          const { unsure, ...fields } = item;
-          const flagged = checks.items.find((c) => c.item === index + 1);
-          await trx
-            .insertInto("draft_items")
-            .values({
-              id: uuid(),
-              person_id: run.personId,
-              document_id: run.documentId,
-              page: target,
-              seq: index + 1,
-              job_id: run.jobId,
-              kind: "lab_result",
-              version: 1,
-              status: "pending",
-              fields: JSON.stringify(fields),
-              original: JSON.stringify(item),
-              unsure: JSON.stringify(
-                [unsure, flagged?.why].filter((w) => w !== undefined),
-              ),
-              created_at: at,
-            })
-            .execute();
-        }
       }
-      // The document's kind and date: only when every page read agrees.
-      const read = pages
-        .filter((p) => p.state !== null && p.entry)
-        .map((p) => JSON.parse(p.entry ?? "{}") as Entry);
-      const kind = agreed(read.map((e) => e.facts?.kind));
-      const date = agreed(read.map((e) => firstDate(e)?.iso));
       await trx
         .updateTable("documents")
-        .set((eb) => ({
-          kind: kind ?? null,
-          date: date ?? null,
-          version: eb("version", "+", 1),
-        }))
+        .set((eb) => ({ version: eb("version", "+", 1) }))
         .where("person_id", "=", run.personId)
         .where("id", "=", run.documentId)
         .execute();
@@ -889,19 +686,42 @@ export function readings(
     /**
      * Each of the person's documents' reading, for the Documents page and
      * get_documents: not read yet, reading, done or failed, with counts.
+     * Worked out from the document's own pages, so a document split from
+     * an add has the add's reading of its pages.
      */
     statuses: async (personId: string) => {
-      const jobs = await db
-        .selectFrom("jobs")
-        .selectAll()
+      const jobs = (
+        await db
+          .selectFrom("jobs")
+          .selectAll()
+          .where("person_id", "=", personId)
+          .orderBy("created_at", "desc")
+          .orderBy("id", "desc")
+          .execute()
+      ).map((row) => ({ job: jobOf(row), error: row.error }));
+      // A deleted add's reading still read its live split documents' pages.
+      const all = await db
+        .selectFrom("documents")
+        .select(["id", "from_document", "deleted_at"])
         .where("person_id", "=", personId)
-        .orderBy("created_at")
-        .orderBy("id")
         .execute();
+      const addOf = new Map(all.map((d) => [d.id, d.from_document ?? d.id]));
+      const documents = all.filter((d) => d.deleted_at === null);
       const pages = await db
         .selectFrom("document_pages")
         .select(["document_id", "position", "entry_job_id", "state"])
         .where("person_id", "=", personId)
+        .execute();
+      const copies = await db
+        .selectFrom("page_copies as c")
+        .innerJoin("document_pages as p", (join) =>
+          join
+            .onRef("p.person_id", "=", "c.person_id")
+            .onRef("p.file_id", "=", "c.file_id")
+            .onRef("p.page_in_file", "=", "c.page_in_file"),
+        )
+        .select(["c.job_id", "p.document_id", "p.position"])
+        .where("c.person_id", "=", personId)
         .execute();
       const drafts = await db
         .selectFrom("draft_items")
@@ -923,31 +743,47 @@ export function readings(
           error: string | null;
         }
       >();
-      for (const row of jobs) {
-        const job = jobOf(row);
-        const mine = pages.filter((p) => p.document_id === job.documentId);
-        const pending = drafts.filter(
-          (d) => d.document_id === job.documentId && d.status === "pending",
+      for (const document of documents) {
+        const add = addOf.get(document.id);
+        const mine = pages.filter((p) => p.document_id === document.id);
+        const here = new Set(mine.map((p) => p.position));
+        const found = jobs.find(
+          ({ job }) =>
+            addOf.get(job.documentId) === add &&
+            job.targets.some((t) => here.has(t)),
         );
-        // Current values only in the result count, as in the end line.
+        if (!found) continue;
+        const { job, error } = found;
+        const targets = job.targets.filter((t) => here.has(t));
+        const copied = new Set(
+          copies
+            .filter((c) => c.job_id === job.id && c.document_id === document.id)
+            .map((c) => c.position),
+        );
+        const pending = drafts.filter(
+          (d) => d.document_id === document.id && d.status === "pending",
+        );
+        // Current values only in the result count: an older reader's earlier
+        // column isn't counted.
         const current = pending.filter(
           (d) =>
             (JSON.parse(d.fields) as { column?: string }).column !== "earlier",
         );
         const done = (status: "saved" | "dismissed") =>
           drafts.filter(
-            (d) => d.document_id === job.documentId && d.status === status,
+            (d) => d.document_id === document.id && d.status === status,
           ).length;
-        statuses.set(job.documentId, {
+        statuses.set(document.id, {
           status:
             job.state === "queued" || job.state === "running"
               ? "reading"
               : job.state,
           saved: mine.filter(
             (p) =>
-              p.entry_job_id === job.id && job.targets.includes(p.position),
+              targets.includes(p.position) &&
+              (copied.has(p.position) || p.entry_job_id === job.id),
           ).length,
-          of: job.targets.length,
+          of: targets.length,
           results: current.length,
           hasPending: pending.length > 0,
           toCheck: current.filter((d) => d.unsure !== "[]").length,
@@ -959,7 +795,7 @@ export function readings(
               mine.some(
                 (p) => p.state === "unreadable" || p.state === "not_looked_at",
               )),
-          error: row.error,
+          error,
         });
       }
       return statuses;
@@ -975,7 +811,7 @@ export function readings(
         .where("deleted_at", "is", null)
         .executeTakeFirst();
       if (!document) return undefined;
-      const job = await latestJob(db, personId, documentId);
+      const job = await readingOf(db, personId, documentId);
       const row =
         job &&
         (await db
@@ -1001,6 +837,34 @@ export function readings(
       const reader = row?.reader
         ? (JSON.parse(row.reader) as { model?: string; effort?: string })
         : undefined;
+      const copies = new Map(
+        (await pagesOf(db, personId, [documentId])).map((p) => [
+          p.position,
+          p.copy,
+        ]),
+      );
+      // While it reads, the copies it saved so far.
+      const sofar = new Map(
+        job && (job.state === "queued" || job.state === "running")
+          ? (
+              await db
+                .selectFrom("page_copies as c")
+                .innerJoin("document_pages as p", (join) =>
+                  join
+                    .onRef("p.person_id", "=", "c.person_id")
+                    .onRef("p.file_id", "=", "c.file_id")
+                    .onRef("p.page_in_file", "=", "c.page_in_file"),
+                )
+                .select(["p.position", "c.copy"])
+                .where("c.person_id", "=", personId)
+                .where("p.document_id", "=", documentId)
+                .where("c.job_id", "=", job.id)
+                .execute()
+            ).map((c) => [c.position, c.copy])
+          : [],
+      );
+      const targets =
+        job?.targets.filter((t) => pages.some((p) => p.position === t)) ?? [];
       return {
         name: documentName(pages.map((p) => p.file_name)),
         status:
@@ -1011,11 +875,10 @@ export function readings(
               : job.state,
         saved: job
           ? pages.filter(
-              (p) =>
-                p.entry_job_id === job.id && job.targets.includes(p.position),
+              (p) => p.entry_job_id === job.id && targets.includes(p.position),
             ).length
           : 0,
-        of: job?.targets.length ?? pages.length,
+        of: job ? targets.length : pages.length,
         runAt: job?.state === "running" ? (row?.run_at ?? null) : null,
         error: row?.error ?? null,
         note: document.reader_note,
@@ -1024,6 +887,7 @@ export function readings(
           state: p.state,
           why: p.state_why,
           entry: p.entry ? (JSON.parse(p.entry) as Entry) : null,
+          copy: sofar.get(p.position) ?? copies.get(p.position)?.text ?? null,
           checks: p.entry_checks
             ? (JSON.parse(p.entry_checks) as Checks)
             : null,

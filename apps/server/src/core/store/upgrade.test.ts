@@ -436,6 +436,27 @@ it("keeps the backup made before the category upgrade at version 3, and a restor
   );
 });
 
+/**
+ * Rows as a Rufi before sorting (version 11) had them: the columns
+ * migration 12 adds are left out, to compare an older test's rows.
+ */
+const beforeSorting = (rows: readonly object[]) =>
+  rows.map((row) =>
+    Object.fromEntries(
+      Object.entries(row).filter(
+        ([key]) =>
+          ![
+            "issuer",
+            "report_number",
+            "from_document",
+            "sorted_at",
+            "quote",
+            "report",
+          ].includes(key),
+      ),
+    ),
+  );
+
 /** The documents and their pages as stored. */
 function documentsIn(path: string) {
   const db = new DatabaseSync(path, { readOnly: true });
@@ -462,7 +483,7 @@ it("upgrades a record of version 4 so a document can be deleted, every document 
   (await openRecord(home)).close();
 
   const after = documentsIn(path);
-  expect(after.documents).toEqual(
+  expect(beforeSorting(after.documents)).toEqual(
     before.documents.map((row) => ({ ...row, deleted_at: null })),
   );
   expect(after.pages).toEqual(before.pages);
@@ -590,7 +611,7 @@ it("upgrades a record of version 8 so a reading no longer waits for the account:
   const store = await openRecord(home);
   try {
     const after = stored();
-    expect(after.jobs).toEqual(
+    expect(beforeSorting(after.jobs)).toEqual(
       before.jobs.map(
         ({ waiting: _waiting, wait_until: _until, retried, ...job }) => ({
           ...job,
@@ -600,7 +621,7 @@ it("upgrades a record of version 8 so a reading no longer waits for the account:
       ),
     );
     expect(after.pages).toEqual(before.pages);
-    expect(after.drafts).toEqual(before.drafts);
+    expect(beforeSorting(after.drafts)).toEqual(before.drafts);
     // Neither former wait waits any more: the oldest runs now, and no job
     // has a time to wake for.
     const next = await readings(store, () => "2026-10-17T09:00:00.000Z").next();
@@ -706,7 +727,10 @@ it("upgrades a record of version 10 so the reader can keep page copies: every pa
 
   const store = await openRecord(home);
   try {
-    expect(stored()).toEqual(before);
+    const after = stored();
+    expect(beforeSorting(after.jobs)).toEqual(before.jobs);
+    expect(after.pages).toEqual(before.pages);
+    expect(beforeSorting(after.drafts)).toEqual(before.drafts);
     const page = store.db
       .prepare(
         "SELECT file_id FROM document_pages WHERE document_id = 'doc-asha-aug' AND position = 1",
@@ -731,6 +755,113 @@ it("upgrades a record of version 10 so the reader can keep page copies: every pa
   } finally {
     store.close();
   }
+});
+
+it("upgrades a record of version 11 so Rufi AI sorts: every document, reading and draft kept, an ended reading counted sorted, and each older draft keeping the report and date Rufi gave it then", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 11));
+  // Readings as Rufi of version 11 left them: a done one with entries and
+  // drafts, page 1 printing the report's head and page 2 none; one still
+  // running; a page with no facts at all.
+  const COLLECTED = {
+    label: "Collected",
+    date: "12/08/2026",
+    iso: "2026-08-12",
+  };
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, retries, ended_at, created_at) VALUES
+        ('job-v11-aug', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1,2]', 0, '2026-10-16T08:02:00Z', '2026-10-16T08:00:00Z'),
+        ('job-v11-sep', 'asha', 'document_read', 'doc-asha-sep', 'running', 1, '[1]', 0, NULL, '2026-10-16T08:00:00Z');
+      UPDATE document_pages SET entry = '${JSON.stringify({
+        outcome: "read",
+        facts: {
+          issuer: "Sunrise Labs",
+          report_number: "SL-1",
+          dates: [COLLECTED],
+        },
+        items: [],
+      })}', entry_job_id = 'job-v11-aug', entry_attempt = 1, state = 'read'
+        WHERE document_id = 'doc-asha-aug' AND position = 1;
+      UPDATE document_pages SET entry = '{"outcome":"read","items":[]}', entry_job_id = 'job-v11-aug', entry_attempt = 1, state = 'read'
+        WHERE document_id = 'doc-asha-aug' AND position = 2;
+      UPDATE document_pages SET entry = '{"outcome":"read","items":[]}', entry_job_id = 'job-v11-sep', entry_attempt = 1
+        WHERE document_id = 'doc-asha-sep';
+      INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, fields, original, created_at) VALUES
+        ('d-v11-1', 'asha', 'doc-asha-aug', 1, 1, 'job-v11-aug', 'lab_result', '{"test_name":"HbA1c","value_text":"6.9"}', '{"test_name":"HbA1c","value_text":"6.9"}', '2026-10-16T08:02:00Z'),
+        ('d-v11-2', 'asha', 'doc-asha-aug', 2, 1, 'job-v11-aug', 'lab_result', '{"test_name":"TSH","value_text":"2.3"}', '{"test_name":"TSH","value_text":"2.3"}', '2026-10-16T08:02:00Z'),
+        ('d-v11-3', 'asha', 'doc-asha-sep', 1, 1, 'job-v11-sep', 'lab_result', '{"test_name":"Free T4","value_text":"1.1"}', '{"test_name":"Free T4","value_text":"1.1"}', '2026-10-16T08:02:00Z');
+    `);
+  } finally {
+    old.close();
+  }
+  const stored = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return {
+        documents: db.prepare("SELECT * FROM documents ORDER BY id").all(),
+        jobs: db.prepare("SELECT * FROM jobs ORDER BY id").all(),
+        pages: db
+          .prepare(
+            "SELECT * FROM document_pages ORDER BY person_id, document_id, position",
+          )
+          .all(),
+        drafts: db.prepare("SELECT * FROM draft_items ORDER BY id").all(),
+      };
+    } finally {
+      db.close();
+    }
+  };
+  const before = stored();
+
+  (await openRecord(home)).close();
+
+  const after = stored();
+  expect(beforeSorting(after.documents)).toEqual(before.documents);
+  expect(beforeSorting(after.jobs)).toEqual(before.jobs);
+  expect(after.pages).toEqual(before.pages);
+  expect(beforeSorting(after.drafts)).toEqual(before.drafts);
+  expect(
+    after.documents.map((d) => [
+      d["id"],
+      d["issuer"],
+      d["report_number"],
+      d["from_document"],
+    ]),
+  ).toEqual(before.documents.map((d) => [d["id"], null, null, null]));
+  expect(
+    after.jobs
+      .filter((j) => String(j["id"]).startsWith("job-v11"))
+      .map((j) => [j["id"], j["sorted_at"]]),
+  ).toEqual([
+    ["job-v11-aug", "2026-10-16T08:02:00Z"],
+    ["job-v11-sep", null],
+  ]);
+  const report = {
+    issuer: "Sunrise Labs",
+    number: "SL-1",
+    collected: "2026-08-12",
+    date: COLLECTED,
+  };
+  expect(
+    after.drafts
+      .filter((d) => String(d["id"]).startsWith("d-v11"))
+      .map((d) => [
+        d["id"],
+        d["quote"],
+        JSON.parse(String(d["report"])) as unknown,
+      ]),
+  ).toEqual([
+    ["d-v11-1", null, report],
+    // Page 2 prints no head: its report is page 1's.
+    ["d-v11-2", null, report],
+    [
+      "d-v11-3",
+      null,
+      { issuer: null, number: null, collected: null, date: null },
+    ],
+  ]);
 });
 
 it.each([

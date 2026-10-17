@@ -1,8 +1,11 @@
-// A document's page: the items the reader read, beside the page they came
-// from. A click on a row shows its page; "Unsure only" keeps the items the
-// reader (or an older Rufi's checks) marked. A fix changes an item's printed fields and
-// keeps the reader's; it names the item's version, so a fix made on an older
-// one (another tab fixed it first) is refused with the value as it is now.
+// A document's page: its draft items (Rufi AI's, from the reader's copies,
+// or an older reader's), beside the page they came from, each with the
+// words it came from and why it is worth a look. A click on a row shows its
+// page; "Worth a look only" keeps the items with a reason. A fix changes an
+// item's printed fields and keeps the drafted ones; it names the item's
+// version, so a fix made on an older one (another tab fixed it first) is
+// refused with the value as it is now. A draft whose page was read again
+// since is out of date: shown so, and never saved.
 // Nothing here saves to the record: "Save in chat" puts the words
 // in the chat box, and the person sends them; once nothing waits, the page
 // says what was saved and set aside, and has no Save in chat. An item goes
@@ -34,7 +37,7 @@ import { AskRufi, ASKS } from "./ask.tsx";
 import { boxFor } from "./boxes.ts";
 import { printedDate, printedDay } from "./dates.ts";
 import { DeleteDocument } from "./delete-document.tsx";
-import { describe, KIND_NAMES, Viewer } from "./documents.tsx";
+import { describe, KIND_NAMES, placeWords, Viewer } from "./documents.tsx";
 import type { BoxChip } from "./draft.ts";
 import { messageOf, retain } from "./live.ts";
 import { askRufi } from "./panel.ts";
@@ -137,24 +140,27 @@ function Checking({
   document: DocumentSummary;
   items: DocumentItems;
 }) {
-  const [unsureOnly, setUnsureOnly] = useState(false);
+  const [lookOnly, setLookOnly] = useState(false);
   const [selected, setSelected] = useState<string | undefined>(undefined);
   const [fixing, setFixing] = useState<string | undefined>(undefined);
   const [shown, setShown] = useState(items.items[0]?.page ?? 1);
   const [original, setOriginal] = useState(false);
   const { name } = describe(document);
-  const pending = items.items.filter((i) => i.status === "pending");
+  // A draft whose page was read again since can't be saved: it isn't counted.
+  const pending = items.items.filter(
+    (i) => i.status === "pending" && !i.outOfDate,
+  );
   // Results are current values only, as the Documents page and the chat's
   // line count them; an earlier column's values stay rows of their own.
   const results = pending.filter((i) => i.fields.column !== "earlier");
   const earlier = pending.length - results.length;
-  const unsure = results.filter((i) => i.unsure.length > 0);
+  const look = results.filter((i) => i.unsure.length > 0);
   const fixed = pending.filter((i) => fixesOf(i).length > 0);
   /** A page's items, also those the filter hides. */
   const count = (position: number) =>
     items.items.filter((i) => i.page === position).length;
   const marked = items.items.filter((i) => i.unsure.length > 0);
-  const listed = unsureOnly ? marked : items.items;
+  const listed = lookOnly ? marked : items.items;
   const left = [
     plural(results.length, "result"),
     ...(earlier > 0 ? [`${String(earlier)} earlier`] : []),
@@ -164,8 +170,11 @@ function Checking({
   const setAside = items.items.filter((i) => i.status === "dismissed").length;
   const about = [
     ...(document.kind ? [KIND_NAMES[document.kind]] : []),
+    document.place
+      ? placeWords(document.place)
+      : plural(items.pages.length, "page"),
+    ...(document.lab ? [document.lab] : []),
     ...(document.date ? [printedDate(document.date)] : []),
-    plural(items.pages.length, "page"),
     `added ${printedDay(document.addedAt)}`,
   ].join(" · ");
 
@@ -185,13 +194,21 @@ function Checking({
               Failed · {document.reading?.error ?? "it stopped"}
             </p>
           )}
+          {document.sorting && (
+            <p className="text-xs text-pretty">
+              {document.sorting.state === "sorting"
+                ? "Sorting…"
+                : `Not sorted yet${document.sorting.why ? ` · ${document.sorting.why}` : ""}`}
+            </p>
+          )}
           <p className="text-xs text-muted">
             {settled ??
               "What the reader read, not saved. These become part of your health record only when you save them in the chat."}
           </p>
         </div>
         {(document.status === "not_read" ||
-          document.reading?.canRetry === true) && (
+          document.reading?.canRetry === true ||
+          document.sorting?.state === "waiting") && (
           <RetryButton personId={person.id} documentId={document.id} />
         )}
         <Button
@@ -228,13 +245,13 @@ function Checking({
             <label className="flex items-center gap-1.5">
               <input
                 type="checkbox"
-                checked={unsureOnly}
+                checked={lookOnly}
                 onChange={(event) => {
-                  setUnsureOnly(event.target.checked);
+                  setLookOnly(event.target.checked);
                 }}
                 className="accent-accent"
               />
-              Unsure only ({marked.length})
+              Worth a look only ({marked.length})
             </label>
             <span className="flex-1" />
             <span className="text-xs text-muted">
@@ -245,7 +262,7 @@ function Checking({
                   ]
                 : [
                     left,
-                    `${String(unsure.length)} unsure`,
+                    `${String(look.length)} worth a look`,
                     ...(fixed.length > 0
                       ? [`${String(fixed.length)} fixed by you`]
                       : []),
@@ -260,7 +277,7 @@ function Checking({
               status={document.status}
               pages={items.pages}
               items={listed}
-              unsureOnly={unsureOnly}
+              lookOnly={lookOnly}
               count={count}
               selected={selected}
               fixing={fixing}
@@ -280,6 +297,7 @@ function Checking({
           documentId={document.id}
           position={shown}
           pages={items.pages}
+          place={document.place}
           show={setShown}
           count={count}
         />
@@ -330,7 +348,7 @@ function Items({
   status,
   pages,
   items,
-  unsureOnly,
+  lookOnly,
   count,
   selected,
   fixing,
@@ -343,7 +361,7 @@ function Items({
   status: DocumentSummary["status"];
   pages: readonly Page[];
   items: readonly Item[];
-  unsureOnly: boolean;
+  lookOnly: boolean;
   /** A page's items, also those the filter hides. */
   count: (position: number) => number;
   selected: string | undefined;
@@ -362,12 +380,12 @@ function Items({
     );
   }
   const shownPages = pages.filter(
-    (page) => !unsureOnly || items.some((i) => i.page === page.position),
+    (page) => !lookOnly || items.some((i) => i.page === page.position),
   );
   if (shownPages.length === 0) {
     return (
       <p className="px-3 py-4 text-muted">
-        {unsureOnly ? "Nothing is marked unsure." : "No items were read."}
+        {lookOnly ? "Nothing is worth a look." : "No items were read."}
       </p>
     );
   }
@@ -493,11 +511,22 @@ function Row({
           {fields.context_text && (
             <span className="text-muted"> · {fields.context_text}</span>
           )}
-          {item.unsure.map((why) => (
-            <span key={why} className="block text-xs text-muted">
-              {why}
+          {item.outOfDate && (
+            <span className="block text-xs text-ink">
+              Out of date: this page was read again
             </span>
-          ))}
+          )}
+          {!item.outOfDate &&
+            item.unsure.map((why) => (
+              <span key={why} className="block text-xs text-muted">
+                Worth a look: {why}
+              </span>
+            ))}
+          {!item.outOfDate && item.quote !== null && (
+            <span className="block text-xs text-muted">
+              From the page: “{item.quote}”
+            </span>
+          )}
           <ReaderRead item={item} />
         </td>
         <td className={`${cell} whitespace-nowrap`}>
@@ -511,9 +540,8 @@ function Row({
           {fields.flag_text && <Tag>{fields.flag_text}</Tag>}
           {fields.column === "earlier" && <Tag>earlier</Tag>}
           {fixes.length > 0 && <Tag strong>fixed by you</Tag>}
-          {item.unsure.length > 0 && <Tag>unsure</Tag>}
           {done && <Tag>{item.status === "saved" ? "saved" : "set aside"}</Tag>}
-          {selected && !done && !fixing && (
+          {selected && !done && !fixing && !item.outOfDate && (
             <Button
               look="quiet"
               icon={Pencil}
@@ -668,7 +696,8 @@ function FixForm({
       )}
       <div className="col-span-full flex items-center gap-2">
         <span className="flex-1 text-xs text-muted">
-          The reader read <b>{item.original.value_text}</b>
+          {item.quote === null ? "The reader read" : "Drafted as"}{" "}
+          <b>{item.original.value_text}</b>
           {item.original.unit ? ` ${item.original.unit}` : ""}. Rufi keeps it
           beside your fix.
         </span>
@@ -695,6 +724,7 @@ function PageView({
   documentId,
   position,
   pages,
+  place,
   show,
   count,
 }: {
@@ -702,11 +732,20 @@ function PageView({
   documentId: string;
   position: number;
   pages: readonly Page[];
+  /** Its pages in what the person added, when it is split from it. */
+  place: DocumentSummary["place"];
   show: (position: number) => void;
   count: (position: number) => number;
 }) {
-  const page = pages.find((p) => p.position === position);
+  // A document split from an add keeps the add's page numbers: pages 3–4.
+  const index = Math.max(
+    0,
+    pages.findIndex((p) => p.position === position),
+  );
+  const page = pages[index];
   const of = pages.length;
+  const before = pages[index - 1];
+  const after = pages[index + 1];
   return (
     <section
       aria-label="Page"
@@ -716,20 +755,25 @@ function PageView({
         <IconButton
           label="Previous page"
           icon={ChevronLeft}
-          disabled={position <= 1}
+          disabled={before === undefined}
           onClick={() => {
-            show(position - 1);
+            if (before) show(before.position);
           }}
         />
         <b>
-          Page {position} of {of}
+          Page {index + 1} of {of}
         </b>
+        {place && (
+          <span className="text-xs text-muted">
+            (page {position} of {place.of} in the file)
+          </span>
+        )}
         <IconButton
           label="Next page"
           icon={ChevronRight}
-          disabled={position >= of}
+          disabled={after === undefined}
           onClick={() => {
-            show(position + 1);
+            if (after) show(after.position);
           }}
         />
         <span className="flex-1" />
@@ -748,7 +792,7 @@ function PageView({
         <PageImage
           key={position}
           path={`${documentPath(personId, documentId)}/pages/${String(position)}`}
-          alt={`Page ${String(position)} of ${String(of)}`}
+          alt={`Page ${String(index + 1)} of ${String(of)}`}
         />
       </div>
     </section>

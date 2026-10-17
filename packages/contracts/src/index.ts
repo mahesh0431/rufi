@@ -280,6 +280,8 @@ export const QueueItem = Schema.Struct({
   holdId: Schema.NullOr(Schema.String),
   /** A message's references, as its chips. */
   refs: Schema.Array(Chip),
+  /** Rufi's request to sort an add: it goes in a reply of its own. */
+  sort: Schema.Boolean,
 });
 export type QueueItem = typeof QueueItem.Type;
 

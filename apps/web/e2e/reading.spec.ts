@@ -1,13 +1,14 @@
 // Reading documents on the screens, on the real core with a scripted reader
 // (tests/fake-reader.ts): reading as a document is added, with the model and
 // effort chosen in Settings, the reader strip above the chat box, a chip's
-// state in the box, the start and end lines, and Open with the reader's
-// work and the document's page.
+// state in the box, the start and end lines, Rufi AI's scripted sort, and
+// Open with the reader's copies and the document's page.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { ChatGptError } from "../../server/src/agent/chatgpt/openai.ts";
+import type { Scenario } from "../../server/tests/fake-codex.ts";
 import { readPage, scriptedReader } from "../../server/tests/fake-reader.ts";
 import { expect, test, type Rufi } from "./rufi.ts";
 
@@ -21,17 +22,51 @@ async function accessible(page: Page) {
   expect(violations.map((violation) => violation.id)).toEqual([]);
 }
 
+/** Rufi AI's sort of the report, in the chat's first turn: one draft a page. */
+const SORT: Scenario = {
+  callsByTurn: [
+    [
+      {
+        id: "sort-report",
+        tool: "sort_documents",
+        arguments: {
+          document: "$document",
+          documents: [
+            {
+              id: "$document",
+              pages: [1, 2],
+              kind: "lab_report",
+              date: "2026-08-12",
+            },
+          ],
+          drafts: [1, 2].map((page) => ({
+            page,
+            test_name: "Haemoglobin",
+            value_text: "13.2",
+            unit: "g/dL",
+            quote: "Haemoglobin | 13.2 | g/dL",
+          })),
+        },
+      },
+    ],
+  ],
+};
+
 /** Rufi with the family and no documents, reading with `reader`. */
 async function opened(
   page: Page,
   rufi: Rufi,
   reader: ReturnType<typeof scriptedReader>,
+  scenario?: Scenario,
 ) {
   await rufi.family(
     `DELETE FROM record_sources; DELETE FROM results; DELETE FROM reports;
      DELETE FROM document_pages; DELETE FROM documents;`,
   );
-  await rufi.start({ reader: reader.run });
+  await rufi.start({
+    reader: reader.run,
+    ...(scenario !== undefined && { scenario }),
+  });
   await page.goto(rufi.link());
 }
 
@@ -40,8 +75,9 @@ async function start(
   page: Page,
   rufi: Rufi,
   reader: ReturnType<typeof scriptedReader>,
+  scenario?: Scenario,
 ) {
-  await opened(page, rufi, reader);
+  await opened(page, rufi, reader, scenario);
   await add(page);
 }
 
@@ -55,7 +91,7 @@ async function add(page: Page) {
   });
 }
 
-test("reads a report in the background as it is added: the strip, the lines and Open", async ({
+test("reads a report in the background as it is added: the strip, the lines, Rufi AI's sort and Open", async ({
   page,
   rufi,
 }) => {
@@ -63,14 +99,14 @@ test("reads a report in the background as it is added: the strip, the lines and 
   const reader = scriptedReader([
     async (turn) => {
       await turn.look(1);
-      await turn.save(1, readPage(), "Collected date on page 1.");
+      await turn.save(1, readPage());
       await gate.promise;
       await turn.look(2);
       await turn.save(2, readPage());
       return undefined;
     },
   ]);
-  await start(page, rufi, reader);
+  await start(page, rufi, reader, SORT);
 
   await expect(
     page.getByRole("cell", { name: /Reading · read 1 of 2/ }),
@@ -108,29 +144,34 @@ test("reads a report in the background as it is added: the strip, the lines and 
   await strip.getByRole("button", { name: "View reading" }).click();
   const sheet = page.getByRole("dialog");
   await expect(sheet).toContainText("reading · read 1 of 2");
-  await expect(sheet).toContainText("Collected date on page 1.");
-  await expect(sheet.getByRole("cell", { name: "Haemoglobin" })).toBeVisible();
+  // The page's copy, as the reader saved it.
+  await expect(sheet.locator("pre")).toHaveCount(1);
+  await expect(sheet.locator("pre")).toContainText("| Haemoglobin | 13.2 |");
   await expect(sheet).toContainText("Page 2");
   await accessible(page);
   await sheet.getByRole("button", { name: "Close" }).click();
 
   gate.resolve(undefined);
-  const end = page.getByText("Lab report · 12 Aug · 2 results read");
+  // The chat's line, not the sort's note while it waits to go.
+  const end = page.getByText(
+    "Read sunrise-labs-august.pdf · 2 pages. Rufi AI is sorting it.",
+    { exact: true },
+  );
   await expect(end).toBeVisible();
   await expect(strip).toBeHidden();
   await expect(chip).toHaveText("sunrise-labs-august.pdf · Read");
+  // Rufi AI sorted it in the chat, with one call, and said so.
+  await expect(page.getByText("ok:", { exact: false }).last()).toBeVisible();
   // Open leads to the document's page; View reading is a button there.
   await page.getByRole("link", { name: "Open", exact: true }).click();
   await expect(page.getByRole("region", { name: "Items" })).toContainText(
-    "2 results · 0 unsure",
+    "2 results · 0 worth a look",
   );
   await page.getByRole("button", { name: "View reading" }).click();
   await expect(sheet).toContainText("sunrise-labs-august.pdf · read");
-  // Both pages read, each showing its item.
-  await expect(sheet.getByText(/^read · 1 item · Sunrise Labs/)).toHaveCount(2);
-  await expect(
-    sheet.getByRole("cell", { name: "Haemoglobin" }).nth(1),
-  ).toBeVisible();
+  // Both pages read, each showing its copy.
+  await expect(sheet.locator("pre")).toHaveCount(2);
+  await expect(sheet.locator("pre").nth(1)).toContainText("| Haemoglobin |");
 });
 
 test("View reading says where a reading is while the reader's work loads, also on a retry of one page", async ({
@@ -145,7 +186,7 @@ test("View reading says where a reading is while the reader's work loads, also o
       await turn.look(1);
       await turn.save(1, readPage());
       await turn.look(2);
-      await turn.save(2, { outcome: "unreadable", why: "Blurred.", items: [] });
+      await turn.save(2, { outcome: "unreadable", why: "Blurred.", copy: "" });
       return undefined;
     },
     // Retry reads only page 2.
@@ -156,7 +197,22 @@ test("View reading says where a reading is while the reader's work loads, also o
       return undefined;
     },
   ]);
-  await start(page, rufi, reader);
+  // Rufi AI sorts the first reading, so Retry reads page 2 again.
+  await start(page, rufi, reader, {
+    callsByTurn: [
+      [
+        {
+          id: "sort-first",
+          tool: "sort_documents",
+          arguments: {
+            document: "$document",
+            documents: [{ id: "$document", pages: [1, 2], kind: "lab_report" }],
+            drafts: [],
+          },
+        },
+      ],
+    ],
+  });
   // The reader's work comes only when the test lets it.
   const held = { work: Promise.withResolvers<undefined>() };
   await page.route("**/documents/*/reading", async (route) => {
@@ -219,7 +275,7 @@ test("Settings keeps the reader's model and effort, and the next reading runs wi
       return undefined;
     },
   ]);
-  await opened(page, rufi, reader);
+  await opened(page, rufi, reader, SORT);
   await page.getByRole("link", { name: "Settings" }).click();
   const model = page.getByRole("combobox", { name: "Reader model" });
   await expect(model).toHaveValue("gpt-6.1-sol");
@@ -256,23 +312,51 @@ test("keeps unreadable pages to check and reserves Nothing to save for a complet
       await turn.save(1, {
         outcome: "unreadable",
         why: "The print is blurred.",
-        items: [],
+        copy: "",
       });
       await turn.look(2);
-      await turn.save(2, { outcome: "nothing_here", items: [] });
+      await turn.save(2, { outcome: "nothing_here", copy: "" });
       return undefined;
     },
     async (turn) => {
       await turn.look(1);
       await turn.save(1, {
         outcome: "read",
-        facts: { kind: "letter" },
-        items: [],
+        copy: "Dear Asha,\n\nYour results were normal.",
       });
       return undefined;
     },
   ]);
-  await start(page, rufi, reader);
+  // Rufi AI sorts each reading: nothing to draft either time. The page
+  // read again joins its document as it is.
+  const sort = (id: string, pages: number[], kind?: string) => [
+    {
+      id,
+      tool: "sort_documents",
+      arguments: {
+        document: "$document",
+        documents: [
+          { id: "$document", pages, ...(kind !== undefined && { kind }) },
+        ],
+        drafts: [],
+      },
+    },
+  ];
+  await rufi.family(
+    `DELETE FROM record_sources; DELETE FROM results; DELETE FROM reports;
+     DELETE FROM document_pages; DELETE FROM documents;`,
+  );
+  await rufi.start({
+    reader: reader.run,
+    scenario: {
+      callsByTurn: [
+        sort("sort-first", [1, 2], "other"),
+        sort("sort-again", [1]),
+      ],
+    },
+  });
+  await page.goto(rufi.link());
+  await add(page);
   const status = page
     .getByRole("row", { name: /sunrise-labs-august.pdf/ })
     .getByRole("cell")

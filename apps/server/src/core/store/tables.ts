@@ -104,9 +104,12 @@ export interface Tables {
     added_from: string;
     kind: string | null;
     date: string | null;
+    issuer: string | null;
+    report_number: string | null;
     reader_note: string | null;
     version: number;
     deleted_at: string | null;
+    from_document: string | null;
   };
   draft_items: {
     id: string;
@@ -121,6 +124,8 @@ export interface Tables {
     fields: string;
     original: string;
     unsure: string;
+    quote: string | null;
+    report: string | null;
     saved_as: string | null;
     record_kind: string | null;
     record_id: string | null;
@@ -175,6 +180,7 @@ export interface Tables {
     error: string | null;
     usage: string | null;
     reader: string | null;
+    sorted_at: string | null;
     created_at: string;
   };
   medicine_uses: {
@@ -293,6 +299,21 @@ export interface Tables {
   settings: {
     key: string;
     value: string;
+  };
+  sort_requests: {
+    id: string;
+    person_id: string;
+    document_id: string;
+    job_id: string | null;
+    state: string;
+    queue_id: string | null;
+    tries: number;
+    retry_at: string | null;
+    error: string | null;
+    call_id: string | null;
+    answer: string | null;
+    created_at: string;
+    ended_at: string | null;
   };
   symptoms: {
     id: string;

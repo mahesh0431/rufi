@@ -303,6 +303,26 @@ function Outcome({
   );
 }
 
+/** Pages as "1–4, 6". */
+function ranges(positions: readonly number[]): string {
+  const parts: [number, number][] = [];
+  for (const p of [...positions].sort((a, b) => a - b)) {
+    const last = parts.at(-1);
+    if (last && last[1] === p - 1) last[1] = p;
+    else parts.push([p, p]);
+  }
+  return parts
+    .map(([a, b]) => (a === b ? String(a) : `${String(a)}–${String(b)}`))
+    .join(", ");
+}
+
+/** A document split from an add: "pages 1–2 of 5", "page 5 of 5". */
+export function placeWords(
+  place: NonNullable<DocumentSummary["place"]>,
+): string {
+  return `${place.pages.length === 1 ? "page" : "pages"} ${ranges(place.pages)} of ${String(place.of)}`;
+}
+
 /** A document's name: its first file's, and what else it holds. */
 export function describe(document: DocumentSummary): {
   name: string;
@@ -310,8 +330,9 @@ export function describe(document: DocumentSummary): {
 } {
   const [first] = document.files;
   const photos = document.files.length;
-  const more =
-    first?.mediaType === "application/pdf"
+  const more = document.place
+    ? placeWords(document.place)
+    : first?.mediaType === "application/pdf"
       ? first.pages === 1
         ? "1 page"
         : `${String(first.pages)} pages`
@@ -336,6 +357,8 @@ function statusOf(document: DocumentSummary): string {
   const read = `read ${String(reading.saved)} of ${String(reading.of)}`;
   if (document.status === "reading") return `Reading · ${read}`;
   if (document.status === "failed") return `Failed · ${read}`;
+  if (document.sorting?.state === "sorting") return "Sorting…";
+  if (document.sorting) return "Not sorted yet";
   if (reading.hasPending) {
     return reading.results > 0
       ? `Not saved · ${results(reading.results)}`
@@ -360,10 +383,15 @@ function Status({
   const reading = document.reading;
   return (
     <>
-      <span className="rounded-full bg-side px-2 py-px text-xs text-muted">
+      <span
+        className="rounded-full bg-side px-2 py-px text-xs text-muted"
+        title={document.sorting?.why ?? undefined}
+      >
         {statusOf(document)}
       </span>
-      {(document.status === "not_read" || reading?.canRetry === true) && (
+      {(document.status === "not_read" ||
+        reading?.canRetry === true ||
+        document.sorting?.state === "waiting") && (
         <RetryButton personId={personId} documentId={document.id} />
       )}
       {document.status !== "not_read" && (
@@ -444,18 +472,20 @@ function List({
                     {/* The status, then what can be done: on one line when there is room. */}
                     <div className="flex flex-wrap items-center gap-1">
                       <Status personId={personId} document={document} />
-                      <AskRufi
-                        className="ml-auto"
-                        onClick={() => {
-                          askRufi(personId, [
-                            {
-                              pointer: { type: "document", id: document.id },
-                              label: name,
-                              detail: "",
-                            },
-                          ]);
-                        }}
-                      />
+                      {document.sorting === null && (
+                        <AskRufi
+                          className="ml-auto"
+                          onClick={() => {
+                            askRufi(personId, [
+                              {
+                                pointer: { type: "document", id: document.id },
+                                label: name,
+                                detail: "",
+                              },
+                            ]);
+                          }}
+                        />
+                      )}
                     </div>
                   </td>
                 </tr>

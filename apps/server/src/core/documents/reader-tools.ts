@@ -1,110 +1,15 @@
-// The reader's two tools, bound by code to one run: one person, one
-// document, the job's current attempt. They take only a page number (and,
-// for save_page, the entry and note): never a person, a document, a path or
-// a job. get_page shows a page and marks it looked at; save_page writes the
-// page's entry through the notebook.
-import { Schema } from "effect";
+// What every reader has: its tools' caller, bound by code to one run (one
+// person, one document, the job's current attempt), and how server/reader.ts
+// runs a reader. Rufi's reader copies pages (copy-reader.ts).
 import type { Log } from "../../platform/logs.ts";
-import {
-  defineTool,
-  Refusal,
-  specOf,
-  toolCaller,
-  WithImage,
-  type Tool,
-} from "../tools/registry.ts";
-import { Entry, Note, type Notebook, type Run } from "./notebook.ts";
-import type { Pages } from "./pages.ts";
-import {
-  READER_INSTRUCTIONS,
-  READER_VERSION,
-  readerInput,
-} from "./reader-instructions.ts";
-
-const Page = Schema.Int.check(Schema.isGreaterThan(0)).annotate({
-  description: "The page's number in this document: 1, 2, 3...",
-});
+import { specOf, toolCaller, type Tool } from "../tools/registry.ts";
+import type { Run } from "./notebook.ts";
 
 /**
  * Wrong inputs a reading may make before Rufi stops it: more than a chat
  * turn's, as one reading saves many pages.
  */
 const READER_REJECTIONS = 10;
-
-function readerTools(run: Run, pages: Pages, book: Notebook): readonly Tool[] {
-  const getPage = defineTool({
-    name: "get_page",
-    description:
-      "Look at one page of the document you are reading: its image, the page's own text when the PDF has text (extra help with exact characters; the image is the source), the entry you saved for it (if any), your note and which pages are saved. Look at a page before you save it, and again after your earlier context was summarised.",
-    input: Schema.Struct({ page: Page }),
-    callers: "model",
-    readOnly: true,
-    destructive: false,
-    examples: [{ page: 1 }],
-    run: async ({ page }) => {
-      if (run.closed) throw new Refusal("This reading has ended.");
-      const view = await pages.page(run.personId, run.documentId, page);
-      if (!view) {
-        const count = await pages.count(run.personId, run.documentId);
-        throw new Refusal(
-          `This document has no page ${String(page)}; its pages are 1–${String(count)}.`,
-        );
-      }
-      run.lookedAt.add(page);
-      const about = {
-        page,
-        of: view.pages,
-        file: view.fileName,
-        ...(view.ok && view.text !== undefined && { text: view.text }),
-        entry: await book.entry(run, page),
-        ...(await book.progress(run)),
-      };
-      if (!view.ok) {
-        return {
-          ...about,
-          image:
-            "This page couldn't be prepared, so there is no image. Save it as unreadable, with why.",
-        };
-      }
-      return new WithImage(about, view.image);
-    },
-  });
-
-  const savePage = defineTool({
-    name: "save_page",
-    description:
-      "Save a page's entry in your notebook: what the page says, with every result as printed. Saving a page again replaces its entry. `note` is your one note for the whole document; give it whole when it changes, or leave it out to keep it. Save every page you were asked to read, also an empty one.",
-    input: Schema.Struct({
-      page: Page,
-      entry: Entry,
-      note: Schema.optionalKey(Note),
-    }),
-    callers: "model",
-    readOnly: false,
-    destructive: false,
-    examples: [
-      {
-        page: 1,
-        entry: {
-          outcome: "read",
-          items: [
-            {
-              test_name: "Haemoglobin",
-              value_text: "13.2",
-              value_number: 13.2,
-              unit: "g/dL",
-              reference_range: "12.0-15.0",
-            },
-          ],
-        },
-        note: "Collected date is on page 1.",
-      },
-    ],
-    run: ({ page, entry, note }) => book.save(run, page, entry, note),
-  });
-
-  return [getPage, savePage];
-}
 
 /** A reader's tools for one run: their catalog for its MCP endpoint, and its caller. */
 export function readerCaller(run: Run, tools: readonly Tool[], log: Log) {
@@ -119,11 +24,6 @@ export function readerCaller(run: Run, tools: readonly Tool[], log: Log) {
   };
 }
 
-/** The reader's tools: their catalog for its MCP endpoint, and its caller. */
-export function forReader(run: Run, pages: Pages, book: Notebook, log: Log) {
-  return readerCaller(run, readerTools(run, pages, book), log);
-}
-
 /** What a reader's run gets from the reading: as readings.about tells it. */
 interface About {
   /** The display name of the person the document was added for. */
@@ -133,28 +33,16 @@ interface About {
   targets: readonly number[];
   /** Targets this job saved in an earlier run. */
   saved: readonly number[];
-  note: string | null;
 }
 
 /**
  * How a reader reads (server/reader.ts runs it): its instructions, its
  * message for a run, its tools bound to the run, and the version stored
- * with a reading. Rufi runs the reader that writes entries in its
- * notebook; the one that copies pages is in copy-reader.ts.
+ * with a reading. Rufi's reader copies pages (copy-reader.ts).
  */
 export interface ReaderKind {
   instructions: string;
   input: (about: About) => string;
   tools: (run: Run, log: Log) => ReturnType<typeof readerCaller>;
   version: object;
-}
-
-/** The reader that writes each page's entry, from which a reading makes drafts. */
-export function entryReader(pages: Pages, book: Notebook): ReaderKind {
-  return {
-    instructions: READER_INSTRUCTIONS,
-    input: readerInput,
-    tools: (run, log) => forReader(run, pages, book, log),
-    version: READER_VERSION,
-  };
 }

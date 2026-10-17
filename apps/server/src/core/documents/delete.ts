@@ -19,7 +19,8 @@ import type { Tables } from "../store/tables.ts";
 import { Refusal } from "../tools/registry.ts";
 import type { FileGate } from "./gate.ts";
 import { removeBytes, sweepBytes } from "./originals.ts";
-import { documentName } from "./reading.ts";
+import { DELETED_DOCUMENT, documentName } from "./naming.ts";
+import { addOf, documentsOf, notSorted, pagesOf, placesOf } from "./sorting.ts";
 
 type Db = Kysely<Tables> | Transaction<Tables>;
 
@@ -38,13 +39,6 @@ export class NoChoice extends Error {
     super("Choose whether the results saved from it stay or go.");
   }
 }
-
-/**
- * What the AI is told of a deleted document, wherever it meets one: its
- * instructions, its reads and a deleted chip. The same words everywhere.
- */
-export const DELETED_DOCUMENT =
-  "Its pages are unavailable: don't use or quote anything you read from them before, also when the user asks. Records saved from it are facts like any other until the user removes them: read them with get_records, as they are now, and say the original was deleted. A deleted file doesn't mean its records are wrong.";
 
 /** What the delete writes its Rufi event with: the chat's own (server/chat.ts). */
 export type WriteEvent = (
@@ -150,9 +144,30 @@ async function previewIn(
     .where("status", "=", "pending")
     .executeTakeFirstOrThrow();
   const saved = await savedFrom(db, personId, documentId);
+  const ids = files.flatMap((f) => (f.id === null ? [] : [f.id]));
+  const others =
+    ids.length === 0
+      ? []
+      : await db
+          .selectFrom("document_pages as p")
+          .innerJoin("documents as d", (join) =>
+            join
+              .onRef("d.person_id", "=", "p.person_id")
+              .onRef("d.id", "=", "p.document_id"),
+          )
+          .select("p.document_id")
+          .distinct()
+          .where("p.person_id", "=", personId)
+          .where("p.file_id", "in", ids)
+          .where("p.document_id", "!=", documentId)
+          .where("d.deleted_at", "is", null)
+          .execute();
+  const place = (await placesOf(db, personId)).get(documentId)?.words ?? "";
   const shown = {
     name: documentName(pages.map((p) => p.file_name)),
     files: files.map(({ name, pages }) => ({ name, pages })),
+    place: place === "" ? null : place,
+    others: others.length,
     readings,
     unsaved,
     saved,
@@ -410,17 +425,84 @@ export function deletions(deps: {
             .where("person_id", "=", personId)
             .where("document_id", "=", documentId)
             .execute();
+          // Its readings, but one whose copies or drafts another document
+          // of its add still has (a split document's pages were read with
+          // the add): it stays while they do, and goes with the last of
+          // them.
+          const root = await addOf(trx, personId, documentId);
+          const gone = trx
+            .selectFrom("jobs as j")
+            .select("j.id")
+            .where("j.person_id", "=", personId)
+            .where("j.document_id", "in", [documentId, root?.id ?? documentId])
+            .where(
+              sql<boolean>`NOT EXISTS (SELECT 1 FROM page_copies c WHERE c.person_id = j.person_id AND c.job_id = j.id)`,
+            )
+            .where(
+              sql<boolean>`NOT EXISTS (SELECT 1 FROM draft_items d WHERE d.person_id = j.person_id AND d.job_id = j.id)`,
+            )
+            .where(
+              sql<boolean>`NOT EXISTS (SELECT 1 FROM document_pages p WHERE p.person_id = j.person_id AND p.entry_job_id = j.id)`,
+            );
+          await trx
+            .updateTable("sort_requests")
+            .set({ job_id: null })
+            .where("person_id", "=", personId)
+            .where("job_id", "in", gone)
+            .execute();
           await trx
             .deleteFrom("jobs")
             .where("person_id", "=", personId)
-            .where("document_id", "=", documentId)
+            .where("id", "in", gone)
             .execute();
           await trx
             .updateTable("documents")
-            .set({ deleted_at: at, kind: null, date: null, reader_note: null })
+            .set({
+              deleted_at: at,
+              kind: null,
+              date: null,
+              issuer: null,
+              report_number: null,
+              reader_note: null,
+            })
             .where("person_id", "=", personId)
             .where("id", "=", documentId)
             .execute();
+          // Nothing of its add left to sort: its sort waits no more.
+          const add = await addOf(trx, personId, documentId);
+          if (add) {
+            const live = await documentsOf(trx, personId, add.id);
+            const left = notSorted(
+              await pagesOf(
+                trx,
+                personId,
+                live.map((d) => d.id),
+                false,
+              ),
+            );
+            if (left.length === 0) {
+              const open = trx
+                .selectFrom("sort_requests")
+                .select("queue_id")
+                .where("person_id", "=", personId)
+                .where("document_id", "=", add.id)
+                .where("state", "in", ["open", "asked", "failed"]);
+              await trx
+                .updateTable("chat_queue")
+                .set({ state: "removed", held: null, updated_at: at })
+                .where("person_id", "=", personId)
+                .where("state", "=", "waiting")
+                .where("id", "in", open)
+                .execute();
+              await trx
+                .updateTable("sort_requests")
+                .set({ state: "void", retry_at: null, ended_at: at })
+                .where("person_id", "=", personId)
+                .where("document_id", "=", add.id)
+                .where("state", "in", ["open", "asked", "failed"])
+                .execute();
+            }
+          }
           // A file no live page of anyone uses any more.
           if (files.length > 0) {
             await trx

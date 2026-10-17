@@ -1113,19 +1113,21 @@ describe("the chat, on the scripted Codex", () => {
         ('res-2', 'asha', 'rep-1', 'lab', 'Glucose', '118', 'mg/dL', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 0),
         ('res-3', 'asha', 'rep-1', 'lab', 'CRP', '<5', 'mg/L', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 0),
         ('res-4', 'asha', 'rep-1', 'lab', 'TSH', '2.1', 'mIU/L', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 1);
-      INSERT INTO documents (id, person_id, added_at, added_from, version)
-        VALUES ('doc-correction', 'asha', '2026-10-01T09:00:00Z', 'chat', 1);
+      INSERT INTO documents (id, person_id, added_at, added_from, kind, date, issuer, report_number, version)
+        VALUES ('doc-correction', 'asha', '2026-10-01T09:00:00Z', 'chat', 'lab_report', '2026-08-12', 'Sunrise Labs', 'CORRECTED', 1);
       INSERT INTO files (id, size, media_type, created_at)
         VALUES ('f-correction', 1, 'application/pdf', '2026-10-01T09:00:00Z');
-      INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name, entry)
-        VALUES ('asha', 'doc-correction', 1, 'f-correction', 1, 'Corrected report.pdf',
-          '{"outcome":"read","facts":{"issuer":"Sunrise Labs","report_number":"CORRECTED","dates":[{"label":"Collected","date":"12/08/2026","iso":"2026-08-12"}]}}');
-      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, created_at)
-        VALUES ('job-correction', 'asha', 'document_read', 'doc-correction', 'done', '[1]', '2026-10-01T09:00:00Z');
-      INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, fields, original, created_at)
+      INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name, state)
+        VALUES ('asha', 'doc-correction', 1, 'f-correction', 1, 'Corrected report.pdf', 'read');
+      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, sorted_at, created_at)
+        VALUES ('job-correction', 'asha', 'document_read', 'doc-correction', 'done', '[1]', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
+      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
+        VALUES ('asha', 'f-correction', 1, 'job-correction', 1, 'read', 'Sunrise Labs · CORRECTED · Collected 12/08/2026 · CRP 4 mg/L', '2026-10-01T09:00:00Z');
+      INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, fields, original, quote, created_at)
         VALUES ('item-correction', 'asha', 'doc-correction', 1, 1, 'job-correction', 'lab_result',
-          '{"test_name":"CRP","value_text":"4","unit":"mg/L"}',
-          '{"test_name":"CRP","value_text":"4","unit":"mg/L"}', '2026-10-01T09:00:00Z');
+          '{"test_name":"CRP","value_text":"4","unit":"mg/L","date":{"label":"Collected","date":"12/08/2026","iso":"2026-08-12"}}',
+          '{"test_name":"CRP","value_text":"4","unit":"mg/L","date":{"label":"Collected","date":"12/08/2026","iso":"2026-08-12"}}',
+          'CRP 4 mg/L', '2026-10-01T09:00:00Z');
     `);
     await startChat("fake");
     const c = await newChat();

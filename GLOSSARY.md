@@ -25,27 +25,31 @@ What people see for the record: the sidebar's heading, Overview and the help say
 _Avoid_: your record (on screen), health file, chart
 
 **Document**:
-What the user added for a person in one go: one PDF, or photos added together, such as a lab report photographed page by page. Its pages are the PDF's pages or the photos, in order. Rufi keeps each original file exactly as it came, and the same content only once per person, until the user deletes the document.
+What the user added for a person in one go: one PDF, or photos added together, such as a lab report photographed page by page. Its pages are the PDF's pages or the photos, in order. Rufi keeps each original file exactly as it came, and the same content only once per person, until the user deletes the document. Once read, **Rufi AI** sorts it: each report or paper in it becomes a document of its own, with its pages of the file ("pages 1–2 of 5"), its kind, date and, for a report, its lab and report number. Each is deleted on its own.
 _Avoid_: upload, attachment
 
 **Reading**:
-Rufi reading one document in the background with its reader, as soon as you add it: one page at a time, then a line in the chat when it ends. Only a reading that finished makes draft items; one that stopped continues with **Retry**, or by itself after Rufi starts again. One that failed for a passing reason, such as a lost connection, tries again by itself up to three times; one stopped by the account (signed out, a usage limit) says why and waits for **Retry**.
+Rufi reading one document in the background with its reader, as soon as you add it: one page at a time, then a line in the chat when it ends. Only a reading that finished asks Rufi AI to sort it (**sorting**), which makes the draft items; one that stopped continues with **Retry**, or by itself after Rufi starts again. One that failed for a passing reason, such as a lost connection, tries again by itself up to three times; one stopped by the account (signed out, a usage limit) says why and waits for **Retry**.
 _Avoid_: import, scan, parsing, extraction
 
 **Reader**:
-The AI that does a reading: a separate AI that Rufi starts for one document, with only two tools (look at a page, save what the page says) and no access to your record, chat, files or the internet; it gets only the name of the person the document is for, to tell when a report may be someone else's. It copies what is printed, and says what it isn't sure of; it never judges your results or saves to the record.
+The AI that does a reading: a separate AI that Rufi starts for one document, with only two tools (look at a page, save its copy of the page) and no access to your record, chat, files or the internet; it doesn't know whose document it is. It copies what is printed, and marks what is unclear; it decides nothing (not the kind, date or results), never judges your results and never saves to the record.
 _Avoid_: parser, OCR, extractor
 
 **Page copy**:
-The reader's copy of one page of a document, as Markdown, exactly as printed, with its marks where something was unclear (a smudged digit, handwriting, a crossed-out value). One for each page and reading, kept as the reader wrote it; it decides nothing and is not your record. It is known by the file and its page, not by the document the page is in. (Rufi reads this way only once Rufi AI drafts from page copies.)
+The reader's copy of one page of a document, as Markdown, exactly as printed, with its marks where something was unclear (a smudged digit, handwriting, a crossed-out value). One for each page and reading, kept as the reader wrote it; it decides nothing and is not your record. It is known by the file and its page, not by the document the page is in. A page's current copy is the one from its latest finished reading.
 _Avoid_: extraction, transcription, OCR text
 
+**Sorting**:
+Rufi AI's work on a file once it is read, in a turn Rufi starts in the person's chat without their message: it splits the file into documents and drafts their results from the page copies, in one call that is kept whole or not at all, and tells the user what it found. It may do nothing else in that turn. A file waiting for it shows **Sorting…**, or **Not sorted yet** with why (it asked the user, the user stopped it, or its tries failed) and **Retry**. The user can ask Rufi AI to sort a file again in the chat.
+_Avoid_: classification, grouping, parsing
+
 **Draft item**:
-One thing a reading found, such as a result, kept exactly as printed and waiting for you: not part of your record, so it counts in no Overview or trend until you save it; when the AI gives one in an answer, it says it isn't saved yet. The reader's own values are kept beside any change. It points to its document and page, and may be marked unsure, with the reader's reason (on a reading from an older Rufi, the reason may come from Rufi's own checks of the entry). It waits until it is saved (new, as another source of a saved result, or as a correction) or dismissed (set aside, as the document's page says); a dismissed item is never saved.
+One result or measurement Rufi AI drafted from a page copy, with its value as the copy prints it (for a digit the reader marked unclear, Rufi AI's reading) and the words it came from, marks included (**From the page**), waiting for you: not part of your record, so it counts in no Overview or trend until you save it; when the AI gives one in an answer, it says it isn't saved yet. Rufi keeps it only when its value is on its page's copy. The drafted values are kept beside any change. It points to its document and page, and may be **worth a look**, with Rufi AI's reason (on a reading from an older Rufi, why its reader wasn't sure). One whose page was read again since is out of date and can't be saved. It waits until it is saved (new, as another source of a saved result, or as a correction) or dismissed (set aside, as the document's page says); a dismissed item is never saved.
 _Avoid_: pending result, unconfirmed record, extracted row
 
 **Report**:
-A lab or clinic report read from a document: who issued it, its printed report number, and when the sample was collected. When all three match, saved results from different documents belong to the same report for that person. If any is missing, reports stay within their document.
+A lab or clinic report: one document as Rufi AI sorted it, with who issued it, its printed report number and when the sample was collected. The results saved from it belong to it. (Results saved from an older Rufi's drafts belong to the same report when all three match, also across documents; if any is missing, reports stay within their document.)
 _Avoid_: lab sheet, test report
 
 **Result**:
@@ -172,7 +176,7 @@ What the queue holds, shown above the box. Your messages sent while the AI repli
 _Avoid_: backlog, pending messages
 
 **Rufi event**:
-Rufi's own note that something happened outside your chat, such as a reading that finished: a line in the chat, and sometimes a note for the AI. It is never your words, a request or your yes: a reply it starts can only read, never save. After a Stop, its note goes with your next message.
+Rufi's own note that something happened outside your chat, such as a reading that finished: a line in the chat, and sometimes a note for the AI. It is never your words, a request or your yes: a reply it starts can only read, never save. After a Stop, its note goes with your next message. The one exception is a reading's request for **sorting**: its reply may sort that file and nothing else, it goes in a reply of its own, and it goes on by itself after Rufi restarts.
 _Avoid_: notification, system message
 
 **Stop**:
@@ -232,7 +236,7 @@ _Avoid_: medical ID card
 ## Rufi and the AI
 
 **The AI**:
-The AI agent that answers in the chat and works with the record through Rufi's tools. It works in the AI's folder, where it can write and run programs and use the internet. Screens and help say "the AI"; "Codex" appears only where its folder is named.
+The AI agent that answers in the chat and works with the record through Rufi's tools; also called **Rufi AI**, beside the **reader**, where both are named. It works in the AI's folder, where it can write and run programs and use the internet. Screens and help say "the AI", or "Rufi AI" next to the reader; "Codex" appears only where its folder is named.
 _Avoid_: assistant, bot; "model" only for a version of the AI (see Model)
 
 **The AI's folder**:
@@ -311,7 +315,7 @@ _Avoid_: download, dump
 
 - **You** keep the **records** of one or more **people**.
 - A **document** can hold **reports**; a **report** has **results**. A **result** can also be typed in without a report.
-- A **reading** of a **document** makes **draft items**; they become **results** only when you save them. Its end is a **Rufi event** in the person's **chat**.
+- A **reading** of a **document** makes **page copies**; its end is a **Rufi event** in the person's **chat** that asks Rufi AI for its **sorting**, which makes **documents** and their **draft items**; they become **results** only when you save them.
 - A **save** changes one **person**'s **records**, rests on their messages or **documents**' pages as its **sources**, and gives one **receipt**; an **undo** is a new save.
 - A message's **chips** point at the person's **results**, **documents** or **draft items**; "save it" with a document's chip saves its **draft items** as **results**.
 - A **person** has one **chat**, made with them; it can produce **saves**, **follow-ups** and **research entries**.

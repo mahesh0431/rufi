@@ -89,6 +89,7 @@ What the restored copy has:
 - In a backup from before Rufi had Lab results and Measurements, every result counts as a lab result: Rufi can't tell which were measurements. To move one, tell Rufi in the chat, for example "my blood pressure from August is a measurement".
 - Your chat and drafts. A reply that was running when the backup was made shows as interrupted. Nothing is sent by itself.
 - Messages that were waiting for the AI come back held, above the box, marked **From a backup: it waited when the backup was made.** Nothing goes to the AI by itself: **Send** each one again, or **Remove** it. A message Rufi was giving the AI when the backup was made shows **Not sure this reached the AI.** (see [Waiting messages](chat.md#waiting-messages)).
+- A file that waited for Rufi AI to sort it when the backup was made shows **Not sorted yet** on the Documents page. It isn't sorted by itself: click **Retry** (see [Documents](documents.md#when-the-sorting-waits)).
 - Your next message starts a new thread for the AI with the chat's last messages, and the chat shows "New thread started" there.
 - Which follow-up notices you already had, as of the backup. A notice the Rufi app showed after the backup was made can show once more (see [Follow-ups](follow-ups.md#notices-on-your-mac)).
 

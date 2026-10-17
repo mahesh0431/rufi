@@ -1,12 +1,18 @@
 // The Documents page on the real core: adding files (photos as one document
 // in the order chosen, a PDF on its own, the same content again, a file that
-// isn't a document) and, from a document's page, the popup that shows the
-// original. The strict CSP
-// refuses nothing the page needs.
+// isn't a document), a file Rufi AI split into documents, one it hasn't
+// sorted yet and its Retry, and, from a document's page, the popup that
+// shows the original. The strict CSP refuses nothing the page needs.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
+import {
+  databasePath,
+  openWritable,
+} from "../../server/src/core/store/database.ts";
+import type { Scenario } from "../../server/tests/fake-codex.ts";
+import { readPage, scriptedReader } from "../../server/tests/fake-reader.ts";
 import { expect, test, type Rufi } from "./rufi.ts";
 
 const FIXTURES = join(
@@ -226,4 +232,180 @@ test("keeps each date on one line in windows 800 to 1024 wide", async ({
       `at ${String(width)} px`,
     ).toBe(true);
   }
+});
+
+/** The scripted reader's copies of both pages of the August report. */
+const copied = () =>
+  scriptedReader([
+    async (turn) => {
+      for (const page of [1, 2]) {
+        await turn.look(page);
+        await turn.save(page, readPage());
+      }
+      return undefined;
+    },
+  ]);
+
+/** Rufi AI's sort of the file: a report on page 1, a prescription on page 2. */
+const SPLIT = {
+  tool: "sort_documents",
+  arguments: {
+    document: "$document",
+    documents: [
+      {
+        id: "$document",
+        pages: [1],
+        kind: "lab_report",
+        date: "2026-08-12",
+        lab: "Sunrise Labs",
+      },
+      { pages: [2], kind: "prescription", date: "2026-08-12" },
+    ],
+    drafts: [
+      {
+        page: 1,
+        test_name: "Haemoglobin",
+        value_text: "13.2",
+        unit: "g/dL",
+        quote: "Haemoglobin | 13.2 | g/dL",
+      },
+    ],
+  },
+};
+
+async function addReport(page: Page, rufi: Rufi, scenario: Scenario) {
+  await rufi.family(
+    `DELETE FROM record_sources; DELETE FROM results; DELETE FROM reports;
+     DELETE FROM document_pages; DELETE FROM documents;`,
+  );
+  await rufi.start({
+    reader: copied().run,
+    scenario,
+  });
+  await page.goto(rufi.link());
+  await page.getByRole("link", { name: "Documents" }).click();
+  await page.getByLabel("Choose documents", { exact: true }).setInputFiles({
+    name: "sunrise-labs-august.pdf",
+    mimeType: "application/pdf",
+    buffer: await readFile(join(FIXTURES, "sunrise-labs-august.pdf")),
+  });
+}
+
+test("shows each document Rufi AI split from a file with its place in the file, kind, lab and date", async ({
+  page,
+  rufi,
+}) => {
+  await addReport(page, rufi, {
+    callsByTurn: [[{ id: "sort-split", ...SPLIT }]],
+  });
+  const rows = page
+    .getByRole("row")
+    .filter({ hasText: "sunrise-labs-august.pdf" });
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText("page 1 of 2");
+  await expect(rows.nth(0)).toContainText("Lab report");
+  await expect(rows.nth(0)).toContainText("Not saved · 1 result");
+  await expect(rows.nth(1)).toContainText("page 2 of 2");
+  await expect(rows.nth(1)).toContainText("Prescription");
+  await accessible(page);
+
+  await rows
+    .nth(0)
+    .getByRole("link", { name: "sunrise-labs-august.pdf" })
+    .click();
+  await expect(page.getByRole("heading", { level: 2 }).first()).toHaveText(
+    /^sunrise-labs-august\.pdf · Lab report · page 1 of 2 · Sunrise Labs · 12 Aug 2026 · added /,
+  );
+  const items = page.getByRole("region", { name: "Items" });
+  await expect(items).toContainText(
+    "From the page: “Haemoglobin | 13.2 | g/dL”",
+  );
+  // Its page in the add, and where that is in the file.
+  await expect(
+    page.getByRole("region", { name: "Page" }).getByRole("img", {
+      name: "Page 1 of 1",
+    }),
+  ).toBeVisible();
+});
+
+test("says a file Rufi AI hasn't sorted yet, and why; its Retry sorts it", async ({
+  page,
+  rufi,
+}) => {
+  // Rufi AI's first turn answers without sorting; the next one sorts.
+  await addReport(page, rufi, {
+    callsByTurn: [[], [{ id: "sort-again", ...SPLIT }]],
+  });
+  const row = page
+    .getByRole("row")
+    .filter({ hasText: "sunrise-labs-august.pdf" });
+  const status = row.getByText("Not sorted yet");
+  await expect(status).toBeVisible({ timeout: 10_000 });
+  await expect(status).toHaveAttribute(
+    "title",
+    "Rufi AI asked you about it in the chat",
+  );
+  // It can't be added to a message until it is sorted.
+  await row.hover();
+  await expect(row.getByRole("button", { name: "Ask Rufi" })).toHaveCount(0);
+  await accessible(page);
+
+  await row.getByRole("button", { name: "Retry" }).click();
+  await expect(
+    page.getByRole("row").filter({ hasText: "page 2 of 2" }),
+  ).toContainText("Prescription");
+});
+
+test("says while Rufi AI sorts a file, and why it couldn't; its Retry sorts it", async ({
+  page,
+  rufi,
+}) => {
+  // The first turn takes a moment, and fails; the next one sorts.
+  await addReport(page, rufi, {
+    userMessageMs: 1_500,
+    failTurns: 1,
+    failMessage: "The AI couldn't answer.",
+    callsByTurn: [[], [{ id: "sort-retry", ...SPLIT }]],
+  });
+  const row = page
+    .getByRole("row")
+    .filter({ hasText: "sunrise-labs-august.pdf" });
+  await expect(row.getByText("Sorting…")).toBeVisible({ timeout: 10_000 });
+  await accessible(page);
+  // As if Rufi had tried three times already: this try is its last.
+  const store = openWritable(databasePath(rufi.home));
+  try {
+    store.db.exec("UPDATE sort_requests SET tries = 3");
+  } finally {
+    store.close();
+  }
+  const status = row.getByText("Not sorted yet");
+  await expect(status).toHaveAttribute("title", "The AI couldn't answer.", {
+    timeout: 10_000,
+  });
+  await row.getByRole("button", { name: "Retry" }).click();
+  await expect(
+    page.getByRole("row").filter({ hasText: "page 2 of 2" }),
+  ).toContainText("Prescription", { timeout: 10_000 });
+});
+
+test("says a file waits for the sign-in to be sorted, with no Retry", async ({
+  page,
+  rufi,
+}) => {
+  rufi.account = { account: "signed_out", email: null };
+  await addReport(page, rufi, {
+    callsByTurn: [[{ id: "sort-signed-in", ...SPLIT }]],
+  });
+  const row = page
+    .getByRole("row")
+    .filter({ hasText: "sunrise-labs-august.pdf" });
+  const status = row.getByText("Not sorted yet");
+  await expect(status).toHaveAttribute(
+    "title",
+    "Sign in with ChatGPT; Rufi AI sorts it then",
+    { timeout: 10_000 },
+  );
+  await expect(row.getByRole("button", { name: "Retry" })).toHaveCount(0);
+  await accessible(page);
 });

@@ -357,6 +357,7 @@ describe("the core", () => {
             heldText: null,
             holdId: null,
             refs: [],
+            sort: false,
           },
           {
             id: "q-2",
@@ -367,6 +368,7 @@ describe("the core", () => {
             heldText: null,
             holdId: null,
             refs: [],
+            sort: false,
           },
         ],
       },

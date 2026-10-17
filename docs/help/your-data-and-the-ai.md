@@ -133,11 +133,13 @@ Rufi reads each document you add with its own reader, as soon as you add it (see
 
 The reader sends the document's pages to the AI service you signed in with, the same way as above. It is a separate AI that Rufi starts for that one document:
 
-- It gets Rufi's instructions for reading, the list of the document's pages, its own notes, and the name of the person the document was added for, as Rufi shows it. It uses the name only to tell when a report may be someone else's. It gets none of your chat or your record, and no other person's name.
-- It can do two things only, both through Rufi: look at a page of that document, and save what the page says in its notebook. It has no files, no commands and no internet, and it can't start other work. This is a lock, not only an instruction: Rufi starts the reader without them, and stops a reading that uses anything else.
-- Rufi keeps what the reader read on each page (its notebook) and its draft items in `rufi.sqlite`, with how much of your plan the reading used. The reader's own copy of its work isn't kept.
+- It gets Rufi's instructions for copying pages, the file's name and the list of its pages. It doesn't get whose document it is, your chat or your record.
+- It can do two things only, both through Rufi: look at a page of that document, and save its copy of the page. It has no files, no commands and no internet, and it can't start other work. This is a lock, not only an instruction: Rufi starts the reader without them, and stops a reading that uses anything else.
+- Rufi keeps the reader's copy of each page in `rufi.sqlite`, with how much of your plan the reading used. The reader's own record of its work isn't kept. Pages an older Rufi read keep what its reader saved then (its notebook).
 
-Draft items aren't your record until you save them. They are in your backups and your export (the `draft_items` table), apart from your record.
+When the reading ends, Rufi gives the page copies to Rufi AI, the AI you chat with, to sort the file into documents and draft their results, in a turn of its own in your chat (see [Documents](documents.md#how-rufi-ai-sorts-a-file)). Like Rufi's other notes (see [Rufi's lines](chat.md#rufis-lines)), this request goes to the AI without your message. Two things are different: in this turn the AI may change something, the file's documents and drafts (you added the file, and Rufi asks the AI only to sort it); and the request goes on by itself after Rufi restarts. Rufi AI reads the copies with Rufi's tools, as it reads your record, and can't save anything to your record in that turn. What it did shows in **Activity**, like any reply.
+
+Draft items aren't your record until you save them. They are in your backups and your export (the `draft_items` table), apart from your record, with the page copies (`page_copies`) and Rufi's requests to sort (`sort_requests`).
 
 ## Your chat
 

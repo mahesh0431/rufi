@@ -113,6 +113,9 @@ export interface Scenario {
   /**
    * Calls of Rufi's tools the model makes during a turn, before answering;
    * `id` is Codex's call id (`call-<n>`; `exec-…` for a call made from exec).
+   * The text "$document" in a call's arguments becomes the document the
+   * turn's message names ("(document <id>)"), as in Rufi's note asking
+   * Rufi AI to sort a reading.
    */
   calls?: {
     id?: string;
@@ -132,6 +135,8 @@ export interface Scenario {
   resetsAt?: number;
   /** The message Codex gives a failed turn (a usage-limit message). */
   failMessage?: string;
+  /** Each thread's first turns fail, as on the usage limit. */
+  failTurns?: number;
   /** Sparse account rate-limit updates following that snapshot. */
   rateLimitUpdates?: Record<string, unknown>[];
   /** Threads the fake knows from before, as a restarted Codex would. */
@@ -374,7 +379,17 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   const calls = text.includes("quiet")
     ? []
     : (scenario.callsByTurn?.[turnIndex] ?? scenario.calls ?? []);
-  for (const [i, { id, ...call }] of calls.entries()) {
+  const named = /\(document ([^)\s]+)\)/.exec(text)?.[1];
+  for (const [i, { id, ...scripted }] of calls.entries()) {
+    const call =
+      named === undefined
+        ? scripted
+        : {
+            ...scripted,
+            arguments: JSON.parse(
+              JSON.stringify(scripted.arguments).replaceAll("$document", named),
+            ) as unknown,
+          };
     // Like Codex: the item starts, then the call goes to Rufi's MCP server.
     const item = {
       id: id ?? `call-${String(i)}`,
@@ -525,7 +540,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     });
     return;
   }
-  if (text.includes("fail")) {
+  if (text.includes("fail") || turnIndex < (scenario.failTurns ?? 0)) {
     if (scenario.resetsAt !== undefined) {
       send({
         method: "account/rateLimits/updated",

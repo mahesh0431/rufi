@@ -79,7 +79,7 @@ export interface Rule {
 }
 
 /** A scanned page: one JPEG filling the page, with no text. */
-export interface Scanned {
+interface Scanned {
   bytes: Uint8Array;
   width: number;
   height: number;
@@ -162,7 +162,3 @@ export function mixedPdf(pages: readonly Page[]): Uint8Array {
 /** A PDF of text pages. */
 export const textPdf = (pages: readonly (readonly Text[])[]): Uint8Array =>
   mixedPdf(pages);
-
-/** A PDF whose pages are JPEG images only: a scan, with no text. */
-export const scanPdf = (jpegs: readonly Scanned[]): Uint8Array =>
-  mixedPdf(jpegs);

@@ -94,6 +94,11 @@ export interface ApiDeps {
   deletions: Deletions;
   /** Their readings: what waits and runs, and each one's work. */
   readings: Readings;
+  /**
+   * Starts a document's sort again when it waits (its tries used, Rufi AI
+   * asked, or a Stop): false when none waits.
+   */
+  sortAgain: (personId: string, documentId: string) => Promise<boolean>;
   /** A document's draft items, and the person's fixes. */
   items: DraftItems;
   /** A document's pages as the reader saw them. */
@@ -712,10 +717,15 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       throw error;
     }
   };
+  // Retry: a sort that waits goes again; otherwise what failed is read again.
   app.post(`${documentsPath}/:documentId/retry`, async (c) => {
     const found = await person(c);
+    const documentId = c.req.param("documentId");
+    if (await reading(() => deps.sortAgain(found.id, documentId))) {
+      return c.json({ pages: [], sorting: true });
+    }
     const pages = await reading(() =>
-      deps.readings.retry(found.id, c.req.param("documentId")),
+      deps.readings.retry(found.id, documentId),
     );
     return c.json({ pages });
   });

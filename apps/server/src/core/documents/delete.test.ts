@@ -32,6 +32,7 @@ import { fileGate, type FileGate } from "./gate.ts";
 import { displayPath, originalPath, pagePath } from "./originals.ts";
 import { pages, publisher } from "./pages.ts";
 import { readings } from "./reading.ts";
+import { sorting } from "./sorting.ts";
 
 const family = await readFile(
   new URL("../../../tests/fixtures/fictional-family.sql", import.meta.url),
@@ -707,4 +708,114 @@ describe("the bytes", () => {
 
     expect(kept).toEqual([RAVI_FILE]);
   });
+});
+
+describe("a document Rufi AI split from an add", () => {
+  /** pile.pdf, two pages, split in two by Rufi AI's sort. */
+  async function split() {
+    store.db.exec(`
+      INSERT INTO files (id, size, media_type, created_at) VALUES ('f-pile', 1, 'application/pdf', '${NOW}');
+      INSERT INTO documents (id, person_id, added_at, added_from, version) VALUES ('pile', 'asha', '${NOW}', 'documents_page', 1);
+      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
+        VALUES ('job-pile', 'asha', 'document_read', 'pile', 'done', 1, '[1,2]', '${NOW}', '${NOW}');
+      INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name, state, entry_job_id, entry_attempt) VALUES
+        ('asha', 'pile', 1, 'f-pile', 1, 'pile.pdf', 'read', 'job-pile', 1),
+        ('asha', 'pile', 2, 'f-pile', 2, 'pile.pdf', 'read', 'job-pile', 1);
+      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at) VALUES
+        ('asha', 'f-pile', 1, 'job-pile', 1, 'read', '| HbA1c | 6.9 | % |', '${NOW}'),
+        ('asha', 'f-pile', 2, 'job-pile', 1, 'read', '| TSH | 2.3 | mIU/L |', '${NOW}');
+    `);
+    await sorting(store, () => NOW).sort(
+      {
+        personId: "asha",
+        chatId: "c-asha",
+        agentTurnId: "t-1",
+        callId: "call-split",
+      },
+      {
+        document: "pile",
+        documents: [
+          { id: "pile", pages: [1], kind: "lab_report" },
+          { pages: [2], kind: "lab_report" },
+        ],
+        drafts: [
+          {
+            page: 1,
+            test_name: "HbA1c",
+            value_text: "6.9",
+            quote: "HbA1c | 6.9",
+          },
+          { page: 2, test_name: "TSH", value_text: "2.3", quote: "TSH | 2.3" },
+        ],
+      },
+    );
+    const child = String(
+      rows("SELECT id FROM documents WHERE from_document = 'pile'")[0]?.["id"],
+    );
+    return { child };
+  }
+  const left = () => ({
+    documents: rows(
+      "SELECT id, deleted_at IS NOT NULL AS deleted FROM documents WHERE id = 'pile' OR from_document = 'pile' ORDER BY rowid",
+    ),
+    pages: rows(
+      "SELECT document_id, position FROM document_pages WHERE file_name = 'pile.pdf' AND file_id IS NOT NULL ORDER BY position",
+    ),
+    drafts: rows(
+      "SELECT document_id, json_extract(fields, '$.test_name') AS test FROM draft_items WHERE job_id = 'job-pile' ORDER BY page",
+    ),
+    copies: rows(
+      "SELECT page_in_file FROM page_copies WHERE job_id = 'job-pile' ORDER BY page_in_file",
+    ),
+    readings: rows("SELECT id FROM jobs WHERE id = 'job-pile'"),
+  });
+
+  it.each(["the split one first", "the add first"])(
+    "deleted one at a time, %s: the other stays whole with its page, draft and copy, until it goes too",
+    async (order) => {
+      const { child } = await split();
+      const [first, second] =
+        order === "the add first" ? ["pile", child] : [child, "pile"];
+      const remover = deleting();
+      const preview = await remover.preview("asha", first);
+      // The file stays while the other document uses it.
+      expect(preview).toMatchObject({
+        place: `page ${first === "pile" ? "1" : "2"} of 2`,
+        others: 1,
+      });
+      await remover.remove("asha", first, preview?.version ?? "");
+      const stays = second === "pile" ? 1 : 2;
+      const kept = left();
+      expect(kept.pages).toEqual([{ document_id: second, position: stays }]);
+      expect(kept.drafts).toEqual([
+        { document_id: second, test: stays === 1 ? "HbA1c" : "TSH" },
+      ]);
+      expect(kept.copies).toEqual([{ page_in_file: stays }]);
+      expect(kept.readings).toEqual([{ id: "job-pile" }]);
+      expect((await docs.list("asha")).filter((d) => d.id === second)).toEqual([
+        expect.objectContaining({ status: "done", sorting: null }),
+      ]);
+
+      expect(await remover.preview("asha", second)).toMatchObject({
+        place: `page ${String(stays)} of 2`,
+        others: 0,
+      });
+      await remover.remove(
+        "asha",
+        second,
+        (await remover.preview("asha", second))?.version ?? "",
+      );
+      expect(left()).toMatchObject({
+        pages: [],
+        drafts: [],
+        copies: [],
+        readings: [],
+      });
+      expect(
+        (await docs.list("asha")).filter(
+          (d) => d.id === "pile" || d.id === child,
+        ),
+      ).toEqual([]);
+    },
+  );
 });

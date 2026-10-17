@@ -358,6 +358,36 @@ export function transcripts(
       .where("agent_turn_id", "=", agentTurnId)
       .executeTakeFirst();
 
+  /** A tool call of a turn, with the answer the AI got. */
+  const keepCall = async (
+    trx: Db,
+    turn: TurnRow,
+    call: {
+      callId: string;
+      tool: string;
+      input: unknown;
+      answer: { ok: boolean; text: string };
+      startedAt: string;
+    },
+  ) => {
+    await trx
+      .insertInto("tool_calls")
+      .values({
+        id: uuid(),
+        person_id: turn.person_id,
+        chat_id: turn.chat_id,
+        turn_id: turn.id,
+        call_id: call.callId,
+        tool: call.tool,
+        input: JSON.stringify(call.input ?? null),
+        answer: call.answer.text,
+        ok: call.answer.ok ? 1 : 0,
+        started_at: call.startedAt,
+        ended_at: now(),
+      })
+      .execute();
+  };
+
   /** The reply or activity entry for an agent item of a turn. */
   const itemOf = (trx: Db, turn: TurnRow, itemId: string, kind: string) =>
     trx
@@ -845,6 +875,8 @@ export function transcripts(
         facts?: unknown;
         /** Rufi's note for the AI, when the AI should hear of it. */
         ask?: string;
+        /** Its row's id in the queue, when the producer keeps it (a sort's request). */
+        askId?: string;
       },
       /** Returns the entries it changed too, when it changes any. */
       write?: (
@@ -867,7 +899,12 @@ export function transcripts(
           await addRow(
             trx,
             chat,
-            { id: uuid(), origin: "rufi", text: event.ask, eventId: id },
+            {
+              id: event.askId ?? uuid(),
+              origin: "rufi",
+              text: event.ask,
+              eventId: id,
+            },
             now(),
           );
         }
@@ -1258,24 +1295,37 @@ export function transcripts(
       change(chat.id, async (trx) => {
         const turn = await turnOf(trx, chat.id, agentTurnId);
         if (!turn) throw new Error("The call's reply isn't saved.");
-        await trx
-          .insertInto("tool_calls")
-          .values({
-            id: uuid(),
-            person_id: turn.person_id,
-            chat_id: chat.id,
-            turn_id: turn.id,
-            call_id: call.callId,
-            tool: call.tool,
-            input: JSON.stringify(call.input ?? null),
-            answer: call.answer.text,
-            ok: call.answer.ok ? 1 : 0,
-            started_at: call.startedAt,
-            ended_at: now(),
-          })
-          .execute();
+        await keepCall(trx, turn, call);
         return undefined;
       }),
+
+    /**
+     * A call that changes what Rufi keeps, with its trace, in one
+     * transaction: `run` writes in it, and the call and the answer the AI
+     * gets are kept with what it wrote. If the trace can't be kept, nothing
+     * is.
+     */
+    withToolCall: async <T>(
+      chat: ChatRow,
+      agentTurnId: string,
+      call: { callId: string; tool: string; input: unknown },
+      run: (trx: Transaction<Tables>) => Promise<T>,
+    ): Promise<T> => {
+      const startedAt = now();
+      let result: T | undefined;
+      await change(chat.id, async (trx) => {
+        const turn = await turnOf(trx, chat.id, agentTurnId);
+        if (!turn) throw new Error("The call's reply isn't saved.");
+        result = await run(trx);
+        await keepCall(trx, turn, {
+          ...call,
+          answer: { ok: true, text: JSON.stringify({ ok: true, result }) },
+          startedAt,
+        });
+        return undefined;
+      });
+      return result as T;
+    },
 
     /** When it is now, as the transcript writes times. */
     now,

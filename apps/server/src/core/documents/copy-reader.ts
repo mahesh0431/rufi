@@ -18,7 +18,7 @@ import type { Run } from "./notebook.ts";
 import type { Pages } from "./pages.ts";
 import { READER_EFFORT, READER_MODEL } from "./reader-instructions.ts";
 import { readerCaller, type ReaderKind } from "./reader-tools.ts";
-import { ranges } from "./reading.ts";
+import { ranges } from "./naming.ts";
 
 export const COPY_INSTRUCTIONS = `You are Rufi's document reader. A person added a document to Rufi, their personal health record. You copy each page into Markdown, exactly as it is printed, so that Rufi's main AI can work from your copy. You copy; you don't decide what anything means.
 
