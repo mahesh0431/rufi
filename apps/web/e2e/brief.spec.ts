@@ -1,7 +1,8 @@
 // A visit brief on the real core: the AI's create_brief call (scripted),
-// Rufi's line in the chat, and the brief's page with its Sources and Copy,
-// in both themes; a later save shows the record changed since. Each test
-// checks that the strict CSP refused nothing the screens need.
+// Rufi's line in the chat, and the brief's page with its Sources (each opens
+// its record) and Copy, in both themes; a later save shows the record changed
+// since. Each test checks that the strict CSP refused nothing the screens
+// need.
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./rufi.ts";
@@ -48,7 +49,7 @@ const MARKDOWN = `## For the visit on Friday
 ### Questions to ask
 - Question: Is the HbA1c a reason to change the Metformin?`;
 
-test("a brief's line opens its page: dated, as written, with its Sources and Copy; a later save shows the record changed since", async ({
+test("a brief's line opens its page: dated, as written, with its Sources and Copy; a later save shows the record changed since, and a source opens its record", async ({
   page,
   rufi,
   context,
@@ -161,6 +162,18 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
   );
   await expect(brief).toContainText("Metformin 500 mg, twice a day");
   await accessible(page);
+
+  // A source opens its record on its page, open and in view.
+  await page
+    .getByRole("region", { name: "Sources" })
+    .getByRole("link", { name: "HbA1c 6.8 % · 12 Aug 2026" })
+    .click();
+  await expect(page).toHaveURL(
+    /\/people\/asha\/record\/lab_result\?open=res-a1$/,
+  );
+  const row = page.getByRole("button", { name: "HbA1c", exact: true });
+  await expect(row).toHaveAttribute("aria-expanded", "true");
+  await expect(row).toBeInViewport();
 });
 
 test("a brief that isn't there says so", async ({ page, rufi }) => {

@@ -450,6 +450,66 @@ test("a page draws in the reply at a fixed height and opens large over the chat:
   }
 });
 
+/** A page with a dark look, which says later which one its script sees. */
+const COLOURS = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>Colours</title><style>
+body { background: rgb(255, 255, 255); }
+@media (prefers-color-scheme: dark) { body { background: rgb(0, 0, 0); } }
+</style></head><body><p id="seen">…</p><script>
+addEventListener("load", () => {
+  document.getElementById("seen").textContent =
+    matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+});
+</script></body></html>`;
+
+for (const { system, chosen } of [
+  { system: "dark", chosen: "Light" },
+  { system: "light", chosen: "Dark" },
+] as const) {
+  test(`a page follows Rufi's appearance, ${chosen} with the system ${system}, and the system with System`, async ({
+    page,
+    rufi,
+  }) => {
+    await page.emulateMedia({ colorScheme: system });
+    await rufi.family();
+    await mkdir(join(rufi.home, "ai", "reports"), { recursive: true });
+    await writeFile(join(rufi.home, "ai", "reports", "colours.html"), COLOURS);
+    await rufi.start();
+    await page.goto(rufi.link());
+    const choose = async (label: string) => {
+      await page.getByRole("link", { name: "Settings" }).click();
+      await page
+        .getByRole("radiogroup", { name: "Appearance" })
+        .getByRole("radio", { name: label })
+        .check();
+      await page.getByRole("link", { name: "Chat with Rufi" }).click();
+    };
+    /** What the page shows: its background, and what its script saw. */
+    const looks = async () => {
+      const frame = page.frameLocator('iframe[title="Colours"]');
+      await expect(frame.locator("#seen")).not.toHaveText("…");
+      return {
+        background: await frame
+          .locator("body")
+          .evaluate((body) => getComputedStyle(body).backgroundColor),
+        seen: await frame.locator("#seen").textContent(),
+      };
+    };
+    const black = { background: "rgb(0, 0, 0)", seen: "dark" };
+    const white = { background: "rgb(255, 255, 255)", seen: "light" };
+
+    await choose(chosen);
+    const box = page.getByRole("textbox", { name: "Message to Rufi" });
+    await box.fill("Your page: [Colours](reports/colours.html)");
+    await box.press("Enter");
+    expect(await looks()).toEqual(chosen === "Dark" ? black : white);
+
+    await choose("System");
+    expect(await looks()).toEqual(system === "dark" ? black : white);
+    expect(await refusedIn(page)).toEqual([]);
+  });
+}
+
 test("a file that is gone keeps its card and says so", async ({
   page,
   rufi,

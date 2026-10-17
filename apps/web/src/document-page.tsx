@@ -180,7 +180,8 @@ function Checking({
             <span className="text-muted">· {about}</span>
           </h2>
           {document.status === "failed" && (
-            <p className="text-xs">
+            // Wrapped, its last word doesn't end on a line of its own.
+            <p className="text-xs text-pretty">
               Failed · {document.reading?.error ?? "it stopped"}
             </p>
           )}

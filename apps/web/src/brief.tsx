@@ -1,12 +1,15 @@
 // A visit brief's page: the AI's Markdown as it wrote it, dated, with the
-// Sources Rufi built from the records it cites, and Copy. A brief never
-// changes; when a later save changed the record, the page says so.
+// Sources Rufi built from the records it cites, each opening its record,
+// and Copy. A brief never changes; when a later save changed the record,
+// the page says so.
 import type { Person } from "@rufi/contracts";
-import type { Brief } from "@rufi/contracts/briefs";
+import type { Brief, BriefSource } from "@rufi/contracts/briefs";
+import { Link } from "@tanstack/react-router";
 import { Copy, Info } from "lucide-react";
 import { useEffect, useState } from "react";
 import { printedTime } from "./dates.ts";
 import { useBrief } from "./reads.ts";
+import { isPageKind } from "./record.tsx";
 import { Marked } from "./transcript.tsx";
 import { Button, Problem } from "./ui.tsx";
 
@@ -74,7 +77,7 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
             >
               <span className="text-muted">{source.kind}</span>
               <span className="break-words">
-                {source.what}
+                <Cited personId={person.id} source={source} />
                 {source.changedSince && (
                   <span className="ml-1.5 text-xs text-accent-ink">
                     changed since
@@ -90,6 +93,46 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
       </section>
     </>
   );
+}
+
+/**
+ * A source's record, as a link that opens it on its page (a result on the
+ * page of its category); as words alone when it has no page or is no longer
+ * in the record.
+ */
+function Cited({
+  personId,
+  source: { what, record },
+}: {
+  personId: string;
+  source: BriefSource;
+}) {
+  const look = "rounded-md text-accent-ink hover:bg-accent-soft";
+  if (record?.kind === "follow_up") {
+    return (
+      <Link
+        to="/people/$personId/follow-ups"
+        params={{ personId }}
+        search={{ open: record.id }}
+        className={look}
+      >
+        {what}
+      </Link>
+    );
+  }
+  if (record && (record.kind === "result" || isPageKind(record.kind))) {
+    return (
+      <Link
+        to="/people/$personId/record/$kind"
+        params={{ personId, kind: record.kind }}
+        search={{ open: record.id }}
+        className={look}
+      >
+        {what}
+      </Link>
+    );
+  }
+  return what;
 }
 
 /** The brief as plain text, to paste anywhere: its date, the brief and its Sources. */

@@ -188,6 +188,49 @@ addEventListener("keydown", (event) => {
   }
 }, true);
 </script>`;
+/** A `prefers-color-scheme` condition in a media query. */
+const SCHEME_FEATURE = /\(\s*prefers-color-scheme\s*:\s*(light|dark)\s*\)/gi;
+/**
+ * Rufi's appearance, light or dark, in place of the system's for a generated
+ * page: a frame's `prefers-color-scheme` follows the system, not the page
+ * that frames it. Appended with Esc, after the page's own styles: each
+ * `prefers-color-scheme` condition in them, and in its later `matchMedia`
+ * calls, becomes one that always or never holds; a page that takes both
+ * schemes gets the chosen one for the browser's own colours. Not sent for
+ * System, which the frame already follows.
+ */
+const pageAppearance = (chosen: "light" | "dark") => `
+<script>
+{
+  const chosen = ${JSON.stringify(chosen)};
+  const follow = (query) =>
+    query.replace(${String(SCHEME_FEATURE)}, (_, scheme) =>
+      scheme.toLowerCase() === chosen ? "(width >= 0)" : "(width < 0)");
+  const rewrite = (media) => {
+    if (media && media.mediaText) media.mediaText = follow(media.mediaText);
+  };
+  const walk = (rules) => {
+    for (const rule of rules) {
+      if (rule instanceof CSSMediaRule) rewrite(rule.media);
+      if (rule.cssRules) walk(rule.cssRules);
+    }
+  };
+  for (const sheet of document.styleSheets) {
+    rewrite(sheet.media);
+    walk(sheet.cssRules);
+  }
+  const own = matchMedia.bind(window);
+  window.matchMedia = (query) => own(follow(String(query)));
+  const both = (value) => /light/.test(value) && /dark/.test(value);
+  const root = document.documentElement;
+  if (
+    both(getComputedStyle(root).colorScheme) ||
+    both(document.querySelector('meta[name="color-scheme"]')?.content ?? "")
+  ) {
+    root.style.colorScheme = chosen;
+  }
+}
+</script>`;
 /** A standalone request never receives the generated page's active content. */
 const OPEN_IN_RUFI = `<!doctype html><html lang="en"><meta charset="utf-8"><title>Open in Rufi</title><body><p>Open this page from the chat in Rufi.</p></body></html>`;
 const FORWARDING = [
@@ -980,11 +1023,12 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     c.header("Content-Type", type);
     if (shape === "page") {
       c.header("Content-Security-Policy", pageCsp(origin()));
-      return c.body(
-        new Uint8Array(
-          Buffer.concat([bytes, Buffer.from(pageEscape(origin()))]),
-        ),
-      );
+      // The address names Rufi's appearance when it is light or dark.
+      const chosen = c.req.query("appearance");
+      const after =
+        pageEscape(origin()) +
+        (chosen === "light" || chosen === "dark" ? pageAppearance(chosen) : "");
+      return c.body(new Uint8Array(Buffer.concat([bytes, Buffer.from(after)])));
     }
     return c.body(new Uint8Array(bytes));
   });

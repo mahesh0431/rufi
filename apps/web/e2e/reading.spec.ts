@@ -323,10 +323,29 @@ test("a reading that failed signed out gives its reason in full, in View reading
   // Also in a small window, the reason leaves room for the Items list.
   for (const size of [
     { width: 1280, height: 720 },
+    { width: 1024, height: 720 },
     { width: 800, height: 600 },
   ]) {
     await page.setViewportSize(size);
     await whole(`Failed · ${why}`);
+    // When it wraps, its last line isn't one word on its own.
+    const last = await page
+      .getByText(`Failed · ${why}`, { exact: true })
+      .evaluate((line) => {
+        const tops: number[] = [];
+        const texts = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+        for (let text = texts.nextNode(); text; text = texts.nextNode()) {
+          for (const word of (text as Text).data.matchAll(/\S+/g)) {
+            const range = document.createRange();
+            range.setStart(text, word.index);
+            range.setEnd(text, word.index + word[0].length);
+            tops.push(range.getBoundingClientRect().top);
+          }
+        }
+        const bottom = Math.max(...tops);
+        return tops.filter((top) => top === bottom).length;
+      });
+    expect(last).toBeGreaterThan(1);
     for (const position of [1, 2]) {
       await expect(
         items.getByRole("cell", { name: `Page ${String(position)} · ` }),
