@@ -36,7 +36,7 @@ A line between days says which day the messages under it are from: "Today", "Yes
 
 Type in the box and press Enter, or click the send button. Shift-Enter starts a new line.
 
-When you send, Rufi takes your message into its queue and empties the box, in one step. While it does, the box says "Sending…" for a moment and you can't change it. Rufi sends the text in this box, also when another tab saved other text just before. Then the message goes to the AI: at once when nothing else runs, or in its turn (see [Waiting messages](#waiting-messages)). It shows in the chat when the AI starts on it.
+When you send, the box says "Sending…" for a moment, and you can't change it; then it empties. Rufi sends the text in this box, also when another tab saved other text just before. Then the message goes to the AI: at once when nothing else runs, or in its turn (see [Waiting messages](#waiting-messages)). It shows in the chat when the AI starts on it.
 
 If you aren't signed in when you send, nothing goes to the AI and nothing waits: your text stays in the box, which says "You're signed out. Sign in with ChatGPT to chat." Click **Sign in** (see [Signing in with ChatGPT](signing-in.md)), then send again. A message that already waited when the sign-in went away keeps waiting. Signing in alone doesn't send it: it goes the next time Rufi gives the AI something, with your next message or with one of Rufi's notes (see [Rufi's lines](#rufis-lines)).
 
@@ -75,7 +75,7 @@ To take a chip out, click its **×**. This changes nothing in your health record
 
 Rufi checks each chip: it must be in the health record of the person whose chat it is. If it isn't, the box says "Something added to this message isn't in this person's record. Take it out of the message and add it again." A chip of a document you deleted says "A document added to this message was deleted. Take it out of the message."
 
-When you delete a document (see [Documents](documents.md#delete-a-document)), its chips in messages you sent, and the chips of the results the reader read from it, keep their names and say **document deleted**. They open nothing. A chip of it in a message that waits to go says the same, and the AI is told that the document was deleted. When you send, Rufi gives the AI each chip's exact name in your health record and its version at that moment, so the AI reads exactly those. A message can have up to 100 chips.
+When you delete a document (see [Documents](documents.md#delete-a-document)), its chips in messages you sent, and the chips of the results the reader read from it, keep their names and say **document deleted**. They open nothing. A chip of it in a message that waits to go says the same, and the AI is told that the document was deleted. The AI reads exactly what each chip pointed to when you sent the message. A message can have up to 100 chips.
 
 ## What you see
 
@@ -95,7 +95,7 @@ Activity shows what the AI did for a reply, as the AI's agent reported it. Rufi 
 
 - **The AI's notes**, in full, such as "I'll check your fasting glucose and HbA1c first." The AI writes these while it works. They are part of Activity, not answers.
 - **The AI's thinking**, as the headings the AI service sends, such as "Comparing the reports", in their place among the steps. When a heading has more under it, click it to read the AI's summary. When the AI service sends nothing, there is no line.
-- **The steps**, each as it was reported: a command, such as `/bin/zsh -lc 'cat …/skills/analysis/SKILL.md'`, with its exit code; one of Rufi's tools, such as `rufi.get_records`, with what the AI asked for; the files the AI changed; a web search. A long step is cut in the middle, so the start and the file name show. A tick means it was done. Other signs mean it is running, it failed, or it stopped.
+- **The steps**, each as it was reported: a command the AI ran, with its exit code; one of Rufi's tools, such as `rufi.get_records`, with what the AI asked for; the files the AI changed; a web search. A long step is cut in the middle, so the start and the file name show. A tick means it was done. Other signs mean it is running, it failed, or it stopped.
 
 Click a step to open everything the agent reported about it: for a command, the whole command, its folder, its exit code, how long it took and what it printed; for a tool, what the AI sent and what came back. Long output shows 12 lines, then **Show all**. A step from before Rufi kept these says "Rufi kept no details for this step."
 
@@ -138,7 +138,7 @@ What the AI's reads can do:
 - **Only this person's record.** A read gets only the records of the person whose chat it is. It can't read another person's record, the chat or Rufi's settings. Rufi chooses the person, not the AI.
 - **Only read.** A read can't change anything.
 - **Removed records too.** Records you removed, and the earlier versions of amended results, are in a read too, marked as removed or replaced.
-- **Limits.** One read gives the AI at most 200 records and 32 KB of them, newest first. When there are more, Rufi tells the AI where the read stopped, and the AI reads on from there, or says in its answer what the missing records mean. A read that failed gives the AI an error, never an empty list.
+- **Limits.** One read gives the AI only so many records, newest first. When there are more, Rufi tells the AI where the read stopped, and the AI reads on from there, or says in its answer what the missing records mean. A read that failed gives the AI an error, never an empty list.
 - **Exactly the ones you added.** For the results you added to a message, the AI reads those records and no others.
 - **Where each one came from.** Each record comes with its sources: your message, or a document and its page.
 
@@ -233,7 +233,7 @@ A held message says why under it, and goes only when you click its button: **Sen
 - **"Not sure this reached the AI."** Rufi stopped, or the AI didn't answer, while Rufi gave it the message. The AI may have it. Check the chat before you send it again. After this, nothing more goes to the AI until you send a message.
 - **"From a backup: it waited when the backup was made."** After a restore, nothing from the past goes to the AI by itself.
 - **The AI's reason**, when the AI couldn't take it, for example when none of your allowed models is offered.
-- **The error, with Try again and New thread**, when Rufi couldn't open the AI's memory of the chat (its thread). The message shows the error as it came. **Try again** opens the same thread again, and the AI keeps its memory of the chat. **New thread** starts the AI with a new memory: your chat and your health record stay as they are, the AI gets the chat's last messages and reads further back when it needs to, and the chat shows "New thread started". While a reply runs, only **Try again** shows (the message then goes after the reply); **New thread** shows again once the reply has ended. If Try again meets an error again, the message waits again with both buttons. The message keeps waiting like this when you reload or Rufi starts again. When you click in two tabs, the first click counts, and the other tab shows what happened.
+- **The error, with Try again and New thread**, when Rufi couldn't open the AI's memory of the chat (its thread). The message shows the error as it came. **Try again** opens the same thread again, and the AI keeps its memory of the chat. **New thread** starts the AI with a new memory, and your chat and your health record stay as they are (see [The AI's memory of the chat](#the-ais-memory-of-the-chat)). While a reply runs, only **Try again** shows (the message then goes after the reply); **New thread** shows again once the reply has ended. If Try again meets an error again, the message waits again with both buttons. The message keeps waiting like this when you reload or Rufi starts again. When you click in two tabs, the first click counts, and the other tab shows what happened.
 
 ## Rufi's lines
 
@@ -255,17 +255,17 @@ The model and effort that answer show in the box, next to the send button, in ev
 
 Rufi keeps the model and effort for your chat. You can't change them while a reply runs. Rufi says so: stop the reply, then change them. A new model answers from your next message, and it has the whole chat: the AI keeps its memory of the chat. Messages that wait go to the new model.
 
-**Context used.** In the chat's panel and page, a small grey ring with a percentage, such as "38%", shows beside the model and effort: how much of the AI's memory of the chat is in use, as the AI last reported it. Point at it, or move to it with Tab, to see what it means. It shows after the AI's first reply, and keeps its value when you reload. It changes after each step of a reply, not with each word. After a compaction or another model, it keeps the old value until the next reply. After a new thread, it shows nothing until the AI's first reply there. When the AI doesn't say how big its memory is, there is no ring. A full memory is normal: near full, the chat history is compacted.
+**Context used.** In the chat's panel and page, a small grey ring with a percentage, such as "38%", shows beside the model and effort: how much of the AI's memory of the chat is in use, as the AI last reported it. Point at it, or move to it with Tab, to see what it means. It shows after the AI's first reply, and keeps its value when you reload. It changes after each step of a reply, not with each word. After a compaction or another model, it keeps the old value until the next reply. After a new thread, it shows nothing until the AI's first reply there. When the AI doesn't say how big its memory is, there is no ring. A full memory is normal: near full, Codex compacts the chat history.
 
 ## The AI's memory of the chat
 
 Your chat is always kept whole in Rufi, and the AI can read all of it. The AI also keeps its own working memory of the chat, a thread, while you talk.
 
-**Compacted.** When that memory gets near full, the AI compacts it: it replaces the older part with a summary, in the same thread. The chat shows "Compacting chat history…" while it runs, and "Chat history compacted" once it is done. A message you send meanwhile waits, as during any reply. If you stop the reply, or Rufi closes, while it compacts, the line goes away. Another model or effort keeps the same thread; if the new model has a smaller memory, the AI can compact, and the chat says so.
+**Compacted.** When that memory gets near full, Codex, the AI's agent, compacts the chat history: it replaces the older part of the AI's memory with a summary, in the same thread. The chat shows "Compacting chat history…" while it runs, and "Chat history compacted" once it is done. A message you send meanwhile waits, as during any reply. If you stop the reply, or Rufi closes, while it compacts, the line goes away. Another model or effort keeps the same thread; if the new model has a smaller memory, the AI can compact, and the chat says so.
 
 **New thread.** The AI starts a new thread only when its own copy of the chat is gone (for example after a restore, a move of Rufi's data, or when its files were deleted), or when you click **New thread** on a waiting message. The chat shows "New thread started" there. The new thread has the chat's last 10 messages, and the AI reads further back when it needs to. When Rufi can't open the AI's thread for another reason, it doesn't start a new one by itself: your message waits with the error, **Try again** and **New thread** (see [Waiting messages](#waiting-messages)).
 
-**New rules.** When Rufi's rules for the AI change, after a Rufi update or when you choose another emergency region, the AI gets the new rules with your next message. It goes at normal speed, and the chat shows no line. If the AI can't take them, your message waits with "The AI couldn't take Rufi's new instructions, so it can't reply now. Try again.", **Try again** and **New thread**.
+**New rules.** When Rufi's rules for the AI change, after a Rufi update or when you choose another emergency region, the AI gets the new rules with your next message, and the chat shows no line. If the AI can't take them, your message waits with "The AI couldn't take Rufi's new instructions, so it can't reply now. Try again.", **Try again** and **New thread**.
 
 ## What you typed but didn't send
 

@@ -66,7 +66,7 @@ Rufi reads each document as soon as you add it. It sends the document's pages to
 
 ### The reader's model and effort
 
-In **Settings** → **Documents**, choose the **Reader model**: **GPT-6.1-Sol** (the start) or **GPT-5.5**. These are the models where Rufi can lock the reader down to its two tools. On GPT-6.1-Sol, the reader uses its tools through small pieces of code, with no files and no internet (see [Your data and the AI](your-data-and-the-ai.md#reading-your-documents)).
+In **Settings** → **Documents**, choose the **Reader model**: **GPT-6.1-Sol** (the start) or **GPT-5.5**. These are the models where Rufi can lock the reader down to its two tools, with no files and no internet (see [Your data and the AI](your-data-and-the-ai.md#reading-your-documents)).
 
 Then choose its **Effort**: **Low**, **Medium** (the start) or **High**. Higher effort thinks longer on each page, and uses more of your plan.
 
@@ -198,7 +198,7 @@ In a browser that has no PDF viewer, Rufi says so and offers **Save a copy**, to
 
 ## Where your documents are kept
 
-The originals are in the `files` folder in your data folder, each named by its content's fingerprint (its SHA-256 hash). Rufi writes each file to disk completely before the document shows in Rufi. Your backups and the export hold every original (see [Backups and export](backups-and-export.md)).
+The originals are in the `files` folder in your data folder, exactly as you added them. Your backups and the export hold every original (see [Backups and export](backups-and-export.md)).
 
 ## Delete a document
 
