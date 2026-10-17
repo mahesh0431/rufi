@@ -305,7 +305,7 @@ function Sheet({
             ...(elapsed ? [elapsed] : []),
           ].join(" · ")
         : reading.status === "failed"
-          ? `failed · ${reading.error ?? "it stopped"} · read ${String(reading.saved)} of ${String(reading.of)}`
+          ? `failed · read ${String(reading.saved)} of ${String(reading.of)}`
           : reading.status === "done"
             ? "read"
             : "not read yet";
@@ -341,6 +341,8 @@ function Sheet({
             {view.error.message}
           </p>
         )}
+        {/* Why it failed, in full: it can be long (a sign-in to renew). */}
+        {reading?.status === "failed" && <p>{reading.error ?? "it stopped"}</p>}
         {items.error && (
           <Problem error={items.error} retry={() => void items.refetch()} />
         )}
