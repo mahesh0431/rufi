@@ -75,7 +75,7 @@ Your choice is used by the next reading that starts. A reading that runs keeps t
 ### While a document is read
 
 - A line in the chat says the reading started: **Reading thyrocare-aug.pdf · 5 pages**.
-- Above the chat box, the reader strip shows each reading: the one at work with its pages read and time (**read 3 of 5 · 1 min**), and those that wait their turn (**waiting**). You can keep chatting meanwhile.
+- Above the chat box, the reader strip shows each reading: the one at work with its pages read and time (**read 3 of 5 · 1 min**), those that wait their turn (**waiting**), and one that waits to try again by itself (**waiting to read again · read 1 of 5**). You can keep chatting meanwhile.
 - Click **View reading** to see the reader's work as it goes: each page it read, with the facts and results it read, its one note for the whole document, its marks and notes (below) and how much of your plan it used. **View reading** shows only; you check and fix results on the document's page (see [Check a report](#check-a-report)). A result you fixed shows your fix there too, with what the reader read under it.
 
 ### When the reading ends
@@ -131,9 +131,8 @@ Say "undo that", as for any save (see [Undo](chat.md#undo)). The AI removes the 
 ## When a reading stops
 
 - **Rufi closed while reading:** when Rufi starts again, the reading continues where it stopped (**reading again** in the strip), with the pages it already read. You see one start line and one end line.
-- **You're signed out, or ChatGPT rejects the sign-in:** the reading waits (**waiting for sign-in**). Sign in again. Rufi checks again every 30 seconds.
-- **Your plan's usage limit:** the reading waits until the limit resets (**waiting until 14:30**), then goes on.
-- **The AI connection was lost or restarted:** Rufi tries once more by itself.
+- **You're signed out, your sign-in has ended, or your plan's usage limit is reached:** the reading stops at once. The line says why, in Rufi's or the service's words, for example **Couldn't finish reading … · Not signed in. Sign in with ChatGPT: in Rufi, or with pnpm rufi signin. · read 0 of 5**, with **Retry**. Sign in, or wait until the limit resets, then click **Retry**. Rufi doesn't try again by itself. If you add several documents meanwhile, each one stops the same way and has its own **Retry**.
+- **The AI connection was lost or restarted, or ChatGPT can't renew your sign-in just now:** Rufi tries again by itself, up to three times: after 30 seconds, then 1 minute, then 2 minutes. Meanwhile the strip says **waiting to read again**.
 - **It took too long, or failed again:** the line says **Couldn't finish reading … · read 3 of 5**, with **Retry**. Between them is why: "the reading took too long", or the AI service's error as the service reported it, such as "exceeded retry limit, last status: 429 Too Many Requests". The pages read so far are kept, and no results are made until a reading finishes.
 
 **Retry** (on the line, in **View reading**, or on the Documents page) continues a reading that failed. For a document that was read with pages that couldn't be read or weren't looked at, it reads only those pages again; the results already read, and any you changed, stay as they are. You can also ask the AI in the chat to read a document again.

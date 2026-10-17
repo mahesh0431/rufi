@@ -13,7 +13,6 @@ If a document's file is missing from your data folder, or has changed, the backu
 A backup doesn't hold:
 
 - your ChatGPT sign-in: a restored copy starts signed out;
-- the list of AI models (`models.json`): a restored copy uses the default list;
 - the AI's own files, such as its own copy of the chat;
 - the AI's folder, with its programs, notes and research files (see [Your data and the AI](your-data-and-the-ai.md#what-the-ai-can-do-in-its-folder));
 - the JPEG copies Rufi makes to show HEIC photos: Rufi makes them again when they are needed;
@@ -125,7 +124,7 @@ Settings says **Exported your data as a zip**. The file is named for the day, fo
 | `csv/`        | The same tables, to open in a spreadsheet                                      |
 | `files/`      | Every document you added, exactly as it came, named by its fingerprint         |
 
-Rufi checks the export against your record and your documents before it gives it to you. If a document's file is missing or changed, Rufi doesn't make the export, and says so. An export never holds your ChatGPT sign-in, the AI's own files, Rufi's log or the list of AI models.
+Rufi checks the export against your record and your documents before it gives it to you. If a document's file is missing or changed, Rufi doesn't make the export, and says so. An export never holds your ChatGPT sign-in, the AI's own files or Rufi's log.
 
 The `results` table holds your lab results and measurements; its `category` column says which each one is, `lab` or `measurement`.
 

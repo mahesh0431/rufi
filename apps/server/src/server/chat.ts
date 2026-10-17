@@ -21,7 +21,6 @@ import {
   type Model,
   type ThreadSettings,
 } from "../agent/runtime.ts";
-import type { Allowlist } from "../core/chat/models.ts";
 import { allowedModels } from "../core/chat/models.ts";
 import {
   QueueRefusal,
@@ -44,7 +43,7 @@ export interface ChatDeps {
   signedIn: () => Promise<boolean>;
   /** Makes the agent, given where its events go. */
   agent: (host: AgentHost) => AgentRuntime;
-  allowlist: () => Promise<Allowlist>;
+  allowlist: readonly string[];
   /** Rufi's MCP endpoint for the chat: its address and its keys. */
   mcp: { url: () => string; keys: McpKeys };
   /**
@@ -401,7 +400,7 @@ export function chat(deps: ChatDeps) {
       let threadId: string;
       try {
         if (fresh.model === null) {
-          const { models } = await offered();
+          const models = await offered();
           const first = models[0]?.id;
           if (first === undefined) {
             throw new ChatRefusal("None of the allowed models is offered now.");
@@ -631,7 +630,7 @@ export function chat(deps: ChatDeps) {
   return {
     agent,
 
-    /** The allowed models the provider offers now, and any allowlist problem. */
+    /** The allowed models the provider offers now. */
     models: offered,
 
     /**
@@ -766,7 +765,7 @@ export function chat(deps: ChatDeps) {
      */
     selectModel: (chat: ChatRow, model: string) =>
       inLane(chat, async (chat) => {
-        const { models } = await offered();
+        const models = await offered();
         if (!models.some((m) => m.id === model)) {
           throw new ChatRefusal(
             "That model isn't allowed or isn't offered now.",
@@ -811,13 +810,8 @@ export function chat(deps: ChatDeps) {
     }
   }
 
-  async function offered(): Promise<{ models: Model[]; error?: string }> {
-    const allowlist = await deps.allowlist();
-    const models = allowedModels(await agent.models(), allowlist.models);
-    return {
-      models,
-      ...(allowlist.error !== undefined && { error: allowlist.error }),
-    };
+  async function offered(): Promise<Model[]> {
+    return allowedModels(await agent.models(), deps.allowlist);
   }
 
   /** Without a sign-in, nothing the person sends is taken. */

@@ -139,12 +139,7 @@ async function start(
         host,
         log,
       }),
-    allowlist: () =>
-      Promise.resolve({
-        models: options.model
-          ? [options.model]
-          : ["gpt-6-astra", "gpt-6.1-sol"],
-      }),
+    allowlist: options.model ? [options.model] : DEFAULT_ALLOWLIST,
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
     rules: (region) => ({
       instructions: coreInstructions(region),

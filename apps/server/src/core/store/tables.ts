@@ -163,9 +163,8 @@ export interface Tables {
     state: string;
     attempt: number;
     targets: string;
-    waiting: string | null;
-    wait_until: string | null;
-    retried: number;
+    retries: number;
+    retry_at: string | null;
     started_at: string | null;
     run_at: string | null;
     ended_at: string | null;
