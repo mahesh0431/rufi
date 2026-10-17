@@ -19,16 +19,12 @@ import type {
   SubAgentOutcome,
   TurnEnd,
 } from "../agent/runtime.ts";
-import type { Notebook, Run } from "../core/documents/notebook.ts";
-import type { Pages } from "../core/documents/pages.ts";
+import type { Run } from "../core/documents/notebook.ts";
 import {
   READER_EFFORT,
-  READER_INSTRUCTIONS,
   READER_MODEL,
-  READER_VERSION,
-  readerInput,
 } from "../core/documents/reader-instructions.ts";
-import { forReader } from "../core/documents/reader-tools.ts";
+import type { ReaderKind } from "../core/documents/reader-tools.ts";
 import {
   ReadingGone,
   type Job,
@@ -41,8 +37,8 @@ import type { McpKeys } from "./mcp.ts";
 
 export interface ReaderDeps {
   readings: Readings;
-  book: Notebook;
-  pages: Pages;
+  /** How the reader reads: its instructions, message, tools and version. */
+  kind: ReaderKind;
   /** Writes a Rufi event in the person's chat, with its producer's outcome. */
   event: Chat["event"];
   /** Runs the reader sub-agent; without one, readings wait. */
@@ -228,7 +224,7 @@ export function reader(deps: ReaderDeps) {
       return;
     }
 
-    const tools = forReader(started, deps.pages, deps.book, log);
+    const tools = deps.kind.tools(started, log);
     const { model, effort } = await deps.choice();
     const counts = { looks: 0, saves: 0 };
     const toolStop = new AbortController();
@@ -264,8 +260,8 @@ export function reader(deps: ReaderDeps) {
         {
           model,
           effort,
-          instructions: READER_INSTRUCTIONS,
-          input: readerInput(await readings.about(started)),
+          instructions: deps.kind.instructions,
+          input: deps.kind.input(await readings.about(started)),
           tools: {
             url: deps.mcp.url(),
             key,
@@ -326,7 +322,7 @@ export function reader(deps: ReaderDeps) {
       compactions: outcome.compactions,
     };
     await readings.recordRun(started, usage, {
-      ...READER_VERSION,
+      ...deps.kind.version,
       model,
       effort,
     });

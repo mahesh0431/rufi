@@ -36,6 +36,10 @@ _Avoid_: import, scan, parsing, extraction
 The AI that does a reading: a separate AI that Rufi starts for one document, with only two tools (look at a page, save what the page says) and no access to your record, chat, files or the internet; it gets only the name of the person the document is for, to tell when a report may be someone else's. It copies what is printed, and says what it isn't sure of; it never judges your results or saves to the record.
 _Avoid_: parser, OCR, extractor
 
+**Page copy**:
+The reader's copy of one page of a document, as Markdown, exactly as printed, with its marks where something was unclear (a smudged digit, handwriting, a crossed-out value). One for each page and reading, kept as the reader wrote it; it decides nothing and is not your record. It is known by the file and its page, not by the document the page is in. (Rufi reads this way only once Rufi AI drafts from page copies.)
+_Avoid_: extraction, transcription, OCR text
+
 **Draft item**:
 One thing a reading found, such as a result, kept exactly as printed and waiting for you: not part of your record, so it counts in no Overview or trend until you save it; when the AI gives one in an answer, it says it isn't saved yet. The reader's own values are kept beside any change. It points to its document and page, and may be marked unsure, with the reader's reason (on a reading from an older Rufi, the reason may come from Rufi's own checks of the entry). It waits until it is saved (new, as another source of a saved result, or as a correction) or dismissed (set aside, as the document's page says); a dismissed item is never saved.
 _Avoid_: pending result, unconfirmed record, extracted row

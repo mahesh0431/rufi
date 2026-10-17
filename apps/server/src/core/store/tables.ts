@@ -210,6 +210,17 @@ export interface Tables {
     warnings: string;
     created_at: string;
   };
+  page_copies: {
+    person_id: string;
+    file_id: string;
+    page_in_file: number;
+    job_id: string;
+    attempt: number;
+    outcome: string;
+    copy: string;
+    why: string | null;
+    saved_at: string;
+  };
   people: {
     id: string;
     display_name: string;

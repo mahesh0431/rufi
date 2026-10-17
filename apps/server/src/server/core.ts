@@ -24,6 +24,7 @@ import { deletions, sweepFiles } from "../core/documents/delete.ts";
 import { documents } from "../core/documents/documents.ts";
 import { fileGate } from "../core/documents/gate.ts";
 import { notebook } from "../core/documents/notebook.ts";
+import { entryReader } from "../core/documents/reader-tools.ts";
 import { readings as openReadings } from "../core/documents/reading.ts";
 import { draftItems } from "../core/documents/items.ts";
 import { backupJob } from "../core/store/backup.ts";
@@ -271,8 +272,7 @@ export const startCore = (options: CoreOptions) =>
       Effect.sync(() => {
         const opened = openReader({
           readings,
-          book: notebook(writer, options.now),
-          pages: pageService,
+          kind: entryReader(pageService, notebook(writer, options.now)),
           event: chat.event,
           run: options.reader,
           choice: () => readerChoice(transcripts.setting),

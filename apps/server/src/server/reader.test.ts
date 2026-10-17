@@ -23,10 +23,16 @@ import {
   transcripts as openTranscripts,
   type Transcripts,
 } from "../core/chat/transcript.ts";
+import { copies } from "../core/documents/copies.ts";
+import {
+  COPY_INSTRUCTIONS,
+  copyReader,
+} from "../core/documents/copy-reader.ts";
 import { deletions } from "../core/documents/delete.ts";
 import { documents, type Documents } from "../core/documents/documents.ts";
 import { fileGate } from "../core/documents/gate.ts";
 import { notebook } from "../core/documents/notebook.ts";
+import { entryReader } from "../core/documents/reader-tools.ts";
 import { pages } from "../core/documents/pages.ts";
 import { readings, type Readings } from "../core/documents/reading.ts";
 import {
@@ -89,6 +95,8 @@ async function startReader(
     retryWaitsMs?: number[];
     log?: (event: string) => void;
     run?: RunSubAgent;
+    /** The reader that copies pages, in place of the one Rufi runs. */
+    copies?: boolean;
   } = {},
 ) {
   const fake = scriptedReader(scripts);
@@ -101,8 +109,15 @@ async function startReader(
   served.push(server);
   const running = reader({
     readings: reads,
-    book: notebook(store, () => NOW),
-    pages: pages(store, home),
+    kind: options.copies
+      ? copyReader(
+          pages(store, home),
+          copies(store, () => NOW),
+        )
+      : entryReader(
+          pages(store, home),
+          notebook(store, () => NOW),
+        ),
     event: async (id, event, write) => {
       const chat = await transcripts.chat(id);
       if (!chat) throw new Error("No chat.");
@@ -1212,4 +1227,70 @@ describe("a document deleted while it is read", () => {
       expect((await reads.next()).job).toBeUndefined();
     },
   );
+});
+
+describe("the reader that copies", () => {
+  it("continues a run that failed from its saved copies, and ends with each page's state and its copies, deciding nothing: no drafts, kind or date", async () => {
+    const copy = (page: number, text: string) => ({
+      page,
+      outcome: "read",
+      copy: text,
+    });
+    const { runs, reader: running } = await startReader(
+      [
+        async (turn) => {
+          await turn.look(1);
+          await turn.call(
+            "save_page",
+            copy(1, "# Sunrise Labs\n\n| Haemoglobin | 13.2 |"),
+          );
+          return { end: { status: "failed", text: "connection lost" } };
+        },
+        async (turn) => {
+          await turn.look(2);
+          await turn.call("save_page", copy(2, "Page 2 of 2"));
+          return undefined;
+        },
+      ],
+      { copies: true },
+    );
+    const id = await addReport();
+    await until(done);
+    await running.close();
+
+    expect(runs.map((r) => r.instructions)).toEqual([
+      COPY_INSTRUCTIONS,
+      COPY_INSTRUCTIONS,
+    ]);
+    expect(runs[0]?.input).toBe(
+      "Copy this document: 2 pages (sunrise-august.pdf).\nSave these pages: 1–2.",
+    );
+    expect(runs[1]?.input).toContain("You saved pages 1 in an earlier run.");
+    expect(
+      rows(
+        "SELECT page_in_file, attempt, outcome, copy FROM page_copies ORDER BY page_in_file",
+      ),
+    ).toEqual([
+      {
+        page_in_file: 1,
+        attempt: 1,
+        outcome: "read",
+        copy: "# Sunrise Labs\n\n| Haemoglobin | 13.2 |",
+      },
+      { page_in_file: 2, attempt: 2, outcome: "read", copy: "Page 2 of 2" },
+    ]);
+    expect(pageStates()).toEqual([
+      { position: 1, state: "read" },
+      { position: 2, state: "read" },
+    ]);
+    expect(drafts()).toEqual([]);
+    expect(rows("SELECT kind, date FROM documents WHERE id = ?", id)).toEqual([
+      { kind: null, date: null },
+    ]);
+    expect(lines()).toEqual([
+      "Reading sunrise-august.pdf · 2 pages",
+      "sunrise-august.pdf · 2 pages copied",
+    ]);
+    expect(asks()).toEqual([]);
+  });
 });
