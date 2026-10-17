@@ -32,7 +32,7 @@ import { askRufi } from "./panel.ts";
 import { printedDate, printedDay } from "./dates.ts";
 import { queries, useDocuments } from "./reads.ts";
 import { openReading, RetryButton } from "./reading.tsx";
-import { Button, IconButton, Problem } from "./ui.tsx";
+import { Button, EmptyState, IconButton, Problem } from "./ui.tsx";
 
 const KINDS: readonly { id: DocumentKind; name: string }[] = [
   { id: "lab_report", name: "Lab reports" },
@@ -234,21 +234,19 @@ export function DocumentsPage({ person }: { person: Person }) {
 
 function Empty({ add }: { add: () => void }) {
   return (
-    <div className="flex flex-col items-center gap-1 rounded-xl border-[1.5px] border-dashed border-line bg-surface px-6 py-14 text-center">
-      <FileText size={28} className="text-muted" aria-hidden />
-      <h2 className="mt-2 text-[15px] font-semibold">No documents yet</h2>
-      <p className="text-muted">
-        Add a lab report or another document as a PDF, or as photos (JPEG, PNG
-        or HEIC).
-        <br />
-        You can also drop files here. Rufi keeps each original exactly as it
-        came.
-      </p>
-      {/* The page's main Add is above; this one is plain. */}
-      <Button icon={Plus} className="mt-3" onClick={add}>
-        Add…
-      </Button>
-    </div>
+    <EmptyState
+      title="No documents yet"
+      // The page's main Add is above; this one is plain.
+      action={
+        <Button icon={Plus} onClick={add}>
+          Add…
+        </Button>
+      }
+    >
+      Add a lab report or another document as a PDF, or as photos (JPEG, PNG or
+      HEIC). You can also drop files here. Rufi keeps each original exactly as
+      it came.
+    </EmptyState>
   );
 }
 

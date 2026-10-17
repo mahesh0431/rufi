@@ -59,6 +59,7 @@ import { useSettings } from "./reads.ts";
 import { Menus } from "./model-menu.tsx";
 import { latestHeading } from "./thinking.ts";
 import { isRunning } from "./transcript-state.ts";
+import { LiveDog } from "./dog.tsx";
 import { Button, buttonLook, ICON } from "./ui.tsx";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no remote
@@ -476,10 +477,17 @@ export function TranscriptView({
           pinned.current = false;
       }}
     >
-      <div className={inner}>
+      <div
+        className={`${inner ?? ""} ${status === "open" && empty ? "h-full" : ""}`}
+      >
         {status === "missing" ? (
           <p className="text-muted">There is no chat here.</p>
-        ) : status === "open" && empty ? null : (
+        ) : status === "open" && empty ? (
+          // A new chat: Rufi says hello over the box.
+          <div className="flex h-full items-center justify-center">
+            <LiveDog size={80} />
+          </div>
+        ) : (
           <div
             ref={log}
             role="log"

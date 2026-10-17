@@ -4,7 +4,7 @@ import { chmod, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { PALETTES } from "@rufi/brand/mark";
+import { type ExpressionKey, PALETTES, svg } from "@rufi/brand/mark";
 import { runningLink } from "../../server/src/server/core.ts";
 import { expect, test } from "./rufi.ts";
 
@@ -22,6 +22,13 @@ const dog = (page: Page) => sidebar(page).getByRole("img", { name: "Rufi" });
 /** The colour of the tile the sidebar's dog sits on. */
 const dogTile = (page: Page) => () =>
   dog(page).evaluate((svg) => svg.querySelector("path")?.getAttribute("fill"));
+
+/** The sidebar dog's face now: its drawing's moves, which differ by face. */
+const face = (page: Page) => () => dog(page).getAttribute("class");
+
+/** The moves of the brand's own drawing of a face. */
+const drawn = (expression: ExpressionKey) =>
+  /class="([^"]+)"/.exec(svg({ expression, size: 36 }))?.[1];
 
 /** The theme the page shows now: light or dark. */
 const theme = (page: Page) => () =>
@@ -143,9 +150,8 @@ test("follows the Mac's light or dark appearance, also when it changes while Ruf
     page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(await theme(page)()).toBe("dark");
   const dark = await background();
-  // One dog in the sidebar, still, on its ink tile.
+  // One dog in the sidebar, on its ink tile.
   await expect(dog(page)).toHaveCount(1);
-  await expect(dog(page)).toHaveAttribute("class", "rufi");
   expect(await dogTile(page)()).toBe(PALETTES.inkApricot.bg);
   await accessible(page);
 
@@ -168,6 +174,75 @@ test("follows the Mac's light or dark appearance, also when it changes while Ruf
   // The dog's tile follows: periwinkle in the light.
   await expect(dog(page)).toHaveCount(1);
   await expect.poll(dogTile(page)).toBe(PALETTES.onPeriwinkle.bg);
+});
+
+test("the sidebar dog thinks while a reply runs, then is calm again; an empty page shows the dog", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start({
+    scenario: { reasoning: ["**Reading the record**"], reasoningMs: 1_500 },
+  });
+  await page.goto(rufi.link());
+  await expect(
+    page.getByRole("heading", { name: "Health record" }),
+  ).toBeVisible();
+  // A new chat: hello.
+  await expect.poll(face(page)).toBe(drawn("hello"));
+  // It moves.
+  expect(
+    await dog(page).evaluate((one) => one.getAnimations({ subtree: true })),
+  ).not.toHaveLength(0);
+
+  const chat = page.getByRole("region", { name: "Chat" });
+  await chat.getByRole("button", { name: "Open the chat" }).click();
+  const box = chat.getByRole("textbox", { name: "Message to Rufi" });
+  await box.fill("How is my ferritin?");
+  await box.press("Enter");
+  await expect.poll(face(page)).toBe(drawn("thinking"));
+  await expect(chat.locator(".reply")).toHaveText("ok:How is my ferritin?");
+  // Done a moment, then calm by itself.
+  await expect.poll(face(page)).toBe(drawn("done"));
+  await expect.poll(face(page), { timeout: 6_000 }).toBe(drawn("calm"));
+  await page.keyboard.press("Escape");
+
+  // A page with nothing on it yet: Rufi, the page's words, Ask Rufi.
+  await sidebar(page).getByRole("link", { name: "Conditions" }).click();
+  const main = page.getByRole("main");
+  await expect(main).toContainText("Nothing here yet.");
+  await expect(main.getByRole("img", { name: "Rufi" })).toBeVisible();
+  await main.getByRole("button", { name: "Ask Rufi" }).click();
+  await expect(box).toBeFocused();
+  await accessible(page);
+});
+
+test("under reduced motion the dog is still, and its face still changes", async ({
+  page,
+  rufi,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await rufi.family();
+  await rufi.start({
+    scenario: { reasoning: ["**Reading the record**"], reasoningMs: 1_500 },
+  });
+  await page.goto(rufi.link());
+  await sidebar(page).getByRole("link", { name: "Conditions" }).click();
+  const moving = (where: ReturnType<Page["locator"]>) =>
+    where.evaluate((one) => one.getAnimations({ subtree: true }).length);
+  await expect.poll(face(page)).toBe(drawn("hello"));
+  expect(await moving(dog(page))).toBe(0);
+  const empty = page.getByRole("main").getByRole("img", { name: "Rufi" });
+  await expect(empty).toBeVisible();
+  expect(await moving(empty)).toBe(0);
+
+  const chat = page.getByRole("region", { name: "Chat" });
+  await chat.getByRole("button", { name: "Open the chat" }).click();
+  const box = chat.getByRole("textbox", { name: "Message to Rufi" });
+  await box.fill("How is my ferritin?");
+  await box.press("Enter");
+  await expect.poll(face(page)).toBe(drawn("thinking"));
+  expect(await moving(dog(page))).toBe(0);
 });
 
 test("Settings chooses light, dark or the Mac's; every open tab changes at once, and a new tab or a restart starts in it", async ({
@@ -326,6 +401,7 @@ test.describe("first run", () => {
     await expect(
       page.getByRole("heading", { name: "Welcome to Rufi" }),
     ).toBeVisible();
+    await expect(page.getByRole("img", { name: "Step 1 of 4" })).toBeVisible();
     await welcoming();
     await expect(page.getByRole("main")).toContainText(
       "Rufi uses AI. What you ask, the documents you add and the parts of your health record the AI reads go to the AI provider you sign in with. Your health record is kept on your Mac.",
@@ -354,6 +430,7 @@ test.describe("first run", () => {
     await expect(
       page.getByRole("heading", { name: "Sign in with ChatGPT", level: 1 }),
     ).toBeVisible();
+    await expect(page.getByRole("img", { name: "Step 3 of 4" })).toBeVisible();
     await welcoming();
     await accessible(page);
     // Another page's address shows the step too.

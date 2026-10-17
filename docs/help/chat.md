@@ -26,6 +26,8 @@ Press ⌘J again, or click anywhere outside the panel, to close it. What you typ
 
 Click **Chat with Rufi** in the sidebar, on any page, to open your chat as a page. The page shows the same chat as the panel, with the same box. In a small window, the chat opens as a page instead of the panel.
 
+A new chat, with nothing in it yet, shows Rufi saying hello over the box.
+
 ## Reading back
 
 The chat opens at its latest messages. Scroll up to see older ones: Rufi loads them as you go, and what you read stays where it is on the screen. If Rufi can't load them, the chat says so: click **Retry**.
