@@ -574,19 +574,17 @@ describe("How a change of Rufi's rules reaches the AI, on the pinned Codex", () 
       if (!row) throw new Error("no chat");
       const queue = chatQueue(store);
       await until(
-        async () =>
-          (await queue.list(row)).items[0]?.held !== null &&
-          (await queue.list(row)).items[0]?.held !== undefined,
+        async () => (await queue.list(row)).items[0]?.held === "open_failed",
       );
       expect((await transcripts.chat("asha"))?.threadTools).toBe(
         row.threadTools,
       );
 
-      // Rufi starts again, and the person sends it again.
+      // Rufi starts again, and the person tries again.
       const opened = await start([{ text: "Two." }]);
       const [held] = (await queue.list(row)).items;
-      if (!held) throw new Error("nothing waits");
-      await opened.chat.queue.sendNow(row, held.id);
+      if (!held?.holdId) throw new Error("nothing waits");
+      await opened.chat.queue.recover(row, held.id, held.holdId, "retry");
       await replies(2);
       expect(notes(answering().at(-1))).toEqual([
         rulesNote(coreInstructions("IN")),

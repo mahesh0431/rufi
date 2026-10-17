@@ -355,6 +355,7 @@ describe("the core", () => {
             state: "not_sure",
             held: null,
             heldText: null,
+            holdId: null,
             refs: [],
           },
           {
@@ -364,6 +365,7 @@ describe("the core", () => {
             state: "waiting",
             held: null,
             heldText: null,
+            holdId: null,
             refs: [],
           },
         ],
@@ -933,6 +935,7 @@ describe("the local API", () => {
     expect((await page.api("GET", c.path)).body["chat"]).toEqual({
       model: "gpt-6-astra",
       effort: "medium",
+      context: null,
     });
 
     // Another person's model, chosen before their first message, stays.
@@ -943,6 +946,7 @@ describe("the local API", () => {
     expect((await page.api("GET", ravi)).body["chat"]).toEqual({
       model: "gpt-6.1-sol",
       effort: "medium",
+      context: null,
     });
   });
 
@@ -1091,20 +1095,31 @@ describe("the local API", () => {
         line.type === "update" && line.chat ? [line.chat] : [],
       );
     await page.say(c.path, "Hello there");
-    // The first message chooses the first allowed model.
-    await until(() => changed().length === 1);
-    expect(changed()).toEqual([{ model: "gpt-6-astra", effort: "medium" }]);
     await until(async () =>
       (
         (await page.api("GET", c.path)).body["turns"] as { status: string }[]
-      ).every((turn) => turn.status === "completed"),
+      ).some((turn) => turn.status === "completed"),
     );
+    // The first message chooses the first allowed model; its new thread is
+    // told too (it has used no context yet).
+    expect(changed()).toEqual([
+      { model: "gpt-6-astra", effort: "medium", context: null },
+      { model: "gpt-6-astra", effort: "medium", context: null },
+    ]);
     await page.api("PUT", `${c.path}/model`, { model: "gpt-6.1-sol" });
-    await until(() => changed().length === 2);
-    expect(changed()[1]).toEqual({ model: "gpt-6.1-sol", effort: "medium" });
-    await page.api("PUT", `${c.path}/effort`, { effort: "high" });
     await until(() => changed().length === 3);
-    expect(changed()[2]).toEqual({ model: "gpt-6.1-sol", effort: "high" });
+    expect(changed()[2]).toEqual({
+      model: "gpt-6.1-sol",
+      effort: "medium",
+      context: null,
+    });
+    await page.api("PUT", `${c.path}/effort`, { effort: "high" });
+    await until(() => changed().length === 4);
+    expect(changed()[3]).toEqual({
+      model: "gpt-6.1-sol",
+      effort: "high",
+      context: null,
+    });
     expect(
       await page.api("PUT", `${c.path}/effort`, { effort: "ultra" }),
     ).toMatchObject({ status: 400 });
