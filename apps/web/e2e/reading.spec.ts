@@ -152,8 +152,10 @@ test("reads a report in the background as it is added: the strip, the lines, Ruf
   await sheet.getByRole("button", { name: "Close" }).click();
 
   gate.resolve(undefined);
+  // The chat's line, not the sort's note while it waits to go.
   const end = page.getByText(
     "Read sunrise-labs-august.pdf · 2 pages. Rufi AI is sorting it.",
+    { exact: true },
   );
   await expect(end).toBeVisible();
   await expect(strip).toBeHidden();
