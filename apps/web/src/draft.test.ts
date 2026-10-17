@@ -171,9 +171,12 @@ describe("the box's draft", () => {
       notice: "The reply had ended.",
     });
 
-    // The refused steer's draft save finishes before another send.
+    // Refused, the text is the draft again, so a reload keeps it.
     await settle();
+    expect(saves()[0]?.body).toEqual({ text: "Keep this", refs: [] });
     saves()[0]?.answer(editable("Keep this"));
+    await settle();
+    expect(box.store.getState().notice).toBe("The reply had ended.");
 
     // No answer from the core: it may have taken it.
     const first = box.submit(false);
