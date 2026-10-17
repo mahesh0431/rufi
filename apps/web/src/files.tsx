@@ -1,8 +1,8 @@
 // What a reply shows besides its text: a picture or a page the AI made, by
 // the path the reply holds, and a Mermaid diagram. A file comes from the core
-// by a short-lived address for that one file (/api/files); a page opens over
-// the chat in a locked frame, and a diagram draws in one (diagram/frame.ts).
-// A file that is gone keeps its card and says so.
+// by a short-lived address for that one file (/api/files); a page draws in the
+// reply in a locked frame and opens large over the chat in another, and a
+// diagram draws in one (diagram/frame.ts). A file that is gone says so.
 import { Dialog } from "@base-ui/react/dialog";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PAGE_ESCAPE, ShownFile } from "@rufi/contracts";
@@ -220,16 +220,21 @@ export function NativePicture({
 }
 
 /**
- * A page the AI made, as a card with its title (the reply's words for it, or
- * its file name) and Open; it runs only once opened, over the chat.
+ * A page the AI made, drawn in the reply at a fixed height (it scrolls inside
+ * its frame), with its title (the reply's words for it, or its file name)
+ * and Open, which shows it large over the chat.
  */
-export function PageCard({ path, title }: { path: string; title: string }) {
+export function Page({ path, title }: { path: string; title: string }) {
   const client = useQueryClient();
   // Closed, the focus goes back to Open.
   const opener = useRef<HTMLButtonElement>(null);
   const portals = useContext(Menus);
-  // Asked when shown, so a page that is gone says so before it is opened.
   const file = useQuery(fileQuery(path));
+  // The frame in the reply keeps the address it loaded, so a fresh one (for
+  // Open) doesn't load the page again and lose what it shows. A stale address
+  // may have run out; the query is asking for a fresh one.
+  const [src, setSrc] = useState<string>();
+  if (src === undefined && file.data && !file.isStale) setSrc(file.data.url);
   const [opened, setOpened] = useState<ShownFile | null>(null);
   const [state, setState] = useState<"idle" | "opening" | "failed">("idle");
   const frame = useRef<HTMLIFrameElement>(null);
@@ -251,45 +256,54 @@ export function PageCard({ path, title }: { path: string; title: string }) {
     };
   }, [opened]);
   const name = title === "" ? nameOf(path) : title;
-  const problem = file.isError ? problemOf(file.error) : undefined;
-  if (problem === "gone") return <Gone title={name} />;
-  if (problem === "refused") return <span>{name}</span>;
+  if (file.isError) {
+    const problem = problemOf(file.error);
+    if (problem === "gone") return <Gone title={name} />;
+    if (problem === "refused") return <span>{name}</span>;
+    return <Failed retry={() => void file.refetch()} />;
+  }
+  if (src === undefined) return <Loading />;
   return (
-    <span className="my-1 flex items-center gap-3 rounded-xl border border-line bg-side px-3 py-2.5">
-      <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-accent-ink">
-        <FileCode size={18} aria-hidden />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block font-semibold break-words">{name}</span>
-        <span className="block text-xs break-all text-muted">
+    <span className="my-1 block">
+      {/* Locked twice: this frame's sandbox and the page's own policy. */}
+      <iframe
+        src={src}
+        title={name}
+        sandbox="allow-scripts"
+        className="block h-120 w-full rounded-[10px] border border-line bg-paper"
+      />
+      <span className="mt-1 flex items-center gap-1.5 text-xs text-muted">
+        <FileCode size={12} className="shrink-0" aria-hidden />
+        <span className="min-w-0 flex-1 break-words">
           {state === "failed"
             ? "Rufi couldn't open this file. Try again."
-            : path}
+            : name}
         </span>
+        <Button
+          ref={opener}
+          look="quiet"
+          icon={ExternalLink}
+          busy={state === "opening" && "Opening…"}
+          aria-label={`Open ${name}`}
+          onClick={() => {
+            setState("opening");
+            // A fresh address, and a check the file is there: a frame can't
+            // say that its page didn't load.
+            client
+              .query({ ...fileQuery(path), staleTime: 0 })
+              .then((file) => {
+                setState("idle");
+                setOpened(file);
+              })
+              .catch((error: unknown) => {
+                // A page gone meanwhile says so (the query says).
+                setState(problemOf(error) === "gone" ? "idle" : "failed");
+              });
+          }}
+        >
+          Open
+        </Button>
       </span>
-      <Button
-        ref={opener}
-        icon={ExternalLink}
-        busy={state === "opening" && "Opening…"}
-        aria-label={`Open ${name}`}
-        onClick={() => {
-          setState("opening");
-          // A fresh address, and a check the file is there: a frame can't
-          // say that its page didn't load.
-          client
-            .query({ ...fileQuery(path), staleTime: 0 })
-            .then((file) => {
-              setState("idle");
-              setOpened(file);
-            })
-            .catch((error: unknown) => {
-              // A page gone meanwhile shows its gone card (the query says).
-              setState(problemOf(error) === "gone" ? "idle" : "failed");
-            });
-        }}
-      >
-        Open
-      </Button>
       {opened && (
         <Dialog.Root
           open

@@ -997,8 +997,8 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   },
   /**
    * The analysis story: the AI reads the record, makes a chart with a
-   * program in its folder, and shows it in the reply as a picture Rufi
-   * serves (the file route says it's a picture, and it is a PNG).
+   * program in its folder, and shows it in the reply as a picture or a page
+   * Rufi serves (the AI picks the form).
    */
   chart_in_reply: async (api, home) => {
     const c = chat(api);
@@ -1007,22 +1007,16 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     );
     const snapshot = await c.read();
     const reply = replyOf(snapshot);
-    const pictures = [...reply.matchAll(/!\[[^\]]*\]\(<?([^)>\s]+)>?\)/g)].map(
-      (found) => decodeURI(found[1] ?? ""),
-    );
+    const files = [...reply.matchAll(/\[[^\]]*\]\(<?([^)>\s]+)>?\)/g)]
+      .map((found) => decodeURI(found[1] ?? ""))
+      .filter((path) => !/^https?:/i.test(path));
     const shown = await Promise.all(
-      pictures.map(async (path) => {
+      files.map(async (path) => {
         const file = await api(
           "GET",
           `/api/files?path=${encodeURIComponent(path)}`,
         ).catch(() => undefined);
-        const bytes = await readFile(
-          isAbsolute(path) ? path : join(home, "ai", path),
-        ).catch(() => undefined);
-        return (
-          file?.["shape"] === "picture" &&
-          bytes?.subarray(0, 4).toString("hex") === "89504e47"
-        );
+        return file?.["shape"] === "picture" || file?.["shape"] === "page";
       }),
     );
     return {
@@ -1031,16 +1025,16 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         ran_a_program: snapshot.entries.some(
           (e) => e.kind === "activity" && e.activity === "command",
         ),
-        shows_a_picture: pictures.length > 0,
-        every_picture_is_a_png_rufi_serves: shown.every(Boolean),
+        shows_a_chart: files.length > 0,
+        every_file_is_one_rufi_serves: shown.every(Boolean),
         how_present: basis(snapshot).how !== null,
       },
       snapshot,
-      notes: `Pictures in the reply: ${pictures.join(", ") || "none"}`,
+      notes: `Files in the reply: ${files.join(", ") || "none"}`,
     };
   },
   /**
-   * A page of results: linked as a card whose words are the page's title
+   * A page of results: linked with words that are the page's title
    * (not an action), self-contained (nothing remote), and without print,
    * download or pop-up buttons, which the locked frame can't run.
    */

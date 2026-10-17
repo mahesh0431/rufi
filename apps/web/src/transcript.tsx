@@ -49,7 +49,7 @@ import { useShallow } from "zustand/shallow";
 import { MiddleCut, StepDetails, took } from "./activity.tsx";
 import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
-import { Diagram, fileIn, NativePicture, PageCard, Picture } from "./files.tsx";
+import { Diagram, fileIn, NativePicture, Page, Picture } from "./files.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import type { Live } from "./live.ts";
 import { RetryButton } from "./reading.tsx";
@@ -94,7 +94,7 @@ const replyComponents = (streaming: boolean): Components => ({
     if (!file) return webLink({ href, children, node, ...rest });
     const words = node ? textOf(node) : "";
     return file.shape === "page" ? (
-      <PageCard path={file.path} title={words} />
+      <Page path={file.path} title={words} />
     ) : (
       <Picture path={file.path} caption={words} />
     );
@@ -103,7 +103,7 @@ const replyComponents = (streaming: boolean): Components => ({
     const file = fileIn(typeof src === "string" ? src : undefined);
     if (!file) return null;
     return file.shape === "page" ? (
-      <PageCard path={file.path} title={alt ?? ""} />
+      <Page path={file.path} title={alt ?? ""} />
     ) : (
       <Picture path={file.path} caption={alt ?? ""} />
     );

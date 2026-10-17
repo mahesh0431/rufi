@@ -1,7 +1,7 @@
 // What a reply shows besides its text, on the real core with its real
 // headers: a picture the AI made, one it generated (once, also when the reply
-// links it, also after a reload), a page it made (a card that opens in a
-// locked frame), a Mermaid diagram (drawn styled, in its own frame), and a
+// links it, also after a reload), a page it made (drawn in the reply in a
+// locked frame, and opened large), a Mermaid diagram (drawn styled, in its own frame), and a
 // file that is gone. A page's script runs, but can't read Rufi's page or an
 // API answer or the network. Standalone requests receive an inert page.
 // The screens' strict CSP refuses nothing.
@@ -223,7 +223,7 @@ async function pageFrame(page: Page): Promise<Frame> {
   return frame;
 }
 
-test("a page is a card that opens over the chat: its script runs, but it can't reach Rufi, its API or anything remote, and a standalone request is inert", async ({
+test("a page draws in the reply at a fixed height and opens large over the chat: its script runs, but it can't reach Rufi, its API or anything remote, and a standalone request is inert", async ({
   page,
   rufi,
 }) => {
@@ -240,7 +240,7 @@ test("a page is a card that opens over the chat: its script runs, but it can't r
   page.context().on("response", (response) => {
     if (response.url().includes("127.0.0.1:9/")) remote.push("answered");
   });
-  // Put the card among enough text to check the reading position after closing.
+  // Put the page among enough text to check the reading position after closing.
   const notes = Array.from(
     { length: 8 },
     (_, i) => `Fictional note ${String(i + 1)}: checked.`,
@@ -254,15 +254,17 @@ test("a page is a card that opens over the chat: its script runs, but it can't r
     ].join("\n\n"),
   );
   const reply = log(page).locator(".reply");
-  await expect(reply).toContainText("Your 2026 results");
-  await expect(reply).toContainText("reports/results-2026.html");
+  // It draws in the reply without a click: the reply's width, a fixed height.
+  const inline = reply.locator('iframe[title="Your 2026 results"]');
+  await expect(inline).toBeVisible();
+  const box = await inline.boundingBox();
+  const width = await reply.evaluate((element) => element.clientWidth);
+  expect(box?.height).toBe(480);
+  expect(box?.width).toBe(width);
   await accessible(page);
-
-  await reply.getByRole("button", { name: "Open Your 2026 results" }).click();
-  const shown = page.getByRole("dialog", { name: "Your 2026 results" });
-  await expect(shown).toBeVisible();
-  const frame = await pageFrame(page);
-  const out = frame.locator("#out");
+  const inlineFrame = await (await inline.elementHandle()).contentFrame();
+  if (!inlineFrame) throw new Error("No page frame in the reply");
+  const out = inlineFrame.locator("#out");
   // Its script ran first, so what it couldn't do proves the locks.
   await expect(out).toContainText("script ran");
   await expect(out).toContainText("eval: 42");
@@ -273,6 +275,15 @@ test("a page is a card that opens over the chat: its script runs, but it can't r
   await expect(out).toContainText("send: blocked");
   await expect(out).toContainText("remote image: blocked");
   await expect(out).toContainText("remote script: blocked");
+  // Clicked in the reply, the page keeps what it shows while it opens large.
+  await inlineFrame.locator("#tab").click();
+  await expect(out).toContainText("tab clicked");
+
+  await reply.getByRole("button", { name: "Open Your 2026 results" }).click();
+  const shown = page.getByRole("dialog", { name: "Your 2026 results" });
+  await expect(shown).toBeVisible();
+  const frame = await pageFrame(page);
+  await expect(frame.locator("#out")).toContainText("script ran");
   // The Escape signal from any sender except this page's frame is ignored.
   await page.evaluate(
     () =>
@@ -297,12 +308,13 @@ test("a page is a card that opens over the chat: its script runs, but it can't r
   // Close and Esc give the focus back to Open.
   const open = reply.getByRole("button", { name: "Open Your 2026 results" });
   await expect(open).toBeFocused();
-  const box = chat(page).getByRole("textbox", { name: "Message to Rufi" });
-  await expect(box).toBeVisible();
+  const message = chat(page).getByRole("textbox", { name: "Message to Rufi" });
+  await expect(message).toBeVisible();
   await expect(
     chat(page).getByRole("button", { name: "Minimise" }),
   ).toBeVisible();
   expect(await scroll.evaluate((element) => element.scrollTop)).toBe(at);
+  await expect(out).toContainText("tab clicked");
   await reply.getByRole("button", { name: "Open Your 2026 results" }).click();
   await expect(shown).toBeVisible();
   await page.keyboard.press("Escape");
@@ -340,7 +352,7 @@ test("a page is a card that opens over the chat: its script runs, but it can't r
   await page.keyboard.press("Escape");
   await expect(shown).toHaveCount(0);
   await expect(open).toBeFocused();
-  await expect(box).toBeVisible();
+  await expect(message).toBeVisible();
   await expect(
     chat(page).getByRole("button", { name: "Minimise" }),
   ).toBeVisible();
@@ -387,20 +399,16 @@ test("a page is a card that opens over the chat: its script runs, but it can't r
       `<!doctype html><html lang="en"><title>Fictional navigation</title><script>console.log("navigation script ran"); location.href = ${JSON.stringify(destination)};</script></html>`,
     );
     await send(page, "[Fictional navigation](reports/navigation.html)");
-    await log(page)
-      .getByRole("button", { name: "Open Fictional navigation" })
-      .click();
-    const navigating = page.getByRole("dialog", {
-      name: "Fictional navigation",
-    });
+    const navigating = log(page).locator(
+      'iframe[title="Fictional navigation"]',
+    );
     const url = new URL(
-      (await navigating.locator("iframe").getAttribute("src")) ?? "",
+      (await navigating.getAttribute("src")) ?? "",
       page.url(),
     ).href;
     await expect.poll(() => ran).toBe(1);
     await expect.poll(() => refusedIn(page)).toEqual([`frame-src ${origin}`]);
     expect(received).toEqual(["/ready"]);
-    await navigating.getByRole("button", { name: "Close" }).click();
     const direct = await page.context().newPage();
     await direct.goto(url);
     await expect(
