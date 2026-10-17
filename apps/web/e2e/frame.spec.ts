@@ -374,12 +374,14 @@ test.describe("first run", () => {
     await expect(
       page.getByRole("heading", { name: /, Mira Fictional$/ }),
     ).toBeVisible();
-    // A new record: every page's tile is there, empty.
-    for (const name of ["Lab results", "Measurements"]) {
-      await expect(
-        page.getByRole("main").getByRole("link", { name: `${name} None yet` }),
-      ).toBeVisible();
-    }
+    // A new record: no tiles, one line with a link to each empty page.
+    const nothingYet = page.getByRole("main").getByText(/^Nothing yet:/);
+    await expect(nothingYet).toContainText(
+      "Nothing yet: Lab results, Measurements, Medicines",
+    );
+    await expect(
+      nothingYet.getByRole("link", { name: "Lab results" }),
+    ).toHaveAttribute("href", /\/record\/lab_result$/);
     await expect(sidebar(page)).toContainText("Mira Fictional");
     await expect(title).toHaveText("Overview");
     // The person's chat was made with them: the bar works at once.

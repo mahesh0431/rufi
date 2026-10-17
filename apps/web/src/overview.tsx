@@ -1,5 +1,6 @@
 // The home: what needs you (each line with Ask Rufi, for the chat box over
-// the page), your health record as one tile per page, and the latest saves,
+// the page), your health record as one tile per page that has something in
+// it (the empty pages as one "Nothing yet" line), and the latest saves,
 // each opening to its receipt. A tile opens its page. The
 // tiles' words are worked out from the saved record, never by the AI.
 import type { Person } from "@rufi/contracts";
@@ -21,6 +22,8 @@ export function OverviewPage({ person }: { person: Person }) {
   // The greeting and date as the page opened.
   const [now] = useState(() => new Date());
   const data = overview.data;
+  const shown = data?.tiles.filter(hasTile) ?? [];
+  const empty = data?.tiles.filter((tile) => !hasTile(tile)) ?? [];
   return (
     <div className="mx-auto max-w-[790px] px-6 py-8">
       <p className="text-muted">{today(now)}</p>
@@ -141,13 +144,34 @@ export function OverviewPage({ person }: { person: Person }) {
             <h2 id="health-record" className="mb-2 px-0.5 font-semibold">
               Health record
             </h2>
-            <ul className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2.5">
-              {data.tiles.map((tile) => (
-                <li key={tile.kind}>
-                  <TileView personId={person.id} tile={tile} />
-                </li>
-              ))}
-            </ul>
+            {shown.length > 0 && (
+              <ul className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2.5">
+                {shown.map((tile) => (
+                  <li key={tile.kind}>
+                    <TileView personId={person.id} tile={tile} />
+                  </li>
+                ))}
+              </ul>
+            )}
+            {empty.length > 0 && (
+              <p
+                className={`${shown.length > 0 ? "mt-3 " : ""}px-0.5 text-muted`}
+              >
+                Nothing yet:{" "}
+                {empty.map((tile, i) => (
+                  <span key={tile.kind}>
+                    {i > 0 && ", "}
+                    <Link
+                      to="/people/$personId/record/$kind"
+                      params={{ personId: person.id, kind: tile.kind }}
+                      className="hover:text-ink hover:underline"
+                    >
+                      {KIND_TITLES[tile.kind]}
+                    </Link>
+                  </span>
+                ))}
+              </p>
+            )}
           </section>
           {data.recent.length > 0 && (
             <section aria-labelledby="recent">
@@ -173,6 +197,12 @@ const lower = (words: string) => words.charAt(0).toLowerCase() + words.slice(1);
 const plural = (n: number, one: string, many: string) =>
   `${String(n)} ${n === 1 ? one : many}`;
 
+/**
+ * A page gets its tile when it has something in it. "None known" for
+ * allergies is something: it was said and saved.
+ */
+const hasTile = (tile: Tile) => tile.count > 0 || tile.noneKnown !== undefined;
+
 /** What a tile says under its title, from what the core counted. */
 function tileLines(tile: Tile): string[] {
   // "None known" stands beside inactive allergies: only an active one or
@@ -183,7 +213,6 @@ function tileLines(tile: Tile): string[] {
       ...(tile.count > 0 ? [`${String(tile.count)} inactive`] : []),
     ];
   }
-  if (tile.count === 0) return ["None yet"];
   const names = tile.names.join(", ");
   const latest = tile.latest;
   switch (tile.kind) {
