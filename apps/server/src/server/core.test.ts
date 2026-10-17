@@ -996,23 +996,18 @@ describe("the local API", () => {
     },
   );
 
-  it("offers the allowed models, and says when the allowlist is broken", async () => {
-    const core = await start();
-    const page = await session(core);
+  it("offers Rufi's models the provider has, and leaves an old models.json as it is, unused", async () => {
+    const { readFile, writeFile } = await import("node:fs/promises");
+    const old = '{"models": ["gpt-5.5"]}';
+    await writeFile(join(home, "models.json"), old);
+    const page = await session(await start());
     expect((await page.api("GET", "/api/models")).body).toEqual({
       models: [
         { id: "gpt-6-astra", name: "GPT-6-Astra" },
         { id: "gpt-6.1-sol", name: "GPT-6.1-Sol" },
       ],
-      allowlistError: null,
     });
-    const { writeFile } = await import("node:fs/promises");
-    await writeFile(join(home, "models.json"), "{ broken");
-    const broken = (await page.api("GET", "/api/models")).body;
-    expect(broken["models"]).toHaveLength(2);
-    expect(String(broken["allowlistError"])).toContain(
-      "models.json isn't valid JSON",
-    );
+    expect(await readFile(join(home, "models.json"), "utf8")).toBe(old);
   });
 
   it("shows the queue and lets the person act on what waits", async () => {

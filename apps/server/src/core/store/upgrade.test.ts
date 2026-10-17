@@ -165,7 +165,7 @@ async function ravisSave(store: Store, at: string): Promise<void> {
 }
 
 describe("a record of version 1", () => {
-  it("upgrades at start: its brief's values and sources and the order of saves stay, also after VACUUM, and a new save comes last", async () => {
+  it("upgrades at start: its brief's values and sources, its reading and the order of saves stay, also after VACUUM, and a new save comes last", async () => {
     const store = await openRecord(home);
     try {
       const saves = async () =>
@@ -181,6 +181,13 @@ describe("a record of version 1", () => {
           .distinct()
           .execute(),
       ).toEqual([{ warnings: "[]" }]);
+      // Its reading is kept, with no automatic retry used or waiting.
+      expect(
+        await store.query
+          .selectFrom("jobs")
+          .select(["id", "state", "retries", "retry_at"])
+          .execute(),
+      ).toEqual([{ id: "job-sep", state: "done", retries: 0, retry_at: null }]);
 
       store.db.exec("VACUUM");
       expect((await readBrief(store.query, "asha", BRIEF))?.sources).toEqual(

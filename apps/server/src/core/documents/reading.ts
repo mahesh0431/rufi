@@ -21,9 +21,10 @@ export interface Job {
   state: "queued" | "running" | "done" | "failed";
   attempt: number;
   targets: number[];
-  waiting: "sign_in" | "usage_limit" | null;
-  waitUntil: string | null;
-  retried: boolean;
+  /** Automatic retries used since its start or the person's Retry. */
+  retries: number;
+  /** A queued automatic retry runs from then on. */
+  retryAt: string | null;
   startedAt: string | null;
 }
 
@@ -81,9 +82,8 @@ const jobOf = (row: Tables["jobs"]): Job => ({
   state: row.state as Job["state"],
   attempt: row.attempt,
   targets: JSON.parse(row.targets) as number[],
-  waiting: row.waiting as Job["waiting"],
-  waitUntil: row.wait_until,
-  retried: row.retried === 1,
+  retries: row.retries,
+  retryAt: row.retry_at,
   startedAt: row.started_at,
 });
 
@@ -170,7 +170,7 @@ export function readings(
         state: "queued",
         attempt: 0,
         targets: JSON.stringify(targets),
-        retried: 0,
+        retries: 0,
         created_at: now(),
       })
       .execute();
@@ -380,8 +380,7 @@ export function readings(
         attempt: job.attempt + 1,
         run_at: at,
         started_at: job.startedAt ?? at,
-        waiting: null,
-        wait_until: null,
+        retry_at: null,
       })
       .where("id", "=", job.id)
       .where("state", "=", "queued")
@@ -479,9 +478,8 @@ export function readings(
               state: "queued",
               error: null,
               ended_at: null,
-              retried: 0,
-              waiting: null,
-              wait_until: null,
+              retries: 0,
+              retry_at: null,
             })
             .where("id", "=", job.id)
             .execute();
@@ -521,9 +519,8 @@ export function readings(
     },
 
     /**
-     * The next reading to run, oldest first. A job
-     * waiting for a usage limit waits until its time; `wake` is the
-     * earliest such time.
+     * The next reading to run, oldest first. An automatic retry waits
+     * until its time; `wake` is the earliest such time.
      */
     next: async (): Promise<{
       job: Job | undefined;
@@ -538,9 +535,9 @@ export function readings(
         .execute();
       const at = now();
       const jobs = rows.map(jobOf);
-      const job = jobs.find((j) => j.waitUntil === null || j.waitUntil <= at);
+      const job = jobs.find((j) => j.retryAt === null || j.retryAt <= at);
       const wake = jobs
-        .map((j) => j.waitUntil)
+        .map((j) => j.retryAt)
         .filter((w): w is string => w !== null && w > at)
         .sort((a, b) => a.localeCompare(b))[0];
       return { job, wake };
@@ -646,49 +643,25 @@ export function readings(
     },
 
     /**
-     * A run that didn't finish goes back to the queue: to wait (for the
-     * sign-in, or until a usage limit resets), or as its one automatic retry.
-     * A sign-in wait with `until` tries again then (a renewal that can't
-     * happen yet).
+     * A run that failed for a passing reason goes back to the queue, as an
+     * automatic retry from `at` on.
      */
-    requeue: async (
-      run: Run,
-      how:
-        | { waiting: "sign_in"; until?: string }
-        | { waiting: "usage_limit"; until: string }
-        | { retry: true },
-    ) => {
+    retryAt: async (run: Run, at: string) => {
       await db.transaction().execute(async (trx) => {
         await markFailedEntries(trx, run);
         await trx
           .updateTable("jobs")
-          .set(
-            "retry" in how
-              ? { state: "queued", retried: 1 }
-              : {
-                  state: "queued",
-                  waiting: how.waiting,
-                  wait_until: how.until ?? null,
-                },
-          )
+          .set((eb) => ({
+            state: "queued",
+            retries: eb("retries", "+", 1),
+            retry_at: at,
+          }))
           .where("id", "=", run.jobId)
           .where("state", "=", "running")
           .where("attempt", "=", run.attempt)
           .execute();
       });
       changed(run.personId);
-    },
-
-    /** A queued job waits for the sign-in before it runs. */
-    waitForSignIn: async (job: Job) => {
-      if (job.waiting === "sign_in") return;
-      await db
-        .updateTable("jobs")
-        .set({ waiting: "sign_in" })
-        .where("id", "=", job.id)
-        .where("state", "=", "queued")
-        .execute();
-      changed(job.personId);
     },
 
     ending,
@@ -838,8 +811,6 @@ export function readings(
             job.state === "running"
               ? ("running" as const)
               : ("waiting" as const),
-          waiting: job.waiting,
-          waitUntil: job.waitUntil,
           again: job.state === "running" ? job.attempt > 1 : job.attempt > 0,
           saved: pages.filter(
             (p) =>

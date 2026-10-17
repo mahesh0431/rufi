@@ -2,8 +2,8 @@
 // scripted reader sub-agent (tests/fake-reader.ts) and the real jobs,
 // notebook, page service and chat transcript: the reader's model and
 // effort, a reading from its start line to its drafts and end line, a
-// restart in the middle, failures and Retry, and waiting for the sign-in or
-// a usage limit.
+// restart in the middle, failures, automatic retries and Retry, and an
+// account problem.
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -48,7 +48,6 @@ let transcripts: Transcripts;
 let reads: Readings;
 let docs: Documents;
 let personId: string;
-let signedIn: boolean;
 let clock: number;
 /** Rufi's MCP servers the readers got, closed after each test. */
 let served: { close: () => Promise<void> }[];
@@ -62,7 +61,6 @@ beforeEach(async () => {
   clock = Date.parse(NOW);
   reads = readings(store, () => new Date(clock).toISOString());
   docs = documents(store, home, () => NOW, reads);
-  signedIn = true;
   served = [];
   return async () => {
     await Promise.all(served.map((server) => server.close()));
@@ -88,7 +86,7 @@ async function startReader(
   scripts: Script[],
   options: {
     deadlineMs?: number;
-    signInPollMs?: number;
+    retryWaitsMs?: number[];
     log?: (event: string) => void;
     run?: RunSubAgent;
   } = {},
@@ -111,11 +109,10 @@ async function startReader(
       await transcripts.addEvent(chat, event, write);
     },
     run: options.run ?? fake.run,
-    signedIn: () => Promise.resolve(signedIn),
     choice: () => readerChoice(transcripts.setting),
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp/reader`, keys },
     log: options.log ?? (() => undefined),
-    signInPollMs: options.signInPollMs ?? 20,
+    retryWaitsMs: options.retryWaitsMs ?? [0, 0, 0],
     now: () => clock,
     ...(options.deadlineMs !== undefined && {
       deadlineMs: () => options.deadlineMs ?? 0,
@@ -151,9 +148,7 @@ const asks = () =>
     "SELECT text FROM chat_queue WHERE origin = 'rufi' ORDER BY position",
   ).map((r) => r["text"] as string);
 const job = () =>
-  rows(
-    "SELECT state, attempt, retried, error, waiting, wait_until FROM jobs",
-  )[0];
+  rows("SELECT state, attempt, retries, retry_at, error FROM jobs")[0];
 const drafts = () =>
   rows(
     "SELECT page, seq, version, status, fields, original, unsure FROM draft_items ORDER BY page, seq",
@@ -208,8 +203,6 @@ describe("a reading", () => {
         documentId: id,
         name: "sunrise-august.pdf",
         state: "running",
-        waiting: null,
-        waitUntil: null,
         again: false,
         saved: 1,
         of: 2,
@@ -489,6 +482,8 @@ describe("a restart or a failure", () => {
       },
     };
     const { reader: running } = await startReader([], {
+      // One automatic retry is enough to see each attempt stopped.
+      retryWaitsMs: [0],
       run: async (task, signal) => {
         attempts++;
         const model = await fakeModel({
@@ -848,7 +843,8 @@ describe("a restart or a failure", () => {
           await turn.save(2, readPage());
           return failure(turn);
         },
-        ...(reason === "connection" ? [failure] : []),
+        // A passing reason: tried again three times by itself.
+        ...(reason === "connection" ? [failure, failure, failure] : []),
         () => Promise.resolve(undefined),
       ]);
       try {
@@ -857,7 +853,7 @@ describe("a restart or a failure", () => {
           ["failed", "done"].includes(String(job()?.["state"])),
         );
         expect(job()?.["state"]).toBe("failed");
-        expect(runs).toHaveLength(reason === "connection" ? 2 : 1);
+        expect(runs).toHaveLength(reason === "connection" ? 4 : 1);
         expect(
           (await reads.view(personId, id))?.pages.map((p) => p.entry),
         ).toEqual([readPage(), readPage()]);
@@ -867,7 +863,7 @@ describe("a restart or a failure", () => {
 
         await reads.retry(personId, id);
         await until(done);
-        expect(runs).toHaveLength(reason === "connection" ? 3 : 2);
+        expect(runs).toHaveLength(reason === "connection" ? 5 : 2);
         expect(runs.at(-1)?.input).toContain(
           "You saved pages 1–2 in an earlier run",
         );
@@ -879,7 +875,7 @@ describe("a restart or a failure", () => {
     },
   );
 
-  it("retries once by itself for a passing reason, then fails visibly with the service's words", async () => {
+  it("tries again by itself for a passing reason, three times after a longer wait each, then fails visibly with the service's words", async () => {
     const lost = () =>
       Promise.resolve({
         end: {
@@ -888,114 +884,124 @@ describe("a restart or a failure", () => {
           text: "exceeded retry limit, last status: 429 Too Many Requests",
         },
       });
-    const { runs, reader: running } = await startReader([lost, lost]);
-    await addReport();
-    await until(() => job()?.["state"] === "failed");
-    expect(runs).toHaveLength(2);
-    expect(lines().at(-1)).toBe(
-      "Couldn't finish reading sunrise-august.pdf · exceeded retry limit, last status: 429 Too Many Requests · read 0 of 2",
-    );
-    await running.close();
-  });
-
-  it("waits for the sign-in, and until a usage limit resets", async () => {
-    signedIn = false;
-    const { runs, reader: running } = await startReader([
-      () =>
-        Promise.resolve({
-          end: {
-            status: "failed" as const,
-            reason: "usage_limit" as const,
-            resetsAt: "2026-10-10T14:30:00.000Z",
-          },
-        }),
-    ]);
-    await addReport();
-    await until(() => job()?.["waiting"] === "sign_in");
-    expect(runs).toEqual([]);
-    expect(await reads.strip(personId)).toMatchObject([
-      { state: "waiting", waiting: "sign_in" },
-    ]);
-
-    signedIn = true;
-    await until(() => job()?.["waiting"] === "usage_limit");
-    expect(job()).toMatchObject({
-      state: "queued",
-      wait_until: "2026-10-10T14:30:00.000Z",
-    });
-    // The clock is still before the reset: nothing more runs.
-    running.poke();
-    await sleep(50);
-    expect(runs).toHaveLength(1);
-    expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages"]);
-    await running.close();
-  });
-
-  it("waits visibly when the provider rejects a stored sign-in, then resumes at the poll time", async () => {
     const { runs, reader: running } = await startReader(
-      [
-        () => Promise.resolve({ end: { status: "failed", reason: "sign_in" } }),
-        async (turn) => {
-          await turn.look(1);
-          await turn.save(1, readPage());
-          await turn.look(2);
-          await turn.save(2, readPage());
-          return undefined;
-        },
-      ],
-      { signInPollMs: 30_000 },
+      [lost, lost, lost, lost],
+      { retryWaitsMs: [30_000, 60_000, 120_000] },
     );
     try {
       await addReport();
-      await until(() => job()?.["waiting"] === "sign_in" || done());
-      expect(job()).toMatchObject({
-        state: "queued",
-        waiting: "sign_in",
-        wait_until: "2026-10-10T09:00:30.000Z",
-        retried: 0,
-      });
-      expect(await reads.strip(personId)).toMatchObject([
-        {
-          state: "waiting",
-          waiting: "sign_in",
-          waitUntil: "2026-10-10T09:00:30.000Z",
-        },
+      for (const [tries, wait] of [
+        [1, 30_000],
+        [2, 60_000],
+        [3, 120_000],
+      ] as const) {
+        await until(() => job()?.["retries"] === tries);
+        expect(job()).toMatchObject({
+          state: "queued",
+          retry_at: new Date(clock + wait).toISOString(),
+        });
+        // Before its time, nothing more runs.
+        running.poke();
+        await sleep(50);
+        expect(runs).toHaveLength(tries);
+        clock += wait;
+        running.poke();
+      }
+      await until(() => job()?.["state"] === "failed");
+      expect(runs).toHaveLength(4);
+      expect(lines()).toEqual([
+        "Reading sunrise-august.pdf · 2 pages",
+        "Couldn't finish reading sunrise-august.pdf · exceeded retry limit, last status: 429 Too Many Requests · read 0 of 2",
       ]);
-      running.poke();
-      await sleep(50);
-      expect(runs).toHaveLength(1);
-      expect(drafts()).toEqual([]);
-      expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages"]);
-
-      clock += 30_000;
-      running.poke();
-      await until(done);
-      expect(runs).toHaveLength(2);
-      expect(drafts()).toHaveLength(2);
     } finally {
       await running.close();
     }
   });
 
-  it("waits a minute when the sign-in can't be renewed yet, keeping its retry", async () => {
-    const { runs, reader: running } = await startReader([
+  it.each([
+    [
+      "signed out",
       () =>
         Promise.reject(
-          new ChatGptError("temporary", "Can't renew the sign-in yet."),
+          new ChatGptError(
+            "not_signed_in",
+            "Not signed in. Sign in with ChatGPT: in Rufi, or with pnpm rufi signin.",
+          ),
         ),
-    ]);
-    await addReport();
-    await until(() => job()?.["waiting"] === "sign_in");
-    expect(job()).toMatchObject({
-      state: "queued",
-      retried: 0,
-      wait_until: "2026-10-10T09:01:00.000Z",
-    });
-    running.poke();
-    await sleep(50);
-    expect(runs).toHaveLength(1);
-    await running.close();
-  });
+      "Not signed in. Sign in with ChatGPT: in Rufi, or with pnpm rufi signin.",
+    ],
+    [
+      "a sign-in that can't be renewed yet",
+      () =>
+        Promise.reject(
+          new ChatGptError(
+            "temporary",
+            "ChatGPT can't renew the sign-in until 14:30. Try again then.",
+          ),
+        ),
+      "ChatGPT can't renew the sign-in until 14:30. Try again then.",
+    ],
+    [
+      "a sign-in the service rejects",
+      () =>
+        Promise.resolve({
+          end: {
+            status: "failed" as const,
+            reason: "sign_in" as const,
+            text: "Your access token could not be refreshed.",
+          },
+        }),
+      "Your access token could not be refreshed.",
+    ],
+    [
+      "a usage limit",
+      () =>
+        Promise.resolve({
+          end: {
+            status: "failed" as const,
+            reason: "usage_limit" as const,
+            text: "You've hit your usage limit.",
+            resetsAt: "2026-10-10T14:30:00.000Z",
+          },
+        }),
+      "You've hit your usage limit.",
+    ],
+  ] as const)(
+    "%s: the reading fails at once with the reason, keeps its pages, and Retry continues it",
+    async (_, problem, why) => {
+      const { runs, reader: running } = await startReader([
+        async (turn) => {
+          await turn.look(1);
+          await turn.save(1, readPage());
+          return problem();
+        },
+        async (turn) => {
+          await turn.look(2);
+          await turn.save(2, readPage());
+          return undefined;
+        },
+      ]);
+      try {
+        const id = await addReport();
+        await until(() => job()?.["state"] === "failed");
+        expect(job()).toMatchObject({ retries: 0, error: why });
+        expect(runs).toHaveLength(1);
+        expect(lines()).toEqual([
+          "Reading sunrise-august.pdf · 2 pages",
+          `Couldn't finish reading sunrise-august.pdf · ${why} · read 1 of 2`,
+        ]);
+        expect(drafts()).toEqual([]);
+        expect(await reads.strip(personId)).toEqual([]);
+
+        await reads.retry(personId, id);
+        await until(done);
+        expect(runs[1]?.input).toContain("You saved pages 1 in an earlier run");
+        expect(drafts().map((d) => d["page"])).toEqual([1, 2]);
+      } finally {
+        await running.close();
+      }
+    },
+  );
 });
 
 describe("the chat AI and a reading", () => {

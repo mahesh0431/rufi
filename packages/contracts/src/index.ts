@@ -311,11 +311,8 @@ export const Sent = Schema.Struct({ id: Schema.String, draft: Draft });
 export const Model = Schema.Struct({ id: Schema.String, name: Schema.String });
 export type Model = typeof Model.Type;
 
-/** The allowed models offered now, and any problem with the allowlist. */
-export const Models = Schema.Struct({
-  models: Schema.Array(Model),
-  allowlistError: Schema.NullOr(Schema.String),
-});
+/** The allowed models offered now. */
+export const Models = Schema.Struct({ models: Schema.Array(Model) });
 
 /** The page's tab proof, for the session's header. */
 export const SessionProof = Schema.Struct({ proof: Schema.String });

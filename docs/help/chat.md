@@ -64,7 +64,7 @@ A document's chip in the box says what Rufi is doing with that document:
 | The chip says                                   | It means                                                                                 |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | **Reading…**, such as **Reading… 2 of 3 pages** | Rufi is reading it now, with the pages read so far.                                      |
-| **Waiting to read**                             | The reading waits for its turn, for you to sign in, or for a usage limit.                |
+| **Waiting to read**                             | The reading waits for its turn, or to try again by itself.                               |
 | **Read**                                        | The reading ended. This doesn't mean anything is saved.                                  |
 | **Read · some pages unclear**                   | The reading ended, but some pages couldn't be read. **Retry** is on the document's page. |
 | **Couldn't read**                               | The reading failed.                                                                      |
@@ -248,7 +248,7 @@ When the AI should know too, Rufi gives it a note:
 
 The model and effort that answer show in the box, next to the send button, in every size of the chat: for example "GPT-6-Astra Medium". Click them to open one menu with both. When you aren't signed in, the menu can't list the models: click **Sign in with ChatGPT** in it to sign in.
 
-**The model.** Your chat has one model at a time. To change it, choose another in the menu: a tick shows the one that answers now. Before your first message, the chat shows the first model in your list of models (`models.json`, see [Your data and the AI](your-data-and-the-ai.md)) that your ChatGPT plan offers now. In a new data folder, that is GPT-6-Astra. Choose another before your first message if you like. To make another model the first choice, put it first in the list.
+**The model.** Your chat has one model at a time. To change it, choose another in the menu: a tick shows the one that answers now. The menu shows Rufi's models that your ChatGPT plan offers now: GPT-6-Astra and GPT-6.1-Sol. Before your first message, the chat shows the first of them, GPT-6-Astra when your plan offers it. Choose another before your first message if you like.
 
 **The effort** is how hard the AI thinks before it answers: Low is faster, Medium gives careful answers at a good speed, and High thinks longer. Your chat starts at Medium. A new effort applies from the next reply, and the AI doesn't start afresh.
 

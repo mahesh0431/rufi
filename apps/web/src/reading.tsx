@@ -17,7 +17,6 @@ import { useEffect, useState } from "react";
 import { create } from "zustand/react";
 import { read, request } from "./api.ts";
 import { chipState } from "./chip-state.ts";
-import { printedTime } from "./dates.ts";
 import { messageOf } from "./live.ts";
 import { queries, useDocumentItems } from "./reads.ts";
 import { Button, IconButton, Problem } from "./ui.tsx";
@@ -136,18 +135,9 @@ function stateOf(reading: ReadingNow, elapsed: string): string {
       elapsed,
     ].join(" · ");
   }
-  switch (reading.waiting) {
-    case "sign_in":
-      return "waiting for sign-in";
-    case "usage_limit":
-      return reading.waitUntil
-        ? `waiting until ${printedTime(reading.waitUntil)} (usage limit)`
-        : "waiting for the usage limit";
-    case null:
-      return reading.again
-        ? `waiting to read again · read ${String(reading.saved)} of ${String(reading.of)}`
-        : "waiting";
-  }
+  return reading.again
+    ? `waiting to read again · read ${String(reading.saved)} of ${String(reading.of)}`
+    : "waiting";
 }
 
 /** Above the chat box: each reading that runs or waits, with View reading. */

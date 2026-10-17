@@ -16,7 +16,7 @@ import type {
   RunSubAgent,
 } from "../agent/runtime.ts";
 import { readBrief } from "../core/briefs/briefs.ts";
-import { allowlistFile } from "../core/chat/models.ts";
+import { DEFAULT_ALLOWLIST } from "../core/chat/models.ts";
 import { drafts as openDrafts } from "../core/chat/drafts.ts";
 import { chatQueue } from "../core/chat/queue.ts";
 import { transcripts as openTranscripts } from "../core/chat/transcript.ts";
@@ -233,7 +233,6 @@ export const startCore = (options: CoreOptions) =>
     const chatKeys = mcpKeys();
     const readerKeys = mcpKeys();
     const mcpUrl = (path: string) => `http://127.0.0.1:${String(port)}${path}`;
-    const allowlist = allowlistFile(home);
     const account =
       options.account ??
       (() => Promise.resolve<Status>({ account: "signed_out", email: null }));
@@ -244,7 +243,7 @@ export const startCore = (options: CoreOptions) =>
           queue,
           signedIn: async () => (await account()).account === "signed_in",
           agent: options.agent,
-          allowlist: allowlist.read,
+          allowlist: DEFAULT_ALLOWLIST,
           mcp: { url: () => mcpUrl(MCP_CHAT), keys: chatKeys },
           rules: (region) => ({
             instructions: coreInstructions(region),
@@ -276,7 +275,6 @@ export const startCore = (options: CoreOptions) =>
           pages: pageService,
           event: chat.event,
           run: options.reader,
-          signedIn: async () => (await account()).account === "signed_in",
           choice: () => readerChoice(transcripts.setting),
           mcp: { url: () => mcpUrl(MCP_READER), keys: readerKeys },
           log,

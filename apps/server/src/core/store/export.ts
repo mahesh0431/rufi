@@ -171,8 +171,7 @@ Dates and times are as Rufi stored them: ISO 8601, times in UTC; a date you
 gave in your own words keeps those words next to it.
 
 Not in this export: your ChatGPT sign-in, the AI's working files, Rufi's
-log, the list of AI models (\`models.json\`), and the JPEG copies Rufi
-makes to show HEIC photos.
+log, and the JPEG copies Rufi makes to show HEIC photos.
 
 The tables (${String(tables.length)}):
 

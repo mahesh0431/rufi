@@ -155,7 +155,7 @@ async function startChat(
         host,
         log,
       }),
-    allowlist: () => Promise.resolve({ models: options.allowlist ?? ALLOWED }),
+    allowlist: options.allowlist ?? ALLOWED,
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
     rules: (region) => ({
       instructions: `Rufi's rules ${options.rules ?? "1"}, for ${region ?? "no region"}.`,

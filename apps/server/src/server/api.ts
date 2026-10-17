@@ -536,8 +536,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   });
 
   app.get("/api/models", async (c) => {
-    const { models, error } = await acting(() => chat.models());
-    return c.json({ models, allowlistError: error ?? null });
+    return c.json({ models: await acting(() => chat.models()) });
   });
 
   app.get("/api/people/:personId/overview", async (c) =>

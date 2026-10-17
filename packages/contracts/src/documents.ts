@@ -88,10 +88,6 @@ export const ReadingNow = Schema.Struct({
   /** The document's file, or "3 photos". */
   name: Schema.String,
   state: Schema.Literals(["running", "waiting"]),
-  /** What a waiting reading waits for; null: its turn. */
-  waiting: Schema.NullOr(Schema.Literals(["sign_in", "usage_limit"])),
-  /** When a usage limit resets. */
-  waitUntil: Schema.NullOr(Schema.String),
   /** It ran before: reading again after a restart or a retry. */
   again: Schema.Boolean,
   saved: Schema.Int,

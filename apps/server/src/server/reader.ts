@@ -1,13 +1,15 @@
 // The document reader at work: runs the queued readings one at a time, each
 // as a Rufi sub-agent (agent/codex/subagent.ts) with the reader's two tools,
-// and writes its start and end into the person's chat as Rufi events. A
-// reading starts only when signed in; a usage limit makes it wait until the
-// limit resets. Each run uses the model and effort chosen in Settings when
-// it starts. Only a reader turn that completed normally finishes a reading; a turn that failed for a passing
-// reason gets one automatic retry, and anything else ends the reading as
-// failed, its notebook kept for Retry. When Rufi stops, a running reading
-// is left as it is: the next start queues it again. The reader gets its two
-// tools from Rufi's MCP server, with a key for one attempt.
+// and writes its start and end into the person's chat as Rufi events. Each
+// run uses the model and effort chosen in Settings when it starts. Only a
+// reader turn that completed normally finishes a reading. A run that failed
+// for a passing reason is tried again by itself, up to three times, each
+// after a longer wait; an account problem (signed out, a sign-in that can't
+// be renewed, a usage limit), Rufi's deadline or a fourth failure ends the
+// reading as failed, with the reason, its notebook kept for Retry. When
+// Rufi stops, a running reading is left as it is: the next start queues it
+// again. The reader gets its two tools from Rufi's MCP server, with a key
+// for one attempt.
 import { Effort } from "@rufi/contracts";
 import { Option, Schema } from "effect";
 import { ChatGptError } from "../agent/chatgpt/openai.ts";
@@ -45,7 +47,6 @@ export interface ReaderDeps {
   event: Chat["event"];
   /** Runs the reader sub-agent; without one, readings wait. */
   run: RunSubAgent | undefined;
-  signedIn: () => Promise<boolean>;
   /** The model and effort chosen in Settings (readerChoice), read as a run starts. */
   choice: () => Promise<ReaderChoice>;
   /** Rufi's MCP endpoint for the reader: its address and its keys. */
@@ -53,8 +54,8 @@ export interface ReaderDeps {
   log: Log;
   /** How long one run of a reading may take, for its number of pages. */
   deadlineMs?: (pages: number) => number;
-  /** How often a reading waiting for the sign-in looks again. */
-  signInPollMs?: number;
+  /** The waits before each automatic retry. */
+  retryWaitsMs?: readonly number[];
   /** The clock for wait times, the same as the readings' clock. */
   now?: () => number;
 }
@@ -67,9 +68,8 @@ const deadlineFor = (pages: number) => Math.min(60, 5 + pages) * 60_000;
 
 /** A loop with nothing to do looks again this often. */
 const IDLE_MS = 60_000;
-const SIGN_IN_POLL_MS = 30_000;
-/** A sign-in that can't be renewed yet is tried again after this. */
-const RENEW_WAIT_MS = 60_000;
+/** A run that failed for a passing reason is tried again after these. */
+const RETRY_WAITS_MS = [30_000, 60_000, 120_000];
 /** After an unexpected failure of the loop itself. */
 const ERROR_MS = 5_000;
 
@@ -174,7 +174,17 @@ export function reader(deps: ReaderDeps) {
     readings.changed(run.personId);
   };
 
-  /** One run of a reading, from its start to its end or its next wait. */
+  /**
+   * A run that failed: tried again later for a passing reason while
+   * automatic retries remain, else failed with `why`.
+   */
+  const retryOrFail = async (run: Run, job: Job, why: string) => {
+    const wait = (deps.retryWaitsMs ?? RETRY_WAITS_MS)[job.retries];
+    if (wait === undefined) await fail(run, why);
+    else await readings.retryAt(run, new Date(now() + wait).toISOString());
+  };
+
+  /** One run of a reading, from its start to its end or its retry. */
   const runJob = async (job: Job, runSubAgent: RunSubAgent) => {
     const mine = { documentId: job.documentId, stop: new AbortController() };
     current = mine;
@@ -280,24 +290,13 @@ export function reader(deps: ReaderDeps) {
         error instanceof ChatGptError &&
         (error.code === "not_signed_in" ||
           error.code === "sign_in_again" ||
-          error.code === "plan_use_off")
+          error.code === "plan_use_off" ||
+          error.code === "temporary")
       ) {
-        await readings.requeue(started, {
-          waiting: "sign_in",
-          until: new Date(
-            now() + (deps.signInPollMs ?? SIGN_IN_POLL_MS),
-          ).toISOString(),
-        });
-      } else if (error instanceof ChatGptError && error.code === "temporary") {
-        // The sign-in can't be renewed yet: wait a little, keep the retry.
-        await readings.requeue(started, {
-          waiting: "sign_in",
-          until: new Date(now() + RENEW_WAIT_MS).toISOString(),
-        });
-      } else if (!job.retried) {
-        await readings.requeue(started, { retry: true });
+        // The sign-in needs the person: its reason, in Rufi's words.
+        await fail(started, error.message);
       } else {
-        await fail(started, "Rufi couldn't start the AI");
+        await retryOrFail(started, job, "Rufi couldn't start the AI");
       }
       return;
     }
@@ -332,31 +331,24 @@ export function reader(deps: ReaderDeps) {
 
     if (end.status === "completed") {
       await finish(started);
-    } else if (end.reason === "sign_in") {
-      await readings.requeue(started, {
-        waiting: "sign_in",
-        until: new Date(
-          now() + (deps.signInPollMs ?? SIGN_IN_POLL_MS),
-        ).toISOString(),
-      });
-    } else if (end.reason === "usage_limit") {
-      await readings.requeue(started, {
-        waiting: "usage_limit",
-        until: end.resetsAt ?? new Date(now() + 60 * 60_000).toISOString(),
-      });
-    } else if (end.reason !== "timeout" && !job.retried) {
-      // A passing reason (a lost connection, a restart, a refused answer):
-      // one automatic retry, which continues from the notebook.
-      await readings.requeue(started, { retry: true });
+      return;
+    }
+    // Rufi's own deadline in Rufi's words; anything else as the service or
+    // Codex said it.
+    const why =
+      stopReason ??
+      (end.reason === "timeout" ? "the reading took too long" : end.text) ??
+      "the reader stopped";
+    if (
+      end.reason === "timeout" ||
+      end.reason === "sign_in" ||
+      end.reason === "usage_limit"
+    ) {
+      await fail(started, why);
     } else {
-      await fail(
-        started,
-        // Rufi's own deadline in Rufi's words; anything else as the service
-        // or Codex said it.
-        stopReason ??
-          (end.reason === "timeout" ? "the reading took too long" : end.text) ??
-          "the reader stopped",
-      );
+      // A passing reason (a lost connection, a restart, a refused answer):
+      // an automatic retry, which continues from the notebook.
+      await retryOrFail(started, job, why);
     }
   };
 
@@ -367,12 +359,8 @@ export function reader(deps: ReaderDeps) {
       try {
         const { job, wake: at } = await readings.next();
         if (job && deps.run) {
-          if (await deps.signedIn()) {
-            await runJob(job, deps.run);
-            continue;
-          }
-          await readings.waitForSignIn(job);
-          delay = deps.signInPollMs ?? SIGN_IN_POLL_MS;
+          await runJob(job, deps.run);
+          continue;
         }
         if (at !== undefined) {
           delay = Math.min(delay, Date.parse(at) - now());

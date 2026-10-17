@@ -320,7 +320,6 @@ async function readOne(item: Item) {
       version,
       log,
     }),
-    signedIn: () => Promise.resolve(true),
     choice: () => Promise.resolve(choice),
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp/reader`, keys },
     log,

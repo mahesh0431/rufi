@@ -28,17 +28,10 @@ const summary = (
   files: [],
 });
 
-const job = (
-  state: ReadingNow["state"],
-  waiting: ReadingNow["waiting"] = null,
-  saved = 0,
-  of = 0,
-): ReadingNow => ({
+const job = (state: ReadingNow["state"], saved = 0, of = 0): ReadingNow => ({
   documentId: "doc-1",
   name: "scan-oct.pdf",
   state,
-  waiting,
-  waitUntil: null,
   again: false,
   saved,
   of,
@@ -50,13 +43,13 @@ describe("a document chip's state, from the document and its reading job", () =>
     [
       "running, with its pages",
       summary("reading"),
-      job("running", null, 2, 3),
+      job("running", 2, 3),
       "Reading… 2 of 3 pages",
     ],
     [
       "running, with its one page",
       summary("reading"),
-      job("running", null, 0, 1),
+      job("running", 0, 1),
       "Reading… 0 of 1 page",
     ],
     [
@@ -68,19 +61,7 @@ describe("a document chip's state, from the document and its reading job", () =>
     [
       "waiting for its turn",
       summary("reading"),
-      job("waiting", null),
-      "Waiting to read",
-    ],
-    [
-      "waiting for sign-in",
-      summary("reading"),
-      job("waiting", "sign_in"),
-      "Waiting to read",
-    ],
-    [
-      "waiting for a usage limit",
-      summary("reading"),
-      job("waiting", "usage_limit"),
+      job("waiting"),
       "Waiting to read",
     ],
     [

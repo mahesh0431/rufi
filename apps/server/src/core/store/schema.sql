@@ -90,9 +90,8 @@ CREATE TABLE jobs (
   state TEXT NOT NULL CHECK (state IN ('queued', 'running', 'done', 'failed')),
   attempt INTEGER NOT NULL DEFAULT 0, -- 1, 2, 3... as runs start
   targets TEXT NOT NULL,               -- JSON array of page positions
-  waiting TEXT CHECK (waiting IN ('sign_in', 'usage_limit')), -- a queued job that waits for this before it runs
-  wait_until TEXT,                     -- a usage limit's reset time
-  retried INTEGER NOT NULL DEFAULT 0,  -- 1 once its one automatic retry is used
+  retries INTEGER NOT NULL DEFAULT 0,  -- automatic retries used since its start or the person's Retry
+  retry_at TEXT,                       -- a queued automatic retry runs from then on
   started_at TEXT,                     -- its first real start: the chat's start line
   run_at TEXT,                         -- the current run's start
   ended_at TEXT,
@@ -555,4 +554,4 @@ CREATE INDEX sources_by_record ON record_sources (person_id, record_id);
 CREATE INDEX drafts_by_document ON draft_items (person_id, document_id, page, seq);
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 8;
+PRAGMA user_version = 9;

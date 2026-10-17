@@ -29,7 +29,7 @@ What the user added for a person in one go: one PDF, or photos added together, s
 _Avoid_: upload, attachment
 
 **Reading**:
-Rufi reading one document in the background with its reader, as soon as you add it: one page at a time, then a line in the chat when it ends. Only a reading that finished makes draft items; one that stopped continues with **Retry**, or by itself after Rufi starts again.
+Rufi reading one document in the background with its reader, as soon as you add it: one page at a time, then a line in the chat when it ends. Only a reading that finished makes draft items; one that stopped continues with **Retry**, or by itself after Rufi starts again. One that failed for a passing reason, such as a lost connection, tries again by itself up to three times; one stopped by the account (signed out, a usage limit) says why and waits for **Retry**.
 _Avoid_: import, scan, parsing, extraction
 
 **Reader**:
@@ -188,7 +188,7 @@ How hard the AI thinks before it answers: Low, Medium or High, chosen for the ch
 _Avoid_: reasoning level, thinking mode
 
 **Allowlist**:
-The models Rufi may use: `models.json` in the data folder. The chat uses the first one until the user chooses another. It starts with the strongest models, GPT-6-Astra first, and you can edit it.
+The models Rufi may use: a short list in Rufi, the strongest models, GPT-6-Astra first. The chat offers those the ChatGPT plan offers now, and uses the first until the user chooses another. An old `models.json` in the data folder is left as it is and not used.
 _Avoid_: whitelist
 
 ## Coming back to things
@@ -280,7 +280,7 @@ _Avoid_: sandbox, test account
 ## Keeping your data safe
 
 **Backup**:
-A checked copy of the record and every document's original file that Rufi makes in `backups/` in the data folder when it starts and then each day. Never the sign-in, the AI's own files, the log or the allowlist. It counts only after its check passes.
+A checked copy of the record and every document's original file that Rufi makes in `backups/` in the data folder when it starts and then each day. Never the sign-in, the AI's own files or the log. It counts only after its check passes.
 _Avoid_: snapshot, archive
 
 **Upgrade**:

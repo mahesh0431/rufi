@@ -18,7 +18,7 @@ import type { ChatGptDeps } from "../agent/chatgpt/openai.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexRuntime } from "../agent/codex/codex.ts";
 import type { AgentEvent } from "../agent/runtime.ts";
-import { allowlistFile } from "../core/chat/models.ts";
+import { DEFAULT_ALLOWLIST } from "../core/chat/models.ts";
 import { pages } from "../core/documents/pages.ts";
 import { coreInstructions } from "../core/chat/instructions.ts";
 import {
@@ -425,14 +425,13 @@ const askCommand = (question: string, person: string | undefined) =>
       person ?? (store ? yield* run(() => onlyPersonId(store)) : undefined);
     const pagesOf = store && pages(store, deps.home);
     const tools = forAgent(() => ({ store, personId, pages: pagesOf }), log);
-    const { models } = yield* run(() => allowlistFile(deps.home).read());
     const file = yield* run(() => codexBinary());
     const { version } = createRequire(import.meta.url)(
       "../../package.json",
     ) as { version: string };
     const started = Date.now();
     const end = yield* ask(question, {
-      model: models[0] ?? "",
+      model: DEFAULT_ALLOWLIST[0] ?? "",
       instructions: coreInstructions(undefined),
       tools,
       agent: (host) =>
