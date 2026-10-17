@@ -383,9 +383,13 @@ function Sheet({
                   <PageWork
                     key={page.position}
                     page={page}
-                    drafts={items.data?.items.filter(
-                      (i) => i.page === page.position,
-                    )}
+                    drafts={
+                      items.isSuccess
+                        ? items.data.items.filter(
+                            (i) => i.page === page.position,
+                          )
+                        : undefined
+                    }
                   />
                 ))}
               </div>
@@ -448,22 +452,26 @@ function PageWork({
       ? [`${facts.dates[0].label} ${facts.dates[0].date}`]
       : []),
   ].join(" · ");
-  // Once the reading made the page's items, each row is its own item, with
-  // the person's fix; until then, what the reader saved.
-  const rows: readonly Row[] = drafts?.length
-    ? drafts.map((draft) => ({
-        key: draft.id,
-        item: draft.fields,
-        why: draft.unsure.join("; "),
-        ...(fixesOf(draft).length > 0 && { fixed: draft }),
-      }))
-    : (entry?.items.map((read, index) => ({
-        key: String(index),
-        item: read,
-        why: [read.unsure, checks?.items.find((c) => c.item === index + 1)?.why]
-          .filter(Boolean)
-          .join("; "),
-      })) ?? []);
+  // A read page waits for its own items, including the person's fix.
+  // Only a page whose reading hasn't made items yet uses the entry.
+  const rows: readonly Row[] =
+    drafts?.length || page.state === "read"
+      ? (drafts ?? []).map((draft) => ({
+          key: draft.id,
+          item: draft.fields,
+          why: draft.unsure.join("; "),
+          ...(fixesOf(draft).length > 0 && { fixed: draft }),
+        }))
+      : (entry?.items.map((read, index) => ({
+          key: String(index),
+          item: read,
+          why: [
+            read.unsure,
+            checks?.items.find((c) => c.item === index + 1)?.why,
+          ]
+            .filter(Boolean)
+            .join("; "),
+        })) ?? []);
   return (
     <section className="rounded-[10px] border border-line">
       <h4 className="flex items-center gap-2 px-2.5 py-1.5 font-normal">
