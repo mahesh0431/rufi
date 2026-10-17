@@ -3,13 +3,13 @@
 // and writes its start and end into the person's chat as Rufi events. Each
 // run uses the model and effort chosen in Settings when it starts. Only a
 // reader turn that completed normally finishes a reading. A run that failed
-// for a passing reason is tried again by itself, up to three times, each
-// after a longer wait; an account problem (signed out, a sign-in that can't
-// be renewed, a usage limit), Rufi's deadline or a fourth failure ends the
-// reading as failed, with the reason, its notebook kept for Retry. When
-// Rufi stops, a running reading is left as it is: the next start queues it
-// again. The reader gets its two tools from Rufi's MCP server, with a key
-// for one attempt.
+// for a passing reason (also a sign-in ChatGPT can't renew just now) is
+// tried again by itself, up to three times, each after a longer wait; an
+// account problem (signed out, a sign-in that has ended, a usage limit),
+// Rufi's deadline or a fourth failure ends the reading as failed, with the
+// reason, its notebook kept for Retry. When Rufi stops, a running reading is
+// left as it is: the next start queues it again. The reader gets its two
+// tools from Rufi's MCP server, with a key for one attempt.
 import { Effort } from "@rufi/contracts";
 import { Option, Schema } from "effect";
 import { ChatGptError } from "../agent/chatgpt/openai.ts";
@@ -290,11 +290,13 @@ export function reader(deps: ReaderDeps) {
         error instanceof ChatGptError &&
         (error.code === "not_signed_in" ||
           error.code === "sign_in_again" ||
-          error.code === "plan_use_off" ||
-          error.code === "temporary")
+          error.code === "plan_use_off")
       ) {
         // The sign-in needs the person: its reason, in Rufi's words.
         await fail(started, error.message);
+      } else if (error instanceof ChatGptError && error.code === "temporary") {
+        // ChatGPT can't renew the sign-in now: a passing reason, in Rufi's words.
+        await retryOrFail(started, job, error.message);
       } else {
         await retryOrFail(started, job, "Rufi couldn't start the AI");
       }

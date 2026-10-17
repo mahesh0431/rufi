@@ -875,7 +875,7 @@ describe("a restart or a failure", () => {
     },
   );
 
-  it("tries again by itself for a passing reason, three times after a longer wait each, then fails visibly with the service's words", async () => {
+  it("tries again by itself for a passing reason, three times after a longer wait each, also across a restart, then fails visibly with the service's words", async () => {
     const lost = () =>
       Promise.resolve({
         end: {
@@ -884,12 +884,21 @@ describe("a restart or a failure", () => {
           text: "exceeded retry limit, last status: 429 Too Many Requests",
         },
       });
-    const { runs, reader: running } = await startReader(
-      [lost, lost, lost, lost],
-      { retryWaitsMs: [30_000, 60_000, 120_000] },
-    );
+    const waits = { retryWaitsMs: [30_000, 60_000, 120_000] };
+    const first = await startReader([lost], waits);
+    await addReport();
+    await until(() => job()?.["retries"] === 1);
+    await first.reader.close();
+
+    // Rufi closes and starts again before the retry's time.
+    store.close();
+    store = openWritable(databasePath(home));
+    transcripts = openTranscripts(store, () => NOW);
+    reads = readings(store, () => new Date(clock).toISOString());
+    expect(await reads.recover()).toBe(0);
+    const second = await startReader([lost, lost, lost], waits);
+    const runs = () => first.runs.length + second.runs.length;
     try {
-      await addReport();
       for (const [tries, wait] of [
         [1, 30_000],
         [2, 60_000],
@@ -901,18 +910,71 @@ describe("a restart or a failure", () => {
           retry_at: new Date(clock + wait).toISOString(),
         });
         // Before its time, nothing more runs.
-        running.poke();
+        second.reader.poke();
         await sleep(50);
-        expect(runs).toHaveLength(tries);
+        expect(runs()).toBe(tries);
         clock += wait;
-        running.poke();
+        second.reader.poke();
       }
       await until(() => job()?.["state"] === "failed");
-      expect(runs).toHaveLength(4);
+      expect(runs()).toBe(4);
       expect(lines()).toEqual([
         "Reading sunrise-august.pdf · 2 pages",
         "Couldn't finish reading sunrise-august.pdf · exceeded retry limit, last status: 429 Too Many Requests · read 0 of 2",
       ]);
+    } finally {
+      await second.reader.close();
+    }
+  });
+
+  it("tries again by itself when ChatGPT can't renew the sign-in just now, from the notebook, and finishes", async () => {
+    const { runs, reader: running } = await startReader([
+      async (turn) => {
+        await turn.look(1);
+        await turn.save(1, readPage());
+        throw new ChatGptError(
+          "temporary",
+          "Couldn't reach ChatGPT. Try again shortly.",
+        );
+      },
+      async (turn) => {
+        await turn.look(2);
+        await turn.save(2, readPage());
+        return undefined;
+      },
+    ]);
+    try {
+      await addReport();
+      await until(done);
+      expect(job()).toMatchObject({ retries: 1, error: null });
+      expect(runs[1]?.input).toContain("You saved pages 1 in an earlier run");
+      expect(drafts().map((d) => d["page"])).toEqual([1, 2]);
+      expect(lines()).toEqual([
+        "Reading sunrise-august.pdf · 2 pages",
+        "Lab report · 12 Aug · 2 results read",
+      ]);
+    } finally {
+      await running.close();
+    }
+  });
+
+  it("keeps the words of a sign-in ChatGPT can't renew when its tries run out", async () => {
+    const renewal = () =>
+      Promise.reject(
+        new ChatGptError(
+          "temporary",
+          "Couldn't reach ChatGPT. Try again shortly.",
+        ),
+      );
+    const { reader: running } = await startReader([renewal, renewal], {
+      retryWaitsMs: [0],
+    });
+    try {
+      await addReport();
+      await until(() => job()?.["state"] === "failed");
+      expect(lines().at(-1)).toBe(
+        "Couldn't finish reading sunrise-august.pdf · Couldn't reach ChatGPT. Try again shortly. · read 0 of 2",
+      );
     } finally {
       await running.close();
     }
@@ -929,17 +991,6 @@ describe("a restart or a failure", () => {
           ),
         ),
       "Not signed in. Sign in with ChatGPT: in Rufi, or with pnpm rufi signin.",
-    ],
-    [
-      "a sign-in that can't be renewed yet",
-      () =>
-        Promise.reject(
-          new ChatGptError(
-            "temporary",
-            "ChatGPT can't renew the sign-in until 14:30. Try again then.",
-          ),
-        ),
-      "ChatGPT can't renew the sign-in until 14:30. Try again then.",
     ],
     [
       "a sign-in the service rejects",

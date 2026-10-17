@@ -19,6 +19,7 @@ import { familyFiles } from "../../../tests/fixtures/golden.ts";
 import { holdRufiLock } from "../../platform/files.ts";
 import { readBrief } from "../briefs/briefs.ts";
 import { transcripts, type ChatRow } from "../chat/transcript.ts";
+import { readings } from "../documents/reading.ts";
 import { claimNotices } from "../record/notices.ts";
 import { recentSaves } from "../record/read.ts";
 import { chatCaller } from "../tools/tools.ts";
@@ -165,7 +166,7 @@ async function ravisSave(store: Store, at: string): Promise<void> {
 }
 
 describe("a record of version 1", () => {
-  it("upgrades at start: its brief's values and sources, its reading and the order of saves stay, also after VACUUM, and a new save comes last", async () => {
+  it("upgrades at start: its brief's values and sources and the order of saves stay, also after VACUUM, and a new save comes last", async () => {
     const store = await openRecord(home);
     try {
       const saves = async () =>
@@ -181,13 +182,6 @@ describe("a record of version 1", () => {
           .distinct()
           .execute(),
       ).toEqual([{ warnings: "[]" }]);
-      // Its reading is kept, with no automatic retry used or waiting.
-      expect(
-        await store.query
-          .selectFrom("jobs")
-          .select(["id", "state", "retries", "retry_at"])
-          .execute(),
-      ).toEqual([{ id: "job-sep", state: "done", retries: 0, retry_at: null }]);
 
       store.db.exec("VACUUM");
       expect((await readBrief(store.query, "asha", BRIEF))?.sources).toEqual(
@@ -544,6 +538,68 @@ it("upgrades a record of version 6 so the AI's notes can be steps of its Activit
     ).run(turn.person_id, turn.chat_id, turn.id);
   } finally {
     db.close();
+  }
+});
+
+it("upgrades a record of version 8 so a reading no longer waits for the account: every job, its notebook and its drafts kept, a former wait free to run at once", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 8));
+  // Readings as Rufi of version 8 left them: one waiting for the sign-in,
+  // one for a usage limit, one running, and one failed after its automatic
+  // retry, with a page it saved in the notebook.
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, waiting, wait_until, retried, started_at, run_at, ended_at, error, usage, reader, created_at) VALUES
+        ('job-failed', 'asha', 'document_read', 'doc-asha-aug', 'failed', 2, '[1,2]', NULL, NULL, 1, '2026-10-16T08:00:00Z', '2026-10-16T08:01:00Z', '2026-10-16T08:02:00Z', 'the reader stopped', '{"totalTokens":120}', '{"model":"gpt-6.1-sol"}', '2026-10-16T08:00:00Z'),
+        ('job-sign-in', 'asha', 'document_read', 'doc-asha-aug', 'queued', 1, '[1]', 'sign_in', '2026-10-16T09:00:30Z', 0, '2026-10-16T09:00:00Z', '2026-10-16T09:00:00Z', NULL, NULL, NULL, NULL, '2026-10-16T09:00:00Z'),
+        ('job-usage', 'ravi', 'document_read', 'doc-ravi-jul', 'queued', 1, '[1]', 'usage_limit', '2099-01-01T00:00:00Z', 0, '2026-10-16T09:10:00Z', '2026-10-16T09:10:00Z', NULL, NULL, NULL, NULL, '2026-10-16T09:10:00Z'),
+        ('job-running', 'asha', 'document_read', 'doc-asha-sep', 'running', 1, '[1]', NULL, NULL, 0, '2026-10-16T09:20:00Z', '2026-10-16T09:20:00Z', NULL, NULL, NULL, NULL, '2026-10-16T09:20:00Z');
+      UPDATE document_pages SET entry = '{"outcome":"read","items":[]}', entry_job_id = 'job-failed', entry_attempt = 0, entry_at = '2026-10-16T08:01:30Z'
+        WHERE document_id = 'doc-asha-aug' AND position = 2;
+    `);
+  } finally {
+    old.close();
+  }
+  const stored = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return {
+        jobs: db.prepare("SELECT * FROM jobs ORDER BY id").all(),
+        pages: db
+          .prepare(
+            "SELECT * FROM document_pages ORDER BY person_id, document_id, position",
+          )
+          .all(),
+        drafts: db.prepare("SELECT * FROM draft_items ORDER BY id").all(),
+      };
+    } finally {
+      db.close();
+    }
+  };
+  const before = stored();
+
+  const store = await openRecord(home);
+  try {
+    const after = stored();
+    expect(after.jobs).toEqual(
+      before.jobs.map(
+        ({ waiting: _waiting, wait_until: _until, retried, ...job }) => ({
+          ...job,
+          retries: retried,
+          retry_at: null,
+        }),
+      ),
+    );
+    expect(after.pages).toEqual(before.pages);
+    expect(after.drafts).toEqual(before.drafts);
+    // Neither former wait waits any more: the oldest runs now, and no job
+    // has a time to wake for.
+    const next = await readings(store, () => "2026-10-17T09:00:00.000Z").next();
+    expect(next.job?.id).toBe("job-sign-in");
+    expect(next.wake).toBeUndefined();
+  } finally {
+    store.close();
   }
 });
 
