@@ -94,12 +94,12 @@ As soon as a reading ends, Rufi asks Rufi AI to sort the file, without waiting f
 
 - **It splits the file into documents**, one for each report or paper, and gives each its kind, its date and, for a report, its lab and report number as printed. A report's pages stay together, also a page that goes on with its table and prints no lab or date. A prescription or a letter is a document of its own. Each one has its own row on the Documents page, with its pages: **mixed-pile.pdf · pages 1–2 of 5**, **pages 3–4 of 5**, **page 5 of 5**.
 - **It drafts the results**: every current lab result, and measurements such as a blood pressure taken at a visit, each with its date and the words it came from on its page. A column of earlier results isn't drafted. A prescription's medicines aren't drafted yet.
-- **It says what is worth a look**, in a few plain words: a digit the reader marked unclear, a value written by hand, or crossed out and written again. Most results need none.
+- **It says what is worth a look**, in a few plain words: a digit the reader marked unclear, a value written by hand, or crossed out and written again. Most results need none. Where the reader marked a digit unclear, the draft's value is Rufi AI's reading (**104**), the value that would be saved; the marks (**1[0?]4**) stay in the words it came from.
 - **It tells you in a few lines** what it found, for example "I sorted mixed-pile.pdf into 3 documents: a Sunrise Labs report from 12 Mar 2026 (14 results, 1 worth a look), a Northgate report from 20 Aug 2026 (12 results) and a prescription from 3 Sep 2026 (3 measurements). Nothing is saved yet." When it can't tell, for example whether two reports are one, or whose a report is, it asks you instead, and sorts once you answer.
 
 The same report added twice, such as a PDF and a photo of it, stays two documents. Rufi AI says it looks like another copy; when you save, it offers the results as another source of the ones already saved.
 
-Rufi checks every draft before it keeps any: a draft's value must be on its page's copy, as printed. If one isn't, Rufi keeps nothing of the sort and tells Rufi AI why, and it tries again. A file is sorted all at once, or not at all.
+Rufi checks every draft before it keeps any: a draft's value must be on its page's copy, as printed (or, for a draft worth a look, as printed with the reader's mark on a digit taken off). If one isn't, Rufi keeps nothing of the sort and tells Rufi AI why, and it tries again. A file is sorted all at once, or not at all.
 
 The drafts are kept as **draft items**: they wait for you and stay across restarts, but they aren't part of your health record yet, so they don't count in your Overview or your trends until you save them (see [Save results to your health record](#save-results-to-your-health-record)). When you ask about a result, the AI also reads the drafts of your documents, and it says that a value it gives from one isn't saved yet.
 

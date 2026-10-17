@@ -134,8 +134,10 @@ const THREE: SortInput = {
     draft(1, "Haemoglobin", "13.2", { value_number: 13.2, unit: "g/dL" }),
     draft(1, "CRP", "<0.05", { comparator: "<", value_number: 0.05 }),
     draft(2, "Ferritin", "1,25", { value_number: 1.25 }),
-    draft(2, "Vitamin B12", "1[0?]4", {
+    // Rufi AI's reading of the marked digit; the marks stay in its quote.
+    draft(2, "Vitamin B12", "104", {
       value_number: 104,
+      quote: "Vitamin B12 | 1[0?]4",
       worth_a_look: "the middle digit is faint",
     }),
     draft(3, "Base excess", "-2", { value_number: -2 }),
@@ -221,6 +223,49 @@ describe("the Documents list", () => {
   });
 });
 
+describe("a draft of a value the reader marked", () => {
+  /** The pile's page 2 with a handwritten value, then a sort of it. */
+  const sortPage2 = (more: Partial<SortInput["drafts"][number]>) => {
+    store.db.exec(
+      "UPDATE page_copies SET copy = copy || char(10) || '| TSH | ~~5.3~~ [handwritten: 5.8] | mIU/L |' WHERE page_in_file = 2",
+    );
+    return sorts.sort(personal(), {
+      ...THREE,
+      drafts: [
+        draft(2, "Vitamin B12", "104", more),
+        draft(2, "TSH", "5.8", more),
+      ],
+    });
+  };
+
+  it("may give Rufi AI's clean reading when it is worth a look", async () => {
+    await sortPage2({ worth_a_look: "a digit is marked unclear" });
+    expect(drafts().map((d) => d["value"])).toEqual(["104", "5.8"]);
+  });
+
+  it("refuses the clean reading when it isn't marked worth a look", async () => {
+    await expect(sortPage2({})).rejects.toMatchObject({
+      // "5.8" is printed plainly inside its mark.
+      issues: [
+        expect.objectContaining({ path: "drafts.0.value_text", got: '"104"' }),
+      ],
+    });
+  });
+
+  it("still refuses a value the page doesn't print, also when it is worth a look", async () => {
+    await expect(
+      sortPage2({ worth_a_look: "a digit is marked unclear" }).then(() =>
+        sorts.sort(personal(), {
+          ...THREE,
+          drafts: [draft(2, "Vitamin B12", "114", { worth_a_look: "unclear" })],
+        }),
+      ),
+    ).rejects.toMatchObject({
+      issues: [expect.objectContaining({ path: "drafts.0.value_text" })],
+    });
+  });
+});
+
 describe("a sort", () => {
   it("splits the add into documents and writes their drafts in one go, each on its page, deciding what the call says", async () => {
     const answer = await sorts.sort(personal("call-split"), THREE);
@@ -299,7 +344,7 @@ describe("a sort", () => {
         page: 2,
         seq: 2,
         version: 1,
-        value: "1[0?]4",
+        value: "104",
         unsure: '["the middle digit is faint"]',
         quote: "Vitamin B12 | 1[0?]4",
       },
@@ -385,7 +430,7 @@ describe("a sort", () => {
         }),
         expect.objectContaining({
           path: "drafts.0.value_text",
-          fix: "\"13.4\" isn't in page 1's copy. Give the value exactly as the copy prints it, marks included (your reading of an unclear digit goes in value_number), or leave the draft out.",
+          fix: '"13.4" isn\'t in page 1\'s copy. Give the value as the copy prints it; where the reader marked a digit unclear ("1[0?]4"), give your reading ("104") and say why in worth_a_look. Or leave the draft out.',
         }),
         // "0.05" is on the page, as part of "<0.05": the check is only that
         // the printed value is there.

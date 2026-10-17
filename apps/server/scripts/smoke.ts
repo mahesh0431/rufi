@@ -1544,22 +1544,18 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
               d.date === want.date,
           ),
         ),
-        // As printed: an unclear one may keep its marks ("1[0?]4").
         every_draft_made: EXPECTED.drafts.every((want) => {
           const got = found(want);
-          const value =
-            want.look === undefined
-              ? got?.value
-              : got?.value.replace(/[^\d.,<>-]|\[|\]/g, "");
           return (
             got !== undefined &&
-            [want.value, ...(want.or ?? [])].includes(value ?? "") &&
+            [want.value, ...(want.or ?? [])].includes(got.value) &&
             got.date === want.date
           );
         }),
-        // Characters, as the record keeps them: no HTML or Markdown.
-        values_as_characters: drafts.every(
-          (d) => comparable(d.value) === d.value,
+        // As the record keeps them: characters, no HTML, Markdown or the
+        // reader's marks (those stay in the quote).
+        values_as_saved: drafts.every(
+          (d) => comparable(d.value) === d.value && !/[[\]?]/.test(d.value),
         ),
         only_current_values: drafts.length === EXPECTED.drafts.length,
         worth_a_look_where_unclear: EXPECTED.drafts

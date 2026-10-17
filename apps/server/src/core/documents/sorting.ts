@@ -86,7 +86,7 @@ const Draft = Schema.Struct({
   test_name: Text(200, "The test's or measurement's name, exactly as printed."),
   value_text: Text(
     100,
-    "The value exactly as in the page's copy, marks included: '<0.5', '1,25', '1[0?]4'; as characters, not the copy's HTML or Markdown ('<0.5', not '&lt;0.5'). Rufi checks it is in that page's copy.",
+    "The value as the page's copy prints it, as it would be saved: '<0.5', '1,25'; as characters, not the copy's HTML or Markdown ('<0.5', not '&lt;0.5'). Where the reader marked a digit unclear ('1[0?]4'), your reading ('104'), with worth_a_look saying why. Rufi checks it is on that page's copy.",
   ),
   comparator: Schema.optionalKey(
     Schema.Literals(["<", "<=", ">", ">="]).annotate({
@@ -96,7 +96,7 @@ const Draft = Schema.Struct({
   value_number: Schema.optionalKey(
     Schema.Finite.annotate({
       description:
-        "The value as a plain number, when it is one: '1,25' is 1.25. Your reading of a marked digit goes here.",
+        "The value as a plain number, when it is one: '1,25' is 1.25.",
     }),
   ),
   unit: Printed("The unit"),
@@ -240,6 +240,15 @@ export function onPage(value: string, copy: string): boolean {
     }
   }
   return false;
+}
+
+/**
+ * A copy with the reader's marks on single characters taken off, as
+ * Rufi AI may read them: "1[0?]4" is "104". For the page check of a draft
+ * worth a look only.
+ */
+function unmarked(copy: string): string {
+  return copy.replace(/\[([^[\]?]{1,3})\?\]/g, "$1");
 }
 
 /** A page of an add as the sort sees it. */
@@ -716,11 +725,18 @@ export function sorting(
             draft.page,
             `Page ${String(draft.page)} has no copy from the reader, so nothing can be drafted from it. Look at it with get_documents and tell the user.`,
           );
-        } else if (!onPage(draft.value_text, page.copy.text)) {
+        } else if (
+          !onPage(draft.value_text, page.copy.text) &&
+          // Rufi AI's reading of a marked digit, for a draft worth a look.
+          !(
+            draft.worth_a_look !== undefined &&
+            onPage(draft.value_text, unmarked(page.copy.text))
+          )
+        ) {
           problem(
             `${at}.value_text`,
             draft.value_text,
-            `"${draft.value_text}" isn't in page ${String(draft.page)}'s copy. Give the value exactly as the copy prints it, marks included (your reading of an unclear digit goes in value_number), or leave the draft out.`,
+            `"${draft.value_text}" isn't in page ${String(draft.page)}'s copy. Give the value as the copy prints it; where the reader marked a digit unclear ("1[0?]4"), give your reading ("104") and say why in worth_a_look. Or leave the draft out.`,
           );
         }
       }

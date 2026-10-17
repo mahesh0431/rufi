@@ -466,7 +466,7 @@ export const retryReading = defineTool({
 
 export const sortDocuments = defineTool({
   name: "sort_documents",
-  description: `Sorts what the user added into documents and writes its drafts, from the reader's page copies (get_documents with copies), as the sorting-documents skill says. One call for the whole add: documents (each with its pages by their number in the add, its kind, its date, and a report's lab and number) and drafts (each a current lab result or a measurement as printed, with its page, its date, the words it comes from and, when it is worth the user's look, why). Every page not sorted yet goes in one document; pages you don't name stay where they are. A draft's value_text must be in its page's copy exactly as the copy prints it, marks included, or the whole call is refused; give your reading of an unclear digit in value_number. The drafts replace the drafts of the named pages that the user hasn't fixed or set aside. A page that a saved result cites stays in its document. Nothing is saved to the record: drafts wait for the user. In a turn Rufi started for a sort, you sort only the pages not sorted yet, and nothing else changes; in the user's own turn you can also change how pages were sorted ("pages 3 and 4 are one letter"). All or nothing; the same call again gets the same answer.`,
+  description: `Sorts what the user added into documents and writes its drafts, from the reader's page copies (get_documents with copies), as the sorting-documents skill says. One call for the whole add: documents (each with its pages by their number in the add, its kind, its date, and a report's lab and number) and drafts (each a current lab result or a measurement as printed, with its page, its date, the words it comes from and, when it is worth the user's look, why). Every page not sorted yet goes in one document; pages you don't name stay where they are. A draft's value_text must be on its page's copy as printed, or the whole call is refused; where the reader marked a digit unclear ("1[0?]4"), give your reading ("104") and say why in worth_a_look. The drafts replace the drafts of the named pages that the user hasn't fixed or set aside. A page that a saved result cites stays in its document. Nothing is saved to the record: drafts wait for the user. In a turn Rufi started for a sort, you sort only the pages not sorted yet, and nothing else changes; in the user's own turn you can also change how pages were sorted ("pages 3 and 4 are one letter"). All or nothing; the same call again gets the same answer.`,
   input: SortInput,
   callers: "model",
   readOnly: false,
@@ -498,7 +498,7 @@ export const sortDocuments = defineTool({
         {
           page: 1,
           test_name: "Potassium",
-          value_text: "4.[2?]",
+          value_text: "4.2",
           value_number: 4.2,
           unit: "mmol/L",
           date: { label: "Collected", date: "04/05/2026", iso: "2026-05-04" },
