@@ -12,6 +12,7 @@ A family's health record on their Mac, with an AI that reads their documents and
 ## Tests
 
 - Code decides it: a code test with exact assertions. The AI decides it: a live test with the real AI on fictional data (`pnpm smoke`, the reader pack). Never mock the AI's judgement, and no test modes in `src`.
+- A live test checks facts in code (what was saved, counts, missing pages); the AI's words and judgement get a verdict from an AI judge or a person, never text matching in code.
 - Tests meet the `tdd` skill's bar and never show a window or take the focus.
 - Never delete: live safety tests, person scope, private-log, file-serving, backup/restore/export, migration and upgrade, capture and Codex protocol tests.
 
