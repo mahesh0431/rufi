@@ -177,6 +177,11 @@ function Checking({
             <b className="text-[14px]">{name}</b>{" "}
             <span className="text-muted">· {about}</span>
           </h2>
+          {document.status === "failed" && (
+            <p className="text-xs">
+              Failed · {document.reading?.error ?? "it stopped"}
+            </p>
+          )}
           <p className="text-xs text-muted">
             {settled ??
               "What the reader read, not saved. These become part of your health record only when you save them in the chat."}

@@ -7,6 +7,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
+import { ChatGptError } from "../../server/src/agent/chatgpt/openai.ts";
 import { readPage, scriptedReader } from "../../server/tests/fake-reader.ts";
 import { expect, test, type Rufi } from "./rufi.ts";
 
@@ -281,4 +282,44 @@ test("keeps unreadable pages to check and reserves Nothing to save for a complet
   await status.getByRole("button", { name: "Retry" }).click();
   await expect(status).toContainText("Nothing to save");
   await expect(status.getByRole("button", { name: "Retry" })).toBeHidden();
+});
+
+test("a reading that failed signed out gives its reason in full, in View reading and on the document page", async ({
+  page,
+  rufi,
+}) => {
+  const why =
+    "Not signed in. Sign in with ChatGPT: in Rufi, or with pnpm rufi signin.";
+  const reader = scriptedReader([
+    () => Promise.reject(new ChatGptError("not_signed_in", why)),
+  ]);
+  await start(page, rufi, reader);
+  const row = page.getByRole("row", { name: /sunrise-labs-august\.pdf/ });
+  await expect(row).toContainText("Failed · read 0 of 2");
+  /** The line is all there: none of it cut off. */
+  const whole = async (text: string) => {
+    const line = page.getByText(text, { exact: true });
+    await expect(line).toBeVisible();
+    expect(
+      await line.evaluate(
+        (element) =>
+          element.scrollWidth <= element.clientWidth &&
+          element.scrollHeight <= element.clientHeight,
+      ),
+    ).toBe(true);
+  };
+
+  await row.getByRole("button", { name: "View reading" }).click();
+  const sheet = page.getByRole("dialog");
+  await expect(sheet.getByRole("heading", { level: 2 })).toHaveText(
+    "sunrise-labs-august.pdf · failed · read 0 of 2",
+  );
+  await whole(why);
+  await accessible(page);
+  await sheet.getByRole("button", { name: "Close" }).click();
+
+  await row.getByRole("link", { name: "sunrise-labs-august.pdf" }).click();
+  await whole(`Failed · ${why}`);
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+  await accessible(page);
 });
