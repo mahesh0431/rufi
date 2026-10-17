@@ -234,6 +234,12 @@ function keepFocusOnLoad(frame: HTMLIFrameElement | null) {
   };
 }
 
+/** A page's address, with Rufi's appearance when it is light or dark. */
+const inAppearance = (url: string, appearance: string) =>
+  appearance === "light" || appearance === "dark"
+    ? `${url}${url.includes("?") ? "&" : "?"}appearance=${appearance}`
+    : url;
+
 /**
  * A page the AI made, drawn in the reply at a fixed height (it scrolls inside
  * its frame), with its title (the reply's words for it, or its file name)
@@ -251,6 +257,32 @@ export function Page({ path, title }: { path: string; title: string }) {
   const [src, setSrc] = useState<string>();
   if (src === undefined && file.data && !file.isStale) setSrc(file.data.url);
   const [opened, setOpened] = useState<ShownFile | null>(null);
+  // Rufi's appearance, when it is light or dark, goes in the page's address:
+  // a frame follows the system's otherwise. A new one loads the page again
+  // in place, also open large, from a fresh address: an old one may have
+  // run out. Until then the page keeps its look.
+  const appearance = useRootData("appearance", "system");
+  const [lookedIn, setLookedIn] = useState(appearance);
+  useEffect(() => {
+    if (appearance === lookedIn) return;
+    let gone = false;
+    client.query({ ...fileQuery(path), staleTime: 0 }).then(
+      (fresh) => {
+        if (gone) return;
+        setSrc(fresh.url);
+        setOpened((now) => now && fresh);
+        setLookedIn(appearance);
+      },
+      // Gone, refused or failed: the card says so (the query holds why);
+      // the frames take the new look on the address they have.
+      () => {
+        if (!gone) setLookedIn(appearance);
+      },
+    );
+    return () => {
+      gone = true;
+    };
+  }, [appearance, lookedIn, client, path]);
   const [state, setState] = useState<"idle" | "opening" | "failed">("idle");
   const frame = useRef<HTMLIFrameElement>(null);
   // The served page relays only Esc. Its opaque origin cannot reach this
@@ -283,7 +315,7 @@ export function Page({ path, title }: { path: string; title: string }) {
       {/* Locked twice: this frame's sandbox and the page's own policy. */}
       <iframe
         ref={keepFocusOnLoad}
-        src={src}
+        src={inAppearance(src, lookedIn)}
         title={name}
         sandbox="allow-scripts"
         className="block h-100 w-full rounded-[10px] border border-line bg-paper"
@@ -350,7 +382,7 @@ export function Page({ path, title }: { path: string; title: string }) {
               {/* Locked twice: this frame's sandbox and the page's own policy. */}
               <iframe
                 ref={frame}
-                src={opened.url}
+                src={inAppearance(opened.url, lookedIn)}
                 title={name}
                 sandbox="allow-scripts"
                 className="m-2.5 min-h-0 flex-1 rounded-lg border border-line bg-paper"
@@ -400,19 +432,22 @@ function Failed({ retry }: { retry: () => void }) {
   );
 }
 
-/** The theme in use, as public/theme.js names it on <html data-theme>. */
-function useTheme(): string {
+/**
+ * A value on <html>, as it changes: the theme in use (`data-theme`, named by
+ * public/theme.js) or the appearance chosen (`data-appearance`).
+ */
+function useRootData(name: "theme" | "appearance", otherwise: string): string {
   return useSyncExternalStore(
     (changed) => {
       const watch = new MutationObserver(changed);
       watch.observe(document.documentElement, {
-        attributeFilter: ["data-theme"],
+        attributeFilter: [`data-${name}`],
       });
       return () => {
         watch.disconnect();
       };
     },
-    () => document.documentElement.dataset["theme"] ?? "light",
+    () => document.documentElement.dataset[name] ?? otherwise,
   );
 }
 
@@ -431,7 +466,7 @@ export function Diagram({
   /** The code block, shown until the diagram is drawn. */
   children: ReactNode;
 }) {
-  const theme = useTheme();
+  const theme = useRootData("theme", "light");
   const frame = useRef<HTMLIFrameElement>(null);
   const [drawn, setDrawn] = useState<
     { src: string; height: number } | "failed" | null

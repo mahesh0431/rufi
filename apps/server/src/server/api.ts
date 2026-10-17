@@ -188,6 +188,54 @@ addEventListener("keydown", (event) => {
   }
 }, true);
 </script>`;
+/** A `prefers-color-scheme` condition in a media query. */
+const SCHEME_FEATURE = /\(\s*prefers-color-scheme\s*:\s*(light|dark)\s*\)/gi;
+/** In place of a condition on the chosen scheme, and on the other one. */
+const ALWAYS = "(width >= 0)";
+const NEVER = "(width < 0)";
+/**
+ * A generated page in Rufi's appearance, light or dark, in place of the
+ * system's: a frame's `prefers-color-scheme` follows the system, not the
+ * page that frames it. Each such condition in the page's text (its styles,
+ * `media` attributes and its scripts' queries) becomes one that always or
+ * never holds, before any of it runs. Read as Latin-1, so every other byte
+ * is served as it is; the file on disk doesn't change. Not done for System,
+ * which the frame already follows.
+ */
+const inAppearance = (bytes: Buffer, chosen: "light" | "dark") =>
+  Buffer.from(
+    bytes
+      .toString("latin1")
+      .replace(SCHEME_FEATURE, (_, scheme: string) =>
+        scheme.toLowerCase() === chosen ? ALWAYS : NEVER,
+      ),
+    "latin1",
+  );
+/**
+ * Appended with Esc to a page in Rufi's appearance: a query the page builds
+ * later follows it too, and a page that takes both schemes gets the chosen
+ * one for the browser's own colours.
+ */
+const pageAppearance = (chosen: "light" | "dark") => `
+<script>
+{
+  const chosen = ${JSON.stringify(chosen)};
+  const own = matchMedia.bind(window);
+  window.matchMedia = (query) =>
+    own(
+      String(query).replace(${String(SCHEME_FEATURE)}, (_, scheme) =>
+        scheme.toLowerCase() === chosen ? ${JSON.stringify(ALWAYS)} : ${JSON.stringify(NEVER)}),
+    );
+  const both = (value) => /light/.test(value) && /dark/.test(value);
+  const root = document.documentElement;
+  if (
+    both(getComputedStyle(root).colorScheme) ||
+    both(document.querySelector('meta[name="color-scheme"]')?.content ?? "")
+  ) {
+    root.style.colorScheme = chosen;
+  }
+}
+</script>`;
 /** A standalone request never receives the generated page's active content. */
 const OPEN_IN_RUFI = `<!doctype html><html lang="en"><meta charset="utf-8"><title>Open in Rufi</title><body><p>Open this page from the chat in Rufi.</p></body></html>`;
 const FORWARDING = [
@@ -980,9 +1028,15 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     c.header("Content-Type", type);
     if (shape === "page") {
       c.header("Content-Security-Policy", pageCsp(origin()));
+      // The address names Rufi's appearance when it is light or dark.
+      const chosen = c.req.query("appearance");
+      const page =
+        chosen === "light" || chosen === "dark"
+          ? [inAppearance(bytes, chosen), Buffer.from(pageAppearance(chosen))]
+          : [bytes];
       return c.body(
         new Uint8Array(
-          Buffer.concat([bytes, Buffer.from(pageEscape(origin()))]),
+          Buffer.concat([...page, Buffer.from(pageEscape(origin()))]),
         ),
       );
     }

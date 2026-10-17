@@ -613,6 +613,17 @@ test.describe("the page", () => {
     store.close();
     const app = await desktop.launch();
     const page = await app.electron.firstWindow();
+    // How the save ended: the file shows before it is all written.
+    await app.electron.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.webContents.session.on(
+        "will-download",
+        (_event, item) => {
+          item.once("done", (_done, state) => {
+            (globalThis as { saved?: string }).saved = state;
+          });
+        },
+      );
+    });
     await page.getByRole("link", { name: "Settings" }).click();
     await page.getByRole("button", { name: "Export" }).click();
     await expect(page.getByRole("status")).toContainText("Exported");
@@ -622,7 +633,11 @@ test.describe("the page", () => {
       path: string;
     };
     expect(name).toMatch(/^rufi-export-\d{4}-\d{2}-\d{2}\.zip$/);
-    await expect.poll(() => existsSync(path)).toBe(true);
+    await expect
+      .poll(() =>
+        app.electron.evaluate(() => (globalThis as { saved?: string }).saved),
+      )
+      .toBe("completed");
     const files = unzipSync(await readFile(path));
     expect(Object.keys(files)).toContain(
       `${name.replace(/\.zip$/, "")}/README.md`,
@@ -783,16 +798,23 @@ test("shows a document's PDF in the built-in viewer; a link in it leaves the win
     );
   });
   // The PDF's "Verify at https://example.com/verify" link, where the viewer
-  // draws page 1 in the window's first size.
-  await page.mouse.click(560, 322);
+  // draws page 1 in the window's first size. The title comes as the PDF
+  // loads, which can be before the viewer has page 1 there to take a click
+  // (on a busy machine): click until the link is followed.
+  const tried = () =>
+    app.electron.evaluate(
+      () => (globalThis as { tried?: string[] }).tried ?? [],
+    );
+  await expect(async () => {
+    await page.mouse.click(560, 322);
+    await expect.poll(tried, { timeout: 1_000 }).not.toEqual([]);
+  }).toPass({ timeout: 10_000 });
 
   // The link tries to take the window away; the window stays in Rufi and
   // the browser isn't asked, as for any link a frame follows.
-  await expect
-    .poll(() =>
-      app.electron.evaluate(() => (globalThis as { tried?: string[] }).tried),
-    )
-    .toEqual(["https://example.com/verify"]);
+  expect(new Set(await tried())).toEqual(
+    new Set(["https://example.com/verify"]),
+  );
   expect(page.url()).toBe(documents);
   expect(app.told).toEqual([]);
   // Esc goes to the PDF viewer while it has the focus; × closes the popup.
