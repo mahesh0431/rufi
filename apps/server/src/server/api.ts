@@ -190,37 +190,42 @@ addEventListener("keydown", (event) => {
 </script>`;
 /** A `prefers-color-scheme` condition in a media query. */
 const SCHEME_FEATURE = /\(\s*prefers-color-scheme\s*:\s*(light|dark)\s*\)/gi;
+/** In place of a condition on the chosen scheme, and on the other one. */
+const ALWAYS = "(width >= 0)";
+const NEVER = "(width < 0)";
 /**
- * Rufi's appearance, light or dark, in place of the system's for a generated
- * page: a frame's `prefers-color-scheme` follows the system, not the page
- * that frames it. Appended with Esc, after the page's own styles: each
- * `prefers-color-scheme` condition in them, and in its later `matchMedia`
- * calls, becomes one that always or never holds; a page that takes both
- * schemes gets the chosen one for the browser's own colours. Not sent for
- * System, which the frame already follows.
+ * A generated page in Rufi's appearance, light or dark, in place of the
+ * system's: a frame's `prefers-color-scheme` follows the system, not the
+ * page that frames it. Each such condition in the page's text (its styles,
+ * `media` attributes and its scripts' queries) becomes one that always or
+ * never holds, before any of it runs. Read as Latin-1, so every other byte
+ * is served as it is; the file on disk doesn't change. Not done for System,
+ * which the frame already follows.
+ */
+const inAppearance = (bytes: Buffer, chosen: "light" | "dark") =>
+  Buffer.from(
+    bytes
+      .toString("latin1")
+      .replace(SCHEME_FEATURE, (_, scheme: string) =>
+        scheme.toLowerCase() === chosen ? ALWAYS : NEVER,
+      ),
+    "latin1",
+  );
+/**
+ * Appended with Esc to a page in Rufi's appearance: a query the page builds
+ * later follows it too, and a page that takes both schemes gets the chosen
+ * one for the browser's own colours.
  */
 const pageAppearance = (chosen: "light" | "dark") => `
 <script>
 {
   const chosen = ${JSON.stringify(chosen)};
-  const follow = (query) =>
-    query.replace(${String(SCHEME_FEATURE)}, (_, scheme) =>
-      scheme.toLowerCase() === chosen ? "(width >= 0)" : "(width < 0)");
-  const rewrite = (media) => {
-    if (media && media.mediaText) media.mediaText = follow(media.mediaText);
-  };
-  const walk = (rules) => {
-    for (const rule of rules) {
-      if (rule instanceof CSSMediaRule) rewrite(rule.media);
-      if (rule.cssRules) walk(rule.cssRules);
-    }
-  };
-  for (const sheet of document.styleSheets) {
-    rewrite(sheet.media);
-    walk(sheet.cssRules);
-  }
   const own = matchMedia.bind(window);
-  window.matchMedia = (query) => own(follow(String(query)));
+  window.matchMedia = (query) =>
+    own(
+      String(query).replace(${String(SCHEME_FEATURE)}, (_, scheme) =>
+        scheme.toLowerCase() === chosen ? ${JSON.stringify(ALWAYS)} : ${JSON.stringify(NEVER)}),
+    );
   const both = (value) => /light/.test(value) && /dark/.test(value);
   const root = document.documentElement;
   if (
@@ -1025,10 +1030,15 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       c.header("Content-Security-Policy", pageCsp(origin()));
       // The address names Rufi's appearance when it is light or dark.
       const chosen = c.req.query("appearance");
-      const after =
-        pageEscape(origin()) +
-        (chosen === "light" || chosen === "dark" ? pageAppearance(chosen) : "");
-      return c.body(new Uint8Array(Buffer.concat([bytes, Buffer.from(after)])));
+      const page =
+        chosen === "light" || chosen === "dark"
+          ? [inAppearance(bytes, chosen), Buffer.from(pageAppearance(chosen))]
+          : [bytes];
+      return c.body(
+        new Uint8Array(
+          Buffer.concat([...page, Buffer.from(pageEscape(origin()))]),
+        ),
+      );
     }
     return c.body(new Uint8Array(bytes));
   });

@@ -450,15 +450,26 @@ test("a page draws in the reply at a fixed height and opens large over the chat:
   }
 });
 
-/** A page with a dark look, which says later which one its script sees. */
+/**
+ * A page with a dark look, which says what its scripts see: one that runs as
+ * the page loads (as a chart drawn inline does), and one later, with a query
+ * it builds. Both schemes' colours come from its `light-dark()` text.
+ */
 const COLOURS = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>Colours</title><style>
-body { background: rgb(255, 255, 255); }
+:root { color-scheme: light dark; }
+body { background: rgb(255, 255, 255); color: light-dark(rgb(1, 1, 1), rgb(2, 2, 2)); }
 @media (prefers-color-scheme: dark) { body { background: rgb(0, 0, 0); } }
-</style></head><body><p id="seen">…</p><script>
+</style></head><body><p id="loading"></p><p id="seen">…</p><script>
+const scheme = (query) => (matchMedia(query).matches ? "dark" : "light");
+document.getElementById("loading").textContent = [
+  getComputedStyle(document.body).backgroundColor,
+  scheme("(prefers-color-scheme: dark)"),
+].join(" ");
 addEventListener("load", () => {
-  document.getElementById("seen").textContent =
-    matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  document.getElementById("seen").textContent = scheme(
+    "(prefers-color-scheme: " + "dark)",
+  );
 });
 </script></body></html>`;
 
@@ -484,19 +495,31 @@ for (const { system, chosen } of [
         .check();
       await page.getByRole("link", { name: "Chat with Rufi" }).click();
     };
-    /** What the page shows: its background, and what its script saw. */
+    /** What the page shows, and what its scripts saw, loading and later. */
     const looks = async () => {
       const frame = page.frameLocator('iframe[title="Colours"]');
       await expect(frame.locator("#seen")).not.toHaveText("…");
       return {
-        background: await frame
-          .locator("body")
-          .evaluate((body) => getComputedStyle(body).backgroundColor),
+        ...(await frame.locator("body").evaluate((body) => {
+          const { backgroundColor, color } = getComputedStyle(body);
+          return { background: backgroundColor, text: color };
+        })),
+        loading: await frame.locator("#loading").textContent(),
         seen: await frame.locator("#seen").textContent(),
       };
     };
-    const black = { background: "rgb(0, 0, 0)", seen: "dark" };
-    const white = { background: "rgb(255, 255, 255)", seen: "light" };
+    const black = {
+      background: "rgb(0, 0, 0)",
+      text: "rgb(2, 2, 2)",
+      loading: "rgb(0, 0, 0) dark",
+      seen: "dark",
+    };
+    const white = {
+      background: "rgb(255, 255, 255)",
+      text: "rgb(1, 1, 1)",
+      loading: "rgb(255, 255, 255) light",
+      seen: "light",
+    };
 
     await choose(chosen);
     const box = page.getByRole("textbox", { name: "Message to Rufi" });

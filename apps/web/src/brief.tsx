@@ -79,7 +79,7 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
               <span className="break-words">
                 <Cited personId={person.id} source={source} />
                 {source.changedSince && (
-                  <span className="ml-1.5 text-xs text-accent-ink">
+                  <span className="ml-1.5 text-xs text-muted">
                     changed since
                   </span>
                 )}
