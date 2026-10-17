@@ -379,6 +379,22 @@ export function deletions(deps: {
             .where("person_id", "=", personId)
             .where("document_id", "=", documentId)
             .execute();
+          // The copies of its own pages; another document's stay.
+          await trx
+            .deleteFrom("page_copies")
+            .where("person_id", "=", personId)
+            .where((eb) =>
+              eb.exists(
+                eb
+                  .selectFrom("document_pages as p")
+                  .select("p.position")
+                  .whereRef("p.person_id", "=", "page_copies.person_id")
+                  .whereRef("p.file_id", "=", "page_copies.file_id")
+                  .whereRef("p.page_in_file", "=", "page_copies.page_in_file")
+                  .where("p.document_id", "=", documentId),
+              ),
+            )
+            .execute();
           await trx
             .updateTable("document_pages")
             .set({

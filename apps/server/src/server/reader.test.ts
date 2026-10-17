@@ -27,6 +27,7 @@ import { deletions } from "../core/documents/delete.ts";
 import { documents, type Documents } from "../core/documents/documents.ts";
 import { fileGate } from "../core/documents/gate.ts";
 import { notebook } from "../core/documents/notebook.ts";
+import { entryReader } from "../core/documents/reader-tools.ts";
 import { pages } from "../core/documents/pages.ts";
 import { readings, type Readings } from "../core/documents/reading.ts";
 import {
@@ -101,8 +102,10 @@ async function startReader(
   served.push(server);
   const running = reader({
     readings: reads,
-    book: notebook(store, () => NOW),
-    pages: pages(store, home),
+    kind: entryReader(
+      pages(store, home),
+      notebook(store, () => NOW),
+    ),
     event: async (id, event, write) => {
       const chat = await transcripts.chat(id);
       if (!chat) throw new Error("No chat.");

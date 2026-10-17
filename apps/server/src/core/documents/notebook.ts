@@ -5,7 +5,9 @@
 // current run, only for that job's target pages, and only for a page the run
 // has looked at since its last compaction. A refusal changes nothing.
 import { Schema } from "effect";
+import type { Transaction } from "kysely";
 import type { Store } from "../store/database.ts";
+import type { Tables } from "../store/tables.ts";
 import { Refusal } from "../tools/registry.ts";
 
 const Text = (max: number, description: string) =>
@@ -150,6 +152,41 @@ const ranges = (positions: readonly number[]) => {
   return parts.join(", ");
 };
 
+/**
+ * Refuses a save the run may not make: a closed run, a page outside the
+ * job's targets, or one not looked at since the run began or compacted.
+ */
+export function mayWrite(run: Run, position: number) {
+  if (run.closed)
+    throw new Refusal("This reading has ended; nothing more is saved.");
+  if (!run.targets.includes(position)) {
+    throw new Refusal(
+      `Page ${String(position)} isn't one of the pages this reading saves (${ranges(run.targets)}).`,
+    );
+  }
+  if (!run.lookedAt.has(position)) {
+    throw new Refusal(
+      `Look at page ${String(position)} with get_page first, then save it.`,
+    );
+  }
+}
+
+/** Inside a save's transaction: refuses when the job isn't running this attempt any more. */
+export async function stillRunning(trx: Transaction<Tables>, run: Run) {
+  const job = await trx
+    .selectFrom("jobs")
+    .select(["state", "attempt"])
+    .where("person_id", "=", run.personId)
+    .where("id", "=", run.jobId)
+    .where("document_id", "=", run.documentId)
+    .executeTakeFirst();
+  if (job?.state !== "running" || job.attempt !== run.attempt) {
+    throw new Refusal(
+      "This reading isn't running any more; nothing more is saved.",
+    );
+  }
+}
+
 export function notebook(
   store: Store,
   now: () => string = () => new Date().toISOString(),
@@ -209,31 +246,9 @@ export function notebook(
       entry: Entry,
       note: string | undefined,
     ) => {
-      if (run.closed)
-        throw new Refusal("This reading has ended; nothing more is saved.");
-      if (!run.targets.includes(position)) {
-        throw new Refusal(
-          `Page ${String(position)} isn't one of the pages this reading saves (${ranges(run.targets)}).`,
-        );
-      }
-      if (!run.lookedAt.has(position)) {
-        throw new Refusal(
-          `Look at page ${String(position)} with get_page first, then save it.`,
-        );
-      }
+      mayWrite(run, position);
       await db.transaction().execute(async (trx) => {
-        const job = await trx
-          .selectFrom("jobs")
-          .select(["state", "attempt"])
-          .where("person_id", "=", run.personId)
-          .where("id", "=", run.jobId)
-          .where("document_id", "=", run.documentId)
-          .executeTakeFirst();
-        if (job?.state !== "running" || job.attempt !== run.attempt) {
-          throw new Refusal(
-            "This reading isn't running any more; nothing more is saved.",
-          );
-        }
+        await stillRunning(trx, run);
         const written = await trx
           .updateTable("document_pages")
           .set({

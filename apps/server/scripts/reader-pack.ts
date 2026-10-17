@@ -28,6 +28,7 @@ import { transcripts as openTranscripts } from "../src/core/chat/transcript.ts";
 import { documents, type NewFile } from "../src/core/documents/documents.ts";
 import { notebook, type Entry } from "../src/core/documents/notebook.ts";
 import { pages } from "../src/core/documents/pages.ts";
+import { entryReader } from "../src/core/documents/reader-tools.ts";
 import { readings } from "../src/core/documents/reading.ts";
 import { databasePath, openWritable } from "../src/core/store/database.ts";
 import { childEnvironment, rufiHome } from "../src/platform/config.ts";
@@ -305,8 +306,7 @@ async function readOne(item: Item) {
   port = served.port;
   const running = reader({
     readings: reads,
-    book: notebook(store),
-    pages: pages(store, home),
+    kind: entryReader(pages(store, home), notebook(store)),
     event: async (id, event, write) => {
       const chat = await transcripts.chat(id);
       if (!chat) throw new Error("No chat.");

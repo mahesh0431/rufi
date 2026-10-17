@@ -15,6 +15,11 @@ import {
 } from "../tools/registry.ts";
 import { Entry, Note, type Notebook, type Run } from "./notebook.ts";
 import type { Pages } from "./pages.ts";
+import {
+  READER_INSTRUCTIONS,
+  READER_VERSION,
+  readerInput,
+} from "./reader-instructions.ts";
 
 const Page = Schema.Int.check(Schema.isGreaterThan(0)).annotate({
   description: "The page's number in this document: 1, 2, 3...",
@@ -101,9 +106,8 @@ function readerTools(run: Run, pages: Pages, book: Notebook): readonly Tool[] {
   return [getPage, savePage];
 }
 
-/** The reader's tools: their catalog for its MCP endpoint, and its caller. */
-export function forReader(run: Run, pages: Pages, book: Notebook, log: Log) {
-  const tools = readerTools(run, pages, book);
+/** A reader's tools for one run: their catalog for its MCP endpoint, and its caller. */
+export function readerCaller(run: Run, tools: readonly Tool[], log: Log) {
   return {
     specs: tools.map(specOf),
     call: toolCaller(
@@ -112,5 +116,45 @@ export function forReader(run: Run, pages: Pages, book: Notebook, log: Log) {
       log,
       READER_REJECTIONS,
     ),
+  };
+}
+
+/** The reader's tools: their catalog for its MCP endpoint, and its caller. */
+export function forReader(run: Run, pages: Pages, book: Notebook, log: Log) {
+  return readerCaller(run, readerTools(run, pages, book), log);
+}
+
+/** What a reader's run gets from the reading: as readings.about tells it. */
+interface About {
+  /** The display name of the person the document was added for. */
+  person: string;
+  pages: number;
+  files: readonly string[];
+  targets: readonly number[];
+  /** Targets this job saved in an earlier run. */
+  saved: readonly number[];
+  note: string | null;
+}
+
+/**
+ * How a reader reads (server/reader.ts runs it): its instructions, its
+ * message for a run, its tools bound to the run, and the version stored
+ * with a reading. Rufi runs the reader that writes entries in its
+ * notebook; the one that copies pages is in copy-reader.ts.
+ */
+export interface ReaderKind {
+  instructions: string;
+  input: (about: About) => string;
+  tools: (run: Run, log: Log) => ReturnType<typeof readerCaller>;
+  version: object;
+}
+
+/** The reader that writes each page's entry, from which a reading makes drafts. */
+export function entryReader(pages: Pages, book: Notebook): ReaderKind {
+  return {
+    instructions: READER_INSTRUCTIONS,
+    input: readerInput,
+    tools: (run, log) => forReader(run, pages, book, log),
+    version: READER_VERSION,
   };
 }

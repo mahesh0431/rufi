@@ -1,11 +1,12 @@
 // Reading documents: the jobs that read them, one at a time, and what a
 // reading writes when it starts and when it ends. A job targets some pages
 // of its document (all of them first; a retry only the pages that failed).
-// Its runs write the notebook (notebook.ts); only a run whose reader turn
-// completed normally finishes the job, in one transaction with its end
-// line: page states, the draft items from this job's entries, the
-// document's kind, date and version, and the job done. A failed job keeps
-// its entries and makes no drafts; Retry continues it. Nothing here writes
+// Its runs write the notebook (notebook.ts), or page copies for a reader
+// that copies (copies.ts); only a run whose reader turn completed normally
+// finishes the job, in one transaction with its end line: page states, the
+// draft items from this job's entries (a copy makes none), the document's
+// kind, date and version, and the job done. A failed job keeps its entries
+// and copies and makes no drafts; Retry continues it. Nothing here writes
 // the record. Rufi reads each document as it is added.
 import type { Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
@@ -209,6 +210,29 @@ export function readings(
     return row && jobOf(row);
   };
 
+  /** The outcomes of a reader that copies: this job's page copies, by position. */
+  const copiedBy = async (
+    trx: Trx | Store["query"],
+    run: Pick<Run, "jobId" | "personId" | "documentId">,
+  ) =>
+    new Map(
+      (
+        await trx
+          .selectFrom("page_copies as c")
+          .innerJoin("document_pages as p", (join) =>
+            join
+              .onRef("p.person_id", "=", "c.person_id")
+              .onRef("p.file_id", "=", "c.file_id")
+              .onRef("p.page_in_file", "=", "c.page_in_file"),
+          )
+          .select(["p.position", "c.outcome", "c.why"])
+          .where("c.person_id", "=", run.personId)
+          .where("c.job_id", "=", run.jobId)
+          .where("p.document_id", "=", run.documentId)
+          .execute()
+      ).map((c) => [c.position, c] as const),
+    );
+
   /** The facts of a reading for its end line and its note for the AI. */
   const ending = async (
     run: Pick<Run, "jobId" | "personId" | "documentId" | "targets">,
@@ -230,9 +254,10 @@ export function readings(
       .execute();
     const name = documentName(pages.map((p) => p.file_name));
     const targets = new Set(run.targets);
-    const mine = pages.filter(
-      (p) => targets.has(p.position) && p.entry_job_id === run.jobId && p.entry,
+    const saved = pages.filter(
+      (p) => targets.has(p.position) && p.entry_job_id === run.jobId,
     );
+    const mine = saved.filter((p) => p.entry);
     const facts = (results: number, unsure: number) => ({
       document: run.documentId,
       results,
@@ -240,9 +265,30 @@ export function readings(
     });
     if (failure !== undefined) {
       return {
-        line: `Couldn't finish reading ${name} · ${failure} · read ${String(mine.length)} of ${String(targets.size)}`,
+        line: `Couldn't finish reading ${name} · ${failure} · read ${String(saved.length)} of ${String(targets.size)}`,
         ask: undefined,
         facts: { ...facts(0, 0), action: "retry" },
+      };
+    }
+    // A reader that copies: what it copied, and nothing it decided.
+    const copied = await copiedBy(db, run);
+    if (copied.size > 0) {
+      const outcomes = [...copied.values()];
+      const unreadable = outcomes.filter((c) => c.outcome === "unreadable");
+      const notLooked = run.targets.filter((t) => !copied.has(t));
+      return {
+        line: [
+          name,
+          `${plural(copied.size - unreadable.length, "page")} copied`,
+          ...(unreadable.length > 0
+            ? [`${plural(unreadable.length, "page")} couldn't be read`]
+            : []),
+          ...(notLooked.length > 0
+            ? [`${plural(notLooked.length, "page")} not looked at`]
+            : []),
+        ].join(" · "),
+        ask: undefined,
+        facts: { ...facts(0, 0), action: "open" },
       };
     }
     // An entry saved by an older Rufi keeps the checks it stored with it.
@@ -717,9 +763,26 @@ export function readings(
         .where("document_id", "=", run.documentId)
         .orderBy("position")
         .execute();
+      const copied = await copiedBy(trx, run);
       for (const target of run.targets) {
         const page = pages.find((p) => p.position === target);
         if (!page) continue;
+        // A reader that copies: the page's state, and no drafts.
+        const copy = copied.get(target);
+        if (copy) {
+          page.state = copy.outcome;
+          await trx
+            .updateTable("document_pages")
+            .set({
+              state: page.state,
+              state_why: copy.outcome === "unreadable" ? copy.why : null,
+            })
+            .where("person_id", "=", run.personId)
+            .where("document_id", "=", run.documentId)
+            .where("position", "=", target)
+            .execute();
+          continue;
+        }
         const entry =
           page.entry_job_id === run.jobId && page.entry
             ? (JSON.parse(page.entry) as Entry)

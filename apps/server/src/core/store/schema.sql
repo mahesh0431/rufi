@@ -137,6 +137,28 @@ CREATE TABLE draft_items (
   CHECK ((status = 'dismissed') = (dismissed_by IS NOT NULL))
 ) STRICT;
 
+-- The reader's copy of a page (a reader that copies, not yet the one Rufi
+-- runs): the page as Markdown, exactly as printed, with the reader's marks
+-- for what was unclear. One per page of a file and reading: known by the
+-- file page (person, file, page in file) and the reading's job, never by
+-- the document the page is in now. A run of the reading saves it again in
+-- place until the reading ends; a new reading of the page adds its own.
+-- Gone with the page's document.
+CREATE TABLE page_copies (
+  person_id TEXT NOT NULL,
+  file_id TEXT NOT NULL,
+  page_in_file INTEGER NOT NULL,
+  job_id TEXT NOT NULL,        -- the reading that copied it
+  attempt INTEGER NOT NULL,    -- the run that saved it
+  outcome TEXT NOT NULL CHECK (outcome IN ('read', 'nothing_here', 'unreadable')),
+  copy TEXT NOT NULL,          -- the page as Markdown (HTML tables allowed), as the reader wrote it
+  why TEXT,                    -- why it is unreadable
+  saved_at TEXT NOT NULL,
+  PRIMARY KEY (person_id, file_id, page_in_file, job_id),
+  FOREIGN KEY (person_id, file_id, page_in_file) REFERENCES document_pages (person_id, file_id, page_in_file),
+  FOREIGN KEY (person_id, job_id) REFERENCES jobs (person_id, id)
+) STRICT;
+
 -- A report as printed, made when its results are saved. A complete lab,
 -- report number and collection date identifies it across the person's
 -- documents; otherwise it stays within one document. document_id is its
@@ -544,6 +566,7 @@ CREATE TABLE briefs (
 CREATE INDEX documents_by_added ON documents (person_id, added_at);
 CREATE INDEX jobs_by_state ON jobs (state, created_at);
 CREATE INDEX jobs_by_document ON jobs (person_id, document_id, created_at);
+CREATE INDEX page_copies_by_job ON page_copies (person_id, job_id);
 CREATE INDEX reports_by_document ON reports (person_id, document_id);
 CREATE INDEX results_by_report ON results (person_id, report_id);
 CREATE INDEX results_by_test ON results (person_id, test_name, unit, measured_at);
@@ -559,4 +582,4 @@ CREATE INDEX sources_by_record ON record_sources (person_id, record_id);
 CREATE INDEX drafts_by_document ON draft_items (person_id, document_id, page, seq);
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 10;
+PRAGMA user_version = 11;
