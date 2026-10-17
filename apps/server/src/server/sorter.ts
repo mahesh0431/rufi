@@ -12,6 +12,8 @@ export function sorter(deps: {
   sorting: Pick<Sorting, "tend">;
   /** The person's queue has rows Rufi put there: hand them over. */
   wake: (personId: string) => Promise<void>;
+  /** The person's sorting changed: tell their screens. */
+  changed: (personId: string) => void;
   log: Log;
   now?: () => number;
 }) {
@@ -39,7 +41,8 @@ export function sorter(deps: {
       let delay = IDLE_MS;
       poked = false;
       try {
-        const { people, wake } = await deps.sorting.tend();
+        const { people, changed, wake } = await deps.sorting.tend();
+        for (const person of changed) deps.changed(person);
         for (const person of people) await deps.wake(person);
         if (wake !== undefined) {
           delay = Math.min(delay, Date.parse(wake) - now());

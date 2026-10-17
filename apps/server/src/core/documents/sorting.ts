@@ -1016,13 +1016,19 @@ export function sorting(
      * one that completed without sorting waits for the person; one the
      * person stopped waits for them to go on; a failed turn, or a hand-over
      * that failed, is tried again after a wait, three times, then waits for
-     * Retry. Returns the people whose chat has a row to hand over now, and
-     * when the next try falls due.
+     * Retry. Returns the people whose chat has a row to hand over now,
+     * those whose requests changed (for their screens), and when the next
+     * try falls due.
      */
-    tend: async (): Promise<{ people: string[]; wake: string | undefined }> =>
+    tend: async (): Promise<{
+      people: string[];
+      changed: string[];
+      wake: string | undefined;
+    }> =>
       db.transaction().execute(async (trx) => {
         const at = now();
         const people = new Set<string>();
+        const changed = new Set<string>();
         const open = await trx
           .selectFrom("sort_requests as r")
           .leftJoin("chat_queue as q", (join) =>
@@ -1053,6 +1059,7 @@ export function sorting(
         let wake: string | undefined;
         for (const request of open) {
           const failed = async (why: string) => {
+            changed.add(request.person_id);
             const wait = SORT_WAITS_MS[request.tries];
             if (wait === undefined) {
               await trx
@@ -1085,6 +1092,7 @@ export function sorting(
             } else {
               await requeue(trx, request, null);
               people.add(request.person_id);
+              changed.add(request.person_id);
             }
             continue;
           }
@@ -1099,6 +1107,7 @@ export function sorting(
           if (request.row === "handing_over") continue;
           if (request.row === "removed" || request.row === null) {
             // The person took it out of the queue: it waits for Retry.
+            changed.add(request.person_id);
             await trx
               .updateTable("sort_requests")
               .set({ state: "failed", error: null, ended_at: at })
@@ -1113,6 +1122,7 @@ export function sorting(
           if (request.turn === "running") continue;
           if (request.turn === "completed") {
             // Rufi AI answered without sorting: it asked the person.
+            changed.add(request.person_id);
             await trx
               .updateTable("sort_requests")
               .set({ state: "asked", ended_at: at })
@@ -1122,11 +1132,12 @@ export function sorting(
           }
           if (request.end_reason === "stopped") {
             await requeue(trx, request, "paused");
+            changed.add(request.person_id);
             continue;
           }
           await failed(request.end_text ?? "the AI stopped");
         }
-        return { people: [...people], wake };
+        return { people: [...people], changed: [...changed], wake };
       }),
 
     /**

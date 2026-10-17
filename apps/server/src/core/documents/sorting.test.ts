@@ -555,7 +555,11 @@ describe("a turn Rufi started", () => {
 describe("Rufi's work on the requests", () => {
   it("hands a waiting request over, tries a failed one again after a wait, three times, then waits for Retry", async () => {
     await asked();
-    expect(await sorts.tend()).toEqual({ people: ["asha"], wake: undefined });
+    expect(await sorts.tend()).toEqual({
+      people: ["asha"],
+      changed: [],
+      wake: undefined,
+    });
 
     for (const [index, wait] of SORT_WAITS_MS.entries()) {
       // The hand-over failed.
@@ -563,7 +567,11 @@ describe("Rufi's work on the requests", () => {
         "UPDATE chat_queue SET held = 'failed', held_text = 'The AI could not start.' WHERE state = 'waiting'",
       );
       const due = new Date(Date.parse(clock) + wait).toISOString();
-      expect(await sorts.tend()).toEqual({ people: [], wake: due });
+      expect(await sorts.tend()).toEqual({
+        people: [],
+        changed: ["asha"],
+        wake: due,
+      });
       expect(requests().at(-1)).toMatchObject({
         tries: index + 1,
         retry_at: due,

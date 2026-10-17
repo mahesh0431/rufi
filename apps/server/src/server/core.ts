@@ -302,7 +302,12 @@ export const startCore = (options: CoreOptions) =>
 
     const sortLoop = yield* Effect.acquireRelease(
       Effect.sync(() => {
-        const opened = openSorter({ sorting, wake: chat.wake, log });
+        const opened = openSorter({
+          sorting,
+          wake: chat.wake,
+          changed: readings.changed,
+          log,
+        });
         sorts.poke = opened.poke;
         return opened;
       }),
