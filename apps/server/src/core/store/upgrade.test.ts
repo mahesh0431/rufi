@@ -54,30 +54,38 @@ const SOURCES = [
     what: "Magnesium 200 mg · 3 Oct 2026 · current",
     from: "Your message, 5 Oct 2026: “I started magnesium 200 mg at night two days ago”",
     changedSince: true,
+    record: {
+      kind: "medicine_use",
+      id: "01a12747-0e00-72c9-b7f1-9ea94482ba7d",
+    },
   },
   {
     kind: "Medicine use",
     what: "Metformin 500 mg · Mar 2024 · current",
     from: "Saved before Rufi kept sources",
     changedSince: false,
+    record: { kind: "medicine_use", id: "med-a1" },
   },
   {
     kind: "Result",
     what: "Vitamin D 24 ng/mL · May 2026",
     from: "Your message, 8 Oct 2026: “My vitamin D in May was 24, not 22”",
     changedSince: false,
+    record: { kind: "result", id: "res-a7" },
   },
   {
     kind: "Result",
     what: "Ferritin 35 ng/mL · 1 Sep 2026",
     from: "Sunrise Labs report, collected 1 Sep 2026 · thyroid recheck.jpg, page 1",
     changedSince: false,
+    record: { kind: "result", id: "01a12747-0e0e-70a5-afd3-4e38a882c8ab" },
   },
   {
     kind: "Result",
     what: "TSH 4.6 mIU/L · 12 Aug 2026 · amended",
     from: "Sunrise Labs report, collected 1 Sep 2026 · thyroid recheck.jpg, page 1",
     changedSince: true,
+    record: { kind: "result", id: "res-a5" },
   },
 ];
 
