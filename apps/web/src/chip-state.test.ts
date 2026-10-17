@@ -14,7 +14,17 @@ const summary = (
   reading:
     status === "not_read"
       ? null
-      : { saved: 2, of: 2, results: 3, toCheck: 0, canRetry, error: null },
+      : {
+          saved: 2,
+          of: 2,
+          results: 3,
+          hasPending: true,
+          toCheck: 0,
+          itemsSaved: 0,
+          itemsSetAside: 0,
+          canRetry,
+          error: null,
+        },
   files: [],
 });
 

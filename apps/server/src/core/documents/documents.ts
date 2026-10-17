@@ -236,7 +236,10 @@ export function documents(
                   saved: reading.saved,
                   of: reading.of,
                   results: reading.results,
+                  hasPending: reading.hasPending,
                   toCheck: reading.toCheck,
+                  itemsSaved: reading.itemsSaved,
+                  itemsSetAside: reading.itemsSetAside,
                   canRetry: reading.canRetry,
                   error: reading.error,
                 }

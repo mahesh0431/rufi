@@ -881,7 +881,10 @@ export function readings(
           saved: number;
           of: number;
           results: number;
+          hasPending: boolean;
           toCheck: number;
+          itemsSaved: number;
+          itemsSetAside: number;
           canRetry: boolean;
           error: string | null;
         }
@@ -889,14 +892,18 @@ export function readings(
       for (const row of jobs) {
         const job = jobOf(row);
         const mine = pages.filter((p) => p.document_id === job.documentId);
-        // Current values only: an earlier column's values stay drafts but
-        // aren't counted, as in the end line.
         const pending = drafts.filter(
+          (d) => d.document_id === job.documentId && d.status === "pending",
+        );
+        // Current values only in the result count, as in the end line.
+        const current = pending.filter(
           (d) =>
-            d.document_id === job.documentId &&
-            d.status === "pending" &&
             (JSON.parse(d.fields) as { column?: string }).column !== "earlier",
         );
+        const done = (status: "saved" | "dismissed") =>
+          drafts.filter(
+            (d) => d.document_id === job.documentId && d.status === status,
+          ).length;
         statuses.set(job.documentId, {
           status:
             job.state === "queued" || job.state === "running"
@@ -907,8 +914,11 @@ export function readings(
               p.entry_job_id === job.id && job.targets.includes(p.position),
           ).length,
           of: job.targets.length,
-          results: pending.length,
-          toCheck: pending.filter((d) => d.unsure !== "[]").length,
+          results: current.length,
+          hasPending: pending.length > 0,
+          toCheck: current.filter((d) => d.unsure !== "[]").length,
+          itemsSaved: done("saved"),
+          itemsSetAside: done("dismissed"),
           canRetry:
             job.state === "failed" ||
             (job.state === "done" &&

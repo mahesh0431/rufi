@@ -321,6 +321,34 @@ export function describe(document: DocumentSummary): {
   return { name: first?.name ?? "Document", more };
 }
 
+const results = (count: number) =>
+  count === 1 ? "1 result" : `${String(count)} results`;
+
+/**
+ * A document's status on the list, from its reading's state and its items'
+ * counts: while any item waits (an earlier value too) it is Not saved;
+ * once none waits, Saved when any was saved, else Set aside, else nothing
+ * was found.
+ */
+function statusOf(document: DocumentSummary): string {
+  const reading = document.reading;
+  if (document.status === "not_read" || reading === null) return "Not read yet";
+  const read = `read ${String(reading.saved)} of ${String(reading.of)}`;
+  if (document.status === "reading") return `Reading · ${read}`;
+  if (document.status === "failed") return `Failed · ${read}`;
+  if (reading.hasPending) {
+    return reading.results > 0
+      ? `Not saved · ${results(reading.results)}`
+      : "Not saved";
+  }
+  if (reading.canRetry) return "To check";
+  if (reading.itemsSaved > 0) return `Saved · ${results(reading.itemsSaved)}`;
+  if (reading.itemsSetAside > 0) {
+    return `Set aside · ${results(reading.itemsSetAside)}`;
+  }
+  return "Nothing to save";
+}
+
 /** A document's reading, in words, with what can be done about it. */
 function Status({
   personId,
@@ -330,22 +358,10 @@ function Status({
   document: DocumentSummary;
 }) {
   const reading = document.reading;
-  const words =
-    document.status === "not_read" || reading === null
-      ? "Not read yet"
-      : document.status === "reading"
-        ? `Reading · read ${String(reading.saved)} of ${String(reading.of)}`
-        : document.status === "failed"
-          ? `Failed · read ${String(reading.saved)} of ${String(reading.of)}`
-          : reading.results === 0
-            ? reading.canRetry
-              ? "To check"
-              : "Nothing to save"
-            : `Not saved · ${reading.results === 1 ? "1 result" : `${String(reading.results)} results`}`;
   return (
     <span className="flex flex-wrap items-center gap-1">
       <span className="rounded-full bg-side px-2 py-px text-xs text-muted">
-        {words}
+        {statusOf(document)}
       </span>
       {(document.status === "not_read" || reading?.canRetry === true) && (
         <RetryButton personId={personId} documentId={document.id} />

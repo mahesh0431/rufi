@@ -39,21 +39,19 @@ import type { BoxChip } from "./draft.ts";
 import { messageOf, retain } from "./live.ts";
 import { askRufi } from "./panel.ts";
 import { queries, useDocumentItems, useDocuments } from "./reads.ts";
-import { IN_RECORD, inRecord, openReading, RetryButton } from "./reading.tsx";
+import {
+  FIELDS,
+  fixesOf,
+  openReading,
+  ReaderRead,
+  RetryButton,
+  settledLine,
+  Tag,
+} from "./reading.tsx";
 import { Button, IconButton, Problem } from "./ui.tsx";
 
 const documentPath = (personId: string, documentId: string) =>
   `/api/people/${encodeURIComponent(personId)}/documents/${encodeURIComponent(documentId)}`;
-
-/** The fields a fix can change, in the form's order. */
-const FIELDS: readonly { id: Fixable; name: string; wide?: boolean }[] = [
-  { id: "test_name", name: "Test", wide: true },
-  { id: "value_text", name: "Value" },
-  { id: "unit", name: "Unit" },
-  { id: "reference_range", name: "Range", wide: true },
-  { id: "flag_text", name: "Flag" },
-  { id: "context_text", name: "Context" },
-];
 
 const PAGE_STATE = {
   read: "read",
@@ -64,10 +62,6 @@ const PAGE_STATE = {
 
 type Item = DraftItem;
 type Page = DocumentItems["pages"][number];
-
-/** The item's fields the person changed: each with the reader's value. */
-const fixesOf = (item: Item) =>
-  FIELDS.filter(({ id }) => item.fields[id] !== item.original[id]);
 
 const plural = (count: number, one: string, many = `${one}s`) =>
   `${String(count)} ${count === 1 ? one : many}`;
@@ -165,7 +159,7 @@ function Checking({
     plural(results.length, "result"),
     ...(earlier > 0 ? [`${String(earlier)} earlier`] : []),
   ].join(" · ");
-  const settled = inRecord(items);
+  const settled = settledLine(items);
   const saved = items.items.filter((i) => i.status === "saved").length;
   const setAside = items.items.filter((i) => i.status === "dismissed").length;
   const about = [
@@ -184,9 +178,8 @@ function Checking({
             <span className="text-muted">· {about}</span>
           </h2>
           <p className="text-xs text-muted">
-            {settled
-              ? IN_RECORD
-              : "What the reader read, not saved. These become part of your health record only when you save them in the chat."}
+            {settled ??
+              "What the reader read, not saved. These become part of your health record only when you save them in the chat."}
           </p>
         </div>
         {(document.status === "not_read" ||
@@ -237,7 +230,7 @@ function Checking({
             </label>
             <span className="flex-1" />
             <span className="text-xs text-muted">
-              {(settled
+              {(settled !== null
                 ? [
                     ...(saved > 0 ? [`${String(saved)} saved`] : []),
                     ...(setAside > 0 ? [`${String(setAside)} set aside`] : []),
@@ -497,17 +490,7 @@ function Row({
               {why}
             </span>
           ))}
-          {fixes.length > 0 && (
-            <span className="block text-xs text-muted">
-              The reader read:{" "}
-              {fixes
-                .map(
-                  ({ id, name }) =>
-                    `${name.toLowerCase()} ${item.original[id] ?? "(empty)"}`,
-                )
-                .join(" · ")}
-            </span>
-          )}
+          <ReaderRead item={item} />
         </td>
         <td className={`${cell} whitespace-nowrap`}>
           {fields.value_text}
@@ -860,15 +843,5 @@ function SaveInChat({
         Save in chat
       </Button>
     </>
-  );
-}
-
-function Tag({ children, strong }: { children: string; strong?: boolean }) {
-  return (
-    <span
-      className={`ml-1 rounded-full border px-1.5 text-[11px] whitespace-nowrap ${strong ? "border-transparent bg-accent-soft text-accent-ink" : "border-line text-muted"}`}
-    >
-      {children}
-    </span>
   );
 }
