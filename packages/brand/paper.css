@@ -1,0 +1,148 @@
+/* Rufi paper: a look the AI may give a page it makes, as one option beside
+   plain Markdown (apps/server/src/core/skills/analysis/SKILL.md). The AI
+   puts this whole file in the page's <style>: a page takes no outside
+   files. It is paper in every theme, as the frame behind a page is: white,
+   ink and one quiet grey, with the light theme's values from tokens.css.
+   No colour says anything about a health value.
+
+   On <body class="rufi-paper"> or a wrapper: h1 and p.lead (the title and
+   what it covers), h2 sections, div.facts of div.fact (a few numbers: <b>
+   the value, <span> what it is), a table, div.note (<b> its heading first),
+   svg.chart (rect.band for a lab range, path.line, circle.pt and pt.last,
+   circle.ring around a value outside the range, text for labels) and
+   p.source (where the numbers came from). */
+.rufi-paper {
+  --ink: #1d2329;
+  --muted: #5f6873;
+  --line: #e3e6eb;
+  --soft: #eef1f5;
+  --link: #1d4ed8;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 32px 28px 40px;
+  background: #ffffff;
+  color: var(--ink);
+  font:
+    14px/1.6 -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    system-ui,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.rufi-paper h1 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+.rufi-paper .lead {
+  margin: 6px 0 0;
+  font-size: 15px;
+  color: var(--muted);
+}
+.rufi-paper h2 {
+  margin: 28px 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.rufi-paper p {
+  margin: 0 0 10px;
+}
+.rufi-paper ul,
+.rufi-paper ol {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+.rufi-paper .facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 20px 0 0;
+}
+.rufi-paper .fact {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.rufi-paper .fact b {
+  display: block;
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.rufi-paper .fact span {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.rufi-paper table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 4px 0 12px;
+  font-variant-numeric: tabular-nums;
+}
+.rufi-paper th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 12.5px;
+  color: var(--muted);
+  padding: 6px 8px 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.rufi-paper td {
+  padding: 6px 8px 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.rufi-paper .note {
+  margin: 14px 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--soft);
+}
+.rufi-paper .note b:first-child {
+  display: block;
+  margin-bottom: 2px;
+}
+.rufi-paper svg.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 4px 0 12px;
+  overflow: visible;
+}
+.rufi-paper svg.chart .band {
+  fill: var(--soft);
+}
+.rufi-paper svg.chart .line {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+.rufi-paper svg.chart .pt {
+  fill: #ffffff;
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+.rufi-paper svg.chart .pt.last {
+  fill: var(--ink);
+}
+.rufi-paper svg.chart .ring {
+  fill: none;
+  stroke: var(--ink);
+  opacity: 0.5;
+}
+.rufi-paper svg.chart text {
+  fill: var(--muted);
+  font-size: 11px;
+}
+.rufi-paper .source {
+  margin-top: 28px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.rufi-paper a {
+  color: var(--link);
+}
