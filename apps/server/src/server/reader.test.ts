@@ -1,9 +1,9 @@
 // The document reader at work, on a real database and real files, with a
-// scripted reader sub-agent (tests/fake-reader.ts) and the real jobs,
-// notebook, page service and chat transcript: the reader's model and
-// effort, a reading from its start line to its drafts and end line, a
-// restart in the middle, failures, automatic retries and Retry, and an
-// account problem.
+// scripted reader sub-agent (tests/fake-reader.ts) and the real jobs, page
+// copies, page service, sorting requests and chat transcript: the reader's
+// model and effort, a reading from its start line to its end line and its
+// request that Rufi AI sort it, a restart in the middle, failures,
+// automatic retries and Retry, and an account problem.
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,10 +31,9 @@ import {
 import { deletions } from "../core/documents/delete.ts";
 import { documents, type Documents } from "../core/documents/documents.ts";
 import { fileGate } from "../core/documents/gate.ts";
-import { notebook } from "../core/documents/notebook.ts";
-import { entryReader } from "../core/documents/reader-tools.ts";
 import { pages } from "../core/documents/pages.ts";
 import { readings, type Readings } from "../core/documents/reading.ts";
+import { sorting } from "../core/documents/sorting.ts";
 import {
   databasePath,
   openWritable,
@@ -95,8 +94,6 @@ async function startReader(
     retryWaitsMs?: number[];
     log?: (event: string) => void;
     run?: RunSubAgent;
-    /** The reader that copies pages, in place of the one Rufi runs. */
-    copies?: boolean;
   } = {},
 ) {
   const fake = scriptedReader(scripts);
@@ -109,20 +106,16 @@ async function startReader(
   served.push(server);
   const running = reader({
     readings: reads,
-    kind: options.copies
-      ? copyReader(
-          pages(store, home),
-          copies(store, () => NOW),
-        )
-      : entryReader(
-          pages(store, home),
-          notebook(store, () => NOW),
-        ),
+    kind: copyReader(
+      pages(store, home),
+      copies(store, () => NOW),
+    ),
     event: async (id, event, write) => {
       const chat = await transcripts.chat(id);
       if (!chat) throw new Error("No chat.");
       await transcripts.addEvent(chat, event, write);
     },
+    sort: sorting(store, () => NOW).ask,
     run: options.run ?? fake.run,
     choice: () => readerChoice(transcripts.setting),
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp/reader`, keys },
@@ -170,6 +163,24 @@ const drafts = () =>
   );
 const pageStates = () =>
   rows("SELECT position, state FROM document_pages ORDER BY position");
+/** The requests that Rufi AI sort a reading. */
+const requests = () =>
+  rows(
+    "SELECT r.job_id, r.state, q.text FROM sort_requests r LEFT JOIN chat_queue q ON q.id = r.queue_id ORDER BY r.created_at",
+  );
+/** The pages copied, by page in the file. */
+const copied = () =>
+  rows(
+    "SELECT page_in_file FROM page_copies ORDER BY page_in_file, job_id",
+  ).map((r) => r["page_in_file"]);
+const SORTING = "Read sunrise-august.pdf · 2 pages. Rufi AI is sorting it.";
+/** Rufi's note that asks Rufi AI to sort the report. */
+const sortNote = (id: string, copies = 2, more: string[] = []) =>
+  [
+    `A document reading finished: sunrise-august.pdf (document ${id}), ${String(copies)} ${copies === 1 ? "page" : "pages"} copied by the reader, not sorted yet.`,
+    ...more,
+    "Sort it now, as the sorting-documents skill says: read its page copies with get_documents, then split it into documents and write its drafts with one sort_documents call. Save nothing. Then tell the user in a few lines what you found and that nothing is saved; if you can't tell something, ask instead.",
+  ].join("\n");
 const done = () => job()?.["state"] === "done";
 
 describe("the reader's model and effort", () => {
@@ -198,12 +209,12 @@ describe("the reader's model and effort", () => {
 });
 
 describe("a reading", () => {
-  it("writes a start line, then drafts, page states and an end line in one go", async () => {
+  it("writes a start line, then page states, an end line and a request that Rufi AI sort it, in one go, deciding nothing", async () => {
     let midway: unknown;
     const { runs, reader: running } = await startReader([
       async (turn) => {
         await turn.look(1);
-        await turn.save(1, readPage(), "Collected date on page 1.");
+        await turn.save(1, readPage());
         midway = await reads.strip(personId);
         await turn.look(2);
         await turn.save(2, readPage());
@@ -224,192 +235,67 @@ describe("a reading", () => {
         runAt: NOW,
       },
     ]);
+    expect(runs.map((r) => r.instructions)).toEqual([COPY_INSTRUCTIONS]);
     expect(runs[0]?.input).toBe(
-      "Read this document: 2 pages (sunrise-august.pdf).\nIt was added for Asha Fictional.\nSave these pages: 1–2.",
+      "Copy this document: 2 pages (sunrise-august.pdf).\nSave these pages: 1–2.",
     );
-    expect(lines()).toEqual([
-      "Reading sunrise-august.pdf · 2 pages",
-      "Lab report · 12 Aug · 2 results read",
+    expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages", SORTING]);
+    // The request and its note for the AI, its row in the queue.
+    expect(requests()).toEqual([
+      {
+        job_id: rows("SELECT id FROM jobs")[0]?.["id"],
+        state: "open",
+        text: sortNote(id),
+      },
     ]);
-    // Nothing needs the person: the AI isn't asked.
-    expect(asks()).toEqual([]);
+    expect(asks()).toEqual([sortNote(id)]);
     expect(pageStates()).toEqual([
       { position: 1, state: "read" },
       { position: 2, state: "read" },
     ]);
-    const [first] = drafts();
-    expect(first).toMatchObject({
-      page: 1,
-      seq: 1,
-      version: 1,
-      status: "pending",
-    });
-    expect(JSON.parse(first?.["fields"] as string)).toEqual({
-      test_name: "Haemoglobin",
-      value_text: "13.2",
-      value_number: 13.2,
-      unit: "g/dL",
-      reference_range: "12.0-15.0",
-    });
-    expect(drafts()).toHaveLength(2);
-    expect(
-      rows("SELECT kind, date, version, reader_note FROM documents"),
-    ).toEqual([
-      {
-        kind: "lab_report",
-        date: "2026-08-12",
-        version: 1,
-        reader_note: "Collected date on page 1.",
-      },
+    // The reader decided nothing: no drafts, kind or date.
+    expect(drafts()).toEqual([]);
+    expect(rows("SELECT kind, date, version FROM documents")).toEqual([
+      { kind: null, date: null, version: 1 },
     ]);
     expect(await reads.strip(personId)).toEqual([]);
     expect((await docs.list(personId))[0]).toMatchObject({
       status: "done",
-      reading: { saved: 2, of: 2, results: 2, toCheck: 0, canRetry: false },
+      sorting: { state: "sorting", why: null },
+      reading: { saved: 2, of: 2, results: 0, canRetry: false },
     });
     await running.close();
   });
 
-  it("counts current results in the end line while keeping earlier values as drafts", async () => {
-    const { reader: running } = await startReader([
-      async (turn) => {
-        await turn.look(1);
-        await turn.save(
-          1,
-          readPage("13.2", {
-            items: [
-              {
-                test_name: "Haemoglobin",
-                value_text: "13.2",
-                column: "current",
-              },
-              {
-                test_name: "Haemoglobin",
-                value_text: "13.2",
-                column: "earlier",
-                date: {
-                  label: "Collected",
-                  date: "12 Aug 2025",
-                  iso: "2025-08-12",
-                },
-              },
-            ],
-          }),
-        );
-        await turn.look(2);
-        await turn.save(2, { outcome: "nothing_here", items: [] });
-        return undefined;
-      },
-    ]);
-    try {
-      await addReport();
-      await until(done);
-      expect(lines().at(-1)).toBe("Lab report · 12 Aug · 1 result read");
-      expect(drafts()).toHaveLength(2);
-      expect((await docs.list(personId))[0]?.reading).toMatchObject({
-        results: 1,
-        toCheck: 0,
-      });
-      expect(JSON.parse(drafts()[1]?.["fields"] as string)).toMatchObject({
-        column: "earlier",
-      });
-    } finally {
-      await running.close();
-    }
-  });
-
-  it("asks only about what the reader raised: Rufi adds no flags of its own", async () => {
-    const answers: unknown[] = [];
-    const { reader: running } = await startReader([
-      async (turn) => {
-        await turn.look(1);
-        // Not on the page's own text, and a number that isn't the printed
-        // value: the reader didn't say it was unsure, so it isn't.
-        answers.push(
-          (
-            await turn.save(
-              1,
-              readPage("13.8", {
-                items: [
-                  {
-                    test_name: "Haemoglobin",
-                    value_text: "4,6",
-                    value_number: 46,
-                  },
-                ],
-              }),
-            )
-          ).json,
-        );
-        await turn.look(2);
-        await turn.save(
-          2,
-          readPage("13.2", {
-            facts: { kind: "lab_report", name: "Meera Fictional" },
-            items: [
-              {
-                test_name: "Haemoglobin",
-                value_text: "13.2",
-                unsure: "the last digit is smudged",
-              },
-            ],
-            issues: ["The name on the report is Meera Fictional."],
-          }),
-        );
-        return undefined;
-      },
-    ]);
-    const id = await addReport();
-    await until(done);
-
-    expect(answers[0]).toEqual({
-      ok: true,
-      result: { saved: "1", still_to_save: "2", note: null },
-    });
-    expect(
-      rows("SELECT entry_checks FROM document_pages ORDER BY position"),
-    ).toEqual([{ entry_checks: null }, { entry_checks: null }]);
-    expect(
-      drafts().map((d) => JSON.parse(d["unsure"] as string) as string[]),
-    ).toEqual([[], ["the last digit is smudged"]]);
-    expect(lines().at(-1)).toBe(
-      "Lab report · 12 Aug · 2 results read · 1 to check",
-    );
-    expect(asks()).toEqual([
-      [
-        `A document reading finished: sunrise-august.pdf (document ${id}), 2 draft items read, not saved.`,
-        "What needs the user:",
-        `- unsure: page 2: Haemoglobin "13.2" (the last digit is smudged)`,
-        "- the reader noted: page 2: The name on the report is Meera Fictional.",
-        "Read the document with get_documents if you need to, then tell the user in a few lines and ask what it needs. Don't save anything.",
-      ].join("\n"),
-    ]);
-    await running.close();
-  });
-
-  it("doesn't ask about a printed name the reader raised no issue for", async () => {
+  it("asks for no sort when no page could be read: the line says so, and Retry reads them", async () => {
     const { reader: running } = await startReader([
       async (turn) => {
         for (const page of [1, 2]) {
           await turn.look(page);
-          await turn.save(
-            page,
-            readPage("13.2", {
-              facts: { kind: "lab_report", name: "Meera Fictional" },
-            }),
-          );
+          await turn.save(page, {
+            outcome: "unreadable",
+            copy: "",
+            why: "Blurred.",
+          });
         }
         return undefined;
       },
     ]);
     await addReport();
     await until(done);
-    expect(lines().at(-1)).toBe("Lab report · 2 results read");
+    expect(lines().at(-1)).toBe(
+      "Couldn't read sunrise-august.pdf · 2 pages couldn't be read",
+    );
+    expect(requests()).toEqual([]);
     expect(asks()).toEqual([]);
+    expect((await docs.list(personId))[0]).toMatchObject({
+      sorting: null,
+      reading: { canRetry: true },
+    });
     await running.close();
   });
 
-  it("tells the reader only the name of the person the document was added for", async () => {
+  it("tells the reader nothing of whom the document was added for", async () => {
     store.db.exec(
       `INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
        INSERT INTO chats (id, person_id, created_at) VALUES ('c-ravi', 'ravi', '${NOW}');`,
@@ -426,12 +312,12 @@ describe("a reading", () => {
     await addReport("ravi");
     await until(done);
     expect(runs[0]?.input).toBe(
-      "Read this document: 2 pages (sunrise-august.pdf).\nIt was added for Ravi Fictional.\nSave these pages: 1–2.",
+      "Copy this document: 2 pages (sunrise-august.pdf).\nSave these pages: 1–2.",
     );
     await running.close();
   });
 
-  it("marks pages the reader never saved as not looked at, and Retry reads only those", async () => {
+  it("marks pages the reader never saved as not looked at, and Retry reads only those, for Rufi AI to sort", async () => {
     const { runs, reader: running } = await startReader([
       async (turn) => {
         await turn.look(1);
@@ -451,17 +337,15 @@ describe("a reading", () => {
     const id = await addReport();
     await until(done);
     expect(lines().at(-1)).toBe(
-      "Lab report · 12 Aug · 1 result read · 1 page not looked at",
+      "Read sunrise-august.pdf · 2 pages · 1 page not looked at. Rufi AI is sorting it.",
     );
+    expect(asks()).toEqual([
+      sortNote(id, 1, ["The reader didn't look at pages 2; Retry reads them."]),
+    ]);
     expect(pageStates()).toEqual([
       { position: 1, state: "read" },
       { position: 2, state: "not_looked_at" },
     ]);
-    // The person fixed page 1's draft meanwhile (slice 3c's fix, by hand here).
-    store.db.exec(
-      `UPDATE draft_items SET fields = '{"test_name":"Haemoglobin","value_text":"13.4"}', version = 2`,
-    );
-    const before = drafts();
 
     expect(await reads.retry(personId, id)).toEqual([2]);
     await until(
@@ -470,9 +354,11 @@ describe("a reading", () => {
     expect(runs[1]?.input).toContain("Save these pages: 2.");
     expect(lines().slice(-2)).toEqual([
       "Reading sunrise-august.pdf again · page 2",
-      "Lab report · 12 Aug · page 2 read again · 1 result read",
+      "Read sunrise-august.pdf again · page 2. Rufi AI is sorting it.",
     ]);
-    expect(drafts()).toEqual([before[0], expect.objectContaining({ page: 2 })]);
+    // The newer request takes the place of the one that waited.
+    expect(requests().map((r) => r["state"])).toEqual(["void", "open"]);
+    expect(copied()).toEqual([1, 2]);
     expect(pageStates()).toEqual([
       { position: 1, state: "read" },
       { position: 2, state: "read" },
@@ -485,7 +371,7 @@ describe("a reading", () => {
 });
 
 describe("a restart or a failure", () => {
-  it("stops a reader that used its refusal allowance, keeps why, and publishes no drafts", async () => {
+  it("stops a reader that used its refusal allowance, keeps why, and asks for no sort", async () => {
     await transcripts.saveSetting("reader_model", "gpt-5.5");
     let attempts = 0;
     const late: number[] = [];
@@ -493,7 +379,7 @@ describe("a restart or a failure", () => {
       call: {
         namespace: "mcp__rufi",
         name: "save_page",
-        arguments: { page: 1, entry: readPage() },
+        arguments: { page: 1, ...readPage() },
       },
     };
     const { reader: running } = await startReader([], {
@@ -514,7 +400,7 @@ describe("a restart or a failure", () => {
               call: {
                 namespace: "mcp__rufi",
                 name: "save_page",
-                arguments: { page: 2, entry: readPage() },
+                arguments: { page: 2, ...readPage() },
               },
             },
             ...Array.from({ length: 10 }, () => bad),
@@ -529,7 +415,7 @@ describe("a restart or a failure", () => {
               call: {
                 namespace: "mcp__rufi",
                 name: "save_page",
-                arguments: { page: 1, entry: readPage() },
+                arguments: { page: 1, ...readPage() },
               },
             },
             { text: "Done." },
@@ -558,7 +444,7 @@ describe("a restart or a failure", () => {
             },
             {
               name: "save_page",
-              arguments: { page: 2, entry: readPage() },
+              arguments: { page: 2, ...readPage() },
               callId: "call-late",
               threadId: "ended",
               turnId: "ended",
@@ -583,15 +469,10 @@ describe("a restart or a failure", () => {
       });
       expect(attempts).toBe(2);
       expect(late).toEqual([401, 401]);
-      expect(drafts()).toEqual([]);
-      const pages = rows(
-        "SELECT position, entry FROM document_pages ORDER BY position",
-      );
-      expect(pages[0]).toEqual({ position: 1, entry: null });
-      expect(JSON.parse(String(pages[1]?.["entry"]))).toMatchObject({
-        outcome: "read",
-        items: [{ test_name: "Haemoglobin", value_text: "13.2" }],
-      });
+      expect(requests()).toEqual([]);
+      expect(rows("SELECT page_in_file, copy FROM page_copies")).toEqual([
+        { page_in_file: 2, copy: readPage().copy },
+      ]);
     } finally {
       await running.close();
     }
@@ -606,7 +487,7 @@ describe("a restart or a failure", () => {
     ]);
   });
 
-  it("continues after a restart from the notebook: no second start line, one set of drafts", async () => {
+  it("continues after a restart from its copies: no second start line, one request to sort", async () => {
     const first = await startReader([
       async (turn) => {
         await turn.look(1);
@@ -617,11 +498,7 @@ describe("a restart or a failure", () => {
       },
     ]);
     await addReport();
-    await until(
-      () =>
-        rows("SELECT entry FROM document_pages WHERE entry IS NOT NULL")
-          .length === 1,
-    );
+    await until(() => copied().length === 1);
     await first.reader.close();
     expect(job()?.["state"]).toBe("running");
 
@@ -640,11 +517,9 @@ describe("a restart or a failure", () => {
     expect(second.runs[0]?.input).toContain(
       "You saved pages 1 in an earlier run",
     );
-    expect(lines()).toEqual([
-      "Reading sunrise-august.pdf · 2 pages",
-      "Lab report · 12 Aug · 2 results read",
-    ]);
-    expect(drafts().map((d) => d["page"])).toEqual([1, 2]);
+    expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages", SORTING]);
+    expect(copied()).toEqual([1, 2]);
+    expect(requests()).toHaveLength(1);
     await second.reader.close();
   });
 
@@ -660,78 +535,52 @@ describe("a restart or a failure", () => {
       },
     ]);
     await addReport();
-    await until(
-      () =>
-        rows("SELECT entry FROM document_pages WHERE entry IS NOT NULL")
-          .length === 2,
-    );
+    await until(() => copied().length === 2);
     await first.reader.close();
     await reads.recover();
 
     const second = await startReader([]);
     await until(done);
     expect(second.runs).toEqual([]);
-    expect(lines()).toHaveLength(2);
-    expect(drafts()).toHaveLength(2);
+    expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages", SORTING]);
+    expect(requests()).toHaveLength(1);
     await second.reader.close();
   });
 
-  it("finishes a reading an older Rufi saved, with the checks it stored, and leaves its entries as they are", async () => {
-    const first = await startReader([
+  it("copies again, the new way, the pages an older reader saved as entries in a reading it left unfinished, each copy taking its entry's place", async () => {
+    const id = await addReport();
+    // An older reader's unfinished reading: page 1 in its notebook.
+    store.db.exec(`
+      UPDATE jobs SET state = 'running', attempt = 1, started_at = '${NOW}';
+      UPDATE document_pages SET entry = '{"outcome":"read","items":[]}', entry_job_id = (SELECT id FROM jobs), entry_attempt = 1, entry_at = '${NOW}'
+        WHERE position = 1;
+    `);
+    await reads.recover();
+    const { runs, reader: running } = await startReader([
       async (turn) => {
         for (const page of [1, 2]) {
           await turn.look(page);
           await turn.save(page, readPage());
         }
-        await turn.stopped();
-        return { end: { status: "interrupted", reason: "stopped" } };
+        return undefined;
       },
     ]);
-    const id = await addReport();
-    await until(
-      () =>
-        rows("SELECT entry FROM document_pages WHERE entry IS NOT NULL")
-          .length === 2,
-    );
-    await first.reader.close();
-    // Page 1 as an older Rufi saved it: a row count in the entry, and its
-    // own checks beside it.
-    store.db.exec(
-      `UPDATE document_pages SET
-         entry = json_set(entry, '$.rows_seen', 2),
-         entry_checks = '{"incomplete":{"rows_seen":2,"items":1},"items":[{"item":1,"why":"its number 13.2 isn''t the printed value"}]}'
-       WHERE position = 1`,
-    );
-    const before = rows(
-      "SELECT entry, entry_checks FROM document_pages ORDER BY position",
-    );
-    await reads.recover();
-
-    const second = await startReader([]);
     await until(done);
-    expect(second.runs).toEqual([]);
-    expect(lines().at(-1)).toBe(
-      "Lab report · 12 Aug · 2 results read · 1 to check · 1 page may be incomplete",
-    );
-    expect(asks()).toEqual([
-      [
-        `A document reading finished: sunrise-august.pdf (document ${id}), 2 draft items read, not saved.`,
-        "What needs the user:",
-        `- unsure: page 1: Haemoglobin "13.2" (its number 13.2 isn't the printed value)`,
-        "- page 1 may be incomplete: 2 rows seen, 1 read",
-        "Read the document with get_documents if you need to, then tell the user in a few lines and ask what it needs. Don't save anything.",
-      ].join("\n"),
-    ]);
-    expect(JSON.parse(drafts()[0]?.["unsure"] as string)).toEqual([
-      "its number 13.2 isn't the printed value",
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.input).not.toContain("earlier run");
+    expect(copied()).toEqual([1, 2]);
+    expect(requests()).toEqual([
+      expect.objectContaining({ state: "open", text: sortNote(id) }),
     ]);
     expect(
-      rows("SELECT entry, entry_checks FROM document_pages ORDER BY position"),
-    ).toEqual(before);
-    await second.reader.close();
+      rows("SELECT entry FROM document_pages ORDER BY position").map(
+        (r) => r["entry"],
+      ),
+    ).toEqual([null, null]);
+    await running.close();
   });
 
-  it("does not finish from failed entries after the retry is interrupted and Rufi restarts", async () => {
+  it("does not finish from failed copies after the retry is interrupted and Rufi restarts", async () => {
     const first = await startReader([
       async (turn) => {
         await turn.look(1);
@@ -749,7 +598,7 @@ describe("a restart or a failure", () => {
       await addReport();
       await until(() => first.runs.length === 2 || done());
       expect(first.runs).toHaveLength(2);
-      expect(drafts()).toEqual([]);
+      expect(requests()).toEqual([]);
     } finally {
       await first.reader.close();
     }
@@ -759,19 +608,19 @@ describe("a restart or a failure", () => {
     try {
       await until(() => second.runs.length === 1 || done());
       expect(second.runs).toHaveLength(1);
-      expect(drafts()).toEqual([]);
+      expect(requests()).toEqual([]);
       expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages"]);
       completed.resolve(undefined);
       await until(done);
-      expect(drafts()).toHaveLength(2);
-      expect(lines()).toHaveLength(2);
+      expect(requests()).toHaveLength(1);
+      expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages", SORTING]);
     } finally {
       completed.resolve(undefined);
       await second.reader.close();
     }
   });
 
-  it("a deadline fails the reading with its entries kept and no drafts; Retry continues it", async () => {
+  it("a deadline fails the reading with its copies kept and no sort; Retry continues it", async () => {
     const { runs, reader: running } = await startReader([
       async (turn) => {
         await turn.look(1);
@@ -791,7 +640,7 @@ describe("a restart or a failure", () => {
     expect(lines().at(-1)).toBe(
       "Couldn't finish reading sunrise-august.pdf · the reading took too long · read 1 of 2",
     );
-    expect(drafts()).toEqual([]);
+    expect(requests()).toEqual([]);
     expect(asks()).toEqual([]);
     expect((await docs.list(personId))[0]).toMatchObject({
       status: "failed",
@@ -801,8 +650,8 @@ describe("a restart or a failure", () => {
     expect(await reads.retry(personId, id)).toEqual([1, 2]);
     await until(done);
     expect(runs[1]?.input).toContain("You saved pages 1 in an earlier run");
-    expect(lines().at(-1)).toBe("Lab report · 12 Aug · 2 results read");
-    expect(drafts().map((d) => d["page"])).toEqual([1, 2]);
+    expect(lines().at(-1)).toBe(SORTING);
+    expect(copied()).toEqual([1, 2]);
     await running.close();
   });
 
@@ -822,7 +671,7 @@ describe("a restart or a failure", () => {
           },
           {
             name: "save_page",
-            arguments: { page: 1, entry: readPage() },
+            arguments: { page: 1, ...readPage() },
             callId: "call-old",
             threadId: "old",
             turnId: "old",
@@ -839,12 +688,13 @@ describe("a restart or a failure", () => {
     await until(done);
     expect(runs[1]?.tools.key).not.toBe(runs[0]?.tools.key);
     expect(refused).toEqual({ status: 401 });
-    expect(drafts().map((d) => d["page"])).toEqual([1, 2]);
+    expect(copied()).toEqual([1, 2]);
+    expect(requests()).toHaveLength(1);
     await running.close();
   });
 
   it.each(["timeout", "connection"] as const)(
-    "keeps all entries without publishing after a %s failure; Retry needs a completed turn",
+    "keeps all copies without a sort after a %s failure; Retry needs a completed turn",
     async (reason) => {
       const failure: Script = () =>
         Promise.resolve({
@@ -870,9 +720,10 @@ describe("a restart or a failure", () => {
         expect(job()?.["state"]).toBe("failed");
         expect(runs).toHaveLength(reason === "connection" ? 4 : 1);
         expect(
-          (await reads.view(personId, id))?.pages.map((p) => p.entry),
-        ).toEqual([readPage(), readPage()]);
-        expect(drafts()).toEqual([]);
+          (await reads.view(personId, id))?.pages.map((p) => p.copy),
+        ).toEqual([null, null]);
+        expect(copied()).toEqual([1, 2]);
+        expect(requests()).toEqual([]);
         expect(lines().at(-1)).toContain("Couldn't finish reading");
         expect(asks()).toEqual([]);
 
@@ -882,8 +733,11 @@ describe("a restart or a failure", () => {
         expect(runs.at(-1)?.input).toContain(
           "You saved pages 1–2 in an earlier run",
         );
-        expect(drafts()).toHaveLength(2);
-        expect(lines().at(-1)).toBe("Lab report · 12 Aug · 2 results read");
+        expect(requests()).toHaveLength(1);
+        expect(lines().at(-1)).toBe(SORTING);
+        expect(
+          (await reads.view(personId, id))?.pages.map((p) => p.copy),
+        ).toEqual([readPage().copy, readPage().copy]);
       } finally {
         await running.close();
       }
@@ -942,7 +796,7 @@ describe("a restart or a failure", () => {
     }
   });
 
-  it("tries again by itself when ChatGPT can't renew the sign-in just now, from the notebook, and finishes", async () => {
+  it("tries again by itself when ChatGPT can't renew the sign-in just now, from its copies, and finishes", async () => {
     const { runs, reader: running } = await startReader([
       async (turn) => {
         await turn.look(1);
@@ -963,11 +817,8 @@ describe("a restart or a failure", () => {
       await until(done);
       expect(job()).toMatchObject({ retries: 1, error: null });
       expect(runs[1]?.input).toContain("You saved pages 1 in an earlier run");
-      expect(drafts().map((d) => d["page"])).toEqual([1, 2]);
-      expect(lines()).toEqual([
-        "Reading sunrise-august.pdf · 2 pages",
-        "Lab report · 12 Aug · 2 results read",
-      ]);
+      expect(copied()).toEqual([1, 2]);
+      expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages", SORTING]);
     } finally {
       await running.close();
     }
@@ -1056,13 +907,14 @@ describe("a restart or a failure", () => {
           "Reading sunrise-august.pdf · 2 pages",
           `Couldn't finish reading sunrise-august.pdf · ${why} · read 1 of 2`,
         ]);
-        expect(drafts()).toEqual([]);
+        expect(requests()).toEqual([]);
         expect(await reads.strip(personId)).toEqual([]);
 
         await reads.retry(personId, id);
         await until(done);
         expect(runs[1]?.input).toContain("You saved pages 1 in an earlier run");
-        expect(drafts().map((d) => d["page"])).toEqual([1, 2]);
+        expect(copied()).toEqual([1, 2]);
+        expect(requests()).toHaveLength(1);
       } finally {
         await running.close();
       }
@@ -1071,24 +923,20 @@ describe("a restart or a failure", () => {
 });
 
 describe("the chat AI and a reading", () => {
-  it("sees the drafts as not saved, and can read failed pages again only in the person's turn", async () => {
+  it("sees the copies and what isn't sorted yet, and can read failed pages again only in the person's turn", async () => {
     const { reader: running } = await startReader([
       async (turn) => {
         await turn.look(1);
         await turn.save(1, readPage());
         await turn.look(2);
-        await turn.save(2, {
-          outcome: "unreadable",
-          why: "Blurred.",
-          items: [],
-        });
+        await turn.save(2, { outcome: "unreadable", why: "Blurred.", copy: "" });
         return undefined;
       },
     ]);
     const id = await addReport();
     await until(done);
     expect(lines().at(-1)).toBe(
-      "Lab report · 12 Aug · 1 result read · 1 page couldn't be read",
+      "Read sunrise-august.pdf · 2 pages · 1 page couldn't be read. Rufi AI is sorting it.",
     );
     const chat = await transcripts.chat(personId);
     if (!chat) throw new Error("No chat.");
@@ -1108,25 +956,33 @@ describe("the chat AI and a reading", () => {
     const answer = JSON.parse(read.text) as { result: Record<string, unknown> };
     expect(answer.result["document"]).toMatchObject({
       status: "done",
-      draft_items: 1,
+      draft_items: 0,
+      add: { id, pages: 2, not_sorted: "1–2" },
     });
     expect(answer.result["pages"]).toEqual([
-      expect.objectContaining({ page: 1, state: "read" }),
+      expect.objectContaining({ page: 1, state: "read", sorted: false }),
       expect.objectContaining({
         page: 2,
         state: "unreadable",
         why: "Blurred.",
+        sorted: false,
       }),
     ]);
-    expect(answer.result["items"]).toEqual([
-      expect.objectContaining({
-        page: 1,
-        version: 1,
-        status: "not saved",
-        test_name: "Haemoglobin",
-        value_text: "13.2",
-      }),
-    ]);
+    const copies = await caller(
+      chat,
+      "turn-1",
+      "person",
+    )("get_documents", { document: id, copies: true });
+    expect(JSON.parse(copies.text)).toMatchObject({
+      ok: true,
+      result: {
+        add: id,
+        copies: [
+          { page: 1, document: id, outcome: "read", sorted: false, copy: readPage().copy },
+          { page: 2, document: id, outcome: "unreadable", sorted: false, copy: "" },
+        ],
+      },
+    });
 
     // A turn a Rufi event started can only read.
     const fromEvent = await caller(
@@ -1227,70 +1083,4 @@ describe("a document deleted while it is read", () => {
       expect((await reads.next()).job).toBeUndefined();
     },
   );
-});
-
-describe("the reader that copies", () => {
-  it("continues a run that failed from its saved copies, and ends with each page's state and its copies, deciding nothing: no drafts, kind or date", async () => {
-    const copy = (page: number, text: string) => ({
-      page,
-      outcome: "read",
-      copy: text,
-    });
-    const { runs, reader: running } = await startReader(
-      [
-        async (turn) => {
-          await turn.look(1);
-          await turn.call(
-            "save_page",
-            copy(1, "# Sunrise Labs\n\n| Haemoglobin | 13.2 |"),
-          );
-          return { end: { status: "failed", text: "connection lost" } };
-        },
-        async (turn) => {
-          await turn.look(2);
-          await turn.call("save_page", copy(2, "Page 2 of 2"));
-          return undefined;
-        },
-      ],
-      { copies: true },
-    );
-    const id = await addReport();
-    await until(done);
-    await running.close();
-
-    expect(runs.map((r) => r.instructions)).toEqual([
-      COPY_INSTRUCTIONS,
-      COPY_INSTRUCTIONS,
-    ]);
-    expect(runs[0]?.input).toBe(
-      "Copy this document: 2 pages (sunrise-august.pdf).\nSave these pages: 1–2.",
-    );
-    expect(runs[1]?.input).toContain("You saved pages 1 in an earlier run.");
-    expect(
-      rows(
-        "SELECT page_in_file, attempt, outcome, copy FROM page_copies ORDER BY page_in_file",
-      ),
-    ).toEqual([
-      {
-        page_in_file: 1,
-        attempt: 1,
-        outcome: "read",
-        copy: "# Sunrise Labs\n\n| Haemoglobin | 13.2 |",
-      },
-      { page_in_file: 2, attempt: 2, outcome: "read", copy: "Page 2 of 2" },
-    ]);
-    expect(pageStates()).toEqual([
-      { position: 1, state: "read" },
-      { position: 2, state: "read" },
-    ]);
-    expect(drafts()).toEqual([]);
-    expect(rows("SELECT kind, date FROM documents WHERE id = ?", id)).toEqual([
-      { kind: null, date: null },
-    ]);
-    expect(lines()).toEqual([
-      "Reading sunrise-august.pdf · 2 pages",
-      "sunrise-august.pdf · 2 pages copied",
-    ]);
-    expect(asks()).toEqual([]);
-  });
 });

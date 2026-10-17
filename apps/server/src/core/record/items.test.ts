@@ -1,6 +1,7 @@
 // Saving a document's draft items, as the AI does it in Rufi's chat: the
 // real tool caller, the real transcripts, a real database with the
-// fictional family, and drafts made by the real end of a reading. Messages
+// fictional family, and drafts made by a real sort of the reader's page
+// copies (or as an older Rufi made them). Messages
 // are sent at 10:00 on Sunday 11 Oct 2026 in India.
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,7 +14,7 @@ import {
   type Transcripts,
 } from "../chat/transcript.ts";
 import type { Entry } from "../documents/notebook.ts";
-import { readings } from "../documents/reading.ts";
+import { sorting } from "../documents/sorting.ts";
 import {
   databasePath,
   openReadOnly,
@@ -112,9 +113,33 @@ const PAGES: Record<number, Entry> = {
   },
 };
 
+/** A page's copy, as the reader would write it: its head and its table. */
+function copyOf(entry: Entry): string {
+  const facts = entry.facts;
+  const head = [
+    ...(facts?.issuer ? [`# ${facts.issuer}`] : []),
+    ...(facts?.report_number ? [`Report No: ${facts.report_number}`] : []),
+    ...(facts?.dates ?? []).map((d) => `${d.label}: ${d.date}`),
+  ];
+  const rows = entry.outcome === "read" ? entry.items : [];
+  return [
+    ...head,
+    "",
+    "| Test | Result | Unit | Range | Flag |",
+    "| --- | --- | --- | --- | --- |",
+    ...rows.map(
+      (item) =>
+        `| ${item.test_name} | ${item.value_text} | ${item.unit ?? ""} | ${item.reference_range ?? ""} | ${item.flag_text ?? ""} |`,
+    ),
+  ].join("\n");
+}
+
 /**
- * Reads a document with these page entries and finishes the reading as
- * Rufi does: its draft items, at version 1.
+ * Reads a document with these pages as Rufi does now: the reader's copy of
+ * each page, then Rufi AI's sort of it in the user's turn (sort_documents),
+ * making one document of every page with its drafts, as an AI would from
+ * the copies: the lab, number and first date printed, and each item's own
+ * date, or else its report's for a current value.
  */
 async function read(
   pages: Record<number, Entry> = PAGES,
@@ -122,30 +147,120 @@ async function read(
 ) {
   const jobId = `job-${documentId}`;
   const targets = Object.keys(pages).map(Number);
-  const run = {
-    jobId,
-    attempt: 1,
-    personId: "asha",
-    documentId,
-    targets,
-    lookedAt: new Set(targets),
-    closed: true,
-  };
   store.db
     .prepare(
-      "INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at) VALUES (?, 'asha', 'document_read', ?, 'running', 1, ?, '2026-10-11T04:00:00Z')",
+      "INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at) VALUES (?, 'asha', 'document_read', ?, 'done', 1, ?, '2026-10-11T04:01:00Z', '2026-10-11T04:00:00Z')",
     )
     .run(jobId, documentId, JSON.stringify(targets));
   for (const [position, entry] of Object.entries(pages)) {
     store.db
       .prepare(
-        "UPDATE document_pages SET entry = ?, entry_job_id = ? WHERE document_id = ? AND position = ?",
+        `INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
+         SELECT person_id, file_id, page_in_file, ?, 1, 'read', ?, '2026-10-11T04:00:30Z'
+         FROM document_pages WHERE person_id = 'asha' AND document_id = ? AND position = ?`,
+      )
+      .run(jobId, copyOf(entry), documentId, Number(position));
+    store.db
+      .prepare(
+        "UPDATE document_pages SET entry_job_id = ?, entry_attempt = 1, state = 'read' WHERE document_id = ? AND position = ?",
+      )
+      .run(jobId, documentId, Number(position));
+  }
+  const facts = Object.values(pages).flatMap((p) =>
+    p.facts ? [p.facts] : [],
+  );
+  const dated = facts.find((f) => f.dates?.[0] !== undefined)?.dates?.[0];
+  const drafts = Object.entries(pages).flatMap(([position, entry]) =>
+    entry.outcome !== "read"
+      ? []
+      : entry.items.map(({ unsure, column, from_page: _from, date, ...item }) => {
+          const when = date ?? (column === "earlier" ? undefined : dated);
+          return {
+            page: Number(position),
+            ...item,
+            ...(when !== undefined && { date: when }),
+            quote: `${item.test_name} ${item.value_text}`,
+            ...(unsure !== undefined && { worth_a_look: unsure }),
+          };
+        }),
+  );
+  const issuer = facts.find((f) => f.issuer)?.issuer;
+  const number = facts.find((f) => f.report_number)?.report_number;
+  const sorted = await call("sort_documents", {
+    document: documentId,
+    documents: [
+      {
+        pages: targets,
+        kind: facts.find((f) => f.kind)?.kind ?? "lab_report",
+        ...(dated?.iso !== undefined && { date: dated.iso }),
+        ...(issuer !== undefined && { lab: issuer }),
+        ...(number !== undefined && { report_number: number }),
+      },
+    ],
+    drafts,
+  });
+  expect(sorted.ok, JSON.stringify(sorted)).toBe(true);
+}
+
+/**
+ * Drafts as an older Rufi made them from its reader's page entries, each
+ * with the report and date migration 12 stored for it: its page's lab,
+ * number and first date, or the page's before when it prints none.
+ */
+function readOld(
+  pages: Record<number, Entry> = PAGES,
+  documentId = "doc-asha-aug",
+) {
+  const jobId = `job-old-${documentId}`;
+  const targets = Object.keys(pages).map(Number);
+  store.db
+    .prepare(
+      "INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, sorted_at, created_at) VALUES (?, 'asha', 'document_read', ?, 'done', 1, ?, '2026-10-11T04:01:00Z', '2026-10-11T04:00:00Z')",
+    )
+    .run(jobId, documentId, JSON.stringify(targets));
+  let report = { issuer: null, number: null, collected: null, date: null } as {
+    issuer: string | null;
+    number: string | null;
+    collected: string | null;
+    date: unknown;
+  };
+  for (const [position, entry] of Object.entries(pages)) {
+    store.db
+      .prepare(
+        "UPDATE document_pages SET entry = ?, entry_job_id = ?, entry_attempt = 1, state = 'read' WHERE document_id = ? AND position = ?",
       )
       .run(JSON.stringify(entry), jobId, documentId, Number(position));
+    const facts = entry.facts;
+    const date = facts?.dates?.[0];
+    if (facts?.issuer || facts?.report_number || date) {
+      report = {
+        issuer: facts.issuer ?? null,
+        number: facts.report_number ?? null,
+        collected: date?.iso ?? null,
+        date: date ?? null,
+      };
+    }
+    if (entry.outcome !== "read") continue;
+    for (const [index, item] of entry.items.entries()) {
+      const { unsure, ...fields } = item;
+      store.db
+        .prepare(
+          `INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, version, status, fields, original, unsure, report, created_at)
+           VALUES (?, 'asha', ?, ?, ?, ?, 'lab_result', 1, 'pending', ?, ?, ?, ?, '2026-10-11T04:01:00Z')`,
+        )
+        .run(
+          `old-${documentId}-${position}-${String(index + 1)}`,
+          documentId,
+          Number(position),
+          index + 1,
+          jobId,
+          JSON.stringify(fields),
+          JSON.stringify(item),
+          JSON.stringify(unsure === undefined ? [] : [unsure]),
+          JSON.stringify(report),
+        );
+    }
   }
-  await store.query
-    .transaction()
-    .execute((trx) => readings(store, () => SUNDAY_10AM).finish(trx, run));
 }
 
 /** The draft items' ids by test, in page order. */
@@ -183,11 +298,14 @@ async function call(
   origin: "person" | "rufi" = "person",
   callId = `call-${String(++calls)}`,
 ) {
-  const answer = await chatCaller(reader, transcripts, () => undefined)(
-    chat,
-    "t-1",
-    origin,
-  )(tool, input, callId);
+  const answer = await chatCaller(
+    reader,
+    transcripts,
+    () => undefined,
+    undefined,
+    undefined,
+    (scope, sort) => sorting(store, () => SUNDAY_10AM).sort(scope, sort),
+  )(chat, "t-1", origin)(tool, input, callId);
   return JSON.parse(answer.text) as {
     ok: boolean;
     result: {
@@ -238,7 +356,7 @@ describe("saving draft items", () => {
     "missing issuer",
     "missing number",
     "missing collected date",
-  ])("groups reports across documents safely: %s", async (scenario) => {
+  ])("groups an older Rufi's reports across documents safely: %s", async (scenario) => {
     const facts = {
       ...(scenario !== "missing issuer" && { issuer: "Sunrise Labs" }),
       ...(scenario !== "missing number" && { report_number: "SOL-SPLIT-1" }),
@@ -254,14 +372,14 @@ describe("saving draft items", () => {
         facts.report_number ?? null,
         facts.dates?.[0]?.iso ?? null,
       );
-    await read({
+    readOld({
       1: {
         outcome: "read",
         facts,
         items: [{ test_name: "Ferritin", value_text: "42", date: COLLECTED }],
       },
     });
-    await read(
+    readOld(
       {
         1: {
           outcome: "read",
@@ -313,6 +431,90 @@ describe("saving draft items", () => {
     expect(saved.every((row) => row["report_id"] !== "rep-ravi-jul")).toBe(
       true,
     );
+  });
+
+  it("saves Rufi AI's drafts in their document's report, as sorted, and never in another document's with the same printed report", async () => {
+    const page = (test: string, value: string): Record<number, Entry> => ({
+      1: {
+        outcome: "read",
+        facts: {
+          issuer: "Sunrise Labs",
+          report_number: "SL-7",
+          dates: [COLLECTED],
+        },
+        items: [{ test_name: test, value_text: value }],
+      },
+    });
+    await read(page("Ferritin", "42"));
+    // The same report added again, as another file.
+    await read(page("Vitamin B12", "510"), "doc-asha-sep");
+    const { Ferritin = "", "Vitamin B12": B12 = "" } = drafts();
+    await say("Save both");
+    const saved = await call("save_changes", {
+      items: [Ferritin, B12].map((item) => ({
+        item,
+        version: 1,
+        as: "new",
+        category: "lab",
+      })),
+    });
+    expect(saved.ok).toBe(true);
+    expect(
+      rows(
+        "SELECT p.document_id, p.issuer, p.report_number, p.collected, r.measured_at FROM results r JOIN reports p ON p.person_id = r.person_id AND p.id = r.report_id WHERE r.test_name IN ('Ferritin', 'Vitamin B12') ORDER BY r.test_name",
+      ),
+    ).toEqual([
+      {
+        document_id: "doc-asha-aug",
+        issuer: "Sunrise Labs",
+        report_number: "SL-7",
+        collected: "2026-08-12",
+        measured_at: "2026-08-12",
+      },
+      {
+        document_id: "doc-asha-sep",
+        issuer: "Sunrise Labs",
+        report_number: "SL-7",
+        collected: "2026-08-12",
+        measured_at: "2026-08-12",
+      },
+    ]);
+  });
+
+  it("dates Rufi AI's draft only by its own date: one without is refused until the user gives one", async () => {
+    await read();
+    const { HbA1c = "" } = drafts();
+    // As if Rufi AI left the date out.
+    store.db
+      .prepare("UPDATE draft_items SET fields = json_remove(fields, '$.date') WHERE id = ?")
+      .run(HbA1c);
+    await say("Save the HbA1c");
+    const refused = await call("save_changes", {
+      items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }],
+    });
+    expect(refused.issues[0]?.fix).toMatch(/^This item has no date Rufi can store \(none is printed for it\)/);
+  });
+
+  it("refuses a draft whose page was read again since, and saves nothing", async () => {
+    await read();
+    const { HbA1c = "" } = drafts();
+    // Page 1 is read again: a newer reading's copy of it.
+    store.db.exec(`
+      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
+        VALUES ('job-again', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1]', '2026-10-11T05:01:00Z', '2026-10-11T05:00:00Z');
+      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
+        SELECT person_id, file_id, page_in_file, 'job-again', 1, 'read', '| HbA1c | 7.1 | % |', '2026-10-11T05:00:30Z'
+        FROM document_pages WHERE document_id = 'doc-asha-aug' AND position = 1;
+    `);
+    await say("Save the HbA1c");
+    const before = written();
+    const refused = await call("save_changes", {
+      items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }],
+    });
+    expect(refused.issues[0]?.fix).toBe(
+      "This draft is out of date: its page was read again since it was drafted. Read the document again with get_documents and save its new drafts.",
+    );
+    expect(written()).toEqual(before);
   });
 
   it("saves the stored items exactly, each with its document page as its source, in one report", async () => {
@@ -411,8 +613,8 @@ describe("saving draft items", () => {
     ]);
   });
 
-  it("puts a page that prints no lab, number or date in the report of the page before", async () => {
-    await read();
+  it("puts an older Rufi's draft on a page that prints no lab, number or date in the report of the page before", async () => {
+    readOld();
     const { HbA1c = "", "LDL cholesterol": LDL = "" } = drafts();
     await say("Save HbA1c and LDL");
     const saved = await call("save_changes", {
@@ -864,8 +1066,8 @@ describe("saving draft items", () => {
     ).toEqual([{ category: "lab" }, { category: "lab" }]);
   });
 
-  it("dates a measurement only by its own date or the user's, never by the report's collection date", async () => {
-    await read({
+  it("dates an older Rufi's measurement only by its own date or the user's, never by the report's collection date", async () => {
+    readOld({
       1: {
         outcome: "read",
         facts: { kind: "prescription", dates: [COLLECTED] },
