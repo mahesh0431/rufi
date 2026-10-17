@@ -1518,7 +1518,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         test: fields.test_name,
         value: fields.value_text,
         date: fields.date?.iso,
-        look: (JSON.parse(d.unsure) as string[]).length > 0,
+        why: (JSON.parse(d.unsure) as string[]).join("; "),
         quote: d.quote,
       };
     });
@@ -1564,7 +1564,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         only_current_values: drafts.length === EXPECTED.drafts.length,
         worth_a_look_where_unclear: EXPECTED.drafts
           .filter((want) => want.look !== undefined)
-          .every((want) => found(want)?.look === true),
+          .every((want) => (found(want)?.why ?? "") !== ""),
         each_from_its_page: drafts.every((d) => (d.quote ?? "") !== ""),
         nothing_saved: nothingSaved(home, snapshot),
       },
@@ -1583,12 +1583,15 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
           criterion:
             "Each reason says plainly why the draft is worth a look (the smudged digit of the photo's glucose, the crossed-out TSH), and no plain value has one.",
           evidence: drafts
-            .filter((d) => d.look)
-            .map((d) => `${d.file} p${String(d.page)} ${d.test} ${d.value}`)
+            .filter((d) => d.why !== "")
+            .map(
+              (d) =>
+                `${d.file} p${String(d.page)} ${d.test} ${d.value}: ${d.why}`,
+            )
             .join("\n"),
         },
       ],
-      notes: `Documents:\n${documents.map((d) => `- ${key(d)} ${d.kind ?? "?"} ${d.date ?? "no date"} ${d.lab ?? ""}`).join("\n")}\n\nDrafts:\n${drafts.map((d) => `- ${d.file} p${String(d.page)} ${d.test} = ${d.value} (${d.date ?? "no date"})${d.look ? " · worth a look" : ""} · from “${d.quote ?? ""}”`).join("\n")}`,
+      notes: `Documents:\n${documents.map((d) => `- ${key(d)} ${d.kind ?? "?"} ${d.date ?? "no date"} ${d.lab ?? ""}`).join("\n")}\n\nDrafts:\n${drafts.map((d) => `- ${d.file} p${String(d.page)} ${d.test} = ${d.value} (${d.date ?? "no date"})${d.why !== "" ? ` · worth a look: ${d.why}` : ""} · from “${d.quote ?? ""}”`).join("\n")}`,
       snapshot,
     };
   },
