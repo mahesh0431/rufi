@@ -4,6 +4,7 @@ import { chmod, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
+import { PALETTES } from "@rufi/brand/mark";
 import { runningLink } from "../../server/src/server/core.ts";
 import { expect, test } from "./rufi.ts";
 
@@ -14,6 +15,13 @@ async function accessible(page: Page) {
 }
 
 const sidebar = (page: Page) => page.getByRole("complementary");
+
+/** Rufi's dog at the top of the sidebar, as a screen reader finds it. */
+const dog = (page: Page) => sidebar(page).getByRole("img", { name: "Rufi" });
+
+/** The colour of the tile the sidebar's dog sits on. */
+const dogTile = (page: Page) => () =>
+  dog(page).evaluate((svg) => svg.querySelector("path")?.getAttribute("fill"));
 
 /** The theme the page shows now: light or dark. */
 const theme = (page: Page) => () =>
@@ -35,6 +43,10 @@ test.describe("opening Rufi", () => {
     expect(page.url()).not.toContain("launch");
     await expect(sidebar(page)).toContainText("Asha Fictional");
     await accessible(page);
+    // The dog in the browser tab.
+    const icon = await page.locator('link[rel="icon"]').getAttribute("href");
+    const served = await page.request.get(new URL(icon ?? "", page.url()).href);
+    expect(served.headers()["content-type"]).toBe("image/svg+xml");
 
     // Reloading keeps the tab's session.
     await page.reload();
@@ -131,6 +143,10 @@ test("follows the Mac's light or dark appearance, also when it changes while Ruf
     page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(await theme(page)()).toBe("dark");
   const dark = await background();
+  // One dog in the sidebar, still, on its ink tile.
+  await expect(dog(page)).toHaveCount(1);
+  await expect(dog(page)).toHaveAttribute("class", "rufi");
+  expect(await dogTile(page)()).toBe(PALETTES.inkApricot.bg);
   await accessible(page);
 
   // The chat with a reply, and a help page with code and a table.
@@ -149,6 +165,9 @@ test("follows the Mac's light or dark appearance, also when it changes while Ruf
   await page.emulateMedia({ colorScheme: "light" });
   await expect.poll(theme(page)).toBe("light");
   expect(await background()).not.toBe(dark);
+  // The dog's tile follows: periwinkle in the light.
+  await expect(dog(page)).toHaveCount(1);
+  await expect.poll(dogTile(page)).toBe(PALETTES.onPeriwinkle.bg);
 });
 
 test("Settings chooses light, dark or the Mac's; every open tab changes at once, and a new tab or a restart starts in it", async ({

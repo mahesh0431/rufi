@@ -5,6 +5,7 @@
   "type": "module",
   "main": "src/main.ts",
   "dependencies": {
+    "@rufi/brand": "workspace:*",
     "@rufi/contracts": "workspace:*",
     "effect": "4.0.0"
   },

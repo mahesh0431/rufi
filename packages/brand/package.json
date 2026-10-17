@@ -1,0 +1,22 @@
+{
+  "name": "@rufi/brand",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Rufi's look: the colour tokens, the two font roles, the dog and DESIGN.md.",
+  "type": "module",
+  "exports": {
+    "./tokens.css": "./tokens.css",
+    "./mark": {
+      "types": "./mark/rufi.d.ts",
+      "default": "./mark/rufi.js"
+    },
+    "./mark/motion.css": "./mark/motion.css",
+    "./mark/assets/*": "./mark/assets/*"
+  },
+  "scripts": {
+    "regenerate": "node mark/build.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

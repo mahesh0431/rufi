@@ -1,5 +1,5 @@
-// The theme (src/themes.css), set before the page paints so it never flashes
-// the wrong one. The core serves the page with the chosen appearance on
+// The theme (its values: packages/brand/tokens.css), set before the page
+// paints so it never flashes the wrong one. The core serves the page with the chosen appearance on
 // <html data-appearance>: light or dark stay so; system follows the system's
 // appearance, also when it changes. When it is chosen again, the screens
 // change data-appearance and the theme follows at once (src/appearance.tsx).

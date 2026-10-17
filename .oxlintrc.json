@@ -7,7 +7,11 @@
   "options": {
     "typeAware": true
   },
-  "ignorePatterns": ["apps/server/src/agent/codex/protocol/**", "lint/rufi.js"],
+  "ignorePatterns": [
+    "apps/server/src/agent/codex/protocol/**",
+    "lint/rufi.js",
+    "packages/brand/mark/**"
+  ],
   "rules": {
     "no-var": "error",
     "prefer-const": "error",

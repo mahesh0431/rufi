@@ -49,7 +49,8 @@ const noLostCause = {
   },
 };
 
-// Colours come only from the theme tokens (apps/web/src/themes.css): no
+// Colours come only from the brand tokens (packages/brand/tokens.css, named
+// for Tailwind in apps/web/src/themes.css): no
 // Tailwind palette class, hex value or colour function in the code. A link's
 // fragment (/help/page#add) is not a hex value.
 const RAW_COLOUR =
@@ -63,7 +64,7 @@ const noRawColour = {
         context.report({
           node,
           message:
-            "Use a theme token (bg-surface, text-ink, …; apps/web/src/themes.css), not a raw colour.",
+            "Use a theme token (bg-surface, text-ink, …; packages/brand/tokens.css), not a raw colour.",
         });
       }
     };

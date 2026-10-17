@@ -1,60 +1,9 @@
-/* Rufi's colours: every colour on every screen comes from these tokens.
-   A theme is one block of their values; the page takes the theme named by
-   <html data-theme>, set before it paints (public/theme.js). To add a theme,
-   add a block like the dark one.
-
-   The agreed look (review of 2 Oct): calm greys, the light blue accent only
-   for selection and the one main action. No clinical colour (no red, amber
-   or green that means something about a health value). The one red is a
-   UI colour: "this removes data", on the last step of a delete that can't
-   be undone. Text keeps WCAG AA contrast in every theme. */
-
-/* Light: a light page, a light grey sidebar, white rounded groups. */
-:root {
-  color-scheme: light;
-  --page: #f5f7fa; /* the page behind everything */
-  --side: #eef1f5; /* the sidebar, and soft fills: code, activity, hover */
-  --surface: #ffffff; /* groups, fields and floating panels on the page */
-  --line: #e3e6eb; /* borders and dividers */
-  --ink: #1d2329; /* text */
-  --muted: #5f6873; /* quieter text and icons */
-  --accent: #2563eb; /* the one main action, and selection marks */
-  --accent-hover: #1d4ed8; /* the main action under the pointer */
-  --on-accent: #ffffff; /* text and icons on the accent */
-  --accent-soft: #e3edfc; /* what is selected, and the person's own messages */
-  --accent-ink: #1d4ed8; /* links and selected text */
-  --danger: #b42318; /* the last step of a delete: its text and icon */
-  --danger-soft: #fdecea; /* the last step of a delete: its fill */
-  --paper: #ffffff; /* behind a page the AI made: white in every theme, as pages are made */
-  --edge: rgb(0 0 0 / 0.06); /* the hairline around floating panels */
-  --shade: rgb(
-    0 0 0 / 0.1
-  ); /* the shadow under floating panels and raised parts */
-  --shade-menu: rgb(0 0 0 / 0.12); /* the shadow under menus, over the panels */
-}
-
-/* Dark: the same layout in dark greys; groups are a step lighter than the
-   page, and the accent is a little lighter so it stands out. */
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --page: #191c20;
-  --side: #22262b;
-  --surface: #262a30;
-  --line: #363c43;
-  --ink: #e4e8ec;
-  --muted: #9ba4ae;
-  --accent: #2f6fe6;
-  --accent-hover: #2459c4;
-  --on-accent: #ffffff;
-  --accent-soft: #1e3250;
-  --accent-ink: #adc9fc; /* AA on the Mac's dark sidebar material too */
-  --danger: #f2a29a;
-  --danger-soft: #3a2224;
-  --paper: #ffffff;
-  --edge: rgb(255 255 255 / 0.08);
-  --shade: rgb(0 0 0 / 0.45);
-  --shade-menu: rgb(0 0 0 / 0.5);
-}
+/* Rufi's colours on the screens. Their values, light and dark, are set in
+   one place for the app and the website: the brand package's tokens
+   (packages/brand/tokens.css; what each is for: packages/brand/DESIGN.md).
+   The page takes the theme named by <html data-theme>, set before it paints
+   (public/theme.js). This file only names the tokens for Tailwind. */
+@import "@rufi/brand/tokens.css";
 
 /* The tokens as Tailwind names (bg-page, text-ink, shadow-float, …).
    Tailwind's own colours and shadows are off, so they can only come from
