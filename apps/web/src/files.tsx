@@ -286,7 +286,7 @@ export function Page({ path, title }: { path: string; title: string }) {
         src={src}
         title={name}
         sandbox="allow-scripts"
-        className="block h-120 w-full rounded-[10px] border border-line bg-paper"
+        className="block h-100 w-full rounded-[10px] border border-line bg-paper"
       />
       <span className="mt-1 flex items-center gap-1.5 text-xs text-muted">
         <FileCode size={12} className="shrink-0" aria-hidden />

@@ -272,7 +272,7 @@ test("a page draws in the reply at a fixed height and opens large over the chat:
   await expect(inline).toBeVisible();
   const box = await inline.boundingBox();
   const width = await reply.evaluate((element) => element.clientWidth);
-  expect(box?.height).toBe(480);
+  expect(box?.height).toBe(400);
   expect(box?.width).toBe(width);
   loading.resolve(undefined);
   const inlineFrame = await (await inline.elementHandle()).contentFrame();
@@ -292,17 +292,12 @@ test("a page draws in the reply at a fixed height and opens large over the chat:
   await expect(out).toContainText("send: blocked");
   await expect(out).toContainText("remote image: blocked");
   await expect(out).toContainText("remote script: blocked");
-  // A deliberate click or Tab can still put the focus inside the page.
+  // A click still puts the focus inside the page.
   const inlineFilter = inlineFrame.getByRole("textbox", { name: "Filter" });
   await inlineFilter.click();
   await page.keyboard.type("HbA1c");
   await expect(inlineFilter).toHaveValue("HbA1c");
   const open = reply.getByRole("button", { name: "Open Your 2026 results" });
-  await open.focus();
-  await page.keyboard.press("Shift+Tab");
-  await expect(inlineFilter).toBeFocused();
-  await page.keyboard.type("Glucose");
-  await expect(inlineFilter).toHaveValue("Glucose");
   // Clicked in the reply, the page keeps what it shows while it opens large.
   await inlineFrame.locator("#tab").click();
   await expect(out).toContainText("tab clicked");

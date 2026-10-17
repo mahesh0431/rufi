@@ -1007,9 +1007,14 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     );
     const snapshot = await c.read();
     const reply = replyOf(snapshot);
+    // Only references to a picture or a page: no scheme, fragment or query.
     const files = [...reply.matchAll(/\[[^\]]*\]\(<?([^)>\s]+)>?\)/g)]
-      .map((found) => decodeURI(found[1] ?? ""))
-      .filter((path) => !/^https?:/i.test(path));
+      .map((found) => decodeURI((found[1] ?? "").replace(/[?#].*$/, "")))
+      .filter(
+        (path) =>
+          !/^[a-z][a-z0-9+.-]*:/i.test(path) &&
+          /\.(png|jpe?g|gif|webp|html?)$/i.test(path),
+      );
     const shown = await Promise.all(
       files.map(async (path) => {
         const file = await api(
