@@ -101,7 +101,7 @@ Activity shows what the AI did for a reply, as the AI's agent reported it. Rufi 
 
 Click a step to open everything the agent reported about it: for a command, the whole command, its folder, its exit code, how long it took and what it printed; for a tool, what the AI sent and what came back. Long output shows 12 lines, then **Show all**. A step from before Rufi kept these says "Rufi kept no details for this step."
 
-While the AI works, Activity is open, says "Activity · working" and how many steps, and grows as the AI goes. When the answer comes, it folds into one line under the answer: how many steps, how many failed or stopped, and how long the reply took. Click the line to fold or open it at any time, also while the AI works. When you fold it while the AI works, its line says "Working", how many steps, and the newest step.
+While the AI works, Activity is open, starts with Rufi thinking, says "Activity · working" and how many steps, and grows as the AI goes. When the answer comes, it folds into one line under the answer: how many steps, how many failed or stopped, and how long the reply took. Click the line to fold or open it at any time, also while the AI works. When you fold it while the AI works, its line says "Working", how many steps, and the newest step.
 
 Choose how Activity opens in **Settings** › **Activity**:
 

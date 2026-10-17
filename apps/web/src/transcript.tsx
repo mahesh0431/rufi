@@ -59,7 +59,7 @@ import { useSettings } from "./reads.ts";
 import { Menus } from "./model-menu.tsx";
 import { latestHeading } from "./thinking.ts";
 import { isRunning } from "./transcript-state.ts";
-import { LiveDog } from "./dog.tsx";
+import { Dog, LiveDog } from "./dog.tsx";
 import { Button, buttonLook, ICON } from "./ui.tsx";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no remote
@@ -786,11 +786,9 @@ function ActivityView({
             className="flex min-h-8 w-fit max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md text-left text-muted hover:text-ink"
           >
             {running ? (
-              <LoaderCircle
-                size={ICON}
-                className="shrink-0 animate-spin"
-                aria-hidden
-              />
+              <span aria-hidden className="shrink-0">
+                <Dog mood="thinking" size={20} />
+              </span>
             ) : (
               <ChevronRight
                 size={ICON}
