@@ -367,6 +367,14 @@ export const startCore = (options: CoreOptions) =>
         ...(options.now && { now: options.now }),
       }),
       readings,
+      sortAgain: async (personId, documentId) => {
+        const again = await sorting.retry(personId, documentId);
+        if (again) {
+          readings.changed(personId);
+          await chat.wake(personId);
+        }
+        return again;
+      },
       items: draftItems(writer, readings.changed),
       pages: pageService,
       files: aiFiles({

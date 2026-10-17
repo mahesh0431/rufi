@@ -17,6 +17,7 @@ import { fileGate, type FileGate } from "./gate.ts";
 import { inspect, type Inspected } from "./inspect.ts";
 import { displayCopy, publisher } from "./pages.ts";
 import type { Readings } from "./reading.ts";
+import { placesOf, sorting } from "./sorting.ts";
 import {
   displayPath,
   isFileId,
@@ -207,6 +208,7 @@ export function documents(
           "d.added_at",
           "d.kind",
           "d.date",
+          "d.issuer",
           "p.file_id",
           "p.file_name",
           "f.media_type",
@@ -218,6 +220,8 @@ export function documents(
         .orderBy("p.position")
         .execute();
       const statuses = await reads?.statuses(personId);
+      const sorts = await sorting(store, now).states(personId);
+      const places = await placesOf(db, personId);
       type File = { -readonly [K in keyof DocumentFile]: DocumentFile[K] };
       const list: (Omit<DocumentSummary, "files"> & { files: File[] })[] = [];
       for (const row of rows) {
@@ -230,6 +234,14 @@ export function documents(
             addedAt: row.added_at,
             kind: row.kind as DocumentSummary["kind"],
             date: row.date,
+            lab: row.issuer,
+            place: (() => {
+              const place = places.get(row.id);
+              return place && place.words !== ""
+                ? { pages: place.positions, of: place.of }
+                : null;
+            })(),
+            sorting: sorts.get(row.id) ?? null,
             status: reading?.status ?? "not_read",
             reading: reading
               ? {

@@ -33,10 +33,27 @@ export type DocumentFile = typeof DocumentFile.Type;
 export const DocumentSummary = Schema.Struct({
   id: Schema.String,
   addedAt: Schema.String,
-  /** As read; null until Rufi reads documents. */
+  /** As Rufi AI sorted it (or an older Rufi read it); null until then. */
   kind: Schema.NullOr(DocumentKind),
-  /** The document's date as read, at its precision; null until read. */
+  /** The document's date as Rufi AI sorted it, at its precision; null until then. */
   date: Schema.NullOr(Schema.String),
+  /** A report's lab or clinic, as printed, as Rufi AI sorted it. */
+  lab: Schema.NullOr(Schema.String),
+  /** Its pages in what the person added, when it is part of it: split by Rufi AI. */
+  place: Schema.NullOr(
+    Schema.Struct({ pages: Schema.Array(Schema.Int), of: Schema.Int }),
+  ),
+  /**
+   * Its pages wait for Rufi AI to sort them: sorting (it goes or runs now)
+   * or waiting (Rufi tries again by itself, or it waits for the person),
+   * with why; null when nothing waits.
+   */
+  sorting: Schema.NullOr(
+    Schema.Struct({
+      state: Schema.Literals(["sorting", "waiting"]),
+      why: Schema.NullOr(Schema.String),
+    }),
+  ),
   /** not_read: never read (added before Rufi read each document as it came); Retry reads it. */
   status: Schema.Literals(["not_read", "reading", "done", "failed"]),
   /** The latest reading: pages saved of those it reads, and its drafts. */
@@ -162,6 +179,9 @@ export const ReadingView = Schema.Struct({
         ]),
       ),
       why: Schema.NullOr(Schema.String),
+      /** The reader's copy of the page, as Markdown, as printed, with its marks. */
+      copy: Schema.NullOr(Schema.String),
+      /** An older reader's entry. */
       entry: Schema.NullOr(ReadEntry),
       /** Checks an older Rufi stored with the entry (they flag, never change it); null for new entries. */
       checks: Schema.NullOr(
@@ -217,19 +237,23 @@ const DraftFields = Schema.Struct({
   from_page: Schema.optionalKey(Schema.Int),
 });
 
-/** What the reader read and the person hasn't saved yet: never the record. */
+/** What Rufi AI drafted (or an older reader read) and the person hasn't saved yet: never the record. */
 export const DraftItem = Schema.Struct({
   id: Schema.String,
   /** Rises with each fix; a fix names the version it was made on. */
   version: Schema.Int,
   page: Schema.Int,
   status: Schema.Literals(["pending", "saved", "dismissed"]),
-  /** The fields now: the reader's, or the person's fix. */
+  /** The fields now: as drafted, or the person's fix. */
   fields: DraftFields,
-  /** The reader's fields, never changed. */
+  /** The fields as drafted, never changed. */
   original: DraftFields,
-  /** Why it may be wrong: the reader's words (and an older Rufi's checks). */
+  /** Why it is worth a look: Rufi AI's reason (an older reader's words and Rufi's checks). */
   unsure: Schema.Array(Schema.String),
+  /** The words it came from, as the reader copied them; null for an older reader's. */
+  quote: Schema.NullOr(Schema.String),
+  /** Its page was read again since it was drafted: it can't be saved. */
+  outOfDate: Schema.Boolean,
 });
 export type DraftItem = typeof DraftItem.Type;
 

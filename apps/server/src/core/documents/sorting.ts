@@ -131,12 +131,10 @@ export const SortInput = Schema.Struct({
       description:
         "The documents the add holds, each with its pages. Every page not sorted yet must be in one of them.",
     }),
-  drafts: Schema.Array(Draft)
-    .check(Schema.isMaxLength(5_000))
-    .annotate({
-      description:
-        "The drafts of the pages in documents, in page order and in the order printed. They replace those pages' drafts the person hasn't touched.",
-    }),
+  drafts: Schema.Array(Draft).check(Schema.isMaxLength(5_000)).annotate({
+    description:
+      "The drafts of the pages in documents, in page order and in the order printed. They replace those pages' drafts the person hasn't touched.",
+  }),
 });
 export type SortInput = typeof SortInput.Type;
 
@@ -295,7 +293,9 @@ export async function documentsOf(db: Db, personId: string, addId: string) {
       "from_document",
     ])
     .where("person_id", "=", personId)
-    .where((eb) => eb.or([eb("id", "=", addId), eb("from_document", "=", addId)]))
+    .where((eb) =>
+      eb.or([eb("id", "=", addId), eb("from_document", "=", addId)]),
+    )
     .where("deleted_at", "is", null)
     .orderBy("from_document")
     .orderBy("id")
@@ -457,7 +457,10 @@ export function sorting(
     scope: SortScope,
   ): Promise<
     | { origin: "person" }
-    | { origin: "rufi"; request: { id: string; documentId: string } | undefined }
+    | {
+        origin: "rufi";
+        request: { id: string; documentId: string } | undefined;
+      }
   > => {
     const turn = await trx
       .selectFrom("turns")
@@ -542,7 +545,13 @@ export function sorting(
       await sql`PRAGMA defer_foreign_keys = ON`.execute(trx);
 
       const add = await addOf(trx, personId, input.document);
-      if (!add || add.deleted) {
+      const given = await trx
+        .selectFrom("documents")
+        .select("deleted_at")
+        .where("person_id", "=", personId)
+        .where("id", "=", input.document)
+        .executeTakeFirst();
+      if (!add || given?.deleted_at !== null) {
         throw new Refusal(
           "There is no such document for this person: read the list with get_documents for its id.",
         );
@@ -668,11 +677,7 @@ export function sorting(
           .select(["document_id", "page"])
           .where("person_id", "=", personId)
           .where("type", "=", "document_page")
-          .where(
-            "document_id",
-            "in",
-            [...new Set(moves.map((m) => m.from))],
-          )
+          .where("document_id", "in", [...new Set(moves.map((m) => m.from))])
           .execute();
         for (const move of moves) {
           if (
@@ -714,12 +719,17 @@ export function sorting(
         }
       }
       if (problems.length > 0) {
-        throw new Refusal("Nothing was sorted. Fix these and try again.", problems);
+        throw new Refusal(
+          "Nothing was sorted. Fix these and try again.",
+          problems,
+        );
       }
 
       // The documents: the chosen ones changed, the others new.
       const at = now();
-      const ids = input.documents.map((_, index) => chosen.get(index) ?? uuid());
+      const ids = input.documents.map(
+        (_, index) => chosen.get(index) ?? uuid(),
+      );
       for (const [index, group] of input.documents.entries()) {
         const id = ids[index] ?? "";
         const values = {
@@ -813,7 +823,7 @@ export function sorting(
         const index = named.get(draft.page) ?? 0;
         const next =
           seq.get(draft.page) ??
-          ((
+          (
             await trx
               .selectFrom("draft_items")
               .select((eb) => eb.fn.max<number | null>("seq").as("last"))
@@ -821,7 +831,8 @@ export function sorting(
               .where("page", "=", draft.page)
               .where("document_id", "in", ids)
               .executeTakeFirst()
-          )?.last ?? 0);
+          )?.last ??
+          0;
         seq.set(draft.page, next + 1);
         const { page: _page, quote, worth_a_look, ...fields } = draft;
         await trx
@@ -838,7 +849,9 @@ export function sorting(
             status: "pending",
             fields: JSON.stringify(fields),
             original: JSON.stringify(fields),
-            unsure: JSON.stringify(worth_a_look === undefined ? [] : [worth_a_look]),
+            unsure: JSON.stringify(
+              worth_a_look === undefined ? [] : [worth_a_look],
+            ),
             quote,
             report: null,
             created_at: at,
@@ -876,8 +889,7 @@ export function sorting(
         }),
         note: "Sorted. Nothing is saved: the drafts wait for the user on each document's page. Tell the user in a few lines what you found.",
       };
-      const request =
-        turn.origin === "rufi" ? turn.request?.id : undefined;
+      const request = turn.origin === "rufi" ? turn.request?.id : undefined;
       if (request !== undefined) {
         await trx
           .updateTable("sort_requests")
@@ -1072,7 +1084,9 @@ export function sorting(
           }
           if (request.row === "waiting") {
             if (request.held === "failed") {
-              await failed(request.held_text ?? "Rufi couldn't hand it to the AI");
+              await failed(
+                request.held_text ?? "Rufi couldn't hand it to the AI",
+              );
             } else if (request.held !== "paused") people.add(request.person_id);
             continue;
           }
@@ -1117,18 +1131,45 @@ export function sorting(
     retry: async (personId: string, documentId: string): Promise<boolean> =>
       db.transaction().execute(async (trx) => {
         const add = await addOf(trx, personId, documentId);
-        if (!add || add.deleted) {
+        const live = await trx
+          .selectFrom("documents")
+          .select("id")
+          .where("person_id", "=", personId)
+          .where("id", "=", documentId)
+          .where("deleted_at", "is", null)
+          .executeTakeFirst();
+        if (!add || !live) {
           throw new Refusal("There is no such document for this person.");
         }
         const request = await trx
-          .selectFrom("sort_requests")
-          .select(["id", "person_id", "queue_id", "state"])
-          .where("person_id", "=", personId)
-          .where("document_id", "=", add.id)
-          .where("state", "in", ["open", "asked", "failed"])
-          .orderBy("created_at", "desc")
+          .selectFrom("sort_requests as r")
+          .leftJoin("chat_queue as q", (join) =>
+            join
+              .onRef("q.person_id", "=", "r.person_id")
+              .onRef("q.id", "=", "r.queue_id"),
+          )
+          .select([
+            "r.id",
+            "r.person_id",
+            "r.queue_id",
+            "r.state",
+            "r.retry_at",
+            "q.held",
+          ])
+          .where("r.person_id", "=", personId)
+          .where("r.document_id", "=", add.id)
+          .where("r.state", "in", ["open", "asked", "failed"])
+          .orderBy("r.created_at", "desc")
           .executeTakeFirst();
-        if (!request) return false;
+        // One that waits to go or runs now needs no Retry.
+        if (
+          !request ||
+          (request.state === "open" &&
+            request.retry_at === null &&
+            request.held !== "paused")
+        ) {
+          return false;
+        }
         await trx
           .updateTable("sort_requests")
           .set({ state: "open", tries: 0, error: null, ended_at: null })
@@ -1178,7 +1219,10 @@ export function sorting(
       for (const request of requests) {
         const state: { state: "sorting" | "waiting"; why: string | null } =
           request.state === "asked"
-            ? { state: "waiting", why: "Rufi AI asked you about it in the chat" }
+            ? {
+                state: "waiting",
+                why: "Rufi AI asked you about it in the chat",
+              }
             : request.state === "failed"
               ? { state: "waiting", why: request.error }
               : request.held === "paused"
@@ -1192,9 +1236,7 @@ export function sorting(
         for (const document of documents) {
           if ((document.from_document ?? document.id) !== request.document_id)
             continue;
-          if (
-            notSorted(pages).some((p) => p.documentId === document.id)
-          ) {
+          if (notSorted(pages).some((p) => p.documentId === document.id)) {
             states.set(document.id, state);
           }
         }
@@ -1207,10 +1249,7 @@ export function sorting(
 export type Sorting = ReturnType<typeof sorting>;
 
 /** "pages 1–2 of 5", "page 5 of 5", or "" for a document that is its whole add. */
-export function pagesWords(
-  positions: readonly number[],
-  of: number,
-): string {
+export function pagesWords(positions: readonly number[], of: number): string {
   if (positions.length === of) return "";
   return `${positions.length === 1 ? "page" : "pages"} ${ranges(positions)} of ${String(of)}`;
 }

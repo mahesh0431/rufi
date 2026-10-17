@@ -1,9 +1,8 @@
-// The reader's notebook: one entry per page of a document, and one note for
-// the whole document, kept in the database while a reading runs, so neither
-// a compaction nor a crash loses the work. Only save_page writes it, through
-// `save` here: the page's entry and the note together, for the running job's
-// current run, only for that job's target pages, and only for a page the run
-// has looked at since its last compaction. A refusal changes nothing.
+// A reading's run and the rules every save of it follows: for the running
+// job's current run, only that job's target pages, and only a page the run
+// has looked at since its last compaction (copies.ts saves under them). And
+// the entry an older reader wrote in its notebook for a page: Rufi no longer
+// writes entries, but the old ones are kept and shown as they are.
 import { Schema } from "effect";
 import type { Transaction } from "kysely";
 import type { Store } from "../store/database.ts";
@@ -107,9 +106,6 @@ export const Entry = Schema.Struct({
 });
 export type Entry = typeof Entry.Type;
 
-/** The note for the whole document, written again whole when it changes. */
-export const Note = Text(2_000, "Your one short note for the whole document.");
-
 /**
  * Checks an older Rufi stored with an entry. Rufi doesn't check entries any
  * more: the reader says itself what it isn't sure of. Old entries keep theirs,
@@ -186,97 +182,3 @@ export async function stillRunning(trx: Transaction<Tables>, run: Run) {
     );
   }
 }
-
-export function notebook(
-  store: Store,
-  now: () => string = () => new Date().toISOString(),
-) {
-  const db = store.query;
-
-  /** Where the reading stands, as the reader is told after each look and save. */
-  const progress = async (run: Run) => {
-    const rows = await db
-      .selectFrom("document_pages")
-      .select(["position", "entry_job_id"])
-      .where("person_id", "=", run.personId)
-      .where("document_id", "=", run.documentId)
-      .where("entry", "is not", null)
-      .execute();
-    const mine = new Set(
-      rows.filter((r) => r.entry_job_id === run.jobId).map((r) => r.position),
-    );
-    const note = await db
-      .selectFrom("documents")
-      .select("reader_note")
-      .where("person_id", "=", run.personId)
-      .where("id", "=", run.documentId)
-      .executeTakeFirst();
-    return {
-      saved: ranges(rows.map((r) => r.position)),
-      still_to_save: ranges(run.targets.filter((p) => !mine.has(p))),
-      note: note?.reader_note ?? null,
-    };
-  };
-
-  return {
-    progress,
-
-    /** The page's current entry, or null when it has none. */
-    entry: async (run: Run, position: number): Promise<Entry | null> => {
-      const row = await db
-        .selectFrom("document_pages")
-        .select("entry")
-        .where("person_id", "=", run.personId)
-        .where("document_id", "=", run.documentId)
-        .where("position", "=", position)
-        .executeTakeFirst();
-      return row?.entry ? (JSON.parse(row.entry) as Entry) : null;
-    },
-
-    /**
-     * Writes page `position`'s entry, replacing an earlier one, and the note
-     * when given (left out, the note stays as it was), in one transaction.
-     * Refused, with nothing written: a closed run, a page outside the
-     * document or the job's targets, a page not looked at in this run, and a
-     * job that isn't running this attempt any more.
-     */
-    save: async (
-      run: Run,
-      position: number,
-      entry: Entry,
-      note: string | undefined,
-    ) => {
-      mayWrite(run, position);
-      await db.transaction().execute(async (trx) => {
-        await stillRunning(trx, run);
-        const written = await trx
-          .updateTable("document_pages")
-          .set({
-            entry: JSON.stringify(entry),
-            entry_job_id: run.jobId,
-            entry_attempt: run.attempt,
-            entry_at: now(),
-            entry_checks: null,
-          })
-          .where("person_id", "=", run.personId)
-          .where("document_id", "=", run.documentId)
-          .where("position", "=", position)
-          .executeTakeFirst();
-        if (written.numUpdatedRows !== 1n) {
-          throw new Refusal(`This document has no page ${String(position)}.`);
-        }
-        if (note !== undefined) {
-          await trx
-            .updateTable("documents")
-            .set({ reader_note: note })
-            .where("person_id", "=", run.personId)
-            .where("id", "=", run.documentId)
-            .execute();
-        }
-      });
-      return progress(run);
-    },
-  };
-}
-
-export type Notebook = ReturnType<typeof notebook>;

@@ -136,7 +136,9 @@ export const getDocuments = defineTool({
           status: statuses.get(d.id)?.status ?? "not_read",
           ...(sorts.has(d.id) && {
             sorting:
-              sorts.get(d.id)?.state === "sorting" ? "sorting" : "not sorted yet",
+              sorts.get(d.id)?.state === "sorting"
+                ? "sorting"
+                : "not sorted yet",
           }),
           ...(places.get(d.id)?.words && { pages: places.get(d.id)?.words }),
           files: files

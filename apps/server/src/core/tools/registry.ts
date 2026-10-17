@@ -40,7 +40,9 @@ export interface ToolContext {
    * only in Rufi's own chat; in a Rufi-started turn only its request's
    * pages.
    */
-  sort?: ((input: SortInput, callId: string) => Promise<SortAnswer>) | undefined;
+  sort?:
+    | ((input: SortInput, callId: string) => Promise<SortAnswer>)
+    | undefined;
   /** Makes a visit brief with its line: only in Rufi's own chat. */
   brief?: ((input: BriefInput, callId: string) => Promise<Made>) | undefined;
 }

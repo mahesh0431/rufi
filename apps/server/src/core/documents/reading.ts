@@ -193,7 +193,9 @@ export function readings(
       )
       .selectAll("j")
       .where("j.person_id", "=", personId)
-      .where((eb) => eb.or([eb("d.id", "=", add), eb("d.from_document", "=", add)]))
+      .where((eb) =>
+        eb.or([eb("d.id", "=", add), eb("d.from_document", "=", add)]),
+      )
       .orderBy("j.created_at", "desc")
       .orderBy("j.id", "desc")
       .execute();
@@ -541,7 +543,6 @@ export function readings(
         files: pages.map((p) => p.file_name),
         targets: run.targets,
         saved: run.targets.filter((t) => copied.has(t)),
-        note: null,
       };
     },
 
@@ -717,15 +718,14 @@ export function readings(
           .orderBy("id", "desc")
           .execute()
       ).map((row) => ({ job: jobOf(row), error: row.error }));
-      const documents = await db
+      // A deleted add's reading still read its live split documents' pages.
+      const all = await db
         .selectFrom("documents")
-        .select(["id", "from_document"])
+        .select(["id", "from_document", "deleted_at"])
         .where("person_id", "=", personId)
-        .where("deleted_at", "is", null)
         .execute();
-      const addOf = new Map(
-        documents.map((d) => [d.id, d.from_document ?? d.id]),
-      );
+      const addOf = new Map(all.map((d) => [d.id, d.from_document ?? d.id]));
+      const documents = all.filter((d) => d.deleted_at === null);
       const pages = await db
         .selectFrom("document_pages")
         .select(["document_id", "position", "entry_job_id", "state"])

@@ -19,11 +19,7 @@ import type { Log } from "../../platform/logs.ts";
 import type { ChatRow, Transcripts } from "../chat/transcript.ts";
 import { createBrief as makeBrief } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
-import type {
-  SortAnswer,
-  SortInput,
-  SortScope,
-} from "../documents/sorting.ts";
+import type { SortAnswer, SortInput, SortScope } from "../documents/sorting.ts";
 import { dismissItems as dismissDrafts } from "../record/items.ts";
 import { saveChanges as saveToRecord } from "../record/save.ts";
 import type { Store } from "../store/database.ts";

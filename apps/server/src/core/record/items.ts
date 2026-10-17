@@ -3,13 +3,16 @@
 // another source for a result the person has, or a correction of one) and
 // any fix the user gave in the chat; Rufi takes the values from the stored
 // item, never retyped by the AI. Code checks whose it is, versions, the
-// item's state and that it has a date; the AI decides with the user what
-// each item is.
+// item's state, that its page wasn't read again since, and that it has a
+// date; the AI decides with the user what each item is. Rufi AI's draft
+// goes in its document's report (the lab, number and date Rufi AI sorted
+// it with); an older Rufi's keeps the report and date stored with it.
 import type { Ref } from "@rufi/contracts";
 import { Schema } from "effect";
 import type { Transaction } from "kysely";
 import { v7 as uuidv7 } from "uuid";
 import type { Entry } from "../documents/notebook.ts";
+import { pagesOf } from "../documents/sorting.ts";
 import type { Tables } from "../store/tables.ts";
 import { dateProblem } from "./dates.ts";
 import {
@@ -115,46 +118,18 @@ export interface Earlier {
 
 /** The fields of a draft item: a result as printed. */
 type Fields = Omit<Entry["items"][number], "unsure">;
-type Facts = NonNullable<Entry["facts"]>;
 
-/** A page's report: the lab, report number and collection date it prints. */
-interface ReportKey {
+/**
+ * An older Rufi's draft's report, as Rufi worked it out when it made the
+ * draft (stored with it by migration 12): the lab, report number and first
+ * date its page printed, or the nearest page's before it.
+ */
+interface OldReport {
   issuer: string | null;
   number: string | null;
   collected: string | null;
-  /** The date the page prints first, as printed, with its label. */
-  date: { label: string; date: string; iso?: string } | undefined;
-}
-
-/**
- * Each page's report, in page order: what it prints, or, for a page that
- * prints no lab, number or date (a table that goes on), the page before's.
- */
-function reportsOf(
-  pages: readonly { position: number; entry: string | null }[],
-): Map<number, ReportKey> {
-  const keys = new Map<number, ReportKey>();
-  let last: ReportKey | undefined;
-  for (const page of pages) {
-    const facts: Facts | undefined = page.entry
-      ? (JSON.parse(page.entry) as Entry).facts
-      : undefined;
-    const date = facts?.dates?.[0];
-    const own = {
-      issuer: facts?.issuer ?? null,
-      number: facts?.report_number ?? null,
-      collected: date?.iso ?? null,
-      date,
-    };
-    if (own.issuer !== null || own.number !== null || own.date !== undefined) {
-      last = own;
-    }
-    keys.set(
-      page.position,
-      last ?? { issuer: null, number: null, collected: null, date: undefined },
-    );
-  }
-  return keys;
+  /** The date that page printed first, as printed, with its label. */
+  date: { label: string; date: string; iso?: string } | null;
 }
 
 /** Whether a saved item's page is still a source of its result, not removed. */
@@ -223,28 +198,28 @@ export async function planItems(
       ? []
       : await trx
           .selectFrom("documents")
-          .select(["id", "version"])
+          .select(["id", "version", "issuer", "report_number", "date"])
           .where("person_id", "=", personId)
           .where("id", "in", documentIds)
           .execute()
-    ).map((d) => [d.id, d.version]),
+    ).map((d) => [d.id, d]),
   );
   const pages =
     documentIds.length === 0
       ? []
       : await trx
           .selectFrom("document_pages")
-          .select(["document_id", "position", "entry", "file_name"])
+          .select(["document_id", "position", "file_name"])
           .where("person_id", "=", personId)
           .where("document_id", "in", documentIds)
           .orderBy("document_id")
           .orderBy("position")
           .execute();
-  const reports = new Map(
-    documentIds.map((id) => [
-      id,
-      reportsOf(pages.filter((p) => p.document_id === id)),
-    ]),
+  /** Each page's current copy's reading: a draft from another is out of date. */
+  const copied = new Map(
+    (await pagesOf(trx, personId, documentIds, false)).flatMap((p) =>
+      p.copy ? [[`${p.documentId}:${String(p.position)}`, p.copy.jobId]] : [],
+    ),
   );
   const named = (document: string, page: number) =>
     pages.find((p) => p.document_id === document && p.position === page)
@@ -307,8 +282,17 @@ export async function planItems(
       });
       continue;
     }
+    const copy = copied.get(`${row.document_id}:${String(row.page)}`);
+    if (row.quote !== null && copy !== undefined && copy !== row.job_id) {
+      problem(
+        `${at}.item`,
+        save.item,
+        "This draft is out of date: its page was read again since it was drafted. Read the document again with get_documents and save its new drafts.",
+      );
+      continue;
+    }
     // What the user pointed at in this turn's message must still be so.
-    const document = documents.get(row.document_id) ?? 0;
+    const document = documents.get(row.document_id)?.version ?? 0;
     if (
       asked("document", row.document_id).some((r) => r.version !== document)
     ) {
@@ -334,7 +318,11 @@ export async function planItems(
       page: row.page,
       name: named(row.document_id, row.page),
     };
-    const report = reports.get(row.document_id)?.get(row.page);
+    // Rufi AI's draft: its document is its report. An older Rufi's: the
+    // report stored with it.
+    const old =
+      row.report === null ? undefined : (JSON.parse(row.report) as OldReport);
+    const own = documents.get(row.document_id);
 
     let before: Row | undefined;
     if (save.as === "new") {
@@ -446,12 +434,14 @@ export async function planItems(
       flag_text: fields.flag_text ?? null,
       context_text: fields.context_text ?? null,
     };
-    // Its date: its own, else (in the current column) its report's first
-    // printed date: the collection date when one is printed. A measurement
-    // takes only its own: a lab's collection date isn't when it was taken.
+    // Its date: its own, as drafted. An older Rufi's draft without one, in
+    // the current column, takes its report's first printed date, as then;
+    // a measurement only its own.
     const date =
       fields.date ??
-      (fields.column === "earlier" || measurement ? undefined : report?.date);
+      (old === undefined || fields.column === "earlier" || measurement
+        ? undefined
+        : (old.date ?? undefined));
     if (date?.iso !== undefined && dateProblem(date.iso) === undefined) {
       columns["measured_at"] = date.iso;
       columns["measured_words"] = `${date.label} ${date.date}`;
@@ -490,12 +480,21 @@ export async function planItems(
       columns,
       before: undefined,
       item: { id: row.id, as: save.as },
-      report: {
-        document: row.document_id,
-        issuer: report?.issuer ?? null,
-        number: report?.number ?? null,
-        collected: report?.collected ?? null,
-      },
+      report: old
+        ? {
+            document: row.document_id,
+            issuer: old.issuer,
+            number: old.number,
+            collected: old.collected,
+            own: false,
+          }
+        : {
+            document: row.document_id,
+            issuer: own?.issuer ?? null,
+            number: own?.report_number ?? null,
+            collected: own?.date ?? null,
+            own: true,
+          },
     });
   }
   return { planned, earlier };
