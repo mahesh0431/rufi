@@ -477,9 +477,10 @@ for (const { system, chosen } of [
   { system: "dark", chosen: "Light" },
   { system: "light", chosen: "Dark" },
 ] as const) {
-  test(`a page follows Rufi's appearance, ${chosen} with the system ${system}, and the system with System`, async ({
+  test(`a page follows Rufi's appearance, ${chosen} with the system ${system}, a change in another tab while it shows, and the system with System`, async ({
     page,
     rufi,
+    context,
   }) => {
     await page.emulateMedia({ colorScheme: system });
     await rufi.family();
@@ -526,6 +527,29 @@ for (const { system, chosen } of [
     await box.fill("Your page: [Colours](reports/colours.html)");
     await box.press("Enter");
     expect(await looks()).toEqual(chosen === "Dark" ? black : white);
+
+    // Another tab chooses the other look; this one stays on its chat, and
+    // its page follows.
+    const other = await context.newPage();
+    await other.goto(rufi.link());
+    await other.getByRole("link", { name: "Settings" }).click();
+    const saved = other.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/settings") &&
+        response.request().method() === "PUT",
+    );
+    await other
+      .getByRole("radiogroup", { name: "Appearance" })
+      .getByRole("radio", { name: chosen === "Dark" ? "Light" : "Dark" })
+      .check();
+    expect((await saved).ok()).toBe(true);
+    await other.close();
+    await expect
+      .poll(() => page.locator('iframe[title="Colours"]').getAttribute("src"))
+      .toMatch(
+        chosen === "Dark" ? /\?appearance=light$/ : /\?appearance=dark$/,
+      );
+    await expect.poll(looks).toEqual(chosen === "Dark" ? white : black);
 
     await choose("System");
     expect(await looks()).toEqual(system === "dark" ? black : white);

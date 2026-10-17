@@ -97,8 +97,8 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
 
 /**
  * A source's record, as a link that opens it on its page (a result on the
- * page of its category); as words alone when it has no page or is no longer
- * in the record.
+ * page of its category, a "no known allergies" statement on Allergies); as
+ * words alone when it is no longer in the record.
  */
 function Cited({
   personId,
@@ -108,7 +108,8 @@ function Cited({
   source: BriefSource;
 }) {
   const look = "rounded-md text-accent-ink hover:bg-accent-soft";
-  if (record?.kind === "follow_up") {
+  const page = record?.kind === "none_known" ? "allergy" : record?.kind;
+  if (record && page === "follow_up") {
     return (
       <Link
         to="/people/$personId/follow-ups"
@@ -120,11 +121,11 @@ function Cited({
       </Link>
     );
   }
-  if (record && (record.kind === "result" || isPageKind(record.kind))) {
+  if (record && page && (page === "result" || isPageKind(page))) {
     return (
       <Link
         to="/people/$personId/record/$kind"
-        params={{ personId, kind: record.kind }}
+        params={{ personId, kind: page }}
         search={{ open: record.id }}
         className={look}
       >

@@ -54,7 +54,9 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
   rufi,
   context,
 }) => {
-  await rufi.family();
+  await rufi.family(
+    "INSERT INTO none_known (id, person_id, category, asserted) VALUES ('nk-a1', 'asha', 'allergies', '2026-09-01');",
+  );
   await rufi.start({
     scenario: {
       callsByTurn: [
@@ -68,6 +70,7 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
                 { kind: "medicine_use", id: "med-a1" },
                 { kind: "result", id: "res-a1" },
                 { kind: "result", id: "res-a7" },
+                { kind: "none_known", id: "nk-a1" },
               ],
             },
           },
@@ -102,7 +105,7 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
     .getByRole("log", { name: "Messages" })
     .locator("[data-entry]", { hasText: "records cited" });
   await expect(line).toHaveText(
-    /^RufiVisit brief · Made \d{1,2} \w{3} \d{4} · 3 records citedOpen$/,
+    /^RufiVisit brief · Made \d{1,2} \w{3} \d{4} · 4 records citedOpen$/,
   );
   await accessible(page);
   await line.getByRole("link", { name: /^Open Visit brief/ }).click();
@@ -126,6 +129,7 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
     "Medicine useMetformin 500 mg · Mar 2024 · currentSaved before Rufi kept sources",
     "ResultHbA1c 6.8 % · 12 Aug 2026Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf, page 1",
     "ResultVitamin D 22 ng/mL · May 2026Saved before Rufi kept sources",
+    "Statementno known allergies (as of 1 Sep 2026) · 1 Sep 2026Saved before Rufi kept sources",
   ]);
   await expect(page.getByText("The record changed since")).toHaveCount(0);
   await accessible(page);
@@ -174,6 +178,18 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
   const row = page.getByRole("button", { name: "HbA1c", exact: true });
   await expect(row).toHaveAttribute("aria-expanded", "true");
   await expect(row).toBeInViewport();
+
+  // A "no known allergies" statement opens on Allergies, as itself.
+  await page.goBack();
+  await page
+    .getByRole("region", { name: "Sources" })
+    .getByRole("link", { name: /^no known allergies/ })
+    .click();
+  await expect(page).toHaveURL(/\/people\/asha\/record\/allergy\?open=nk-a1$/);
+  const statement = page.getByRole("button", { name: "No known allergies" });
+  await expect(statement).toHaveAttribute("aria-expanded", "true");
+  await expect(statement).toBeInViewport();
+  await expect(page.getByText("History")).toBeVisible();
 });
 
 test("a brief that isn't there says so", async ({ page, rufi }) => {
