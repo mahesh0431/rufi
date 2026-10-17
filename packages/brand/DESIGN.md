@@ -92,7 +92,7 @@ Motion needs `@rufi/brand/mark/motion.css` on the page. Without `live()` the dra
 - Rufi is always the white paper dog. Its folds are apricot (a deeper apricot on an apricot ground).
 - On a dark ground it stands as it is. On a light page it sits on a colour: a tile, a badge or a panel, never straight on the page.
 - On light grounds its face is a soft ink, so the mark doesn't look heavy.
-- In the app the sidebar's dog is `onPeriwinkle` in the light theme and `inkApricot` in the dark one, following the theme, still.
+- In the app the dog is `onPeriwinkle` in the light theme and `inkApricot` in the dark one, following the theme. In the dark, a 1px ring in `--line` keeps the ink tile's shape on the sidebar's grey.
 - No stethoscope or other medical sign: Rufi keeps the record and prepares a person for the doctor; it is not the doctor.
 
 ### Expressions and motion
@@ -118,7 +118,8 @@ The face reacts to Rufi's own work, never to a person's health: no sad or alarme
 | `resting`   | Paused or offline (z z)                              |
 | `alert`     | Something new came in                                |
 
-- **Always respect reduced motion:** nothing moves and the eyes don't follow, also when the setting changes while the page is open (`motion.css` and `follow()` do this). The app's dog is always still.
+- **Always respect reduced motion:** nothing moves and the eyes don't follow, also when the setting changes while the page is open (`motion.css` and `follow()` do this). The face still changes.
+- In the app, the sidebar's dog (36 px) shows what Rufi is doing, by one rule from what the app already knows, and the chat's AI can choose a face for a moment of the conversation (the `show_face` tool); it moves by CSS only. A large dog on an empty page or in the first run uses `live()`. The working line under a reply shows the thinking dog at 20 px.
 - On the website the eyes follow the pointer only with a mouse or trackpad. A click on Rufi plays a laugh and a hop, with no sign.
 
 ### The generated files

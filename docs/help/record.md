@@ -32,7 +32,7 @@ A stopped medicine is still in your health record: its tile counts it in your hi
 
 ## The sidebar
 
-Under **Overview**, **Health record** lists its pages with their counts: Lab results, Measurements, Medicines, Prescriptions, Conditions, Allergies, Symptoms and Care events. Click one to open its page.
+Under **Overview**, **Health record** lists its pages with their counts: Lab results, Measurements, Medicines, Prescriptions, Conditions, Allergies, Symptoms and Care events. Click one to open its page. A page with nothing in it yet shows Rufi and "Nothing here yet."; click **Ask Rufi** there to open your chat.
 
 ## Lab results and Measurements
 

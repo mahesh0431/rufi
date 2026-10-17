@@ -114,6 +114,19 @@ export const ActivityKind = Schema.Literals([
 ]);
 export type ActivityKind = typeof ActivityKind.Type;
 
+/**
+ * A face Rufi's AI may show on the dog during a chat (the show_face tool):
+ * about the conversation, never about a health result, so none is sad.
+ */
+export const Face = Schema.Literals([
+  "question",
+  "found",
+  "tip",
+  "playful",
+  "alert",
+]);
+export type Face = typeof Face.Type;
+
 /** One item of a chat's transcript, in order by `seq`. */
 export const Entry = Schema.Struct({
   id: Schema.String,

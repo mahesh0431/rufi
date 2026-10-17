@@ -10,12 +10,14 @@ import {
 import { useMutation } from "@tanstack/react-query";
 import { Schema } from "effect";
 import { ArrowRight, Check } from "lucide-react";
+import type { ExpressionKey } from "@rufi/brand/mark";
 import { type ReactNode, useState } from "react";
 import { ApiError, read } from "./api.ts";
 import { AppearanceChoice } from "./appearance.tsx";
+import { LiveDog } from "./dog.tsx";
 import { queries, saveSettings, useFirstRun, useSettings } from "./reads.ts";
-import { SignIn } from "./signin.tsx";
-import { Button, Problem } from "./ui.tsx";
+import { SignIn, useSignInFlow } from "./signin.tsx";
+import { Button, ICON, Problem } from "./ui.tsx";
 
 const Added = Schema.Struct({ person: Person });
 
@@ -42,11 +44,7 @@ export function FirstRun() {
     case "name":
       return <YourName />;
     case "sign_in":
-      return (
-        <Step title="Sign in with ChatGPT">
-          <SignIn skip={() => void finish("sign_in")} />
-        </Step>
-      );
+      return <SignInStep />;
     case "region":
       return <EmergencyRegion />;
     case "done":
@@ -54,12 +52,26 @@ export function FirstRun() {
   }
 }
 
-function Step({ title, children }: { title: string; children: ReactNode }) {
+/** The steps in order, for the marker at the top of each. */
+const STEPS = ["welcome", "name", "sign_in", "region"] as const;
+
+function Step({
+  step,
+  title,
+  mood = "hello",
+  children,
+}: {
+  step: (typeof STEPS)[number];
+  title: string;
+  mood?: ExpressionKey;
+  children: ReactNode;
+}) {
   return (
     <section
       aria-labelledby="step"
-      className="mx-auto mt-24 flex max-w-md flex-col gap-3 px-6"
+      className="mx-auto mt-16 flex max-w-md flex-col gap-3 px-6"
     >
+      <StepTop step={step} mood={mood} />
       <h1 id="step" className="text-xl font-semibold">
         {title}
       </h1>
@@ -68,16 +80,53 @@ function Step({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/** Where you are in the first run, and Rufi with a face for the step. */
+function StepTop({
+  step,
+  mood,
+}: {
+  step: (typeof STEPS)[number];
+  mood: ExpressionKey;
+}) {
+  const at = STEPS.indexOf(step);
+  return (
+    <>
+      <div
+        role="img"
+        aria-label={`Step ${String(at + 1)} of ${String(STEPS.length)}`}
+        className="flex items-center gap-1"
+      >
+        {STEPS.map((one, i) => (
+          <span
+            key={one}
+            className={`h-1 rounded-full ${i === at ? "w-4.5 bg-accent" : "w-1 bg-line"}`}
+          />
+        ))}
+      </div>
+      <div className="mt-4 mb-1">
+        <LiveDog mood={mood} size={64} />
+      </div>
+    </>
+  );
+}
+
 function Welcome() {
   const [understood, setUnderstood] = useState(false);
   const done = useMutation({ mutationFn: () => finish("welcome") });
   return (
-    <Step title="Welcome to Rufi">
+    <Step step="welcome" title="Welcome to Rufi">
       <p>
         Rufi uses AI. What you ask, the documents you add and the parts of your
         health record the AI reads go to the AI provider you sign in with. Your
         health record is kept on your Mac.
       </p>
+      <div className="my-1 flex items-center gap-3">
+        <Place name="Your Mac">Your health record</Place>
+        <ArrowRight size={ICON} className="shrink-0 text-muted" aria-hidden />
+        <Place name="The AI provider">
+          What you ask, the documents you add, the parts the AI reads
+        </Place>
+      </div>
       <label className="flex items-center gap-2">
         <input
           type="checkbox"
@@ -130,12 +179,13 @@ function YourName() {
   const trimmed = name.trim();
   return (
     <form
-      className="mx-auto mt-24 flex max-w-md flex-col gap-3 px-6"
+      className="mx-auto mt-16 flex max-w-md flex-col gap-3 px-6"
       onSubmit={(event) => {
         event.preventDefault();
         if (trimmed !== "") add.mutate(trimmed);
       }}
     >
+      <StepTop step="name" mood="hello" />
       <label htmlFor="name" className="text-xl font-semibold">
         What's your name?
       </label>
@@ -178,7 +228,7 @@ function EmergencyRegion() {
     },
   });
   return (
-    <Step title="Your emergency region">
+    <Step step="region" title="Your emergency region" mood="calm">
       <p className="text-muted">
         The AI gives this number when a message may describe an emergency. Not
         set: it says to call your local emergency number. You can change it in
@@ -229,6 +279,30 @@ function EmergencyRegion() {
           Skip for now
         </Button>
       </div>
+    </Step>
+  );
+}
+
+/** One side of where your things are, in the welcome step. */
+function Place({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <div className="flex-1 rounded-xl border border-line bg-surface px-3 py-2">
+      <p className="font-semibold">{name}</p>
+      <p>{children}</p>
+    </div>
+  );
+}
+
+/** Sign in, with Rufi thinking while ChatGPT's sign-in waits. */
+function SignInStep() {
+  const waiting = useSignInFlow().data?.state === "waiting";
+  return (
+    <Step
+      step="sign_in"
+      title="Sign in with ChatGPT"
+      mood={waiting ? "thinking" : "hello"}
+    >
+      <SignIn skip={() => void finish("sign_in")} />
     </Step>
   );
 }

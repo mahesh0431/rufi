@@ -36,6 +36,7 @@ import { ReadingSheet } from "./reading.tsx";
 import { FirstRun } from "./first-run.tsx";
 import { retain } from "./live.ts";
 import { resetPanel } from "./panel.ts";
+import { SidebarDog } from "./sidebar-dog.tsx";
 import { isPageKind, KIND_TITLES } from "./record.tsx";
 import { useFirstRun, useOverview, usePeople, useStatus } from "./reads.ts";
 import { ICON, type Icon } from "./ui.tsx";
@@ -138,7 +139,7 @@ export function Frame() {
         className="flex w-60 shrink-0 flex-col gap-0.5 border-r border-line bg-side p-2.5"
       >
         <div className="flex items-center gap-2 px-2 py-1.5">
-          <Dog />
+          {person ? <SidebarDog person={person} /> : <Dog size={36} />}
           <p className="truncate font-semibold">
             {person?.displayName ?? "Rufi"}
           </p>

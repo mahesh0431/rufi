@@ -64,19 +64,40 @@ In a new data folder, Rufi takes you through four short steps:
 3. **Sign in with ChatGPT.** See [Signing in with ChatGPT](signing-in.md#sign-in-in-rufi). To do it later, click **Skip for now**: your health record works without the AI.
 4. **Your emergency region,** for the number the AI gives in an emergency. Choose it and click **Save and continue**, or click **Skip for now**. You can change it in Settings.
 
-The steps fill the window. The sidebar, Help, Settings and your chat show when the first run is done.
+The steps fill the window. Each step shows Rufi at the top, and small dots for where you are: a screen reader reads them as "Step 1 of 4" and so on. While your browser has ChatGPT's sign-in open, Rufi thinks. The welcome step also shows what goes where in two boxes: **Your Mac** keeps your health record; **The AI provider** gets what you ask, the documents you add and the parts the AI reads. The sidebar, Help, Settings and your chat show when the first run is done.
 
 Rufi keeps each step you finished. If you reload the page, close it or open Rufi in another tab, you go on from the first step not done. Two tabs never add two people.
 
 ## What you see
 
-- **The sidebar:** your name, **Chat with Rufi**, **Overview**, **Health record** with each of its pages and its count (**Lab results**, **Measurements**, **Medicines** and the others), **Documents**, and at the bottom **Help** and **Settings**. When the AI can't be used, a line under them says why.
+- **The sidebar:** Rufi and your name, **Chat with Rufi**, **Overview**, **Health record** with each of its pages and its count (**Lab results**, **Measurements**, **Medicines** and the others), **Documents**, and at the bottom **Help** and **Settings**. When the AI can't be used, a line under them says why.
 - **The chat bar:** the box at the bottom right of every page where you read your health (Overview, your health record's pages, Follow-ups and Documents), where you talk to Rufi. **Ask Rufi** on those pages puts things in it, and you stay on the page. It is your one chat with Rufi, the same as Chat with Rufi in the sidebar. See [Talking to Rufi](chat.md).
 - **Overview:** what needs you (documents waiting to be saved or read again), your health record as one tile for each of its pages, and your recent changes. Each kind of record has its own page, and results have two: Lab results and Measurements. See [Your health record](record.md).
 - **Settings:** the ChatGPT plan Rufi's AI uses (see [Signing in with ChatGPT](signing-in.md#your-plan-in-settings)), how Rufi looks, how a reply's Activity opens (see [Activity](chat.md#activity)), and your emergency region. When a message may describe an emergency, the AI gives this region's number; with no region, it says to call your local emergency number. See [What Rufi's AI will and won't do](safety.md#in-an-emergency-it-tells-you-to-call-for-help-first). Settings also holds the model and effort Rufi reads your documents with (see [Documents](documents.md#the-readers-model-and-effort)), shows your backups and exports your data (see [Backups and export](backups-and-export.md)), and shows where your data folder is (see [Your data and the AI](your-data-and-the-ai.md#where-your-data-lives)).
 - **Help:** these pages.
 
 The other pages come in later steps.
+
+A page with nothing on it yet, such as Documents or Follow-ups in a new record, shows Rufi with the page's own words.
+
+### Rufi's face
+
+Rufi, at the top of the sidebar, shows what it is doing. When more than one thing is going on, the first line here that applies sets its face:
+
+| When                                                                                              | Rufi              |
+| ------------------------------------------------------------------------------------------------- | ----------------- |
+| Rufi can't be reached, or the AI can't be used (you aren't signed in, or your plan can't be used) | Asleep (z z)      |
+| Your last answer from the AI didn't finish, until you send again                                  | Sorry             |
+| The AI chose a face in its last answer, until the next answer starts                              | The AI's choice   |
+| A document is being read                                                                          | Reads             |
+| The AI is working on an answer                                                                    | Thinks (dots)     |
+| An answer or a reading just finished, for a few seconds                                           | Happy, with a hop |
+| Your chat is new and empty                                                                        | Says hello        |
+| Anything else                                                                                     | Calm              |
+
+During a chat, the AI can choose Rufi's face for a moment of the conversation: asking you something, finding something worth a look, a tip, a light moment, or bringing up something new.
+
+Rufi's face is about Rufi's own work and your conversation, never about your health results. When your Mac is set to reduce motion, Rufi doesn't move, but its face still changes.
 
 ## How Rufi looks
 
