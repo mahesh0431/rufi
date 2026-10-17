@@ -7,7 +7,6 @@ import {
   type DocumentItems,
   type DraftItem,
   type Fixable,
-  type ReadEntry,
   ReadingView,
   Readings,
   type ReadingNow,
@@ -387,7 +386,6 @@ function Sheet({
                     drafts={items.data?.items.filter(
                       (i) => i.page === page.position,
                     )}
-                    first={page.position === reading.pages[0]?.position}
                   />
                 ))}
               </div>
@@ -424,12 +422,10 @@ function Sheet({
 function PageWork({
   page,
   drafts,
-  first,
 }: {
   page: ReadingView["pages"][number];
-  /** The page's draft items, in the entry's order, once they came. */
+  /** The page's draft items, once the reading made them. */
   drafts: readonly DraftItem[] | undefined;
-  first: boolean;
 }) {
   const { entry, checks } = page;
   const outcome = page.state
@@ -452,21 +448,32 @@ function PageWork({
       ? [`${facts.dates[0].label} ${facts.dates[0].date}`]
       : []),
   ].join(" · ");
-  const flagged = (index: number) =>
-    checks?.items.find((c) => c.item === index + 1)?.why;
+  // Once the reading made the page's items, each row is its own item, with
+  // the person's fix; until then, what the reader saved.
+  const rows: readonly Row[] = drafts?.length
+    ? drafts.map((draft) => ({
+        key: draft.id,
+        item: draft.fields,
+        why: draft.unsure.join("; "),
+        ...(fixesOf(draft).length > 0 && { fixed: draft }),
+      }))
+    : (entry?.items.map((read, index) => ({
+        key: String(index),
+        item: read,
+        why: [read.unsure, checks?.items.find((c) => c.item === index + 1)?.why]
+          .filter(Boolean)
+          .join("; "),
+      })) ?? []);
   return (
-    <details
-      open={first && entry !== null}
-      className="rounded-[10px] border border-line"
-    >
-      <summary className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5">
+    <section className="rounded-[10px] border border-line">
+      <h4 className="flex items-center gap-2 px-2.5 py-1.5 font-normal">
         <b>Page {page.position}</b>
         <span className="min-w-0 flex-1 truncate text-xs text-muted">
           {summary}
         </span>
         {checks?.incomplete && <Tag>may be incomplete</Tag>}
-      </summary>
-      {entry && <EntryTable entry={entry} drafts={drafts} flagged={flagged} />}
+      </h4>
+      {rows.length > 0 && <ItemTable rows={rows} />}
       {checks?.incomplete && (
         <p className="border-t border-line px-2.5 py-1 text-xs text-muted">
           The reader counted {checks.incomplete.rows_seen} rows and read{" "}
@@ -486,25 +493,23 @@ function PageWork({
           The reader noted: {issue}
         </p>
       ))}
-    </details>
+    </section>
   );
 }
 
+/** A row of a page: the item's fields now, why it may be wrong, and the item fixed. */
+type Row = {
+  key: string;
+  item: DraftItem["fields"];
+  why: string;
+  fixed?: DraftItem;
+};
+
 /**
- * A page's items as the reader read them; an item the person fixed shows
- * their fix, with the reader's value under its name, as the document's page
- * does.
+ * A page's items; an item the person fixed shows their fix, with the
+ * reader's value under its name, as the document's page does.
  */
-function EntryTable({
-  entry,
-  drafts,
-  flagged,
-}: {
-  entry: ReadEntry;
-  drafts: readonly DraftItem[] | undefined;
-  flagged: (index: number) => string | undefined;
-}) {
-  if (entry.items.length === 0) return null;
+function ItemTable({ rows }: { rows: readonly Row[] }) {
   return (
     <table className="w-full border-collapse text-[12.5px]">
       <thead>
@@ -522,39 +527,30 @@ function EntryTable({
         </tr>
       </thead>
       <tbody>
-        {entry.items.map((read, index) => {
-          const draft = drafts?.[index];
-          const fixed = draft !== undefined && fixesOf(draft).length > 0;
-          const item = fixed ? draft.fields : read;
-          const why = [read.unsure, flagged(index)].filter(Boolean).join("; ");
-          return (
-            <tr
-              key={`${read.test_name}-${String(index)}`}
-              className="align-top"
-            >
-              <td className="border-t border-line px-2.5 py-1">
-                {item.test_name}
-                {item.column === "earlier" && (
-                  <span className="text-muted"> (earlier)</span>
-                )}
-                {why && <span className="block text-xs text-muted">{why}</span>}
-                {fixed && <ReaderRead item={draft} />}
-              </td>
-              <td className="border-t border-line px-2.5 py-1">
-                {item.value_text}
-                {item.unit ? ` ${item.unit}` : ""}
-              </td>
-              <td className="border-t border-line px-2.5 py-1">
-                {item.reference_range ?? ""}
-              </td>
-              <td className="border-t border-line px-2.5 py-1 text-right whitespace-nowrap">
-                {item.flag_text && <Tag>{item.flag_text}</Tag>}
-                {fixed && <Tag strong>fixed by you</Tag>}
-                {why && <Tag>unsure</Tag>}
-              </td>
-            </tr>
-          );
-        })}
+        {rows.map(({ key, item, why, fixed }) => (
+          <tr key={key} className="align-top">
+            <td className="border-t border-line px-2.5 py-1">
+              {item.test_name}
+              {item.column === "earlier" && (
+                <span className="text-muted"> (earlier)</span>
+              )}
+              {why && <span className="block text-xs text-muted">{why}</span>}
+              {fixed && <ReaderRead item={fixed} />}
+            </td>
+            <td className="border-t border-line px-2.5 py-1">
+              {item.value_text}
+              {item.unit ? ` ${item.unit}` : ""}
+            </td>
+            <td className="border-t border-line px-2.5 py-1">
+              {item.reference_range ?? ""}
+            </td>
+            <td className="border-t border-line px-2.5 py-1 text-right whitespace-nowrap">
+              {item.flag_text && <Tag>{item.flag_text}</Tag>}
+              {fixed && <Tag strong>fixed by you</Tag>}
+              {why && <Tag>unsure</Tag>}
+            </td>
+          </tr>
+        ))}
       </tbody>
     </table>
   );

@@ -139,7 +139,7 @@ export function DocumentsPage({ person }: { person: Person }) {
 
   return (
     <div
-      className="relative mx-auto min-h-full max-w-[790px] px-6 py-8"
+      className="relative mx-auto min-h-full max-w-[880px] px-6 py-8"
       onDragOver={(event: DragEvent) => {
         if (!event.dataTransfer.types.includes("Files")) return;
         event.preventDefault();
@@ -391,9 +391,18 @@ function List({
   return (
     <>
       <div className="rounded-xl border border-line bg-surface px-3">
-        <table className="w-full border-collapse">
+        <table className="w-full table-fixed border-collapse">
+          {/* Fixed widths, so a longer status never moves the columns. */}
+          <colgroup>
+            <col />
+            <col className="w-[88px]" />
+            <col className="w-[68px]" />
+            <col className="w-[68px]" />
+            <col className="w-[280px]" />
+            <col className="w-[104px]" />
+          </colgroup>
           <thead>
-            <tr className="text-left text-xs text-muted">
+            <tr className="text-left text-xs text-muted [&>th]:pr-3">
               <th className="py-2 font-normal">Document</th>
               <th className="py-2 font-normal">Kind</th>
               <th className="py-2 font-normal">Date</th>
@@ -414,7 +423,7 @@ function List({
               return (
                 <tr
                   key={document.id}
-                  className="group border-t border-line hover:bg-side"
+                  className="group border-t border-line hover:bg-side [&>td]:pr-3 [&>td:last-child]:pr-0"
                 >
                   <td className="py-2.5">
                     <Link
@@ -427,7 +436,7 @@ function List({
                         className="shrink-0 text-muted"
                         aria-hidden
                       />
-                      {name}
+                      <span className="min-w-0 wrap-anywhere">{name}</span>
                     </Link>
                     {more && <div className="ml-6 text-muted">{more}</div>}
                   </td>
@@ -441,7 +450,7 @@ function List({
                   <td className="py-2.5">
                     <Status personId={personId} document={document} />
                   </td>
-                  <td className="py-2.5 pl-2 text-right">
+                  <td className="py-2.5 text-right">
                     <AskRufi
                       onClick={() => {
                         askRufi(personId, [
