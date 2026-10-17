@@ -9,6 +9,7 @@ import {
   MessageText,
   MAX_MESSAGE_CHARS,
   PAGE_ESCAPE,
+  RecoverMessage,
   ReorderQueue,
   SaveDraft,
   SaveSettings,
@@ -848,6 +849,14 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.post(`${one}/queue/:itemId/send`, async (c) => {
     const found = await chatOf(c);
     await acting(() => chat.queue.sendNow(found, c.req.param("itemId")));
+    return c.json(await chat.queue.list(found));
+  });
+  app.post(`${one}/queue/:itemId/recover`, async (c) => {
+    const found = await chatOf(c);
+    const { hold, choice } = await body(c, RecoverMessage);
+    await acting(() =>
+      chat.queue.recover(found, c.req.param("itemId"), hold, choice),
+    );
     return c.json(await chat.queue.list(found));
   });
 

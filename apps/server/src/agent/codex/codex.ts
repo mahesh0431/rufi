@@ -9,9 +9,11 @@
 // to the reply it was made in (activeTurn).
 import { setTimeout as sleep } from "node:timers/promises";
 import {
+  NotOpened,
   NotReloaded,
   NotSent,
   Stopped,
+  ThreadNotFound,
   type AgentEvent,
   type AgentHost,
   type AgentRuntime,
@@ -39,8 +41,10 @@ import type { RateLimitSnapshot } from "./protocol/v2/RateLimitSnapshot.ts";
 import type { ReasoningSummaryTextDeltaNotification } from "./protocol/v2/ReasoningSummaryTextDeltaNotification.ts";
 import type { ThreadBackgroundTerminalsListResponse } from "./protocol/v2/ThreadBackgroundTerminalsListResponse.ts";
 import type { ThreadResumeResponse } from "./protocol/v2/ThreadResumeResponse.ts";
+import type { ThreadInjectItemsParams } from "./protocol/v2/ThreadInjectItemsParams.ts";
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
 import type { ThreadStartResponse } from "./protocol/v2/ThreadStartResponse.ts";
+import type { ThreadTokenUsageUpdatedNotification } from "./protocol/v2/ThreadTokenUsageUpdatedNotification.ts";
 import type { ThreadTurnsListResponse } from "./protocol/v2/ThreadTurnsListResponse.ts";
 import type { ThreadUnsubscribeResponse } from "./protocol/v2/ThreadUnsubscribeResponse.ts";
 import type { TurnCompletedNotification } from "./protocol/v2/TurnCompletedNotification.ts";
@@ -126,11 +130,6 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   const threads = new Map<string, ThreadSettings>();
   /** Threads Rufi let go of, until Codex says they are closed. */
   const closing = new Map<string, PromiseWithResolvers<undefined>>();
-  /**
-   * Threads Codex is summarising for Rufi, until it ends: how it ended. Its
-   * turn is Rufi's own, never shown as a reply.
-   */
-  const compacting = new Map<string, PromiseWithResolvers<string>>();
   const turns = new Map<string, Running>(); // the running turn of each thread
   /** Threads where a Stop came during a send: the reply it starts is stopped. */
   const stopNext = new Set<string>();
@@ -228,8 +227,6 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     loaded.clear();
     for (const waiting of closing.values()) waiting.resolve(undefined);
     closing.clear();
-    for (const waiting of compacting.values()) waiting.resolve("failed");
-    compacting.clear();
   }
 
   /** Ends every running turn the same way; their app-server is gone. */
@@ -344,13 +341,18 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         }
         return;
     }
-    // A summary Rufi asked for: nothing of it is shown, only how it ended.
-    const summarising =
-      typeof threadId === "string" ? compacting.get(threadId) : undefined;
-    if (summarising && typeof threadId === "string") {
-      if (method === "turn/completed") {
-        compacting.delete(threadId);
-        summarising.resolve((params as TurnCompletedNotification).turn.status);
+    // Also outside a reply: a resume gives the thread's last usage again.
+    if (method === "thread/tokenUsage/updated") {
+      const { turnId, tokenUsage } =
+        params as ThreadTokenUsageUpdatedNotification;
+      if (typeof threadId === "string") {
+        emit({
+          type: "usage",
+          threadId,
+          turnId,
+          tokens: tokenUsage.last.totalTokens,
+          window: tokenUsage.modelContextWindow,
+        });
       }
       return;
     }
@@ -714,24 +716,43 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     await shutDown();
   }
 
-  /** Picks a thread up with the same checked settings and MCP registration. */
+  /**
+   * Picks a thread up with the same checked settings and MCP registration.
+   * Codex's answer for a thread it has no files of (0.159.3) is the only
+   * one that says the thread is gone; any other failure only says it didn't
+   * open now.
+   */
   async function resume(
     app: AppServer,
     threadId: string,
     settings: ThreadSettings,
     signal?: AbortSignal,
   ) {
-    const response = await abortable(
-      request<ThreadResumeResponse>(app, "thread/resume", {
-        threadId,
-        excludeTurns: true,
-        ...settingsFor(settings),
-      }).catch(toolsFailed),
-      signal,
-    );
+    let response: ThreadResumeResponse;
+    try {
+      response = await abortable(
+        request<ThreadResumeResponse>(app, "thread/resume", {
+          threadId,
+          excludeTurns: true,
+          ...settingsFor(settings),
+        }).catch(toolsFailed),
+        signal,
+      );
+      check(response, settings);
+    } catch (error) {
+      if (error instanceof Stopped) throw error;
+      if (
+        error instanceof RpcError &&
+        error.code === -32600 &&
+        error.message ===
+          `Codex refused thread/resume: no rollout found for thread id ${threadId}`
+      ) {
+        throw new ThreadNotFound(error.message, { cause: error });
+      }
+      throw new NotOpened(errorText(error), { cause: error });
+    }
     const running =
       response.thread.status.type === "active" || turns.has(threadId);
-    check(response, settings);
     loaded.add(threadId);
     threads.set(threadId, settings);
     return { model: response.model, running };
@@ -793,10 +814,9 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       return resume(app, threadId, settings, signal);
     },
 
-    reloadThread: async (threadId, settings, signal) => {
+    reloadThread: async (threadId, settings, note, signal) => {
       const app = await ready(signal);
-      // Still summarising after a Stop: the thread is there, but busy.
-      if (turns.has(threadId) || compacting.has(threadId)) {
+      if (turns.has(threadId)) {
         throw new NotReloaded(
           "The AI is busy in this chat. Try again in a moment.",
         );
@@ -825,21 +845,26 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       }
       const response = await resume(app, threadId, settings, signal);
       // The history still holds the instructions the thread was first given
-      // (0.159.3); a summary of it starts again from the new ones.
-      const summarised = Promise.withResolvers<string>();
-      compacting.set(threadId, summarised);
-      let status: string;
+      // (0.159.3): the note says the new ones replace them. Codex stores it
+      // before it answers.
       try {
-        await request(app, "thread/compact/start", { threadId });
-        status = await within(summarised.promise, deadlines.turnMs, signal);
+        await abortable(
+          request(app, "thread/inject_items", {
+            threadId,
+            items: [
+              {
+                type: "message",
+                role: "developer",
+                content: [{ type: "input_text", text: note }],
+              },
+            ],
+          } satisfies ThreadInjectItemsParams),
+          signal,
+        );
       } catch (error) {
         if (error instanceof Stopped) throw error;
-        // Codex didn't start it, or it took too long: nothing more is waited for.
-        if (compacting.get(threadId) === summarised)
-          compacting.delete(threadId);
         throw new NotReloaded(undefined, { cause: error });
       }
-      if (status !== "completed") throw new NotReloaded();
       return { model: response.model };
     },
 

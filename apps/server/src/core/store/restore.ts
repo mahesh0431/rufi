@@ -120,7 +120,7 @@ function holdQueue(path: string): void {
     db.exec(`
       BEGIN;
       UPDATE chat_queue SET state = 'not_sure' WHERE state = 'handing_over';
-      UPDATE chat_queue SET held = 'restored', held_text = NULL WHERE state = 'waiting';
+      UPDATE chat_queue SET held = 'restored', held_text = NULL, hold_id = NULL WHERE state = 'waiting';
       COMMIT;
     `);
   } finally {

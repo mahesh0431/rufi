@@ -124,12 +124,20 @@ _Avoid_: drawer, popup, sidebar
 The chat at its own address, opened with **Chat with Rufi** in the sidebar. A small window opens the chat as a page.
 
 **Transcript**:
-Rufi's own stored copy of the chat: your messages, the AI's replies, its notes and its reasoning, a receipt for each save, and one activity line for each thing the AI did, with everything that activity sent and got back. Each part is saved before it is shown. The notes, the reasoning's headings and the activity lines show in each reply's **Activity**; a cut step keeps what it had. The chat shows its latest page first, and older pages as the user scrolls up, with a line between days and a quiet line where the AI **started afresh**; Rufi works out both lines from the transcript when it shows it.
+Rufi's own stored copy of the chat: your messages, the AI's replies, its notes and its reasoning, a receipt for each save, and one activity line for each thing the AI did, with everything that activity sent and got back. Each part is saved before it is shown. The notes, the reasoning's headings and the activity lines show in each reply's **Activity**; a cut step keeps what it had. The chat shows its latest page first, and older pages as the user scrolls up, with a line between days and quiet lines where a **new thread** started and where the chat history was **compacted**; Rufi works out these lines from the transcript when it shows it.
 _Avoid_: log, history
 
-**Started afresh**:
-Where the AI began a new memory of the chat (after its own copy of the chat was lost, with the chat's last 10 messages, the AI's **notes** among them, but not its steps or thinking) or compacted its own memory of a long chat. The chat shows a quiet line there: "The AI started afresh here. It can still read earlier messages."
-_Avoid_: reset, new session, new conversation
+**New thread**:
+A new working memory of the chat for the AI. It starts only when the AI's own copy of the chat is gone (a restore, a move of Rufi's data, its files deleted), or when the user clicks **New thread** on a message that waits because the AI's thread didn't open. The chat and the health record stay as they are; the AI gets the chat's last 10 messages, its **notes** among them but not its steps or thinking, and reads further back when it needs to. The chat shows a quiet line there: "New thread started". Another model or effort, or a change of Rufi's rules, keeps the same thread.
+_Avoid_: started afresh, reset, new session, new conversation
+
+**Chat history compacted**:
+The AI's memory of a long chat got near full, and Codex replaced its older part with a summary, in the same thread. The chat shows "Compacting chat history…" while it runs and "Chat history compacted" once it is done; nothing when it was cut off (a Stop, Rufi closed). The chat itself stays whole.
+_Avoid_: started afresh, reset, summarised
+
+**Context used**:
+How much of the AI's memory of the chat its thread uses, as Codex last reported it: the last request's tokens over the model's context window, as a percentage, shown as a small grey ring beside the model and effort. It shows after the AI's first report in the thread, keeps its value after a reload, and shows nothing when Codex doesn't say the window.
+_Avoid_: tokens left, memory full
 
 **Activity**:
 What the AI did for one reply, as the AI's agent reported it, in order: its **notes**, its thinking's headings, and one step for each thing it did (read the record with one of Rufi's tools, ran a command, searched the web, changed a file, worked with a sub-agent, generated a picture, which the reply shows). Each step shows what was reported, such as the command and its exit code, or `rufi.get_records` and what the AI asked for, never Rufi's words for it; it opens to everything the agent gave about it, such as a command's output. Open and live while the AI works; folded into one line under the answer once the reply ended ("Activity · 12 steps · 1 failed · 1m 36s"), as the Activity setting says (**Show while working**, **Always show**, **Always hide**). Plain lines in the chat, not a box.
@@ -180,11 +188,11 @@ The message you started in the chat and haven't sent, with its chips, saved quie
 _Avoid_: note, unsent
 
 **Model**:
-The version of the AI that answers, such as GPT-6-Astra, chosen for the chat from the allowlist, with its **effort**, in the box. A new model answers from the next reply and has the whole chat; the AI doesn't start afresh.
+The version of the AI that answers, such as GPT-6-Astra, chosen for the chat from the allowlist, with its **effort**, in the box. A new model answers from the next reply, in the same thread, with the whole chat.
 _Avoid_: engine, brain
 
 **Effort**:
-How hard the AI thinks before it answers: Low, Medium or High, chosen for the chat with the model. Medium until the user chooses another. A new effort applies from the next reply; the AI doesn't start afresh.
+How hard the AI thinks before it answers: Low, Medium or High, chosen for the chat with the model. Medium until the user chooses another. A new effort applies from the next reply, in the same thread.
 _Avoid_: reasoning level, thinking mode
 
 **Allowlist**:

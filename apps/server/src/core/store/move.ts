@@ -453,8 +453,8 @@ async function copyFolder(from: string, to: string): Promise<void> {
 }
 
 /**
- * Lets each chat's AI thread go: in the new folder, the AI starts a fresh
- * thread with the saved chat, as it does after a model change.
+ * Lets each chat's AI thread go: in the new folder, the AI starts a new
+ * thread with the saved chat, as it does when its thread is not found.
  */
 function freshThreads(path: string): void {
   const db = new DatabaseSync(path);

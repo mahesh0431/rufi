@@ -28,6 +28,7 @@ export const MIGRATIONS: readonly string[] = [
   read("migrations/0007-activity-notes.sql"),
   read("migrations/0008-save-warnings.sql"),
   read("migrations/0009-reader-retries.sql"),
+  read("migrations/0010-chat-memory.sql"),
 ];
 
 /** What a database file is, read without changing it. */
