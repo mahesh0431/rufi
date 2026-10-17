@@ -75,13 +75,17 @@ describe("the reader pack's reading of the judge's answer", () => {
 
   it("fails the whole answer when it gives a verdict for a row the key doesn't have, also when every known row is fine", () => {
     const key = page("mixed", 1);
-    const given = answer(key);
-    given.rows.push({
-      row: 99,
-      verdict: "changed silently",
-      why: "The copy adds an unmarked Sodium row.",
+    const judged = readAnswer(key, {
+      ...answer(key),
+      rows: [
+        ...answer(key).rows,
+        {
+          row: 99,
+          verdict: "changed silently",
+          why: "The copy adds an unmarked Sodium row.",
+        },
+      ],
     });
-    const judged = readAnswer(key, given);
     expect(judged).toEqual({
       failed: expect.stringContaining("99") as unknown,
     });
