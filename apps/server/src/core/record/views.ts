@@ -1,6 +1,7 @@
 // The record as its screens show it: Overview's tiles and latest saves, a
 // page per kind in groups (a report's lab results whole, a day of results,
-// or one row), a row with its sources and history, and a test's series.
+// or one row; a result row with its small trend), a row with its sources and
+// history, and a test's series.
 // Results have two pages, Lab results and Measurements, by their category
 // (docs/adr/0013). Read only, for one person, each answer from one read
 // transaction so it is consistent. "Current" is read.ts's isCurrent, as
@@ -41,6 +42,8 @@ const GROUPS_PER_PAGE = { result: 10, other: 30 };
 const RECENT_SHOWN = 5;
 /** Names a tile shows at most. */
 const NAMES_SHOWN = 3;
+/** Values a row's small trend shows at most. */
+const TREND_POINTS = 6;
 
 /**
  * The kinds each page shows: allergies' page has the "none known"
@@ -295,9 +298,18 @@ async function page(
     }
   }
   const last = mine.at(-1);
+  const found = [...groups.values()];
   return {
-    groups: [...groups.values()],
+    groups: found,
     next: keys.length > size && last ? encodeCursor(last) : null,
+    ...(category !== undefined && {
+      trends: await trends(
+        db,
+        personId,
+        category,
+        found.flatMap((group) => group.rows),
+      ),
+    }),
   };
 }
 
@@ -472,22 +484,80 @@ async function series(
   unit: string | null,
   category: ResultCategory,
 ): Promise<Series> {
-  const kind = kindOf("result");
-  const { rows } = await sql<Row>`
-    SELECT r.* FROM results r
-    WHERE r.person_id = ${personId} AND r.test_name = ${test}
-      AND ${unit === null ? sql`r.unit IS NULL` : sql`r.unit = ${unit}`}
-      AND r.category = ${category}
-      AND ${isCurrent(kind, "r")}
-    ORDER BY ${calendar(sql`r.measured_at`)} DESC, r.measured_at, r.entered_at, r.rowid`.execute(
+  const rows = await seriesRows(
     db,
+    personId,
+    category,
+    sql`r.test_name = ${test} AND ${unit === null ? sql`r.unit IS NULL` : sql`r.unit = ${unit}`}`,
   );
   return {
     test,
     unit,
     category,
-    values: rows.map((row) => shown(kind, row)),
+    values: rows.map((row) => shown(kindOf("result"), row)),
   };
+}
+
+/** Current results of one category that match `where`, in a series' order. */
+async function seriesRows(
+  db: Db,
+  personId: string,
+  category: ResultCategory,
+  where: RawBuilder<unknown>,
+) {
+  const { rows } = await sql<Row>`
+    SELECT r.* FROM results r
+    WHERE r.person_id = ${personId} AND ${where}
+      AND r.category = ${category}
+      AND ${isCurrent(kindOf("result"), "r")}
+    ORDER BY ${calendar(sql`r.measured_at`)} DESC, r.measured_at, r.entered_at, r.rowid`.execute(
+    db,
+  );
+  return rows;
+}
+
+/** Whether a result can be a point on a trend: a calendar date and a number. */
+const placed = (row: ShownRow): row is ResultRow =>
+  !("problem" in row) &&
+  row.kind === "result" &&
+  row.number !== undefined &&
+  row.measured !== undefined &&
+  /^\d{4}/.test(row.measured.date);
+
+/**
+ * Each result row's small trend: the latest values of its series (its test
+ * in its unit and category) up to it, a few at most, read for the whole
+ * page at once. Only rows with two or more such values have one.
+ */
+async function trends(
+  db: Db,
+  personId: string,
+  category: ResultCategory,
+  rows: readonly ShownRow[],
+): Promise<Record<string, ResultRow[]>> {
+  const shownRows = rows.filter(placed);
+  const tests = [...new Set(shownRows.map((row) => row.test))];
+  if (tests.length === 0) return {};
+  const key = (row: ResultRow) => JSON.stringify([row.test, row.unit ?? null]);
+  const all = new Map<string, ResultRow[]>();
+  for (const row of await seriesRows(
+    db,
+    personId,
+    category,
+    sql`r.test_name IN (${sql.join(tests)})`,
+  )) {
+    const value = shown(kindOf("result"), row);
+    if (!placed(value)) continue;
+    all.set(key(value), [...(all.get(key(value)) ?? []), value]);
+  }
+  const found: Record<string, ResultRow[]> = {};
+  for (const row of shownRows) {
+    const values = all.get(key(row)) ?? [];
+    const at = values.findIndex((value) => value.id === row.id);
+    const trend = values.slice(Math.max(0, at + 1 - TREND_POINTS), at + 1);
+    if (trend.length > 1) found[row.id] = trend;
+  }
+  return found;
 }
 
 /** A page's tile: its count and what it counts. */
