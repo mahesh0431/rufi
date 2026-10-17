@@ -43,6 +43,8 @@
   --apricot-icon: #a8551c; /* an icon on the pale apricot square */
   --apricot-tint: #fdf0e6; /* the pale apricot square behind an icon */
   --periwinkle: #c9d0ff; /* the ground under the dog on a light page */
+  --facet: #f2f4f7; /* the faint paper facets behind the website's first screen */
+  --facet-deep: #ebeef3; /* the faint paper facets behind the website's first screen */
 
   /* The two font roles. Sizes stay with each medium. */
   --font-ui:
