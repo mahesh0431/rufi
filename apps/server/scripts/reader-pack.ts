@@ -11,8 +11,18 @@
 // documents, about 20 minutes); --only names the documents to read, from
 // either.
 //
+//
+// --copies reads the copy set (tests/pack/copy-set.ts, five pages in two
+// files) with the reader that copies (core/documents/copy-reader.ts) and
+// scores each page's copy against the rows it must hold: rows found,
+// missed, changed (marked unclear or not), copied twice, numbers invented,
+// and what each copy did with the smudged digit and the handwritten
+// correction. --runs n reads the set n times, one round after another, and
+// reports every round; each copy is written to the output folder.
+//
 //   RUFI_HOME=<test sign-in folder> node apps/server/scripts/reader-pack.ts [--all | --only a,b] [--model id] [--effort level] [--out empty-dir]
-//   node apps/server/scripts/reader-pack.ts --make <dir>    (only writes the pack's files)
+//   RUFI_HOME=<test sign-in folder> node apps/server/scripts/reader-pack.ts --copies [--runs n] [--model id] [--effort level] [--out empty-dir]
+//   node apps/server/scripts/reader-pack.ts [--copies] --make <dir>    (only writes the pack's files)
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -26,17 +36,27 @@ import { codexBinary } from "../src/agent/codex/binary.ts";
 import { subAgentRunner } from "../src/agent/codex/subagent.ts";
 import { transcripts as openTranscripts } from "../src/core/chat/transcript.ts";
 import { documents, type NewFile } from "../src/core/documents/documents.ts";
+import { copies } from "../src/core/documents/copies.ts";
+import { copyReader } from "../src/core/documents/copy-reader.ts";
 import { notebook, type Entry } from "../src/core/documents/notebook.ts";
 import { pages } from "../src/core/documents/pages.ts";
-import { entryReader } from "../src/core/documents/reader-tools.ts";
+import {
+  entryReader,
+  type ReaderKind,
+} from "../src/core/documents/reader-tools.ts";
 import { readings } from "../src/core/documents/reading.ts";
-import { databasePath, openWritable } from "../src/core/store/database.ts";
+import {
+  databasePath,
+  openWritable,
+  type Store,
+} from "../src/core/store/database.ts";
 import { childEnvironment, rufiHome } from "../src/platform/config.ts";
 import { Secrets, secretsLayer } from "../src/platform/keychain.ts";
 import { diagnostics } from "../src/platform/logs.ts";
 import { reader, READER_SETTING, readerChoice } from "../src/server/reader.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "../src/server/mcp.ts";
 import { drawn, photo, scan } from "../tests/pack/images.ts";
+import { copySetFiles, KEY } from "../tests/pack/copy-set.ts";
 import { scanPdf, textPdf } from "../tests/pack/pdf.ts";
 import {
   BUNDLE,
@@ -47,7 +67,14 @@ import {
   type Report,
 } from "../tests/pack/reports.ts";
 import { outFolder, runAll, sharedToken } from "./live-run.ts";
-import { chooseItems, norm, scoreItems, type Draft } from "./reader-score.ts";
+import {
+  chooseItems,
+  norm,
+  scoreCopy,
+  scoreItems,
+  silent,
+  type Draft,
+} from "./reader-score.ts";
 
 const { values } = parseArgs({
   options: {
@@ -57,6 +84,8 @@ const { values } = parseArgs({
     make: { type: "string" },
     model: { type: "string" },
     effort: { type: "string" },
+    copies: { type: "boolean", default: false },
+    runs: { type: "string", default: "1" },
   },
 });
 
@@ -221,6 +250,20 @@ const set =
       ? "the whole pack (--all)"
       : "the small dense set (--all reads the whole pack)";
 
+if (values.make !== undefined && values.copies) {
+  await mkdir(values.make, { recursive: true });
+  for (const file of Object.values(await copySetFiles())) {
+    await writeFile(join(values.make, file.name), file.bytes);
+  }
+  for (const key of KEY) {
+    await writeFile(
+      join(values.make, `${key.file}-${String(key.page)}.key.md`),
+      key.hand,
+    );
+  }
+  console.log(`Copy set written to ${values.make}`);
+  process.exit(0);
+}
 if (values.make !== undefined) {
   await mkdir(values.make, { recursive: true });
   for (const item of chosen) {
@@ -293,6 +336,26 @@ const byKind = new Map<string, typeof totals & { ms: number }>();
 
 /** Reads one document with the real reader, then scores it. */
 async function readOne(item: Item) {
+  const { store, documentId, home } = await readFiles(
+    await item.files(),
+    (store, home) => entryReader(pages(store, home), notebook(store)),
+  );
+  try {
+    return score(item, store, documentId, home);
+  } finally {
+    store.close();
+  }
+}
+
+/**
+ * Reads files added as one document, on a scratch data folder of its own,
+ * with the reader `kind` makes, until its reading ends. The caller closes
+ * the store.
+ */
+async function readFiles(
+  files: NewFile[],
+  kind: (store: Store, home: string) => ReaderKind,
+) {
   const home = await mkdtemp(join(tmpdir(), "rufi-pack-"));
   const store = openWritable(databasePath(home));
   const transcripts = openTranscripts(store);
@@ -306,7 +369,7 @@ async function readOne(item: Item) {
   port = served.port;
   const running = reader({
     readings: reads,
-    kind: entryReader(pages(store, home), notebook(store)),
+    kind: kind(store, home),
     event: async (id, event, write) => {
       const chat = await transcripts.chat(id);
       if (!chat) throw new Error("No chat.");
@@ -326,7 +389,7 @@ async function readOne(item: Item) {
   });
   const { added } = await documents(store, home, undefined, reads).add(
     person?.id ?? "",
-    await item.files(),
+    files,
     true,
   );
   const documentId = added[0] ?? "";
@@ -345,11 +408,7 @@ async function readOne(item: Item) {
   }
   await running.close();
   await served.close();
-  try {
-    return score(item, store, documentId, home);
-  } finally {
-    store.close();
-  }
+  return { store, documentId, home };
 }
 
 function score(
@@ -491,6 +550,166 @@ function score(
   if (asked !== undefined) rows.push(`  asked: ${asked.replace(/\n/g, " / ")}`);
   rows.push(`  scratch data folder: ${home}`);
   return rows;
+}
+
+if (values.copies) {
+  await readCopies(Number(values.runs));
+  process.exit(0);
+}
+
+/**
+ * Reads the copy set `runs` times, a round after another (each round's two
+ * files at once), scores every page's copy, writes each copy to the output
+ * folder, and reports every round.
+ */
+async function readCopies(runs: number) {
+  if (!Number.isInteger(runs) || runs < 1) {
+    console.error("--runs takes a whole number of rounds, 1 or more.");
+    process.exit(2);
+  }
+  const files = await copySetFiles();
+  const begun = Date.now();
+  const lines: string[] = [];
+  const totals = {
+    pages: 0,
+    rows: 0,
+    found: 0,
+    missed: 0,
+    changedSilent: 0,
+    changedMarked: 0,
+    duplicated: 0,
+    invented: 0,
+  };
+  const doubts = new Map<string, string[]>();
+  for (let round = 1; round <= runs; round++) {
+    const results = await runAll(
+      ["mixed", "photo"],
+      undefined,
+      async (name) => {
+        const { store, documentId } = await readFiles(
+          [name === "mixed" ? files.mixed : files.photo],
+          (store, home) => copyReader(pages(store, home), copies(store)),
+        );
+        try {
+          return copiesOf(store, documentId);
+        } finally {
+          store.close();
+        }
+      },
+    );
+    lines.push(`## Round ${String(round)}`, "");
+    for (const name of ["mixed", "photo"] as const) {
+      const result = results.get(name);
+      if (result?.status !== "fulfilled") {
+        lines.push(`- ${name}: the harness failed: ${String(result?.reason)}`);
+        continue;
+      }
+      const { job, saved } = result.value;
+      const ms =
+        job.started_at && job.ended_at
+          ? Date.parse(job.ended_at) - Date.parse(job.started_at)
+          : 0;
+      const usage = job.usage
+        ? (JSON.parse(job.usage) as { totalTokens: number; looks: number })
+        : undefined;
+      lines.push(
+        `- ${name}: ${job.state}${job.error ? ` (${job.error})` : ""} · ${String(saved.length)} pages copied · ${saved.length > 0 ? (ms / saved.length / 1000).toFixed(1) : "—"} s a page · ${usage ? `${String(usage.totalTokens)} tokens, ${String(usage.looks)} looks` : "—"}`,
+      );
+      for (const key of KEY.filter((k) => k.file === name)) {
+        const copy = saved.find((c) => c.position === key.page);
+        if (!copy) {
+          lines.push(`  - page ${String(key.page)}: no copy`);
+          continue;
+        }
+        const folder = join(out, `round-${String(round)}`);
+        await mkdir(folder, { recursive: true });
+        await writeFile(
+          join(folder, `${name}-${String(key.page)}.md`),
+          copy.copy,
+        );
+        const score = scoreCopy(key, copy.copy);
+        const changed = (marked: boolean) =>
+          score.changed.filter((c) => c.marked === marked);
+        totals.pages++;
+        totals.rows += score.rows;
+        totals.found += score.found;
+        totals.missed += score.missed.length;
+        totals.changedSilent += changed(false).length;
+        totals.changedMarked += changed(true).length;
+        totals.duplicated += score.duplicated.length;
+        totals.invented += score.invented.length;
+        const named = (label: string, list: readonly string[]) =>
+          list.length > 0 ? [`${label}: ${list.join("; ")}`] : [];
+        lines.push(
+          `  - page ${String(key.page)} (${copy.outcome}): ${String(score.found)} of ${String(score.rows)} rows whole · silent errors ${String(silent(score))}`,
+          ...[
+            ...named("missed", score.missed),
+            ...named(
+              "changed, not marked",
+              changed(false).map((c) => `${c.row} (${c.missing.join(", ")})`),
+            ),
+            ...named(
+              "changed, marked",
+              changed(true).map((c) => `${c.row} (${c.missing.join(", ")})`),
+            ),
+            ...named("copied twice", score.duplicated),
+            ...named("numbers not on the page", score.invented),
+            ...score.doubts.map(
+              (d) => `${d.row}: ${d.outcome}${d.line ? ` — "${d.line}"` : ""}`,
+            ),
+          ].map((l) => `    - ${l}`),
+        );
+        for (const d of score.doubts) {
+          doubts.set(d.row, [...(doubts.get(d.row) ?? []), d.outcome]);
+        }
+      }
+    }
+    lines.push("");
+  }
+  const text = [
+    `# Reader pack: the copy set, ${new Date(begun).toISOString()}`,
+    "",
+    `Reader: the reader that copies, ${choice.model}, ${choice.effort}. ${String(runs)} ${runs === 1 ? "round" : "rounds"}, one after another; wall time ${String(Math.round((Date.now() - begun) / 1000))} s. Each copy is in this folder, by round.`,
+    "",
+    `Totals: ${String(totals.pages)} pages, ${String(totals.rows)} rows, ${String(totals.found)} whole, ${String(totals.missed)} missed, ${String(totals.changedSilent)} changed and not marked, ${String(totals.changedMarked)} changed and marked, ${String(totals.duplicated)} copied twice, ${String(totals.invented)} numbers not on the page.`,
+    "",
+    "Hard-to-read parts, round by round:",
+    ...[...doubts].map(
+      ([row, outcomes]) => `- ${row}: ${outcomes.join(" · ")}`,
+    ),
+    "",
+    ...lines,
+  ].join("\n");
+  await writeFile(join(out, "report.md"), `${text}\n`);
+  console.log(text);
+}
+
+/** A document's latest reading and its page copies, by position. */
+function copiesOf(store: ReturnType<typeof openWritable>, documentId: string) {
+  const job = store.db
+    .prepare(
+      "SELECT id, state, error, started_at, ended_at, usage FROM jobs WHERE document_id = ? ORDER BY created_at DESC LIMIT 1",
+    )
+    .get(documentId) as {
+    id: string;
+    state: string;
+    error: string | null;
+    started_at: string | null;
+    ended_at: string | null;
+    usage: string | null;
+  };
+  const saved = store.db
+    .prepare(
+      `SELECT p.position, c.outcome, c.copy FROM page_copies c
+       JOIN document_pages p ON p.person_id = c.person_id AND p.file_id = c.file_id AND p.page_in_file = c.page_in_file
+       WHERE p.document_id = ? AND c.job_id = ? ORDER BY p.position`,
+    )
+    .all(documentId, job.id) as {
+    position: number;
+    outcome: string;
+    copy: string;
+  }[];
+  return { job, saved };
 }
 
 const started = Date.now();
