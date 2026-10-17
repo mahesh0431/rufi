@@ -255,9 +255,12 @@ export class Desktop {
   }
 }
 
-/** The processes whose command line names `folder`. */
+/**
+ * The processes whose command line names a path in `folder`; not one in a
+ * folder whose name only starts the same.
+ */
 export async function naming(folder: string): Promise<number[]> {
-  const pattern = folder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = `${folder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`;
   const { stdout } = await promisify(execFile)("pgrep", ["-f", pattern]).catch(
     (error: unknown) => {
       // 1: none.

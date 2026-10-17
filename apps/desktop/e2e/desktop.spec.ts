@@ -389,22 +389,31 @@ test.describe("stopping", () => {
     await working(await app.electron.firstWindow());
     // Chromium's helpers (GPU, network, the page) name the app's profile.
     expect((await naming(desktop.folder)).length).toBeGreaterThan(1);
-    // One that outlives the app, as a helper can for a moment.
-    const helper = spawn(
-      process.execPath,
-      [
-        "-e",
-        "setInterval(() => undefined, 1000)",
-        "--",
-        `--user-data-dir=${join(desktop.folder, "tmp", "profile")}`,
-      ],
-      { stdio: "ignore" },
-    );
+    // One that outlives the app, as a helper can for a moment; and one of
+    // another folder whose name only starts the same.
+    const stand = (profile: string) =>
+      spawn(
+        process.execPath,
+        [
+          "-e",
+          "setInterval(() => undefined, 1000)",
+          "--",
+          `--user-data-dir=${profile}`,
+        ],
+        { stdio: "ignore" },
+      );
+    const helper = stand(join(desktop.folder, "tmp", "profile"));
     const gone = new Promise((resolve) => helper.once("exit", resolve));
+    const other = stand(`${desktop.folder}-other/tmp/profile`);
 
-    await desktop.close();
-    expect(await naming(desktop.folder)).toEqual([]);
-    await gone;
+    try {
+      await desktop.close();
+      expect(await naming(desktop.folder)).toEqual([]);
+      await gone;
+      expect(await naming(`${desktop.folder}-other`)).toEqual([other.pid]);
+    } finally {
+      other.kill("SIGKILL");
+    }
   });
 
   test("when the Rufi it started stops, the app says so and quits", async ({

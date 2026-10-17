@@ -8,8 +8,8 @@
 // usage limit, the sign-in, the provider). Nothing is run again by itself.
 // Every case also checks that each reply completed with words. Anything but
 // passed or a person's verdict makes the exit code nonzero. A case's data
-// folder goes when it ends; a FAILED or INFRA case's is kept in the output
-// folder as <case>.home, and its line says so.
+// folder goes once it has passed or waits only for a person's verdict; any
+// other case's stays in the Mac's temporary folder, and its line names it.
 //
 //   RUFI_HOME=<test sign-in folder> pnpm smoke [--only a,b] [--jobs n] [--out empty-dir]
 import { randomUUID } from "node:crypto";
@@ -28,8 +28,8 @@ import { everyTurnAnswered } from "./answered.ts";
 import {
   HarnessTimeout,
   outFolder,
+  onScratch,
   runAll,
-  scratchFolders,
   sharedToken,
   statusOf,
   type Status,
@@ -2231,14 +2231,39 @@ const loop = monitorEventLoopDelay({ resolution: 20 });
 loop.enable();
 const started = Date.now();
 
-/** One case on its own scratch data folder and core; its line for the report. */
+/**
+ * One case on its own scratch data folder and core; its line for the
+ * report. The data folder goes once the case has passed or waits only for
+ * a person's verdict; otherwise its logs, record and Codex's files stay, and
+ * the line names them.
+ */
 async function runCase(
   name: string,
 ): Promise<{ status: Status; line: string }> {
+  const {
+    result: { status, why, seconds, outcome },
+    kept,
+  } = await onScratch(
+    "rufi-smoke-",
+    (home) => playCase(name, home),
+    (played) =>
+      played.status === "passed" ||
+      played.status === "needs a person's verdict",
+  );
+  const line = `${name}: ${status}${why ? ` (${why})` : ""}, ${String(seconds)} s${kept === undefined ? "" : `; data folder: ${kept}`}`;
+  console.log(line);
+  await writeFile(
+    join(out, `${name}.md`),
+    `# ${line}\n\n${outcome ? transcriptText(outcome.snapshot) : ""}\n${outcome?.notes === undefined ? "" : `\n${outcome.notes}\n`}${outcome?.verdicts === undefined ? "" : `\n${verdictsText(outcome.verdicts)}`}`,
+  );
+  return { status, line };
+}
+
+/** Plays case `name` on the data folder `home`: its status and outcome. */
+async function playCase(name: string, home: string) {
   const check = CASES[name];
   if (!check) throw new Error(`no case ${name}`);
   // The fictional family, and the case's own rows.
-  const home = await scratchFolders.make("rufi-smoke-");
   const store = openWritable(databasePath(home));
   store.db.exec(await readFile(FAMILY, "utf8"));
   await familyFiles(home);
@@ -2306,7 +2331,7 @@ async function runCase(
         .filter(([, ok]) => !ok)
         .map(([check]) => check)
     : [];
-  const { status: result, why } = statusOf({
+  const { status, why } = statusOf({
     failed,
     turns: outcome?.snapshot.turns ?? [],
     person: PERSON_VERDICT.has(name) || (outcome?.verdicts ?? []).length > 0,
@@ -2314,20 +2339,7 @@ async function runCase(
     stalledMs: stalls.max / 1e6,
   });
   const seconds = Math.round((Date.now() - began) / 1000);
-  // A failure's data folder is evidence: its logs, record and Codex's files.
-  let kept: string | undefined;
-  if (result === "FAILED" || result === "INFRA") {
-    kept = await scratchFolders.keep(home, join(out, `${name}.home`));
-  } else {
-    await scratchFolders.remove(home);
-  }
-  const line = `${name}: ${result}${why ? ` (${why})` : ""}, ${String(seconds)} s${kept === undefined ? "" : `; data folder kept: ${kept}`}`;
-  console.log(line);
-  await writeFile(
-    join(out, `${name}.md`),
-    `# ${line}\n\n${outcome ? transcriptText(outcome.snapshot) : ""}\n${outcome?.notes === undefined ? "" : `\n${outcome.notes}\n`}${outcome?.verdicts === undefined ? "" : `\n${verdictsText(outcome.verdicts)}`}`,
-  );
-  return { status: result, line };
+  return { status, why, seconds, outcome };
 }
 
 const results = await runAll(names, jobs, runCase);

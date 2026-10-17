@@ -18,7 +18,7 @@ import {
 import type { Log } from "../src/platform/logs.ts";
 import type { McpKeys } from "../src/server/mcp.ts";
 import type { KeyPage } from "../tests/pack/copy-set.ts";
-import { scratchFolders } from "./live-run.ts";
+import { onScratch } from "./live-run.ts";
 
 /** The judge's model and effort: a judgement, so the reader's model at high. */
 export const JUDGE = { model: "gpt-6.1-sol", effort: "high" } as const;
@@ -214,20 +214,25 @@ export async function judgePage(
     tools: [specOf(tool)],
     call: ({ tool: name, input, callId }) => call(name, input, callId),
   });
-  const home = await scratchFolders.make("rufi-judge-");
   try {
-    const outcome = await deps.run(home)({
-      ...JUDGE,
-      instructions: JUDGE_INSTRUCTIONS,
-      input: judgeInput(key, copy),
-      tools: { url: deps.mcp.url(), key: mcpKey, names: [tool.name] },
-      onCompaction: () => undefined,
-      deadlineMs: 10 * 60_000,
-    });
+    // The judge's data folder stays, named, when it gave no verdicts.
+    const { result: outcome, kept } = await onScratch(
+      "rufi-judge-",
+      (home) =>
+        deps.run(home)({
+          ...JUDGE,
+          instructions: JUDGE_INSTRUCTIONS,
+          input: judgeInput(key, copy),
+          tools: { url: deps.mcp.url(), key: mcpKey, names: [tool.name] },
+          onCompaction: () => undefined,
+          deadlineMs: 10 * 60_000,
+        }),
+      (ended) => ended.end.status === "completed" && answer !== undefined,
+    );
     // Only a turn that ended normally gives verdicts.
     if (outcome.end.status !== "completed" || answer === undefined)
       return {
-        failed: `The judge gave no verdicts (${outcome.end.status}${outcome.end.text ? `: ${outcome.end.text}` : ""}${answer === undefined ? "" : ", after it saved some"}).`,
+        failed: `The judge gave no verdicts (${outcome.end.status}${outcome.end.text ? `: ${outcome.end.text}` : ""}${answer === undefined ? "" : ", after it saved some"}; data folder: ${String(kept)}).`,
       };
     return readAnswer(key, answer);
   } catch (error) {
@@ -236,7 +241,6 @@ export async function judgePage(
     };
   } finally {
     deps.mcp.keys.revoke(mcpKey);
-    await scratchFolders.remove(home);
   }
 }
 

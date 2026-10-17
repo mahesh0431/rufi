@@ -1,15 +1,20 @@
-import { spawn } from "node:child_process";
-import { once } from "node:events";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Turn } from "@rufi/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import { ChatGptError } from "../src/agent/chatgpt/openai.ts";
 import {
   HarnessTimeout,
+  onScratch,
   outFolder,
   runAll,
   sharedToken,
@@ -137,63 +142,43 @@ describe("the output folder", () => {
   });
 });
 
-describe("the cases' scratch data folders", () => {
-  /**
-   * A run that makes three case folders in its own temporary folder, removes
-   * the first, keeps the second as evidence and leaves the third, then ends
-   * as `how` says; its exit code, what is left in the temporary folder, and
-   * what is in the output folder.
-   */
-  async function run(how: "ends" | "crashes" | "is stopped") {
-    const temporary = await mkdtemp(join(tmpdir(), "rufi-scratch-"));
-    const out = await mkdtemp(join(tmpdir(), "rufi-out-"));
-    const script = `
-      import { writeFile } from "node:fs/promises";
-      import { join } from "node:path";
-      import { scratchFolders } from ${JSON.stringify(new URL("live-run.ts", import.meta.url).href)};
-      const [done, evidence, running] = [
-        await scratchFolders.make("rufi-smoke-"),
-        await scratchFolders.make("rufi-smoke-"),
-        await scratchFolders.make("rufi-smoke-"),
-      ];
-      await writeFile(join(running, "rufi.db"), "a fictional record");
-      await scratchFolders.remove(done);
-      await scratchFolders.keep(evidence, join(${JSON.stringify(out)}, "case.home"));
-      console.log("running");
-      if (${JSON.stringify(how)} === "crashes") throw new Error("the run crashed");
-      if (${JSON.stringify(how)} === "is stopped") setInterval(() => undefined, 1000);
-    `;
-    const child = spawn(
-      process.execPath,
-      ["--input-type=module", "--eval", script],
-      {
-        env: { ...process.env, TMPDIR: temporary },
-        stdio: ["ignore", "pipe", "ignore"],
+describe("a case's scratch data folder", () => {
+  /** A case that writes a fictional record in its folder, then ends as `how`. */
+  const play = (how: "passes" | "fails" | "throws") =>
+    onScratch(
+      "rufi-smoke-",
+      async (home) => {
+        await writeFile(join(home, "rufi.db"), "a fictional record");
+        if (how === "throws") throw new Error("the core didn't start");
+        return { home, passed: how === "passes" };
       },
+      (result) => result.passed,
     );
-    const exited = once(child, "exit");
-    for await (const line of createInterface({ input: child.stdout })) {
-      if (line === "running") break;
-    }
-    if (how === "is stopped") child.kill("SIGINT");
-    const [code] = (await exited) as [number | null];
-    return {
-      code,
-      left: await readdir(temporary),
-      kept: await readdir(out),
-    };
-  }
+  const record = (home: string) => readFile(join(home, "rufi.db"), "utf8");
 
-  it.each([
-    ["ends", 0],
-    ["crashes", 1],
-    ["is stopped", 130],
-  ] as const)(
-    "go when the run %s; one kept as evidence stays in the output folder",
-    async (how, code) => {
-      expect(await run(how)).toEqual({ code, left: [], kept: ["case.home"] });
-    },
-  );
+  it("goes once its case has passed", async () => {
+    const { result, kept } = await play("passes");
+    expect(kept).toBeUndefined();
+    await expect(access(result.home)).rejects.toThrow(/ENOENT/);
+  });
+
+  it("stays, with what the case wrote, when the case didn't pass", async () => {
+    const { result, kept } = await play("fails");
+    expect(kept).toBe(result.home);
+    expect(await record(result.home)).toBe("a fictional record");
+  });
+
+  it("stays when the case throws, and the error names it", async () => {
+    const error: unknown = await play("throws").catch((e: unknown) => e);
+    expect(error).toMatchObject({
+      message: expect.stringMatching(
+        /^the core didn't start \(data folder: .*rufi-smoke-\w+\)$/,
+      ) as unknown,
+      cause: new Error("the core didn't start"),
+    });
+    const home = /data folder: (.*)\)$/.exec((error as Error).message)?.[1];
+    expect(await record(home ?? "")).toBe("a fictional record");
+  });
 });
 
 describe("a case's status", () => {

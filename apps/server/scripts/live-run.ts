@@ -2,8 +2,7 @@
 // at once, one token source for them all, a new output folder per run, the
 // cases' scratch data folders, and each case's status for the report.
 import { execFileSync } from "node:child_process";
-import { rmSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readdir, rename, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Turn } from "@rufi/contracts";
@@ -97,54 +96,31 @@ export async function outFolder(
   return mkdtemp(`/tmp/rufi-${kind}-${commit}-${time}-`);
 }
 
-/** The run's scratch data folders not removed or kept yet. */
-const scratch = new Set<string>();
-
 /**
- * Scratch data folders for a run's cases, named `<prefix>…` in the Mac's
- * temporary folder. The run removes each when its case is done with it, and
- * any still there when the run ends, also when it crashes or is stopped
- * with Ctrl-C, so a run leaves no fictional data in the temporary folder.
- * One a case needs as evidence is moved into the run's output folder
- * instead, for the report to say where.
+ * Runs a case on a scratch data folder of its own, `<prefix>…` in the Mac's
+ * temporary folder. The folder is removed once the case has ended and
+ * `passed` says it passed. After any other ending (a failure, an error, a
+ * crash) it stays where it is, as the evidence: `kept` names it, and so does
+ * the error the case threw.
  */
-export const scratchFolders = {
-  async make(prefix: string): Promise<string> {
-    watchExit();
-    const folder = await mkdtemp(join(tmpdir(), prefix));
-    scratch.add(folder);
-    return folder;
-  },
-  async remove(folder: string): Promise<void> {
-    await rm(folder, { recursive: true, force: true });
-    scratch.delete(folder);
-  },
-  /** Moves `folder` to `to`, where it stays when the run ends; `to`. */
-  async keep(folder: string, to: string): Promise<string> {
-    await rename(folder, to).catch(async (error: unknown) => {
-      // The output folder is on another disk.
-      if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
-      await cp(folder, to, { recursive: true });
-      await rm(folder, { recursive: true, force: true });
-    });
-    scratch.delete(folder);
-    return to;
-  },
-};
-
-let watching = false;
-
-function watchExit(): void {
-  if (watching) return;
-  watching = true;
-  process.once("exit", () => {
-    for (const folder of scratch) {
-      rmSync(folder, { recursive: true, force: true });
-    }
-  });
-  // Without these, a signal ends the run without its exit.
-  process.once("SIGINT", () => process.exit(130));
-  process.once("SIGTERM", () => process.exit(143));
+export async function onScratch<T>(
+  prefix: string,
+  run: (home: string) => Promise<T>,
+  passed: (result: T) => boolean,
+): Promise<{ result: T; kept: string | undefined }> {
+  const home = await mkdtemp(join(tmpdir(), prefix));
+  let result: T;
+  try {
+    result = await run(home);
+  } catch (error) {
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)} (data folder: ${home})`,
+      { cause: error },
+    );
+  }
+  if (!passed(result)) return { result, kept: home };
+  await rm(home, { recursive: true, force: true });
+  return { result, kept: undefined };
 }
 
 /** A wait in the harness that ran out: the run's trouble, not Rufi's answer. */
