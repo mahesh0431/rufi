@@ -16,6 +16,7 @@ import {
   type Transcripts,
 } from "../chat/transcript.ts";
 import { databasePath, openWritable, type Store } from "../store/database.ts";
+import { documents as openDocuments } from "./documents.ts";
 import {
   comparable,
   onPage,
@@ -41,6 +42,7 @@ const COPIES = [
   "Dr. Rao\n\nRx: Metformin 500 mg, twice a day",
 ];
 
+let home: string;
 let store: Store;
 let transcripts: Transcripts;
 let chat: ChatRow;
@@ -49,9 +51,8 @@ let calls = 0;
 
 beforeEach(async () => {
   clock = T0;
-  store = openWritable(
-    databasePath(await mkdtemp(join(tmpdir(), "rufi-sorting-"))),
-  );
+  home = await mkdtemp(join(tmpdir(), "rufi-sorting-"));
+  store = openWritable(databasePath(home));
   store.db.exec(`
     INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional'), ('ravi', 'Ravi Fictional');
     INSERT INTO chats (id, person_id, created_at) VALUES ('c-asha', 'asha', '${T0}'), ('c-ravi', 'ravi', '${T0}');
@@ -182,6 +183,41 @@ describe("the page check", () => {
     expect(comparable("1\\*2 **bold**  ~~3~~ [unclear: 4]")).toBe(
       "1*2 bold ~~3~~ [unclear: 4]",
     );
+  });
+});
+
+describe("the Documents list", () => {
+  it("says an add is being sorted, then shows each of its documents with its place in the file, its kind, lab and date", async () => {
+    const list = () => openDocuments(store, home, now).list("asha");
+    await asked();
+    expect(await list()).toEqual([
+      expect.objectContaining({
+        id: "pile",
+        kind: null,
+        place: null,
+        sorting: { state: "sorting", why: null },
+      }),
+    ]);
+    await sorts.sort(personal(), THREE);
+    expect(
+      (await list()).map((d) => [d.kind, d.date, d.lab, d.place, d.sorting]),
+    ).toEqual([
+      [
+        "lab_report",
+        "2026-03-12",
+        "Sunrise Labs",
+        { pages: [1, 2], of: 5 },
+        null,
+      ],
+      [
+        "lab_report",
+        "2026-08-20",
+        "Lakeside Diagnostics",
+        { pages: [3, 4], of: 5 },
+        null,
+      ],
+      ["prescription", null, null, { pages: [5], of: 5 }, null],
+    ]);
   });
 });
 

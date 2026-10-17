@@ -11,6 +11,7 @@ import type {
   DocumentSummary,
   MediaType,
 } from "@rufi/contracts/documents";
+import { sql } from "kysely";
 import { v7 as uuid } from "uuid";
 import type { Store } from "../store/database.ts";
 import { fileGate, type FileGate } from "./gate.ts";
@@ -193,7 +194,10 @@ export function documents(
       return { added, already };
     },
 
-    /** The person's documents, newest first, each with its files in page order. */
+    /**
+     * The person's documents, newest first, each with its files in page
+     * order; the documents Rufi AI split from one add by their first page.
+     */
     list: async (personId: string): Promise<DocumentSummary[]> => {
       const rows = await db
         .selectFrom("documents as d")
@@ -216,7 +220,10 @@ export function documents(
         .where("d.person_id", "=", personId)
         .where("d.deleted_at", "is", null)
         .orderBy("d.added_at", "desc")
-        .orderBy("d.id", "desc")
+        .orderBy(sql`COALESCE(d.from_document, d.id)`, "desc")
+        .orderBy(
+          sql`(SELECT MIN(q.position) FROM document_pages q WHERE q.person_id = d.person_id AND q.document_id = d.id)`,
+        )
         .orderBy("p.position")
         .execute();
       const statuses = await reads?.statuses(personId);
