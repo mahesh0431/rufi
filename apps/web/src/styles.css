@@ -208,3 +208,45 @@ body {
 [data-app] [data-toolbar] {
   -webkit-app-region: drag;
 }
+
+/* Print (the visit brief's Print, or ⌘P on any page): only the page, on A4
+   sheets, light in every theme (packages/brand/tokens.css keeps dark for
+   screens). The sidebar, toolbar, chat bar and sheets stay on the screen,
+   the page's scroll box opens to its full length, and each sheet's foot
+   gives its number. */
+@page {
+  size: A4;
+  margin: 16mm 16mm 18mm;
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font: 9px var(--font-ui);
+    color: var(--muted);
+  }
+}
+@media print {
+  html,
+  body,
+  #root {
+    height: auto;
+    background: none;
+  }
+  [data-frame],
+  [data-pane] {
+    display: block;
+    height: auto;
+  }
+  [data-frame] > :not([data-pane]),
+  [data-pane] > :not(main) {
+    display: none;
+  }
+  [data-pane] > main {
+    overflow: visible;
+    padding: 0;
+  }
+  [data-dog="dark"] {
+    display: none !important;
+  }
+  [data-dog="light"] {
+    display: inline !important;
+  }
+}
