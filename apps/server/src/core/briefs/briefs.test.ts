@@ -281,6 +281,72 @@ describe("create_brief", () => {
     ]);
   });
 
+  it("marks a result amended since changed since, following each amendment; one amended before the brief stays unmarked", async () => {
+    await use(
+      "create_brief",
+      {
+        markdown: MARKDOWN,
+        record_version: await version(),
+        // TSH 2.1 was amended to 4.6 (res-a5) before the brief.
+        cited: [...CITED, { kind: "result", id: "res-a4" }],
+      },
+      "brief-1",
+    );
+    const id = (rows("SELECT id FROM briefs")[0] as { id: string }).id;
+    const marks = async () =>
+      (await readBrief(store.query, "asha", id))?.sources.map(
+        ({ what, changedSince }) => ({ what, changedSince }),
+      );
+    expect(await marks()).toEqual([
+      { what: "Metformin 500 mg · Mar 2024 · current", changedSince: false },
+      { what: "Creatine 5 g · Jun 2026 · current", changedSince: false },
+      { what: "HbA1c 6.8 % · 12 Aug 2026", changedSince: false },
+      { what: "TSH 2.1 mIU/L · 12 Aug 2026", changedSince: false },
+    ]);
+
+    await saveSaid("The HbA1c was 6.6, not 6.8", {
+      kind: "result",
+      action: "add",
+      fields: { test: "HbA1c", value: "6.6", unit: "%", replaces: "res-a1" },
+    });
+    await saveSaid("The September TSH was 4.4", {
+      kind: "result",
+      action: "add",
+      fields: { test: "TSH", value: "4.4", unit: "mIU/L", replaces: "res-a5" },
+    });
+    expect(await marks()).toEqual([
+      { what: "Metformin 500 mg · Mar 2024 · current", changedSince: false },
+      { what: "Creatine 5 g · Jun 2026 · current", changedSince: false },
+      { what: "HbA1c 6.8 % · 12 Aug 2026", changedSince: true },
+      // Its amendment was amended in turn.
+      { what: "TSH 2.1 mIU/L · 12 Aug 2026", changedSince: true },
+    ]);
+  });
+
+  it("shows a statement's date once, as other sources show theirs", async () => {
+    await saveSaid("I have no allergies", {
+      kind: "none_known",
+      action: "add",
+      fields: { category: "allergies" },
+    });
+    const statement = rows("SELECT id FROM none_known")[0] as { id: string };
+    await use(
+      "create_brief",
+      {
+        markdown: MARKDOWN,
+        record_version: await version(),
+        cited: [{ kind: "none_known", id: statement.id }],
+      },
+      "brief-1",
+    );
+    const id = (rows("SELECT id FROM briefs")[0] as { id: string }).id;
+    expect(
+      (await readBrief(store.query, "asha", id))?.sources.map(
+        ({ kind, what }) => ({ kind, what }),
+      ),
+    ).toEqual([{ kind: "Statement", what: "no known allergies · 4 Oct 2026" }]);
+  });
+
   it.each([
     { when: "before any saves", from: "Saved before Rufi kept sources" },
     {

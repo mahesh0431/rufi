@@ -86,6 +86,16 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
                   id: "med-a1",
                   fields: { status: "stopped" },
                 },
+                {
+                  kind: "result",
+                  action: "add",
+                  fields: {
+                    test: "Vitamin D",
+                    value: "24",
+                    unit: "ng/mL",
+                    replaces: "res-a7",
+                  },
+                },
               ],
             },
           },
@@ -129,7 +139,7 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
     "Medicine useMetformin 500 mg · Mar 2024 · currentSaved before Rufi kept sources",
     "ResultHbA1c 6.8 % · 12 Aug 2026Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf, page 1",
     "ResultVitamin D 22 ng/mL · May 2026Saved before Rufi kept sources",
-    "Statementno known allergies (as of 1 Sep 2026) · 1 Sep 2026Saved before Rufi kept sources",
+    "Statementno known allergies · 1 Sep 2026Saved before Rufi kept sources",
   ]);
   await expect(page.getByText("The record changed since")).toHaveCount(0);
   await accessible(page);
@@ -150,20 +160,24 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
   // The second scripted turn changes the record through the running chat.
   await page.getByRole("link", { name: "Chat with Rufi" }).click();
   const message = page.getByRole("textbox", { name: "Message to Rufi" });
-  await message.fill("I stopped Metformin");
+  await message.fill("I stopped Metformin, and the Vitamin D was 24");
   await message.press("Enter");
-  await expect(page.locator(".receipt").getByRole("listitem")).toHaveText(
+  await expect(page.locator(".receipt").getByRole("listitem")).toHaveText([
     "Changed medicine use Metformin 500 mg: status current → stopped",
-  );
+    "Added result Vitamin D 24 ng/mL: category lab, replaces Vitamin D 22 ng/mL",
+  ]);
   await page.getByRole("link", { name: /^Open Visit brief/ }).click();
   await page.reload();
   await expect(page.getByRole("status").getByText(/changed since/)).toHaveText(
     "The record changed since this brief was made. The brief stays as it was; ask Rufi in the chat for a new one to include the changes.",
   );
-  // As the brief cited it, marked.
-  await expect(sources.first()).toHaveText(
+  // As the brief cited it, marked; an amended result too.
+  await expect(sources).toHaveText([
     "Medicine useMetformin 500 mg · Mar 2024 · currentchanged sinceSaved before Rufi kept sources",
-  );
+    "ResultHbA1c 6.8 % · 12 Aug 2026Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf, page 1",
+    "ResultVitamin D 22 ng/mL · May 2026changed sinceSaved before Rufi kept sources",
+    "Statementno known allergies · 1 Sep 2026Saved before Rufi kept sources",
+  ]);
   await expect(brief).toContainText("Metformin 500 mg, twice a day");
   await accessible(page);
 
