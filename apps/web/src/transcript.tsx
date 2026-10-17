@@ -1,19 +1,20 @@
 // The chat's transcript as the core stored it: your messages, the AI's
 // replies as Markdown, with the pictures, pages and diagrams they show
 // (files.tsx), each picture the AI generated, and under each answer its
-// Activity and, once it ended, Based on; Rufi's receipt for each save to the
-// record, Rufi's own event lines (never your words), the line of each visit
-// brief, which opens it, and how a reply ended when it didn't finish. A line
-// between days, and a quiet line where the AI started afresh or compacted
-// its memory. Activity is what the AI's agent reported, in order: its
-// progress notes in full, its thinking headings and its steps, each step
-// opening to all the agent gave about it (activity.tsx). While the AI works
-// it is open and live; once the reply ended it folds into one line, as the
-// Activity setting says; a click folds or opens it. It is plain content in
-// the chat, never a box of its own. The chat opens at the latest page; older
-// pages load as you scroll up, and the view stays where it is. Each entry
-// reads only itself from the live store, so a streaming reply re-renders
-// alone.
+// Activity and, once it completed, Based on beside it; Rufi's receipt for
+// each save to the record, Rufi's own event lines (never your words), the
+// line of each visit brief, which opens it, and how a reply ended when it
+// didn't finish. A line between days, and a quiet line where the AI started
+// afresh or compacted its memory. Activity is what the AI's agent reported,
+// in order: its progress notes in full, its thinking headings and its steps,
+// each step opening to all the agent gave about it (activity.tsx). While the
+// AI works it is open and live; once the reply ended it folds into one line,
+// as the Activity setting says; a click folds or opens it. It is plain
+// content in the chat, never a box of its own. The chat opens at the latest
+// page; older pages load as you scroll up, and the view stays where it is.
+// Each entry reads only itself from the live store, so a streaming reply
+// re-renders alone.
+import { Popover } from "@base-ui/react/popover";
 import { Link } from "@tanstack/react-router";
 import {
   ArrowUpRight,
@@ -22,6 +23,7 @@ import {
   Check,
   ChevronRight,
   FileText,
+  Info,
   LoaderCircle,
   RotateCw,
   Square,
@@ -42,7 +44,7 @@ import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import remend from "remend";
-import type { ActivityShown, Entry, Read, Turn } from "@rufi/contracts";
+import type { ActivityShown, Entry, Turn } from "@rufi/contracts";
 import type { StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/shallow";
@@ -54,9 +56,10 @@ import { dayLine, dayOf, printedTime } from "./dates.ts";
 import type { Live } from "./live.ts";
 import { RetryButton } from "./reading.tsx";
 import { useSettings } from "./reads.ts";
+import { Menus } from "./model-menu.tsx";
 import { latestHeading } from "./thinking.ts";
 import { isRunning } from "./transcript-state.ts";
-import { Button, buttonLook, ICON } from "./ui.tsx";
+import { Button, buttonLook, ICON, IconButton } from "./ui.tsx";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no remote
 // images, and links only to http(s) pages, opened outside Rufi with no opener
@@ -220,9 +223,6 @@ function Reply({
   );
 }
 
-/** Based on shows once a reply ended, when it has How or Used. */
-const based = (turn: Turn) =>
-  turn.status !== "running" && (turn.how !== null || turn.used.length > 0);
 /** A reply that ended without completing says how. */
 const cut = (turn: Turn) =>
   turn.status !== "running" && turn.status !== "completed";
@@ -249,10 +249,11 @@ const shows = (entry: Entry) =>
 /**
  * What the transcript shows, in order, each as a key: "d:" a day's line
  * before an entry, "a:" the AI started afresh for a turn, "c:" a compaction
- * it completed, "e:" an entry, "s:" a turn's Activity, "b:" a turn's Based
- * on, "x:" how a turn ended. A turn's Activity takes the place of its first
- * line while it runs, and sits under its answer once it ended. Keys, so the
- * list draws again only when what it shows changes.
+ * it completed, "e:" an entry, "s:" a turn's Activity and Based on, "x:" how
+ * a turn ended. A turn's Activity takes the place of its first line while it
+ * runs, and sits under its answer once it ended, with Based on beside it
+ * when the AI wrote How. Keys, so the list draws again only when what it
+ * shows changes.
  */
 function lines(state: Live): string[] {
   const { order, entries } = state;
@@ -295,12 +296,11 @@ function lines(state: Live): string[] {
     if (turn.afresh) add(before, opens, `a:${turn.id}`);
     const step = firstStep.get(turn.id);
     const answer = lastReply.get(turn.id);
-    if (step !== undefined) {
-      if (turn.status !== "running" && answer !== undefined) {
+    if (turn.status !== "running" && answer !== undefined) {
+      if (step !== undefined || turn.how !== null) {
         add(after, answer, `s:${turn.id}`);
-      } else add(before, step, `s:${turn.id}`);
-    }
-    if (based(turn)) add(after, answer ?? closes, `b:${turn.id}`);
+      }
+    } else if (step !== undefined) add(before, step, `s:${turn.id}`);
     if (cut(turn)) add(after, closes, `x:${turn.id}`);
   }
   const shown = [...(after.get("") ?? [])];
@@ -535,8 +535,6 @@ function Line({ live, line }: { live: StoreApi<Live>; line: string }) {
       return <QuietLine />;
     case "s:":
       return <ActivityView live={live} turnId={id} />;
-    case "b:":
-      return <BasedOn live={live} turnId={id} />;
     case "x:":
       return <Ending live={live} turnId={id} />;
     default:
@@ -710,7 +708,8 @@ const steps = (n: number) => `${String(n)} ${n === 1 ? "step" : "steps"}`;
  * into one line once the reply ended, as the Activity setting says ("always
  * show": open after too; "always hide": one working line, then folded). A
  * click folds or opens it; that choice holds until the reply ends, and is
- * this page's own. No line when there is nothing to show.
+ * this page's own. Based on sits on its line. No line when there is nothing
+ * to show.
  */
 function ActivityView({
   live,
@@ -741,7 +740,7 @@ function ActivityView({
   const running = turn?.status === "running";
   const [chosen, choose] = useState<{ open: boolean; running: boolean }>();
   const list = useId();
-  if (!turn || ids.length === 0) return null;
+  if (!turn || (ids.length === 0 && turn.how === null)) return null;
   const open =
     chosen?.running === running
       ? chosen.open
@@ -767,40 +766,45 @@ function ActivityView({
         .join(" · ");
   return (
     <div className="flex min-w-0 flex-col gap-1.5" data-activity={turnId}>
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={list}
-        onClick={() => {
-          choose({ open: !open, running });
-        }}
-        className="flex min-h-8 w-fit max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md text-left text-muted hover:text-ink"
-      >
-        {running ? (
-          <LoaderCircle
-            size={ICON}
-            className="shrink-0 animate-spin"
-            aria-hidden
-          />
-        ) : (
-          <ChevronRight
-            size={ICON}
-            className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
-            aria-hidden
-          />
+      <div className="flex min-w-0 items-center gap-4">
+        {ids.length > 0 && (
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls={list}
+            onClick={() => {
+              choose({ open: !open, running });
+            }}
+            className="flex min-h-8 w-fit max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md text-left text-muted hover:text-ink"
+          >
+            {running ? (
+              <LoaderCircle
+                size={ICON}
+                className="shrink-0 animate-spin"
+                aria-hidden
+              />
+            ) : (
+              <ChevronRight
+                size={ICON}
+                className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+                aria-hidden
+              />
+            )}
+            <span className="shrink-0">{label}</span>
+            {running && !open && newest && (
+              <MiddleCut
+                text={
+                  newest.kind === "reasoning"
+                    ? latestHeading(newest.text)
+                    : newest.text
+                }
+                mono={newest.kind === "activity" && newest.activity !== "note"}
+              />
+            )}
+          </button>
         )}
-        <span className="shrink-0">{label}</span>
-        {running && !open && newest && (
-          <MiddleCut
-            text={
-              newest.kind === "reasoning"
-                ? latestHeading(newest.text)
-                : newest.text
-            }
-            mono={newest.kind === "activity" && newest.activity !== "note"}
-          />
-        )}
-      </button>
+        {turn.how !== null && <BasedOn how={turn.how} />}
+      </div>
       {open && (
         <ol
           id={list}
@@ -1018,55 +1022,46 @@ function ActivityIcon({
 }
 
 /**
- * Based on, under an answer once its reply ended: How, the AI's own words
- * on where the answer comes from, and Used, what Rufi saw it read. Closed
- * until opened.
+ * Based on, beside a reply's Activity once it completed: How, the AI's own
+ * words on where the answer comes from, as plain text in a popover. A click
+ * outside, Esc or Close closes it, and the focus goes back to Based on.
  */
-function BasedOn({ live, turnId }: { live: StoreApi<Live>; turnId: string }) {
-  const turn = useStore(live, (state) => state.turns[turnId]);
-  if (!turn) return null;
+function BasedOn({ how }: { how: string }) {
+  const portals = use(Menus);
+  // Opened, the popover itself has the focus: on Close, its tooltip would
+  // take the first Esc.
+  const popup = useRef<HTMLDivElement>(null);
   return (
-    <details className="based-on text-muted">
-      {/* A plain link: no disclosure triangle; still a button for the keyboard. */}
-      <summary className="w-fit cursor-pointer list-none text-accent-ink underline [&::-webkit-details-marker]:hidden">
+    <Popover.Root>
+      <Popover.Trigger className="flex min-h-8 w-fit shrink-0 cursor-pointer items-center gap-1.5 rounded-md text-muted hover:text-ink data-[popup-open]:text-ink">
+        <Info size={ICON} className="shrink-0" aria-hidden />
         Based on
-      </summary>
-      <div className="mt-1.5 flex flex-col gap-2 rounded-lg border border-line bg-side px-3 py-2">
-        {turn.how !== null && (
-          <div>
-            <p className="text-xs font-medium text-ink">How</p>
-            <p className="break-words whitespace-pre-wrap text-ink">
-              {turn.how}
+      </Popover.Trigger>
+      <Popover.Portal container={portals}>
+        <Popover.Positioner
+          side="bottom"
+          align="start"
+          sideOffset={4}
+          className="z-30"
+        >
+          <Popover.Popup
+            ref={popup}
+            initialFocus={popup}
+            className="w-72 max-w-[calc(100vw-2rem)] rounded-xl bg-surface/95 py-2 pr-1.5 pl-3 shadow-menu backdrop-blur-xl outline-none"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <Popover.Title className="text-xs font-normal text-muted">
+                Based on
+              </Popover.Title>
+              <Popover.Close render={<IconButton label="Close" icon={X} />} />
+            </div>
+            <p className="pr-1.5 break-words whitespace-pre-wrap text-ink">
+              {how}
             </p>
-          </div>
-        )}
-        {turn.used.length > 0 && (
-          <div>
-            <p className="text-xs font-medium text-ink">Used</p>
-            <ul className="flex flex-col gap-1">
-              {turn.used.map((read, i) => (
-                // A reply's reads only grow, in order.
-                <UsedLine key={i} read={read} />
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-    </details>
-  );
-}
-
-/**
- * One read of the health record on one line, what and what came back or why
- * not ("Read your results in 2026 · 8 records").
- */
-function UsedLine({ read }: { read: Read }) {
-  const said = read.note ?? (read.outcome === "failed" ? "It failed." : null);
-  return (
-    <li className="min-w-0">
-      <span className="text-ink">{read.title}</span>
-      {said !== null && <span> · {said}</span>}
-    </li>
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 

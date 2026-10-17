@@ -13,7 +13,6 @@ const turn = (id: string, status: Turn["status"]): Turn => ({
   endedAt: status === "running" ? null : "2026-10-05T00:00:05Z",
   afresh: false,
   how: null,
-  used: [],
 });
 const entry = (kind: Entry["kind"], turnId: string, text: string): Entry => ({
   id: `${kind}-${turnId}`,

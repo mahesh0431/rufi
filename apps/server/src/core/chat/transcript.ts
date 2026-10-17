@@ -23,7 +23,6 @@ import type { Saved } from "../record/save.ts";
 import { addRow } from "./queue.ts";
 import { chipsOf } from "./refs.ts";
 import { splitBasis } from "./basis.ts";
-import { usedOf } from "./used.ts";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 
@@ -171,8 +170,8 @@ async function entriesOut(trx: Db, rows: EntryRow[]): Promise<Entry[]> {
 }
 
 /**
- * Turns as the screens get them, each with its Based on built from its own
- * replies and calls: How from its replies once it completed, and Used. A
+ * Turns as the screens get them, each with its How from its own replies
+ * once it completed. A
  * turn on another agent thread than the turn before it started afresh;
  * the chat's first turn didn't.
  */
@@ -218,26 +217,6 @@ async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
     .where("kind", "=", "reply")
     .orderBy("seq")
     .execute();
-  const calls = await trx
-    .selectFrom("tool_calls")
-    .select([
-      "turn_id",
-      "tool",
-      "ok",
-      "input",
-      sql<number | null>`json_extract(answer, '$.result.returned')`.as(
-        "returned",
-      ),
-      sql<number | null>`json_extract(answer, '$.result.complete')`.as(
-        "complete",
-      ),
-      sql<string | null>`json_extract(answer, '$.error')`.as("error"),
-    ])
-    .where("person_id", "=", first.person_id)
-    .where("turn_id", "in", ids)
-    .orderBy("started_at")
-    .orderBy("id")
-    .execute();
   return rows.map((row) => {
     const how =
       row.status === "completed"
@@ -258,7 +237,6 @@ async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
       endedAt: row.ended_at,
       afresh: threadBefore !== null && threadBefore !== row.thread_id,
       how: how ?? null,
-      used: usedOf(calls.filter((call) => call.turn_id === row.id)),
     };
   });
 }
@@ -1211,8 +1189,8 @@ export function transcripts(
     /**
      * A call the AI made to one of Rufi's tools, with what it sent and
      * exactly what it got back, kept before the AI gets the answer. Also
-     * after the reply ended (a save that finished after a Stop). The turn
-     * is sent again, with its Used.
+     * after the reply ended (a save that finished after a Stop). Nothing
+     * the screens show changes, so the chat's revision stays.
      */
     recordToolCall: (
       chat: ChatRow,
@@ -1244,7 +1222,7 @@ export function transcripts(
             ended_at: now(),
           })
           .execute();
-        return { entries: [], turns: [turn.id] };
+        return undefined;
       }),
 
     /** When it is now, as the transcript writes times. */

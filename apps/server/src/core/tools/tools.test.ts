@@ -21,7 +21,6 @@ import {
   NoInput,
   REJECTIONS_PER_TURN,
   Refusal,
-  shownFor,
   toolCaller,
   type ToolContext,
 } from "./registry.ts";
@@ -648,38 +647,6 @@ describe("get_records", () => {
     expect(rest.records.map((r) => r.id)).toContain("s-small");
   });
 
-  it("names each read in plain words, with its dates", () => {
-    const tool = TOOLS.find((one) => one.name === "get_records");
-    if (!tool) throw new Error("get_records is missing");
-    expect(
-      [
-        { kind: "result" },
-        { kind: "symptom", from: "2026", to: "2026" },
-        { kind: "symptom", from: "2026-01-01", to: "2026-12-31" },
-        { kind: "result", from: "2026-08", to: "2026-08-31" },
-        { kind: "result", from: "2026-08-12", to: "2026-08-12" },
-        { kind: "medicine_use", from: "2024-03" },
-        { kind: "allergy", to: "2025" },
-        { kind: "care_event", from: "2024", to: "2026-10-08" },
-        { kind: "result", report: "rep-asha-aug" },
-        { kind: "rash" },
-        "not an object",
-      ].map((input) => shownFor(tool, input)),
-    ).toEqual([
-      "Read your results",
-      "Read your symptoms in 2026",
-      "Read your symptoms in 2026",
-      "Read your results in Aug 2026",
-      "Read your results on 12 Aug 2026",
-      "Read your medicine uses since Mar 2024",
-      "Read your allergies up to 2025",
-      "Read your care events from 2024 to 8 Oct 2026",
-      "Read the results of a report",
-      "Read your records",
-      "Read your records",
-    ]);
-  });
-
   it("answers a read that fails with an error, never with no records", async () => {
     const store = makeDatabase(family);
     const writer = new DatabaseSync(path);
@@ -902,7 +869,6 @@ describe("the error envelope", () => {
     const broken = defineTool({
       name: "broken",
       description: "Fails.",
-      shown: "Did something",
       input: NoInput,
       callers: "model",
       readOnly: true,
@@ -931,7 +897,6 @@ describe("the error envelope", () => {
     const refusing = defineTool({
       name: "refusing",
       description: "Refuses.",
-      shown: "Did something",
       input: NoInput,
       callers: "model",
       readOnly: true,
@@ -957,7 +922,6 @@ describe("the error envelope", () => {
     const uiOnly = defineTool({
       name: "accept_changes",
       description: "UI only.",
-      shown: "Did something",
       input: NoInput,
       callers: "ui",
       readOnly: false,

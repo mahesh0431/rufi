@@ -400,13 +400,19 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
         ["message", "overview second"],
         ["reply", "ok:overview second"],
       ]);
-      const read = { title: "Read your overview", outcome: "done", note: null };
-      expect(
-        turns.map((turn) => [turn.status, turn.afresh, turn.used]),
-      ).toEqual([
-        ["completed", false, [read]],
-        ["completed", false, [read]],
+      expect(turns.map((turn) => [turn.status, turn.afresh])).toEqual([
+        ["completed", false],
+        ["completed", false],
       ]);
+      // Each reply read the overview with Rufi's tools.
+      expect(
+        store.db
+          .prepare(
+            "SELECT turn_id FROM tool_calls WHERE tool = 'get_overview' AND ok = 1 ORDER BY started_at",
+          )
+          .all()
+          .map((row) => row["turn_id"]),
+      ).toEqual(turns.map((turn) => turn.id));
     },
   );
 
@@ -1593,13 +1599,9 @@ describe("the chat, on the scripted Codex", () => {
       ok: true,
       result: { person: "Asha Fictional" },
     });
-    // Used: the health-record read only; the command is in Activity.
-    expect(turns[0]?.used).toEqual([
-      { title: "Read your overview", outcome: "done", note: null },
-    ]);
   });
 
-  it("shows How only from a completed reply, and each reply's Used is its own: its health-record reads, failed ones too", async () => {
+  it("splits How off a completed reply, also while it streams; small talk has none; Activity names each read", async () => {
     await startChat("fake", {
       scenario: {
         calls: [
@@ -1607,7 +1609,6 @@ describe("the chat, on the scripted Codex", () => {
             tool: "get_records",
             arguments: { kind: "result", from: "2024" },
           },
-          { tool: "get_records", arguments: { kind: "rash" } },
         ],
       },
     });
@@ -1637,23 +1638,9 @@ describe("the chat, on the scripted Codex", () => {
         .prepare("SELECT text FROM transcript_entries WHERE kind = 'reply'")
         .all()[0],
     ).toEqual({ text: `ok:${asked}` });
-    expect(turns.map((t) => [t.how, t.used])).toEqual([
-      [
-        "From the record, read now.",
-        [
-          {
-            title: "Read your results since 2024",
-            outcome: "done",
-            note: "0 records",
-          },
-          {
-            title: "Read your records",
-            outcome: "failed",
-            note: "The input for get_records isn't valid.",
-          },
-        ],
-      ],
-      [null, []],
+    expect(turns.map((t) => t.how)).toEqual([
+      "From the record, read now.",
+      null,
     ]);
   });
 
@@ -2155,24 +2142,11 @@ describe("the chat, on the scripted Codex", () => {
     );
   });
 
-  it("shows a cut reply's answer without How or half a block, with what it had read, and passes it on marked, with its progress note", async () => {
+  it("shows a cut reply's answer without How or half a block, and passes it on marked, with its progress note", async () => {
     const c = await newChat();
     await transcripts.startTurn(c, "t-1", {
       id: "thread-cut",
       model: "gpt-6.1-sol",
-    });
-    await transcripts.recordToolCall(c, "t-1", {
-      callId: "call-1",
-      tool: "get_records",
-      input: { kind: "result", to: "2026-08" },
-      answer: {
-        ok: false,
-        text: JSON.stringify({
-          ok: false,
-          error: "Rufi couldn't run get_records.",
-        }),
-      },
-      startedAt: "2026-10-08T10:00:00Z",
     });
     // A note can hold a fact the AI said; the new thread keeps it.
     await transcripts.appendNote(
@@ -2194,18 +2168,7 @@ describe("the chat, on the scripted Codex", () => {
       ["activity", "Your record has one HbA1c, from August."],
       ["reply", "Your HbA1c was 6.8 %."],
     ]);
-    expect(turns).toMatchObject([
-      {
-        how: null,
-        used: [
-          {
-            title: "Read your results up to Aug 2026",
-            outcome: "failed",
-            note: "Rufi couldn't run get_records.",
-          },
-        ],
-      },
-    ]);
+    expect(turns).toMatchObject([{ how: null }]);
     expect(await transcripts.lastMessages(c, 10)).toEqual([
       {
         from: "note",
