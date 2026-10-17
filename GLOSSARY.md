@@ -113,7 +113,7 @@ Each person's one conversation with Rufi's AI, kept by Rufi and made with the pe
 _Avoid_: conversation, thread, session
 
 **Chat bar**:
-The box at the bottom right of the pages where you read your health (Overview, the record's pages, Follow-ups, Documents, a document's page, a visit brief), a pill with the model and effort and Send: the person's chat, the same in every browser tab. The pages leave room for it, so it covers nothing. It is one line, always the same size: what **Ask Rufi** added (the first chip's name and how many more), then the start of the draft, or a reason for the moment; a click opens the chat panel. While a reply runs, it says "Rufi is answering" with Stop. Help and Settings reach the chat with **Chat with Rufi** in the sidebar.
+The box at the bottom right of the pages where you read your health (Overview, the record's pages, Follow-ups, Documents, a document's page, a visit brief), a pill with the model and effort and Send: the person's chat, the same in every browser tab. The pages leave room for it, so it covers nothing. It is one line, always the same size: what **Ask Rufi** added (the first chip's name and how many more), then the start of the draft, or a reason for the moment; a click opens the chat panel. While a reply runs, it shows a turning circle, with Stop. Help and Settings reach the chat with **Chat with Rufi** in the sidebar.
 _Avoid_: composer, input
 
 **Chat panel**:
