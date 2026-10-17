@@ -202,10 +202,12 @@ export function comparable(text: string): string {
 }
 
 const WORD = /[\p{L}\p{N}]/u;
+const DIGIT = /\p{N}/u;
 
 /**
  * The page check: whether `value` is in `copy`, both made comparable, at
- * word boundaries (not inside a longer number or word). It checks only
+ * word boundaries (not inside a longer number or word: "13" isn't on a
+ * page that prints only "13.2"). It checks only
  * that the printed value is on the page, not what it means.
  */
 export function onPage(value: string, copy: string): boolean {
@@ -217,14 +219,25 @@ export function onPage(value: string, copy: string): boolean {
     at !== -1;
     at = hay.indexOf(needle, at + 1)
   ) {
-    const before = hay[at - 1];
-    const after = hay[at + needle.length];
-    const edge = (c: string | undefined, inner: string | undefined) =>
+    const end = at + needle.length;
+    const edge = (
+      c: string | undefined,
+      inner: string | undefined,
+      beyond: string | undefined,
+    ) =>
       c === undefined ||
-      !WORD.test(c) ||
       inner === undefined ||
-      !WORD.test(inner);
-    if (edge(before, needle[0]) && edge(after, needle.at(-1))) return true;
+      !WORD.test(inner) ||
+      // "13" in "13.2", "1" in "1,25": a point or comma between digits is
+      // inside the number.
+      (!WORD.test(c) &&
+        !(/[.,]/.test(c) && DIGIT.test(inner) && DIGIT.test(beyond ?? "")));
+    if (
+      edge(hay[at - 1], needle[0], hay[at - 2]) &&
+      edge(hay[end], needle.at(-1), hay[end + 1])
+    ) {
+      return true;
+    }
   }
   return false;
 }
