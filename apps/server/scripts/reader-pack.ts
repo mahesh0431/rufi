@@ -564,9 +564,6 @@ if (values.copies) {
   process.exit(0);
 }
 
-/** Copies the judge reads at once. */
-const JUDGES_AT_ONCE = 4;
-
 /** A round of the copy set: what the reader did, and each page's copy. */
 interface Round {
   name: string;
@@ -713,7 +710,8 @@ async function judgeAll(rounds: readonly Round[]) {
   try {
     await runAll(
       copied.map((_, i) => String(i)),
-      JUDGES_AT_ONCE,
+      // Copies the judge reads at once.
+      4,
       async (i) => {
         const page = copied[Number(i)];
         if (page?.copy === undefined) return;
