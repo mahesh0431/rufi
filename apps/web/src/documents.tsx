@@ -390,13 +390,13 @@ function List({
 }) {
   return (
     <>
-      {/* The name keeps a minimum width; the status asks for room for one
-          line and wraps first. Only a window too narrow for every column
-          scrolls sideways. */}
+      {/* The name keeps a minimum width and the dates one line; the status
+          asks for room for one line and wraps first. Only a window too
+          narrow for every column scrolls sideways. */}
       <div className="overflow-x-auto rounded-xl border border-line bg-surface px-3">
         <table className="w-full border-collapse">
           <thead>
-            <tr className="text-left text-xs text-muted [&>th]:pr-3">
+            <tr className="text-left text-xs text-muted [&>th]:pr-2.5">
               <th className="py-2 font-normal">Document</th>
               <th className="py-2 font-normal">Kind</th>
               <th className="py-2 font-normal">Date</th>
@@ -414,13 +414,13 @@ function List({
               return (
                 <tr
                   key={document.id}
-                  className="group border-t border-line hover:bg-side [&>td]:pr-3 [&>td:last-child]:pr-0"
+                  className="group border-t border-line hover:bg-side [&>td]:pr-2.5 [&>td:last-child]:pr-0"
                 >
                   <td className="py-2.5">
                     <Link
                       to="/people/$personId/documents/$documentId"
                       params={{ personId, documentId: document.id }}
-                      className="flex w-fit min-w-36 items-center gap-2 text-left font-semibold hover:underline"
+                      className="flex w-fit min-w-28 items-center gap-2 text-left font-semibold hover:underline"
                     >
                       <Icon
                         size={16}
@@ -434,10 +434,12 @@ function List({
                   <td className="py-2.5 text-muted">
                     {document.kind ? KIND_NAMES[document.kind] : "—"}
                   </td>
-                  <td className="py-2.5 text-muted">
+                  <td className="py-2.5 whitespace-nowrap text-muted">
                     {document.date ? printedDate(document.date) : "—"}
                   </td>
-                  <td className="py-2.5">{printedDay(document.addedAt)}</td>
+                  <td className="py-2.5 whitespace-nowrap">
+                    {printedDay(document.addedAt)}
+                  </td>
                   <td className="py-2.5">
                     {/* The status, then what can be done: on one line when there is room. */}
                     <div className="flex flex-wrap items-center gap-1">

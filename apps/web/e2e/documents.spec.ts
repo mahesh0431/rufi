@@ -181,3 +181,49 @@ test("offers a copy of a PDF where the browser has no PDF viewer", async ({
   await expect(copy).toHaveAttribute("download", "Sunrise Labs August.pdf");
   await accessible(page);
 });
+
+test("keeps each date on one line in windows 800 to 1024 wide", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family(
+    `UPDATE documents SET kind = 'lab_report', date = '2026-08-12'
+     WHERE id = 'doc-asha-aug';
+     UPDATE documents SET kind = 'prescription', date = '2026-09'
+     WHERE id = 'doc-asha-sep';`,
+  );
+  await rufi.start();
+  await page.goto(rufi.link());
+  await page.getByRole("link", { name: "Documents" }).click();
+  await expect(rows(page)).toHaveCount(2);
+  // The Date and Added columns' cells, newest first; the day added is
+  // this Mac's.
+  const dates = rows(page).locator("td:nth-child(3), td:nth-child(4)");
+  await expect(dates).toHaveText([
+    "Sep 2026",
+    /^\d Sep 2026$/,
+    "12 Aug 2026",
+    /^1\d Aug 2026$/,
+  ]);
+  for (const width of [800, 900, 1024]) {
+    await page.setViewportSize({ width, height: 720 });
+    const lines = await dates.evaluateAll((cells) =>
+      cells.map((cell) => {
+        const range = document.createRange();
+        range.selectNodeContents(cell);
+        // One box per line the text takes.
+        return new Set([...range.getClientRects()].map((r) => r.top)).size;
+      }),
+    );
+    expect(lines, `at ${String(width)} px`).toEqual([1, 1, 1, 1]);
+    // And every column fits: no sideways scroll.
+    const table = page.getByRole("table");
+    expect(
+      await table.evaluate(
+        (element) =>
+          element.scrollWidth <= (element.parentElement?.clientWidth ?? 0),
+      ),
+      `at ${String(width)} px`,
+    ).toBe(true);
+  }
+});
