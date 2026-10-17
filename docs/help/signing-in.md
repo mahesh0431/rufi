@@ -6,7 +6,7 @@ You can sign in in Rufi, or with terminal commands.
 
 ## Sign in in Rufi
 
-1. Click **Sign in with ChatGPT**: in the first run, or click "Not signed in" (or "ChatGPT plan can't be used") at the bottom of the sidebar, or **Sign in** in **Settings** › **ChatGPT plan**.
+1. Click **Sign in with ChatGPT**: in the first run, or click "Not signed in" (or "ChatGPT plan can't be used") at the bottom of the sidebar, **Sign in** in **Settings** › **ChatGPT plan**, or **Sign in** by the chat's box after you sent while signed out.
 2. Your browser opens on ChatGPT's sign-in page. If it doesn't open, click **open the sign-in page** in Rufi.
 3. Sign in to ChatGPT and approve Rufi. The first time, Rufi also registers itself as an app on your account.
 4. Allow **ChatGPT plan use**. Without it, the AI can't answer. To allow it later, sign in again.

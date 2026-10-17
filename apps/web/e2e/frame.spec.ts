@@ -369,14 +369,26 @@ test.describe("first run", () => {
     await bar
       .getByRole("textbox", { name: "Message to Rufi" })
       .fill("Hello from the first page");
-    await bar.getByRole("textbox", { name: "Message to Rufi" }).press("Enter");
-    // Signed out, it waits; signing in alone sends nothing.
-    const waiting = bar.getByRole("region", { name: "Waiting messages" });
-    await expect(waiting).toContainText(
-      "You're signed out. Sign in, then Send.",
+    const box = bar.getByRole("textbox", { name: "Message to Rufi" });
+    await box.press("Enter");
+    // Signed out, nothing goes and nothing waits: the text stays in the box.
+    await expect(bar.getByRole("alert")).toHaveText(
+      "You're signed out. Sign in with ChatGPT to chat.Sign in",
     );
+    await expect(box).toHaveValue("Hello from the first page");
+    await expect(
+      bar.getByRole("region", { name: "Waiting messages" }),
+    ).toHaveCount(0);
+    await accessible(page);
+    await bar.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Sign in with ChatGPT", level: 1 }),
+    ).toBeVisible();
     rufi.account = { account: "signed_in", email: "mira@example.com" };
-    await waiting.getByRole("button", { name: "Send", exact: true }).click();
+    await page.goBack();
+    await bar.getByRole("button", { name: "Open the chat" }).click();
+    await expect(box).toHaveValue("Hello from the first page");
+    await box.press("Enter");
     await expect(bar.locator(".reply")).toHaveText(
       "ok:Hello from the first page",
     );
@@ -384,6 +396,16 @@ test.describe("first run", () => {
     await expect(page.locator(".reply")).toHaveText(
       "ok:Hello from the first page",
     );
+    // The sign-in goes away while the page is open: the next send says so.
+    rufi.account = { account: "signed_out", email: null };
+    const chatBox = page.getByRole("textbox", { name: "Message to Rufi" });
+    await chatBox.fill("My next question");
+    await chatBox.press("Enter");
+    await expect(page.getByRole("alert")).toHaveText(
+      "You're signed out. Sign in with ChatGPT to chat.Sign in",
+    );
+    await expect(chatBox).toHaveValue("My next question");
+
     await sidebar(page).getByRole("link", { name: "Settings" }).click();
     await expect(
       page.getByRole("combobox", { name: "Emergency region" }),

@@ -5,7 +5,12 @@
 // called, and the next only after that turn and its writes have ended. The
 // AI calls Rufi's tools through Rufi's MCP server, with a key for its thread;
 // each call is bound to the reply it was made in.
-import type { Chip, Effort, Pointer } from "@rufi/contracts";
+import {
+  SIGNED_OUT,
+  type Chip,
+  type Effort,
+  type Pointer,
+} from "@rufi/contracts";
 import {
   NotReloaded,
   NotSent,
@@ -632,7 +637,8 @@ export function chat(deps: ChatDeps) {
     /**
      * Takes a message and its references into the queue by the send's id,
      * and empties the box, in one step; it goes to the AI in its turn. The
-     * same id again finds the message it made.
+     * same id again finds the message it made. Signed out, nothing is
+     * taken: the text stays in the box.
      */
     send: async (
       chat: ChatRow,
@@ -640,6 +646,7 @@ export function chat(deps: ChatDeps) {
       text: string,
       refs: readonly Pointer[] = [],
     ) => {
+      await mustBeSignedIn();
       try {
         await queue.accept(chat, id, text, refs);
       } catch (error) {
@@ -726,6 +733,7 @@ export function chat(deps: ChatDeps) {
         refused(() => queue.reorder(chat, ids)),
       /** The person sends one row now: first in line, and the pause ends. */
       sendNow: async (chat: ChatRow, id: string) => {
+        await mustBeSignedIn();
         await refused(() => queue.sendNow(chat, id));
         next(chat);
       },
@@ -810,6 +818,11 @@ export function chat(deps: ChatDeps) {
       models,
       ...(allowlist.error !== undefined && { error: allowlist.error }),
     };
+  }
+
+  /** Without a sign-in, nothing the person sends is taken. */
+  async function mustBeSignedIn(): Promise<void> {
+    if (!(await deps.signedIn())) throw new ChatRefusal(SIGNED_OUT);
   }
 
   /** A change to the queue; its refusals are the chat's. */

@@ -157,7 +157,7 @@ describe("the box's draft", () => {
   });
 
   it("keeps the text with the reason when the core refuses; sends a message whose answer was lost again by the same id, so it is taken once", async () => {
-    const { api, sends } = core();
+    const { api, saves, sends } = core();
     const box = draftBox(api);
     await settle();
     box.type("Keep this");
@@ -170,6 +170,13 @@ describe("the box's draft", () => {
       sending: false,
       notice: "The reply had ended.",
     });
+
+    // Refused, the text is the draft again, so a reload keeps it.
+    await settle();
+    expect(saves()[0]?.body).toEqual({ text: "Keep this", refs: [] });
+    saves()[0]?.answer(editable("Keep this"));
+    await settle();
+    expect(box.store.getState().notice).toBe("The reply had ended.");
 
     // No answer from the core: it may have taken it.
     const first = box.submit(false);

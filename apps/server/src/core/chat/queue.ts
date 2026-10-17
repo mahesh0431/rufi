@@ -404,8 +404,8 @@ export function chatQueue(
     /**
      * Claims the next turn's rows, or none. A person's message goes with
      * every event held to ride with it; events next to each other at the
-     * head go together. Paused: none, and events wait to ride. Signed out:
-     * every row waiting is held for that, and none goes.
+     * head go together. Paused or signed out: none, and events wait to
+     * ride.
      */
     claim: (chat: ChatOf, signedIn: boolean): Promise<HandOver | undefined> =>
       write(chat, async (trx) => {
@@ -441,15 +441,7 @@ export function chatQueue(
         const head = free[0];
         if (!head) return undefined;
         if (!signedIn) {
-          await trx
-            .updateTable("chat_queue")
-            .set({ held: "signed_out", updated_at: at })
-            .where(
-              "id",
-              "in",
-              free.map((row) => row.id),
-            )
-            .execute();
+          await holdEvents("signed_out");
           return undefined;
         }
         let batch: typeof waiting;

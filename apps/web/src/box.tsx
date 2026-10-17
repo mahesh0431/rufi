@@ -3,7 +3,7 @@
 // be. Enter sends into Rufi's queue; while a reply runs the box says so, the
 // message waits, and Add to reply passes it into the reply instead. The box
 // clears only when the core took the message, and nothing is sent again by
-// itself.
+// itself. Signed out, the core takes nothing: the box says so, with Sign in.
 // The model and effort are chosen beside Send; what waits shows above the
 // box. Chips (references to documents, draft items and records) sit above
 // the text and go with it; a document's chip says what Rufi is doing with
@@ -15,14 +15,17 @@ import {
   MAX_MESSAGE_CHARS,
   MAX_REFS,
   type Person,
+  SIGNED_OUT,
   type QueueItem,
 } from "@rufi/contracts";
+import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowDown,
   ArrowUp,
   Check,
   CornerUpRight,
   LoaderCircle,
+  LogIn,
   type LucideProps,
   Pencil,
   RotateCw,
@@ -86,6 +89,7 @@ export function Box({
   const refused = usePanel((state) => state.refused);
   const stateOf = useChipStates(person.id);
   const running = useStore(live, isRunning);
+  const navigate = useNavigate();
   const [problem, setProblem] = useState<string | null>(null);
   const long = tooLong(text);
   const many = tooMany(chips);
@@ -305,8 +309,20 @@ export function Box({
             </p>
           )}
       {size !== "bar" && why !== null && (
-        <p role="alert" className="px-3.5 pb-2 text-muted">
+        <p
+          role="alert"
+          className="flex items-center gap-1.5 px-3.5 pb-2 text-muted"
+        >
           {why}
+          {why === SIGNED_OUT && (
+            <Button
+              look="quiet"
+              icon={LogIn}
+              onClick={() => void navigate({ to: "/sign-in" })}
+            >
+              Sign in
+            </Button>
+          )}
         </p>
       )}
     </form>
@@ -378,9 +394,10 @@ function whyHeld(item: QueueItem): string | null {
   switch (item.held) {
     case "paused":
     case "signed_out":
+      // A message an older Rufi held signed out says no more: Send or Remove.
       return item.origin === "rufi"
         ? "Goes to the AI with your next message."
-        : "You're signed out. Sign in, then Send.";
+        : null;
     case "restored":
       return "From a backup: it waited when the backup was made.";
     case "failed":

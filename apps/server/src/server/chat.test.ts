@@ -6,7 +6,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { Entry } from "@rufi/contracts";
+import { SIGNED_OUT, type Entry } from "@rufi/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Scenario } from "../../tests/fake-codex.ts";
 import {
@@ -1390,19 +1390,22 @@ describe("the chat, on the scripted Codex", () => {
     },
   );
 
-  it("holds messages while signed out; signing in sends nothing; Send now does", async () => {
+  it("takes nothing the person sends while signed out", async () => {
     await startChat("fake");
     const c = await newChat();
     signedIn = false;
-    await say(c, "Hello");
-    await until(async () => (await waiting())[0]?.[2] === "signed_out");
-    signedIn = true;
-    await sleep(300);
-    expect((await transcript(c.id)).turns).toEqual([]);
-    const [held] = (await queue.list(c)).items;
-    await chat?.queue.sendNow(c, held?.id ?? "");
-    await ended(c.id);
-    expect((await transcript(c.id)).entries[0]).toEqual(["message", "Hello"]);
+    await expect(say(c, "Hello")).rejects.toThrow(SIGNED_OUT);
+    expect(await waiting()).toEqual([]);
+    store.db.exec(`
+      INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position,
+        state, held, created_at, updated_at)
+      VALUES ('q-restored', '${c.personId}', '${c.id}', 'person', 'From before',
+        1, 'waiting', 'restored', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
+    `);
+    await expect(chat?.queue.sendNow(c, "q-restored")).rejects.toThrow(
+      SIGNED_OUT,
+    );
+    expect(await waiting()).toEqual([["From before", "waiting", "restored"]]);
   });
 
   it("starts and changes to allowed models the provider offers only", async () => {

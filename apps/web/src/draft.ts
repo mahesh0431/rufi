@@ -204,7 +204,7 @@ export function draftBox(api: DraftApi) {
   };
 
   /** Saves the text if it changed, or the last save failed, after this box's earlier saves. */
-  function save(): Promise<void> {
+  function save(keepNotice = false): Promise<void> {
     clearTimeout(timer);
     return inTurn(api.client, api.scope, async () => {
       const state = store.getState();
@@ -236,7 +236,7 @@ export function draftBox(api: DraftApi) {
               chip,
           ),
           failed: false,
-          notice: null,
+          ...(!keepNotice && { notice: null }),
         });
       } catch (error) {
         store.setState({ failed: true, notice: messageOf(error) });
@@ -335,6 +335,7 @@ export function draftBox(api: DraftApi) {
         } catch (error) {
           if (answered(error) || steer) forget();
           store.setState({ sending: false, notice: messageOf(error) });
+          void save(true);
         }
       });
     },
