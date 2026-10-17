@@ -396,8 +396,7 @@ CREATE TABLE transcript_entries (
 ) STRICT;
 
 -- Each call the AI made to one of Rufi's own tools, kept by Rufi as it
--- answered: what the AI sent and exactly what it got back. A reply's Used
--- (what it read) is built from these and its activity lines.
+-- answered: what the AI sent and exactly what it got back.
 CREATE TABLE tool_calls (
   id TEXT PRIMARY KEY,         -- UUIDv7
   person_id TEXT NOT NULL,

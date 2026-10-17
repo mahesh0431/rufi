@@ -82,7 +82,7 @@ When you delete a document (see [Documents](documents.md#delete-a-document)), it
 - **Your messages**, on the right, with the chips you added to them.
 - **The AI's replies**, which appear as the AI writes them. Replies can have lists and tables, and the pictures, pages and diagrams the AI makes (see [Pictures, pages and diagrams](#pictures-pages-and-diagrams)). Links to web pages open in your browser, outside Rufi. A reply never shows a picture from the internet.
 - **Activity**, under an answer: what the AI did for that reply, folded into one line, such as "Activity · 12 steps · 1 failed · 1m 36s". Click it to open it. While the AI works, it is open, and you can read along. See [Activity](#activity).
-- **Based on**, a link under an answer once the reply has ended. It opens where the answer comes from. See [Where an answer comes from](#where-an-answer-comes-from).
+- **Based on**, beside Activity once the reply has ended. It opens where the answer comes from, in the AI's own words. See [Where an answer comes from](#where-an-answer-comes-from).
 - **Receipts**, with a tick, each time the AI saved something to your health record: "Saved", then one line for each change. A save from a document starts with a summary, such as "Saved 42 results from Sunrise Labs August.pdf · 40 new · 1 more source · 1 correction"; when the list is long, click **Show what was saved** to see it. Rufi writes them. See [Changing your health record](#changing-your-health-record).
 - **A visit brief's line**, with a page sign and **Open**, when the AI made a brief for you. Rufi writes it. See [Visit brief](visit-brief.md).
 - **Rufi's lines**, with a bell and "Rufi" above them, when something happened outside the chat. Rufi writes them, never the AI, and they are never your words. See [Rufi's lines](#rufis-lines).
@@ -146,18 +146,15 @@ If your health record changes while the AI answers, for example because the AI s
 
 ## Where an answer comes from
 
-Under an answer, once the reply has ended, the **Based on** link opens two parts:
+Under an answer, once the reply has ended, **Based on** sits beside Activity, with an info sign. Click it to open the AI's own words on where the answer comes from: your health record, read in this reply or earlier in the chat, the web, or general knowledge. They also say how the AI got the answer, for example which results it compared. Click outside, press Esc or click **✕** to close it.
 
-- **How**: the AI's own words on where the answer comes from: your health record, read in this reply or earlier in the chat, the web, or general knowledge. It also says how the AI got the answer, for example which results it compared.
-- **Used**: the reads of your health record that Rufi handled in that reply, and how each one ended: your Overview, or your records of one kind (for example "Read your lab results in 2026 · 8 records"). Rufi makes this list from its own record of the reads, not from the AI's words. What each read got back isn't shown here; Rufi keeps it with the chat.
-
-Used is what the AI read, not proof that each read supports the answer. When a read failed or was capped, its line says so. A read that a Stop cut off before it got its answer is a stopped step in [Activity](#activity), not in Used. Commands, web searches and other steps are in Activity, not in Used. When the AI answers from something it read earlier in the chat, Used is empty for that reply, and How says so. If How and Used don't agree, ask the AI.
+To see what the AI read, open [Activity](#activity): each read of your health record is a step there, such as `rufi.get_records`, with what the AI asked for and what came back. If Based on and Activity don't agree, ask the AI.
 
 Anything that changes what an answer means, such as only two readings or a missing month, is in the answer itself, not only under Based on.
 
-Small talk, such as "thanks", has no How, and no Based on when the AI read nothing. While a reply runs, Based on isn't there yet. If you stop a reply, or Rufi closes during it, what the AI wrote so far stays, without How; Based on shows only what the AI had read.
+Small talk, such as "thanks", has no Based on. While a reply runs, Based on isn't there yet. If you stop a reply, or Rufi closes during it, what the AI wrote so far stays, without Based on.
 
-The AI writes How at the end of its reply, and Rufi shows it under Based on, not in the answer. If the AI forgets it, the answer has no How.
+The AI writes these words at the end of its reply, and Rufi shows them under Based on, not in the answer. If the AI forgets them, the answer has no Based on.
 
 ## Changing your health record
 

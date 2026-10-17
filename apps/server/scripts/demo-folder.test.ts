@@ -121,9 +121,11 @@ describe("pnpm demo's reset", () => {
         "completed",
         "completed",
       ]);
-      expect(turns[0]?.used.map((read) => read.title)).toEqual([
-        "Read your overview",
-      ]);
+      expect(
+        store.db
+          .prepare("SELECT tool FROM tool_calls WHERE turn_id = ?")
+          .all(turns[0]?.id ?? ""),
+      ).toEqual([{ tool: "get_overview" }]);
       expect(turns[0]?.how).toContain("Sunrise Labs");
 
       const receipts = entries.filter((entry) => entry.kind === "receipt");

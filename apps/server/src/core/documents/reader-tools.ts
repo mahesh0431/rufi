@@ -31,7 +31,6 @@ function readerTools(run: Run, pages: Pages, book: Notebook): readonly Tool[] {
     name: "get_page",
     description:
       "Look at one page of the document you are reading: its image, the page's own text when the PDF has text (extra help with exact characters; the image is the source), the entry you saved for it (if any), your note and which pages are saved. Look at a page before you save it, and again after your earlier context was summarised.",
-    shown: "Looked at a page",
     input: Schema.Struct({ page: Page }),
     callers: "model",
     readOnly: true,
@@ -70,7 +69,6 @@ function readerTools(run: Run, pages: Pages, book: Notebook): readonly Tool[] {
     name: "save_page",
     description:
       "Save a page's entry in your notebook: what the page says, with every result as printed. Saving a page again replaces its entry. `note` is your one note for the whole document; give it whole when it changes, or leave it out to keep it. Save every page you were asked to read, also an empty one.",
-    shown: "Saved a page",
     input: Schema.Struct({
       page: Page,
       entry: Entry,

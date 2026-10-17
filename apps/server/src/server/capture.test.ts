@@ -315,9 +315,6 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
           .filter((entry) => entry.kind === "receipt")
           .map((entry) => entry.text),
       ).toEqual(["**Saved**\n\n- Added symptom **Headache**"]);
-      expect(page.turns[0]?.used).toMatchObject([
-        { title: "Read your overview", outcome: "done" },
-      ]);
     },
   );
 
@@ -588,10 +585,6 @@ describe("What a person sees of the AI's steps, on the pinned Codex", () => {
           .filter((entry) => entry.kind === "reply")
           .map((entry) => entry.text),
       ).toEqual(["Done."]);
-      // Used: the health-record read only, never the commands.
-      expect(page.turns[0]?.used).toEqual([
-        { title: "Read your results", outcome: "done", note: "0 records" },
-      ]);
     },
   );
 });

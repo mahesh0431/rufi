@@ -36,20 +36,8 @@ const Input = Schema.Struct({
   ),
 });
 
-/** What a person sees when the AI uses it. */
-function shown(input: unknown): string {
-  const sent = (input ?? {}) as Record<string, unknown>;
-  if (typeof sent["page"] === "number") {
-    return `Looked at page ${String(sent["page"])} of a document`;
-  }
-  return typeof sent["document"] === "string"
-    ? "Read a document"
-    : "Read your documents";
-}
-
 export const getDocuments = defineTool({
   name: "get_documents",
-  shown,
   description: `The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its files and pages, and its reading's status: "not_read" (never read; retry_reading reads it), "reading" (Rufi's reader is reading it now; its items come when it ends), "done" or "failed". With document: its version (it rises when a reading or a fix changes its draft items), its pages (each with what the reader found: its state, its facts such as dates, lab, report number and the name printed on it, and its issues) and its draft items: what the reader read, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed or as the user fixed them on the document's page (a fixed item has fixed_by_user, and reader_read: what the reader read in each field the user changed, null where it read nothing; a date on the item is its own; without one, the page's first printed date is used when it is saved), and why it may be unsure. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page as an image, with the page's own text when the PDF has some (use it for exact characters); a photo or a scan is the image alone. At most ${String(PART.documents)} documents, ${String(PART.pages)} pages or ${String(PART.items)} draft items come back; when there are more, the answer has "next": pass it as after to read on. Rufi chooses the person, not you.`,
   input: Input,
   callers: "model",

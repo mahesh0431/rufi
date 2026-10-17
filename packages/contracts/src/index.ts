@@ -181,21 +181,6 @@ export const EndReason = Schema.Literals([
 ]);
 export type EndReason = typeof EndReason.Type;
 
-/**
- * One read of the health record in a reply, for Based on's Used: a call to
- * one of Rufi's read tools that Rufi answered, from its own record of the
- * call. What was read, not proof that it supports the answer.
- */
-export const Read = Schema.Struct({
-  /** What was read, in plain words: "Read your results in 2026". */
-  title: Schema.String,
-  /** done; capped: a cap left some out; failed: nothing came back. */
-  outcome: Schema.Literals(["done", "capped", "failed"]),
-  /** What came back, or why not, in Rufi's words: "12 records", the error. */
-  note: Schema.NullOr(Schema.String),
-});
-export type Read = typeof Read.Type;
-
 /** One reply the AI ran: how it went, and how it ended. */
 export const Turn = Schema.Struct({
   id: Schema.String,
@@ -218,8 +203,6 @@ export const Turn = Schema.Struct({
    * from, in the AI's words. Only once the reply completed.
    */
   how: Schema.NullOr(Schema.String),
-  /** Used: what Rufi saw the AI read in this reply, in order. */
-  used: Schema.Array(Read),
 });
 export type Turn = typeof Turn.Type;
 

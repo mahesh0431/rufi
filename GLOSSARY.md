@@ -144,7 +144,7 @@ What a reply shows besides its words. A picture is a chart from the AI's program
 _Avoid_: artifact, attachment, image (say picture), HTML (say page)
 
 **Basis**:
-What an answer rests on, shown as **Based on** under the answer once the reply has ended. **How** is the AI's own words on where the answer comes from (your record, read in this reply or earlier in the chat, the web, or general knowledge) and how it got there; **Used** is the reads of the health record that Rufi handled in that reply and got an answer for (failed and capped ones too), built by Rufi from its own record of them. Commands and web searches are in **Activity**, not in Used. Small talk has none.
+What an answer rests on: **How**, the AI's own words on where the answer comes from (your record, read in this reply or earlier in the chat, the web, or general knowledge) and how it got there. It shows as **Based on** beside the answer's **Activity** once the reply has completed, and opens as plain text. What the AI read is in Activity, each read a step. Small talk has none.
 _Avoid_: reason, rationale, citation; "reasoning" is the AI's thinking, and a **source** is what a record rests on
 
 **Steer**:
@@ -305,4 +305,4 @@ _Avoid_: download, dump
 - A **person** has one **chat**, made with them; it can produce **saves**, **follow-ups** and **research entries**.
 - A **chat** has one **queue**: your messages and the notes of **Rufi events** wait there for the AI.
 - The **chat** has one **transcript**, one **draft** and a **model**; a **steer** and each **activity** belong to one reply.
-- An answer's **basis** belongs to its reply: How from the AI's words, Used from that reply's own **activity**.
+- An answer's **basis** belongs to its reply: How, from the AI's words at the end of that reply.
