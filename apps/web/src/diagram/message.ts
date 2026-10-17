@@ -2,7 +2,10 @@
 // the diagram and the theme's colours in the frame's address (after #); the
 // frame answers with whether it drew it, and its height.
 
-/** The theme's colours the diagram is drawn in, from src/themes.css. */
+/**
+ * The theme's colours the diagram is drawn in, from the brand tokens
+ * (packages/brand/tokens.css).
+ */
 export const DIAGRAM_COLOURS = [
   "surface",
   "side",

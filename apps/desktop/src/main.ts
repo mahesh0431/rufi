@@ -22,7 +22,10 @@ import { core, CoreError } from "./core.ts";
 import { noticeText, noticeTimer } from "./notices.ts";
 import { followAppearance, lockDown, openWindow } from "./window.ts";
 
-const ICON = fileURLToPath(new URL("../assets/rufi-mark.png", import.meta.url));
+// The dog, from the brand package: the Dock's icon while Rufi runs.
+const ICON = fileURLToPath(
+  import.meta.resolve("@rufi/brand/mark/assets/png/mac-icon-512.png"),
+);
 
 // Chromium's own files, before anything else can make them in the default
 // place. One folder per data folder, so one app runs per data folder; the

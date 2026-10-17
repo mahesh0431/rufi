@@ -1,0 +1,74 @@
+/* Rufi's colours and fonts: the one place they are set. The app and the
+   website both read this file; what each colour is for, and what is never
+   allowed, is in DESIGN.md beside it.
+
+   A theme is one block of values. The light block is :root; the dark one
+   applies when <html data-theme="dark">, which each page sets before it
+   paints. To add a theme, add a block like the dark one.
+
+   The agreed look: calm greys, the blue accent only for selection and the
+   one main action. No clinical colour (no red, amber or green that means
+   something about a health value). The one red is a UI colour: "this
+   removes data", on the last step of a delete that can't be undone. Text
+   keeps WCAG AA contrast in every theme. Apricot belongs to Rufi itself. */
+
+/* Light: a light page, a light grey sidebar, white rounded groups. */
+:root {
+  color-scheme: light;
+  --page: #f5f7fa; /* the page behind everything */
+  --side: #eef1f5; /* the sidebar, and soft fills: code, activity, hover */
+  --surface: #ffffff; /* groups, fields and floating panels on the page */
+  --line: #e3e6eb; /* borders and dividers */
+  --ink: #1d2329; /* text */
+  --muted: #5f6873; /* quieter text and icons */
+  --accent: #2563eb; /* the one main action, and selection marks */
+  --accent-hover: #1d4ed8; /* the main action under the pointer */
+  --on-accent: #ffffff; /* text and icons on the accent */
+  --accent-soft: #e3edfc; /* what is selected, and the person's own messages */
+  --accent-ink: #1d4ed8; /* links and selected text */
+  --danger: #b42318; /* the last step of a delete: its text and icon */
+  --danger-soft: #fdecea; /* the last step of a delete: its fill */
+  --paper: #ffffff; /* behind a page the AI made: white in every theme, as pages are made */
+  --edge: rgb(0 0 0 / 0.06); /* the hairline around floating panels */
+  --shade: rgb(
+    0 0 0 / 0.1
+  ); /* the shadow under floating panels and raised parts */
+  --shade-menu: rgb(0 0 0 / 0.12); /* the shadow under menus, over the panels */
+
+  /* Rufi's own colours, for light pages only (the website). They have no
+     dark values: the app doesn't use them. */
+  --body-text: #4a5566; /* running text on a reading page */
+  --apricot: #ee9a5b; /* the dog's folds; dots and lines */
+  --apricot-text: #c4621f; /* accent words in a large heading (large text only) */
+  --apricot-icon: #a8551c; /* an icon on the pale apricot square */
+  --apricot-tint: #fdf0e6; /* the pale apricot square behind an icon */
+  --periwinkle: #c9d0ff; /* the ground under the dog on a light page */
+
+  /* The two font roles. Sizes stay with each medium. */
+  --font-ui:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; /* the app */
+  --font-brand: "Inter Variable", Inter, sans-serif; /* the website */
+}
+
+/* Dark: the same layout in dark greys; groups are a step lighter than the
+   page, and the accent is a little lighter so it stands out. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #191c20;
+  --side: #22262b;
+  --surface: #262a30;
+  --line: #363c43;
+  --ink: #e4e8ec;
+  --muted: #9ba4ae;
+  --accent: #2f6fe6;
+  --accent-hover: #2459c4;
+  --on-accent: #ffffff;
+  --accent-soft: #1e3250;
+  --accent-ink: #adc9fc; /* AA on the Mac's dark sidebar material too */
+  --danger: #f2a29a;
+  --danger-soft: #3a2224;
+  --paper: #ffffff;
+  --edge: rgb(255 255 255 / 0.08);
+  --shade: rgb(0 0 0 / 0.45);
+  --shade-menu: rgb(0 0 0 / 0.5);
+}

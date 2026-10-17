@@ -5,6 +5,7 @@
     "pnpm-lock.yaml",
     "mise.lock",
     "apps/server/src/agent/codex/protocol/**",
-    "apps/server/tools.json"
+    "apps/server/tools.json",
+    "packages/brand/mark/**"
   ]
 }

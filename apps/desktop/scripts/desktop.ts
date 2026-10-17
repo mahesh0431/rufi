@@ -1,16 +1,16 @@
 // `pnpm desktop` (after it builds the screens): opens the Rufi app on this
 // pinned Node. On the Mac, Electron runs from a copy of its app bundle named
-// Rufi, so the menu bar and the Dock say Rufi; the copy is an APFS clone, made
-// once per Electron version.
+// Rufi, so the menu bar and the Dock say Rufi, with the dog as its icon
+// (bundle-icon.ts); the copy is an APFS clone, made once per Electron version.
 import { execFile, spawn } from "node:child_process";
 import { access, mkdir, rename, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { bundleIcon } from "./bundle-icon.ts";
 
 const APP = fileURLToPath(new URL("..", import.meta.url));
-const ICON = join(APP, "assets/rufi-mark.png");
 const run = promisify(execFile);
 const require = createRequire(import.meta.url);
 
@@ -43,7 +43,10 @@ async function renamed(binary: string): Promise<string> {
   const folder = join(APP, "node_modules/.cache", `electron-${version}`);
   const bundle = join(folder, "Rufi.app");
   const inside = join(bundle, binary.slice(binary.indexOf(".app/") + 5));
-  if (await exists(bundle)) return inside;
+  if (await exists(bundle)) {
+    await bundleIcon(bundle);
+    return inside;
+  }
   // Made beside it, then moved in place: a half-made copy is never used.
   const making = `${bundle}.${String(process.pid)}`;
   await mkdir(folder, { recursive: true });
@@ -61,14 +64,7 @@ async function renamed(binary: string): Promise<string> {
   ] as const) {
     await run("plutil", ["-replace", key, "-string", value, plist]);
   }
-  await run("sips", [
-    "-s",
-    "format",
-    "icns",
-    ICON,
-    "--out",
-    join(making, "Contents/Resources/electron.icns"),
-  ]);
+  await bundleIcon(making);
   await rename(making, bundle).catch(async (error: unknown) => {
     // Another `pnpm desktop` made it first.
     await rm(making, { recursive: true, force: true });

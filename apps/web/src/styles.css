@@ -1,9 +1,9 @@
 @import "tailwindcss";
 @import "./themes.css";
 
+/* The UI font role, from the brand tokens (packages/brand/tokens.css). */
 @theme {
-  --font-sans:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  --font-sans: var(--font-ui);
 }
 
 /* One focus ring for everything the keyboard reaches. In the base layer, so
@@ -180,6 +180,12 @@ body {
   padding: 2px 0;
   font: inherit;
   overflow-wrap: anywhere;
+}
+
+/* The sidebar's dog for the theme in use (src/dog.tsx). */
+:root:not([data-theme="dark"]) [data-dog="dark"],
+:root[data-theme="dark"] [data-dog="light"] {
+  display: none;
 }
 
 /* In the Rufi app on the Mac: the window's own sidebar material shows

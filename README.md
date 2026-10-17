@@ -10,5 +10,5 @@ Rufi is in early development and not ready for use yet.
 
 ## License
 
-Apache License 2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+Apache License 2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). The Rufi name and its dog are not under that licence: see [`TRADEMARKS.md`](TRADEMARKS.md).
 Copyright 2026 Mahesh Palavalli.
