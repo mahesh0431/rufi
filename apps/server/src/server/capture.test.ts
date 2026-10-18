@@ -490,7 +490,7 @@ describe("The context a chat's thread used, on the pinned Codex", () => {
 });
 
 describe("How a change of Rufi's rules reaches the AI, on the pinned Codex", () => {
-  /** A skill's body changes, as in a release; undone after the test. */
+  /** A skill's body or file changes, as in a release; undone after the test. */
   let restore: (() => void) | undefined;
   afterEach(() => {
     restore?.();
@@ -514,6 +514,23 @@ describe("How a change of Rufi's rules reaches the AI, on the pinned Codex", () 
           "\n- New rule in this release: show each calculation's inputs.\n";
         restore = () => {
           skill.text = previous;
+        };
+        return Promise.resolve();
+      },
+    },
+    {
+      change: "a file beside a skill only",
+      region: undefined,
+      make: () => {
+        const skill = SKILLS.find((skill) => skill.name === "analysis");
+        if (!skill) throw new Error("no analysis skill");
+        const previous = skill.files;
+        skill.files = {
+          ...previous,
+          "paper.css": `${previous["paper.css"] ?? ""}\n.rufi-paper h3 { margin: 0; }\n`,
+        };
+        restore = () => {
+          skill.files = previous;
         };
         return Promise.resolve();
       },

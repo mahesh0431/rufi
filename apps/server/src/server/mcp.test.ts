@@ -1,15 +1,26 @@
 // Rufi's MCP endpoints over real HTTP, as the pinned Codex talks to them: who
 // gets in, what a key opens, and the shape of answers. What a chat call may
 // do is chat.test.ts's; the real Codex against them is capture.test.ts's.
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   callTool,
   initialize,
+  listResources,
   listTools,
+  readResource,
   type McpServerConfig,
 } from "../../tests/mcp-client.ts";
+import { SKILLS } from "../core/skills/skills.ts";
 import type { ToolAnswer, ToolSpec } from "../core/tools/registry.ts";
-import { mcpEndpoint, mcpKeys, serveMcp, type McpCall } from "./mcp.ts";
+import {
+  mcpEndpoint,
+  mcpKeys,
+  serveMcp,
+  skillResources,
+  type McpCall,
+} from "./mcp.ts";
 
 const OVERVIEW: ToolSpec = {
   name: "get_overview",
@@ -195,5 +206,54 @@ describe("Rufi's MCP endpoints", () => {
       ],
       isError: true,
     });
+  });
+  it("offers each skill and the files beside it to read, the paper as CSS byte for byte", async () => {
+    let port = 0;
+    const withSkills = await serveMcp(
+      mcpEndpoint({
+        keys: chatKeys,
+        port: () => port,
+        log: () => undefined,
+        resources: skillResources(SKILLS),
+      }),
+    );
+    port = withSkills.port;
+    try {
+      const server: McpServerConfig = {
+        url: `http://127.0.0.1:${String(port)}/mcp`,
+        http_headers: { Authorization: `Bearer ${chatKeys.issue(scope())}` },
+      };
+      await initialize(server);
+      const listed = (await listResources(server)).result?.["resources"];
+      expect(listed).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            uri: "skill://analysis/SKILL.md",
+            mimeType: "text/markdown",
+          }),
+          expect.objectContaining({
+            uri: "skill://analysis/paper.css",
+            mimeType: "text/css",
+          }),
+        ]),
+      );
+      const paper = readFileSync(
+        createRequire(import.meta.url).resolve("@rufi/brand/paper.css"),
+        "utf8",
+      );
+      expect(
+        (await readResource(server, "skill://analysis/paper.css")).result,
+      ).toEqual({
+        contents: [
+          {
+            uri: "skill://analysis/paper.css",
+            mimeType: "text/css",
+            text: paper,
+          },
+        ],
+      });
+    } finally {
+      await withSkills.close();
+    }
   });
 });
