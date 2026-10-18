@@ -1,5 +1,5 @@
-// A result's values over time as a calm line: an ink line, the lab's range
-// as a pale band, a ring on a value outside it and the newest value filled.
+// A result's values over time as a calm line: an ink line, a ring on a value
+// the lab flagged, the newest value filled, and the lab's range as printed.
 // No red, amber or green: the lab's flag and note say what it means, in
 // words. Large in an open row, small after a row's value.
 import type { ShownRow } from "@rufi/contracts/record";
@@ -30,30 +30,6 @@ export function Trend({
       viewBox={`0 0 ${String(width)} ${String(height)}`}
       className={`block h-auto max-w-full overflow-visible ${mini ? "" : "my-2"}`}
     >
-      {drawing.band && (
-        <rect
-          className="fill-ink/7"
-          x={drawing.left}
-          y={drawing.band.y}
-          width={drawing.right - drawing.left}
-          height={drawing.band.height}
-        />
-      )}
-      {drawing.edges.map((edge) => (
-        <g key={edge.text}>
-          <line
-            className="stroke-line"
-            strokeDasharray="3 3"
-            x1={drawing.left}
-            x2={drawing.right}
-            y1={edge.y}
-            y2={edge.y}
-          />
-          <Label x={drawing.left - 6} y={edge.y + 4} anchor="end">
-            {edge.text}
-          </Label>
-        </g>
-      ))}
       {drawing.range !== undefined && (
         <Label x={drawing.right} y={11} anchor="end">
           {drawing.range}
@@ -71,7 +47,7 @@ export function Trend({
           />
           {line.points.map((point, i) => (
             <g key={i}>
-              {point.outside && (
+              {point.flagged && (
                 <circle
                   className="fill-none stroke-ink opacity-55"
                   strokeWidth={1}
@@ -91,7 +67,7 @@ export function Trend({
                 <text
                   className="fill-ink text-[11.5px] font-semibold tabular-nums"
                   x={point.x}
-                  y={point.y - (point.outside ? 11 : 8)}
+                  y={point.y - (point.flagged ? 11 : 8)}
                   textAnchor="middle"
                 >
                   {point.text}

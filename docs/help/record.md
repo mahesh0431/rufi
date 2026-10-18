@@ -70,8 +70,8 @@ Click a record's name to open it in place. Click again to close it.
 - For a result, when it was measured and when it entered Rufi. These are two different dates.
 - For a result, **over time:** every current value of that test in that unit on that page, as a line and as a table. A corrected or removed value isn't a second value here: it is in that row's history. A value in another unit has its own line and table.
   - The line puts each value at its date, oldest on the left; the newest value is a filled dot. One value is a single dot. A blood pressure has two lines: the second number is dashed.
-  - The lab's range is a pale band, and it says the range at the top right, for example "Lab range 30 - 400". The line fits your values, so a wide range doesn't flatten it: an edge of the range shows, with its number, only when it is near your values.
-  - A value outside the range printed with it has a ring around it. Rufi uses no colours for high or low: what the lab printed, such as "Low", is in the table, in words.
+  - The newest value's range is written at the top right as the lab printed it, for example "Lab range 30 - 400". The line fits your values, so a wide range doesn't flatten it.
+  - A value the lab flagged, such as "High" or "Low", has a ring around it, on the small line too. Rufi adds no flag of its own and uses no colours for high or low: the lab's flag is in the table, in words.
   - Values with no date, or with no number (such as "Negative"), aren't on the line. The table shows every value: oldest first, then those with no date. The lab's range and note columns show only when a value has them.
 
 ## Ask Rufi about a row
