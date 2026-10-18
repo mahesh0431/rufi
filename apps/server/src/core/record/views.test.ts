@@ -128,14 +128,15 @@ describe("what is current", () => {
     store.db.exec(`
       INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, measured_at, entered_at, replaces_id) VALUES
         ${ferritin.join(",\n")};`);
-    const trend = async (person: string, id: string) =>
-      Object.assign(
-        {},
-        ...(person === "asha"
+    const trend = async (person: string, id: string) => {
+      const pages =
+        person === "asha"
           ? await allPages("lab_result")
-          : [await views.page(person, "lab_result")]
-        ).map((page) => page.trends),
-      )[id]?.map((value: { id: string }) => value.id) as string[] | undefined;
+          : [await views.page(person, "lab_result")];
+      return pages
+        .flatMap((page) => page.trends?.[id] ?? [])
+        .map((value) => value.id);
+    };
     const whole = ["asha-fer-1", "asha-fer-2", "asha-fer-3", "asha-fer-4"];
     expect(await trend("asha", "asha-fer-4")).toEqual(whole);
     expect(await trend("ravi", "ravi-fer-4")).toEqual([
