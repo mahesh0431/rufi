@@ -3,7 +3,9 @@ Copyright 2026 Mahesh Palavalli
 
 Rufi was created by Mahesh Palavalli (https://github.com/mahesh0431).
 
-Licensed under the Apache License, Version 2.0 (see LICENSE).
+Licensed under the Apache License, Version 2.0 (see LICENSE), except
+packages/brand/mark/: the Rufi name and the Rufi dog, their code included,
+are not under that licence. All rights reserved; see TRADEMARKS.md.
 
 Rufi is not a medical device. It is provided "AS IS", without warranties or
 conditions of any kind, as described in the License.
