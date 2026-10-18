@@ -11,14 +11,18 @@ import { Button } from "./ui.tsx";
 /** How often a waiting page asks whether the sign-in is done. */
 const POLL_MS = 1_000;
 
-export function SignIn({ skip }: { skip?: () => void }) {
-  const status = useStatus().data;
-  const flow = useQuery({
+/** How the sign-in goes: asked again each second while it waits. */
+export const useSignInFlow = () =>
+  useQuery({
     queryKey: ["signin"],
     queryFn: () => read(SignInState, "GET", "/api/signin"),
     refetchInterval: (query) =>
       query.state.data?.state === "waiting" ? POLL_MS : false,
   });
+
+export function SignIn({ skip }: { skip?: () => void }) {
+  const status = useStatus().data;
+  const flow = useSignInFlow();
   const start = useMutation({
     mutationFn: () => read(SignInState, "POST", "/api/signin"),
     onSuccess: (state) => queries.setQueryData(["signin"], state),

@@ -3,6 +3,7 @@
 import { createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
 import { getDocuments, retryReading, sortDocuments } from "./documents.ts";
+import { showFace } from "./face.ts";
 import { getOverview } from "./overview.ts";
 import { dismissItems, saveChanges } from "./save.ts";
 import { getRecords } from "./records.ts";
@@ -37,6 +38,7 @@ export const TOOLS: readonly Tool[] = [
   sortDocuments,
   retryReading,
   createBrief,
+  showFace,
 ];
 
 /**

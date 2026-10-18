@@ -2090,6 +2090,38 @@
           ]
         }
       ]
+    },
+    {
+      "name": "rufi.show_face",
+      "description": "Shows a face on Rufi, the dog at the top of the app's sidebar, from this call until your next reply starts: question (you ask the user to decide something), found (you found something worth a look), tip (you give a hint), playful (a light moment), alert (you bring up something new). Optional and playful, about the conversation: most replies need none, and the last call in a reply wins. Never use it to react to a health value or result. It changes nothing and answers ok.",
+      "callers": "model",
+      "readOnly": true,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "face": {
+            "type": "string",
+            "enum": [
+              "question",
+              "found",
+              "tip",
+              "playful",
+              "alert"
+            ],
+            "description": "The face to show."
+          }
+        },
+        "required": [
+          "face"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "face": "question"
+        }
+      ]
     }
   ]
 }

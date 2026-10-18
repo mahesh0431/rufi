@@ -4,11 +4,14 @@
 // or has the focus, and always on a touch screen (styles.css); pointing at
 // it shows a small label of what it does. A click on it never leaves the
 // page, and doesn't close an open panel: the chip goes in the panel's box,
-// the same draft.
+// the same draft. On a page with nothing to point at, it opens the chat.
 import { svg } from "@rufi/brand/mark";
-import { Plus } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { MessageCircle, Plus } from "lucide-react";
 import type { ComponentProps } from "react";
 import { twMerge } from "tailwind-merge";
+import { chatPage, isSmall, openPanel } from "./panel.ts";
+import { Button } from "./ui.tsx";
 
 /** What the small label beside the face says. */
 const TIP = "Ask Rufi about this";
@@ -52,5 +55,25 @@ export function AskRufi({
         {TIP}
       </span>
     </button>
+  );
+}
+
+/**
+ * Ask Rufi on an empty page: the chat opens over it, or as its page in a
+ * small window.
+ */
+export function AskRufiEmpty({ personId }: { personId: string }) {
+  const navigate = useNavigate();
+  return (
+    <Button
+      icon={MessageCircle}
+      {...ASKS}
+      onClick={() => {
+        if (isSmall()) void navigate(chatPage(personId));
+        else openPanel();
+      }}
+    >
+      Ask Rufi
+    </Button>
   );
 }
