@@ -1,15 +1,17 @@
 // A visit brief's page: the AI's Markdown as it wrote it, dated, with the
-// Sources Rufi built from the records it cites, Print and Copy. Printed,
-// it is the same page without the buttons, under Rufi's dog (the frame
-// stays on the screen: styles.css). A brief never changes; when a later
-// save changed the record, the page says so.
+// Sources Rufi built from the records it cites, each opening its record,
+// Print and Copy. Printed, it is the same page without the buttons, under
+// Rufi's dog (the frame stays on the screen: styles.css). A brief never
+// changes; when a later save changed the record, the page says so.
 import type { Person } from "@rufi/contracts";
-import type { Brief } from "@rufi/contracts/briefs";
+import type { Brief, BriefSource } from "@rufi/contracts/briefs";
+import { Link } from "@tanstack/react-router";
 import { Copy, Info, Printer } from "lucide-react";
 import { useEffect, useState } from "react";
 import { printedTime } from "./dates.ts";
 import { Dog } from "./dog.tsx";
 import { useBrief } from "./reads.ts";
+import { isPageKind } from "./record.tsx";
 import { Marked } from "./transcript.tsx";
 import { Button, Problem } from "./ui.tsx";
 
@@ -90,9 +92,9 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
             >
               <span className="text-muted">{source.kind}</span>
               <span className="break-words">
-                {source.what}
+                <Cited personId={person.id} source={source} />
                 {source.changedSince && (
-                  <span className="ml-1.5 text-xs text-accent-ink">
+                  <span className="ml-1.5 text-xs text-muted">
                     changed since
                   </span>
                 )}
@@ -106,6 +108,47 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
       </section>
     </>
   );
+}
+
+/**
+ * A source's record, as a link that opens it on its page (a result on the
+ * page of its category, a "no known allergies" statement on Allergies); as
+ * words alone when it is no longer in the record.
+ */
+function Cited({
+  personId,
+  source: { what, record },
+}: {
+  personId: string;
+  source: BriefSource;
+}) {
+  const look = "rounded-md text-accent-ink hover:bg-accent-soft";
+  const page = record?.kind === "none_known" ? "allergy" : record?.kind;
+  if (record && page === "follow_up") {
+    return (
+      <Link
+        to="/people/$personId/follow-ups"
+        params={{ personId }}
+        search={{ open: record.id }}
+        className={look}
+      >
+        {what}
+      </Link>
+    );
+  }
+  if (record && page && (page === "result" || isPageKind(page))) {
+    return (
+      <Link
+        to="/people/$personId/record/$kind"
+        params={{ personId, kind: page }}
+        search={{ open: record.id }}
+        className={look}
+      >
+        {what}
+      </Link>
+    );
+  }
+  return what;
 }
 
 /** The brief as plain text, to paste anywhere: its date, the brief and its Sources. */

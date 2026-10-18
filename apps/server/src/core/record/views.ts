@@ -28,7 +28,7 @@ import type { DocumentSummary } from "@rufi/contracts/documents";
 import { RecordRow } from "@rufi/contracts/record";
 import { Schema } from "effect";
 import { sql, type Kysely, type RawBuilder } from "kysely";
-import { documentName } from "../documents/reading.ts";
+import { documentName } from "../documents/naming.ts";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 import { kindNamed, type Kind, type Row } from "./kinds.ts";

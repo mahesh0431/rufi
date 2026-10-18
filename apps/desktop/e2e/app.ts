@@ -233,7 +233,42 @@ export class Desktop {
         await exited;
       }
     }
+    // Chromium's helpers (GPU, network, the page) can still write the app's
+    // profile, in this folder, for a moment after the app is gone; each
+    // names the profile in its command line. They are ended, and the folder
+    // goes only once none of them runs.
+    const deadline = Date.now() + 20_000;
+    for (let left = await naming(this.folder); left.length > 0;) {
+      if (Date.now() > deadline) {
+        throw new Error(`Processes ${left.join(", ")} are still running.`);
+      }
+      for (const pid of left) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      left = await naming(this.folder);
+    }
   }
+}
+
+/**
+ * The processes whose command line names a path in `folder`; not one in a
+ * folder whose name only starts the same.
+ */
+export async function naming(folder: string): Promise<number[]> {
+  const pattern = `${folder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`;
+  const { stdout } = await promisify(execFile)("pgrep", ["-f", pattern]).catch(
+    (error: unknown) => {
+      // 1: none.
+      if ((error as { code?: unknown }).code === 1) return { stdout: "" };
+      throw error;
+    },
+  );
+  return stdout.split("\n").filter(Boolean).map(Number);
 }
 
 /**
