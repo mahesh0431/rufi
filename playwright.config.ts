@@ -3,7 +3,8 @@ import { defineConfig } from "@playwright/test";
 // The screens on the real core, in Chromium: each test starts its own core on
 // a fictional data folder with the scripted Codex (apps/web/e2e/rufi.ts).
 // The Rufi app in Electron: each test runs the real `rufi start` on its own
-// fictional data folder, signed out (apps/desktop/e2e/app.ts).
+// fictional data folder, signed out (apps/desktop/e2e/app.ts). The brand
+// package's moving dog at its own API, on a blank page.
 export default defineConfig({
   outputDir: "node_modules/.playwright",
   globalSetup: "apps/server/tests/run-folder.ts",
@@ -18,5 +19,10 @@ export default defineConfig({
       use: { browserName: "chromium" },
     },
     { name: "desktop", testDir: "apps/desktop/e2e", timeout: 60_000 },
+    {
+      name: "brand",
+      testDir: "packages/brand/mark",
+      use: { browserName: "chromium" },
+    },
   ],
 });

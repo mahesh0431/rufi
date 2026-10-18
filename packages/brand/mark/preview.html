@@ -48,7 +48,9 @@ function draw(){
   $('sizes').innerHTML=[256,128,64,32,16].map(n=>`<div>${Rufi.svg({palette:pal,expression:ex,size:n,ground:ground==="none"?"tile":ground,...(motion?{}:{motion:false})})}<br>${n}</div>`).join('');
   $('ex').innerHTML=Object.entries(Rufi.EXPRESSIONS).map(([k,e])=>`<div class="t ${k===ex?'on':''}" data-k="${k}" style="background:${pal.bg};color:${light(pal.bg)?'#1B2430':'#F6F4EF'}">${Rufi.svg({palette:pal,expression:k,size:150,...(motion?{}:{motion:false})})}<b>${e.name}</b><span>${e.use}</span></div>`).join('');
   document.querySelectorAll('.t').forEach(t=>t.onclick=()=>{ex=t.dataset.k;draw();});
-  if($('follow').checked) document.querySelectorAll('svg.rufi').forEach(el=>stops.push(Rufi.follow(el)));
+  // moving only with Motion on; each dog keeps its own expression (a card's own, the others the chosen one)
+  $('follow').disabled=!motion;
+  if(motion) document.querySelectorAll('svg.rufi').forEach(el=>{const r=Rufi.live(el,{expression:el.closest('.t')?.dataset.k??ex,pointer:$('follow').checked});stops.push(()=>r.stop());});
   $('pals').innerHTML=Object.entries(Rufi.PALETTES).map(([k,p])=>`<div class="chip ${k===palKey?'on':''}" data-k="${k}">${[p.bg,p.paper,p.accent].map(c=>`<i class="dot" style="background:${c}"></i>`).join('')}${p.name}</div>`).join('');
   document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{palKey=c.dataset.k;pal={...Rufi.PALETTES[palKey]};sync();draw();});
 }
