@@ -3,8 +3,8 @@
    allowed, is in DESIGN.md beside it.
 
    A theme is one block of values. The light block is :root; the dark one
-   applies when <html data-theme="dark">, which each page sets before it
-   paints. To add a theme, add a block like the dark one.
+   applies on screen when <html data-theme="dark">, which each page sets
+   before it paints. To add a theme, add a block like the dark one.
 
    The agreed look: calm greys, the blue accent only for selection and the
    one main action. No clinical colour (no red, amber or green that means
@@ -53,24 +53,27 @@
 }
 
 /* Dark: the same layout in dark greys; groups are a step lighter than the
-   page, and the accent is a little lighter so it stands out. */
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --page: #191c20;
-  --side: #22262b;
-  --surface: #262a30;
-  --line: #363c43;
-  --ink: #e4e8ec;
-  --muted: #9ba4ae;
-  --accent: #2f6fe6;
-  --accent-hover: #2459c4;
-  --on-accent: #ffffff;
-  --accent-soft: #1e3250;
-  --accent-ink: #adc9fc; /* AA on the Mac's dark sidebar material too */
-  --danger: #f2a29a;
-  --danger-soft: #3a2224;
-  --paper: #ffffff;
-  --edge: rgb(255 255 255 / 0.08);
-  --shade: rgb(0 0 0 / 0.45);
-  --shade-menu: rgb(0 0 0 / 0.5);
+   page, and the accent is a little lighter so it stands out. Screens only:
+   paper is light, so a printed page keeps the light values in every theme. */
+@media screen {
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #191c20;
+    --side: #22262b;
+    --surface: #262a30;
+    --line: #363c43;
+    --ink: #e4e8ec;
+    --muted: #9ba4ae;
+    --accent: #2f6fe6;
+    --accent-hover: #2459c4;
+    --on-accent: #ffffff;
+    --accent-soft: #1e3250;
+    --accent-ink: #adc9fc; /* AA on the Mac's dark sidebar material too */
+    --danger: #f2a29a;
+    --danger-soft: #3a2224;
+    --paper: #ffffff;
+    --edge: rgb(255 255 255 / 0.08);
+    --shade: rgb(0 0 0 / 0.45);
+    --shade-menu: rgb(0 0 0 / 0.5);
+  }
 }

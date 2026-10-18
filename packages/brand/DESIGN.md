@@ -8,7 +8,7 @@ The Rufi name and the dog, with everything in `mark/` (its code too), are not un
 
 Every colour comes from a token in `tokens.css`. Never write a colour value in a screen or a page; if no token fits, add one here first, with its job. In the app, Tailwind's own palette is off and lint refuses raw colours: the tokens are named for Tailwind in `apps/web/src/themes.css` (`bg-surface`, `text-ink`, …).
 
-A theme is one block of values: light in `:root`, dark when `<html data-theme="dark">`. Each page sets `data-theme` before it paints, so it never shows the wrong theme first. The website is light only and never sets a theme.
+A theme is one block of values: light in `:root`, dark when `<html data-theme="dark">`, on screens only: paper is light, so a printed page keeps the light values in every theme. Each page sets `data-theme` before it paints, so it never shows the wrong theme first. The website is light only and never sets a theme.
 
 | Token                               | Its job                                                              |
 | ----------------------------------- | -------------------------------------------------------------------- |

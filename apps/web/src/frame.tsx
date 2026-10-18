@@ -132,7 +132,7 @@ export function Frame() {
     );
   }
   return (
-    <div className="flex h-full">
+    <div data-frame="" className="flex h-full">
       <aside
         data-sidebar=""
         className="flex w-60 shrink-0 flex-col gap-0.5 border-r border-line bg-side p-2.5"
@@ -184,7 +184,7 @@ export function Frame() {
         </nav>
         <Account />
       </aside>
-      <div className="flex min-w-0 flex-1 flex-col bg-page">
+      <div data-pane="" className="flex min-w-0 flex-1 flex-col bg-page">
         <header
           data-toolbar=""
           className="flex h-[52px] shrink-0 items-center border-b border-line bg-page/80 px-5 backdrop-blur"
