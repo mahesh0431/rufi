@@ -130,7 +130,7 @@ test("Ask Rufi puts chips of several kinds in the box, a report as one, and the 
   await row("CRP").hover();
   await expect(ask).toHaveCSS("opacity", "1");
   await ask.hover();
-  await expect(ask.getByText("Add to chat to ask Rufi")).toBeVisible();
+  await expect(ask.getByText("Ask Rufi about this")).toBeVisible();
   await ask.click();
   // A report: one chip for its results, from its heading.
   await page
