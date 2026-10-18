@@ -14,7 +14,7 @@ Overview is the first page you see. It has three parts, in this order:
 
    Click **Open** to go to the document's page (see [Documents](documents.md)), or to that follow-up on Follow-ups. Click **Ask Rufi** to put it in the chat's box and ask about it (see [Adding to a message](chat.md#adding-to-a-message)). A document read with nothing to save isn't here. When nothing waits, this part isn't shown.
 
-2. **Health record:** one tile for each of its pages, with its count and a short summary. Click a tile to open that page. A page with nothing in it says **None yet**.
+2. **Health record:** a tile for each of its pages that has something in it, with its count and a short summary. Click a tile to open that page. The pages with nothing in them are on one line under the tiles, **Nothing yet:** and their names. Click a name to open that page. When a page gets its first record, it gets its tile.
 3. **Recent changes:** your last 5 saves and undos, newest first. Click one to see its receipt, the same as in the chat.
 
 Rufi works out the tiles from your saved health record, not with the AI. Each tile says what it counts:
@@ -52,7 +52,7 @@ Each page shows the records that are current, newest first. As you scroll to the
 
 - **Lab results** are grouped the way the paper is. Lab results from one report are together: the lab, the date the sample was collected and how many results it has. A report is one document as Rufi AI sorted it, with the lab and date it gave it (see [Documents](documents.md#how-rufi-ai-sorts-a-file)). When the report prints no date, it shows the latest date of its results, such as the one you gave ("Aug 2026"); a report with no dates at all goes under **No date**. A report's lab results always show whole. Lab results you typed in the chat are grouped by their day, or by their month or year when that is all you said ("May 2026"). Rufi never makes up a day. Lab results with no date come last, under **No date**.
 - **Measurements** are grouped by the day they were taken, newest first, with how many there are that day, for example "20 Sep 2026 · 2 measurements". A measurement dated only by month or year has its own group ("Aug 2026"). The measurements of a report, such as the blood pressure from a visit, are here too, under the day each was taken, not with the report's lab results. Measurements with no date come last, under **No date**.
-- A result shows its test, its value and unit (in one column, so values line up), the lab's range, and the lab's note and context, as printed. A date shows at the precision known, with its time when there is one. "Amended" means that the lab corrected the result. When a result's own date differs from its report's date, the row shows it.
+- A result shows its test, its value and unit (in one column, so values line up), a small line of its latest values, the lab's range, and the lab's note and context, as printed. The small line shows only when the test has two or more values with a date and a number, and it ends at that row's value. A date shows at the precision known, with its time when there is one. "Amended" means that the lab corrected the result. When a result's own date differs from its report's date, the row shows it.
 - **Other kinds** show one row for each record, newest first by its date: when a medicine started, when a symptom began. Records with no date come last.
 - **Allergies** also show "No known allergies" when you said so, with the day you said it.
 
@@ -68,11 +68,15 @@ Click a record's name to open it in place. Click again to close it.
 - **History:** each save that changed it, oldest first, with its date and time. A change shows what changed, before and after, such as "value 22 → 24". A removal has its own line, and so has **Put back**, when a removed record came back. A record saved before Rufi kept its history has none.
 - **Replaces** or **Replaced by:** for an amended result, the earlier version it replaces, which is kept. For a replaced result, the result that replaced it.
 - For a result, when it was measured and when it entered Rufi. These are two different dates.
-- For a result, **over time:** every current value of that test in that unit on that page, oldest first, then the values with no date. A corrected or removed value isn't a second value here: it is in that row's history. A value in another unit has its own table. The lab's range and note columns show only when a value has them.
+- For a result, **over time:** every current value of that test in that unit on that page, as a line and as a table. A corrected or removed value isn't a second value here: it is in that row's history. A value in another unit has its own line and table.
+  - The line puts each value at its date, oldest on the left; the newest value is a filled dot. One value is a single dot. A blood pressure has two lines: the second number is dashed.
+  - The newest value's range is written at the top right as the lab printed it, for example "Lab range 30 - 400". The line fits your values, so a wide range doesn't flatten it.
+  - A value the lab flagged, such as "High" or "Low", has a ring around it, on the small line too. Rufi adds no flag of its own and uses no colours for high or low: the lab's flag is in the table, in words.
+  - Values with no date, or with no number (such as "Negative"), aren't on the line. The table shows every value: oldest first, then those with no date. The lab's range and note columns show only when a value has them.
 
 ## Ask Rufi about a row
 
-Point at a row and click **Ask Rufi**. The record goes in the chat's box as a chip, and you stay on the page: the chat bar shows what you added (see [The chat bar](chat.md#the-chat-bar)). Add more rows the same way if you like. Then click the bar, say what you want, for example "this stopped last week", and send. The AI changes your health record only after you say yes, and the chat shows a receipt.
+Point at a row and click **Ask Rufi**, Rufi's face with a blue + at the row's end. The record goes in the chat's box as a chip, and you stay on the page: the chat bar shows what you added (see [The chat bar](chat.md#the-chat-bar)). Add more rows the same way if you like. Then click the bar, say what you want, for example "this stopped last week", and send. The AI changes your health record only after you say yes, and the chat shows a receipt.
 
 On Lab results, a report's heading has its own **Ask Rufi**: it adds the whole report as one chip, with any measurements it printed, and the AI reads exactly that report's results. A day of measurements has no such button: add its rows one by one.
 

@@ -123,9 +123,24 @@ test("Ask Rufi puts chips of several kinds in the box, a report as one, and the 
       .getByRole("listitem")
       .filter({ has: page.getByRole("button", { name, exact: true }) });
 
-  // A row: Ask Rufi, shown on the pointer.
+  // A row: Ask Rufi, Rufi's face, shown on the pointer; its label on its own.
+  const ask = row("CRP").getByRole("button", { name: "Ask Rufi" });
+  await page.mouse.move(0, 0);
+  await expect(ask).toHaveCSS("opacity", "0");
   await row("CRP").hover();
-  await row("CRP").getByRole("button", { name: "Ask Rufi" }).click();
+  await expect(ask).toHaveCSS("opacity", "1");
+  await ask.hover();
+  await expect(ask.getByText("Ask Rufi about this")).toBeVisible();
+  // By keyboard: Tab from the row to Ask Rufi shows it; Enter adds the chip.
+  await page.mouse.move(0, 0);
+  await row("CRP").getByRole("button", { name: "CRP", exact: true }).focus();
+  await expect(ask).toHaveCSS("opacity", "1");
+  await page.keyboard.press("Tab");
+  await expect(ask).toBeFocused();
+  await expect(ask).toHaveCSS("opacity", "1");
+  await page.keyboard.press("Enter");
+  await added(bar, "Repeat HbA1c · 15 Jan 2026 +1");
+  expect(page.url()).toBe(results);
   // A report: one chip for its results, from its heading.
   await page
     .getByRole("button", {

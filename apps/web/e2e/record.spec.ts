@@ -34,7 +34,10 @@ test("a save in one window refreshes Overview's tiles there and a kind's page in
   rufi,
   context,
 }) => {
-  await rufi.family();
+  // Allergies: no rows, but "None known" was said, with no date.
+  await rufi.family(
+    "INSERT INTO none_known (id, person_id, category, asserted) VALUES ('nk-a1', 'asha', 'allergies', NULL);",
+  );
   await rufi.start({
     scenario: {
       callsByTurn: [crpSave("remove"), crpSave("restore")],
@@ -61,6 +64,15 @@ test("a save in one window refreshes Overview's tiles there and a kind's page in
     .getByRole("main")
     .getByRole("link", { name: /^Lab results 7/ });
   await expect(tile).toBeVisible();
+  // A page with something in it has a tile; the empty ones are on one line.
+  const record = page.getByRole("region", { name: "Health record" });
+  await expect(
+    record.getByRole("link", { name: /^Allergies\s*None known$/ }),
+  ).toBeVisible();
+  const nothingYet = record.getByText(/^Nothing yet:/);
+  await expect(nothingYet.getByRole("link")).not.toHaveCount(0);
+  await expect(nothingYet).not.toContainText("Allergies");
+  await expect(nothingYet).not.toContainText("Lab results");
   await accessible(page);
   await chat(page).getByRole("button", { name: "Open the chat" }).click();
   await box(page).fill("Remove the CRP result");
@@ -199,6 +211,53 @@ test("the Lab results page shows lab results as the lab printed them, by report,
   await expect(
     page.getByRole("region", { name: "No date · 1 result" }),
   ).toContainText("Blood groupB positive");
+  await accessible(page);
+});
+
+test("a result's values over time: a small trend on its row, and the large one with the table when it opens", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family(
+    `INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, reference_range, flag_text, measured_at, entered_at) VALUES
+       ('fer-1', 'asha', 'lab', 'Ferritin', '31', 31, 'µg/L', '30 - 400', NULL, '2025-10-12', '2026-10-01T10:00:00Z'),
+       ('fer-2', 'asha', 'lab', 'Ferritin', '18', 18, 'µg/L', '30 - 400', 'Low', '2026-03-04', '2026-10-01T10:00:00Z'),
+       ('fer-3', 'asha', 'lab', 'Ferritin', '26', 26, 'µg/L', '30 - 400', 'Low', '2026-09-01', '2026-10-01T10:00:00Z');`,
+  );
+  await rufi.start();
+  await page.goto(rufi.link());
+  await sidebar(page)
+    .getByRole("link", { name: /^Lab results/ })
+    .click();
+  const newest = page
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("button", { name: "Ferritin" }) })
+    .first();
+  await expect(
+    newest.getByRole("img", {
+      name: "Ferritin over time: 31 on 12 Oct 2025, 18 on 4 Mar 2026, 26 on 1 Sep 2026. Lab range 30 - 400",
+    }),
+  ).toBeVisible();
+  // The first value has no line to show yet.
+  await expect(
+    page
+      .getByRole("listitem")
+      .filter({ has: page.getByRole("button", { name: "Ferritin" }) })
+      .last()
+      .getByRole("img"),
+  ).toHaveCount(0);
+
+  await newest.getByRole("button", { name: "Ferritin" }).click();
+  const chart = newest.getByRole("img", {
+    name: "Ferritin (µg/L) over time: 31 on 12 Oct 2025, 18 on 4 Mar 2026, 26 on 1 Sep 2026. Lab range 30 - 400",
+  });
+  await expect(chart).toBeVisible();
+  // The range as the lab printed it, in words.
+  await expect(chart).toContainText("Lab range 30 - 400");
+  // The table stays, with the lab's note as printed.
+  await expect(newest.getByRole("table")).toContainText(
+    "4 Mar 202618 µg/L30 - 400Low",
+  );
   await accessible(page);
 });
 

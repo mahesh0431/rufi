@@ -1,15 +1,80 @@
 // A visit brief on the real core: the AI's create_brief call (scripted),
 // Rufi's line in the chat, and the brief's page with its Sources (each opens
-// its record) and Copy, in both themes; a later save shows the record changed
-// since. Each test checks that the strict CSP refused nothing the screens
-// need.
+// its record), Copy and Print, in both themes; a later save shows the record
+// changed since. Each test checks that the strict CSP refused nothing the
+// screens need.
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { draw } from "../../server/src/core/documents/inspect.ts";
 import { expect, test } from "./rufi.ts";
 
 async function accessible(page: Page) {
   const { violations } = await new AxeBuilder({ page }).analyze();
   expect(violations.map((violation) => violation.id)).toEqual([]);
+}
+
+/** A printed PDF's sheets: each one's size in points and its text. */
+async function sheets(pdf: Buffer) {
+  const task = getDocument({ data: new Uint8Array(pdf), verbosity: 0 });
+  try {
+    const document = await task.promise;
+    const read = [];
+    for (let number = 1; number <= document.numPages; number += 1) {
+      const sheet = await document.getPage(number);
+      const { items } = await sheet.getTextContent();
+      read.push({
+        width: Math.round(sheet.view[2] ?? 0),
+        height: Math.round(sheet.view[3] ?? 0),
+        text: items
+          .map((item) => ("str" in item ? item.str : ""))
+          .join(" ")
+          .replace(/\s+/g, " "),
+      });
+    }
+    return read;
+  } finally {
+    await task.destroy();
+  }
+}
+
+/**
+ * How much of a printed sheet is in `colour` (a CSS rgb()), drawn as Rufi
+ * draws a PDF page for the AI and counted in a page of its own.
+ */
+async function shareOf(page: Page, pdf: Buffer, sheet: number, colour: string) {
+  const drawn = await draw(new Uint8Array(pdf), sheet);
+  if (!drawn.ok) throw new Error("The printed sheet didn't draw.");
+  const counter = await page.context().newPage();
+  try {
+    return await counter.evaluate(
+      async ({ png, colour }) => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${png}`;
+        await image.decode();
+        const canvas = new OffscreenCanvas(image.width, image.height);
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("no canvas");
+        context.drawImage(image, 0, 0);
+        const { data } = context.getImageData(0, 0, image.width, image.height);
+        const [r = 0, g = 0, b = 0] = (colour.match(/\d+/g) ?? []).map(Number);
+        let same = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          if (
+            Math.abs((data[i] ?? 0) - r) <= 2 &&
+            Math.abs((data[i + 1] ?? 0) - g) <= 2 &&
+            Math.abs((data[i + 2] ?? 0) - b) <= 2
+          ) {
+            same += 1;
+          }
+        }
+        return same / (data.length / 4);
+      },
+      { png: Buffer.from(drawn.png).toString("base64"), colour },
+    );
+  } finally {
+    await counter.close();
+  }
 }
 
 // The CSP's refusals, collected in the page.
@@ -157,6 +222,40 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
     "\n- Result: HbA1c 6.8 % · 12 Aug 2026 (Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf, page 1)",
   );
 
+  // Print: the system's print, of the page alone, light on the dark theme.
+  await page.evaluate(() => {
+    const counted = globalThis as unknown as { printed: number };
+    counted.printed = 0;
+    window.print = () => {
+      counted.printed += 1;
+    };
+  });
+  await page.getByRole("button", { name: "Print" }).click();
+  expect(
+    await page.evaluate(
+      () => (globalThis as unknown as { printed: number }).printed,
+    ),
+  ).toBe(1);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.emulateMedia({ media: "print" });
+  for (const part of [
+    page.getByRole("complementary"),
+    page.getByRole("banner"),
+    page.getByRole("region", { name: "Chat" }),
+    page.getByRole("button", { name: "Copy" }),
+    page.getByRole("button", { name: "Print" }),
+  ]) {
+    await expect(part).toBeHidden();
+  }
+  await expect(brief).toBeVisible();
+  await expect(sources.last()).toBeVisible();
+  await expect(page.locator('main [data-dog="light"]')).toBeVisible();
+  await expect(page.locator('main [data-dog="dark"]')).toBeHidden();
+  // The light theme's ink (packages/brand/tokens.css).
+  await expect(brief).toHaveCSS("color", "rgb(29, 35, 41)");
+  await page.emulateMedia({ media: "screen" });
+  await expect(brief).toHaveCSS("color", "rgb(228, 232, 236)");
+
   // The second scripted turn changes the record through the running chat.
   await page.getByRole("link", { name: "Chat with Rufi" }).click();
   const message = page.getByRole("textbox", { name: "Message to Rufi" });
@@ -221,12 +320,22 @@ test("a brief that isn't there says so", async ({ page, rufi }) => {
   );
 });
 
-test("the chat bar leaves the last Sources row of a long brief in view", async ({
+test("the chat bar leaves the last Sources row of a long brief in view; printed, it is numbered A4 sheets to its last row", async ({
   page,
   rufi,
 }) => {
   await rufi.family();
-  // Every result of Asha's cited: a page longer than the window.
+  // Every result of Asha's cited, and notes: a page longer than the window
+  // and than one sheet.
+  const markdown = [
+    MARKDOWN,
+    "### Notes",
+    ...Array.from(
+      { length: 40 },
+      (_, i) =>
+        `- Note ${String(i + 1)}: a fictional line to ask about at the visit.`,
+    ),
+  ].join("\n\n");
   const cited = [
     { kind: "medicine_use", id: "med-a1" },
     ...Array.from({ length: 11 }, (_, i) => ({
@@ -240,7 +349,7 @@ test("the chat bar leaves the last Sources row of a long brief in view", async (
         [
           {
             tool: "create_brief",
-            arguments: { markdown: MARKDOWN, record_version: 0, cited },
+            arguments: { markdown, record_version: 0, cited },
           },
         ],
       ],
@@ -281,4 +390,29 @@ test("the chat bar leaves the last Sources row of a long brief in view", async (
     expect(bar).toBeDefined();
     expect((last?.y ?? 0) + (last?.height ?? 0)).toBeLessThanOrEqual(bar ?? 0);
   }
+
+  // Printed as the page asks: A4 sheets of white paper, with no panel of
+  // the app's page colour behind the brief, each with its number, and the
+  // brief whole, to its last Sources row.
+  const lastRow = (await sources.last().innerText()).replace(/\s+/g, " ");
+  const pane = await page
+    .locator("[data-pane]")
+    .evaluate((element) => getComputedStyle(element).backgroundColor);
+  await page.emulateMedia({ media: "print" });
+  // With backgrounds printed, as a print window may.
+  const pdf = await page.pdf({
+    preferCSSPageSize: true,
+    printBackground: true,
+  });
+  expect(await shareOf(page, pdf, 1, pane)).toBeLessThan(0.01);
+  const printed = await sheets(pdf);
+  expect(printed.length).toBeGreaterThan(1);
+  printed.forEach((sheet, i) => {
+    // A4 in points.
+    expect([sheet.width, sheet.height]).toEqual([595, 842]);
+    expect(sheet.text).toContain(
+      `Page ${String(i + 1)} of ${String(printed.length)}`,
+    );
+  });
+  expect(printed.at(-1)?.text).toContain(lastRow);
 });

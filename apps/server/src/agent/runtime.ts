@@ -169,10 +169,14 @@ export interface AgentSandbox {
   unreadable: readonly string[];
 }
 
-/** One of Rufi's skills, as the agent reads it: its SKILL.md, by name. */
+/**
+ * One of Rufi's skills, as the agent reads it: its SKILL.md, by name, and
+ * the files beside it.
+ */
 export interface AgentSkill {
   name: string;
   text: string;
+  files: Readonly<Record<string, string>>;
 }
 
 /**

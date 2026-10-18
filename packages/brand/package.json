@@ -2,10 +2,11 @@
   "name": "@rufi/brand",
   "version": "0.1.0",
   "private": true,
-  "description": "Rufi's look: the colour tokens, the two font roles, the dog and DESIGN.md.",
+  "description": "Rufi's look: the colour tokens, the two font roles, the dog, the paper for the AI's pages and DESIGN.md.",
   "type": "module",
   "exports": {
     "./tokens.css": "./tokens.css",
+    "./paper.css": "./paper.css",
     "./mark": {
       "types": "./mark/rufi.d.ts",
       "default": "./mark/rufi.js"

@@ -184,6 +184,56 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* Ask Rufi (src/ask.tsx): it shows when its row (a list item, a table row
+   or a group's heading) is under the pointer or has the focus, and always on
+   a touch screen. Pointing at it makes the face a little larger and, after
+   a moment, shows its small label. The + stands on the row's hover colour. */
+.ask-rufi {
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+:is(li, tr, h2):is(:hover, :focus-within) .ask-rufi,
+.ask-rufi:focus-visible {
+  opacity: 1;
+}
+.ask-rufi-face {
+  transition: transform 150ms ease;
+}
+.ask-rufi:hover .ask-rufi-face {
+  transform: scale(1.12);
+}
+/* The label comes after a moment, whole: never half faded. */
+.ask-rufi-tip {
+  visibility: hidden;
+}
+.ask-rufi:is(:hover, :focus-visible) .ask-rufi-tip {
+  visibility: visible;
+  transition: visibility 0s 250ms;
+}
+@media (hover: none) {
+  .ask-rufi {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ask-rufi,
+  .ask-rufi-face {
+    transition: none;
+  }
+  .ask-rufi:hover .ask-rufi-face {
+    transform: none;
+  }
+}
+.ask-rufi [data-dog] > svg {
+  border-radius: 50%;
+}
+:root[data-theme="dark"] .ask-rufi [data-dog="dark"] svg {
+  box-shadow: 0 0 0 1px var(--line);
+}
+.ask-rufi-plus {
+  box-shadow: 0 0 0 2px var(--side);
+}
+
 /* The dog for the theme in use (src/dog.tsx). */
 :root:not([data-theme="dark"]) [data-dog="dark"],
 :root[data-theme="dark"] [data-dog="light"] {
@@ -218,4 +268,47 @@ body {
 }
 [data-app] [data-toolbar] {
   -webkit-app-region: drag;
+}
+
+/* Print (the visit brief's Print, or ⌘P on any page): only the page, on A4
+   sheets of white paper (no panel behind it), light in every theme (packages/brand/tokens.css keeps dark for
+   screens). The sidebar, toolbar, chat bar and sheets stay on the screen,
+   the page's scroll box opens to its full length, and each sheet's foot
+   gives its number. */
+@page {
+  size: A4;
+  margin: 16mm 16mm 18mm;
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font: 9px var(--font-ui);
+    color: var(--muted);
+  }
+}
+@media print {
+  html,
+  body,
+  #root {
+    height: auto;
+    background: none;
+  }
+  [data-frame],
+  [data-pane] {
+    display: block;
+    height: auto;
+    background: none;
+  }
+  [data-frame] > :not([data-pane]),
+  [data-pane] > :not(main) {
+    display: none;
+  }
+  [data-pane] > main {
+    overflow: visible;
+    padding: 0;
+  }
+  [data-dog="dark"] {
+    display: none !important;
+  }
+  [data-dog="light"] {
+    display: inline !important;
+  }
 }

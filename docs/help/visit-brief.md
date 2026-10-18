@@ -1,6 +1,6 @@
 # Visit brief
 
-Before a doctor's visit, you can ask Rufi for a visit brief: a dated page with what your doctor needs for that visit, such as your current medicines and recent lab results, and questions to ask. Every fact in it comes from your saved health record, and Rufi lists those records under the brief. You can copy it and paste it wherever you need it.
+Before a doctor's visit, you can ask Rufi for a visit brief: a dated page with what your doctor needs for that visit, such as your current medicines and recent lab results, and questions to ask. Every fact in it comes from your saved health record, and Rufi lists those records under the brief. You can copy it and paste it wherever you need it, or print it.
 
 ## Ask for a brief
 
@@ -40,6 +40,10 @@ Click a record to open it on its page, with its sources and history (see [Open a
 ## Copy a brief
 
 Click **Copy**. Rufi puts the brief on the clipboard as plain text: the date, the brief and its Sources. **Copied** shows for a moment. Paste it into an email, a note or a message to your doctor.
+
+## Print a brief
+
+Click **Print**. Your Mac's print window opens with the brief's page alone: Rufi's dog, when it was made and from whose record, the brief and its Sources, without the sidebar or the chat. It prints on white paper, also when Rufi is dark. A long brief goes on to more pages, and each page's foot says its number, for example "Page 1 of 2". To keep a file of it, choose **Save as PDF** in the print window.
 
 ## When your record changes
 

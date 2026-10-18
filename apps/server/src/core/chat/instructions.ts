@@ -57,7 +57,7 @@ export const rulesNote = (instructions: string) =>
 
 /**
  * Names what a thread was told: the core and every skill's whole text
- * (front matter included). A changed skill must replace what the thread
+ * (front matter included) and files. A changed skill must replace what the thread
  * read before, just as a changed core does (server/chat.ts).
  */
 export function rulesVersion(region: string | undefined): string {
@@ -65,7 +65,7 @@ export function rulesVersion(region: string | undefined): string {
     .update(
       JSON.stringify({
         core: coreInstructions(region),
-        skills: SKILLS.map((skill) => skill.text),
+        skills: SKILLS.map((skill) => [skill.text, skill.files]),
       }),
     )
     .digest("hex")
