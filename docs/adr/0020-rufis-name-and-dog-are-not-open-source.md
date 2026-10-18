@@ -1,4 +1,4 @@
-# 0018 · Rufi's name and its dog are not under the code's licence
+# 0020 · Rufi's name and its dog are not under the code's licence
 
 **Date:** 17 Oct 2026 · **Status:** accepted
 
