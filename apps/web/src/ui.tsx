@@ -2,8 +2,9 @@
 import { Tooltip } from "@base-ui/react/tooltip";
 import { cva, type VariantProps } from "class-variance-authority";
 import { LoaderCircle, type LucideProps, RotateCw } from "lucide-react";
-import type { ComponentProps, ComponentType } from "react";
+import type { ComponentProps, ComponentType, ReactNode } from "react";
 import { twMerge } from "tailwind-merge";
+import { LiveDog } from "./dog.tsx";
 
 /** A Lucide icon, or one drawn the same way. */
 export type Icon = ComponentType<LucideProps>;
@@ -136,6 +137,37 @@ export function Problem({
           Retry
         </Button>
       )}
+    </div>
+  );
+}
+
+/**
+ * A page with nothing on it yet: Rufi saying hello, a heading, a line and
+ * one action, each only when the page has it.
+ */
+export function EmptyState({
+  title,
+  children,
+  action,
+}: {
+  title?: string;
+  children?: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-1 rounded-xl border-[1.5px] border-dashed border-line bg-surface px-6 py-14 text-center">
+      <LiveDog size={64} />
+      {title !== undefined && (
+        <h2 className="mt-3 text-[15px] font-semibold">{title}</h2>
+      )}
+      {children !== undefined && (
+        <p
+          className={`max-w-md text-muted ${title === undefined ? "mt-3" : ""}`}
+        >
+          {children}
+        </p>
+      )}
+      {action !== undefined && <div className="mt-3">{action}</div>}
     </div>
   );
 }

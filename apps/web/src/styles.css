@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @import "./themes.css";
+/* The dog's motion (src/dog.tsx); it stops under reduced motion. */
+@import "@rufi/brand/mark/motion.css";
 
 /* The UI font role, from the brand tokens (packages/brand/tokens.css). */
 @theme {
@@ -182,10 +184,19 @@ body {
   overflow-wrap: anywhere;
 }
 
-/* The sidebar's dog for the theme in use (src/dog.tsx). */
+/* The dog for the theme in use (src/dog.tsx). */
 :root:not([data-theme="dark"]) [data-dog="dark"],
 :root[data-theme="dark"] [data-dog="light"] {
   display: none;
+}
+[data-dog] > svg {
+  display: block;
+}
+/* In the dark, a hairline around the dog's ink tile, so the tile keeps its
+   shape on the sidebar's grey. It takes no room. */
+[data-dog="dark"] > svg {
+  border-radius: 24%;
+  box-shadow: 0 0 0 1px var(--line);
 }
 
 /* In the Rufi app on the Mac: the window's own sidebar material shows

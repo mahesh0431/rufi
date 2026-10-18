@@ -796,7 +796,7 @@ describe("the error envelope", () => {
       "rm_rf",
     );
     expect(body["error"]).toBe(
-      "There is no tool called rm_rf. Rufi's tools: get_overview, get_records, get_documents, read_chat, save_changes, dismiss_items, sort_documents, retry_reading, create_brief.",
+      "There is no tool called rm_rf. Rufi's tools: get_overview, get_records, get_documents, read_chat, save_changes, dismiss_items, sort_documents, retry_reading, create_brief, show_face.",
     );
   });
 
@@ -935,6 +935,37 @@ describe("the error envelope", () => {
       () => undefined,
     )("accept_changes", {});
     expect(answer.ok).toBe(false);
+  });
+});
+
+describe("show_face", () => {
+  it("answers ok in Rufi's chat and changes nothing", async () => {
+    makeDatabase(family).close();
+    const store = openWritable(path);
+    try {
+      const chats = transcripts(store, () => "2026-10-14T10:00:00Z");
+      const chat = (await chats.chat("asha")) as ChatRow;
+      const caller = chatCaller(store, chats, record)(chat, "t-1", "person");
+      const changes = () =>
+        store.db.prepare("SELECT total_changes() AS n").get()?.["n"];
+      const before = changes();
+      const answer = await caller("show_face", { face: "found" });
+      expect(JSON.parse(answer.text)).toEqual({ ok: true });
+      expect(changes()).toBe(before);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("has no sad or sorry face to show", async () => {
+    for (const face of ["sorry", "sleepy", "steady"]) {
+      const answer = await call(
+        { store: undefined, personId: undefined },
+        "show_face",
+        { face },
+      );
+      expect(answer.body["error"]).toBe("The input for show_face isn't valid.");
+    }
   });
 });
 

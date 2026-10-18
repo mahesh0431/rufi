@@ -20,13 +20,13 @@ import type {
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRight, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { AskRufi } from "./ask.tsx";
+import { AskRufi, AskRufiEmpty } from "./ask.tsx";
 import { printedDate, printedTime } from "./dates.ts";
 import type { BoxChip } from "./draft.ts";
 import { askRufi } from "./panel.ts";
 import { useRecordDetail, useRecordPages, useSeries } from "./reads.ts";
 import { Trend } from "./trend.tsx";
-import { Button, buttonLook, ICON, Problem } from "./ui.tsx";
+import { Button, buttonLook, EmptyState, ICON, Problem } from "./ui.tsx";
 
 /** The pages, in the sidebar's order, by their title: results have two. */
 export const KIND_TITLES: Record<PageKind, string> = {
@@ -357,7 +357,9 @@ export function RecordPage({
         </p>
       )}
       {groups.length === 0 ? (
-        <p className="text-muted">Nothing here yet.</p>
+        <EmptyState action={<AskRufiEmpty personId={person.id} />}>
+          Nothing here yet.
+        </EmptyState>
       ) : results ? (
         groups.map((group) => {
           const heading = groupHeading(group);

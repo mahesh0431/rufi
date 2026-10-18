@@ -20,7 +20,7 @@ import { printedDate } from "./dates.ts";
 import { askRufi } from "./panel.ts";
 import { cellsOf, chipOf, pageOf, RowDetail, rowElementId } from "./record.tsx";
 import { useFollowUps, useRecordDetail } from "./reads.ts";
-import { Problem } from "./ui.tsx";
+import { EmptyState, Problem } from "./ui.tsx";
 
 type Group = FollowUps["groups"][number]["group"];
 
@@ -131,10 +131,10 @@ export function FollowUpsPage({
   if (groups.length === 0) {
     return (
       <div className="mx-auto max-w-[790px] px-6 py-8">
-        <p className="text-muted">
+        <EmptyState>
           Nothing to come back to yet. When a report or you mention a recheck,
           Rufi offers to add it here.
-        </p>
+        </EmptyState>
       </div>
     );
   }
