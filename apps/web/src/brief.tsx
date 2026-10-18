@@ -1,13 +1,15 @@
 // A visit brief's page: the AI's Markdown as it wrote it, dated, with the
 // Sources Rufi built from the records it cites, each opening its record,
-// and Copy. A brief never changes; when a later save changed the record,
-// the page says so.
+// Print and Copy. Printed, it is the same page without the buttons, under
+// Rufi's dog (the frame stays on the screen: styles.css). A brief never
+// changes; when a later save changed the record, the page says so.
 import type { Person } from "@rufi/contracts";
 import type { Brief, BriefSource } from "@rufi/contracts/briefs";
 import { Link } from "@tanstack/react-router";
-import { Copy, Info } from "lucide-react";
+import { Copy, Info, Printer } from "lucide-react";
 import { useEffect, useState } from "react";
 import { printedTime } from "./dates.ts";
+import { Dog } from "./dog.tsx";
 import { useBrief } from "./reads.ts";
 import { isPageKind } from "./record.tsx";
 import { Marked } from "./transcript.tsx";
@@ -39,11 +41,24 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
   return (
     <>
       <div className="mb-3.5 flex items-start gap-3">
+        <span className="hidden pt-1 print:block">
+          <Dog />
+        </span>
         <div className="flex-1">
           <h2 className="text-[22px] font-bold">Visit brief</h2>
           <p className="text-muted">{made}</p>
         </div>
-        <CopyButton text={() => asText(brief, made)} />
+        <div className="flex items-start gap-3 print:hidden">
+          <CopyButton text={() => asText(brief, made)} />
+          <Button
+            icon={Printer}
+            onClick={() => {
+              window.print();
+            }}
+          >
+            Print
+          </Button>
+        </div>
       </div>
       {brief.changedSince && (
         <p
@@ -73,7 +88,7 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
             <li
               // A brief's Sources never change.
               key={index}
-              className="grid grid-cols-[110px_1fr] gap-x-3 border-t border-line px-3.5 py-2 first:border-t-0"
+              className="grid break-inside-avoid grid-cols-[110px_1fr] gap-x-3 border-t border-line px-3.5 py-2 first:border-t-0"
             >
               <span className="text-muted">{source.kind}</span>
               <span className="break-words">
