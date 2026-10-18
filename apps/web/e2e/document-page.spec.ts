@@ -1,7 +1,8 @@
 // A document's page on the real core, after a scripted reading
-// (tests/fake-reader.ts): the items beside their page, "Unsure only", a fix
-// that keeps the reader's value, a fix from a second tab refused with the
-// value now, and "Save in chat" putting the words in the box.
+// (tests/fake-reader.ts) and Rufi AI's scripted sort: the drafts beside
+// their page with the words they come from, "Worth a look only", a fix that
+// keeps the drafted value, a fix from a second tab refused with the value
+// now, and "Save in chat" putting the words in the box.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
@@ -19,15 +20,60 @@ async function accessible(page: Page) {
   expect(violations.map((violation) => violation.id)).toEqual([]);
 }
 
-const PLATELETS = {
-  test_name: "Platelet count",
-  value_text: "2.1",
-  unit: "lakh/µL",
-  reference_range: "1.5-4.1",
-  unsure: "the decimal point is faint",
+const COLLECTED = {
+  label: "Collected",
+  date: "12 Aug 2026",
+  iso: "2026-08-12",
+};
+const draft = (
+  page: number,
+  test_name: string,
+  value_text: string,
+  unit: string,
+  more = {},
+) => ({
+  page,
+  test_name,
+  value_text,
+  unit,
+  date: COLLECTED,
+  quote: `${test_name} | ${value_text} | ${unit}`,
+  ...more,
+});
+
+/** Rufi AI's sort of the report: one document, three drafts. */
+const SORT = {
+  callsByTurn: [
+    [
+      {
+        id: "sort-aug",
+        tool: "sort_documents",
+        arguments: {
+          document: "$document",
+          documents: [
+            {
+              id: "$document",
+              pages: [1, 2],
+              kind: "lab_report",
+              date: "2026-08-12",
+              lab: "Sunrise Labs",
+            },
+          ],
+          drafts: [
+            draft(1, "Haemoglobin", "13.2", "g/dL"),
+            draft(1, "Platelet count", "2.1", "lakh/µL", {
+              reference_range: "1.5-4.1",
+              worth_a_look: "the decimal point is faint",
+            }),
+            draft(2, "Haemoglobin", "13.2", "g/dL"),
+          ],
+        },
+      },
+    ],
+  ],
 };
 
-test("checks a report against its pages: unsure only, a fix, a fix from another tab, then the chat", async ({
+test("checks a report against its pages: worth a look only, a fix, a fix from another tab, then the chat", async ({
   page,
   rufi,
   context,
@@ -37,13 +83,13 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
     async (turn) => {
       await turn.look(1);
       const first = readPage("13.2");
-      await turn.save(1, { ...first, items: [...first.items, PLATELETS] });
-      await turn.look(2);
-      const second = readPage("13.2");
-      await turn.save(2, {
-        ...second,
-        items: [...second.items, { ...second.items[0], column: "earlier" }],
+      await turn.save(1, {
+        ...first,
+        // A row the reader wrote as HTML: its quote is the row's words.
+        copy: `${first.copy}\n\n<table><tr><td>Platelet count</td><td><strong>2.1</strong></td><td>lakh/µL</td><td>1.5-4.1</td></tr></table>`,
       });
+      await turn.look(2);
+      await turn.save(2, readPage("13.2"));
       return undefined;
     },
   ]);
@@ -51,7 +97,7 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
     `DELETE FROM record_sources; DELETE FROM results; DELETE FROM reports;
      DELETE FROM document_pages; DELETE FROM documents;`,
   );
-  await rufi.start({ reader: reader.run });
+  await rufi.start({ reader: reader.run, scenario: SORT });
   await page.goto(rufi.link());
   await page.getByRole("link", { name: "Documents" }).click();
   await page.getByLabel("Choose documents", { exact: true }).setInputFiles({
@@ -63,27 +109,29 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
     page.getByRole("cell", { name: /Not saved · 3 results/ }),
   ).toBeVisible({ timeout: 10_000 });
 
-  // Items beside the page; a row shows its page.
+  // Items beside the page; a row shows its page and the words it came from.
   await page.getByRole("link", { name: "sunrise-labs-august.pdf" }).click();
   const items = page.getByRole("region", { name: "Items" });
   const shown = page.getByRole("region", { name: "Page" });
-  // An earlier column's value is a row of its own, not a result.
-  await expect(items).toContainText("3 results · 1 earlier · 1 unsure");
-  await expect(items).toContainText("Page 2 · read · 2 items");
-  await expect(items.getByRole("row", { name: /earlier/ })).toHaveCount(1);
+  await expect(items).toContainText("3 results · 1 worth a look");
+  await expect(items).toContainText("Page 2 · read · 1 item");
+  await expect(items).toContainText(
+    "From the page: “Platelet count | 2.1 | lakh/µL”",
+  );
+  await expect(items).not.toContainText("<td>");
   await expect(shown.getByRole("img", { name: "Page 1 of 2" })).toBeVisible();
   await items.getByRole("button", { name: "Haemoglobin" }).nth(1).click();
   await expect(shown.getByRole("img", { name: "Page 2 of 2" })).toBeVisible();
   await accessible(page);
 
-  // Unsure only.
-  await items.getByLabel("Unsure only (1)").check();
+  // Worth a look only.
+  await items.getByLabel("Worth a look only (1)").check();
   await expect(items.getByRole("button", { name: "Haemoglobin" })).toHaveCount(
     0,
   );
-  await expect(items).toContainText("the decimal point is faint");
+  await expect(items).toContainText("Worth a look: the decimal point is faint");
 
-  // A fix keeps the reader's value.
+  // A fix keeps the drafted value.
   await items.getByRole("button", { name: "Platelet count" }).click();
   await items.getByRole("button", { name: "Fix" }).click();
   const form = items.getByRole("form", { name: "Fix Platelet count" });
@@ -91,7 +139,7 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
   await form.getByRole("button", { name: "Save fix" }).click();
   await expect(form).toHaveCount(0);
   await expect(items).toContainText("2.7 lakh/µL");
-  await expect(items).toContainText("The reader read: value 2.1");
+  await expect(items).toContainText("Drafted: value 2.1");
   await expect(items).toContainText("fixed by you");
 
   // Another tab fixes it first, including a field this person didn't edit.
@@ -244,25 +292,22 @@ test("checks a report against its pages: unsure only, a fix, a fix from another 
 });
 
 /**
- * Three draft items read from page 1 of Asha's August report; the person
- * fixed the first one's value (the reader read 13.2).
+ * Three drafts Rufi AI wrote from page 1 of Asha's August report; the person
+ * fixed the first one's value (drafted as 13.2).
  */
 const DRAFTS = `
-  INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at)
-    VALUES ('job-aug', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1,2]', '2026-10-01T09:00:00Z');
-  UPDATE document_pages SET state = 'read', entry_job_id = 'job-aug',
-    entry = '{"outcome":"read","facts":{"issuer":"Sunrise Labs","dates":[{"label":"Collected","date":"12 Aug 2026","iso":"2026-08-12"}]},"items":[]}'
+  INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, sorted_at, created_at)
+    VALUES ('job-aug', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1,2]', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
+  UPDATE document_pages SET state = 'read', entry_job_id = 'job-aug'
     WHERE document_id = 'doc-asha-aug';
-  UPDATE document_pages
-    SET entry = json_set(entry, '$.items', json('[{"test_name":"Test 1","value_text":"13.2"},{"test_name":"Test 2","value_text":"2"},{"test_name":"Test 3","value_text":"3"}]'))
-    WHERE document_id = 'doc-asha-aug' AND position = 1;
-  UPDATE documents SET version = 1 WHERE id = 'doc-asha-aug';
-  INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, version, fields, original, created_at)
+  UPDATE documents SET version = 1, kind = 'lab_report', issuer = 'Sunrise Labs', date = '2026-08-12'
+    WHERE id = 'doc-asha-aug';
+  INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, version, fields, original, quote, created_at)
   SELECT 'drf-' || n, 'asha', 'doc-asha-aug', 1, n, 'job-aug', 'lab_result',
     CASE n WHEN 1 THEN 2 ELSE 1 END,
-    json_object('test_name', 'Test ' || n, 'value_text', CASE n WHEN 1 THEN '13.4' ELSE '' || n END),
-    json_object('test_name', 'Test ' || n, 'value_text', CASE n WHEN 1 THEN '13.2' ELSE '' || n END),
-    '2026-10-01T09:00:00Z'
+    json_object('test_name', 'Test ' || n, 'value_text', CASE n WHEN 1 THEN '13.4' ELSE '' || n END, 'date', json('{"label":"Collected","date":"12 Aug 2026","iso":"2026-08-12"}')),
+    json_object('test_name', 'Test ' || n, 'value_text', CASE n WHEN 1 THEN '13.2' ELSE '' || n END, 'date', json('{"label":"Collected","date":"12 Aug 2026","iso":"2026-08-12"}')),
+    'Test ' || n || ' | ' || CASE n WHEN 1 THEN '13.2' ELSE '' || n END, '2026-10-01T09:00:00Z'
   FROM (SELECT 1 AS n UNION SELECT 2 UNION SELECT 3);
 `;
 
@@ -276,9 +321,7 @@ test("the list stays Not saved while an earlier value waits, then shows Saved wh
      UPDATE draft_items SET fields = json_set(fields, '$.column', 'earlier'),
        original = json_set(original, '$.column', 'earlier')
        WHERE id = 'drf-2';
-     UPDATE document_pages
-       SET entry = json_set(json_remove(entry, '$.items[2]'), '$.items[1].column', 'earlier')
-       WHERE document_id = 'doc-asha-aug' AND position = 1;`,
+`,
   );
   await rufi.start({
     scenario: {
@@ -368,7 +411,9 @@ test("once nothing waits, the page says its results were saved to the health rec
     "What the reader read, not saved. These become part of your health record only when you save them in the chat.";
   const inRecord = "These results were saved to your health record.";
   await expect(page.getByText(waiting)).toBeVisible();
-  await expect(items).toContainText("3 results · 0 unsure · 1 fixed by you");
+  await expect(items).toContainText(
+    "3 results · 0 worth a look · 1 fixed by you",
+  );
   await expect(page.getByText("Not saved yet: 3 results.")).toBeVisible();
   await expect(save).toBeVisible();
 
@@ -421,7 +466,7 @@ test("once nothing waits, the page says its results were saved to the health rec
   // What was saved is the person's fix, shown beside the reader's value.
   const read = reading.getByRole("row").filter({ hasText: "Test 1" });
   await expect(read.getByRole("cell").nth(1)).toHaveText("13.4");
-  await expect(read).toContainText("The reader read: value 13.2");
+  await expect(read).toContainText("Drafted: value 13.2");
   await expect(read).toContainText("fixed by you");
   await page.keyboard.press("Escape");
   await page.unrouteAll({ behavior: "wait" });

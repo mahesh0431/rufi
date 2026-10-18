@@ -64,8 +64,11 @@ describe("adding documents", () => {
         addedAt: "2026-10-10T09:00:00.000Z",
         kind: null,
         date: null,
+        lab: null,
+        place: null,
         status: "not_read",
         reading: null,
+        sorting: null,
         files: [
           {
             id: "7f4a70ccb858d23ee1cce44693bc2c009abb14604f0f3dbd48470639d6928b54",

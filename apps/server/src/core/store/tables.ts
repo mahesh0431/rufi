@@ -47,6 +47,7 @@ export interface Tables {
     state: string;
     held: string | null;
     held_text: string | null;
+    hold_id: string | null;
     sent_as: string | null;
     turn_id: string | null;
     created_at: string;
@@ -63,6 +64,9 @@ export interface Tables {
     thread_tools: string | null;
     paused: string | null;
     revision: number;
+    context_tokens: number | null;
+    context_window: number | null;
+    context_thread: string | null;
     created_at: string;
   };
   conditions: {
@@ -100,9 +104,12 @@ export interface Tables {
     added_from: string;
     kind: string | null;
     date: string | null;
+    issuer: string | null;
+    report_number: string | null;
     reader_note: string | null;
     version: number;
     deleted_at: string | null;
+    from_document: string | null;
   };
   draft_items: {
     id: string;
@@ -117,6 +124,8 @@ export interface Tables {
     fields: string;
     original: string;
     unsure: string;
+    quote: string | null;
+    report: string | null;
     saved_as: string | null;
     record_kind: string | null;
     record_id: string | null;
@@ -171,6 +180,7 @@ export interface Tables {
     error: string | null;
     usage: string | null;
     reader: string | null;
+    sorted_at: string | null;
     created_at: string;
   };
   medicine_uses: {
@@ -205,6 +215,17 @@ export interface Tables {
     request: string;
     warnings: string;
     created_at: string;
+  };
+  page_copies: {
+    person_id: string;
+    file_id: string;
+    page_in_file: number;
+    job_id: string;
+    attempt: number;
+    outcome: string;
+    copy: string;
+    why: string | null;
+    saved_at: string;
   };
   people: {
     id: string;
@@ -278,6 +299,21 @@ export interface Tables {
   settings: {
     key: string;
     value: string;
+  };
+  sort_requests: {
+    id: string;
+    person_id: string;
+    document_id: string;
+    job_id: string | null;
+    state: string;
+    queue_id: string | null;
+    tries: number;
+    retry_at: string | null;
+    error: string | null;
+    call_id: string | null;
+    answer: string | null;
+    created_at: string;
+    ended_at: string | null;
   };
   symptoms: {
     id: string;

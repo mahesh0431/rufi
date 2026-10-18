@@ -11,6 +11,10 @@ export const BriefSource = Schema.Struct({
   from: Schema.String,
   /** A save changed this record after the brief cited it. */
   changedSince: Schema.Boolean,
+  /** The record to open: this one, or the result that amends it now; null once removed. */
+  record: Schema.NullOr(
+    Schema.Struct({ kind: Schema.String, id: Schema.String }),
+  ),
 });
 export type BriefSource = typeof BriefSource.Type;
 

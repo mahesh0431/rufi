@@ -1,4 +1,11 @@
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -7,6 +14,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ChatGptError } from "../src/agent/chatgpt/openai.ts";
 import {
   HarnessTimeout,
+  onScratch,
   outFolder,
   runAll,
   sharedToken,
@@ -131,6 +139,53 @@ describe("the output folder", () => {
     expect(await outFolder("smoke", dir)).toBe(dir);
     await writeFile(join(dir, "report.md"), "an earlier run\n");
     await expect(outFolder("smoke", dir)).rejects.toThrow(/isn't empty/);
+  });
+});
+
+describe("a case's scratch data folder", () => {
+  /**
+   * A case that writes a fictional record in its folder, then ends as `how`;
+   * a case that passes writes its transcript to an output folder that's
+   * gone.
+   */
+  const play = (how: "passes" | "fails" | "can't save its transcript") =>
+    onScratch(
+      "rufi-smoke-",
+      async (home) => {
+        await writeFile(join(home, "rufi.db"), "a fictional record");
+        if (how === "can't save its transcript") {
+          await writeFile(join(`${home}-gone`, "case.md"), "AI: …");
+        }
+        return { home, passed: how !== "fails" };
+      },
+      (result) => result.passed,
+    );
+  const record = (home: string) => readFile(join(home, "rufi.db"), "utf8");
+
+  it("goes once its case has passed", async () => {
+    const { result, kept } = await play("passes");
+    expect(kept).toBeUndefined();
+    await expect(access(result.home)).rejects.toThrow(/ENOENT/);
+  });
+
+  it("stays, with what the case wrote, when the case didn't pass", async () => {
+    const { result, kept } = await play("fails");
+    expect(kept).toBe(result.home);
+    expect(await record(result.home)).toBe("a fictional record");
+  });
+
+  it("stays when the case's transcript couldn't be saved, and the error names it", async () => {
+    const error: unknown = await play("can't save its transcript").catch(
+      (e: unknown) => e,
+    );
+    expect(error).toMatchObject({
+      message: expect.stringMatching(
+        /^ENOENT: .* \(data folder: .*rufi-smoke-\w+\)$/,
+      ) as unknown,
+      cause: { code: "ENOENT" },
+    });
+    const home = /data folder: (.*)\)$/.exec((error as Error).message)?.[1];
+    expect(await record(home ?? "")).toBe("a fictional record");
   });
 });
 

@@ -209,10 +209,6 @@ export const pageOf = (row: RecordRow): PageKind | undefined => {
   return isPageKind(row.kind) ? row.kind : undefined;
 };
 
-/** The kind of record a page's rows are. */
-const rowKindOf = (kind: PageKind) =>
-  kind === "lab_result" || kind === "measurement" ? "result" : kind;
-
 /** A row as a chip in the chat box. */
 export const chipOf = (row: RecordRow): BoxChip => ({
   pointer: { type: "record", kind: row.kind, id: row.id },
@@ -272,9 +268,7 @@ export function RecordPage({
   opened?: string;
 }) {
   const pages = useRecordPages(person.id, kind);
-  const [open, setOpen] = useState<string | null>(
-    opened === undefined ? null : `${rowKindOf(kind)}:${opened}`,
-  );
+  const [open, setOpen] = useState<string | null>(null);
   const sought = useRef(opened);
   const more = useRef<HTMLButtonElement | null>(null);
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = pages;
@@ -297,25 +291,27 @@ export function RecordPage({
     };
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  // The row asked for: more pages until it is loaded, then into view, once.
+  // The row asked for: more pages until it is loaded, then open and into
+  // view, once, by its own kind (Allergies also shows a statement).
   const loaded = pages.data?.pages;
   useEffect(() => {
     const id = sought.current;
     if (id === undefined || loaded === undefined) return;
-    const there = loaded.some((page) =>
-      page.groups.some((group) => group.rows.some((row) => row.id === id)),
-    );
+    const there = loaded
+      .flatMap((page) => page.groups.flatMap((group) => group.rows))
+      .find((row) => row.id === id);
     if (there) {
       sought.current = undefined;
+      setOpen(`${there.kind}:${id}`);
       document
-        .getElementById(rowElementId(rowKindOf(kind), id))
+        .getElementById(rowElementId(there.kind, id))
         ?.scrollIntoView({ block: "center" });
     } else if (!hasNextPage) {
       sought.current = undefined;
     } else if (!isFetchingNextPage) {
       void fetchNextPage();
     }
-  }, [loaded, kind, hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [loaded, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   if (pages.data === undefined) {
     return (
