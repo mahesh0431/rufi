@@ -201,6 +201,14 @@ export type RecordGroup = typeof RecordGroup.Type;
 export const RecordPage = Schema.Struct({
   groups: Schema.Array(RecordGroup),
   next: Schema.NullOr(Schema.String),
+  /**
+   * On a results page, a row's small trend, by the row's id: the latest
+   * values of its series up to it, oldest first, a few at most, each with a
+   * date and a number. Only for a row with two or more.
+   */
+  trends: Schema.optionalKey(
+    Schema.Record(Schema.String, Schema.Array(ResultRow)),
+  ),
 });
 export type RecordPage = typeof RecordPage.Type;
 

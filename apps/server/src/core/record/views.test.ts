@@ -110,13 +110,61 @@ describe("what is current", () => {
     );
   });
 
-  it("reads only the person's own rows", async () => {
+  it("reads only the person's own rows, and only their current values in a row's small trend, also after an undo", async () => {
     expect(await views.detail("asha", "result", "res-r1")).toBeUndefined();
     expect(
       await views.detail("asha", "no_such_kind", "res-a1"),
     ).toBeUndefined();
     const ravi = await views.page("ravi", "lab_result");
     expect(idsOf(ravi)).toEqual(["res-r1", "res-r2"]);
+
+    // Both have ferritin, in the same unit, on the same days.
+    const ferritin = ["asha", "ravi"].flatMap((person) =>
+      [1, 2, 3, 4].map(
+        (month) =>
+          `('${person}-fer-${String(month)}', '${person}', 'lab', 'Ferritin', '${String(20 + month)}', ${String(20 + month)}, 'µg/L', '2026-0${String(month)}-15', '2026-10-01T10:00:00Z', NULL)`,
+      ),
+    );
+    store.db.exec(`
+      INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, measured_at, entered_at, replaces_id) VALUES
+        ${ferritin.join(",\n")};`);
+    const trend = async (person: string, id: string) => {
+      const pages =
+        person === "asha"
+          ? await allPages("lab_result")
+          : [await views.page(person, "lab_result")];
+      return pages
+        .flatMap((page) => page.trends?.[id] ?? [])
+        .map((value) => value.id);
+    };
+    const whole = ["asha-fer-1", "asha-fer-2", "asha-fer-3", "asha-fer-4"];
+    expect(await trend("asha", "asha-fer-4")).toEqual(whole);
+    expect(await trend("ravi", "ravi-fer-4")).toEqual([
+      "ravi-fer-1",
+      "ravi-fer-2",
+      "ravi-fer-3",
+      "ravi-fer-4",
+    ]);
+
+    // Asha's second value removed, her third amended by the lab.
+    await saveSaid("Remove the February ferritin", [
+      { kind: "result", action: "remove", id: "asha-fer-2" },
+    ]);
+    store.db.exec(`
+      INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, measured_at, entered_at, replaces_id) VALUES
+        ('asha-fer-3b', 'asha', 'lab', 'Ferritin', '24', 24, 'µg/L', '2026-03-15', '2026-10-02T10:00:00Z', 'asha-fer-3');`);
+    expect(await trend("asha", "asha-fer-4")).toEqual([
+      "asha-fer-1",
+      "asha-fer-3b",
+      "asha-fer-4",
+    ]);
+
+    // Undone: the amendment taken off, the removed value put back.
+    await saveSaid("Undo those", [
+      { kind: "result", action: "remove", id: "asha-fer-3b" },
+      { kind: "result", action: "restore", id: "asha-fer-2" },
+    ]);
+    expect(await trend("asha", "asha-fer-4")).toEqual(whole);
   });
 });
 
@@ -384,6 +432,55 @@ describe("series", () => {
     ]);
     const other = await views.series("asha", "TSH", "mIU/L", "measurement");
     expect(other.values.map((value) => value.id)).toEqual(["tsh-moved"]);
+  });
+});
+
+describe("a row's small trend", () => {
+  it("has its series' latest values up to it, read for the whole page, with a date and a number", async () => {
+    // Eight ferritin values typed in, one a month apart, one not a number,
+    // one in another unit, and one on the other page.
+    const months = Array.from({ length: 8 }, (_, i) => {
+      const month = String(i + 1).padStart(2, "0");
+      return `('fer-${month}', 'asha', 'lab', 'Ferritin', '${String(20 + i)}', ${String(20 + i)}, 'µg/L', '30 - 400', '2025-${month}-15', '2025-12-01T10:00:00Z')`;
+    });
+    store.db.exec(`
+      INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, reference_range, measured_at, entered_at) VALUES
+        ${months.join(",\n")},
+        ('fer-word', 'asha', 'lab', 'Ferritin', 'Haemolysed', NULL, 'µg/L', NULL, '2025-09-15', '2025-12-01T10:00:00Z'),
+        ('fer-unit', 'asha', 'lab', 'Ferritin', '2.6', 2.6, 'nmol/L', NULL, '2025-10-15', '2025-12-01T10:00:00Z'),
+        ('fer-meas', 'asha', 'measurement', 'Ferritin', '25', 25, 'µg/L', NULL, '2025-11-15', '2025-12-01T10:00:00Z');`);
+    const trends = Object.assign(
+      {},
+      ...(await allPages("lab_result")).map((page) => page.trends),
+    ) as Record<string, { id: string }[]>;
+    const ids = (id: string) => trends[id]?.map((value) => value.id);
+    // The newest: the six latest values, oldest first, ending at it.
+    expect(ids("fer-08")).toEqual([
+      "fer-03",
+      "fer-04",
+      "fer-05",
+      "fer-06",
+      "fer-07",
+      "fer-08",
+    ]);
+    // An older row's trend ends at its own value.
+    expect(ids("fer-02")).toEqual(["fer-01", "fer-02"]);
+    // The first value alone, a word, another unit alone: no trend.
+    expect(trends["fer-01"]).toBeUndefined();
+    expect(trends["fer-word"]).toBeUndefined();
+    expect(trends["fer-unit"]).toBeUndefined();
+    // On Measurements, the weights: one known by its month, then the day.
+    const measured = Object.assign(
+      {},
+      ...(await allPages("measurement")).map((page) => page.trends),
+    ) as Record<string, { id: string }[]>;
+    expect(measured["res-a10"]?.map((value) => value.id)).toEqual([
+      "res-a11",
+      "res-a10",
+    ]);
+    expect(measured["fer-meas"]).toBeUndefined();
+    // Other pages have none.
+    expect((await views.page("asha", "medicine_use")).trends).toBeUndefined();
   });
 });
 
