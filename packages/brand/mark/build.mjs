@@ -5,7 +5,8 @@
 // Run after changing rufi.js or motion.css: pnpm --filter @rufi/brand regenerate
 // (assets/ is kept in git; never edit it by hand). The PNGs need Chromium through
 // Playwright; without it this stops before it touches assets/. Everything is made
-// in a new folder first and takes the place of assets/ only when all of it is made.
+// in a new folder first and takes the place of assets/ only when all of it is made; meanwhile the old assets/ waits
+// beside it as assets.old-<pid>, so a build stopped halfway leaves it there to put back.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -72,6 +73,17 @@ try {
 }
 await browser.close();
 
-fs.rmSync(OUT, { recursive: true, force: true });
-fs.renameSync(NEW, OUT);
+// The old assets/ steps aside, the new one moves in, and only then does the old one go; if the move fails, the old
+// one comes back.
+const OLD = path.join(here, `assets.old-${process.pid}`);
+if (fs.existsSync(OUT)) fs.renameSync(OUT, OLD);
+try {
+  fs.renameSync(NEW, OUT);
+} catch (cause) {
+  if (fs.existsSync(OLD)) fs.renameSync(OLD, OUT);
+  console.error(`No assets made: the new ones couldn't take the place of assets/, which is as it was. They are in ${NEW}.`);
+  console.error(cause);
+  process.exit(1);
+}
+fs.rmSync(OLD, { recursive: true, force: true });
 console.log('assets/ written: svg/, png/, favicon/');

@@ -220,14 +220,16 @@ function follow(svgEl, { max = 18, expression = 'calm' } = {}) {
 // Use it on an <svg> made by svg() with the pill eyes: const r = live(el, { expression: 'calm' }); r.set('thinking'); r.stop().
 // Every number of the eyes, the mouth and the gaze is a spring that moves toward its target, so a change of expression, a blink or a
 // look at the pointer can start at any moment and still look smooth. The ears and the whole mark keep their CSS moves (motion.css);
-// when they change, the old pose blends into the new move. With reduced motion the face changes at once and does nothing by itself.
+// when they change, the old pose blends into the new move. With reduced motion the face changes at once and does nothing by itself,
+// also when the setting changes while the face is shown: it settles, and moves again when the setting is turned off.
 const EYE_MOVES = new Set(['blink', 'blink2', 'look', 'read', 'happy', 'wink', 'sleepy', 'wide']);   // live() does these itself
 const SPEED = { eyes: 17, blink: 55, open: 26, mouth: 13, gaze: 17 };   // how fast each part follows (higher is faster)
 function live(svgEl, { expression = 'calm', pointer = true, max = 18 } = {}) {
   const paths = [...svgEl.querySelectorAll('.eye-shape')], mouth = svgEl.querySelector('.mouth'), feat = svgEl.querySelector('.feat');
   const eyesG = svgEl.querySelector('.eyes'), signs = svgEl.querySelector('.signs');
   if (paths.length !== 2 || !mouth) return { set() {}, stop() {} };
-  const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduce = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : undefined;
+  let still = reduce?.matches ?? false;
   const KE = ['w', 't', 'b', 'd', 'k', 'lid', 'tilt'], KM = ['cw', 'yc', 'yb', 'f'];
   const ch = (v, w, z = 1) => ({ x: v, v: 0, to: v, w, z });   // one number; w: how fast, z: damping (1 = no overshoot)
   const E = formsOf('open').map((f) => Object.fromEntries(KE.map((k) => [k, ch(f[k], SPEED.eyes)])));
@@ -281,6 +283,13 @@ function live(svgEl, { expression = 'calm', pointer = true, max = 18 } = {}) {
     if (x.sign) signs.insertAdjacentHTML('beforeend', sign(x.sign, signs.dataset.c, !!signs.dataset.tile));
   }
 
+  // the face's own moves (thinking, glances, blinks): none while still
+  function loops() {
+    if (x.gaze === 'think' && !still) thinkLoop(); else look(rest());
+    if (x.gaze === 'follow' && !still) glanceLoop();
+    if (x.blink && !still) blinkLoop();
+  }
+
   function set(name) {
     x = EXPRESSIONS[name] || EXPRESSIONS.calm;
     timers.forEach(clearTimeout); timers = [];
@@ -288,10 +297,18 @@ function live(svgEl, { expression = 'calm', pointer = true, max = 18 } = {}) {
     const base = () => { eyesTo(x.eyeForm); mouthTo(x.mouth); };
     if (x.enter && !still) { eyesTo(x.enter.eyeForm || x.eyeForm, SPEED.open, x.enter.bounce ? 0.45 : 1); mouthTo(x.enter.mouth || x.mouth); later(x.enter.ms, () => eyesTo(x.eyeForm, SPEED.eyes, x.enter.bounce ? 0.6 : 1)); later(x.enter.ms, () => mouthTo(x.mouth)); }
     else base();
-    if (x.gaze === 'think' && !still) thinkLoop(); else look(rest());
-    if (x.gaze === 'follow' && !still) glanceLoop();
-    if (x.blink && !still) blinkLoop();
+    loops();
   }
+
+  // reduced motion turned on or off while the face is shown: everything pending stops, the face settles in the
+  // expression's pose, and its own moves start again only when motion is allowed
+  const onReduce = () => {
+    still = reduce.matches;
+    timers.forEach(clearTimeout); timers = []; clearTimeout(move.t); shut = false;
+    eyesTo(x.eyeForm); mouthTo(x.mouth);
+    loops();
+  };
+  reduce?.addEventListener('change', onReduce);
 
   // the pointer, as follow() does it
   const move = (ev) => {
@@ -326,7 +343,7 @@ function live(svgEl, { expression = 'calm', pointer = true, max = 18 } = {}) {
   return {
     set,
     get expression() { return Object.keys(EXPRESSIONS).find((k) => EXPRESSIONS[k] === x); },
-    stop() { cancelAnimationFrame(raf); timers.forEach(clearTimeout); clearTimeout(move.t); removeEventListener('pointermove', move); },
+    stop() { cancelAnimationFrame(raf); timers.forEach(clearTimeout); clearTimeout(move.t); removeEventListener('pointermove', move); reduce?.removeEventListener('change', onReduce); },
   };
 }
 

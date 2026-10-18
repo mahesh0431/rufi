@@ -1,7 +1,14 @@
 // The Rufi app bundle's icon on the Mac: made from the dog on a first start,
 // left as it is while the dog is the same, and made again in a cached bundle
 // when the dog changes. Runs the Mac's own converter (sips), so Mac only.
-import { mkdir, mkdtemp, readFile, stat } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,6 +40,19 @@ it.runIf(process.platform === "darwin")(
     );
     expect(changed).not.toBe(ICON);
     await bundleIcon(bundle, changed);
-    expect(await readFile(icns)).not.toEqual(first);
+    const second = await readFile(icns);
+    expect(second).not.toEqual(first);
+
+    // A picture the converter can't read: the bundle keeps its icon.
+    const broken = join(bundle, "not-a-picture.png");
+    await writeFile(broken, "not a picture");
+    await expect(bundleIcon(bundle, broken)).rejects.toThrow(
+      "the bundle keeps the icon it had",
+    );
+    expect(await readFile(icns)).toEqual(second);
+    expect(await readdir(join(bundle, "Contents/Resources"))).toEqual([
+      "electron.icns",
+      "rufi-icon.sha256",
+    ]);
   },
 );
