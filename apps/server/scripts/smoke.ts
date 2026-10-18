@@ -7,14 +7,15 @@
 // needs a person's verdict (a part code can't check) or INFRA (a timeout, a
 // usage limit, the sign-in, the provider). Nothing is run again by itself.
 // Every case also checks that each reply completed with words. Anything but
-// passed or a person's verdict makes the exit code nonzero.
+// passed or a person's verdict makes the exit code nonzero. A case's data
+// folder goes once it has passed or waits only for a person's verdict; any
+// other case's stays in the Mac's temporary folder, and its line names it.
 //
 //   RUFI_HOME=<test sign-in folder> pnpm smoke [--only a,b] [--jobs n] [--out empty-dir]
 import { randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { parseArgs } from "node:util";
 import { DatabaseSync } from "node:sqlite";
@@ -27,6 +28,7 @@ import { everyTurnAnswered } from "./answered.ts";
 import {
   HarnessTimeout,
   outFolder,
+  onScratch,
   runAll,
   sharedToken,
   statusOf,
@@ -50,6 +52,8 @@ import { agentSetup, startCore, type Core } from "../src/server/core.ts";
 import { FAMILY, familyFiles } from "../tests/fixtures/golden.ts";
 import { textPdf } from "../tests/pack/pdf.ts";
 import { layout, PRESCRIPTION, REPORTS } from "../tests/pack/reports.ts";
+import { copySetFiles, EXPECTED } from "../tests/pack/copy-set.ts";
+import { comparable } from "../src/core/documents/sorting.ts";
 import type { Text } from "../tests/pack/pdf.ts";
 import { subAgentRunner } from "../src/agent/codex/subagent.ts";
 
@@ -628,7 +632,8 @@ async function readReport(
 
 /**
  * Adds a fictional document of these pages (Rufi reads it at once), waits
- * for its reading to end, and gives the document's id.
+ * for its reading to end and Rufi AI's sort of it, and gives the id of
+ * the document as added.
  */
 async function readDocument(
   api: Api,
@@ -636,32 +641,59 @@ async function readDocument(
   name: string,
   pages: Text[][],
 ): Promise<string> {
-  const c = chat(api);
   await api.upload([{ name, bytes: textPdf(pages) }]);
+  return (await sorted(api, home, [name]))[0] ?? "";
+}
+
+/**
+ * Waits for each file's reading to end and, when it asked for one, Rufi
+ * AI's sort of it to end (sorted, or an answer that asks the user), with no
+ * turn running; gives the id of each file's document as added.
+ */
+async function sorted(
+  api: Api,
+  home: string,
+  names: readonly string[],
+): Promise<string[]> {
+  const c = chat(api);
   for (let i = 0; ; i++) {
     const { entries } = await c.read();
     const lines = entries.filter((e) => e.kind === "event").map((e) => e.text);
-    if (i > 720)
+    if (i > 1440)
       throw new HarnessTimeout(
-        `the reading took over six minutes: ${lines.join("; ")}`,
+        `the reading and its sort took over twelve minutes: ${lines.join("; ")}`,
       );
-    if (
-      lines.some((l) =>
-        /^(Lab report|Prescription|Letter|Document|Couldn't)/.test(l),
-      )
-    )
-      break;
+    const ended = names.every((name) =>
+      lines.some(
+        (l) =>
+          l.includes(name) &&
+          (l.endsWith("Rufi AI is sorting it.") || l.startsWith("Couldn't")),
+      ),
+    );
+    if (ended) {
+      const store = openReadOnly(databasePath(home));
+      const waiting = store?.db
+        .prepare(
+          "SELECT (SELECT count(*) FROM sort_requests WHERE state = 'open') + (SELECT count(*) FROM turns WHERE status = 'running') AS n",
+        )
+        .get() as { n: number } | undefined;
+      store?.close();
+      if (waiting?.n === 0) break;
+    }
     await sleep(500);
   }
-  // A reading that needs the user gives the AI a note in the same write as
-  // the line: a message sent with say() waits until its reply has ended.
   const store = openReadOnly(databasePath(home));
-  const row = store?.db
-    .prepare("SELECT document_id AS id FROM document_pages WHERE file_name = ?")
-    .get(name) as { id: string } | undefined;
+  const ids = names.map((name) => {
+    const row = store?.db
+      .prepare(
+        "SELECT COALESCE(d.from_document, d.id) AS id FROM document_pages p JOIN documents d ON d.person_id = p.person_id AND d.id = p.document_id WHERE p.file_name = ? ORDER BY p.position LIMIT 1",
+      )
+      .get(name) as { id: string } | undefined;
+    if (!row) throw new Error(`no document ${name}`);
+    return row.id;
+  });
   store?.close();
-  if (!row) throw new Error(`no document ${name}`);
-  return row.id;
+  return ids;
 }
 
 /** A document's draft items, as stored now. */
@@ -1360,8 +1392,8 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     const snapshot = await c.read();
     return {
       checks: {
-        // The same thread: the AI has the whole chat, nothing started afresh.
-        same_thread: snapshot.turns.every((turn) => !turn.afresh),
+        // The same thread: the AI has the whole chat, no new thread.
+        same_thread: snapshot.turns.every((turn) => !turn.newThread),
         new_model: snapshot.turns.at(-1)?.model === "gpt-6.1-sol",
       },
       verdicts: [
@@ -1424,6 +1456,144 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     };
   },
   /**
+   * Rufi AI sorts the copy set as it is read: mixed.pdf into its two
+   * reports and its prescription, the photo (the first report again) as a
+   * document of its own, each draft on its page with the value printed,
+   * the unclear and crossed-out ones worth a look, and nothing saved.
+   */
+  sorts_the_copy_set: async (api, home) => {
+    const c = chat(api);
+    const files = await copySetFiles();
+    await api.upload([files.mixed]);
+    await api.upload([files.photo]);
+    const [mixed = "", photo = ""] = await sorted(api, home, [
+      files.mixed.name,
+      files.photo.name,
+    ]);
+    const snapshot = await c.read();
+    const store = openReadOnly(databasePath(home));
+    const made = (store?.db
+      .prepare(
+        `SELECT COALESCE(d.from_document, d.id) AS add_id, d.id, d.kind, d.date, d.issuer, d.report_number,
+           (SELECT json_group_array(position) FROM (SELECT position FROM document_pages q WHERE q.person_id = d.person_id AND q.document_id = d.id ORDER BY position)) AS pages
+         FROM documents d WHERE d.person_id = 'asha' AND d.deleted_at IS NULL AND COALESCE(d.from_document, d.id) IN (?, ?)`,
+      )
+      .all(mixed, photo) ?? []) as {
+      add_id: string;
+      kind: string | null;
+      date: string | null;
+      issuer: string | null;
+      report_number: string | null;
+      pages: string;
+    }[];
+    const drafted = (store?.db
+      .prepare(
+        `SELECT COALESCE(d.from_document, d.id) AS add_id, i.page, i.fields, i.unsure, i.quote
+         FROM draft_items i JOIN documents d ON d.person_id = i.person_id AND d.id = i.document_id
+         WHERE i.person_id = 'asha' AND COALESCE(d.from_document, d.id) IN (?, ?)`,
+      )
+      .all(mixed, photo) ?? []) as {
+      add_id: string;
+      page: number;
+      fields: string;
+      unsure: string;
+      quote: string | null;
+    }[];
+    store?.close();
+    const fileOf = (add: string) => (add === mixed ? "mixed" : "photo");
+    const documents = made.map((d) => ({
+      file: fileOf(d.add_id),
+      kind: d.kind,
+      date: d.date,
+      pages: JSON.parse(d.pages) as number[],
+      lab: d.issuer,
+    }));
+    const drafts = drafted.map((d) => {
+      const fields = JSON.parse(d.fields) as {
+        test_name: string;
+        value_text: string;
+        date?: { iso?: string };
+      };
+      return {
+        file: fileOf(d.add_id),
+        page: d.page,
+        test: fields.test_name,
+        value: fields.value_text,
+        date: fields.date?.iso,
+        why: (JSON.parse(d.unsure) as string[]).join("; "),
+        quote: d.quote,
+      };
+    });
+    const found = (want: (typeof EXPECTED.drafts)[number]) =>
+      drafts.find(
+        (d) =>
+          d.file === want.file &&
+          d.page === want.page &&
+          d.test.toLowerCase() === want.test.toLowerCase(),
+      );
+    const key = (d: { file: string; pages: readonly number[] }) =>
+      `${d.file}:${d.pages.join(",")}`;
+    return {
+      checks: {
+        documents_as_split:
+          documents.map(key).sort().join(" ") ===
+          EXPECTED.documents.map(key).sort().join(" "),
+        kinds_and_dates: EXPECTED.documents.every((want) =>
+          documents.some(
+            (d) =>
+              key(d) === key(want) &&
+              d.kind === want.kind &&
+              d.date === want.date,
+          ),
+        ),
+        every_draft_made: EXPECTED.drafts.every((want) => {
+          const got = found(want);
+          return (
+            got !== undefined &&
+            [want.value, ...(want.or ?? [])].includes(got.value) &&
+            got.date === want.date
+          );
+        }),
+        // As the record keeps them: characters, no HTML, Markdown or the
+        // reader's marks (those stay in the quote).
+        values_as_saved: drafts.every(
+          (d) => comparable(d.value) === d.value && !/[[\]?]/.test(d.value),
+        ),
+        only_current_values: drafts.length === EXPECTED.drafts.length,
+        worth_a_look_where_unclear: EXPECTED.drafts
+          .filter((want) => want.look !== undefined)
+          .every((want) => (found(want)?.why ?? "") !== ""),
+        each_from_its_page: drafts.every((d) => (d.quote ?? "") !== ""),
+        nothing_saved: nothingSaved(home, snapshot),
+      },
+      verdicts: [
+        {
+          check: "tells_what_it_found",
+          criterion:
+            "Rufi AI's replies in the turns Rufi started say in a few lines what each file holds (two reports and a prescription; the June report again), that nothing is saved, and point at what is worth a look.",
+          evidence: snapshot.entries
+            .filter((e) => e.kind === "reply")
+            .map((e) => e.text)
+            .join("\n\n---\n\n"),
+        },
+        {
+          check: "worth_a_look_reasons",
+          criterion:
+            "Each reason says plainly why the draft is worth a look (the smudged digit of the photo's glucose, the crossed-out TSH), and no plain value has one.",
+          evidence: drafts
+            .filter((d) => d.why !== "")
+            .map(
+              (d) =>
+                `${d.file} p${String(d.page)} ${d.test} ${d.value}: ${d.why}`,
+            )
+            .join("\n"),
+        },
+      ],
+      notes: `Documents:\n${documents.map((d) => `- ${key(d)} ${d.kind ?? "?"} ${d.date ?? "no date"} ${d.lab ?? ""}`).join("\n")}\n\nDrafts:\n${drafts.map((d) => `- ${d.file} p${String(d.page)} ${d.test} = ${d.value} (${d.date ?? "no date"})${d.why !== "" ? ` · worth a look: ${d.why}` : ""} · from “${d.quote ?? ""}”`).join("\n")}`,
+      snapshot,
+    };
+  },
+  /**
    * A real reading while you chat: its lines come, your reply isn't held up,
    * and its question (another name on the report) comes in a turn of its
    * own that can only read.
@@ -1438,17 +1608,8 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     await c.ask(
       "In general, what does a high LDL cholesterol mean? Keep it short.",
     );
-    // The reading's end line, then the reply it asks for.
-    for (let i = 0; i < 360; i++) {
-      const { entries } = await c.read();
-      if (
-        entries.some(
-          (e) => e.kind === "event" && e.text.startsWith("Lab report"),
-        )
-      )
-        break;
-      await sleep(500);
-    }
+    // The reading's end line, then Rufi AI's sort and its reply.
+    await sorted(api, home, ["lotus-sep.pdf"]);
     await c.ended(2);
     const snapshot = await c.read();
     const lines = snapshot.entries
@@ -1461,10 +1622,11 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         start_line: lines.includes("Reading lotus-sep.pdf · 1 page"),
-        end_line: lines.some((l) =>
-          l.startsWith("Lab report · 11 Sep · 8 results read"),
+        end_line: lines.includes(
+          "Read lotus-sep.pdf · 1 page. Rufi AI is sorting it.",
         ),
-        drafts_made: drafts === 8,
+        // Rufi AI sorted it, or asked whose it is first.
+        sorted_or_asked: drafts === 8 || drafts === 0,
         one_message_of_yours:
           snapshot.entries.filter((e) => e.kind === "message").length === 1,
         event_turn: snapshot.turns.length === 2,
@@ -1722,7 +1884,10 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       "DELETE FROM draft_items WHERE document_id = ? AND page = 2",
     ).run(doc);
     db.prepare(
-      "UPDATE document_pages SET entry_checks = NULL, state = 'unreadable', state_why = 'The photo is too blurred to read.', entry = json_object('outcome', 'unreadable', 'why', 'The photo is too blurred to read.', 'items', json('[]')) WHERE document_id = ? AND position = 2",
+      "UPDATE document_pages SET state = 'unreadable', state_why = 'The photo is too blurred to read.' WHERE document_id = ? AND position = 2",
+    ).run(doc);
+    db.prepare(
+      "UPDATE page_copies SET outcome = 'unreadable', copy = '', why = 'The photo is too blurred to read.' WHERE (person_id, file_id, page_in_file) IN (SELECT person_id, file_id, page_in_file FROM document_pages WHERE document_id = ? AND position = 2)",
     ).run(doc);
     db.close();
     const pageOne = draftsOf(home, doc);
@@ -2229,14 +2394,40 @@ const loop = monitorEventLoopDelay({ resolution: 20 });
 loop.enable();
 const started = Date.now();
 
-/** One case on its own scratch data folder and core; its line for the report. */
+/**
+ * One case on its own scratch data folder and core; its line for the
+ * report, after its transcript is written to the output folder. The data
+ * folder goes then if the case passed or waits only for a person's verdict;
+ * otherwise its logs, record and Codex's files stay, and the line names
+ * them.
+ */
 async function runCase(
   name: string,
 ): Promise<{ status: Status; line: string }> {
+  const keeps = (status: Status) =>
+    status !== "passed" && status !== "needs a person's verdict";
+  const { result } = await onScratch(
+    "rufi-smoke-",
+    async (home) => {
+      const { status, why, seconds, outcome } = await playCase(name, home);
+      const line = `${name}: ${status}${why ? ` (${why})` : ""}, ${String(seconds)} s${keeps(status) ? `; data folder: ${home}` : ""}`;
+      console.log(line);
+      await writeFile(
+        join(out, `${name}.md`),
+        `# ${line}\n\n${outcome ? transcriptText(outcome.snapshot) : ""}\n${outcome?.notes === undefined ? "" : `\n${outcome.notes}\n`}${outcome?.verdicts === undefined ? "" : `\n${verdictsText(outcome.verdicts)}`}`,
+      );
+      return { status, line };
+    },
+    ({ status }) => !keeps(status),
+  );
+  return result;
+}
+
+/** Plays case `name` on the data folder `home`: its status and outcome. */
+async function playCase(name: string, home: string) {
   const check = CASES[name];
   if (!check) throw new Error(`no case ${name}`);
   // The fictional family, and the case's own rows.
-  const home = await mkdtemp(join(tmpdir(), "rufi-smoke-"));
   const store = openWritable(databasePath(home));
   store.db.exec(await readFile(FAMILY, "utf8"));
   await familyFiles(home);
@@ -2312,13 +2503,7 @@ async function runCase(
     stalledMs: stalls.max / 1e6,
   });
   const seconds = Math.round((Date.now() - began) / 1000);
-  const line = `${name}: ${result}${why ? ` (${why})` : ""}, ${String(seconds)} s`;
-  console.log(line);
-  await writeFile(
-    join(out, `${name}.md`),
-    `# ${line}\n\n${outcome ? transcriptText(outcome.snapshot) : ""}\n${outcome?.notes === undefined ? "" : `\n${outcome.notes}\n`}${outcome?.verdicts === undefined ? "" : `\n${verdictsText(outcome.verdicts)}`}`,
-  );
-  return { status: result, line };
+  return { status: result, why, seconds, outcome };
 }
 
 const results = await runAll(names, jobs, runCase);

@@ -35,6 +35,8 @@ The page shows when the brief was made, the brief as the AI wrote it, and **Sour
 
 Rufi builds this list itself, from the records the AI cited. A record that Rufi had before it kept sources says **Saved before Rufi kept sources**. A page of a document you deleted says **Document deleted (Sunrise Labs August.pdf, page 2)**: the brief itself doesn't change.
 
+Click a record to open it on its page, with its sources and history (see [Open a row](record.md#open-a-row)). When an amended result has replaced a result since, the amended one opens. A record removed from your health record since stays in the list, but doesn't open.
+
 ## Copy a brief
 
 Click **Copy**. Rufi puts the brief on the clipboard as plain text: the date, the brief and its Sources. **Copied** shows for a moment. Paste it into an email, a note or a message to your doctor.

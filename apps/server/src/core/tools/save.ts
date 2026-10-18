@@ -63,7 +63,7 @@ export const saveChanges = defineTool({
   name: "save_changes",
   description: `Saves to the active person's record, all or nothing, after the user clearly said yes to exactly this in this chat. Two parts, either or both:
 - changes: typed changes from the user's own words. Each is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history), restore a removed one, or remove_source (take a document page off a record's sources, to undo "another source": the page goes in from, as {document, page} from the record's sources in get_records); ids come from get_overview or get_records. Give only what the user said: a field they didn't give stays out, and a date comes with the words it came from. A result's category (lab or measurement) is the one field you choose, with the user: every added result needs one, except an amended result, which keeps the category of the one it replaces unless you give one. A result read from a document changes in place only its category, in a change of its own; what it prints and its date change only by amendment. source is the user's message with the facts the change rests on, so the record shows why it is there: when the facts came in an earlier message than the yes, give that message's position as read_chat shows it; when they are in this turn's message, leave source out.
-- items: draft items of the user's documents (get_documents), each with the version you read and how it goes in: new, another_source (the same result is already saved: its values stay, and the document page becomes another source) or correction (it corrects a saved result: a new result replaces it); record names the saved result, with its version from get_records. category: lab or measurement, for new; a correction keeps the corrected result's unless you give one; never for another_source. Rufi takes each item's values from the stored item, never from you, and its date from the item or, for a lab result, its page; a measurement is dated only by its own date or the user's; fix holds only a value the user corrected in the chat, or the date they gave for an item with none (a rough one is fine, at their precision), with the words it came from; its source is as a change's. An item already saved at that version returns its earlier save; a dismissed item, or one whose version changed, is refused, and nothing is saved.
+- items: draft items of the user's documents (get_documents), each with the version you read and how it goes in: new, another_source (the same result is already saved: its values stay, and the document page becomes another source) or correction (it corrects a saved result: a new result replaces it); record names the saved result, with its version from get_records. category: lab or measurement, for new; a correction keeps the corrected result's unless you give one; never for another_source. Rufi takes each item's values from the stored item, never from you, and its date from the item or, for a lab result, its page; a measurement is dated only by its own date or the user's; fix holds only a value the user corrected in the chat, or the date they gave for an item with none (a rough one is fine, at their precision), with the words it came from; its source is as a change's. An item saved at that version, and still in the record so (its page a source of that result, the result not removed), returns its earlier save and saves nothing; after an undo took its page off or removed its result, it can be saved again. A dismissed item, or one whose version changed, is refused, and nothing is saved.
 No count limit. Rufi refuses a save with any problem and says each one; nothing is saved then. On success Rufi adds its own receipt to the chat and returns it; the same call again returns the same receipt. warnings name a date that should have happened by then (an onset, a measurement, done care) but is later than the message it rests on: it is saved as given; if it may be a slip, check with the user. Never say something was saved without this tool's answer.
 ${FIELDS}`,
   input: SaveInput,
@@ -177,12 +177,15 @@ ${FIELDS}`,
         changes: saved.changes,
         ...(saved.earlier.length > 0 && { already_saved: saved.earlier }),
         ...(saved.warnings.length > 0 && { warnings: saved.warnings }),
-        ...(!saved.fresh &&
-          (saved.receipt === ""
+        ...(saved.fresh
+          ? saved.earlier.length > 0 && {
+              note: "The items in already_saved weren't saved again: each is in the record already, as its earlier save put it.",
+            }
+          : saved.receipt === ""
             ? {
-                note: "Every item was saved before, so nothing new was saved and Rufi added no receipt.",
+                note: "Nothing was saved, and Rufi added no receipt: every item is in the record already, as its earlier save in already_saved put it. If the user asked for something else, read the result with get_records and tell them.",
               }
-            : { note: "This call was already saved." })),
+            : { note: "This call was already saved." }),
       };
     } catch (error) {
       if (error instanceof SaveRefused) {

@@ -10,6 +10,9 @@ const summary = (
   addedAt: "2026-10-11T09:00:00Z",
   kind: null,
   date: null,
+  lab: null,
+  place: null,
+  sorting: null,
   status,
   reading:
     status === "not_read"

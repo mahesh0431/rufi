@@ -12,14 +12,13 @@ Everything for your health record is in one data folder on your Mac. The first t
 
 To see where your data folder is, open **Settings** › **Data folder**. **Show in Finder** shows it in Finder. Finder hides folders whose name starts with a dot, such as `~/.rufi`: **Show in Finder** opens it anyway, and in Finder ⇧⌘. (Shift-Command-period) shows hidden folders.
 
-Rufi remembers the data folder in a small file next to it, the location file: `~/.rufi/location.json`. It stays in `~/.rufi` when you move your data. It holds only the folder's path, never health data or secrets. Each time Rufi starts, it opens the folder that this file names:
+Rufi remembers where your data folder is in a small file, the location file: `~/.rufi/location.json`. It holds only the folder's path, never health data or secrets. Each time Rufi starts, it opens that folder:
 
-- If that folder isn't there (for example, it is on a disk that isn't connected, or it was deleted), Rufi says so and doesn't start. It never starts an empty record in place of yours. Connect the disk, or put the folder back, and start Rufi again.
+- If the folder isn't there (for example, it is on a disk that isn't connected, or it was deleted), Rufi says so and doesn't start. It never starts an empty record in place of yours. Connect the disk, or put the folder back, and start Rufi again.
 - If the folder is there but your record isn't in it (for example, an empty folder where the disk used to be), Rufi doesn't start either. Check that it is the right disk.
-- If the location file is damaged, Rufi doesn't start. The file is short: `{"version": 1, "dataFolder": "/path/to/your/data/folder"}`. Put the path of your data folder back in it, or get the file back from your Mac's backup.
-- If the location file is gone and `~/.rufi/data` holds your record, Rufi remembers that folder again and starts.
-- If the location file is gone and that folder holds other files but no record, Rufi doesn't start and changes nothing.
-- If there is no location file and `~/.rufi` holds files that aren't this Rufi's home, for example from an earlier Rufi app, Rufi doesn't start and changes nothing there. Move that folder away (for example to `~/.rufi-old`), then start Rufi again. This also applies when `RUFI_HOME` points into that folder, directly or through a link.
+- If the location file is damaged, Rufi doesn't start. Get the file back from your Mac's backup, or put your data folder's path back in it: `{"version": 1, "dataFolder": "/path/to/your/data/folder"}`.
+- If the location file is gone and `~/.rufi/data` holds your record, Rufi remembers that folder again and starts. If that folder holds other files but no record, Rufi doesn't start and changes nothing.
+- If there is no location file and `~/.rufi` holds files from an earlier Rufi app, Rufi doesn't start and changes nothing there. Move that folder away (for example to `~/.rufi-old`), then start Rufi again.
 
 > **Note:** If you delete both the location file and your data folder, Rufi can't tell that from a new Mac: it starts a new, empty record. To get your data back, restore a backup (see [Backups and export](backups-and-export.md#restore-a-backup)).
 
@@ -27,26 +26,19 @@ Keep the data folder on your Mac's own disk or on a disk that you connect to you
 
 Your sign-in's secrets aren't in the data folder: they are in your Mac's Keychain (see [Signing in with ChatGPT](signing-in.md)).
 
-| In the data folder | What it is                                                                                                                                                                                                                                 |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `rufi.sqlite`      | The record (people, documents, reports, lab results and measurements) and your chat, with what the AI did in it (see below)                                                                                                                |
-| `installed.json`   | Says a record was made in this folder. If it is there and `rufi.sqlite` isn't, Rufi doesn't start: it never shows an empty record in place of yours                                                                                        |
-| `creating.json`    | There while Rufi first makes its record. If that first start stops, Rufi uses this file to go on safely at the next start. It removes the file after the record is made                                                                    |
-| `files/`           | Your documents, exactly as you added them (see [Documents](documents.md))                                                                                                                                                                  |
-| `cache/`           | Copies Rufi makes again when they are missing: the JPEG copy that shows a HEIC photo, and the pages of your PDFs drawn as images for the AI (see below)                                                                                    |
-| `backups/`         | Rufi's backups of `rufi.sqlite` and your documents, made when it starts and then each day. They never hold your sign-in, the AI's files or the log (see [Backups and export](backups-and-export.md))                                       |
-| `chatgpt.json`     | Your sign-in details, without secrets (see [Signing in with ChatGPT](signing-in.md))                                                                                                                                                       |
-| `logs/`            | Rufi's log (see below)                                                                                                                                                                                                                     |
-| `codex/`           | The AI's own files: its settings, Rufi's skills (Rufi's instructions for each job, written again each time Rufi starts), its own copy of your chat with what its tools returned, and the pictures it generates (`codex/generated_images/`) |
-| `ai/`              | The AI's folder: where the AI works, with its programs, notes and research files (see [What the AI can do in its folder](#what-the-ai-can-do-in-its-folder))                                                                               |
-| `sub-agents/`      | The settings and the empty working folder of Rufi's document reader (see below); it holds no document                                                                                                                                      |
-| `core.json`        | There while Rufi runs: how `pnpm start` finds the running Rufi to open it again. Rufi removes it when it stops                                                                                                                             |
-| `rufi.lock`        | A folder that is there while Rufi or a Rufi command uses the data folder, so only one of them does at a time                                                                                                                               |
-| `credentials.lock` | A short-lived folder while Rufi changes or renews the sign-in                                                                                                                                                                              |
-| `restoring/`       | There only when a restore into this folder didn't finish. Rufi doesn't start on such a folder                                                                                                                                              |
-| `moved-to.json`    | There in a folder that you moved your data out of: it names the new folder. Rufi doesn't start on such a folder                                                                                                                            |
-| `moving-out.json`  | There in your data folder while it is moved, and after a move stopped. Rufi doesn't start on it until you finish or cancel the move                                                                                                        |
-| `moving-in.json`   | There in the new folder of a move until the copy is checked, and for good in a cancelled one. Rufi doesn't start on such a folder                                                                                                          |
+| In the data folder | What it is                                                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `rufi.sqlite`      | Your health record (people, documents, reports, lab results and measurements) and your chat, with what the AI did in it (see below)                          |
+| `files/`           | Your documents, exactly as you added them (see [Documents](documents.md))                                                                                    |
+| `backups/`         | Rufi's backups of your record and your documents (see [Backups and export](backups-and-export.md))                                                           |
+| `cache/`           | Copies Rufi makes again when they are missing: the JPEG copy that shows a HEIC photo, and the pages of your PDFs drawn as images for the AI                  |
+| `chatgpt.json`     | Your sign-in details, without secrets (see [Signing in with ChatGPT](signing-in.md))                                                                         |
+| `logs/`            | Rufi's log (see below)                                                                                                                                       |
+| `codex/`           | The AI's own files: its settings, Rufi's instructions for the AI, its own copy of your chat, and the pictures it generates                                   |
+| `ai/`              | The AI's folder: where the AI works, with its programs, notes and research files (see [What the AI can do in its folder](#what-the-ai-can-do-in-its-folder)) |
+| `sub-agents/`      | The settings of Rufi's document reader; it holds no document                                                                                                 |
+
+Rufi also keeps a few small files there that say what state the folder is in: while Rufi runs, and while a first start, a move or a restore isn't finished. With them, Rufi never opens a folder that another Rufi uses, or one that is only half made.
 
 When Rufi creates your data folder, it makes it private to your Mac user account. The files Rufi writes in it, such as `rufi.sqlite` and the log, are private to your account too. Rufi doesn't change a folder that already existed, so who can open a folder you chose depends on that folder's permissions and on who can use your Mac account.
 
@@ -65,7 +57,7 @@ You can move your data folder to another folder: on your Mac, or on a disk that 
 
 Rufi copies everything in your data folder into the new folder: your health record and your chat, your documents, your backups and your sign-in. It checks the copy (the record, and each file against the old one) and only then uses the new folder. You stay signed in.
 
-The AI's own files (`codex/` and `sub-agents/`) and the AI's folder (`ai/`) stay in the old folder, because they name the old folder. Your chat is in your record, so nothing of it is lost: your next message starts the AI afresh with the chat's last messages, and the chat shows a quiet line there. The AI's programs and notes stay in the old folder's `ai/`; copy what you want to keep.
+The AI's own files (`codex/` and `sub-agents/`) and the AI's folder (`ai/`) stay in the old folder, because they name the old folder. Your chat is in your record, so nothing of it is lost: your next message starts a new thread for the AI with the chat's last messages, and the chat shows "New thread started" there. The AI's programs and notes stay in the old folder's `ai/`; copy what you want to keep.
 
 The old folder stays as it was, with a `moved-to.json` file that names the new folder. Rufi doesn't open the old folder any more, also not with `RUFI_HOME`, so that you never change two copies. Delete it when you're ready.
 
@@ -113,8 +105,8 @@ The chat's AI works like a coding agent, in its own folder: the AI's folder, `ai
 
 Rufi limits what the AI's programs can reach. This is a lock, not only an instruction: Codex's sandbox on your Mac holds it.
 
-- They can write only in the AI's folder and in your Mac's folders for temporary files. So their caches, such as the downloads of Python's installer and the fonts of its chart library, are in `ai/.cache`.
-- They can't open your record's database (`rufi.sqlite` and its other files), your backups or `core.json`. So the AI reads and changes your health record only through Rufi's tools: each read shows as a step in the answer's **Activity**, and each save with its receipt.
+- They can write only in the AI's folder and in your Mac's folders for temporary files.
+- They can't open your record's database or your backups. So the AI reads and changes your health record only through Rufi's tools: each read shows as a step in the answer's **Activity**, and each save with its receipt.
 - They get none of the sign-in's secrets.
 - They can read the other files that your Mac account can read. Rufi tells the AI to use only Rufi's tools for your record, but it doesn't lock the rest yet.
 
@@ -133,7 +125,7 @@ When you ask about a document in the chat, the AI can look at its pages, one at 
 
 Each page the AI looks at goes to the AI service you signed in with, like the parts of your record it reads. Rufi's tool gives the AI only the documents of the person whose chat it is. Looking at a page changes nothing; documents aren't part of your record until you save from them.
 
-Rufi keeps the drawn PDF pages in `cache/` and draws a page again when its copy is missing; they aren't in your backups or your export.
+Rufi draws a page again when it needs it; the drawn pages aren't in your backups or your export.
 
 ## Reading your documents
 
@@ -141,37 +133,32 @@ Rufi reads each document you add with its own reader, as soon as you add it (see
 
 The reader sends the document's pages to the AI service you signed in with, the same way as above. It is a separate AI that Rufi starts for that one document:
 
-- It gets Rufi's instructions for reading, the list of the document's pages, its own notes, and the name of the person the document was added for, as Rufi shows it. It uses the name only to tell when a report may be someone else's. It gets none of your chat or your record, and no other person's name.
-- It can do two things only, both through Rufi: look at a page of that document, and save what the page says in its notebook. It has no files, no commands and no internet, and it can't start other work. This is a lock, not only an instruction: Rufi starts the reader without them, and stops a reading that uses anything else.
-- On GPT-6.1-Sol, the reader's model to start with, the reader uses these two through small pieces of code that it writes. That code runs closed off inside Codex: it has no files and no network, and it can only use the reader's two tools and read the time. The reader can also try to ask you a question; nobody is there to answer, so Rufi stops that reading, and it continues as any stopped reading does. On GPT-5.5, the reader uses its two tools without code. You choose the model in **Settings** → **Documents** (see [Documents](documents.md#the-readers-model-and-effort)).
-- Its thread isn't saved by the AI. Rufi keeps its notebook (what each page says) and its draft items in `rufi.sqlite`, with the reader's version and how much of your plan the reading used.
+- It gets Rufi's instructions for copying pages, the file's name and the list of its pages. It doesn't get whose document it is, your chat or your record.
+- It can do two things only, both through Rufi: look at a page of that document, and save its copy of the page. It has no files, no commands and no internet, and it can't start other work. This is a lock, not only an instruction: Rufi starts the reader without them, and stops a reading that uses anything else.
+- Rufi keeps the reader's copy of each page in `rufi.sqlite`, with how much of your plan the reading used. The reader's own record of its work isn't kept. Pages an older Rufi read keep what its reader saved then (its notebook).
 
-Draft items aren't your record until you save them. They are in your backups and your export (the `draft_items` table), apart from your record.
+When the reading ends, Rufi gives the page copies to Rufi AI, the AI you chat with, to sort the file into documents and draft their results, in a turn of its own in your chat (see [Documents](documents.md#how-rufi-ai-sorts-a-file)). Like Rufi's other notes (see [Rufi's lines](chat.md#rufis-lines)), this request goes to the AI without your message. Two things are different: in this turn the AI may change something, the file's documents and drafts (you added the file, and Rufi asks the AI only to sort it); and the request goes on by itself after Rufi restarts. Rufi AI reads the copies with Rufi's tools, as it reads your record, and can't save anything to your record in that turn. What it did shows in **Activity**, like any reply.
+
+Draft items aren't your record until you save them. They are in your backups and your export (the `draft_items` table), apart from your record, with the page copies (`page_copies`) and Rufi's requests to sort (`sort_requests`).
 
 ## Your chat
 
-Rufi keeps your chat in `rufi.sqlite`: your messages, the AI's replies, one line for each thing the AI did, such as reading your record or searching the web, and a receipt for each save to your record. Rufi saves each part before it shows it, so what you see is what was saved.
+Rufi keeps your chat in `rufi.sqlite`: your messages, the AI's replies, one line for each thing the AI did, such as reading your record or searching the web, and a receipt for each save to your record. What you see is what Rufi saved.
 
-Rufi also keeps everything the AI did in a reply, so that an answer can be traced later:
+So that an answer can be traced later, Rufi also keeps, as long as the chat:
 
-- For each thing the AI did, everything it sent and got back, as the AI service gave it: for example a read of your records and what it got back, a command and its output, or the words of a web search.
-- For each read or save with Rufi's own tools, what the AI asked and exactly what Rufi answered, except the page images it looked at: Rufi keeps which page it was, not the image.
-- The AI's reasoning summaries: a short account of its thinking, when the AI service gives one. Rufi asks for them.
+- What each thing the AI did sent and got back, as the AI service gave it: for example a read of your records, a command and its output, or the words of a web search. You see it when you open a step in **Activity**.
+- For each read or save with Rufi's own tools, exactly what Rufi answered, except the page images the AI looked at: Rufi keeps which page it was, not the image. This isn't shown.
+- The AI's reasoning summaries, when the AI service gives them. You see them behind each thinking line.
+- For each change to your record, the record before and after it, and the message of yours it came from.
+- What you typed in the chat but didn't send (the chat's draft). Drafts stay on your Mac until you send them.
 
-You see the reasoning summaries in the chat, behind each thinking line, and what each step sent and got back when you open it in **Activity**. Rufi's own copy of what its tools answered isn't shown: it is there so that an answer can be traced. Rufi keeps them as long as the chat. Work the AI gives to a sub-agent isn't kept.
-
-For each change to your record, Rufi also keeps the record before and after it, and the message of yours it came from.
-
-It also keeps what you typed in the chat but didn't send (the chat's draft). Drafts stay on your Mac until you send them.
-
-The AI's own copies in `codex/` hold more, as long as the AI keeps them, also the page images the AI looked at.
+Work the AI gives to a sub-agent isn't kept. The AI's own copies in `codex/` hold more, as long as the AI keeps them, also the page images the AI looked at.
 
 ## What Rufi logs
 
-Rufi writes its own log to `logs/rufi.log` in the data folder, to help find problems. Each line is a fixed event with checked details: the event's name, the names of the AI's messages and of Rufi's tools, statuses, error codes and timings.
+Rufi writes its own log to `logs/rufi.log` in the data folder, to help find problems: what happened and when, such as which of Rufi's tools ran, statuses, error codes and timings.
 
-The log never holds your words, the AI's replies, health text or your sign-in. It stays on your Mac. At 10 MB Rufi starts a new file, and it keeps five files at most.
+The log never holds your words, the AI's replies, health text or your sign-in. It stays on your Mac, and Rufi removes its oldest lines as it grows. With `--debug`, `pnpm rufi ask` also shows these lines in the terminal.
 
-With `--debug`, `pnpm rufi ask` also shows these same lines in the terminal.
-
-This is about `logs/rufi.log` and its older copies only. The AI's own files in `codex/` are separate.
+The AI's own files in `codex/` are separate from this log.

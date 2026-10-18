@@ -1,6 +1,7 @@
 // The document reader at work: runs the queued readings one at a time, each
 // as a Rufi sub-agent (agent/codex/subagent.ts) with the reader's two tools,
-// and writes its start and end into the person's chat as Rufi events. Each
+// and writes its start and end into the person's chat as Rufi events; a
+// reading that copied pages ends with a request that Rufi AI sort them. Each
 // run uses the model and effort chosen in Settings when it starts. Only a
 // reader turn that completed normally finishes a reading. A run that failed
 // for a passing reason (also a sign-in ChatGPT can't renew just now) is
@@ -12,6 +13,7 @@
 // tools from Rufi's MCP server, with a key for one attempt.
 import { Effort } from "@rufi/contracts";
 import { Option, Schema } from "effect";
+import { v7 as uuid } from "uuid";
 import { ChatGptError } from "../agent/chatgpt/openai.ts";
 import { SUB_AGENT_MODELS } from "../agent/codex/subagent.ts";
 import type {
@@ -19,16 +21,12 @@ import type {
   SubAgentOutcome,
   TurnEnd,
 } from "../agent/runtime.ts";
-import type { Notebook, Run } from "../core/documents/notebook.ts";
-import type { Pages } from "../core/documents/pages.ts";
+import type { Run } from "../core/documents/notebook.ts";
 import {
   READER_EFFORT,
-  READER_INSTRUCTIONS,
   READER_MODEL,
-  READER_VERSION,
-  readerInput,
 } from "../core/documents/reader-instructions.ts";
-import { forReader } from "../core/documents/reader-tools.ts";
+import type { ReaderKind } from "../core/documents/reader-tools.ts";
 import {
   ReadingGone,
   type Job,
@@ -41,10 +39,19 @@ import type { McpKeys } from "./mcp.ts";
 
 export interface ReaderDeps {
   readings: Readings;
-  book: Notebook;
-  pages: Pages;
+  /** How the reader reads: its instructions, message, tools and version. */
+  kind: ReaderKind;
   /** Writes a Rufi event in the person's chat, with its producer's outcome. */
   event: Chat["event"];
+  /**
+   * Asks Rufi AI to sort what a reading copied, in its end line's
+   * transaction: the request, handed over as the queue row `queueId`.
+   */
+  sort: (
+    trx: Parameters<Readings["finish"]>[0],
+    run: Run,
+    queueId: string,
+  ) => Promise<void>;
   /** Runs the reader sub-agent; without one, readings wait. */
   run: RunSubAgent | undefined;
   /** The model and effort chosen in Settings (readerChoice), read as a run starts. */
@@ -139,9 +146,13 @@ export function reader(deps: ReaderDeps) {
     }
   };
 
-  /** Ends a run that completed: drafts, page states, the end line, the ask. */
+  /**
+   * Ends a run that completed: page states, the end line and, when it
+   * copied pages to sort, the request that asks Rufi AI to sort them.
+   */
   const finish = async (run: Run) => {
     const end = await readings.ending(run);
+    const askId = uuid();
     await unlessGone(
       deps.event(
         run.personId,
@@ -149,10 +160,11 @@ export function reader(deps: ReaderDeps) {
           kind: "document_read",
           line: end.line,
           facts: end.facts,
-          ...(end.ask !== undefined && { ask: end.ask }),
+          ...(end.ask !== undefined && { ask: end.ask, askId }),
         },
         async (trx) => {
-          await readings.finish(trx, run);
+          await readings.finish(trx, run, end.ask !== undefined);
+          if (end.ask !== undefined) await deps.sort(trx, run, askId);
         },
       ),
     );
@@ -228,7 +240,7 @@ export function reader(deps: ReaderDeps) {
       return;
     }
 
-    const tools = forReader(started, deps.pages, deps.book, log);
+    const tools = deps.kind.tools(started, log);
     const { model, effort } = await deps.choice();
     const counts = { looks: 0, saves: 0 };
     const toolStop = new AbortController();
@@ -264,8 +276,8 @@ export function reader(deps: ReaderDeps) {
         {
           model,
           effort,
-          instructions: READER_INSTRUCTIONS,
-          input: readerInput(await readings.about(started)),
+          instructions: deps.kind.instructions,
+          input: deps.kind.input(await readings.about(started)),
           tools: {
             url: deps.mcp.url(),
             key,
@@ -326,7 +338,7 @@ export function reader(deps: ReaderDeps) {
       compactions: outcome.compactions,
     };
     await readings.recordRun(started, usage, {
-      ...READER_VERSION,
+      ...deps.kind.version,
       model,
       effort,
     });

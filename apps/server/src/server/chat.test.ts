@@ -38,6 +38,7 @@ import {
 import { chatCaller, forAgent } from "../core/tools/tools.ts";
 import { v7 as uuid } from "uuid";
 import { chatQueue, type ChatQueue } from "../core/chat/queue.ts";
+import { rulesNote } from "../core/chat/instructions.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 import { agentSetup } from "./core.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
@@ -55,6 +56,8 @@ let signedIn: boolean;
 let model: FakeModel | undefined;
 let token: string;
 let tokenGate: Promise<void> | undefined;
+/** Calls of Rufi's tools the chat admitted, as they start. */
+let admitted: string[];
 /** Rufi's MCP server for this run of the chat, as the core serves it. */
 let served: { port: number; close: () => Promise<void> } | undefined;
 
@@ -71,6 +74,7 @@ beforeEach(async () => {
   signedIn = true;
   token = "token";
   tokenGate = undefined;
+  admitted = [];
 });
 afterEach(async () => {
   await chat?.close();
@@ -171,6 +175,7 @@ async function startChat(
           reader && pages(reader, home),
         )(chat, turnId, origin);
         return async (name, input, callId) => {
+          admitted.push(name);
           await sleep(options.toolMs ?? 0);
           return call(name, input, callId);
         };
@@ -400,7 +405,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
         ["message", "overview second"],
         ["reply", "ok:overview second"],
       ]);
-      expect(turns.map((turn) => [turn.status, turn.afresh])).toEqual([
+      expect(turns.map((turn) => [turn.status, turn.newThread])).toEqual([
         ["completed", false],
         ["completed", false],
       ]);
@@ -726,7 +731,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       await say(await chatRow(c.id), "after the switch");
       await ended(c.id, 2);
       const { turns } = await transcript(c.id);
-      expect(turns.map((turn) => [turn.model, turn.afresh])).toEqual([
+      expect(turns.map((turn) => [turn.model, turn.newThread])).toEqual([
         ["gpt-6.1-sol", false],
         ["gpt-6-astra", false],
       ]);
@@ -753,18 +758,52 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       const { turns, entries } = await transcript(c.id);
       // One thread, and Rufi's summaries aren't replies.
       expect(threadsUsed()).toBe(1);
-      expect(turns.map((turn) => turn.afresh)).toEqual([false, false, false]);
+      expect(turns.map((turn) => turn.newThread)).toEqual([
+        false,
+        false,
+        false,
+      ]);
       expect(entries.filter(([kind]) => kind === "reply")).toEqual([
         ["reply", "ok:first"],
         ["reply", "ok:second"],
         ["reply", "ok:third"],
       ]);
-      // Each reply had only the rules of its time.
-      expect(
-        (await backend.rules()).filter((rules) => rules !== "").at(-1),
-      ).toBe("Rufi's rules 2, for IN.");
-      expect(await backend.rules()).toContain("Rufi's rules 1, for IN.");
+      // Each reply after a change had the new rules whole, as the last word.
+      const rules = await backend.rules();
+      expect(rules).toHaveLength(3);
+      const regionNote = rulesNote("Rufi's rules 1, for IN.");
+      const updateNote = rulesNote("Rufi's rules 2, for IN.");
+      expect(rules[1]?.slice(-regionNote.length)).toBe(regionNote);
+      expect(rules[2]?.slice(-updateNote.length)).toBe(updateNote);
       expect((await chatRow(c.id)).threadTools).toBe("rules-2-IN");
+    },
+  );
+
+  it(
+    "starts a new thread, with the earlier chat, only when Codex has no record of the chat's thread",
+    timeout,
+    async () => {
+      await startChat(name);
+      const c = await newChat();
+      await say(c, "first");
+      await ended(c.id, 1);
+      // The thread's files are gone: Codex has no record of this id.
+      const lost = await chatRow(c.id);
+      await transcripts.setThread(lost, {
+        id: uuid(),
+        provider: "codex",
+        model: "gpt-6.1-sol",
+        tools: lost.threadTools ?? "",
+      });
+      await startChat(name);
+      await say(await chatRow(c.id), "second");
+      await ended(c.id, 2);
+      expect((await queue.list(c)).items).toEqual([]);
+      const { turns } = await transcript(c.id);
+      expect(turns.map((turn) => turn.newThread)).toEqual([false, true]);
+      expect((await backend.contexts()).at(-1)).toContain(
+        "User: first\n\nAI: ok:first",
+      );
     },
   );
 
@@ -783,7 +822,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       // No new thread: no earlier messages handed over, no quiet line.
       expect(await backend.contexts()).toEqual([]);
       const { turns } = await transcript(c.id);
-      expect(turns.map((turn) => turn.afresh)).toEqual([false, false]);
+      expect(turns.map((turn) => turn.newThread)).toEqual([false, false]);
       expect((await chatRow(c.id)).effort).toBe("high");
     },
   );
@@ -1074,19 +1113,21 @@ describe("the chat, on the scripted Codex", () => {
         ('res-2', 'asha', 'rep-1', 'lab', 'Glucose', '118', 'mg/dL', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 0),
         ('res-3', 'asha', 'rep-1', 'lab', 'CRP', '<5', 'mg/L', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 0),
         ('res-4', 'asha', 'rep-1', 'lab', 'TSH', '2.1', 'mIU/L', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 1);
-      INSERT INTO documents (id, person_id, added_at, added_from, version)
-        VALUES ('doc-correction', 'asha', '2026-10-01T09:00:00Z', 'chat', 1);
+      INSERT INTO documents (id, person_id, added_at, added_from, kind, date, issuer, report_number, version)
+        VALUES ('doc-correction', 'asha', '2026-10-01T09:00:00Z', 'chat', 'lab_report', '2026-08-12', 'Sunrise Labs', 'CORRECTED', 1);
       INSERT INTO files (id, size, media_type, created_at)
         VALUES ('f-correction', 1, 'application/pdf', '2026-10-01T09:00:00Z');
-      INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name, entry)
-        VALUES ('asha', 'doc-correction', 1, 'f-correction', 1, 'Corrected report.pdf',
-          '{"outcome":"read","facts":{"issuer":"Sunrise Labs","report_number":"CORRECTED","dates":[{"label":"Collected","date":"12/08/2026","iso":"2026-08-12"}]}}');
-      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, created_at)
-        VALUES ('job-correction', 'asha', 'document_read', 'doc-correction', 'done', '[1]', '2026-10-01T09:00:00Z');
-      INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, fields, original, created_at)
+      INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name, state)
+        VALUES ('asha', 'doc-correction', 1, 'f-correction', 1, 'Corrected report.pdf', 'read');
+      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, sorted_at, created_at)
+        VALUES ('job-correction', 'asha', 'document_read', 'doc-correction', 'done', '[1]', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
+      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
+        VALUES ('asha', 'f-correction', 1, 'job-correction', 1, 'read', 'Sunrise Labs · CORRECTED · Collected 12/08/2026 · CRP 4 mg/L', '2026-10-01T09:00:00Z');
+      INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, fields, original, quote, created_at)
         VALUES ('item-correction', 'asha', 'doc-correction', 1, 1, 'job-correction', 'lab_result',
-          '{"test_name":"CRP","value_text":"4","unit":"mg/L"}',
-          '{"test_name":"CRP","value_text":"4","unit":"mg/L"}', '2026-10-01T09:00:00Z');
+          '{"test_name":"CRP","value_text":"4","unit":"mg/L","date":{"label":"Collected","date":"12/08/2026","iso":"2026-08-12"}}',
+          '{"test_name":"CRP","value_text":"4","unit":"mg/L","date":{"label":"Collected","date":"12/08/2026","iso":"2026-08-12"}}',
+          'CRP 4 mg/L', '2026-10-01T09:00:00Z');
     `);
     await startChat("fake");
     const c = await newChat();
@@ -1900,9 +1941,9 @@ describe("the chat, on the scripted Codex", () => {
     });
     const c = await newChat();
     await say(c, "hang: I have a headache");
-    await until(async () =>
-      (await transcript(c.id)).entries.some(([kind]) => kind === "activity"),
-    );
+    // Codex shows the call before it reaches Rufi: a Stop before then
+    // refuses it (ADR 0016). This one is under way when Stop comes.
+    await until(() => Promise.resolve(admitted.includes("save_changes")));
     await chat?.stop(c);
     await ended(c.id);
     await until(async () =>
@@ -1973,7 +2014,7 @@ describe("the chat, on the scripted Codex", () => {
     );
   });
 
-  it("marks only the first reply on a new thread as afresh: a model change, or a send stopped before it began, marks nothing", async () => {
+  it("marks only the first reply on a new thread: a model change, or a send stopped before it began, marks nothing", async () => {
     await startChat("fake", {
       scenario: { slow: ["thread/start"], slowMs: 300 },
     });
@@ -2008,7 +2049,7 @@ describe("the chat, on the scripted Codex", () => {
     expect(
       entries.filter(([kind]) => kind === "message").map(([, text]) => text),
     ).toEqual(["first", "second", "third", "fourth"]);
-    expect(turns.map((t) => t.afresh)).toEqual([false, false, true, false]);
+    expect(turns.map((t) => t.newThread)).toEqual([false, false, true, false]);
   });
 
   it("keeps the AI's compaction of its memory, done once Codex completed it", async () => {
@@ -2064,14 +2105,14 @@ describe("the chat, on the scripted Codex", () => {
     expect(start).not.toHaveProperty("sandbox");
   });
 
-  it("holds the message with the reason when the thread can't take Rufi's new rules, and starts no other", async () => {
+  it("holds the message with the reason and both choices when the thread can't take Rufi's new rules, and starts no other", async () => {
     await startChat("fake");
     const c = await newChat();
     await say(c, "first");
     await ended(c.id);
-    await startChat("fake", { rules: "2", scenario: { compactFails: true } });
+    await startChat("fake", { rules: "2", scenario: { injectFails: true } });
     await say(await chatRow(c.id), "second");
-    await until(async () => (await waiting())[0]?.[2] === "failed");
+    await until(async () => (await waiting())[0]?.[2] === "open_failed");
     expect((await queue.list(c)).items).toMatchObject([
       {
         text: "second",
@@ -2085,32 +2126,6 @@ describe("the chat, on the scripted Codex", () => {
       .split("\n")
       .filter((line) => line.includes('"method":"thread/start"'));
     expect(started).toHaveLength(1);
-  });
-
-  it("keeps a message held on Send now when its resumed thread failed the permission check", async () => {
-    await startChat("fake");
-    const c = await newChat();
-    await say(c, "first");
-    await ended(c.id);
-    await startChat("fake", { scenario: { profile: ":workspace" } });
-    await say(await chatRow(c.id), "second");
-    await until(async () => (await queue.list(c)).items[0]?.held === "failed");
-    const held = (await queue.list(c)).items[0];
-    if (!held) throw new Error("no held message");
-    const reason =
-      "Codex didn't take Rufi's thread settings: its permissions are :workspace.";
-    expect(held.heldText).toBe(reason);
-
-    await chat?.queue.sendNow(await chatRow(c.id), held.id);
-    await until(
-      async () =>
-        (await transcript(c.id)).turns.length > 1 ||
-        (await queue.list(c)).items[0]?.held === "failed",
-    );
-    expect((await transcript(c.id)).turns).toHaveLength(1);
-    expect((await queue.list(c)).items).toMatchObject([
-      { id: held.id, text: "second", held: "failed", heldText: reason },
-    ]);
   });
 
   it("never reuses another agent's thread", async () => {
@@ -2213,5 +2228,285 @@ describe("the chat, on the scripted Codex", () => {
         endText: "Rufi closed before the reply finished.",
       },
     ]);
+  });
+});
+
+describe("When the AI's thread doesn't open", () => {
+  /** Asha's chat after one reply, then Rufi started again with `scenario`. */
+  async function afterOneReply(scenario: Scenario) {
+    await startChat("fake");
+    await say(await newChat(), "first");
+    await ended("c-asha");
+    const thread = (await chatRow()).threadId;
+    await startChat("fake", { scenario });
+    return thread;
+  }
+
+  /** The held message, once it waits with the open error. */
+  async function held() {
+    await until(
+      async () =>
+        (await queue.list(await chatRow())).items[0]?.held === "open_failed",
+    );
+    const [item] = (await queue.list(await chatRow())).items;
+    if (!item?.holdId) throw new Error("no held message");
+    return { ...item, holdId: item.holdId };
+  }
+
+  const threadStarts = async () =>
+    (await readFile(join(home, "fake.jsonl"), "utf8"))
+      .split("\n")
+      .filter((line) => line.includes('"method":"thread/start"')).length;
+
+  it("holds the message with Codex's error and starts no other thread; Try again holds it anew while the error lasts, then sends it once in the same thread", async () => {
+    const thread = await afterOneReply({ resumeFails: 2 });
+    await say(await chatRow(), "second");
+    const first = await held();
+    expect(first).toMatchObject({
+      text: "second",
+      state: "waiting",
+      heldText:
+        "Codex refused thread/resume: failed to read thread: a fictional read error",
+    });
+    expect(await threadStarts()).toBe(1);
+
+    await chat?.queue.recover(await chatRow(), first.id, first.holdId, "retry");
+    await until(async () => {
+      const item = (await queue.list(await chatRow())).items[0];
+      return item?.held === "open_failed" && item.holdId !== first.holdId;
+    });
+    const second = await held();
+    expect(second.id).toBe(first.id);
+
+    // A click on the first hold, from a tab that still shows it, changes nothing.
+    await expect(
+      chat?.queue.recover(
+        await chatRow(),
+        first.id,
+        first.holdId,
+        "new_thread",
+      ),
+    ).rejects.toThrow("The waiting messages changed meanwhile.");
+    expect((await queue.list(await chatRow())).items).toMatchObject([
+      { id: first.id, holdId: second.holdId },
+    ]);
+    expect((await chatRow()).threadId).toBe(thread);
+
+    await chat?.queue.recover(
+      await chatRow(),
+      second.id,
+      second.holdId,
+      "retry",
+    );
+    await ended("c-asha", 2);
+    const { entries, turns } = await transcript("c-asha");
+    expect(
+      entries.filter(([kind]) => kind === "message").map(([, text]) => text),
+    ).toEqual(["first", "second"]);
+    expect(turns.map((turn) => turn.newThread)).toEqual([false, false]);
+    expect(threadsUsed()).toBe(1);
+    expect(await threadStarts()).toBe(1);
+  });
+
+  it("keeps the held message with its choices when Rufi starts again", async () => {
+    await afterOneReply({ profile: ":workspace" });
+    await say(await chatRow(), "second");
+    const before = await held();
+    expect(before.heldText).toBe(
+      "Codex didn't take Rufi's thread settings: its permissions are :workspace.",
+    );
+    await startChat("fake", { scenario: { profile: ":workspace" } });
+    await sleep(100);
+    expect(await held()).toEqual(before);
+    expect((await chatRow()).paused).toBeNull();
+  });
+
+  it("starts one new thread on New thread, with the earlier chat, and sends the message once", async () => {
+    const thread = await afterOneReply({ resumeFails: 5 });
+    await say(await chatRow(), "second");
+    const item = await held();
+    await chat?.queue.recover(
+      await chatRow(),
+      item.id,
+      item.holdId,
+      "new_thread",
+    );
+    await ended("c-asha", 2);
+    const { entries, turns } = await transcript("c-asha");
+    expect(
+      entries.filter(([kind]) => kind === "message").map(([, text]) => text),
+    ).toEqual(["first", "second"]);
+    expect(turns.map((turn) => turn.newThread)).toEqual([false, true]);
+    expect((await chatRow()).threadId).not.toBe(thread);
+    expect(threadsUsed()).toBe(2);
+    expect(await threadStarts()).toBe(2);
+    expect((await backendOf("fake").contexts()).at(-1)).toContain(
+      "User: first\n\nAI: ok:first",
+    );
+    expect(await queue.list(await chatRow())).toMatchObject({ items: [] });
+  });
+
+  it("takes only the first of two tabs' choices for one hold", async () => {
+    const thread = await afterOneReply({ resumeFails: 1 });
+    await say(await chatRow(), "second");
+    const item = await held();
+    const row = await chatRow();
+    const choices = await Promise.allSettled([
+      chat?.queue.recover(row, item.id, item.holdId, "retry"),
+      chat?.queue.recover(row, item.id, item.holdId, "new_thread"),
+    ]);
+    expect(choices.map((choice) => choice.status)).toEqual([
+      "fulfilled",
+      "rejected",
+    ]);
+    await ended("c-asha", 2);
+    await sleep(100);
+    expect(
+      (await transcript("c-asha")).entries
+        .filter(([kind]) => kind === "message")
+        .map(([, text]) => text),
+    ).toEqual(["first", "second"]);
+    expect((await chatRow()).threadId).toBe(thread);
+    expect(threadsUsed()).toBe(1);
+  });
+
+  it("keeps an open-error hold and the current thread when New thread meets another running reply, then recovers once after Stop", async () => {
+    const thread = await afterOneReply({ resumeFails: 1 });
+    await say(await chatRow(), "held message");
+    const item = await held();
+
+    // A later message opens the same thread once the transient error passes.
+    await say(await chatRow(), "partial");
+    await until(async () =>
+      (await transcript("c-asha")).entries.some(
+        ([kind, text]) => kind === "reply" && text === "ok:part",
+      ),
+    );
+    const before = await queue.list(await chatRow());
+    await chat?.queue.recover(
+      await chatRow(),
+      item.id,
+      item.holdId,
+      "new_thread",
+    );
+    expect(await queue.list(await chatRow())).toEqual(before);
+    expect((await chatRow()).threadId).toBe(thread);
+    expect(
+      (await transcript("c-asha")).turns.map((turn) => turn.status),
+    ).toEqual(["completed", "running"]);
+
+    // Stop still reaches that reply; the same hold can then be recovered.
+    await chat?.stop(await chatRow());
+    await ended("c-asha", 2);
+    await chat?.queue.recover(
+      await chatRow(),
+      item.id,
+      item.holdId,
+      "new_thread",
+    );
+    await ended("c-asha", 3);
+    await expect(
+      chat?.queue.recover(await chatRow(), item.id, item.holdId, "new_thread"),
+    ).rejects.toThrow("The waiting messages changed meanwhile.");
+    const { entries, turns } = await transcript("c-asha");
+    expect(
+      entries.filter(([kind]) => kind === "message").map(([, text]) => text),
+    ).toEqual(["first", "partial", "held message"]);
+    expect(turns.map((turn) => [turn.status, turn.newThread])).toEqual([
+      ["completed", false],
+      ["interrupted", false],
+      ["completed", true],
+    ]);
+    expect((await chatRow()).threadId).not.toBe(thread);
+    expect((await queue.list(await chatRow())).items).toEqual([]);
+    expect(threadsUsed()).toBe(2);
+  });
+
+  it("after New thread, a restart before the message went keeps it waiting once, and the next send starts the new thread", async () => {
+    const thread = await afterOneReply({ resumeFails: 5 });
+    await say(await chatRow(), "second");
+    const item = await held();
+    // The choice is stored, and Rufi stops before it hands the message over.
+    await queue.recover(await chatRow(), item.id, item.holdId, true);
+    await startChat("fake");
+    expect((await chatRow()).threadId).toBeNull();
+    expect(await waiting()).toEqual([["second", "waiting", null]]);
+    expect((await chatRow()).paused).toBe("restarted");
+    await chat?.queue.sendNow(await chatRow(), item.id);
+    await ended("c-asha", 2);
+    const { turns } = await transcript("c-asha");
+    expect(turns.map((turn) => turn.newThread)).toEqual([false, true]);
+    expect((await chatRow()).threadId).not.toBe(thread);
+    expect(
+      (await transcript("c-asha")).entries
+        .filter(([kind]) => kind === "message")
+        .map(([, text]) => text),
+    ).toEqual(["first", "second"]);
+  });
+
+  it("starts a new thread when Codex has no record of it, also when the sign-in renews before the message goes", async () => {
+    await startChat("fake", { scenario: { forgets: true } });
+    await say(await newChat(), "first");
+    await ended("c-asha");
+    // A new token: Codex starts again, and its saved threads are gone.
+    token = "renewed-token";
+    await say(await chatRow(), "second");
+    await ended("c-asha", 2);
+    expect((await queue.list(await chatRow())).items).toEqual([]);
+    const { entries, turns } = await transcript("c-asha");
+    expect(
+      entries.filter(([kind]) => kind === "message").map(([, text]) => text),
+    ).toEqual(["first", "second"]);
+    expect(turns.map((turn) => turn.newThread)).toEqual([false, true]);
+  });
+
+  it("keeps the context the thread used as Codex last reported it, for that thread only", async () => {
+    await startChat("fake", {
+      scenario: { usage: { tokens: 38_000, window: 100_000 } },
+    });
+    await say(await newChat(), "first");
+    await ended("c-asha");
+    await until(async () => (await chatRow()).context !== null);
+    expect((await chatRow()).context).toEqual({
+      tokens: 38_000,
+      window: 100_000,
+    });
+    expect((await transcripts.page(await chatRow())).chat.context).toEqual({
+      tokens: 38_000,
+      window: 100_000,
+    });
+
+    // A model change keeps the thread, and its last report.
+    await chat?.selectModel(await chatRow(), "gpt-6-astra");
+    expect((await chatRow()).context).toEqual({
+      tokens: 38_000,
+      window: 100_000,
+    });
+
+    // The thread is lost: the new one shows nothing until it reports.
+    const lost = await chatRow();
+    await transcripts.setThread(lost, {
+      id: "lost-1",
+      provider: "codex",
+      model: "gpt-6.1-sol",
+      tools: lost.threadTools ?? "",
+    });
+    expect((await chatRow()).context).toBeNull();
+    await startChat("fake", {
+      scenario: { usage: { tokens: 1_000, window: null } },
+    });
+    await say(await chatRow(), "second");
+    await ended("c-asha", 2);
+    // Codex didn't say the window: kept as it came, and nothing to show.
+    const stored = () =>
+      store.db
+        .prepare("SELECT context_tokens, context_window FROM chats")
+        .get() as {
+        context_tokens: number | null;
+        context_window: number | null;
+      };
+    await until(() => Promise.resolve(stored().context_tokens === 1_000));
+    expect(stored()).toEqual({ context_tokens: 1_000, context_window: null });
+    expect((await chatRow()).context).toBeNull();
   });
 });

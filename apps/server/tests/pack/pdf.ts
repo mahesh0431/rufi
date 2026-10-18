@@ -1,6 +1,7 @@
 // A small PDF writer for the fictional test pack: pages of text in
-// Helvetica (WinAnsi), or pages that are one JPEG each (a scan, with no
-// text). Enough to make lab reports that look printed; nothing more.
+// Helvetica (WinAnsi) with ruled lines, or pages that are one JPEG each (a
+// scan, with no text), or both in one file. Enough to make lab reports that
+// look printed; nothing more.
 
 /** One piece of text on a page, from the top-left corner, in points. */
 export interface Text {
@@ -71,10 +72,35 @@ const stream = (dict: string, body: number[]) => [
   ...ascii("\nendstream"),
 ];
 
-/** A PDF of text pages. */
-export function textPdf(pages: readonly (readonly Text[])[]): Uint8Array {
-  // 1 catalog, 2 pages, 3 font, 4 bold font, then per page: page, content.
-  const kids = pages.map((_, i) => `${String(5 + i * 2)} 0 R`).join(" ");
+/** A ruled line on a page, from the top-left corner, in points. */
+export interface Rule {
+  line: [x1: number, y1: number, x2: number, y2: number];
+  width?: number;
+}
+
+/** A scanned page: one JPEG filling the page, with no text. */
+interface Scanned {
+  bytes: Uint8Array;
+  width: number;
+  height: number;
+}
+
+/** A page of text (and ruled lines), or a scanned page. */
+type Page = readonly (Text | Rule)[] | Scanned;
+
+const isScanned = (page: Page): page is Scanned => "bytes" in page;
+
+/** A PDF of pages of text, of scanned pages, or of both. */
+export function mixedPdf(pages: readonly Page[]): Uint8Array {
+  // 1 catalog, 2 pages, 3 font, 4 bold font, then per page: page, content
+  // (and its image, for a scanned page).
+  const first: number[] = [];
+  let next = 5;
+  for (const page of pages) {
+    first.push(next);
+    next += isScanned(page) ? 3 : 2;
+  }
+  const kids = first.map((n) => `${String(n)} 0 R`).join(" ");
   const objects: number[][] = [
     ascii("<< /Type /Catalog /Pages 2 0 R >>"),
     ascii(`<< /Type /Pages /Kids [${kids}] /Count ${String(pages.length)} >>`),
@@ -86,8 +112,35 @@ export function textPdf(pages: readonly (readonly Text[])[]): Uint8Array {
     ),
   ];
   for (const [i, page] of pages.entries()) {
+    const at = first[i] ?? 0;
+    const box = `/MediaBox [0 0 ${String(WIDTH)} ${String(HEIGHT)}]`;
+    if (isScanned(page)) {
+      objects.push(
+        ascii(
+          `<< /Type /Page /Parent 2 0 R ${box} /Resources << /XObject << /Im0 ${String(at + 2)} 0 R >> >> /Contents ${String(at + 1)} 0 R >>`,
+        ),
+        stream(
+          "",
+          ascii(`q ${String(WIDTH)} 0 0 ${String(HEIGHT)} 0 0 cm /Im0 Do Q`),
+        ),
+        stream(
+          `/Type /XObject /Subtype /Image /Width ${String(page.width)} /Height ${String(page.height)} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode`,
+          [...page.bytes],
+        ),
+      );
+      continue;
+    }
     const content: number[] = [];
     for (const t of page) {
+      if ("line" in t) {
+        const [x1, y1, x2, y2] = t.line;
+        content.push(
+          ...ascii(
+            `${(t.width ?? 0.6).toFixed(2)} w ${x1.toFixed(1)} ${(HEIGHT - y1).toFixed(1)} m ${x2.toFixed(1)} ${(HEIGHT - y2).toFixed(1)} l S\n`,
+          ),
+        );
+        continue;
+      }
       content.push(
         ...ascii(
           `BT /${t.bold ? "F2" : "F1"} ${String(t.size)} Tf ${t.x.toFixed(1)} ${(HEIGHT - t.y).toFixed(1)} Td (`,
@@ -98,7 +151,7 @@ export function textPdf(pages: readonly (readonly Text[])[]): Uint8Array {
     }
     objects.push(
       ascii(
-        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${String(WIDTH)} ${String(HEIGHT)}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${String(6 + i * 2)} 0 R >>`,
+        `<< /Type /Page /Parent 2 0 R ${box} /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${String(at + 1)} 0 R >>`,
       ),
       stream("", content),
     );
@@ -106,30 +159,6 @@ export function textPdf(pages: readonly (readonly Text[])[]): Uint8Array {
   return assemble(objects);
 }
 
-/** A PDF whose pages are JPEG images only: a scan, with no text. */
-export function scanPdf(
-  jpegs: readonly { bytes: Uint8Array; width: number; height: number }[],
-): Uint8Array {
-  const kids = jpegs.map((_, i) => `${String(3 + i * 3)} 0 R`).join(" ");
-  const objects: number[][] = [
-    ascii("<< /Type /Catalog /Pages 2 0 R >>"),
-    ascii(`<< /Type /Pages /Kids [${kids}] /Count ${String(jpegs.length)} >>`),
-  ];
-  for (const [i, jpeg] of jpegs.entries()) {
-    const page = 3 + i * 3;
-    objects.push(
-      ascii(
-        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${String(WIDTH)} ${String(HEIGHT)}] /Resources << /XObject << /Im0 ${String(page + 2)} 0 R >> >> /Contents ${String(page + 1)} 0 R >>`,
-      ),
-      stream(
-        "",
-        ascii(`q ${String(WIDTH)} 0 0 ${String(HEIGHT)} 0 0 cm /Im0 Do Q`),
-      ),
-      stream(
-        `/Type /XObject /Subtype /Image /Width ${String(jpeg.width)} /Height ${String(jpeg.height)} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode`,
-        [...jpeg.bytes],
-      ),
-    );
-  }
-  return assemble(objects);
-}
+/** A PDF of text pages. */
+export const textPdf = (pages: readonly (readonly Text[])[]): Uint8Array =>
+  mixedPdf(pages);

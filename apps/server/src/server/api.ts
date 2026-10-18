@@ -9,6 +9,7 @@ import {
   MessageText,
   MAX_MESSAGE_CHARS,
   PAGE_ESCAPE,
+  RecoverMessage,
   ReorderQueue,
   SaveDraft,
   SaveSettings,
@@ -93,6 +94,11 @@ export interface ApiDeps {
   deletions: Deletions;
   /** Their readings: what waits and runs, and each one's work. */
   readings: Readings;
+  /**
+   * Starts a document's sort again when it waits (its tries used, Rufi AI
+   * asked, or a Stop): false when none waits.
+   */
+  sortAgain: (personId: string, documentId: string) => Promise<boolean>;
   /** A document's draft items, and the person's fixes. */
   items: DraftItems;
   /** A document's pages as the reader saw them. */
@@ -186,6 +192,54 @@ addEventListener("keydown", (event) => {
     parent.postMessage(${JSON.stringify(PAGE_ESCAPE)}, ${JSON.stringify(origin)});
   }
 }, true);
+</script>`;
+/** A `prefers-color-scheme` condition in a media query. */
+const SCHEME_FEATURE = /\(\s*prefers-color-scheme\s*:\s*(light|dark)\s*\)/gi;
+/** In place of a condition on the chosen scheme, and on the other one. */
+const ALWAYS = "(width >= 0)";
+const NEVER = "(width < 0)";
+/**
+ * A generated page in Rufi's appearance, light or dark, in place of the
+ * system's: a frame's `prefers-color-scheme` follows the system, not the
+ * page that frames it. Each such condition in the page's text (its styles,
+ * `media` attributes and its scripts' queries) becomes one that always or
+ * never holds, before any of it runs. Read as Latin-1, so every other byte
+ * is served as it is; the file on disk doesn't change. Not done for System,
+ * which the frame already follows.
+ */
+const inAppearance = (bytes: Buffer, chosen: "light" | "dark") =>
+  Buffer.from(
+    bytes
+      .toString("latin1")
+      .replace(SCHEME_FEATURE, (_, scheme: string) =>
+        scheme.toLowerCase() === chosen ? ALWAYS : NEVER,
+      ),
+    "latin1",
+  );
+/**
+ * Appended with Esc to a page in Rufi's appearance: a query the page builds
+ * later follows it too, and a page that takes both schemes gets the chosen
+ * one for the browser's own colours.
+ */
+const pageAppearance = (chosen: "light" | "dark") => `
+<script>
+{
+  const chosen = ${JSON.stringify(chosen)};
+  const own = matchMedia.bind(window);
+  window.matchMedia = (query) =>
+    own(
+      String(query).replace(${String(SCHEME_FEATURE)}, (_, scheme) =>
+        scheme.toLowerCase() === chosen ? ${JSON.stringify(ALWAYS)} : ${JSON.stringify(NEVER)}),
+    );
+  const both = (value) => /light/.test(value) && /dark/.test(value);
+  const root = document.documentElement;
+  if (
+    both(getComputedStyle(root).colorScheme) ||
+    both(document.querySelector('meta[name="color-scheme"]')?.content ?? "")
+  ) {
+    root.style.colorScheme = chosen;
+  }
+}
 </script>`;
 /** A standalone request never receives the generated page's active content. */
 const OPEN_IN_RUFI = `<!doctype html><html lang="en"><meta charset="utf-8"><title>Open in Rufi</title><body><p>Open this page from the chat in Rufi.</p></body></html>`;
@@ -663,10 +717,15 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       throw error;
     }
   };
+  // Retry: a sort that waits goes again; otherwise what failed is read again.
   app.post(`${documentsPath}/:documentId/retry`, async (c) => {
     const found = await person(c);
+    const documentId = c.req.param("documentId");
+    if (await reading(() => deps.sortAgain(found.id, documentId))) {
+      return c.json({ pages: [], sorting: true });
+    }
     const pages = await reading(() =>
-      deps.readings.retry(found.id, c.req.param("documentId")),
+      deps.readings.retry(found.id, documentId),
     );
     return c.json({ pages });
   });
@@ -850,6 +909,14 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     await acting(() => chat.queue.sendNow(found, c.req.param("itemId")));
     return c.json(await chat.queue.list(found));
   });
+  app.post(`${one}/queue/:itemId/recover`, async (c) => {
+    const found = await chatOf(c);
+    const { hold, choice } = await body(c, RecoverMessage);
+    await acting(() =>
+      chat.queue.recover(found, c.req.param("itemId"), hold, choice),
+    );
+    return c.json(await chat.queue.list(found));
+  });
 
   // The chat's draft; the last save wins.
   const draftPath = `${one}/draft`;
@@ -971,9 +1038,15 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     c.header("Content-Type", type);
     if (shape === "page") {
       c.header("Content-Security-Policy", pageCsp(origin()));
+      // The address names Rufi's appearance when it is light or dark.
+      const chosen = c.req.query("appearance");
+      const page =
+        chosen === "light" || chosen === "dark"
+          ? [inAppearance(bytes, chosen), Buffer.from(pageAppearance(chosen))]
+          : [bytes];
       return c.body(
         new Uint8Array(
-          Buffer.concat([bytes, Buffer.from(pageEscape(origin()))]),
+          Buffer.concat([...page, Buffer.from(pageEscape(origin()))]),
         ),
       );
     }
