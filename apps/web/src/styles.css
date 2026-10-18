@@ -182,6 +182,56 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* Ask Rufi (src/ask.tsx): it shows when its row (a list item, a table row
+   or a group's heading) is under the pointer or has the focus, and always on
+   a touch screen. Pointing at it makes the face a little larger and, after
+   a moment, shows its small label. The + stands on the row's hover colour. */
+.ask-rufi {
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+:is(li, tr, h2):is(:hover, :focus-within) .ask-rufi,
+.ask-rufi:focus-visible {
+  opacity: 1;
+}
+.ask-rufi-face {
+  transition: transform 150ms ease;
+}
+.ask-rufi:hover .ask-rufi-face {
+  transform: scale(1.12);
+}
+/* The label comes after a moment, whole: never half faded. */
+.ask-rufi-tip {
+  visibility: hidden;
+}
+.ask-rufi:is(:hover, :focus-visible) .ask-rufi-tip {
+  visibility: visible;
+  transition: visibility 0s 250ms;
+}
+@media (hover: none) {
+  .ask-rufi {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ask-rufi,
+  .ask-rufi-face {
+    transition: none;
+  }
+  .ask-rufi:hover .ask-rufi-face {
+    transform: none;
+  }
+}
+.ask-rufi [data-dog] > svg {
+  border-radius: 50%;
+}
+:root[data-theme="dark"] .ask-rufi [data-dog="dark"] svg {
+  box-shadow: 0 0 0 1px var(--line);
+}
+.ask-rufi-plus {
+  box-shadow: 0 0 0 2px var(--side);
+}
+
 /* The sidebar's dog for the theme in use (src/dog.tsx). */
 :root:not([data-theme="dark"]) [data-dog="dark"],
 :root[data-theme="dark"] [data-dog="light"] {
