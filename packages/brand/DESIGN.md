@@ -2,7 +2,7 @@
 
 How Rufi looks, for the people and the agents who build its screens and pages. The values are in `tokens.css` beside this file; the dog is in `mark/`. The app (`apps/web`, and the desktop window around it) and the website read them from here, so a colour changes in one place.
 
-The Rufi name and the dog are not under the code's licence: see `TRADEMARKS.md` at the repository root. The tokens and this page are Apache 2.0 like the rest.
+The Rufi name and the dog, with everything in `mark/` (its code too), are not under the code's licence: see `TRADEMARKS.md` at the repository root. The tokens and this page are Apache 2.0 like the rest.
 
 ## Colour
 
