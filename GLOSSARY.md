@@ -41,7 +41,7 @@ The reader's copy of one page of a document, as Markdown, exactly as printed, wi
 _Avoid_: extraction, transcription, OCR text
 
 **Sorting**:
-Rufi AI's work on a file once it is read, in a turn Rufi starts in the person's chat without their message: it splits the file into documents and drafts their results from the page copies, in one call that is kept whole or not at all, and tells the user what it found. It may do nothing else in that turn. A file waiting for it shows **Sorting…**, or **Not sorted yet** with why (it asked the user, the user stopped it, or its tries failed) and **Retry**. The user can ask Rufi AI to sort a file again in the chat.
+Rufi AI's work on a file once it is read, in a turn Rufi starts in the person's chat without their message: it splits the file into documents and drafts their results from the page copies, in one call that is kept whole or not at all, and tells the user what it found. It may change nothing else in the record in that turn; showing a face on Rufi is fine, as it changes nothing. A file waiting for it shows **Sorting…**, or **Not sorted yet** with why (it asked the user, the user stopped it, or its tries failed) and **Retry**. The user can ask Rufi AI to sort a file again in the chat.
 _Avoid_: classification, grouping, parsing
 
 **Draft item**:
@@ -176,7 +176,7 @@ What the queue holds, shown above the box. Your messages sent while the AI repli
 _Avoid_: backlog, pending messages
 
 **Rufi event**:
-Rufi's own note that something happened outside your chat, such as a reading that finished: a line in the chat, and sometimes a note for the AI. It is never your words, a request or your yes: a reply it starts can only read, never save. After a Stop, its note goes with your next message. The one exception is a reading's request for **sorting**: its reply may sort that file and nothing else, it goes in a reply of its own, and it goes on by itself after Rufi restarts.
+Rufi's own note that something happened outside your chat, such as a reading that finished: a line in the chat, and sometimes a note for the AI. It is never your words, a request or your yes: a reply it starts can change nothing, never save. After a Stop, its note goes with your next message. The one exception is a reading's request for **sorting**: its reply may sort that file and nothing else, it goes in a reply of its own, and it goes on by itself after Rufi restarts.
 _Avoid_: notification, system message
 
 **Stop**:
@@ -244,7 +244,7 @@ The folder where the AI works: `ai/` in the data folder. It keeps its programs, 
 _Avoid_: workspace, sandbox, scratch folder
 
 **Tool**:
-Something Rufi offers the AI, such as reading a person's Overview. Tools are how the AI works with the record.
+Something Rufi offers the AI, such as reading a person's Overview. Tools are how the AI works with the record; a few are about the conversation only, such as showing a face on Rufi.
 _Avoid_: function, plugin
 
 **Skill**:

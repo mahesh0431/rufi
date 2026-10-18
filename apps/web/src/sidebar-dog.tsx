@@ -67,18 +67,21 @@ export function SidebarDog({ person }: { person: Person }) {
     useReadings(person.id).data?.some((one) => one.state === "running") ===
     true;
 
-  // A reply or a reading that ended: done for a few seconds. A reply the
-  // person stopped, or one that broke off, isn't done.
-  const busy = working || reading;
-  const wasBusy = useRef(busy);
+  // A reply or a reading that ended, with nothing else going on: done for a
+  // few seconds. A reply the person stopped, or one that broke off, isn't
+  // done; a reading that ends after it still is.
+  const wasWorking = useRef(working);
+  const wasReading = useRef(reading);
   const [justDone, setJustDone] = useState(false);
   useEffect(() => {
-    const finished =
-      wasBusy.current &&
-      !busy &&
+    const replyDone =
+      wasWorking.current &&
+      !working &&
       lastTurn(live.getState())?.status !== "interrupted";
-    wasBusy.current = busy;
-    if (!finished) return;
+    const readingDone = wasReading.current && !reading;
+    wasWorking.current = working;
+    wasReading.current = reading;
+    if (working || reading || !(replyDone || readingDone)) return;
     setJustDone(true);
     const over = setTimeout(() => {
       setJustDone(false);
@@ -87,7 +90,7 @@ export function SidebarDog({ person }: { person: Person }) {
       clearTimeout(over);
       setJustDone(false);
     };
-  }, [busy, live]);
+  }, [working, reading, live]);
 
   const mood = moodOf({
     away:
