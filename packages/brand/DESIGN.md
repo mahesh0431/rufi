@@ -58,6 +58,10 @@ Two font roles, as family stacks in the tokens; sizes and weights stay with each
 
 Lucide, everywhere (`lucide-react` in the app). One icon set, the same stroke; no second set beside it.
 
+## Rufi paper
+
+`paper.css` beside this file is one look the AI may give a page it makes; the analysis skill offers it beside the AI's own styles and plain Markdown. It is light on purpose, in every theme: a page reads as a sheet of white paper, as the frame behind it is (`--paper`), even when Rufi is dark. Its values are the light theme's. A page takes no outside files, so the AI puts the whole file in the page's `<style>`.
+
 ## The dog
 
 Rufi is a dog folded from one sheet of white paper. The facets, the creases and the ear flaps make it look made with care, not a cartoon; keep the folded-paper language in everything new.

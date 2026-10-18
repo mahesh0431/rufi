@@ -111,6 +111,20 @@ export const listTools = (server: McpServerConfig) =>
     { "mcp-protocol-version": PROTOCOL },
   );
 
+export const listResources = (server: McpServerConfig) =>
+  post(
+    server,
+    { id: nextId++, method: "resources/list", params: {} },
+    { "mcp-protocol-version": PROTOCOL },
+  );
+
+export const readResource = (server: McpServerConfig, uri: string) =>
+  post(
+    server,
+    { id: nextId++, method: "resources/read", params: { uri } },
+    { "mcp-protocol-version": PROTOCOL },
+  );
+
 /** Calls a tool with the `_meta` Codex gives a call: its id, thread and turn. */
 export const callTool = (
   server: McpServerConfig,
