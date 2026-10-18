@@ -179,9 +179,12 @@ export async function prepareCodexHome(
   await rm(skills, { recursive: true, force: true });
   for (const skill of options.skills ?? []) {
     await mkdir(join(skills, skill.name), { recursive: true, mode: 0o700 });
-    await writeFile(join(skills, skill.name, "SKILL.md"), skill.text, {
-      mode: 0o600,
-    });
+    for (const [name, text] of [
+      ["SKILL.md", skill.text],
+      ...Object.entries(skill.files),
+    ] as const) {
+      await writeFile(join(skills, skill.name, name), text, { mode: 0o600 });
+    }
   }
   await writeFile(
     join(paths.codexHome, "config.toml"),
