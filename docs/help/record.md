@@ -14,7 +14,7 @@ Overview is the first page you see. It has three parts, in this order:
 
    Click **Open** to go to the document's page (see [Documents](documents.md)), or to that follow-up on Follow-ups. Click **Ask Rufi** to put it in the chat's box and ask about it (see [Adding to a message](chat.md#adding-to-a-message)). A document read with nothing to save isn't here. When nothing waits, this part isn't shown.
 
-2. **Health record:** one tile for each of its pages, with its count and a short summary. Click a tile to open that page. A page with nothing in it says **None yet**.
+2. **Health record:** a tile for each of its pages that has something in it, with its count and a short summary. Click a tile to open that page. The pages with nothing in them are on one line under the tiles, **Nothing yet:** and their names. Click a name to open that page. When a page gets its first record, it gets its tile.
 3. **Recent changes:** your last 5 saves and undos, newest first. Click one to see its receipt, the same as in the chat.
 
 Rufi works out the tiles from your saved health record, not with the AI. Each tile says what it counts:

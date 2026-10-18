@@ -34,7 +34,10 @@ test("a save in one window refreshes Overview's tiles there and a kind's page in
   rufi,
   context,
 }) => {
-  await rufi.family();
+  // Allergies: no rows, but "None known" was said, with no date.
+  await rufi.family(
+    "INSERT INTO none_known (id, person_id, category, asserted) VALUES ('nk-a1', 'asha', 'allergies', NULL);",
+  );
   await rufi.start({
     scenario: {
       callsByTurn: [crpSave("remove"), crpSave("restore")],
@@ -61,6 +64,15 @@ test("a save in one window refreshes Overview's tiles there and a kind's page in
     .getByRole("main")
     .getByRole("link", { name: /^Lab results 7/ });
   await expect(tile).toBeVisible();
+  // A page with something in it has a tile; the empty ones are on one line.
+  const record = page.getByRole("region", { name: "Health record" });
+  await expect(
+    record.getByRole("link", { name: /^Allergies\s*None known$/ }),
+  ).toBeVisible();
+  const nothingYet = record.getByText(/^Nothing yet:/);
+  await expect(nothingYet.getByRole("link")).not.toHaveCount(0);
+  await expect(nothingYet).not.toContainText("Allergies");
+  await expect(nothingYet).not.toContainText("Lab results");
   await accessible(page);
   await chat(page).getByRole("button", { name: "Open the chat" }).click();
   await box(page).fill("Remove the CRP result");
