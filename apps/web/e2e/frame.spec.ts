@@ -380,8 +380,12 @@ test.describe("first run", () => {
       "Nothing yet: Lab results, Measurements, Medicines",
     );
     await expect(
-      nothingYet.getByRole("link", { name: "Lab results" }),
-    ).toHaveAttribute("href", /\/record\/lab_result$/);
+      page.getByRole("region", { name: "Health record" }).getByRole("listitem"),
+    ).toHaveCount(0);
+    await nothingYet.getByRole("link", { name: "Lab results" }).click();
+    await expect(title).toHaveText("Lab results");
+    await expect(page.getByRole("main")).toContainText("Nothing here yet.");
+    await page.goBack();
     await expect(sidebar(page)).toContainText("Mira Fictional");
     await expect(title).toHaveText("Overview");
     // The person's chat was made with them: the bar works at once.
