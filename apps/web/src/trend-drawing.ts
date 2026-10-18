@@ -1,70 +1,11 @@
-// A result's values over time, worked out for drawing: where each value,
-// the lab's range and the dates go on a chart of a given size. Neutral by
-// design: the chart shows where a value sits, and the lab's own flag and
-// note say what it means, in words. A value outside the range it was printed
-// with gets a ring; Rufi adds no flag.
+// A result's values over time, worked out for drawing: where each value and
+// the dates go on a chart of a given size. Neutral by design: the chart shows
+// where a value sits, and the lab's own words say what it means. A value the
+// lab flagged (its printed flag, such as High or Low) gets a ring; Rufi adds
+// no flag and reads nothing from the printed range, which is written as it
+// came.
 import type { ResultRow, ShownRow } from "@rufi/contracts/record";
 import { printedDate } from "./dates.ts";
-
-/** One edge of a printed range: its number, and how the lab printed it. */
-interface Edge {
-  value: number;
-  text: string;
-}
-
-/** A printed range as numbers: "30 - 400", "<10" or ">40"; none when it isn't one of these. */
-export interface Range {
-  low?: Edge;
-  high?: Edge;
-}
-
-const NUMBER = String.raw`(-?\d+(?:\.\d+)?)`;
-const BETWEEN = new RegExp(
-  String.raw`^\s*${NUMBER}\s*[-–—]\s*${NUMBER}(?![\d.])`,
-);
-const BOUND = new RegExp(String.raw`^\s*(<=?|≤|>=?|≥)\s*${NUMBER}(?![\d.])`);
-
-const edge = (text: string): Edge => ({ value: Number(text), text });
-
-/**
- * A printed range's numbers: "4.0 - 5.6" and "30–400 µg/L" are both edges,
- * "<10" only a high one, ">40" only a low one. Anything else ("Negative",
- * "see note") is no range: no band and no ring, and the table still shows
- * it as printed.
- */
-export function rangeOf(printed: string | undefined): Range | undefined {
-  if (printed === undefined) return undefined;
-  const between = BETWEEN.exec(printed);
-  if (between) {
-    const [, low = "", high = ""] = between;
-    return Number(low) <= Number(high)
-      ? { low: edge(low), high: edge(high) }
-      : undefined;
-  }
-  const bound = BOUND.exec(printed);
-  if (bound) {
-    const [, sign = "", number = ""] = bound;
-    return sign.startsWith("<") || sign === "≤"
-      ? { high: edge(number) }
-      : { low: edge(number) };
-  }
-  return undefined;
-}
-
-/**
- * Whether a value is outside the range printed with it: only when that is
- * certain, so "<5" against a range from 3 is not ringed.
- */
-export function isOutside(row: ResultRow): boolean {
-  const range = rangeOf(row.range);
-  if (row.number === undefined || range === undefined) return false;
-  const below = row.comparator === ">" || row.comparator === ">=";
-  const above = row.comparator === "<" || row.comparator === "<=";
-  return (
-    (range.low !== undefined && !below && row.number < range.low.value) ||
-    (range.high !== undefined && !above && row.number > range.high.value)
-  );
-}
 
 /** A calendar date ("2026", "2026-05", "2026-05-20T08:30") as a time to space values by. */
 function timeOf(date: string): number {
@@ -100,8 +41,8 @@ interface TrendPoint {
   y: number;
   /** The value as the chart writes it above its point. */
   text: string;
-  /** Outside the range printed with it: drawn with a ring. */
-  outside: boolean;
+  /** The lab printed a flag with it: drawn with a ring. */
+  flagged: boolean;
   /** The newest value: drawn filled. */
   last: boolean;
   /** Whether its value is written above it (none where they would crowd). */
@@ -119,13 +60,8 @@ interface TrendLine {
 export interface TrendDrawing {
   width: number;
   height: number;
-  /** The plot's left and right edge. */
-  left: number;
+  /** The plot's right edge. */
   right: number;
-  /** The newest value's range, as a pale band within the plot. */
-  band?: { y: number; height: number };
-  /** Range edges near the values, each a dashed line with its number. */
-  edges: { y: number; text: string }[];
   /** The newest value's range as printed, written at the top right. */
   range?: string;
   lines: TrendLine[];
@@ -159,10 +95,9 @@ function spaced(xs: number[], gap: number): boolean[] {
 }
 
 /**
- * The chart of a result's values. The scale fits the values, and a range
- * edge comes in only when it is near them, so a wide range (30 to 400)
- * can't flatten the line. Time is spaced by date; one value sits in the
- * middle. A two-value result (blood pressure) has a second line.
+ * The chart of a result's values. The scale fits the values, so a wide
+ * range can't flatten the line. Time is spaced by date; one value sits in
+ * the middle. A two-value result (blood pressure) has a second line.
  */
 export function drawTrend(
   title: string,
@@ -180,64 +115,43 @@ export function drawTrend(
   const top = room.top;
   const bottom = height - room.bottom;
 
-  const seconds = placed.filter(
-    (value): value is Placed & { second_number: number } =>
-      value.second_number !== undefined,
-  );
-  const numbers = [
-    ...placed.map((value) => value.number),
-    ...seconds.map((value) => value.second_number),
-  ];
-  const d0 = Math.min(...numbers);
-  const d1 = Math.max(...numbers);
-  const spread = Math.max(d1 - d0, Math.abs(d1) * 0.1 || 1);
-  let v0 = d0 - spread * 0.3;
-  let v1 = d1 + spread * 0.3;
-  const range = rangeOf(newest.range);
-  const near = [range?.low, range?.high].filter(
-    (end): end is Edge =>
-      end !== undefined && end.value >= d0 - spread && end.value <= d1 + spread,
-  );
-  for (const end of near) {
-    v0 = Math.min(v0, end.value - spread * 0.15);
-    v1 = Math.max(v1, end.value + spread * 0.15);
+  let d0 = Infinity;
+  let d1 = -Infinity;
+  for (const value of placed) {
+    for (const number of [value.number, value.second_number ?? value.number]) {
+      d0 = Math.min(d0, number);
+      d1 = Math.max(d1, number);
+    }
   }
+  const spread = Math.max(d1 - d0, Math.abs(d1) * 0.1 || 1);
+  const v0 = d0 - spread * 0.3;
+  const v1 = d1 + spread * 0.3;
   const t0 = timeOf(placed[0]?.measured.date ?? newest.measured.date);
   const t1 = timeOf(newest.measured.date);
   const x = (date: string) =>
     left + (t1 === t0 ? 0.5 : (timeOf(date) - t0) / (t1 - t0)) * (right - left);
   const y = (value: number) =>
     top + (1 - (value - v0) / (v1 - v0)) * (bottom - top);
-  const clamp = (at: number) => Math.max(top, Math.min(bottom, at));
-
-  const band =
-    range === undefined
-      ? undefined
-      : (() => {
-          const high = clamp(range.high ? y(range.high.value) : top);
-          const low = clamp(range.low ? y(range.low.value) : bottom);
-          return low > high ? { y: high, height: low - high } : undefined;
-        })();
 
   const xs = placed.map((value) => x(value.measured.date));
   const labelled = spaced(xs, VALUE_GAP);
+  // Each value with its place in `placed`, so nothing is searched for again.
+  const indexed = placed.map((row, at) => ({ row, at }));
+  const seconds = indexed.filter(({ row }) => row.second_number !== undefined);
   const line = (
-    rows: readonly Placed[],
+    rows: readonly { row: Placed; at: number }[],
     number: (row: Placed) => number,
     text: (row: Placed) => string,
     second: boolean,
   ): TrendLine => {
-    const points = rows.map((row, i) => {
-      const at = placed.indexOf(row);
-      return {
-        x: x(row.measured.date),
-        y: y(number(row)),
-        text: text(row),
-        outside: !second && isOutside(row),
-        last: i === rows.length - 1,
-        labelled: !mini && (labelled[at] ?? false),
-      };
-    });
+    const points = rows.map(({ row, at }, i) => ({
+      x: xs[at] ?? left,
+      y: y(number(row)),
+      text: text(row),
+      flagged: !second && row.flag !== undefined,
+      last: i === rows.length - 1,
+      labelled: !mini && (labelled[at] ?? false),
+    }));
     return {
       d: points
         .map(
@@ -252,7 +166,7 @@ export function drawTrend(
   const two = seconds.length > 0;
   const lines = [
     line(
-      placed,
+      indexed,
       (row) => row.number,
       (row) => (two ? String(row.number) : row.value),
       false,
@@ -278,17 +192,9 @@ export function drawTrend(
   return {
     width,
     height,
-    left,
     right,
-    ...(band && { band }),
-    edges: mini
-      ? []
-      : near
-          .map((end) => ({ y: y(end.value), text: end.text }))
-          .filter((end) => end.y >= top && end.y <= bottom),
     ...(!mini &&
-      newest.range !== undefined &&
-      range !== undefined && { range: `Lab range ${newest.range}` }),
+      newest.range !== undefined && { range: `Lab range ${newest.range}` }),
     lines,
     dates: mini
       ? []

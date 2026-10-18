@@ -1,6 +1,6 @@
 import type { ResultRow } from "@rufi/contracts/record";
 import { describe, expect, it } from "vitest";
-import { drawTrend, isOutside, rangeOf } from "./trend-drawing.ts";
+import { drawTrend } from "./trend-drawing.ts";
 
 const LARGE = { width: 640, height: 150 };
 
@@ -28,59 +28,30 @@ const ferritin = [
   result("f3", "2026-09-01", "26", { range: "30 - 400", flag: "L" }),
 ];
 
-describe("a printed range", () => {
-  it("reads as numbers only in the shapes labs print", () => {
-    expect(rangeOf("4.0 - 5.6")).toEqual({
-      low: { value: 4, text: "4.0" },
-      high: { value: 5.6, text: "5.6" },
-    });
-    expect(rangeOf("30–400 µg/L")).toEqual({
-      low: { value: 30, text: "30" },
-      high: { value: 400, text: "400" },
-    });
-    expect(rangeOf("-2 - 2")).toEqual({
-      low: { value: -2, text: "-2" },
-      high: { value: 2, text: "2" },
-    });
-    expect(rangeOf("<10")).toEqual({ high: { value: 10, text: "10" } });
-    expect(rangeOf(">= 40")).toEqual({ low: { value: 40, text: "40" } });
-    expect(rangeOf("Negative")).toBeUndefined();
-    expect(rangeOf("3,5 - 5,0")).toBeUndefined();
-    expect(rangeOf("400 - 30")).toBeUndefined();
-    expect(rangeOf(undefined)).toBeUndefined();
-  });
-});
-
 describe("a ring", () => {
-  it("marks a value outside the range printed with it, and only when that is certain", () => {
-    expect(
-      isOutside(result("a", "2026-01-01", "18", { range: "30 - 400" })),
-    ).toBe(true);
-    expect(
-      isOutside(result("b", "2026-01-01", "30", { range: "30 - 400" })),
-    ).toBe(false);
-    expect(isOutside(result("c", "2026-01-01", "162", { range: "<100" }))).toBe(
-      true,
+  it("marks each value the lab flagged, and only those: Rufi reads nothing from the range", () => {
+    const ringed = (more: Partial<ResultRow>, value = "8") =>
+      drawTrend(
+        "Ferritin (µg/L)",
+        [result("a", "2026-01-01", value, more)],
+        LARGE,
+      )?.lines[0]?.points[0]?.flagged;
+    // The lab's own flag, as printed.
+    expect(ringed({ range: "30 - 400", flag: "L" }, "18")).toBe(true);
+    expect(ringed({ range: "<5,5", flag: "High" }, "5.3")).toBe(true);
+    // No flag: no ring, whatever the range says.
+    for (const range of ["30 - 400", "0 - 1,000", "<5", "see note"]) {
+      expect(ringed({ range }, "18")).toBe(false);
+    }
+    expect(ringed({ comparator: "<", number: 5, range: "10 - 20" }, "<5")).toBe(
+      false,
     );
-    // "<5" could be 4 or 0.1: inside a range from 3, or not; no ring.
-    const under = { comparator: "<", number: 5, range: "3 - 10" };
-    expect(isOutside(result("d", "2026-01-01", "<5", under))).toBe(false);
-    // "<5" against a range from 10 is below it for certain.
-    expect(
-      isOutside(
-        result("e", "2026-01-01", "<5", { ...under, range: "10 - 20" }),
-      ),
-    ).toBe(true);
-    // No range, or one Rufi can't read: no ring.
-    expect(isOutside(result("f", "2026-01-01", "18"))).toBe(false);
-    expect(
-      isOutside(result("g", "2026-01-01", "18", { range: "see note" })),
-    ).toBe(false);
+    expect(ringed({})).toBe(false);
   });
 
-  it("is drawn on each value outside its range, whatever the lab's note says", () => {
+  it("is drawn on each flagged value of a series, and the newest is filled", () => {
     const drawing = drawTrend("Ferritin (µg/L)", ferritin, LARGE);
-    expect(drawing?.lines[0]?.points.map((point) => point.outside)).toEqual([
+    expect(drawing?.lines[0]?.points.map((point) => point.flagged)).toEqual([
       false,
       true,
       true,
@@ -94,28 +65,20 @@ describe("a ring", () => {
 });
 
 describe("the scale", () => {
-  it("fits the values, so a wide range can't flatten the line; only the near edge is drawn", () => {
+  it("fits the values, so a wide range can't flatten the line; the range is written as printed", () => {
     const drawing = drawTrend("Ferritin (µg/L)", ferritin, LARGE);
     const ys = drawing?.lines[0]?.points.map((point) => point.y) ?? [];
     // The values use most of the plot's height (22 to 128), not a sliver of it.
     expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(50);
-    // 30 is near the values: drawn with its number. 400 is far: not drawn.
-    expect(drawing?.edges.map((edge) => edge.text)).toEqual(["30"]);
-    // The band runs from 30 to the top of the plot.
-    expect(drawing?.band?.y).toBe(22);
-    expect(drawing?.band && drawing.band.y + drawing.band.height).toBeCloseTo(
-      drawing?.edges[0]?.y ?? 0,
-    );
     expect(drawing?.range).toBe("Lab range 30 - 400");
-  });
-
-  it("brings in both edges when the values sit between them", () => {
-    const tsh = [
-      result("t1", "2026-01-10", "2.1", { range: "0.4 - 4.0" }),
-      result("t2", "2026-08-12", "4.6", { range: "0.4 - 4.0", flag: "High" }),
-    ];
-    const drawing = drawTrend("TSH (mIU/L)", tsh, LARGE);
-    expect(drawing?.edges.map((edge) => edge.text)).toEqual(["0.4", "4.0"]);
+    // A range in words is written as it came too.
+    expect(
+      drawTrend(
+        "Ferritin (µg/L)",
+        [result("f1", "2026-01-01", "31", { range: "see note" })],
+        LARGE,
+      )?.range,
+    ).toBe("Lab range see note");
   });
 
   it("spaces time by date, oldest at the left", () => {
@@ -135,7 +98,7 @@ describe("the scale", () => {
     );
     expect(drawing?.lines).toHaveLength(1);
     expect(drawing?.lines[0]?.points).toEqual([
-      expect.objectContaining({ x: 330, last: true, outside: true }),
+      expect.objectContaining({ x: 330, last: true, flagged: false }),
     ]);
     expect(drawing?.dates.map((date) => date.text)).toEqual(["May 2026"]);
   });
@@ -175,7 +138,6 @@ describe("the scale", () => {
       "82",
       "78",
     ]);
-    expect(drawing?.band).toBeUndefined();
     expect(drawing?.said).toBe(
       "Blood pressure (mmHg) over time: 126/82 on 1 Jun 2026, 118/78 on 20 Sep 2026",
     );
@@ -191,14 +153,12 @@ describe("for a screen reader", () => {
 });
 
 describe("a small trend", () => {
-  it("has the band and the rings, but no numbers, dates or edges", () => {
+  it("has the rings, but no numbers, dates or range", () => {
     const drawing = drawTrend("Ferritin", ferritin, {
       width: 88,
       height: 22,
       mini: true,
     });
-    expect(drawing?.band).toBeDefined();
-    expect(drawing?.edges).toEqual([]);
     expect(drawing?.dates).toEqual([]);
     expect(drawing?.range).toBeUndefined();
     expect(drawing?.lines[0]?.points.map((point) => point.labelled)).toEqual([
@@ -206,7 +166,7 @@ describe("a small trend", () => {
       false,
       false,
     ]);
-    expect(drawing?.lines[0]?.points.map((point) => point.outside)).toEqual([
+    expect(drawing?.lines[0]?.points.map((point) => point.flagged)).toEqual([
       false,
       true,
       true,

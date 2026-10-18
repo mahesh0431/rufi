@@ -539,7 +539,10 @@ async function trends(
   const tests = [...new Set(shownRows.map((row) => row.test))];
   if (tests.length === 0) return {};
   const key = (row: ResultRow) => JSON.stringify([row.test, row.unit ?? null]);
+  const wanted = new Set(shownRows.map((row) => row.id));
   const all = new Map<string, ResultRow[]>();
+  // Where each shown row is in its series, found as the series is built.
+  const at = new Map<string, number>();
   for (const row of await seriesRows(
     db,
     personId,
@@ -548,13 +551,22 @@ async function trends(
   )) {
     const value = shown(kindOf("result"), row);
     if (!placed(value)) continue;
-    all.set(key(value), [...(all.get(key(value)) ?? []), value]);
+    let values = all.get(key(value));
+    if (values === undefined) {
+      values = [];
+      all.set(key(value), values);
+    }
+    if (wanted.has(value.id)) at.set(value.id, values.length);
+    values.push(value);
   }
   const found: Record<string, ResultRow[]> = {};
   for (const row of shownRows) {
-    const values = all.get(key(row)) ?? [];
-    const at = values.findIndex((value) => value.id === row.id);
-    const trend = values.slice(Math.max(0, at + 1 - TREND_POINTS), at + 1);
+    const end = at.get(row.id);
+    if (end === undefined) continue;
+    const trend = (all.get(key(row)) ?? []).slice(
+      Math.max(0, end + 1 - TREND_POINTS),
+      end + 1,
+    );
     if (trend.length > 1) found[row.id] = trend;
   }
   return found;

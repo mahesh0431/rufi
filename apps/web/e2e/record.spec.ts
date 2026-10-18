@@ -252,14 +252,8 @@ test("a result's values over time: a small trend on its row, and the large one w
     name: "Ferritin (µg/L) over time: 31 on 12 Oct 2025, 18 on 4 Mar 2026, 26 on 1 Sep 2026. Lab range 30 - 400",
   });
   await expect(chart).toBeVisible();
-  // The scale fits the values: the near edge of the range has its number, the far one doesn't.
+  // The range as the lab printed it, in words.
   await expect(chart).toContainText("Lab range 30 - 400");
-  await expect(chart.locator("text").filter({ hasText: /^30$/ })).toHaveCount(
-    1,
-  );
-  await expect(chart.locator("text").filter({ hasText: /^400$/ })).toHaveCount(
-    0,
-  );
   // The table stays, with the lab's note as printed.
   await expect(newest.getByRole("table")).toContainText(
     "4 Mar 202618 µg/L30 - 400Low",

@@ -110,13 +110,61 @@ describe("what is current", () => {
     );
   });
 
-  it("reads only the person's own rows", async () => {
+  it("reads only the person's own rows, and only their current values in a row's small trend, also after an undo", async () => {
     expect(await views.detail("asha", "result", "res-r1")).toBeUndefined();
     expect(
       await views.detail("asha", "no_such_kind", "res-a1"),
     ).toBeUndefined();
     const ravi = await views.page("ravi", "lab_result");
     expect(idsOf(ravi)).toEqual(["res-r1", "res-r2"]);
+
+    // Both have ferritin, in the same unit, on the same days.
+    const ferritin = ["asha", "ravi"].flatMap((person) =>
+      [1, 2, 3, 4].map(
+        (month) =>
+          `('${person}-fer-${String(month)}', '${person}', 'lab', 'Ferritin', '${String(20 + month)}', ${String(20 + month)}, 'µg/L', '2026-0${String(month)}-15', '2026-10-01T10:00:00Z', NULL)`,
+      ),
+    );
+    store.db.exec(`
+      INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, measured_at, entered_at, replaces_id) VALUES
+        ${ferritin.join(",\n")};`);
+    const trend = async (person: string, id: string) => {
+      const pages =
+        person === "asha"
+          ? await allPages("lab_result")
+          : [await views.page(person, "lab_result")];
+      return pages
+        .flatMap((page) => page.trends?.[id] ?? [])
+        .map((value) => value.id);
+    };
+    const whole = ["asha-fer-1", "asha-fer-2", "asha-fer-3", "asha-fer-4"];
+    expect(await trend("asha", "asha-fer-4")).toEqual(whole);
+    expect(await trend("ravi", "ravi-fer-4")).toEqual([
+      "ravi-fer-1",
+      "ravi-fer-2",
+      "ravi-fer-3",
+      "ravi-fer-4",
+    ]);
+
+    // Asha's second value removed, her third amended by the lab.
+    await saveSaid("Remove the February ferritin", [
+      { kind: "result", action: "remove", id: "asha-fer-2" },
+    ]);
+    store.db.exec(`
+      INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, measured_at, entered_at, replaces_id) VALUES
+        ('asha-fer-3b', 'asha', 'lab', 'Ferritin', '24', 24, 'µg/L', '2026-03-15', '2026-10-02T10:00:00Z', 'asha-fer-3');`);
+    expect(await trend("asha", "asha-fer-4")).toEqual([
+      "asha-fer-1",
+      "asha-fer-3b",
+      "asha-fer-4",
+    ]);
+
+    // Undone: the amendment taken off, the removed value put back.
+    await saveSaid("Undo those", [
+      { kind: "result", action: "remove", id: "asha-fer-3b" },
+      { kind: "result", action: "restore", id: "asha-fer-2" },
+    ]);
+    expect(await trend("asha", "asha-fer-4")).toEqual(whole);
   });
 });
 
