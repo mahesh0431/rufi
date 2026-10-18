@@ -222,7 +222,7 @@ body {
     transform: none;
   }
 }
-.ask-rufi svg {
+.ask-rufi [data-dog] > svg {
   border-radius: 50%;
 }
 :root[data-theme="dark"] .ask-rufi [data-dog="dark"] svg {
