@@ -11,7 +11,7 @@ import type { ComponentProps } from "react";
 import { twMerge } from "tailwind-merge";
 
 /** What the small label beside the face says. */
-const TIP = "Add to chat to ask Rufi";
+const TIP = "Ask Rufi about this";
 
 /** Marks a control that adds to the chat: a click on it keeps the panel open. */
 export const ASKS = { "data-ask": "" } as const;
