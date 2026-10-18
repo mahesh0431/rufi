@@ -139,7 +139,12 @@ export function Frame() {
         className="flex w-60 shrink-0 flex-col gap-0.5 border-r border-line bg-side p-2.5"
       >
         <div className="flex items-center gap-2 px-2 py-1.5">
-          {person ? <SidebarDog person={person} /> : <Dog size={36} />}
+          {person ? (
+            // Keyed by person: what it remembers (a job just done) is theirs.
+            <SidebarDog key={person.id} person={person} />
+          ) : (
+            <Dog size={36} />
+          )}
           <p className="truncate font-semibold">
             {person?.displayName ?? "Rufi"}
           </p>
