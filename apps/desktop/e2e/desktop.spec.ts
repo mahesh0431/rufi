@@ -3,6 +3,7 @@
 // quitting and crashing leave behind, what the person is told when something
 // fails, new windows, and what the page can't do. Dock, menus, focus and the
 // looks are checked by hand on the Mac.
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -24,6 +25,7 @@ import {
   type Desktop,
   ended,
   expect,
+  naming,
   rufiStarts,
   test,
 } from "./app.ts";
@@ -380,6 +382,40 @@ test.describe("stopping", () => {
     expect(await desktop.running()).toBe(false);
   });
 
+  test("a test's end stops whatever can still write in its folder, before the folder goes", async ({
+    desktop,
+  }) => {
+    const app = await desktop.launch();
+    await working(await app.electron.firstWindow());
+    // Chromium's helpers (GPU, network, the page) name the app's profile.
+    expect((await naming(desktop.folder)).length).toBeGreaterThan(1);
+    // One that outlives the app, as a helper can for a moment; and one of
+    // another folder whose name only starts the same.
+    const stand = (profile: string) =>
+      spawn(
+        process.execPath,
+        [
+          "-e",
+          "setInterval(() => undefined, 1000)",
+          "--",
+          `--user-data-dir=${profile}`,
+        ],
+        { stdio: "ignore" },
+      );
+    const helper = stand(join(desktop.folder, "tmp", "profile"));
+    const gone = new Promise((resolve) => helper.once("exit", resolve));
+    const other = stand(`${desktop.folder}-other/tmp/profile`);
+
+    try {
+      await desktop.close();
+      expect(await naming(desktop.folder)).toEqual([]);
+      await gone;
+      expect(await naming(`${desktop.folder}-other`)).toEqual([other.pid]);
+    } finally {
+      other.kill("SIGKILL");
+    }
+  });
+
   test("when the Rufi it started stops, the app says so and quits", async ({
     desktop,
   }) => {
@@ -613,6 +649,17 @@ test.describe("the page", () => {
     store.close();
     const app = await desktop.launch();
     const page = await app.electron.firstWindow();
+    // How the save ended: the file shows before it is all written.
+    await app.electron.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.webContents.session.on(
+        "will-download",
+        (_event, item) => {
+          item.once("done", (_done, state) => {
+            (globalThis as { saved?: string }).saved = state;
+          });
+        },
+      );
+    });
     await page.getByRole("link", { name: "Settings" }).click();
     await page.getByRole("button", { name: "Export" }).click();
     await expect(page.getByRole("status")).toContainText("Exported");
@@ -622,7 +669,11 @@ test.describe("the page", () => {
       path: string;
     };
     expect(name).toMatch(/^rufi-export-\d{4}-\d{2}-\d{2}\.zip$/);
-    await expect.poll(() => existsSync(path)).toBe(true);
+    await expect
+      .poll(() =>
+        app.electron.evaluate(() => (globalThis as { saved?: string }).saved),
+      )
+      .toBe("completed");
     const files = unzipSync(await readFile(path));
     expect(Object.keys(files)).toContain(
       `${name.replace(/\.zip$/, "")}/README.md`,
@@ -783,16 +834,23 @@ test("shows a document's PDF in the built-in viewer; a link in it leaves the win
     );
   });
   // The PDF's "Verify at https://example.com/verify" link, where the viewer
-  // draws page 1 in the window's first size.
-  await page.mouse.click(560, 322);
+  // draws page 1 in the window's first size. The title comes as the PDF
+  // loads, which can be before the viewer has page 1 there to take a click
+  // (on a busy machine): click until the link is followed.
+  const tried = () =>
+    app.electron.evaluate(
+      () => (globalThis as { tried?: string[] }).tried ?? [],
+    );
+  await expect(async () => {
+    await page.mouse.click(560, 322);
+    await expect.poll(tried, { timeout: 1_000 }).not.toEqual([]);
+  }).toPass({ timeout: 10_000 });
 
   // The link tries to take the window away; the window stays in Rufi and
   // the browser isn't asked, as for any link a frame follows.
-  await expect
-    .poll(() =>
-      app.electron.evaluate(() => (globalThis as { tried?: string[] }).tried),
-    )
-    .toEqual(["https://example.com/verify"]);
+  expect(new Set(await tried())).toEqual(
+    new Set(["https://example.com/verify"]),
+  );
   expect(page.url()).toBe(documents);
   expect(app.told).toEqual([]);
   // Esc goes to the PDF viewer while it has the focus; × closes the popup.

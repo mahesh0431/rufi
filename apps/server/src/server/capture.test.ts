@@ -32,7 +32,11 @@ import {
   openWritable,
   type Store,
 } from "../core/store/database.ts";
-import { coreInstructions, rulesVersion } from "../core/chat/instructions.ts";
+import {
+  coreInstructions,
+  rulesNote,
+  rulesVersion,
+} from "../core/chat/instructions.ts";
 import { SKILLS } from "../core/skills/skills.ts";
 import type { ToolSpec } from "../core/tools/registry.ts";
 import { chatCaller, forAgent } from "../core/tools/tools.ts";
@@ -194,6 +198,7 @@ const RUFI_TOOLS = [
   "mcp__rufi__read_chat",
   "mcp__rufi__retry_reading",
   "mcp__rufi__save_changes",
+  "mcp__rufi__sort_documents",
 ];
 
 describe("Rufi's tools on the pinned Codex, over MCP", () => {
@@ -426,7 +431,7 @@ describe("What the AI is given, on the pinned Codex", () => {
   );
 
   it(
-    "keeps one thread across a model change, core and skill-body updates and a compaction; each reply has the rules and tools of its time",
+    "keeps one thread across a model change and a Rufi update; each reply has the tools of its time",
     { timeout: 180_000 },
     async () => {
       const opened = await start([{ text: "One." }, { text: "Two." }]);
@@ -441,54 +446,150 @@ describe("What the AI is given, on the pinned Codex", () => {
       expect(changed?.model).toBe("gpt-6.1-sol");
       expect(userWords(changed)).toEqual(["first", "second"]);
 
-      // Rufi is updated: a tool says more, and the core names the region.
-      await transcripts.saveSetting("emergency_region", "IN");
+      // Rufi is updated: a tool says more.
       const update = "Changed in this update.";
       await start(
         [
           {
             exec: 'text(ALL_TOOLS.find((t) => t.name === "mcp__rufi__get_overview").description)',
           },
-          { text: "Three.", tokens: OVER_LIMIT },
-          { text: "Four." },
+          { text: "Three." },
         ],
         { update },
       );
       await say("third");
       await replies(3);
-      const [described, third] = answering().slice(-2);
-      expect(developer(described)).toContain(coreInstructions("IN"));
-      expect(developer(described)).not.toContain(coreInstructions(undefined));
-      expect(userWords(described)).toContain("third");
-      const output = JSON.stringify(third?.input.at(-1)?.output ?? "");
+      const output = JSON.stringify(answering().at(-1)?.input.at(-1)?.output);
       expect(output).toContain(update);
+      expect(threadsUsed()).toBe(1);
+    },
+  );
+});
 
-      // The answer was over the limit: Codex summarises, the core stays.
-      await say("fourth");
-      await replies(4);
-      const summaries = (model?.requests.length ?? 0) - answering().length;
-      expect(summaries).toBe(2);
-      const fourth = answering().at(-1);
-      expect(developer(fourth)).toContain(coreInstructions("IN"));
-      expect(developer(fourth)).not.toContain(coreInstructions(undefined));
-      expect(userWords(fourth)).toContain("fourth");
+/** The developer messages that say Rufi's rules changed, whole. */
+const notes = (request: ModelRequest | undefined) =>
+  developer(request).filter((text) => text.startsWith("Rufi's rules changed."));
 
-      // A release changes only a bundled skill's body: the name,
-      // description and core stay the same. It must reload too.
-      const skill = SKILLS.find((skill) => skill.name === "analysis");
-      if (!skill) throw new Error("no analysis skill");
-      const previous = skill.text;
-      try {
+describe("The context a chat's thread used, on the pinned Codex", () => {
+  it(
+    "is the last request's tokens and the model's window, as Codex reports them",
+    { timeout: 120_000 },
+    async () => {
+      await start([{ text: "One.", tokens: 1_234 }]);
+      await say("first");
+      await replies(1);
+      await until(
+        async () =>
+          ((await transcripts.chat("asha"))?.context ?? null) !== null,
+      );
+      const context = (await transcripts.chat("asha"))?.context;
+      expect(context?.tokens).toBe(1_234);
+      expect(context?.window).toBeGreaterThan(1_234);
+    },
+  );
+});
+
+describe("How a change of Rufi's rules reaches the AI, on the pinned Codex", () => {
+  /** A skill's body changes, as in a release; undone after the test. */
+  let restore: (() => void) | undefined;
+  afterEach(() => {
+    restore?.();
+    restore = undefined;
+  });
+
+  it.each([
+    {
+      change: "a new emergency region (the core)",
+      region: "IN",
+      make: () => transcripts.saveSetting("emergency_region", "IN"),
+    },
+    {
+      change: "a skill's body only",
+      region: undefined,
+      make: () => {
+        const skill = SKILLS.find((skill) => skill.name === "analysis");
+        if (!skill) throw new Error("no analysis skill");
+        const previous = skill.text;
         skill.text +=
           "\n- New rule in this release: show each calculation's inputs.\n";
-        await start([{ text: "Five." }]);
-        await say("fifth");
-        await replies(5);
-        expect((model?.requests.length ?? 0) - answering().length).toBe(1);
-        expect(userWords(answering().at(-1))).toContain("fifth");
-      } finally {
-        skill.text = previous;
-      }
+        restore = () => {
+          skill.text = previous;
+        };
+        return Promise.resolve();
+      },
+    },
+  ])(
+    "after $change, the complete rules reach the next request without a compaction, and stay after a restart and after Codex compacts",
+    { timeout: 180_000 },
+    async ({ region, make }) => {
+      await start([{ text: "One." }]);
+      await say("first");
+      await replies(1);
+      const before = coreInstructions(undefined);
+      expect(notes(answering().at(-1))).toEqual([]);
+
+      // The thread is open: Rufi lets it go, picks it up with the new rules
+      // and adds the note; the next request has it, whole.
+      await make();
+      const note = rulesNote(coreInstructions(region));
+      model?.script.push({ text: "Two." });
+      await say("second");
+      await replies(2);
+      expect(model?.requests.length).toBe(answering().length);
+      expect(notes(answering().at(-1))).toEqual([note]);
+      expect(userWords(answering().at(-1))).toEqual(["first", "second"]);
+
+      // Rufi starts again: the thread is picked up cold and keeps the note.
+      await start([{ text: "Three.", tokens: OVER_LIMIT }]);
+      await say("third");
+      await replies(3);
+      expect(model?.requests.length).toBe(answering().length);
+      expect(notes(answering().at(-1))).toEqual([note]);
+
+      // The answer was over the limit: Codex compacts, and the request after
+      // it starts from the new rules.
+      model?.script.push({ text: "Four." });
+      await say("fourth");
+      await replies(4);
+      expect(model?.requests.length).toBe(answering().length + 1);
+      const fourth = answering().at(-1);
+      expect(developer(fourth)).toContain(coreInstructions(region));
+      if (region !== undefined) expect(developer(fourth)).not.toContain(before);
+      expect(userWords(fourth)).toContain("fourth");
+      expect(threadsUsed()).toBe(1);
+    },
+  );
+
+  it(
+    "gives the rules again after an update that didn't reach the AI",
+    { timeout: 180_000 },
+    async () => {
+      await start([{ text: "One." }]);
+      await say("first");
+      await replies(1);
+      await transcripts.saveSetting("emergency_region", "IN");
+      // Rufi's tools don't start for the AI: the thread isn't picked up.
+      await start([], { refuse: true });
+      await say("second");
+      const row = await transcripts.chat("asha");
+      if (!row) throw new Error("no chat");
+      const queue = chatQueue(store);
+      await until(
+        async () => (await queue.list(row)).items[0]?.held === "open_failed",
+      );
+      expect((await transcripts.chat("asha"))?.threadTools).toBe(
+        row.threadTools,
+      );
+
+      // Rufi starts again, and the person tries again.
+      const opened = await start([{ text: "Two." }]);
+      const [held] = (await queue.list(row)).items;
+      if (!held?.holdId) throw new Error("nothing waits");
+      await opened.chat.queue.recover(row, held.id, held.holdId, "retry");
+      await replies(2);
+      expect(notes(answering().at(-1))).toEqual([
+        rulesNote(coreInstructions("IN")),
+      ]);
       expect(threadsUsed()).toBe(1);
     },
   );

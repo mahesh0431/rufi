@@ -665,6 +665,8 @@ export interface Planned {
     issuer: string | null;
     number: string | null;
     collected: string | null;
+    /** Rufi AI's report: its document, never matched with another's. */
+    own: boolean;
   };
 }
 
@@ -893,8 +895,9 @@ async function write(
 }
 
 /**
- * Reuse the person's report by its complete printed identity, across
- * documents. An incomplete identity stays within its document.
+ * The report a result goes in. Rufi AI's report is its document: reused
+ * within it. An older Rufi's is reused by its complete printed identity,
+ * across documents; an incomplete one stays within its document.
  */
 async function reportFor(
   trx: Transaction<Tables>,
@@ -908,7 +911,12 @@ async function reportFor(
     .where("issuer", "is", key.issuer)
     .where("report_number", "is", key.number)
     .where("collected", "is", key.collected);
-  if (key.issuer === null || key.number === null || key.collected === null) {
+  if (
+    key.own ||
+    key.issuer === null ||
+    key.number === null ||
+    key.collected === null
+  ) {
     query = query.where("document_id", "=", key.document);
   }
   const found = await query.executeTakeFirst();

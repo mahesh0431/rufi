@@ -450,6 +450,121 @@ test("a page draws in the reply at a fixed height and opens large over the chat:
   }
 });
 
+/**
+ * A page with a dark look, which says what its scripts see: one that runs as
+ * the page loads (as a chart drawn inline does), and one later, with a query
+ * it builds. Both schemes' colours come from its `light-dark()` text.
+ */
+const COLOURS = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>Colours</title><style>
+:root { color-scheme: light dark; }
+body { background: rgb(255, 255, 255); color: light-dark(rgb(1, 1, 1), rgb(2, 2, 2)); }
+@media (prefers-color-scheme: dark) { body { background: rgb(0, 0, 0); } }
+</style></head><body><p id="loading"></p><p id="seen">…</p><script>
+const scheme = (query) => (matchMedia(query).matches ? "dark" : "light");
+document.getElementById("loading").textContent = [
+  getComputedStyle(document.body).backgroundColor,
+  scheme("(prefers-color-scheme: dark)"),
+].join(" ");
+addEventListener("load", () => {
+  document.getElementById("seen").textContent = scheme(
+    "(prefers-color-scheme: " + "dark)",
+  );
+});
+</script></body></html>`;
+
+for (const { system, chosen } of [
+  { system: "dark", chosen: "Light" },
+  { system: "light", chosen: "Dark" },
+] as const) {
+  test(`a page follows Rufi's appearance, ${chosen} with the system ${system}, a change in another tab while it shows open large, and the system with System`, async ({
+    page,
+    rufi,
+    context,
+  }) => {
+    await page.emulateMedia({ colorScheme: system });
+    await rufi.family();
+    await mkdir(join(rufi.home, "ai", "reports"), { recursive: true });
+    await writeFile(join(rufi.home, "ai", "reports", "colours.html"), COLOURS);
+    await rufi.start();
+    await page.goto(rufi.link());
+    const choose = async (label: string) => {
+      await page.getByRole("link", { name: "Settings" }).click();
+      await page
+        .getByRole("radiogroup", { name: "Appearance" })
+        .getByRole("radio", { name: label })
+        .check();
+      await page.getByRole("link", { name: "Chat with Rufi" }).click();
+    };
+    const inline = page.locator('.reply iframe[title="Colours"]');
+    /** What the page shows, and what its scripts saw, loading and later. */
+    const looks = async (shown = inline) => {
+      const frame = shown.contentFrame();
+      await expect(frame.locator("#seen")).not.toHaveText("…");
+      return {
+        ...(await frame.locator("body").evaluate((body) => {
+          const { backgroundColor, color } = getComputedStyle(body);
+          return { background: backgroundColor, text: color };
+        })),
+        loading: await frame.locator("#loading").textContent(),
+        seen: await frame.locator("#seen").textContent(),
+      };
+    };
+    const black = {
+      background: "rgb(0, 0, 0)",
+      text: "rgb(2, 2, 2)",
+      loading: "rgb(0, 0, 0) dark",
+      seen: "dark",
+    };
+    const white = {
+      background: "rgb(255, 255, 255)",
+      text: "rgb(1, 1, 1)",
+      loading: "rgb(255, 255, 255) light",
+      seen: "light",
+    };
+
+    await choose(chosen);
+    const box = page.getByRole("textbox", { name: "Message to Rufi" });
+    await box.fill("Your page: [Colours](reports/colours.html)");
+    await box.press("Enter");
+    expect(await looks()).toEqual(chosen === "Dark" ? black : white);
+
+    // Another tab chooses the other look; this one stays on its chat with
+    // the page open large, which stays open, and both frames follow.
+    await page.getByRole("button", { name: "Open Colours" }).click();
+    const large = page.getByRole("dialog", { name: "Colours" });
+    await expect(large).toBeVisible();
+    const other = await context.newPage();
+    await other.goto(rufi.link());
+    await other.getByRole("link", { name: "Settings" }).click();
+    const saved = other.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/settings") &&
+        response.request().method() === "PUT",
+    );
+    await other
+      .getByRole("radiogroup", { name: "Appearance" })
+      .getByRole("radio", { name: chosen === "Dark" ? "Light" : "Dark" })
+      .check();
+    expect((await saved).ok()).toBe(true);
+    await other.close();
+    const now =
+      chosen === "Dark" ? /\?appearance=light$/ : /\?appearance=dark$/;
+    for (const shown of [inline, large.locator("iframe")]) {
+      await expect.poll(() => shown.getAttribute("src")).toMatch(now);
+      await expect
+        .poll(() => looks(shown))
+        .toEqual(chosen === "Dark" ? white : black);
+    }
+    await expect(large).toBeVisible();
+    await large.getByRole("button", { name: "Close" }).click();
+
+    await choose("System");
+    expect(await looks()).toEqual(system === "dark" ? black : white);
+    expect(await refusedIn(page)).toEqual([]);
+  });
+}
+
 test("a file that is gone keeps its card and says so", async ({
   page,
   rufi,

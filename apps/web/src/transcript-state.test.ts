@@ -29,10 +29,10 @@ const turn = (status: Turn["status"], id = "t1"): Turn => ({
   resetsAt: null,
   startedAt: at,
   endedAt: null,
-  afresh: false,
+  newThread: false,
   how: null,
 });
-const chat = { model: "gpt-6.1-sol", effort: "medium" } as const;
+const chat = { model: "gpt-6.1-sol", effort: "medium", context: null } as const;
 const page = (
   revision: number,
   entries: Entry[],
@@ -103,7 +103,7 @@ describe("the chat's live stream", () => {
       revision: 1,
       entries: [],
       turns: [],
-      chat: { model: "gpt-6-astra", effort: "medium" },
+      chat: { model: "gpt-6-astra", effort: "medium", context: null },
     });
     expect(changed.chat?.model).toBe("gpt-6-astra");
     const later = apply(changed, {

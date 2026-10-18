@@ -21,7 +21,8 @@ interface ReaderTurn {
   /** Calls a reader tool; its answer, parsed. */
   call: (name: string, input: unknown) => Promise<Answer>;
   look: (page: number) => Promise<unknown>;
-  save: (page: number, entry: unknown, note?: string) => Promise<Answer>;
+  /** Saves the page's copy: its outcome, its Markdown and why. */
+  save: (page: number, copy: object) => Promise<Answer>;
   task: SubAgentTask;
   signal: AbortSignal | undefined;
   /** Waits for Rufi to stop the run, also when it already has. */
@@ -73,8 +74,7 @@ export function scriptedReader(scripts: Script[]) {
     const turn: ReaderTurn = {
       call,
       look: async (page) => (await call("get_page", { page })).json,
-      save: (page, entry, note) =>
-        call("save_page", { page, entry, ...(note !== undefined && { note }) }),
+      save: (page, copy) => call("save_page", { page, ...copy }),
       task,
       signal,
       stopped: () =>
@@ -102,23 +102,8 @@ export function scriptedReader(scripts: Script[]) {
   return { run, runs };
 }
 
-/** A read page with one fictional result, as the reader saves it. */
-export const readPage = (value = "13.2", extra: object = {}) => ({
+/** A page's copy with one fictional result, as the reader saves it. */
+export const readPage = (value = "13.2") => ({
   outcome: "read",
-  facts: {
-    kind: "lab_report",
-    dates: [{ label: "Collected", date: "12 Aug 2026", iso: "2026-08-12" }],
-    issuer: "Sunrise Labs",
-    name: "Asha Fictional",
-  },
-  items: [
-    {
-      test_name: "Haemoglobin",
-      value_text: value,
-      value_number: Number(value),
-      unit: "g/dL",
-      reference_range: "12.0-15.0",
-    },
-  ],
-  ...extra,
+  copy: `# Sunrise Labs\n\nCollected: 12 Aug 2026\n\n| Test | Result | Unit | Range |\n| --- | --- | --- | --- |\n| Haemoglobin | ${value} | g/dL | 12.0-15.0 |`,
 });
