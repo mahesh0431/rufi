@@ -37,6 +37,13 @@ child.on("exit", (code) => {
   process.exitCode = code ?? 1;
 });
 
+/** The dog's icon for the bundle; Rufi starts with the icon it had when that fails. */
+async function iconOf(bundle: string): Promise<void> {
+  await bundleIcon(bundle).catch((error: unknown) => {
+    console.error(error);
+  });
+}
+
 /** The Electron binary inside a copy of its bundle named Rufi. */
 async function renamed(binary: string): Promise<string> {
   const { version } = require("electron/package.json") as { version: string };
@@ -44,7 +51,7 @@ async function renamed(binary: string): Promise<string> {
   const bundle = join(folder, "Rufi.app");
   const inside = join(bundle, binary.slice(binary.indexOf(".app/") + 5));
   if (await exists(bundle)) {
-    await bundleIcon(bundle);
+    await iconOf(bundle);
     return inside;
   }
   // Made beside it, then moved in place: a half-made copy is never used.
@@ -64,7 +71,7 @@ async function renamed(binary: string): Promise<string> {
   ] as const) {
     await run("plutil", ["-replace", key, "-string", value, plist]);
   }
-  await bundleIcon(making);
+  await iconOf(making);
   await rename(making, bundle).catch(async (error: unknown) => {
     // Another `pnpm desktop` made it first.
     await rm(making, { recursive: true, force: true });

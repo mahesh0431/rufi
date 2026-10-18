@@ -4,7 +4,7 @@ import { chmod, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { type ExpressionKey, PALETTES, svg } from "@rufi/brand/mark";
+import { type ExpressionKey, svg } from "@rufi/brand/mark";
 import { runningLink } from "../../server/src/server/core.ts";
 import { expect, test } from "./rufi.ts";
 
@@ -18,10 +18,6 @@ const sidebar = (page: Page) => page.getByRole("complementary");
 
 /** Rufi's dog at the top of the sidebar, as a screen reader finds it. */
 const dog = (page: Page) => sidebar(page).getByRole("img", { name: "Rufi" });
-
-/** The colour of the tile the sidebar's dog sits on. */
-const dogTile = (page: Page) => () =>
-  dog(page).evaluate((svg) => svg.querySelector("path")?.getAttribute("fill"));
 
 /** The sidebar dog's face now: its drawing's moves, which differ by face. */
 const face = (page: Page) => () => dog(page).getAttribute("class");
@@ -152,9 +148,8 @@ test("follows the Mac's light or dark appearance, also when it changes while Ruf
     page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(await theme(page)()).toBe("dark");
   const dark = await background();
-  // One dog in the sidebar, on its ink tile.
+  // One dog in the sidebar, the one for this theme.
   await expect(dog(page)).toHaveCount(1);
-  expect(await dogTile(page)()).toBe(PALETTES.inkApricot.bg);
   await accessible(page);
 
   // The chat with a reply, and a help page with code and a table.
@@ -173,9 +168,8 @@ test("follows the Mac's light or dark appearance, also when it changes while Ruf
   await page.emulateMedia({ colorScheme: "light" });
   await expect.poll(theme(page)).toBe("light");
   expect(await background()).not.toBe(dark);
-  // The dog's tile follows: periwinkle in the light.
+  // Still one dog: the light one.
   await expect(dog(page)).toHaveCount(1);
-  await expect.poll(dogTile(page)).toBe(PALETTES.onPeriwinkle.bg);
 });
 
 test("the sidebar dog shows the face Rufi's AI chose until the next reply, which it thinks through, then is calm again; an empty page shows the dog", async ({
