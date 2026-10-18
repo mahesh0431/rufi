@@ -3,7 +3,8 @@
 // lab results typed in the chat; on Measurements, the day they were taken;
 // one row each for the other kinds), more as the person scrolls. A row opens in
 // place to its sources, its history and, for a result, its values over
-// time. The page only shows: changes start in the chat, with Ask Rufi on a
+// time, drawn and as a table; a result row has a small trend after its
+// value. The page only shows: changes start in the chat, with Ask Rufi on a
 // row (or a report's heading): its chip goes in the chat box, and the page
 // stays.
 import type { Person } from "@rufi/contracts";
@@ -13,6 +14,7 @@ import type {
   RecordChange,
   RecordGroup,
   RecordRow,
+  ResultRow,
   ShownRow,
 } from "@rufi/contracts/record";
 import { Link } from "@tanstack/react-router";
@@ -23,6 +25,7 @@ import { printedDate, printedTime } from "./dates.ts";
 import type { BoxChip } from "./draft.ts";
 import { askRufi } from "./panel.ts";
 import { useRecordDetail, useRecordPages, useSeries } from "./reads.ts";
+import { Trend } from "./trend.tsx";
 import { Button, buttonLook, ICON, Problem } from "./ui.tsx";
 
 /** The pages, in the sidebar's order, by their title: results have two. */
@@ -320,12 +323,17 @@ export function RecordPage({
     );
   }
   const groups = pages.data.pages.flatMap((page) => page.groups);
+  const trends: Partial<Record<string, readonly ResultRow[]>> =
+    Object.fromEntries(
+      pages.data.pages.flatMap((page) => Object.entries(page.trends ?? {})),
+    );
   const results = kind === "lab_result" || kind === "measurement";
   const row = (shown: ShownRow, groupDate?: string) => (
     <RowView
       key={`${shown.kind}:${shown.id}`}
       personId={person.id}
       row={shown}
+      trend={trends[shown.id]}
       groupDate={groupDate}
       open={open === `${shown.kind}:${shown.id}`}
       onOpen={() => {
@@ -408,6 +416,7 @@ export function RecordPage({
 function RowView({
   personId,
   row,
+  trend,
   groupDate,
   open,
   onOpen,
@@ -415,6 +424,8 @@ function RowView({
 }: {
   personId: string;
   row: ShownRow;
+  /** A result's small trend: its latest values up to it. */
+  trend: readonly ResultRow[] | undefined;
   groupDate: string | undefined;
   open: boolean;
   onOpen: () => void;
@@ -435,7 +446,7 @@ function RowView({
       className="border-t border-line first:border-t-0"
     >
       <div
-        className={`group grid items-center gap-2 px-3 py-2 ${result ? "grid-cols-[1.2fr_1fr_0.9fr_1fr_0.9fr_auto]" : "grid-cols-[1.4fr_1fr_0.8fr_1fr_auto]"} ${open ? "bg-accent-soft" : "hover:bg-side"}`}
+        className={`group grid items-center gap-2 px-3 py-2 ${result ? "grid-cols-[1.1fr_0.9fr_96px_0.8fr_0.8fr_0.7fr_auto]" : "grid-cols-[1.4fr_1fr_0.8fr_1fr_auto]"} ${open ? "bg-accent-soft" : "hover:bg-side"}`}
       >
         <button
           type="button"
@@ -449,6 +460,13 @@ function RowView({
           )}
         </button>
         {result && <span>{cells.value}</span>}
+        {result && (
+          <span>
+            {trend && row.kind === "result" && (
+              <Trend mini title={row.test} values={trend} />
+            )}
+          </span>
+        )}
         <span className="text-muted">{cells.detail}</span>
         <span>{cells.status}</span>
         <span className="text-muted">{cells.date}</span>
@@ -617,7 +635,7 @@ export function RowDetail({
   );
 }
 
-/** A test's current values in one unit over time, as a table. */
+/** A test's current values in one unit over time, drawn and as a table. */
 function SeriesTable({
   personId,
   test,
@@ -649,6 +667,7 @@ function SeriesTable({
       <h3 className="mt-3 mb-1 text-xs font-semibold text-muted">
         {title} over time
       </h3>
+      <Trend title={title} values={series.data.values} />
       <table className="w-full border-collapse">
         <thead>
           <tr className="text-left text-xs text-muted">
