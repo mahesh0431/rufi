@@ -221,7 +221,8 @@ function follow(svgEl, { max = 18, expression = 'calm' } = {}) {
 // Every number of the eyes, the mouth and the gaze is a spring that moves toward its target, so a change of expression, a blink or a
 // look at the pointer can start at any moment and still look smooth. The ears and the whole mark keep their CSS moves (motion.css);
 // when they change, the old pose blends into the new move. With reduced motion the face changes at once and does nothing by itself,
-// also when the setting changes while the face is shown: it settles, and moves again when the setting is turned off.
+// also when the setting changes while the face is shown: it settles (a blend into new ear and mark moves ends too),
+// and moves again when the setting is turned off.
 const EYE_MOVES = new Set(['blink', 'blink2', 'look', 'read', 'happy', 'wink', 'sleepy', 'wide']);   // live() does these itself
 const SPEED = { eyes: 17, blink: 55, open: 26, mouth: 13, gaze: 17 };   // how fast each part follows (higher is faster)
 function live(svgEl, { expression = 'calm', pointer = true, max = 18 } = {}) {
@@ -273,11 +274,18 @@ function live(svgEl, { expression = 'calm', pointer = true, max = 18 } = {}) {
 
   // the CSS moves of the ears and the whole mark; the pose they had blends into the new move instead of jumping
   const parts = ['.all', '.flapL', '.flapR'].map((q) => svgEl.querySelector(q)).filter(Boolean);
+  // the blends running now, so reduced motion and stop() can end them at once
+  let blends = [];
+  const unblend = () => { blends.forEach((a) => a.cancel()); blends = []; };
   function classes() {
     const moves = (x.motion || '').split(' ').filter((m) => m && !EYE_MOVES.has(m));
     const before = parts.map((el) => getComputedStyle(el).transform);
     svgEl.setAttribute('class', ['rufi', ...moves.map((m) => 'm-' + m), ...(x.sign ? ['m-sign'] : [])].join(' '));
-    if (!still && parts[0].animate) parts.forEach((el, i) => { if (getComputedStyle(el).transform !== before[i]) el.animate([{ transform: before[i], offset: 0 }], { duration: 420, easing: 'ease-out' }); });
+    if (!still && parts[0].animate) parts.forEach((el, i) => {
+      if (getComputedStyle(el).transform === before[i]) return;
+      const a = el.animate([{ transform: before[i], offset: 0 }], { duration: 420, easing: 'ease-out' });
+      blends.push(a); a.onfinish = () => { blends = blends.filter((b) => b !== a); };
+    });
     if (!signs) return;
     for (const old of signs.children) { old.style.transition = 'opacity .2s'; old.style.opacity = 0; setTimeout(() => old.remove(), 220); }
     if (x.sign) signs.insertAdjacentHTML('beforeend', sign(x.sign, signs.dataset.c, !!signs.dataset.tile));
@@ -304,7 +312,7 @@ function live(svgEl, { expression = 'calm', pointer = true, max = 18 } = {}) {
   // expression's pose, and its own moves start again only when motion is allowed
   const onReduce = () => {
     still = reduce.matches;
-    timers.forEach(clearTimeout); timers = []; clearTimeout(move.t); shut = false;
+    timers.forEach(clearTimeout); timers = []; if (still) unblend(); clearTimeout(move.t); shut = false;
     eyesTo(x.eyeForm); mouthTo(x.mouth);
     loops();
   };
@@ -343,7 +351,7 @@ function live(svgEl, { expression = 'calm', pointer = true, max = 18 } = {}) {
   return {
     set,
     get expression() { return Object.keys(EXPRESSIONS).find((k) => EXPRESSIONS[k] === x); },
-    stop() { cancelAnimationFrame(raf); timers.forEach(clearTimeout); clearTimeout(move.t); removeEventListener('pointermove', move); reduce?.removeEventListener('change', onReduce); },
+    stop() { cancelAnimationFrame(raf); timers.forEach(clearTimeout); clearTimeout(move.t); removeEventListener('pointermove', move); reduce?.removeEventListener('change', onReduce); unblend(); },
   };
 }
 
