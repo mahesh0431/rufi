@@ -72,7 +72,7 @@ Click a record's name to open it in place. Click again to close it.
 
 ## Ask Rufi about a row
 
-Point at a row and click **Ask Rufi**. The record goes in the chat's box as a chip, and you stay on the page: the chat bar shows what you added (see [The chat bar](chat.md#the-chat-bar)). Add more rows the same way if you like. Then click the bar, say what you want, for example "this stopped last week", and send. The AI changes your health record only after you say yes, and the chat shows a receipt.
+Point at a row and click **Ask Rufi**, Rufi's face with a blue + at the row's end. The record goes in the chat's box as a chip, and you stay on the page: the chat bar shows what you added (see [The chat bar](chat.md#the-chat-bar)). Add more rows the same way if you like. Then click the bar, say what you want, for example "this stopped last week", and send. The AI changes your health record only after you say yes, and the chat shows a receipt.
 
 On Lab results, a report's heading has its own **Ask Rufi**: it adds the whole report as one chip, with any measurements it printed, and the AI reads exactly that report's results. A day of measurements has no such button: add its rows one by one.
 
