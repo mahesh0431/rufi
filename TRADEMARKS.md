@@ -5,6 +5,7 @@ The code in this repository is under the Apache License 2.0, except everything i
 You may use the name and the dog to talk about Rufi, for example in an article, a post or a link to it. Show the dog as it is, without changing it.
 
 Do not:
+
 - claim the name or the dog as your own;
 - use them as the name, logo or domain name of another app, a fork or a service;
 - use them in a way that says Rufi made or supports something that it did not;
