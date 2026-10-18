@@ -1,8 +1,10 @@
 // What the live runs share (the smoke set and the reader pack): every case
-// at once, one token source for them all, a new output folder per run, and
-// each case's status for the report.
+// at once, one token source for them all, a new output folder per run, the
+// cases' scratch data folders, and each case's status for the report.
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Turn } from "@rufi/contracts";
 import { ChatGptError } from "../src/agent/chatgpt/openai.ts";
 
@@ -92,6 +94,33 @@ export async function outFolder(
   }).trim();
   const time = new Date().toISOString().slice(0, 19).replaceAll(":", "");
   return mkdtemp(`/tmp/rufi-${kind}-${commit}-${time}-`);
+}
+
+/**
+ * Runs a case on a scratch data folder of its own, `<prefix>…` in the Mac's
+ * temporary folder. The folder is removed once the case has ended and
+ * `passed` says it passed. After any other ending (a failure, an error, a
+ * crash) it stays where it is, as the evidence: `kept` names it, and so does
+ * the error the case threw.
+ */
+export async function onScratch<T>(
+  prefix: string,
+  run: (home: string) => Promise<T>,
+  passed: (result: T) => boolean,
+): Promise<{ result: T; kept: string | undefined }> {
+  const home = await mkdtemp(join(tmpdir(), prefix));
+  let result: T;
+  try {
+    result = await run(home);
+  } catch (error) {
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)} (data folder: ${home})`,
+      { cause: error },
+    );
+  }
+  if (!passed(result)) return { result, kept: home };
+  await rm(home, { recursive: true, force: true });
+  return { result, kept: undefined };
 }
 
 /** A wait in the harness that ran out: the run's trouble, not Rufi's answer. */

@@ -102,6 +102,12 @@ export type AgentEvent = { threadId: string } & (
       details: unknown;
     }
   | { type: "turnEnded"; turnId: string; end: TurnEnd }
+  /**
+   * How much of the model's context the thread used, as the agent last
+   * reported it: the last request's tokens, and the model's context window
+   * (null when the agent doesn't know it). It may come outside a reply.
+   */
+  | { type: "usage"; turnId: string; tokens: number; window: number | null }
 );
 
 /** A Stop that came while Rufi was getting ready to send. */
@@ -112,10 +118,22 @@ export class Stopped extends Error {
 }
 
 /**
+ * The agent couldn't open a thread it has: the thread may well be there,
+ * so it isn't replaced; the message waits with the agent's reason.
+ */
+export class NotOpened extends Error {}
+
+/**
+ * The agent has no thread by that id (its files are gone, or it is another
+ * folder's): only a new thread can reply.
+ */
+export class ThreadNotFound extends NotOpened {}
+
+/**
  * A thread that is there but didn't take its new instructions: it must not
  * reply until it has them.
  */
-export class NotReloaded extends Error {
+export class NotReloaded extends NotOpened {
   constructor(
     message = "The AI couldn't take Rufi's new instructions, so it can't reply now. Try again.",
     options?: ErrorOptions,
@@ -194,6 +212,8 @@ export interface AgentRuntime {
   /**
    * Picks an existing thread up again; `running` says a reply is running in
    * it. It starts nothing. A thread already open keeps what it was given.
+   * Throws ThreadNotFound when the agent has no such thread, NotOpened when
+   * it couldn't open it for another reason.
    */
   resumeThread: (
     threadId: string,
@@ -202,12 +222,16 @@ export interface AgentRuntime {
   ) => Promise<{ model: string; running: boolean }>;
   /**
    * Gives an idle thread new instructions: it is closed if open, picked up
-   * again with `settings`, and its history summarised so the AI works from
-   * them. Throws when any part of that didn't happen.
+   * again with `settings` (what the agent starts from again after it
+   * compacts), and `note` (the new rules whole, saying they replace the
+   * earlier ones) is added to its history, which still holds the rules it
+   * was first given. Returns once the agent has stored the note; throws when
+   * any part of that didn't happen.
    */
   reloadThread: (
     threadId: string,
     settings: ThreadSettings,
+    note: string,
     signal?: AbortSignal,
   ) => Promise<{ model: string }>;
   /** Whether the thread is open in the agent now. */

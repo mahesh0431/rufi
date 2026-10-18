@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-import { DELETED_DOCUMENT } from "../documents/delete.ts";
+import { DELETED_DOCUMENT } from "../documents/naming.ts";
 import { SKILLS } from "./skills.ts";
 
 describe("Rufi's skills", () => {
@@ -17,6 +17,7 @@ describe("Rufi's skills", () => {
       "research",
       "results",
       "saving-a-document",
+      "sorting-documents",
       "visit-brief",
     ]);
     for (const skill of SKILLS) {

@@ -98,6 +98,8 @@ describe("the document page's items", () => {
       fields: HBA1C,
       original: HBA1C,
       unsure: ["faint digit"],
+      quote: null,
+      outOfDate: false,
     });
     expect(view?.items[1]?.status).toBe("saved");
   });

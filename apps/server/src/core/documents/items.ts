@@ -14,6 +14,7 @@ import {
 import type { Store } from "../store/database.ts";
 import { Refusal } from "../tools/registry.ts";
 import type { Checks } from "./notebook.ts";
+import { pagesOf } from "./sorting.ts";
 
 /** A fix made on an older version: the item as it is now. */
 export class StaleFix extends Error {
@@ -59,15 +60,21 @@ function plainNumber(
   };
 }
 
-const itemOf = (row: {
-  id: string;
-  version: number;
-  page: number;
-  status: string;
-  fields: string;
-  original: string;
-  unsure: string;
-}): DraftItem => {
+const itemOf = (
+  row: {
+    id: string;
+    version: number;
+    page: number;
+    status: string;
+    fields: string;
+    original: string;
+    unsure: string;
+    quote: string | null;
+    job_id: string;
+  },
+  /** Each page's current copy's reading: a draft from another is out of date. */
+  copied: ReadonlyMap<number, string>,
+): DraftItem => {
   const { unsure: _reader, ...original } = JSON.parse(
     row.original,
   ) as Fields & {
@@ -81,8 +88,25 @@ const itemOf = (row: {
     fields: JSON.parse(row.fields) as Fields,
     original,
     unsure: JSON.parse(row.unsure) as string[],
+    quote: row.quote,
+    outOfDate:
+      row.quote !== null &&
+      copied.has(row.page) &&
+      copied.get(row.page) !== row.job_id,
   };
 };
+
+/** Each of the document's pages' current copy's reading, by position. */
+const copiesOf = async (
+  db: Parameters<typeof pagesOf>[0],
+  personId: string,
+  documentId: string,
+) =>
+  new Map(
+    (await pagesOf(db, personId, [documentId], false)).flatMap((p) =>
+      p.copy ? [[p.position, p.copy.jobId] as const] : [],
+    ),
+  );
 
 export function draftItems(
   store: Store,
@@ -98,6 +122,8 @@ export function draftItems(
     "fields",
     "original",
     "unsure",
+    "quote",
+    "job_id",
   ] as const;
 
   return {
@@ -120,6 +146,7 @@ export function draftItems(
         .orderBy("p.position")
         .execute();
       if (pages.length === 0) return undefined;
+      const copied = await copiesOf(db, personId, documentId);
       const items = await db
         .selectFrom("draft_items")
         .select(columns)
@@ -141,7 +168,7 @@ export function draftItems(
               ? ((JSON.parse(p.entry_checks) as Checks).incomplete ?? null)
               : null,
         })),
-        items: items.map(itemOf),
+        items: items.map((item) => itemOf(item, copied)),
       };
     },
 
@@ -166,7 +193,7 @@ export function draftItems(
           .where("id", "=", itemId)
           .executeTakeFirst();
         if (!row) return undefined;
-        const item = itemOf(row);
+        const item = itemOf(row, await copiesOf(trx, personId, documentId));
         if (item.status !== "pending") {
           throw new Refusal(
             `This result is already ${item.status === "saved" ? "saved" : "dismissed"}, so it can't be fixed here.`,

@@ -12,15 +12,17 @@ import {
   type Pointer,
 } from "@rufi/contracts";
 import {
-  NotReloaded,
+  NotOpened,
   NotSent,
   Stopped,
+  ThreadNotFound,
   type AgentEvent,
   type AgentHost,
   type AgentRuntime,
   type Model,
   type ThreadSettings,
 } from "../agent/runtime.ts";
+import { rulesNote } from "../core/chat/instructions.ts";
 import { allowedModels } from "../core/chat/models.ts";
 import {
   QueueRefusal,
@@ -68,6 +70,8 @@ export interface ChatDeps {
     ) => (name: string, input: unknown, callId: string) => Promise<ToolAnswer>;
   };
   log: Log;
+  /** Told when a turn of the person's chat has ended (Rufi's sorting looks). */
+  ended?: (personId: string) => void;
 }
 
 /** A request the chat can't do now, in words for the person. */
@@ -140,8 +144,9 @@ export function chat(deps: ChatDeps) {
             kind: event.type,
             error: errorCode(error),
           });
-          // A transcript with a hole is never shown as a whole reply.
-          if (event.type === "turnEnded") return;
+          // A transcript with a hole is never shown as a whole reply; the
+          // context used is no part of it.
+          if (event.type === "turnEnded" || event.type === "usage") return;
           lost(event.threadId, event.turnId);
         }),
       );
@@ -194,15 +199,18 @@ export function chat(deps: ChatDeps) {
     }
     const startedAt = transcripts.now();
     const answer = await caller.call(call.tool, call.input, callId);
-    // Kept before the AI has it: Rufi keeps every answer the AI got.
+    // Kept before the AI has it: Rufi keeps every answer the AI got (a sort
+    // keeps its own, with what it changed).
     try {
-      await transcripts.recordToolCall(caller.chat, turnId, {
-        callId,
-        tool: call.tool,
-        input: call.input,
-        answer,
-        startedAt,
-      });
+      if (!answer.kept) {
+        await transcripts.recordToolCall(caller.chat, turnId, {
+          callId,
+          tool: call.tool,
+          input: call.input,
+          answer,
+          startedAt,
+        });
+      }
     } catch (error) {
       log("chat.save_failed", { kind: "tool_call", error: errorCode(error) });
       lost(threadId, turnId);
@@ -345,6 +353,12 @@ export function chat(deps: ChatDeps) {
           details: event.details,
         });
         return;
+      case "usage":
+        await transcripts.setContext(chat, event.threadId, {
+          tokens: event.tokens,
+          window: event.window,
+        });
+        return;
       case "turnEnded":
         if (callers.get(event.threadId)?.turnId === event.turnId) {
           callers.delete(event.threadId);
@@ -354,6 +368,7 @@ export function chat(deps: ChatDeps) {
         }
         await transcripts.endTurn(chat, event.turnId, event.end);
         await endHandOver(chat, event.turnId);
+        deps.ended?.(chat.personId);
         // The turn and its writes have ended: the next rows may go.
         next(chat);
         return;
@@ -386,8 +401,9 @@ export function chat(deps: ChatDeps) {
    * Hands over the next turn's rows, in the chat's lane: only when no
    * reply runs. The rows are claimed in the database first; the AI either
    * starts their turn (they are sent with it), surely didn't get them (they
-   * wait again, the person's held with the reason), or nobody knows (not
-   * sure, and the chat pauses).
+   * wait again, the person's held with the reason; when the AI's thread
+   * didn't open, for the person to choose Try again or New thread), or
+   * nobody knows (not sure, and the chat pauses).
    */
   const dispatch = (chat: ChatRow) =>
     inLane(chat, async (stored, signal) => {
@@ -416,6 +432,7 @@ export function chat(deps: ChatDeps) {
           fresh,
           handOver.id,
           quiet ? undefined : textOf(error),
+          error instanceof NotOpened,
         );
         if (!quiet) next(fresh);
         return;
@@ -439,10 +456,14 @@ export function chat(deps: ChatDeps) {
         if (error instanceof NotSent) {
           handing.delete(threadId);
           const stopped = error.cause instanceof Stopped || closed;
+          // Codex was replaced and the thread is gone: the rows wait again,
+          // and their next hand-over starts a new thread.
+          const gone = error.cause instanceof ThreadNotFound;
           await queue.notTaken(
             fresh,
             handOver.id,
-            stopped ? undefined : error.message,
+            stopped || gone ? undefined : error.message,
+            error.cause instanceof NotOpened,
           );
           if (!stopped) next(fresh);
           return;
@@ -522,7 +543,10 @@ export function chat(deps: ChatDeps) {
    * The chat's thread, open in the agent and told the current rules. A
    * thread is picked up again only here, when the person acts: told again
    * when its rules changed (a Rufi update, a new emergency region), and a
-   * new one starts only when it's missing or can't be picked up.
+   * new one starts only when the chat has none (a move, the person's New
+   * thread), it is another agent's, or the agent has no such thread. Any
+   * other failure to open it throws NotOpened: the message waits for the
+   * person's choice.
    */
   async function threadFor(
     chat: ChatRow,
@@ -539,7 +563,12 @@ export function chat(deps: ChatDeps) {
         if (told) {
           await agent.resumeThread(threadId, resumed, signal);
         } else {
-          await agent.reloadThread(threadId, resumed, signal);
+          await agent.reloadThread(
+            threadId,
+            resumed,
+            rulesNote(threadSettings.instructions),
+            signal,
+          );
           await transcripts.setThreadRules(chat, version);
           chat.threadTools = version;
         }
@@ -547,11 +576,9 @@ export function chat(deps: ChatDeps) {
         if (!wasLoaded) fillGaps(chat, threadId);
         return threadId;
       } catch (error) {
-        // The thread is there but didn't take its new rules: the message
-        // waits with the reason, rather than going to a thread told otherwise.
-        if (error instanceof Stopped || error instanceof NotReloaded) {
-          throw error;
-        }
+        // Only a thread the agent has no record of is replaced; any other
+        // failure holds the message (NotOpened: for the person's choice).
+        if (!(error instanceof ThreadNotFound)) throw error;
         log("chat.resume_failed", { error: errorCode(error) });
       }
     }
@@ -736,6 +763,38 @@ export function chat(deps: ChatDeps) {
         await refused(() => queue.sendNow(chat, id));
         next(chat);
       },
+      /**
+       * The person's choice for a message whose AI thread didn't open, for
+       * the hold they saw: the same thread again, or a new one. In the
+       * chat's lane, after any hand-over under way; a choice made on an
+       * older hold changes nothing.
+       */
+      recover: async (
+        chat: ChatRow,
+        id: string,
+        hold: string,
+        choice: "retry" | "new_thread",
+      ) => {
+        await mustBeSignedIn();
+        await inLane(chat, async (fresh) => {
+          const newThread = choice === "new_thread";
+          // Never while a reply runs: it would lose that reply's thread. The
+          // hold stays, and the screens read the queue again.
+          if (newThread && (await busy(fresh))) {
+            queue.changed(fresh.id);
+            return;
+          }
+          await refused(() => queue.recover(fresh, id, hold, newThread));
+          // The old thread's key opens nothing any more.
+          const old = fresh.threadId;
+          if (newThread && old !== null) {
+            const key = keys.get(old);
+            if (key !== undefined) deps.mcp.keys.revoke(key);
+            keys.delete(old);
+          }
+        });
+        next(chat);
+      },
       subscribe: (chatId: string, listener: () => void) =>
         queue.subscribe(chatId, listener),
     },
@@ -755,6 +814,17 @@ export function chat(deps: ChatDeps) {
       const chat = await transcripts.chat(personId);
       if (!chat) throw new ChatRefusal("That person has no chat.");
       await transcripts.addEvent(chat, event, write);
+      queue.changed(chat.id);
+      next(chat);
+    },
+
+    /**
+     * Rufi's own work put rows in the person's queue (a sort tried again):
+     * the next rows go, when no reply runs.
+     */
+    wake: async (personId: string) => {
+      const chat = await transcripts.chat(personId);
+      if (!chat) return;
       queue.changed(chat.id);
       next(chat);
     },
@@ -794,18 +864,20 @@ export function chat(deps: ChatDeps) {
     },
   };
 
-  /**
-   * Refuses to change `what` while a reply runs or is starting; what the
-   * thread did is saved first.
-   */
-  async function idle(chat: ChatRow, what: string): Promise<void> {
+  /** Whether a reply runs or is starting; what the thread did is saved first. */
+  async function busy(chat: ChatRow): Promise<boolean> {
     const threadId = threadOf(chat);
     await saving;
     const { items } = await queue.list(chat);
-    if (
+    return (
       (threadId !== null && agent.running(threadId)) ||
       items.some((item) => item.state === "handing_over")
-    ) {
+    );
+  }
+
+  /** Refuses to change `what` while a reply runs or is starting. */
+  async function idle(chat: ChatRow, what: string): Promise<void> {
+    if (await busy(chat)) {
       throw new ChatRefusal(`Stop the reply before changing ${what}.`);
     }
   }

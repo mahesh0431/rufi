@@ -1,5 +1,6 @@
 // Reading documents on the screens: Retry, the reader strip above the chat
-// box, and View reading: a reading's work as the reader saved it, read
+// box, and View reading: a reading's work as the reader saved it (each
+// page's copy, or an older reader's items), read
 // only. Rufi's live stream says when readings change; the Documents page
 // also looks again while one reads.
 import { Dialog } from "@base-ui/react/dialog";
@@ -89,7 +90,7 @@ export function ReaderRead({ item }: { item: DraftItem }) {
   if (fixes.length === 0) return null;
   return (
     <span className="block text-xs text-muted">
-      The reader read:{" "}
+      {item.quote === null ? "The reader read" : "Drafted"}:{" "}
       {fixes
         .map(
           ({ id, name }) =>
@@ -305,7 +306,7 @@ function Sheet({
             ...(elapsed ? [elapsed] : []),
           ].join(" · ")
         : reading.status === "failed"
-          ? `failed · ${reading.error ?? "it stopped"} · read ${String(reading.saved)} of ${String(reading.of)}`
+          ? `failed · read ${String(reading.saved)} of ${String(reading.of)}`
           : reading.status === "done"
             ? "read"
             : "not read yet";
@@ -341,6 +342,8 @@ function Sheet({
             {view.error.message}
           </p>
         )}
+        {/* Why it failed, in full: it can be long (a sign-in to renew). */}
+        {reading?.status === "failed" && <p>{reading.error ?? "it stopped"}</p>}
         {items.error && (
           <Problem error={items.error} retry={() => void items.refetch()} />
         )}
@@ -442,26 +445,30 @@ function PageWork({
       ? [`${facts.dates[0].label} ${facts.dates[0].date}`]
       : []),
   ].join(" · ");
-  // A read page shows its own items, with the person's fix, once they
+  // A copied page shows the reader's copy as it wrote it, marks and all
+  // (Rufi AI's drafts from it are on the document's page). An older
+  // reader's page shows its own items, with the person's fix, once they
   // came; a page still being read shows what the reader saved.
   const rows: readonly Row[] =
-    page.state === "read"
-      ? (drafts ?? []).map((draft) => ({
-          key: draft.id,
-          item: draft.fields,
-          why: draft.unsure.join("; "),
-          ...(fixesOf(draft).length > 0 && { fixed: draft }),
-        }))
-      : (entry?.items.map((read, index) => ({
-          key: String(index),
-          item: read,
-          why: [
-            read.unsure,
-            checks?.items.find((c) => c.item === index + 1)?.why,
-          ]
-            .filter(Boolean)
-            .join("; "),
-        })) ?? []);
+    page.copy !== null
+      ? []
+      : page.state === "read"
+        ? (drafts ?? []).map((draft) => ({
+            key: draft.id,
+            item: draft.fields,
+            why: draft.unsure.join("; "),
+            ...(fixesOf(draft).length > 0 && { fixed: draft }),
+          }))
+        : (entry?.items.map((read, index) => ({
+            key: String(index),
+            item: read,
+            why: [
+              read.unsure,
+              checks?.items.find((c) => c.item === index + 1)?.why,
+            ]
+              .filter(Boolean)
+              .join("; "),
+          })) ?? []);
   return (
     <section className="rounded-[10px] border border-line">
       <h4 className="flex items-center gap-2 px-2.5 py-1.5 font-normal">
@@ -472,6 +479,11 @@ function PageWork({
         {checks?.incomplete && <Tag>may be incomplete</Tag>}
       </h4>
       {rows.length > 0 && <ItemTable rows={rows} />}
+      {page.copy !== null && (
+        <pre className="border-t border-line px-2.5 py-1.5 font-sans text-[12.5px] wrap-anywhere whitespace-pre-wrap">
+          {page.copy}
+        </pre>
+      )}
       {checks?.incomplete && (
         <p className="border-t border-line px-2.5 py-1 text-xs text-muted">
           The reader counted {checks.incomplete.rows_seen} rows and read{" "}

@@ -152,6 +152,40 @@ second line', NULL, '');
     ).toBe('"id","display_name"\r\n"asha","Asha ""Ammu"", Fictional"\r\n');
   });
 
+  it("holds the reader's page copies exactly as written: Markdown, an HTML table, marks and new lines", async () => {
+    const [file] = await withDocuments();
+    const copy =
+      '# Sunrise Labs\n\n<table><tr><td>Glucose, Fasting</td><td>1[0?]4 H</td><td>µmol/L</td></tr></table>\n\n| TSH | ~~5.3~~ [handwritten: 5.8] |\n"Page 1 of 2"';
+    const store = openWritable(databasePath(home));
+    try {
+      store.db.exec(`
+        INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at)
+          SELECT 'job-copy', 'asha', 'document_read', document_id, 'done', 1, '[1]', '2026-10-08T09:00:00Z'
+          FROM document_pages WHERE file_id = '${file ?? ""}' AND page_in_file = 1;
+      `);
+      store.db
+        .prepare(
+          `INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
+           VALUES ('asha', ?, 1, 'job-copy', 1, 'read', ?, '2026-10-08T09:01:00Z')`,
+        )
+        .run(file ?? "", copy);
+    } finally {
+      store.close();
+    }
+
+    const files = await unzipped();
+
+    const table = JSON.parse(
+      strFromU8(files[`${FOLDER}/json/page_copies.json`] ?? new Uint8Array()),
+    ) as { rows: { copy: string; job_id: string }[] };
+    expect(table.rows).toEqual([
+      expect.objectContaining({ job_id: "job-copy", copy }),
+    ]);
+    expect(
+      strFromU8(files[`${FOLDER}/csv/page_copies.csv`] ?? new Uint8Array()),
+    ).toContain(`"${copy.replaceAll('"', '""')}"`);
+  });
+
   it("holds every table, a README and its own record, and nothing of the sign-in, the AI's files or logs", async () => {
     const sentinel = "NOT FOR THE EXPORT";
     await writeFile(join(home, "chatgpt.json"), `{"hostId":"${sentinel}"}`);

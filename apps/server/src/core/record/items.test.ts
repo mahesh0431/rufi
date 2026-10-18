@@ -1,6 +1,7 @@
 // Saving a document's draft items, as the AI does it in Rufi's chat: the
 // real tool caller, the real transcripts, a real database with the
-// fictional family, and drafts made by the real end of a reading. Messages
+// fictional family, and drafts made by a real sort of the reader's page
+// copies (or as an older Rufi made them). Messages
 // are sent at 10:00 on Sunday 11 Oct 2026 in India.
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,7 +14,7 @@ import {
   type Transcripts,
 } from "../chat/transcript.ts";
 import type { Entry } from "../documents/notebook.ts";
-import { readings } from "../documents/reading.ts";
+import { sorting } from "../documents/sorting.ts";
 import {
   databasePath,
   openReadOnly,
@@ -112,40 +113,160 @@ const PAGES: Record<number, Entry> = {
   },
 };
 
+/** A page's copy, as the reader would write it: its head and its table. */
+function copyOf(entry: Entry): string {
+  const facts = entry.facts;
+  const head = [
+    ...(facts?.issuer ? [`# ${facts.issuer}`] : []),
+    ...(facts?.report_number ? [`Report No: ${facts.report_number}`] : []),
+    ...(facts?.dates ?? []).map((d) => `${d.label}: ${d.date}`),
+  ];
+  const rows = entry.outcome === "read" ? entry.items : [];
+  return [
+    ...head,
+    "",
+    "| Test | Result | Unit | Range | Flag |",
+    "| --- | --- | --- | --- | --- |",
+    ...rows.map(
+      (item) =>
+        `| ${item.test_name} | ${item.value_text} | ${item.unit ?? ""} | ${item.reference_range ?? ""} | ${item.flag_text ?? ""} |`,
+    ),
+  ].join("\n");
+}
+
 /**
- * Reads a document with these page entries and finishes the reading as
- * Rufi does: its draft items, at version 1.
+ * Reads a document with these pages as Rufi does now: the reader's copy of
+ * each page, then Rufi AI's sort of it in the user's turn (sort_documents),
+ * making one document of every page with its drafts, as an AI would from
+ * the copies: the lab, number and first date printed, and each item's own
+ * date, or else its report's for a current value.
  */
 async function read(
   pages: Record<number, Entry> = PAGES,
   documentId = "doc-asha-aug",
 ) {
+  const sorted = await call("sort_documents", copied(pages, documentId));
+  expect(sorted.ok, JSON.stringify(sorted)).toBe(true);
+}
+
+/** The reader's copies of these pages, and the sort Rufi AI would call. */
+function copied(pages: Record<number, Entry>, documentId: string) {
   const jobId = `job-${documentId}`;
   const targets = Object.keys(pages).map(Number);
-  const run = {
-    jobId,
-    attempt: 1,
-    personId: "asha",
-    documentId,
-    targets,
-    lookedAt: new Set(targets),
-    closed: true,
-  };
   store.db
     .prepare(
-      "INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at) VALUES (?, 'asha', 'document_read', ?, 'running', 1, ?, '2026-10-11T04:00:00Z')",
+      "INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at) VALUES (?, 'asha', 'document_read', ?, 'done', 1, ?, '2026-10-11T04:01:00Z', '2026-10-11T04:00:00Z')",
     )
     .run(jobId, documentId, JSON.stringify(targets));
   for (const [position, entry] of Object.entries(pages)) {
     store.db
       .prepare(
-        "UPDATE document_pages SET entry = ?, entry_job_id = ? WHERE document_id = ? AND position = ?",
+        `INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
+         SELECT person_id, file_id, page_in_file, ?, 1, 'read', ?, '2026-10-11T04:00:30Z'
+         FROM document_pages WHERE person_id = 'asha' AND document_id = ? AND position = ?`,
+      )
+      .run(jobId, copyOf(entry), documentId, Number(position));
+    store.db
+      .prepare(
+        "UPDATE document_pages SET entry_job_id = ?, entry_attempt = 1, state = 'read' WHERE document_id = ? AND position = ?",
+      )
+      .run(jobId, documentId, Number(position));
+  }
+  const facts = Object.values(pages).flatMap((p) => (p.facts ? [p.facts] : []));
+  const dated = facts.find((f) => f.dates?.[0] !== undefined)?.dates?.[0];
+  const drafts = Object.entries(pages).flatMap(([position, entry]) =>
+    entry.outcome !== "read"
+      ? []
+      : entry.items.map(
+          ({ unsure, column, from_page: _from, date, ...item }) => {
+            const when = date ?? (column === "earlier" ? undefined : dated);
+            return {
+              page: Number(position),
+              ...item,
+              ...(when !== undefined && { date: when }),
+              quote: `${item.test_name} ${item.value_text}`,
+              ...(unsure !== undefined && { worth_a_look: unsure }),
+            };
+          },
+        ),
+  );
+  const issuer = facts.find((f) => f.issuer)?.issuer;
+  const number = facts.find((f) => f.report_number)?.report_number;
+  return {
+    document: documentId,
+    documents: [
+      {
+        id: documentId,
+        pages: targets,
+        kind: facts.find((f) => f.kind)?.kind ?? "lab_report",
+        ...(dated?.iso !== undefined && { date: dated.iso }),
+        ...(issuer !== undefined && { lab: issuer }),
+        ...(number !== undefined && { report_number: number }),
+      },
+    ],
+    drafts,
+  };
+}
+
+/**
+ * Drafts as an older Rufi made them from its reader's page entries, each
+ * with the report and date migration 12 stored for it: its page's lab,
+ * number and first date, or the page's before when it prints none.
+ */
+function readOld(
+  pages: Record<number, Entry> = PAGES,
+  documentId = "doc-asha-aug",
+) {
+  const jobId = `job-old-${documentId}`;
+  const targets = Object.keys(pages).map(Number);
+  store.db
+    .prepare(
+      "INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, sorted_at, created_at) VALUES (?, 'asha', 'document_read', ?, 'done', 1, ?, '2026-10-11T04:01:00Z', '2026-10-11T04:00:00Z')",
+    )
+    .run(jobId, documentId, JSON.stringify(targets));
+  let report = { issuer: null, number: null, collected: null, date: null } as {
+    issuer: string | null;
+    number: string | null;
+    collected: string | null;
+    date: unknown;
+  };
+  for (const [position, entry] of Object.entries(pages)) {
+    store.db
+      .prepare(
+        "UPDATE document_pages SET entry = ?, entry_job_id = ?, entry_attempt = 1, state = 'read' WHERE document_id = ? AND position = ?",
       )
       .run(JSON.stringify(entry), jobId, documentId, Number(position));
+    const facts = entry.facts;
+    const date = facts?.dates?.[0];
+    if (facts?.issuer || facts?.report_number || date) {
+      report = {
+        issuer: facts.issuer ?? null,
+        number: facts.report_number ?? null,
+        collected: date?.iso ?? null,
+        date: date ?? null,
+      };
+    }
+    if (entry.outcome !== "read") continue;
+    for (const [index, item] of entry.items.entries()) {
+      const { unsure, ...fields } = item;
+      store.db
+        .prepare(
+          `INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, version, status, fields, original, unsure, report, created_at)
+           VALUES (?, 'asha', ?, ?, ?, ?, 'lab_result', 1, 'pending', ?, ?, ?, ?, '2026-10-11T04:01:00Z')`,
+        )
+        .run(
+          `old-${documentId}-${position}-${String(index + 1)}`,
+          documentId,
+          Number(position),
+          index + 1,
+          jobId,
+          JSON.stringify(fields),
+          JSON.stringify(item),
+          JSON.stringify(unsure === undefined ? [] : [unsure]),
+          JSON.stringify(report),
+        );
+    }
   }
-  await store.query
-    .transaction()
-    .execute((trx) => readings(store, () => SUNDAY_10AM).finish(trx, run));
 }
 
 /** The draft items' ids by test, in page order. */
@@ -183,12 +304,19 @@ async function call(
   origin: "person" | "rufi" = "person",
   callId = `call-${String(++calls)}`,
 ) {
-  const answer = await chatCaller(reader, transcripts, () => undefined)(
-    chat,
-    "t-1",
-    origin,
-  )(tool, input, callId);
-  return JSON.parse(answer.text) as {
+  const answer = await chatCaller(
+    reader,
+    transcripts,
+    () => undefined,
+    undefined,
+    undefined,
+    { run: sorting(store, () => SUNDAY_10AM).sort, done: () => undefined },
+  )(chat, "t-1", origin)(tool, input, callId);
+  return {
+    ...(JSON.parse(answer.text) as object),
+    kept: answer.kept,
+  } as {
+    kept?: true;
     ok: boolean;
     result: {
       receipt?: string;
@@ -238,81 +366,172 @@ describe("saving draft items", () => {
     "missing issuer",
     "missing number",
     "missing collected date",
-  ])("groups reports across documents safely: %s", async (scenario) => {
-    const facts = {
-      ...(scenario !== "missing issuer" && { issuer: "Sunrise Labs" }),
-      ...(scenario !== "missing number" && { report_number: "SOL-SPLIT-1" }),
-      ...(scenario !== "missing collected date" && { dates: [COLLECTED] }),
-    };
-    // Another person's identical printed report must never be reused.
-    store.db
-      .prepare(
-        "UPDATE reports SET issuer = ?, report_number = ?, collected = ? WHERE id = 'rep-ravi-jul'",
-      )
-      .run(
-        facts.issuer ?? null,
-        facts.report_number ?? null,
-        facts.dates?.[0]?.iso ?? null,
-      );
-    await read({
-      1: {
-        outcome: "read",
-        facts,
-        items: [{ test_name: "Ferritin", value_text: "42", date: COLLECTED }],
-      },
-    });
-    await read(
-      {
+  ])(
+    "groups an older Rufi's reports across documents safely: %s",
+    async (scenario) => {
+      const facts = {
+        ...(scenario !== "missing issuer" && { issuer: "Sunrise Labs" }),
+        ...(scenario !== "missing number" && { report_number: "SOL-SPLIT-1" }),
+        ...(scenario !== "missing collected date" && { dates: [COLLECTED] }),
+      };
+      // Another person's identical printed report must never be reused.
+      store.db
+        .prepare(
+          "UPDATE reports SET issuer = ?, report_number = ?, collected = ? WHERE id = 'rep-ravi-jul'",
+        )
+        .run(
+          facts.issuer ?? null,
+          facts.report_number ?? null,
+          facts.dates?.[0]?.iso ?? null,
+        );
+      readOld({
         1: {
           outcome: "read",
           facts,
-          items: [
-            { test_name: "Vitamin B12", value_text: "510", date: COLLECTED },
-          ],
+          items: [{ test_name: "Ferritin", value_text: "42", date: COLLECTED }],
         },
-      },
-      "doc-asha-sep",
-    );
-    const { Ferritin = "", "Vitamin B12": B12 = "" } = drafts();
-    const items = [Ferritin, B12].map((item) => ({
-      item,
-      version: 1,
-      as: "new",
-      category: "lab",
-    }));
-    await say("Save Ferritin and Vitamin B12");
-    if (scenario === "later save") {
-      for (const item of items) {
-        expect((await call("save_changes", { items: [item] })).ok).toBe(true);
+      });
+      readOld(
+        {
+          1: {
+            outcome: "read",
+            facts,
+            items: [
+              { test_name: "Vitamin B12", value_text: "510", date: COLLECTED },
+            ],
+          },
+        },
+        "doc-asha-sep",
+      );
+      const { Ferritin = "", "Vitamin B12": B12 = "" } = drafts();
+      const items = [Ferritin, B12].map((item) => ({
+        item,
+        version: 1,
+        as: "new",
+        category: "lab",
+      }));
+      await say("Save Ferritin and Vitamin B12");
+      if (scenario === "later save") {
+        for (const item of items) {
+          expect((await call("save_changes", { items: [item] })).ok).toBe(true);
+        }
+      } else {
+        expect((await call("save_changes", { items })).ok).toBe(true);
       }
-    } else {
-      expect((await call("save_changes", { items })).ok).toBe(true);
-    }
-    const saved = rows(
-      "SELECT r.test_name, r.value_text, r.report_id, s.document_id, s.page FROM results r JOIN record_sources s ON s.person_id = r.person_id AND s.record_id = r.id WHERE r.test_name IN ('Ferritin', 'Vitamin B12') ORDER BY r.test_name",
-    );
-    expect(saved).toEqual([
+      const saved = rows(
+        "SELECT r.test_name, r.value_text, r.report_id, s.document_id, s.page FROM results r JOIN record_sources s ON s.person_id = r.person_id AND s.record_id = r.id WHERE r.test_name IN ('Ferritin', 'Vitamin B12') ORDER BY r.test_name",
+      );
+      expect(saved).toEqual([
+        {
+          test_name: "Ferritin",
+          value_text: "42",
+          report_id: expect.any(String) as string,
+          document_id: "doc-asha-aug",
+          page: 1,
+        },
+        {
+          test_name: "Vitamin B12",
+          value_text: "510",
+          report_id: expect.any(String) as string,
+          document_id: "doc-asha-sep",
+          page: 1,
+        },
+      ]);
+      expect(new Set(saved.map((row) => row["report_id"])).size).toBe(
+        scenario === "same save" || scenario === "later save" ? 1 : 2,
+      );
+      expect(saved.every((row) => row["report_id"] !== "rep-ravi-jul")).toBe(
+        true,
+      );
+    },
+  );
+
+  it("saves Rufi AI's drafts in their document's report, as sorted, and never in another document's with the same printed report", async () => {
+    const page = (test: string, value: string): Record<number, Entry> => ({
+      1: {
+        outcome: "read",
+        facts: {
+          issuer: "Sunrise Labs",
+          report_number: "SL-7",
+          dates: [COLLECTED],
+        },
+        items: [{ test_name: test, value_text: value }],
+      },
+    });
+    await read(page("Ferritin", "42"));
+    // The same report added again, as another file.
+    await read(page("Vitamin B12", "510"), "doc-asha-sep");
+    const { Ferritin = "", "Vitamin B12": B12 = "" } = drafts();
+    await say("Save both");
+    const saved = await call("save_changes", {
+      items: [Ferritin, B12].map((item) => ({
+        item,
+        version: 1,
+        as: "new",
+        category: "lab",
+      })),
+    });
+    expect(saved.ok).toBe(true);
+    expect(
+      rows(
+        "SELECT p.document_id, p.issuer, p.report_number, p.collected, r.measured_at FROM results r JOIN reports p ON p.person_id = r.person_id AND p.id = r.report_id WHERE r.test_name IN ('Ferritin', 'Vitamin B12') ORDER BY r.test_name",
+      ),
+    ).toEqual([
       {
-        test_name: "Ferritin",
-        value_text: "42",
-        report_id: expect.any(String) as string,
         document_id: "doc-asha-aug",
-        page: 1,
+        issuer: "Sunrise Labs",
+        report_number: "SL-7",
+        collected: "2026-08-12",
+        measured_at: "2026-08-12",
       },
       {
-        test_name: "Vitamin B12",
-        value_text: "510",
-        report_id: expect.any(String) as string,
         document_id: "doc-asha-sep",
-        page: 1,
+        issuer: "Sunrise Labs",
+        report_number: "SL-7",
+        collected: "2026-08-12",
+        measured_at: "2026-08-12",
       },
     ]);
-    expect(new Set(saved.map((row) => row["report_id"])).size).toBe(
-      scenario === "same save" || scenario === "later save" ? 1 : 2,
+  });
+
+  it("dates Rufi AI's draft only by its own date: one without is refused until the user gives one", async () => {
+    await read();
+    const { HbA1c = "" } = drafts();
+    // As if Rufi AI left the date out.
+    store.db
+      .prepare(
+        "UPDATE draft_items SET fields = json_remove(fields, '$.date') WHERE id = ?",
+      )
+      .run(HbA1c);
+    await say("Save the HbA1c");
+    const refused = await call("save_changes", {
+      items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }],
+    });
+    expect(refused.issues[0]?.fix).toMatch(
+      /^This item has no date Rufi can store \(none is printed for it\)/,
     );
-    expect(saved.every((row) => row["report_id"] !== "rep-ravi-jul")).toBe(
-      true,
+  });
+
+  it("refuses a draft whose page was read again since, and saves nothing", async () => {
+    await read();
+    const { HbA1c = "" } = drafts();
+    // Page 1 is read again: a newer reading's copy of it.
+    store.db.exec(`
+      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
+        VALUES ('job-again', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1]', '2026-10-11T05:01:00Z', '2026-10-11T05:00:00Z');
+      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
+        SELECT person_id, file_id, page_in_file, 'job-again', 1, 'read', '| HbA1c | 7.1 | % |', '2026-10-11T05:00:30Z'
+        FROM document_pages WHERE document_id = 'doc-asha-aug' AND position = 1;
+    `);
+    await say("Save the HbA1c");
+    const before = written();
+    const refused = await call("save_changes", {
+      items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }],
+    });
+    expect(refused.issues[0]?.fix).toBe(
+      "This draft is out of date: its page was read again since it was drafted. Read the document again with get_documents and save its new drafts.",
     );
+    expect(written()).toEqual(before);
   });
 
   it("saves the stored items exactly, each with its document page as its source, in one report", async () => {
@@ -411,8 +630,8 @@ describe("saving draft items", () => {
     ]);
   });
 
-  it("puts a page that prints no lab, number or date in the report of the page before", async () => {
-    await read();
+  it("puts an older Rufi's draft on a page that prints no lab, number or date in the report of the page before", async () => {
+    readOld();
     const { HbA1c = "", "LDL cholesterol": LDL = "" } = drafts();
     await say("Save HbA1c and LDL");
     const saved = await call("save_changes", {
@@ -667,6 +886,137 @@ describe("saving draft items", () => {
     });
   });
 
+  it("links a page again after an undo took it off the result, in a save of its own with a receipt and history", async () => {
+    // The same result printed on both pages of the report.
+    const haemoglobin = {
+      test_name: "Haemoglobin",
+      value_text: "13.4",
+      value_number: 13.4,
+      unit: "g/dL",
+    };
+    await read({
+      1: {
+        outcome: "read",
+        facts: { dates: [COLLECTED], issuer: "Sunrise Labs" },
+        items: [haemoglobin],
+      },
+      2: { outcome: "read", items: [haemoglobin] },
+    });
+    const [first = "", second = ""] = rows(
+      "SELECT id FROM draft_items ORDER BY page",
+    ).map((row) => String(row["id"]));
+    const versionOf = async (id: string) =>
+      (
+        (await call("get_records", { kind: "result", ids: [id] })).result as {
+          records?: { version: string | null }[];
+        }
+      ).records?.[0]?.version ?? null;
+    const relink = async (id: string) => ({
+      item: second,
+      version: 1,
+      as: "another_source",
+      record: { id, version: await versionOf(id) },
+    });
+
+    await say("Save it; page 2 is the same result");
+    const saved = await call("save_changes", {
+      items: [{ item: first, version: 1, as: "new", category: "lab" }],
+    });
+    const id = saved.result.changes[0]?.id ?? "";
+    const firstSave = (one("SELECT id FROM operations") as { id: string }).id;
+    expect((await call("save_changes", { items: [await relink(id)] })).ok).toBe(
+      true,
+    );
+    await say("Undo both");
+    for (const change of [
+      {
+        kind: "result",
+        action: "remove_source",
+        id,
+        from: { document: "doc-asha-aug", page: 2 },
+      },
+      { kind: "result", action: "remove", id },
+    ]) {
+      expect((await call("save_changes", { changes: [change] })).ok).toBe(true);
+    }
+    await say("Save it again, with both pages");
+    // A removed result takes no page: it is put back first.
+    const removed = written();
+    const refused = await call("save_changes", { items: [await relink(id)] });
+    expect(refused.issues.map((i) => [i.path, i.fix])).toEqual([
+      [
+        "items.0.record",
+        "That result is removed. To save this item into it, put it back first with a restore change, in a save of its own, after the user's yes; then save the item.",
+      ],
+    ]);
+    expect(written()).toEqual(removed);
+    expect(
+      (
+        await call("save_changes", {
+          changes: [{ kind: "result", action: "restore", id }],
+        })
+      ).ok,
+    ).toBe(true);
+    const again = await call("save_changes", { items: [await relink(id)] });
+    expect(again.ok).toBe(true);
+    expect(lines(again.result.receipt)).toEqual([
+      "Saved 1 result from Sunrise Labs August.pdf · 1 more source",
+      "Added a source to result Haemoglobin 13.4 g/dL: Sunrise Labs August.pdf, page 2 (its values stay as they are)",
+    ]);
+    expect(again.result.changes).toEqual([
+      { kind: "result", action: "link", id },
+    ]);
+    const save = (
+      one("SELECT id FROM operations ORDER BY seq DESC LIMIT 1") as {
+        id: string;
+      }
+    ).id;
+    expect(
+      one(
+        "SELECT status, saved_as, record_id, operation_id FROM draft_items WHERE id = ?",
+        second,
+      ),
+    ).toEqual({
+      status: "saved",
+      saved_as: "another_source",
+      record_id: id,
+      operation_id: save,
+    });
+    expect(
+      rows(
+        "SELECT c.action FROM record_changes c JOIN operations o ON o.id = c.operation_id WHERE c.record_id = ? ORDER BY o.seq, c.seq",
+        id,
+      ).map((row) => row["action"]),
+    ).toEqual(["add", "link", "unlink", "remove", "restore", "link"]);
+    expect(
+      rows(
+        "SELECT page FROM record_sources WHERE record_id = ? AND type = 'document_page' AND removed_by IS NULL ORDER BY page",
+        id,
+      ),
+    ).toEqual([{ page: 1 }, { page: 2 }]);
+
+    // Both pages are sources now, so both items are saved as they are.
+    const after = written();
+    const twice = await call("save_changes", {
+      items: [
+        { item: first, version: 1, as: "new", category: "lab" },
+        await relink(id),
+      ],
+    });
+    expect(twice.ok).toBe(true);
+    expect(twice.result.changes).toEqual([]);
+    expect(twice.result.already_saved).toEqual([
+      {
+        item: first,
+        as: "new",
+        record: id,
+        save: firstSave,
+      },
+      { item: second, as: "another_source", record: id, save },
+    ]);
+    expect(written()).toEqual(after);
+  });
+
   it("saves a correction as a new result that replaces the saved one", async () => {
     await read();
     const { HbA1c = "" } = drafts();
@@ -733,8 +1083,8 @@ describe("saving draft items", () => {
     ).toEqual([{ category: "lab" }, { category: "lab" }]);
   });
 
-  it("dates a measurement only by its own date or the user's, never by the report's collection date", async () => {
-    await read({
+  it("dates an older Rufi's measurement only by its own date or the user's, never by the report's collection date", async () => {
+    readOld({
       1: {
         outcome: "read",
         facts: { kind: "prescription", dates: [COLLECTED] },
@@ -897,9 +1247,26 @@ describe("saving draft items", () => {
           save: (one("SELECT id FROM operations") as { id: string }).id,
         },
       ],
-      note: "Every item was saved before, so nothing new was saved and Rufi added no receipt.",
+      note: "Nothing was saved, and Rufi added no receipt: every item is in the record already, as its earlier save in already_saved put it. If the user asked for something else, read the result with get_records and tell them.",
     });
     expect(written()).toEqual(after);
+
+    // Beside an item saved now, it is named as not saved again.
+    const { TSH = "" } = drafts();
+    const mixed = await call("save_changes", {
+      items: [
+        { item: HbA1c, version: 1, as: "new", category: "lab" },
+        { item: TSH, version: 1, as: "new", category: "lab" },
+      ],
+    });
+    expect(mixed.ok).toBe(true);
+    expect(lines(mixed.result.receipt)[0]).toBe(
+      "Saved 1 result from Sunrise Labs August.pdf · 1 new",
+    );
+    expect(mixed.result.already_saved).toHaveLength(1);
+    expect(mixed.result.note).toBe(
+      "The items in already_saved weren't saved again: each is in the record already, as its earlier save put it.",
+    );
   });
 
   it("refuses a save when the document changed since the user's message pointed at it", async () => {
@@ -976,6 +1343,124 @@ describe("saving draft items", () => {
     expect(one("SELECT removed FROM results WHERE id = ?", id)).toEqual({
       removed: 1,
     });
+
+    // Asked again, the item goes in as a new result of its own.
+    await say("Save it again");
+    const again = await call("save_changes", {
+      items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }],
+    });
+    expect(again.ok).toBe(true);
+    expect(lines(again.result.receipt)[1]).toBe(
+      'Added result HbA1c 7.1 %: category lab, range 4.0 - 5.6, flag H, measured 12 Aug 2026 ("Collected 12/08/2026") · page 1',
+    );
+    const added = again.result.changes[0]?.id ?? "";
+    expect(added).not.toBe(id);
+    expect(
+      one(
+        "SELECT record_id, operation_id FROM draft_items WHERE id = ?",
+        HbA1c,
+      ),
+    ).toEqual({
+      record_id: added,
+      operation_id: (
+        one("SELECT id FROM operations ORDER BY seq DESC LIMIT 1") as {
+          id: string;
+        }
+      ).id,
+    });
+    expect(one("SELECT removed FROM results WHERE id = ?", id)).toEqual({
+      removed: 1,
+    });
+  });
+});
+
+describe("a sort again", () => {
+  it("keeps the lab, number and date it leaves out: a later save from the same report lands in the same report", async () => {
+    await read();
+    const save = async (item: string) => {
+      const saved = await call("save_changes", {
+        items: [{ item, version: 1, as: "new", category: "lab" }],
+      });
+      expect(saved.ok, JSON.stringify(saved)).toBe(true);
+      return saved.result.changes[0]?.id ?? "";
+    };
+    await say("Save the HbA1c");
+    const hba1c = await save(drafts()["HbA1c"] ?? "");
+    // Page 2 sorted again into its document, naming nothing else of it.
+    const again = await call("sort_documents", {
+      document: "doc-asha-aug",
+      documents: [{ id: "doc-asha-aug", pages: [2] }],
+      drafts: [
+        {
+          page: 2,
+          test_name: "LDL cholesterol",
+          value_text: "142",
+          unit: "mg/dL",
+          date: COLLECTED,
+          quote: "LDL cholesterol 142",
+        },
+      ],
+    });
+    expect(again.ok, JSON.stringify(again)).toBe(true);
+    await say("Save the LDL too");
+    const ldl = await save(drafts()["LDL cholesterol"] ?? "");
+    const report = (id: string) =>
+      rows(
+        "SELECT p.id, p.issuer, p.report_number, p.collected FROM results r JOIN reports p ON p.person_id = r.person_id AND p.id = r.report_id WHERE r.id = ?",
+        id,
+      );
+    expect(report(hba1c)).toEqual([
+      {
+        id: expect.any(String) as string,
+        issuer: "Sunrise Labs",
+        report_number: "SL-1042",
+        collected: "2026-08-12",
+      },
+    ]);
+    expect(report(ldl)).toEqual(report(hba1c));
+  });
+});
+
+describe("a sort's trace", () => {
+  it("is kept with the sort, in its transaction: when it can't be kept, nothing is sorted", async () => {
+    const input = copied(PAGES, "doc-asha-aug");
+    const before = rows("SELECT * FROM documents WHERE id = 'doc-asha-aug'");
+    store.db.exec(
+      "CREATE TRIGGER no_trace BEFORE INSERT ON tool_calls BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+    );
+    const failed = await call("sort_documents", input, "person", "call-sort");
+    expect(failed.ok).toBe(false);
+    expect(rows("SELECT * FROM documents WHERE id = 'doc-asha-aug'")).toEqual(
+      before,
+    );
+    expect(drafts()).toEqual({});
+    expect(rows("SELECT id FROM sort_requests")).toEqual([]);
+    expect(
+      rows("SELECT sorted_at FROM jobs WHERE id = 'job-doc-asha-aug'"),
+    ).toEqual([{ sorted_at: null }]);
+
+    store.db.exec("DROP TRIGGER no_trace");
+    const { kept: given, ...sorted } = await call(
+      "sort_documents",
+      input,
+      "person",
+      "call-sort",
+    );
+    expect(sorted.ok).toBe(true);
+    // Kept with the sort, exactly as the AI gets it: the chat keeps it no
+    // more.
+    expect(given).toBe(true);
+    const kept = rows(
+      "SELECT tool, input, answer, ok FROM tool_calls WHERE call_id = 'call-sort'",
+    );
+    expect(kept).toEqual([
+      {
+        tool: "sort_documents",
+        input: JSON.stringify(input),
+        answer: JSON.stringify(sorted),
+        ok: 1,
+      },
+    ]);
   });
 });
 
