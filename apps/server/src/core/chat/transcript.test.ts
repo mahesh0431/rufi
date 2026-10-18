@@ -160,14 +160,14 @@ describe("the chat's pages", () => {
     },
   );
 
-  it("say where the AI started afresh: the first turn on another thread, never the chat's first", async () => {
+  it("say where a new thread started: the first turn on another thread, never the chat's first", async () => {
     await reply(1, "thread-1");
     await reply(2, "thread-1");
     await reply(3, "thread-2");
     await reply(4, "thread-2");
     await reply(5, "thread-3");
     const { turns } = await transcripts.page(chat);
-    expect(turns.map((turn) => turn.afresh)).toEqual([
+    expect(turns.map((turn) => turn.newThread)).toEqual([
       false,
       false,
       true,
@@ -179,7 +179,7 @@ describe("the chat's pages", () => {
   it("are empty for a new chat", async () => {
     expect(await transcripts.page(chat)).toEqual({
       revision: 0,
-      chat: { model: null, effort: "medium" },
+      chat: { model: null, effort: "medium", context: null },
       entries: [],
       turns: [],
       before: null,

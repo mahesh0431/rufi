@@ -277,17 +277,17 @@ test("the paperclip says it adds a file, then gives its chip with what Rufi does
 
 /** Seven draft items read from page 1 of Asha's August report. */
 const DRAFTS = `
-  INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at)
-    VALUES ('job-aug', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1,2]', '2026-10-01T09:00:00Z');
-  UPDATE document_pages SET state = 'read', entry_job_id = 'job-aug',
-    entry = '{"outcome":"read","facts":{"issuer":"Sunrise Labs","dates":[{"label":"Collected","date":"12 Aug 2026","iso":"2026-08-12"}]},"items":[]}'
+  INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, sorted_at, created_at)
+    VALUES ('job-aug', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1,2]', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
+  UPDATE document_pages SET state = 'read', entry_job_id = 'job-aug'
     WHERE document_id = 'doc-asha-aug';
-  UPDATE documents SET version = 1 WHERE id = 'doc-asha-aug';
-  INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, fields, original, created_at)
+  UPDATE documents SET version = 1, kind = 'lab_report', issuer = 'Sunrise Labs', date = '2026-08-12'
+    WHERE id = 'doc-asha-aug';
+  INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, fields, original, quote, created_at)
   SELECT 'drf-' || n, 'asha', 'doc-asha-aug', 1, n, 'job-aug', 'lab_result',
-    json_object('test_name', 'Test ' || n, 'value_text', '' || n),
-    json_object('test_name', 'Test ' || n, 'value_text', '' || n),
-    '2026-10-01T09:00:00Z'
+    json_object('test_name', 'Test ' || n, 'value_text', '' || n, 'date', json('{"label":"Collected","date":"12 Aug 2026","iso":"2026-08-12"}')),
+    json_object('test_name', 'Test ' || n, 'value_text', '' || n, 'date', json('{"label":"Collected","date":"12 Aug 2026","iso":"2026-08-12"}')),
+    'Test ' || n || ' | ' || n, '2026-10-01T09:00:00Z'
   FROM (SELECT 1 AS n UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6 UNION SELECT 7);
 `;
 

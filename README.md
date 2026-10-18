@@ -6,7 +6,7 @@ Rufi is in early development and not ready for use yet.
 
 - [Help](docs/help/index.md): what works today
 - [Glossary](GLOSSARY.md): the words Rufi uses
-- For developers: [`AGENTS.md`](AGENTS.md) and the decisions in [`docs/adr/`](docs/adr/)
+- For developers: [How Rufi works](docs/how-rufi-works.md), [`AGENTS.md`](AGENTS.md) and the decisions in [`docs/adr/`](docs/adr/)
 
 ## License
 

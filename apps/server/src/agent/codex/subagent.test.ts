@@ -1,9 +1,10 @@
 // The reader's lock-down, proved on the pinned Codex binary itself, offline:
 // a sub-agent turn against the local fake model, with the reader's real
-// tools, page service and notebook writer on a real database. It captures
-// every request Codex sends the model and fails on any tool but get_page and
-// save_page, also after a compaction; it checks a page image reaches the
-// model, and that the tools' binding and the notebook's write boundary hold.
+// tools (core/documents/copy-reader.ts), page service and copies writer on a
+// real database. It captures every request Codex sends the model and fails
+// on any tool but get_page and save_page, also after a compaction; it checks
+// a page image reaches the model, and that the tools' binding and the
+// copies' write boundary hold.
 import {
   mkdir,
   mkdtemp,
@@ -22,10 +23,11 @@ import {
 } from "../../../tests/fake-model.ts";
 import type { Scenario } from "../../../tests/fake-codex.ts";
 import { documents } from "../../core/documents/documents.ts";
-import { notebook, type Run } from "../../core/documents/notebook.ts";
+import { copies } from "../../core/documents/copies.ts";
+import { forCopying } from "../../core/documents/copy-reader.ts";
+import type { Run } from "../../core/documents/notebook.ts";
 import { pagePath } from "../../core/documents/originals.ts";
 import { pages } from "../../core/documents/pages.ts";
-import { forReader } from "../../core/documents/reader-tools.ts";
 import {
   databasePath,
   openWritable,
@@ -129,19 +131,35 @@ function job(targets: number[], attempt = 1): Run {
   };
 }
 
-/** The notebook as stored: every page's entry and job, and the note. */
-const stored = () => ({
-  pages: store.db
+/** Every page as stored: its entry and the reading that last saved it. */
+const stored = () =>
+  store.db
     .prepare(
       "SELECT person_id, position, entry, entry_job_id FROM document_pages ORDER BY person_id, position",
     )
     .all()
-    .map((row) => ({ ...row })),
-  notes: store.db
-    .prepare("SELECT person_id, reader_note FROM documents ORDER BY person_id")
+    .map((row) => ({ ...row }));
+
+/** The reader's page copies as stored, by file page and reading. */
+const storedCopies = () =>
+  store.db
+    .prepare(
+      "SELECT person_id, page_in_file, job_id, attempt, outcome, copy FROM page_copies ORDER BY person_id, page_in_file",
+    )
     .all()
-    .map((row) => ({ ...row })),
-});
+    .map((row) => ({ ...row }));
+
+/** Page 1 of Asha's report, as Rufi drew it. */
+const drawn = () =>
+  readFile(
+    pagePath(
+      root,
+      store.db
+        .prepare("SELECT file_id FROM document_pages WHERE document_id = ?")
+        .get(documentId)?.["file_id"] as string,
+      1,
+    ),
+  );
 
 /** A reader turn on the real Codex: the scripted steps, then "done". */
 async function read(
@@ -152,10 +170,10 @@ async function read(
   config: readonly string[] = [],
 ): Promise<{ outcome: SubAgentOutcome; answers: unknown[] }> {
   model = await fakeModel({ script });
-  const reader = forReader(
+  const reader = forCopying(
     run,
     pages(store, root),
-    notebook(store),
+    copies(store),
     () => undefined,
   );
   const answers: unknown[] = [];
@@ -257,16 +275,11 @@ for (const part of answer.content) {
 }`,
 });
 
-/** A script for exec: save a page, and show Rufi's answer. */
-const save = (page: number, entry: unknown, tokens?: number): Step => ({
-  exec: `const answer = await tools.mcp__rufi__save_page(${JSON.stringify({ page, entry })});
+/** A script for exec: save a page's copy, and show Rufi's answer. */
+const saveCopy = (page: number, copy: string, tokens?: number): Step => ({
+  exec: `const answer = await tools.mcp__rufi__save_page(${JSON.stringify({ page, outcome: "read", copy })});
 text(answer.content[0].text);`,
   ...(tokens !== undefined && { tokens }),
-});
-
-const entry = (value: string) => ({
-  outcome: "read",
-  items: [{ test_name: "Haemoglobin", value_text: value, unit: "g/dL" }],
 });
 
 describe("the reader on the pinned Codex", () => {
@@ -332,27 +345,31 @@ describe("the reader on the pinned Codex", () => {
     expect(model?.requests).toEqual([]);
   }, 120_000);
 
-  it("can call only get_page, save_page and Codex's resource helpers (which find nothing), sees the page image, and its tools hold", async () => {
+  it("can call only get_page, save_page and Codex's resource helpers (which find nothing), also after a compaction, sees the page image, and its copies hold", async () => {
     const run = job([1, 2]);
-    const before = stored();
+    const final = "# Sunrise Labs\n\n| Haemoglobin | 13.2 |";
     const { outcome, answers } = await read(
       run,
       [
         { call: { name: "list_mcp_resources", arguments: {} } },
-        call("save_page", { page: 1, entry: entry("13.2") }),
+        call("save_page", { page: 1, outcome: "read", copy: "# Sunrise Labs" }),
         call("get_page", { page: 1 }),
         call("get_page", { page: 9 }),
         call("get_page", { page: 1, document: "another" }),
-        call("save_page", { page: 1, entry: { outcome: "read" } }),
+        call("save_page", { page: 1, copy: "# Sunrise Labs" }),
         // Refusals so far changed nothing.
         call("save_page", {
           page: 1,
-          entry: entry("13.2"),
-          note: "Dates on page 1.",
+          outcome: "read",
+          copy: "# Sunrise Labs\n\n| Haemoglobin | 1[3?].2 |",
         }),
         // The answer to this save reports usage over the limit: Codex compacts.
-        call("save_page", { page: 1, entry: entry("13.4") }, OVER_LIMIT),
-        call("save_page", { page: 1, entry: entry("13.5") }),
+        call(
+          "save_page",
+          { page: 1, outcome: "read", copy: final },
+          OVER_LIMIT,
+        ),
+        call("save_page", { page: 1, outcome: "read", copy: "lost" }),
         call("get_page", { page: 1 }),
         { text: "Done." },
       ],
@@ -418,17 +435,8 @@ describe("the reader on the pinned Codex", () => {
       "input_image",
     ]);
     expect(output[1]?.text).toContain("Sunrise Labs · Test report · page 1");
-    const drawn = await readFile(
-      pagePath(
-        root,
-        store.db
-          .prepare("SELECT file_id FROM document_pages WHERE document_id = ?")
-          .get(documentId)?.["file_id"] as string,
-        1,
-      ),
-    );
     expect(output[2]?.image_url).toBe(
-      `data:image/png;base64,${drawn.toString("base64")}`,
+      `data:image/png;base64,${(await drawn()).toString("base64")}`,
     );
 
     // Each refusal says why; nothing changed until the first valid save.
@@ -439,51 +447,51 @@ describe("the reader on the pinned Codex", () => {
     expect(errors[4]).toBe("The input for save_page isn't valid.");
     // After the compaction, page 1 must be looked at again before a save.
     expect(errors[7]).toBe("Look at page 1 with get_page first, then save it.");
-
-    const after = stored();
-    expect(after.notes).toEqual([
-      { person_id: "asha", reader_note: "Dates on page 1." },
-      { person_id: "ravi", reader_note: null },
-    ]);
-    expect(after.pages).toEqual([
-      // Replaced, not added: one entry, the last saved before the compaction.
+    // Replaced in place within the reading: one copy, the last saved
+    // before the compaction, by its file page and this reading.
+    expect(storedCopies()).toEqual([
       {
         person_id: "asha",
-        position: 1,
-        entry: JSON.stringify(entry("13.4")),
-        entry_job_id: jobId,
+        page_in_file: 1,
+        job_id: jobId,
+        attempt: 1,
+        outcome: "read",
+        copy: final,
       },
+    ]);
+    // The page says this run saved it; Ravi's report is untouched.
+    expect(stored()).toEqual([
+      { person_id: "asha", position: 1, entry: null, entry_job_id: jobId },
       { person_id: "asha", position: 2, entry: null, entry_job_id: null },
       { person_id: "ravi", position: 1, entry: null, entry_job_id: null },
     ]);
-    expect(before.pages.every((p) => p["entry"] === null)).toBe(true);
-    // The look after the compaction shows the saved entry and the note.
+    // The look after the compaction shows the saved copy.
     expect(answers[8]).toMatchObject({
       ok: true,
       result: {
         page: 1,
-        of: 2,
-        entry: entry("13.4"),
-        note: "Dates on page 1.",
+        saved_copy: { outcome: "read", copy: final },
         saved: "1",
         still_to_save: "2",
       },
     });
   }, 120_000);
 
-  it("saves nothing for a page outside the job's targets, another run, or a closed run", async () => {
+  it("saves no copy for a page outside the job's targets, another run, or a closed run", async () => {
     const run = job([1]);
+    const copy = (page: number, text: string) =>
+      call("save_page", { page, outcome: "read", copy: text });
     const { outcome, answers } = await read(
       run,
       [
         // Page 2 may be looked at for context, but this job doesn't save it.
         call("get_page", { page: 2 }),
-        call("save_page", { page: 2, entry: entry("1") }),
+        copy(2, "page two"),
         call("get_page", { page: 1 }),
         // Before this call, another run of the job has started.
-        call("save_page", { page: 1, entry: entry("2") }),
+        copy(1, "another run"),
         // Before this call, Rufi has closed the run.
-        call("save_page", { page: 1, entry: entry("3") }),
+        copy(1, "closed"),
         { text: "Done." },
       ],
       (n) => {
@@ -503,29 +511,29 @@ describe("the reader on the pinned Codex", () => {
       "This reading has ended; nothing more is saved.",
     ]);
     // A late call after the turn ended is refused too.
-    const late = await forReader(
+    const late = await forCopying(
       run,
       pages(store, root),
-      notebook(store),
+      copies(store),
       () => undefined,
-    ).call("save_page", { page: 1, entry: entry("4") });
+    ).call("save_page", { page: 1, outcome: "read", copy: "late" });
     expect(JSON.parse(late.text)).toMatchObject({
       ok: false,
       error: "This reading has ended; nothing more is saved.",
     });
-    expect(stored().pages.every((p) => p["entry"] === null)).toBe(true);
-    expect(stored().notes.every((n) => n["reader_note"] === null)).toBe(true);
+    expect(storedCopies()).toEqual([]);
+    expect(stored().every((p) => p["entry_job_id"] === null)).toBe(true);
   }, 120_000);
 
-  it("on a code-mode model, can reach only its two tools and Codex's pinned set through exec, and sees the page image it shows", async () => {
+  it("on a code-mode model, can reach only its two tools and Codex's pinned set through exec, also after a compaction, and sees the page image it shows", async () => {
     const run = job([1, 2]);
     const { outcome } = await read(
       run,
       [
         look(1),
-        save(1, entry("13.2")),
+        saveCopy(1, "# Sunrise Labs"),
         // The answer to this save reports usage over the limit: Codex compacts.
-        save(1, entry("13.4"), OVER_LIMIT),
+        saveCopy(1, "# Sunrise Labs\n\nHaemoglobin 13.2 g/dL", OVER_LIMIT),
         look(1),
         { text: "Done." },
       ],
@@ -581,25 +589,18 @@ describe("the reader on the pinned Codex", () => {
     const shown = requests[1]?.input.at(-1);
     expect(shown?.type).toBe("custom_tool_call_output");
     const output = shown?.output as { type: string; image_url?: string }[];
-    const drawn = await readFile(
-      pagePath(
-        root,
-        store.db
-          .prepare("SELECT file_id FROM document_pages WHERE document_id = ?")
-          .get(documentId)?.["file_id"] as string,
-        1,
-      ),
-    );
     expect(output.filter((part) => part.type === "input_image")).toEqual([
       expect.objectContaining({
-        image_url: `data:image/png;base64,${drawn.toString("base64")}`,
+        image_url: `data:image/png;base64,${(await drawn()).toString("base64")}`,
       }),
     ]);
-    // The saves through exec reached the notebook.
-    expect(stored().pages[0]).toMatchObject({
-      entry: JSON.stringify(entry("13.4")),
-      entry_job_id: jobId,
-    });
+    // The saves through exec reached the copies.
+    expect(storedCopies()).toEqual([
+      expect.objectContaining({
+        job_id: jobId,
+        copy: "# Sunrise Labs\n\nHaemoglobin 13.2 g/dL",
+      }),
+    ]);
   }, 120_000);
 
   it("fails the turn when a code-mode reader asks the person a question", async () => {

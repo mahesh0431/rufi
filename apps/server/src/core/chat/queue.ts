@@ -6,7 +6,10 @@
 // twice: one Rufi stopped while handing it over is "not sure", shown and
 // never sent again by itself. A paused chat (Stop, or Rufi started again
 // with rows waiting) hands nothing over until the person sends; an event
-// that comes meanwhile rides with their next message.
+// that comes meanwhile rides with their next message. A message whose AI
+// thread didn't open waits with that hold until the person chooses Try
+// again or New thread for it. A sort, Rufi's request that Rufi AI sort an
+// add (core/documents/sorting.ts), always has a turn of its own.
 import type { Chip, Pointer, Queue, QueueItem } from "@rufi/contracts";
 import type { Kysely, Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
@@ -79,6 +82,7 @@ export async function addRow(
       state: "waiting",
       held: row.origin === "rufi" && paused !== null ? "paused" : null,
       held_text: null,
+      hold_id: null,
       sent_as: null,
       turn_id: null,
       created_at: at,
@@ -176,6 +180,7 @@ export function chatQueue(
             "q.state",
             "q.held",
             "q.held_text",
+            "q.hold_id",
             "q.refs",
             "e.text as line",
           ])
@@ -184,6 +189,7 @@ export function chatQueue(
           .where("q.state", "in", ["waiting", "handing_over", "not_sure"])
           .orderBy("q.position")
           .execute();
+        const sorts = await sortRows(trx, chat);
         return {
           paused: await pausedOf(trx, chat),
           items: found.map((row): QueueItem => ({
@@ -194,7 +200,9 @@ export function chatQueue(
             state: row.state as QueueItem["state"],
             held: row.held as QueueItem["held"],
             heldText: row.held_text,
+            holdId: row.hold_id,
             refs: JSON.parse(row.refs) as Chip[],
+            sort: sorts.has(row.id),
           })),
         };
       }),
@@ -291,7 +299,12 @@ export function chatQueue(
       write(chat, async (trx) => {
         const { numUpdatedRows } = await trx
           .updateTable("chat_queue")
-          .set({ state: "removed", held: null, updated_at: now() })
+          .set({
+            state: "removed",
+            held: null,
+            hold_id: null,
+            updated_at: now(),
+          })
           .where("person_id", "=", chat.personId)
           .where("chat_id", "=", chat.id)
           .where("id", "=", id)
@@ -329,7 +342,8 @@ export function chatQueue(
     /**
      * The person sends one row now: first in line, no longer held, and the
      * pause ends. A not-sure row goes again as a new row (its own id), and
-     * the old one is removed, so one id is never handed over twice.
+     * the old one is removed, so one id is never handed over twice. A row
+     * whose thread didn't open goes only by `recover`.
      */
     sendNow: (chat: ChatOf, id: string) =>
       write(chat, async (trx) => {
@@ -337,6 +351,7 @@ export function chatQueue(
           .selectAll()
           .where("id", "=", id)
           .where("state", "in", ["waiting", "not_sure"])
+          .where("held", "is not", "open_failed")
           .executeTakeFirst();
         if (!row)
           throw new QueueRefusal("That message isn't waiting any more.");
@@ -369,6 +384,7 @@ export function chatQueue(
             state: "waiting",
             held: null,
             held_text: null,
+            hold_id: null,
             sent_as: null,
             turn_id: null,
             position,
@@ -377,6 +393,49 @@ export function chatQueue(
           })
           .execute();
         return again;
+      }),
+
+    /**
+     * The person's choice for a message whose AI thread didn't open, for
+     * the hold they saw: it goes first in line, and the pause ends; for a
+     * new thread, the chat lets its thread go, in the same transaction.
+     * An older hold, or a row no longer held so, changes nothing.
+     */
+    recover: (chat: ChatOf, id: string, hold: string, newThread: boolean) =>
+      write(chat, async (trx) => {
+        const row = await rows(trx, chat)
+          .select("id")
+          .where("id", "=", id)
+          .where("state", "=", "waiting")
+          .where("held", "=", "open_failed")
+          .where("hold_id", "=", hold)
+          .executeTakeFirst();
+        if (!row) throw new QueueRefusal(CHANGED_ELSEWHERE);
+        const position = await front(trx, chat);
+        await trx
+          .updateTable("chat_queue")
+          .set({
+            held: null,
+            held_text: null,
+            hold_id: null,
+            position,
+            updated_at: now(),
+          })
+          .where("id", "=", id)
+          .execute();
+        await trx
+          .updateTable("chats")
+          .set({
+            paused: null,
+            ...(newThread && {
+              thread_id: null,
+              thread_provider: null,
+              thread_model: null,
+              thread_tools: null,
+            }),
+          })
+          .where("id", "=", chat.id)
+          .execute();
       }),
 
     /**
@@ -405,12 +464,14 @@ export function chatQueue(
      * Claims the next turn's rows, or none. A person's message goes with
      * every event held to ride with it; events next to each other at the
      * head go together. Paused or signed out: none, and events wait to
-     * ride.
+     * ride. A sort (Rufi's request that Rufi AI sort an add) goes in a turn
+     * of its own and never rides: held, it goes after the rows that aren't,
+     * and the pause after a restart doesn't hold it (a Stop does).
      */
     claim: (chat: ChatOf, signedIn: boolean): Promise<HandOver | undefined> =>
       write(chat, async (trx) => {
         const at = now();
-        const holdEvents = (held: string) =>
+        const holdEvents = (held: string, keep: readonly string[] = []) =>
           trx
             .updateTable("chat_queue")
             .set({ held, updated_at: at })
@@ -419,8 +480,10 @@ export function chatQueue(
             .where("origin", "=", "rufi")
             .where("state", "=", "waiting")
             .where("held", "is", null)
+            .$if(keep.length > 0, (q) => q.where("id", "not in", keep))
             .execute();
-        if ((await pausedOf(trx, chat)) !== null) {
+        const paused = await pausedOf(trx, chat);
+        if (paused === "stopped") {
           await holdEvents("paused");
           return undefined;
         }
@@ -437,7 +500,25 @@ export function chatQueue(
           .where("state", "=", "waiting")
           .orderBy("position")
           .execute();
-        const free = waiting.filter((row) => row.held === null);
+        const sorts = await sortRows(trx, chat);
+        const isSort = (row: { id: string }) => sorts.has(row.id);
+        // A person's message sent while a sort waits goes before it; a held
+        // sort goes once the rows that aren't held have gone.
+        const unheld = waiting.filter(
+          (row) => row.held === null && (paused === null || isSort(row)),
+        );
+        const cut = unheld.findLastIndex((row) => row.origin === "person") + 1;
+        const free = [
+          ...unheld.slice(0, cut).filter((row) => !isSort(row)),
+          ...unheld.slice(0, cut).filter(isSort),
+          ...unheld.slice(cut),
+          ...waiting.filter(
+            (row) => isSort(row) && RIDES.includes(row.held ?? ""),
+          ),
+        ];
+        // The pause after a restart holds no sort: signed out, the sort waits
+        // for the sign-in instead.
+        if (paused !== null) await holdEvents("paused", [...sorts]);
         const head = free[0];
         if (!head) return undefined;
         if (!signedIn) {
@@ -447,11 +528,18 @@ export function chatQueue(
         let batch: typeof waiting;
         if (head.origin === "person") {
           const riding = waiting.filter(
-            (row) => row.origin === "rufi" && RIDES.includes(row.held ?? ""),
+            (row) =>
+              row.origin === "rufi" &&
+              RIDES.includes(row.held ?? "") &&
+              !isSort(row),
           );
           batch = [...riding, head];
+        } else if (isSort(head)) {
+          batch = [head];
         } else {
-          const stop = free.findIndex((row) => row.origin !== "rufi");
+          const stop = free.findIndex(
+            (row) => row.origin !== "rufi" || isSort(row),
+          );
           batch = stop === -1 ? free : free.slice(0, stop);
         }
         const id = head.id;
@@ -484,25 +572,43 @@ export function chatQueue(
     /**
      * A hand-over the AI never got: its rows wait again. The person's row
      * is held with `why` (to send again or remove), unless it went back for
-     * a Stop; events wait to ride with the next message.
+     * a Stop; events wait to ride with the next message. `notOpened`: the
+     * AI's thread didn't open, and the hold is a new one of its kind.
      */
-    notTaken: (chat: ChatOf, id: string, why?: string) =>
+    notTaken: (chat: ChatOf, id: string, why?: string, notOpened = false) =>
       write(chat, async (trx) => {
         const at = now();
         const back = rows(trx, chat)
           .select("id")
           .where("sent_as", "=", id)
           .where("state", "=", "handing_over");
+        const held =
+          why === undefined ? null : notOpened ? "open_failed" : "failed";
         await trx
           .updateTable("chat_queue")
           .set({
             state: "waiting",
             sent_as: null,
-            held: why === undefined ? null : "failed",
+            held,
             held_text: why ?? null,
+            hold_id: held === "open_failed" ? uuid() : null,
             updated_at: at,
           })
           .where("id", "in", back.where("origin", "=", "person"))
+          .execute();
+        const sorts = await sortRows(trx, chat);
+        // A sort whose hand-over failed is Rufi's to try again (sorting.ts).
+        await trx
+          .updateTable("chat_queue")
+          .set({
+            state: "waiting",
+            sent_as: null,
+            held: why !== undefined ? "failed" : "paused",
+            held_text: why ?? null,
+            updated_at: at,
+          })
+          .where("id", "in", back.where("origin", "=", "rufi"))
+          .where("id", "in", [...sorts, ""])
           .execute();
         await trx
           .updateTable("chat_queue")
@@ -541,11 +647,24 @@ export function chatQueue(
     /**
      * When Rufi starts: rows it stopped while handing over are not sure,
      * never sent again by itself; a chat with rows waiting is paused until
-     * the person sends. Returns how many rows were cut off.
+     * the person sends. A sort is Rufi's own work, safe to hand over again
+     * (sort_documents does it once): it waits again, and pauses nothing.
+     * Returns how many rows were cut off.
      */
     endStopped: (): Promise<number> =>
       db.transaction().execute(async (trx) => {
         const at = now();
+        const sorts = trx
+          .selectFrom("sort_requests")
+          .select("queue_id")
+          .where("state", "=", "open")
+          .where("queue_id", "is not", null);
+        await trx
+          .updateTable("chat_queue")
+          .set({ state: "waiting", sent_as: null, updated_at: at })
+          .where("state", "=", "handing_over")
+          .where("id", "in", sorts)
+          .execute();
         const cut = await trx
           .updateTable("chat_queue")
           .set({ state: "not_sure", updated_at: at })
@@ -562,7 +681,8 @@ export function chatQueue(
                 .select("q.id")
                 .whereRef("q.chat_id", "=", "chats.id")
                 .where("q.state", "=", "waiting")
-                .where("q.held", "is", null),
+                .where("q.held", "is", null)
+                .where("q.id", "not in", sorts),
             ),
           )
           .execute();
@@ -573,6 +693,7 @@ export function chatQueue(
           .where("origin", "=", "rufi")
           .where("state", "=", "waiting")
           .where("held", "is", null)
+          .where("id", "not in", sorts)
           .where((eb) =>
             eb.exists(
               eb
@@ -586,4 +707,16 @@ export function chatQueue(
         return Number(cut.numUpdatedRows);
       }),
   };
+}
+
+/** The chat's rows that are an open sort's, by id. */
+async function sortRows(trx: Db, chat: ChatOf): Promise<Set<string>> {
+  const found = await trx
+    .selectFrom("sort_requests")
+    .select("queue_id")
+    .where("person_id", "=", chat.personId)
+    .where("state", "=", "open")
+    .where("queue_id", "is not", null)
+    .execute();
+  return new Set(found.map((r) => r.queue_id ?? ""));
 }
