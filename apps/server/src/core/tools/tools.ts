@@ -2,7 +2,7 @@
 // using them is in the core (core/chat/instructions.ts) and the skills.
 import { createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
-import { getDocuments, retryReading } from "./documents.ts";
+import { getDocuments, retryReading, sortDocuments } from "./documents.ts";
 import { showFace } from "./face.ts";
 import { getOverview } from "./overview.ts";
 import { dismissItems, saveChanges } from "./save.ts";
@@ -14,15 +14,19 @@ import {
   specOf,
   toolCaller,
   type Tool,
+  type ToolAnswer,
   type ToolContext,
 } from "./registry.ts";
+import type { Transaction } from "kysely";
 import type { Log } from "../../platform/logs.ts";
 import type { ChatRow, Transcripts } from "../chat/transcript.ts";
 import { createBrief as makeBrief } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
+import type { SortAnswer, SortInput, SortScope } from "../documents/sorting.ts";
 import { dismissItems as dismissDrafts } from "../record/items.ts";
 import { saveChanges as saveToRecord } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
+import type { Tables } from "../store/tables.ts";
 
 export const TOOLS: readonly Tool[] = [
   getOverview,
@@ -31,6 +35,7 @@ export const TOOLS: readonly Tool[] = [
   readChat,
   saveChanges,
   dismissItems,
+  sortDocuments,
   retryReading,
   createBrief,
   showFace,
@@ -96,9 +101,11 @@ export function toolsJson(): string {
 }
 
 /**
- * The tools of one turn in Rufi's own chat, the one place the AI can save
- * or make a brief: each is written with its line in the chat. A turn a Rufi
- * event started can only read: the person didn't ask for it.
+ * The tools of one turn in Rufi's own chat, the one place the AI can save,
+ * sort or make a brief: each is written with its line in the chat. A turn a
+ * Rufi event started can only read: the person didn't ask for it. The one
+ * exception is a sort's own turn, which can sort its add (and nothing
+ * else): Rufi asked for it.
  */
 export function chatCaller(
   reader: Store | undefined,
@@ -106,9 +113,20 @@ export function chatCaller(
   log: Log,
   pages?: Pages,
   retry?: (personId: string, documentId: string) => Promise<number[]>,
+  sort?: {
+    run: (
+      scope: SortScope,
+      input: SortInput,
+      trx: Transaction<Tables>,
+    ) => Promise<SortAnswer>;
+    /** After a sort is kept. */
+    done: (personId: string) => void;
+  },
 ) {
-  return (chat: ChatRow, agentTurnId: string, origin: "person" | "rufi") =>
-    forAgent(
+  return (chat: ChatRow, agentTurnId: string, origin: "person" | "rufi") => {
+    // Sorts kept with their call, by call id, till their answer goes out.
+    const kept = new Set<string>();
+    const call = forAgent(
       () => ({
         store: reader,
         personId: chat.personId,
@@ -144,6 +162,30 @@ export function chatCaller(
                   input,
                 ),
               ),
+        // A Rufi-started turn may sort only for its own request: sorting.ts
+        // checks that, in the sort's transaction, which keeps the call too.
+        sort: async (input, callId) => {
+          if (!sort) throw new Refusal("Rufi can't sort documents here.");
+          const sorted = await transcripts.withToolCall(
+            chat,
+            agentTurnId,
+            { callId, tool: "sort_documents", input },
+            (trx) =>
+              sort.run(
+                {
+                  personId: chat.personId,
+                  chatId: chat.id,
+                  agentTurnId,
+                  callId,
+                },
+                input,
+                trx,
+              ),
+          );
+          kept.add(callId);
+          sort.done(chat.personId);
+          return sorted;
+        },
         retryReading: (documentId) =>
           origin === "rufi"
             ? Promise.reject(new Refusal(EVENT_TURN_RETRY))
@@ -170,4 +212,15 @@ export function chatCaller(
       log,
       () => rejectionsPerReply(transcripts.setting),
     ).forTurn();
+    return async (
+      name: string,
+      input: unknown,
+      callId?: string,
+    ): Promise<ToolAnswer> => {
+      const answer = await call(name, input, callId);
+      return callId !== undefined && kept.delete(callId)
+        ? { ...answer, kept: true }
+        : answer;
+    };
+  };
 }

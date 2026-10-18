@@ -160,6 +160,9 @@ record, your chat, your documents and Rufi's settings, as Rufi stored it.
 - \`draft_items\`: what Rufi's reader read from your documents, each not
   saved yet, saved, or dismissed. Not your record: Rufi counts one nowhere
   until you save it.
+- \`page_copies\`: the reader's copy of a page of your documents, as
+  Markdown, exactly as it wrote it, with its marks where something was
+  unclear. One for each page and reading. Not your record either.
 - \`results\`: your lab results and measurements, as printed. Its
   \`category\` column says which each one is: \`lab\` (on Lab results) or
   \`measurement\` (on Measurements). Results saved before Rufi had

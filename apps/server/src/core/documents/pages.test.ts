@@ -311,7 +311,7 @@ describe("get_documents", () => {
         value_number: 12.8,
         unit: "g/dL",
         fixed_by_user: true,
-        reader_read: { value_text: "13.2", unit: null },
+        drafted: { value_text: "13.2", unit: null },
       },
       {
         id: "i2",

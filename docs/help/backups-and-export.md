@@ -20,9 +20,9 @@ A backup doesn't hold:
 
 Rufi keeps the newest backup of each of the last 7 days that had one, and of each of the last 4 weeks that had one: about 5 weeks. It removes older backups only after a new backup passed its check, so it never removes your last good backups, however long Rufi was closed.
 
-The backups are in the `backups` folder in your data folder, one folder for each backup, named by the date and time it was made (for example `2026-10-08-091403`). Each holds `rufi.sqlite`, the documents in `files`, and `backup.json`. Where your Mac's disk allows (as its own disk does), a document in a backup is a clone: it takes no more space until the file changes.
+The backups are in the `backups` folder in your data folder, one folder for each backup, named by the date and time it was made (for example `2026-10-08-091403`). Each holds `rufi.sqlite`, the documents in `files`, and `backup.json`. Where your Mac's disk allows (as its own disk does), a document in a backup takes no more space until the file changes.
 
-Each hour Rufi checks that its newest backup is still whole: the record, and that each document is there with its size. It reads every document again only when it makes a backup and when you restore one.
+Each hour Rufi checks that its newest backup is still whole: the record, and that each document is there with its size. It reads each document's content again only when it makes a backup and when you restore one. If a backup isn't whole, Settings says so (see [See your backups](#see-your-backups)).
 
 ### The backup before an upgrade
 
@@ -89,7 +89,8 @@ What the restored copy has:
 - In a backup from before Rufi had Lab results and Measurements, every result counts as a lab result: Rufi can't tell which were measurements. To move one, tell Rufi in the chat, for example "my blood pressure from August is a measurement".
 - Your chat and drafts. A reply that was running when the backup was made shows as interrupted. Nothing is sent by itself.
 - Messages that were waiting for the AI come back held, above the box, marked **From a backup: it waited when the backup was made.** Nothing goes to the AI by itself: **Send** each one again, or **Remove** it. A message Rufi was giving the AI when the backup was made shows **Not sure this reached the AI.** (see [Waiting messages](chat.md#waiting-messages)).
-- Your next message starts the AI afresh with the chat's last messages, and the chat shows a quiet line there.
+- A file that waited for Rufi AI to sort it when the backup was made shows **Not sorted yet** on the Documents page. It isn't sorted by itself: click **Retry** (see [Documents](documents.md#when-the-sorting-waits)).
+- Your next message starts a new thread for the AI with the chat's last messages, and the chat shows "New thread started" there.
 - Which follow-up notices you already had, as of the backup. A notice the Rufi app showed after the backup was made can show once more (see [Follow-ups](follow-ups.md#notices-on-your-mac)).
 
 If Rufi refuses:

@@ -10,7 +10,7 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
 import { localTime, shownDate } from "../record/dates.ts";
 import { KINDS, kindNamed, type Kind, type Row } from "../record/kinds.ts";
-import { recordVersion, recordVersions } from "../record/read.ts";
+import { isCurrent, recordVersion, recordVersions } from "../record/read.ts";
 import type { Tables } from "../store/tables.ts";
 
 const kindNames = KINDS.map((kind) => kind.name) as [string, ...string[]];
@@ -208,6 +208,8 @@ interface Source {
   from: string;
   /** A save changed this record after the brief cited it. */
   changedSince: boolean;
+  /** The record to open: this one, or the result that amends it now; null once removed. */
+  record: { kind: string; id: string } | null;
 }
 
 export interface Brief {
@@ -243,7 +245,16 @@ export async function readBrief(
       kind: capital(kind.noun),
       what: summary(kind, row),
       from: await sourceOf(query, personId, kind, row, record.version),
-      changedSince: now.get(`${record.kind}:${record.id}`) !== record.version,
+      changedSince:
+        now.get(`${record.kind}:${record.id}`) !== record.version ||
+        (kind.name === "result" &&
+          (await amendedSince(
+            query,
+            personId,
+            record.id,
+            brief.record_version,
+          ))),
+      record: await toOpen(query, kind, personId, record.id),
     });
   }
   return {
@@ -266,6 +277,59 @@ async function recordOf(
       query,
     );
   return rows[0];
+}
+
+/**
+ * The record a source opens: the cited one while it is in the record; for a
+ * result amended since, the result that amends it now, following each
+ * amendment; null when there is none (removed).
+ */
+async function toOpen(
+  query: Kysely<Tables>,
+  kind: Kind,
+  personId: string,
+  id: string,
+): Promise<{ kind: string; id: string } | null> {
+  const { rows } =
+    await sql`SELECT 1 FROM ${sql.table(kind.table)} r WHERE r.person_id = ${personId} AND r.id = ${id} AND ${isCurrent(kind, "r")}`.execute(
+      query,
+    );
+  if (rows.length > 0) return { kind: kind.name, id };
+  if (kind.name !== "result") return null;
+  const newer = await query
+    .selectFrom("results")
+    .select("id")
+    .where("person_id", "=", personId)
+    .where("replaces_id", "=", id)
+    .where("removed", "=", 0)
+    .executeTakeFirst();
+  return newer ? toOpen(query, kind, personId, newer.id) : null;
+}
+
+/**
+ * A save after the brief's record version changed a result that amends this
+ * one, or one that amends that (added, changed or removed since).
+ */
+async function amendedSince(
+  query: Kysely<Tables>,
+  personId: string,
+  id: string,
+  recordVersion: number,
+): Promise<boolean> {
+  const { rows } = await sql<{ id: string }>`
+    WITH RECURSIVE amending(id) AS (
+      SELECT id FROM results WHERE person_id = ${personId} AND replaces_id = ${id}
+      UNION
+      SELECT r.id FROM results r JOIN amending a ON r.replaces_id = a.id
+      WHERE r.person_id = ${personId}
+    )
+    SELECT id FROM amending`.execute(query);
+  const amending = rows.map((row) => ({ kind: "result", id: row.id }));
+  const then = await recordVersions(query, personId, amending, recordVersion);
+  const now = await recordVersions(query, personId, amending);
+  return amending.some(
+    ({ kind, id }) => then.get(`${kind}:${id}`) !== now.get(`${kind}:${id}`),
+  );
 }
 
 /**
@@ -310,7 +374,8 @@ function summary(kind: Kind, row: Row): string {
   const date = row[column];
   const state = row["status"];
   return [
-    kind.label(row),
+    // A statement's label carries its date; here it shows once, after it.
+    kind.label(kind.name === "none_known" ? { ...row, asserted: null } : row),
     typeof date === "string" && date !== "next_visit" && shownDate(date),
     typeof state === "string" && state !== "unknown" && state,
     kind.name === "result" && row["replaces_id"] !== null && "amended",

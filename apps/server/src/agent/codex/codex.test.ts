@@ -10,8 +10,10 @@ import type { Scenario } from "../../../tests/fake-codex.ts";
 import { childEnvironment } from "../../platform/config.ts";
 import {
   agentCall,
+  NotOpened,
   NotReloaded,
   NotSent,
+  ThreadNotFound,
   type AgentEvent,
   type AgentRuntime,
   type TurnEnd,
@@ -789,11 +791,15 @@ describe("starting a reply", () => {
     ]);
   });
 
-  it("gives an open thread new instructions: lets it go, picks it up with them, then has it summarised, showing nothing of the summary", async () => {
+  it("gives an open thread new instructions: lets it go, picks it up with them, then adds the note, with no compaction", async () => {
     const agent = start();
     const { threadId } = await agent.startThread(SETTINGS);
     await expect(
-      agent.reloadThread(threadId, { ...SETTINGS, instructions: "Be kind." }),
+      agent.reloadThread(
+        threadId,
+        { ...SETTINGS, instructions: "Be kind." },
+        "The rules changed: Be kind.",
+      ),
     ).resolves.toEqual({ model: "gpt-6.1-sol" });
     expect(
       (await entries()).flatMap((entry) => {
@@ -804,10 +810,24 @@ describe("starting a reply", () => {
       "thread/start",
       "thread/unsubscribe",
       "thread/resume",
-      "thread/compact/start",
+      "thread/inject_items",
     ]);
     expect(await sent("thread/resume")).toMatchObject([
       { threadId, developerInstructions: "Be kind." },
+    ]);
+    expect(await sent("thread/inject_items")).toEqual([
+      {
+        threadId,
+        items: [
+          {
+            type: "message",
+            role: "developer",
+            content: [
+              { type: "input_text", text: "The rules changed: Be kind." },
+            ],
+          },
+        ],
+      },
     ]);
     expect(seen(threadId)).toEqual([]);
     expect(agent.loaded(threadId)).toBe(true);
@@ -815,17 +835,50 @@ describe("starting a reply", () => {
     await agent.send(threadId, { id: "m-1", input: ["Hi"] });
     await ended(threadId);
     expect((await entries()).filter((entry) => entry.turn)).toMatchObject([
-      { told: "Be kind." },
+      { told: "The rules changed: Be kind." },
     ]);
   });
 
-  it("says the thread didn't take its new instructions when its summary fails", async () => {
-    const agent = start({ compactFails: true });
+  it("says the thread didn't take its new instructions when the note isn't added", async () => {
+    const agent = start({ injectFails: true });
     const { threadId } = await agent.startThread(SETTINGS);
     await expect(
-      agent.reloadThread(threadId, { ...SETTINGS, instructions: "Be kind." }),
+      agent.reloadThread(
+        threadId,
+        { ...SETTINGS, instructions: "Be kind." },
+        "The rules changed: Be kind.",
+      ),
     ).rejects.toThrow(NotReloaded);
     expect(seen(threadId)).toEqual([]);
+  });
+
+  it("says a thread is gone only when Codex has no record of it; any other failure only that it didn't open", async () => {
+    const agent = start({ threads: { "old-1": {} }, resumeFails: 1 });
+    const gone = agent.resumeThread("gone-1", SETTINGS);
+    await expect(gone).rejects.toThrow(ThreadNotFound);
+    await expect(gone).rejects.toThrow("no rollout found for thread id gone-1");
+    const failed = agent.resumeThread("old-1", SETTINGS);
+    await expect(failed).rejects.toThrow(NotOpened);
+    await expect(failed).rejects.not.toThrow(ThreadNotFound);
+    await expect(failed).rejects.toThrow(
+      "failed to read thread: a fictional read error",
+    );
+    // The thread is there: it opens once the failure passes.
+    await expect(agent.resumeThread("old-1", SETTINGS)).resolves.toEqual({
+      model: "gpt-6.1-sol",
+      running: false,
+    });
+  });
+
+  it("passes up the context a thread used, as Codex reports it", async () => {
+    const agent = start({ usage: { tokens: 38_000, window: 100_000 } });
+    const threadId = await ask(agent);
+    await ended(threadId);
+    expect(
+      seen(threadId).flatMap((event) =>
+        event.type === "usage" ? [[event.tokens, event.window]] : [],
+      ),
+    ).toEqual([[38_000, 100_000]]);
   });
 });
 

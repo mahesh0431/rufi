@@ -4,8 +4,8 @@
 // Activity and, once it completed, Based on beside it; Rufi's receipt for
 // each save to the record, Rufi's own event lines (never your words), the
 // line of each visit brief, which opens it, and how a reply ended when it
-// didn't finish. A line between days, and a quiet line where the AI started
-// afresh or compacted its memory. Activity is what the AI's agent reported,
+// didn't finish. A line between days, and a quiet line where a new AI thread
+// started, and where Codex compacts or compacted the chat history. Activity is what the AI's agent reported,
 // in order: its progress notes in full, its thinking headings and its steps,
 // each step opening to all the agent gave about it (activity.tsx). While the
 // AI works it is open and live; once the reply ended it folds into one line,
@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import {
   createContext,
+  type ReactNode,
   use,
   useEffect,
   useId,
@@ -249,8 +250,8 @@ const shows = (entry: Entry) =>
 
 /**
  * What the transcript shows, in order, each as a key: "d:" a day's line
- * before an entry, "a:" the AI started afresh for a turn, "c:" a compaction
- * it completed, "e:" an entry, "s:" a turn's Activity and Based on, "x:" how
+ * before an entry, "a:" a new thread started for a turn, "k:" a compaction
+ * running, "c:" a compaction completed, "e:" an entry, "s:" a turn's Activity and Based on, "x:" how
  * a turn ended. A turn's Activity takes the place of its first line while it
  * runs, and sits under its answer once it ended, with Based on beside it
  * when the AI wrote How. Keys, so the list draws again only when what it
@@ -290,11 +291,11 @@ function lines(state: Live): string[] {
         order.findLast(
           (id) => (entries[id]?.createdAt ?? "") <= turn.startedAt,
         ) ?? "";
-      if (turn.afresh) add(after, at, `a:${turn.id}`);
+      if (turn.newThread) add(after, at, `a:${turn.id}`);
       if (cut(turn)) add(after, at, `x:${turn.id}`);
       continue;
     }
-    if (turn.afresh) add(before, opens, `a:${turn.id}`);
+    if (turn.newThread) add(before, opens, `a:${turn.id}`);
     const step = firstStep.get(turn.id);
     const answer = lastReply.get(turn.id);
     if (turn.status !== "running" && answer !== undefined) {
@@ -317,7 +318,9 @@ function lines(state: Live): string[] {
       if (today !== day) shown.push(`d:${id}`);
       day = today;
       if (entry.activity === "compaction") {
-        // Only a compaction the AI completed: one started or cut shows nothing.
+        // One running shows until it ends; one cut (a Stop, a crash) shows
+        // nothing.
+        if (entry.status === "running") shown.push(`k:${id}`);
         if (entry.status === "done") shown.push(`c:${id}`);
       } else shown.push(`e:${id}`);
     }
@@ -539,8 +542,11 @@ function Line({ live, line }: { live: StoreApi<Live>; line: string }) {
     case "d:":
       return <DayLine live={live} id={id} />;
     case "a:":
+      return <QuietLine>New thread started</QuietLine>;
+    case "k:":
+      return <QuietLine>Compacting chat history…</QuietLine>;
     case "c:":
-      return <QuietLine />;
+      return <QuietLine>Chat history compacted</QuietLine>;
     case "s:":
       return <ActivityView live={live} turnId={id} />;
     case "x:":
@@ -596,13 +602,9 @@ function DayLine({ live, id }: { live: StoreApi<Live>; id: string }) {
   );
 }
 
-/** Where the AI started afresh, or compacted its memory of the chat. */
-function QuietLine() {
-  return (
-    <p className="text-center text-xs text-muted italic">
-      The AI started afresh here. It can still read earlier messages.
-    </p>
-  );
+/** Where a new AI thread started, or Codex compacts the chat history. */
+function QuietLine({ children }: { children: ReactNode }) {
+  return <p className="text-center text-xs text-muted italic">{children}</p>;
 }
 
 function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
