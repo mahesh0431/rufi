@@ -22,6 +22,7 @@ A family's health record on their Mac, with an AI that reads their documents and
 - Every external call has a deadline; errors keep their `cause`; no empty `catch`.
 - Logs hold only the events in `platform/logs.ts`: never prompts, replies, health text, tokens or errors.
 - In `apps/web`, no module-level `let` that components reassign.
+- Rufi's look comes from `packages/brand`: read its `DESIGN.md` before a screen changes. Colours come only from its tokens; the dog only from `@rufi/brand/mark` (its `svg()` or `mark/assets/`), never redrawn or copied.
 
 ## Never weaken
 

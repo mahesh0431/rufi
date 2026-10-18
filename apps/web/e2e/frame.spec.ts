@@ -15,6 +15,9 @@ async function accessible(page: Page) {
 
 const sidebar = (page: Page) => page.getByRole("complementary");
 
+/** Rufi's dog at the top of the sidebar, as a screen reader finds it. */
+const dog = (page: Page) => sidebar(page).getByRole("img", { name: "Rufi" });
+
 /** The theme the page shows now: light or dark. */
 const theme = (page: Page) => () =>
   page.evaluate(() => document.documentElement.dataset["theme"]);
@@ -35,6 +38,10 @@ test.describe("opening Rufi", () => {
     expect(page.url()).not.toContain("launch");
     await expect(sidebar(page)).toContainText("Asha Fictional");
     await accessible(page);
+    // The dog in the browser tab.
+    const icon = await page.locator('link[rel="icon"]').getAttribute("href");
+    const served = await page.request.get(new URL(icon ?? "", page.url()).href);
+    expect(served.headers()["content-type"]).toBe("image/svg+xml");
 
     // Reloading keeps the tab's session.
     await page.reload();
@@ -131,6 +138,8 @@ test("follows the Mac's light or dark appearance, also when it changes while Ruf
     page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(await theme(page)()).toBe("dark");
   const dark = await background();
+  // One dog in the sidebar, the one for this theme.
+  await expect(dog(page)).toHaveCount(1);
   await accessible(page);
 
   // The chat with a reply, and a help page with code and a table.
@@ -149,6 +158,8 @@ test("follows the Mac's light or dark appearance, also when it changes while Ruf
   await page.emulateMedia({ colorScheme: "light" });
   await expect.poll(theme(page)).toBe("light");
   expect(await background()).not.toBe(dark);
+  // Still one dog: the light one.
+  await expect(dog(page)).toHaveCount(1);
 });
 
 test("Settings chooses light, dark or the Mac's; every open tab changes at once, and a new tab or a restart starts in it", async ({

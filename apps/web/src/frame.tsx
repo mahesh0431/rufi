@@ -29,6 +29,7 @@ import {
 import type { Person } from "@rufi/contracts";
 import { type ReactNode, useEffect } from "react";
 import { useConnection } from "./api.ts";
+import { Dog } from "./dog.tsx";
 import { useAppearance } from "./appearance.tsx";
 import { CHAT_TITLE, ChatDock } from "./chat.tsx";
 import { ReadingSheet } from "./reading.tsx";
@@ -136,9 +137,12 @@ export function Frame() {
         data-sidebar=""
         className="flex w-60 shrink-0 flex-col gap-0.5 border-r border-line bg-side p-2.5"
       >
-        <p className="truncate px-2 py-1.5 font-semibold">
-          {person?.displayName ?? "Rufi"}
-        </p>
+        <div className="flex items-center gap-2 px-2 py-1.5">
+          <Dog />
+          <p className="truncate font-semibold">
+            {person?.displayName ?? "Rufi"}
+          </p>
+        </div>
         <nav
           aria-label="Pages"
           className="mt-2 flex min-h-0 flex-1 flex-col gap-0.5"

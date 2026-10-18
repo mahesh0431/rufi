@@ -202,6 +202,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@rufi/brand':
+        specifier: workspace:*
+        version: link:../../packages/brand
       '@rufi/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -294,6 +297,9 @@ importers:
       '@dnd-kit/utilities':
         specifier: 3.2.2
         version: 3.2.2(react@19.3.0)
+      '@rufi/brand':
+        specifier: workspace:*
+        version: link:../../packages/brand
       '@rufi/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -373,6 +379,12 @@ importers:
       vite:
         specifier: 8.3.2
         version: 8.3.2(@types/node@24.19.0)(jiti@2.7.0)(yaml@2.9.1)
+
+  packages/brand:
+    devDependencies:
+      '@playwright/test':
+        specifier: 1.63.0
+        version: 1.63.0
 
   packages/contracts:
     dependencies:

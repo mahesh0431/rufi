@@ -1,0 +1,60 @@
+<!doctype html>
+<!-- The Rufi dog. Not under the Apache License: the Rufi name and everything in
+     packages/brand/mark/ belong to mahesh0431. All rights reserved. See TRADEMARKS.md. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rufi: the folded mark</title>
+<link rel="stylesheet" href="motion.css">
+<style>
+body{margin:0;background:#ECE9E2;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Inter",sans-serif;color:#1B2430}
+main{max-width:1200px;margin:0 auto;padding:28px 24px 80px}h1{font-size:30px;margin:0 0 4px;letter-spacing:-.02em}h2{font-size:18px;margin:30px 0 8px}
+.lead{color:#5d6670;margin:0;max-width:860px}
+.bar{position:sticky;top:0;z-index:2;background:#ECE9E2ee;backdrop-filter:blur(6px);padding:12px 0;display:flex;flex-wrap:wrap;gap:16px;align-items:center;border-bottom:1px solid #ddd8ce}
+.bar label{font-size:13px;font-weight:600;display:flex;gap:6px;align-items:center}
+.bar select,.bar input[type=color]{font:inherit}
+.chips{display:flex;gap:6px}.chip{border:2px solid transparent;border-radius:10px;padding:5px 10px;background:#fff;cursor:pointer;font-size:13px;display:flex;gap:6px;align-items:center}
+.chip.on{border-color:#1B2430}.dot{width:14px;height:14px;border-radius:4px;display:inline-block;box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)}
+.hero{display:grid;grid-template-columns:1fr 1.3fr;gap:14px;margin-top:16px}
+.stage{border-radius:18px;display:flex;align-items:center;justify-content:center;padding:26px;min-height:300px}
+.sizes{border-radius:18px;background:#fff;display:flex;gap:12px;align-items:end;justify-content:center;padding:22px;flex-wrap:wrap}
+.sizes div{text-align:center;font-size:11px;color:#8a929b}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.t{border-radius:16px;padding:12px 8px;display:flex;flex-direction:column;align-items:center;cursor:pointer}
+.t.on{outline:3px solid #1B2430;outline-offset:2px}
+.t b{font-size:14px;margin-top:4px}.t span{font-size:12px;opacity:.7;text-align:center}
+code{background:#fff;padding:2px 6px;border-radius:6px;font-size:13px}
+</style></head><body><main>
+<h1>Rufi: the folded mark</h1>
+<p class="lead">One source (<code>rufi.js</code>) and one motion file (<code>motion.css</code>). Open it through a local server (a browser won't load modules from a plain file). Pick a palette or your own three colours, an expression and a ground; nothing here is a copy.</p>
+<div class="bar">
+  <div class="chips" id="pals"></div>
+  <label>Ground <input type="color" id="cbg"></label><label>Paper <input type="color" id="cpaper"></label><label>Fold <input type="color" id="cacc"></label><label>Face <input type="color" id="cink"></label>
+  <label><select id="ground"><option value="tile">App tile</option><option value="circle">Round badge</option><option value="none">No ground</option></select></label>
+  <label><input type="checkbox" id="motion" checked> Motion</label>
+  <label><input type="checkbox" id="follow" checked> Eyes follow the pointer</label>
+</div>
+<div class="hero"><div class="stage" id="stage"></div><div class="sizes" id="sizes"></div></div>
+<h2>Expressions</h2><div class="grid" id="ex"></div>
+</main>
+<script type="module">
+import * as Rufi from './rufi.js';
+const $=id=>document.getElementById(id);
+let pal={...Rufi.PALETTES.inkApricot}, palKey='inkApricot', ex='calm', stops=[];
+const light=c=>{const [r,g,b]=[1,3,5].map(i=>parseInt(c.slice(i,i+2),16));return (r*299+g*587+b*114)/1000>150;};
+function draw(){
+  stops.forEach(f=>f());stops=[];
+  const ground=$('ground').value, motion=$('motion').checked;
+  $('stage').style.background=ground==='none'?pal.bg:'#fff';
+  $('stage').innerHTML=Rufi.svg({palette:pal,expression:ex,size:280,ground,...(motion?{}:{motion:false})});
+  $('sizes').innerHTML=[256,128,64,32,16].map(n=>`<div>${Rufi.svg({palette:pal,expression:ex,size:n,ground:ground==="none"?"tile":ground,...(motion?{}:{motion:false})})}<br>${n}</div>`).join('');
+  $('ex').innerHTML=Object.entries(Rufi.EXPRESSIONS).map(([k,e])=>`<div class="t ${k===ex?'on':''}" data-k="${k}" style="background:${pal.bg};color:${light(pal.bg)?'#1B2430':'#F6F4EF'}">${Rufi.svg({palette:pal,expression:k,size:150,...(motion?{}:{motion:false})})}<b>${e.name}</b><span>${e.use}</span></div>`).join('');
+  document.querySelectorAll('.t').forEach(t=>t.onclick=()=>{ex=t.dataset.k;draw();});
+  // moving only with Motion on; each dog keeps its own expression (a card's own, the others the chosen one)
+  $('follow').disabled=!motion;
+  if(motion) document.querySelectorAll('svg.rufi').forEach(el=>{const r=Rufi.live(el,{expression:el.closest('.t')?.dataset.k??ex,pointer:$('follow').checked});stops.push(()=>r.stop());});
+  $('pals').innerHTML=Object.entries(Rufi.PALETTES).map(([k,p])=>`<div class="chip ${k===palKey?'on':''}" data-k="${k}">${[p.bg,p.paper,p.accent].map(c=>`<i class="dot" style="background:${c}"></i>`).join('')}${p.name}</div>`).join('');
+  document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{palKey=c.dataset.k;pal={...Rufi.PALETTES[palKey]};sync();draw();});
+}
+function sync(){$('cbg').value=pal.bg;$('cpaper').value=pal.paper;$('cacc').value=pal.accent;$('cink').value=pal.ink;}
+[['cbg','bg'],['cpaper','paper'],['cacc','accent'],['cink','ink']].forEach(([id,k])=>$(id).oninput=e=>{pal={...pal,[k]:e.target.value,name:'Custom'};palKey='';draw();});
+$('ground').onchange=draw;$('motion').onchange=draw;$('follow').onchange=draw;sync();draw();
+</script></body></html>
