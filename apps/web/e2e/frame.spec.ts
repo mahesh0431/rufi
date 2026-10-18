@@ -1,11 +1,12 @@
 // The frame on the real core: opening Rufi, first run, sign-in, Overview,
 // Settings and Help, and what the page does when the core is slow or gone.
-import { chmod, readdir } from "node:fs/promises";
+import { chmod, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { type ExpressionKey, svg } from "@rufi/brand/mark";
 import { runningLink } from "../../server/src/server/core.ts";
+import { readPage, scriptedReader } from "../../server/tests/fake-reader.ts";
 import { expect, test } from "./rufi.ts";
 
 /** No accessibility rule broken on what the page shows now. */
@@ -172,12 +173,21 @@ test("follows the Mac's light or dark appearance, also when it changes while Ruf
   await expect(dog(page)).toHaveCount(1);
 });
 
-test("the sidebar dog shows the face Rufi's AI chose until the next reply, which it thinks through, then is calm again; an empty page shows the dog", async ({
+test("the sidebar dog shows the face Rufi's AI chose until the next reply, also after a reload, which it thinks through, then is calm again; an empty page shows the dog; another person's dog has its own face; a reading after a Stop is done", async ({
   page,
   rufi,
 }) => {
+  // A page read whole: its sort waits, as the chat's queue does after a Stop.
+  const reader = scriptedReader([
+    async (turn) => {
+      await turn.look(1);
+      await turn.save(1, readPage());
+      return undefined;
+    },
+  ]);
   await rufi.family();
   await rufi.start({
+    reader: reader.run,
     scenario: {
       // The first reply shows a face; the second shows none.
       callsByTurn: [[{ tool: "show_face", arguments: { face: "question" } }]],
@@ -205,9 +215,12 @@ test("the sidebar dog shows the face Rufi's AI chose until the next reply, which
   await expect(chat.locator(".reply")).toHaveText(
     "ok:Should I recheck my ferritin?",
   );
-  // The AI's face stays after its reply.
+  // The AI's face stays after its reply, and after a reload.
   await expect(chat.getByRole("button", { name: "Stop" })).toHaveCount(0);
   expect(await face(page)()).toBe(drawn("question"));
+  await page.reload();
+  await expect.poll(face(page)).toBe(drawn("question"));
+  await chat.getByRole("button", { name: "Open the chat" }).click();
 
   // The next reply: thinking, done a moment, then calm by itself.
   await box.fill("How is my ferritin?");
@@ -228,6 +241,49 @@ test("the sidebar dog shows the face Rufi's AI chose until the next reply, which
   await main.getByRole("button", { name: "Ask Rufi" }).click();
   await expect(box).toBeFocused();
   await accessible(page);
+
+  // Asha's reply runs, and Ravi's page opens meanwhile, in the same window:
+  // his dog has his own face, not a job done.
+  const open = (path: string) =>
+    page.evaluate((to) => {
+      history.pushState(null, "", to);
+      dispatchEvent(new PopStateEvent("popstate"));
+    }, path);
+  await box.fill("And my vitamin D?");
+  await box.press("Enter");
+  await expect.poll(face(page)).toBe(drawn("thinking"));
+  await open("/people/ravi/follow-ups");
+  await expect(sidebar(page)).toContainText("Ravi Fictional");
+  for (let i = 0; i < 4; i += 1) {
+    expect(await face(page)()).not.toBe(drawn("done"));
+    await page.waitForTimeout(400);
+  }
+
+  // Back on Asha's Documents: a reply she stops isn't done, but a reading
+  // that ends after it is.
+  await open("/people/asha/documents");
+  await expect(sidebar(page)).toContainText("Asha Fictional");
+  await chat.getByRole("button", { name: "Open the chat" }).click();
+  await expect(chat.locator(".reply")).toHaveCount(3);
+  // The scripted reply writes a part, then runs until it is stopped.
+  await box.fill("partial");
+  await box.press("Enter");
+  await expect(chat.locator(".reply").last()).toHaveText("ok:part");
+  await chat.getByRole("button", { name: "Stop" }).click();
+  await expect(chat.getByRole("button", { name: "Stop" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect.poll(face(page)).not.toBe(drawn("thinking"));
+  await page.getByLabel("Choose documents", { exact: true }).setInputFiles({
+    name: "sunrise-labs.pdf",
+    mimeType: "application/pdf",
+    buffer: await readFile(
+      join(
+        import.meta.dirname,
+        "../../server/tests/fixtures/documents/ravi-lipid-panel.pdf",
+      ),
+    ),
+  });
+  await expect.poll(face(page)).toBe(drawn("done"));
 });
 
 test("under reduced motion the dog is still, and its face still changes", async ({
