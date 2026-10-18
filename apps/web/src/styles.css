@@ -210,7 +210,7 @@ body {
 }
 
 /* Print (the visit brief's Print, or ⌘P on any page): only the page, on A4
-   sheets, light in every theme (packages/brand/tokens.css keeps dark for
+   sheets of white paper (no panel behind it), light in every theme (packages/brand/tokens.css keeps dark for
    screens). The sidebar, toolbar, chat bar and sheets stay on the screen,
    the page's scroll box opens to its full length, and each sheet's foot
    gives its number. */
@@ -234,6 +234,7 @@ body {
   [data-pane] {
     display: block;
     height: auto;
+    background: none;
   }
   [data-frame] > :not([data-pane]),
   [data-pane] > :not(main) {
