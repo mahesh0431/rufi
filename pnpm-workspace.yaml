@@ -6,9 +6,3 @@ packages:
 # allowBuilds, and an unlisted one fails the install instead of being skipped.
 strictDepBuilds: true
 allowBuilds: {}
-minimumReleaseAgeExclude:
-  - lucide-react@1.52.0
-# KaTeX below 0.18.2 has an advisory (GHSA-238p-pmpm-9mq7); Mermaid 12.1.0
-# asks for ^0.16. Drop this when Mermaid's own range takes a fixed KaTeX.
-overrides:
-  mermaid>katex: 0.18.11

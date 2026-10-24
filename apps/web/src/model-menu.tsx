@@ -66,6 +66,7 @@ export function ModelMenu({
         {/* While the list comes, the name's place is kept; without one, none. */}
         {name ??
           (models.isPending && <span className="inline-block w-[5.5rem]" />)}
+        {/* A space between the two, so the menu's name holds what it shows. */}{" "}
         <span className="text-muted">{effortName}</span>
         <ChevronDown size={ICON} className="text-muted" aria-hidden />
       </Menu.Trigger>

@@ -202,8 +202,8 @@ test("checks a report against its pages: worth a look only, a fix, a fix from an
   await save.click();
   expect(page.url()).toBe(documentPage);
   await expect(minimise).toHaveCount(0);
-  await expect(opener).toHaveAccessibleDescription(
-    /^sunrise-labs-august\.pdf What changed since March\?/,
+  await expect(opener).toHaveAccessibleName(
+    /^Open the chat: sunrise-labs-august\.pdf What changed since March\?/,
   );
 
   // In a short window, the footer's button is above the bar: a click at
@@ -268,7 +268,7 @@ test("checks a report against its pages: worth a look only, a fix, a fix from an
     await items.getByRole("row").filter({ hasText: "Platelet count" }).hover();
     await items.getByRole("button", { name: "Ask Rufi" }).first().click();
     await expect(chat.getByRole("alert")).toHaveText(refused);
-    await expect(opener).toHaveAccessibleDescription(
+    await expect(opener).toHaveAccessibleName(
       new RegExp(`${refused.replace(/[.?:]/g, "\\$&")}$`),
     );
   };

@@ -69,7 +69,7 @@ export function OverviewPage({ person }: { person: Person }) {
                       </span>
                     </span>
                     <AskRufi
-                      aria-label={`Ask Rufi about ${document.name}`}
+                      aria-label={`Ask Rufi about this document: ${document.name}`}
                       onClick={() => {
                         askRufi(person.id, [
                           {
@@ -110,7 +110,7 @@ export function OverviewPage({ person }: { person: Person }) {
                       </span>
                     </span>
                     <AskRufi
-                      aria-label={`Ask Rufi about ${followUp.title}`}
+                      aria-label={`Ask Rufi about this follow-up: ${followUp.title}`}
                       onClick={() => {
                         askRufi(person.id, [
                           {

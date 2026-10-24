@@ -51,13 +51,7 @@ import {
   Square,
   X,
 } from "lucide-react";
-import {
-  type ReactNode,
-  type RefObject,
-  useEffect,
-  useId,
-  useState,
-} from "react";
+import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
@@ -153,7 +147,6 @@ export function Box({
       : (refused ?? notice ?? problem);
   /** In the pill, for the moment, in place of the text. */
   const reason = why ?? saved;
-  const pill = useId();
 
   // The box grows with its text up to a few lines, then scrolls.
   const field = (
@@ -234,15 +227,12 @@ export function Box({
             ref={(element) => {
               inputRef.current = element;
             }}
-            aria-label="Open the chat"
-            aria-describedby={pill}
             onClick={onOpen}
             className="flex h-full min-w-0 flex-1 items-center rounded-l-full pl-3 text-left"
           >
-            <span
-              id={pill}
-              className="flex min-w-0 flex-1 items-center gap-1.5"
-            >
+            {/* Its name says what it does, then what it shows. */}
+            <span className="sr-only">Open the chat: </span>
+            <span className="flex min-w-0 flex-1 items-center gap-1.5">
               {running && (
                 <LoaderCircle
                   size={14}
