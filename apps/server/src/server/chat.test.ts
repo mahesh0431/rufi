@@ -1539,7 +1539,7 @@ describe("the chat, on the scripted Codex", () => {
         .map((e) => [e.status, e.link]);
     const jobs = () =>
       store.db
-        .prepare("SELECT state FROM jobs")
+        .prepare("SELECT state FROM jobs ORDER BY rowid")
         .all()
         .map((row) => row["state"]);
 
@@ -1580,7 +1580,7 @@ describe("the chat, on the scripted Codex", () => {
       ]);
     });
 
-    it("ends the reply before the AI when the reading fails or is stopped, its message held for Retry and no reading left open; another message goes meanwhile, and Retry reads on", async () => {
+    it("ends the reply before the AI when a reading fails or is stopped, its message held for Retry and no reading of its files left open; another message goes meanwhile, and Retry reads on", async () => {
       const stoppedAt = Promise.withResolvers<undefined>();
       await startChat("fake", {
         reader: [
@@ -1604,19 +1604,46 @@ describe("the chat, on the scripted Codex", () => {
             await turn.save(2, readPage());
             return undefined;
           },
+          // The second file, read only once the first is.
+          async (turn) => {
+            await turn.look(1);
+            await turn.save(1, readPage());
+            return undefined;
+          },
         ],
       });
       const c = await newChat();
       const id = await attach();
+      const [photo = ""] = (
+        await documents(store, home).add(
+          "asha",
+          [
+            {
+              name: "thyroid.jpg",
+              bytes: new Uint8Array(
+                await readFile(
+                  join(
+                    import.meta.dirname,
+                    "../../tests/fixtures/documents/thyroid-recheck.jpg",
+                  ),
+                ),
+              ),
+            },
+          ],
+          true,
+        )
+      ).added;
       await chat?.send(c, uuid(), "quiet Read this", [
         { type: "document", id },
+        { type: "document", id: photo },
       ]);
       await ended(c.id);
       expect((await transcript(c.id)).turns).toMatchObject([
         { status: "failed" },
       ]);
       expect((await reading(c)).map(([status]) => status)).toEqual(["failed"]);
-      expect(jobs()).toEqual(["failed"]);
+      // The second file's reading, never started, fails with the reply.
+      expect(jobs()).toEqual(["failed", "failed"]);
       const held = async () => {
         const [item] = (await queue.list(await chatRow())).items;
         expect(item).toMatchObject({
@@ -1635,7 +1662,7 @@ describe("the chat, on the scripted Codex", () => {
       expect((await transcript(c.id)).turns.at(-1)).toMatchObject({
         status: "interrupted",
       });
-      expect(jobs()).toEqual(["failed"]);
+      expect(jobs()).toEqual(["failed", "failed"]);
       expect(await inputs()).toEqual([]);
 
       // Another message goes on its own; the held one waits for Retry.
@@ -1650,10 +1677,13 @@ describe("the chat, on the scripted Codex", () => {
       expect((await transcript(c.id)).turns.at(-1)).toMatchObject({
         status: "completed",
       });
-      expect(readerRuns.at(-1)?.input).toContain(
-        "You saved pages 1 in an earlier run",
-      );
-      expect(jobs()).toEqual(["done"]);
+      expect(readerRuns.map((run) => run.input)).toEqual([
+        expect.stringContaining("Sunrise Labs August.pdf"),
+        expect.stringContaining("Sunrise Labs August.pdf"),
+        expect.stringContaining("You saved pages 1 in an earlier run"),
+        expect.stringContaining("thyroid.jpg"),
+      ]);
+      expect(jobs()).toEqual(["done", "done"]);
       expect((await inputs()).at(-1)?.at(-1)).toMatch(/^quiet Read this/);
       expect(await waiting()).toEqual([]);
     });

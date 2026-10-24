@@ -710,7 +710,7 @@ describe("a restart or a failure", () => {
     expect(job()).toMatchObject({ state: "failed", retries: 3 });
   });
 
-  it("a Stop during the wait before a retry ends it at once", async () => {
+  it("a Stop during the wait before a retry ends it at once; a restart then fails the reading that waited", async () => {
     const lost = () =>
       Promise.resolve({
         end: { status: "failed" as const, reason: "connection" as const },
@@ -724,6 +724,10 @@ describe("a restart or a failure", () => {
     });
     expect(end).toEqual({ ended: "stopped" });
     expect(runs).toHaveLength(1);
+    // Rufi closed then: its next start fails the reading that waited.
+    expect(job()).toMatchObject({ state: "queued" });
+    expect(await reads.recover()).toBe(1);
+    expect(job()).toMatchObject({ state: "failed", retry_at: null });
   });
 
   it("tries again by itself when ChatGPT can't renew the sign-in just now, from its copies, and finishes", async () => {
