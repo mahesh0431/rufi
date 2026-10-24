@@ -109,8 +109,8 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   rufi,
 }) => {
   await opened(page, rufi);
-  await expect(opener(chat(page))).toHaveAccessibleDescription(
-    "Ask or tell Rufi about Asha Fictional…",
+  await expect(opener(chat(page))).toHaveAccessibleName(
+    "Open the chat: Ask or tell Rufi about Asha Fictional…",
   );
   // The reminder is under the panel, where answers are read.
   await expect(chat(page).getByText(/AI can make mistakes/)).toHaveCount(0);
@@ -1023,8 +1023,8 @@ test("a click outside the panel steps back to the bar and keeps what you typed; 
   await box(chat(page)).fill("Half a thought");
   await page.getByRole("main").click({ position: { x: 20, y: 20 } });
   await expect(minimise).toHaveCount(0);
-  await expect(opener(chat(page))).toHaveAccessibleDescription(
-    "Half a thought",
+  await expect(opener(chat(page))).toHaveAccessibleName(
+    "Open the chat: Half a thought",
   );
   await expect(log(chat(page))).toHaveCount(0);
 

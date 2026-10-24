@@ -53,8 +53,8 @@ const chips = (scope: Page | Locator) =>
   scope.getByRole("list", { name: "Added to this message" });
 /** The closed bar says what is added: the first chip and how many more. */
 const added = (scope: Locator, shown: string) =>
-  expect(opener(scope)).toHaveAccessibleDescription(
-    new RegExp(`^${shown.replace(/[.+?]/g, "\\$&")} `),
+  expect(opener(scope)).toHaveAccessibleName(
+    new RegExp(`^Open the chat: ${shown.replace(/[.+?]/g, "\\$&")} `),
   );
 /** The closed bar: a pill that opens the chat panel. */
 const opener = (scope: Locator) =>
