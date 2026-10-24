@@ -49,7 +49,7 @@ One result or measurement Rufi AI drafted from a page copy, with its value as th
 _Avoid_: pending result, unconfirmed record, extracted row
 
 **Report**:
-A lab or clinic report: one document as Rufi AI sorted it, with who issued it, its printed report number and when the sample was collected. The results saved from it belong to it. (Results saved from an older Rufi's drafts belong to the same report when all three match, also across documents; if any is missing, reports stay within their document.)
+A lab or clinic report: one document as Rufi AI sorted it, with who issued it, its printed report number and when the sample was collected. The results saved from it belong to it.
 _Avoid_: lab sheet, test report
 
 **Result**:
