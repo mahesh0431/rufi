@@ -115,8 +115,10 @@ async function opened(
 /** Sends a message; the scripted Codex answers "ok:" and the message. */
 async function send(page: Page, text: string) {
   const opener = chat(page).getByRole("button", { name: "Open the chat" });
-  if (await opener.isVisible()) await opener.click();
   const box = chat(page).getByRole("textbox", { name: "Message to Rufi" });
+  // Right after a load, neither the bar nor the box has drawn yet.
+  await expect(opener.or(box).first()).toBeVisible();
+  if (await opener.isVisible()) await opener.click();
   await box.fill(text);
   await box.press("Enter");
   await expect(box).toHaveValue("");
