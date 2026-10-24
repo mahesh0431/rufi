@@ -1,38 +1,75 @@
 name: check
 
-# Ready pull requests only: drafts are work in progress, and a pull request
-# is merged only when it is up to date with main, so main isn't checked again.
+# Every pull request, drafts too, and main after each merge. The jobs run side
+# by side; `check` passes only when all of them do, so it is the one gate.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
 
 permissions:
   contents: read
 
+# A newer push to a pull request cancels its older run; runs on main all finish.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  check:
-    if: github.event.pull_request.draft == false
+  quick:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm audit
+      - uses: ./.github/actions/setup
+      # What Rufi ships. Dependabot's weekly updates cover the dev tools.
+      - run: pnpm audit --prod
+      - run: pnpm check:quick
+
+  vitest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup
+      - run: pnpm --filter @rufi/web build
+      - run: pnpm exec vitest run --shard=${{ matrix.shard }}/2
+
+  playwright:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup
       - run: pnpm exec playwright install chromium --with-deps
       # The Rufi app's tests: Electron's binary (it has no install script),
       # Chromium's sandbox (Ubuntu allows it only with user namespaces) and a
       # virtual display.
       - run: pnpm --filter @rufi/desktop exec install-electron
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - run: xvfb-run --auto-servernum pnpm check
+      - run: pnpm --filter @rufi/web build
+      - run: xvfb-run --auto-servernum pnpm exec playwright test --shard=${{ matrix.shard }}/3
+
+  # The gate branch protection asks for. It always runs, so it is never
+  # skipped (a skipped required check counts as passed).
+  check:
+    if: always()
+    needs: [quick, vitest, playwright]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+        run: exit 1
 
   secrets:
-    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
