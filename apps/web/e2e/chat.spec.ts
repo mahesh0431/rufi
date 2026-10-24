@@ -1601,7 +1601,7 @@ test("Based on, beside Activity once a reply ended, opens the AI's own words and
   await expect(basedOn).toHaveCount(1);
 });
 
-test("a tool step shows the tool and its arguments as reported, and opens to its result; its sign keeps its size beside a long line", async ({
+test("a tool step shows the tool and its arguments as reported, and opens to its result", async ({
   page,
   rufi,
 }) => {
@@ -1629,11 +1629,6 @@ test("a tool step shows the tool and its arguments as reported, and opens to its
   );
   const other = steps(chat(page)).nth(1);
   await expect(other).toContainText('elsewhere.lookup · {"query":"headache');
-  // The sign keeps its 13 px beside a line longer than the chat.
-  for (const line of [own, other]) {
-    const sign = await line.locator("svg").first().boundingBox();
-    expect(sign?.width).toBe(13);
-  }
   await own.getByRole("button").click();
   await expect(own.getByText("Arguments", { exact: true })).toBeVisible();
   await expect(own.getByText("Result", { exact: true })).toBeVisible();

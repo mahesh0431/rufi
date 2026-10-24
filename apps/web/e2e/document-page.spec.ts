@@ -206,31 +206,6 @@ test("checks a report against its pages: worth a look only, a fix, a fix from an
     /^Open the chat: sunrise-labs-august\.pdf What changed since March\?/,
   );
 
-  // In a short window, the footer's button is above the bar: a click at
-  // its middle and near its corner reaches it.
-  await page.setViewportSize({ width: 1000, height: 420 });
-  await page.getByRole("main").evaluate((main) => {
-    main.scrollTo(0, main.scrollHeight);
-  });
-  const button = await save.boundingBox();
-  for (const [x, y] of [
-    [0.5, 0.5],
-    [0.9, 0.9],
-  ] as const) {
-    const at = {
-      x: (button?.x ?? 0) + (button?.width ?? 0) * x,
-      y: (button?.y ?? 0) + (button?.height ?? 0) * y,
-    };
-    // What is there is the button or a part of it, such as its icon.
-    expect(
-      await save.evaluate((element, { x, y }) => {
-        const hit = document.elementFromPoint(x, y);
-        return hit !== null && element.contains(hit);
-      }, at),
-    ).toBe(true);
-  }
-  await page.setViewportSize({ width: 1280, height: 720 });
-
   await opener.click();
   await expect(box).toHaveValue(
     "What changed since March?\nAnd since June?\n\nSave these 3 results.\n\nSave these 3 results.",

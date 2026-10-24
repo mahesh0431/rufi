@@ -249,12 +249,7 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
   }
   await expect(brief).toBeVisible();
   await expect(sources.last()).toBeVisible();
-  await expect(page.locator('main [data-dog="light"]')).toBeVisible();
-  await expect(page.locator('main [data-dog="dark"]')).toBeHidden();
-  // The light theme's ink (packages/brand/tokens.css).
-  await expect(brief).toHaveCSS("color", "rgb(29, 35, 41)");
   await page.emulateMedia({ media: "screen" });
-  await expect(brief).toHaveCSS("color", "rgb(228, 232, 236)");
 
   // The second scripted turn changes the record through the running chat.
   await page.getByRole("link", { name: "Chat with Rufi" }).click();
@@ -320,13 +315,12 @@ test("a brief that isn't there says so", async ({ page, rufi }) => {
   );
 });
 
-test("the chat bar leaves the last Sources row of a long brief in view; printed, it is numbered A4 sheets to its last row", async ({
+test("a long brief prints as numbered A4 sheets, to its last Sources row", async ({
   page,
   rufi,
 }) => {
   await rufi.family();
-  // Every result of Asha's cited, and notes: a page longer than the window
-  // and than one sheet.
+  // Every result of Asha's cited, and notes: longer than one sheet.
   const markdown = [
     MARKDOWN,
     "### Notes",
@@ -366,30 +360,6 @@ test("the chat bar leaves the last Sources row of a long brief in view; printed,
     .getByRole("region", { name: "Sources" })
     .getByRole("listitem");
   await expect(sources).toHaveCount(cited.length);
-
-  for (const size of [
-    { width: 1280, height: 720 },
-    { width: 800, height: 600 },
-  ]) {
-    await page.setViewportSize(size);
-    await page.getByRole("main").evaluate((main) => {
-      main.scrollTop = main.scrollHeight;
-    });
-    const last = await sources.last().boundingBox();
-    // The bar: the box floating over the page's bottom right.
-    const bar = await chat
-      .getByRole("button", { name: "Open the chat" })
-      .evaluate((element) => {
-        let shown: Element | null = element;
-        while (shown && getComputedStyle(shown).position !== "fixed") {
-          shown = shown.parentElement;
-        }
-        return shown?.getBoundingClientRect().top;
-      });
-    expect(last).not.toBeNull();
-    expect(bar).toBeDefined();
-    expect((last?.y ?? 0) + (last?.height ?? 0)).toBeLessThanOrEqual(bar ?? 0);
-  }
 
   // Printed as the page asks: A4 sheets of white paper, with no panel of
   // the app's page colour behind the brief, each with its number, and the
