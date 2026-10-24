@@ -13,7 +13,10 @@ import { twMerge } from "tailwind-merge";
 import { chatPage, isSmall, openPanel } from "./panel.ts";
 import { Button } from "./ui.tsx";
 
-/** What the small label beside the face says. */
+/**
+ * What the small label beside the face says. A row's own name for the button
+ * starts with it too, so the name holds what pointing at it shows.
+ */
 const TIP = "Ask Rufi about this";
 
 /** Marks a control that adds to the chat: a click on it keeps the panel open. */
@@ -33,7 +36,7 @@ export function AskRufi({
   return (
     <button
       type="button"
-      aria-label="Ask Rufi"
+      aria-label={TIP}
       {...ASKS}
       {...props}
       className={twMerge(
