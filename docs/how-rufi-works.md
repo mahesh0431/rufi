@@ -19,7 +19,7 @@ flowchart LR
     subgraph core["The core: rufi start, one process<br/>apps/server"]
       api["Local API and the screens' build<br/>127.0.0.1"]
       chat["Chat: queue and dispatcher<br/>server/chat.ts"]
-      reader["Readings, one at a time<br/>server/reader.ts"]
+      reader["Readings, one at a time,<br/>called by the chat<br/>server/reader.ts"]
       mcp["Rufi's MCP server<br/>/mcp and /mcp/reader"]
       record["Record, tools, transcripts, documents<br/>core/"]
       agent["Sign-in and the Codex adapter<br/>agent/"]
@@ -47,6 +47,7 @@ flowchart LR
   api --> chat
   api --> record
   chat --> agent
+  chat -- "Rufi's part" --> reader
   reader --> agent
   agent --> codex
   agent --> sub
@@ -79,22 +80,22 @@ ADRs: [0001](adr/0001-codex-on-chatgpt-plan.md) (Codex on the ChatGPT plan), [00
 
 One data folder holds everything (default `~/.rufi/data`). The core finds it once, at start: a non-blank `RUFI_HOME`, else the folder that `~/.rufi/location.json` names, else the default, made at the first start. It never makes an empty record in place of a remembered folder that is gone, and it refuses a folder that a move or a restore left half done; a first start that stopped goes on at the next start. See [ADR 0014](adr/0014-where-rufi-keeps-its-data.md).
 
-| In the data folder                                   | What it is                                                                                                                               |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `rufi.sqlite`                                        | The record, each chat's transcript and queue, the reader's page copies (and older notebooks), sorting requests and draft items, settings |
-| `files/`                                             | Each document's original, named by the SHA-256 of its content                                                                            |
-| `cache/`                                             | Copies made again when missing: HEIC photos as JPEG, PDF pages drawn for the AI                                                          |
-| `backups/`                                           | Checked backups; `backups/before-upgrade/` is never pruned                                                                               |
-| `chatgpt.json`                                       | Who signed in, without secrets (the tokens are in the Keychain)                                                                          |
-| `logs/`                                              | `rufi.log`: fixed events and checked fields only                                                                                         |
-| `codex/`                                             | The chat's Codex home: its settings, Rufi's skills (written at each start), its own copy of each thread, generated pictures              |
-| `sub-agents/`                                        | The reader's Codex home and an empty working folder; no document                                                                         |
-| `ai/`                                                | The AI's folder: the only place the chat AI's commands can write                                                                         |
-| `core.json`                                          | While the core runs: how `pnpm start` and the app find it                                                                                |
-| `rufi.lock`, `credentials.lock`                      | Folders held while a process uses the data folder, and while the sign-in changes (always `rufi.lock` first)                              |
-| `installed.json`, `creating.json`                    | A record was made here; a first start that hasn't finished                                                                               |
-| `restoring/`                                         | A restore that didn't finish                                                                                                             |
-| `moved-to.json`, `moving-out.json`, `moving-in.json` | A move's state in the old and the new folder                                                                                             |
+| In the data folder                                   | What it is                                                                                                                  |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `rufi.sqlite`                                        | The record, each chat's transcript and queue, the reader's page copies (and older notebooks), draft items, settings         |
+| `files/`                                             | Each document's original, named by the SHA-256 of its content                                                               |
+| `cache/`                                             | Copies made again when missing: HEIC photos as JPEG, PDF pages drawn for the AI                                             |
+| `backups/`                                           | Checked backups; `backups/before-upgrade/` is never pruned                                                                  |
+| `chatgpt.json`                                       | Who signed in, without secrets (the tokens are in the Keychain)                                                             |
+| `logs/`                                              | `rufi.log`: fixed events and checked fields only                                                                            |
+| `codex/`                                             | The chat's Codex home: its settings, Rufi's skills (written at each start), its own copy of each thread, generated pictures |
+| `sub-agents/`                                        | The reader's Codex home and an empty working folder; no document                                                            |
+| `ai/`                                                | The AI's folder: the only place the chat AI's commands can write                                                            |
+| `core.json`                                          | While the core runs: how `pnpm start` and the app find it                                                                   |
+| `rufi.lock`, `credentials.lock`                      | Folders held while a process uses the data folder, and while the sign-in changes (always `rufi.lock` first)                 |
+| `installed.json`, `creating.json`                    | A record was made here; a first start that hasn't finished                                                                  |
+| `restoring/`                                         | A restore that didn't finish                                                                                                |
+| `moved-to.json`, `moving-out.json`, `moving-in.json` | A move's state in the old and the new folder                                                                                |
 
 The core refuses to start on a folder with `installed.json` and no `rufi.sqlite`, with `restoring/`, or with any of the move marks.
 
@@ -111,7 +112,11 @@ sequenceDiagram
   S->>C: Send (text, chips, send id)
   C->>DB: one transaction: a queue row, the draft emptied
   C->>DB: claim the turn's rows
-  C->>X: open the chat's thread, start a turn
+  C->>X: open the chat's thread
+  opt the message brings files to read
+    C->>C: Rufi's part: the reader copies the pages
+  end
+  C->>X: start a turn
   X-->>C: items as they happen (notes, steps, reply)
   C->>DB: store each item
   C-->>S: stream what was stored
@@ -123,15 +128,17 @@ sequenceDiagram
 ```
 
 - **Rufi owns the queue.** What waits to go to the AI (the person's messages, and notes from Rufi's events) is in Rufi's database, one queue per chat, never in the agent's own queue. A send moves the box's text into a row and empties the draft in one transaction, keyed by the send's id, so a resend after a lost answer is not taken twice. See [ADR 0004](adr/0004-conversations-are-rufis.md).
+- **Files go with the message.** A file the person chooses is stored at once but unsent (`documents.sent_at` is null): it is a chip in the box and is left out of every list, count and tool until a send sets `sent_at` in the send's transaction. A chip taken out removes an unsent file. See [ADR 0021](adr/0021-files-start-on-send.md).
+- **Rufi's part.** When a claimed message has chips that need reading, the dispatcher opens the thread, starts the reply (its turn has no agent turn yet), and makes the reading jobs in that same transaction. Outside the chat's lane, so Stop and other short actions still work, it calls the reader for each job in turn; each is a `reading` activity of the reply with its progress. Then, in the lane, it marks the hand-over (`chat_queue.sent_as`) and starts the agent's turn with a note on what was copied, built from the stored page states. If the reading doesn't finish (Stop, an account problem, the deadline, a restart), the reply ends there, every job it made that hasn't finished fails with its copies kept, and the message waits with the hold `reply_ended` and a **Retry**. An empty `sent_as` means the AI surely never got the message, so Retry is safe; a set one keeps the "not sure" rule. Nothing is read by itself after a restart.
 - **One turn at a time.** The dispatcher claims a turn's rows in the database before it calls the agent, and starts a turn only when none runs. A row it isn't sure reached the AI becomes "not sure" and is never sent again by itself. Stop's pause is stored before the interrupt; only the person's send ends it.
 - **Chips are pointers.** The core checks each chip against the person and stamps its version when it accepts the message; the AI is told exactly which records, at that version.
 - **Stored first, shown from what was stored.** Every item the agent reports is written to the transcript, then streamed to the screens. The screens read older entries by pages of whole turns; a reconnect starts again from the latest page. Lines such as the day lines are worked out when shown, never stored.
-- **Rufi's events.** Something outside the chat (a reading started or ended, a document deleted) is one transaction: a transcript line and, when the AI should know, a queue row with origin Rufi. A turn started only by Rufi's notes can read but not save.
+- **Rufi's events.** Something outside the chat (a document deleted) is one transaction: a transcript line and, when the AI should know, a queue row with origin Rufi. A turn started only by Rufi's notes can read but not save or sort (the tool caller refuses both). A reading is not an event: it is a step of the person's own reply.
 - **The reply's basis.** The AI writes where its answer comes from at the end of the reply; Rufi stores the reply as it came and splits the basis off when it reads it. See [ADR 0007](adr/0007-the-basis-travels-inside-the-reply.md).
 
 ## Rufi's tools and the record
 
-The AI reads and changes the record only through Rufi's tools (`core/tools/`, listed in `apps/server/tools.json`): read the Overview, records, documents and earlier chat; save changes; set draft items aside; retry a reading; make a visit brief.
+The AI reads and changes the record only through Rufi's tools (`core/tools/`, listed in `apps/server/tools.json`): read the Overview, records, documents and earlier chat; save changes; set draft items aside; make a visit brief. Reading is not one of them: the person's **Retry** puts the document in the chat.
 
 - **One person.** Rufi chooses the person whose chat it is. No tool takes a person, a table or SQL from the AI. See [ADR 0006](adr/0006-the-ai-reads-one-persons-record.md).
 - **Reads are read-only and bounded.** Tools read through their own read-only connection. One `get_records` answer holds at most 200 records and 32 KB (a single larger record comes back on its own); when there are more, it says where it stopped and the AI reads on. A failed read is an error, never an empty list.
@@ -158,22 +165,21 @@ Each person has one chat, and each chat has one Codex thread. The transcript in 
 
 ## The reader
 
-Rufi reads each document as it is added, with its own sub-agent, one document at a time. See [ADR 0009](adr/0009-background-readings-by-a-rufi-sub-agent.md) and [ADR 0010](adr/0010-the-reader-runs-on-gpt-6-1-sol-through-exec.md).
+Rufi reads each document when the person sends it, with its own sub-agent, one document at a time across Rufi. The chat calls it for one job and an abort signal (`server/reader.ts`); there is no loop and no queue of work waiting in the background. See [ADR 0009](adr/0009-background-readings-by-a-rufi-sub-agent.md), [ADR 0010](adr/0010-the-reader-runs-on-gpt-6-1-sol-through-exec.md) and [ADR 0021](adr/0021-files-start-on-send.md).
 
 - **Locked down.** Each attempt runs in a Codex app-server of its own, in an ephemeral thread, with no shell, files, network, web search, sub-agents or skills, and exactly two tools from `/mcp/reader`: look at a page (`get_page`) and save its copy (`save_page`). On GPT-6.1-Sol it calls them through code inside Codex's `exec`; on GPT-5.5 directly. The runner refuses other models, and fails a turn that shows anything it didn't allow.
 - **Pages.** One page service serves the reader and the chat's `get_documents`: a PDF page drawn as an image, with its own text when it has some; a photo as added, a HEIC as its JPEG copy. Images go to the AI and are never stored in the transcript.
 - **It copies, and decides nothing.** The reader copies each page as Markdown (HTML for a table Markdown can't hold), exactly as printed, and marks what is unclear; it gets the file's name and pages, never whose document it is. Its page copies are kept in `page_copies`, one for each page of a file and reading (known by the file, the page in the file and the reading, never by the document the page is in); a reading's runs replace a page's copy until it ends, so a compaction, a stop or a restart loses nothing. A page's current copy is the one from its latest finished reading. Pages an older reader saved as notebook entries keep them, and are shown as they are.
-- **The end asks for a sort.** Only a reader turn that completed normally finishes a reading, or, after a crash, a start that finds every target page already copied. It finishes in one transaction: the page states, the document's version, the end line in the chat ("Read X · 5 pages. Rufi AI is sorting it.") and Rufi's request that Rufi AI sort the add (below), with its note in the chat's queue. A reading where no page could be read ends "Couldn't read X" with Retry, and asks for nothing.
-- **Retries.** A passing failure is tried again by itself after 30 seconds, 1 minute and 2 minutes. An account problem (signed out, a usage limit) or a fourth failure ends the reading as failed, with the copies kept for **Retry**.
-- **Measured.** The reader pack (`scripts/reader-pack.ts`) reads the copy set (`tests/pack/copy-set.ts`) with the real reader: an AI judge (one sub-agent turn for each copied page, on the test sign-in) gives each row of the page's hand-checked key a verdict (same, changed and marked, changed silently, missing or unsure), and code counts only the facts (pages copied, rows on pages with no copy) and the verdicts. `pnpm smoke --only sorts_the_copy_set` reads and sorts the same set live.
+- **A job lives inside a reply.** Jobs (`jobs`) are made when a reply starts, for the message's documents that need reading, and failed when Rufi's part ends without finishing them or at the next start, so `queued` and `running` exist only inside a live reply. One slot guards the runner, so readings stay one at a time across people. A finished reading is one transaction: the page states and the document's version. It writes no chat line and asks for nothing; the chat hands the message to Rufi AI.
+- **Retries.** A passing failure is tried again by itself after 30 seconds, 1 minute and 2 minutes, inside the reply. An account problem (signed out, a usage limit), Rufi's deadline (5 minutes plus one a page, at most an hour) or a fourth failure ends the reading as failed, with the copies kept: the reply's **Retry** goes on from the next page not copied.
+- **Measured.** The reader pack (`scripts/reader-pack.ts`) reads the copy set (`tests/pack/copy-set.ts`) with the real reader: an AI judge (one sub-agent turn for each copied page, on the test sign-in) gives each row of the page's hand-checked key a verdict (same, changed and marked, changed silently, missing or unsure), and code counts only the facts (pages copied, rows on pages with no copy) and the verdicts. `pnpm smoke --only sorts_the_copy_set` sends the same set in a message, so it is read and sorted live.
 
 ## Sorting
 
 Rufi AI, the chat's AI, decides what the reader's copies are: it splits an add (the document as the person added it) into documents and writes their draft items. See [ADR 0019](adr/0019-rufi-ai-sorts-and-drafts.md).
 
-- **A request, in the person's chat.** A reading's end writes a `sort_requests` row (open) and its note as a Rufi row in `chat_queue`. A sort row goes in a turn of its own (events before it go together; a person's message sent while it waits to start goes first), never rides with a message, and isn't held by the pause after a restart: it is the one thing Rufi hands the AI without the person's send. A Stop holds it; it goes after the person's next message. Signed out, it waits for the sign-in.
-- **One call, all or nothing.** In that turn the AI reads the copies with `get_documents` (`copies: true`) and makes one `sort_documents` call: the documents of the add, each naming the add's document it is by id (or none, for a new one), with its pages, and its kind, date, lab and report number (a named document keeps those left out), and the drafts, each on its page with the words it came from and, when it is worth a look, why. In one transaction, the chat's, which keeps the call's `tool_calls` row too (foreign keys checked at its end, so pages and their drafts move together), Rufi updates the named documents, makes the new ones (`documents.from_document` is the add), moves pages, replaces the untouched drafts of the pages named, moves fixed and set-aside drafts with their page, tombstones a document left with no pages, marks the readings sorted (`jobs.sorted_at`) and the request done with the call's answer (the same call again gets it back). It refuses, with every problem and nothing written, a call that leaves a page not sorted, names a page or a document twice, names a document not of the add, leaves the add's own document out while moving all its pages, moves a page a saved result cites, or has a draft on a page with no copy. What a draft says is Rufi AI's reading of the page: code doesn't compare it to the copy. A turn Rufi started may sort only its request's add and only the pages not sorted yet, into new documents or into documents it leaves as they are, and change nothing else in the record (a face with `show_face` is fine: it writes nothing and is no sign of a sort or a save); a person's turn may sort any of their adds again.
-- **The sorter.** `server/sorter.ts` looks at the open requests at start, after each turn and as retries fall due: a turn that completed without sorting asked the person (it waits, "Not sorted yet"); one the person stopped waits for their next message; a failed turn or hand-over is tried again after 30 seconds, 1 minute and 2 minutes, then waits for **Retry**. Retry on the Documents page sorts first when a sort waits. A newer reading's request voids an older one of the same add. A restore ends open requests, for Retry.
+- **In the person's reply.** Rufi starts no reply of its own to sort. When the reader has copied the pages, the message and a note of what was copied go to the AI in the same reply. The `sorting-documents` skill says: when a message brings documents that aren't sorted, sort them first, one `sort_documents` call for each add, then answer what the user wrote, or tell them what you found when they wrote nothing. A file the AI asked about, or whose part of the reply failed, stays "Not sorted yet" until a message sends it again; nothing is sorted or retried by itself.
+- **One call, all or nothing.** The AI reads the copies with `get_documents` (`copies: true`) and makes one `sort_documents` call: the documents of the add, each naming the add's document it is by id (or none, for a new one), with its pages, and its kind, date, lab and report number (a named document keeps those left out), and the drafts, each on its page with the words it came from and, when it is worth a look, why. In one transaction, the chat's, which keeps the call's `tool_calls` row too (foreign keys checked at its end, so pages and their drafts move together), Rufi updates the named documents, makes the new ones (`documents.from_document` is the add, and they take the add's `sent_at`), moves pages, replaces the untouched drafts of the pages named, moves fixed and set-aside drafts with their page, tombstones a document left with no pages, and marks the readings sorted (`jobs.sorted_at`). The same call again gets its stored answer back. It refuses, with every problem and nothing written, a call that leaves a page not sorted, names a page or a document twice, names a document not of the add, leaves the add's own document out while moving all its pages, moves a page a saved result cites, or has a draft on a page with no copy; and it refuses a sort while a reading of the add is queued or running. What a draft says is Rufi AI's reading of the page: code doesn't compare it to the copy. A reply Rufi started (a note about a deleted document) can't sort, as it can't save; a person's reply may sort any of their adds again.
 - **Saving.** A draft saves into its document's report (its lab, report number and date), with its own date, its values taken from the stored draft. A value the person fixed on the document's page is kept as typed, with no number (the page parses nothing); the AI gives its number in `save_changes` (`value_number`, `comparator` on the item), and code takes one only for such an item. A draft from before sorting saves the same way. A draft whose page was read again since it was drafted is out of date: not counted, and refused.
 
 ## Documents' originals

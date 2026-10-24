@@ -25,23 +25,27 @@ What people see for the record: the sidebar's heading, Overview and the help say
 _Avoid_: your record (on screen), health file, chart
 
 **Document**:
-What the user added for a person in one go: one PDF, or photos added together, such as a lab report photographed page by page. Its pages are the PDF's pages or the photos, in order. Rufi keeps each original file exactly as it came, and the same content only once per person, until the user deletes the document. Once read, **Rufi AI** sorts it: each report or paper in it becomes a document of its own, with its pages of the file ("pages 1–2 of 5"), its kind, date and, for a report, its lab and report number. Each is deleted on its own.
+What the user added for a person in one go: one PDF, or photos added together, such as a lab report photographed page by page. Its pages are the PDF's pages or the photos, in order. Rufi keeps each original file exactly as it came, and the same content only once per person, until the user deletes the document. A file the user chooses goes in the chat box as a **chip** and is stored at once, but it is not yet sent: it is not listed, read or seen by the AI until a message sends it, and taking its chip out removes it from Rufi, with its pages. A file always arrives through the chat; zip files and folders are not taken yet. Once read, **Rufi AI** sorts it: each report or paper in it becomes a document of its own, with its pages of the file ("pages 1–2 of 5"), its kind, date and, for a report, its lab and report number. Each is deleted on its own.
 _Avoid_: upload, attachment
 
 **Reading**:
-Rufi reading one document in the background with its reader, as soon as you add it: one page at a time, then a line in the chat when it ends. Only a reading that finished asks Rufi AI to sort it (**sorting**), which makes the draft items; one that stopped continues with **Retry**, or by itself after Rufi starts again. One that failed for a passing reason, such as a lost connection, tries again by itself up to three times; one stopped by the account (signed out, a usage limit) says why and waits for **Retry**.
+Rufi's reader copying one document, one page at a time, when a message sends it: the first part of the reply (**Rufi's part**), shown as a step in its Activity with how far it is. Only a reading that finished goes on to **Rufi AI**, which sorts the file (**sorting**) and makes the draft items. One that does not finish (Stop, the account, the deadline, Rufi closing) ends the reply before the AI, keeps the pages copied, and goes on from the next page with **Retry** on the reply or the document; nothing is read by itself after Rufi starts again. One that failed for a passing reason, such as a lost connection, tries again by itself up to three times; one stopped by the account (signed out, a usage limit) says why and waits for **Retry**. Pages that could not be read are read again only when the user asks (a chip marked **read again**).
 _Avoid_: import, scan, parsing, extraction
 
 **Reader**:
 The AI that does a reading: a separate AI that Rufi starts for one document, with only two tools (look at a page, save its copy of the page) and no access to your record, chat, files or the internet; it doesn't know whose document it is. It copies what is printed, and marks what is unclear; it decides nothing (not the kind, date or results), never judges your results and never saves to the record.
 _Avoid_: parser, OCR, extractor
 
+**Rufi's part**:
+The first part of a reply to a message that brings files: Rufi (not the AI) has its reader copy each file's pages, one file after another, shown as steps in the reply's Activity. It ends with the hand-over of the message to Rufi AI, with a short note of what was copied; a Stop, a failure or Rufi closing ends the reply here, and the AI never gets half a message. The pages copied are kept.
+_Avoid_: pre-processing, import step
+
 **Page copy**:
 The reader's copy of one page of a document, as Markdown, exactly as printed, with its marks where something was unclear (a smudged digit, handwriting, a crossed-out value). One for each page and reading, kept as the reader wrote it; it decides nothing and is not your record. It is known by the file and its page, not by the document the page is in. A page's current copy is the one from its latest finished reading.
 _Avoid_: extraction, transcription, OCR text
 
 **Sorting**:
-Rufi AI's work on a file once it is read, in a turn Rufi starts in the person's chat without their message: it splits the file into documents and drafts their results from the page copies, in one call that is kept whole or not at all, and tells the user what it found. It may change nothing else in the record in that turn; showing a face on Rufi is fine, as it changes nothing. A file waiting for it shows **Sorting…**, or **Not sorted yet** with why (it asked the user, the user stopped it, or its tries failed) and **Retry**. The user can ask Rufi AI to sort a file again in the chat.
+Rufi AI's work on a file once it is read, in the reply to the message that sent the file, after **Rufi's part**: it splits the file into documents and drafts their results from the page copies, in one call that is kept whole or not at all, then answers what the user wrote, or tells them what it found when they wrote nothing. It saves nothing without the user's yes. A file read and not sorted shows **Not sorted yet** (Rufi AI asked the user, or its part of the reply failed or was stopped) with **Ask Rufi**; Rufi does not sort by itself or try again by itself. The user can ask Rufi AI to sort a file again in the chat.
 _Avoid_: classification, grouping, parsing
 
 **Draft item**:
@@ -172,11 +176,11 @@ What waits to go to the AI, kept by Rufi with the chat: your messages and Rufi's
 _Avoid_: inbox, outbox
 
 **Waiting messages**:
-What the queue holds, shown above the box; you can edit, reorder or remove your messages there. A held one says why (it came from a backup, the AI couldn't take it, or Rufi isn't sure it reached the AI) and goes only when you send it. Signed out, a send takes nothing: the text stays in the box. After a Stop, or when Rufi starts again with messages waiting, they wait until you send a message or click **Send now**.
+What the queue holds, shown above the box; you can edit, reorder or remove your messages there. A held one says why (it came from a backup, the AI couldn't take it, or Rufi isn't sure it reached the AI) and goes only when you send it. A message that brings new files waits for a reply of its own, which reads them first; so does anything sent while Rufi's reader copies. A message whose reply ended in Rufi's part is not listed: its reply has **Retry**. Signed out, a send takes nothing: the text and chips stay in the box. After a Stop, or when Rufi starts again with messages waiting, they wait until you send a message or click **Send now**.
 _Avoid_: backlog, pending messages
 
 **Rufi event**:
-Rufi's own note that something happened outside your chat, such as a reading that finished: a line in the chat, and sometimes a note for the AI. It is never your words, a request or your yes: a reply it starts can change nothing, never save. After a Stop, its note goes with your next message. The one exception is a reading's request for **sorting**: its reply may sort that file and nothing else, it goes in a reply of its own, and it goes on by itself after Rufi restarts.
+Rufi's own note that something happened outside your chat, such as a deleted document: a line in the chat, and sometimes a note for the AI. It is never your words, a request or your yes: a reply it starts can change nothing, never save or sort. After a Stop, its note goes with your next message.
 _Avoid_: notification, system message
 
 **Stop**:
@@ -188,7 +192,7 @@ A reply that didn't finish because you stopped it or Rufi closed. What it wrote 
 _Avoid_: cancelled, aborted
 
 **Chip**:
-Something from the record added to a message in the chat: a record (such as a result, with **Ask Rufi** on its row), a report's results (with **Ask Rufi** in its heading), a document or a draft item, shown by its name. **Ask Rufi** adds it and the page stays. In the box, a document's chip also says what Rufi is doing with it (Reading…, Waiting to read, Read, Read · some pages unclear, Couldn't read); this is worked out each time, never stored. It points at exactly that one, for this person; the AI gets its id and its version when the message is sent. Taking a chip out of the box changes nothing in the record.
+Something from the record added to a message in the chat: a record (such as a result, with **Ask Rufi** on its row), a report's results (with **Ask Rufi** in its heading), a document or a draft item, shown by its name. **Ask Rufi** adds it and the page stays. A document's chip may be marked **read again** (from **Retry**), so that sending it reads its unreadable pages again; it shows no reading state. It points at exactly that one, for this person; the AI gets its id and its version when the message is sent. Taking a chip out of the box changes nothing in the record, except a file that was not yet sent, which leaves Rufi.
 _Avoid_: attachment, tag, mention
 
 **Draft**:
@@ -315,7 +319,7 @@ _Avoid_: download, dump
 
 - **You** keep the **records** of one or more **people**.
 - A **document** can hold **reports**; a **report** has **results**. A **result** can also be typed in without a report.
-- A **reading** of a **document** makes **page copies**; its end is a **Rufi event** in the person's **chat** that asks Rufi AI for its **sorting**, which makes **documents** and their **draft items**; they become **results** only when you save them.
+- A **reading** of a **document** makes **page copies**, in **Rufi's part** of the reply to the message that sent the file; then Rufi AI, in the same reply, does its **sorting**, which makes **documents** and their **draft items**; they become **results** only when you save them.
 - A **save** changes one **person**'s **records**, rests on their messages or **documents**' pages as its **sources**, and gives one **receipt**; an **undo** is a new save.
 - A message's **chips** point at the person's **results**, **documents** or **draft items**; "save it" with a document's chip saves its **draft items** as **results**.
 - A **person** has one **chat**, made with them; it can produce **saves**, **follow-ups** and **research entries**.

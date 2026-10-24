@@ -139,7 +139,7 @@ The reader sends the document's pages to the AI service you signed in with, the 
 
 When the reading ends, Rufi gives the page copies to Rufi AI, the AI you chat with, with your message, in the same reply. Rufi AI sorts the file into documents and drafts their results, then answers you (see [Documents](documents.md#how-rufi-ai-sorts-a-file)). Rufi AI reads the copies with Rufi's tools, as it reads your record, and saves nothing to your record without your yes. What it did shows in **Activity**, like any reply. Rufi starts no reply of its own to sort a file.
 
-Draft items aren't your record until you save them. They are in your backups and your export (the `draft_items` table), apart from your record, with the page copies (`page_copies`) and Rufi's requests to sort (`sort_requests`).
+Draft items aren't your record until you save them. They are in your backups and your export (the `draft_items` table), apart from your record, with the page copies (`page_copies`).
 
 ## Your chat
 
