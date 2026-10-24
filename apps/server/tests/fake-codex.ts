@@ -112,8 +112,8 @@ export interface Scenario {
    * Calls of Rufi's tools the model makes during a turn, before answering;
    * `id` is Codex's call id (`call-<n>`; `exec-…` for a call made from exec).
    * The text "$document" in a call's arguments becomes the document the
-   * turn's message names ("(document <id>)"), as in Rufi's note asking
-   * Rufi AI to sort a reading.
+   * turn's input names ("(document <id>)"), as in Rufi's note on what its
+   * reader copied.
    */
   calls?: {
     id?: string;
@@ -377,7 +377,10 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   const calls = text.includes("quiet")
     ? []
     : (scenario.callsByTurn?.[turnIndex] ?? scenario.calls ?? []);
-  const named = /\(document ([^)\s]+)\)/.exec(text)?.[1];
+  // Rufi's note on what its reader copied comes before the message.
+  const named = /\(document ([^)\s]+)\)/.exec(
+    entry.input.map((part) => part.text).join("\n"),
+  )?.[1];
   for (const [i, { id, ...scripted }] of calls.entries()) {
     const call =
       named === undefined

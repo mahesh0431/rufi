@@ -458,6 +458,8 @@ export function chat(deps: ChatDeps) {
       }
       const part = await startPart(fresh, handOver);
       if (part) {
+        // Their readings start: the Documents page says so.
+        deps.reading?.readings.changed(fresh.personId);
         readFirst(fresh, threadId, handOver, part);
         return;
       }
@@ -909,6 +911,10 @@ export function chat(deps: ChatDeps) {
     } catch (error) {
       if (error instanceof QueueRefusal) throw new ChatRefusal(error.message);
       throw error;
+    }
+    // Its files are sent now: the Documents page lists them.
+    if (refs.some((ref) => ref.type === "document")) {
+      deps.reading?.readings.changed(chat.personId);
     }
     next(chat);
   }

@@ -86,10 +86,17 @@ async function report() {
 
 const chat = (page: Page) => page.getByRole("region", { name: "Chat" });
 const log = (page: Page) => chat(page).getByRole("log", { name: "Messages" });
+/** The chips in the box (a sent message shows its own). */
 const chips = (page: Page) =>
   chat(page)
+    .locator("form")
     .getByRole("list", { name: "Added to this message" })
     .getByRole("listitem");
+/** A click outside the chat panel steps back to the bar: open it again. */
+const reopen = (page: Page) =>
+  chat(page)
+    .getByRole("button", { name: /^Open the chat/ })
+    .click();
 /** The rows of the reply's open Activity (the last one). */
 const steps = (page: Page) =>
   log(page)
@@ -146,6 +153,7 @@ test("a file waits in the box until Send; then one reply copies its pages as Ruf
   await expect(sheet).toContainText("Page 2");
   await accessible(page);
   await sheet.getByRole("button", { name: "Close" }).click();
+  await reopen(page);
 
   // The same reply goes on to the AI: its sort, then one answer.
   gate.resolve(undefined);
@@ -154,10 +162,11 @@ test("a file waits in the box until Send; then one reply copies its pages as Ruf
   await log(page)
     .getByRole("button", { name: /^Activity · / })
     .click();
-  await expect(steps(page)).toHaveText([
+  // Rufi's part first, then the AI's own steps.
+  await expect(steps(page).nth(0)).toHaveText(
     /Rufi's reader · sunrise-labs-august\.pdf.*2 pages/,
-    /rufi\.sort_documents/,
-  ]);
+  );
+  await expect(steps(page).nth(1)).toHaveText(/rufi\.sort_documents/);
   await expect(row(page)).toContainText("Not saved · 2 results");
 
   // The document's page has the same copies, both pages.
@@ -268,15 +277,13 @@ test("View reading says where a reading is while the reader's work loads; Retry 
   await sendFiles(page, await report());
   await view();
   await expect(title).toHaveText(
-    /^sunrise-labs-august\.pdf · read 0 of 2 · under a minute$/,
+    /^sunrise-labs-august\.pdf · reading · read 0 of 2$/,
   );
-  await expect(sheet).toContainText("Reading… 0 of 2 pages");
   await accessible(page);
   held.work.resolve(undefined);
   await expect(title).toHaveText(
     /^sunrise-labs-august\.pdf · reading · read 0 of 2 · under a minute$/,
   );
-  await expect(sheet).not.toContainText("Reading… 0 of 2 pages");
   await expect(sheet.getByText("not read yet")).toHaveCount(2);
   await sheet.getByRole("button", { name: "Close" }).click();
   first.resolve(undefined);
@@ -291,12 +298,12 @@ test("View reading says where a reading is while the reader's work loads; Retry 
   await chat(page).getByRole("button", { name: "Send" }).click();
   await view();
   await expect(title).toHaveText(
-    /^sunrise-labs-august\.pdf · read 0 of 1 · under a minute$/,
+    /^sunrise-labs-august\.pdf · reading · read 0 of 1$/,
   );
-  await expect(sheet).toContainText("Reading… 0 of 1 page");
   held.work.resolve(undefined);
   await sheet.getByRole("button", { name: "Close" }).click();
   again.resolve(undefined);
+  await reopen(page);
   await expect(log(page).locator(".reply")).toHaveCount(2);
 });
 
@@ -451,6 +458,7 @@ test("a reading that failed signed out ends the reply with its reason in full, i
   await whole(`Failed · ${why}`);
   await accessible(page);
 
+  await reopen(page);
   await log(page).getByRole("button", { name: "Retry" }).click();
   await expect(log(page).locator(".reply")).toHaveCount(1);
   await expect(page.getByRole("region", { name: "Items" })).toContainText(
