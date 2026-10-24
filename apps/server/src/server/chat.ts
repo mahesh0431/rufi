@@ -656,9 +656,11 @@ export function chat(deps: ChatDeps) {
   const threadOf = (chat: ChatRow) => (current(chat) ? chat.threadId : null);
 
   /**
-   * Passes a message into the reply running now, saved as a steer; false
-   * when none runs, or it ended before the agent took the message. A
-   * message already in the chat by this id was taken: a retry.
+   * Passes a message into the reply the person started that runs now, saved
+   * as a steer; false when none runs, it is Rufi's own (it can't save, so
+   * the message waits for a reply of its own), or it ended before the agent
+   * took the message. A message already in the chat by this id was taken: a
+   * retry.
    */
   const steer = (
     chat: ChatRow,
@@ -671,7 +673,11 @@ export function chat(deps: ChatDeps) {
       // TODO: a retry of a message still waiting in the queue, while a
       // reply runs, goes into that reply too; it shows twice in the chat.
       const threadId = threadOf(chat);
-      if (threadId === null || !agent.running(threadId)) return false;
+      const turnId = threadId === null ? undefined : agent.activeTurn(threadId);
+      if (threadId === null || turnId === undefined) return false;
+      // The turn is saved as it starts.
+      await saving;
+      if ((await transcripts.origin(chat, turnId)) !== "person") return false;
       let chips: Chip[];
       try {
         chips = await transcripts.chips(chat.personId, refs);
@@ -680,9 +686,9 @@ export function chat(deps: ChatDeps) {
         throw error;
       }
       steers.set(id, { threadId, text, refs: chips });
-      let turnId: string;
+      let steered: string;
       try {
-        ({ turnId } = await agent.steer(threadId, {
+        ({ turnId: steered } = await agent.steer(threadId, {
           id,
           text: withRefs(text, chips),
         }));
@@ -697,7 +703,7 @@ export function chat(deps: ChatDeps) {
           id,
           kind: "steer",
           text,
-          agentTurnId: turnId,
+          agentTurnId: steered,
           refs: chips,
         }),
       );

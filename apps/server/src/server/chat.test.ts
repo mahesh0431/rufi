@@ -278,6 +278,18 @@ const say = (c: ChatRow, text: string) => {
   return chat.send(c, uuid(), text);
 };
 
+/**
+ * A reply Rufi started, with its note: "hang" runs until it is stopped. A
+ * message the person sends meanwhile waits for a reply of its own.
+ */
+const rufiReply = async (c: ChatRow, note = "Rufi's note: hang") => {
+  if (!chat) throw new Error("no chat");
+  await chat.event("asha", { kind: "test", line: "Rufi's line", ask: note });
+  await until(async () =>
+    (await transcript(c.id)).turns.some((t) => t.status === "running"),
+  );
+};
+
 /** What waits in the chat's queue, as [text, state, held]. */
 const waiting = async () =>
   (await queue.list(await chatRow())).items.map((item) => [
@@ -574,13 +586,13 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     async () => {
       await startChat(name);
       const c = await newChat();
-      await say(c, "hang");
-      await running(c.id);
+      await rufiReply(c);
       await say(c, "B");
       expect(await waiting()).toEqual([["B", "waiting", null]]);
-      // A waiting message is not in the transcript; the running one is.
-      await until(async () => (await transcript(c.id)).entries.length > 0);
-      expect((await transcript(c.id)).entries).toEqual([["message", "hang"]]);
+      // A waiting message is not in the transcript.
+      expect(
+        (await transcript(c.id)).entries.filter(([kind]) => kind === "message"),
+      ).toEqual([]);
       await chat?.stop(c);
       await ended(c.id);
       expect((await transcript(c.id)).turns[0]).toMatchObject({
@@ -597,7 +609,6 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
           ([kind]) => kind === "message" || kind === "reply",
         ),
       ).toEqual([
-        ["message", "hang"],
         ["message", "B"],
         ["reply", "ok:B"],
         ["message", "C"],
@@ -649,8 +660,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     async () => {
       await startChat(name);
       const c = await newChat();
-      await say(c, "hang");
-      await running(c.id);
+      await rufiReply(c);
       await say(c, "B");
       await say(c, "C");
       await chat?.stop(c);
@@ -665,7 +675,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
         (await transcript(c.id)).entries
           .filter(([kind]) => kind === "message")
           .map(([, text]) => text),
-      ).toEqual(["hang", "C", "B"]);
+      ).toEqual(["C", "B"]);
     },
   );
 
@@ -839,8 +849,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       await startChat(name);
       await chat?.selectEffort(await newChat(), "high");
       const c = await chatRow();
-      await say(c, "hang");
-      await running(c.id);
+      await rufiReply(c);
       await until(async () => (await backend.efforts()).length === 1);
       await say(c, "queued next");
       await chat?.stop(c);
@@ -861,8 +870,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     async () => {
       await startChat(name);
       const c = await newChat();
-      await say(c, "hang");
-      await running(c.id);
+      await rufiReply(c);
       await until(async () => (await backend.efforts()).length === 1);
       await expect(chat?.selectModel(c, "gpt-6-astra")).rejects.toThrow(
         "Stop the reply before changing the model.",
@@ -895,8 +903,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     async () => {
       await startChat(name);
       const c = await newChat();
-      await say(c, "hang");
-      await running(c.id);
+      await rufiReply(c);
       await say(c, "B");
       await startChat(name); // Rufi restarts.
       expect((await transcript(c.id)).turns).toMatchObject([
@@ -912,7 +919,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
         (await transcript(c.id)).entries
           .filter(([kind]) => kind === "message")
           .map(([, text]) => text),
-      ).toEqual(["hang", "B", "C"]);
+      ).toEqual(["B", "C"]);
     },
   );
 
