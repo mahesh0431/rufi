@@ -540,6 +540,17 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
               options: question.options ?? [],
             });
           }
+          // The answer is whole; one never completed was cut.
+          if (!running.notes.has(item.id) && item.phase !== "commentary") {
+            emit({
+              type: "text",
+              threadId,
+              turnId,
+              itemId: item.id,
+              delta: "",
+              done: true,
+            });
+          }
           return;
         }
         if (item.type === "reasoning") {
