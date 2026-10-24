@@ -32,7 +32,7 @@ import { sql, type Kysely, type RawBuilder } from "kysely";
 import { documentName } from "../documents/naming.ts";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
-import { kindNamed, type Kind, type Row } from "./kinds.ts";
+import { KINDS, kindNamed, visitWords, type Kind, type Row } from "./kinds.ts";
 import { classify, dueSpan } from "./due.ts";
 import { changed, fieldsOf, isCurrent } from "./read.ts";
 
@@ -56,7 +56,7 @@ const PAGES: Record<
   lab_result: { kinds: ["result"], category: "lab" },
   measurement: { kinds: ["result"], category: "measurement" },
   medicine_use: { kinds: ["medicine_use"] },
-  prescription: { kinds: ["prescription"] },
+  visit: { kinds: ["visit"] },
   condition: { kinds: ["condition"] },
   allergy: { kinds: ["allergy", "none_known"] },
   symptom: { kinds: ["symptom"] },
@@ -196,6 +196,7 @@ function shown(kind: Kind, row: Row): ShownRow {
     id,
     ...fieldsOf(kind, row),
     ...(typeof row["asserted"] === "string" && { asserted: row["asserted"] }),
+    ...(typeof row["cited"] === "number" && { cited: row["cited"] }),
   };
   // Fields the row doesn't have are left out, not sent as undefined.
   const decoded = Schema.decodeUnknownResult(RecordRow)(
@@ -223,7 +224,9 @@ async function members(
   const report =
     kind.name === "result"
       ? sql`, p.issuer AS report_issuer FROM results r LEFT JOIN reports p ON p.person_id = r.person_id AND p.id = r.report_id`
-      : sql` FROM ${sql.table(kind.table)} r`;
+      : kind.name === "visit"
+        ? sql`, (SELECT count(*) FROM (${citing(personId, sql`r.id`)})) AS cited FROM visits r`
+        : sql` FROM ${sql.table(kind.table)} r`;
   const { rows } = await sql<Row>`
     SELECT r.*, ${gid} AS gid${report}
     WHERE ${mine} AND ${gid} IN (${sql.join(gids)})
@@ -346,6 +349,11 @@ async function sourcesOf(
         .onRef("e.person_id", "=", "s.person_id")
         .onRef("e.id", "=", "s.entry_id"),
     )
+    .leftJoin("visits as v", (join) =>
+      join
+        .onRef("v.person_id", "=", "s.person_id")
+        .onRef("v.id", "=", "s.visit_id"),
+    )
     .select([
       "s.type",
       "s.entry_id",
@@ -355,6 +363,13 @@ async function sourcesOf(
       "d.deleted_at",
       "e.text",
       "e.created_at",
+      "s.visit_id",
+      "v.doctor",
+      "v.place",
+      "v.reason",
+      "v.as_written",
+      "v.date",
+      "v.removed",
     ])
     .where("s.person_id", "=", personId)
     .where("s.kind", "=", kind.name)
@@ -370,14 +385,58 @@ async function sourcesOf(
           text: source.text ?? "",
           at: source.created_at ?? "",
         }
-      : {
-          type: "document",
-          document: source.document_id ?? "",
-          page: source.page ?? 0,
-          file: source.file_name ?? "",
-          deleted: source.deleted_at !== null,
-        },
+      : source.type === "visit"
+        ? {
+            type: "visit",
+            visit: source.visit_id ?? "",
+            label: visitWords(source),
+            removed: source.removed === 1,
+          }
+        : {
+            type: "document",
+            document: source.document_id ?? "",
+            page: source.page ?? 0,
+            file: source.file_name ?? "",
+            deleted: source.deleted_at !== null,
+          },
   );
+}
+
+/**
+ * The records that cite a visit now, as their kind and id, in the order
+ * they first cited it: a source not taken off, of a record that is
+ * current. `visit` is SQL for its id.
+ */
+function citing(personId: string, visit: RawBuilder<unknown>) {
+  return sql`SELECT s.kind, s.record_id FROM record_sources s
+    WHERE s.person_id = ${personId} AND s.visit_id = ${visit} AND s.removed_by IS NULL
+    AND (${sql.join(
+      KINDS.map(
+        (kind) =>
+          sql`(s.kind = ${kind.name} AND EXISTS (SELECT 1 FROM ${sql.table(kind.table)} c WHERE c.person_id = s.person_id AND c.id = s.record_id AND ${isCurrent(kind, "c")}))`,
+      ),
+      sql` OR `,
+    )})
+    GROUP BY s.kind, s.record_id ORDER BY min(s.rowid)`;
+}
+
+/** From this visit: the current records that cite it now. */
+async function fromVisit(
+  db: Db,
+  personId: string,
+  id: string,
+): Promise<ShownRow[]> {
+  const { rows } = await sql<{
+    kind: string;
+    record_id: string;
+  }>`${citing(personId, sql`${id}`)}`.execute(db);
+  const found: ShownRow[] = [];
+  for (const { kind: name, record_id } of rows) {
+    const kind = kindOf(name);
+    const row = await stored(db, personId, kind, record_id);
+    if (row) found.push(shown(kind, row));
+  }
+  return found;
 }
 
 /** Each change saves made to the record, in the order of the saves. */
@@ -454,6 +513,9 @@ async function detail(
     sources: await sourcesOf(db, personId, kind, id),
     history: await historyOf(db, personId, kind, id),
   };
+  if (kind.name === "visit") {
+    return { ...result, fromVisit: await fromVisit(db, personId, id) };
+  }
   if (kind.name !== "result") return result;
   const replaces =
     typeof row["replaces_id"] === "string"

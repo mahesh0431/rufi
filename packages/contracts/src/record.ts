@@ -61,18 +61,24 @@ export const MedicineUseRow = Schema.Struct({
   ended: When,
 });
 
-export const PrescriptionRow = Schema.Struct({
-  kind: Schema.Literal("prescription"),
+/** A visit that happened, with the doctor's words as written. */
+export const VisitRow = Schema.Struct({
+  kind: Schema.Literal("visit"),
   id: Id,
-  item: Schema.String,
-  strength: Text,
-  amount: Text,
-  route: Text,
-  schedule: Text,
-  period: Text,
-  prescriber: Text,
-  issued: When,
+  setting: Schema.Literals(["clinic", "online", "home", "hospital", "unknown"]),
+  /** When it happened; a hospital stay's admission. */
+  date: When,
+  /** A hospital stay's discharge. */
+  ended: When,
+  doctor: Text,
+  place: Text,
+  reason: Text,
+  /** The doctor's words as written, in Markdown. */
+  as_written: Schema.String,
+  /** On the Visits page: how many current records cite it now. */
+  cited: Schema.optionalKey(Schema.Int),
 });
+export type VisitRow = typeof VisitRow.Type;
 
 export const SymptomRow = Schema.Struct({
   kind: Schema.Literal("symptom"),
@@ -113,7 +119,7 @@ export const AllergyRow = Schema.Struct({
 export const CareEventRow = Schema.Struct({
   kind: Schema.Literal("care_event"),
   id: Id,
-  type: Schema.Literals(["visit", "procedure", "immunisation"]),
+  type: Schema.Literals(["procedure", "immunisation"]),
   name: Schema.String,
   status: Schema.Literals(["planned", "done", "not_done", "unknown"]),
   date: When,
@@ -151,7 +157,7 @@ export type BadRow = typeof BadRow.Type;
 export const RecordRow = Schema.Union([
   ResultRow,
   MedicineUseRow,
-  PrescriptionRow,
+  VisitRow,
   SymptomRow,
   ConditionRow,
   AllergyRow,
@@ -172,7 +178,7 @@ export const PageKind = Schema.Literals([
   "lab_result",
   "measurement",
   "medicine_use",
-  "prescription",
+  "visit",
   "condition",
   "allergy",
   "symptom",
@@ -229,6 +235,14 @@ export const RecordSource = Schema.Union([
     text: Schema.String,
     at: Schema.String,
   }),
+  Schema.Struct({
+    type: Schema.Literal("visit"),
+    visit: Id,
+    /** Its doctor, place and date: "Dr A. Fictional · Lakeview Family Clinic · 20 Aug 2026". */
+    label: Schema.String,
+    /** The visit was removed: its name stays, nothing to open. */
+    removed: Schema.Boolean,
+  }),
 ]);
 export type RecordSource = typeof RecordSource.Type;
 
@@ -271,6 +285,8 @@ export const RecordDetail = Schema.Struct({
   replacedBy: Schema.optionalKey(ShownRow),
   /** For a result: when it entered Rufi. */
   entered: Schema.optionalKey(Schema.String),
+  /** For a visit: the current records that cite it now, From this visit. */
+  fromVisit: Schema.optionalKey(Schema.Array(ShownRow)),
 });
 export type RecordDetail = typeof RecordDetail.Type;
 

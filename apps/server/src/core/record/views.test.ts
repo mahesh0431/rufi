@@ -66,6 +66,9 @@ async function saveSaid(text: string, changes: object[]) {
     "person",
   )("save_changes", { changes }, `call-${String(++calls)}`);
   expect(answer.ok).toBe(true);
+  return (
+    JSON.parse(answer.text) as { result: { changes: { id: string }[] } }
+  ).result.changes.map((change) => change.id);
 }
 
 /** Every page of a kind, following each page's cursor. */
@@ -308,7 +311,7 @@ describe("tiles", () => {
         now: 2,
         names: ["Creatine 5 g", "Metformin 500 mg"],
       },
-      { kind: "prescription", count: 0, names: [] },
+      { kind: "visit", count: 0, names: [] },
       { kind: "condition", count: 2, now: 1, names: ["Type 2 diabetes"] },
       // An inactive allergy is in the count; "none known" still holds.
       { kind: "allergy", count: 1, now: 0, names: [], noneKnown: "2026-10-01" },
@@ -412,6 +415,82 @@ describe("a row opened", () => {
     expect((await views.overview("asha"))?.tiles[0]).toMatchObject({
       count: 8,
     });
+  });
+});
+
+describe("a visit", () => {
+  it("lists From this visit: the current records that cite it now, not one whose source came off or that was removed", async () => {
+    const [visit, iron, cough, anaemia] = await saveSaid(
+      "Dr Rao saw me on 2 Oct: she started iron for anaemia, keep the creatine, and watch the cough",
+      [
+        {
+          kind: "visit",
+          action: "add",
+          ref: "v1",
+          fields: {
+            setting: "clinic",
+            date: { date: "2026-10-02", words: "on 2 Oct" },
+            doctor: "Dr Rao",
+            as_written:
+              "Started iron for anaemia. Keep creatine. Watch the cough.",
+          },
+        },
+        {
+          kind: "medicine_use",
+          action: "add",
+          from: [{ visit: { ref: "v1" } }],
+          fields: { name: "Iron", status: "current" },
+        },
+        {
+          kind: "symptom",
+          action: "add",
+          from: [{ visit: { ref: "v1" } }],
+          fields: { name: "Cough" },
+        },
+        {
+          kind: "condition",
+          action: "add",
+          from: [{ visit: { ref: "v1" } }],
+          fields: { name: "Anaemia" },
+        },
+        {
+          kind: "medicine_use",
+          action: "link",
+          id: "med-a2",
+          from: [{ visit: { ref: "v1" } }],
+        },
+      ],
+    );
+    await saveSaid(
+      "The cough was nothing, and the creatine isn't from Dr Rao",
+      [
+        { kind: "symptom", action: "remove", id: cough },
+        {
+          kind: "medicine_use",
+          action: "remove_source",
+          id: "med-a2",
+          from: [{ visit }],
+        },
+      ],
+    );
+
+    const opened = await views.detail("asha", "visit", visit ?? "");
+    expect(opened?.fromVisit?.map((row) => [row.kind, row.id])).toEqual([
+      ["medicine_use", iron],
+      ["condition", anaemia],
+    ]);
+    const [row] = (await views.page("asha", "visit")).groups[0]?.rows ?? [];
+    expect(row).toMatchObject({ kind: "visit", id: visit, cited: 2 });
+    expect(
+      (await views.detail("asha", "medicine_use", iron ?? ""))?.sources,
+    ).toEqual([
+      {
+        type: "visit",
+        visit,
+        label: "Dr Rao · 2 Oct 2026",
+        removed: false,
+      },
+    ]);
   });
 });
 
