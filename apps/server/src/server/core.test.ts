@@ -910,6 +910,74 @@ describe("the local API", () => {
     expect((await page.api("GET", c.draft)).body["text"]).toBe(
       "A fictional follow-up",
     );
+
+    // After a restart, a send that waits for the reply's history is kept
+    // out by a Stop meanwhile too.
+    await stop();
+    const again = await session(
+      await start({
+        agent: scripted({ slow: ["thread/turns/list"], slowMs: 1_500 }),
+      }),
+    );
+    await again.say(c.path, "hang");
+    await sleep(300);
+    const waiting = again.say(c.path, "A fictional follow-up");
+    await sleep(100);
+    expect((await again.api("POST", `${c.path}/stop`)).status).toBe(200);
+    expect(await waiting).toMatchObject({
+      status: 409,
+      body: { error: "Stopped." },
+    });
+    await sleep(500);
+    expect((await again.api("GET", `${c.path}/queue`)).body).toMatchObject({
+      paused: "stopped",
+      items: [],
+    });
+    expect(
+      (
+        (await again.api("GET", c.path)).body["turns"] as { status: string }[]
+      ).map((turn) => turn.status),
+    ).not.toContain("completed");
+  });
+
+  it("refuses one person's send of an id another person's send is using", async () => {
+    const core = await start({
+      agent: scripted({ slow: ["turn/steer"], slowMs: 600 }),
+    });
+    const page = await session(core);
+    const a = await chat(page);
+    // A second person, as family adds one.
+    const store = openWritable(databasePath(home));
+    store.db.exec(`
+      INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
+      INSERT INTO chats (id, person_id, created_at)
+        VALUES ('c-ravi', 'ravi', '2026-10-24T09:00:00Z');`);
+    store.close();
+    const b = { path: "/api/people/ravi/chat" };
+    for (const c of [a, b]) await page.say(c.path, "hang");
+    await sleep(300);
+    const id = randomUUID();
+    const [sentA, sentB] = await Promise.all([
+      page.say(a.path, "Fictional A private text", "messages", id),
+      page.say(b.path, "Fictional B private text", "messages", id),
+    ]);
+    expect(sentA.status).toBe(202);
+    expect(sentB).toMatchObject({
+      status: 409,
+      body: { error: "That message id is already used." },
+    });
+    await sleep(300);
+    const lines = async (path: string) =>
+      (
+        (await page.api("GET", path)).body["entries"] as {
+          id: string;
+          text: string;
+        }[]
+      ).filter((entry) => entry.id === id);
+    expect(await lines(a.path)).toMatchObject([
+      { text: "Fictional A private text" },
+    ]);
+    expect(await lines(b.path)).toEqual([]);
   });
 
   it("holds a message the AI couldn't take, with the reason, to send again or remove", async () => {

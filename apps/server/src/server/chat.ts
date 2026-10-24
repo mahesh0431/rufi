@@ -101,6 +101,12 @@ export function chat(deps: ChatDeps) {
     string,
     { threadId: string; text: string; refs: Chip[] }
   >();
+  /**
+   * Sends not yet answered, by message id: the chat that owns the id
+   * meanwhile, and how many of its sends use it. Once answered, the record
+   * owns it.
+   */
+  const sending = new Map<string, { chatId: string; count: number }>();
   /** Each running turn's tool caller and chat, by thread. */
   const callers = new Map<
     string,
@@ -486,6 +492,15 @@ export function chat(deps: ChatDeps) {
     return row;
   }
 
+  /** An action a Stop of the chat stops from now on. */
+  function stoppable(chat: ChatRow): AbortController {
+    const op = new AbortController();
+    const ops = acting.get(chat.id) ?? new Set();
+    ops.add(op);
+    acting.set(chat.id, ops);
+    return op;
+  }
+
   /**
    * Runs `action` after the chat's earlier actions, on the
    * chat as stored then; Stop can end it.
@@ -493,8 +508,8 @@ export function chat(deps: ChatDeps) {
   function inLane<T>(
     chat: ChatRow,
     action: (fresh: ChatRow, signal: AbortSignal) => Promise<T>,
+    op = stoppable(chat),
   ): Promise<T> {
-    const op = new AbortController();
     const ops = acting.get(chat.id) ?? new Set();
     ops.add(op);
     acting.set(chat.id, ops);
@@ -696,52 +711,57 @@ export function chat(deps: ChatDeps) {
     id: string,
     text: string,
     refs: readonly Pointer[],
+    op: AbortController,
   ) =>
-    inLane(chat, async (chat, signal) => {
-      const queued = async () => {
-        if (signal.aborted) throw new Stopped();
-        await accept(chat, id, text, refs);
-        return "queued" as const;
-      };
-      if (await queue.known(id)) return queued();
-      const threadId = await personReply(chat);
-      if (threadId === undefined) return queued();
-      let chips: Chip[];
-      try {
-        chips = await transcripts.chips(chat.personId, refs);
-      } catch (error) {
-        if (error instanceof RefRefusal) throw new ChatRefusal(error.message);
-        throw error;
-      }
-      steers.set(id, { threadId, text, refs: chips });
-      let steered: string;
-      try {
-        ({ turnId: steered } = await agent.steer(threadId, {
-          id,
-          text: withRefs(text, chips),
-        }));
-      } catch (error) {
-        steers.delete(id);
-        if (!(error instanceof NotSent)) throw error;
-        return queued();
-      }
-      // In line with the events: the agent may have shown it already.
-      const saved = saving.then(() =>
-        transcripts.addMessage(chat, {
-          id,
-          kind: "steer",
-          text,
-          agentTurnId: steered,
-          refs: chips,
-        }),
-      );
-      saving = saved.then(
-        () => undefined,
-        () => undefined,
-      );
-      await saved;
-      return "steered" as const;
-    });
+    inLane(
+      chat,
+      async (chat, signal) => {
+        const queued = async () => {
+          if (signal.aborted) throw new Stopped();
+          await accept(chat, id, text, refs);
+          return "queued" as const;
+        };
+        if (await queue.known(id)) return queued();
+        const threadId = await personReply(chat);
+        if (threadId === undefined) return queued();
+        let chips: Chip[];
+        try {
+          chips = await transcripts.chips(chat.personId, refs);
+        } catch (error) {
+          if (error instanceof RefRefusal) throw new ChatRefusal(error.message);
+          throw error;
+        }
+        steers.set(id, { threadId, text, refs: chips });
+        let steered: string;
+        try {
+          ({ turnId: steered } = await agent.steer(threadId, {
+            id,
+            text: withRefs(text, chips),
+          }));
+        } catch (error) {
+          steers.delete(id);
+          if (!(error instanceof NotSent)) throw error;
+          return queued();
+        }
+        // In line with the events: the agent may have shown it already.
+        const saved = saving.then(() =>
+          transcripts.addMessage(chat, {
+            id,
+            kind: "steer",
+            text,
+            agentTurnId: steered,
+            refs: chips,
+          }),
+        );
+        saving = saved.then(
+          () => undefined,
+          () => undefined,
+        );
+        await saved;
+        return "steered" as const;
+      },
+      op,
+    );
 
   return {
     agent,
@@ -763,14 +783,30 @@ export function chat(deps: ChatDeps) {
       text: string,
       refs: readonly Pointer[] = [],
     ) => {
-      await mustBeSignedIn();
-      // Only a reply running now can take it: the lane decides again.
-      if ((await personReply(await latest(chat))) === undefined) {
-        await accept(chat, id, text, refs);
-        return { id, steered: false };
+      // While it is pending, the id is this chat's: another chat's send of
+      // it is refused (then the record owns it).
+      const owner = sending.get(id);
+      if (owner !== undefined && owner.chatId !== chat.id) {
+        throw new ChatRefusal("That message id is already used.");
       }
-      const how = await steer(chat, id, text, refs);
-      return { id, steered: how === "steered" };
+      sending.set(id, { chatId: chat.id, count: (owner?.count ?? 0) + 1 });
+      // A Stop from now on stops this send too.
+      const op = stoppable(chat);
+      try {
+        await mustBeSignedIn();
+        // Only a reply running now can take it: the lane decides again.
+        if ((await personReply(await latest(chat))) === undefined) {
+          if (op.signal.aborted) throw new Stopped();
+          await accept(chat, id, text, refs);
+          return { id, steered: false };
+        }
+        const how = await steer(chat, id, text, refs, op);
+        return { id, steered: how === "steered" };
+      } finally {
+        acting.get(chat.id)?.delete(op);
+        const left = sending.get(id);
+        if (left && --left.count === 0) sending.delete(id);
+      }
     },
 
     /**
