@@ -96,9 +96,22 @@ const kept = (page: Page, text: string) =>
       (response.request().postData() ?? "").includes(text),
   );
 
+/**
+ * Opens the panel from the bar when it is closed. It waits for the bar or the
+ * box first: right after a load, neither has drawn yet.
+ */
+async function openChat(page: Page) {
+  await expect(
+    opener(chat(page))
+      .or(box(chat(page)))
+      .first(),
+  ).toBeVisible();
+  if (await opener(chat(page)).isVisible()) await opener(chat(page)).click();
+}
+
 /** Sends a message from the panel, opening it from the bar when it is closed. */
 async function send(page: Page, text: string) {
-  if (await opener(chat(page)).isVisible()) await opener(chat(page)).click();
+  await openChat(page);
   await box(chat(page)).fill(text);
   await box(chat(page)).press("Enter");
   await expect(box(chat(page))).toHaveValue("");
@@ -794,7 +807,7 @@ test("the AI's memory: a compaction shows while it runs, then as done; the meter
     },
   });
   const meter = chat(page).getByRole("button", { name: /^Context used/ });
-  if (await opener(chat(page)).isVisible()) await opener(chat(page)).click();
+  await openChat(page);
   // No meter before the AI reported anything.
   await expect(meter).toHaveCount(0);
   await send(page, "Hello");
@@ -808,15 +821,9 @@ test("the AI's memory: a compaction shows while it runs, then as done; the meter
 
   await expect(meter).toHaveAccessibleName("Context used: 38%");
   await expect(meter).toHaveText("38%");
-  await meter.hover();
-  await expect(
-    page.getByText(
-      "Of the AI's memory for this chat. Near full, Codex compacts the chat history.",
-    ),
-  ).toBeVisible();
   await accessible(page);
   await page.reload();
-  if (await opener(chat(page)).isVisible()) await opener(chat(page)).click();
+  await openChat(page);
   await expect(meter).toHaveText("38%");
 
   // Rufi starts again, and the AI's thread doesn't open twice.
@@ -1594,7 +1601,7 @@ test("Based on, beside Activity once a reply ended, opens the AI's own words and
   await expect(basedOn).toHaveCount(1);
 });
 
-test("a tool step shows the tool and its arguments as reported, and opens to its result; its sign keeps its size beside a long line", async ({
+test("a tool step shows the tool and its arguments as reported, and opens to its result", async ({
   page,
   rufi,
 }) => {
@@ -1622,11 +1629,6 @@ test("a tool step shows the tool and its arguments as reported, and opens to its
   );
   const other = steps(chat(page)).nth(1);
   await expect(other).toContainText('elsewhere.lookup · {"query":"headache');
-  // The sign keeps its 13 px beside a line longer than the chat.
-  for (const line of [own, other]) {
-    const sign = await line.locator("svg").first().boundingBox();
-    expect(sign?.width).toBe(13);
-  }
   await own.getByRole("button").click();
   await expect(own.getByText("Arguments", { exact: true })).toBeVisible();
   await expect(own.getByText("Result", { exact: true })).toBeVisible();

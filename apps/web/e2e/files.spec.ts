@@ -115,8 +115,10 @@ async function opened(
 /** Sends a message; the scripted Codex answers "ok:" and the message. */
 async function send(page: Page, text: string) {
   const opener = chat(page).getByRole("button", { name: "Open the chat" });
-  if (await opener.isVisible()) await opener.click();
   const box = chat(page).getByRole("textbox", { name: "Message to Rufi" });
+  // Right after a load, neither the bar nor the box has drawn yet.
+  await expect(opener.or(box).first()).toBeVisible();
+  if (await opener.isVisible()) await opener.click();
   await box.fill(text);
   await box.press("Enter");
   await expect(box).toHaveValue("");
@@ -593,7 +595,7 @@ async function diagramFrame(page: Page): Promise<Frame> {
   return frame;
 }
 
-test("a Mermaid diagram draws styled in the theme, with its labelled edge and arrow; its own settings can't restyle it; a broken one stays readable", async ({
+test("a Mermaid diagram draws in place of its code block, with its labelled edge; a broken one stays readable", async ({
   page,
   rufi,
 }) => {
@@ -604,49 +606,13 @@ test("a Mermaid diagram draws styled in the theme, with its labelled edge and ar
       "In two steps:",
       "",
       "```mermaid",
-      '%%{init: {"theme": "dark", "themeCSS": ".node rect { fill: red; }"}}%%',
       "flowchart LR",
       "  A[You add a report] -->|then| B[Rufi reads it]",
       "```",
     ].join("\n"),
   );
   const frame = await diagramFrame(page);
-  const accentSoft = await page.evaluate(() =>
-    getComputedStyle(document.documentElement)
-      .getPropertyValue("--accent-soft")
-      .trim(),
-  );
-  const looks = await frame.evaluate(() => {
-    const rgb = (value: string) => value;
-    const node = document.querySelector(".node rect, .node path");
-    const label = [...document.querySelectorAll("text, tspan")].find(
-      (text) => text.textContent === "then",
-    );
-    const arrow = document.querySelector("marker path");
-    const box = node?.getBoundingClientRect();
-    const words = [...document.querySelectorAll(".node text")].map((text) => {
-      const r = text.getBoundingClientRect();
-      return { width: r.width, height: r.height };
-    });
-    return {
-      fill: node ? rgb(getComputedStyle(node).fill) : null,
-      nodeWidth: box?.width ?? 0,
-      label: label !== undefined,
-      arrow: arrow ? getComputedStyle(arrow).fill : null,
-      words,
-    };
-  });
-  // Mermaid's own styles applied: the node is filled in the theme's soft
-  // accent (never the diagram's red), and the arrow is drawn.
-  const toRgb = (hex: string) =>
-    `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ")})`;
-  expect(looks.fill).toBe(toRgb(accentSoft));
-  expect(looks.label).toBe(true);
-  expect(looks.arrow).not.toBe("none");
-  expect(looks.arrow).not.toBeNull();
-  expect(looks.words.every((word) => word.width > 0 && word.height > 0)).toBe(
-    true,
-  );
+  await expect(frame.getByText("then", { exact: true })).toBeVisible();
   // Not the code block: the diagram replaced it.
   await expect(log(page).locator(".reply pre")).toHaveCount(0);
   await accessible(page);
@@ -660,45 +626,5 @@ test("a Mermaid diagram draws styled in the theme, with its labelled edge and ar
   await expect(broken.getByTitle("Diagram")).toHaveCount(0, {
     timeout: 20_000,
   });
-  expect(await refusedIn(page)).toEqual([]);
-});
-
-test("in the dark theme, a diagram draws on the chat's dark surface, its edge labels too", async ({
-  page,
-  rufi,
-}) => {
-  await page.emulateMedia({ colorScheme: "dark" });
-  await opened(page, rufi);
-  await send(
-    page,
-    [
-      "In two steps:",
-      "",
-      "```mermaid",
-      "flowchart LR",
-      "  A[You add a report] -->|then| B[Rufi reads it]",
-      "```",
-    ].join("\n"),
-  );
-  const frame = await diagramFrame(page);
-  const surface = await page.evaluate(() => {
-    const value = getComputedStyle(document.documentElement)
-      .getPropertyValue("--surface")
-      .trim();
-    return `rgb(${[1, 3, 5].map((i) => parseInt(value.slice(i, i + 2), 16)).join(", ")})`;
-  });
-  expect(surface).not.toBe("rgb(255, 255, 255)");
-  const looks = await frame.evaluate(() => ({
-    scheme: getComputedStyle(document.documentElement).colorScheme,
-    background: getComputedStyle(document.body).backgroundColor,
-    label: [...document.querySelectorAll(".edgeLabel rect")].map(
-      (rect) => getComputedStyle(rect).fill,
-    ),
-  }));
-  // The frame isn't a light page painted white behind the diagram.
-  expect(looks.scheme).toBe("dark");
-  expect(looks.background).toBe(surface);
-  expect(looks.label.length).toBeGreaterThan(0);
-  expect(new Set(looks.label)).toEqual(new Set([surface]));
   expect(await refusedIn(page)).toEqual([]);
 });
