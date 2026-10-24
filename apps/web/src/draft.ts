@@ -29,7 +29,7 @@ export interface DraftApi {
    */
   call: (
     method: "GET" | "PUT" | "POST",
-    path: "draft" | "messages" | "steer",
+    path: "draft" | "messages",
     body?: unknown,
   ) => Promise<unknown>;
   /** The queries' client, and this box's name: its saves run in turn. */
@@ -294,11 +294,11 @@ export function draftBox(api: DraftApi) {
     },
 
     /**
-     * Sends the text into the queue, or steers it into the running reply.
+     * Sends the text: into the running reply, or into the queue.
      * The box empties when the core took it; a refusal leaves the text with
      * the reason.
      */
-    async submit(steer: boolean): Promise<void> {
+    async submit(): Promise<void> {
       const state = store.getState();
       const text = state.text.trim();
       if (
@@ -312,13 +312,12 @@ export function draftBox(api: DraftApi) {
       }
       clearTimeout(timer);
       store.setState({ sending: true, notice: null });
-      // A steer is never sent twice: a lost answer's text gets a new id.
-      const id = !steer && unanswered?.text === text ? unanswered.id : newId();
+      const id = unanswered?.text === text ? unanswered.id : newId();
       await inTurn(api.client, api.scope, async () => {
         try {
-          if (!steer && !remember({ id, text, refs: state.refs })) return;
+          if (!remember({ id, text, refs: state.refs })) return;
           const sent = Schema.decodeUnknownSync(Sent)(
-            await api.call("POST", steer ? "steer" : "messages", {
+            await api.call("POST", "messages", {
               id,
               text,
               refs: pointers(state.refs),
@@ -333,7 +332,7 @@ export function draftBox(api: DraftApi) {
             failed: false,
           });
         } catch (error) {
-          if (answered(error) || steer) forget();
+          if (answered(error)) forget();
           store.setState({ sending: false, notice: messageOf(error) });
           void save(true);
         }

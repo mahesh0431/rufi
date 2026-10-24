@@ -655,6 +655,60 @@ export function chat(deps: ChatDeps) {
   /** The chat's thread, when it is the agent's (no new one is made). */
   const threadOf = (chat: ChatRow) => (current(chat) ? chat.threadId : null);
 
+  /**
+   * Passes a message into the reply running now, saved as a steer; false
+   * when none runs, or it ended before the agent took the message. A
+   * message already in the chat by this id was taken: a retry.
+   */
+  const steer = (
+    chat: ChatRow,
+    id: string,
+    text: string,
+    refs: readonly Pointer[],
+  ) =>
+    inLane(chat, async (chat) => {
+      if (steers.has(id) || (await transcripts.hasMessage(id))) return true;
+      // TODO: a retry of a message still waiting in the queue, while a
+      // reply runs, goes into that reply too; it shows twice in the chat.
+      const threadId = threadOf(chat);
+      if (threadId === null || !agent.running(threadId)) return false;
+      let chips: Chip[];
+      try {
+        chips = await transcripts.chips(chat.personId, refs);
+      } catch (error) {
+        if (error instanceof RefRefusal) throw new ChatRefusal(error.message);
+        throw error;
+      }
+      steers.set(id, { threadId, text, refs: chips });
+      let turnId: string;
+      try {
+        ({ turnId } = await agent.steer(threadId, {
+          id,
+          text: withRefs(text, chips),
+        }));
+      } catch (error) {
+        steers.delete(id);
+        if (error instanceof NotSent || !agent.running(threadId)) return false;
+        throw error;
+      }
+      // In line with the events: the agent may have shown it already.
+      const saved = saving.then(() =>
+        transcripts.addMessage(chat, {
+          id,
+          kind: "steer",
+          text,
+          agentTurnId: turnId,
+          refs: chips,
+        }),
+      );
+      saving = saved.then(
+        () => undefined,
+        () => undefined,
+      );
+      await saved;
+      return true;
+    });
+
   return {
     agent,
 
@@ -662,10 +716,12 @@ export function chat(deps: ChatDeps) {
     models: offered,
 
     /**
-     * Takes a message and its references into the queue by the send's id,
-     * and empties the box, in one step; it goes to the AI in its turn. The
-     * same id again finds the message it made. Signed out, nothing is
-     * taken: the text stays in the box.
+     * Sends a message. While a reply runs, it goes into that reply (saved
+     * as a steer: `steered`), and the box is emptied after. Otherwise it is
+     * taken into the queue by the send's id, and the box emptied, in one
+     * step; it goes to the AI in its turn. The same id again finds the
+     * message it made. Signed out, nothing is taken: the text stays in the
+     * box.
      */
     send: async (
       chat: ChatRow,
@@ -674,6 +730,7 @@ export function chat(deps: ChatDeps) {
       refs: readonly Pointer[] = [],
     ) => {
       await mustBeSignedIn();
+      if (await steer(chat, id, text, refs)) return { id, steered: true };
       try {
         await queue.accept(chat, id, text, refs);
       } catch (error) {
@@ -681,63 +738,8 @@ export function chat(deps: ChatDeps) {
         throw error;
       }
       next(chat);
-      return { id };
+      return { id, steered: false };
     },
-
-    /**
-     * Passes a message into the running reply; saved as a steer. When the
-     * reply has ended, it is refused: it never becomes a waiting message.
-     */
-    steer: (
-      chat: ChatRow,
-      id: string,
-      text: string,
-      refs: readonly Pointer[] = [],
-    ) =>
-      inLane(chat, async (chat) => {
-        const threadId = threadOf(chat);
-        if (threadId === null || !agent.running(threadId)) {
-          throw new ChatRefusal(STEER_ENDED);
-        }
-        let chips: Chip[];
-        try {
-          chips = await transcripts.chips(chat.personId, refs);
-        } catch (error) {
-          if (error instanceof RefRefusal) throw new ChatRefusal(error.message);
-          throw error;
-        }
-        steers.set(id, { threadId, text, refs: chips });
-        let turnId: string;
-        try {
-          ({ turnId } = await agent.steer(threadId, {
-            id,
-            text: withRefs(text, chips),
-          }));
-        } catch (error) {
-          steers.delete(id);
-          if (error instanceof NotSent || !agent.running(threadId)) {
-            throw new ChatRefusal(STEER_ENDED);
-          }
-          throw error;
-        }
-        // In line with the events: the agent may have shown it already.
-        const saved = saving.then(() =>
-          transcripts.addMessage(chat, {
-            id,
-            kind: "steer",
-            text,
-            agentTurnId: turnId,
-            refs: chips,
-          }),
-        );
-        saving = saved.then(
-          () => undefined,
-          () => undefined,
-        );
-        await saved;
-        return { id };
-      }),
-
     /**
      * Stops the running reply, or a hand-over getting ready. The pause is
      * stored first, so nothing more goes to the AI until the person sends,
@@ -903,8 +905,6 @@ export function chat(deps: ChatDeps) {
   }
 }
 
-const STEER_ENDED =
-  "The reply had ended, so this wasn't passed into it. Send it as a new message.";
 
 /** Why a hand-over failed, in words for the person. */
 const textOf = (error: unknown) =>
