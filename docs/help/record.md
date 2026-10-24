@@ -19,20 +19,20 @@ Overview is the first page you see. It has three parts, in this order:
 
 Rufi works out the tiles from your saved health record, not with the AI. Each tile says what it counts:
 
-| Tile                                 | What it says                                                                                                                                  |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Lab results                          | The latest report (or the latest lab results you typed in the chat), its date, how many results it has, and how many have a note from the lab |
-| Measurements                         | The latest day with measurements, what was measured that day, and the date                                                                    |
-| Medicines                            | How many you take now, with their names, and how many more are in your history (stopped, paused, completed)                                   |
-| Conditions                           | How many are ongoing, with their names                                                                                                        |
-| Allergies                            | How many are active, with their names, or **None known** when you said so                                                                     |
-| Prescriptions, Symptoms, Care events | The latest one and its date                                                                                                                   |
+| Tile                          | What it says                                                                                                                                  |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Lab results                   | The latest report (or the latest lab results you typed in the chat), its date, how many results it has, and how many have a note from the lab |
+| Measurements                  | The latest day with measurements, what was measured that day, and the date                                                                    |
+| Medicines                     | How many you take now, with their names, and how many more are in your history (stopped, paused, completed)                                   |
+| Conditions                    | How many are ongoing, with their names                                                                                                        |
+| Allergies                     | How many are active, with their names, or **None known** when you said so                                                                     |
+| Visits, Symptoms, Care events | The latest one and its date, for example "Latest: Dr A. Fictional · Lakeview Family Clinic · 20 Aug 2026"                                    |
 
 A stopped medicine is still in your health record: its tile counts it in your history, and its page shows it.
 
 ## The sidebar
 
-Under **Overview**, **Health record** lists its pages with their counts: Lab results, Measurements, Medicines, Prescriptions, Conditions, Allergies, Symptoms and Care events. Click one to open its page. A page with nothing in it yet shows Rufi and "Nothing here yet."; click **Ask Rufi** there to open your chat.
+Under **Overview**, **Health record** lists its pages with their counts: Lab results, Measurements, Medicines, Visits, Conditions, Allergies, Symptoms and Care events (procedures and immunisations). Click one to open its page. A page with nothing in it yet shows Rufi and "Nothing here yet."; click **Ask Rufi** there to open your chat.
 
 ## Lab results and Measurements
 
@@ -55,16 +55,30 @@ Each page shows the records that are current, newest first. As you scroll to the
 - A result shows its test, its value and unit (in one column, so values line up), a small line of its latest values, the lab's range, and the lab's note and context, as printed. The small line shows only when the test has two or more values with a date and a number, and it ends at that row's value. A date shows at the precision known, with its time when there is one. "Amended" means that the lab corrected the result. When a result's own date differs from its report's date, the row shows it.
 - **Other kinds** show one row for each record, newest first by its date: when a medicine started, when a symptom began. Records with no date come last.
 - **Allergies** also show "No known allergies" when you said so, with the day you said it.
+- **Visits** show each visit to a doctor: its doctor and place, why you went, how many records came from it, the setting (clinic, online, home visit or hospital stay) and its date; a hospital stay shows from admission to discharge. Click a visit's name to open its page (see [A visit](#a-visit)).
 
 A removed record isn't shown, and neither is a result that an amended result replaced. Both stay in the history.
 
 If Rufi can't show a stored record, its row says **Can't show this row**. The rest of the page still shows.
 
+## A visit
+
+A visit is one time you saw a doctor: at a clinic, online (a video or phone call), at home, or a stay in hospital. It keeps what the doctor wrote or said, as written, also the medicines you didn't take. You save one in the chat: send its prescription or discharge summary, or tell the AI about the visit (see [A visit's paper](documents.md#a-visits-paper)).
+
+A visit's page shows:
+
+- its doctor, place, setting and date, with **Ask Rufi**;
+- **The doctor's words**, as the paper has them, with its headings, such as Diagnosis, Rx and Advice. For a visit you told the AI about, your words;
+- **From this visit**: the records saved from it, such as a medicine you take, a condition or a follow-up, each with **Open**. A medicine the doctor proposed that you don't take is only in the doctor's words;
+- its **Sources** (the paper's page, or your message) and its **History**, as any record.
+
+A record saved from a visit shows the visit in its sources. One record can come from several visits, such as a condition seen at each one.
+
 ## Open a row
 
 Click a record's name to open it in place. Click again to close it.
 
-- **Sources:** where it came from. For a document page, click **Open** to go to the document. A page of a document you deleted says **Document deleted (Sunrise Labs August.pdf, page 2)**, with nothing to open. A result you kept when you deleted its document stays as it was: only its file is gone. For something you said in the chat, your words are shown.
+- **Sources:** where it came from. For a document page, click **Open** to go to the document. For a visit, such as **Visit · Dr A. Fictional · Lakeview Family Clinic · 20 Aug 2026**, click **Open** to go to the visit's page; a visit you removed says **Visit removed**. A page of a document you deleted says **Document deleted (Sunrise Labs August.pdf, page 2)**, with nothing to open. A result you kept when you deleted its document stays as it was: only its file is gone. For something you said in the chat, your words are shown.
 - **History:** each save that changed it, oldest first, with its date and time. A change shows what changed, before and after, such as "value 22 → 24". A removal has its own line, and so has **Put back**, when a removed record came back. A record saved before Rufi kept its history has none.
 - **Replaces** or **Replaced by:** for an amended result, the earlier version it replaces, which is kept. For a replaced result, the result that replaced it.
 - For a result, when it was measured and when it entered Rufi. These are two different dates.
