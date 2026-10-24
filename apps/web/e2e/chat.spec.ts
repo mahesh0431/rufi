@@ -1422,14 +1422,26 @@ test("an old chat shows as it was stored: its replies in order, and its steps fo
       id: "old-thread",
       model: "gpt-6-astra",
     });
-    await saved.appendReply(found, "old-turn", "old-1", "I'll check first.");
+    await saved.appendReply(
+      found,
+      "old-turn",
+      "old-1",
+      "I'll check first.",
+      true,
+    );
     await saved.setActivity(found, "old-turn", "old-2", {
       activity: "command",
       title: "Ran a command",
       detail: "ls",
       status: "done",
     });
-    await saved.appendReply(found, "old-turn", "old-3", "Here is the answer.");
+    await saved.appendReply(
+      found,
+      "old-turn",
+      "old-3",
+      "Here is the answer.",
+      true,
+    );
     await saved.endTurn(found, "old-turn", { status: "completed" });
   } finally {
     store.close();
@@ -1712,7 +1724,7 @@ test("the transcript follows a growing Activity to its newest row, above the box
 });
 
 test.describe("on the real Codex binary, with a local fake model", () => {
-  test("a reply streams after Rufi's tool; Stop; a message waits; Add to reply", async ({
+  test("a reply streams after Rufi's tool; a message waits; Add to reply cuts the reply, which goes on; Stop", async ({
     page,
     rufi,
   }) => {
@@ -1727,20 +1739,27 @@ test.describe("on the real Codex binary, with a local fake model", () => {
       log(chat(page)).getByRole("list", { name: "Activity" }),
     ).toContainText("rufi.get_overview");
 
-    await send(page, "hang");
-    await expect(
-      chat(page).getByRole("button", { name: "Stop" }),
-    ).toBeVisible();
+    await send(page, "partial");
+    await expect(log(chat(page))).toContainText("ok:part");
     await send(page, "Waits its turn");
     await expect(
       chat(page)
         .getByRole("region", { name: "Waiting messages" })
         .getByRole("listitem"),
     ).toHaveText(["Waits its turn"]);
+    // Codex cuts the reply at once: what it wrote stays, then your text,
+    // and the reply goes on with it; the waiting message goes after.
     await box(chat(page)).fill("Steered in");
     await chat(page).getByRole("button", { name: "Add to reply" }).click();
-    await expect(log(chat(page))).toContainText("Added to the replySteered in");
+    await expect(log(chat(page))).toContainText(
+      "ok:partAdded to the replySteered inok:Steered inWaits its turnok:Waits its turn",
+    );
 
+    // Stop works on the reply that goes on after a cut.
+    await send(page, "hang");
+    await box(chat(page)).fill("Still hang");
+    await chat(page).getByRole("button", { name: "Add to reply" }).click();
+    await expect(log(chat(page))).toContainText("Added to the replyStill hang");
     await chat(page).getByRole("button", { name: "Stop" }).click();
     await expect(log(chat(page))).toContainText("Stopped.");
   });

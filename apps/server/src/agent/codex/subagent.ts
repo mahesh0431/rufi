@@ -62,8 +62,8 @@ export interface SubAgentDeps {
  * the pinned Codex gives Rufi's tools on it (ADR 0010). Direct: the model
  * calls them itself, and Codex adds none of its own. Code: the model calls
  * them from JavaScript in Codex's `exec` (an isolate with no files or
- * network), and Codex always adds `exec`, `wait`, `request_user_input_async`
- * and, inside `exec`, `clock__curr_time`; nothing turns them off.
+ * network), and Codex always adds `exec`, `wait` and, inside `exec`,
+ * `clock__curr_time`; nothing turns them off.
  */
 export const SUB_AGENT_MODELS = [
   { id: "gpt-6.1-sol", name: "GPT-6.1-Sol", route: "code" },
@@ -90,7 +90,7 @@ const TOKEN_MARGIN_MS = 5 * 60_000;
 /**
  * Codex's settings for a sub-agent thread on the pinned Codex, each turning
  * off what Codex would otherwise give the model (checked in the source at
- * rust-v0.159.3 and by subagent.test.ts).
+ * rust-v0.163.0 and by subagent.test.ts).
  */
 const LOCKED_CONFIG = {
   /** spawn_agent and its tools (and tool_search, which finds them). */

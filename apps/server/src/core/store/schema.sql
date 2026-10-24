@@ -458,8 +458,13 @@ CREATE TABLE transcript_entries (
   UNIQUE (chat_id, seq),
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
   FOREIGN KEY (person_id, turn_id) REFERENCES turns (person_id, id),
-  -- An activity line has its kind and status; nothing else has either.
-  CHECK ((kind = 'activity') = (activity IS NOT NULL) AND (kind = 'activity') = (status IS NOT NULL)),
+  -- An activity line has its kind and status. A reply has a status from
+  -- Codex 0.163 on: running until the agent gave it whole, then done; one
+  -- cut when its turn ended (Add to reply cuts the answer) is stopped. An
+  -- older reply has none. Nothing else has either.
+  CHECK ((kind = 'activity') = (activity IS NOT NULL)),
+  CHECK (kind != 'activity' OR status IS NOT NULL),
+  CHECK (status IS NULL OR kind IN ('activity', 'reply')),
   CHECK (details IS NULL OR kind IN ('activity', 'reasoning', 'event')),
   CHECK (refs IS NULL OR kind IN ('message', 'steer'))
 ) STRICT;
@@ -630,4 +635,4 @@ CREATE INDEX sort_requests_by_document ON sort_requests (person_id, document_id)
 CREATE INDEX sort_requests_by_queue ON sort_requests (person_id, queue_id);
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 13;
+PRAGMA user_version = 14;

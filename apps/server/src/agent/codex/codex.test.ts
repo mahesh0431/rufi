@@ -304,10 +304,6 @@ describe("starting Codex", () => {
         SETTINGS,
       ),
     ).rejects.toThrow("model_reasoning_summary is null");
-    // Codex would drop Rufi's tools without a word.
-    await expect(
-      start({ capabilities: { namespaceTools: false } }).startThread(SETTINGS),
-    ).rejects.toThrow("the provider doesn't take Rufi's tools");
   });
 
   it.each(["initialize", "config/read", "thread/start"])(
@@ -359,6 +355,14 @@ describe("a turn", () => {
       { type: "message", turnId: TURN_1, id: "m-Hello", text: "Hello" },
       { type: "text", turnId: TURN_1, itemId: "item-1", delta: "ok:" },
       { type: "text", turnId: TURN_1, itemId: "item-1", delta: "Hello" },
+      // The answer is whole.
+      {
+        type: "text",
+        turnId: TURN_1,
+        itemId: "item-1",
+        delta: "",
+        done: true,
+      },
       {
         type: "activity",
         turnId: TURN_1,
@@ -563,7 +567,7 @@ describe("a turn", () => {
       seen(thread)
         .filter((e) => e.type === "text")
         .map((e) => e.delta),
-    ).toEqual(["ok:", "Hello"]);
+    ).toEqual(["ok:", "Hello", ""]);
   });
 
   it("gives a message that didn't stream, and the AI's questions for the user", async () => {
@@ -582,7 +586,7 @@ describe("a turn", () => {
     const last = seen(thread).filter((e) =>
       ["text", "question"].includes(e.type),
     );
-    expect(last.slice(-3)).toEqual([
+    expect(last.slice(-4)).toEqual([
       {
         type: "text",
         turnId: TURN_1,
@@ -603,9 +607,19 @@ describe("a turn", () => {
         title: "Anything else?",
         options: [],
       },
+      // Then it is whole, questions and all.
+      {
+        type: "text",
+        turnId: TURN_1,
+        itemId: "item-last",
+        delta: "",
+        done: true,
+      },
     ]);
     // The streamed message isn't repeated when it completes.
-    expect(last.filter((e) => e.type === "text")).toHaveLength(3);
+    expect(
+      last.filter((e) => e.type === "text" && e.done === undefined),
+    ).toHaveLength(3);
   });
 
   it("reports a usage limit without a reset time when Codex gives none", async () => {

@@ -311,6 +311,7 @@ export function chat(deps: ChatDeps) {
           event.turnId,
           event.itemId,
           event.delta,
+          event.done === true,
         );
         return;
       case "note":

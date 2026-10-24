@@ -215,7 +215,7 @@ If you click Stop, what the AI did so far stays in Activity, and the folded line
 
 **Stop.** After a Stop, nothing more goes to the AI until you send a message. Rufi keeps this also when you reload or Rufi starts again. A Stop while Rufi AI sorts a file stops the sorting too: it goes on after your next message.
 
-**Add to reply.** To change the reply that is running, type in the box and click **Add to reply** instead of sending. Your text goes into that reply, and the AI takes it at its next step. The chat shows it as your message, marked "Added to the reply". If the reply ended just before, the box says "The reply had ended, so this wasn't passed into it. Send it as a new message." Your text stays in the box.
+**Add to reply** passes your text into the running reply; Rufi carries on with it in mind.
 
 ## Waiting messages
 

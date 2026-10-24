@@ -81,6 +81,16 @@ export const PAGE_ROWS = 60;
 type EntryRow = Selectable<Tables["transcript_entries"]>;
 type TurnRow = Selectable<Tables["turns"]>;
 
+/**
+ * Whether a reply or note is whole: its turn completed and it wasn't cut
+ * (Add to reply can cut it while the turn goes on). An older reply has no
+ * status and follows its turn.
+ */
+const whole = (
+  status: EntryRow["status"],
+  turnStatus: TurnRow["status"] | null | undefined,
+) => turnStatus === "completed" && status !== "stopped";
+
 /** An entry as the screens get it; a reply shows its answer (docs/adr/0007). */
 const toEntry = (
   row: EntryRow,
@@ -92,7 +102,7 @@ const toEntry = (
   kind: row.kind as Entry["kind"],
   text:
     row.kind === "reply"
-      ? splitBasis(row.text, turnStatus === "completed").answer
+      ? splitBasis(row.text, whole(row.status, turnStatus)).answer
       : row.text,
   activity: row.activity as Entry["activity"],
   detail: row.detail,
@@ -105,7 +115,9 @@ const toEntry = (
           ? "running"
           : "stopped"
         : "done"
-      : (row.status as Entry["status"]),
+      : row.kind === "reply"
+        ? null
+        : (row.status as Entry["status"]),
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   ...(row.refs !== null && { refs: JSON.parse(row.refs) as Chip[] }),
@@ -229,7 +241,7 @@ async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
   );
   const replies = await trx
     .selectFrom("transcript_entries")
-    .select(["turn_id", "text"])
+    .select(["turn_id", "text", "status"])
     .where("person_id", "=", first.person_id)
     .where("turn_id", "in", ids)
     .where("kind", "=", "reply")
@@ -239,7 +251,10 @@ async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
     const how =
       row.status === "completed"
         ? replies
-            .filter((reply) => reply.turn_id === row.id)
+            .filter(
+              (reply) =>
+                reply.turn_id === row.id && whole(reply.status, row.status),
+            )
             .map((reply) => splitBasis(reply.text, true).how)
             .findLast((found) => found !== undefined)
         : undefined;
@@ -912,8 +927,9 @@ export function transcripts(
       }),
 
     /**
-     * A reply ended: final from now on. Its unfinished activity is stopped,
-     * and its replies and reasoning are sent again by the ended turn's state.
+     * A reply ended: final from now on. Its unfinished activity and answers
+     * are stopped, and its replies and reasoning are sent again by the ended
+     * turn's state.
      */
     endTurn: (chat: ChatRow, agentTurnId: string, end: TurnEnding) =>
       change(chat.id, async (trx, revision) => {
@@ -986,22 +1002,31 @@ export function transcripts(
         return { entries: [id], turns: [] };
       }),
 
-    /** More of a reply's text; the reply is created by its first part. */
+    /**
+     * More of a reply's text; the reply is created by its first part. It
+     * runs until `done`, when the agent gave it whole; one still running
+     * when its turn ends was cut.
+     */
     appendReply: (
       chat: ChatRow,
       agentTurnId: string,
       itemId: string,
       text: string,
+      done = false,
     ) =>
       change(chat.id, async (trx, revision) => {
         const turn = await turnOf(trx, chat.id, agentTurnId);
-        if (turn?.status !== "running" || text === "") return undefined;
+        if (turn?.status !== "running" || (text === "" && !done)) {
+          return undefined;
+        }
         const reply = await itemOf(trx, turn, itemId, "reply");
         if (!reply) {
+          if (text === "") return undefined;
           const id = await insertEntry(trx, chat, revision, {
             turnId: turn.id,
             kind: "reply",
             text,
+            status: done ? "done" : "running",
             agentItemId: itemId,
           });
           return { entries: [id], turns: [] };
@@ -1010,6 +1035,7 @@ export function transcripts(
           .updateTable("transcript_entries")
           .set({
             text: sql<string>`text || ${text}`,
+            ...(done && { status: "done" }),
             revision,
             updated_at: now(),
           })
@@ -1380,7 +1406,13 @@ export function transcripts(
             .onRef("t.person_id", "=", "e.person_id")
             .onRef("t.id", "=", "e.turn_id"),
         )
-        .select(["e.kind", "e.text", "e.activity", "t.status"])
+        .select([
+          "e.kind",
+          "e.text",
+          "e.activity",
+          "e.status as entryStatus",
+          "t.status",
+        ])
         .where("e.person_id", "=", chat.personId)
         .where("e.chat_id", "=", chat.id)
         .where((eb) =>
@@ -1406,7 +1438,7 @@ export function transcripts(
         .limit(count)
         .execute();
       return rows.reverse().map((row) => {
-        const finished = row.status === "completed";
+        const finished = whole(row.entryStatus, row.status);
         if (row.kind === "activity") {
           return {
             from: "note" as const,

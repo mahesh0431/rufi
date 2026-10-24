@@ -2192,10 +2192,40 @@ describe("the chat, on the scripted Codex", () => {
       },
       { from: "ai", text: "Your HbA1c was 6.8 %.", unfinished: true },
     ]);
+    // Add to reply cuts an answer and the turn goes on and completes: the
+    // cut answer stays cut, the one that followed is whole.
+    await transcripts.startTurn(c, "t-2", {
+      id: "thread-cut",
+      model: "gpt-6.1-sol",
+    });
+    await transcripts.appendReply(
+      c,
+      "t-2",
+      "item-3",
+      "Your HbA1c was 6.8 %.\n\n```rufi-ba",
+    );
+    await transcripts.addMessage(c, {
+      id: uuid(),
+      kind: "steer",
+      text: "Only the number",
+      agentTurnId: "t-2",
+    });
+    await transcripts.appendReply(c, "t-2", "item-4", "6.8 %.", true);
+    await transcripts.endTurn(c, "t-2", { status: "completed" });
+    expect((await transcript(c.id)).entries.slice(-3)).toEqual([
+      ["reply", "Your HbA1c was 6.8 %."],
+      ["steer", "Only the number"],
+      ["reply", "6.8 %."],
+    ]);
+    expect((await transcripts.lastMessages(c, 10)).slice(-3)).toEqual([
+      { from: "ai", text: "Your HbA1c was 6.8 %.", unfinished: true },
+      { from: "user", text: "Only the number" },
+      { from: "ai", text: "6.8 %." },
+    ]);
     // A new thread hears both, marked unfinished.
     await startChat("fake");
     await say(await chatRow(c.id), "And?");
-    await ended(c.id, 2);
+    await ended(c.id, 3);
     expect((await backendOf("fake").contexts()).at(-1)).toContain(
       "AI (a progress note) (this reply didn't finish): Your record has one HbA1c, from August.\n\nAI (this reply didn't finish): Your HbA1c was 6.8 %.",
     );

@@ -48,7 +48,14 @@ export type AgentEvent = { threadId: string } & (
   /** A message of the user's reached the agent; `id` is the one Rufi gave it. */
   | { type: "message"; turnId: string; id: string; text: string }
   /** Part of a reply, as it streams; `itemId` tells replies apart. */
-  | { type: "text"; turnId: string; itemId: string; delta: string }
+  /** Part of the agent's answer, as it streams; `done` once it is whole. */
+  | {
+      type: "text";
+      turnId: string;
+      itemId: string;
+      delta: string;
+      done?: true;
+    }
   /**
    * Part of the agent's progress note (a message the agent marks as
    * commentary, not its answer), as it streams; `done` once it is whole.
