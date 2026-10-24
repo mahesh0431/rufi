@@ -270,6 +270,8 @@ export const RecordChange = Schema.Struct({
   fields: Schema.Array(FieldChange),
   /** The save rested on a message of the user's. */
   fromMessage: Schema.Boolean,
+  /** The save rested on a visit. */
+  fromVisit: Schema.Boolean,
 });
 export type RecordChange = typeof RecordChange.Type;
 

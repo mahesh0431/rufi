@@ -653,7 +653,9 @@ export function RowDetail({
               {change.action === "add" &&
                 (change.fromMessage
                   ? ", from your message"
-                  : ", from a document")}
+                  : change.fromVisit
+                    ? ", from a visit"
+                    : ", from a document")}
               {change.fields.map((field) => (
                 <span key={field.field} className="block pl-4">
                   {field.field} {valueOf(field.before)} → {valueOf(field.after)}

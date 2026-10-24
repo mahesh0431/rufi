@@ -47,16 +47,16 @@ export function VisitPage({
   }
   return (
     <div className="mx-auto max-w-[790px] px-6 py-8">
-      <div className="mb-3.5 flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <h2 className="text-[22px] font-bold">{visitTitle(row)}</h2>
-          <p className="text-muted">{visitWhen(row)}</p>
-        </div>
-        <AskRufi
-          onClick={() => {
-            askRufi(person.id, [chipOf(row)]);
-          }}
-        />
+      <div className="mb-3.5">
+        <h2 className="flex items-start gap-3 text-[22px] font-bold">
+          <span className="min-w-0 flex-1">{visitTitle(row)}</span>
+          <AskRufi
+            onClick={() => {
+              askRufi(person.id, [chipOf(row)]);
+            }}
+          />
+        </h2>
+        <p className="text-muted">{visitWhen(row)}</p>
       </div>
       {removed && (
         <p className="mb-3.5 text-muted">Removed from your health record.</p>

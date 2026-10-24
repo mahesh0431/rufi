@@ -460,6 +460,9 @@ async function historyOf(
       "c.after",
       "c.source_entry_id",
       "o.created_at",
+      sql<number>`EXISTS (SELECT 1 FROM record_sources s WHERE s.person_id = c.person_id AND s.kind = c.kind AND s.record_id = c.record_id AND s.operation_id = c.operation_id AND s.type = 'visit')`.as(
+        "from_visit",
+      ),
     ])
     .where("c.person_id", "=", personId)
     .where("c.kind", "=", kind.name)
@@ -492,6 +495,7 @@ async function historyOf(
       action: change.action as RecordChange["action"],
       fields,
       fromMessage: change.source_entry_id !== null,
+      fromVisit: change.from_visit === 1,
     };
   });
 }

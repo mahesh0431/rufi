@@ -481,9 +481,15 @@ describe("a visit", () => {
     ]);
     const [row] = (await views.page("asha", "visit")).groups[0]?.rows ?? [];
     expect(row).toMatchObject({ kind: "visit", id: visit, cited: 2 });
+    const ironOpened = await views.detail("asha", "medicine_use", iron ?? "");
+    // Its history says it came from a visit, not from a message or a page.
     expect(
-      (await views.detail("asha", "medicine_use", iron ?? ""))?.sources,
-    ).toEqual([
+      ironOpened?.history.map(({ fromMessage, fromVisit }) => [
+        fromMessage,
+        fromVisit,
+      ]),
+    ).toEqual([[false, true]]);
+    expect(ironOpened?.sources).toEqual([
       {
         type: "visit",
         visit,
