@@ -685,12 +685,11 @@ export function chat(deps: ChatDeps) {
 
   /**
    * Passes a message by a new id into the reply the person started that
-   * runs now, saved as a steer: "steered". "queue": the queue takes it (an
-   * id it knows, or no such reply runs: Rufi's own reply can't save, so the
-   * message waits for one of its own). When the reply ended before the
-   * agent took the message, it is taken into the queue here ("queued"),
-   * unless Stop came: then nothing is taken. Any other failure is
-   * uncertain, and shown as it is.
+   * runs now, saved as a steer: "steered". Otherwise the queue takes it,
+   * here ("queued"): an id it knows, no such reply runs (Rufi's own reply
+   * can't save, so the message waits for one of its own), or the reply
+   * ended before the agent took the message. A Stop meanwhile takes
+   * nothing. Any other failure is uncertain, and shown as it is.
    */
   const steer = (
     chat: ChatRow,
@@ -699,9 +698,14 @@ export function chat(deps: ChatDeps) {
     refs: readonly Pointer[],
   ) =>
     inLane(chat, async (chat, signal) => {
-      if (await queue.known(id)) return "queue";
+      const queued = async () => {
+        if (signal.aborted) throw new Stopped();
+        await accept(chat, id, text, refs);
+        return "queued" as const;
+      };
+      if (await queue.known(id)) return queued();
       const threadId = await personReply(chat);
-      if (threadId === undefined) return "queue";
+      if (threadId === undefined) return queued();
       let chips: Chip[];
       try {
         chips = await transcripts.chips(chat.personId, refs);
@@ -719,9 +723,7 @@ export function chat(deps: ChatDeps) {
       } catch (error) {
         steers.delete(id);
         if (!(error instanceof NotSent)) throw error;
-        if (signal.aborted) throw new Stopped();
-        await accept(chat, id, text, refs);
-        return "queued";
+        return queued();
       }
       // In line with the events: the agent may have shown it already.
       const saved = saving.then(() =>
@@ -738,7 +740,7 @@ export function chat(deps: ChatDeps) {
         () => undefined,
       );
       await saved;
-      return "steered";
+      return "steered" as const;
     });
 
   return {
@@ -763,11 +765,11 @@ export function chat(deps: ChatDeps) {
     ) => {
       await mustBeSignedIn();
       // Only a reply running now can take it: the lane decides again.
-      const how =
-        (await personReply(await latest(chat))) === undefined
-          ? "queue"
-          : await steer(chat, id, text, refs);
-      if (how === "queue") await accept(chat, id, text, refs);
+      if ((await personReply(await latest(chat))) === undefined) {
+        await accept(chat, id, text, refs);
+        return { id, steered: false };
+      }
+      const how = await steer(chat, id, text, refs);
       return { id, steered: how === "steered" };
     },
 

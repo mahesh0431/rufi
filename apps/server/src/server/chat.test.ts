@@ -704,6 +704,37 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
+    "a Stop while a send is routed into the reply keeps it out, and the chat stays stopped",
+    timeout,
+    async () => {
+      // Stop lands while the send looks its id up.
+      const { known } = queue;
+      const looking = Promise.withResolvers<undefined>();
+      const go = Promise.withResolvers<undefined>();
+      queue = {
+        ...queue,
+        known: async (id) => {
+          looking.resolve(undefined);
+          await go.promise;
+          return known(id);
+        },
+      };
+      await startChat(name);
+      const c = await newChat();
+      await say(c, "hang");
+      await running(c.id);
+      const sending = say(c, "A fictional follow-up");
+      await looking.promise;
+      await chat?.stop(c);
+      await ended(c.id);
+      go.resolve(undefined);
+      await expect(sending).rejects.toThrow("Stopped.");
+      expect(await waiting()).toEqual([]);
+      expect((await chatRow()).paused).toBe("stopped");
+    },
+  );
+
+  it(
     "hands nothing over when Stop comes while the message is getting ready; it waits",
     timeout,
     async () => {
