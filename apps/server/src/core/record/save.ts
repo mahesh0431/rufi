@@ -77,7 +77,7 @@ const From = Schema.Union([
         "The visit's id from get_overview, or {ref} for one this save adds.",
     }),
   }),
-]);
+]).annotate({ identifier: "From" });
 type FromGiven = typeof From.Type;
 
 /** One change of one kind, as the AI gives it. */

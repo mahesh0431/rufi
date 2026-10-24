@@ -242,65 +242,7 @@
                     "from": {
                       "type": "array",
                       "items": {
-                        "anyOf": [
-                          {
-                            "type": "object",
-                            "properties": {
-                              "document": {
-                                "type": "string",
-                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                "minLength": 1,
-                                "maxLength": 100
-                              },
-                              "page": {
-                                "type": "integer",
-                                "maximum": 9007199254740991,
-                                "exclusiveMinimum": 0
-                              }
-                            },
-                            "required": [
-                              "document",
-                              "page"
-                            ],
-                            "additionalProperties": false
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "visit": {
-                                "anyOf": [
-                                  {
-                                    "type": "string",
-                                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                    "minLength": 1,
-                                    "maxLength": 100
-                                  },
-                                  {
-                                    "type": "object",
-                                    "properties": {
-                                      "ref": {
-                                        "type": "string",
-                                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                        "minLength": 1,
-                                        "maxLength": 100,
-                                        "description": "The ref of a visit an earlier change of this save adds."
-                                      }
-                                    },
-                                    "required": [
-                                      "ref"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                ],
-                                "description": "The visit's id from get_overview, or {ref} for one this save adds."
-                              }
-                            },
-                            "required": [
-                              "visit"
-                            ],
-                            "additionalProperties": false
-                          }
-                        ]
+                        "$ref": "#/$defs/From"
                       },
                       "minItems": 1,
                       "description": "The user's document pages or visits the record rests on: with add or change, what its values came from; with link, sources to add while its values stay; with remove_source, sources to take off, as get_records lists them. A fact only from these needs no source message."
@@ -445,65 +387,7 @@
                     "from": {
                       "type": "array",
                       "items": {
-                        "anyOf": [
-                          {
-                            "type": "object",
-                            "properties": {
-                              "document": {
-                                "type": "string",
-                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                "minLength": 1,
-                                "maxLength": 100
-                              },
-                              "page": {
-                                "type": "integer",
-                                "maximum": 9007199254740991,
-                                "exclusiveMinimum": 0
-                              }
-                            },
-                            "required": [
-                              "document",
-                              "page"
-                            ],
-                            "additionalProperties": false
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "visit": {
-                                "anyOf": [
-                                  {
-                                    "type": "string",
-                                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                    "minLength": 1,
-                                    "maxLength": 100
-                                  },
-                                  {
-                                    "type": "object",
-                                    "properties": {
-                                      "ref": {
-                                        "type": "string",
-                                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                        "minLength": 1,
-                                        "maxLength": 100,
-                                        "description": "The ref of a visit an earlier change of this save adds."
-                                      }
-                                    },
-                                    "required": [
-                                      "ref"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                ],
-                                "description": "The visit's id from get_overview, or {ref} for one this save adds."
-                              }
-                            },
-                            "required": [
-                              "visit"
-                            ],
-                            "additionalProperties": false
-                          }
-                        ]
+                        "$ref": "#/$defs/From"
                       },
                       "minItems": 1,
                       "description": "The user's document pages or visits the record rests on: with add or change, what its values came from; with link, sources to add while its values stay; with remove_source, sources to take off, as get_records lists them. A fact only from these needs no source message."
@@ -636,65 +520,7 @@
                     "from": {
                       "type": "array",
                       "items": {
-                        "anyOf": [
-                          {
-                            "type": "object",
-                            "properties": {
-                              "document": {
-                                "type": "string",
-                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                "minLength": 1,
-                                "maxLength": 100
-                              },
-                              "page": {
-                                "type": "integer",
-                                "maximum": 9007199254740991,
-                                "exclusiveMinimum": 0
-                              }
-                            },
-                            "required": [
-                              "document",
-                              "page"
-                            ],
-                            "additionalProperties": false
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "visit": {
-                                "anyOf": [
-                                  {
-                                    "type": "string",
-                                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                    "minLength": 1,
-                                    "maxLength": 100
-                                  },
-                                  {
-                                    "type": "object",
-                                    "properties": {
-                                      "ref": {
-                                        "type": "string",
-                                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                        "minLength": 1,
-                                        "maxLength": 100,
-                                        "description": "The ref of a visit an earlier change of this save adds."
-                                      }
-                                    },
-                                    "required": [
-                                      "ref"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                ],
-                                "description": "The visit's id from get_overview, or {ref} for one this save adds."
-                              }
-                            },
-                            "required": [
-                              "visit"
-                            ],
-                            "additionalProperties": false
-                          }
-                        ]
+                        "$ref": "#/$defs/From"
                       },
                       "minItems": 1,
                       "description": "The user's document pages or visits the record rests on: with add or change, what its values came from; with link, sources to add while its values stay; with remove_source, sources to take off, as get_records lists them. A fact only from these needs no source message."
@@ -805,65 +631,7 @@
                     "from": {
                       "type": "array",
                       "items": {
-                        "anyOf": [
-                          {
-                            "type": "object",
-                            "properties": {
-                              "document": {
-                                "type": "string",
-                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                "minLength": 1,
-                                "maxLength": 100
-                              },
-                              "page": {
-                                "type": "integer",
-                                "maximum": 9007199254740991,
-                                "exclusiveMinimum": 0
-                              }
-                            },
-                            "required": [
-                              "document",
-                              "page"
-                            ],
-                            "additionalProperties": false
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "visit": {
-                                "anyOf": [
-                                  {
-                                    "type": "string",
-                                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                    "minLength": 1,
-                                    "maxLength": 100
-                                  },
-                                  {
-                                    "type": "object",
-                                    "properties": {
-                                      "ref": {
-                                        "type": "string",
-                                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                        "minLength": 1,
-                                        "maxLength": 100,
-                                        "description": "The ref of a visit an earlier change of this save adds."
-                                      }
-                                    },
-                                    "required": [
-                                      "ref"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                ],
-                                "description": "The visit's id from get_overview, or {ref} for one this save adds."
-                              }
-                            },
-                            "required": [
-                              "visit"
-                            ],
-                            "additionalProperties": false
-                          }
-                        ]
+                        "$ref": "#/$defs/From"
                       },
                       "minItems": 1,
                       "description": "The user's document pages or visits the record rests on: with add or change, what its values came from; with link, sources to add while its values stay; with remove_source, sources to take off, as get_records lists them. A fact only from these needs no source message."
@@ -964,65 +732,7 @@
                     "from": {
                       "type": "array",
                       "items": {
-                        "anyOf": [
-                          {
-                            "type": "object",
-                            "properties": {
-                              "document": {
-                                "type": "string",
-                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                "minLength": 1,
-                                "maxLength": 100
-                              },
-                              "page": {
-                                "type": "integer",
-                                "maximum": 9007199254740991,
-                                "exclusiveMinimum": 0
-                              }
-                            },
-                            "required": [
-                              "document",
-                              "page"
-                            ],
-                            "additionalProperties": false
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "visit": {
-                                "anyOf": [
-                                  {
-                                    "type": "string",
-                                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                    "minLength": 1,
-                                    "maxLength": 100
-                                  },
-                                  {
-                                    "type": "object",
-                                    "properties": {
-                                      "ref": {
-                                        "type": "string",
-                                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                        "minLength": 1,
-                                        "maxLength": 100,
-                                        "description": "The ref of a visit an earlier change of this save adds."
-                                      }
-                                    },
-                                    "required": [
-                                      "ref"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                ],
-                                "description": "The visit's id from get_overview, or {ref} for one this save adds."
-                              }
-                            },
-                            "required": [
-                              "visit"
-                            ],
-                            "additionalProperties": false
-                          }
-                        ]
+                        "$ref": "#/$defs/From"
                       },
                       "minItems": 1,
                       "description": "The user's document pages or visits the record rests on: with add or change, what its values came from; with link, sources to add while its values stay; with remove_source, sources to take off, as get_records lists them. A fact only from these needs no source message."
@@ -1194,65 +904,7 @@
                     "from": {
                       "type": "array",
                       "items": {
-                        "anyOf": [
-                          {
-                            "type": "object",
-                            "properties": {
-                              "document": {
-                                "type": "string",
-                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                "minLength": 1,
-                                "maxLength": 100
-                              },
-                              "page": {
-                                "type": "integer",
-                                "maximum": 9007199254740991,
-                                "exclusiveMinimum": 0
-                              }
-                            },
-                            "required": [
-                              "document",
-                              "page"
-                            ],
-                            "additionalProperties": false
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "visit": {
-                                "anyOf": [
-                                  {
-                                    "type": "string",
-                                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                    "minLength": 1,
-                                    "maxLength": 100
-                                  },
-                                  {
-                                    "type": "object",
-                                    "properties": {
-                                      "ref": {
-                                        "type": "string",
-                                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                        "minLength": 1,
-                                        "maxLength": 100,
-                                        "description": "The ref of a visit an earlier change of this save adds."
-                                      }
-                                    },
-                                    "required": [
-                                      "ref"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                ],
-                                "description": "The visit's id from get_overview, or {ref} for one this save adds."
-                              }
-                            },
-                            "required": [
-                              "visit"
-                            ],
-                            "additionalProperties": false
-                          }
-                        ]
+                        "$ref": "#/$defs/From"
                       },
                       "minItems": 1,
                       "description": "The user's document pages or visits the record rests on: with add or change, what its values came from; with link, sources to add while its values stay; with remove_source, sources to take off, as get_records lists them. A fact only from these needs no source message."
@@ -1381,65 +1033,7 @@
                     "from": {
                       "type": "array",
                       "items": {
-                        "anyOf": [
-                          {
-                            "type": "object",
-                            "properties": {
-                              "document": {
-                                "type": "string",
-                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                "minLength": 1,
-                                "maxLength": 100
-                              },
-                              "page": {
-                                "type": "integer",
-                                "maximum": 9007199254740991,
-                                "exclusiveMinimum": 0
-                              }
-                            },
-                            "required": [
-                              "document",
-                              "page"
-                            ],
-                            "additionalProperties": false
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "visit": {
-                                "anyOf": [
-                                  {
-                                    "type": "string",
-                                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                    "minLength": 1,
-                                    "maxLength": 100
-                                  },
-                                  {
-                                    "type": "object",
-                                    "properties": {
-                                      "ref": {
-                                        "type": "string",
-                                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                        "minLength": 1,
-                                        "maxLength": 100,
-                                        "description": "The ref of a visit an earlier change of this save adds."
-                                      }
-                                    },
-                                    "required": [
-                                      "ref"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                ],
-                                "description": "The visit's id from get_overview, or {ref} for one this save adds."
-                              }
-                            },
-                            "required": [
-                              "visit"
-                            ],
-                            "additionalProperties": false
-                          }
-                        ]
+                        "$ref": "#/$defs/From"
                       },
                       "minItems": 1,
                       "description": "The user's document pages or visits the record rests on: with add or change, what its values came from; with link, sources to add while its values stay; with remove_source, sources to take off, as get_records lists them. A fact only from these needs no source message."
@@ -1550,65 +1144,7 @@
                     "from": {
                       "type": "array",
                       "items": {
-                        "anyOf": [
-                          {
-                            "type": "object",
-                            "properties": {
-                              "document": {
-                                "type": "string",
-                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                "minLength": 1,
-                                "maxLength": 100
-                              },
-                              "page": {
-                                "type": "integer",
-                                "maximum": 9007199254740991,
-                                "exclusiveMinimum": 0
-                              }
-                            },
-                            "required": [
-                              "document",
-                              "page"
-                            ],
-                            "additionalProperties": false
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "visit": {
-                                "anyOf": [
-                                  {
-                                    "type": "string",
-                                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                    "minLength": 1,
-                                    "maxLength": 100
-                                  },
-                                  {
-                                    "type": "object",
-                                    "properties": {
-                                      "ref": {
-                                        "type": "string",
-                                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                        "minLength": 1,
-                                        "maxLength": 100,
-                                        "description": "The ref of a visit an earlier change of this save adds."
-                                      }
-                                    },
-                                    "required": [
-                                      "ref"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                ],
-                                "description": "The visit's id from get_overview, or {ref} for one this save adds."
-                              }
-                            },
-                            "required": [
-                              "visit"
-                            ],
-                            "additionalProperties": false
-                          }
-                        ]
+                        "$ref": "#/$defs/From"
                       },
                       "minItems": 1,
                       "description": "The user's document pages or visits the record rests on: with add or change, what its values came from; with link, sources to add while its values stay; with remove_source, sources to take off, as get_records lists them. A fact only from these needs no source message."
@@ -1680,65 +1216,7 @@
                     "from": {
                       "type": "array",
                       "items": {
-                        "anyOf": [
-                          {
-                            "type": "object",
-                            "properties": {
-                              "document": {
-                                "type": "string",
-                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                "minLength": 1,
-                                "maxLength": 100
-                              },
-                              "page": {
-                                "type": "integer",
-                                "maximum": 9007199254740991,
-                                "exclusiveMinimum": 0
-                              }
-                            },
-                            "required": [
-                              "document",
-                              "page"
-                            ],
-                            "additionalProperties": false
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "visit": {
-                                "anyOf": [
-                                  {
-                                    "type": "string",
-                                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                    "minLength": 1,
-                                    "maxLength": 100
-                                  },
-                                  {
-                                    "type": "object",
-                                    "properties": {
-                                      "ref": {
-                                        "type": "string",
-                                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                                        "minLength": 1,
-                                        "maxLength": 100,
-                                        "description": "The ref of a visit an earlier change of this save adds."
-                                      }
-                                    },
-                                    "required": [
-                                      "ref"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                ],
-                                "description": "The visit's id from get_overview, or {ref} for one this save adds."
-                              }
-                            },
-                            "required": [
-                              "visit"
-                            ],
-                            "additionalProperties": false
-                          }
-                        ]
+                        "$ref": "#/$defs/From"
                       },
                       "minItems": 1,
                       "description": "The user's document pages or visits the record rests on: with add or change, what its values came from; with link, sources to add while its values stay; with remove_source, sources to take off, as get_records lists them. A fact only from these needs no source message."
@@ -2034,6 +1512,67 @@
         },
         "additionalProperties": false,
         "$defs": {
+          "From": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "document": {
+                    "type": "string",
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "page": {
+                    "type": "integer",
+                    "maximum": 9007199254740991,
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "document",
+                  "page"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "visit": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "ref": {
+                            "type": "string",
+                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                            "minLength": 1,
+                            "maxLength": 100,
+                            "description": "The ref of a visit an earlier change of this save adds."
+                          }
+                        },
+                        "required": [
+                          "ref"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ],
+                    "description": "The visit's id from get_overview, or {ref} for one this save adds."
+                  }
+                },
+                "required": [
+                  "visit"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
           "Text": {
             "type": "string",
             "minLength": 1,
