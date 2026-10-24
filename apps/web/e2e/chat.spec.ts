@@ -133,7 +133,7 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
     "Lab results7",
     "Measurements3",
     "Medicines2",
-    "Prescriptions",
+    "Visits",
     "Conditions",
     "Allergies",
     "Symptoms",
@@ -157,13 +157,32 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
     "AI can make mistakes. Check important health decisions with your doctor.",
   );
 
+  // Every text the reply shows, as it shows it: a read after "ok:" shows can
+  // come after the last part on a busy machine.
+  await page.evaluate(() => {
+    const shown: string[] = [];
+    Object.assign(globalThis, { shown });
+    new MutationObserver(() => {
+      const text =
+        document.querySelector('[aria-label="Messages"] .reply')?.textContent ??
+        "";
+      if (text !== "" && shown.at(-1) !== text) shown.push(text);
+    }).observe(document.body, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    });
+  });
   await box(chat(page)).fill("drip: my thyroid results");
   await box(chat(page)).press("Enter");
   const reply = log(chat(page)).locator(".reply");
-  await expect(reply).toContainText("ok:");
-  // It streams: the first part shows before the rest has come.
-  expect(await reply.textContent()).not.toBe("ok:drip");
   await expect(reply).toHaveText("ok:drip");
+  // It streams: the first part showed before the rest had come.
+  const shown = await page.evaluate(
+    () => (globalThis as unknown as { shown: string[] }).shown,
+  );
+  expect(shown[0]).not.toBe("ok:drip");
+  expect(shown.at(-1)).toBe("ok:drip");
   await expect(log(chat(page))).toContainText("drip: my thyroid results");
   // What the AI did is folded under the answer.
   await expect(activity(chat(page))).toHaveText(/^Activity · 2 steps · /);

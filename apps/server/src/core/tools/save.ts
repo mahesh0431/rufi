@@ -62,7 +62,7 @@ const FIELDS = [
 export const saveChanges = defineTool({
   name: "save_changes",
   description: `Saves to the active person's record, all or nothing, after the user clearly said yes to exactly this in this chat. Two parts, either or both:
-- changes: typed changes from the user's own words. Each is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history), restore a removed one, or remove_source (take a document page off a record's sources, to undo "another source": the page goes in from, as {document, page} from the record's sources in get_records); ids come from get_overview or get_records. Give only what the user said: a field they didn't give stays out, and a date comes with the words it came from. A result's category (lab or measurement) is the one field you choose, with the user: every added result needs one, except an amended result, which keeps the category of the one it replaces unless you give one. A result read from a document changes in place only its category, in a change of its own; what it prints and its date change only by amendment. source is the user's message with the facts the change rests on, so the record shows why it is there: when the facts came in an earlier message than the yes, give that message's position as read_chat shows it; when they are in this turn's message, leave source out.
+- changes: typed changes from the user's own words or their documents. Each is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history), restore a removed one, link (add sources to a record whose values stay as they are) or remove_source (take sources off a record, as get_records lists them, to undo a link or "another source"); ids come from get_overview or get_records. from names the user's document pages ({document, page}) and visits ({visit: id}) a change rests on; a record saved from a visit cites the visit, and the visit cites its page. ref names a record an add makes ("v1"), so a later change in the same save can cite it as {visit: {ref: "v1"}}: add the visit first, then the records from it. Give only what the user said: a field they didn't give stays out, and a date comes with the words it came from. A result's category (lab or measurement) is the one field you choose, with the user: every added result needs one, except an amended result, which keeps the category of the one it replaces unless you give one. A result read from a document changes in place only its category, in a change of its own; what it prints and its date change only by amendment. source is the user's message with the facts the change rests on, so the record shows why it is there: when the facts came in an earlier message than the yes, give that message's position as read_chat shows it; when they are in this turn's message, leave source out. A change with from rests only on it unless you give source too: the user's yes alone is never a source.
 - items: draft items of the user's documents (get_documents), each with the version you read and how it goes in: new, another_source (the same result is already saved: its values stay, and the document page becomes another source) or correction (it corrects a saved result: a new result replaces it); record names the saved result, with its version from get_records. category: lab or measurement, for new; a correction keeps the corrected result's unless you give one; never for another_source. Rufi takes each item's values and date from the stored item, never from you, except the number of a value the user fixed on the document's page: give it in value_number (and comparator) as you read their value, and ask them when it is unclear; fix holds only a value the user corrected in the chat, or the date they gave for an item with none (a rough one is fine, at their precision), with the words it came from; its source is as a change's. An item saved at that version, and still in the record so (its page a source of that result, the result not removed), returns its earlier save and saves nothing; after an undo took its page off or removed its result, it can be saved again. A dismissed item, or one whose version changed, is refused, and nothing is saved.
 No count limit. Rufi refuses a save with any problem and says each one; nothing is saved then. On success Rufi adds its own receipt to the chat and returns it; the same call again returns the same receipt. Never say something was saved without this tool's answer.
 ${FIELDS}`,
@@ -133,7 +133,32 @@ ${FIELDS}`,
           kind: "result",
           action: "remove_source",
           id: "0199a0f2-0000-7000-8000-00000000000a",
-          from: { document: "0199a0f2-0000-7000-8000-0000000000d1", page: 2 },
+          from: [{ document: "0199a0f2-0000-7000-8000-0000000000d1", page: 2 }],
+        },
+      ],
+    },
+    {
+      changes: [
+        {
+          kind: "visit",
+          action: "add",
+          ref: "v1",
+          from: [{ document: "0199a0f2-0000-7000-8000-0000000000d2", page: 1 }],
+          fields: {
+            setting: "Clinic",
+            date: { date: "2026-08-20", words: "20/08/2026" },
+            doctor: "Dr A. Fictional",
+            place: "Lakeview Family Clinic",
+            reason: "Iron deficiency anaemia",
+            as_written:
+              "**Diagnosis:** Iron deficiency anaemia\n\n**Rx**\n1. Ferrous sulfate 200 mg once daily\n\n**Review** in 6 weeks",
+          },
+        },
+        {
+          kind: "medicine_use",
+          action: "link",
+          id: "0199a0f2-7c1e-7d3a-9b1e-3f5c2a1d4e6f",
+          from: [{ visit: { ref: "v1" } }],
         },
       ],
     },

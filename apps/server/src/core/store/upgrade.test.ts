@@ -840,9 +840,226 @@ it("upgrades a record of version 11 so Rufi AI sorts: every document, reading an
   ]);
 });
 
-it("upgrades a record of version 14 so files start on Send: every document sent as it was added, every reply, line and queued message kept, and an open sorting request gone with its note", async () => {
+it("upgrades a record of version 14 to Visits: the saves, follow-ups and briefs that named a prescription or a visit read after it, and an old change's reverse saves", async () => {
   const path = databasePath(home);
   migrate(path, MIGRATIONS.slice(0, 14));
+  // As Rufi of version 14 left them: one save added a prescription beside a
+  // medicine use, from Asha's message and a page; a follow-up about a
+  // visit, whose next save moved it to the prescription and changed its
+  // due; a brief citing the medicine use, the prescription and one from
+  // before Rufi kept saves.
+  const old = new DatabaseSync(path);
+  try {
+    const entry = (seq: number, id: string, kind: string, text: string) =>
+      `('${id}', 'asha', 'c-asha', ${String(seq)}, NULL, '${kind}', '${text}', 1, '2026-10-12T05:00:00Z', '2026-10-12T05:00:00Z')`;
+    const rx = {
+      id: "rx-1",
+      person_id: "asha",
+      item: "Ferrous sulfate",
+      strength: "200 mg",
+      amount: null,
+      route: null,
+      schedule: null,
+      period: null,
+      prescriber: "Dr Fictional",
+      issued: "2026-10-10",
+      issued_words: "10 Oct",
+      removed: 0,
+    };
+    const iron = {
+      id: "med-iron",
+      person_id: "asha",
+      name: "Iron",
+      strength: "200 mg",
+      amount: null,
+      schedule: null,
+      route: null,
+      purpose: null,
+      status: "current",
+      started: null,
+      started_words: null,
+      ended: null,
+      ended_words: null,
+      removed: 0,
+    };
+    const followUp = {
+      id: "fu-1",
+      person_id: "asha",
+      title: "Review with Dr Fictional",
+      due: "2026-11",
+      due_words: "next month",
+      status: "open",
+      outcome: null,
+      linked_kind: "care_event",
+      linked_id: "ce-visit",
+      removed: 0,
+    };
+    const moved = {
+      ...followUp,
+      due: "2026-12",
+      due_words: "in December",
+      linked_kind: "prescription",
+      linked_id: "rx-1",
+    };
+    const json = (row: object) => `'${JSON.stringify(row)}'`;
+    // Saved as a visit, then made an immunisation on another day.
+    const flu = {
+      id: "ce-flu",
+      person_id: "asha",
+      type: "immunisation",
+      name: "Flu vaccine",
+      status: "done",
+      date: "2026-10-02",
+      date_words: "2 Oct",
+      provider: null,
+      details: null,
+      removed: 0,
+    };
+    old.exec(`
+      INSERT INTO transcript_entries (id, person_id, chat_id, seq, turn_id, kind, text, revision, created_at, updated_at) VALUES
+        ${entry(901, "m-v14", "message", "Dr Fictional gave me iron, I take it")},
+        ${entry(902, "op-v14-1", "receipt", "**Saved**")},
+        ${entry(903, "op-v14-2", "receipt", "**Saved**")},
+        ${entry(904, "brief-v14", "brief", "Visit brief")};
+      INSERT INTO operations (id, seq, person_id, chat_id, call_id, request, created_at) VALUES
+        ('op-v14-1', 101, 'asha', 'c-asha', 'call-v14-1', '{}', '2026-10-12T05:00:00Z'),
+        ('op-v14-2', 102, 'asha', 'c-asha', 'call-v14-2', '{}', '2026-10-12T05:01:00Z');
+      INSERT INTO prescriptions (id, person_id, item, strength, prescriber, issued, issued_words) VALUES
+        ('rx-0', 'asha', 'Levothyroxine', '25 mcg', 'Dr Fictional', '2025-01', 'Jan 2025'),
+        ('rx-1', 'asha', 'Ferrous sulfate', '200 mg', 'Dr Fictional', '2026-10-10', '10 Oct');
+      INSERT INTO medicine_uses (id, person_id, name, strength, status) VALUES ('med-iron', 'asha', 'Iron', '200 mg', 'current');
+      INSERT INTO care_events (id, person_id, type, name, status, date, date_words) VALUES
+        ('ce-visit', 'asha', 'visit', 'Dr Fictional', 'done', NULL, NULL),
+        ('ce-flu', 'asha', 'immunisation', 'Flu vaccine', 'done', '2026-10-02', '2 Oct');
+      INSERT INTO follow_ups (id, person_id, title, due, due_words, status, linked_kind, linked_id) VALUES
+        ('fu-1', 'asha', 'Review with Dr Fictional', '2026-12', 'in December', 'open', 'prescription', 'rx-1');
+      INSERT INTO record_changes (operation_id, seq, person_id, kind, record_id, action, before, after, source_entry_id) VALUES
+        ('op-v14-1', 1, 'asha', 'prescription', 'rx-1', 'add', NULL, ${json(rx)}, 'm-v14'),
+        ('op-v14-1', 2, 'asha', 'medicine_use', 'med-iron', 'add', NULL, ${json(iron)}, 'm-v14'),
+        ('op-v14-1', 3, 'asha', 'follow_up', 'fu-1', 'add', NULL, ${json(followUp)}, 'm-v14'),
+        ('op-v14-2', 1, 'asha', 'follow_up', 'fu-1', 'change', ${json(followUp)}, ${json(moved)}, 'm-v14'),
+        ('op-v14-2', 2, 'asha', 'care_event', 'ce-flu', 'change', ${json({ ...flu, type: "visit", date: "2026-10-01", date_words: "1 Oct" })}, ${json(flu)}, 'm-v14');
+      INSERT INTO record_sources (person_id, kind, record_id, type, entry_id, document_id, page, operation_id) VALUES
+        ('asha', 'prescription', 'rx-1', 'message', 'm-v14', NULL, NULL, 'op-v14-1'),
+        ('asha', 'prescription', 'rx-1', 'document_page', NULL, 'doc-asha-aug', 1, 'op-v14-1'),
+        ('asha', 'medicine_use', 'med-iron', 'message', 'm-v14', NULL, NULL, 'op-v14-1'),
+        ('asha', 'follow_up', 'fu-1', 'message', 'm-v14', NULL, NULL, 'op-v14-1');
+      INSERT INTO briefs (id, person_id, chat_id, call_id, markdown, record_version, cited, created_at) VALUES
+        ('brief-v14', 'asha', 'c-asha', 'call-v14-brief', '# Visit brief', 6, '[{"kind":"prescription","id":"rx-0","version":null},{"kind":"prescription","id":"rx-1","version":"op-v14-1"},{"kind":"medicine_use","id":"med-iron","version":"op-v14-1"}]', '2026-10-12T05:02:00Z');
+    `);
+  } finally {
+    old.close();
+  }
+
+  const store = await openRecord(home);
+  try {
+    const [latest, previous] = await recentSaves(store, "asha");
+    // The about-and-due change keeps the due; the gone prescription is in
+    // neither side. The immunisation's change keeps its date, not the gone
+    // type.
+    expect(latest?.changes).toEqual([
+      {
+        kind: "follow_up",
+        id: "fu-1",
+        action: "change",
+        before: { due: { date: "2026-11", words: "next month" } },
+        after: { due: { date: "2026-12", words: "in December" } },
+      },
+      {
+        kind: "care_event",
+        id: "ce-flu",
+        action: "change",
+        before: { date: { date: "2026-10-01", words: "1 Oct" } },
+        after: { date: { date: "2026-10-02", words: "2 Oct" } },
+      },
+    ]);
+    // The mixed save keeps its other changes; its receipt stays as written.
+    expect(previous?.receipt).toBe("**Saved**");
+    expect(previous?.changes.map((c) => [c.kind, c.id, c.action])).toEqual([
+      ["medicine_use", "med-iron", "add"],
+      ["follow_up", "fu-1", "add"],
+    ]);
+    expect(
+      store.db
+        .prepare(
+          "SELECT kind, record_id, type FROM record_sources WHERE record_id IN ('rx-1', 'med-iron') ORDER BY rowid",
+        )
+        .all(),
+    ).toEqual([
+      { kind: "medicine_use", record_id: "med-iron", type: "message" },
+    ]);
+    expect(
+      store.db
+        .prepare("SELECT id, type FROM care_events WHERE person_id = 'asha'")
+        .all(),
+    ).toEqual([{ id: "ce-flu", type: "immunisation" }]);
+
+    const brief = await readBrief(store.query, "asha", "brief-v14");
+    expect(brief?.markdown).toBe("# Visit brief");
+    expect(brief?.sources.map((s) => s.record)).toEqual([
+      { kind: "medicine_use", id: "med-iron" },
+    ]);
+
+    // Asha says "undo that": the AI saves the latest change's before.
+    const chats = transcripts(store, () => "2026-10-12T06:00:00.000Z");
+    const chat = (await chats.chat("asha")) as ChatRow;
+    await chats.startTurn(chat, "t-undo", {
+      id: "thread-asha",
+      model: "gpt-6.1-sol",
+    });
+    await chats.addMessage(chat, {
+      id: "m-undo",
+      kind: "message",
+      text: "Undo that",
+      agentTurnId: "t-undo",
+    });
+    const reader = openReadOnly(databasePath(home)) as Store;
+    try {
+      const answer = await chatCaller(reader, chats, () => undefined)(
+        chat,
+        "t-undo",
+        "person",
+      )(
+        "save_changes",
+        {
+          changes: (latest?.changes ?? []).map((change) => ({
+            kind: change.kind,
+            action: "change",
+            id: change.id,
+            fields: "before" in change ? change.before : {},
+          })),
+        },
+        "call-undo",
+      );
+      expect(answer.ok).toBe(true);
+    } finally {
+      reader.close();
+    }
+    expect(
+      store.db
+        .prepare(
+          "SELECT due, due_words, linked_kind, linked_id FROM follow_ups WHERE id = 'fu-1'",
+        )
+        .get(),
+    ).toEqual({
+      due: "2026-11",
+      due_words: "next month",
+      linked_kind: null,
+      linked_id: null,
+    });
+    expect(
+      store.db
+        .prepare("SELECT type, date FROM care_events WHERE id = 'ce-flu'")
+        .get(),
+    ).toEqual({ type: "immunisation", date: "2026-10-01" });
+  } finally {
+    store.close();
+  }
+});
+
+it("upgrades a record of version 15 so files start on Send: every document sent as it was added, every reply, line and queued message kept, and an open sorting request gone with its note", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 15));
   // Rufi's open request that Rufi AI sort Asha's August report, its note
   // waiting in her chat's queue.
   const old = new DatabaseSync(path);

@@ -33,7 +33,7 @@ The page shows when the brief was made, the brief as the AI wrote it, and **Sour
 | Medicine use | Magnesium 200 mg · current | Your message, 7 Oct 2026: "I started magnesium…"                     |
 | Result       | HbA1c 6.8 % · 12 Aug 2026  | Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf |
 
-Rufi builds this list itself, from the records the AI cited. A record that Rufi had before it kept sources says **Saved before Rufi kept sources**. A page of a document you deleted says **Document deleted (Sunrise Labs August.pdf, page 2)**: the brief itself doesn't change.
+Rufi builds this list itself, from the records the AI cited. A record that Rufi had before it kept sources says **Saved before Rufi kept sources**. A page of a document you deleted says **Document deleted (Sunrise Labs August.pdf, page 2)**: the brief itself doesn't change. A record saved from a visit says the visit, such as **Visit · Dr A. Fictional · Lakeview Family Clinic · 20 Aug 2026**.
 
 Click a record to open it on its page, with its sources and history (see [Open a row](record.md#open-a-row)). When an amended result has replaced a result since, the amended one opens. A record removed from your health record since stays in the list, but doesn't open.
 

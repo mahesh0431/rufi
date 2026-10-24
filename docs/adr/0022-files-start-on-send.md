@@ -1,4 +1,4 @@
-# 0021 · Files start on Send: Rufi copies the pages in the person's reply
+# 0022 · Files start on Send: Rufi copies the pages in the person's reply
 
 **Date:** 24 Oct 2026 · **Status:** accepted
 

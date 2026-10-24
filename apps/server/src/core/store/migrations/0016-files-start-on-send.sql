@@ -1,4 +1,4 @@
--- Files start on Send (docs/adr/0021). A document is unsent while it sits
+-- Files start on Send (docs/adr/0022). A document is unsent while it sits
 -- in the chat box (documents.sent_at null); every document made before was
 -- sent as it was added. A reply whose message brings documents to read
 -- starts with Rufi's part, before the agent's turn exists, so a turn's

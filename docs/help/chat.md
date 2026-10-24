@@ -166,16 +166,17 @@ You change your health record by telling the AI in the chat. Nothing changes unt
 
    When a detail is long, its line shows the part around the change. Rufi writes the receipt itself, from what it saved, not from the AI's words. If the receipt is different from what the AI told you, trust the receipt and tell the AI.
 
-The AI can save medicines you take, prescriptions, symptoms, conditions, allergies, lab results, measurements such as your weight or blood pressure, visits, procedures and immunisations, "no known allergies", and follow-ups.
+The AI can save medicines you take, visits to a doctor (with what the doctor wrote or said), symptoms, conditions, allergies, lab results, measurements such as your weight or blood pressure, procedures and immunisations, "no known allergies", and follow-ups.
 
 What Rufi does when it saves:
 
 - **Only what you said.** A detail you didn't give stays unknown. A date is saved only when you gave one, at the precision you gave it: "since 2019" stays a year. Rufi keeps the words the date came from, such as "last Monday", and the AI counts them from when you sent the message, not from when you said yes. A result always needs a date: when a report has none, the AI asks you for one, and a rough date is fine (see [Save results to your health record](documents.md#save-results-to-your-health-record)).
-- **Where it came from.** The source of a change is your message the change came from: the one where you told the AI the facts, not your "yes". A record's **Sources** show that message's words (see [Your health record](record.md)).
+- **Where it came from.** The source of a change is your message the change came from: the one where you told the AI the facts, not your "yes". A record saved from a visit has the visit as its source, and the visit has its paper's page. A record's **Sources** show them (see [Your health record](record.md)).
 - **Dates to come.** A date after your message, such as a planned visit or a recheck in December, is saved as you gave it. So is a date that should already have happened but is later than your message, such as when a symptom started: the AI mentions it after saving, in case it is a slip such as a wrong year, and you can tell it to change it.
 - **All or nothing.** When one part can't be saved, nothing is saved, and the AI tells you why.
 - **Nothing is deleted.** A record you remove leaves your current health record, and Rufi keeps its history.
-- **One medicine, one use.** When you take a medicine in two ways, such as a morning and a night dose, stopping one doesn't stop the other. A prescription doesn't add a medicine you take.
+- **One medicine, one use.** When you take a medicine in two ways, such as a morning and a night dose, stopping one doesn't stop the other.
+- **A visit's medicines become yours only when you say you take them.** The AI asks "Are you taking these?" before it saves any of them as a medicine you take. One you already have gets the visit as one more source, and its details stay. When the doctor changed a dose, the old one is stopped and the new one added, so your history shows both.
 - **A lab result or a measurement.** The AI says which each new result is, and asks when it isn't sure. To move a result to the other page, say so, for example "this weight is a measurement": its value, date and sources stay, and the receipt shows the change (see [Lab results and Measurements](record.md#lab-results-and-measurements)).
 - **"No known allergies" has a date.** It can't stay in your health record beside an allergy that is active or whose status is unknown. When you tell the AI about such an allergy, it asks you to remove "no known allergies" in the same save.
 
@@ -187,7 +188,7 @@ To save the results Rufi read from a document, add the document to a message and
 
 ### Undo
 
-Say "undo that". The AI reads the save and your health record as it is now. It tells you what it will change back, and anything that changed after that save, and asks you. Say yes, and the AI saves the reverse, with its own receipt: a removed record is put back ("Put back result …"). The first save stays in the history. When the save added a document page as one more source of a result, the undo takes only that source off: the result stays.
+Say "undo that". The AI reads the save and your health record as it is now. It tells you what it will change back, and anything that changed after that save, and asks you. Say yes, and the AI saves the reverse, with its own receipt: a removed record is put back ("Put back result …"). The first save stays in the history. When the save added a document page or a visit as one more source of a record, the undo takes only that source off: the record stays. Undoing a visit removes the visit and what was added from it, and sets back a medicine it changed; when a medicine needs both, set back and its source taken off, you see two receipts.
 
 ### When a save and a stop meet
 

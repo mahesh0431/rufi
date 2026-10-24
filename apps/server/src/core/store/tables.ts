@@ -230,20 +230,6 @@ export interface Tables {
     id: string;
     display_name: string;
   };
-  prescriptions: {
-    id: string;
-    person_id: string;
-    item: string;
-    strength: string | null;
-    amount: string | null;
-    route: string | null;
-    schedule: string | null;
-    period: string | null;
-    prescriber: string | null;
-    issued: string | null;
-    issued_words: string | null;
-    removed: number;
-  };
   record_changes: {
     operation_id: string;
     seq: number;
@@ -263,6 +249,7 @@ export interface Tables {
     entry_id: string | null;
     document_id: string | null;
     page: number | null;
+    visit_id: string | null;
     operation_id: string | null;
     removed_by: string | null;
   };
@@ -359,5 +346,19 @@ export interface Tables {
     resets_at: string | null;
     started_at: string;
     ended_at: string | null;
+  };
+  visits: {
+    id: string;
+    person_id: string;
+    setting: string;
+    date: string | null;
+    date_words: string | null;
+    ended: string | null;
+    ended_words: string | null;
+    doctor: string | null;
+    place: string | null;
+    reason: string | null;
+    as_written: string | null;
+    removed: number;
   };
 }

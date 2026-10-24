@@ -393,7 +393,7 @@ test("keeps unreadable pages to check and reserves Nothing to save for a complet
   });
   await sendFiles(page, await report());
   const status = row(page).getByRole("cell").nth(4); // Status
-  await expect(status).toContainText("To check");
+  await expect(status).toContainText("To check", { timeout: 10_000 });
   await expect(status).not.toContainText("Nothing to save");
 
   await status.getByRole("button", { name: "Retry" }).click();

@@ -8,6 +8,8 @@ Tell the AI in the chat, for example "Remind me to recheck my HbA1c in December"
 
 When a document or your words suggest one, for example a report that says "Repeat HbA1c in 3 months", the AI suggests a follow-up and its month, and asks. It saves nothing until you say yes. A plain "yes" is enough: you don't need to say the date again.
 
+A follow-up from a visit, such as "Repeat CBC after 8 weeks" on a prescription, has the visit as its source, and shows under **From this visit** on the visit's page (see [A visit](record.md#a-visit)). The next visit itself is a follow-up too, until it happens.
+
 The date stays as you gave it:
 
 - "December" is the month of December: due all of December. Rufi never makes it into a day.

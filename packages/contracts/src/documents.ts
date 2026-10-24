@@ -260,6 +260,10 @@ export const DocumentItems = Schema.Struct({
   ),
   /** In page order, then as on the page. */
   items: Schema.Array(DraftItem),
+  /** The visits that cite one of its pages now: Saved as. */
+  savedAs: Schema.Array(
+    Schema.Struct({ id: Schema.String, label: Schema.String }),
+  ),
 });
 export type DocumentItems = typeof DocumentItems.Type;
 

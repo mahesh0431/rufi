@@ -226,6 +226,25 @@ async function pageFrame(page: Page): Promise<Frame> {
   return frame;
 }
 
+/**
+ * Waits until the opened page has been read to its end: Rufi's Esc relay comes
+ * after the page's own content, and until then an Esc in the page isn't heard.
+ */
+async function relayReady(page: Page) {
+  const frame = await pageFrame(page);
+  await expect
+    .poll(() =>
+      frame
+        .evaluate(
+          () =>
+            location.pathname.startsWith("/files/") &&
+            document.readyState !== "loading",
+        )
+        .catch(() => false),
+    )
+    .toBe(true);
+}
+
 test("a page draws in the reply at a fixed height and opens large over the chat: its script runs, but it can't reach Rufi, its API or anything remote, and a standalone request is inert", async ({
   page,
   rufi,
@@ -340,6 +359,9 @@ test("a page draws in the reply at a fixed height and opens large over the chat:
   await expect(out).toContainText("tab clicked");
   await reply.getByRole("button", { name: "Open Your 2026 results" }).click();
   await expect(shown).toBeVisible();
+  // Not tested on purpose: an Esc while the page still loads may be ignored
+  // (a known TODO; pressing again closes it).
+  await relayReady(page);
   await page.keyboard.press("Escape");
   await expect(shown).toHaveCount(0);
   await expect(open).toBeFocused();

@@ -100,7 +100,7 @@ When the reading doesn't finish, your reply ends before Rufi AI starts (see [Whe
 When a reading ends, Rufi gives your message to Rufi AI with a short note: which documents were just copied, and which pages couldn't be read. Rufi AI reads the page copies, sorts the new files, and then answers what you wrote. If you sent files and no words, it tells you in a few lines what it found. It can't save anything to your health record, set anything aside or write a visit brief until you say yes in the chat.
 
 - **It splits the file into documents**, one for each report or paper, and gives each its kind, its date and, for a report, its lab and report number as printed. A report's pages stay together, also a page that goes on with its table and prints no lab or date. A prescription or a letter is a document of its own. Each one has its own row on the Documents page, with its pages: **mixed-pile.pdf · pages 1–2 of 5**, **pages 3–4 of 5**, **page 5 of 5**.
-- **It drafts the results**: every current lab result, and measurements such as a blood pressure taken at a visit, each with its date and the words it came from on its page. A column of earlier results isn't drafted. A prescription's medicines aren't drafted yet.
+- **It drafts the results**: every current lab result, and measurements such as a blood pressure taken at a visit, each with its date and the words it came from on its page. A column of earlier results isn't drafted. A prescription's medicines and advice aren't drafted: they go in its visit (see [A visit's paper](#a-visits-paper)).
 - **It says what is worth a look**, in a few plain words: a digit the reader marked unclear, a value written by hand, or crossed out and written again. Most results need none. Where the reader marked a digit unclear, the draft's value is Rufi AI's reading (**104**), the value that would be saved; the marks (**1[0?]4**) stay in the words it came from.
 - **It tells you in a few lines** what it found, for example "I sorted mixed-pile.pdf into 3 documents: a Sunrise Labs report from 12 Mar 2026 (14 results, 1 worth a look), a Northgate report from 20 Aug 2026 (12 results) and a prescription from 3 Sep 2026 (3 measurements). Nothing is saved yet." When it can't tell, for example whether two reports are one, or whose a report is, it asks you instead, and sorts once you answer.
 
@@ -162,6 +162,20 @@ If a result isn't yours, or was read by mistake, tell the AI. When you say yes, 
 ### Undo
 
 Say "undo that", as for any save (see [Undo](chat.md#undo)). The AI removes the results the save added, and they stay in the history. When a result became **another source**, the undo takes only that page off its sources: the result stays. To save it again, ask the AI, for example "save page 2 as a source again". It asks first, and the chat shows a new receipt. When the undo removed the result, the AI puts it back first, so you see two receipts: one for the result put back, then one for the page added as its source.
+
+## A visit's paper
+
+A prescription, an e-prescription or a discharge summary is the paper from a visit to a doctor. When Rufi AI tells you what it found in one, it also says what the paper holds, which of its medicines are already in your health record, and proposes saving it as a visit. It asks **Are you taking these?** and saves nothing yet.
+
+Answer in the chat, for example "only the Levothyroxine; add the follow-ups". The AI saves it all in one save, with one receipt:
+
+- **the visit**, with the doctor's words as the paper has them, and the paper's page as its source;
+- **each medicine you said you take**, with the visit as its source. One already in your health record keeps its details and gets the visit as one more source. A medicine you don't take stays only in the doctor's words;
+- **follow-ups** for the tests and the next visit, when you said yes to them.
+
+The paper's page shows **Saved as** with each visit saved from it; click one to open the visit (see [A visit](record.md#a-visit)). This doesn't mean everything on the paper is saved. When the paper may be someone else's, the AI asks whose it is and saves nothing until you say. Say "undo that" to take the visit back (see [Undo](chat.md#undo)).
+
+You can also tell the AI about a visit with no paper, such as a video call with your doctor; it saves it the same way, with your words as the doctor's words. When the paper comes later, the AI adds it to the visit you have instead of making a second one.
 
 ## When a reading stops
 
@@ -263,7 +277,7 @@ When Rufi AI sorted a file into several documents, each one is deleted on its ow
 If you saved results from the document, Rufi lists each saved result that comes from it. A result that an amended result replaced is in the list too, marked **replaced**: it comes back if the amended one is removed. A result you already removed isn't in the list. Choose one of the two buttons; neither is chosen for you:
 
 - **Delete file:** the file goes, and the results stay in your health record. Use this when the results are right and you only want the file gone, for example a second copy of a report. Their sources say **Document deleted (Sunrise Labs August.pdf, page 2)**.
-- **Delete file and results:** the file goes, and the chat opens. The AI starts by itself: it lists the results from the document and asks you about them. When you say yes, it removes them from your health record. For a result that you also gave in another way (you told the AI, or another document has it), it asks to take only this document off it: the result stays, with its other sources. The AI removes nothing before your yes.
+- **Delete file and results:** the file goes, and the chat opens. The AI starts by itself: it lists the results from the document and asks you about them. The list in the dialog is what rests on the document's pages. Medicines or follow-ups saved from a visit here aren't listed; Rufi AI goes through them with you. A medicine you also told it you take stays, with only the visit taken off. When you say yes, it removes them from your health record. For a result that you also gave in another way (you told the AI, or another document has it), it asks to take only this document off it: the result stays, with its other sources. The AI removes nothing before your yes.
 
 Your health record changes only in the chat, with your yes. The delete itself removes no result.
 
@@ -280,7 +294,7 @@ Your health record changes only in the chat, with your yes. The delete itself re
 | A reading that waits or runs: it stops                  | Visit briefs, as they were written                                                           |
 |                                                         | The document's name and page numbers, so that what points at it can say **document deleted** |
 
-After the delete, a chip of the document in an old message says **document deleted** and opens nothing. A reading line about it from an earlier version has no **Open** or **Retry**. A saved result's sources say **Document deleted (Sunrise Labs August.pdf, page 2)**. A result you removed before can still come back with "undo that"; its source says **document deleted**. The document itself can't come back: add its file again if you need it.
+After the delete, a chip of the document in an old message says **document deleted** and opens nothing. A reading line about it from an earlier version has no **Open** or **Retry**. A saved result's sources say **Document deleted (Sunrise Labs August.pdf, page 2)**, and so do a visit's: the visit stays, with the records saved from it. A result you removed before can still come back with "undo that"; its source says **document deleted**. The document itself can't come back: add its file again if you need it.
 
 If another person in Rufi has the same file, Rufi keeps the file for them.
 
