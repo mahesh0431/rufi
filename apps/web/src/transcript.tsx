@@ -54,7 +54,8 @@ import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
 import { Diagram, fileIn, NativePicture, Page, Picture } from "./files.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
-import type { Live } from "./live.ts";
+import { chatPath, messageOf, type Live } from "./live.ts";
+import { request } from "./api.ts";
 import { RetryButton } from "./reading.tsx";
 import { useSettings } from "./reads.ts";
 import { Menus } from "./model-menu.tsx";
@@ -1081,15 +1082,52 @@ function BasedOn({ how }: { how: string }) {
  */
 function Ending({ live, turnId }: { live: StoreApi<Live>; turnId: string }) {
   const turn = useStore(live, (state) => state.turns[turnId]);
+  const retry = useStore(live, (state) =>
+    state.queue.items.find(
+      (item) => item.held === "reply_ended" && item.turnId === turnId,
+    ),
+  );
+  const personId = use(Whose);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   if (!turn) return null;
-  if (turn.endText !== null)
-    return <p className="text-muted">{turn.endText}</p>;
   return (
-    <p className="text-muted">
-      This reply didn't finish.
-      {turn.endReason === "usage_limit" && turn.resetsAt !== null && (
-        <> It resets {printedTime(turn.resetsAt)}.</>
-      )}
-    </p>
+    <div className="text-muted">
+      <p className="flex flex-wrap items-center gap-1.5">
+        <span>
+          {turn.endText ?? "This reply didn't finish."}
+          {turn.endText === null &&
+            turn.endReason === "usage_limit" &&
+            turn.resetsAt !== null && (
+              <> It resets {printedTime(turn.resetsAt)}.</>
+            )}
+        </span>
+        {retry?.holdId && (
+          <Button
+            look="quiet"
+            icon={RotateCw}
+            busy={busy && "Retrying…"}
+            onClick={() => {
+              setBusy(true);
+              setProblem(null);
+              void request(
+                "POST",
+                `${chatPath(personId)}/queue/${encodeURIComponent(retry.id)}/retry`,
+                { hold: retry.holdId },
+              )
+                .catch((error: unknown) => {
+                  setProblem(messageOf(error));
+                })
+                .finally(() => {
+                  setBusy(false);
+                });
+            }}
+          >
+            Retry
+          </Button>
+        )}
+      </p>
+      {problem && <p role="alert">{problem}</p>}
+    </div>
   );
 }

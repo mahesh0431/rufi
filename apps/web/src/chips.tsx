@@ -2,20 +2,10 @@
 // icon says what it is (a document, a draft item, a saved record, a
 // report's results), its name
 // is what the page calls it, and the pointer shows where it comes from. In
-// the box, a document's chip also says what Rufi is doing with it. A chip
+// the box, a Retry chip says read again. A chip
 // whose document was deleted keeps its name, says so, and is dimmed.
 import type { Pointer } from "@rufi/contracts";
-import {
-  Activity,
-  FileText,
-  FlaskConical,
-  LoaderCircle,
-  Table2,
-  X,
-} from "lucide-react";
-import { type ChipState, chipState } from "./chip-state.ts";
-import { useReadings } from "./reading.tsx";
-import { useDocuments } from "./reads.ts";
+import { Activity, FileText, FlaskConical, Table2, X } from "lucide-react";
 import { IconButton } from "./ui.tsx";
 
 const ICONS = {
@@ -25,27 +15,8 @@ const ICONS = {
   report: Table2,
 } as const;
 
-/**
- * The state of each document chip in a person's box, from their documents
- * and reading jobs: one read of each for the whole box.
- */
-export function useChipStates(
-  personId: string,
-): (pointer: Pointer) => ChipState | undefined {
-  const documents = useDocuments(personId).data;
-  const readings = useReadings(personId).data;
-  return (pointer) =>
-    pointer.type === "document"
-      ? chipState(
-          documents?.find((d) => d.id === pointer.id),
-          readings?.find((r) => r.documentId === pointer.id),
-        )
-      : undefined;
-}
-
 export function ChipView({
   chip,
-  state,
   onRemove,
 }: {
   chip: {
@@ -54,18 +25,14 @@ export function ChipView({
     detail: string;
     deleted?: true | undefined;
   };
-  /** What Rufi is doing with it: only in the box. */
-  state?: ChipState | undefined;
   /** Takes it out of the box; none in a sent message. */
   onRemove?: () => void;
 }) {
   const Icon = ICONS[chip.pointer.type];
   const label = chip.label === "" ? "Adding…" : chip.label;
-  const named = chip.deleted
-    ? `${label} · document deleted`
-    : state === undefined
-      ? label
-      : `${label} · ${state.text}`;
+  const again =
+    chip.pointer.type === "document" && chip.pointer.readAgain === true;
+  const named = `${label}${chip.deleted ? " · document deleted" : again ? " · read again" : ""}`;
   return (
     <span
       title={
@@ -78,18 +45,8 @@ export function ChipView({
       {chip.deleted && (
         <span className="shrink-0 whitespace-nowrap"> · document deleted</span>
       )}
-      {state !== undefined && (
-        <span className="shrink-0 whitespace-nowrap text-muted">
-          {" · "}
-          {state.busy && (
-            <LoaderCircle
-              size={11}
-              className="mr-1 inline animate-spin align-[-1px]"
-              aria-hidden
-            />
-          )}
-          {state.text}
-        </span>
+      {again && !chip.deleted && (
+        <span className="text-muted"> · read again</span>
       )}
       {onRemove ? (
         // The one smaller button: a chip is a word in the message, and a

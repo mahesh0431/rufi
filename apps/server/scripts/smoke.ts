@@ -170,8 +170,13 @@ async function page(core: Core) {
       throw new Error(`${method} ${path}: ${JSON.stringify(reply.body)}`);
     return reply.body;
   };
-  /** Adds files on the Documents page, as the screens do. */
-  const upload = async (files: { name: string; bytes: Uint8Array }[]) => {
+  /**
+   * Adds files from the chat box, as the screens do: unsent until a
+   * message sends them. Gives their documents' ids.
+   */
+  const upload = async (
+    files: { name: string; bytes: Uint8Array }[],
+  ): Promise<string[]> => {
     const form = new FormData();
     for (const file of files)
       form.append("file", new Blob([new Uint8Array(file.bytes)]), file.name);
@@ -189,6 +194,7 @@ async function page(core: Core) {
       throw error;
     });
     if (reply.status >= 400) throw new Error(`add: ${await reply.text()}`);
+    return ((await reply.json()) as { added: string[] }).added;
   };
   return Object.assign(api, { upload });
 }
@@ -608,13 +614,12 @@ const briefText = (brief: Brief) =>
   `## The brief\n\n${brief.markdown}\n\n## Sources${brief.changedSince ? " (the record changed since)" : ""}\n\n${brief.sources.map((s) => `- ${s.kind}: ${s.what} (${s.from})${s.changedSince ? " · changed since" : ""}`).join("\n")}`;
 
 /**
- * Adds a fictional report as a document (Rufi reads it at once), waits
- * for its reading to end, and gives the document's id. `undated`: the
+ * Sends a fictional report as a document (readDocument), and gives the
+ * document's id. `undated`: the
  * report has no date printed on it (no Collected or Reported line).
  */
 async function readReport(
   api: Api,
-  home: string,
   report: string,
   name: string,
   { undated = false } = {},
@@ -626,73 +631,22 @@ async function readReport(
       ? page.filter((text) => !/^(Collected|Reported):/.test(text.text))
       : page,
   );
-  return readDocument(api, home, name, pages);
+  return readDocument(api, name, pages);
 }
 
 /**
- * Adds a fictional document of these pages (Rufi reads it at once), waits
- * for its reading to end and Rufi AI's sort of it, and gives the id of
- * the document as added.
+ * Adds a fictional document of these pages from the chat box and sends it
+ * with a few words, as a person does: its reply reads it, and Rufi AI sorts
+ * it and answers. Gives the id of the document as added.
  */
 async function readDocument(
   api: Api,
-  home: string,
   name: string,
   pages: Text[][],
 ): Promise<string> {
-  await api.upload([{ name, bytes: textPdf(pages) }]);
-  return (await sorted(api, home, [name]))[0] ?? "";
-}
-
-/**
- * Waits for each file's reading to end and, when it asked for one, Rufi
- * AI's sort of it to end (sorted, or an answer that asks the user), with no
- * turn running; gives the id of each file's document as added.
- */
-async function sorted(
-  api: Api,
-  home: string,
-  names: readonly string[],
-): Promise<string[]> {
-  const c = chat(api);
-  for (let i = 0; ; i++) {
-    const { entries } = await c.read();
-    const lines = entries.filter((e) => e.kind === "event").map((e) => e.text);
-    if (i > 1440)
-      throw new HarnessTimeout(
-        `the reading and its sort took over twelve minutes: ${lines.join("; ")}`,
-      );
-    const ended = names.every((name) =>
-      lines.some(
-        (l) =>
-          l.includes(name) &&
-          (l.endsWith("Rufi AI is sorting it.") || l.startsWith("Couldn't")),
-      ),
-    );
-    if (ended) {
-      const store = openReadOnly(databasePath(home));
-      const waiting = store?.db
-        .prepare(
-          "SELECT (SELECT count(*) FROM sort_requests WHERE state = 'open') + (SELECT count(*) FROM turns WHERE status = 'running') AS n",
-        )
-        .get() as { n: number } | undefined;
-      store?.close();
-      if (waiting?.n === 0) break;
-    }
-    await sleep(500);
-  }
-  const store = openReadOnly(databasePath(home));
-  const ids = names.map((name) => {
-    const row = store?.db
-      .prepare(
-        "SELECT COALESCE(d.from_document, d.id) AS id FROM document_pages p JOIN documents d ON d.person_id = p.person_id AND d.id = p.document_id WHERE p.file_name = ? ORDER BY p.position LIMIT 1",
-      )
-      .get(name) as { id: string } | undefined;
-    if (!row) throw new Error(`no document ${name}`);
-    return row.id;
-  });
-  store?.close();
-  return ids;
+  const [id = ""] = await api.upload([{ name, bytes: textPdf(pages) }]);
+  await chat(api).say("Here is a report of mine.", [chipOf("document", id)]);
+  return id;
 }
 
 /** A document's draft items, as stored now. */
@@ -1417,11 +1371,13 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   sorts_the_copy_set: async (api, home) => {
     const c = chat(api);
     const files = await copySetFiles();
-    await api.upload([files.mixed]);
-    await api.upload([files.photo]);
-    const [mixed = "", photo = ""] = await sorted(api, home, [
-      files.mixed.name,
-      files.photo.name,
+    const [mixed = "", photo = ""] = await api.upload([
+      files.mixed,
+      files.photo,
+    ]);
+    await c.say("What is my TSH in these files?", [
+      chipOf("document", mixed),
+      chipOf("document", photo),
     ]);
     const snapshot = await c.read();
     const store = openReadOnly(databasePath(home));
@@ -1518,7 +1474,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         {
           check: "tells_what_it_found",
           criterion:
-            "Rufi AI's replies in the turns Rufi started say in a few lines what each file holds (two reports and a prescription; the June report again), that nothing is saved, and point at what is worth a look.",
+            "Rufi AI's reply to the message with the files says in a few lines what each file holds (two reports and a prescription; the June report again), that nothing is saved, and point at what is worth a look.",
           evidence: snapshot.entries
             .filter((e) => e.kind === "reply")
             .map((e) => e.text)
@@ -1541,60 +1497,10 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       snapshot,
     };
   },
-  /**
-   * A real reading while you chat: its lines come, your reply isn't held up,
-   * and its question (another name on the report) comes in a turn of its
-   * own that can only read.
-   */
-  reading_while_chatting: async (api, home) => {
-    const c = chat(api);
-    const other = REPORTS["other_name"];
-    if (!other) throw new Error("no fictional report");
-    await api.upload([
-      { name: "lotus-sep.pdf", bytes: textPdf(layout(other)) },
-    ]);
-    await c.ask(
-      "In general, what does a high LDL cholesterol mean? Keep it short.",
-    );
-    // The reading's end line, then Rufi AI's sort and its reply.
-    await sorted(api, home, ["lotus-sep.pdf"]);
-    await c.ended(2);
-    const snapshot = await c.read();
-    const lines = snapshot.entries
-      .filter((e) => e.kind === "event")
-      .map((e) => e.text);
-    const store = openReadOnly(databasePath(home));
-    const drafts = (store?.db.prepare("SELECT id FROM draft_items").all() ?? [])
-      .length;
-    store?.close();
-    return {
-      checks: {
-        start_line: lines.includes("Reading lotus-sep.pdf · 1 page"),
-        end_line: lines.includes(
-          "Read lotus-sep.pdf · 1 page. Rufi AI is sorting it.",
-        ),
-        // Rufi AI sorted it, or asked whose it is first.
-        sorted_or_asked: drafts === 8 || drafts === 0,
-        one_message_of_yours:
-          snapshot.entries.filter((e) => e.kind === "message").length === 1,
-        event_turn: snapshot.turns.length === 2,
-        nothing_saved: nothingSaved(home, snapshot),
-      },
-      verdicts: [
-        {
-          check: "asks_about_the_name",
-          criterion:
-            "In the turn Rufi started for the reading, the AI says the report names Meera Fictional and asks whose it is.",
-          evidence: lastReply(snapshot),
-        },
-      ],
-      snapshot,
-    };
-  },
   /** "Save these" with three result chips: exactly those are saved, once. */
   save_these: async (api, home) => {
     const c = chat(api);
-    const doc = await readReport(api, home, "lipids", "lotus-jun.pdf");
+    const doc = await readReport(api, "lipids", "lotus-jun.pdf");
     const chosen = draftsOf(home, doc).filter((d) =>
       ["HDL Cholesterol", "LDL Cholesterol", "Triglycerides"].includes(d.test),
     );
@@ -1665,7 +1571,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
    */
   follow_up_suggested: async (api, home) => {
     const c = chat(api);
-    const doc = await readReport(api, home, "hba1c_repeat", "sunrise-sep.pdf");
+    const doc = await readReport(api, "hba1c_repeat", "sunrise-sep.pdf");
     await c.say("What does this report say? Don't save anything yet.", [
       chipOf("document", doc),
     ]);
@@ -1753,7 +1659,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   /** "Explain, don't save": the document is explained, and nothing is saved. */
   explain_dont_save: async (api, home) => {
     const c = chat(api);
-    const doc = await readReport(api, home, "cbc", "sunrise-aug-cbc.pdf");
+    const doc = await readReport(api, "cbc", "sunrise-aug-cbc.pdf");
     await c.say(
       "Can you explain what this report shows? Don't save anything yet.",
       [chipOf("document", doc)],
@@ -1775,7 +1681,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   /** A draft isn't the record: the answer says the LDL isn't saved yet. */
   draft_vs_saved: async (api, home) => {
     const c = chat(api);
-    await readReport(api, home, "lipids", "lotus-jun.pdf");
+    await readReport(api, "lipids", "lotus-jun.pdf");
     await c.say("What was my last LDL cholesterol?");
     const snapshot = await c.read();
     return {
@@ -1794,7 +1700,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   /** Another name on the report: the AI asks whose it is and saves nothing for someone else. */
   another_name: async (api, home) => {
     const c = chat(api);
-    const doc = await readReport(api, home, "other_name", "lotus-sep.pdf");
+    const doc = await readReport(api, "other_name", "lotus-sep.pdf");
     await c.say("Save it.", [chipOf("document", doc)]);
     const asked = await c.read();
     await c.say("It's my sister Meera's report, not mine.");
@@ -1825,7 +1731,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
    */
   unreadable_page: async (api, home) => {
     const c = chat(api);
-    const doc = await readReport(api, home, "urine", "lotus-urine.pdf");
+    const doc = await readReport(api, "urine", "lotus-urine.pdf");
     const db = new DatabaseSync(databasePath(home));
     db.exec("PRAGMA busy_timeout = 5000");
     db.prepare(
@@ -1868,7 +1774,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
    */
   no_printed_date: async (api, home) => {
     const c = chat(api);
-    const doc = await readReport(api, home, "urine", "lotus-undated.pdf", {
+    const doc = await readReport(api, "urine", "lotus-undated.pdf", {
       undated: true,
     });
     const drafts = draftsOf(home, doc);
@@ -1905,7 +1811,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
    */
   correction_vs_separate: async (api, home) => {
     const c = chat(api);
-    const doc = await readReport(api, home, "amended", "sunrise-amended.pdf");
+    const doc = await readReport(api, "amended", "sunrise-amended.pdf");
     await c.say("Save it.", [chipOf("document", doc)]);
     await yesIfAsked(
       c,
@@ -1943,7 +1849,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   /** The user corrects a value before saving: Rufi saves theirs and keeps the reader's. */
   correction_before_saving: async (api, home) => {
     const c = chat(api);
-    const doc = await readReport(api, home, "lipids", "lotus-jun.pdf");
+    const doc = await readReport(api, "lipids", "lotus-jun.pdf");
     await c.say(
       "Before you save: the LDL on this report is wrong, the lab told me it is 112, not 109. Save it with that.",
       [chipOf("document", doc)],
@@ -1971,7 +1877,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   /** The user fixed a value on the document's page: the AI calls it their fix. */
   your_fix: async (api, home) => {
     const c = chat(api);
-    const doc = await readReport(api, home, "lipids", "lotus-jun.pdf");
+    const doc = await readReport(api, "lipids", "lotus-jun.pdf");
     const ldl = draftsOf(home, doc).find((d) => d.test === "LDL Cholesterol");
     if (!ldl) throw new Error("the reader read no LDL");
     await api("POST", `/api/people/asha/documents/${doc}/items/${ldl.id}/fix`, {
@@ -2001,7 +1907,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
    */
   duplicate_beyond_200: async (api, home) => {
     const c = chat(api);
-    const doc = await readReport(api, home, "lipids", "lotus-jun.pdf");
+    const doc = await readReport(api, "lipids", "lotus-jun.pdf");
     await c.say("Save it.", [chipOf("document", doc)]);
     await yesIfAsked(
       c,

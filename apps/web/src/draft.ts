@@ -58,7 +58,12 @@ const shown = (chips: readonly Chip[]): BoxChip[] =>
     pointer:
       ref.type === "record"
         ? { type: ref.type, kind: ref.kind, id: ref.id }
-        : { type: ref.type, id: ref.id },
+        : {
+            type: ref.type,
+            id: ref.id,
+            ...(ref.type === "document" &&
+              ref.readAgain === true && { readAgain: true as const }),
+          },
     label,
     detail,
   }));
@@ -81,7 +86,7 @@ const Kept = Schema.Struct({
 });
 type Kept = typeof Kept.Type;
 const sameChips = (a: readonly BoxChip[], b: readonly BoxChip[]) =>
-  a.map(chipKey).join("\n") === b.map(chipKey).join("\n");
+  JSON.stringify(pointers(a)) === JSON.stringify(pointers(b));
 
 export interface BoxState {
   text: string;
@@ -230,11 +235,12 @@ export function draftBox(api: DraftApi) {
         const now = store.getState().refs;
         store.setState({
           draft,
-          refs: now.map(
-            (chip) =>
-              shown(draft.refs).find((c) => chipKey(c) === chipKey(chip)) ??
-              chip,
-          ),
+          refs: now.map((chip) => {
+            const named = shown(draft.refs).find(
+              (c) => chipKey(c) === chipKey(chip),
+            );
+            return named ? { ...named, pointer: chip.pointer } : chip;
+          }),
           failed: false,
           ...(!keepNotice && { notice: null }),
         });
@@ -268,7 +274,15 @@ export function draftBox(api: DraftApi) {
       const state = store.getState();
       if (!state.loaded || state.sending || state.unresolved) return false;
       const before = state.text.trimEnd();
-      const keys = new Set(state.refs.map(chipKey));
+      const merged = new Map(state.refs.map((chip) => [chipKey(chip), chip]));
+      for (const chip of chips) {
+        const before = merged.get(chipKey(chip));
+        if (
+          !before ||
+          (chip.pointer.type === "document" && chip.pointer.readAgain === true)
+        )
+          merged.set(chipKey(chip), chip);
+      }
       store.setState({
         text:
           text === ""
@@ -276,7 +290,7 @@ export function draftBox(api: DraftApi) {
             : before === ""
               ? text
               : `${before}\n\n${text}`,
-        refs: [...state.refs, ...chips.filter((c) => !keys.has(chipKey(c)))],
+        refs: [...merged.values()],
         notice: null,
       });
       void save();
@@ -306,7 +320,7 @@ export function draftBox(api: DraftApi) {
         state.sending ||
         tooLong(text) ||
         tooMany(state.refs) ||
-        text === ""
+        (text === "" && state.refs.length === 0)
       ) {
         return;
       }
