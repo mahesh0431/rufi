@@ -2,11 +2,12 @@
 // names each item, the version it read, how it goes in (a new result,
 // another source for a result the person has, or a correction of one) and
 // any fix the user gave in the chat; Rufi takes the values from the stored
-// item, never retyped by the AI. Code checks whose it is, versions, the
-// item's state, that its page wasn't read again since, and that it has a
-// date; the AI decides with the user what each item is. Rufi AI's draft
-// goes in its document's report (the lab, number and date Rufi AI sorted
-// it with); an older Rufi's keeps the report and date stored with it.
+// item, never retyped by the AI, but for the number of a value the user
+// fixed on the document's page, which the AI reads from their words. Code
+// checks whose it is, versions, the item's state, that its page wasn't read
+// again since, and that it has a date; the AI decides with the user what
+// each item is. A draft goes in its document's report (the lab, number and
+// date Rufi AI sorted it with).
 import type { Ref } from "@rufi/contracts";
 import { Schema } from "effect";
 import type { Transaction } from "kysely";
@@ -93,6 +94,18 @@ export const ItemSave = Schema.Struct({
         "What the item is, chosen with the user: lab (a test of a sample) or measurement (blood pressure, pulse, weight, height, temperature, SpO2). Needed for new; a correction keeps the corrected result's category unless you give one; never for another_source.",
     }),
   ),
+  value_number: Schema.optionalKey(
+    Schema.Finite.annotate({
+      description:
+        "Only for an item whose value the user fixed on the document's page (drafted has value_text): their value as a plain number, as you read it ('4,6' is 4.6). Leave it out when it isn't one ('Negative'). Every other item's number comes from the item as stored. A value fix in fix.fields replaces it: its number comes only with that fix.",
+    }),
+  ),
+  comparator: Schema.optionalKey(
+    Schema.Literals(["<", "<=", ">", ">="]).annotate({
+      description:
+        "With value_number: the comparator of the user's fixed value ('<5' is <), if any.",
+    }),
+  ),
   fix: Schema.optionalKey(
     Schema.Struct({
       source: Schema.optionalKey(Position),
@@ -118,19 +131,6 @@ export interface Earlier {
 
 /** The fields of a draft item: a result as printed. */
 type Fields = Omit<Entry["items"][number], "unsure">;
-
-/**
- * An older Rufi's draft's report, as Rufi worked it out when it made the
- * draft (stored with it by migration 12): the lab, report number and first
- * date its page printed, or the nearest page's before it.
- */
-interface OldReport {
-  issuer: string | null;
-  number: string | null;
-  collected: string | null;
-  /** The date that page printed first, as printed, with its label. */
-  date: { label: string; date: string; iso?: string } | null;
-}
 
 /** Whether a saved item's page is still a source of its result, not removed. */
 async function stillSaved(
@@ -313,15 +313,24 @@ export async function planItems(
     }
 
     const fields = JSON.parse(row.fields) as Fields;
+    const pageFixed =
+      fields.value_text !== (JSON.parse(row.original) as Fields).value_text;
+    if (
+      (save.value_number !== undefined || save.comparator !== undefined) &&
+      !pageFixed
+    ) {
+      problem(
+        `${at}.value_number`,
+        save.value_number ?? save.comparator,
+        "The user didn't fix this item's value on the document's page: its number comes from the item as stored. Leave value_number and comparator out; a value the user corrected in the chat goes in fix.",
+      );
+      continue;
+    }
     const page = {
       document: row.document_id,
       page: row.page,
       name: named(row.document_id, row.page),
     };
-    // Rufi AI's draft: its document is its report. An older Rufi's: the
-    // report stored with it.
-    const old =
-      row.report === null ? undefined : (JSON.parse(row.report) as OldReport);
     const own = documents.get(row.document_id);
 
     let before: Row | undefined;
@@ -427,21 +436,17 @@ export async function planItems(
       category,
       test_name: fields.test_name,
       value_text: fields.value_text,
-      comparator: fields.comparator ?? null,
-      value_number: fields.value_number ?? null,
+      // A value fixed on the page has no number of its own: the AI's.
+      comparator: (pageFixed ? save.comparator : fields.comparator) ?? null,
+      value_number:
+        (pageFixed ? save.value_number : fields.value_number) ?? null,
       unit: fields.unit ?? null,
       reference_range: fields.reference_range ?? null,
       flag_text: fields.flag_text ?? null,
       context_text: fields.context_text ?? null,
     };
-    // Its date: its own, as drafted. An older Rufi's draft without one, in
-    // the current column, takes its report's first printed date, as then;
-    // a measurement only its own.
-    const date =
-      fields.date ??
-      (old === undefined || fields.column === "earlier" || measurement
-        ? undefined
-        : (old.date ?? undefined));
+    // Its date: its own, as drafted.
+    const date = fields.date;
     if (date?.iso !== undefined && dateProblem(date.iso) === undefined) {
       columns["measured_at"] = date.iso;
       columns["measured_words"] = `${date.label} ${date.date}`;
@@ -453,6 +458,11 @@ export async function planItems(
         continue;
       }
       source = found;
+      // A value corrected in the chat takes only the number given with it.
+      if (save.fix.fields["value"] !== undefined) {
+        columns["comparator"] = null;
+        columns["value_number"] = null;
+      }
       for (const [name, value] of Object.entries(save.fix.fields)) {
         Object.assign(columns, columnsOf(result.fields[name] as Field, value));
       }
@@ -480,21 +490,12 @@ export async function planItems(
       columns,
       before: undefined,
       item: { id: row.id, as: save.as },
-      report: old
-        ? {
-            document: row.document_id,
-            issuer: old.issuer,
-            number: old.number,
-            collected: old.collected,
-            own: false,
-          }
-        : {
-            document: row.document_id,
-            issuer: own?.issuer ?? null,
-            number: own?.report_number ?? null,
-            collected: own?.date ?? null,
-            own: true,
-          },
+      report: {
+        document: row.document_id,
+        issuer: own?.issuer ?? null,
+        number: own?.report_number ?? null,
+        collected: own?.date ?? null,
+      },
     });
   }
   return { planned, earlier };

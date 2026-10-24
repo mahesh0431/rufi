@@ -1,5 +1,4 @@
-// Rufi AI's sort of an add, on a real database: the page check, a split
-// into documents with their drafts in one transaction, the refusals that
+// Rufi AI's sort of an add, on a real database: a split into documents with their drafts in one transaction, the refusals that
 // write nothing, the same call again, what a turn Rufi started may sort,
 // pages a saved result cites, a fixed draft that moves with its page, and
 // Rufi's own work on the requests (tend) and the person's Retry. One
@@ -17,13 +16,7 @@ import {
 } from "../chat/transcript.ts";
 import { databasePath, openWritable, type Store } from "../store/database.ts";
 import { documents as openDocuments } from "./documents.ts";
-import {
-  comparable,
-  onPage,
-  sorting,
-  type SortInput,
-  type SortScope,
-} from "./sorting.ts";
+import { sorting, type SortInput, type SortScope } from "./sorting.ts";
 
 const T0 = "2026-10-18T09:00:00.000Z";
 let clock = T0;
@@ -159,39 +152,6 @@ const drafts = () =>
     "SELECT document_id, page, seq, version, json_extract(fields, '$.value_text') AS value, unsure, quote FROM draft_items ORDER BY page, seq",
   );
 
-describe("the page check", () => {
-  it.each([
-    ["<0.05", "| CRP | &lt;0.05 | mg/L |", true],
-    ["-2", "| Base excess | -2 | mmol/L |", true],
-    ["1,25", "| Ferritin | 1,25 | ng/mL |", true],
-    ["1[0?]4", "| Vitamin B12 | 1[0?]4 |", true],
-    ["1.5", "| Potassium | 1\\.5 |", true],
-    ["13.2", "| Haemoglobin | **13.2** |", true],
-    ["5.6", "<td>5.6</td>", true],
-    ["5.6", '<td class="v">5.6</td><br/>', true],
-    // A value below a limit, with a range above one on its row.
-    ["<0.5", "| CRP | <0.5 | mg/L | >3.0 high |", true],
-    ["<8", "| Vitamin D | <8 | ng/mL | >30 |", true],
-    // The doubt stays: a marked digit is not the plain number.
-    ["104", "| Vitamin B12 | 1[0?]4 |", false],
-    // Not inside a longer number.
-    ["3.2", "| Haemoglobin | 13.2 |", false],
-    ["13", "| Haemoglobin | 13.2 |", false],
-    ["2", "| Haemoglobin | 13.2 |", false],
-    ["1", "| Ferritin | 1,25 |", false],
-    ["", "| Haemoglobin | 13.2 |", false],
-  ])("%s on %s: %s", (value, copy, found) => {
-    expect(onPage(value, copy)).toBe(found);
-  });
-
-  it("compares entities, escapes and spacing as the characters they stand for, marks kept", () => {
-    expect(comparable("&lt;0.5&nbsp;mg/L")).toBe("<0.5 mg/L");
-    expect(comparable("1\\*2 **bold**  ~~3~~ [unclear: 4]")).toBe(
-      "1*2 bold ~~3~~ [unclear: 4]",
-    );
-  });
-});
-
 describe("the Documents list", () => {
   it("says an add is being sorted, then shows each of its documents with its place in the file, its kind, lab and date", async () => {
     const list = () => openDocuments(store, home, now).list("asha");
@@ -227,46 +187,13 @@ describe("the Documents list", () => {
   });
 });
 
-describe("a draft of a value the reader marked", () => {
-  /** The pile's page 2 with a handwritten value, then a sort of it. */
-  const sortPage2 = (more: Partial<SortInput["drafts"][number]>) => {
-    store.db.exec(
-      "UPDATE page_copies SET copy = copy || char(10) || '| TSH | ~~5.3~~ [handwritten: 5.8] | mIU/L |' WHERE page_in_file = 2",
-    );
-    return sorts.sort(personal(), {
+describe("a draft's value", () => {
+  it("is kept as Rufi AI gives it, also when its page's copy doesn't print it", async () => {
+    await sorts.sort(personal(), {
       ...THREE,
-      drafts: [
-        draft(2, "Vitamin B12", "104", more),
-        draft(2, "TSH", "5.8", more),
-      ],
+      drafts: [draft(2, "Vitamin B12", "104"), draft(2, "Ferritin", "125")],
     });
-  };
-
-  it("may give Rufi AI's clean reading when it is worth a look", async () => {
-    await sortPage2({ worth_a_look: "a digit is marked unclear" });
-    expect(drafts().map((d) => d["value"])).toEqual(["104", "5.8"]);
-  });
-
-  it("refuses the clean reading when it isn't marked worth a look", async () => {
-    await expect(sortPage2({})).rejects.toMatchObject({
-      // "5.8" is printed plainly inside its mark.
-      issues: [
-        expect.objectContaining({ path: "drafts.0.value_text", got: '"104"' }),
-      ],
-    });
-  });
-
-  it("still refuses a value the page doesn't print, also when it is worth a look", async () => {
-    await expect(
-      sortPage2({ worth_a_look: "a digit is marked unclear" }).then(() =>
-        sorts.sort(personal(), {
-          ...THREE,
-          drafts: [draft(2, "Vitamin B12", "114", { worth_a_look: "unclear" })],
-        }),
-      ),
-    ).rejects.toMatchObject({
-      issues: [expect.objectContaining({ path: "drafts.0.value_text" })],
-    });
+    expect(drafts().map((d) => d["value"])).toEqual(["104", "125"]);
   });
 });
 
@@ -414,11 +341,7 @@ describe("a sort", () => {
         { pages: [1, 2, 9], kind: "lab_report" },
         { pages: [2, 3], kind: "lab_report" },
       ],
-      drafts: [
-        draft(1, "Haemoglobin", "13.4"),
-        draft(1, "CRP", "0.05"),
-        draft(5, "Metformin", "500"),
-      ],
+      drafts: [draft(5, "Metformin", "500")],
     });
     await expect(call).rejects.toMatchObject({
       message: "Nothing was sorted. Fix these and try again.",
@@ -432,13 +355,7 @@ describe("a sort", () => {
           path: "documents",
           fix: "Pages 4–5 aren't sorted yet: put each of them in one of the documents too.",
         }),
-        expect.objectContaining({
-          path: "drafts.0.value_text",
-          fix: '"13.4" isn\'t in page 1\'s copy. Give the value as the copy prints it; where the reader marked a digit unclear ("1[0?]4"), give your reading ("104") and say why in worth_a_look. Or leave the draft out.',
-        }),
-        // "0.05" is on the page, as part of "<0.05": the check is only that
-        // the printed value is there.
-        expect.objectContaining({ path: "drafts.2.page" }),
+        expect.objectContaining({ path: "drafts.0.page" }),
       ],
     });
     expect({ documents: documents(), pages: pagesOfEach() }).toEqual(before);

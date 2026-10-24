@@ -12,7 +12,7 @@ import { Schema } from "effect";
 import { sql, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
 import type { Tables } from "../store/tables.ts";
-import { isAfter, localTime, shownDate } from "./dates.ts";
+import { localTime, shownDate } from "./dates.ts";
 import { ItemSave, planItems, type Earlier } from "./items.ts";
 import { recordVersions } from "./read.ts";
 import {
@@ -195,8 +195,6 @@ export interface Saved {
   changes: { kind: string; action: Action; id: string }[];
   /** Items saved before at the version named, with their earlier save. */
   earlier: Earlier[];
-  /** Stored with the save: what the AI may want to check; never a refusal. */
-  warnings: string[];
 }
 
 interface Where {
@@ -250,7 +248,7 @@ export async function saveChanges(
   const request = JSON.stringify(input);
   const earlier = await trx
     .selectFrom("operations")
-    .select(["id", "request", "warnings"])
+    .select(["id", "request"])
     .where("chat_id", "=", where.chatId)
     .where("call_id", "=", where.callId)
     .executeTakeFirst();
@@ -451,7 +449,6 @@ export async function saveChanges(
       fresh: false,
       changes: [],
       earlier: items.earlier,
-      warnings: [],
     };
   }
 
@@ -466,7 +463,6 @@ export async function saveChanges(
       chat_id: where.chatId,
       call_id: where.callId,
       request,
-      warnings: "[]",
       created_at: where.now,
     })
     .execute();
@@ -514,13 +510,6 @@ export async function saveChanges(
   ) {
     await checkAllergies(trx, where.personId);
   }
-  const warnings = await warningsOf(trx, where.personId, id);
-  await trx
-    .updateTable("operations")
-    .set({ warnings: JSON.stringify(warnings) })
-    .where("person_id", "=", where.personId)
-    .where("id", "=", id)
-    .execute();
   return {
     id,
     receipt: receiptText(written, await linksOf(trx, where.personId, written)),
@@ -531,7 +520,6 @@ export async function saveChanges(
       id: String(w.after["id"]),
     })),
     earlier: items.earlier,
-    warnings,
   };
 }
 
@@ -590,62 +578,6 @@ const ENTRY_KINDS: Record<string, string> = {
   brief: "Rufi's line for a visit brief",
 };
 
-/**
- * A save's dates that should have happened by then (an onset, a measurement,
- * done care) but are later than the user's message the change rests on, or
- * than the save itself for a document's item with no fix: each a warning for
- * the AI, which decides with the user whether it is a slip. Only a date the
- * change set, or made one that must have happened. Computed once in the
- * save's transaction; a replay reads the stored warnings.
- */
-async function warningsOf(
-  trx: Transaction<Tables>,
-  personId: string,
-  operation: string,
-): Promise<string[]> {
-  const rows = await trx
-    .selectFrom("record_changes as c")
-    .innerJoin("operations as o", "o.id", "c.operation_id")
-    .leftJoin("transcript_entries as e", (join) =>
-      join
-        .onRef("e.person_id", "=", "c.person_id")
-        .onRef("e.id", "=", "c.source_entry_id"),
-    )
-    .select([
-      "c.kind",
-      "c.before",
-      "c.after",
-      "e.created_at as said",
-      "o.created_at as saved",
-    ])
-    .where("c.person_id", "=", personId)
-    .where("c.operation_id", "=", operation)
-    .orderBy("c.seq")
-    .execute();
-  const warnings: string[] = [];
-  for (const row of rows) {
-    const kind = kindNamed(row.kind) as Kind;
-    const after = JSON.parse(row.after) as Row;
-    const before =
-      row.before === null ? undefined : (JSON.parse(row.before) as Row);
-    const anchor = localTime(row.said ?? row.saved);
-    for (const field of Object.values(kind.fields)) {
-      if (field.past === undefined) continue;
-      const past = (r: Row) =>
-        typeof field.past === "function" ? field.past(r) : field.past === true;
-      const date = after[field.column];
-      if (!past(after) || typeof date !== "string" || !isAfter(date, anchor)) {
-        continue;
-      }
-      if (before && past(before) && before[field.column] === date) continue;
-      warnings.push(
-        `${kind.noun} ${kind.label(after)}: ${field.shown} ${shownDate(date)} is later than ${row.said === null ? "the day it was saved" : "the user's message it rests on"} (${shownDate(anchor.slice(0, 10))}). It is saved as given; if it may be a slip, check with the user.`,
-      );
-    }
-  }
-  return warnings;
-}
-
 /** One change to write, checked. */
 export interface Planned {
   kind: Kind;
@@ -665,8 +597,6 @@ export interface Planned {
     issuer: string | null;
     number: string | null;
     collected: string | null;
-    /** Rufi AI's report: its document, never matched with another's. */
-    own: boolean;
   };
 }
 
@@ -894,32 +824,21 @@ async function write(
   };
 }
 
-/**
- * The report a result goes in. Rufi AI's report is its document: reused
- * within it. An older Rufi's is reused by its complete printed identity,
- * across documents; an incomplete one stays within its document.
- */
+/** The report a result goes in: its document's, reused within it. */
 async function reportFor(
   trx: Transaction<Tables>,
   personId: string,
   key: NonNullable<Planned["report"]>,
 ): Promise<string> {
-  let query = trx
+  const found = await trx
     .selectFrom("reports")
     .select("id")
     .where("person_id", "=", personId)
+    .where("document_id", "=", key.document)
     .where("issuer", "is", key.issuer)
     .where("report_number", "is", key.number)
-    .where("collected", "is", key.collected);
-  if (
-    key.own ||
-    key.issuer === null ||
-    key.number === null ||
-    key.collected === null
-  ) {
-    query = query.where("document_id", "=", key.document);
-  }
-  const found = await query.executeTakeFirst();
+    .where("collected", "is", key.collected)
+    .executeTakeFirst();
   if (found) return found.id;
   const id = uuid();
   await trx
@@ -974,7 +893,7 @@ async function checkAllergies(trx: Transaction<Tables>, personId: string) {
 async function replay(
   trx: Transaction<Tables>,
   personId: string,
-  operation: { id: string; warnings: string },
+  operation: { id: string },
 ): Promise<Saved> {
   const { id } = operation;
   const rows = await trx
@@ -1000,7 +919,6 @@ async function replay(
       id: row.record_id,
     })),
     earlier: [],
-    warnings: JSON.parse(operation.warnings) as string[],
   };
 }
 

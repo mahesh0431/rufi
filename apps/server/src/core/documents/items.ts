@@ -1,9 +1,11 @@
 // A document's draft items as the document page shows them, and the person's
 // fixes. A fix changes the item's fields only: the reader's fields stay as
 // they came (original), the item's version rises, and so does the
-// document's. It names the version it was made on, so a fix from a tab that
-// holds an older version is refused with the item as it is now. Saved and
-// dismissed items can't be fixed. Nothing here writes the record.
+// document's. A fixed value is kept as typed, without a number: Rufi AI
+// gives its number when it saves the item (record/items.ts). A fix names
+// the version it was made on, so a fix from a tab that holds an older
+// version is refused with the item as it is now. Saved and dismissed items
+// can't be fixed. Nothing here writes the record.
 import {
   FIXABLE,
   type DocumentItems,
@@ -44,21 +46,6 @@ export function readerValues(
 
 /** The fields every lab result has: a fix can't empty them. */
 const REQUIRED: readonly Fixable[] = ["test_name", "value_text"];
-
-/**
- * A plain printed number ("5.8", "-2", "<5", ">= 10") as its comparator and
- * number; anything else ("4,6", "Negative", "1,200") has none.
- */
-function plainNumber(
-  value: string,
-): Pick<Fields, "comparator" | "value_number"> {
-  const found = /^(<=|>=|<|>)?\s*(-?\d+(?:\.\d+)?)$/.exec(value);
-  if (!found?.[2]) return {};
-  return {
-    ...(found[1] && { comparator: found[1] }),
-    value_number: Number(found[2]),
-  };
-}
 
 const itemOf = (
   row: {
@@ -216,11 +203,23 @@ export function draftItems(
         ) {
           return { item, changed: false };
         }
-        // The number goes with the printed value: made again from a plain
-        // number, left out otherwise. The reader's stays in its original.
+        // The number goes with the value it was drafted for: a fixed value
+        // has none until Rufi AI saves it, and the value set back to the
+        // drafted one gets the drafted number back.
         const value = given.get("value_text");
         const renumber =
           value !== undefined && value !== item.fields.value_text;
+        const drafted =
+          renumber && value === item.original.value_text
+            ? {
+                ...(item.original.comparator !== undefined && {
+                  comparator: item.original.comparator,
+                }),
+                ...(item.original.value_number !== undefined && {
+                  value_number: item.original.value_number,
+                }),
+              }
+            : {};
         const fields = {
           ...Object.fromEntries(
             Object.entries(item.fields).filter(
@@ -233,7 +232,7 @@ export function draftItems(
             ),
           ),
           ...Object.fromEntries([...given].filter(([, text]) => text !== "")),
-          ...(renumber && plainNumber(value)),
+          ...drafted,
         } as Fields;
         await trx
           .updateTable("draft_items")

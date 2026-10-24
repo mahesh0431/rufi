@@ -79,7 +79,6 @@ async function save(changes: unknown[], callId = "call-1", to = chat) {
       result: {
         receipt: string;
         changes: { kind: string; id: string }[];
-        warnings?: string[];
         note?: string;
       };
       issues: { path: string; fix: string }[];
@@ -1341,40 +1340,6 @@ describe("the health rules", () => {
       },
     );
   });
-
-  it("keeps planned care apart from done care: a done visit later than the message is saved, with a warning", async () => {
-    await say("I have a dentist visit on 20 Oct");
-    const planned = await save([
-      {
-        kind: "care_event",
-        action: "add",
-        fields: {
-          type: "visit",
-          name: "Dentist",
-          status: "planned",
-          date: { date: "2026-10-20", words: "on 20 Oct" },
-        },
-      },
-    ]);
-    expect(planned.body.result).not.toHaveProperty("warnings");
-    const id = planned.body.result.changes[0]?.id ?? "";
-    await say("I went to the dentist");
-    const done = await save(
-      [
-        {
-          kind: "care_event",
-          action: "change",
-          id,
-          fields: { status: "done" },
-        },
-      ],
-      "call-2",
-    );
-    expect(done.body.result.warnings).toEqual([
-      "care event Dentist: date 20 Oct 2026 is later than the user's message it rests on (4 Oct 2026). It is saved as given; if it may be a slip, check with the user.",
-    ]);
-    expect(row("care_events", id)["status"]).toBe("done");
-  });
 });
 
 describe("dates", () => {
@@ -1418,102 +1383,11 @@ describe("dates", () => {
       },
     ]);
     expect(saved.ok).toBe(true);
-    // A follow-up is due later: that is no warning.
-    expect(saved.body.result).not.toHaveProperty("warnings");
     const [due, started] = saved.body.result.changes.map((c) => c.id);
     expect([
       row("follow_ups", due ?? "")["due_words"],
       row("medicine_uses", started ?? "")["started_words"],
     ]).toEqual(["दिसंबर", "last Monday"]);
-  });
-
-  it("saves a date that should have happened but is later than the message, and warns the AI the same way when the call comes again", async () => {
-    // Said on Sunday 4 Oct at 10:00 in India; saved days later.
-    await say("My cramps start in January, and I was weighed at 10:31");
-    clock = "2026-10-12T04:30:00.000Z";
-    const changes = [
-      {
-        kind: "symptom",
-        action: "add",
-        fields: { name: "Cramp", onset: { date: "2027-01", words: "January" } },
-      },
-      {
-        kind: "result",
-        action: "add",
-        fields: {
-          test: "Weight",
-          value: "61",
-          unit: "kg",
-          category: "measurement",
-          measured: { date: "2026-10-04T10:31", words: "at 10:31" },
-        },
-      },
-    ];
-    const warned = [
-      "symptom Cramp: onset Jan 2027 is later than the user's message it rests on (4 Oct 2026). It is saved as given; if it may be a slip, check with the user.",
-      "result Weight 61 kg: measured 4 Oct 2026 10:31 is later than the user's message it rests on (4 Oct 2026). It is saved as given; if it may be a slip, check with the user.",
-    ];
-    const saved = await save(changes);
-    expect(saved.body.result.warnings).toEqual(warned);
-    expect(
-      rows("SELECT name, onset FROM symptoms WHERE name = 'Cramp'"),
-    ).toEqual([{ name: "Cramp", onset: "2027-01" }]);
-    clock = "2027-03-01T04:30:00.000Z";
-    const again = await save(changes);
-    expect(again.body.result.warnings).toEqual(warned);
-    expect(again.body.result.note).toBe("This call was already saved.");
-    // The measurement is no longer later than the message in this zone.
-    // A replay keeps the warning from the original local comparison.
-    process.env["TZ"] = "Pacific/Kiritimati";
-    try {
-      const travelled = await save(changes);
-      expect(travelled.body.result.warnings).toEqual(warned);
-      expect(travelled.body.result.note).toBe("This call was already saved.");
-    } finally {
-      process.env["TZ"] = "Asia/Kolkata";
-    }
-  });
-
-  it("gives no warning for the minute the message was sent, in the Mac's time zone, nor for a date the change didn't set", async () => {
-    await say("I had a cramp just now");
-    const cramp = await save([
-      {
-        kind: "symptom",
-        action: "add",
-        fields: {
-          name: "Cramp",
-          onset: { date: "2026-10-04T10:00", words: "just now" },
-        },
-      },
-    ]);
-    expect(cramp.body.result).not.toHaveProperty("warnings");
-    await say("The cramps start in January");
-    const later = await save(
-      [
-        {
-          kind: "symptom",
-          action: "change",
-          id: cramp.body.result.changes[0]?.id,
-          fields: { onset: { date: "2027-01", words: "in January" } },
-        },
-      ],
-      "call-2",
-    );
-    expect(later.body.result.warnings).toHaveLength(1);
-    await say("It is severe");
-    const severe = await save(
-      [
-        {
-          kind: "symptom",
-          action: "change",
-          id: cramp.body.result.changes[0]?.id,
-          fields: { severity: "severe" },
-        },
-      ],
-      "call-3",
-    );
-    expect(severe.ok).toBe(true);
-    expect(severe.body.result).not.toHaveProperty("warnings");
   });
 });
 
