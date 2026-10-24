@@ -95,7 +95,8 @@ export async function currentRecords(store: Store, personId: string) {
     record[kind.name] = {
       items: rows.slice(0, RECORDS_SHOWN).map((row) => ({
         id: row["id"],
-        ...fieldsOf(kind, row),
+        // A visit's words can be pages long: get_records gives them.
+        ...fieldsOf(kind, row, (name) => name !== "as_written"),
         ...(typeof row["asserted"] === "string" && {
           asserted: row["asserted"],
         }),
