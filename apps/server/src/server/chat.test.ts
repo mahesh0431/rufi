@@ -2204,7 +2204,7 @@ describe("the chat, on the scripted Codex", () => {
       },
       { from: "ai", text: "Your HbA1c was 6.8 %.", unfinished: true },
     ]);
-    // Add to reply cuts an answer and the turn goes on and completes: the
+    // A message sent into the reply cuts an answer and the turn goes on and completes: the
     // cut answer stays cut, the one that followed is whole.
     await transcripts.startTurn(c, "t-2", {
       id: "thread-cut",

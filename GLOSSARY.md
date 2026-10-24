@@ -164,7 +164,7 @@ What an answer rests on: **How**, the AI's own words on where the answer comes f
 _Avoid_: reason, rationale, citation; "reasoning" is the AI's thinking, and a **source** is what a record rests on
 
 **Steer**:
-A message sent while the AI is replying, passed into that reply; the AI carries on with it in mind. On screen, its button is **Add to reply**.
+A message sent while the AI is replying, passed into that reply; the AI carries on with it in mind. A word of the code: on screen it is your message, as any other.
 _Avoid_: nudge, interrupt
 
 **Queue**:
@@ -172,7 +172,7 @@ What waits to go to the AI, kept by Rufi with the chat: your messages and Rufi's
 _Avoid_: inbox, outbox
 
 **Waiting messages**:
-What the queue holds, shown above the box. Your messages sent while the AI replies wait, then go in order after the reply; you can edit, reorder or remove them. A held one says why (it came from a backup, the AI couldn't take it, or Rufi isn't sure it reached the AI) and goes only when you send it. Signed out, a send takes nothing: the text stays in the box. After a Stop, or when Rufi starts again with messages waiting, they wait until you send a message or click **Send now**.
+What the queue holds, shown above the box; you can edit, reorder or remove your messages there. A held one says why (it came from a backup, the AI couldn't take it, or Rufi isn't sure it reached the AI) and goes only when you send it. Signed out, a send takes nothing: the text stays in the box. After a Stop, or when Rufi starts again with messages waiting, they wait until you send a message or click **Send now**.
 _Avoid_: backlog, pending messages
 
 **Rufi event**:
