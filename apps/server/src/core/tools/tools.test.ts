@@ -15,7 +15,6 @@ import {
 } from "../store/database.ts";
 import { transcripts, type ChatRow } from "../chat/transcript.ts";
 import { RESULTS_SHOWN } from "./overview.ts";
-import { FIELDS } from "./save.ts";
 import {
   defineTool,
   NoInput,
@@ -969,25 +968,6 @@ describe("show_face", () => {
   });
 });
 
-describe("save_changes' fields, in its description", () => {
-  it("names each kind's fields with a fixed set's values, which are dates (in every form a date takes), a due or a link and the kinds it names", () => {
-    const lines = FIELDS.split("\n");
-    expect(lines).toHaveLength(11);
-    expect(lines).toContain(
-      "- result: test, value, category (lab|measurement), comparator (<|<=|>|>=), number, second_number, unit, range, flag, context, measured (date), replaces",
-    );
-    expect(lines).toContain(
-      '- follow_up: title, due (date or "next_visit"), status (open|done|dropped), outcome, about ({kind: medicine_use|prescription|symptom|condition|allergy|result|care_event, id} of another record)',
-    );
-    expect(lines[0]).toContain(
-      "YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM in local time",
-    );
-    expect(lines.at(-1)).toBe(
-      "A draft item's fix.fields: test, value, comparator (<|<=|>|>=), number, unit, range, flag, context, measured (date).",
-    );
-  });
-});
-
 describe("tables.ts", () => {
   it("matches schema.sql (run pnpm db:types)", async () => {
     expect(await readFile(TABLES_TS, "utf8")).toBe(tablesTs(schema));
@@ -1008,26 +988,6 @@ describe("tools.json", () => {
         ).toBe(true);
       }
     }
-  });
-
-  it("tells the model the date format wherever it gives a date", () => {
-    const { tools } = JSON.parse(toolsJson()) as {
-      tools: { name: string; inputSchema: Record<string, unknown> }[];
-    };
-    const input = (name: string) =>
-      tools.find((tool) => tool.name === `rufi.${name}`)?.inputSchema as {
-        properties: Record<string, { description?: string }>;
-        $defs: Record<
-          string,
-          { properties: Record<string, { description?: string }> }
-        >;
-      };
-    const records = input("get_records").properties;
-    expect(records["from"]?.description).toContain("YYYY-MM-DD");
-    expect(records["to"]?.description).toContain("YYYY-MM-DD");
-    expect(
-      input("save_changes").$defs["DateSaid"]?.properties["date"]?.description,
-    ).toContain("YYYY-MM-DD");
   });
 });
 

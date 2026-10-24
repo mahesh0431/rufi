@@ -51,7 +51,7 @@ const named = (fields: Record<string, Field>, names: readonly string[]) =>
  * 5,000 bytes, as this one is, to `unknown` before the model sees it
  * (0.159.3), but keeps the description whole.
  */
-export const FIELDS = [
+const FIELDS = [
   'Fields by kind, in changes[].fields (a date is {"date": "2026-09-28", "words": "last Monday"}: YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM in local time, at the precision the user gave, with the words it came from):',
   ...KINDS.map(
     (kind) => `- ${kind.name}: ${named(kind.fields, Object.keys(kind.fields))}`,

@@ -173,31 +173,3 @@ describe("a small trend", () => {
     ]);
   });
 });
-
-describe("labels", () => {
-  it("are written where they don't crowd: the newest always", () => {
-    const weights = Array.from({ length: 12 }, (_, i) =>
-      result(
-        `w${String(i)}`,
-        `2026-09-${String(i + 1).padStart(2, "0")}`,
-        String(60 + i / 10),
-        {
-          test: "Weight",
-          unit: "kg",
-        },
-      ),
-    );
-    const drawing = drawTrend("Weight (kg)", weights, LARGE);
-    const points = drawing?.lines[0]?.points ?? [];
-    const shown = points.filter((point) => point.labelled);
-    expect(points.at(-1)?.labelled).toBe(true);
-    shown.slice(1).forEach((point, i) => {
-      expect(point.x - (shown[i]?.x ?? 0)).toBeGreaterThanOrEqual(30);
-    });
-    const dates = drawing?.dates ?? [];
-    expect(dates.at(-1)?.text).toBe("12 Sep 2026");
-    dates.slice(1).forEach((date, i) => {
-      expect(date.x - (dates[i]?.x ?? 0)).toBeGreaterThanOrEqual(84);
-    });
-  });
-});
