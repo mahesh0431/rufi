@@ -955,64 +955,70 @@ describe("the local API", () => {
     );
   });
 
-  it("a Stop while a send goes into the reply keeps it out, and the chat stays stopped", async () => {
-    const core = await start({
-      agent: scripted({ slow: ["turn/steer"], slowMs: 600 }),
-    });
-    const page = await session(core);
-    const c = await chat(page);
-    await page.say(c.path, "hang");
-    await until(async () =>
-      (
-        (await page.api("GET", c.path)).body["turns"] as { status: string }[]
-      ).some((turn) => turn.status === "running"),
-    );
-    await page.api("PUT", c.draft, { text: "A fictional follow-up" });
-    const sending = page.say(c.path, "A fictional follow-up");
-    await sleep(200);
-    expect((await page.api("POST", `${c.path}/stop`)).status).toBe(200);
-    expect(await sending).toMatchObject({
-      status: 409,
-      body: { error: "Stopped." },
-    });
-    await sleep(500);
-    const queue = (await page.api("GET", `${c.path}/queue`)).body;
-    expect(queue).toMatchObject({ paused: "stopped", items: [] });
-    expect(
-      (await page.api("GET", c.path)).body["turns"] as { status: string }[],
-    ).toMatchObject([{ status: "interrupted" }]);
-    expect((await page.api("GET", c.draft)).body["text"]).toBe(
-      "A fictional follow-up",
-    );
+  it(
+    "a Stop while a send goes into the reply keeps it out, and the chat stays stopped",
+    { timeout: 15_000 },
+    async () => {
+      const core = await start({
+        agent: scripted({ slow: ["turn/steer"], slowMs: 600 }),
+      });
+      const page = await session(core);
+      const c = await chat(page);
+      await page.say(c.path, "hang");
+      await until(async () =>
+        (
+          (await page.api("GET", c.path)).body["turns"] as { status: string }[]
+        ).some((turn) => turn.status === "running"),
+      );
+      await page.api("PUT", c.draft, { text: "A fictional follow-up" });
+      const sending = page.say(c.path, "A fictional follow-up");
+      await sleep(200);
+      expect((await page.api("POST", `${c.path}/stop`)).status).toBe(200);
+      expect(await sending).toMatchObject({
+        status: 409,
+        body: { error: "Stopped." },
+      });
+      await sleep(500);
+      const queue = (await page.api("GET", `${c.path}/queue`)).body;
+      expect(queue).toMatchObject({ paused: "stopped", items: [] });
+      expect(
+        (await page.api("GET", c.path)).body["turns"] as { status: string }[],
+      ).toMatchObject([{ status: "interrupted" }]);
+      expect((await page.api("GET", c.draft)).body["text"]).toBe(
+        "A fictional follow-up",
+      );
 
-    // After a restart, a send that waits for the reply's history is kept
-    // out by a Stop meanwhile too.
-    await stop();
-    const again = await session(
-      await start({
-        agent: scripted({ slow: ["thread/turns/list"], slowMs: 1_500 }),
-      }),
-    );
-    await again.say(c.path, "hang");
-    await sleep(300);
-    const waiting = again.say(c.path, "A fictional follow-up");
-    await sleep(100);
-    expect((await again.api("POST", `${c.path}/stop`)).status).toBe(200);
-    expect(await waiting).toMatchObject({
-      status: 409,
-      body: { error: "Stopped." },
-    });
-    await sleep(500);
-    expect((await again.api("GET", `${c.path}/queue`)).body).toMatchObject({
-      paused: "stopped",
-      items: [],
-    });
-    expect(
-      (
-        (await again.api("GET", c.path)).body["turns"] as { status: string }[]
-      ).map((turn) => turn.status),
-    ).not.toContain("completed");
-  });
+      // After a restart, a send that waits for the reply's history is kept
+      // out by a Stop meanwhile too.
+      await stop();
+      const again = await session(
+        await start({
+          agent: scripted({ slow: ["thread/turns/list"], slowMs: 4_000 }),
+        }),
+      );
+      await again.say(c.path, "hang");
+      // Its turn is saved only after the history, so no screen shows it
+      // running yet: wait well inside the history's 4 s.
+      await sleep(1_500);
+      const waiting = again.say(c.path, "A fictional follow-up");
+      await sleep(100);
+      expect((await again.api("POST", `${c.path}/stop`)).status).toBe(200);
+      expect(await waiting).toMatchObject({
+        status: 409,
+        body: { error: "Stopped." },
+      });
+      await sleep(500);
+      expect((await again.api("GET", `${c.path}/queue`)).body).toMatchObject({
+        paused: "stopped",
+        items: [],
+      });
+      expect(
+        (
+          (await again.api("GET", c.path)).body["turns"] as { status: string }[]
+        ).map((turn) => turn.status),
+      ).not.toContain("completed");
+    },
+  );
 
   it("refuses one person's send of an id another person's send is using", async () => {
     const core = await start({
@@ -1029,7 +1035,14 @@ describe("the local API", () => {
     store.close();
     const b = { path: "/api/people/ravi/chat" };
     for (const c of [a, b]) await page.say(c.path, "hang");
-    await sleep(300);
+    // Both replies run, so each send goes into its reply.
+    for (const c of [a, b]) {
+      await until(async () =>
+        (
+          (await page.api("GET", c.path)).body["turns"] as { status: string }[]
+        ).some((turn) => turn.status === "running"),
+      );
+    }
     const id = randomUUID();
     const [sentA, sentB] = await Promise.all([
       page.say(a.path, "Fictional A private text", "messages", id),
