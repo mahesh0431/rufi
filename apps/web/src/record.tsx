@@ -16,6 +16,7 @@ import type {
   RecordRow,
   ResultRow,
   ShownRow,
+  VisitRow,
 } from "@rufi/contracts/record";
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRight, ChevronDown } from "lucide-react";
@@ -33,7 +34,7 @@ export const KIND_TITLES: Record<PageKind, string> = {
   lab_result: "Lab results",
   measurement: "Measurements",
   medicine_use: "Medicines",
-  prescription: "Prescriptions",
+  visit: "Visits",
   condition: "Conditions",
   allergy: "Allergies",
   symptom: "Symptoms",
@@ -46,7 +47,7 @@ export const isPageKind = (kind: string): kind is PageKind =>
 const NOUNS: Record<RecordRow["kind"], string> = {
   result: "Result",
   medicine_use: "Medicine",
-  prescription: "Prescription",
+  visit: "Visit",
   condition: "Condition",
   allergy: "Allergy",
   symptom: "Symptom",
@@ -91,6 +92,23 @@ const STATUS: Record<string, string> = {
   dropped: "Dropped",
 };
 
+/** A visit's setting, as a person says it. */
+const SETTINGS: Record<VisitRow["setting"], string> = {
+  clinic: "Clinic",
+  online: "Online",
+  home: "Home visit",
+  hospital: "Hospital stay",
+  unknown: "",
+};
+
+/** A visit's name: its doctor and place, or why they went. */
+export const visitTitle = (row: VisitRow) =>
+  [row.doctor, row.place].filter(Boolean).join(" · ") || row.reason || "Visit";
+
+/** A visit's setting and date, as its page's heading says them. */
+export const visitWhen = (row: VisitRow) =>
+  [SETTINGS[row.setting], cellsOf(row).date].filter(Boolean).join(" · ");
+
 interface Cells {
   /** What the row is, as its chip names it. */
   title: string;
@@ -134,14 +152,20 @@ export function cellsOf(row: RecordRow, groupDate?: string): Cells {
         status: STATUS[row.status] ?? "",
         date: span(row.started, row.ended) ?? "",
       };
-    case "prescription":
+    case "visit":
       return {
-        title: join(row.item, row.strength),
-        detail: [row.amount, row.schedule, row.period]
+        title: visitTitle(row),
+        detail: [
+          row.reason,
+          row.cited !== undefined &&
+            `${String(row.cited)} ${row.cited === 1 ? "record" : "records"} from it`,
+        ]
           .filter(Boolean)
           .join(" · "),
-        status: row.prescriber ?? "",
-        date: dated(row.issued) ?? "",
+        status: SETTINGS[row.setting],
+        date: row.ended
+          ? `${dated(row.date) ?? "?"} to ${dated(row.ended) ?? ""}`
+          : (dated(row.date) ?? ""),
       };
     case "symptom":
       return {
@@ -194,7 +218,7 @@ export function cellsOf(row: RecordRow, groupDate?: string): Cells {
 }
 
 /** What a row is called: a result by its category. */
-const nounOf = (row: RecordRow) =>
+export const nounOf = (row: RecordRow) =>
   row.kind === "result"
     ? row.category === "measurement"
       ? "Measurement"
@@ -450,17 +474,28 @@ function RowView({
       <div
         className={`group grid items-center gap-2 px-3 py-2 ${result ? "grid-cols-[1.1fr_0.9fr_96px_0.8fr_0.8fr_0.7fr_auto]" : "grid-cols-[1.4fr_1fr_0.8fr_1fr_auto]"} ${open ? "bg-accent-soft" : "hover:bg-side"}`}
       >
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={onOpen}
-          className="min-w-0 text-left font-semibold"
-        >
-          {cells.name ?? cells.title}
-          {cells.note !== undefined && (
-            <span className="font-normal text-muted"> {cells.note}</span>
-          )}
-        </button>
+        {row.kind === "visit" ? (
+          // A visit has a page of its own: the doctor's words and what came from it.
+          <Link
+            to="/people/$personId/visits/$visitId"
+            params={{ personId, visitId: row.id }}
+            className="min-w-0 text-left font-semibold"
+          >
+            {cells.title}
+          </Link>
+        ) : (
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={onOpen}
+            className="min-w-0 text-left font-semibold"
+          >
+            {cells.name ?? cells.title}
+            {cells.note !== undefined && (
+              <span className="font-normal text-muted"> {cells.note}</span>
+            )}
+          </button>
+        )}
         {result && <span>{cells.value}</span>}
         {result && (
           <span>
@@ -480,7 +515,9 @@ function RowView({
           />
         </span>
       </div>
-      {open && <RowDetail personId={personId} row={row} />}
+      {open && row.kind !== "visit" && (
+        <RowDetail personId={personId} row={row} />
+      )}
     </li>
   );
 }
@@ -552,11 +589,31 @@ export function RowDetail({
               key={
                 source.type === "document"
                   ? `${source.document}:${String(source.page)}`
-                  : source.entry
+                  : source.type === "visit"
+                    ? source.visit
+                    : source.entry
               }
               className="py-0.5"
             >
-              {source.type === "document" && source.deleted ? (
+              {source.type === "visit" ? (
+                source.removed ? (
+                  <span className="text-muted">
+                    Visit removed ({source.label})
+                  </span>
+                ) : (
+                  <>
+                    Visit · {source.label}{" "}
+                    <Link
+                      to="/people/$personId/visits/$visitId"
+                      params={{ personId, visitId: source.visit }}
+                      className={buttonLook({ look: "quiet" })}
+                    >
+                      <ArrowUpRight size={ICON} aria-hidden />
+                      Open
+                    </Link>
+                  </>
+                )
+              ) : source.type === "document" && source.deleted ? (
                 <span className="text-muted">
                   Document deleted ({source.file}, page {source.page})
                 </span>

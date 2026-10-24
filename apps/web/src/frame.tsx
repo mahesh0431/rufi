@@ -14,7 +14,6 @@ import {
   Activity,
   CalendarClock,
   CircleHelp,
-  ClipboardList,
   FileText,
   FlaskConical,
   HeartPulse,
@@ -25,6 +24,7 @@ import {
   Settings,
   ShieldAlert,
   Stethoscope,
+  Syringe,
 } from "lucide-react";
 import type { Person } from "@rufi/contracts";
 import { type ReactNode, useEffect } from "react";
@@ -248,11 +248,11 @@ const KIND_ICONS: Record<keyof typeof KIND_TITLES, Icon> = {
   lab_result: FlaskConical,
   measurement: Ruler,
   medicine_use: Pill,
-  prescription: ClipboardList,
+  visit: Stethoscope,
   condition: HeartPulse,
   allergy: ShieldAlert,
   symptom: Activity,
-  care_event: Stethoscope,
+  care_event: Syringe,
 };
 
 /** The person's record by kind, each with its count, as Overview's tiles. */

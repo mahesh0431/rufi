@@ -19,6 +19,7 @@ import {
 } from "@rufi/contracts/documents";
 import type { Person } from "@rufi/contracts";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { Schema } from "effect";
 import {
   Check,
@@ -205,6 +206,21 @@ function Checking({
             {settled ??
               "What the reader read, not saved. These become part of your health record only when you save them in the chat."}
           </p>
+          {items.savedAs.length > 0 && (
+            <p className="text-xs">
+              <span className="text-muted">Saved as</span>
+              {items.savedAs.map((visit) => (
+                <Link
+                  key={visit.id}
+                  to="/people/$personId/visits/$visitId"
+                  params={{ personId: person.id, visitId: visit.id }}
+                  className="ml-2 rounded-md text-accent-ink hover:bg-accent-soft"
+                >
+                  Visit · {visit.label}
+                </Link>
+              ))}
+            </p>
+          )}
         </div>
         {(document.status === "not_read" ||
           document.reading?.canRetry === true ||

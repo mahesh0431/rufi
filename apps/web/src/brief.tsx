@@ -136,6 +136,17 @@ function Cited({
       </Link>
     );
   }
+  if (record && page === "visit") {
+    return (
+      <Link
+        to="/people/$personId/visits/$visitId"
+        params={{ personId, visitId: record.id }}
+        className={look}
+      >
+        {what}
+      </Link>
+    );
+  }
   if (record && page && (page === "result" || isPageKind(page))) {
     return (
       <Link
