@@ -69,8 +69,6 @@ export interface Scenario {
   stale?: boolean;
   /** Text the reply streams after an interrupt (Rufi must not save it). */
   late?: boolean;
-  /** What the provider supports, over what Codex reports by default. */
-  capabilities?: { namespaceTools?: boolean };
   /** The command each reply runs after its answer, and what it printed (ls). */
   ls?: { command: string; output: string };
   /** A last message that arrives only completed, never streamed. */
@@ -810,13 +808,6 @@ async function handle(
         ? { data: all.slice(half), nextCursor: null }
         : { data: all.slice(0, half), nextCursor: "page-2" };
     }
-    case "modelProvider/capabilities/read":
-      return {
-        namespaceTools: true,
-        imageGeneration: false,
-        webSearch: false,
-        ...scenario.capabilities,
-      };
     case "config/read":
       return {
         config: {

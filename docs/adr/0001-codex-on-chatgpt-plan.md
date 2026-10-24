@@ -1,6 +1,6 @@
 # 0001 · Codex on the ChatGPT plan route
 
-**Date:** 1 Oct 2026 · **Status:** accepted · **Pin:** `@openai/codex` 0.159.2
+**Date:** 1 Oct 2026 · **Status:** accepted · **Pin:** `@openai/codex` 0.163.0
 
 ## Decision
 
@@ -43,3 +43,5 @@ Rufi runs `codex app-server` over stdio with OpenAI's documented provider settin
 **Amendment, 14 Oct 2026:** Rufi's tools no longer go as `dynamicTools`; they come from Rufi's own MCP server (ADR 0016). A change to the tools still starts a new thread for now.
 
 **Amendment, 14 Oct 2026:** a change to the tools no longer starts a new thread, and the chat runs in the AI's folder under Rufi's permission profile, not with full access (ADR 0016, its extension).
+
+**Amendment, 24 Oct 2026: pin 0.163.0.** Codex no longer reports `namespaceTools`, because it no longer gates namespaced tools by provider (openai/codex#50447), so Rufi no longer checks it. Recheck: the `HOME` split holds (`contract.test.ts`; skill roots and Codex's `HOME` lookup unchanged in the source); web search on this route is unchanged in the source (the standalone tool still needs `supports_standalone_web_search`, which Rufi doesn't set).

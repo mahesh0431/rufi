@@ -304,10 +304,6 @@ describe("starting Codex", () => {
         SETTINGS,
       ),
     ).rejects.toThrow("model_reasoning_summary is null");
-    // Codex would drop Rufi's tools without a word.
-    await expect(
-      start({ capabilities: { namespaceTools: false } }).startThread(SETTINGS),
-    ).rejects.toThrow("the provider doesn't take Rufi's tools");
   });
 
   it.each(["initialize", "config/read", "thread/start"])(
