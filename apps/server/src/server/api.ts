@@ -182,8 +182,9 @@ const DIAGRAM = "/diagram.html";
 const GONE_PAGE = `<!doctype html><html lang="en"><meta charset="utf-8"><title>File not found</title><body style="font:14px/1.5 -apple-system,sans-serif;margin:24px"><p>This file is no longer in the AI's folder.</p></body></html>`;
 /**
  * Esc in a generated page, told to its dialog: the page has its own origin,
- * so Rufi never hears its keys. Appended to what is served, after the file,
- * so its doctype stays first and its bytes on disk stay as they are.
+ * so Rufi never hears its keys. Served first, before any of the page's own
+ * scripts can take the focus, and after its doctype, which stays first; the
+ * file on disk stays as it is.
  */
 const pageEscape = (origin: string) => `
 <script>
@@ -193,6 +194,17 @@ addEventListener("keydown", (event) => {
   }
 }, true);
 </script>`;
+/** A page's leading doctype, read as Latin-1: after a UTF-8 BOM and spaces. */
+const DOCTYPE = /^(?:\xEF\xBB\xBF)?\s*<!doctype[^>]*>/i;
+/** The page with the Esc relay after its doctype, or first without one. */
+const withEscape = (page: Buffer, origin: string) => {
+  const at = DOCTYPE.exec(page.toString("latin1"))?.[0].length ?? 0;
+  return Buffer.concat([
+    page.subarray(0, at),
+    Buffer.from(pageEscape(origin)),
+    page.subarray(at),
+  ]);
+};
 /** A `prefers-color-scheme` condition in a media query. */
 const SCHEME_FEATURE = /\(\s*prefers-color-scheme\s*:\s*(light|dark)\s*\)/gi;
 /** In place of a condition on the chosen scheme, and on the other one. */
@@ -1044,11 +1056,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
         chosen === "light" || chosen === "dark"
           ? [inAppearance(bytes, chosen), Buffer.from(pageAppearance(chosen))]
           : [bytes];
-      return c.body(
-        new Uint8Array(
-          Buffer.concat([...page, Buffer.from(pageEscape(origin()))]),
-        ),
-      );
+      return c.body(new Uint8Array(withEscape(Buffer.concat(page), origin())));
     }
     return c.body(new Uint8Array(bytes));
   });

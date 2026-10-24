@@ -567,6 +567,40 @@ for (const { system, chosen } of [
   });
 }
 
+test("Esc closes a page opened large from the moment its own first script runs", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  // A key the page hears as its first script runs, as when it takes the
+  // focus while it still loads.
+  await writeFile(
+    join(rufi.home, "ai", "reports", "early.html"),
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Early</title>
+<script>dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));</script>
+</head><body><p>Fictional</p></body></html>`,
+  );
+  await send(page, "Your page: [Early](reports/early.html)");
+  const open = log(page)
+    .locator(".reply")
+    .getByRole("button", { name: "Open Early" });
+  await expect(open).toBeVisible();
+  // The relay's signal comes from the large view's frame, so it opened.
+  await page.evaluate(() => {
+    addEventListener("message", (event) => {
+      if (event.data === "rufi-page-escape") {
+        Object.assign(globalThis, { escaped: true });
+      }
+    });
+  });
+  await open.click();
+  await expect
+    .poll(() => page.evaluate(() => "escaped" in globalThis))
+    .toBe(true);
+  await expect(page.getByRole("dialog", { name: "Early" })).toHaveCount(0);
+  await expect(open).toBeFocused();
+});
+
 test("a file that is gone keeps its card and says so", async ({
   page,
   rufi,
