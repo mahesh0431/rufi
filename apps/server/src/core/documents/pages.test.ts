@@ -308,7 +308,6 @@ describe("get_documents", () => {
         status: "not saved",
         test_name: "Haemoglobin",
         value_text: "12.8",
-        value_number: 12.8,
         unit: "g/dL",
         fixed_by_user: true,
         drafted: { value_text: "13.2", unit: null },

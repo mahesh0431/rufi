@@ -136,7 +136,6 @@ CREATE TABLE draft_items (
   original TEXT NOT NULL,      -- Rufi AI's fields (an older Rufi's: the reader's), never changed (JSON)
   unsure TEXT NOT NULL DEFAULT '[]', -- why it is worth a look: Rufi AI's reason (an older Rufi's: the reader's words and Rufi's checks) (JSON)
   quote TEXT,                  -- the text it came from, as in the page copy, for the screen; null for an older Rufi's
-  report TEXT,                 -- an older Rufi's draft: its report and date as Rufi worked them out then (JSON); null for Rufi AI's, whose report is its document
   saved_as TEXT CHECK (saved_as IN ('new', 'another_source', 'correction')),
   record_kind TEXT,
   record_id TEXT,
@@ -205,12 +204,10 @@ CREATE TABLE sort_requests (
   CHECK ((state = 'done') = (call_id IS NOT NULL))
 ) STRICT;
 
--- A report as printed, made when its results are saved. Rufi AI's report
--- is its document: every save from that document uses one report. An
--- older Rufi's draft keeps the report Rufi worked out for it: a complete
--- lab, report number and collection date identifies it across the person's
--- documents; otherwise it stays within one document. document_id is its
--- first document; each result's actual page is kept in record_sources.
+-- A report as printed, made when its results are saved. A draft's report
+-- is its document: every save from that document uses one report (an
+-- older Rufi's reports may span documents). document_id is its first
+-- document; each result's actual page is kept in record_sources.
 CREATE TABLE reports (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL,
@@ -541,7 +538,6 @@ CREATE TABLE operations (
   chat_id TEXT NOT NULL,
   call_id TEXT NOT NULL,       -- the agent's id for the call: the same call again is the same save
   request TEXT NOT NULL,       -- the changes as the AI sent them (JSON)
-  warnings TEXT NOT NULL DEFAULT '[]', -- the warnings returned by the save (JSON)
   created_at TEXT NOT NULL,
   UNIQUE (person_id, id),
   UNIQUE (chat_id, call_id),
@@ -634,4 +630,4 @@ CREATE INDEX sort_requests_by_document ON sort_requests (person_id, document_id)
 CREATE INDEX sort_requests_by_queue ON sort_requests (person_id, queue_id);
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 12;
+PRAGMA user_version = 13;

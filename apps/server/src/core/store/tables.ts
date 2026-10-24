@@ -125,7 +125,6 @@ export interface Tables {
     original: string;
     unsure: string;
     quote: string | null;
-    report: string | null;
     saved_as: string | null;
     record_kind: string | null;
     record_id: string | null;
@@ -213,7 +212,6 @@ export interface Tables {
     chat_id: string;
     call_id: string;
     request: string;
-    warnings: string;
     created_at: string;
   };
   page_copies: {
