@@ -195,7 +195,14 @@ export async function addOf(
   personId: string,
   documentId: string,
 ): Promise<
-  | { id: string; addedAt: string; addedFrom: string; deleted: boolean }
+  | {
+      id: string;
+      addedAt: string;
+      addedFrom: string;
+      /** When a message sent it; null while it waits unsent in the box. */
+      sentAt: string | null;
+      deleted: boolean;
+    }
   | undefined
 > {
   const document = await db
@@ -207,7 +214,7 @@ export async function addOf(
   if (!document) return undefined;
   const add = await db
     .selectFrom("documents")
-    .select(["id", "added_at", "added_from", "deleted_at"])
+    .select(["id", "added_at", "added_from", "sent_at", "deleted_at"])
     .where("person_id", "=", personId)
     .where("id", "=", document.from_document ?? document.id)
     .executeTakeFirstOrThrow();
@@ -215,6 +222,7 @@ export async function addOf(
     id: add.id,
     addedAt: add.added_at,
     addedFrom: add.added_from,
+    sentAt: add.sent_at,
     deleted: add.deleted_at !== null,
   };
 }
@@ -500,7 +508,8 @@ export function sorting(
       .where("person_id", "=", personId)
       .where("id", "=", input.document)
       .executeTakeFirst();
-    if (!add || given?.deleted_at !== null) {
+    // Unsent, it waits in the chat box: not the AI's yet.
+    if (!add || given?.deleted_at !== null || add.sentAt === null) {
       throw new Refusal(
         "There is no such document for this person: read the list with get_documents for its id.",
       );
@@ -738,6 +747,8 @@ export function sorting(
             person_id: personId,
             added_at: add.addedAt,
             added_from: add.addedFrom,
+            // Sent with the add it came from.
+            sent_at: add.sentAt,
             kind: group.kind ?? "other",
             date: null,
             issuer: null,

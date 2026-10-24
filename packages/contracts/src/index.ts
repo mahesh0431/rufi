@@ -33,7 +33,12 @@ export const MAX_REFS = 100;
  * added and when sent.
  */
 export const Pointer = Schema.Union([
-  Schema.Struct({ type: Schema.Literal("document"), id: Id }),
+  Schema.Struct({
+    type: Schema.Literal("document"),
+    id: Id,
+    /** Retry: Send reads again the pages its reading couldn't read. */
+    readAgain: Schema.optionalKey(Schema.Literal(true)),
+  }),
   Schema.Struct({ type: Schema.Literal("draft_item"), id: Id }),
   Schema.Struct({ type: Schema.Literal("record"), kind: Line(40), id: Id }),
   Schema.Struct({ type: Schema.Literal("report"), id: Id }),
@@ -56,6 +61,7 @@ export const Ref = Schema.Union([
     type: Schema.Literal("document"),
     id: Id,
     version: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    readAgain: Schema.optionalKey(Schema.Literal(true)),
   }),
   Schema.Struct({
     type: Schema.Literal("draft_item"),
@@ -499,11 +505,15 @@ export const MessageText = Schema.Struct({ text: Message });
 /**
  * A message from the box, sent into the queue or steered into the running
  * reply. `id` is the send's own: the same send again (a retry) finds the
- * message it made and never makes a second one.
+ * message it made and never makes a second one. Its text may be empty when
+ * something is added to it (files sent with no words).
  */
 export const SendMessage = Schema.Struct({
   id: Schema.String.check(Schema.isUUID()),
-  text: Message,
+  text: Schema.String.check(
+    Schema.isTrimmed(),
+    Schema.isMaxLength(MAX_MESSAGE_CHARS),
+  ),
   /** Its chips: what it points at. */
   refs: Schema.optionalKey(Pointers),
 });

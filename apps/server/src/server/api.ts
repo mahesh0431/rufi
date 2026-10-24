@@ -142,6 +142,8 @@ function notAdded({ file, reason }: NotADocument): string {
 }
 
 const MESSAGE_REFUSAL = `A message needs some text, and can be at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters.`;
+/** A send needs words, a file or another chip. */
+const SEND_REFUSAL = `A message needs some text or something added to it, and can be at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters.`;
 /** A stream says it's alive this often when nothing happens. */
 const PING_MS = 15_000;
 /** Updates a screen may fall behind by before its stream is closed; it reconnects. */
@@ -729,6 +731,14 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     );
     return c.json({ pages });
   });
+  // A chip of an unsent file taken out of the box: the file leaves Rufi.
+  app.delete(`${documentsPath}/:documentId/unsent`, async (c) => {
+    const found = await person(c);
+    await reading(() =>
+      deps.deletions.removeUnsent(found.id, c.req.param("documentId")),
+    );
+    return c.json({ removed: true });
+  });
   // Delete: what it would do, then the delete made on that preview. A
   // preview that changed meanwhile refuses it with the preview as it is now.
   app.get(`${documentsPath}/:documentId/delete`, async (c) => {
@@ -854,7 +864,10 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   // The same id again (a retry) finds the message it made.
   app.post(`${one}/messages`, async (c) => {
     const found = await chatOf(c);
-    const { id, text, refs } = await body(c, SendMessage, MESSAGE_REFUSAL);
+    const { id, text, refs } = await body(c, SendMessage, SEND_REFUSAL);
+    if (text === "" && (refs?.length ?? 0) === 0) {
+      throw new HttpError(400, SEND_REFUSAL);
+    }
     const { steered } = await acting(() => chat.send(found, id, text, refs));
     const draft = steered
       ? await drafts.save(found, "")

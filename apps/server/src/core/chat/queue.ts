@@ -100,6 +100,27 @@ const pausedOf = async (trx: Db, chat: ChatOf) =>
       .executeTakeFirst()
   )?.paused ?? null) as Queue["paused"];
 
+/**
+ * Sends the person's unsent documents among `ids`, in the transaction of
+ * the message that sends them: from now on they are in the lists and the
+ * AI's tools. A document sent before keeps its time.
+ */
+export async function sendDocuments(
+  trx: Transaction<Tables>,
+  personId: string,
+  ids: readonly string[],
+  at: string,
+): Promise<void> {
+  if (ids.length === 0) return;
+  await trx
+    .updateTable("documents")
+    .set({ sent_at: at })
+    .where("person_id", "=", personId)
+    .where("id", "in", ids)
+    .where("sent_at", "is", null)
+    .execute();
+}
+
 export type ChatQueue = ReturnType<typeof chatQueue>;
 
 export function chatQueue(
@@ -222,8 +243,8 @@ export function chatQueue(
 
     /**
      * Takes a message from the box: a new waiting row by the send's id, with
-     * its references checked against the person, the draft emptied and the
-     * pause ended, in one transaction. The same id again finds the row it
+     * its references checked against the person, its unsent documents sent,
+     * the draft emptied and the pause ended, in one transaction. The same id again finds the row it
      * made, or the message it sent into a running reply: `fresh` is false
      * then, and nothing changes.
      */
@@ -272,6 +293,15 @@ export function chatQueue(
           .set({ paused: null })
           .where("id", "=", chat.id)
           .execute();
+        // The files that waited unsent in the box go with it.
+        await sendDocuments(
+          trx,
+          chat.personId,
+          chips.flatMap((chip) =>
+            chip.ref.type === "document" ? [chip.ref.id] : [],
+          ),
+          at,
+        );
         await addRow(
           trx,
           chat,

@@ -33,6 +33,7 @@ import { displayPath, originalPath, pagePath } from "./originals.ts";
 import { pages, publisher } from "./pages.ts";
 import { readings } from "./reading.ts";
 import { sorting } from "./sorting.ts";
+import { addSent } from "../../../tests/sent.ts";
 
 const family = await readFile(
   new URL("../../../tests/fixtures/fictional-family.sql", import.meta.url),
@@ -139,7 +140,7 @@ async function save(said: string, changes: unknown[]) {
 /** Adds a file from the fixtures for a person; returns its new document. */
 async function add(personId: string, file: string, name = file) {
   const bytes = new Uint8Array(await readFile(join(FIXTURES, file)));
-  const { added } = await docs.add(personId, [{ name, bytes }], true);
+  const { added } = await addSent(docs, store, personId, [{ name, bytes }]);
   return added[0] ?? "";
 }
 
@@ -447,10 +448,11 @@ describe("a delete", () => {
 
   it("marks the chat's chips of the document and its draft items as deleted, takes Open off its reading's line, and brief sources say so", async () => {
     const id = await add("asha", "ravi-lipid-panel.pdf", "lipid.pdf");
-    const [job] = rows("SELECT id FROM jobs WHERE document_id = ?", id);
-    store.db
-      .exec(`INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, fields, original, created_at)
-      VALUES ('item-1', 'asha', '${id}', 1, 1, '${String(job?.["id"])}', 'lab_result',
+    store.db.exec(`
+      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
+        VALUES ('job-lipid', 'asha', 'document_read', '${id}', 'done', 1, '[1]', '${NOW}', '${NOW}');
+      INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, fields, original, created_at)
+      VALUES ('item-1', 'asha', '${id}', 1, 1, 'job-lipid', 'lab_result',
         '{"test_name":"LDL cholesterol","value_text":"162","unit":"mg/dL"}',
         '{"test_name":"LDL cholesterol","value_text":"162","unit":"mg/dL"}', '${NOW}')`);
     const chips = await transcripts.chips("asha", [
@@ -715,7 +717,7 @@ describe("a document Rufi AI split from an add", () => {
   async function split() {
     store.db.exec(`
       INSERT INTO files (id, size, media_type, created_at) VALUES ('f-pile', 1, 'application/pdf', '${NOW}');
-      INSERT INTO documents (id, person_id, added_at, added_from, version) VALUES ('pile', 'asha', '${NOW}', 'documents_page', 1);
+      INSERT INTO documents (id, person_id, added_at, added_from, version, sent_at) VALUES ('pile', 'asha', '${NOW}', 'documents_page', 1, '${NOW}');
       INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
         VALUES ('job-pile', 'asha', 'document_read', 'pile', 'done', 1, '[1,2]', '${NOW}', '${NOW}');
       INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name, state, entry_job_id, entry_attempt) VALUES

@@ -431,7 +431,7 @@ it("keeps the backup made before the category upgrade at version 3, and a restor
 
 /**
  * Rows as a Rufi before sorting (version 11) had them: the columns
- * migration 12 adds are left out, to compare an older test's rows.
+ * migrations 12 and 15 add are left out, to compare an older test's rows.
  */
 const beforeSorting = (rows: readonly object[]) =>
   rows.map((row) =>
@@ -444,6 +444,7 @@ const beforeSorting = (rows: readonly object[]) =>
             "from_document",
             "sorted_at",
             "quote",
+            "sent_at",
           ].includes(key),
       ),
     ),
@@ -839,6 +840,39 @@ it("upgrades a record of version 11 so Rufi AI sorts: every document, reading an
     ["d-v11-2", null],
     ["d-v11-3", null],
   ]);
+});
+
+it("upgrades a record of version 14 so files start on Send: every document sent as it was added, every reply, line and queued message kept", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 14));
+  const stored = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      const all = (table: string) =>
+        db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all();
+      return {
+        documents: all("documents"),
+        turns: all("turns"),
+        entries: all("transcript_entries"),
+        queue: all("chat_queue"),
+      };
+    } finally {
+      db.close();
+    }
+  };
+  const before = stored();
+  expect(before.documents.length).toBeGreaterThan(0);
+  expect(before.turns.length).toBeGreaterThan(0);
+
+  (await openRecord(home)).close();
+
+  const after = stored();
+  expect(after.documents).toEqual(
+    before.documents.map((row) => ({ ...row, sent_at: row["added_at"] })),
+  );
+  expect(after.turns).toEqual(before.turns);
+  expect(after.entries).toEqual(before.entries);
+  expect(after.queue).toEqual(before.queue);
 });
 
 it.each([

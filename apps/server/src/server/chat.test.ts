@@ -1141,9 +1141,9 @@ describe("the chat, on the scripted Codex", () => {
     store.db.exec(`
       INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
       INSERT INTO files (id, size, media_type, created_at) VALUES ('f-1', 1, 'application/pdf', '2026-10-01T09:00:00Z');
-      INSERT INTO documents (id, person_id, added_at, added_from, version) VALUES
-        ('doc-1', 'asha', '2026-10-01T09:00:00Z', 'chat', 3),
-        ('doc-r', 'ravi', '2026-10-01T09:00:00Z', 'chat', 1);
+      INSERT INTO documents (id, person_id, added_at, added_from, version, sent_at) VALUES
+        ('doc-1', 'asha', '2026-10-01T09:00:00Z', 'chat', 3, '2026-10-01T09:00:00Z'),
+        ('doc-r', 'ravi', '2026-10-01T09:00:00Z', 'chat', 1, '2026-10-01T09:00:00Z');
       INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name) VALUES
         ('asha', 'doc-1', 1, 'f-1', 1, 'Sunrise Labs August.pdf'),
         ('ravi', 'doc-r', 1, 'f-1', 1, 'Ravi lipid panel.pdf');
@@ -1156,8 +1156,8 @@ describe("the chat, on the scripted Codex", () => {
         ('res-2', 'asha', 'rep-1', 'lab', 'Glucose', '118', 'mg/dL', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 0),
         ('res-3', 'asha', 'rep-1', 'lab', 'CRP', '<5', 'mg/L', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 0),
         ('res-4', 'asha', 'rep-1', 'lab', 'TSH', '2.1', 'mIU/L', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 1);
-      INSERT INTO documents (id, person_id, added_at, added_from, kind, date, issuer, report_number, version)
-        VALUES ('doc-correction', 'asha', '2026-10-01T09:00:00Z', 'chat', 'lab_report', '2026-08-12', 'Sunrise Labs', 'CORRECTED', 1);
+      INSERT INTO documents (id, person_id, added_at, added_from, kind, date, issuer, report_number, version, sent_at)
+        VALUES ('doc-correction', 'asha', '2026-10-01T09:00:00Z', 'chat', 'lab_report', '2026-08-12', 'Sunrise Labs', 'CORRECTED', 1, '2026-10-01T09:00:00Z');
       INSERT INTO files (id, size, media_type, created_at)
         VALUES ('f-correction', 1, 'application/pdf', '2026-10-01T09:00:00Z');
       INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name, state)

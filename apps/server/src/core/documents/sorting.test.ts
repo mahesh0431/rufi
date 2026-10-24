@@ -49,7 +49,7 @@ beforeEach(async () => {
     INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional'), ('ravi', 'Ravi Fictional');
     INSERT INTO chats (id, person_id, created_at) VALUES ('c-asha', 'asha', '${T0}'), ('c-ravi', 'ravi', '${T0}');
     INSERT INTO files (id, size, media_type, created_at) VALUES ('f-pile', 1, 'application/pdf', '${T0}');
-    INSERT INTO documents (id, person_id, added_at, added_from, version) VALUES ('pile', 'asha', '${T0}', 'documents_page', 1);
+    INSERT INTO documents (id, person_id, added_at, added_from, version, sent_at) VALUES ('pile', 'asha', '${T0}', 'documents_page', 1, '${T0}');
     INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
       VALUES ('job-1', 'asha', 'document_read', 'pile', 'done', 1, '[1,2,3,4,5]', '${T0}', '${T0}');
   `);

@@ -318,6 +318,61 @@ export function deletions(deps: {
     preview: async (personId: string, documentId: string) =>
       previewIn(db, personId, documentId),
 
+    /**
+     * Takes an unsent document out of Rufi, as its chip leaves the box: its
+     * row and pages go, and its original when nothing else uses it. Nothing
+     * points at it (it was never sent), so it leaves no tombstone. Refused
+     * once a message sent it: a Send and a removal never both win.
+     */
+    removeUnsent: async (personId: string, documentId: string) => {
+      const files = await db.transaction().execute(async (trx) => {
+        const found = await trx
+          .selectFrom("documents")
+          .select("sent_at")
+          .where("person_id", "=", personId)
+          .where("id", "=", documentId)
+          .where("deleted_at", "is", null)
+          .executeTakeFirst();
+        if (!found) throw new Refusal("There is no such document.");
+        if (found.sent_at !== null) {
+          throw new Refusal("This file was already sent.");
+        }
+        const used = (
+          await trx
+            .selectFrom("document_pages")
+            .select("file_id")
+            .distinct()
+            .where("person_id", "=", personId)
+            .where("document_id", "=", documentId)
+            .execute()
+        ).flatMap((p) => (p.file_id === null ? [] : [p.file_id]));
+        await trx
+          .deleteFrom("document_pages")
+          .where("person_id", "=", personId)
+          .where("document_id", "=", documentId)
+          .execute();
+        await trx
+          .deleteFrom("documents")
+          .where("person_id", "=", personId)
+          .where("id", "=", documentId)
+          .execute();
+        if (used.length > 0) {
+          await trx
+            .deleteFrom("files")
+            .where("id", "in", used)
+            .where(
+              sql<boolean>`NOT EXISTS (SELECT 1 FROM document_pages p WHERE p.file_id = files.id)`,
+            )
+            .execute();
+        }
+        return used;
+      });
+      // Bytes left behind go at the next start.
+      await removeUnused(files).catch((error: unknown) => {
+        deps.log("documents.cleanup_failed", { error: errorCode(error) });
+      });
+    },
+
     /** Whether the person's document was deleted: its tombstone is there. */
     deleted: async (personId: string, documentId: string) =>
       (await db

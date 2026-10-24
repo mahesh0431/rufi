@@ -994,7 +994,8 @@ function inputOf(handOver: HandOver, context: string | undefined): string[] {
 /** A message as the AI gets it: the person's words, then their references. */
 function withRefs(text: string, chips: readonly Chip[]): string {
   const list = refsForAi(chips);
-  return list === undefined ? text : `${text}\n\n${list}`;
+  if (list === undefined) return text;
+  return text === "" ? list : `${text}\n\n${list}`;
 }
 
 const WHO = {

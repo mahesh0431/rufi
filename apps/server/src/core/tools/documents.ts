@@ -85,7 +85,8 @@ export const getDocuments = defineTool({
         .selectFrom("documents")
         .select(["id", "added_at", "kind", "date"])
         .where("person_id", "=", personId)
-        .where("deleted_at", "is", null);
+        .where("deleted_at", "is", null)
+        .where("sent_at", "is not", null);
       if (input.after !== undefined) {
         const last = await db
           .selectFrom("documents")
@@ -163,6 +164,8 @@ export const getDocuments = defineTool({
       ])
       .where("person_id", "=", personId)
       .where("id", "=", input.document)
+      // Unsent, it waits in the chat box: not the AI's yet.
+      .where("sent_at", "is not", null)
       .executeTakeFirst();
     if (document?.deleted_at != null) {
       throw new Refusal(

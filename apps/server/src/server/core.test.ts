@@ -9,6 +9,7 @@ import {
   chmod,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rm,
   stat,
@@ -735,14 +736,20 @@ describe("the local API", () => {
     const page = await session(core);
     const c = await chat(page);
     expect(
-      (await page.api("POST", `${c.path}/messages`, { text: "" })).status,
+      (
+        await page.api("POST", `${c.path}/messages`, {
+          id: randomUUID(),
+          text: "",
+        })
+      ).status,
     ).toBe(400);
     const tooLong = await page.api("POST", `${c.path}/messages`, {
       text: "x".repeat(10_001),
     });
     expect(tooLong.status).toBe(400);
     expect(tooLong.body).toEqual({
-      error: "A message needs some text, and can be at most 10,000 characters.",
+      error:
+        "A message needs some text or something added to it, and can be at most 10,000 characters.",
     });
     for (const before of ["0", "-1", "1.5", "x", ""]) {
       expect((await page.api("GET", `${c.path}?before=${before}`)).status).toBe(
@@ -2061,15 +2068,12 @@ describe("documents over the API", () => {
         await release();
       }
 
-      const reopened = await session(await start());
+      // Its record was kept: the same file again is the document there.
+      const reopened = await start();
       expect(
-        (await reopened.api("GET", `/api/people/${person}/documents`)).body,
+        await add(reopened, await session(reopened), person, [file]),
       ).toMatchObject({
-        documents: [
-          {
-            files: [{ id, name: file.name, mediaType: "image/jpeg", pages: 1 }],
-          },
-        ],
+        body: { added: [], already: [{ name: file.name }] },
       });
     } finally {
       finish.resolve(undefined);
@@ -2079,6 +2083,53 @@ describe("documents over the API", () => {
       syncBuiltinESMExports();
     }
   }, 10_000);
+
+  it("keeps an added file unsent in the box until a message sends it; taking its chip out first removes it from Rufi", async () => {
+    const core = await start();
+    const page = await session(core);
+    const { person, path } = await chat(page);
+    const documents = `/api/people/${person}/documents`;
+    const listed = async () =>
+      (
+        (await page.api("GET", documents)).body["documents"] as {
+          id: string;
+        }[]
+      ).map((d) => d.id);
+    const photo = await fixture("thyroid-recheck.jpg");
+
+    const first = (await add(core, page, person, [photo])).body as {
+      added: string[];
+    };
+    const [unsent = ""] = first.added;
+    expect(await listed()).toEqual([]);
+
+    // Its chip taken out: it leaves Rufi, its original too.
+    expect(
+      (await page.api("DELETE", `${documents}/${unsent}/unsent`)).status,
+    ).toBe(200);
+    expect(await readdir(join(home, "files"))).toEqual([]);
+    const again = (await add(core, page, person, [photo])).body as {
+      added: string[];
+    };
+    const [document = ""] = again.added;
+    expect(document).not.toBe(unsent);
+
+    // Sent with no words: listed, and taking its chip out leaves it.
+    const sent = await page.api("POST", `${path}/messages`, {
+      id: randomUUID(),
+      text: "",
+      refs: [{ type: "document", id: document }],
+    });
+    expect(sent.status).toBe(202);
+    expect(await listed()).toEqual([document]);
+    expect(
+      await page.api("DELETE", `${documents}/${document}/unsent`),
+    ).toMatchObject({
+      status: 409,
+      body: { error: "This file was already sent." },
+    });
+    expect(await listed()).toEqual([document]);
+  });
 
   it("adds documents for the person in the path, and shows each file only to them", async () => {
     const core = await start();
@@ -2095,6 +2146,15 @@ describe("documents over the API", () => {
     expect(added).toEqual({
       status: 201,
       body: { added: [expect.any(String), expect.any(String)], already: [] },
+    });
+    // Sent from the box, they are listed.
+    await page.api("POST", `/api/people/${person}/chat/messages`, {
+      id: randomUUID(),
+      text: "",
+      refs: (added.body as { added: string[] }).added.map((id) => ({
+        type: "document",
+        id,
+      })),
     });
     const listed = (await page.api("GET", `/api/people/${person}/documents`))
       .body["documents"] as { id: string; files: { id: string }[] }[];

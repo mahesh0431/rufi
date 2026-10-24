@@ -16,10 +16,10 @@ INSERT INTO files (id, size, media_type, created_at) VALUES
   ('a2d64c4aa2a3101f1fc2ee893451ca0f43f547ca48ba5a1ce625c42d52e23562', 30740, 'image/jpeg', '2026-09-02T18:30:00Z'),
   ('f7d7c195033e1719e2c191970b14e52478e02faf51f1d61e57b517674fbc9c45', 16150, 'application/pdf', '2026-07-01T08:00:00Z');
 
-INSERT INTO documents (id, person_id, added_at, added_from) VALUES
-  ('doc-asha-aug', 'asha', '2026-08-13T09:00:00Z', 'documents_page'),
-  ('doc-asha-sep', 'asha', '2026-09-02T18:30:00Z', 'documents_page'),
-  ('doc-ravi-jul', 'ravi', '2026-07-01T08:00:00Z', 'documents_page');
+INSERT INTO documents (id, person_id, added_at, added_from, sent_at) VALUES
+  ('doc-asha-aug', 'asha', '2026-08-13T09:00:00Z', 'documents_page', '2026-08-13T09:00:00Z'),
+  ('doc-asha-sep', 'asha', '2026-09-02T18:30:00Z', 'documents_page', '2026-09-02T18:30:00Z'),
+  ('doc-ravi-jul', 'ravi', '2026-07-01T08:00:00Z', 'documents_page', '2026-07-01T08:00:00Z');
 
 INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name) VALUES
   ('asha', 'doc-asha-aug', 1, '7f4a70ccb858d23ee1cce44693bc2c009abb14604f0f3dbd48470639d6928b54', 1, 'Sunrise Labs August.pdf'),

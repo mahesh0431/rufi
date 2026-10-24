@@ -18,6 +18,7 @@ import { sorting } from "../documents/sorting.ts";
 import { backupsPath, makeBackup } from "./backup.ts";
 import { databasePath, openWritable } from "./database.ts";
 import { restore } from "./restore.ts";
+import { addSent } from "../../../tests/sent.ts";
 
 let root: string;
 let backup: string;
@@ -58,11 +59,9 @@ async function backupWithDocument(): Promise<{ folder: string; id: string }> {
   );
   const name = "sunrise-labs-august.pdf";
   const docs = documents(store, home);
-  await docs.add(
-    "asha",
-    [{ name, bytes: new Uint8Array(await readFile(join(FIXTURES, name))) }],
-    true,
-  );
+  await addSent(docs, store, "asha", [
+    { name, bytes: new Uint8Array(await readFile(join(FIXTURES, name))) },
+  ]);
   const id = (await docs.list("asha"))[0]?.files[0]?.id ?? "";
   store.close();
   const made = await makeBackup(home, new Date("2026-10-08T09:14:03Z"));

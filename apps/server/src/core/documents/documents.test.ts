@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { databasePath, openWritable, type Store } from "../store/database.ts";
 import { documents, NotADocument, type NewFile } from "./documents.ts";
 import { displayPath, filesPath } from "./originals.ts";
+import { addSent } from "../../../tests/sent.ts";
 
 const FIXTURES = join(import.meta.dirname, "../../../tests/fixtures/documents");
 const fixture = async (file: string, name = file): Promise<NewFile> => ({
@@ -55,7 +56,7 @@ describe("adding documents", () => {
     const pdf = await fixture("sunrise-labs-august.pdf", "Sunrise August.pdf");
     const docs = documents(store, home, () => "2026-10-10T09:00:00.000Z");
 
-    const { added, already } = await docs.add("asha", [pdf], true);
+    const { added, already } = await addSent(docs, store, "asha", [pdf]);
 
     expect(already).toEqual([]);
     expect(await docs.list("asha")).toEqual([
@@ -136,7 +137,9 @@ describe("adding documents", () => {
   it("makes each photo its own document when they aren't together", async () => {
     const docs = documents(store, home);
 
-    const { added } = await docs.add(
+    const { added } = await addSent(
+      docs,
+      store,
       "asha",
       [await photo("a.png", "#111111"), await photo("b.png", "#222222")],
       false,
@@ -150,13 +153,17 @@ describe("adding documents", () => {
 
   it("never adds the same content twice for a person, also under another name", async () => {
     const docs = documents(store, home);
-    const first = await docs.add(
+    const first = await addSent(
+      docs,
+      store,
       "asha",
       [await fixture("thyroid-recheck.jpg")],
       true,
     );
 
-    const again = await docs.add(
+    const again = await addSent(
+      docs,
+      store,
       "asha",
       [
         await fixture("thyroid-recheck.jpg", "renamed.jpg"),
@@ -176,10 +183,10 @@ describe("adding documents", () => {
 
   it("adds the same content for another person, and two files with one name as two documents", async () => {
     const docs = documents(store, home);
-    await docs.add("asha", [await photo("scan.png", "#111111")], true);
+    await addSent(docs, store, "asha", [await photo("scan.png", "#111111")]);
 
-    await docs.add("ravi", [await photo("scan.png", "#111111")], true);
-    await docs.add("asha", [await photo("scan.png", "#999999")], true);
+    await addSent(docs, store, "ravi", [await photo("scan.png", "#111111")]);
+    await addSent(docs, store, "asha", [await photo("scan.png", "#999999")]);
 
     expect(await docs.list("ravi")).toHaveLength(1);
     expect(await docs.list("asha")).toHaveLength(2);
@@ -238,7 +245,9 @@ describe("adding documents", () => {
 describe("showing a file", () => {
   it("shows a sideways HEIC upright through its JPEG copy, made again when it's missing", async () => {
     const docs = documents(store, home);
-    const { added } = await docs.add(
+    const { added } = await addSent(
+      docs,
+      store,
       "asha",
       [await fixture("sideways.heic")],
       true,
@@ -266,12 +275,16 @@ describe("showing a file", () => {
 
   it("shows a file only for the person and document that hold it", async () => {
     const docs = documents(store, home);
-    const { added } = await docs.add(
+    const { added } = await addSent(
+      docs,
+      store,
       "asha",
       [await fixture("thyroid-recheck.jpg")],
       true,
     );
-    const other = await docs.add(
+    const other = await addSent(
+      docs,
+      store,
       "asha",
       [await photo("other.png", "#111111")],
       true,
