@@ -92,22 +92,13 @@ const STATUS: Record<string, string> = {
   dropped: "Dropped",
 };
 
-/** A visit's setting, as a person says it. */
-const SETTINGS: Record<VisitRow["setting"], string> = {
-  clinic: "Clinic",
-  online: "Online",
-  home: "Home visit",
-  hospital: "Hospital stay",
-  unknown: "",
-};
-
 /** A visit's name: its doctor and place, or why they went. */
 export const visitTitle = (row: VisitRow) =>
   [row.doctor, row.place].filter(Boolean).join(" · ") || row.reason || "Visit";
 
 /** A visit's setting and date, as its page's heading says them. */
 export const visitWhen = (row: VisitRow) =>
-  [SETTINGS[row.setting], cellsOf(row).date].filter(Boolean).join(" · ");
+  [row.setting, cellsOf(row).date].filter(Boolean).join(" · ");
 
 interface Cells {
   /** What the row is, as its chip names it. */
@@ -162,7 +153,7 @@ export function cellsOf(row: RecordRow, groupDate?: string): Cells {
         ]
           .filter(Boolean)
           .join(" · "),
-        status: SETTINGS[row.setting],
+        status: row.setting,
         date: row.ended
           ? `${dated(row.date) ?? "?"} to ${dated(row.ended) ?? ""}`
           : (dated(row.date) ?? ""),

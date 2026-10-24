@@ -55,7 +55,7 @@ Each page shows the records that are current, newest first. As you scroll to the
 - A result shows its test, its value and unit (in one column, so values line up), a small line of its latest values, the lab's range, and the lab's note and context, as printed. The small line shows only when the test has two or more values with a date and a number, and it ends at that row's value. A date shows at the precision known, with its time when there is one. "Amended" means that the lab corrected the result. When a result's own date differs from its report's date, the row shows it.
 - **Other kinds** show one row for each record, newest first by its date: when a medicine started, when a symptom began. Records with no date come last.
 - **Allergies** also show "No known allergies" when you said so, with the day you said it.
-- **Visits** show each visit to a doctor: its doctor and place, why you went, how many records came from it, the setting (clinic, online, home visit or hospital stay) and its date; a hospital stay shows from admission to discharge. Click a visit's name to open its page (see [A visit](#a-visit)).
+- **Visits** show each visit to a doctor: its doctor and place, why you went, how many records came from it, the kind of visit in your words (for example, Clinic, Dental or Lab visit) and its date; a hospital stay shows from admission to discharge. Click a visit's name to open its page (see [A visit](#a-visit)).
 
 A removed record isn't shown, and neither is a result that an amended result replaced. Both stay in the history.
 

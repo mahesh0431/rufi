@@ -313,16 +313,16 @@ CREATE TABLE allergies (
   UNIQUE (person_id, id)
 ) STRICT;
 
--- A visit that happened (docs/adr/0021): to a clinic, online (a phone
--- call too), at home, or a stay in hospital (admitted on date, discharged
--- on ended). It keeps the doctor's words as written, in Markdown with the
+-- A care event that happened (docs/adr/0021), its kind in the person's
+-- words; a stay is admitted on date, discharged on ended.
+-- It keeps the doctor's words as written, in Markdown with the
 -- paper's own headings; for a visit told in the chat, the person's words.
 -- The records saved from it cite it in record_sources. A visit to come is
 -- a follow-up.
 CREATE TABLE visits (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL REFERENCES people (id),
-  setting TEXT NOT NULL DEFAULT 'unknown' CHECK (setting IN ('clinic', 'online', 'home', 'hospital', 'unknown')),
+  setting TEXT NOT NULL DEFAULT 'unknown',
   date TEXT,                   -- when it happened; a hospital stay's admission
   date_words TEXT,
   ended TEXT,                  -- a hospital stay's discharge

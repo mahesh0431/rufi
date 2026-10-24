@@ -265,22 +265,11 @@ export const KINDS: readonly Kind[] = [
     noun: "visit",
     fields: {
       setting: {
-        ...state("setting", [
-          "clinic",
-          "online",
-          "home",
-          "hospital",
-          "unknown",
-        ]),
-        input: Schema.Literals([
-          "clinic",
-          "online",
-          "home",
-          "hospital",
-          "unknown",
-        ]).annotate({
+        ...text("setting"),
+        notNull: true,
+        input: Short.annotate({
           description:
-            "clinic; online (a video or phone call); home (the doctor came); hospital (a stay: date is the admission, ended the discharge).",
+            "The kind of visit, as short free text in the user's words, shown as written. For a stay, date is the admission and ended the discharge.",
         }),
       },
       date: date("date", "date"),

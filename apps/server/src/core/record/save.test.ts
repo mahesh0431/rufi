@@ -195,16 +195,16 @@ const KIND_CASES: KindCase[] = [
   {
     kind: "visit",
     table: "visits",
-    said: "I saw Dr Rao online yesterday about the cough; she said it's viral, rest and fluids",
+    said: "I saw Dr Rao at urgent care yesterday about the cough; she said it's viral, rest and fluids",
     add: {
-      setting: "online",
+      setting: "Urgent care",
       date: { date: "2026-10-03", words: "yesterday" },
       doctor: "Dr Rao",
       reason: "Cough",
       as_written: "Viral cough. Rest and fluids.",
     },
     stored: {
-      setting: "online",
+      setting: "Urgent care",
       date: "2026-10-03",
       date_words: "yesterday",
       doctor: "Dr Rao",
@@ -213,15 +213,15 @@ const KIND_CASES: KindCase[] = [
     },
     added: [
       "Saved",
-      'Added visit Dr Rao: setting online, date 3 Oct 2026 ("yesterday"), reason Cough, as written Viral cough. Rest and fluids.',
+      'Added visit Dr Rao: setting Urgent care, date 3 Oct 2026 ("yesterday"), reason Cough, as written Viral cough. Rest and fluids.',
     ],
     change: {
-      said: "It was at the Lakeview clinic, not online",
-      fields: { setting: "clinic", place: "Lakeview Family Clinic" },
-      stored: { setting: "clinic", place: "Lakeview Family Clinic" },
+      said: "It was at the Lakeview clinic, not urgent care",
+      fields: { setting: "Clinic", place: "Lakeview Family Clinic" },
+      stored: { setting: "Clinic", place: "Lakeview Family Clinic" },
       receipt: [
         "Saved",
-        "Changed visit Dr Rao · Lakeview Family Clinic: setting online → clinic; place not given → Lakeview Family Clinic",
+        "Changed visit Dr Rao · Lakeview Family Clinic: setting Urgent care → Clinic; place not given → Lakeview Family Clinic",
       ],
     },
     removed: ["Saved", "Removed visit Dr Rao · Lakeview Family Clinic"],
@@ -1561,7 +1561,7 @@ describe("a visit and the records saved from it", () => {
         ref: "v1",
         from: [{ document: "doc-asha-sep", page: 1 }],
         fields: {
-          setting: "clinic",
+          setting: "Clinic",
           date: { date: "2026-10-02", words: "02/10/2026" },
           doctor: "Dr A. Fictional",
           place: "Lakeview Family Clinic",
@@ -1609,7 +1609,7 @@ describe("a visit and the records saved from it", () => {
     const newDoseId = ids.at(-1);
     expect(lines(saved.body.result.receipt)).toEqual([
       "Saved",
-      'Added visit Dr A. Fictional · Lakeview Family Clinic: setting clinic, date 2 Oct 2026 ("02/10/2026"), reason Iron deficiency anaemia, as written **Diagnosis:** Iron deficiency anaemia **Rx** 1. Ferrous sulfate 200 mg once d… · from thyroid recheck.jpg, page 1',
+      'Added visit Dr A. Fictional · Lakeview Family Clinic: setting Clinic, date 2 Oct 2026 ("02/10/2026"), reason Iron deficiency anaemia, as written **Diagnosis:** Iron deficiency anaemia **Rx** 1. Ferrous sulfate 200 mg once d… · from thyroid recheck.jpg, page 1',
       "Added medicine use Ferrous sulfate 200 mg: current · from visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026",
       "Added a source to medicine use Creatine 5 g: visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026 (its values stay as they are)",
       "Added a source to medicine use Creatine 5 g: Sunrise Labs August.pdf, page 2 (its values stay as they are)",
@@ -1644,7 +1644,7 @@ describe("a visit and the records saved from it", () => {
         id: visitId,
         action: "add",
         fields: {
-          setting: "clinic",
+          setting: "Clinic",
           date: { date: "2026-10-02", words: "02/10/2026" },
           doctor: "Dr A. Fictional",
           place: "Lakeview Family Clinic",

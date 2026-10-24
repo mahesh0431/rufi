@@ -18,6 +18,49 @@ const chat = (page: Page) => page.getByRole("region", { name: "Chat" });
 const box = (page: Page) =>
   chat(page).getByRole("textbox", { name: "Message to Rufi" });
 
+test("a visit saves a free-text kind and shows it as written on the list and its page", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start({
+    scenario: {
+      calls: [
+        {
+          tool: "save_changes",
+          arguments: {
+            changes: [
+              {
+                kind: "visit",
+                action: "add",
+                fields: {
+                  setting: "Dental check-up",
+                  doctor: "Dr Fictional",
+                  as_written: "Teeth cleaned. Continue flossing.",
+                },
+              },
+            ],
+          },
+        },
+      ],
+    },
+  });
+  await page.goto(rufi.link());
+  await chat(page).getByRole("button", { name: "Open the chat" }).click();
+  await box(page).fill(
+    "Save my Dental check-up with Dr Fictional: teeth cleaned, continue flossing.",
+  );
+  await box(page).press("Enter");
+  await expect(chat(page).locator(".receipt")).toContainText("Dental check-up");
+  await page.keyboard.press("Escape");
+  await sidebar(page)
+    .getByRole("link", { name: /^Visits/ })
+    .click();
+  await expect(page.getByRole("main")).toContainText("Dental check-up");
+  await page.getByRole("link", { name: "Dr Fictional", exact: true }).click();
+  await expect(page.getByRole("main")).toContainText("Dental check-up");
+});
+
 /** A save that removes the CRP result, or puts it back. */
 const crpSave = (action: "remove" | "restore") => [
   {

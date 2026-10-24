@@ -2172,8 +2172,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         one_save: saves === 1,
         one_visit_from_the_page:
           saved.visits.length === 1 &&
-          visit?.setting === "clinic" &&
-          visit.date === "2026-08-20" &&
+          visit?.date === "2026-08-20" &&
           JSON.stringify(visit.sources) ===
             JSON.stringify([{ type: "document_page", document: doc, page: 1 }]),
         levothyroxine_unchanged_and_cites_the_visit:
@@ -2239,10 +2238,9 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         no_medicine_before_her_word:
           medicinesFirst === medicinesBefore &&
           kept.medicines.length === medicinesBefore,
-        one_online_visit_yesterday:
+        one_visit_yesterday:
           kept.visits.length === 1 &&
-          visit?.setting === "online" &&
-          visit.date ===
+          visit?.date ===
             `${String(yesterday.getFullYear())}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`,
         the_medicine_once_started_cites_the_visit:
           taking?.status === "current" &&

@@ -65,7 +65,7 @@ export const MedicineUseRow = Schema.Struct({
 export const VisitRow = Schema.Struct({
   kind: Schema.Literal("visit"),
   id: Id,
-  setting: Schema.Literals(["clinic", "online", "home", "hospital", "unknown"]),
+  setting: Schema.String,
   /** When it happened; a hospital stay's admission. */
   date: When,
   /** A hospital stay's discharge. */

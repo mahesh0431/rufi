@@ -225,9 +225,8 @@ function Preview({
                 from a visit rests on the visit. */}
             {visit && (
               <p className="mt-2.5">
-                A medicine or follow-up saved from a visit here isn't listed:
-                Delete file keeps it, and with Delete file and results the AI
-                goes through it with you too.
+                Medicines or follow-ups saved from a visit here aren't listed;
+                Rufi AI goes through them with you.
               </p>
             )}
             {/* One document of a split file: only its part goes. */}

@@ -9,7 +9,7 @@
 CREATE TABLE visits (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL REFERENCES people (id),
-  setting TEXT NOT NULL DEFAULT 'unknown' CHECK (setting IN ('clinic', 'online', 'home', 'hospital', 'unknown')),
+  setting TEXT NOT NULL DEFAULT 'unknown',
   date TEXT,
   date_words TEXT,
   ended TEXT,

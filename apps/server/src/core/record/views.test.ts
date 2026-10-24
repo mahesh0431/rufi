@@ -428,7 +428,7 @@ describe("a visit", () => {
           action: "add",
           ref: "v1",
           fields: {
-            setting: "clinic",
+            setting: "Urgent care",
             date: { date: "2026-10-02", words: "on 2 Oct" },
             doctor: "Dr Rao",
             as_written:
@@ -480,7 +480,12 @@ describe("a visit", () => {
       ["condition", anaemia],
     ]);
     const [row] = (await views.page("asha", "visit")).groups[0]?.rows ?? [];
-    expect(row).toMatchObject({ kind: "visit", id: visit, cited: 2 });
+    expect(row).toMatchObject({
+      kind: "visit",
+      id: visit,
+      setting: "Urgent care",
+      cited: 2,
+    });
     const ironOpened = await views.detail("asha", "medicine_use", iron ?? "");
     // Its history says it came from a visit, not from a message or a page.
     expect(

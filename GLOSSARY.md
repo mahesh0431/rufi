@@ -81,7 +81,7 @@ One medicine or supplement the person takes or took, in one way (a morning and a
 _Avoid_: prescription (that is a paper), medication list, drug
 
 **Visit**:
-One time the person saw a doctor: at a clinic, online (a video or phone call), at home, or a stay in hospital (admitted and discharged). It keeps the doctor's words as written, the medicines proposed included, and its paper's page as its source; the records saved from it cite it. A visit to come is a follow-up. A **prescription** is a kind of document: the paper from a visit, not a record of its own.
+One care event that happened, with its kind in the person's words, such as a clinic, dental or lab visit, a phone call or a stay in hospital (admitted and discharged). It keeps the doctor's words as written, the medicines proposed included, and its paper's page as its source; the records saved from it cite it. A visit to come is a follow-up. A **prescription** is a kind of document: the paper from a visit, not a record of its own.
 _Avoid_: consultation, encounter, appointment
 
 **Care event**:

@@ -145,7 +145,7 @@ ${FIELDS}`,
           ref: "v1",
           from: [{ document: "0199a0f2-0000-7000-8000-0000000000d2", page: 1 }],
           fields: {
-            setting: "clinic",
+            setting: "Clinic",
             date: { date: "2026-08-20", words: "20/08/2026" },
             doctor: "Dr A. Fictional",
             place: "Lakeview Family Clinic",
