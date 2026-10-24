@@ -795,7 +795,7 @@ describe("a document Rufi AI split from an add", () => {
       expect(kept.copies).toEqual([{ page_in_file: stays }]);
       expect(kept.readings).toEqual([{ id: "job-pile" }]);
       expect((await docs.list("asha")).filter((d) => d.id === second)).toEqual([
-        expect.objectContaining({ status: "done", sorting: null }),
+        expect.objectContaining({ status: "done", notSorted: false }),
       ]);
 
       expect(await remover.preview("asha", second)).toMatchObject({

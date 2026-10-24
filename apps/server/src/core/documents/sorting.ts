@@ -22,7 +22,7 @@ import { v7 as uuid } from "uuid";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 import { Refusal, type Issue } from "../tools/registry.ts";
-import { documentName, ranges } from "./naming.ts";
+import { ranges } from "./naming.ts";
 
 type Trx = Transaction<Tables>;
 type Db = Kysely<Tables> | Trx;
@@ -800,8 +800,6 @@ export async function unsorted(db: Db, personId: string): Promise<Set<string>> {
     ).map((p) => p.documentId),
   );
 }
-
-export type Sorting = ReturnType<typeof sorting>;
 
 /** "pages 1–2 of 5", "page 5 of 5", or "" for a document that is its whole add. */
 function pagesWords(positions: readonly number[], of: number): string {

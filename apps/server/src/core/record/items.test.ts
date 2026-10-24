@@ -248,7 +248,6 @@ async function call(
     transcripts,
     () => undefined,
     undefined,
-    undefined,
     { run: sorting(store, () => SUNDAY_10AM).sort, done: () => undefined },
   )(chat, "t-1", origin)(tool, input, callId);
   return {
@@ -1181,7 +1180,7 @@ describe("a sort again", () => {
 });
 
 describe("a sort's trace", () => {
-  it("is kept with the sort, in its transaction: when it can't be kept, nothing is sorted", async () => {
+  it("is kept with the sort, in its transaction: when it can't be kept, nothing is sorted; the same call again answers the same", async () => {
     const input = copied(PAGES, "doc-asha-aug");
     const before = rows("SELECT * FROM documents WHERE id = 'doc-asha-aug'");
     store.db.exec(
@@ -1193,7 +1192,6 @@ describe("a sort's trace", () => {
       before,
     );
     expect(drafts()).toEqual({});
-    expect(rows("SELECT id FROM sort_requests")).toEqual([]);
     expect(
       rows("SELECT sorted_at FROM jobs WHERE id = 'job-doc-asha-aug'"),
     ).toEqual([{ sorted_at: null }]);
@@ -1220,6 +1218,17 @@ describe("a sort's trace", () => {
         ok: 1,
       },
     ]);
+
+    // The same call again gets the same answer and writes nothing.
+    const documents = rows("SELECT id, version FROM documents");
+    const { kept: _, ...again } = await call(
+      "sort_documents",
+      input,
+      "person",
+      "call-sort",
+    );
+    expect(again).toEqual(sorted);
+    expect(rows("SELECT id, version FROM documents")).toEqual(documents);
   });
 });
 
@@ -1278,23 +1287,33 @@ describe("dismissing draft items", () => {
 });
 
 describe("a turn a Rufi event started", () => {
-  it("can't save or dismiss draft items", async () => {
+  it("can't save, dismiss or sort draft items", async () => {
     await read();
     const { HbA1c = "" } = drafts();
     const before = written();
+    const sorted = drafts();
     for (const [tool, input] of [
       [
         "save_changes",
         { items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }] },
       ],
       ["dismiss_items", { items: [{ item: HbA1c, version: 1 }] }],
+      [
+        "sort_documents",
+        {
+          document: "doc-asha-aug",
+          documents: [{ id: "doc-asha-aug", pages: [1], kind: "letter" }],
+          drafts: [],
+        },
+      ],
     ] as const) {
       const answer = await call(tool, input, "rufi");
       expect(answer.ok).toBe(false);
       expect(answer.error).toBe(
-        "This turn was started by a Rufi event, not by the user, so nothing can be saved or made in it. Explain or ask; the user asks in a message of their own.",
+        "This turn was started by a Rufi event, not by the user, so nothing can be saved, sorted or made in it. Explain or ask; the user asks in a message of their own.",
       );
     }
     expect(written()).toEqual(before);
+    expect(drafts()).toEqual(sorted);
   });
 });

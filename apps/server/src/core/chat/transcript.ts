@@ -123,15 +123,17 @@ const toEntry = (
   updatedAt: row.updated_at,
   ...(row.refs !== null && { refs: JSON.parse(row.refs) as Chip[] }),
   ...(row.kind === "event" && linkOf(row.details)),
+  ...(row.activity === "reading" && linkOf(row.details, true)),
 });
 
-/** An event's link to its document, from its facts; none once it is deleted. */
-function linkOf(details: string | null): Pick<Entry, "link"> {
-  const facts = (
-    JSON.parse(details ?? "{}") as {
-      facts?: { document?: unknown; action?: unknown; deleted?: unknown };
-    }
-  ).facts;
+/**
+ * An event's link to its document, from its facts, or a reading step's to
+ * its reading; none once it is deleted.
+ */
+function linkOf(details: string | null, reading = false): Pick<Entry, "link"> {
+  type Facts = { document?: unknown; action?: unknown; deleted?: unknown };
+  const stored = JSON.parse(details ?? "{}") as Facts & { facts?: Facts };
+  const facts = reading ? { ...stored, action: "open" } : stored.facts;
   return typeof facts?.document === "string" &&
     facts.deleted !== true &&
     (facts.action === "open" || facts.action === "retry")

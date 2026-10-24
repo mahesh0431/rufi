@@ -20,7 +20,7 @@ import { Refusal } from "../tools/registry.ts";
 import type { FileGate } from "./gate.ts";
 import { removeBytes, sweepBytes } from "./originals.ts";
 import { DELETED_DOCUMENT, documentName } from "./naming.ts";
-import { addOf, documentsOf, notSorted, pagesOf, placesOf } from "./sorting.ts";
+import { addOf, placesOf } from "./sorting.ts";
 
 type Db = Kysely<Tables> | Transaction<Tables>;
 
@@ -259,7 +259,28 @@ async function markDeleted(
       .where("id", "=", id)
       .execute();
   }
-  return [...sent, ...events].map((e) => e.id);
+  const steps = await trx
+    .selectFrom("transcript_entries")
+    .select(["id", "details"])
+    .where("person_id", "=", personId)
+    .where("activity", "=", "reading")
+    .where(sql<boolean>`json_extract(details, '$.document') = ${documentId}`)
+    .execute();
+  for (const { id, details } of steps) {
+    await trx
+      .updateTable("transcript_entries")
+      .set({
+        details: JSON.stringify({
+          ...(JSON.parse(details ?? "{}") as object),
+          deleted: true,
+        }),
+        revision,
+        updated_at: at,
+      })
+      .where("id", "=", id)
+      .execute();
+  }
+  return [...sent, ...events, ...steps].map((e) => e.id);
 }
 
 /** The AI's note of a delete: what is true now, and what to do. */

@@ -706,21 +706,16 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     c.header("Content-Type", found.mediaType);
     return c.body(new Uint8Array(bytes));
   };
-  /** A reading's refusal (nothing to retry) as the answer shows it. */
-  const reading = async <T>(action: () => Promise<T>): Promise<T> => {
+  // A chip of an unsent file taken out of the box: the file leaves Rufi.
+  // One sent meanwhile stays, refused.
+  app.delete(`${documentsPath}/:documentId/unsent`, async (c) => {
+    const found = await person(c);
     try {
-      return await action();
+      await deps.deletions.removeUnsent(found.id, c.req.param("documentId"));
     } catch (error) {
       if (error instanceof Refusal) throw new HttpError(409, error.message);
       throw error;
     }
-  };
-  // A chip of an unsent file taken out of the box: the file leaves Rufi.
-  app.delete(`${documentsPath}/:documentId/unsent`, async (c) => {
-    const found = await person(c);
-    await reading(() =>
-      deps.deletions.removeUnsent(found.id, c.req.param("documentId")),
-    );
     return c.json({ removed: true });
   });
   // Delete: what it would do, then the delete made on that preview. A

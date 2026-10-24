@@ -660,6 +660,8 @@ export function chatQueue(
             held: null,
             held_text: null,
             hold_id: null,
+            // Its next reply is a new one.
+            turn_id: null,
             position,
             updated_at: now(),
           })

@@ -132,6 +132,7 @@ export function reader(deps: ReaderDeps) {
       };
       const timer = setTimeout(done, Math.max(0, ms));
       signal.addEventListener("abort", done, { once: true });
+      if (signal.aborted) done();
     });
 
   /**
@@ -153,12 +154,6 @@ export function reader(deps: ReaderDeps) {
       deleted.aborted
         ? ({ ended: "deleted" } as const)
         : ({ ended: "stopped" } as const);
-    // A crash after the last page was saved: finish without a reader.
-    if (await readings.allSaved(job)) {
-      run.closed = true;
-      await readings.finish(run);
-      return { ended: "done" };
-    }
     const tools = deps.kind.tools(run, log);
     const { model, effort } = await deps.choice();
     const counts = { looks: 0, saves: 0 };
@@ -302,7 +297,13 @@ export function reader(deps: ReaderDeps) {
       await Promise.race([
         before,
         new Promise<void>((resolve) => {
-          stop.addEventListener("abort", () => resolve(), { once: true });
+          stop.addEventListener(
+            "abort",
+            () => {
+              resolve();
+            },
+            { once: true },
+          );
           if (stop.aborted) resolve();
         }),
       ]);

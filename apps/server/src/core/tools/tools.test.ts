@@ -795,7 +795,7 @@ describe("the error envelope", () => {
       "rm_rf",
     );
     expect(body["error"]).toBe(
-      "There is no tool called rm_rf. Rufi's tools: get_overview, get_records, get_documents, read_chat, save_changes, dismiss_items, sort_documents, retry_reading, create_brief, show_face.",
+      "There is no tool called rm_rf. Rufi's tools: get_overview, get_records, get_documents, read_chat, save_changes, dismiss_items, sort_documents, create_brief, show_face.",
     );
   });
 

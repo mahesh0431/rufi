@@ -414,31 +414,6 @@ export function readings(
       return row && jobOf(row);
     },
 
-    /**
-     * Whether every target has this job's copy from a run not recorded as
-     * failed. A page an older reader saved in this job's notebook has no
-     * copy: the reader that copies reads it again.
-     */
-    allSaved: async (job: Job) => {
-      const rows = await db
-        .selectFrom("document_pages as p")
-        .innerJoin("page_copies as c", (join) =>
-          join
-            .onRef("c.person_id", "=", "p.person_id")
-            .onRef("c.file_id", "=", "p.file_id")
-            .onRef("c.page_in_file", "=", "p.page_in_file"),
-        )
-        .select("p.position")
-        .where("p.person_id", "=", job.personId)
-        .where("p.document_id", "=", job.documentId)
-        .where("c.job_id", "=", job.id)
-        .where("p.entry_job_id", "=", job.id)
-        .where("p.entry_attempt", ">", 0)
-        .execute();
-      const saved = new Set(rows.map((r) => r.position));
-      return job.targets.every((t) => saved.has(t));
-    },
-
     /** Starts a run of a queued job: running, the next attempt. */
     startRun: (job: Job): Promise<Run> =>
       db.transaction().execute((trx) => begin(trx, job)),
@@ -629,6 +604,7 @@ export function readings(
      */
     note: async (jobIds: readonly string[]): Promise<string | undefined> => {
       const lines: string[] = [];
+      let sorts = false;
       for (const id of jobIds) {
         const row = await db
           .selectFrom("jobs")
@@ -638,6 +614,8 @@ export function readings(
           .executeTakeFirst();
         if (!row) continue;
         const job = jobOf(row);
+        // Only unreadable pages: finished as sorted, nothing to sort.
+        if (row.sorted_at === null) sorts = true;
         const pages = await db
           .selectFrom("document_pages")
           .select(["position", "file_name", "state"])
@@ -668,7 +646,9 @@ export function readings(
       if (lines.length === 0) return undefined;
       return [
         ...lines,
-        "Not sorted yet: sort it as the sorting-documents skill says, then answer the user's message.",
+        sorts
+          ? "Not sorted yet: sort it as the sorting-documents skill says, then answer the user's message."
+          : "Nothing in it to sort: tell the user what couldn't be read, then answer their message.",
       ].join("\n");
     },
 

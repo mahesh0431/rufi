@@ -7,14 +7,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, it } from "vitest";
 import { holdRufiLock } from "../../platform/files.ts";
-import { v7 as uuid } from "uuid";
-import { chatQueue } from "../chat/queue.ts";
-import {
-  transcripts as openTranscripts,
-  type ChatRow,
-} from "../chat/transcript.ts";
 import { documents } from "../documents/documents.ts";
-import { sorting } from "../documents/sorting.ts";
 import { backupsPath, makeBackup } from "./backup.ts";
 import { databasePath, openWritable } from "./database.ts";
 import { restore } from "./restore.ts";

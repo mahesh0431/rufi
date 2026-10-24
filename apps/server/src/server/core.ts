@@ -258,7 +258,10 @@ export const startCore = (options: CoreOptions) =>
           log,
         }),
       ),
-      (opened) => Effect.sync(() => opened.close()),
+      (opened) =>
+        Effect.sync(() => {
+          opened.close();
+        }),
     );
     const chat = yield* Effect.acquireRelease(
       Effect.sync(() =>

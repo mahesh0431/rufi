@@ -361,14 +361,19 @@ describe("the core", () => {
     await release();
   });
 
-  it("marks the hand-overs a crash cut off as not sure, never sends them again, and holds what waits until the person sends", async () => {
+  it("marks the hand-overs a crash cut off as not sure, never sends them again, and holds what waits until the person sends; a reply cut off in Rufi's part ends there, its message held for Retry", async () => {
     const left = openWritable(databasePath(home));
     left.db.exec(`
-      INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
-      INSERT INTO chats (id, person_id, created_at) VALUES ('c-asha', 'asha', '2026-10-04T09:00:00Z');
+      INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional'), ('ravi', 'Ravi Fictional');
+      INSERT INTO chats (id, person_id, created_at) VALUES ('c-asha', 'asha', '2026-10-04T09:00:00Z'), ('c-ravi', 'ravi', '2026-10-04T09:00:00Z');
       INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, sent_as, created_at, updated_at) VALUES
         ('q-1', 'asha', 'c-asha', 'person', 'Being handed over', 1, 'handing_over', 'q-1', '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
-        ('q-2', 'asha', 'c-asha', 'person', 'Waiting', 2, 'waiting', NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');`);
+        ('q-2', 'asha', 'c-asha', 'person', 'Waiting', 2, 'waiting', NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');
+      -- Ravi's reply was copying his file, before the AI had his message.
+      INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at)
+        VALUES ('t-r', 'ravi', 'c-ravi', NULL, NULL, 'gpt-6.1-sol', 'running', '2026-10-04T10:00:00Z');
+      INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, sent_as, turn_id, created_at, updated_at) VALUES
+        ('q-r', 'ravi', 'c-ravi', 'person', 'Read this', 1, 'handing_over', NULL, 't-r', '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');`);
     left.close();
     const page = await session(await start());
     await sleep(300);
@@ -385,7 +390,6 @@ describe("the core", () => {
             heldText: null,
             holdId: null,
             refs: [],
-            sort: false,
           },
           {
             id: "q-2",
@@ -396,7 +400,6 @@ describe("the core", () => {
             heldText: null,
             holdId: null,
             refs: [],
-            sort: false,
           },
         ],
       },
@@ -426,6 +429,47 @@ describe("the core", () => {
     const [, again] = await said();
     expect(again?.text).toBe("Being handed over");
     expect(again?.id).not.toBe("q-1");
+
+    const ravi = "/api/people/ravi/chat";
+    const held = (await page.api("GET", `${ravi}/queue`)).body["items"] as {
+      holdId: string;
+    }[];
+    expect(held).toEqual([
+      {
+        id: "q-r",
+        origin: "person",
+        text: "Read this",
+        state: "waiting",
+        held: "reply_ended",
+        heldText: "Rufi closed while reading.",
+        holdId: expect.any(String) as string,
+        refs: [],
+        turnId: "t-r",
+      },
+    ]);
+    expect((await page.api("GET", ravi)).body["turns"]).toMatchObject([
+      {
+        id: "t-r",
+        status: "interrupted",
+        endText: "Rufi closed while reading.",
+      },
+    ]);
+    // Two Retry clicks (two tabs) send it once.
+    const hold = { hold: held[0]?.holdId };
+    const retries = await Promise.all([
+      page.api("POST", `${ravi}/queue/q-r/retry`, hold),
+      page.api("POST", `${ravi}/queue/q-r/retry`, hold),
+    ]);
+    expect(retries.map((r) => r.status).sort((a, b) => a - b)).toEqual([
+      200, 409,
+    ]);
+    const sent = async () =>
+      (
+        (await page.api("GET", ravi)).body["entries"] as { kind: string }[]
+      ).filter((entry) => entry.kind === "message");
+    await until(async () => (await sent()).length === 1);
+    await sleep(300);
+    expect(await sent()).toHaveLength(1);
   });
 
   it("marks replies cut off by a crash as interrupted when it starts", async () => {
@@ -1075,7 +1119,7 @@ describe("the local API", () => {
   });
 
   it(
-    "marks a message Rufi stopped during while handing it over as not sure, never sent again",
+    "marks a message Rufi stopped during after sending it to the AI as not sure, never sent again",
     { timeout: 20_000 },
     async () => {
       // A core of its own, whose Codex never answers thread/start.
@@ -1102,14 +1146,21 @@ describe("the local API", () => {
         const c = await chat(page);
         queue = `${c.path}/queue`;
         await page.say(c.path, "Outgoing text");
-        await until(
-          async () =>
-            (
-              (await page.api("GET", queue)).body["items"] as {
-                state: string;
-              }[]
-            )[0]?.state === "handing_over",
-        );
+        // Crashed once the message went to the AI: marked as it is sent.
+        const sent = openReadOnly(databasePath(home));
+        if (!sent) throw new Error("No data yet.");
+        try {
+          await until(
+            () =>
+              sent.db
+                .prepare(
+                  "SELECT 1 FROM chat_queue WHERE state = 'handing_over' AND sent_as IS NOT NULL",
+                )
+                .get() !== undefined,
+          );
+        } finally {
+          sent.close();
+        }
       } finally {
         child.kill("SIGKILL");
         await exited;
