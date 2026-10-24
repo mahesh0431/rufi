@@ -108,7 +108,9 @@ test("Ask Rufi puts chips of several kinds in the box, a report as one, and the 
   // A Needs you line: its chip goes in the box; the bar says so, closed.
   await page
     .getByRole("region", { name: "Needs you" })
-    .getByRole("button", { name: "Ask Rufi about Repeat HbA1c" })
+    .getByRole("button", {
+      name: "Ask Rufi about this follow-up: Repeat HbA1c",
+    })
     .click();
   await expect(page).toHaveURL(/\/$/);
   await added(bar, "Repeat HbA1c · 15 Jan 2026");
@@ -412,6 +414,10 @@ test("a document's draft items go into the chat as chips, and the AI gets their 
   }
   expect(page.url()).toBe(documentPage);
   await added(bar, "Test 1 1 +1");
+  // Checked with the pointer still on Ask Rufi, its label shown.
+  await expect(
+    row("Test 5").getByText("Ask Rufi about this", { exact: true }),
+  ).toBeVisible();
   await accessible(page);
   await page.reload();
   await opener(bar).click();
