@@ -12,6 +12,7 @@ import { join } from "node:path";
 import type { AgentSandbox, AgentSkill, McpServer } from "../runtime.ts";
 import type { ConfigReadResponse } from "./protocol/v2/ConfigReadResponse.ts";
 import type { ExperimentalFeatureListResponse } from "./protocol/v2/ExperimentalFeatureListResponse.ts";
+import type { ModelProviderCapabilitiesReadResponse } from "./protocol/v2/ModelProviderCapabilitiesReadResponse.ts";
 import type { Rpc } from "./rpc.ts";
 
 /**
@@ -224,6 +225,15 @@ export async function checkSettings(
   }
   if (config["personality"] !== SETTINGS.personality) {
     problems.push(`personality is ${JSON.stringify(config["personality"])}`);
+  }
+  // Without namespace support Codex drops Rufi's tools without a word.
+  const capabilities: ModelProviderCapabilitiesReadResponse = await rpc.request(
+    "modelProvider/capabilities/read",
+    {},
+    timeoutMs,
+  );
+  if (!capabilities.namespaceTools) {
+    problems.push("the provider doesn't take Rufi's tools (namespaceTools)");
   }
   const enabled = new Map<string, boolean>();
   let cursor: string | null = null;

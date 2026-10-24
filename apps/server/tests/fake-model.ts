@@ -21,6 +21,7 @@ import type { AddressInfo } from "node:net";
 
 export interface ModelRequest {
   model?: string;
+  instructions?: string;
   input: {
     type?: string;
     role?: string;

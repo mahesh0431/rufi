@@ -124,7 +124,6 @@
           },
           "page": {
             "type": "integer",
-            "maximum": 9007199254740991,
             "exclusiveMinimum": 0,
             "description": "A page of that document, by its number: you get the page's image, its own text when it has some, and the reader's copy."
           },
@@ -165,7 +164,6 @@
         "properties": {
           "before": {
             "type": "integer",
-            "maximum": 9007199254740991,
             "exclusiveMinimum": 0,
             "description": "Read entries before this position: the `next_before` of the previous page."
           },
@@ -227,7 +225,6 @@
                     },
                     "source": {
                       "type": "integer",
-                      "maximum": 9007199254740991,
                       "exclusiveMinimum": 0,
                       "description": "The user's message with the facts this rests on, as its position in read_chat. Leave it out when the facts are in their message in this turn, where they said yes."
                     },
@@ -242,7 +239,6 @@
                         },
                         "page": {
                           "type": "integer",
-                          "maximum": 9007199254740991,
                           "exclusiveMinimum": 0
                         }
                       },
@@ -378,7 +374,6 @@
                     },
                     "source": {
                       "type": "integer",
-                      "maximum": 9007199254740991,
                       "exclusiveMinimum": 0,
                       "description": "The user's message with the facts this rests on, as its position in read_chat. Leave it out when the facts are in their message in this turn, where they said yes."
                     },
@@ -393,7 +388,6 @@
                         },
                         "page": {
                           "type": "integer",
-                          "maximum": 9007199254740991,
                           "exclusiveMinimum": 0
                         }
                       },
@@ -519,7 +513,6 @@
                     },
                     "source": {
                       "type": "integer",
-                      "maximum": 9007199254740991,
                       "exclusiveMinimum": 0,
                       "description": "The user's message with the facts this rests on, as its position in read_chat. Leave it out when the facts are in their message in this turn, where they said yes."
                     },
@@ -534,7 +527,6 @@
                         },
                         "page": {
                           "type": "integer",
-                          "maximum": 9007199254740991,
                           "exclusiveMinimum": 0
                         }
                       },
@@ -658,7 +650,6 @@
                     },
                     "source": {
                       "type": "integer",
-                      "maximum": 9007199254740991,
                       "exclusiveMinimum": 0,
                       "description": "The user's message with the facts this rests on, as its position in read_chat. Leave it out when the facts are in their message in this turn, where they said yes."
                     },
@@ -673,7 +664,6 @@
                         },
                         "page": {
                           "type": "integer",
-                          "maximum": 9007199254740991,
                           "exclusiveMinimum": 0
                         }
                       },
@@ -775,7 +765,6 @@
                     },
                     "source": {
                       "type": "integer",
-                      "maximum": 9007199254740991,
                       "exclusiveMinimum": 0,
                       "description": "The user's message with the facts this rests on, as its position in read_chat. Leave it out when the facts are in their message in this turn, where they said yes."
                     },
@@ -790,7 +779,6 @@
                         },
                         "page": {
                           "type": "integer",
-                          "maximum": 9007199254740991,
                           "exclusiveMinimum": 0
                         }
                       },
@@ -882,7 +870,6 @@
                     },
                     "source": {
                       "type": "integer",
-                      "maximum": 9007199254740991,
                       "exclusiveMinimum": 0,
                       "description": "The user's message with the facts this rests on, as its position in read_chat. Leave it out when the facts are in their message in this turn, where they said yes."
                     },
@@ -897,7 +884,6 @@
                         },
                         "page": {
                           "type": "integer",
-                          "maximum": 9007199254740991,
                           "exclusiveMinimum": 0
                         }
                       },
@@ -1060,7 +1046,6 @@
                     },
                     "source": {
                       "type": "integer",
-                      "maximum": 9007199254740991,
                       "exclusiveMinimum": 0,
                       "description": "The user's message with the facts this rests on, as its position in read_chat. Leave it out when the facts are in their message in this turn, where they said yes."
                     },
@@ -1075,7 +1060,6 @@
                         },
                         "page": {
                           "type": "integer",
-                          "maximum": 9007199254740991,
                           "exclusiveMinimum": 0
                         }
                       },
@@ -1178,7 +1162,6 @@
                     },
                     "source": {
                       "type": "integer",
-                      "maximum": 9007199254740991,
                       "exclusiveMinimum": 0,
                       "description": "The user's message with the facts this rests on, as its position in read_chat. Leave it out when the facts are in their message in this turn, where they said yes."
                     },
@@ -1193,7 +1176,6 @@
                         },
                         "page": {
                           "type": "integer",
-                          "maximum": 9007199254740991,
                           "exclusiveMinimum": 0
                         }
                       },
@@ -1256,7 +1238,6 @@
                     },
                     "source": {
                       "type": "integer",
-                      "maximum": 9007199254740991,
                       "exclusiveMinimum": 0,
                       "description": "The user's message with the facts this rests on, as its position in read_chat. Leave it out when the facts are in their message in this turn, where they said yes."
                     },
@@ -1271,7 +1252,6 @@
                         },
                         "page": {
                           "type": "integer",
-                          "maximum": 9007199254740991,
                           "exclusiveMinimum": 0
                         }
                       },
@@ -1387,7 +1367,6 @@
                 },
                 "version": {
                   "type": "integer",
-                  "maximum": 9007199254740991,
                   "exclusiveMinimum": 0,
                   "description": "The item's version as you read it with get_documents."
                 },
@@ -1445,7 +1424,6 @@
                   "properties": {
                     "source": {
                       "type": "integer",
-                      "maximum": 9007199254740991,
                       "exclusiveMinimum": 0,
                       "description": "The user's message with the facts this rests on, as its position in read_chat. Leave it out when the facts are in their message in this turn, where they said yes."
                     },
@@ -1729,7 +1707,6 @@
                 },
                 "version": {
                   "type": "integer",
-                  "maximum": 9007199254740991,
                   "exclusiveMinimum": 0,
                   "description": "The item's version as you read it."
                 }
@@ -1791,7 +1768,6 @@
                   "type": "array",
                   "items": {
                     "type": "integer",
-                    "maximum": 9007199254740991,
                     "exclusiveMinimum": 0
                   },
                   "minItems": 1,
@@ -1841,7 +1817,6 @@
               "properties": {
                 "page": {
                   "type": "integer",
-                  "maximum": 9007199254740991,
                   "exclusiveMinimum": 0,
                   "description": "The page it is printed on."
                 },
@@ -2051,9 +2026,8 @@
           },
           "record_version": {
             "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991,
-            "description": "The record_version get_overview gave you before you read the record for this brief."
+            "description": "The record_version get_overview gave you before you read the record for this brief.",
+            "minimum": 0
           },
           "cited": {
             "type": "array",

@@ -405,20 +405,16 @@ describe("the reader on the pinned Codex", () => {
             ],
       );
     }
-    // Codex's own prompt with no personality (as a developer message), then
-    // Rufi's instructions only, and no history: then just the task.
-    const messages = requests[0]?.input.map((item) => [
-      item.role,
-      item.content,
-    ]);
-    expect(messages?.[0]?.[0]).toBe("developer");
-    const prompt = JSON.stringify(messages?.[0]?.[1]);
-    expect(prompt).toMatch(/^\[\{"type":"input_text","text":"You are Codex/);
-    expect(prompt).not.toContain("# Personality\\n");
-    expect(messages?.slice(1)).toEqual([
-      ["developer", [{ type: "input_text", text: INSTRUCTIONS }]],
-      ["user", [{ type: "input_text", text: INPUT }]],
-    ]);
+    // Codex's own prompt with no personality, then Rufi's instructions only,
+    // and no history: then just the task.
+    expect(requests[0]?.instructions).toMatch(/^You are Codex/);
+    expect(requests[0]?.instructions).not.toMatch(/^# Personality$/m);
+    expect(requests[0]?.input.map((item) => [item.role, item.content])).toEqual(
+      [
+        ["developer", [{ type: "input_text", text: INSTRUCTIONS }]],
+        ["user", [{ type: "input_text", text: INPUT }]],
+      ],
+    );
 
     // Codex's resource helper reached nothing: the endpoint offers none.
     expect(requests[1]?.input.at(-1)).toMatchObject({
@@ -550,8 +546,8 @@ describe("the reader on the pinned Codex", () => {
 
     // The complete exposed set, in every request, also after the compaction:
     // exec and wait run Rufi's tools (declared in exec's description, not
-    // deferred) and Codex's resource helpers. No question to the person: Codex
-    // honours the reader's request_user_input setting for it too.
+    // deferred) and Codex's resource helpers; the async question fails the
+    // turn.
     const requests = model?.requests ?? [];
     expect(requests.filter(isCompaction)).toHaveLength(1);
     for (const request of requests) {
@@ -562,6 +558,7 @@ describe("the reader on the pinned Codex", () => {
       }
       expect(callable(request), where).toEqual([
         "functions.exec",
+        "functions.request_user_input_async",
         "functions.wait",
       ]);
       expect(inExec(request), where).toEqual([
@@ -606,7 +603,7 @@ describe("the reader on the pinned Codex", () => {
     ]);
   }, 120_000);
 
-  it("gives a code-mode reader no way to ask the person a question", async () => {
+  it("fails the turn when a code-mode reader asks the person a question", async () => {
     const { outcome } = await read(
       job([1]),
       [
@@ -621,13 +618,11 @@ describe("the reader on the pinned Codex", () => {
       undefined,
       CODE_MODEL,
     );
-    // Codex doesn't offer the question tool and refuses a call to it, so no
-    // question reaches anyone and the reader goes on.
-    expect(model?.requests[1]?.input.at(-1)).toMatchObject({
-      type: "function_call_output",
-      output: "unsupported call: request_user_input_async",
+    expect(outcome.end).toEqual({
+      status: "failed",
+      reason: "provider_failed",
+      text: "The reader asked a question, but nobody is there to answer it, so Rufi stopped it.",
     });
-    expect(outcome.end).toEqual({ status: "completed" });
   }, 120_000);
 
   it("refuses a model it doesn't run before a turn starts", async () => {
