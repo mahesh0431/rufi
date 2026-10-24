@@ -38,10 +38,6 @@ export function localTime(iso: string): string {
   return `${String(at.getFullYear())}-${two(at.getMonth() + 1)}-${two(at.getDate())}T${two(at.getHours())}:${two(at.getMinutes())}`;
 }
 
-/** Whether `date` (at its precision) is later than the local time `anchor`. */
-export const isAfter = (date: string, anchor: string) =>
-  date > anchor.slice(0, date.length);
-
 const MONTHS = [
   "Jan",
   "Feb",

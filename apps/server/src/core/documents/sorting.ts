@@ -4,10 +4,9 @@
 // its page, in one sort_documents call. Code decides none of it. It keeps
 // only what must never go wrong: whose add it is, that every page ends in
 // one document, that a page a saved result cites stays where it is, that a
-// Rufi-started turn sorts only the pages its request is for, and the page
-// check: a draft's value, as printed, is in its page's copy. A sort is
-// written in one transaction, with its request consumed; the stored tool
-// call is its trace.
+// draft's page has a copy, and that a Rufi-started turn sorts only the pages
+// its request is for. A sort is written in one transaction, with its request
+// consumed; the stored tool call is its trace.
 //
 // The add is the document as the person added it, with the documents split
 // from it (documents.from_document). Every document of an add shares its
@@ -103,7 +102,7 @@ const Draft = Schema.Struct({
   test_name: Text(200, "The test's or measurement's name, exactly as printed."),
   value_text: Text(
     100,
-    "The value as the page's copy prints it, as it would be saved: '<0.5', '1,25'; as characters, not the copy's HTML or Markdown ('<0.5', not '&lt;0.5'). Where the reader marked a digit unclear ('1[0?]4'), your reading ('104'), with worth_a_look saying why. Rufi checks it is on that page's copy.",
+    "The value as the page's copy prints it, as it would be saved: '<0.5', '1,25'; as characters, not the copy's HTML or Markdown ('<0.5', not '&lt;0.5'). Where the reader marked a digit unclear ('1[0?]4'), your reading ('104'), with worth_a_look saying why.",
   ),
   comparator: Schema.optionalKey(
     Schema.Literals(["<", "<=", ">", ">="]).annotate({
@@ -175,100 +174,6 @@ export interface SortAnswer {
     worth_a_look: number;
   }[];
   note: string;
-}
-
-/** HTML entities a copy may hold, as their characters. */
-const ENTITIES: Record<string, string> = {
-  amp: "&",
-  lt: "<",
-  gt: ">",
-  quot: '"',
-  apos: "'",
-  nbsp: " ",
-  ndash: "–",
-  mdash: "—",
-  micro: "µ",
-  deg: "°",
-  plusmn: "±",
-  le: "≤",
-  ge: "≥",
-};
-
-/**
- * Text as the page check compares it: HTML entities as their characters,
- * Markdown escapes and emphasis taken off, HTML tags as a space, spacing made
- * one space. Marks such as [?], [unclear: ...] and ~~...~~ stay.
- */
-export function comparable(text: string): string {
-  return (
-    text
-      .normalize("NFC")
-      // Only what looks like an HTML tag: in "<0.5 | >3.0" both values stay.
-      .replace(/<\/?[a-z][a-z0-9]*(\s[^<>\n]*)?\/?>/gi, " ")
-      .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, name: string) => {
-        if (name.startsWith("#x") || name.startsWith("#X")) {
-          return String.fromCodePoint(Number.parseInt(name.slice(2), 16));
-        }
-        if (name.startsWith("#")) {
-          return String.fromCodePoint(Number.parseInt(name.slice(1), 10));
-        }
-        return ENTITIES[name.toLowerCase()] ?? whole;
-      })
-      .replace(/\\([!-/:-@[-`{-~])/g, "$1")
-      .replace(/\*\*|__/g, "")
-      .replace(/[\s ]+/g, " ")
-      .trim()
-  );
-}
-
-const WORD = /[\p{L}\p{N}]/u;
-const DIGIT = /\p{N}/u;
-
-/**
- * The page check: whether `value` is in `copy`, both made comparable, at
- * word boundaries (not inside a longer number or word: "13" isn't on a
- * page that prints only "13.2"). It checks only
- * that the printed value is on the page, not what it means.
- */
-export function onPage(value: string, copy: string): boolean {
-  const needle = comparable(value);
-  if (needle === "") return false;
-  const hay = comparable(copy);
-  for (
-    let at = hay.indexOf(needle);
-    at !== -1;
-    at = hay.indexOf(needle, at + 1)
-  ) {
-    const end = at + needle.length;
-    const edge = (
-      c: string | undefined,
-      inner: string | undefined,
-      beyond: string | undefined,
-    ) =>
-      c === undefined ||
-      inner === undefined ||
-      !WORD.test(inner) ||
-      // "13" in "13.2", "1" in "1,25": a point or comma between digits is
-      // inside the number.
-      (!WORD.test(c) &&
-        !(/[.,]/.test(c) && DIGIT.test(inner) && DIGIT.test(beyond ?? "")));
-    if (
-      edge(hay[at - 1], needle[0], hay[at - 2]) &&
-      edge(hay[end], needle.at(-1), hay[end + 1])
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * A copy with the reader's marks on single characters taken off, as
- * Rufi AI may read them: "1[0?]4" is "104". For the page check of a draft
- * worth a look only.
- */
-function unmarked(copy: string): string {
-  return copy.replace(/\[([^[\]?]{1,3})\?\]/g, "$1");
 }
 
 /** A page of an add as the sort sees it. */
@@ -781,7 +686,7 @@ export function sorting(
       }
     }
 
-    // Each draft on a named page that has a copy, its value on that copy.
+    // Each draft on a named page that has a copy.
     for (const [index, draft] of input.drafts.entries()) {
       const at = `drafts.${String(index)}`;
       const page = pages.find((p) => p.position === draft.page);
@@ -796,19 +701,6 @@ export function sorting(
           `${at}.page`,
           draft.page,
           `Page ${String(draft.page)} has no copy from the reader, so nothing can be drafted from it. Look at it with get_documents and tell the user.`,
-        );
-      } else if (
-        !onPage(draft.value_text, page.copy.text) &&
-        // Rufi AI's reading of a marked digit, for a draft worth a look.
-        !(
-          draft.worth_a_look !== undefined &&
-          onPage(draft.value_text, unmarked(page.copy.text))
-        )
-      ) {
-        problem(
-          `${at}.value_text`,
-          draft.value_text,
-          `"${draft.value_text}" isn't in page ${String(draft.page)}'s copy. Give the value as the copy prints it; where the reader marked a digit unclear ("1[0?]4"), give your reading ("104") and say why in worth_a_look. Or leave the draft out.`,
         );
       }
     }
@@ -950,7 +842,6 @@ export function sorting(
             worth_a_look === undefined ? [] : [worth_a_look],
           ),
           quote,
-          report: null,
           created_at: at,
         })
         .execute();

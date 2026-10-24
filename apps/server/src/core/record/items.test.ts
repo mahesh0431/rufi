@@ -1,8 +1,7 @@
 // Saving a document's draft items, as the AI does it in Rufi's chat: the
 // real tool caller, the real transcripts, a real database with the
 // fictional family, and drafts made by a real sort of the reader's page
-// copies (or as an older Rufi made them). Messages
-// are sent at 10:00 on Sunday 11 Oct 2026 in India.
+// copies. Messages are sent at 10:00 on Sunday 11 Oct 2026 in India.
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +13,7 @@ import {
   type Transcripts,
 } from "../chat/transcript.ts";
 import type { Entry } from "../documents/notebook.ts";
+import { draftItems } from "../documents/items.ts";
 import { sorting } from "../documents/sorting.ts";
 import {
   databasePath,
@@ -208,67 +208,6 @@ function copied(pages: Record<number, Entry>, documentId: string) {
   };
 }
 
-/**
- * Drafts as an older Rufi made them from its reader's page entries, each
- * with the report and date migration 12 stored for it: its page's lab,
- * number and first date, or the page's before when it prints none.
- */
-function readOld(
-  pages: Record<number, Entry> = PAGES,
-  documentId = "doc-asha-aug",
-) {
-  const jobId = `job-old-${documentId}`;
-  const targets = Object.keys(pages).map(Number);
-  store.db
-    .prepare(
-      "INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, sorted_at, created_at) VALUES (?, 'asha', 'document_read', ?, 'done', 1, ?, '2026-10-11T04:01:00Z', '2026-10-11T04:00:00Z')",
-    )
-    .run(jobId, documentId, JSON.stringify(targets));
-  let report = { issuer: null, number: null, collected: null, date: null } as {
-    issuer: string | null;
-    number: string | null;
-    collected: string | null;
-    date: unknown;
-  };
-  for (const [position, entry] of Object.entries(pages)) {
-    store.db
-      .prepare(
-        "UPDATE document_pages SET entry = ?, entry_job_id = ?, entry_attempt = 1, state = 'read' WHERE document_id = ? AND position = ?",
-      )
-      .run(JSON.stringify(entry), jobId, documentId, Number(position));
-    const facts = entry.facts;
-    const date = facts?.dates?.[0];
-    if (facts?.issuer || facts?.report_number || date) {
-      report = {
-        issuer: facts.issuer ?? null,
-        number: facts.report_number ?? null,
-        collected: date?.iso ?? null,
-        date: date ?? null,
-      };
-    }
-    if (entry.outcome !== "read") continue;
-    for (const [index, item] of entry.items.entries()) {
-      const { unsure, ...fields } = item;
-      store.db
-        .prepare(
-          `INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, version, status, fields, original, unsure, report, created_at)
-           VALUES (?, 'asha', ?, ?, ?, ?, 'lab_result', 1, 'pending', ?, ?, ?, ?, '2026-10-11T04:01:00Z')`,
-        )
-        .run(
-          `old-${documentId}-${position}-${String(index + 1)}`,
-          documentId,
-          Number(position),
-          index + 1,
-          jobId,
-          JSON.stringify(fields),
-          JSON.stringify(item),
-          JSON.stringify(unsure === undefined ? [] : [unsure]),
-          JSON.stringify(report),
-        );
-    }
-  }
-}
-
 /** The draft items' ids by test, in page order. */
 const drafts = () =>
   Object.fromEntries(
@@ -324,7 +263,6 @@ async function call(
       already_saved?: unknown[];
       note?: string;
       dismissed?: string[];
-      warnings?: string[];
     };
     error?: string;
     issues: { path: string; fix: string }[];
@@ -360,92 +298,6 @@ const lines = (receipt: unknown) =>
     .filter((line) => line !== "");
 
 describe("saving draft items", () => {
-  it.each([
-    "same save",
-    "later save",
-    "missing issuer",
-    "missing number",
-    "missing collected date",
-  ])(
-    "groups an older Rufi's reports across documents safely: %s",
-    async (scenario) => {
-      const facts = {
-        ...(scenario !== "missing issuer" && { issuer: "Sunrise Labs" }),
-        ...(scenario !== "missing number" && { report_number: "SOL-SPLIT-1" }),
-        ...(scenario !== "missing collected date" && { dates: [COLLECTED] }),
-      };
-      // Another person's identical printed report must never be reused.
-      store.db
-        .prepare(
-          "UPDATE reports SET issuer = ?, report_number = ?, collected = ? WHERE id = 'rep-ravi-jul'",
-        )
-        .run(
-          facts.issuer ?? null,
-          facts.report_number ?? null,
-          facts.dates?.[0]?.iso ?? null,
-        );
-      readOld({
-        1: {
-          outcome: "read",
-          facts,
-          items: [{ test_name: "Ferritin", value_text: "42", date: COLLECTED }],
-        },
-      });
-      readOld(
-        {
-          1: {
-            outcome: "read",
-            facts,
-            items: [
-              { test_name: "Vitamin B12", value_text: "510", date: COLLECTED },
-            ],
-          },
-        },
-        "doc-asha-sep",
-      );
-      const { Ferritin = "", "Vitamin B12": B12 = "" } = drafts();
-      const items = [Ferritin, B12].map((item) => ({
-        item,
-        version: 1,
-        as: "new",
-        category: "lab",
-      }));
-      await say("Save Ferritin and Vitamin B12");
-      if (scenario === "later save") {
-        for (const item of items) {
-          expect((await call("save_changes", { items: [item] })).ok).toBe(true);
-        }
-      } else {
-        expect((await call("save_changes", { items })).ok).toBe(true);
-      }
-      const saved = rows(
-        "SELECT r.test_name, r.value_text, r.report_id, s.document_id, s.page FROM results r JOIN record_sources s ON s.person_id = r.person_id AND s.record_id = r.id WHERE r.test_name IN ('Ferritin', 'Vitamin B12') ORDER BY r.test_name",
-      );
-      expect(saved).toEqual([
-        {
-          test_name: "Ferritin",
-          value_text: "42",
-          report_id: expect.any(String) as string,
-          document_id: "doc-asha-aug",
-          page: 1,
-        },
-        {
-          test_name: "Vitamin B12",
-          value_text: "510",
-          report_id: expect.any(String) as string,
-          document_id: "doc-asha-sep",
-          page: 1,
-        },
-      ]);
-      expect(new Set(saved.map((row) => row["report_id"])).size).toBe(
-        scenario === "same save" || scenario === "later save" ? 1 : 2,
-      );
-      expect(saved.every((row) => row["report_id"] !== "rep-ravi-jul")).toBe(
-        true,
-      );
-    },
-  );
-
   it("saves Rufi AI's drafts in their document's report, as sorted, and never in another document's with the same printed report", async () => {
     const page = (test: string, value: string): Record<number, Entry> => ({
       1: {
@@ -630,31 +482,6 @@ describe("saving draft items", () => {
     ]);
   });
 
-  it("puts an older Rufi's draft on a page that prints no lab, number or date in the report of the page before", async () => {
-    readOld();
-    const { HbA1c = "", "LDL cholesterol": LDL = "" } = drafts();
-    await say("Save HbA1c and LDL");
-    const saved = await call("save_changes", {
-      items: [
-        { item: HbA1c, version: 1, as: "new", category: "lab" },
-        { item: LDL, version: 1, as: "new", category: "lab" },
-      ],
-    });
-    expect(saved.ok).toBe(true);
-    const [first, second] = saved.result.changes.map(
-      (c) =>
-        one(
-          "SELECT report_id, measured_at FROM results WHERE id = ?",
-          c.id,
-        ) as {
-          report_id: string;
-          measured_at: string;
-        },
-    );
-    expect(second).toEqual(first);
-    expect(second?.measured_at).toBe("2026-08-12");
-  });
-
   it("applies the user's fix and keeps the reader's value in the draft", async () => {
     await read();
     const { "LDL cholesterol": ldl = "" } = drafts();
@@ -700,6 +527,61 @@ describe("saving draft items", () => {
     expect(JSON.parse(draft.original)).toMatchObject({ value_text: "142" });
   });
 
+  it("takes the number of a value the user fixed on the document's page from the save, and only for that value", async () => {
+    await read();
+    const { HbA1c = "", TSH = "" } = drafts();
+    await draftItems(store, () => undefined).fix(
+      "asha",
+      "doc-asha-aug",
+      HbA1c,
+      {
+        version: 1,
+        fields: { value_text: "7,4" },
+      },
+    );
+    await say("Save HbA1c and TSH");
+    const refused = await call("save_changes", {
+      items: [
+        {
+          item: HbA1c,
+          version: 2,
+          as: "new",
+          category: "lab",
+          value_number: 7.4,
+        },
+        {
+          item: TSH,
+          version: 1,
+          as: "new",
+          category: "lab",
+          value_number: 2.4,
+        },
+      ],
+    });
+    expect(refused.issues.map((i) => i.path)).toEqual(["items.1.value_number"]);
+    const saved = await call("save_changes", {
+      items: [
+        {
+          item: HbA1c,
+          version: 2,
+          as: "new",
+          category: "lab",
+          value_number: 7.4,
+        },
+        { item: TSH, version: 1, as: "new", category: "lab" },
+      ],
+    });
+    expect(saved.ok).toBe(true);
+    expect(
+      saved.result.changes.map((c) =>
+        one("SELECT value_text, value_number FROM results WHERE id = ?", c.id),
+      ),
+    ).toEqual([
+      { value_text: "7,4", value_number: 7.4 },
+      { value_text: "2.1", value_number: 2.1 },
+    ]);
+  });
+
   it("refuses an item with no date it can store until the user gives one", async () => {
     await read();
     const { "Vitamin D": vitamin = "" } = drafts();
@@ -731,66 +613,6 @@ describe("saving draft items", () => {
         saved.result.changes[0]?.id,
       ),
     ).toEqual({ measured_at: "2026-04-03", measured_words: "3 April" });
-  });
-
-  it("saves an item dated later than the save, or than the fix's message, and warns the AI", async () => {
-    const page = PAGES[1] as Entry;
-    await read({
-      1: {
-        ...page,
-        facts: {
-          ...page.facts,
-          dates: [
-            { label: "Collected", date: "12/11/2026", iso: "2026-11-12" },
-          ],
-        },
-      },
-    });
-    const { HbA1c = "", TSH = "" } = drafts();
-    const earlier = await say("The TSH was taken in December");
-    const position = (
-      one("SELECT seq FROM transcript_entries WHERE id = ?", earlier) as {
-        seq: number;
-      }
-    ).seq;
-    await say("Save both");
-    const input = {
-      items: [
-        { item: HbA1c, version: 1, as: "new", category: "lab" },
-        {
-          item: TSH,
-          version: 1,
-          as: "new",
-          category: "lab",
-          fix: {
-            source: position,
-            fields: { measured: { date: "2026-12", words: "in December" } },
-          },
-        },
-      ],
-    };
-    const saved = await call("save_changes", input, "person", "future-items");
-    expect(saved.ok).toBe(true);
-    const warned = [
-      "result HbA1c 7.1 %: measured 12 Nov 2026 is later than the day it was saved (11 Oct 2026). It is saved as given; if it may be a slip, check with the user.",
-      "result TSH 2.1 mIU/L: measured Dec 2026 is later than the user's message it rests on (11 Oct 2026). It is saved as given; if it may be a slip, check with the user.",
-    ];
-    expect(saved.result.warnings).toEqual(warned);
-    expect(
-      rows(
-        "SELECT entry_id FROM record_sources WHERE type = 'message' AND record_id = ?",
-        saved.result.changes[1]?.id,
-      ),
-    ).toEqual([{ entry_id: earlier }]);
-    // The save and the fix's message are on 10 October in this zone.
-    process.env["TZ"] = "America/Los_Angeles";
-    try {
-      const again = await call("save_changes", input, "person", "future-items");
-      expect(again.result.warnings).toEqual(warned);
-      expect(again.result.note).toBe("This call was already saved.");
-    } finally {
-      process.env["TZ"] = "Asia/Kolkata";
-    }
   });
 
   it("adds the page as another source of a result already saved, changing no value; undo takes off only that link", async () => {
@@ -1081,81 +903,6 @@ describe("saving draft items", () => {
         one("SELECT category FROM results WHERE id = ?", c.id),
       ),
     ).toEqual([{ category: "lab" }, { category: "lab" }]);
-  });
-
-  it("dates an older Rufi's measurement only by its own date or the user's, never by the report's collection date", async () => {
-    readOld({
-      1: {
-        outcome: "read",
-        facts: { kind: "prescription", dates: [COLLECTED] },
-        items: [
-          {
-            test_name: "Blood pressure",
-            value_text: "130/85",
-            unit: "mmHg",
-            date: { label: "Visit", date: "5 Oct 2026", iso: "2026-10-05" },
-          },
-          {
-            test_name: "Weight",
-            value_text: "72",
-            value_number: 72,
-            unit: "kg",
-          },
-        ],
-      },
-    });
-    const { "Blood pressure": bp = "", Weight: weight = "" } = drafts();
-    await say("Save them as measurements; I was weighed on 4 Oct");
-    const before = written();
-    const refused = await call("save_changes", {
-      items: [
-        { item: bp, version: 1, as: "new", category: "measurement" },
-        { item: weight, version: 1, as: "new", category: "measurement" },
-      ],
-    });
-    expect(refused.issues).toEqual([
-      {
-        path: "items.1.item",
-        got: expect.any(String) as unknown,
-        fix: "This measurement has no date Rufi can store (none is printed for it, and a report's collection date isn't when it was measured). Ask the user when it was measured; a rough date such as 'around August 2026' is fine. Give it in fix.fields.measured at the precision they gave, with the words it came from; never make one up.",
-      },
-    ]);
-    expect(written()).toEqual(before);
-
-    const saved = await call("save_changes", {
-      items: [
-        { item: bp, version: 1, as: "new", category: "measurement" },
-        {
-          item: weight,
-          version: 1,
-          as: "new",
-          category: "measurement",
-          fix: {
-            fields: { measured: { date: "2026-10-04", words: "4 Oct" } },
-          },
-        },
-      ],
-    });
-    expect(saved.ok).toBe(true);
-    expect(
-      saved.result.changes.map((c) =>
-        one(
-          "SELECT category, measured_at, measured_words FROM results WHERE id = ?",
-          c.id,
-        ),
-      ),
-    ).toEqual([
-      {
-        category: "measurement",
-        measured_at: "2026-10-05",
-        measured_words: "Visit 5 Oct 2026",
-      },
-      {
-        category: "measurement",
-        measured_at: "2026-10-04",
-        measured_words: "4 Oct",
-      },
-    ]);
   });
 
   it("refuses two items that both correct the same saved result", async () => {
