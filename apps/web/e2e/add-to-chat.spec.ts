@@ -207,7 +207,7 @@ test("Ask Rufi puts chips of several kinds in the box, a report as one, and the 
   await expect(box(bar)).toBeFocused();
 });
 
-test("the paperclip says it adds a file, then gives its chip with what Rufi does with it; the same file again gives the chip of the one you have; a Documents row adds its chip", async ({
+test("the paperclip says it adds a file, then gives its chip; the same file again gives the chip of the one you have; × removes an unsent file and only takes a sent one out; a Documents row adds its chip", async ({
   page,
   rufi,
 }) => {
@@ -221,17 +221,18 @@ test("the paperclip says it adds a file, then gives its chip with what Rufi does
     await route.continue();
   });
   const picker = bar.getByLabel("Choose documents to add");
-  await picker.setInputFiles({
+  const lipid = async () => ({
     name: "Asha lipid panel.pdf",
     mimeType: "application/pdf",
     buffer: await readFile(join(FIXTURES, "ravi-lipid-panel.pdf")),
   });
+  await picker.setInputFiles(await lipid());
   await expect(bar.getByText("Adding Asha lipid panel.pdf…")).toBeVisible();
   await expect(chips(bar)).toHaveCount(0);
   upload.resolve(undefined);
-  // With no reader, its reading waits.
+  // Unsent: the chip is the name alone; nothing reads the file before Send.
   await expect(chips(bar).getByRole("listitem")).toHaveText([
-    "Asha lipid panel.pdf · Waiting to read",
+    "Asha lipid panel.pdf",
   ]);
   await picker.setInputFiles({
     name: "August again.pdf",
@@ -244,36 +245,44 @@ test("the paperclip says it adds a file, then gives its chip with what Rufi does
     ),
   ).toBeVisible();
   await expect(chips(bar).getByRole("listitem")).toHaveText([
-    "Asha lipid panel.pdf · Waiting to read",
+    "Asha lipid panel.pdf",
     "Sunrise Labs August.pdf",
   ]);
   await accessible(page);
 
-  // The new document is on the Documents page, added from the chat; Ask
+  // × on the unsent file removes it from Rufi: choosing it again gives a
+  // new chip, not "already added". × on a sent document only leaves the box.
+  const take = (name: string) =>
+    bar.getByRole("button", { name: `Take ${name} out of the message` });
+  await take("Asha lipid panel.pdf").click();
+  await take("Sunrise Labs August.pdf").click();
+  await expect(chips(bar)).toHaveCount(0);
+  await picker.setInputFiles(await lipid());
+  await expect(chips(bar).getByRole("listitem")).toHaveText([
+    "Asha lipid panel.pdf",
+  ]);
+  await expect(page.getByText(/was already added/)).toHaveCount(0);
+
+  // The unsent file isn't on the Documents page; the sent one still is. Ask
   // Rufi on a row adds its chip, and the page stays.
   await page.getByRole("link", { name: "Documents" }).click();
   const documents = page.url();
+  await expect(
+    page.getByRole("row").filter({ hasText: "Sunrise Labs August.pdf" }),
+  ).toHaveCount(1);
+  await expect(
+    page.getByRole("row").filter({ hasText: "Asha lipid panel.pdf" }),
+  ).toHaveCount(0);
   const row = page
     .getByRole("row")
     .filter({ has: page.getByText("thyroid recheck.jpg") });
   await row.hover();
   await row.getByRole("button", { name: "Ask Rufi" }).click();
   expect(page.url()).toBe(documents);
-  await added(bar, "Asha lipid panel.pdf +2");
+  await added(bar, "Asha lipid panel.pdf +1");
   await opener(bar).click();
   await expect(chips(bar).getByRole("listitem")).toHaveText([
-    "Asha lipid panel.pdf · Waiting to read",
-    "Sunrise Labs August.pdf",
-    "thyroid recheck.jpg",
-  ]);
-
-  // A sent message's chips say nothing of the reading.
-  await box(bar).fill("What are these?");
-  await box(bar).press("Enter");
-  const message = log(bar).locator("[data-entry]").first();
-  await expect(chips(message).getByRole("listitem")).toHaveText([
     "Asha lipid panel.pdf",
-    "Sunrise Labs August.pdf",
     "thyroid recheck.jpg",
   ]);
 });

@@ -1,8 +1,9 @@
 // Reading documents on the screens, on the real core with a scripted reader
-// (tests/fake-reader.ts): reading as a document is added, with the model and
-// effort chosen in Settings, the reader strip above the chat box, a chip's
-// state in the box, the start and end lines, Rufi AI's scripted sort, and
-// Open with the reader's copies and the document's page.
+// (tests/fake-reader.ts): files wait in the chat box until Send, then one
+// reply has Rufi's reader copying the pages and Rufi AI's scripted sort and
+// answer; Stop and a failure end the reply before the AI, with Retry; Retry
+// on the Documents page puts a read again chip in the box; the model and
+// effort chosen in Settings; View reading with the reader's copies.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
@@ -10,7 +11,10 @@ import type { Page } from "@playwright/test";
 import { ChatGptError } from "../../server/src/agent/chatgpt/openai.ts";
 import type { Scenario } from "../../server/tests/fake-codex.ts";
 import { readPage, scriptedReader } from "../../server/tests/fake-reader.ts";
-import { expect, test, type Rufi } from "./rufi.ts";
+import { expect, sendFiles, test, type Rufi } from "./rufi.ts";
+
+// Wide enough for the Documents page beside the chat panel.
+test.use({ viewport: { width: 2000, height: 800 } });
 
 const REPORT = join(
   import.meta.dirname,
@@ -68,30 +72,34 @@ async function opened(
     ...(scenario !== undefined && { scenario }),
   });
   await page.goto(rufi.link());
-}
-
-/** As `opened`, with the fictional report just added. */
-async function start(
-  page: Page,
-  rufi: Rufi,
-  reader: ReturnType<typeof scriptedReader>,
-  scenario?: Scenario,
-) {
-  await opened(page, rufi, reader, scenario);
-  await add(page);
-}
-
-/** Adds the fictional report on the Documents page. */
-async function add(page: Page) {
   await page.getByRole("link", { name: "Documents" }).click();
-  await page.getByLabel("Choose documents", { exact: true }).setInputFiles({
+}
+
+/** The fictional report, as the picker gives it. */
+async function report() {
+  return {
     name: "sunrise-labs-august.pdf",
     mimeType: "application/pdf",
     buffer: await readFile(REPORT),
-  });
+  };
 }
 
-test("reads a report in the background as it is added: the strip, the lines, Rufi AI's sort and Open", async ({
+const chat = (page: Page) => page.getByRole("region", { name: "Chat" });
+const log = (page: Page) => chat(page).getByRole("log", { name: "Messages" });
+const chips = (page: Page) =>
+  chat(page)
+    .getByRole("list", { name: "Added to this message" })
+    .getByRole("listitem");
+/** The rows of the reply's open Activity (the last one). */
+const steps = (page: Page) =>
+  log(page)
+    .getByRole("list", { name: "Activity" })
+    .last()
+    .locator(":scope > li");
+const row = (page: Page) =>
+  page.getByRole("row").filter({ hasText: "sunrise-labs-august.pdf" });
+
+test("a file waits in the box until Send; then one reply copies its pages as Rufi's reader, Rufi AI sorts it and answers, and View reading shows the copies", async ({
   page,
   rufi,
 }) => {
@@ -106,75 +114,108 @@ test("reads a report in the background as it is added: the strip, the lines, Ruf
       return undefined;
     },
   ]);
-  await start(page, rufi, reader, SORT);
+  await opened(page, rufi, reader, SORT);
+  await page
+    .getByLabel("Choose documents", { exact: true })
+    .setInputFiles(await report());
 
-  await expect(
-    page.getByRole("cell", { name: /Reading · read 1 of 2/ }),
-  ).toBeVisible();
+  // In the box by its name, and nowhere else: not listed, not read.
+  await expect(chips(page)).toHaveText(["sunrise-labs-august.pdf"]);
+  await expect(page.getByText("No documents yet")).toBeVisible();
+  expect(reader.runs).toHaveLength(0);
   await accessible(page);
-  // Its chip in the chat box says what Rufi is doing with it.
-  const row = page
-    .getByRole("row")
-    .filter({ hasText: "sunrise-labs-august.pdf" });
-  await row.hover();
-  await row.getByRole("button", { name: "Ask Rufi" }).click();
-  const chip = page
-    .getByRole("list", { name: "Added to this message" })
-    .getByRole("listitem");
 
-  await page.getByRole("link", { name: "Chat with Rufi" }).click();
-  await expect(chip).toHaveText(
-    "sunrise-labs-august.pdf · Reading… 1 of 2 pages",
+  await chat(page)
+    .getByRole("textbox", { name: "Message to Rufi" })
+    .fill("What is my haemoglobin?");
+  await chat(page).getByRole("button", { name: "Send" }).click();
+
+  // The reply starts with Rufi's reader counting pages; the Documents page
+  // shows the reading and its copies so far.
+  await expect(log(page)).toContainText("What is my haemoglobin?");
+  await expect(steps(page).first()).toContainText(
+    "Rufi's reader · sunrise-labs-august.pdf",
   );
-  // As laid out, the state stands apart from the name.
-  const gap = await chip.evaluate((item) => {
-    const [name, state] = item.querySelectorAll(":scope > span > span");
-    return (
-      (state?.getBoundingClientRect().left ?? 0) -
-      (name?.getBoundingClientRect().right ?? 0)
-    );
-  });
-  expect(gap).toBeGreaterThanOrEqual(3);
-  await expect(
-    page.getByText("Reading sunrise-labs-august.pdf · 2 pages"),
-  ).toBeVisible();
-  const strip = page.getByRole("region", { name: "Reading documents" });
-  await expect(strip).toContainText("sunrise-labs-august.pdf");
-  await expect(strip).toContainText("read 1 of 2");
-  await strip.getByRole("button", { name: "View reading" }).click();
+  await expect(steps(page).first()).toContainText("1 of 2 pages");
+  await expect(row(page)).toContainText("Reading · read 1 of 2");
+  await row(page).getByRole("button", { name: "View reading" }).click();
   const sheet = page.getByRole("dialog");
   await expect(sheet).toContainText("reading · read 1 of 2");
-  // The page's copy, as the reader saved it.
   await expect(sheet.locator("pre")).toHaveCount(1);
   await expect(sheet.locator("pre")).toContainText("| Haemoglobin | 13.2 |");
   await expect(sheet).toContainText("Page 2");
   await accessible(page);
   await sheet.getByRole("button", { name: "Close" }).click();
 
+  // The same reply goes on to the AI: its sort, then one answer.
   gate.resolve(undefined);
-  // The chat's line, not the sort's note while it waits to go.
-  const end = page.getByText(
-    "Read sunrise-labs-august.pdf · 2 pages. Rufi AI is sorting it.",
-    { exact: true },
-  );
-  await expect(end).toBeVisible();
-  await expect(strip).toBeHidden();
-  await expect(chip).toHaveText("sunrise-labs-august.pdf · Read");
-  // Rufi AI sorted it in the chat, with one call, and said so.
-  await expect(page.getByText("ok:", { exact: false }).last()).toBeVisible();
-  // Open leads to the document's page; View reading is a button there.
-  await page.getByRole("link", { name: "Open", exact: true }).click();
+  await expect(log(page).locator(".reply")).toHaveCount(1);
+  await expect(log(page).locator(".reply")).toContainText("ok:");
+  await log(page)
+    .getByRole("button", { name: /^Activity · / })
+    .click();
+  await expect(steps(page)).toHaveText([
+    /Rufi's reader · sunrise-labs-august\.pdf.*2 pages/,
+    /rufi\.sort_documents/,
+  ]);
+  await expect(row(page)).toContainText("Not saved · 2 results");
+
+  // The document's page has the same copies, both pages.
+  await row(page)
+    .getByRole("link", { name: "sunrise-labs-august.pdf" })
+    .click();
   await expect(page.getByRole("region", { name: "Items" })).toContainText(
     "2 results · 0 worth a look",
   );
   await page.getByRole("button", { name: "View reading" }).click();
   await expect(sheet).toContainText("sunrise-labs-august.pdf · read");
-  // Both pages read, each showing its copy.
   await expect(sheet.locator("pre")).toHaveCount(2);
   await expect(sheet.locator("pre").nth(1)).toContainText("| Haemoglobin |");
 });
 
-test("View reading says where a reading is while the reader's work loads, also on a retry of one page", async ({
+test("a Stop in Rufi's reader ends the reply before the AI with Retry, no waiting message; Retry goes on and the AI answers once", async ({
+  page,
+  rufi,
+}) => {
+  const reader = scriptedReader([
+    async (turn) => {
+      await turn.look(1);
+      await turn.save(1, readPage());
+      await turn.stopped();
+      return { end: { status: "interrupted", reason: "stopped" } };
+    },
+    async (turn) => {
+      await turn.look(2);
+      await turn.save(2, readPage());
+      return undefined;
+    },
+  ]);
+  await opened(page, rufi, reader, SORT);
+  await sendFiles(page, await report(), "Sort this please");
+
+  await expect(row(page)).toContainText("Reading · read 1 of 2");
+  await chat(page).getByRole("button", { name: "Stop" }).click();
+  await expect(log(page)).toContainText("Stopped. · read 1 of 2");
+  // The AI never got the message; the message isn't waiting; Retry is.
+  await expect(log(page).locator(".reply")).toHaveCount(0);
+  await expect(
+    chat(page).getByRole("region", { name: "Waiting messages" }),
+  ).toHaveCount(0);
+  await log(page)
+    .getByRole("button", { name: /^Activity · / })
+    .click();
+  await expect(steps(page).first()).toContainText("stopped · 1 of 2");
+
+  await log(page).getByRole("button", { name: "Retry" }).click();
+  await expect(log(page).locator(".reply")).toHaveCount(1);
+  // Your message shows once, though it was sent twice.
+  await expect(
+    log(page).getByText("Sort this please", { exact: true }),
+  ).toHaveCount(1);
+  await expect(row(page)).toContainText("Not saved · 2 results");
+});
+
+test("View reading says where a reading is while the reader's work loads; Retry on the Documents page reads only the pages that couldn't be read, when sent", async ({
   page,
   rufi,
 }) => {
@@ -198,7 +239,7 @@ test("View reading says where a reading is while the reader's work loads, also o
     },
   ]);
   // Rufi AI sorts the first reading, so Retry reads page 2 again.
-  await start(page, rufi, reader, {
+  await opened(page, rufi, reader, {
     callsByTurn: [
       [
         {
@@ -219,14 +260,12 @@ test("View reading says where a reading is while the reader's work loads, also o
     await held.work.promise;
     await route.continue();
   });
-  const strip = page.getByRole("region", { name: "Reading documents" });
   const sheet = page.getByRole("dialog");
   const title = sheet.getByRole("heading", { level: 2 });
-  const view = async () => {
-    await page.getByRole("link", { name: "Chat with Rufi" }).click();
-    await strip.getByRole("button", { name: "View reading" }).click();
-  };
+  const view = () =>
+    row(page).getByRole("button", { name: "View reading" }).click();
 
+  await sendFiles(page, await report());
   await view();
   await expect(title).toHaveText(
     /^sunrise-labs-august\.pdf · read 0 of 2 · under a minute$/,
@@ -241,15 +280,15 @@ test("View reading says where a reading is while the reader's work loads, also o
   await expect(sheet.getByText("not read yet")).toHaveCount(2);
   await sheet.getByRole("button", { name: "Close" }).click();
   first.resolve(undefined);
-  await expect(strip).toBeHidden();
 
-  // A retry reads only page 2: its progress counts one page, never "page 1".
+  // Retry puts the file in the box; only Send reads: page 2 alone, its
+  // progress counting one page, never "page 1".
   held.work = Promise.withResolvers<undefined>();
-  await page.getByRole("link", { name: "Documents" }).click();
-  await page
-    .getByRole("row", { name: /sunrise-labs-august.pdf/ })
-    .getByRole("button", { name: "Retry" })
-    .click();
+  await row(page).getByRole("button", { name: "Retry" }).click();
+  await expect(chips(page)).toHaveText([
+    "sunrise-labs-august.pdf · read again",
+  ]);
+  await chat(page).getByRole("button", { name: "Send" }).click();
   await view();
   await expect(title).toHaveText(
     /^sunrise-labs-august\.pdf · read 0 of 1 · under a minute$/,
@@ -257,9 +296,8 @@ test("View reading says where a reading is while the reader's work loads, also o
   await expect(sheet).toContainText("Reading… 0 of 1 page");
   held.work.resolve(undefined);
   await sheet.getByRole("button", { name: "Close" }).click();
-  // The reading ends before Rufi stops.
   again.resolve(undefined);
-  await expect(strip).toBeHidden();
+  await expect(log(page).locator(".reply")).toHaveCount(2);
 });
 
 test("Settings keeps the reader's model and effort, and the next reading runs with them", async ({
@@ -293,7 +331,8 @@ test("Settings keeps the reader's model and effort, and the next reading runs wi
   await expect(model).toHaveValue("gpt-5.5");
   await expect(effort.getByRole("radio", { name: "High" })).toBeChecked();
 
-  await add(page);
+  await page.getByRole("link", { name: "Documents" }).click();
+  await sendFiles(page, await report());
   await expect(
     page.getByRole("cell", { name: /Not saved · 2 results/ }),
   ).toBeVisible({ timeout: 10_000 });
@@ -302,7 +341,7 @@ test("Settings keeps the reader's model and effort, and the next reading runs wi
   ]);
 });
 
-test("keeps unreadable pages to check and reserves Nothing to save for a completed empty reading", async ({
+test("keeps unreadable pages to check and reserves Nothing to save for a completed empty reading; Retry reads nothing until Send", async ({
   page,
   rufi,
 }) => {
@@ -342,33 +381,26 @@ test("keeps unreadable pages to check and reserves Nothing to save for a complet
       },
     },
   ];
-  await rufi.family(
-    `DELETE FROM record_sources; DELETE FROM results; DELETE FROM reports;
-     DELETE FROM document_pages; DELETE FROM documents;`,
-  );
-  await rufi.start({
-    reader: reader.run,
-    scenario: {
-      callsByTurn: [
-        sort("sort-first", [1, 2], "other"),
-        sort("sort-again", [1]),
-      ],
-    },
+  await opened(page, rufi, reader, {
+    callsByTurn: [sort("sort-first", [1, 2], "other"), sort("sort-again", [1])],
   });
-  await page.goto(rufi.link());
-  await add(page);
-  const status = page
-    .getByRole("row", { name: /sunrise-labs-august.pdf/ })
-    .getByRole("cell")
-    .nth(4); // Status
+  await sendFiles(page, await report());
+  const status = row(page).getByRole("cell").nth(4); // Status
   await expect(status).toContainText("To check");
   await expect(status).not.toContainText("Nothing to save");
+
   await status.getByRole("button", { name: "Retry" }).click();
+  await expect(chips(page)).toHaveText([
+    "sunrise-labs-august.pdf · read again",
+  ]);
+  expect(reader.runs).toHaveLength(1);
+  await expect(status).toContainText("To check");
+  await chat(page).getByRole("button", { name: "Send" }).click();
   await expect(status).toContainText("Nothing to save");
   await expect(status.getByRole("button", { name: "Retry" })).toBeHidden();
 });
 
-test("a reading that failed signed out gives its reason in full, in View reading and on the document page", async ({
+test("a reading that failed signed out ends the reply with its reason in full, in View reading and on the document page; Retry goes on and the AI answers", async ({
   page,
   rufi,
 }) => {
@@ -376,10 +408,21 @@ test("a reading that failed signed out gives its reason in full, in View reading
     "Not signed in. Sign in with ChatGPT: in Rufi, or with pnpm rufi signin.";
   const reader = scriptedReader([
     () => Promise.reject(new ChatGptError("not_signed_in", why)),
+    async (turn) => {
+      for (const number of [1, 2]) {
+        await turn.look(number);
+        await turn.save(number, readPage());
+      }
+      return undefined;
+    },
   ]);
-  await start(page, rufi, reader);
-  const row = page.getByRole("row", { name: /sunrise-labs-august\.pdf/ });
-  await expect(row).toContainText("Failed · read 0 of 2");
+  await opened(page, rufi, reader, SORT);
+  await sendFiles(page, await report());
+  await expect(log(page)).toContainText(
+    `Couldn't read sunrise-labs-august.pdf · ${why} · read 0 of 2`,
+  );
+  await expect(log(page).locator(".reply")).toHaveCount(0);
+  await expect(row(page)).toContainText("Failed · read 0 of 2");
   /** The line is all there: none of it cut off. */
   const whole = async (text: string) => {
     const line = page.getByText(text, { exact: true });
@@ -393,7 +436,7 @@ test("a reading that failed signed out gives its reason in full, in View reading
     ).toBe(true);
   };
 
-  await row.getByRole("button", { name: "View reading" }).click();
+  await row(page).getByRole("button", { name: "View reading" }).click();
   const sheet = page.getByRole("dialog");
   await expect(sheet.getByRole("heading", { level: 2 })).toHaveText(
     "sunrise-labs-august.pdf · failed · read 0 of 2",
@@ -402,8 +445,15 @@ test("a reading that failed signed out gives its reason in full, in View reading
   await accessible(page);
   await sheet.getByRole("button", { name: "Close" }).click();
 
-  await row.getByRole("link", { name: "sunrise-labs-august.pdf" }).click();
+  await row(page)
+    .getByRole("link", { name: "sunrise-labs-august.pdf" })
+    .click();
   await whole(`Failed · ${why}`);
-  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
   await accessible(page);
+
+  await log(page).getByRole("button", { name: "Retry" }).click();
+  await expect(log(page).locator(".reply")).toHaveCount(1);
+  await expect(page.getByRole("region", { name: "Items" })).toContainText(
+    "2 results",
+  );
 });

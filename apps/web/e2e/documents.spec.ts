@@ -1,19 +1,23 @@
-// The Documents page on the real core: adding files (photos as one document
-// in the order chosen, a PDF on its own, the same content again, a file that
-// isn't a document), a file Rufi AI split into documents, one it hasn't
-// sorted yet and its Retry, and, from a document's page, the popup that
-// shows the original. The strict CSP refuses nothing the page needs.
+// The Documents page on the real core: Add opens the chat and the picker
+// (photos as one document in the order chosen, a PDF on its own, a file that
+// isn't a document), and a sent file is listed; a file Rufi AI split into
+// documents, one it hasn't sorted yet and Ask Rufi, and, from a document's
+// page, the popup that shows the original. The strict CSP refuses nothing the
+// page needs.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import {
-  databasePath,
-  openWritable,
-} from "../../server/src/core/store/database.ts";
 import type { Scenario } from "../../server/tests/fake-codex.ts";
-import { readPage, scriptedReader } from "../../server/tests/fake-reader.ts";
-import { expect, test, type Rufi } from "./rufi.ts";
+import {
+  readPage,
+  scriptedReader,
+  type Script,
+} from "../../server/tests/fake-reader.ts";
+import { expect, sendFiles, test, type Rufi } from "./rufi.ts";
+
+// Wide enough for the Documents page beside the chat panel.
+test.use({ viewport: { width: 2000, height: 800 } });
 
 const FIXTURES = join(
   import.meta.dirname,
@@ -58,7 +62,12 @@ const fixture = async (file: string, name = file, mimeType = "") => ({
 });
 
 /** Rufi with the family; `empty`: Asha has no documents yet. */
-async function documentsPage(page: Page, rufi: Rufi, empty = false) {
+async function documentsPage(
+  page: Page,
+  rufi: Rufi,
+  empty = false,
+  reader?: ReturnType<typeof scriptedReader>,
+) {
   await rufi.family(
     ...(empty
       ? [
@@ -67,7 +76,7 @@ async function documentsPage(page: Page, rufi: Rufi, empty = false) {
         ]
       : []),
   );
-  await rufi.start();
+  await rufi.start(reader && { reader: reader.run });
   await page.goto(rufi.link());
   await page.getByRole("link", { name: "Documents" }).click();
   await expect(
@@ -75,20 +84,41 @@ async function documentsPage(page: Page, rufi: Rufi, empty = false) {
   ).toBeVisible();
 }
 
-const picker = (page: Page) =>
-  page.getByLabel("Choose documents", { exact: true });
+const chat = (page: Page) => page.getByRole("region", { name: "Chat" });
+const chips = (page: Page) =>
+  chat(page)
+    .getByRole("list", { name: "Added to this message" })
+    .getByRole("listitem");
 const rows = (page: Page) =>
   page.getByRole("row").filter({ hasNot: page.getByRole("columnheader") });
 
-test("adds photos as one document in the order chosen, and a PDF as its own", async ({
+/** The scripted reader's copy of a document's `count` pages. */
+const copies =
+  (count: number): Script =>
+  async (turn) => {
+    for (let number = 1; number <= count; number += 1) {
+      await turn.look(number);
+      await turn.save(number, readPage());
+    }
+    return undefined;
+  };
+
+test("Add opens the chat and the picker; photos become one document in the order chosen, and a PDF its own; they are listed once sent", async ({
   page,
   rufi,
 }) => {
-  await documentsPage(page, rufi, true);
+  await documentsPage(page, rufi, true, scriptedReader([copies(2), copies(1)]));
   await expect(page.getByText("No documents yet")).toBeVisible();
   await accessible(page);
 
-  await picker(page).setInputFiles([
+  // One click opens the chat and the picker.
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Add…" }).first().click();
+  const picked = await chooser;
+  await expect(
+    chat(page).getByRole("textbox", { name: "Message to Rufi" }),
+  ).toBeVisible();
+  await picked.setFiles([
     // A photo by its content, though its name and type say PDF.
     await fixture("sideways.heic", "IMG_1.pdf", "application/pdf"),
     await fixture("thyroid-recheck.jpg", "IMG_2.jpg"),
@@ -107,7 +137,10 @@ test("adds photos as one document in the order chosen, and a PDF as its own", as
   ]);
   await dialog.getByRole("button", { name: "Add 2 documents" }).click();
 
-  await expect(page.getByRole("status")).toHaveText("Added 2 documents.");
+  // Chips in the box; the page lists nothing until they are sent.
+  await expect(chips(page)).toHaveText(["IMG_2.jpg", "lipid.pdf"]);
+  await expect(page.getByText("No documents yet")).toBeVisible();
+  await chat(page).getByRole("button", { name: "Send" }).click();
   await expect(rows(page)).toHaveCount(2);
   await expect(rows(page).filter({ hasText: "IMG_2.jpg" })).toContainText(
     "+ 1 more photo",
@@ -115,8 +148,6 @@ test("adds photos as one document in the order chosen, and a PDF as its own", as
   await expect(rows(page).filter({ hasText: "lipid.pdf" })).toContainText(
     "1 page",
   );
-  // Rufi reads what is added at once; no reader here, so it waits its turn.
-  await expect(rows(page).first()).toContainText("Reading · read 0 of 1");
 
   // The popup: the photos in their order, the HEIC upright through its copy.
   await page.getByRole("link", { name: "IMG_2.jpg" }).click();
@@ -135,37 +166,23 @@ test("adds photos as one document in the order chosen, and a PDF as its own", as
   await expect(popup).toHaveCount(0);
 });
 
-test("names the same content again, also renamed, and refuses a file that isn't a document", async ({
+test("refuses a file that isn't a document, in the chat box, and adds nothing", async ({
   page,
   rufi,
 }) => {
   await documentsPage(page, rufi);
   await expect(rows(page)).toHaveCount(2);
-
-  await picker(page).setInputFiles([
-    await fixture("thyroid-recheck.jpg", "copy of thyroid.jpg"),
-  ]);
-  const status = page.getByRole("status");
-  await expect(status).toHaveText(
-    "copy of thyroid.jpg was already added: open it.",
-  );
-  await expect(rows(page)).toHaveCount(2);
-  await status.getByRole("button", { name: "open it" }).click();
-  await expect(
-    page.getByRole("heading", { name: /thyroid recheck\.jpg/ }),
-  ).toBeVisible();
-  await page.getByRole("link", { name: "Documents" }).click();
-
-  await picker(page).setInputFiles([
+  await page.getByLabel("Choose documents", { exact: true }).setInputFiles([
     {
       name: "notes.docx",
       mimeType: "",
       buffer: Buffer.from("Fictional notes"),
     },
   ]);
-  await expect(page.getByRole("alert")).toHaveText(
+  await expect(chat(page).getByRole("alert")).toHaveText(
     "notes.docx isn't a PDF, JPEG, PNG or HEIC photo. Nothing was added. Remove it and add the others again.",
   );
+  await expect(chips(page)).toHaveCount(0);
   await expect(rows(page)).toHaveCount(2);
 });
 
@@ -187,18 +204,6 @@ test("offers a copy of a PDF where the browser has no PDF viewer", async ({
   await expect(copy).toHaveAttribute("download", "Sunrise Labs August.pdf");
   await accessible(page);
 });
-
-/** The scripted reader's copies of both pages of the August report. */
-const copied = () =>
-  scriptedReader([
-    async (turn) => {
-      for (const page of [1, 2]) {
-        await turn.look(page);
-        await turn.save(page, readPage());
-      }
-      return undefined;
-    },
-  ]);
 
 /** Rufi AI's sort of the file: a report on page 1, a prescription on page 2. */
 const SPLIT = {
@@ -227,29 +232,33 @@ const SPLIT = {
   },
 };
 
-async function addReport(page: Page, rufi: Rufi, scenario: Scenario) {
+/** Sends the August report from the Documents page; its reader copies both pages. */
+async function sendReport(page: Page, rufi: Rufi, scenario: Scenario) {
+  const reader = scriptedReader([copies(2)]);
   await rufi.family(
     `DELETE FROM record_sources; DELETE FROM results; DELETE FROM reports;
      DELETE FROM document_pages; DELETE FROM documents;`,
   );
-  await rufi.start({
-    reader: copied().run,
-    scenario,
-  });
+  await rufi.start({ reader: reader.run, scenario });
   await page.goto(rufi.link());
   await page.getByRole("link", { name: "Documents" }).click();
-  await page.getByLabel("Choose documents", { exact: true }).setInputFiles({
-    name: "sunrise-labs-august.pdf",
-    mimeType: "application/pdf",
-    buffer: await readFile(join(FIXTURES, "sunrise-labs-august.pdf")),
-  });
+  await sendFiles(
+    page,
+    {
+      name: "sunrise-labs-august.pdf",
+      mimeType: "application/pdf",
+      buffer: await readFile(join(FIXTURES, "sunrise-labs-august.pdf")),
+    },
+    "Sort this file",
+  );
+  return reader;
 }
 
 test("shows each document Rufi AI split from a file with its place in the file, kind, lab and date", async ({
   page,
   rufi,
 }) => {
-  await addReport(page, rufi, {
+  await sendReport(page, rufi, {
     callsByTurn: [[{ id: "sort-split", ...SPLIT }]],
   });
   const rows = page
@@ -282,84 +291,30 @@ test("shows each document Rufi AI split from a file with its place in the file, 
   ).toBeVisible();
 });
 
-test("says a file Rufi AI hasn't sorted yet, and why; its Retry sorts it", async ({
+test("says a file Rufi AI hasn't sorted yet, with Ask Rufi and no Retry; asking in the chat sorts it without reading again", async ({
   page,
   rufi,
 }) => {
-  // Rufi AI's first turn answers without sorting; the next one sorts.
-  await addReport(page, rufi, {
+  // Rufi AI's first reply answers without sorting; the next one sorts.
+  const reader = await sendReport(page, rufi, {
     callsByTurn: [[], [{ id: "sort-again", ...SPLIT }]],
   });
   const row = page
     .getByRole("row")
     .filter({ hasText: "sunrise-labs-august.pdf" });
-  const status = row.getByText("Not sorted yet");
-  await expect(status).toBeVisible({ timeout: 10_000 });
-  await expect(status).toHaveAttribute(
-    "title",
-    "Rufi AI asked you about it in the chat",
-  );
-  // It can't be added to a message until it is sorted.
-  await row.hover();
-  await expect(row.getByRole("button", { name: "Ask Rufi" })).toHaveCount(0);
+  await expect(row.getByText("Not sorted yet")).toBeVisible();
+  await expect(row.getByRole("button", { name: "Retry" })).toHaveCount(0);
   await accessible(page);
 
-  await row.getByRole("button", { name: "Retry" }).click();
+  await row.hover();
+  await row.getByRole("button", { name: "Ask Rufi" }).click();
+  await expect(chips(page)).toHaveText(["sunrise-labs-august.pdf"]);
+  await chat(page)
+    .getByRole("textbox", { name: "Message to Rufi" })
+    .fill("Please sort it");
+  await chat(page).getByRole("button", { name: "Send" }).click();
   await expect(
     page.getByRole("row").filter({ hasText: "page 2 of 2" }),
   ).toContainText("Prescription");
-});
-
-test("says while Rufi AI sorts a file, and why it couldn't; its Retry sorts it", async ({
-  page,
-  rufi,
-}) => {
-  // The first turn takes a moment, and fails; the next one sorts.
-  await addReport(page, rufi, {
-    userMessageMs: 1_500,
-    failTurns: 1,
-    failMessage: "The AI couldn't answer.",
-    callsByTurn: [[], [{ id: "sort-retry", ...SPLIT }]],
-  });
-  const row = page
-    .getByRole("row")
-    .filter({ hasText: "sunrise-labs-august.pdf" });
-  await expect(row.getByText("Sorting…")).toBeVisible({ timeout: 10_000 });
-  await accessible(page);
-  // As if Rufi had tried three times already: this try is its last.
-  const store = openWritable(databasePath(rufi.home));
-  try {
-    store.db.exec("UPDATE sort_requests SET tries = 3");
-  } finally {
-    store.close();
-  }
-  const status = row.getByText("Not sorted yet");
-  await expect(status).toHaveAttribute("title", "The AI couldn't answer.", {
-    timeout: 10_000,
-  });
-  await row.getByRole("button", { name: "Retry" }).click();
-  await expect(
-    page.getByRole("row").filter({ hasText: "page 2 of 2" }),
-  ).toContainText("Prescription", { timeout: 10_000 });
-});
-
-test("says a file waits for the sign-in to be sorted, with no Retry", async ({
-  page,
-  rufi,
-}) => {
-  rufi.account = { account: "signed_out", email: null };
-  await addReport(page, rufi, {
-    callsByTurn: [[{ id: "sort-signed-in", ...SPLIT }]],
-  });
-  const row = page
-    .getByRole("row")
-    .filter({ hasText: "sunrise-labs-august.pdf" });
-  const status = row.getByText("Not sorted yet");
-  await expect(status).toHaveAttribute(
-    "title",
-    "Sign in with ChatGPT; Rufi AI sorts it then",
-    { timeout: 10_000 },
-  );
-  await expect(row.getByRole("button", { name: "Retry" })).toHaveCount(0);
-  await accessible(page);
+  expect(reader.runs).toHaveLength(1);
 });

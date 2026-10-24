@@ -615,8 +615,8 @@ const briefText = (brief: Brief) =>
 
 /**
  * Sends a fictional report as a document (readDocument), and gives the
- * document's id. `undated`: the
- * report has no date printed on it (no Collected or Reported line).
+ * document's id. `undated`: the report has no date printed on it (no
+ * Collected or Reported line).
  */
 async function readReport(
   api: Api,
@@ -1371,10 +1371,9 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   sorts_the_copy_set: async (api, home) => {
     const c = chat(api);
     const files = await copySetFiles();
-    const [mixed = "", photo = ""] = await api.upload([
-      files.mixed,
-      files.photo,
-    ]);
+    // Two adds: an upload's files go together as one document.
+    const [mixed = ""] = await api.upload([files.mixed]);
+    const [photo = ""] = await api.upload([files.photo]);
     await c.say("What is my TSH in these files?", [
       chipOf("document", mixed),
       chipOf("document", photo),
@@ -1474,7 +1473,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         {
           check: "tells_what_it_found",
           criterion:
-            "Rufi AI's reply to the message with the files says in a few lines what each file holds (two reports and a prescription; the June report again), that nothing is saved, and point at what is worth a look.",
+            "Rufi AI's reply to the message with the files says in a few lines what each file holds (two reports and a prescription; the June report again), that nothing is saved, points at what is worth a look, and answers the person's question about TSH using the report's printed value.",
           evidence: snapshot.entries
             .filter((e) => e.kind === "reply")
             .map((e) => e.text)
@@ -1981,12 +1980,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
    */
   prescription_measurements: async (api, home) => {
     const c = chat(api);
-    const doc = await readDocument(
-      api,
-      home,
-      "lakeview-oct.pdf",
-      PRESCRIPTION.pages,
-    );
+    const doc = await readDocument(api, "lakeview-oct.pdf", PRESCRIPTION.pages);
     await c.say("Save the results from this prescription.", [
       chipOf("document", doc),
     ]);

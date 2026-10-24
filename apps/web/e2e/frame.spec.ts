@@ -1,12 +1,11 @@
 // The frame on the real core: opening Rufi, first run, sign-in, Overview,
 // Settings and Help, and what the page does when the core is slow or gone.
-import { chmod, readdir, readFile } from "node:fs/promises";
+import { chmod, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { type ExpressionKey, svg } from "@rufi/brand/mark";
 import { runningLink } from "../../server/src/server/core.ts";
-import { readPage, scriptedReader } from "../../server/tests/fake-reader.ts";
 import { expect, test } from "./rufi.ts";
 
 /** No accessibility rule broken on what the page shows now. */
@@ -173,21 +172,12 @@ test("follows the Mac's light or dark appearance, also when it changes while Ruf
   await expect(dog(page)).toHaveCount(1);
 });
 
-test("the sidebar dog shows the face Rufi's AI chose until the next reply, also after a reload, which it thinks through, then is calm again; an empty page shows the dog; another person's dog has its own face; a reading after a Stop is done", async ({
+test("the sidebar dog shows the face Rufi's AI chose until the next reply, also after a reload, which it thinks through, then is calm again; an empty page shows the dog; another person's dog has its own face", async ({
   page,
   rufi,
 }) => {
-  // A page read whole: its sort waits, as the chat's queue does after a Stop.
-  const reader = scriptedReader([
-    async (turn) => {
-      await turn.look(1);
-      await turn.save(1, readPage());
-      return undefined;
-    },
-  ]);
   await rufi.family();
   await rufi.start({
-    reader: reader.run,
     scenario: {
       // The first reply shows a face; the second shows none.
       callsByTurn: [[{ tool: "show_face", arguments: { face: "question" } }]],
@@ -259,8 +249,7 @@ test("the sidebar dog shows the face Rufi's AI chose until the next reply, also 
     await page.waitForTimeout(400);
   }
 
-  // Back on Asha's Documents: a reply she stops isn't done, but a reading
-  // that ends after it is.
+  // Back on Asha's Documents: a reply she stops isn't done.
   await open("/people/asha/documents");
   await expect(sidebar(page)).toContainText("Asha Fictional");
   await chat.getByRole("button", { name: "Open the chat" }).click();
@@ -273,17 +262,7 @@ test("the sidebar dog shows the face Rufi's AI chose until the next reply, also 
   await expect(chat.getByRole("button", { name: "Stop" })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect.poll(face(page)).not.toBe(drawn("thinking"));
-  await page.getByLabel("Choose documents", { exact: true }).setInputFiles({
-    name: "sunrise-labs.pdf",
-    mimeType: "application/pdf",
-    buffer: await readFile(
-      join(
-        import.meta.dirname,
-        "../../server/tests/fixtures/documents/ravi-lipid-panel.pdf",
-      ),
-    ),
-  });
-  await expect.poll(face(page)).toBe(drawn("done"));
+  expect(await face(page)()).not.toBe(drawn("done"));
 });
 
 test("under reduced motion the dog is still, and its face still changes", async ({

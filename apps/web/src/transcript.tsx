@@ -913,7 +913,14 @@ function Step({ live, id }: { live: StoreApi<Live>; id: string }) {
           id={details}
           className="mt-1 mb-1 flex flex-col gap-1.5 pl-5 text-xs"
         >
-          <StepDetails personId={personId} id={id} version={entry.updatedAt} />
+          <StepDetails
+            personId={personId}
+            id={id}
+            version={entry.updatedAt}
+            reading={
+              entry.activity === "reading" ? entry.link?.document : undefined
+            }
+          />
         </div>
       )}
     </div>
