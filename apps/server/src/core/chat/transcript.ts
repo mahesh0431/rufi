@@ -20,9 +20,10 @@ import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
 import type { Made } from "../briefs/briefs.ts";
 import type { Saved } from "../record/save.ts";
-import { addRow } from "./queue.ts";
+import { addRow, endPart } from "./queue.ts";
 import { chipsOf } from "./refs.ts";
 import { splitBasis } from "./basis.ts";
+import { CLOSED_WHILE_READING } from "../documents/reading.ts";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 
@@ -220,6 +221,7 @@ async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
             .select("p.thread_id")
             .whereRef("p.person_id", "=", "t.person_id")
             .whereRef("p.chat_id", "=", "t.chat_id")
+            .where("p.thread_id", "is not", null)
             .where((p) =>
               p.or([
                 p("p.started_at", "<", p.ref("t.started_at")),
@@ -268,7 +270,10 @@ async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
       resetsAt: row.resets_at,
       startedAt: row.started_at,
       endedAt: row.ended_at,
-      newThread: threadBefore !== null && threadBefore !== row.thread_id,
+      newThread:
+        row.thread_id !== null &&
+        threadBefore !== null &&
+        threadBefore !== row.thread_id,
       how: how ?? null,
     };
   });
@@ -465,7 +470,7 @@ export function transcripts(
   const handedOver = (trx: Db, chat: ChatRow, handOver: string) =>
     trx
       .selectFrom("chat_queue")
-      .select(["id", "origin", "text", "refs"])
+      .select(["id", "origin", "text", "refs", "turn_id"])
       .where("person_id", "=", chat.personId)
       .where("chat_id", "=", chat.id)
       .where("sent_as", "=", handOver)
@@ -801,7 +806,9 @@ export function transcripts(
      * per agent turn. `handOver` is the id of the queue's rows Rufi handed
      * over for it: in the same transaction they are sent, the person's
      * message enters the transcript by its row's id, and the turn takes its
-     * origin from them (a Rufi event's turn can only read).
+     * origin from them (a Rufi event's turn can only read). A reply whose
+     * Rufi's part read the message's files is this turn: it takes the
+     * agent's ids.
      */
     startTurn: (
       chat: ChatRow,
@@ -813,6 +820,33 @@ export function transcripts(
         if (await turnOf(trx, chat.id, agentTurnId)) return undefined;
         const rows =
           handOver === undefined ? [] : await handedOver(trx, chat, handOver);
+        // The reply Rufi's part started for these rows goes on as this turn.
+        const part = await trx
+          .selectFrom("turns")
+          .select("id")
+          .where("person_id", "=", chat.personId)
+          .where("chat_id", "=", chat.id)
+          .where("status", "=", "running")
+          .where("agent_turn_id", "is", null)
+          .where(
+            "id",
+            "in",
+            rows.flatMap((row) => (row.turn_id === null ? [] : [row.turn_id])),
+          )
+          .executeTakeFirst();
+        if (part) {
+          await trx
+            .updateTable("turns")
+            .set({
+              agent_turn_id: agentTurnId,
+              thread_id: thread.id,
+              model: thread.model,
+            })
+            .where("id", "=", part.id)
+            .execute();
+          const entries = await sent(trx, chat, revision, rows, part.id);
+          return { entries, turns: [part.id] };
+        }
         const id = uuid();
         await trx
           .insertInto("turns")
@@ -866,6 +900,178 @@ export function transcripts(
       });
       return found;
     },
+
+    /**
+     * The start of a reply whose message brings files to read, before the
+     * agent's turn exists (server/chat.ts): in one transaction, `open` makes
+     * their reading jobs; when it makes any, the reply starts (its turn, on
+     * the chat's model), the person's message enters the chat, and the
+     * claimed rows point at the reply. Undefined, with nothing written, when
+     * no file needs reading.
+     */
+    startPart: async <T>(
+      chat: ChatRow,
+      handOver: string,
+      model: string,
+      open: (trx: Transaction<Tables>) => Promise<T[]>,
+    ): Promise<{ turnId: string; opened: T[] } | undefined> => {
+      let started: { turnId: string; opened: T[] } | undefined;
+      await change(chat.id, async (trx, revision) => {
+        const opened = await open(trx);
+        if (opened.length === 0) return undefined;
+        const rows = await trx
+          .selectFrom("chat_queue")
+          .select(["id", "origin", "text", "refs"])
+          .where("person_id", "=", chat.personId)
+          .where("chat_id", "=", chat.id)
+          .where("state", "=", "handing_over")
+          .orderBy("position")
+          .execute();
+        const id = uuid();
+        await trx
+          .insertInto("turns")
+          .values({
+            id,
+            person_id: chat.personId,
+            chat_id: chat.id,
+            agent_turn_id: null,
+            thread_id: null,
+            model,
+            origin: "person",
+            status: "running",
+            end_reason: null,
+            end_text: null,
+            resets_at: null,
+            started_at: now(),
+            ended_at: null,
+          })
+          .execute();
+        await trx
+          .updateTable("chat_queue")
+          .set({ turn_id: id, updated_at: now() })
+          .where(
+            "id",
+            "in",
+            rows.map((row) => row.id),
+          )
+          .execute();
+        // The message is in the chat once, also when its reply is tried again.
+        const entries: string[] = [];
+        for (const row of rows) {
+          if (row.origin !== "person" || row.id !== handOver) continue;
+          const there = await trx
+            .selectFrom("transcript_entries")
+            .select("id")
+            .where("id", "=", row.id)
+            .executeTakeFirst();
+          if (there) continue;
+          entries.push(
+            await insertEntry(trx, chat, revision, {
+              id: row.id,
+              turnId: id,
+              kind: "message",
+              text: row.text,
+              refs: JSON.parse(row.refs) as Chip[],
+            }),
+          );
+        }
+        started = { turnId: id, opened };
+        return { entries, turns: [id] };
+      });
+      return started;
+    },
+
+    /**
+     * A step of Rufi's part of a reply (the reader copying one document):
+     * added when it starts, updated as it goes and when it ends.
+     */
+    setStep: (
+      chat: ChatRow,
+      turnId: string,
+      stepId: string,
+      step: {
+        title: string;
+        detail: string;
+        status: "running" | "done" | "failed" | "stopped";
+        details: unknown;
+      },
+    ) =>
+      change(chat.id, async (trx, revision) => {
+        const line = await trx
+          .selectFrom("transcript_entries")
+          .select("id")
+          .where("person_id", "=", chat.personId)
+          .where("turn_id", "=", turnId)
+          .where("agent_item_id", "=", stepId)
+          .where("kind", "=", "activity")
+          .executeTakeFirst();
+        if (!line) {
+          const id = await insertEntry(trx, chat, revision, {
+            turnId,
+            kind: "activity",
+            text: step.title,
+            activity: "reading",
+            detail: step.detail,
+            status: step.status,
+            agentItemId: stepId,
+            details: JSON.stringify(step.details),
+          });
+          return { entries: [id], turns: [] };
+        }
+        await trx
+          .updateTable("transcript_entries")
+          .set({
+            text: step.title,
+            detail: step.detail,
+            status: step.status,
+            details: JSON.stringify(step.details),
+            revision,
+            updated_at: now(),
+          })
+          .where("id", "=", line.id)
+          .execute();
+        return { entries: [line.id], turns: [] };
+      }),
+
+    /**
+     * A reply that ended in Rufi's part, before the AI got its message, in
+     * one transaction: the reply ended with why, its message held for the
+     * reply's Retry (core/chat/queue.ts), and `write` (its readings that
+     * didn't finish failed).
+     */
+    endPart: (
+      chat: ChatRow,
+      turnId: string,
+      end: TurnEnding & { text: string },
+      write: (trx: Transaction<Tables>) => Promise<void>,
+    ) =>
+      change(chat.id, async (trx, revision) => {
+        const at = now();
+        await trx
+          .updateTable("turns")
+          .set({
+            status: end.status,
+            end_reason: end.reason ?? null,
+            end_text: end.text,
+            ended_at: at,
+          })
+          .where("id", "=", turnId)
+          .where("status", "=", "running")
+          // The AI's turn didn't take it over.
+          .where("agent_turn_id", "is", null)
+          .execute();
+        const stopped = await trx
+          .updateTable("transcript_entries")
+          .set({ status: "stopped", revision, updated_at: at })
+          .where("person_id", "=", chat.personId)
+          .where("turn_id", "=", turnId)
+          .where("status", "=", "running")
+          .returning("id")
+          .execute();
+        await endPart(trx, chat, end.text, at);
+        await write(trx);
+        return { entries: stopped.map((row) => row.id), turns: [turnId] };
+      }),
 
     /** The chips of references, each checked to be the person's (RefRefusal). */
     chips: (personId: string, refs: readonly Pointer[]) =>
@@ -1372,7 +1578,11 @@ export function transcripts(
             .updateTable("turns")
             .set({
               status: "interrupted",
-              end_text: "Rufi closed before the reply finished.",
+              // Before the agent's turn, Rufi was reading the files.
+              end_text:
+                turn.agent_turn_id === null
+                  ? `${CLOSED_WHILE_READING}.`
+                  : "Rufi closed before the reply finished.",
               ended_at: now(),
             })
             .where("id", "=", turn.id)

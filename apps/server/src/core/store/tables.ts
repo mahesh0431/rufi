@@ -299,21 +299,6 @@ export interface Tables {
     key: string;
     value: string;
   };
-  sort_requests: {
-    id: string;
-    person_id: string;
-    document_id: string;
-    job_id: string | null;
-    state: string;
-    queue_id: string | null;
-    tries: number;
-    retry_at: string | null;
-    error: string | null;
-    call_id: string | null;
-    answer: string | null;
-    created_at: string;
-    ended_at: string | null;
-  };
   symptoms: {
     id: string;
     person_id: string;

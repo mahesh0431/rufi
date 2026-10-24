@@ -10,6 +10,7 @@ import {
   MAX_MESSAGE_CHARS,
   PAGE_ESCAPE,
   RecoverMessage,
+  RetryReply,
   ReorderQueue,
   SaveDraft,
   SaveSettings,
@@ -94,11 +95,6 @@ export interface ApiDeps {
   deletions: Deletions;
   /** Their readings: what waits and runs, and each one's work. */
   readings: Readings;
-  /**
-   * Starts a document's sort again when it waits (its tries used, Rufi AI
-   * asked, or a Stop): false when none waits.
-   */
-  sortAgain: (personId: string, documentId: string) => Promise<boolean>;
   /** A document's draft items, and the person's fixes. */
   items: DraftItems;
   /** A document's pages as the reader saw them. */
@@ -719,18 +715,6 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       throw error;
     }
   };
-  // Retry: a sort that waits goes again; otherwise what failed is read again.
-  app.post(`${documentsPath}/:documentId/retry`, async (c) => {
-    const found = await person(c);
-    const documentId = c.req.param("documentId");
-    if (await reading(() => deps.sortAgain(found.id, documentId))) {
-      return c.json({ pages: [], sorting: true });
-    }
-    const pages = await reading(() =>
-      deps.readings.retry(found.id, documentId),
-    );
-    return c.json({ pages });
-  });
   // A chip of an unsent file taken out of the box: the file leaves Rufi.
   app.delete(`${documentsPath}/:documentId/unsent`, async (c) => {
     const found = await person(c);
@@ -771,10 +755,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     deps.log("documents.deleted", { ms: Date.now() - started });
     return c.json({ deleted: true });
   });
-  // What waits and runs, for the strip; one reading's work, for Open.
-  app.get("/api/people/:personId/readings", async (c) =>
-    c.json({ readings: await deps.readings.strip((await person(c)).id) }),
-  );
+  // One reading's work, for View reading.
   app.get(`${documentsPath}/:documentId/reading`, async (c) => {
     const found = await deps.readings.view(
       (await person(c)).id,
@@ -916,6 +897,12 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.post(`${one}/queue/:itemId/send`, async (c) => {
     const found = await chatOf(c);
     await acting(() => chat.queue.sendNow(found, c.req.param("itemId")));
+    return c.json(await chat.queue.list(found));
+  });
+  app.post(`${one}/queue/:itemId/retry`, async (c) => {
+    const found = await chatOf(c);
+    const { hold } = await body(c, RetryReply);
+    await acting(() => chat.queue.retry(found, c.req.param("itemId"), hold));
     return c.json(await chat.queue.list(found));
   });
   app.post(`${one}/queue/:itemId/recover`, async (c) => {

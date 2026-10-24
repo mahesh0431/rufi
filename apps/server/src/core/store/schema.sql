@@ -177,39 +177,6 @@ CREATE TABLE page_copies (
   FOREIGN KEY (person_id, job_id) REFERENCES jobs (person_id, id)
 ) STRICT;
 
--- Rufi's own work of asking Rufi AI to sort an add (docs/adr/0019): one
--- per reading that ended with pages to sort, and one for each sort a
--- person's turn made. Rufi hands it to the AI as a row of the chat's queue
--- (queue_id: its row now), in a turn of its own, and tries again after a
--- failed turn, three times; a sort_documents call consumes it in the same
--- transaction as the split and the drafts, and keeps its answer, so the
--- same call again gets the same answer. Operational state, not the
--- record: the stored tool call is the trace of a sort.
-CREATE TABLE sort_requests (
-  id TEXT PRIMARY KEY,         -- UUIDv7
-  person_id TEXT NOT NULL,
-  document_id TEXT NOT NULL,   -- the add it sorts
-  job_id TEXT,                 -- the reading whose end asked for it; null: a person's sort, or a reading since deleted
-  -- open: waits, runs or will be tried again; asked: Rufi AI asked the
-  -- person instead, and it waits for them; failed: its tries are used,
-  -- Retry starts it again; done: sorted; void: nothing is left to sort.
-  state TEXT NOT NULL CHECK (state IN ('open', 'asked', 'failed', 'done', 'void')),
-  queue_id TEXT,               -- its row in the chat's queue now
-  tries INTEGER NOT NULL DEFAULT 0, -- failed turns since it was made or the person's Retry
-  retry_at TEXT,               -- its next try, after a failed turn
-  error TEXT,                  -- why its last turn failed, in words for the person
-  call_id TEXT,                -- the agent's id for the sort_documents call that did it
-  answer TEXT,                 -- what that call got back (JSON)
-  created_at TEXT NOT NULL,
-  ended_at TEXT,
-  UNIQUE (person_id, id),
-  UNIQUE (person_id, call_id),
-  FOREIGN KEY (person_id, document_id) REFERENCES documents (person_id, id),
-  FOREIGN KEY (person_id, job_id) REFERENCES jobs (person_id, id),
-  FOREIGN KEY (person_id, queue_id) REFERENCES chat_queue (person_id, id) DEFERRABLE INITIALLY DEFERRED,
-  CHECK ((state = 'done') = (call_id IS NOT NULL))
-) STRICT;
-
 -- A report as printed, made when its results are saved. A draft's report
 -- is its document: every save from that document uses one report (an
 -- older Rufi's reports may span documents). document_id is its first
@@ -641,9 +608,6 @@ CREATE INDEX operations_by_person ON operations (person_id, seq);
 CREATE INDEX changes_by_record ON record_changes (person_id, record_id);
 CREATE INDEX sources_by_record ON record_sources (person_id, record_id);
 CREATE INDEX drafts_by_document ON draft_items (person_id, document_id, page, seq);
-CREATE INDEX sort_requests_by_state ON sort_requests (state, retry_at);
-CREATE INDEX sort_requests_by_document ON sort_requests (person_id, document_id);
-CREATE INDEX sort_requests_by_queue ON sort_requests (person_id, queue_id);
 
 -- The version this file makes: the number of migrations (./migrations.ts).
 PRAGMA user_version = 15;

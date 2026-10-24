@@ -1,22 +1,23 @@
-// Reading documents: the jobs that read them, one at a time, and what a
-// reading writes when it starts and when it ends. A job targets some pages
-// of its document (all of them first; a retry only the pages that failed).
-// Its runs write the reader's page copies (copies.ts); only a run whose
-// reader turn completed normally finishes the job, in one transaction with
-// its end line: page states, the document's version, the job done, and the
-// request that asks Rufi AI to sort the pages (sorting.ts), which makes the
-// drafts. A failed job keeps its copies; Retry continues it. Nothing here
-// writes the record or decides what a page means. Rufi reads each
-// document as it is added. Pages an older reader saved as notebook entries
-// keep them, and are shown as they are.
-import type { Transaction } from "kysely";
+// Reading documents: the jobs that read them, one at a time. A job is made
+// or opened again when the reply of the message that sent its document
+// starts (server/chat.ts), and runs in that reply, before the AI gets the
+// message. It targets some pages of its document (all of them first; a
+// read-again only the pages that couldn't be read). Its runs write the
+// reader's page copies (copies.ts); only a run whose reader turn completed
+// normally finishes the job: page states, the document's version, the job
+// done. Rufi AI then sorts the pages in the same reply (sorting.ts), which
+// makes the drafts. A job that doesn't finish fails with its copies kept:
+// when its reply ends otherwise, or at the next start. It goes on when its
+// document is sent again. Nothing here writes the record or decides what a
+// page means. Pages an older reader saved as notebook entries keep them, and
+// are shown as they are.
+import { sql, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
-import { Refusal } from "../tools/registry.ts";
 import type { Checks, Entry, Run } from "./notebook.ts";
 import { documentName, ranges } from "./naming.ts";
-import { pagesOf, sortLine, sortNote } from "./sorting.ts";
+import { pagesOf } from "./sorting.ts";
 
 export interface Job {
   id: string;
@@ -43,20 +44,6 @@ export interface Usage {
   looks: number;
   saves: number;
   compactions: number;
-}
-
-/** A reading's end, as the chat shows it and the AI is told. */
-export interface Ending {
-  /** The chat's line. */
-  line: string;
-  /** Rufi's note that asks Rufi AI to sort the pages, when there are pages to sort. */
-  ask: string | undefined;
-  facts: {
-    document: string;
-    action: "open" | "retry";
-    results: number;
-    unsure: number;
-  };
 }
 
 type Trx = Transaction<Tables>;
@@ -91,8 +78,14 @@ const jobOf = (row: Tables["jobs"]): Job => ({
   startedAt: row.started_at,
 });
 
-const plural = (n: number, one: string, many = `${one}s`) =>
-  `${String(n)} ${n === 1 ? one : many}`;
+/** What a job does when its reply starts, for a document sent with it. */
+type Plan =
+  | { kind: "new"; targets: number[] }
+  | { kind: "again"; job: Job }
+  | undefined;
+
+/** Why a reading Rufi stopped in the middle failed, for the person. */
+export const CLOSED_WHILE_READING = "Rufi closed while reading";
 
 export function readings(
   store: Store,
@@ -100,12 +93,10 @@ export function readings(
 ) {
   const db = store.query;
   const listeners = new Map<string, Set<() => void>>();
-  const watchers = new Set<() => void>();
 
-  /** Tells the person's screens, and the reader, that their readings changed. */
+  /** Tells the person's screens that their readings changed. */
   const changed = (personId: string) => {
     for (const listener of listeners.get(personId) ?? []) listener();
-    for (const watcher of watchers) watcher();
   };
 
   /** Queues a reading of `targets` of the document. */
@@ -115,10 +106,11 @@ export function readings(
     documentId: string,
     targets: readonly number[],
   ) => {
+    const id = uuid();
     await trx
       .insertInto("jobs")
       .values({
-        id: uuid(),
+        id,
         person_id: personId,
         kind: "document_read",
         document_id: documentId,
@@ -129,6 +121,7 @@ export function readings(
         created_at: now(),
       })
       .execute();
+    return id;
   };
 
   const positions = async (
@@ -207,72 +200,6 @@ export function readings(
     );
 
   /**
-   * The facts of a reading for its end line and, when it has pages to
-   * sort, Rufi's note that asks Rufi AI to sort them. A reading that
-   * copied nothing but unreadable pages has nothing to sort.
-   */
-  const ending = async (
-    run: Pick<Run, "jobId" | "personId" | "documentId" | "targets">,
-    failure?: string,
-  ): Promise<Ending> => {
-    const pages = await db
-      .selectFrom("document_pages")
-      .select(["position", "file_name"])
-      .where("person_id", "=", run.personId)
-      .where("document_id", "=", run.documentId)
-      .orderBy("position")
-      .execute();
-    const files = pages.map((p) => p.file_name);
-    const name = documentName(files);
-    const copied = await copiedBy(db, run);
-    const facts = { document: run.documentId, results: 0, unsure: 0 };
-    if (failure !== undefined) {
-      return {
-        line: `Couldn't finish reading ${name} · ${failure} · read ${String(copied.size)} of ${String(run.targets.length)}`,
-        ask: undefined,
-        facts: { ...facts, action: "retry" },
-      };
-    }
-    const unreadable = run.targets.filter(
-      (t) => copied.get(t)?.outcome === "unreadable",
-    );
-    const notLooked = run.targets.filter((t) => !copied.has(t));
-    const sortable = copied.size - unreadable.length;
-    if (sortable === 0) {
-      return {
-        line: [
-          `Couldn't read ${name}`,
-          ...(unreadable.length > 0
-            ? [`${plural(unreadable.length, "page")} couldn't be read`]
-            : []),
-          ...(notLooked.length > 0
-            ? [`${plural(notLooked.length, "page")} not looked at`]
-            : []),
-        ].join(" · "),
-        ask: undefined,
-        facts: { ...facts, action: "retry" },
-      };
-    }
-    return {
-      line: sortLine({
-        files,
-        targets: run.targets,
-        pages: pages.length,
-        unreadable: unreadable.length,
-        notLooked: notLooked.length,
-      }),
-      ask: sortNote({
-        name,
-        documentId: run.documentId,
-        copied: copied.size,
-        unreadable,
-        notLooked,
-      }),
-      facts: { ...facts, action: "open" },
-    };
-  };
-
-  /**
    * Starts a run of a queued job: running, the next attempt. Returns the
    * run, bound to it.
    */
@@ -321,13 +248,81 @@ export function readings(
       .where("entry_attempt", "=", run.attempt)
       .execute();
 
+  /**
+   * Queued or running jobs (of `ids`, or all) failed with `why`; the
+   * entries of their current attempts kept for the next one, never to
+   * finish from alone. Returns whose they were.
+   */
+  const failUnfinished = async (
+    trx: Trx,
+    why: string,
+    ids?: readonly string[],
+  ) => {
+    const open = trx
+      .selectFrom("jobs as j")
+      .select("j.id")
+      .where("j.state", "in", ["queued", "running"])
+      .$if(ids !== undefined, (q) => q.where("j.id", "in", [...(ids ?? [])]));
+    await trx
+      .updateTable("document_pages")
+      .set({ entry_attempt: 0 })
+      .where("entry_job_id", "in", open)
+      .where("entry_attempt", ">", 0)
+      .where(
+        sql<boolean>`entry_attempt = (SELECT attempt FROM jobs WHERE jobs.id = document_pages.entry_job_id)`,
+      )
+      .execute();
+    return trx
+      .updateTable("jobs")
+      .set({ state: "failed", error: why, ended_at: now(), retry_at: null })
+      .where("state", "in", ["queued", "running"])
+      .$if(ids !== undefined, (q) => q.where("id", "in", [...(ids ?? [])]))
+      .returning("person_id")
+      .execute();
+  };
+
+  /** What the document's reading needs when a message sends it. */
+  const planOf = async (
+    trx: Trx | Store["query"],
+    personId: string,
+    documentId: string,
+    again: boolean,
+  ): Promise<Plan> => {
+    const live = await trx
+      .selectFrom("documents")
+      .select("id")
+      .where("person_id", "=", personId)
+      .where("id", "=", documentId)
+      .where("deleted_at", "is", null)
+      .executeTakeFirst();
+    if (!live) return undefined;
+    const job = await readingOf(trx, personId, documentId);
+    if (!job) {
+      return {
+        kind: "new",
+        targets: await positions(trx, personId, documentId),
+      };
+    }
+    if (job.state === "queued" || job.state === "running") return undefined;
+    if (job.state === "failed" && job.documentId === documentId) {
+      return { kind: "again", job };
+    }
+    if (!again && job.state !== "failed") return undefined;
+    const failed = (
+      await trx
+        .selectFrom("document_pages")
+        .select("position")
+        .where("person_id", "=", personId)
+        .where("document_id", "=", documentId)
+        .where("state", "in", ["unreadable", "not_looked_at"])
+        .orderBy("position")
+        .execute()
+    ).map((p) => p.position);
+    return failed.length === 0 ? undefined : { kind: "new", targets: failed };
+  };
+
   return {
     changed,
-
-    /** Listens to every change: the reader looks for work. */
-    watch: (watcher: () => void) => {
-      watchers.add(watcher);
-    },
 
     /** Listens to one person's readings; returns the way to stop. */
     subscribe: (personId: string, listener: () => void) => {
@@ -339,114 +334,84 @@ export function readings(
       };
     },
 
-    /** Queues a reading of every page, inside an add's transaction. */
-    queueNew: async (trx: Trx, personId: string, documentId: string) => {
-      await queueIn(
-        trx,
-        personId,
-        documentId,
-        await positions(trx, personId, documentId),
+    /**
+     * Whether the document needs reading when a message sends it: never
+     * read, its reading failed, or `again` (Retry) and its reading couldn't
+     * read some pages. Writes nothing.
+     */
+    needs: async (personId: string, documentId: string, again: boolean) =>
+      (await planOf(db, personId, documentId, again)) !== undefined,
+
+    /**
+     * In the transaction that starts a reply: the job that reads the
+     * document now, or undefined when it needs none. A document never read
+     * gets a job for every page; a failed reading is queued again to go on
+     * where it stopped; with `again`, a finished one gets a job for the
+     * pages it couldn't read or didn't look at.
+     */
+    open: async (
+      trx: Trx,
+      personId: string,
+      documentId: string,
+      again: boolean,
+    ): Promise<Job | undefined> => {
+      const plan = await planOf(trx, personId, documentId, again);
+      if (plan === undefined) return undefined;
+      let id: string;
+      if (plan.kind === "new") {
+        id = await queueIn(trx, personId, documentId, plan.targets);
+      } else {
+        id = plan.job.id;
+        await trx
+          .updateTable("jobs")
+          .set({
+            state: "queued",
+            error: null,
+            ended_at: null,
+            retries: 0,
+            retry_at: null,
+          })
+          .where("id", "=", id)
+          .execute();
+      }
+      return jobOf(
+        await trx
+          .selectFrom("jobs")
+          .selectAll()
+          .where("id", "=", id)
+          .executeTakeFirstOrThrow(),
       );
     },
 
     /**
-     * Reads again what failed: a failed reading continues where it stopped
-     * (with a fresh deadline); a finished one reads its unreadable and
-     * not-looked-at pages in a new job, which never touches the drafts
-     * already made; one never read is read in full. Returns the pages it
-     * will read.
+     * In the transaction that ends a reply: its jobs that haven't finished
+     * (not started, running, or waiting for a retry) fail with `why`, their
+     * copies kept.
      */
-    retry: async (personId: string, documentId: string) => {
-      const targets = await db.transaction().execute(async (trx) => {
-        const exists = await trx
-          .selectFrom("documents")
-          .select("id")
-          .where("person_id", "=", personId)
-          .where("id", "=", documentId)
-          .where("deleted_at", "is", null)
-          .executeTakeFirst();
-        if (!exists)
-          throw new Refusal("There is no such document for this person.");
-        const job = await readingOf(trx, personId, documentId);
-        if (!job) {
-          // Never read (added before Rufi read each document as it came).
-          const all = await positions(trx, personId, documentId);
-          await queueIn(trx, personId, documentId, all);
-          return all;
-        }
-        if (job.state === "queued" || job.state === "running") {
-          throw new Refusal("This document is being read now.");
-        }
-        if (job.state === "failed" && job.documentId === documentId) {
-          await trx
-            .updateTable("jobs")
-            .set({
-              state: "queued",
-              error: null,
-              ended_at: null,
-              retries: 0,
-              retry_at: null,
-            })
-            .where("id", "=", job.id)
-            .execute();
-          return job.targets;
-        }
-        const failed = (
-          await trx
-            .selectFrom("document_pages")
-            .select("position")
-            .where("person_id", "=", personId)
-            .where("document_id", "=", documentId)
-            .where("state", "in", ["unreadable", "not_looked_at"])
-            .orderBy("position")
-            .execute()
-        ).map((p) => p.position);
-        if (failed.length === 0) {
-          throw new Refusal(
-            "Every page of this document was read; nothing to read again.",
-          );
-        }
-        await queueIn(trx, personId, documentId, failed);
-        return failed;
-      });
-      changed(personId);
-      return targets;
-    },
-
-    /** At start: readings Rufi stopped in the middle are queued again. */
-    recover: async () => {
-      const rows = await db
-        .updateTable("jobs")
-        .set({ state: "queued" })
-        .where("state", "=", "running")
-        .returning("person_id")
-        .execute();
-      return rows.length;
+    failOpen: async (trx: Trx, jobIds: readonly string[], why: string) => {
+      if (jobIds.length === 0) return;
+      await failUnfinished(trx, why, jobIds);
     },
 
     /**
-     * The next reading to run, oldest first. An automatic retry waits
-     * until its time; `wake` is the earliest such time.
+     * At start: readings Rufi stopped in the middle fail, their copies
+     * kept. Nothing reads by itself: the person sends the document again.
      */
-    next: async (): Promise<{
-      job: Job | undefined;
-      wake: string | undefined;
-    }> => {
+    recover: async () => {
       const rows = await db
+        .transaction()
+        .execute((trx) => failUnfinished(trx, CLOSED_WHILE_READING));
+      return rows.length;
+    },
+
+    /** The job as stored now. */
+    job: async (jobId: string): Promise<Job | undefined> => {
+      const row = await db
         .selectFrom("jobs")
         .selectAll()
-        .where("state", "=", "queued")
-        .orderBy("created_at")
-        .orderBy("id")
-        .execute();
-      const at = now();
-      const jobs = rows.map(jobOf);
-      const job = jobs.find((j) => j.retryAt === null || j.retryAt <= at);
-      const wake = jobs
-        .map((j) => j.retryAt)
-        .filter((w): w is string => w !== null && w > at)
-        .sort((a, b) => a.localeCompare(b))[0];
-      return { job, wake };
+        .where("id", "=", jobId)
+        .executeTakeFirst();
+      return row && jobOf(row);
     },
 
     /**
@@ -474,28 +439,7 @@ export function readings(
       return job.targets.every((t) => saved.has(t));
     },
 
-    /** The start line of a job's first real start. */
-    startLine: async (job: Job) => {
-      const pages = await db
-        .selectFrom("document_pages")
-        .select("file_name")
-        .where("person_id", "=", job.personId)
-        .where("document_id", "=", job.documentId)
-        .orderBy("position")
-        .execute();
-      const name = documentName(pages.map((p) => p.file_name));
-      return job.targets.length === pages.length
-        ? `Reading ${name} · ${plural(pages.length, "page")}`
-        : `Reading ${name} again · ${job.targets.length === 1 ? "page" : "pages"} ${ranges(job.targets)}`;
-    },
-
-    /**
-     * Starts a run of a queued job: running, the next attempt. Returns the
-     * run, bound to it. Inside the start line's transaction on a first start.
-     */
-    begin: (trx: Trx, job: Job) => begin(trx, job),
-
-    /** Starts a run that has no start line (the job started before). */
+    /** Starts a run of a queued job: running, the next attempt. */
     startRun: (job: Job): Promise<Run> =>
       db.transaction().execute((trx) => begin(trx, job)),
 
@@ -570,117 +514,162 @@ export function readings(
       changed(run.personId);
     },
 
-    ending,
-
-    /**
-     * A reading's end that failed, inside its end line's transaction: the
-     * job failed, its entries kept, no drafts.
-     */
-    fail: async (trx: Trx, run: Run, error: string) => {
-      await markFailedEntries(trx, run);
-      const ended = await trx
-        .updateTable("jobs")
-        .set({ state: "failed", error, ended_at: now() })
-        .where("id", "=", run.jobId)
-        .where("state", "=", "running")
-        .where("attempt", "=", run.attempt)
-        .executeTakeFirst();
-      if (ended.numUpdatedRows !== 1n) {
-        throw await notRunning(
-          trx,
-          run.jobId,
-          "The reading isn't running any more.",
-        );
-      }
+    /** A reading's end that failed: the job failed, its copies kept. */
+    fail: async (run: Run, error: string) => {
+      await db.transaction().execute(async (trx) => {
+        await markFailedEntries(trx, run);
+        const ended = await trx
+          .updateTable("jobs")
+          .set({ state: "failed", error, ended_at: now() })
+          .where("id", "=", run.jobId)
+          .where("state", "=", "running")
+          .where("attempt", "=", run.attempt)
+          .executeTakeFirst();
+        if (ended.numUpdatedRows !== 1n) {
+          throw await notRunning(
+            trx,
+            run.jobId,
+            "The reading isn't running any more.",
+          );
+        }
+      });
+      changed(run.personId);
     },
 
     /**
-     * A reading's normal end, inside its end line's transaction, once per
-     * job: each target's state (its copy's outcome, or not looked at), the
-     * document's version raised, the job done. A reading with nothing to
-     * sort (`sorts` false: only unreadable pages) is sorted as it ends.
-     * Draft items come from Rufi AI's sort (sorting.ts), never from here.
+     * A reading's normal end, once per job: each target's state (its
+     * copy's outcome, or not looked at), the document's version raised, the
+     * job done. A reading with nothing to sort (only unreadable pages) is
+     * sorted as it ends. Draft items come from Rufi AI's sort (sorting.ts),
+     * never from here.
      */
-    finish: async (trx: Trx, run: Run, sorts: boolean) => {
-      const at = now();
-      const ended = await trx
-        .updateTable("jobs")
-        .set({
-          state: "done",
-          ended_at: at,
-          error: null,
-          sorted_at: sorts ? null : at,
-        })
-        .where("id", "=", run.jobId)
-        .where("state", "=", "running")
-        .where("attempt", "=", run.attempt)
-        .executeTakeFirst();
-      if (ended.numUpdatedRows !== 1n) {
-        throw await notRunning(
-          trx,
-          run.jobId,
-          "The reading isn't running any more.",
+    finish: async (run: Run) => {
+      await db.transaction().execute(async (trx) => {
+        const at = now();
+        const copied = await copiedBy(trx, run);
+        const sorts = [...copied.values()].some(
+          (copy) => copy.outcome !== "unreadable",
         );
-      }
-      const copied = await copiedBy(trx, run);
-      for (const target of run.targets) {
-        const copy = copied.get(target);
-        await trx
-          .updateTable("document_pages")
+        const ended = await trx
+          .updateTable("jobs")
           .set({
-            state: copy?.outcome ?? "not_looked_at",
-            state_why: copy?.outcome === "unreadable" ? copy.why : null,
+            state: "done",
+            ended_at: at,
+            error: null,
+            sorted_at: sorts ? null : at,
           })
+          .where("id", "=", run.jobId)
+          .where("state", "=", "running")
+          .where("attempt", "=", run.attempt)
+          .executeTakeFirst();
+        if (ended.numUpdatedRows !== 1n) {
+          throw await notRunning(
+            trx,
+            run.jobId,
+            "The reading isn't running any more.",
+          );
+        }
+        for (const target of run.targets) {
+          const copy = copied.get(target);
+          await trx
+            .updateTable("document_pages")
+            .set({
+              state: copy?.outcome ?? "not_looked_at",
+              state_why: copy?.outcome === "unreadable" ? copy.why : null,
+            })
+            .where("person_id", "=", run.personId)
+            .where("document_id", "=", run.documentId)
+            .where("position", "=", target)
+            .execute();
+        }
+        await trx
+          .updateTable("documents")
+          .set((eb) => ({ version: eb("version", "+", 1) }))
           .where("person_id", "=", run.personId)
-          .where("document_id", "=", run.documentId)
-          .where("position", "=", target)
+          .where("id", "=", run.documentId)
           .execute();
-      }
-      await trx
-        .updateTable("documents")
-        .set((eb) => ({ version: eb("version", "+", 1) }))
-        .where("person_id", "=", run.personId)
-        .where("id", "=", run.documentId)
-        .execute();
+      });
+      changed(run.personId);
     },
 
-    /** The person's readings that wait or run, for the strip above the box. */
-    strip: async (personId: string) => {
-      const jobs = await db
-        .selectFrom("jobs")
-        .selectAll()
-        .where("person_id", "=", personId)
-        .where("state", "in", ["queued", "running"])
-        .orderBy("created_at")
-        .orderBy("id")
+    /**
+     * The document's name and how far the job's reading got: its targets
+     * copied so far, of how many.
+     */
+    progress: async (
+      job: Pick<Job, "id" | "personId" | "documentId" | "targets">,
+    ) => {
+      const pages = await db
+        .selectFrom("document_pages")
+        .select("file_name")
+        .where("person_id", "=", job.personId)
+        .where("document_id", "=", job.documentId)
+        .orderBy("position")
         .execute();
-      const list = [];
-      for (const row of jobs) {
+      const copied = await copiedBy(db, {
+        jobId: job.id,
+        personId: job.personId,
+        documentId: job.documentId,
+      });
+      return {
+        name: documentName(pages.map((p) => p.file_name)),
+        saved: job.targets.filter((t) => copied.has(t)).length,
+        of: job.targets.length,
+        unreadable: job.targets.filter(
+          (t) => copied.get(t)?.outcome === "unreadable",
+        ).length,
+      };
+    },
+
+    /**
+     * Rufi's note for the AI on what its reply just copied: each finished
+     * job's document, its pages copied and the pages that couldn't be read
+     * or weren't looked at, from the stored page states, and what to do.
+     * Undefined when none finished.
+     */
+    note: async (jobIds: readonly string[]): Promise<string | undefined> => {
+      const lines: string[] = [];
+      for (const id of jobIds) {
+        const row = await db
+          .selectFrom("jobs")
+          .selectAll()
+          .where("id", "=", id)
+          .where("state", "=", "done")
+          .executeTakeFirst();
+        if (!row) continue;
         const job = jobOf(row);
         const pages = await db
           .selectFrom("document_pages")
-          .select(["position", "file_name", "entry_job_id"])
-          .where("person_id", "=", personId)
+          .select(["position", "file_name", "state"])
+          .where("person_id", "=", job.personId)
           .where("document_id", "=", job.documentId)
           .orderBy("position")
           .execute();
-        list.push({
-          documentId: job.documentId,
-          name: documentName(pages.map((p) => p.file_name)),
-          state:
-            job.state === "running"
-              ? ("running" as const)
-              : ("waiting" as const),
-          again: job.state === "running" ? job.attempt > 1 : job.attempt > 0,
-          saved: pages.filter(
-            (p) =>
-              p.entry_job_id === job.id && job.targets.includes(p.position),
-          ).length,
-          of: job.targets.length,
-          runAt: job.state === "running" ? row.run_at : null,
-        });
+        const targets = pages.filter((p) => job.targets.includes(p.position));
+        const unreadable = targets
+          .filter((p) => p.state === "unreadable")
+          .map((p) => p.position);
+        const notLooked = targets
+          .filter((p) => p.state === "not_looked_at")
+          .map((p) => p.position);
+        const copied = targets.length - notLooked.length;
+        lines.push(
+          [
+            `Rufi's reader copied ${documentName(pages.map((p) => p.file_name))} (document ${job.documentId}): ${job.targets.length === pages.length ? "" : `pages ${ranges(job.targets)}, `}${String(copied)} ${copied === 1 ? "page" : "pages"} copied.`,
+            ...(unreadable.length > 0
+              ? [`It couldn't read pages ${ranges(unreadable)}.`]
+              : []),
+            ...(notLooked.length > 0
+              ? [`It didn't look at pages ${ranges(notLooked)}.`]
+              : []),
+          ].join(" "),
+        );
       }
-      return list;
+      if (lines.length === 0) return undefined;
+      return [
+        ...lines,
+        "Not sorted yet: sort it as the sorting-documents skill says, then answer the user's message.",
+      ].join("\n");
     },
 
     /**

@@ -4,8 +4,15 @@
 -- starts with Rufi's part, before the agent's turn exists, so a turn's
 -- agent turn and thread may be null; the reader copying a document is an
 -- activity of the reply ('reading'). A message whose reply ended in Rufi's
--- part waits with a hold of its own ('reply_ended'). The tables are made
--- again, as SQLite does it: new table, copy, drop, rename.
+-- part waits with a hold of its own ('reply_ended'). Rufi AI sorts in the
+-- person's reply, so Rufi's sorting requests go: an open one's note leaves
+-- the queue, and its file shows not sorted yet. The tables are made again,
+-- as SQLite does it: new table, copy, drop, rename.
+UPDATE chat_queue SET state = 'removed', held = NULL, hold_id = NULL, held_text = NULL
+  WHERE state IN ('waiting', 'handing_over', 'not_sure')
+    AND id IN (SELECT queue_id FROM sort_requests WHERE state = 'open' AND queue_id IS NOT NULL);
+DROP TABLE sort_requests;
+
 CREATE TABLE documents_new (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL REFERENCES people (id),

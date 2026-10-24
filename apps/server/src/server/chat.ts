@@ -2,7 +2,12 @@
 // saved first and shown from what was saved. What waits to go to the AI is
 // in Rufi's own queue (core/chat/queue.ts): the dispatcher here hands the AI
 // one turn's rows at a time, claimed in the database before the AI is
-// called, and the next only after that turn and its writes have ended. The
+// called, and the next only after that turn and its writes have ended. A
+// message that sends files to read has Rufi's part first: its reply starts,
+// Rufi's reader copies the files one after another (each a step of the
+// reply), outside the chat's lane so Stop and other actions go on, and only
+// then the message goes to the AI with Rufi's note on what was copied. A
+// reading that doesn't finish ends the reply before the AI, with Retry. The
 // AI calls Rufi's tools through Rufi's MCP server, with a key for its thread;
 // each call is bound to the reply it was made in.
 import {
@@ -31,9 +36,12 @@ import {
 } from "../core/chat/queue.ts";
 import { refsForAi, RefRefusal } from "../core/chat/refs.ts";
 import type { ChatRow, Transcripts } from "../core/chat/transcript.ts";
+import type { Job, Readings } from "../core/documents/reading.ts";
 import type { ToolAnswer, ToolSpec } from "../core/tools/registry.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import type { McpCall, McpKeys } from "./mcp.ts";
+import type { ReadProgress, Reader } from "./reader.ts";
+import { v7 as uuid } from "uuid";
 
 /** How many earlier messages a new thread starts with. */
 const NEW_THREAD_MESSAGES = 10;
@@ -70,8 +78,11 @@ export interface ChatDeps {
     ) => (name: string, input: unknown, callId: string) => Promise<ToolAnswer>;
   };
   log: Log;
-  /** Told when a turn of the person's chat has ended (Rufi's sorting looks). */
-  ended?: (personId: string) => void;
+  /**
+   * Rufi's reader, for the files a message sends: their readings, and the
+   * call that reads one. Without it, a message goes to the AI as it is.
+   */
+  reading?: { readings: Readings; read: Reader["read"] };
 }
 
 /** A request the chat can't do now, in words for the person. */
@@ -132,6 +143,8 @@ export function chat(deps: ChatDeps) {
   const replied = new Set<string>();
   /** Turns with a part Rufi couldn't save: stopped, and ended as failed. */
   const unsaved = new Set<string>();
+  /** Rufi's parts of replies under way, so closing waits for them. */
+  const parts = new Set<Promise<void>>();
 
   /** A part of the turn wasn't saved: nothing more of it is, and it stops. */
   function lost(threadId: string, turnId: string): void {
@@ -375,7 +388,6 @@ export function chat(deps: ChatDeps) {
         }
         await transcripts.endTurn(chat, event.turnId, event.end);
         await endHandOver(chat, event.turnId);
-        deps.ended?.(chat.personId);
         // The turn and its writes have ended: the next rows may go.
         next(chat);
         return;
@@ -406,11 +418,12 @@ export function chat(deps: ChatDeps) {
 
   /**
    * Hands over the next turn's rows, in the chat's lane: only when no
-   * reply runs. The rows are claimed in the database first; the AI either
-   * starts their turn (they are sent with it), surely didn't get them (they
-   * wait again, the person's held with the reason; when the AI's thread
-   * didn't open, for the person to choose Try again or New thread), or
-   * nobody knows (not sure, and the chat pauses).
+   * reply runs. The rows are claimed in the database first and the AI's
+   * thread opened; a message with files to read has Rufi's part first
+   * (readFirst). The AI either starts their turn (they are sent with it),
+   * surely didn't get them (they wait again, the person's held with the
+   * reason; when the AI's thread didn't open, for the person to choose Try
+   * again or New thread), or nobody knows (not sure, and the chat pauses).
    */
   const dispatch = (chat: ChatRow) =>
     inLane(chat, async (stored, signal) => {
@@ -437,50 +450,264 @@ export function chat(deps: ChatDeps) {
         const quiet = error instanceof Stopped || closed;
         await queue.notTaken(
           fresh,
-          handOver.id,
           quiet ? undefined : textOf(error),
           error instanceof NotOpened,
         );
         if (!quiet) next(fresh);
         return;
       }
-      const context = pendingContext.get(fresh.id);
-      handing.set(threadId, handOver.id);
-      try {
-        await agent.send(
-          threadId,
-          {
-            id: handOver.id,
-            input: inputOf(handOver, context),
-            // A new model goes with the next reply, in the same thread.
-            ...(fresh.model !== null && { model: fresh.model }),
-            effort: fresh.effort,
-          },
-          signal,
-        );
-        pendingContext.delete(fresh.id);
-      } catch (error) {
-        if (error instanceof NotSent) {
-          handing.delete(threadId);
-          const stopped = error.cause instanceof Stopped || closed;
-          // Codex was replaced and the thread is gone: the rows wait again,
-          // and their next hand-over starts a new thread.
-          const gone = error.cause instanceof ThreadNotFound;
-          await queue.notTaken(
-            fresh,
-            handOver.id,
-            stopped || gone ? undefined : error.message,
-            error.cause instanceof NotOpened,
+      const part = await startPart(fresh, handOver);
+      if (part) {
+        readFirst(fresh, threadId, handOver, part);
+        return;
+      }
+      await handOverTo(fresh, threadId, handOver, [], signal);
+    });
+
+  /**
+   * The message's files that need reading, with their jobs made and its
+   * reply started in one transaction; undefined when none needs reading.
+   */
+  async function startPart(chat: ChatRow, handOver: HandOver) {
+    const reading = deps.reading;
+    if (!reading || handOver.origin !== "person") return undefined;
+    const documents = handOver.refs.flatMap((chip) =>
+      chip.ref.type === "document"
+        ? [{ id: chip.ref.id, again: chip.ref.readAgain === true }]
+        : [],
+    );
+    if (documents.length === 0) return undefined;
+    return transcripts.startPart(
+      chat,
+      handOver.id,
+      chat.model ?? "",
+      async (trx) => {
+        const jobs: Job[] = [];
+        for (const { id, again } of documents) {
+          const job = await reading.readings.open(
+            trx,
+            chat.personId,
+            id,
+            again,
           );
-          if (!stopped) next(fresh);
+          if (job) jobs.push(job);
+        }
+        return jobs;
+      },
+    );
+  }
+
+  /**
+   * Rufi's part of a reply, outside the chat's lane: each file's reading
+   * as a step, one after another, then the hand-over in the lane, with
+   * Rufi's note on what was copied. A Stop or a reading that fails ends
+   * the reply here, its message held for Retry and the readings left
+   * failed, their copies kept. Rufi closing leaves it for the next start.
+   */
+  function readFirst(
+    chat: ChatRow,
+    threadId: string,
+    handOver: HandOver,
+    part: { turnId: string; opened: Job[] },
+  ): void {
+    const reading = deps.reading;
+    if (!reading) return;
+    const op = stoppable(chat);
+    const jobIds = part.opened.map((job) => job.id);
+    /** The reply ends here, before the AI: its message waits for Retry. */
+    const end = async (stopped: boolean, text: string, why: string) => {
+      if (closed) return;
+      await transcripts.endPart(
+        chat,
+        part.turnId,
+        {
+          status: stopped ? "interrupted" : "failed",
+          ...(stopped && { reason: "stopped" as const }),
+          text,
+        },
+        (trx) => reading.readings.failOpen(trx, jobIds, why),
+      );
+      queue.changed(chat.id);
+      reading.readings.changed(chat.personId);
+      if (!stopped) next(chat);
+    };
+    const work = (async () => {
+      const done: string[] = [];
+      for (const job of part.opened) {
+        const stepId = uuid();
+        const { name } = await reading.readings.progress(job);
+        let shown: ReadProgress | undefined;
+        let writing = Promise.resolve();
+        const step = (
+          status: "running" | "done" | "failed" | "stopped",
+          detail: string,
+        ) => {
+          writing = writing
+            .then(async () => {
+              await transcripts.setStep(chat, part.turnId, stepId, {
+                title: `Rufi's reader · ${name}`,
+                detail,
+                status,
+                details: { document: job.documentId, job: job.id },
+              });
+            })
+            .catch((error: unknown) => {
+              log("chat.save_failed", {
+                kind: "step",
+                error: errorCode(error),
+              });
+            });
+          return writing;
+        };
+        const ended = await reading.read(job, op.signal, (now) => {
+          shown = now;
+          void step("running", progressWords(now));
+        });
+        await writing;
+        const far = `${String(shown?.saved ?? 0)} of ${String(shown?.of ?? job.targets.length)}`;
+        if (ended.ended === "done") {
+          const after = await reading.readings.progress(job);
+          await step(
+            "done",
+            [
+              `${String(after.of)} ${after.of === 1 ? "page" : "pages"}`,
+              ...(after.unreadable > 0
+                ? [`${String(after.unreadable)} couldn't be read`]
+                : []),
+            ].join(" · "),
+          );
+          done.push(job.id);
+          continue;
+        }
+        if (ended.ended === "deleted") {
+          await step("stopped", "deleted");
+          continue;
+        }
+        if (closed) return;
+        if (ended.ended === "stopped") {
+          await step("stopped", `stopped · ${far}`);
+          await end(true, `Stopped. · read ${far}`, "Stopped");
           return;
         }
-        log("chat.handover_unknown", { error: errorCode(error) });
-        // Its turn may have started meanwhile: that is saved first.
-        await saving;
-        await queue.unknown(fresh, handOver.id);
+        await step("failed", `${ended.why} · ${far}`);
+        await end(
+          false,
+          `Couldn't read ${name} · ${ended.why} · read ${far}`,
+          ended.why,
+        );
+        return;
       }
-    });
+      try {
+        await inLane(
+          chat,
+          async (fresh, signal) => {
+            if (closed) return;
+            const note = await reading.readings.note(done);
+            await handOverTo(
+              fresh,
+              threadId,
+              handOver,
+              note === undefined ? [] : [note],
+              signal,
+              part.turnId,
+            );
+          },
+          op,
+        );
+      } catch (error) {
+        if (!(error instanceof Stopped)) throw error;
+        await end(true, "Stopped.", "Stopped");
+      }
+    })()
+      .catch((error: unknown) => {
+        log("chat.dispatch_failed", { error: errorCode(error) });
+      })
+      .finally(() => {
+        parts.delete(work);
+        acting.get(chat.id)?.delete(op);
+      });
+    parts.add(work);
+  }
+
+  /**
+   * Gives the claimed rows to the AI in the chat's lane: marked first, then
+   * sent with `notes` (Rufi's note on the files it read). In a reply Rufi's
+   * part started (`partTurn`), a hand-over the AI surely didn't take ends
+   * that reply, its message held for Retry.
+   */
+  async function handOverTo(
+    chat: ChatRow,
+    threadId: string,
+    handOver: HandOver,
+    notes: string[],
+    signal: AbortSignal,
+    partTurn?: string,
+  ): Promise<void> {
+    const context = pendingContext.get(chat.id);
+    await queue.mark(chat, handOver.id);
+    handing.set(threadId, handOver.id);
+    try {
+      await agent.send(
+        threadId,
+        {
+          id: handOver.id,
+          input: inputOf(handOver, context, notes),
+          // A new model goes with the next reply, in the same thread.
+          ...(chat.model !== null && { model: chat.model }),
+          effort: chat.effort,
+        },
+        signal,
+      );
+      pendingContext.delete(chat.id);
+    } catch (error) {
+      if (error instanceof NotSent) {
+        handing.delete(threadId);
+        const stopped = error.cause instanceof Stopped || closed;
+        // Codex was replaced and the thread is gone: the rows wait again,
+        // and their next hand-over starts a new thread.
+        const gone = error.cause instanceof ThreadNotFound;
+        if (partTurn !== undefined) {
+          if (closed) return;
+          await transcripts.endPart(
+            chat,
+            partTurn,
+            {
+              status: stopped ? "interrupted" : "failed",
+              ...(stopped && { reason: "stopped" as const }),
+              text: stopped ? "Stopped." : error.message,
+            },
+            () => Promise.resolve(),
+          );
+          queue.changed(chat.id);
+          if (!stopped) next(chat);
+          return;
+        }
+        await queue.notTaken(
+          chat,
+          stopped || gone ? undefined : error.message,
+          error.cause instanceof NotOpened,
+        );
+        if (!stopped) next(chat);
+        return;
+      }
+      log("chat.handover_unknown", { error: errorCode(error) });
+      // Its turn may have started meanwhile: that is saved first.
+      await saving;
+      await queue.unknown(chat, handOver.id);
+      // A reply Rufi's part started and the AI's turn didn't fill ends.
+      if (partTurn !== undefined) {
+        await transcripts.endPart(
+          chat,
+          partTurn,
+          {
+            status: "interrupted",
+            text: "Not sure this reached the AI.",
+          },
+          () => Promise.resolve(),
+        );
+      }
+    }
+  }
 
   /**
    * The chat as stored now: an earlier action may have given it a
@@ -686,6 +913,25 @@ export function chat(deps: ChatDeps) {
     next(chat);
   }
 
+  /** Whether any of the documents among `refs` needs reading first. */
+  async function toRead(chat: ChatRow, refs: readonly Pointer[]) {
+    const reading = deps.reading;
+    if (!reading) return false;
+    for (const ref of refs) {
+      if (
+        ref.type === "document" &&
+        (await reading.readings.needs(
+          chat.personId,
+          ref.id,
+          ref.readAgain === true,
+        ))
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** Whether a reply the person started runs in the chat now. */
   const personReply = async (chat: ChatRow) => {
     const threadId = threadOf(chat);
@@ -724,6 +970,8 @@ export function chat(deps: ChatDeps) {
         if (await queue.known(id)) return queued();
         const threadId = await personReply(chat);
         if (threadId === undefined) return queued();
+        // Files to read first wait for a reply of their own.
+        if (await toRead(chat, refs)) return queued();
         let chips: Chip[];
         try {
           chips = await transcripts.chips(chat.personId, refs);
@@ -867,6 +1115,19 @@ export function chat(deps: ChatDeps) {
         });
         next(chat);
       },
+      /**
+       * The person's Retry of a reply that ended while Rufi read its files,
+       * for the hold they saw: its message goes again, first in line, and
+       * its reading goes on where it stopped. A Retry on an older hold
+       * changes nothing.
+       */
+      retry: async (chat: ChatRow, id: string, hold: string) => {
+        await mustBeSignedIn();
+        await inLane(chat, async (fresh) => {
+          await refused(() => queue.retry(fresh, id, hold));
+        });
+        next(chat);
+      },
       subscribe: (chatId: string, listener: () => void) =>
         queue.subscribe(chatId, listener),
     },
@@ -886,17 +1147,6 @@ export function chat(deps: ChatDeps) {
       const chat = await transcripts.chat(personId);
       if (!chat) throw new ChatRefusal("That person has no chat.");
       await transcripts.addEvent(chat, event, write);
-      queue.changed(chat.id);
-      next(chat);
-    },
-
-    /**
-     * Rufi's own work put rows in the person's queue (a sort tried again):
-     * the next rows go, when no reply runs.
-     */
-    wake: async (personId: string) => {
-      const chat = await transcripts.chat(personId);
-      if (!chat) return;
       queue.changed(chat.id);
       next(chat);
     },
@@ -930,6 +1180,9 @@ export function chat(deps: ChatDeps) {
     /** Waits for what is being saved, then ends the agent. */
     close: async () => {
       closed = true;
+      // Rufi's parts stop; the next start ends their replies.
+      for (const ops of acting.values()) for (const op of ops) op.abort();
+      await Promise.allSettled(parts);
       await agent.close();
       await Promise.allSettled(lanes.values());
       await saving;
@@ -974,17 +1227,33 @@ export function chat(deps: ChatDeps) {
   }
 }
 
+/** How far a reading is, for its step. */
+function progressWords(now: ReadProgress): string {
+  const far = `${String(now.saved)} of ${String(now.of)}`;
+  switch (now.state) {
+    case "waiting":
+      return `waiting for another reading · ${far}`;
+    case "again":
+      return `waiting to copy again · ${far}`;
+    case "copying":
+      return `${far} ${now.of === 1 ? "page" : "pages"}`;
+  }
+}
+
 /** Why a hand-over failed, in words for the person. */
 const textOf = (error: unknown) =>
   error instanceof Error ? error.message : "The AI couldn't take it.";
 
 /** A turn's input: a new thread's earlier chat, Rufi's notes, the message. */
-function inputOf(handOver: HandOver, context: string | undefined): string[] {
+function inputOf(
+  handOver: HandOver,
+  context: string | undefined,
+  more: readonly string[],
+): string[] {
+  const notes = [...handOver.notes, ...more];
   return [
     ...(context === undefined ? [] : [context]),
-    ...(handOver.notes.length === 0
-      ? []
-      : [`${NOTES_HEAD}\n\n${handOver.notes.join("\n\n")}`]),
+    ...(notes.length === 0 ? [] : [`${NOTES_HEAD}\n\n${notes.join("\n\n")}`]),
     ...(handOver.text === undefined
       ? []
       : [withRefs(handOver.text, handOver.refs)]),

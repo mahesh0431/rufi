@@ -44,18 +44,14 @@ export const DocumentSummary = Schema.Struct({
     Schema.Struct({ pages: Schema.Array(Schema.Int), of: Schema.Int }),
   ),
   /**
-   * Its pages wait for Rufi AI to sort them: sorting (it goes or runs now),
-   * waiting (Rufi tries again by itself, or it waits for the person: Retry)
-   * or signed_out (it goes once the person signs in), with why; null when
-   * nothing waits.
+   * Its pages wait for Rufi AI to sort them: in the chat, when the person
+   * asks (Ask Rufi).
    */
-  sorting: Schema.NullOr(
-    Schema.Struct({
-      state: Schema.Literals(["sorting", "waiting", "signed_out"]),
-      why: Schema.NullOr(Schema.String),
-    }),
-  ),
-  /** not_read: never read (added before Rufi read each document as it came); Retry reads it. */
+  notSorted: Schema.Boolean,
+  /**
+   * not_read: never read (its message was removed before its reply, or it
+   * was added before Rufi read each document); Retry puts it in the chat.
+   */
   status: Schema.Literals(["not_read", "reading", "done", "failed"]),
   /** The latest reading: pages saved of those it reads, and its drafts. */
   reading: Schema.NullOr(
@@ -71,7 +67,7 @@ export const DocumentSummary = Schema.Struct({
       /** Draft items saved to the record, and set aside (every column, as the document's page counts them). */
       itemsSaved: Schema.Int,
       itemsSetAside: Schema.Int,
-      /** Retry would read something: a failed reading, or failed pages. */
+      /** Retry, through the chat, would read something: a failed reading, or failed pages. */
       canRetry: Schema.Boolean,
       /** Why it failed, in words for the person. */
       error: Schema.NullOr(Schema.String),
@@ -99,23 +95,6 @@ export const Added = Schema.Struct({
   already: Schema.Array(AlreadyAdded),
 });
 export type Added = typeof Added.Type;
-
-/** A reading that waits or runs, for the strip above the chat box. */
-export const ReadingNow = Schema.Struct({
-  documentId: Schema.String,
-  /** The document's file, or "3 photos". */
-  name: Schema.String,
-  state: Schema.Literals(["running", "waiting"]),
-  /** It ran before: reading again after a restart or a retry. */
-  again: Schema.Boolean,
-  saved: Schema.Int,
-  of: Schema.Int,
-  /** When this run started, while it runs. */
-  runAt: Schema.NullOr(Schema.String),
-});
-export type ReadingNow = typeof ReadingNow.Type;
-
-export const Readings = Schema.Struct({ readings: Schema.Array(ReadingNow) });
 
 const PrintedDate = Schema.Struct({
   label: Schema.String,

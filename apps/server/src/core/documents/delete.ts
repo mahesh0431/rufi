@@ -500,12 +500,6 @@ export function deletions(deps: {
               sql<boolean>`NOT EXISTS (SELECT 1 FROM document_pages p WHERE p.person_id = j.person_id AND p.entry_job_id = j.id)`,
             );
           await trx
-            .updateTable("sort_requests")
-            .set({ job_id: null })
-            .where("person_id", "=", personId)
-            .where("job_id", "in", gone)
-            .execute();
-          await trx
             .deleteFrom("jobs")
             .where("person_id", "=", personId)
             .where("id", "in", gone)
@@ -523,41 +517,6 @@ export function deletions(deps: {
             .where("person_id", "=", personId)
             .where("id", "=", documentId)
             .execute();
-          // Nothing of its add left to sort: its sort waits no more.
-          const add = await addOf(trx, personId, documentId);
-          if (add) {
-            const live = await documentsOf(trx, personId, add.id);
-            const left = notSorted(
-              await pagesOf(
-                trx,
-                personId,
-                live.map((d) => d.id),
-                false,
-              ),
-            );
-            if (left.length === 0) {
-              const open = trx
-                .selectFrom("sort_requests")
-                .select("queue_id")
-                .where("person_id", "=", personId)
-                .where("document_id", "=", add.id)
-                .where("state", "in", ["open", "asked", "failed"]);
-              await trx
-                .updateTable("chat_queue")
-                .set({ state: "removed", held: null, updated_at: at })
-                .where("person_id", "=", personId)
-                .where("state", "=", "waiting")
-                .where("id", "in", open)
-                .execute();
-              await trx
-                .updateTable("sort_requests")
-                .set({ state: "void", retry_at: null, ended_at: at })
-                .where("person_id", "=", personId)
-                .where("document_id", "=", add.id)
-                .where("state", "in", ["open", "asked", "failed"])
-                .execute();
-            }
-          }
           // A file no live page of anyone uses any more.
           if (files.length > 0) {
             await trx

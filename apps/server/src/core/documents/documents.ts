@@ -21,7 +21,7 @@ import { fileGate, type FileGate } from "./gate.ts";
 import { inspect, type Inspected } from "./inspect.ts";
 import { displayCopy, publisher } from "./pages.ts";
 import type { Readings } from "./reading.ts";
-import { placesOf, sorting } from "./sorting.ts";
+import { placesOf, unsorted } from "./sorting.ts";
 import {
   displayPath,
   isFileId,
@@ -232,7 +232,7 @@ export function documents(
         .orderBy("p.position")
         .execute();
       const statuses = await reads?.statuses(personId);
-      const sorts = await sorting(store, now).states(personId);
+      const waiting = await unsorted(db, personId);
       const places = await placesOf(db, personId);
       type File = { -readonly [K in keyof DocumentFile]: DocumentFile[K] };
       const list: (Omit<DocumentSummary, "files"> & { files: File[] })[] = [];
@@ -253,7 +253,7 @@ export function documents(
                 ? { pages: place.positions, of: place.of }
                 : null;
             })(),
-            sorting: sorts.get(row.id) ?? null,
+            notSorted: waiting.has(row.id),
             status: reading?.status ?? "not_read",
             reading: reading
               ? {

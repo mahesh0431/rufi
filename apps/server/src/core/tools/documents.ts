@@ -18,8 +18,8 @@ import {
   notSorted,
   pagesOf,
   placesOf,
-  sorting,
   SortInput,
+  unsorted,
 } from "../documents/sorting.ts";
 import { defineTool, Refusal, WithImage } from "./registry.ts";
 
@@ -55,7 +55,7 @@ const Input = Schema.Struct({
 
 export const getDocuments = defineTool({
   name: "get_documents",
-  description: `The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its kind and date (as sorted), its files and pages, its reading's status: "not_read" (never read; retry_reading reads it), "reading" (Rufi's reader is copying its pages now), "done" or "failed", and its sorting when it waits for it: "sorting" (Rufi asked you to sort it) or "not sorted yet". One add (what the user added at once: a PDF, or photos together) can be several documents once sorted: such a document names its pages in the add ("pages 3–4 of 5"). With document: its version (it rises when a sort, a reading or a fix changes its draft items or pages), kind, date, lab and report number, its add (every document of it, with their pages, and the pages not sorted yet), its pages (each with its number in the add, its state and whether it is sorted; an older reading's facts and issues) and its draft items: what you or an older reader drafted, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed or as the user fixed them on the document's page (a fixed item has fixed_by_user, and drafted: what was drafted in each field the user changed, null where none), the words it came from (quote), why it is worth a look, and out_of_date when its page was read again since. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page as an image, with the page's own text when the PDF has some and the reader's copy (use them for exact characters); a photo or a scan is the image and the copy. With document and copies: the reader's copy of every page of its add, as Markdown, exactly as printed, with the reader's marks where something is unclear (2[3?]6, [unclear: ...], ~~crossed out~~, [handwritten: ...]). At most ${String(PART.documents)} documents, ${String(PART.pages)} pages, ${String(PART.items)} draft items or ${String(PART.copies)} copies come back; when there are more, the answer has "next": pass it as after to read on. Rufi chooses the person, not you.`,
+  description: `The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its kind and date (as sorted), its files and pages, its reading's status: "not_read" (never read; the user's Retry reads it), "reading" (Rufi's reader is copying its pages now), "done" or "failed", and "not sorted yet" when its pages wait for you to sort them. One add (what the user added at once: a PDF, or photos together) can be several documents once sorted: such a document names its pages in the add ("pages 3–4 of 5"). With document: its version (it rises when a sort, a reading or a fix changes its draft items or pages), kind, date, lab and report number, its add (every document of it, with their pages, and the pages not sorted yet), its pages (each with its number in the add, its state and whether it is sorted; an older reading's facts and issues) and its draft items: what you or an older reader drafted, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed or as the user fixed them on the document's page (a fixed item has fixed_by_user, and drafted: what was drafted in each field the user changed, null where none), the words it came from (quote), why it is worth a look, and out_of_date when its page was read again since. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page as an image, with the page's own text when the PDF has some and the reader's copy (use them for exact characters); a photo or a scan is the image and the copy. With document and copies: the reader's copy of every page of its add, as Markdown, exactly as printed, with the reader's marks where something is unclear (2[3?]6, [unclear: ...], ~~crossed out~~, [handwritten: ...]). At most ${String(PART.documents)} documents, ${String(PART.pages)} pages, ${String(PART.items)} draft items or ${String(PART.copies)} copies come back; when there are more, the answer has "next": pass it as after to read on. Rufi chooses the person, not you.`,
   input: Input,
   callers: "model",
   readOnly: true,
@@ -126,7 +126,7 @@ export const getDocuments = defineTool({
         .orderBy((eb) => eb.fn.min("position"))
         .execute();
       const statuses = await readings(store).statuses(personId);
-      const sorts = await sorting(store).states(personId);
+      const waiting = await unsorted(db, personId);
       const places = await placesOf(db, personId);
       return {
         documents: part.map((d) => ({
@@ -135,12 +135,7 @@ export const getDocuments = defineTool({
           kind: d.kind,
           date: d.date,
           status: statuses.get(d.id)?.status ?? "not_read",
-          ...(sorts.has(d.id) && {
-            sorting:
-              sorts.get(d.id)?.state === "sorting"
-                ? "sorting"
-                : "not sorted yet",
-          }),
+          ...(waiting.has(d.id) && { sorting: "not sorted yet" }),
           ...(places.get(d.id)?.words && { pages: places.get(d.id)?.words }),
           files: files
             .filter((f) => f.document_id === d.id)
@@ -376,7 +371,7 @@ export const getDocuments = defineTool({
       version: document.version,
       status: status?.status ?? "not_read",
       ...(status?.status === "reading" && {
-        reading: `copied ${String(status.saved)} of ${String(status.of)} pages so far; it is sorted when the reading ends`,
+        reading: `copied ${String(status.saved)} of ${String(status.of)} pages so far; sort it once the reading has ended`,
       }),
       ...(add &&
         (siblings.length > 1 || waiting.length > 0) && {
@@ -443,33 +438,9 @@ export const getDocuments = defineTool({
   },
 });
 
-export const retryReading = defineTool({
-  name: "retry_reading",
-  description:
-    "Reads a document again where its reading failed, when the user asks you to: a reading that failed continues where it stopped; a finished reading reads only its pages that couldn't be read or weren't looked at, and never changes the draft items already read; a document never read is read in full. Only in a message from the user, never in a turn a Rufi event started. The reading runs in the background; its line comes in the chat when it ends.",
-  input: Schema.Struct({
-    document: Schema.String.annotate({
-      description: "The document's id, from get_documents.",
-    }),
-  }),
-  callers: "model",
-  readOnly: false,
-  destructive: false,
-  examples: [{ document: "01a12345-0000-7000-8000-000000000000" }],
-  run: async ({ document }, { retryReading: retry }) => {
-    if (!retry) throw new Refusal("Rufi can't read documents here.");
-    const pages = await retry(document);
-    return {
-      queued: true,
-      pages,
-      note: "The reading runs in the background; Rufi shows its line in the chat when it ends.",
-    };
-  },
-});
-
 export const sortDocuments = defineTool({
   name: "sort_documents",
-  description: `Sorts what the user added into documents and writes its drafts, from the reader's page copies (get_documents with copies), as the sorting-documents skill says. One call for the whole add: documents (each one of the add's documents by its id, or a new one with no id; its pages by their number in the add; its kind, its date, and a report's lab and number, which for a named document stay as they are when left out) and drafts (each a current lab result or a measurement as printed, with its page, its date, the words it comes from and, when it is worth the user's look, why). Every page not sorted yet goes in one document; pages you don't name stay where they are. The add's own id names its first document: the first sort names it for one of the documents. A draft's value_text is the value as its page prints it; where the reader marked a digit unclear ("1[0?]4"), give your reading ("104") and say why in worth_a_look. The drafts replace the drafts of the named pages that the user hasn't fixed or set aside. A page that a saved result cites stays in its document. Nothing is saved to the record: drafts wait for the user. In a turn Rufi started for a sort, you sort only the pages not sorted yet, each into a document that keeps its kind, date, lab and number, or into a new one, and nothing else changes; in the user's own turn you can also change how pages were sorted ("pages 3 and 4 are one letter"). All or nothing; the same call again gets the same answer.`,
+  description: `Sorts what the user added into documents and writes its drafts, from the reader's page copies (get_documents with copies), as the sorting-documents skill says. One call for the whole add: documents (each one of the add's documents by its id, or a new one with no id; its pages by their number in the add; its kind, its date, and a report's lab and number, which for a named document stay as they are when left out) and drafts (each a current lab result or a measurement as printed, with its page, its date, the words it comes from and, when it is worth the user's look, why). Every page not sorted yet goes in one document; pages you don't name stay where they are. The add's own id names its first document: the first sort names it for one of the documents. A draft's value_text is the value as its page prints it; where the reader marked a digit unclear ("1[0?]4"), give your reading ("104") and say why in worth_a_look. The drafts replace the drafts of the named pages that the user hasn't fixed or set aside. A page that a saved result cites stays in its document. Nothing is saved to the record: drafts wait for the user. You sort in the user's reply, never in a reply Rufi started; you can also change how pages were sorted ("pages 3 and 4 are one letter"). All or nothing; the same call again gets the same answer.`,
   input: SortInput,
   callers: "model",
   readOnly: false,
