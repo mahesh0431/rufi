@@ -207,11 +207,25 @@ export function chatQueue(
         };
       }),
 
+    /** Whether a send's id was used already: by a row here, or in a chat. */
+    known: async (id: string) =>
+      (await db
+        .selectFrom("chat_queue")
+        .select("id")
+        .where("id", "=", id)
+        .executeTakeFirst()) !== undefined ||
+      (await db
+        .selectFrom("transcript_entries")
+        .select("id")
+        .where("id", "=", id)
+        .executeTakeFirst()) !== undefined,
+
     /**
      * Takes a message from the box: a new waiting row by the send's id, with
      * its references checked against the person, the draft emptied and the
      * pause ended, in one transaction. The same id again finds the row it
-     * made: `fresh` is false then.
+     * made, or the message it sent into a running reply: `fresh` is false
+     * then, and nothing changes.
      */
     accept: (
       chat: ChatOf,
@@ -232,13 +246,15 @@ export function chatQueue(
           return { id, fresh: false };
         }
         // It becomes the message's id in the transcript too.
-        if (
-          (await trx
-            .selectFrom("transcript_entries")
-            .select("id")
-            .where("id", "=", id)
-            .executeTakeFirst()) !== undefined
-        ) {
+        const entry = await trx
+          .selectFrom("transcript_entries")
+          .select(["chat_id", "kind"])
+          .where("id", "=", id)
+          .executeTakeFirst();
+        if (entry !== undefined) {
+          if (entry.chat_id === chat.id && entry.kind === "steer") {
+            return { id, fresh: false };
+          }
           throw new QueueRefusal("That message id is already used.");
         }
         let chips: Chip[];

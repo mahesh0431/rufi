@@ -1,5 +1,5 @@
 // The chat on the real core: the bar, the panel and the page of the
-// person's one chat; streaming, Stop, waiting messages, Add to reply, the model and
+// person's one chat; streaming, Stop, waiting messages, a send into the running reply, the model and
 // drafts; older pages, day lines and the AI's memory (its lines, the
 // meter, a thread that doesn't open); and what
 // the AI's Markdown may and may not do. Each test checks that the strict CSP
@@ -235,24 +235,21 @@ test("Stop keeps what the reply wrote so far", async ({ page, rufi }) => {
   await expect(chat(page).getByRole("button", { name: "Stop" })).toHaveCount(0);
 });
 
-test("messages sent during a reply wait: edit, reorder, remove, and send one after a Stop", async ({
+/** Two of the person's messages wait, after a Stop. */
+const WAITING = `
+  UPDATE chats SET paused = 'stopped' WHERE id = 'c-asha';
+  INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, created_at, updated_at) VALUES
+    ('q-2', 'asha', 'c-asha', 'person', 'Second', 1, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z'),
+    ('q-3', 'asha', 'c-asha', 'person', 'Third', 2, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');`;
+
+test("waiting messages: edit, reorder, remove, and send one now", async ({
   page,
   rufi,
 }) => {
-  await opened(page, rufi);
-  await send(page, "hang");
-  // While Rufi answers, Stop is where Send was, and typing queues the next
-  // message.
-  const stop = chat(page).getByRole("button", { name: "Stop" });
-  await expect(stop).toBeVisible();
-  await expect(chat(page).getByRole("button", { name: "Send" })).toHaveCount(0);
-  await expect(box(chat(page))).toHaveAttribute(
-    "placeholder",
-    "Type to queue your next message…",
-  );
-
-  await send(page, "Second");
-  await send(page, "Third");
+  await rufi.family(WAITING);
+  await rufi.start();
+  await page.goto(rufi.link());
+  await opener(chat(page)).click();
   const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
   const items = waiting.getByRole("listitem");
   await expect(items).toHaveText(["Second", "Third"]);
@@ -303,7 +300,9 @@ test("messages sent during a reply wait: edit, reorder, remove, and send one aft
   await page.keyboard.press("Escape");
   await expect(handle(1)).not.toHaveAttribute("aria-pressed");
   await expect(items).toHaveText(["Second", "Third"]);
-  await expect(log(chat(page))).toBeVisible();
+  await expect(
+    chat(page).getByRole("button", { name: "Minimise" }),
+  ).toBeVisible();
 
   await items.nth(0).getByRole("button", { name: "Edit" }).click();
   await waiting
@@ -314,14 +313,6 @@ test("messages sent during a reply wait: edit, reorder, remove, and send one aft
   await items.nth(1).getByRole("button", { name: "Remove" }).click();
   await expect(items).toHaveText(["Second, edited"]);
 
-  // The bar has Stop too. After a Stop they keep waiting, until you send.
-  await box(chat(page)).press("Escape");
-  await expect(log(chat(page))).toHaveCount(0);
-  await stop.click();
-  await expect(stop).toHaveCount(0);
-  await expect(chat(page).getByRole("button", { name: "Send" })).toBeVisible();
-  await opener(chat(page)).click();
-  await expect(log(chat(page))).toContainText("Stopped.");
   await expect(waiting).toContainText(
     "Stopped · these go when you send a message",
   );
@@ -336,12 +327,13 @@ test("an older read of the queue never undoes a newer change", async ({
   page,
   rufi,
 }) => {
-  await opened(page, rufi);
-  await send(page, "hang");
-  await send(page, "Second");
+  await rufi.family(WAITING);
+  await rufi.start();
+  await page.goto(rufi.link());
+  await opener(chat(page)).click();
   const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
   const items = waiting.getByRole("listitem");
-  await expect(items).toHaveText(["Second"]);
+  await expect(items).toHaveText(["Second", "Third"]);
 
   // A read that still sees "Second" as it was is held back.
   const read = Promise.withResolvers<undefined>();
@@ -355,14 +347,14 @@ test("an older read of the queue never undoes a newer change", async ({
     await release.promise;
     await route.fulfill({ response });
   });
-  await send(page, "Third");
+  await items.nth(1).getByRole("button", { name: "Remove" }).click();
   await read.promise;
   await items.first().getByRole("button", { name: "Edit" }).click();
   await waiting
     .getByRole("textbox", { name: "Waiting message" })
     .fill("Second, edited");
   await waiting.getByRole("button", { name: "Save" }).click();
-  await expect(items).toHaveText(["Second, edited", "Third"]);
+  await expect(items).toHaveText(["Second, edited"]);
 
   const late = page.waitForResponse(
     (response) =>
@@ -371,20 +363,21 @@ test("an older read of the queue never undoes a newer change", async ({
   );
   release.resolve(undefined);
   await (await late).finished();
-  await expect(items).toHaveText(["Second, edited", "Third"]);
+  await expect(items).toHaveText(["Second, edited"]);
 });
 
-test("Add to reply passes your text into the running reply", async ({
+test("a message sent while a reply runs goes into that reply, as your message; Stop is beside Send", async ({
   page,
   rufi,
 }) => {
   await opened(page, rufi);
   await send(page, "hang");
   await box(chat(page)).fill("Only the latest results, please");
-  await chat(page).getByRole("button", { name: "Add to reply" }).click();
+  await expect(chat(page).getByRole("button", { name: "Stop" })).toBeVisible();
+  await box(chat(page)).press("Enter");
   await expect(box(chat(page))).toHaveValue("");
   await expect(log(chat(page))).toContainText(
-    "Added to the replyOnly the latest results, please",
+    "hangOnly the latest results, please",
   );
   await expect(
     chat(page).getByRole("region", { name: "Waiting messages" }),
@@ -1726,7 +1719,7 @@ test("the transcript follows a growing Activity to its newest row, above the box
 });
 
 test.describe("on the real Codex binary, with a local fake model", () => {
-  test("a reply streams after Rufi's tool; a message waits; Add to reply cuts the reply, which goes on; Stop", async ({
+  test("a reply streams after Rufi's tool; a message sent meanwhile goes into the reply, which goes on; Stop", async ({
     page,
     rufi,
   }) => {
@@ -1743,25 +1736,17 @@ test.describe("on the real Codex binary, with a local fake model", () => {
 
     await send(page, "partial");
     await expect(log(chat(page))).toContainText("ok:part");
-    await send(page, "Waits its turn");
-    await expect(
-      chat(page)
-        .getByRole("region", { name: "Waiting messages" })
-        .getByRole("listitem"),
-    ).toHaveText(["Waits its turn"]);
-    // Codex cuts the reply at once: what it wrote stays, then your text,
-    // and the reply goes on with it; the waiting message goes after.
-    await box(chat(page)).fill("Steered in");
-    await chat(page).getByRole("button", { name: "Add to reply" }).click();
+    // What the reply wrote stays, then your message, and the reply goes on
+    // with it.
+    await send(page, "Steered in");
     await expect(log(chat(page))).toContainText(
-      "ok:partAdded to the replySteered inok:Steered inWaits its turnok:Waits its turn",
+      "ok:partSteered inok:Steered in",
     );
 
-    // Stop works on the reply that goes on after a cut.
+    // Stop works on the reply that goes on.
     await send(page, "hang");
-    await box(chat(page)).fill("Still hang");
-    await chat(page).getByRole("button", { name: "Add to reply" }).click();
-    await expect(log(chat(page))).toContainText("Added to the replyStill hang");
+    await send(page, "Still hang");
+    await expect(log(chat(page))).toContainText("hangStill hang");
     await chat(page).getByRole("button", { name: "Stop" }).click();
     await expect(log(chat(page))).toContainText("Stopped.");
   });

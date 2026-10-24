@@ -194,10 +194,37 @@ async function session(core: Pick<Core, "port" | "launchUrl">) {
     say: (
       path: string,
       text: string,
-      kind: "messages" | "steer" = "messages",
+      kind: "messages" = "messages",
       id: string = randomUUID(),
     ) => call(core.port, "POST", `${path}/${kind}`, headers, { id, text }),
   };
+}
+
+/**
+ * A reply Rufi started, with its note: "hang" runs until it is stopped. A
+ * message the person sends meanwhile waits for a reply of its own.
+ */
+async function rufiReply(
+  core: Core,
+  page: {
+    api: (
+      method: string,
+      path: string,
+    ) => Promise<{ body: Record<string, unknown> }>;
+  },
+  path: string,
+) {
+  const personId = decodeURIComponent(path.split("/")[3] ?? "");
+  await core.chat.event(personId, {
+    kind: "test",
+    line: "Rufi's line",
+    ask: "Rufi's note: hang",
+  });
+  await until(async () =>
+    ((await page.api("GET", path)).body["turns"] as { status: string }[]).some(
+      (turn) => turn.status === "running",
+    ),
+  );
 }
 
 /** The scripted Codex playing `scenario` (FAKE_CODEX), for start(). */
@@ -802,67 +829,155 @@ describe("the local API", () => {
     });
   });
 
-  it("takes a send into the queue and empties the box in one step; the same send again makes no second message", async () => {
+  it("takes a send and empties the box in one step, into the queue or into the running reply; the same send again makes no second message", async () => {
     const core = await start();
     const page = await session(core);
     const c = await chat(page);
-    const queue = `${c.path}/queue`;
-    // A reply runs, so the send waits.
-    expect((await page.say(c.path, "hang")).status).toBe(202);
+    const entries = async () =>
+      (
+        (await page.api("GET", c.path)).body["entries"] as {
+          id: string;
+          kind: string;
+          text: string;
+        }[]
+      ).filter((entry) => entry.kind === "message" || entry.kind === "steer");
+    // No reply runs: into the queue, and it starts.
+    const first = randomUUID();
+    expect((await page.say(c.path, "hang", "messages", first)).status).toBe(
+      202,
+    );
     await until(
       async () =>
         ((await page.api("GET", c.path)).body["turns"] as unknown[]).length > 0,
     );
-    await page.api("PUT", c.draft, { text: "First" });
+    // A retry whose answer was lost, while its reply runs: still one
+    // message, not passed into the reply, and a newer draft stays.
+    await page.api("PUT", c.draft, { text: "A newer draft" });
+    expect(await page.say(c.path, "hang", "messages", first)).toMatchObject({
+      status: 202,
+      body: { draft: { text: "A newer draft" } },
+    });
+    // The reply runs: into it, and the box is empty.
+    await page.api("PUT", c.draft, { text: "Only the latest" });
     const id = randomUUID();
-    const sent = await page.say(c.path, "First", "messages", id);
-    expect(sent).toMatchObject({
+    expect(
+      await page.say(c.path, "Only the latest", "messages", id),
+    ).toMatchObject({
       status: 202,
       body: { id, draft: { text: "", refs: [] } },
     });
-    // A retry whose answer was lost: still one waiting row, and the box
-    // stays empty.
-    expect((await page.say(c.path, "First", "messages", id)).status).toBe(202);
-    const waiting = (await page.api("GET", queue)).body["items"] as {
-      id: string;
-    }[];
-    expect(waiting).toMatchObject([{ text: "First", state: "waiting" }]);
-    expect((await page.api("GET", c.draft)).body).toEqual({
-      text: "",
-      refs: [],
-    });
-    // Sent after a Stop: one message.
-    expect((await page.api("POST", `${c.path}/stop`)).status).toBe(200);
+    await page.api("PUT", c.draft, { text: "Newer still" });
     expect(
-      (await page.api("POST", `${queue}/${waiting[0]?.id ?? ""}/send`)).status,
-    ).toBe(200);
+      await page.say(c.path, "Only the latest", "messages", id),
+    ).toMatchObject({ status: 202, body: { draft: { text: "Newer still" } } });
+    await until(async () => (await entries()).length === 2);
+    await sleep(200);
+    expect(await entries()).toMatchObject([
+      { id: first, kind: "message", text: "hang" },
+      { id, kind: "steer", text: "Only the latest" },
+    ]);
+    expect((await page.api("GET", `${c.path}/queue`)).body["items"]).toEqual(
+      [],
+    );
+  });
+
+  it("a Stop while a send goes into the reply keeps it out, and the chat stays stopped", async () => {
+    const core = await start({
+      agent: scripted({ slow: ["turn/steer"], slowMs: 600 }),
+    });
+    const page = await session(core);
+    const c = await chat(page);
+    await page.say(c.path, "hang");
     await until(async () =>
       (
         (await page.api("GET", c.path)).body["turns"] as { status: string }[]
-      ).some((turn) => turn.status === "completed"),
+      ).some((turn) => turn.status === "running"),
     );
+    await page.api("PUT", c.draft, { text: "A fictional follow-up" });
+    const sending = page.say(c.path, "A fictional follow-up");
     await sleep(200);
-    const said = (
-      (await page.api("GET", c.path)).body["entries"] as {
-        id: string;
-        kind: string;
-        text: string;
-      }[]
-    ).filter((entry) => entry.kind === "message");
-    expect(said).toMatchObject([{ text: "hang" }, { id, text: "First" }]);
-    // A steer after the reply ended: refused, and the box keeps its text.
-    await page.api("PUT", c.draft, { text: "Only the latest" });
-    expect(await page.say(c.path, "Only the latest", "steer")).toMatchObject({
+    expect((await page.api("POST", `${c.path}/stop`)).status).toBe(200);
+    expect(await sending).toMatchObject({
       status: 409,
-      body: {
-        error:
-          "The reply had ended, so this wasn't passed into it. Send it as a new message.",
-      },
+      body: { error: "Stopped." },
     });
-    expect((await page.api("GET", c.draft)).body).toEqual({
-      text: "Only the latest",
-      refs: [],
+    await sleep(500);
+    const queue = (await page.api("GET", `${c.path}/queue`)).body;
+    expect(queue).toMatchObject({ paused: "stopped", items: [] });
+    expect(
+      (await page.api("GET", c.path)).body["turns"] as { status: string }[],
+    ).toMatchObject([{ status: "interrupted" }]);
+    expect((await page.api("GET", c.draft)).body["text"]).toBe(
+      "A fictional follow-up",
+    );
+
+    // After a restart, a send that waits for the reply's history is kept
+    // out by a Stop meanwhile too.
+    await stop();
+    const again = await session(
+      await start({
+        agent: scripted({ slow: ["thread/turns/list"], slowMs: 1_500 }),
+      }),
+    );
+    await again.say(c.path, "hang");
+    await sleep(300);
+    const waiting = again.say(c.path, "A fictional follow-up");
+    await sleep(100);
+    expect((await again.api("POST", `${c.path}/stop`)).status).toBe(200);
+    expect(await waiting).toMatchObject({
+      status: 409,
+      body: { error: "Stopped." },
     });
+    await sleep(500);
+    expect((await again.api("GET", `${c.path}/queue`)).body).toMatchObject({
+      paused: "stopped",
+      items: [],
+    });
+    expect(
+      (
+        (await again.api("GET", c.path)).body["turns"] as { status: string }[]
+      ).map((turn) => turn.status),
+    ).not.toContain("completed");
+  });
+
+  it("refuses one person's send of an id another person's send is using", async () => {
+    const core = await start({
+      agent: scripted({ slow: ["turn/steer"], slowMs: 600 }),
+    });
+    const page = await session(core);
+    const a = await chat(page);
+    // A second person, as family adds one.
+    const store = openWritable(databasePath(home));
+    store.db.exec(`
+      INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
+      INSERT INTO chats (id, person_id, created_at)
+        VALUES ('c-ravi', 'ravi', '2026-10-24T09:00:00Z');`);
+    store.close();
+    const b = { path: "/api/people/ravi/chat" };
+    for (const c of [a, b]) await page.say(c.path, "hang");
+    await sleep(300);
+    const id = randomUUID();
+    const [sentA, sentB] = await Promise.all([
+      page.say(a.path, "Fictional A private text", "messages", id),
+      page.say(b.path, "Fictional B private text", "messages", id),
+    ]);
+    expect(sentA.status).toBe(202);
+    expect(sentB).toMatchObject({
+      status: 409,
+      body: { error: "That message id is already used." },
+    });
+    await sleep(300);
+    const lines = async (path: string) =>
+      (
+        (await page.api("GET", path)).body["entries"] as {
+          id: string;
+          text: string;
+        }[]
+      ).filter((entry) => entry.id === id);
+    expect(await lines(a.path)).toMatchObject([
+      { text: "Fictional A private text" },
+    ]);
+    expect(await lines(b.path)).toEqual([]);
   });
 
   it("holds a message the AI couldn't take, with the reason, to send again or remove", async () => {
@@ -1021,11 +1136,7 @@ describe("the local API", () => {
     const page = await session(core);
     const c = await chat(page);
     const queue = `${c.path}/queue`;
-    expect((await page.say(c.path, "hang")).status).toBe(202);
-    await until(
-      async () =>
-        ((await page.api("GET", c.path)).body["turns"] as unknown[]).length > 0,
-    );
+    await rufiReply(core, page, c.path);
     await page.say(c.path, "B");
     await page.say(c.path, "C");
     const items = async () =>
@@ -1043,7 +1154,6 @@ describe("the local API", () => {
     expect((await items()).map((item) => item.text)).toEqual(["C", "B2"]);
     // An order that leaves one out is refused.
     expect((await page.api("PUT", queue, { ids: [b?.id] })).status).toBe(409);
-    expect((await page.say(c.path, "faster", "steer")).status).toBe(200);
     expect(
       (await page.api("PUT", `${c.path}/model`, { model: "gpt-6.1-sol" }))
         .status,
@@ -2160,7 +2270,8 @@ describe("backups and export over the API", () => {
     "restores a backup made during a reply: drafts and history are there, the reply shows interrupted, and the next message starts a new thread",
     { timeout: 30_000 },
     async () => {
-      const page = await session(await start());
+      const core = await start();
+      const page = await session(core);
       const c = await chat(page);
       await page.say(c.path, "Please remember my fictional cat Biscuit");
       await until(async () =>
@@ -2168,12 +2279,7 @@ describe("backups and export over the API", () => {
           (await page.api("GET", c.path)).body["turns"] as { status: string }[]
         ).every((turn) => turn.status === "completed"),
       );
-      await page.say(c.path, "hang");
-      await until(async () =>
-        (
-          (await page.api("GET", c.path)).body["turns"] as { status: string }[]
-        ).some((turn) => turn.status === "running"),
-      );
+      await rufiReply(core, page, c.path);
       await page.say(c.path, "A waiting fictional question");
       await page.api("PUT", c.draft, { text: "An unsent fictional note" });
       const made = (await page.api("POST", "/api/backups")).body["last"] as {
