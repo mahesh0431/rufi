@@ -114,7 +114,7 @@ function FromVisit({ personId, row }: { personId: string; row: ShownRow }) {
   );
 }
 
-/** Open: the row on its page, opened (a follow-up on Follow-ups). */
+/** Open: the row on its page, opened (a follow-up on Follow-ups, a visit on its own page). */
 function OpenRow({ personId, row }: { personId: string; row: RecordRow }) {
   const look = buttonLook({ look: "quiet" });
   const label = (

@@ -256,7 +256,7 @@ function FollowUpView({
 
 /**
  * The record a follow-up is about, by its label and date, read through the
- * record's own detail; it opens on its kind's page. A result amended since
+ * record's own detail; it opens on its kind's page (a visit on its own). A result amended since
  * keeps the values the follow-up was about, says what it was amended to,
  * and opens the current one, following each amendment; `said` is the label
  * of the record the follow-up names, once an amendment is followed.
