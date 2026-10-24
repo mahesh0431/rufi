@@ -9,7 +9,13 @@ import { Schema } from "effect";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
 import { localTime, shownDate } from "../record/dates.ts";
-import { KINDS, kindNamed, type Kind, type Row } from "../record/kinds.ts";
+import {
+  KINDS,
+  kindNamed,
+  visitWords,
+  type Kind,
+  type Row,
+} from "../record/kinds.ts";
 import { isCurrent, recordVersion, recordVersions } from "../record/read.ts";
 import type { Tables } from "../store/tables.ts";
 
@@ -425,7 +431,24 @@ async function sourceOf(
         .onRef("e.person_id", "=", "s.person_id")
         .onRef("e.id", "=", "s.entry_id"),
     )
-    .select(["s.page", "p.file_name", "d.deleted_at", "e.text", "e.created_at"])
+    .leftJoin("visits as v", (join) =>
+      join
+        .onRef("v.person_id", "=", "s.person_id")
+        .onRef("v.id", "=", "s.visit_id"),
+    )
+    .select([
+      "s.page",
+      "p.file_name",
+      "d.deleted_at",
+      "e.text",
+      "e.created_at",
+      "v.id as visit_id",
+      "v.doctor",
+      "v.place",
+      "v.reason",
+      "v.as_written",
+      "v.date",
+    ])
     .where("s.person_id", "=", personId)
     .where("s.kind", "=", kind.name)
     .where("s.record_id", "=", String(row["id"]))
@@ -456,6 +479,7 @@ async function sourceOf(
           : source.text;
       return `Your message, ${shownDate(localTime(source.created_at).slice(0, 10))}: “${said}”`;
     }
+    if (source.visit_id !== null) return `Visit · ${visitWords(source)}`;
     const page = `${source.file_name ?? "A document"}, page ${String(source.page)}`;
     return source.deleted_at === null ? page : `Document deleted (${page})`;
   });

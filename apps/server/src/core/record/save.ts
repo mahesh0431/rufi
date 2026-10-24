@@ -22,6 +22,7 @@ import {
   literal,
   Position,
   wordsColumn,
+  visitWords,
   type Field,
   type Kind,
   type Row,
@@ -33,6 +34,7 @@ const ACTIONS = [
   "change",
   "remove",
   "restore",
+  "link",
   "remove_source",
 ] as const;
 type Asked = (typeof ACTIONS)[number];
@@ -44,6 +46,39 @@ const Id = Schema.String.check(
   Schema.isMinLength(1),
   Schema.isMaxLength(100),
 );
+
+/** What an action is doing, in a refusal's words. */
+const DOING: Record<Asked, string> = {
+  add: "adding",
+  change: "changing",
+  remove: "removing",
+  restore: "restoring",
+  link: "adding a source",
+  remove_source: "taking off a source",
+};
+
+/** A document page or a Visit a record rests on, as the AI names it. */
+const From = Schema.Union([
+  Schema.Struct({
+    document: Id,
+    page: Schema.Int.check(Schema.isGreaterThan(0)),
+  }),
+  Schema.Struct({
+    visit: Schema.Union([
+      Id,
+      Schema.Struct({
+        ref: Id.annotate({
+          description:
+            "The ref of a visit an earlier change of this save adds.",
+        }),
+      }),
+    ]).annotate({
+      description:
+        "The visit's id from get_overview, or {ref} for one this save adds.",
+    }),
+  }),
+]);
+type FromGiven = typeof From.Type;
 
 /** One change of one kind, as the AI gives it. */
 function changeOf(kind: Kind) {
@@ -65,14 +100,17 @@ function changeOf(kind: Kind) {
         description: `The ${kind.noun}'s id, from get_overview; not when adding.`,
       }),
     ),
+    ref: Schema.optionalKey(
+      Id.annotate({
+        description:
+          'Adding only: a name for the new record within this save ("v1"), so a later change can cite it with from: [{visit: {ref: "v1"}}].',
+      }),
+    ),
     source: Schema.optionalKey(Position),
     from: Schema.optionalKey(
-      Schema.Struct({
-        document: Id,
-        page: Schema.Int.check(Schema.isGreaterThan(0)),
-      }).annotate({
+      Schema.Array(From).check(Schema.isMinLength(1)).annotate({
         description:
-          "remove_source only: the document page to take off the record's sources, as get_records lists it.",
+          "The user's document pages or visits the record rests on: with add or change, what its values came from; with link, sources to add while its values stay; with remove_source, sources to take off, as get_records lists them. A fact only from these needs no source message.",
       }),
     ),
     fields: Schema.optionalKey(
@@ -86,21 +124,36 @@ function changeOf(kind: Kind) {
       (change: {
         action: Asked;
         id?: string;
+        ref?: string;
         fields?: object;
         from?: object;
       }) => {
         const issues: Schema.FilterIssue[] = [];
         const given = change.fields ?? {};
-        if (
-          (change.action === "remove_source") !==
-          (change.from !== undefined)
-        ) {
+        const sourcing =
+          change.action === "link" || change.action === "remove_source";
+        if (sourcing && change.from === undefined) {
           issues.push({
             path: ["from"],
             issue:
-              change.action === "remove_source"
-                ? "Give from: the document page to take off."
-                : "Leave from out: it is only for remove_source.",
+              change.action === "link"
+                ? "Give from: the document pages or visits to add as sources."
+                : "Give from: the sources to take off.",
+          });
+        }
+        if (
+          (change.action === "remove" || change.action === "restore") &&
+          change.from !== undefined
+        ) {
+          issues.push({
+            path: ["from"],
+            issue: `Leave from out: ${change.action === "remove" ? "removing" : "restoring"} takes no source.`,
+          });
+        }
+        if (change.ref !== undefined && change.action !== "add") {
+          issues.push({
+            path: ["ref"],
+            issue: "Leave ref out: it names a record this save adds.",
           });
         }
         if (change.action === "add") {
@@ -138,7 +191,7 @@ function changeOf(kind: Kind) {
         if (change.action !== "change" && change.fields !== undefined) {
           issues.push({
             path: ["fields"],
-            issue: `Leave fields out: ${change.action === "remove" ? "removing" : change.action === "restore" ? "restoring" : "taking off a source"} changes no field.`,
+            issue: `Leave fields out: ${DOING[change.action]} changes no field.`,
           });
         }
         return issues;
@@ -229,6 +282,15 @@ interface Page {
   name: string;
 }
 
+/**
+ * A document page or a Visit a typed change names in from: a Visit by its
+ * id, or by the ref of the change in this save that adds it until that is
+ * written.
+ */
+export type Cite =
+  | ({ type: "document_page" } & Page)
+  | { type: "visit"; id?: string | undefined; ref?: string };
+
 const describe = (value: unknown) => {
   if (value === undefined) return "nothing";
   const text = JSON.stringify(value);
@@ -271,11 +333,103 @@ export async function saveChanges(
   const touched = new Map<string, string>();
   const pointed = (where.refs ?? []).filter((ref) => ref.type === "record");
 
+  /** The refs of the records this save adds, so far: a later change may cite one. */
+  const named = new Map<string, Kind>();
+
+  /** The pages and Visits a change names in from, checked as this person's; undefined when one is wrong. */
+  const citesOf = async (
+    at: string,
+    from: readonly FromGiven[],
+  ): Promise<Cite[] | undefined> => {
+    const cites: Cite[] = [];
+    let wrong = false;
+    for (const [n, given] of from.entries()) {
+      const path = `${at}.from.${String(n)}`;
+      if ("document" in given) {
+        const page = await trx
+          .selectFrom("document_pages as p")
+          .innerJoin("documents as d", (join) =>
+            join
+              .onRef("d.person_id", "=", "p.person_id")
+              .onRef("d.id", "=", "p.document_id"),
+          )
+          .select(["p.file_name", "d.deleted_at"])
+          .where("p.person_id", "=", where.personId)
+          .where("p.document_id", "=", given.document)
+          .where("p.position", "=", given.page)
+          .executeTakeFirst();
+        const fix = !page
+          ? "No page of this person's documents is at this document and page: read them with get_documents."
+          : page.deleted_at !== null
+            ? "This document was deleted, so its page can't be a source."
+            : undefined;
+        if (fix || !page) {
+          problem(path, given, fix ?? "");
+          wrong = true;
+          continue;
+        }
+        cites.push({ type: "document_page", ...given, name: page.file_name });
+        continue;
+      }
+      if (typeof given.visit !== "string") {
+        const kind = named.get(given.visit.ref);
+        if (kind?.name !== "visit") {
+          problem(
+            path,
+            given,
+            kind
+              ? `${given.visit.ref} is a ${kind.noun} this save adds, not a visit.`
+              : `No earlier change of this save adds a record with ref ${given.visit.ref}: add the visit first, with that ref.`,
+          );
+          wrong = true;
+          continue;
+        }
+        cites.push({ type: "visit", ref: given.visit.ref });
+        continue;
+      }
+      const visit = await recordOf(
+        trx,
+        kindNamed("visit") as Kind,
+        where.personId,
+        given.visit,
+      );
+      if (!visit || visit["removed"] === 1) {
+        problem(
+          path,
+          given,
+          visit
+            ? "This visit is removed: restore it first."
+            : "No visit with this id is in this person's record.",
+        );
+        wrong = true;
+        continue;
+      }
+      cites.push({ type: "visit", id: given.visit });
+    }
+    return wrong ? undefined : cites;
+  };
+
   for (const [index, change] of changes.entries()) {
     const at = `changes.${String(index)}`;
     const kind = kindNamed(change.kind) as Kind;
     const given = (change.fields ?? {}) as Record<string, unknown>;
-    const source = await messageAt(change.source);
+    if (change.ref !== undefined) {
+      if (named.has(change.ref)) {
+        problem(
+          `${at}.ref`,
+          change.ref,
+          "Another change of this save has this ref: give each added record its own.",
+        );
+      }
+      named.set(change.ref, kind);
+    }
+    // A fact only from a page or a visit rests on no message: the user's
+    // yes isn't a source.
+    const fromAlone =
+      change.from !== undefined &&
+      change.source === undefined &&
+      change.action !== "remove_source";
+    const source = fromAlone ? undefined : await messageAt(change.source);
     if (typeof source === "string") {
       problem(`${at}.source`, change.source, source);
       continue;
@@ -320,40 +474,52 @@ export async function saveChanges(
     }
 
     if (change.action === "remove_source") {
-      const from = change.from as { document: string; page: number };
-      const linked = await trx
-        .selectFrom("record_sources as s")
-        .innerJoin("document_pages as p", (join) =>
-          join
-            .onRef("p.person_id", "=", "s.person_id")
-            .onRef("p.document_id", "=", "s.document_id")
-            .onRef("p.position", "=", "s.page"),
-        )
-        .select("p.file_name")
-        .where("s.person_id", "=", where.personId)
-        .where("s.kind", "=", kind.name)
-        .where("s.record_id", "=", change.id ?? "")
-        .where("s.document_id", "=", from.document)
-        .where("s.page", "=", from.page)
-        .where("s.removed_by", "is", null)
-        .executeTakeFirst();
-      if (!linked) {
-        problem(
-          `${at}.from`,
+      for (const [n, from] of (change.from ?? []).entries()) {
+        const path = `${at}.from.${String(n)}`;
+        const linked = await currentSource(
+          trx,
+          where.personId,
+          kind,
+          change.id ?? "",
           from,
-          `This page isn't one of the ${kind.noun}'s sources: read its sources with get_records.`,
         );
-        continue;
+        if (!linked) {
+          problem(
+            path,
+            from,
+            `This isn't one of the ${kind.noun}'s sources: read its sources with get_records.`,
+          );
+          continue;
+        }
+        planned.push({
+          kind,
+          action: "unlink",
+          id: change.id,
+          source,
+          cites: [linked],
+          columns: {},
+          before,
+        });
       }
-      planned.push({
-        kind,
-        action: "unlink",
-        id: change.id,
-        source,
-        page: { ...from, name: linked.file_name },
-        columns: {},
-        before,
-      });
+      continue;
+    }
+
+    const cites =
+      change.from === undefined ? [] : await citesOf(at, change.from);
+    if (!cites) continue;
+
+    if (change.action === "link") {
+      for (const cite of cites) {
+        planned.push({
+          kind,
+          action: "link",
+          id: change.id,
+          source,
+          cites: [cite],
+          columns: {},
+          before,
+        });
+      }
       continue;
     }
 
@@ -409,13 +575,15 @@ export async function saveChanges(
       }
     }
     if (change.action === "add" && kind.asserted) {
-      columns.asserted = source.local.slice(0, 10);
+      columns.asserted = (source?.local ?? localTime(where.now)).slice(0, 10);
     }
     planned.push({
       kind,
       action: change.action,
       id: change.id,
       source,
+      cites,
+      ...(change.ref !== undefined && { ref: change.ref }),
       columns,
       before,
     });
@@ -467,9 +635,22 @@ export async function saveChanges(
     })
     .execute();
   const written: Written[] = [];
+  /** The ids of the records this save added, by their ref. */
+  const added = new Map<string, string>();
   let seq = 0;
-  for (const change of planned) {
+  for (const planning of planned) {
+    const change: Planned = {
+      ...planning,
+      cites: planning.cites?.map((cite) =>
+        cite.type === "visit" && cite.ref !== undefined
+          ? { ...cite, id: added.get(cite.ref) }
+          : cite,
+      ),
+    };
     const done = await write(trx, where, id, change);
+    if (change.ref !== undefined) {
+      added.set(change.ref, String(done.after["id"]));
+    }
     written.push(done);
     if (done.item) {
       await trx
@@ -585,8 +766,12 @@ export interface Planned {
   id: string | undefined;
   /** The user's message it rests on, when there is one. */
   source: Source | undefined;
-  /** The document page it rests on, when there is one. */
+  /** The document page it rests on, when there is one: a draft item's. */
   page?: Page;
+  /** The pages and Visits the change named in from. */
+  cites?: Cite[] | undefined;
+  /** The name an added record has in this save. */
+  ref?: string;
   columns: Row;
   before: Row | undefined;
   /** The draft item it saves. */
@@ -607,6 +792,7 @@ interface Written {
   after: Row;
   source: Source | undefined;
   page: Page | undefined;
+  cites: Cite[];
   item: Planned["item"];
   /** A link that was there already. */
   already?: true;
@@ -725,37 +911,45 @@ async function write(
   const table = sql.table(change.kind.table);
   const columns: Row = { ...change.columns };
   let id = change.id ?? "";
-  const sourced = (
-    type: "message" | "document_page",
-  ): Promise<{ id: string } | undefined> => {
-    let query = trx
-      .selectFrom("record_sources")
-      .select("record_id as id")
-      .where("person_id", "=", where.personId)
-      .where("kind", "=", change.kind.name)
-      .where("record_id", "=", id)
-      .where("removed_by", "is", null);
-    query =
-      type === "message"
-        ? query.where("entry_id", "=", change.source?.id ?? "")
-        : query
-            .where("document_id", "=", change.page?.document ?? "")
-            .where("page", "=", change.page?.page ?? 0);
-    return query.executeTakeFirst();
+  // A draft item's page, then the pages and Visits the change named.
+  const cites: Cite[] = [
+    ...(change.page
+      ? [{ type: "document_page" as const, ...change.page }]
+      : []),
+    ...(change.cites ?? []),
+  ];
+  const message = change.source && {
+    type: "message" as const,
+    entry_id: change.source.id,
+    document_id: null,
+    page: null,
+    visit_id: null,
   };
-  const addSource = async (type: "message" | "document_page") => {
-    if (await sourced(type)) return false;
+  /** Adds a source the record doesn't have now; false when it has it. */
+  const addSource = async (
+    source: NonNullable<typeof message> | Cite,
+  ): Promise<boolean> => {
+    const values =
+      source.type === "message"
+        ? source
+        : {
+            type: source.type,
+            entry_id: null,
+            document_id:
+              source.type === "document_page" ? source.document : null,
+            page: source.type === "document_page" ? source.page : null,
+            visit_id: source.type === "visit" ? (source.id ?? "") : null,
+          };
+    if (await currentRow(trx, where.personId, change.kind, id, values)) {
+      return false;
+    }
     await trx
       .insertInto("record_sources")
       .values({
         person_id: where.personId,
         kind: change.kind.name,
         record_id: id,
-        type,
-        entry_id: type === "message" ? (change.source?.id ?? null) : null,
-        document_id:
-          type === "document_page" ? (change.page?.document ?? null) : null,
-        page: type === "document_page" ? (change.page?.page ?? null) : null,
+        ...values,
         operation_id: operation,
         removed_by: null,
       })
@@ -782,20 +976,26 @@ async function write(
       break;
     }
     case "link":
-      already = !(await addSource("document_page"));
+      already = !(await addSource(cites[0] as Cite));
       break;
-    case "unlink":
-      await trx
+    case "unlink": {
+      const cite = cites[0] as Cite;
+      let off = trx
         .updateTable("record_sources")
         .set({ removed_by: operation })
         .where("person_id", "=", where.personId)
         .where("kind", "=", change.kind.name)
         .where("record_id", "=", id)
-        .where("document_id", "=", change.page?.document ?? "")
-        .where("page", "=", change.page?.page ?? 0)
-        .where("removed_by", "is", null)
-        .execute();
+        .where("removed_by", "is", null);
+      off =
+        cite.type === "visit"
+          ? off.where("visit_id", "=", cite.id ?? "")
+          : off
+              .where("document_id", "=", cite.document)
+              .where("page", "=", cite.page);
+      await off.execute();
       break;
+    }
     case "change":
     case "remove":
     case "restore": {
@@ -807,10 +1007,10 @@ async function write(
       );
     }
   }
-  // What the values now rest on: the user's message, the document's page.
+  // What the values now rest on: the user's message, the pages and Visits.
   if (change.action === "add" || change.action === "change") {
-    if (change.source) await addSource("message");
-    if (change.page) await addSource("document_page");
+    if (message) await addSource(message);
+    for (const cite of cites) await addSource(cite);
   }
   return {
     kind: change.kind,
@@ -819,9 +1019,84 @@ async function write(
     after: (await recordOf(trx, change.kind, where.personId, id)) as Row,
     source: change.source,
     page: change.page,
+    cites: change.cites ?? [],
     item: change.item,
     ...(already && { already: true as const }),
   };
+}
+
+/** A source row of the record's that isn't taken off, matching `source`. */
+function currentRow(
+  trx: Transaction<Tables>,
+  personId: string,
+  kind: Kind,
+  id: string,
+  source: {
+    type: "message" | "document_page" | "visit";
+    entry_id: string | null;
+    document_id: string | null;
+    page: number | null;
+    visit_id: string | null;
+  },
+) {
+  let query = trx
+    .selectFrom("record_sources")
+    .select("record_id")
+    .where("person_id", "=", personId)
+    .where("kind", "=", kind.name)
+    .where("record_id", "=", id)
+    .where("type", "=", source.type)
+    .where("removed_by", "is", null);
+  query =
+    source.type === "message"
+      ? query.where("entry_id", "=", source.entry_id)
+      : source.type === "visit"
+        ? query.where("visit_id", "=", source.visit_id)
+        : query
+            .where("document_id", "=", source.document_id)
+            .where("page", "=", source.page);
+  return query.executeTakeFirst();
+}
+
+/**
+ * The page or Visit `from` names, when it is one of the record's sources
+ * now: what remove_source takes off.
+ */
+async function currentSource(
+  trx: Transaction<Tables>,
+  personId: string,
+  kind: Kind,
+  id: string,
+  from: FromGiven,
+): Promise<Cite | undefined> {
+  if ("document" in from) {
+    const linked = await trx
+      .selectFrom("record_sources as s")
+      .innerJoin("document_pages as p", (join) =>
+        join
+          .onRef("p.person_id", "=", "s.person_id")
+          .onRef("p.document_id", "=", "s.document_id")
+          .onRef("p.position", "=", "s.page"),
+      )
+      .select("p.file_name")
+      .where("s.person_id", "=", personId)
+      .where("s.kind", "=", kind.name)
+      .where("s.record_id", "=", id)
+      .where("s.document_id", "=", from.document)
+      .where("s.page", "=", from.page)
+      .where("s.removed_by", "is", null)
+      .executeTakeFirst();
+    return linked && { type: "document_page", ...from, name: linked.file_name };
+  }
+  if (typeof from.visit !== "string") return undefined;
+  const linked = await currentRow(trx, personId, kind, id, {
+    type: "visit",
+    entry_id: null,
+    document_id: null,
+    page: null,
+    visit_id: from.visit,
+  });
+  return linked && { type: "visit", id: from.visit };
 }
 
 /** The report a result goes in: its document's, reused within it. */
@@ -937,6 +1212,17 @@ async function linksOf(
   written: readonly Written[],
 ): Promise<Links> {
   const links: Links = new Map();
+  const visit = kindNamed("visit") as Kind;
+  for (const { cites, after, kind } of written) {
+    const ids = cites.flatMap((cite) =>
+      cite.type === "visit" && cite.id !== undefined ? [cite.id] : [],
+    );
+    if (kind.name === "visit") ids.push(String(after["id"]));
+    for (const id of ids) {
+      const row = await recordOf(trx, visit, personId, id);
+      if (row) links.set(linkKey("visit", id), visitWords(row));
+    }
+  }
   for (const { before, after } of written) {
     // An amended result names the one it replaces by its label.
     const replaced = after["replaces_id"];
@@ -1040,8 +1326,16 @@ function receiptText(written: readonly Written[], links: Links): string {
       written.flatMap((w) => (w.page ? [[w.page.document, w.page.name]] : [])),
     ).values(),
   ];
+  /** A page or a Visit, as a receipt names it. */
+  const cited = (cite: Cite) =>
+    cite.type === "visit"
+      ? `visit ${links.get(linkKey("visit", cite.id)) ?? String(cite.id)}`
+      : `${cite.name}, page ${String(cite.page)}`;
   /** Where a line's record came from: the page, and the user's message. */
-  const from = ({ page, source, item }: Written) => {
+  const from = ({ page, source, item, cites }: Written) => {
+    if (cites.length > 0) {
+      return ` · from ${cites.map((cite) => literal(cited(cite))).join(", ")}${source ? ", and your message" : ""}`;
+    }
     if (!page || !item) return "";
     const where =
       documents.length === 1
@@ -1057,8 +1351,11 @@ function receiptText(written: readonly Written[], links: Links): string {
         ? `**${literal(kind.label(after))}**`
         : `${kind.noun} **${literal(kind.label(after))}**`;
     if (action === "link" || action === "unlink") {
+      const cite = w.cites[0];
       const page = value(
-        `${w.page?.name ?? "a document"}, page ${String(w.page?.page ?? "")}`,
+        cite
+          ? cited(cite)
+          : `${w.page?.name ?? "a document"}, page ${String(w.page?.page ?? "")}`,
       );
       if (w.already) return `- The ${name} already had ${page} as a source`;
       return action === "link"

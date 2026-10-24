@@ -267,7 +267,7 @@ describe("a document with saved results", () => {
         kind: "result",
         action: "remove_source",
         id: "res-a7",
-        from: { document: AUG, page: 2 },
+        from: [{ document: AUG, page: 2 }],
       },
     ]);
     await save(

@@ -127,6 +127,28 @@ export async function recentSaves(store: Store, personId: string) {
       .where("operation_id", "=", save.id)
       .orderBy("seq")
       .execute();
+    // The pages and Visits the save added to its records or took off them:
+    // what its reverse takes off or links again.
+    const sources = await store.query
+      .selectFrom("record_sources")
+      .select([
+        "kind",
+        "record_id",
+        "document_id",
+        "page",
+        "visit_id",
+        "removed_by",
+      ])
+      .where("person_id", "=", personId)
+      .where("type", "!=", "message")
+      .where((eb) =>
+        eb.or([
+          eb("operation_id", "=", save.id),
+          eb("removed_by", "=", save.id),
+        ]),
+      )
+      .orderBy(sql.ref("rowid"))
+      .execute();
     shown.push({
       at: save.created_at,
       receipt: save.text,
@@ -137,10 +159,23 @@ export async function recentSaves(store: Store, personId: string) {
           change.before === null
             ? undefined
             : (JSON.parse(change.before) as Row);
+        const from = sources
+          .filter(
+            (s) =>
+              s.kind === change.kind &&
+              s.record_id === change.record_id &&
+              (s.removed_by === save.id) === (change.action === "unlink"),
+          )
+          .map((s) =>
+            s.visit_id === null
+              ? { document: s.document_id, page: s.page }
+              : { visit: s.visit_id },
+          );
         const base = {
           kind: change.kind,
           id: change.record_id,
           action: change.action,
+          ...(from.length > 0 && change.action !== "add" && { from }),
         };
         if (change.action !== "change" || !before) {
           return change.action === "add"

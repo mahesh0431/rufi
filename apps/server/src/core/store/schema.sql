@@ -264,23 +264,6 @@ CREATE TABLE medicine_uses (
   UNIQUE (person_id, id)
 ) STRICT;
 
--- What a prescriber wrote for one item. It never makes a medicine use.
-CREATE TABLE prescriptions (
-  id TEXT PRIMARY KEY,
-  person_id TEXT NOT NULL REFERENCES people (id),
-  item TEXT NOT NULL,
-  strength TEXT,
-  amount TEXT,
-  route TEXT,
-  schedule TEXT,
-  period TEXT,                 -- the intended period, as written: 'for 5 days'
-  prescriber TEXT,
-  issued TEXT,
-  issued_words TEXT,
-  removed INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (person_id, id)
-) STRICT;
-
 -- One episode of a symptom; a symptom that comes back is a new episode.
 CREATE TABLE symptoms (
   id TEXT PRIMARY KEY,
@@ -330,11 +313,33 @@ CREATE TABLE allergies (
   UNIQUE (person_id, id)
 ) STRICT;
 
--- A visit, procedure or immunisation. Planned care is not done care.
+-- A visit that happened (docs/adr/0021): to a clinic, online (a phone
+-- call too), at home, or a stay in hospital (admitted on date, discharged
+-- on ended). It keeps the doctor's words as written, in Markdown with the
+-- paper's own headings; for a visit told in the chat, the person's words.
+-- The records saved from it cite it in record_sources. A visit to come is
+-- a follow-up.
+CREATE TABLE visits (
+  id TEXT PRIMARY KEY,
+  person_id TEXT NOT NULL REFERENCES people (id),
+  setting TEXT NOT NULL DEFAULT 'unknown' CHECK (setting IN ('clinic', 'online', 'home', 'hospital', 'unknown')),
+  date TEXT,                   -- when it happened; a hospital stay's admission
+  date_words TEXT,
+  ended TEXT,                  -- a hospital stay's discharge
+  ended_words TEXT,
+  doctor TEXT,                 -- as written: 'Dr A. Fictional, MBBS'
+  place TEXT,                  -- as written: 'Lakeview Family Clinic'
+  reason TEXT,                 -- a short line for lists: why they went, or the diagnosis, as written
+  as_written TEXT,             -- the doctor's words as written (Markdown)
+  removed INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (person_id, id)
+) STRICT;
+
+-- A procedure or an immunisation. Planned care is not done care.
 CREATE TABLE care_events (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL REFERENCES people (id),
-  type TEXT NOT NULL CHECK (type IN ('visit', 'procedure', 'immunisation')),
+  type TEXT NOT NULL CHECK (type IN ('procedure', 'immunisation')),
   name TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'unknown' CHECK (status IN ('planned', 'done', 'not_done', 'unknown')),
   date TEXT,
@@ -568,25 +573,29 @@ CREATE TABLE record_changes (
 ) STRICT;
 
 -- Where a record's values came from, several per record: the user's
--- message, or a page of a document. Each is added by a save, and a later
+-- message, a page of a document, or a Visit (the records saved from a
+-- visit cite it; the Visit cites its paper's page). Each is added by a save, and a later
 -- save may take it off (removed_by); it is never deleted. Saying "save it"
 -- isn't a source: it only says yes.
 CREATE TABLE record_sources (
   person_id TEXT NOT NULL,
   kind TEXT NOT NULL,          -- the record's kind: 'result', 'symptom'...
   record_id TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('message', 'document_page')),
+  type TEXT NOT NULL CHECK (type IN ('message', 'document_page', 'visit')),
   entry_id TEXT,               -- message: the user's message
   document_id TEXT,            -- document_page: the document and its page
   page INTEGER,
+  visit_id TEXT,               -- visit: the Visit
   operation_id TEXT,           -- the save that added it; null for one from before Rufi kept saves
   removed_by TEXT,             -- the save that took it off
   FOREIGN KEY (person_id, entry_id) REFERENCES transcript_entries (person_id, id),
   FOREIGN KEY (person_id, document_id, page) REFERENCES document_pages (person_id, document_id, position),
+  FOREIGN KEY (person_id, visit_id) REFERENCES visits (person_id, id),
   FOREIGN KEY (person_id, operation_id) REFERENCES operations (person_id, id),
   FOREIGN KEY (person_id, removed_by) REFERENCES operations (person_id, id),
   CHECK ((type = 'message') = (entry_id IS NOT NULL)),
-  CHECK ((type = 'document_page') = (document_id IS NOT NULL AND page IS NOT NULL))
+  CHECK ((type = 'document_page') = (document_id IS NOT NULL AND page IS NOT NULL)),
+  CHECK ((type = 'visit') = (visit_id IS NOT NULL))
 ) STRICT;
 
 -- A visit brief the AI wrote from the saved record, in a chat. Its line in
@@ -629,10 +638,11 @@ CREATE INDEX tool_calls_by_turn ON tool_calls (person_id, turn_id);
 CREATE INDEX operations_by_person ON operations (person_id, seq);
 CREATE INDEX changes_by_record ON record_changes (person_id, record_id);
 CREATE INDEX sources_by_record ON record_sources (person_id, record_id);
+CREATE INDEX sources_by_visit ON record_sources (person_id, visit_id);
 CREATE INDEX drafts_by_document ON draft_items (person_id, document_id, page, seq);
 CREATE INDEX sort_requests_by_state ON sort_requests (state, retry_at);
 CREATE INDEX sort_requests_by_document ON sort_requests (person_id, document_id);
 CREATE INDEX sort_requests_by_queue ON sort_requests (person_id, queue_id);
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 14;
+PRAGMA user_version = 15;
