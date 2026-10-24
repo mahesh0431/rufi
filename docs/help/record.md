@@ -26,7 +26,7 @@ Rufi works out the tiles from your saved health record, not with the AI. Each ti
 | Medicines                     | How many you take now, with their names, and how many more are in your history (stopped, paused, completed)                                   |
 | Conditions                    | How many are ongoing, with their names                                                                                                        |
 | Allergies                     | How many are active, with their names, or **None known** when you said so                                                                     |
-| Visits, Symptoms, Care events | The latest one and its date, for example "Latest: Dr A. Fictional · Lakeview Family Clinic · 20 Aug 2026"                                    |
+| Visits, Symptoms, Care events | The latest one and its date, for example "Latest: Dr A. Fictional · Lakeview Family Clinic · 20 Aug 2026"                                     |
 
 A stopped medicine is still in your health record: its tile counts it in your history, and its page shows it.
 
