@@ -125,7 +125,8 @@ function visitLabel(row: Row): string {
     .join(" · ");
   if (named !== "") return named;
   if (typeof row["reason"] === "string") return row["reason"];
-  const words = String(row["as_written"] ?? "")
+  const written = row["as_written"];
+  const words = (typeof written === "string" ? written : "")
     .replace(/[#*_>`]/g, "")
     .trim()
     .split("\n")[0];

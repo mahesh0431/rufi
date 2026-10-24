@@ -1222,7 +1222,7 @@ describe("the health rules", () => {
       before,
     );
 
-    const undo = await say("Undo that");
+    await say("Undo that");
     const back = await save(
       [
         {
@@ -1621,7 +1621,20 @@ describe("a visit and the records saved from it", () => {
     // "Undo that": the AI saves the reverse of what latest saves show.
     const [latest] = (await overview()).latest_saves;
     expect(latest?.changes).toEqual([
-      { kind: "visit", id: visitId, action: "add", fields: expect.any(Object) },
+      {
+        kind: "visit",
+        id: visitId,
+        action: "add",
+        fields: {
+          setting: "clinic",
+          date: { date: "2026-10-02", words: "02/10/2026" },
+          doctor: "Dr A. Fictional",
+          place: "Lakeview Family Clinic",
+          reason: "Iron deficiency anaemia",
+          as_written:
+            "**Diagnosis:** Iron deficiency anaemia\n\n**Rx**\n1. Ferrous sulfate 200 mg once daily\n2. Metformin 1000 mg twice a day\n3. Creatine, continue",
+        },
+      },
       {
         kind: "medicine_use",
         id: ironId,

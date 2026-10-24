@@ -287,7 +287,7 @@ interface Page {
  * id, or by the ref of the change in this save that adds it until that is
  * written.
  */
-export type Cite =
+type Cite =
   | ({ type: "document_page" } & Page)
   | { type: "visit"; id?: string | undefined; ref?: string };
 
