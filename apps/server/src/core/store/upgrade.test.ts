@@ -183,13 +183,6 @@ describe("a record of version 1", () => {
         SOURCES,
       );
       expect(await saves()).toEqual(RAVIS_SAVES);
-      expect(
-        await store.query
-          .selectFrom("operations")
-          .select("warnings")
-          .distinct()
-          .execute(),
-      ).toEqual([{ warnings: "[]" }]);
 
       store.db.exec("VACUUM");
       expect((await readBrief(store.query, "asha", BRIEF))?.sources).toEqual(
@@ -451,7 +444,6 @@ const beforeSorting = (rows: readonly object[]) =>
             "from_document",
             "sorted_at",
             "quote",
-            "report",
           ].includes(key),
       ),
     ),
@@ -757,7 +749,7 @@ it("upgrades a record of version 10 so the reader can keep page copies: every pa
   }
 });
 
-it("upgrades a record of version 11 so Rufi AI sorts: every document, reading and draft kept, an ended reading counted sorted, and each older draft keeping the report and date Rufi gave it then", async () => {
+it("upgrades a record of version 11 so Rufi AI sorts: every document, reading and draft kept, and an ended reading counted sorted", async () => {
   const path = databasePath(home);
   migrate(path, MIGRATIONS.slice(0, 11));
   // Readings as Rufi of version 11 left them: a done one with entries and
@@ -838,29 +830,14 @@ it("upgrades a record of version 11 so Rufi AI sorts: every document, reading an
     ["job-v11-aug", "2026-10-16T08:02:00Z"],
     ["job-v11-sep", null],
   ]);
-  const report = {
-    issuer: "Sunrise Labs",
-    number: "SL-1",
-    collected: "2026-08-12",
-    date: COLLECTED,
-  };
   expect(
     after.drafts
       .filter((d) => String(d["id"]).startsWith("d-v11"))
-      .map((d) => [
-        d["id"],
-        d["quote"],
-        JSON.parse(String(d["report"])) as unknown,
-      ]),
+      .map((d) => [d["id"], d["quote"]]),
   ).toEqual([
-    ["d-v11-1", null, report],
-    // Page 2 prints no head: its report is page 1's.
-    ["d-v11-2", null, report],
-    [
-      "d-v11-3",
-      null,
-      { issuer: null, number: null, collected: null, date: null },
-    ],
+    ["d-v11-1", null],
+    ["d-v11-2", null],
+    ["d-v11-3", null],
   ]);
 });
 

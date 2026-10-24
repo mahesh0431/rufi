@@ -99,7 +99,7 @@ As soon as a reading ends, Rufi asks Rufi AI to sort the file, without waiting f
 
 The same report added twice, such as a PDF and a photo of it, stays two documents. Rufi AI says it looks like another copy; when you save, it offers the results as another source of the ones already saved.
 
-Rufi checks every draft before it keeps any: a draft's value must be on its page's copy, as printed (or, for a draft worth a look, as printed with the reader's mark on a digit taken off). If one isn't, Rufi keeps nothing of the sort and tells Rufi AI why, and it tries again. A file is sorted all at once, or not at all.
+A file is sorted all at once, or not at all: if Rufi can't keep the sort (for example, it leaves a page out), it keeps none of it and tells Rufi AI why, and it tries again. What a draft says is Rufi AI's reading of the page; you check it before you save.
 
 The drafts are kept as **draft items**: they wait for you and stay across restarts, but they aren't part of your health record yet, so they don't count in your Overview or your trends until you save them (see [Save results to your health record](#save-results-to-your-health-record)). When you ask about a result, the AI also reads the drafts of your documents, and it says that a value it gives from one isn't saved yet.
 
@@ -144,9 +144,9 @@ Marks show you where to look. A mark never changes a value:
 
 What Rufi does when it saves a document's results:
 
-- **The values as printed.** Rufi saves each result from the draft item, as it was drafted from the page (with your fix, if you made one), never as the AI typed it when saving. If you correct a value in the chat ("the LDL is 132, not 142"), Rufi saves your value and keeps your words.
-- **Its date.** A result gets the date Rufi AI drafted for it: for a lab result, its report's collection date as printed; for a measurement, the day it was taken. A draft from an older Rufi gets the date printed for it, or else the first date printed on its page, as before. Every result needs a date. When a report has no clear date, the AI asks you when the sample was taken before it saves anything. A rough date is fine, such as "around August 2026" or "early this year": Rufi saves it at the precision you gave (a month, a year) and keeps your words. If you don't know, the AI explains that it needs a date and asks for a rough one. It never makes one up. A measurement's date is the day it was taken: it gets only the date printed for it, or the one you give, never the report's collection date.
-- **Its report.** The results of one document go in one report, with the lab, report number and date Rufi AI gave the document. Drafts from an older Rufi go in a report by their page's printed lab, report number and collection date, as before.
+- **The values as printed.** Rufi saves each result from the draft item, as it was drafted from the page (with your fix, if you made one), never as the AI typed it when saving. If you fixed a value on the document's page, the AI reads its number for the trends as it saves, for example 4.6 for **4,6**, and asks you when it isn't sure. If you correct a value in the chat ("the LDL is 132, not 142"), Rufi saves your value and keeps your words.
+- **Its date.** A result gets the date Rufi AI drafted for it: for a lab result, its report's collection date as printed; for a measurement, the day it was taken. Every result needs a date. When a report has no clear date, the AI asks you when the sample was taken before it saves anything. A rough date is fine, such as "around August 2026" or "early this year": Rufi saves it at the precision you gave (a month, a year) and keeps your words. If you don't know, the AI explains that it needs a date and asks for a rough one. It never makes one up. A measurement's date is the day it was taken: it gets only the date printed for it, or the one you give, never the report's collection date.
+- **Its report.** The results of one document go in one report, with the lab, report number and date Rufi AI gave the document.
 - **Its sources.** Each result keeps where it came from: the document and its page, your message, or both. The receipt, the AI's reads and a visit brief show them.
 - **All or nothing.** Rufi saves all the results in one step, however many there are. If one can't be saved, nothing is saved, and the AI tells you why.
 - **Each result once.** A result you already saved isn't saved again: the AI gets the earlier save back. After an undo, you can ask the AI to save it again.
@@ -195,7 +195,7 @@ When every result is saved or set aside, the page says **These results were save
 2. Change what was drafted wrong: the test, value, unit, range, flag or context, exactly as the page prints it. A field you changed is outlined.
 3. Click **Save fix**.
 
-The result shows **fixed by you** and what was drafted (**Drafted: value 2.1**; on a reading from an older Rufi, **The reader read: value 2.1**). Rufi keeps the drafted value beside your fix. A fix doesn't take away **Worth a look**, so the AI still sees why when you save. To fix a date, tell the AI in the chat.
+The result shows **fixed by you** and what was drafted (**Drafted: value 2.1**; on a reading from an older Rufi, **The reader read: value 2.1**). Rufi keeps the drafted value beside your fix, and your value as you typed it. A fix doesn't take away **Worth a look**, so the AI still sees why when you save. To fix a date, tell the AI in the chat.
 
 A result you already saved or set aside can't be fixed here.
 

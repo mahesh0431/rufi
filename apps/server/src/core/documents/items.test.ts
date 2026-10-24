@@ -1,6 +1,6 @@
 // The document page's draft items on a real database: what the page shows,
 // and the person's fixes with versions (two tabs, saved items, the reader's
-// value kept, the number made again from a fixed value).
+// value kept, no drafted number on a fixed value).
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -123,10 +123,10 @@ describe("a fix", () => {
     });
 
     expect(fixed?.version).toBe(2);
+    const { value_number: _drafted, ...printed } = HBA1C;
     expect(fixed?.fields).toEqual({
-      ...HBA1C,
+      ...printed,
       value_text: "5.8",
-      value_number: 5.8,
       flag_text: "H",
     });
     const [shown] = (await items.view("asha", "d1"))?.items ?? [];
@@ -184,19 +184,19 @@ describe("a fix", () => {
     expect(fixed?.version).toBe(2);
   });
 
-  it("makes the number again only from a plain printed number", async () => {
-    const less = await items.fix("asha", "d1", "i1", {
+  it("keeps the drafted number only with the drafted value", async () => {
+    const fixed = await items.fix("asha", "d1", "i1", {
       version: 1,
       fields: { value_text: "<5" },
     });
-    expect(less?.fields).toMatchObject({ comparator: "<", value_number: 5 });
+    expect(fixed?.fields).not.toHaveProperty("value_number");
+    expect(fixed?.fields).not.toHaveProperty("comparator");
 
-    const comma = await items.fix("asha", "d1", "i1", {
+    const back = await items.fix("asha", "d1", "i1", {
       version: 2,
-      fields: { value_text: "4,6" },
+      fields: { value_text: "5.3" },
     });
-    expect(comma?.fields).not.toHaveProperty("value_number");
-    expect(comma?.fields).not.toHaveProperty("comparator");
+    expect(back?.fields).toEqual(HBA1C);
   });
 
   it("that changes nothing keeps the version", async () => {

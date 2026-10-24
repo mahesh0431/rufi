@@ -44,8 +44,6 @@ export interface Field {
   type: "value" | "boolean" | "date" | "due" | "link";
   /** Where a date's words are kept, when not in `<column>_words`. */
   wordsColumn?: string;
-  /** A date that must have happened by the time the user said it. */
-  past?: boolean | ((after: Row) => boolean);
   /** The AI must give it when adding, and can't forget it. */
   required?: true;
   /**
@@ -107,11 +105,12 @@ const state = (column: string, values: readonly [string, ...string[]]) => ({
   ...choice(column, values),
   notNull: true as const,
 });
-const date = (
-  column: string,
-  shown: string,
-  past: NonNullable<Field["past"]>,
-): Field => ({ column, shown, input: DateSaid, type: "date", past });
+const date = (column: string, shown: string): Field => ({
+  column,
+  shown,
+  input: DateSaid,
+  type: "date",
+});
 const required = (field: Field): Field => ({ ...field, required: true });
 
 const join = (...parts: unknown[]) =>
@@ -136,8 +135,8 @@ export const KINDS: readonly Kind[] = [
         "completed",
         "unknown",
       ]),
-      started: date("started", "start", false),
-      ended: date("ended", "end", false),
+      started: date("started", "start"),
+      ended: date("ended", "end"),
     },
     label: (row) => join(row["name"], row["strength"]),
     inLabel: ["name", "strength"],
@@ -155,7 +154,7 @@ export const KINDS: readonly Kind[] = [
       schedule: text("schedule"),
       period: text("period"),
       prescriber: text("prescriber"),
-      issued: date("issued", "issued", true),
+      issued: date("issued", "issued"),
     },
     label: (row) => join(row["item"], row["strength"]),
     inLabel: ["item", "strength"],
@@ -168,8 +167,8 @@ export const KINDS: readonly Kind[] = [
     fields: {
       name: required(text("name")),
       status: state("status", ["ongoing", "resolved", "unknown"]),
-      onset: date("onset", "onset", true),
-      ended: date("ended", "end", true),
+      onset: date("onset", "onset"),
+      ended: date("ended", "end"),
       severity: text("severity"),
       location: text("location"),
       intermittent: {
@@ -192,8 +191,8 @@ export const KINDS: readonly Kind[] = [
       name: required(text("name")),
       certainty: state("certainty", ["suspected", "diagnosed", "unknown"]),
       status: state("status", ["ongoing", "resolved", "unknown"]),
-      recognised: date("recognised", "recognised", true),
-      resolved: date("resolved", "resolved", true),
+      recognised: date("recognised", "recognised"),
+      resolved: date("resolved", "resolved"),
       details: long("details"),
     },
     label: (row) => join(row["name"]),
@@ -209,7 +208,7 @@ export const KINDS: readonly Kind[] = [
       reaction: text("reaction"),
       status: state("status", ["active", "inactive", "unknown"]),
       certainty: state("certainty", ["confirmed", "suspected", "unknown"]),
-      reacted: date("reacted", "reaction date", true),
+      reacted: date("reacted", "reaction date"),
     },
     label: (row) => join(row["substance"]),
     inLabel: ["substance"],
@@ -241,7 +240,7 @@ export const KINDS: readonly Kind[] = [
       flag: text("flag_text", "flag"),
       context: text("context_text", "context"),
       measured: {
-        ...date("measured_at", "measured", true),
+        ...date("measured_at", "measured"),
         wordsColumn: "measured_words",
       },
       replaces: text("replaces_id", "replaces"),
@@ -259,12 +258,7 @@ export const KINDS: readonly Kind[] = [
       type: required(choice("type", ["visit", "procedure", "immunisation"])),
       name: required(text("name")),
       status: state("status", ["planned", "done", "not_done", "unknown"]),
-      // Done or missed care happened by the time the user said so.
-      date: date(
-        "date",
-        "date",
-        (after) => after["status"] === "done" || after["status"] === "not_done",
-      ),
+      date: date("date", "date"),
       provider: text("provider"),
       details: long("details"),
     },

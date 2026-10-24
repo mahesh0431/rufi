@@ -2053,7 +2053,7 @@ describe("documents over the API", () => {
       });
     expect((await fix(1)).body).toMatchObject({
       version: 2,
-      fields: { value_text: "13.4", value_number: 13.4 },
+      fields: { value_text: "13.4" },
       original: { value_text: "13.2" },
     });
     expect(await fix(1)).toMatchObject({
