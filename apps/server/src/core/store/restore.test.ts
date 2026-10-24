@@ -7,17 +7,11 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, it } from "vitest";
 import { holdRufiLock } from "../../platform/files.ts";
-import { v7 as uuid } from "uuid";
-import { chatQueue } from "../chat/queue.ts";
-import {
-  transcripts as openTranscripts,
-  type ChatRow,
-} from "../chat/transcript.ts";
 import { documents } from "../documents/documents.ts";
-import { sorting } from "../documents/sorting.ts";
 import { backupsPath, makeBackup } from "./backup.ts";
 import { databasePath, openWritable } from "./database.ts";
 import { restore } from "./restore.ts";
+import { addSent } from "../../../tests/sent.ts";
 
 let root: string;
 let backup: string;
@@ -58,11 +52,9 @@ async function backupWithDocument(): Promise<{ folder: string; id: string }> {
   );
   const name = "sunrise-labs-august.pdf";
   const docs = documents(store, home);
-  await docs.add(
-    "asha",
-    [{ name, bytes: new Uint8Array(await readFile(join(FIXTURES, name))) }],
-    true,
-  );
+  await addSent(docs, store, "asha", [
+    { name, bytes: new Uint8Array(await readFile(join(FIXTURES, name))) },
+  ]);
   const id = (await docs.list("asha"))[0]?.files[0]?.id ?? "";
   store.close();
   const made = await makeBackup(home, new Date("2026-10-08T09:14:03Z"));
@@ -195,49 +187,20 @@ describe("restore", () => {
   });
 });
 
-describe("a restore of a backup made while a file waited to be sorted", () => {
-  it("runs nothing by itself: the sort waits for Retry, and the person's waiting message is held", async () => {
-    const home = join(root, "sorting");
+describe("a restore of a backup made while a reply read its files", () => {
+  it("runs nothing by itself: the message being read for and the one waiting come back held", async () => {
+    const home = join(root, "reading");
     await mkdir(home);
     const store = openWritable(databasePath(home));
-    store.db.exec(
-      "INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional'); INSERT INTO chats (id, person_id, created_at) VALUES ('c-asha', 'asha', '2026-10-08T09:00:00Z')",
-    );
-    const name = "sunrise-labs-august.pdf";
-    const docs = documents(store, home);
-    const [documentId = ""] = (
-      await docs.add(
-        "asha",
-        [{ name, bytes: new Uint8Array(await readFile(join(FIXTURES, name))) }],
-        true,
-      )
-    ).added;
-    store.db
-      .prepare(
-        "INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at) VALUES ('job-1', 'asha', 'document_read', ?, 'done', 1, '[1,2]', '2026-10-08T09:00:00Z', '2026-10-08T09:00:00Z')",
-      )
-      .run(documentId);
-    const transcripts = openTranscripts(store);
-    const chat = (await transcripts.chat("asha")) as ChatRow;
-    const queueId = uuid();
-    await transcripts.addEvent(
-      chat,
-      {
-        kind: "document_read",
-        line: "Read sunrise-labs-august.pdf · 2 pages. Rufi AI is sorting it.",
-        ask: "Sort it now.",
-        askId: queueId,
-      },
-      async (trx) => {
-        await sorting(store).ask(
-          trx,
-          { personId: "asha", documentId, jobId: "job-1" },
-          queueId,
-        );
-        return undefined;
-      },
-    );
-    await chatQueue(store).accept(chat, uuid(), "What did it say?");
+    store.db.exec(`
+      INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
+      INSERT INTO chats (id, person_id, created_at) VALUES ('c-asha', 'asha', '2026-10-08T09:00:00Z');
+      INSERT INTO turns (id, person_id, chat_id, model, status, started_at)
+        VALUES ('turn-1', 'asha', 'c-asha', 'gpt-6.1-sol', 'running', '2026-10-08T09:00:00Z');
+      INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, turn_id, created_at, updated_at) VALUES
+        ('q-1', 'asha', 'c-asha', 'person', 'What does it say?', 1, 'handing_over', 'turn-1', '2026-10-08T09:00:00Z', '2026-10-08T09:00:00Z'),
+        ('q-2', 'asha', 'c-asha', 'person', 'And my iron?', 2, 'waiting', NULL, '2026-10-08T09:01:00Z', '2026-10-08T09:01:00Z');
+    `);
     store.close();
     const made = await makeBackup(home, new Date("2026-10-08T09:14:03Z"));
     const target = join(root, "restored");
@@ -247,17 +210,12 @@ describe("a restore of a backup made while a file waited to be sorted", () => {
     const db = new DatabaseSync(databasePath(target), { readOnly: true });
     try {
       expect(
-        db.prepare("SELECT state, error FROM sort_requests").all(),
-      ).toEqual([{ state: "failed", error: null }]);
-      expect(
         db
-          .prepare(
-            "SELECT origin, state, held FROM chat_queue ORDER BY position",
-          )
+          .prepare("SELECT id, state, held FROM chat_queue ORDER BY position")
           .all(),
       ).toEqual([
-        { origin: "rufi", state: "removed", held: null },
-        { origin: "person", state: "waiting", held: "restored" },
+        { id: "q-1", state: "waiting", held: "restored" },
+        { id: "q-2", state: "waiting", held: "restored" },
       ]);
     } finally {
       db.close();

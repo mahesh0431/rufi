@@ -56,7 +56,9 @@ export function drafts(
           chips.map(({ ref }) =>
             ref.type === "record"
               ? { type: ref.type, kind: ref.kind, id: ref.id }
-              : { type: ref.type, id: ref.id },
+              : ref.type === "document" && ref.readAgain === true
+                ? { type: ref.type, id: ref.id, readAgain: true }
+                : { type: ref.type, id: ref.id },
           ),
         ),
         updated_at: now(),

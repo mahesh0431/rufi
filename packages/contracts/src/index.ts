@@ -33,7 +33,12 @@ export const MAX_REFS = 100;
  * added and when sent.
  */
 export const Pointer = Schema.Union([
-  Schema.Struct({ type: Schema.Literal("document"), id: Id }),
+  Schema.Struct({
+    type: Schema.Literal("document"),
+    id: Id,
+    /** Retry: Send reads again the pages its reading couldn't read. */
+    readAgain: Schema.optionalKey(Schema.Literal(true)),
+  }),
   Schema.Struct({ type: Schema.Literal("draft_item"), id: Id }),
   Schema.Struct({ type: Schema.Literal("record"), kind: Line(40), id: Id }),
   Schema.Struct({ type: Schema.Literal("report"), id: Id }),
@@ -56,6 +61,7 @@ export const Ref = Schema.Union([
     type: Schema.Literal("document"),
     id: Id,
     version: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    readAgain: Schema.optionalKey(Schema.Literal(true)),
   }),
   Schema.Struct({
     type: Schema.Literal("draft_item"),
@@ -110,6 +116,11 @@ export const ActivityKind = Schema.Literals([
   "picture",
   /** The AI's progress note, its words as they came: a step, not a reply. */
   "note",
+  /**
+   * Rufi's reader copying one document, before the AI gets the message:
+   * `detail` says how far; its details name the document.
+   */
+  "reading",
   "other",
 ]);
 export type ActivityKind = typeof ActivityKind.Type;
@@ -277,7 +288,9 @@ export const QueueItem = Schema.Struct({
    * that rides with the person's next message), restored (from a backup),
    * failed (the AI refused it; heldText says why), open_failed (the AI's
    * thread didn't open; heldText says why, and the person chooses Try
-   * again or New thread).
+   * again or New thread), reply_ended (its reply ended while Rufi read its
+   * files; it is in the chat already, and its reply's Retry sends it
+   * again; heldText says why).
    */
   held: Schema.NullOr(
     Schema.Literals([
@@ -286,15 +299,16 @@ export const QueueItem = Schema.Struct({
       "restored",
       "failed",
       "open_failed",
+      "reply_ended",
     ]),
   ),
   heldText: Schema.NullOr(Schema.String),
-  /** Which open_failed hold it is: Try again and New thread name it. */
+  /** Which open_failed or reply_ended hold it is: the person's choice names it. */
   holdId: Schema.NullOr(Schema.String),
   /** A message's references, as its chips. */
   refs: Schema.Array(Chip),
-  /** Rufi's request to sort an add: it goes in a reply of its own. */
-  sort: Schema.Boolean,
+  /** A reply_ended message's reply, which shows its Retry. */
+  turnId: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 export type QueueItem = typeof QueueItem.Type;
 
@@ -499,11 +513,15 @@ export const MessageText = Schema.Struct({ text: Message });
 /**
  * A message from the box, sent into the queue or steered into the running
  * reply. `id` is the send's own: the same send again (a retry) finds the
- * message it made and never makes a second one.
+ * message it made and never makes a second one. Its text may be empty when
+ * something is added to it (files sent with no words).
  */
 export const SendMessage = Schema.Struct({
   id: Schema.String.check(Schema.isUUID()),
-  text: Message,
+  text: Schema.String.check(
+    Schema.isTrimmed(),
+    Schema.isMaxLength(MAX_MESSAGE_CHARS),
+  ),
   /** Its chips: what it points at. */
   refs: Schema.optionalKey(Pointers),
 });
@@ -515,6 +533,12 @@ export const SaveDraft = Schema.Struct({
 });
 
 export const ReorderQueue = Schema.Struct({ ids: Schema.Array(Id) });
+
+/**
+ * The person's Retry of a reply that ended while Rufi read its files,
+ * naming the hold they saw.
+ */
+export const RetryReply = Schema.Struct({ hold: Id });
 
 /**
  * The person's choice for a message whose AI thread didn't open, naming

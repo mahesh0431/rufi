@@ -34,7 +34,6 @@ export interface ToolContext {
    * Reads a document's failed pages again, at the person's request: only
    * in Rufi's own chat, in a turn the person started.
    */
-  retryReading?: ((documentId: string) => Promise<number[]>) | undefined;
   /**
    * Sorts an add into documents and writes its drafts (sort_documents):
    * only in Rufi's own chat; in a Rufi-started turn only its request's
