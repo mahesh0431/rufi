@@ -407,7 +407,12 @@ test("a reading that ends, with nothing saved, shows in Needs you on an open Ove
   ]);
   await accessible(page);
 
-  // Read again cleanly with nothing to save, it waits for nothing.
+  // Read again cleanly with nothing to save, it waits for nothing. The
+  // chat steps back to its bar, off the row.
+  await other
+    .getByRole("region", { name: "Chat" })
+    .getByRole("button", { name: "Minimise" })
+    .click();
   await other
     .getByRole("row", { name: /clinic-letter\.heic/ })
     .getByRole("button", { name: "Retry" })

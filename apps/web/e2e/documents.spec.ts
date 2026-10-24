@@ -85,8 +85,10 @@ async function documentsPage(
 }
 
 const chat = (page: Page) => page.getByRole("region", { name: "Chat" });
+/** The chips in the box (a sent message shows its own). */
 const chips = (page: Page) =>
   chat(page)
+    .locator("form")
     .getByRole("list", { name: "Added to this message" })
     .getByRole("listitem");
 const rows = (page: Page) =>
@@ -138,7 +140,7 @@ test("Add opens the chat and the picker; photos become one document in the order
   await dialog.getByRole("button", { name: "Add 2 documents" }).click();
 
   // Chips in the box; the page lists nothing until they are sent.
-  await expect(chips(page)).toHaveText(["IMG_2.jpg", "lipid.pdf"]);
+  await expect(chips(page)).toHaveText(["2 photos", "lipid.pdf"]);
   await expect(page.getByText("No documents yet")).toBeVisible();
   await chat(page).getByRole("button", { name: "Send" }).click();
   await expect(rows(page)).toHaveCount(2);
@@ -306,8 +308,13 @@ test("says a file Rufi AI hasn't sorted yet, with Ask Rufi and no Retry; asking 
   await expect(row.getByRole("button", { name: "Retry" })).toHaveCount(0);
   await accessible(page);
 
+  // The chat steps back to its bar, off the row.
+  await chat(page).getByRole("button", { name: "Minimise" }).click();
   await row.hover();
   await row.getByRole("button", { name: "Ask Rufi" }).click();
+  await chat(page)
+    .getByRole("button", { name: /^Open the chat/ })
+    .click();
   await expect(chips(page)).toHaveText(["sunrise-labs-august.pdf"]);
   await chat(page)
     .getByRole("textbox", { name: "Message to Rufi" })

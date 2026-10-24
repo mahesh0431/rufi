@@ -242,9 +242,10 @@ test("checks a report against its pages: worth a look only, a fix, a fix from an
   );
   await expect(
     chat
+      .locator("form")
       .getByRole("list", { name: "Added to this message" })
       .getByRole("listitem"),
-  ).toHaveText(["sunrise-labs-august.pdf · Read"]);
+  ).toHaveText(["sunrise-labs-august.pdf"]);
   await accessible(page);
   await box.fill("What changed since March?");
 
