@@ -850,10 +850,13 @@ describe("the local API", () => {
       async () =>
         ((await page.api("GET", c.path)).body["turns"] as unknown[]).length > 0,
     );
-    // A retry whose answer was lost: still one message.
-    expect((await page.say(c.path, "hang", "messages", first)).status).toBe(
-      202,
-    );
+    // A retry whose answer was lost, while its reply runs: still one
+    // message, not passed into the reply, and a newer draft stays.
+    await page.api("PUT", c.draft, { text: "A newer draft" });
+    expect(await page.say(c.path, "hang", "messages", first)).toMatchObject({
+      status: 202,
+      body: { draft: { text: "A newer draft" } },
+    });
     // The reply runs: into it, and the box is empty.
     await page.api("PUT", c.draft, { text: "Only the latest" });
     const id = randomUUID();
@@ -863,9 +866,10 @@ describe("the local API", () => {
       status: 202,
       body: { id, draft: { text: "", refs: [] } },
     });
+    await page.api("PUT", c.draft, { text: "Newer still" });
     expect(
-      (await page.say(c.path, "Only the latest", "messages", id)).status,
-    ).toBe(202);
+      await page.say(c.path, "Only the latest", "messages", id),
+    ).toMatchObject({ status: 202, body: { draft: { text: "Newer still" } } });
     await until(async () => (await entries()).length === 2);
     await sleep(200);
     expect(await entries()).toMatchObject([
@@ -874,6 +878,37 @@ describe("the local API", () => {
     ]);
     expect((await page.api("GET", `${c.path}/queue`)).body["items"]).toEqual(
       [],
+    );
+  });
+
+  it("a Stop while a send goes into the reply keeps it out, and the chat stays stopped", async () => {
+    const core = await start({
+      agent: scripted({ slow: ["turn/steer"], slowMs: 600 }),
+    });
+    const page = await session(core);
+    const c = await chat(page);
+    await page.say(c.path, "hang");
+    await until(async () =>
+      (
+        (await page.api("GET", c.path)).body["turns"] as { status: string }[]
+      ).some((turn) => turn.status === "running"),
+    );
+    await page.api("PUT", c.draft, { text: "A fictional follow-up" });
+    const sending = page.say(c.path, "A fictional follow-up");
+    await sleep(200);
+    expect((await page.api("POST", `${c.path}/stop`)).status).toBe(200);
+    expect(await sending).toMatchObject({
+      status: 409,
+      body: { error: "Stopped." },
+    });
+    await sleep(500);
+    const queue = (await page.api("GET", `${c.path}/queue`)).body;
+    expect(queue).toMatchObject({ paused: "stopped", items: [] });
+    expect(
+      (await page.api("GET", c.path)).body["turns"] as { status: string }[],
+    ).toMatchObject([{ status: "interrupted" }]);
+    expect((await page.api("GET", c.draft)).body["text"]).toBe(
+      "A fictional follow-up",
     );
   });
 

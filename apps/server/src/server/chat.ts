@@ -655,12 +655,42 @@ export function chat(deps: ChatDeps) {
   /** The chat's thread, when it is the agent's (no new one is made). */
   const threadOf = (chat: ChatRow) => (current(chat) ? chat.threadId : null);
 
+  /** Takes a message into the queue by its id, which owns the ids. */
+  async function accept(
+    chat: ChatRow,
+    id: string,
+    text: string,
+    refs: readonly Pointer[],
+  ): Promise<void> {
+    try {
+      await queue.accept(chat, id, text, refs);
+    } catch (error) {
+      if (error instanceof QueueRefusal) throw new ChatRefusal(error.message);
+      throw error;
+    }
+    next(chat);
+  }
+
+  /** Whether a reply the person started runs in the chat now. */
+  const personReply = async (chat: ChatRow) => {
+    const threadId = threadOf(chat);
+    const turnId = threadId === null ? undefined : agent.activeTurn(threadId);
+    if (threadId === null || turnId === undefined) return undefined;
+    // The turn is saved as it starts.
+    await saving;
+    return (await transcripts.origin(chat, turnId)) === "person"
+      ? threadId
+      : undefined;
+  };
+
   /**
-   * Passes a message into the reply the person started that runs now, saved
-   * as a steer; false when none runs, it is Rufi's own (it can't save, so
-   * the message waits for a reply of its own), or it ended before the agent
-   * took the message. A message already in the chat by this id was taken: a
-   * retry.
+   * Passes a message by a new id into the reply the person started that
+   * runs now, saved as a steer: "steered". "queue": the queue takes it (an
+   * id it knows, or no such reply runs: Rufi's own reply can't save, so the
+   * message waits for one of its own). When the reply ended before the
+   * agent took the message, it is taken into the queue here ("queued"),
+   * unless Stop came: then nothing is taken. Any other failure is
+   * uncertain, and shown as it is.
    */
   const steer = (
     chat: ChatRow,
@@ -668,16 +698,10 @@ export function chat(deps: ChatDeps) {
     text: string,
     refs: readonly Pointer[],
   ) =>
-    inLane(chat, async (chat) => {
-      if (steers.has(id) || (await transcripts.hasMessage(id))) return true;
-      // TODO: a retry of a message still waiting in the queue, while a
-      // reply runs, goes into that reply too; it shows twice in the chat.
-      const threadId = threadOf(chat);
-      const turnId = threadId === null ? undefined : agent.activeTurn(threadId);
-      if (threadId === null || turnId === undefined) return false;
-      // The turn is saved as it starts.
-      await saving;
-      if ((await transcripts.origin(chat, turnId)) !== "person") return false;
+    inLane(chat, async (chat, signal) => {
+      if (await queue.known(id)) return "queue";
+      const threadId = await personReply(chat);
+      if (threadId === undefined) return "queue";
       let chips: Chip[];
       try {
         chips = await transcripts.chips(chat.personId, refs);
@@ -694,8 +718,10 @@ export function chat(deps: ChatDeps) {
         }));
       } catch (error) {
         steers.delete(id);
-        if (error instanceof NotSent || !agent.running(threadId)) return false;
-        throw error;
+        if (!(error instanceof NotSent)) throw error;
+        if (signal.aborted) throw new Stopped();
+        await accept(chat, id, text, refs);
+        return "queued";
       }
       // In line with the events: the agent may have shown it already.
       const saved = saving.then(() =>
@@ -712,7 +738,7 @@ export function chat(deps: ChatDeps) {
         () => undefined,
       );
       await saved;
-      return true;
+      return "steered";
     });
 
   return {
@@ -722,12 +748,12 @@ export function chat(deps: ChatDeps) {
     models: offered,
 
     /**
-     * Sends a message. While a reply runs, it goes into that reply (saved
-     * as a steer: `steered`), and the box is emptied after. Otherwise it is
-     * taken into the queue by the send's id, and the box emptied, in one
-     * step; it goes to the AI in its turn. The same id again finds the
-     * message it made. Signed out, nothing is taken: the text stays in the
-     * box.
+     * Sends a message. While a reply the person started runs, it goes into
+     * that reply (saved as a steer: `steered`), and the box is emptied after.
+     * Otherwise it is taken into the queue by the send's id, and the box
+     * emptied, in one step; it goes to the AI in its turn. The same id again
+     * finds the message it made, and changes nothing. Signed out, nothing is
+     * taken: the text stays in the box.
      */
     send: async (
       chat: ChatRow,
@@ -736,16 +762,15 @@ export function chat(deps: ChatDeps) {
       refs: readonly Pointer[] = [],
     ) => {
       await mustBeSignedIn();
-      if (await steer(chat, id, text, refs)) return { id, steered: true };
-      try {
-        await queue.accept(chat, id, text, refs);
-      } catch (error) {
-        if (error instanceof QueueRefusal) throw new ChatRefusal(error.message);
-        throw error;
-      }
-      next(chat);
-      return { id, steered: false };
+      // Only a reply running now can take it: the lane decides again.
+      const how =
+        (await personReply(await latest(chat))) === undefined
+          ? "queue"
+          : await steer(chat, id, text, refs);
+      if (how === "queue") await accept(chat, id, text, refs);
+      return { id, steered: how === "steered" };
     },
+
     /**
      * Stops the running reply, or a hand-over getting ready. The pause is
      * stored first, so nothing more goes to the AI until the person sends,
