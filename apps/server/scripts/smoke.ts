@@ -52,7 +52,11 @@ import { agentSetup, startCore, type Core } from "../src/server/core.ts";
 import { FAMILY, familyFiles } from "../tests/fixtures/golden.ts";
 import { textPdf } from "../tests/pack/pdf.ts";
 import { layout, PRESCRIPTION, REPORTS } from "../tests/pack/reports.ts";
-import { copySetFiles, EXPECTED } from "../tests/pack/copy-set.ts";
+import {
+  copySetFiles,
+  EXPECTED,
+  prescriptionFile,
+} from "../tests/pack/copy-set.ts";
 import type { Text } from "../tests/pack/pdf.ts";
 import { subAgentRunner } from "../src/agent/codex/subagent.ts";
 
@@ -490,6 +494,13 @@ const result = (
   `('${id}', 'asha', NULL, 'lab', '${test}', '${value}', ${comparator === null ? "NULL" : `'${comparator}'`}, ${String(Number.parseFloat(value.replace(/[<>]/, "")))}, '${unit}', NULL, NULL, NULL, '${measured}', '${measured}T09:00:00Z', NULL)`;
 const RESULTS = `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id) VALUES `;
 const SEEDS: Record<string, string> = {
+  // Asha told the AI she takes Levothyroxine 25 mcg.
+  prescription_visit: `INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, revision, created_at, updated_at) VALUES
+      ('m-levo', 'asha', 'c-asha', 1, 'message', 'I take Levothyroxine 25 mcg every morning.', 1, '2026-08-01T09:00:00Z', '2026-08-01T09:00:00Z');
+    INSERT INTO medicine_uses (id, person_id, name, strength, schedule, status) VALUES
+      ('med-levo', 'asha', 'Levothyroxine', '25 mcg', 'every morning', 'current');
+    INSERT INTO record_sources (person_id, kind, record_id, type, entry_id) VALUES
+      ('asha', 'medicine_use', 'med-levo', 'message', 'm-levo');`,
   // The August report's results were removed, so it can be deleted.
   deleted_document:
     "UPDATE results SET removed = 1 WHERE report_id = 'rep-asha-aug';",
@@ -754,6 +765,65 @@ function resultsNow(home: string) {
       page: number | null;
     }[],
   }));
+}
+
+/** Asha's visits and medicines as stored now, each with its current sources. */
+function visitRecord(home: string) {
+  const store = openReadOnly(databasePath(home));
+  if (!store) throw new Error("no database");
+  const sources = (kind: string, id: string) =>
+    (
+      store.db
+        .prepare(
+          "SELECT type, document_id, page, visit_id FROM record_sources WHERE kind = ? AND record_id = ? AND removed_by IS NULL ORDER BY rowid",
+        )
+        .all(kind, id) as {
+        type: string;
+        document_id: string | null;
+        page: number | null;
+        visit_id: string | null;
+      }[]
+    )
+      .filter((s) => s.type !== "message")
+      .map((s) =>
+        s.type === "visit"
+          ? { type: s.type, visit: s.visit_id }
+          : { type: s.type, document: s.document_id, page: s.page },
+      );
+  const visits = (
+    store.db
+      .prepare(
+        "SELECT id, setting, date, doctor FROM visits WHERE person_id = 'asha' AND removed = 0 ORDER BY rowid",
+      )
+      .all() as { id: string; setting: string; date: string | null }[]
+  ).map((v) => ({ ...v, sources: sources("visit", v.id) }));
+  const medicines = (
+    store.db
+      .prepare(
+        "SELECT * FROM medicine_uses WHERE person_id = 'asha' AND removed = 0 ORDER BY rowid",
+      )
+      .all() as Record<string, unknown>[]
+  ).map((m) => ({
+    id: String(m["id"]),
+    name: String(m["name"]),
+    status: String(m["status"]),
+    values: JSON.stringify(m),
+    sources: sources("medicine_use", String(m["id"])),
+  }));
+  const cited = store.db
+    .prepare(
+      "SELECT s.kind, s.record_id, s.visit_id FROM record_sources s WHERE s.type = 'visit' AND s.removed_by IS NULL AND NOT EXISTS (SELECT 1 FROM follow_ups f WHERE s.kind = 'follow_up' AND f.id = s.record_id AND f.removed = 1)",
+    )
+    .all() as { kind: string; record_id: string; visit_id: string }[];
+  store.close();
+  return {
+    visits,
+    medicines,
+    medicine: (id: string) => medicines.find((m) => m.id === id),
+    /** The records of a kind that cite the visit now. */
+    citing: (visit: string, kind: string) =>
+      cited.filter((c) => c.visit_id === visit && c.kind === kind),
+  };
 }
 
 /** Asha's follow-ups, as stored now. */
@@ -2065,6 +2135,130 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       },
       snapshot,
       notes: sourcesNote(home),
+    };
+  },
+  /**
+   * The copy set's prescription, sent with Levothyroxine 25 mcg already in
+   * the record: Rufi AI proposes its Visit and asks which medicines Asha
+   * takes, saving nothing; on "only the Levothyroxine" one save makes the
+   * Visit from the page, links it to the Levothyroxine unchanged, adds no
+   * iron and adds follow-ups citing it; "undo that" takes it all back and
+   * leaves the Levothyroxine as it was.
+   */
+  prescription_visit: async (api, home) => {
+    const c = chat(api);
+    const levothyroxine = () => visitRecord(home).medicine("med-levo");
+    const before = levothyroxine();
+    await api.upload([prescriptionFile()]);
+    const [doc] = await sorted(api, home, ["lakeview-aug.pdf"]);
+    const proposed = await c.read();
+    const savedBefore = record(home).saves;
+    await c.say(
+      "I only take the Levothyroxine, not the iron. Save the visit, and add the follow-ups.",
+    );
+    await yesIfAsked(c, home);
+    const saved = visitRecord(home);
+    const visit = saved.visits[0];
+    const levo = saved.medicine("med-levo");
+    const followUps = saved.citing(visit?.id ?? "", "follow_up");
+    const saves = record(home).saves;
+    await c.say("Undo that.");
+    if (record(home).saves === saves) await c.say("Yes, undo it.");
+    const snapshot = await c.read();
+    const undone = visitRecord(home);
+    return {
+      checks: {
+        nothing_saved_with_the_proposal: savedBefore === 0,
+        one_save: saves === 1,
+        one_visit_from_the_page:
+          saved.visits.length === 1 &&
+          visit?.setting === "clinic" &&
+          visit.date === "2026-08-20" &&
+          JSON.stringify(visit.sources) ===
+            JSON.stringify([{ type: "document_page", document: doc, page: 1 }]),
+        levothyroxine_unchanged_and_cites_the_visit:
+          levo?.values === before?.values &&
+          levo?.sources.some(
+            (s) => s.type === "visit" && s.visit === visit?.id,
+          ) === true,
+        no_iron: !saved.medicines.some((m) => /ferrous|iron/i.test(m.name)),
+        follow_ups_cite_the_visit: followUps.length > 0,
+        undo_removes_the_visit: undone.visits.length === 0,
+        undo_removes_its_follow_ups:
+          undone.citing(visit?.id ?? "", "follow_up").length === 0,
+        levothyroxine_as_before_the_visit:
+          JSON.stringify(undone.medicine("med-levo")) ===
+          JSON.stringify(before),
+      },
+      verdicts: [
+        {
+          check: "proposes_the_visit_and_asks",
+          criterion:
+            "In its reply to the prescription, Rufi AI says what it holds, proposes saving it as a visit, says the Levothyroxine is already in Asha's record, and asks whether she takes the medicines before saving any.",
+          evidence: proposed.entries
+            .filter((e) => e.kind === "reply")
+            .map((e) => e.text)
+            .join("\n\n"),
+        },
+      ],
+      snapshot,
+    };
+  },
+  /**
+   * A visit told in the chat, with a medicine the doctor prescribed: Rufi
+   * AI saves it as an online Visit on Asha's yes and saves the medicine as
+   * one she takes only once she says she started it.
+   */
+  visit_in_chat: async (api, home) => {
+    const c = chat(api);
+    const medicinesBefore = visitRecord(home).medicines.length;
+    await c.say(
+      "I had a video call with Dr Rao yesterday about my cough. She said it's a viral infection, prescribed azithromycin 500 mg once a day for 3 days, and told me to rest and drink fluids.",
+    );
+    const first = await c.read();
+    const medicinesFirst = visitRecord(home).medicines.length;
+    await c.say("Yes, save the visit. I haven't started the azithromycin yet.");
+    await yesIfAsked(c, home);
+    const kept = visitRecord(home);
+    const visit = kept.visits[0];
+    const saves = record(home).saves;
+    await c.say("I started the azithromycin this morning. Please save it.");
+    if (record(home).saves === saves) await c.say("Yes, save it.");
+    const snapshot = await c.read();
+    const taking = visitRecord(home).medicines.find((m) =>
+      /azithromycin/i.test(m.name),
+    );
+    const at = new Date();
+    const yesterday = new Date(
+      at.getFullYear(),
+      at.getMonth(),
+      at.getDate() - 1,
+    );
+    return {
+      checks: {
+        no_medicine_before_her_word:
+          medicinesFirst === medicinesBefore &&
+          kept.medicines.length === medicinesBefore,
+        one_online_visit_yesterday:
+          kept.visits.length === 1 &&
+          visit?.setting === "online" &&
+          visit.date ===
+            `${String(yesterday.getFullYear())}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`,
+        the_medicine_once_started_cites_the_visit:
+          taking?.status === "current" &&
+          taking.sources.some(
+            (s) => s.type === "visit" && s.visit === visit?.id,
+          ),
+      },
+      verdicts: [
+        {
+          check: "asks_before_a_medicine",
+          criterion:
+            "Rufi AI proposes saving the call as a visit and asks whether Asha takes the azithromycin, saving no medicine before she says so.",
+          evidence: replyOf(first),
+        },
+      ],
+      snapshot,
     };
   },
   /**
