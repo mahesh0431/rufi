@@ -1064,6 +1064,14 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         ),
         how_present: basis(snapshot).how !== null,
       },
+      verdicts: [
+        {
+          check: "shows_a_chart",
+          criterion:
+            "The reply shows a chart of fasting glucose and HbA1c over the years, as a picture or a page that opens in the chat, made from the records read.",
+          evidence: replyOf(snapshot),
+        },
+      ],
       snapshot,
     };
   },

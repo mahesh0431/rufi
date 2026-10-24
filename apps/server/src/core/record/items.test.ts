@@ -529,17 +529,16 @@ describe("saving draft items", () => {
 
   it("takes the number of a value the user fixed on the document's page from the save, and only for that value", async () => {
     await read();
-    const { HbA1c = "", TSH = "" } = drafts();
-    await draftItems(store, () => undefined).fix(
-      "asha",
-      "doc-asha-aug",
-      HbA1c,
-      {
+    const { HbA1c = "", TSH = "", "LDL cholesterol": LDL = "" } = drafts();
+    const pageFix = (item: string, value: string) =>
+      draftItems(store, () => undefined).fix("asha", "doc-asha-aug", item, {
         version: 1,
-        fields: { value_text: "7,4" },
-      },
-    );
-    await say("Save HbA1c and TSH");
+        fields: { value_text: value },
+      });
+    await pageFix(HbA1c, "7,4");
+    // Then corrected again in the chat: the page fix's number goes with it.
+    await pageFix(LDL, "<4,6");
+    await say("Save them; the LDL actually says Negative");
     const refused = await call("save_changes", {
       items: [
         {
@@ -569,16 +568,29 @@ describe("saving draft items", () => {
           value_number: 7.4,
         },
         { item: TSH, version: 1, as: "new", category: "lab" },
+        {
+          item: LDL,
+          version: 2,
+          as: "new",
+          category: "lab",
+          value_number: 4.6,
+          comparator: "<",
+          fix: { fields: { value: "Negative" } },
+        },
       ],
     });
     expect(saved.ok).toBe(true);
     expect(
       saved.result.changes.map((c) =>
-        one("SELECT value_text, value_number FROM results WHERE id = ?", c.id),
+        one(
+          "SELECT value_text, comparator, value_number FROM results WHERE id = ?",
+          c.id,
+        ),
       ),
     ).toEqual([
-      { value_text: "7,4", value_number: 7.4 },
-      { value_text: "2.1", value_number: 2.1 },
+      { value_text: "7,4", comparator: null, value_number: 7.4 },
+      { value_text: "2.1", comparator: null, value_number: 2.1 },
+      { value_text: "Negative", comparator: null, value_number: null },
     ]);
   });
 

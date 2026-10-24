@@ -97,7 +97,7 @@ export const ItemSave = Schema.Struct({
   value_number: Schema.optionalKey(
     Schema.Finite.annotate({
       description:
-        "Only for an item whose value the user fixed on the document's page (drafted has value_text): their value as a plain number, as you read it ('4,6' is 4.6). Leave it out when it isn't one ('Negative'). Every other item's number comes from the item as stored.",
+        "Only for an item whose value the user fixed on the document's page (drafted has value_text): their value as a plain number, as you read it ('4,6' is 4.6). Leave it out when it isn't one ('Negative'). Every other item's number comes from the item as stored. A value fix in fix.fields replaces it: its number comes only with that fix.",
     }),
   ),
   comparator: Schema.optionalKey(
@@ -458,6 +458,11 @@ export async function planItems(
         continue;
       }
       source = found;
+      // A value corrected in the chat takes only the number given with it.
+      if (save.fix.fields["value"] !== undefined) {
+        columns["comparator"] = null;
+        columns["value_number"] = null;
+      }
       for (const [name, value] of Object.entries(save.fix.fields)) {
         Object.assign(columns, columnsOf(result.fields[name] as Field, value));
       }
