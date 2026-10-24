@@ -397,12 +397,20 @@ export function chatQueue(
         }
       }),
 
-    /** The waiting rows in a new order; `ids` must be all of them. */
+    /**
+     * The waiting rows in a new order; `ids` must be all of them but the
+     * ones held for Retry, which the box shows apart and which keep their
+     * places.
+     */
     reorder: (chat: ChatOf, ids: readonly string[]) =>
       write(chat, async (trx) => {
         const waiting = await rows(trx, chat)
-          .select("id")
+          .select(["id", "position"])
           .where("state", "=", "waiting")
+          .where((eb) =>
+            eb.or([eb("held", "is", null), eb("held", "!=", "reply_ended")]),
+          )
+          .orderBy("position")
           .execute();
         const known = new Set(waiting.map((row) => row.id));
         if (
@@ -415,7 +423,7 @@ export function chatQueue(
         for (const [index, id] of ids.entries()) {
           await trx
             .updateTable("chat_queue")
-            .set({ position: index + 1, updated_at: now() })
+            .set({ position: waiting[index]?.position ?? index + 1, updated_at: now() })
             .where("id", "=", id)
             .execute();
         }

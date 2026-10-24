@@ -373,7 +373,9 @@ describe("the core", () => {
       INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at)
         VALUES ('t-r', 'ravi', 'c-ravi', NULL, NULL, 'gpt-6.1-sol', 'running', '2026-10-04T10:00:00Z');
       INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, sent_as, turn_id, created_at, updated_at) VALUES
-        ('q-r', 'ravi', 'c-ravi', 'person', 'Read this', 1, 'handing_over', NULL, 't-r', '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');`);
+        ('q-r', 'ravi', 'c-ravi', 'person', 'Read this', 1, 'handing_over', NULL, 't-r', '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
+        ('q-r2', 'ravi', 'c-ravi', 'person', 'Second', 2, 'waiting', NULL, NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
+        ('q-r3', 'ravi', 'c-ravi', 'person', 'Third', 3, 'waiting', NULL, NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');`);
     left.close();
     const page = await session(await start());
     await sleep(300);
@@ -431,6 +433,16 @@ describe("the core", () => {
     expect(again?.id).not.toBe("q-1");
 
     const ravi = "/api/people/ravi/chat";
+    // The waiting messages reorder without the one held for Retry, which
+    // the box doesn't show among them.
+    expect(
+      (await page.api("PUT", `${ravi}/queue`, { ids: ["q-r3", "q-r2"] })).body,
+    ).toMatchObject({
+      items: [{ id: "q-r" }, { id: "q-r3" }, { id: "q-r2" }],
+    });
+    for (const id of ["q-r2", "q-r3"]) {
+      await page.api("DELETE", `${ravi}/queue/${id}`);
+    }
     const held = (await page.api("GET", `${ravi}/queue`)).body["items"] as {
       holdId: string;
     }[];
@@ -843,9 +855,19 @@ describe("the local API", () => {
         .exec(`INSERT INTO results (id, person_id, category, test_name, value_text, unit, entered_at) VALUES
         ('res-1', '${c.person}', 'lab', 'HbA1c', '6.8', '%', '2026-10-04T09:00:00Z'),
         ('res-r', 'ravi', 'lab', 'LDL', '162', 'mg/dL', '2026-10-04T09:00:00Z')`);
+      writable.db.exec(`INSERT INTO documents (id, person_id, added_at, added_from, sent_at) VALUES
+        ('doc-1', '${c.person}', '2026-10-04T09:00:00Z', 'chat', '2026-10-04T09:00:00Z')`);
     } finally {
       writable.close();
     }
+    // A Retry chip keeps its mark to read again through a reload.
+    await page.api("PUT", draft, {
+      text: "",
+      refs: [{ type: "document", id: "doc-1", readAgain: true }],
+    });
+    expect((await page.api("GET", draft)).body).toMatchObject({
+      refs: [{ ref: { type: "document", id: "doc-1", readAgain: true } }],
+    });
     const chip = {
       ref: { type: "record", kind: "result", id: "res-1", version: null },
       label: "HbA1c 6.8 %",
