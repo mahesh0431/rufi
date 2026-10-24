@@ -423,7 +423,10 @@ export function chatQueue(
         for (const [index, id] of ids.entries()) {
           await trx
             .updateTable("chat_queue")
-            .set({ position: waiting[index]?.position ?? index + 1, updated_at: now() })
+            .set({
+              position: waiting[index]?.position ?? index + 1,
+              updated_at: now(),
+            })
             .where("id", "=", id)
             .execute();
         }

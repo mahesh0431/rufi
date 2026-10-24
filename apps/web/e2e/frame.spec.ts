@@ -452,7 +452,7 @@ test.describe("first run", () => {
     await expect(page.getByRole("img", { name: "Step 1 of 4" })).toBeVisible();
     await welcoming();
     await expect(page.getByRole("main")).toContainText(
-      "Rufi uses AI. What you ask, the documents you add and the parts of your health record the AI reads go to the AI provider you sign in with. Your health record is kept on your Mac.",
+      "Rufi uses AI. What you ask, the documents you send and the parts of your health record the AI reads go to the AI provider you sign in with. Your health record is kept on your Mac.",
     );
     await accessible(page);
     // The look can be chosen here too, and stays chosen.

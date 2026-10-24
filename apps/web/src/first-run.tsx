@@ -116,7 +116,7 @@ function Welcome() {
   return (
     <Step step="welcome" title="Welcome to Rufi">
       <p>
-        Rufi uses AI. What you ask, the documents you add and the parts of your
+        Rufi uses AI. What you ask, the documents you send and the parts of your
         health record the AI reads go to the AI provider you sign in with. Your
         health record is kept on your Mac.
       </p>
@@ -124,7 +124,7 @@ function Welcome() {
         <Place name="Your Mac">Your health record</Place>
         <ArrowRight size={ICON} className="shrink-0 text-muted" aria-hidden />
         <Place name="The AI provider">
-          What you ask, the documents you add, the parts the AI reads
+          What you ask, the documents you send, the parts the AI reads
         </Place>
       </div>
       <label className="flex items-center gap-2">
