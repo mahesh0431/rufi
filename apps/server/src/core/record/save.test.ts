@@ -1580,7 +1580,12 @@ describe("a visit and the records saved from it", () => {
           status: "current",
         },
       },
-      { kind: "medicine_use", action: "link", id: "med-a2", from: [visit] },
+      {
+        kind: "medicine_use",
+        action: "link",
+        id: "med-a2",
+        from: [visit, { document: "doc-asha-aug", page: 2 }],
+      },
       {
         kind: "medicine_use",
         action: "change",
@@ -1599,14 +1604,15 @@ describe("a visit and the records saved from it", () => {
       },
     ]);
     expect(saved.ok).toBe(true);
-    const [visitId, ironId, , , newDoseId] = saved.body.result.changes.map(
-      (change) => change.id,
-    );
+    const ids = saved.body.result.changes.map((change) => change.id);
+    const [visitId, ironId] = ids;
+    const newDoseId = ids.at(-1);
     expect(lines(saved.body.result.receipt)).toEqual([
       "Saved",
       'Added visit Dr A. Fictional · Lakeview Family Clinic: setting clinic, date 2 Oct 2026 ("02/10/2026"), reason Iron deficiency anaemia, as written **Diagnosis:** Iron deficiency anaemia **Rx** 1. Ferrous sulfate 200 mg once d… · from thyroid recheck.jpg, page 1',
       "Added medicine use Ferrous sulfate 200 mg: current · from visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026",
       "Added a source to medicine use Creatine 5 g: visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026 (its values stay as they are)",
+      "Added a source to medicine use Creatine 5 g: Sunrise Labs August.pdf, page 2 (its values stay as they are)",
       'Changed medicine use Metformin 500 mg: status current → stopped; end not given → 2 Oct 2026 ("02/10/2026") · from Sunrise Labs August.pdf, page 1, visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026',
       "Added medicine use Metformin 1000 mg: current · from visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026",
     ]);
@@ -1615,7 +1621,11 @@ describe("a visit and the records saved from it", () => {
     expect(sourcesOf(visitId ?? "")).toEqual([
       { type: "document_page", page: "doc-asha-sep p1" },
     ]);
-    for (const id of [ironId, "med-a2", newDoseId]) {
+    expect(sourcesOf("med-a2")).toEqual([
+      { type: "visit", visit_id: visitId },
+      { type: "document_page", page: "doc-asha-aug p2" },
+    ]);
+    for (const id of [ironId, newDoseId]) {
       expect(sourcesOf(id ?? "")).toEqual([
         { type: "visit", visit_id: visitId },
       ]);
@@ -1653,11 +1663,12 @@ describe("a visit and the records saved from it", () => {
           status: "current",
         },
       },
+      // One link of two sources is one entry, with both.
       {
         kind: "medicine_use",
         id: "med-a2",
         action: "link",
-        from: [{ visit: visitId }],
+        from: [{ visit: visitId }, { document: "doc-asha-aug", page: 2 }],
       },
       {
         kind: "medicine_use",
@@ -1687,7 +1698,7 @@ describe("a visit and the records saved from it", () => {
           kind: "medicine_use",
           action: "remove_source",
           id: "med-a2",
-          from: [{ visit: visitId }],
+          from: [{ visit: visitId }, { document: "doc-asha-aug", page: 2 }],
         },
         {
           kind: "medicine_use",
@@ -1759,6 +1770,13 @@ describe("a visit and the records saved from it", () => {
         id: "med-a2",
         from: [{ visit: "visit-ravi" }],
       },
+      {
+        kind: "visit",
+        action: "add",
+        ref: "self",
+        from: [{ visit: { ref: "self" } }],
+        fields: { as_written: "A visit citing itself" },
+      },
     ]);
     expect(refused.ok).toBe(false);
     expect(refused.body.issues.map(({ path, fix }) => [path, fix])).toEqual([
@@ -1775,6 +1793,10 @@ describe("a visit and the records saved from it", () => {
         "This document was deleted, so its page can't be a source.",
       ],
       ["changes.2.from.0", "No visit with this id is in this person's record."],
+      [
+        "changes.3.from.0",
+        "No earlier change of this save adds a record with ref self: add the visit first, with that ref.",
+      ],
     ]);
     expect(written()).toEqual(before);
   });

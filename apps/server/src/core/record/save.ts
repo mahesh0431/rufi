@@ -421,7 +421,6 @@ export async function saveChanges(
           "Another change of this save has this ref: give each added record its own.",
         );
       }
-      named.set(change.ref, kind);
     }
     // A fact only from a page or a visit rests on no message: the user's
     // yes isn't a source.
@@ -506,6 +505,8 @@ export async function saveChanges(
 
     const cites =
       change.from === undefined ? [] : await citesOf(at, change.from);
+    // Named only after its own sources: a ref names an earlier change.
+    if (change.ref !== undefined) named.set(change.ref, kind);
     if (!cites) continue;
 
     if (change.action === "link") {
