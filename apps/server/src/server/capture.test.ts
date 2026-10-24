@@ -773,10 +773,10 @@ describe.runIf(process.platform === "darwin")(
             ) as Ran[];
             const by = (cmd: string) => ran.find((r) => r.cmd === cmd);
             for (const cmd of denied) {
-              expect(by(cmd)?.output).toMatch(/Operation not permitted/);
+              expect(by(cmd)?.output).toMatch(/operation not permitted/i);
             }
             for (const write of [named.outside, named.journal]) {
-              expect(by(write)?.output).toMatch(/operation not permitted/);
+              expect(by(write)?.output).toMatch(/operation not permitted/i);
             }
             expect(existsSync(outside)).toBe(false);
             expect(existsSync(journal)).toBe(false);
