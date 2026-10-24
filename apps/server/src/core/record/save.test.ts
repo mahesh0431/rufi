@@ -95,10 +95,14 @@ const rows = (sql: string) => store.db.prepare(sql).all();
 /** A record's current sources, oldest first. */
 const sourcesOf = (id: string) =>
   rows(
-    `SELECT type, coalesce(entry_id, document_id || ' p' || page) AS at FROM record_sources WHERE record_id = '${id}' AND removed_by IS NULL ORDER BY rowid`,
+    `SELECT type, coalesce(entry_id, visit_id, document_id || ' p' || page) AS at FROM record_sources WHERE record_id = '${id}' AND removed_by IS NULL ORDER BY rowid`,
   ).map((source) => {
     const { type, at } = source as { type: string; at: string };
-    return type === "message" ? { type, entry_id: at } : { type, page: at };
+    return type === "message"
+      ? { type, entry_id: at }
+      : type === "visit"
+        ? { type, visit_id: at }
+        : { type, page: at };
   });
 const receipts = () =>
   rows(
@@ -131,6 +135,8 @@ const written = () => ({
   receipts: receipts(),
   medicines: rows("SELECT * FROM medicine_uses ORDER BY id"),
   symptoms: rows("SELECT * FROM symptoms"),
+  visits: rows("SELECT * FROM visits"),
+  sources: rows("SELECT * FROM record_sources ORDER BY rowid"),
   revision: row("chats", chat.id)["revision"],
 });
 
@@ -187,40 +193,38 @@ const KIND_CASES: KindCase[] = [
     removed: ["Saved", "Removed medicine use Magnesium 400 mg"],
   },
   {
-    kind: "prescription",
-    table: "prescriptions",
-    said: "Dr Rao prescribed amoxicillin 500 mg three times a day for 5 days on 2 Oct",
+    kind: "visit",
+    table: "visits",
+    said: "I saw Dr Rao at urgent care yesterday about the cough; she said it's viral, rest and fluids",
     add: {
-      item: "Amoxicillin",
-      strength: "500 mg",
-      schedule: "three times a day",
-      period: "for 5 days",
-      prescriber: "Dr Rao",
-      issued: { date: "2026-10-02", words: "on 2 Oct" },
+      setting: "Urgent care",
+      date: { date: "2026-10-03", words: "yesterday" },
+      doctor: "Dr Rao",
+      reason: "Cough",
+      as_written: "Viral cough. Rest and fluids.",
     },
     stored: {
-      item: "Amoxicillin",
-      strength: "500 mg",
-      schedule: "three times a day",
-      period: "for 5 days",
-      prescriber: "Dr Rao",
-      issued: "2026-10-02",
-      issued_words: "on 2 Oct",
+      setting: "Urgent care",
+      date: "2026-10-03",
+      date_words: "yesterday",
+      doctor: "Dr Rao",
+      reason: "Cough",
+      as_written: "Viral cough. Rest and fluids.",
     },
     added: [
       "Saved",
-      'Added prescription Amoxicillin 500 mg: schedule three times a day, period for 5 days, prescriber Dr Rao, issued 2 Oct 2026 ("on 2 Oct")',
+      'Added visit Dr Rao: setting Urgent care, date 3 Oct 2026 ("yesterday"), reason Cough, as written Viral cough. Rest and fluids.',
     ],
     change: {
-      said: "It was Dr Mehta, not Dr Rao",
-      fields: { prescriber: "Dr Mehta" },
-      stored: { prescriber: "Dr Mehta" },
+      said: "It was at the Lakeview clinic, not urgent care",
+      fields: { setting: "Clinic", place: "Lakeview Family Clinic" },
+      stored: { setting: "Clinic", place: "Lakeview Family Clinic" },
       receipt: [
         "Saved",
-        "Changed prescription Amoxicillin 500 mg: prescriber Dr Rao → Dr Mehta",
+        "Changed visit Dr Rao · Lakeview Family Clinic: setting Urgent care → Clinic; place not given → Lakeview Family Clinic",
       ],
     },
-    removed: ["Saved", "Removed prescription Amoxicillin 500 mg"],
+    removed: ["Saved", "Removed visit Dr Rao · Lakeview Family Clinic"],
   },
   {
     kind: "symptom",
@@ -360,34 +364,34 @@ const KIND_CASES: KindCase[] = [
   {
     kind: "care_event",
     table: "care_events",
-    said: "I have a dentist visit planned on 20 Oct",
+    said: "I have a tooth extraction planned on 20 Oct",
     add: {
-      type: "visit",
-      name: "Dentist",
+      type: "procedure",
+      name: "Tooth extraction",
       status: "planned",
       date: { date: "2026-10-20", words: "on 20 Oct" },
     },
     stored: {
-      type: "visit",
-      name: "Dentist",
+      type: "procedure",
+      name: "Tooth extraction",
       status: "planned",
       date: "2026-10-20",
       date_words: "on 20 Oct",
     },
     added: [
       "Saved",
-      'Added care event Dentist: type visit, planned, date 20 Oct 2026 ("on 20 Oct")',
+      'Added care event Tooth extraction: type procedure, planned, date 20 Oct 2026 ("on 20 Oct")',
     ],
     change: {
-      said: "The dentist visit moved to 22 Oct",
+      said: "The extraction moved to 22 Oct",
       fields: { date: { date: "2026-10-22", words: "22 Oct" } },
       stored: { date: "2026-10-22", date_words: "22 Oct" },
       receipt: [
         "Saved",
-        'Changed care event Dentist: date 20 Oct 2026 ("on 20 Oct") → 22 Oct 2026 ("22 Oct")',
+        'Changed care event Tooth extraction: date 20 Oct 2026 ("on 20 Oct") → 22 Oct 2026 ("22 Oct")',
       ],
     },
-    removed: ["Saved", "Removed care event Dentist"],
+    removed: ["Saved", "Removed care event Tooth extraction"],
   },
   {
     kind: "none_known",
@@ -453,6 +457,7 @@ describe("saving each kind of record", () => {
         c.table === "care_events"
           ? { status: "unknown" }
           : {}),
+        ...(c.table === "visits" ? { setting: "unknown" } : {}),
         ...(c.table === "allergies" || c.table === "conditions"
           ? { status: "unknown", certainty: "unknown" }
           : {}),
@@ -909,20 +914,6 @@ describe("a save", () => {
 });
 
 describe("the health rules", () => {
-  it("never makes a medicine use from a prescription", async () => {
-    await say("Dr Rao prescribed amoxicillin");
-    const medicines = rows("SELECT * FROM medicine_uses");
-    await save([
-      {
-        kind: "prescription",
-        action: "add",
-        fields: { item: "Amoxicillin", prescriber: "Dr Rao" },
-      },
-    ]);
-    expect(rows("SELECT * FROM prescriptions")).toHaveLength(1);
-    expect(rows("SELECT * FROM medicine_uses")).toEqual(medicines);
-  });
-
   it("stops only the use it names when two uses of one medicine coexist", async () => {
     await say("I also take metformin 500 mg at night");
     const night = await save([
@@ -1533,6 +1524,281 @@ describe("the AI's view of the record", () => {
         ],
       },
     ]);
+  });
+});
+
+describe("a visit and the records saved from it", () => {
+  /** The AI's view of the record, as get_overview gives it. */
+  const overview = async () =>
+    (
+      JSON.parse(
+        (
+          await forAgent(
+            () => ({ store: reader, personId: "asha" }),
+            () => undefined,
+          ).forTurn()("get_overview", {})
+        ).text,
+      ) as {
+        result: { latest_saves: { changes: Record<string, unknown>[] }[] };
+      }
+    ).result;
+
+  it("saves a visit from its page and the records citing it in one save, and the reverse saves set every record back", async () => {
+    // The metformin already rests on a page, which the save names again.
+    store.db.exec(
+      "INSERT INTO record_sources (person_id, kind, record_id, type, document_id, page) VALUES ('asha', 'medicine_use', 'med-a1', 'document_page', 'doc-asha-aug', 1)",
+    );
+    const metformin = row("medicine_uses", "med-a1");
+    const creatine = row("medicine_uses", "med-a2");
+    await say(
+      "Yes: I take the iron now, the metformin goes up to 1000 mg, and I keep the creatine",
+    );
+    const visit = { visit: { ref: "v1" } };
+    const saved = await save([
+      {
+        kind: "visit",
+        action: "add",
+        ref: "v1",
+        from: [{ document: "doc-asha-sep", page: 1 }],
+        fields: {
+          setting: "Clinic",
+          date: { date: "2026-10-02", words: "02/10/2026" },
+          doctor: "Dr A. Fictional",
+          place: "Lakeview Family Clinic",
+          reason: "Iron deficiency anaemia",
+          as_written:
+            "**Diagnosis:** Iron deficiency anaemia\n\n**Rx**\n1. Ferrous sulfate 200 mg once daily\n2. Metformin 1000 mg twice a day\n3. Creatine, continue",
+        },
+      },
+      {
+        kind: "medicine_use",
+        action: "add",
+        from: [visit],
+        fields: {
+          name: "Ferrous sulfate",
+          strength: "200 mg",
+          status: "current",
+        },
+      },
+      {
+        kind: "medicine_use",
+        action: "link",
+        id: "med-a2",
+        from: [visit, { document: "doc-asha-aug", page: 2 }],
+      },
+      {
+        kind: "medicine_use",
+        action: "change",
+        id: "med-a1",
+        from: [{ document: "doc-asha-aug", page: 1 }, visit],
+        fields: {
+          status: "stopped",
+          ended: { date: "2026-10-02", words: "02/10/2026" },
+        },
+      },
+      {
+        kind: "medicine_use",
+        action: "add",
+        from: [visit],
+        fields: { name: "Metformin", strength: "1000 mg", status: "current" },
+      },
+    ]);
+    expect(saved.ok).toBe(true);
+    const ids = saved.body.result.changes.map((change) => change.id);
+    const [visitId, ironId] = ids;
+    const newDoseId = ids.at(-1);
+    expect(lines(saved.body.result.receipt)).toEqual([
+      "Saved",
+      'Added visit Dr A. Fictional · Lakeview Family Clinic: setting Clinic, date 2 Oct 2026 ("02/10/2026"), reason Iron deficiency anaemia, as written **Diagnosis:** Iron deficiency anaemia **Rx** 1. Ferrous sulfate 200 mg once d… · from thyroid recheck.jpg, page 1',
+      "Added medicine use Ferrous sulfate 200 mg: current · from visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026",
+      "Added a source to medicine use Creatine 5 g: visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026 (its values stay as they are)",
+      "Added a source to medicine use Creatine 5 g: Sunrise Labs August.pdf, page 2 (its values stay as they are)",
+      'Changed medicine use Metformin 500 mg: status current → stopped; end not given → 2 Oct 2026 ("02/10/2026") · from Sunrise Labs August.pdf, page 1, visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026',
+      "Added medicine use Metformin 1000 mg: current · from visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026",
+    ]);
+    // The visit rests on its page; the records from it on the visit. The
+    // yes is no source of either.
+    expect(sourcesOf(visitId ?? "")).toEqual([
+      { type: "document_page", page: "doc-asha-sep p1" },
+    ]);
+    expect(sourcesOf("med-a2")).toEqual([
+      { type: "visit", visit_id: visitId },
+      { type: "document_page", page: "doc-asha-aug p2" },
+    ]);
+    for (const id of [ironId, newDoseId]) {
+      expect(sourcesOf(id ?? "")).toEqual([
+        { type: "visit", visit_id: visitId },
+      ]);
+    }
+    expect(sourcesOf("med-a1")).toEqual([
+      { type: "document_page", page: "doc-asha-aug p1" },
+      { type: "visit", visit_id: visitId },
+    ]);
+    expect(row("medicine_uses", "med-a2")).toEqual(creatine);
+
+    // "Undo that": the AI saves the reverse of what latest saves show.
+    const [latest] = (await overview()).latest_saves;
+    expect(latest?.changes).toEqual([
+      {
+        kind: "visit",
+        id: visitId,
+        action: "add",
+        fields: {
+          setting: "Clinic",
+          date: { date: "2026-10-02", words: "02/10/2026" },
+          doctor: "Dr A. Fictional",
+          place: "Lakeview Family Clinic",
+          reason: "Iron deficiency anaemia",
+          as_written:
+            "**Diagnosis:** Iron deficiency anaemia\n\n**Rx**\n1. Ferrous sulfate 200 mg once daily\n2. Metformin 1000 mg twice a day\n3. Creatine, continue",
+        },
+      },
+      {
+        kind: "medicine_use",
+        id: ironId,
+        action: "add",
+        fields: {
+          name: "Ferrous sulfate",
+          strength: "200 mg",
+          status: "current",
+        },
+      },
+      // One link of two sources is one entry, with both.
+      {
+        kind: "medicine_use",
+        id: "med-a2",
+        action: "link",
+        from: [{ visit: visitId }, { document: "doc-asha-aug", page: 2 }],
+      },
+      {
+        kind: "medicine_use",
+        id: "med-a1",
+        action: "change",
+        from: [{ visit: visitId }],
+        before: { status: "current" },
+        after: {
+          status: "stopped",
+          ended: { date: "2026-10-02", words: "02/10/2026" },
+        },
+      },
+      {
+        kind: "medicine_use",
+        id: newDoseId,
+        action: "add",
+        fields: { name: "Metformin", strength: "1000 mg", status: "current" },
+      },
+    ]);
+    const undo = await say("Undo that");
+    const back = await save(
+      [
+        { kind: "visit", action: "remove", id: visitId },
+        { kind: "medicine_use", action: "remove", id: ironId },
+        { kind: "medicine_use", action: "remove", id: newDoseId },
+        {
+          kind: "medicine_use",
+          action: "remove_source",
+          id: "med-a2",
+          from: [{ visit: visitId }, { document: "doc-asha-aug", page: 2 }],
+        },
+        {
+          kind: "medicine_use",
+          action: "change",
+          id: "med-a1",
+          fields: { status: "current", ended: null },
+        },
+      ],
+      "call-2",
+    );
+    expect(back.ok).toBe(true);
+    // One save changes a record once: the old dose's source comes off next.
+    const off = await save(
+      [
+        {
+          kind: "medicine_use",
+          action: "remove_source",
+          id: "med-a1",
+          from: [{ visit: visitId }],
+        },
+      ],
+      "call-3",
+    );
+    expect(off.ok).toBe(true);
+    expect(row("medicine_uses", "med-a1")).toEqual(metformin);
+    expect(row("medicine_uses", "med-a2")).toEqual(creatine);
+    for (const [table, id] of [
+      ["visits", visitId],
+      ["medicine_uses", ironId],
+      ["medicine_uses", newDoseId],
+    ]) {
+      expect(row(table ?? "", id ?? "")["removed"]).toBe(1);
+    }
+    expect(sourcesOf("med-a2")).toEqual([]);
+    // The change back rests on the user's "undo that".
+    expect(sourcesOf("med-a1")).toEqual([
+      { type: "document_page", page: "doc-asha-aug p1" },
+      { type: "message", entry_id: undo },
+    ]);
+  });
+
+  it("refuses a source that isn't this person's live page or visit, or a ref no earlier change adds, and saves nothing", async () => {
+    store.db.exec(`
+      INSERT INTO visits (id, person_id, as_written) VALUES ('visit-ravi', 'ravi', 'Checkup');
+      UPDATE documents SET deleted_at = '2026-10-03T09:00:00Z' WHERE id = 'doc-asha-aug';
+    `);
+    await say("Save the visit and the iron");
+    const before = written();
+    const refused = await save([
+      {
+        kind: "medicine_use",
+        action: "add",
+        from: [{ visit: { ref: "v1" } }],
+        fields: { name: "Ferrous sulfate" },
+      },
+      {
+        kind: "visit",
+        action: "add",
+        ref: "v1",
+        from: [
+          { document: "doc-ravi-jul", page: 1 },
+          { document: "doc-asha-aug", page: 1 },
+        ],
+        fields: { as_written: "Ferrous sulfate 200 mg" },
+      },
+      {
+        kind: "medicine_use",
+        action: "link",
+        id: "med-a2",
+        from: [{ visit: "visit-ravi" }],
+      },
+      {
+        kind: "visit",
+        action: "add",
+        ref: "self",
+        from: [{ visit: { ref: "self" } }],
+        fields: { as_written: "A visit citing itself" },
+      },
+    ]);
+    expect(refused.ok).toBe(false);
+    expect(refused.body.issues.map(({ path, fix }) => [path, fix])).toEqual([
+      [
+        "changes.0.from.0",
+        "No earlier change of this save adds a record with ref v1: add the visit first, with that ref.",
+      ],
+      [
+        "changes.1.from.0",
+        "No page of this person's documents is at this document and page: read them with get_documents.",
+      ],
+      [
+        "changes.1.from.1",
+        "This document was deleted, so its page can't be a source.",
+      ],
+      ["changes.2.from.0", "No visit with this id is in this person's record."],
+      [
+        "changes.3.from.0",
+        "No earlier change of this save adds a record with ref self: add the visit first, with that ref.",
+      ],
+    ]);
+    expect(written()).toEqual(before);
   });
 });
 

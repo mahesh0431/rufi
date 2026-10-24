@@ -95,7 +95,8 @@ export async function currentRecords(store: Store, personId: string) {
     record[kind.name] = {
       items: rows.slice(0, RECORDS_SHOWN).map((row) => ({
         id: row["id"],
-        ...fieldsOf(kind, row),
+        // A visit's words can be pages long: get_records gives them.
+        ...fieldsOf(kind, row, (name) => name !== "as_written"),
         ...(typeof row["asserted"] === "string" && {
           asserted: row["asserted"],
         }),
@@ -127,28 +128,76 @@ export async function recentSaves(store: Store, personId: string) {
       .where("operation_id", "=", save.id)
       .orderBy("seq")
       .execute();
+    // The pages and Visits the save added to its records or took off them:
+    // what its reverse takes off or links again.
+    const sources = await store.query
+      .selectFrom("record_sources")
+      .select([
+        "kind",
+        "record_id",
+        "document_id",
+        "page",
+        "visit_id",
+        "removed_by",
+      ])
+      .where("person_id", "=", personId)
+      .where("type", "!=", "message")
+      .where((eb) =>
+        eb.or([
+          eb("operation_id", "=", save.id),
+          eb("removed_by", "=", save.id),
+        ]),
+      )
+      .orderBy(sql.ref("rowid"))
+      .execute();
     shown.push({
       at: save.created_at,
       receipt: save.text,
-      changes: changes.map((change) => {
-        const kind = kindNamed(change.kind) as Kind;
-        const after = JSON.parse(change.after) as Row;
-        const before =
-          change.before === null
-            ? undefined
-            : (JSON.parse(change.before) as Row);
-        const base = {
-          kind: change.kind,
-          id: change.record_id,
-          action: change.action,
-        };
-        if (change.action !== "change" || !before) {
-          return change.action === "add"
-            ? { ...base, fields: fieldsOf(kind, after) }
-            : base;
-        }
-        return { ...base, ...changed(kind, before, after) };
-      }),
+      // One link or remove_source of several sources is a history row for
+      // each: shown once, with them all.
+      changes: changes
+        .filter(
+          (change, i) =>
+            (change.action !== "link" && change.action !== "unlink") ||
+            changes.findIndex(
+              (other) =>
+                other.kind === change.kind &&
+                other.record_id === change.record_id &&
+                other.action === change.action,
+            ) === i,
+        )
+        .map((change) => {
+          const kind = kindNamed(change.kind) as Kind;
+          const after = JSON.parse(change.after) as Row;
+          const before =
+            change.before === null
+              ? undefined
+              : (JSON.parse(change.before) as Row);
+          const from = sources
+            .filter(
+              (s) =>
+                s.kind === change.kind &&
+                s.record_id === change.record_id &&
+                (s.removed_by === save.id) === (change.action === "unlink"),
+            )
+            .map((s) =>
+              s.visit_id === null
+                ? { document: s.document_id, page: s.page }
+                : { visit: s.visit_id },
+            );
+          const base = {
+            kind: change.kind,
+            id: change.record_id,
+            action: change.action,
+            ...(from.length > 0 && change.action !== "add" && { from }),
+          };
+          if (change.action !== "change" || !before) {
+            return change.action === "add"
+              ? { ...base, fields: fieldsOf(kind, after) }
+              : base;
+          }
+          return { ...base, ...changed(kind, before, after) };
+        }),
     });
   }
   return shown;

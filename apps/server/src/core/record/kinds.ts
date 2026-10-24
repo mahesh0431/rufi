@@ -9,6 +9,8 @@ const Text = (max: number) =>
   Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(max));
 const Short = Text(200).annotate({ identifier: "Text" });
 const Long = Text(1_000).annotate({ identifier: "LongText" });
+/** The longest words as written a Visit keeps: a discharge summary's pages. */
+const AS_WRITTEN_MAX = 30_000;
 
 /** A date as the user said it: the date the AI worked out, and their words. */
 const DateSaid = Schema.Struct({
@@ -116,6 +118,29 @@ const required = (field: Field): Field => ({ ...field, required: true });
 const join = (...parts: unknown[]) =>
   parts.filter((part) => typeof part === "string" && part !== "").join(" ");
 
+/** A visit's name: its doctor and place, else its reason, else its words' start. */
+function visitLabel(row: Row): string {
+  const named = [row["doctor"], row["place"]]
+    .filter((part) => typeof part === "string" && part !== "")
+    .join(" · ");
+  if (named !== "") return named;
+  if (typeof row["reason"] === "string") return row["reason"];
+  const written = row["as_written"];
+  const words = (typeof written === "string" ? written : "")
+    .replace(/[#*_>`]/g, "")
+    .trim()
+    .split("\n")[0];
+  return words === undefined || words === "" ? "visit" : words.slice(0, 60);
+}
+
+/** A Visit as a source names it: its doctor and place, and its date. */
+export function visitWords(row: Row): string {
+  const date = row["date"];
+  return [visitLabel(row), typeof date === "string" && shownDate(date)]
+    .filter((part) => typeof part === "string")
+    .join(" · ");
+}
+
 export const KINDS: readonly Kind[] = [
   {
     name: "medicine_use",
@@ -141,24 +166,6 @@ export const KINDS: readonly Kind[] = [
     label: (row) => join(row["name"], row["strength"]),
     inLabel: ["name", "strength"],
     dated: "started",
-  },
-  {
-    name: "prescription",
-    table: "prescriptions",
-    noun: "prescription",
-    fields: {
-      item: required(text("item")),
-      strength: text("strength"),
-      amount: text("amount"),
-      route: text("route"),
-      schedule: text("schedule"),
-      period: text("period"),
-      prescriber: text("prescriber"),
-      issued: date("issued", "issued"),
-    },
-    label: (row) => join(row["item"], row["strength"]),
-    inLabel: ["item", "strength"],
-    dated: "issued",
   },
   {
     name: "symptom",
@@ -251,11 +258,45 @@ export const KINDS: readonly Kind[] = [
     dated: "measured",
   },
   {
+    // A visit that happened, with the doctor's words as written; the
+    // records saved from it cite it (docs/adr/0021).
+    name: "visit",
+    table: "visits",
+    noun: "visit",
+    fields: {
+      setting: {
+        ...text("setting"),
+        notNull: true,
+        input: Short.annotate({
+          description:
+            "The kind of visit, as short free text in the user's words, shown as written. For a stay, date is the admission and ended the discharge.",
+        }),
+      },
+      date: date("date", "date"),
+      ended: date("ended", "discharged"),
+      doctor: text("doctor"),
+      place: text("place"),
+      reason: text("reason"),
+      as_written: required({
+        column: "as_written",
+        shown: "as written",
+        input: Text(AS_WRITTEN_MAX).annotate({
+          description:
+            "The doctor's words as written, in Markdown with the paper's own headings (findings, diagnosis, medicines, advice, tests, when to come back); for a visit told in the chat, the user's words.",
+        }),
+        type: "value",
+      }),
+    },
+    label: visitLabel,
+    inLabel: ["doctor", "place"],
+    dated: "date",
+  },
+  {
     name: "care_event",
     table: "care_events",
     noun: "care event",
     fields: {
-      type: required(choice("type", ["visit", "procedure", "immunisation"])),
+      type: required(choice("type", ["procedure", "immunisation"])),
       name: required(text("name")),
       status: state("status", ["planned", "done", "not_done", "unknown"]),
       date: date("date", "date"),
@@ -299,7 +340,7 @@ export const KINDS: readonly Kind[] = [
         input: Schema.Struct({
           kind: Schema.Literals([
             "medicine_use",
-            "prescription",
+            "visit",
             "symptom",
             "condition",
             "allergy",

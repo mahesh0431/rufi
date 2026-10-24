@@ -255,7 +255,7 @@ function tileLines(tile: Tile): string[] {
       return [
         `${String(tile.now ?? 0)} active${names === "" ? "" : `: ${names}`}`,
       ];
-    case "prescription":
+    case "visit":
     case "symptom":
     case "care_event":
       return latest

@@ -167,8 +167,10 @@ record, your chat, your documents and Rufi's settings, as Rufi stored it.
   \`category\` column says which each one is: \`lab\` (on Lab results) or
   \`measurement\` (on Measurements). Results saved before Rufi had
   categories count as \`lab\`.
-- \`record_sources\`: where each record came from: your message, or a page
-  of a document.
+- \`visits\`: your visits to a doctor, each with the doctor's words as
+  written (\`as_written\`, Markdown).
+- \`record_sources\`: where each record came from: your message, a page of
+  a document, or a visit.
 
 Dates and times are as Rufi stored them: ISO 8601, times in UTC; a date you
 gave in your own words keeps those words next to it.

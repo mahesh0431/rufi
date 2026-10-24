@@ -156,8 +156,17 @@ const notes = () =>
 
 describe("a document with saved results", () => {
   it("lists each one not removed, a replaced one too; a delete with no choice changes nothing; Delete file keeps them, and the AI hears at once they stay", async () => {
-    // CRP was removed before: it isn't listed.
-    store.db.exec("UPDATE results SET removed = 1 WHERE id = 'res-a3'");
+    // CRP was removed before: it isn't listed. The paper was also saved as
+    // a visit, and the creatine was saved from that visit: the list has the
+    // visit, not the creatine, and Delete file keeps both.
+    store.db.exec(`
+      UPDATE results SET removed = 1 WHERE id = 'res-a3';
+      INSERT INTO visits (id, person_id, setting, date, doctor, place, as_written) VALUES
+        ('visit-aug', 'asha', 'clinic', '2026-08-12', 'Dr Rao', 'Lakeview Family Clinic', 'Creatine 5 g every morning');
+      INSERT INTO record_sources (person_id, kind, record_id, type, document_id, page, visit_id) VALUES
+        ('asha', 'visit', 'visit-aug', 'document_page', '${AUG}', 1, NULL),
+        ('asha', 'medicine_use', 'med-a2', 'visit', NULL, NULL, 'visit-aug');
+    `);
     const remover = deleting();
 
     const preview = await remover.preview("asha", AUG);
@@ -184,6 +193,13 @@ describe("a document with saved results", () => {
         date: "12 Aug 2026",
         replaced: true,
       },
+      {
+        kind: "visit",
+        id: "visit-aug",
+        label: "Dr Rao · Lakeview Family Clinic",
+        date: "12 Aug 2026",
+        replaced: false,
+      },
     ]);
     const before = rows("SELECT * FROM documents");
     await expect(
@@ -205,6 +221,22 @@ describe("a document with saved results", () => {
       "res-a1",
     );
     expect(kept?.removed).toBe(false);
+    const creatine = await recordViews(reader, () => new Date(NOW)).detail(
+      "asha",
+      "medicine_use",
+      "med-a2",
+    );
+    expect([creatine?.removed, creatine?.sources]).toEqual([
+      false,
+      [
+        {
+          type: "visit",
+          visit: "visit-aug",
+          label: "Dr Rao · Lakeview Family Clinic · 12 Aug 2026",
+          removed: false,
+        },
+      ],
+    ]);
     expect(kept?.sources).toEqual([
       {
         type: "document",
@@ -223,6 +255,7 @@ describe("a document with saved results", () => {
 - result res-a1: HbA1c 6.8 %, 12 Aug 2026
 - result res-a2: Glucose 118 mg/dL, 12 Aug 2026
 - result res-a4: TSH 2.1 mIU/L, 12 Aug 2026 (replaced by an amendment)
+- visit visit-aug: Dr Rao · Lakeview Family Clinic, 12 Aug 2026
 `,
         ) as unknown,
       },
@@ -267,7 +300,7 @@ describe("a document with saved results", () => {
         kind: "result",
         action: "remove_source",
         id: "res-a7",
-        from: { document: AUG, page: 2 },
+        from: [{ document: AUG, page: 2 }],
       },
     ]);
     await save(

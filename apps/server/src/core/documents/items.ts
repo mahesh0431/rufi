@@ -14,6 +14,7 @@ import {
   type FixItem,
 } from "@rufi/contracts/documents";
 import type { Store } from "../store/database.ts";
+import { visitWords } from "../record/kinds.ts";
 import { Refusal } from "../tools/registry.ts";
 import type { Checks } from "./notebook.ts";
 import { pagesOf } from "./sorting.ts";
@@ -156,6 +157,26 @@ export function draftItems(
               : null,
         })),
         items: items.map((item) => itemOf(item, copied)),
+        // Saved as: each visit that cites one of its pages now. A list of
+        // links, not a sign the paper is done.
+        savedAs: (
+          await db
+            .selectFrom("record_sources as s")
+            .innerJoin("visits as v", (join) =>
+              join
+                .onRef("v.person_id", "=", "s.person_id")
+                .onRef("v.id", "=", "s.record_id"),
+            )
+            .selectAll("v")
+            .distinct()
+            .where("s.person_id", "=", personId)
+            .where("s.kind", "=", "visit")
+            .where("s.document_id", "=", documentId)
+            .where("s.removed_by", "is", null)
+            .where("v.removed", "=", 0)
+            .orderBy("v.date", "desc")
+            .execute()
+        ).map((visit) => ({ id: visit.id, label: visitWords(visit) })),
       };
     },
 

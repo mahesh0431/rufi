@@ -243,7 +243,7 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
         expect(save).toContain(`kind: "${kind}";`);
       }
       expect(save).toContain(
-        'action: "add" | "change" | "remove" | "restore" | "remove_source";',
+        'action: "add" | "change" | "remove" | "restore" | "link" | "remove_source";',
       );
       expect(save).toContain('as: "new" | "another_source" | "correction";');
       // Required stays required, and every field keeps its type: none is left

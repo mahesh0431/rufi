@@ -699,7 +699,7 @@ describe("saving draft items", () => {
           kind: "result",
           action: "remove_source",
           id: "res-typed",
-          from: { document: "doc-asha-aug", page: 1 },
+          from: [{ document: "doc-asha-aug", page: 1 }],
         },
       ],
     });
@@ -767,7 +767,7 @@ describe("saving draft items", () => {
         kind: "result",
         action: "remove_source",
         id,
-        from: { document: "doc-asha-aug", page: 2 },
+        from: [{ document: "doc-asha-aug", page: 2 }],
       },
       { kind: "result", action: "remove", id },
     ]) {

@@ -17,7 +17,7 @@ _Avoid_: patient, profile, member
 ## The record
 
 **Record**:
-Everything Rufi holds as true about one person: what the user said yes to in the chat, and what came from their documents. Each record (a medicine use, prescription, symptom, condition, allergy, result, care event, "none known" statement or follow-up) keeps its source and its history; removing one takes it out of the current record and keeps its history.
+Everything Rufi holds as true about one person: what the user said yes to in the chat, and what came from their documents. Each record (a medicine use, visit, symptom, condition, allergy, result, care event, "none known" statement or follow-up) keeps its source and its history; removing one takes it out of the current record and keeps its history.
 _Avoid_: chart, file, history
 
 **Health record**:
@@ -76,8 +76,20 @@ _Avoid_: normalised, cleaned
 A result the lab issued again, replacing an earlier version; its value or any other reported detail may differ, and the earlier version is kept.
 _Avoid_: corrected, updated, overwritten
 
+**Medicine use**:
+One medicine or supplement the person takes or took, in one way (a morning and a night dose are two), with its status: taking now, paused, stopped or completed. It becomes one only on the person's word; a medicine a doctor proposed is in the visit's words until then. The **Medicines** page.
+_Avoid_: prescription (that is a paper), medication list, drug
+
+**Visit**:
+One care event that happened, with its kind in the person's words, such as a clinic, dental or lab visit, a phone call or a stay in hospital (admitted and discharged). It keeps the doctor's words as written, the medicines proposed included, and its paper's page as its source; the records saved from it cite it. A visit to come is a follow-up. A **prescription** is a kind of document: the paper from a visit, not a record of its own.
+_Avoid_: consultation, encounter, appointment
+
+**Care event**:
+A procedure or an immunisation, planned or done. A visit to a doctor is a **visit**.
+_Avoid_: event, intervention
+
 **Source**:
-Where a saved record came from: the user's own message in the chat, or a document and its page. A message source is the user's message with the facts the record came from, never their "yes" alone and never words the AI quotes: the AI names an earlier message by its place in the chat, and with none named it is the user's message in that turn. A record can have several, such as a result the user told the AI and then added in a lab report; the same result from another copy is another source, not another result. Undo of another source takes only that source off. A date keeps the words it came from ("last Monday"), which count from when the source message was sent.
+Where a saved record came from: the user's own message in the chat, a document and its page, or a visit (a record saved from a visit cites the visit; the visit cites its paper's page). A message source is the user's message with the facts the record came from, never their "yes" alone and never words the AI quotes: the AI names an earlier message by its place in the chat, and with none named it is the user's message in that turn. A record can have several, such as a result the user told the AI and then added in a lab report; the same result from another copy is another source, not another result. Undo of another source takes only that source off. A date keeps the words it came from ("last Monday"), which count from when the source message was sent.
 _Avoid_: origin, provenance, attachment
 
 ## Changes
@@ -316,7 +328,8 @@ _Avoid_: download, dump
 - **You** keep the **records** of one or more **people**.
 - A **document** can hold **reports**; a **report** has **results**. A **result** can also be typed in without a report.
 - A **reading** of a **document** makes **page copies**; its end is a **Rufi event** in the person's **chat** that asks Rufi AI for its **sorting**, which makes **documents** and their **draft items**; they become **results** only when you save them.
-- A **save** changes one **person**'s **records**, rests on their messages or **documents**' pages as its **sources**, and gives one **receipt**; an **undo** is a new save.
+- A **save** changes one **person**'s **records**, rests on their messages, **documents**' pages or **visits** as its **sources**, and gives one **receipt**; an **undo** is a new save.
+- A **visit** rests on its paper's page; the **records** saved from it (a **medicine use**, a condition, a **follow-up**) cite it, and one record can cite several visits.
 - A message's **chips** point at the person's **results**, **documents** or **draft items**; "save it" with a document's chip saves its **draft items** as **results**.
 - A **person** has one **chat**, made with them; it can produce **saves**, **follow-ups** and **research entries**.
 - A **chat** has one **queue**: your messages and the notes of **Rufi events** wait there for the AI.

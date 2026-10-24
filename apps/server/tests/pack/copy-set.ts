@@ -373,6 +373,12 @@ const SMUDGE: Ink[] = [
   { smudge: [SUNRISE.current + 1.5 * DIGIT * 10, GLUCOSE_Y - 3.6, 6.5] },
 ];
 
+/** mixed.pdf's prescription as a file of its own, as a person adds it. */
+export const prescriptionFile = (): NewFile => ({
+  name: "lakeview-aug.pdf",
+  bytes: mixedPdf([prescription()]),
+});
+
 /** The set's two files, as a person adds them. */
 export async function copySetFiles(): Promise<{
   mixed: NewFile;

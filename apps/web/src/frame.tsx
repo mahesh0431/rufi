@@ -14,7 +14,6 @@ import {
   Activity,
   CalendarClock,
   CircleHelp,
-  ClipboardList,
   FileText,
   FlaskConical,
   HeartPulse,
@@ -25,6 +24,7 @@ import {
   Settings,
   ShieldAlert,
   Stethoscope,
+  Syringe,
 } from "lucide-react";
 import type { Person } from "@rufi/contracts";
 import { type ReactNode, useEffect } from "react";
@@ -55,6 +55,10 @@ const isChatPage = (pathname: string) =>
 const isBriefPage = (pathname: string) =>
   /^\/people\/[^/]+\/briefs\/[^/]+$/.test(pathname);
 
+/** Whether the address is one of a person's visits. */
+const isVisitPage = (pathname: string) =>
+  /^\/people\/[^/]+\/visits\/[^/]+$/.test(pathname);
+
 /** The kind of a person's record page at the address, if it is one. */
 const recordKind = (pathname: string) => {
   const kind = /^\/people\/[^/]+\/record\/([^/]+)$/.exec(pathname)?.[1];
@@ -84,7 +88,8 @@ const hasBar = (pathname: string) =>
   recordKind(pathname) !== undefined ||
   isFollowUpsPage(pathname) ||
   isDocumentsPage(pathname) ||
-  isBriefPage(pathname);
+  isBriefPage(pathname) ||
+  isVisitPage(pathname);
 
 export function Frame() {
   useAppearance();
@@ -206,7 +211,9 @@ export function Frame() {
                     ? "Documents"
                     : isBriefPage(pathname)
                       ? "Visit brief"
-                      : (TITLES[pathname.split("/")[1] ?? ""] ?? "Overview")}
+                      : isVisitPage(pathname)
+                        ? "Visit"
+                        : (TITLES[pathname.split("/")[1] ?? ""] ?? "Overview")}
           </h1>
         </header>
         <Offline shown={connection === "offline"} />
@@ -248,11 +255,11 @@ const KIND_ICONS: Record<keyof typeof KIND_TITLES, Icon> = {
   lab_result: FlaskConical,
   measurement: Ruler,
   medicine_use: Pill,
-  prescription: ClipboardList,
+  visit: Stethoscope,
   condition: HeartPulse,
   allergy: ShieldAlert,
   symptom: Activity,
-  care_event: Stethoscope,
+  care_event: Syringe,
 };
 
 /** The person's record by kind, each with its count, as Overview's tiles. */

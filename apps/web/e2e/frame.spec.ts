@@ -639,7 +639,7 @@ test.describe("first run", () => {
       "Lab results7",
       "Measurements3",
       "Medicines2",
-      "Prescriptions",
+      "Visits",
       "Conditions",
       "Allergies",
       "Symptoms",

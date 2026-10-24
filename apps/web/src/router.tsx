@@ -24,6 +24,7 @@ import { isPageKind, pageOf, RecordPage } from "./record.tsx";
 import { usePeople, useRecordDetail } from "./reads.ts";
 import { SettingsPage } from "./settings.tsx";
 import { SignIn } from "./signin.tsx";
+import { VisitPage } from "./visit.tsx";
 import { buttonLook, ICON, Problem } from "./ui.tsx";
 
 const root = createRootRoute({ component: Frame });
@@ -194,6 +195,27 @@ const record = createRoute({
   },
 });
 
+const visit = createRoute({
+  getParentRoute: () => root,
+  path: "/people/$personId/visits/$visitId",
+  component: function Visit() {
+    const { personId, visitId } = visit.useParams();
+    const people = usePeople();
+    if (people.data === undefined) {
+      return people.error ? (
+        <div className="px-6 py-8">
+          <Problem error={people.error} retry={() => void people.refetch()} />
+        </div>
+      ) : null;
+    }
+    const person = people.data.find((p) => p.id === personId);
+    if (!person) {
+      return <div className="px-6 py-8 text-muted">There is no page here.</div>;
+    }
+    return <VisitPage key={visitId} person={person} visitId={visitId} />;
+  },
+});
+
 const followUps = createRoute({
   getParentRoute: () => root,
   path: "/people/$personId/follow-ups",
@@ -304,6 +326,7 @@ export const router = createRouter({
     documents,
     document,
     record,
+    visit,
     followUps,
     brief,
     conversation,
