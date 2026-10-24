@@ -1,0 +1,8 @@
+name: setup
+description: Rufi's pinned tools (mise) and its dependencies, after a checkout.
+runs:
+  using: composite
+  steps:
+    - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+    - run: pnpm install --frozen-lockfile
+      shell: bash

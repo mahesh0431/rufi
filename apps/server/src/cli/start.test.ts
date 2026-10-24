@@ -1,6 +1,6 @@
 // `pnpm start` as a person runs it, from a checkout whose path has a space
 // (such as "My Projects"): the screens are found and served. Needs the built
-// screens (pnpm check builds them first). Nothing here signs in or asks the AI.
+// screens (pnpm --filter @rufi/web build). Nothing here signs in or asks the AI.
 import { spawn } from "node:child_process";
 import { mkdtemp, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
