@@ -2,9 +2,10 @@
 // fixes. A fix changes the item's fields only: the reader's fields stay as
 // they came (original), the item's version rises, and so does the
 // document's. A fixed value is kept as typed, without a number: Rufi AI
-// gives its number when it saves the item (record/items.ts). It names the version it was made on, so a fix from a tab that
-// holds an older version is refused with the item as it is now. Saved and
-// dismissed items can't be fixed. Nothing here writes the record.
+// gives its number when it saves the item (record/items.ts). A fix names
+// the version it was made on, so a fix from a tab that holds an older
+// version is refused with the item as it is now. Saved and dismissed items
+// can't be fixed. Nothing here writes the record.
 import {
   FIXABLE,
   type DocumentItems,

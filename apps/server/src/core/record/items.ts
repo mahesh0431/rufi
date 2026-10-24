@@ -3,10 +3,11 @@
 // another source for a result the person has, or a correction of one) and
 // any fix the user gave in the chat; Rufi takes the values from the stored
 // item, never retyped by the AI, but for the number of a value the user
-// fixed on the document's page, which the AI reads from their words. Code checks whose it is, versions, the
-// item's state, that its page wasn't read again since, and that it has a
-// date; the AI decides with the user what each item is. A draft goes in
-// its document's report (the lab, number and date Rufi AI sorted it with).
+// fixed on the document's page, which the AI reads from their words. Code
+// checks whose it is, versions, the item's state, that its page wasn't read
+// again since, and that it has a date; the AI decides with the user what
+// each item is. A draft goes in its document's report (the lab, number and
+// date Rufi AI sorted it with).
 import type { Ref } from "@rufi/contracts";
 import { Schema } from "effect";
 import type { Transaction } from "kysely";
