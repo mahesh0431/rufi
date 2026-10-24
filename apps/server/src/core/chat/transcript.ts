@@ -83,7 +83,7 @@ type TurnRow = Selectable<Tables["turns"]>;
 
 /**
  * Whether a reply or note is whole: its turn completed and it wasn't cut
- * (Add to reply can cut it while the turn goes on). An older reply has no
+ * (a message sent into the reply can cut it while the turn goes on). An older reply has no
  * status and follows its turn.
  */
 const whole = (

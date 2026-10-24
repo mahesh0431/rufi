@@ -215,11 +215,11 @@ If you click Stop, what the AI did so far stays in Activity, and the folded line
 
 **Stop.** After a Stop, nothing more goes to the AI until you send a message. Rufi keeps this also when you reload or Rufi starts again. A Stop while Rufi AI sorts a file stops the sorting too: it goes on after your next message.
 
-**Add to reply** passes your text into the running reply; Rufi carries on with it in mind.
+You can send while Rufi is replying; it carries on with your message in mind. Stop ends the reply.
 
 ## Waiting messages
 
-While the AI replies, the box says "Type to queue your next message…". When you send a message then, it waits in Rufi's queue, and goes to the AI after the reply, in order. What waits shows above the box, also after a reload, a restart of Rufi, or a change of model. For each of your waiting messages you can:
+What waits shows above the box, also after a reload, a restart of Rufi, or a change of model. For each of your waiting messages you can:
 
 - **Edit** it (the pencil), then **Save**.
 - **Move** it, to change the order: drag it up or down by its handle (the dots on its left). With the keyboard, go to the handle with Tab, press Space to pick the message up, the up and down arrows to move it, and Space to put it down. Esc puts it back where it was.

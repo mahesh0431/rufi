@@ -278,6 +278,18 @@ const say = (c: ChatRow, text: string) => {
   return chat.send(c, uuid(), text);
 };
 
+/**
+ * A reply Rufi started, with its note: "hang" runs until it is stopped. A
+ * message the person sends meanwhile waits for a reply of its own.
+ */
+const rufiReply = async (c: ChatRow, note = "Rufi's note: hang") => {
+  if (!chat) throw new Error("no chat");
+  await chat.event("asha", { kind: "test", line: "Rufi's line", ask: note });
+  await until(async () =>
+    (await transcript(c.id)).turns.some((t) => t.status === "running"),
+  );
+};
+
 /** What waits in the chat's queue, as [text, state, held]. */
 const waiting = async () =>
   (await queue.list(await chatRow())).items.map((item) => [
@@ -574,13 +586,13 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     async () => {
       await startChat(name);
       const c = await newChat();
-      await say(c, "hang");
-      await running(c.id);
+      await rufiReply(c);
       await say(c, "B");
       expect(await waiting()).toEqual([["B", "waiting", null]]);
-      // A waiting message is not in the transcript; the running one is.
-      await until(async () => (await transcript(c.id)).entries.length > 0);
-      expect((await transcript(c.id)).entries).toEqual([["message", "hang"]]);
+      // A waiting message is not in the transcript.
+      expect(
+        (await transcript(c.id)).entries.filter(([kind]) => kind === "message"),
+      ).toEqual([]);
       await chat?.stop(c);
       await ended(c.id);
       expect((await transcript(c.id)).turns[0]).toMatchObject({
@@ -597,7 +609,6 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
           ([kind]) => kind === "message" || kind === "reply",
         ),
       ).toEqual([
-        ["message", "hang"],
         ["message", "B"],
         ["reply", "ok:B"],
         ["message", "C"],
@@ -649,8 +660,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     async () => {
       await startChat(name);
       const c = await newChat();
-      await say(c, "hang");
-      await running(c.id);
+      await rufiReply(c);
       await say(c, "B");
       await say(c, "C");
       await chat?.stop(c);
@@ -665,26 +675,62 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
         (await transcript(c.id)).entries
           .filter(([kind]) => kind === "message")
           .map(([, text]) => text),
-      ).toEqual(["hang", "C", "B"]);
+      ).toEqual(["C", "B"]);
     },
   );
 
   it(
-    "passes a steer into the running reply and saves it as a steer",
+    "a message sent while a reply runs goes into that reply; one sent after goes as a new message",
     timeout,
     async () => {
       await startChat(name);
       const c = await newChat();
       await say(c, "slow");
       await running(c.id);
-      await chat?.steer(c, uuid(), "shorter please");
+      await expect(say(c, "shorter please")).resolves.toMatchObject({
+        steered: true,
+      });
       await ended(c.id);
       const { entries } = await transcript(c.id);
       expect(entries).toContainEqual(["steer", "shorter please"]);
       expect(entries).toContainEqual(["reply", "ok:shorter please"]);
-      await expect(chat?.steer(c, uuid(), "too late")).rejects.toThrow(
-        "The reply had ended, so this wasn't passed into it.",
-      );
+      await expect(say(c, "after")).resolves.toMatchObject({ steered: false });
+      await ended(c.id, 2);
+      expect((await transcript(c.id)).entries).toContainEqual([
+        "reply",
+        "ok:after",
+      ]);
+    },
+  );
+
+  it(
+    "a Stop while a send is routed into the reply keeps it out, and the chat stays stopped",
+    timeout,
+    async () => {
+      // Stop lands while the send looks its id up.
+      const { known } = queue;
+      const looking = Promise.withResolvers<undefined>();
+      const go = Promise.withResolvers<undefined>();
+      queue = {
+        ...queue,
+        known: async (id) => {
+          looking.resolve(undefined);
+          await go.promise;
+          return known(id);
+        },
+      };
+      await startChat(name);
+      const c = await newChat();
+      await say(c, "hang");
+      await running(c.id);
+      const sending = say(c, "A fictional follow-up");
+      await looking.promise;
+      await chat?.stop(c);
+      await ended(c.id);
+      go.resolve(undefined);
+      await expect(sending).rejects.toThrow("Stopped.");
+      expect(await waiting()).toEqual([]);
+      expect((await chatRow()).paused).toBe("stopped");
     },
   );
 
@@ -834,8 +880,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       await startChat(name);
       await chat?.selectEffort(await newChat(), "high");
       const c = await chatRow();
-      await say(c, "hang");
-      await running(c.id);
+      await rufiReply(c);
       await until(async () => (await backend.efforts()).length === 1);
       await say(c, "queued next");
       await chat?.stop(c);
@@ -856,8 +901,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     async () => {
       await startChat(name);
       const c = await newChat();
-      await say(c, "hang");
-      await running(c.id);
+      await rufiReply(c);
       await until(async () => (await backend.efforts()).length === 1);
       await expect(chat?.selectModel(c, "gpt-6-astra")).rejects.toThrow(
         "Stop the reply before changing the model.",
@@ -890,8 +934,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     async () => {
       await startChat(name);
       const c = await newChat();
-      await say(c, "hang");
-      await running(c.id);
+      await rufiReply(c);
       await say(c, "B");
       await startChat(name); // Rufi restarts.
       expect((await transcript(c.id)).turns).toMatchObject([
@@ -907,7 +950,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
         (await transcript(c.id)).entries
           .filter(([kind]) => kind === "message")
           .map(([, text]) => text),
-      ).toEqual(["hang", "B", "C"]);
+      ).toEqual(["B", "C"]);
     },
   );
 
@@ -2192,7 +2235,7 @@ describe("the chat, on the scripted Codex", () => {
       },
       { from: "ai", text: "Your HbA1c was 6.8 %.", unfinished: true },
     ]);
-    // Add to reply cuts an answer and the turn goes on and completes: the
+    // A message sent into the reply cuts an answer and the turn goes on and completes: the
     // cut answer stays cut, the one that followed is whole.
     await transcripts.startTurn(c, "t-2", {
       id: "thread-cut",

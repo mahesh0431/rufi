@@ -1,9 +1,8 @@
 // The chat's box, the same in every size: what you type is the chat's
 // draft, kept by the core, saved quietly; the box says only when it couldn't
-// be. Enter sends into Rufi's queue; while a reply runs Stop is beside the
-// box (Activity shows what the AI does; the bar, where it doesn't show, has
-// a busy sign), the message waits, and Add to reply passes it into the reply
-// instead. The box clears only when the core took the message, and nothing
+// be. Enter sends; while a reply runs, the message goes into that reply,
+// and Stop is beside the box (Activity shows what the AI does; the bar,
+// where it doesn't show, has a busy sign). The box clears only when the core took the message, and nothing
 // is sent again by itself. Signed out, the core takes nothing: the box says so, with Sign in.
 // The model and effort are chosen beside Send; what waits shows above the
 // box. Chips (references to documents, draft items and records) sit above
@@ -39,7 +38,6 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import {
   Check,
-  CornerUpRight,
   GripVertical,
   LoaderCircle,
   LogIn,
@@ -113,16 +111,14 @@ export function Box({
   const long = tooLong(text);
   const many = tooMany(chips);
   const hasText = text.trim() !== "" && !long && !many;
-  const placeholder = running
-    ? "Type to queue your next message…"
-    : `Ask or tell Rufi about ${person.displayName}…`;
+  const placeholder = `Ask or tell Rufi about ${person.displayName}…`;
 
   // Leaving the screen, the box saves at once what isn't saved yet.
   useEffect(() => () => void box.saveNow(), [box]);
 
-  const submit = (steer: boolean) => {
+  const submit = () => {
     setProblem(null);
-    void box.submit(steer);
+    void box.submit();
   };
 
   async function act(action: () => Promise<unknown>) {
@@ -174,7 +170,7 @@ export function Box({
             !event.nativeEvent.isComposing
           ) {
             event.preventDefault();
-            if (hasText) submit(false);
+            if (hasText) submit();
           }
         }}
         className="resize-none overflow-hidden bg-transparent outline-none placeholder:text-muted"
@@ -186,7 +182,7 @@ export function Box({
     <IconButton
       type="submit"
       look="main"
-      label={running ? "Send (waits for the reply)" : "Send"}
+      label="Send"
       icon={Send}
       disabled={!hasText || locked}
       className="rounded-full disabled:bg-muted/40 disabled:opacity-100"
@@ -207,7 +203,7 @@ export function Box({
       className={size === "page" ? "flex flex-col gap-2" : "flex flex-col"}
       onSubmit={(event) => {
         event.preventDefault();
-        submit(false);
+        submit();
       }}
     >
       {size !== "bar" && <ReaderStrip personId={person.id} />}
@@ -283,18 +279,6 @@ export function Box({
           <div className="mt-1 flex items-center gap-1.5">
             <AttachButton personId={person.id} />
             <span className="flex-1" />
-            {running && hasText && (
-              <Button
-                icon={CornerUpRight}
-                title="Pass this into the reply that is running"
-                disabled={locked}
-                onClick={() => {
-                  submit(true);
-                }}
-              >
-                Add to reply
-              </Button>
-            )}
             {choice}
             <ContextMeter live={live} />
             {(!running || hasText) && sendButton}

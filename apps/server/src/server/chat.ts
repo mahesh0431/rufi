@@ -101,6 +101,12 @@ export function chat(deps: ChatDeps) {
     string,
     { threadId: string; text: string; refs: Chip[] }
   >();
+  /**
+   * Sends not yet answered, by message id: the chat that owns the id
+   * meanwhile, and how many of its sends use it. Once answered, the record
+   * owns it.
+   */
+  const sending = new Map<string, { chatId: string; count: number }>();
   /** Each running turn's tool caller and chat, by thread. */
   const callers = new Map<
     string,
@@ -486,6 +492,15 @@ export function chat(deps: ChatDeps) {
     return row;
   }
 
+  /** An action a Stop of the chat stops from now on. */
+  function stoppable(chat: ChatRow): AbortController {
+    const op = new AbortController();
+    const ops = acting.get(chat.id) ?? new Set();
+    ops.add(op);
+    acting.set(chat.id, ops);
+    return op;
+  }
+
   /**
    * Runs `action` after the chat's earlier actions, on the
    * chat as stored then; Stop can end it.
@@ -493,8 +508,8 @@ export function chat(deps: ChatDeps) {
   function inLane<T>(
     chat: ChatRow,
     action: (fresh: ChatRow, signal: AbortSignal) => Promise<T>,
+    op = stoppable(chat),
   ): Promise<T> {
-    const op = new AbortController();
     const ops = acting.get(chat.id) ?? new Set();
     ops.add(op);
     acting.set(chat.id, ops);
@@ -655,50 +670,60 @@ export function chat(deps: ChatDeps) {
   /** The chat's thread, when it is the agent's (no new one is made). */
   const threadOf = (chat: ChatRow) => (current(chat) ? chat.threadId : null);
 
-  return {
-    agent,
+  /** Takes a message into the queue by its id, which owns the ids. */
+  async function accept(
+    chat: ChatRow,
+    id: string,
+    text: string,
+    refs: readonly Pointer[],
+  ): Promise<void> {
+    try {
+      await queue.accept(chat, id, text, refs);
+    } catch (error) {
+      if (error instanceof QueueRefusal) throw new ChatRefusal(error.message);
+      throw error;
+    }
+    next(chat);
+  }
 
-    /** The allowed models the provider offers now. */
-    models: offered,
+  /** Whether a reply the person started runs in the chat now. */
+  const personReply = async (chat: ChatRow) => {
+    const threadId = threadOf(chat);
+    const turnId = threadId === null ? undefined : agent.activeTurn(threadId);
+    if (threadId === null || turnId === undefined) return undefined;
+    // The turn is saved as it starts.
+    await saving;
+    return (await transcripts.origin(chat, turnId)) === "person"
+      ? threadId
+      : undefined;
+  };
 
-    /**
-     * Takes a message and its references into the queue by the send's id,
-     * and empties the box, in one step; it goes to the AI in its turn. The
-     * same id again finds the message it made. Signed out, nothing is
-     * taken: the text stays in the box.
-     */
-    send: async (
-      chat: ChatRow,
-      id: string,
-      text: string,
-      refs: readonly Pointer[] = [],
-    ) => {
-      await mustBeSignedIn();
-      try {
-        await queue.accept(chat, id, text, refs);
-      } catch (error) {
-        if (error instanceof QueueRefusal) throw new ChatRefusal(error.message);
-        throw error;
-      }
-      next(chat);
-      return { id };
-    },
-
-    /**
-     * Passes a message into the running reply; saved as a steer. When the
-     * reply has ended, it is refused: it never becomes a waiting message.
-     */
-    steer: (
-      chat: ChatRow,
-      id: string,
-      text: string,
-      refs: readonly Pointer[] = [],
-    ) =>
-      inLane(chat, async (chat) => {
-        const threadId = threadOf(chat);
-        if (threadId === null || !agent.running(threadId)) {
-          throw new ChatRefusal(STEER_ENDED);
-        }
+  /**
+   * Passes a message by a new id into the reply the person started that
+   * runs now, saved as a steer: "steered". Otherwise the queue takes it,
+   * here ("queued"): an id it knows, no such reply runs (Rufi's own reply
+   * can't save, so the message waits for one of its own), or the reply
+   * ended before the agent took the message. A Stop meanwhile takes
+   * nothing. Any other failure is uncertain, and shown as it is.
+   */
+  const steer = (
+    chat: ChatRow,
+    id: string,
+    text: string,
+    refs: readonly Pointer[],
+    op: AbortController,
+  ) =>
+    inLane(
+      chat,
+      async (chat, signal) => {
+        const queued = async () => {
+          if (signal.aborted) throw new Stopped();
+          await accept(chat, id, text, refs);
+          return "queued" as const;
+        };
+        if (await queue.known(id)) return queued();
+        const threadId = await personReply(chat);
+        if (threadId === undefined) return queued();
         let chips: Chip[];
         try {
           chips = await transcripts.chips(chat.personId, refs);
@@ -707,18 +732,16 @@ export function chat(deps: ChatDeps) {
           throw error;
         }
         steers.set(id, { threadId, text, refs: chips });
-        let turnId: string;
+        let steered: string;
         try {
-          ({ turnId } = await agent.steer(threadId, {
+          ({ turnId: steered } = await agent.steer(threadId, {
             id,
             text: withRefs(text, chips),
           }));
         } catch (error) {
           steers.delete(id);
-          if (error instanceof NotSent || !agent.running(threadId)) {
-            throw new ChatRefusal(STEER_ENDED);
-          }
-          throw error;
+          if (!(error instanceof NotSent)) throw error;
+          return queued();
         }
         // In line with the events: the agent may have shown it already.
         const saved = saving.then(() =>
@@ -726,7 +749,7 @@ export function chat(deps: ChatDeps) {
             id,
             kind: "steer",
             text,
-            agentTurnId: turnId,
+            agentTurnId: steered,
             refs: chips,
           }),
         );
@@ -735,8 +758,56 @@ export function chat(deps: ChatDeps) {
           () => undefined,
         );
         await saved;
-        return { id };
-      }),
+        return "steered" as const;
+      },
+      op,
+    );
+
+  return {
+    agent,
+
+    /** The allowed models the provider offers now. */
+    models: offered,
+
+    /**
+     * Sends a message. While a reply the person started runs, it goes into
+     * that reply (saved as a steer: `steered`), and the box is emptied after.
+     * Otherwise it is taken into the queue by the send's id, and the box
+     * emptied, in one step; it goes to the AI in its turn. The same id again
+     * finds the message it made, and changes nothing. Signed out, nothing is
+     * taken: the text stays in the box.
+     */
+    send: async (
+      chat: ChatRow,
+      id: string,
+      text: string,
+      refs: readonly Pointer[] = [],
+    ) => {
+      // While it is pending, the id is this chat's: another chat's send of
+      // it is refused (then the record owns it).
+      const owner = sending.get(id);
+      if (owner !== undefined && owner.chatId !== chat.id) {
+        throw new ChatRefusal("That message id is already used.");
+      }
+      sending.set(id, { chatId: chat.id, count: (owner?.count ?? 0) + 1 });
+      // A Stop from now on stops this send too.
+      const op = stoppable(chat);
+      try {
+        await mustBeSignedIn();
+        // Only a reply running now can take it: the lane decides again.
+        if ((await personReply(await latest(chat))) === undefined) {
+          if (op.signal.aborted) throw new Stopped();
+          await accept(chat, id, text, refs);
+          return { id, steered: false };
+        }
+        const how = await steer(chat, id, text, refs, op);
+        return { id, steered: how === "steered" };
+      } finally {
+        acting.get(chat.id)?.delete(op);
+        const left = sending.get(id);
+        if (left && --left.count === 0) sending.delete(id);
+      }
+    },
 
     /**
      * Stops the running reply, or a hand-over getting ready. The pause is
@@ -902,9 +973,6 @@ export function chat(deps: ChatDeps) {
     }
   }
 }
-
-const STEER_ENDED =
-  "The reply had ended, so this wasn't passed into it. Send it as a new message.";
 
 /** Why a hand-over failed, in words for the person. */
 const textOf = (error: unknown) =>

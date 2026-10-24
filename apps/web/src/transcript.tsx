@@ -617,9 +617,6 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
       data-entry={id}
       className="max-w-[85%] self-end rounded-2xl bg-accent-soft px-3.5 py-2"
     >
-      {entry.kind === "steer" && (
-        <p className="text-xs text-accent-ink">Added to the reply</p>
-      )}
       {entry.refs && entry.refs.length > 0 && (
         <ul
           aria-label="Added to this message"

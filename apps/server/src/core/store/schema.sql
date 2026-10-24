@@ -460,7 +460,7 @@ CREATE TABLE transcript_entries (
   FOREIGN KEY (person_id, turn_id) REFERENCES turns (person_id, id),
   -- An activity line has its kind and status. A reply has a status from
   -- Codex 0.163 on: running until the agent gave it whole, then done; one
-  -- cut when its turn ended (Add to reply cuts the answer) is stopped. An
+  -- cut when its turn ended (a message sent into it cuts the answer) is stopped. An
   -- older reply has none. Nothing else has either.
   CHECK ((kind = 'activity') = (activity IS NOT NULL)),
   CHECK (kind != 'activity' OR status IS NOT NULL),

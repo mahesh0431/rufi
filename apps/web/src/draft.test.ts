@@ -137,7 +137,7 @@ describe("the box's draft", () => {
     box.type("Hello");
     await vi.advanceTimersByTimeAsync(400);
     box.type("Hello\n");
-    const sending = box.submit(false);
+    const sending = box.submit();
     await settle();
     // The earlier save goes first.
     expect(sends()).toHaveLength(0);
@@ -161,14 +161,14 @@ describe("the box's draft", () => {
     const box = draftBox(api);
     await settle();
     box.type("Keep this");
-    const steered = box.submit(true);
+    const refused = box.submit();
     await settle();
-    sends()[0]?.fail(refusal("The reply had ended."));
-    await steered;
+    sends()[0]?.fail(refusal("Not signed in."));
+    await refused;
     expect(box.store.getState()).toMatchObject({
       text: "Keep this",
       sending: false,
-      notice: "The reply had ended.",
+      notice: "Not signed in.",
     });
 
     // Refused, the text is the draft again, so a reload keeps it.
@@ -176,15 +176,15 @@ describe("the box's draft", () => {
     expect(saves()[0]?.body).toEqual({ text: "Keep this", refs: [] });
     saves()[0]?.answer(editable("Keep this"));
     await settle();
-    expect(box.store.getState().notice).toBe("The reply had ended.");
+    expect(box.store.getState().notice).toBe("Not signed in.");
 
     // No answer from the core: it may have taken it.
-    const first = box.submit(false);
+    const first = box.submit();
     await settle();
     sends()[1]?.fail(new Error("Rufi can't be reached."));
     await first;
     expect(box.store.getState().text).toBe("Keep this");
-    const again = box.submit(false);
+    const again = box.submit();
     await settle();
     sends()[2]?.answer({ id: "id-2", draft: editable("") });
     await again;
@@ -233,7 +233,7 @@ describe("the box's chips", () => {
     // Nothing new to save for the second add of the same chip.
     expect(saves()).toHaveLength(1);
 
-    void box.submit(false);
+    void box.submit();
     await settle();
     expect(sends()[0]?.body).toEqual({
       id: "id-1",
@@ -266,7 +266,7 @@ describe("the box's chips", () => {
       detail: "",
     })) satisfies BoxChip[];
     box.append("", many);
-    await box.submit(false);
+    await box.submit();
     await settle();
     expect(saves()).toHaveLength(0);
     expect(sends()).toHaveLength(0);
@@ -297,7 +297,7 @@ describe("a lost send's chips", () => {
     first.api.storage = storage;
     const box = draftBox(first.api);
     await settle();
-    const sending = box.submit(false);
+    const sending = box.submit();
     await settle();
     first.sends()[0]?.fail(new Error("Rufi can't be reached."));
     await sending;
@@ -317,7 +317,7 @@ describe("a lost send's chips", () => {
         },
       ],
     });
-    void reloaded.submit(false);
+    void reloaded.submit();
     await settle();
     expect(next.sends()[0]?.body).toEqual({
       id: "id-1",
@@ -343,7 +343,7 @@ describe("adding to the box from another page", () => {
     first.api.storage = storage;
     const box = draftBox(first.api);
     await settle();
-    const sending = box.submit(false);
+    const sending = box.submit();
     await settle();
     first.sends()[0]?.fail(new Error("Rufi can't be reached."));
     await sending;
@@ -364,7 +364,7 @@ describe("adding to the box from another page", () => {
     expect(reloaded.store.getState().text).toBe("Save my earlier report");
     expect(next.saves()).toHaveLength(0);
 
-    const retry = reloaded.submit(false);
+    const retry = reloaded.submit();
     await settle();
     expect(next.sends()[0]?.body).toEqual({
       id: "id-1",
@@ -402,7 +402,7 @@ describe("adding to the box from another page", () => {
     );
     await settle();
 
-    void box.submit(false);
+    void box.submit();
     await settle();
     expect(held(box.store.getState())).toBe(true);
     expect(box.append("Save these 2 results.")).toBe(false);
