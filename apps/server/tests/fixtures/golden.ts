@@ -150,7 +150,7 @@ async function ashasChat(home: string, store: Store, today: Date) {
       });
     }
     clock = new Date(clock.getTime() + 8_000);
-    await chats.appendReply(chat, agentTurn, uuid(), reply);
+    await chats.appendReply(chat, agentTurn, uuid(), reply, true);
     await chats.endTurn(chat, agentTurn, { status: "completed" });
     const { seq } = await store.query
       .selectFrom("transcript_entries")

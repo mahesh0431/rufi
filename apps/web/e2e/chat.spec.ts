@@ -1422,14 +1422,26 @@ test("an old chat shows as it was stored: its replies in order, and its steps fo
       id: "old-thread",
       model: "gpt-6-astra",
     });
-    await saved.appendReply(found, "old-turn", "old-1", "I'll check first.");
+    await saved.appendReply(
+      found,
+      "old-turn",
+      "old-1",
+      "I'll check first.",
+      true,
+    );
     await saved.setActivity(found, "old-turn", "old-2", {
       activity: "command",
       title: "Ran a command",
       detail: "ls",
       status: "done",
     });
-    await saved.appendReply(found, "old-turn", "old-3", "Here is the answer.");
+    await saved.appendReply(
+      found,
+      "old-turn",
+      "old-3",
+      "Here is the answer.",
+      true,
+    );
     await saved.endTurn(found, "old-turn", { status: "completed" });
   } finally {
     store.close();
