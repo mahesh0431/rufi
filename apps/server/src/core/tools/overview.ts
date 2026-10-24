@@ -110,13 +110,15 @@ async function readOverview(store: Store, personId: string) {
 
   return {
     person: person.display_name,
-    // A deleted document stays as a tombstone (docs/adr/0015): not counted.
+    // A deleted document stays as a tombstone (docs/adr/0015), and an
+    // unsent one waits in the chat box (ADR 0021): neither is counted.
     documents: (
       await query
         .selectFrom("documents")
         .select((eb) => eb.fn.countAll<number>().as("n"))
         .where("person_id", "=", person.id)
         .where("deleted_at", "is", null)
+        .where("sent_at", "is not", null)
         .executeTakeFirstOrThrow()
     ).n,
     reports: await count("reports"),
