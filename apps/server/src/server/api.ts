@@ -856,7 +856,9 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     const found = await chatOf(c);
     const { id, text, refs } = await body(c, SendMessage, MESSAGE_REFUSAL);
     const { steered } = await acting(() => chat.send(found, id, text, refs));
-    const draft = steered ? await drafts.save(found, "") : await drafts.read(found);
+    const draft = steered
+      ? await drafts.save(found, "")
+      : await drafts.read(found);
     return c.json({ id, draft }, 202);
   });
   app.post(`${one}/stop`, async (c) => {

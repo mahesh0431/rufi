@@ -905,7 +905,6 @@ export function chat(deps: ChatDeps) {
   }
 }
 
-
 /** Why a hand-over failed, in words for the person. */
 const textOf = (error: unknown) =>
   error instanceof Error ? error.message : "The AI couldn't take it.";

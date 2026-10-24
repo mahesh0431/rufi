@@ -670,21 +670,26 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
-    "passes a steer into the running reply and saves it as a steer",
+    "a message sent while a reply runs goes into that reply; one sent after goes as a new message",
     timeout,
     async () => {
       await startChat(name);
       const c = await newChat();
       await say(c, "slow");
       await running(c.id);
-      await chat?.steer(c, uuid(), "shorter please");
+      await expect(say(c, "shorter please")).resolves.toMatchObject({
+        steered: true,
+      });
       await ended(c.id);
       const { entries } = await transcript(c.id);
       expect(entries).toContainEqual(["steer", "shorter please"]);
       expect(entries).toContainEqual(["reply", "ok:shorter please"]);
-      await expect(chat?.steer(c, uuid(), "too late")).rejects.toThrow(
-        "The reply had ended, so this wasn't passed into it.",
-      );
+      await expect(say(c, "after")).resolves.toMatchObject({ steered: false });
+      await ended(c.id, 2);
+      expect((await transcript(c.id)).entries).toContainEqual([
+        "reply",
+        "ok:after",
+      ]);
     },
   );
 
