@@ -1544,6 +1544,10 @@ describe("a visit and the records saved from it", () => {
     ).result;
 
   it("saves a visit from its page and the records citing it in one save, and the reverse saves set every record back", async () => {
+    // The metformin already rests on a page, which the save names again.
+    store.db.exec(
+      "INSERT INTO record_sources (person_id, kind, record_id, type, document_id, page) VALUES ('asha', 'medicine_use', 'med-a1', 'document_page', 'doc-asha-aug', 1)",
+    );
     const metformin = row("medicine_uses", "med-a1");
     const creatine = row("medicine_uses", "med-a2");
     await say(
@@ -1581,7 +1585,7 @@ describe("a visit and the records saved from it", () => {
         kind: "medicine_use",
         action: "change",
         id: "med-a1",
-        from: [visit],
+        from: [{ document: "doc-asha-aug", page: 1 }, visit],
         fields: {
           status: "stopped",
           ended: { date: "2026-10-02", words: "02/10/2026" },
@@ -1603,7 +1607,7 @@ describe("a visit and the records saved from it", () => {
       'Added visit Dr A. Fictional · Lakeview Family Clinic: setting clinic, date 2 Oct 2026 ("02/10/2026"), reason Iron deficiency anaemia, as written **Diagnosis:** Iron deficiency anaemia **Rx** 1. Ferrous sulfate 200 mg once d… · from thyroid recheck.jpg, page 1',
       "Added medicine use Ferrous sulfate 200 mg: current · from visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026",
       "Added a source to medicine use Creatine 5 g: visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026 (its values stay as they are)",
-      'Changed medicine use Metformin 500 mg: status current → stopped; end not given → 2 Oct 2026 ("02/10/2026") · from visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026',
+      'Changed medicine use Metformin 500 mg: status current → stopped; end not given → 2 Oct 2026 ("02/10/2026") · from Sunrise Labs August.pdf, page 1, visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026',
       "Added medicine use Metformin 1000 mg: current · from visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026",
     ]);
     // The visit rests on its page; the records from it on the visit. The
@@ -1611,11 +1615,15 @@ describe("a visit and the records saved from it", () => {
     expect(sourcesOf(visitId ?? "")).toEqual([
       { type: "document_page", page: "doc-asha-sep p1" },
     ]);
-    for (const id of [ironId, "med-a2", "med-a1", newDoseId]) {
+    for (const id of [ironId, "med-a2", newDoseId]) {
       expect(sourcesOf(id ?? "")).toEqual([
         { type: "visit", visit_id: visitId },
       ]);
     }
+    expect(sourcesOf("med-a1")).toEqual([
+      { type: "document_page", page: "doc-asha-aug p1" },
+      { type: "visit", visit_id: visitId },
+    ]);
     expect(row("medicine_uses", "med-a2")).toEqual(creatine);
 
     // "Undo that": the AI saves the reverse of what latest saves show.
@@ -1715,7 +1723,10 @@ describe("a visit and the records saved from it", () => {
     }
     expect(sourcesOf("med-a2")).toEqual([]);
     // The change back rests on the user's "undo that".
-    expect(sourcesOf("med-a1")).toEqual([{ type: "message", entry_id: undo }]);
+    expect(sourcesOf("med-a1")).toEqual([
+      { type: "document_page", page: "doc-asha-aug p1" },
+      { type: "message", entry_id: undo },
+    ]);
   });
 
   it("refuses a source that isn't this person's live page or visit, or a ref no earlier change adds, and saves nothing", async () => {

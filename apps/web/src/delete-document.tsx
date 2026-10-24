@@ -140,6 +140,9 @@ function Preview({
   });
   const preview = changed ?? found.data;
   const saved = preview?.saved ?? [];
+  /** A result, or a record when the list has another kind, such as a visit. */
+  const noun = saved.every((r) => r.kind === "result") ? "result" : "record";
+  const visit = saved.some((r) => r.kind === "visit");
   const shown = preview?.name ?? name;
   const title = `Delete ${shown}?`;
   const confirm = (choice?: Confirm["saved"]) => {
@@ -192,8 +195,8 @@ function Preview({
           <>
             <p className="mt-1.5 mb-2.5">
               {saved.length === 1
-                ? "1 result in your health record comes from it:"
-                : `${String(saved.length)} results in your health record come from it:`}
+                ? `1 ${noun} in your health record comes from it:`
+                : `${String(saved.length)} ${noun}s in your health record come from it:`}
             </p>
             {/* A long list scrolls by itself, so the choice stays in view. */}
             <ul
@@ -218,6 +221,15 @@ function Preview({
                 </li>
               ))}
             </ul>
+            {/* The list is what rests on the paper's pages: what was saved
+                from a visit rests on the visit. */}
+            {visit && (
+              <p className="mt-2.5">
+                A medicine or follow-up saved from a visit here isn't listed:
+                Delete file keeps it, and with Delete file and results the AI
+                goes through it with you too.
+              </p>
+            )}
             {/* One document of a split file: only its part goes. */}
             {preview.others > 0 && preview.place !== null && (
               <ul className="mt-2.5 list-disc pl-[18px]">
