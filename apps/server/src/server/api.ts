@@ -182,9 +182,9 @@ const DIAGRAM = "/diagram.html";
 const GONE_PAGE = `<!doctype html><html lang="en"><meta charset="utf-8"><title>File not found</title><body style="font:14px/1.5 -apple-system,sans-serif;margin:24px"><p>This file is no longer in the AI's folder.</p></body></html>`;
 /**
  * Esc in a generated page, told to its dialog: the page has its own origin,
- * so Rufi never hears its keys. Served first, before any of the page's own
- * scripts can take the focus, and after its doctype, which stays first; the
- * file on disk stays as it is.
+ * so Rufi never hears its keys. Served before any of the page's own scripts
+ * can take the focus: just inside its `<head>` (see `relayAt`). The file on
+ * disk stays as it is.
  */
 const pageEscape = (origin: string) => `
 <script>
@@ -194,11 +194,29 @@ addEventListener("keydown", (event) => {
   }
 }, true);
 </script>`;
-/** A page's leading doctype, read as Latin-1: after a UTF-8 BOM and spaces. */
-const DOCTYPE = /^(?:\xEF\xBB\xBF)?\s*<!doctype[^>]*>/i;
-/** The page with the Esc relay after its doctype, or first without one. */
+/** A tag's attributes, quoted values and all, up to its `>`. */
+const ATTRIBUTES = String.raw`(?:[^>"']|"[^"]*"|'[^']*')*`;
+/**
+ * What a page may start with before its `<head>`, read as Latin-1: a UTF-8
+ * BOM, then spaces, comments, its doctype and its `<html>` tag. Nothing of it
+ * may come after the relay: a doctype after it puts the page in quirks mode.
+ */
+const PROLOG = new RegExp(
+  String.raw`^(?:ï»¿)?(?:\s|<!--[\s\S]*?-->|<!doctype${ATTRIBUTES}>|<html(?=[\s/>])${ATTRIBUTES}>)*`,
+  "i",
+);
+const HEAD = new RegExp(String.raw`^<head(?=[\s/>])${ATTRIBUTES}>`, "i");
+/**
+ * Where the relay goes: just inside the page's own `<head>`, whose attributes
+ * a script before it would drop; without one, right after the prolog.
+ */
+const relayAt = (text: string) => {
+  const prolog = PROLOG.exec(text)?.[0].length ?? 0;
+  return prolog + (HEAD.exec(text.slice(prolog))?.[0].length ?? 0);
+};
+/** The page with the Esc relay before its own scripts. */
 const withEscape = (page: Buffer, origin: string) => {
-  const at = DOCTYPE.exec(page.toString("latin1"))?.[0].length ?? 0;
+  const at = relayAt(page.toString("latin1"));
   return Buffer.concat([
     page.subarray(0, at),
     Buffer.from(pageEscape(origin)),

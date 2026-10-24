@@ -573,22 +573,40 @@ test("Esc closes a page opened large from the moment its own first script runs",
 }) => {
   await opened(page, rufi);
   // A key the page hears as its first script runs, as when it takes the
-  // focus while it still loads.
+  // focus while it still loads. A comment before its doctype, and its head's
+  // own attributes, which its script reads.
   await writeFile(
     join(rufi.home, "ai", "reports", "early.html"),
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Early</title>
+    `<!-- A fictional chart -->
+<!doctype html><html lang="en"><head id="config" data-label="Fictional chart"><meta charset="utf-8"><title>Early</title>
 <script>dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));</script>
-</head><body><p>Fictional</p></body></html>`,
+</head><body><p id="mode"></p><p id="label"></p><script>
+document.getElementById("mode").textContent = document.compatMode;
+document.getElementById("label").textContent = document.getElementById("config").dataset.label;
+</script></body></html>`,
   );
   await send(page, "Your page: [Early](reports/early.html)");
   const open = log(page)
     .locator(".reply")
     .getByRole("button", { name: "Open Early" });
   await expect(open).toBeVisible();
+  // The page keeps its standards mode and its head, in the reply too.
+  const inline = log(page)
+    .locator('.reply iframe[title="Early"]')
+    .contentFrame();
+  await expect(inline.locator("#mode")).toHaveText("CSS1Compat");
+  await expect(inline.locator("#label")).toHaveText("Fictional chart");
   // The relay's signal comes from the large view's frame, so it opened.
   await page.evaluate(() => {
     addEventListener("message", (event) => {
-      if (event.data === "rufi-page-escape") {
+      const large = document.querySelector<HTMLIFrameElement>(
+        '[role="dialog"] iframe',
+      );
+      if (
+        event.data === "rufi-page-escape" &&
+        event.source !== null &&
+        event.source === large?.contentWindow
+      ) {
         Object.assign(globalThis, { escaped: true });
       }
     });
