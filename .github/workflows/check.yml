@@ -23,7 +23,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
       - run: pnpm check:quick
-      # What Rufi ships. Dependabot's weekly updates cover the dev tools.
+      # Production dependencies only. Dev dependencies, Electron among them
+      # (it runs the Rufi app), rely on Dependabot's weekly updates.
       - run: pnpm audit --prod
 
   vitest:
@@ -60,11 +61,21 @@ jobs:
       - run: pnpm --filter @rufi/web build
       - run: xvfb-run --auto-servernum pnpm exec playwright test --shard=${{ matrix.shard }}/3
 
+  # The tests that run only on a Mac and skip on Ubuntu: the AI's sandbox
+  # canary on the pinned Codex, and the app icon.
+  mac:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup
+      - run: pnpm exec vitest run apps/server/src/server/capture.test.ts apps/desktop/scripts/bundle-icon.test.ts
+
   # The gate branch protection asks for. It always runs, so it is never
   # skipped (a skipped required check counts as passed).
   check:
     if: always()
-    needs: [quick, vitest, playwright]
+    needs: [quick, vitest, playwright, mac]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
