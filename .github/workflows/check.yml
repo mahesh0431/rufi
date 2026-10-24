@@ -47,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
@@ -58,7 +58,7 @@ jobs:
       - run: pnpm --filter @rufi/desktop exec install-electron
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: pnpm --filter @rufi/web build
-      - run: xvfb-run --auto-servernum pnpm exec playwright test --shard=${{ matrix.shard }}/3
+      - run: xvfb-run --auto-servernum pnpm exec playwright test --shard=${{ matrix.shard }}/4
 
   # The gate branch protection asks for. It always runs, so it is never
   # skipped (a skipped required check counts as passed).
