@@ -202,7 +202,7 @@ const ATTRIBUTES = String.raw`(?:[^>"']|"[^"]*"|'[^']*')*`;
  * may come after the relay: a doctype after it puts the page in quirks mode.
  */
 const PROLOG = new RegExp(
-  String.raw`^(?:ï»¿)?(?:\s|<!--[\s\S]*?-->|<!doctype${ATTRIBUTES}>|<html(?=[\s/>])${ATTRIBUTES}>)*`,
+  String.raw`^(?:\xEF\xBB\xBF)?(?:\s|<!--[\s\S]*?-->|<!doctype${ATTRIBUTES}>|<html(?=[\s/>])${ATTRIBUTES}>)*`,
   "i",
 );
 const HEAD = new RegExp(String.raw`^<head(?=[\s/>])${ATTRIBUTES}>`, "i");
