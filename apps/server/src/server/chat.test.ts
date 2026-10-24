@@ -285,8 +285,12 @@ const say = (c: ChatRow, text: string) => {
 const rufiReply = async (c: ChatRow, note = "Rufi's note: hang") => {
   if (!chat) throw new Error("no chat");
   await chat.event("asha", { kind: "test", line: "Rufi's line", ask: note });
-  await until(async () =>
-    (await transcript(c.id)).turns.some((t) => t.status === "running"),
+  // Codex starts for this first reply; a busy machine needs longer than for
+  // a reply's later steps, as long as a send was given before.
+  await until(
+    async () =>
+      (await transcript(c.id)).turns.some((t) => t.status === "running"),
+    45_000,
   );
 };
 

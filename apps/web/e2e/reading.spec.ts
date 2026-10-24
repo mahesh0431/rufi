@@ -361,7 +361,9 @@ test("keeps unreadable pages to check and reserves Nothing to save for a complet
     .getByRole("row", { name: /sunrise-labs-august.pdf/ })
     .getByRole("cell")
     .nth(4); // Status
-  await expect(status).toContainText("To check");
+  // The reading, then Rufi AI's sort in a Codex it starts: as long as the
+  // other tests of a sort allow.
+  await expect(status).toContainText("To check", { timeout: 10_000 });
   await expect(status).not.toContainText("Nothing to save");
   await status.getByRole("button", { name: "Retry" }).click();
   await expect(status).toContainText("Nothing to save");
