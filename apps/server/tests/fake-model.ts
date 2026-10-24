@@ -1,7 +1,8 @@
 // A local stand-in for the model endpoint, so the real Codex binary runs real
 // turns offline. Codex sends it each request; it answers by the user's last
 // message, with the same words as the scripted fake Codex (fake-codex.ts):
-// "hang" never answers, "slow" answers after 1.5 s, "overview" first reads
+// "hang" never answers, "partial" writes "ok:part" and then never answers,
+// "slow" answers after 1.5 s, "overview" first reads
 // Rufi's get_overview (through Codex's `exec` tool, as a model does),
 // "command" runs a long command (as the fake's does, it ignores TERM and
 // leaves a program in the background) and Codex waits for it, "background
@@ -228,6 +229,20 @@ export async function fakeModel(
         return;
       }
       if (last.includes("hang")) {
+        open.add(response);
+        return;
+      }
+      if (last.includes("partial")) {
+        const item = `msg-${String(requests.length)}`;
+        event({
+          type: "response.output_item.added",
+          item: { type: "message", role: "assistant", id: item, content: [] },
+        } as { type: string });
+        event({
+          type: "response.output_text.delta",
+          delta: "ok:part",
+          item_id: item,
+        } as { type: string });
         open.add(response);
         return;
       }
