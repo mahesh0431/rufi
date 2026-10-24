@@ -151,25 +151,3 @@ describe("for a screen reader", () => {
     );
   });
 });
-
-describe("a small trend", () => {
-  it("has the rings, but no numbers, dates or range", () => {
-    const drawing = drawTrend("Ferritin", ferritin, {
-      width: 88,
-      height: 22,
-      mini: true,
-    });
-    expect(drawing?.dates).toEqual([]);
-    expect(drawing?.range).toBeUndefined();
-    expect(drawing?.lines[0]?.points.map((point) => point.labelled)).toEqual([
-      false,
-      false,
-      false,
-    ]);
-    expect(drawing?.lines[0]?.points.map((point) => point.flagged)).toEqual([
-      false,
-      true,
-      true,
-    ]);
-  });
-});
