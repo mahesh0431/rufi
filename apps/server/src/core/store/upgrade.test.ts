@@ -903,6 +903,19 @@ it("upgrades a record of version 14 to Visits: the saves, follow-ups and briefs 
       linked_id: "rx-1",
     };
     const json = (row: object) => `'${JSON.stringify(row)}'`;
+    // Saved as a visit, then made an immunisation on another day.
+    const flu = {
+      id: "ce-flu",
+      person_id: "asha",
+      type: "immunisation",
+      name: "Flu vaccine",
+      status: "done",
+      date: "2026-10-02",
+      date_words: "2 Oct",
+      provider: null,
+      details: null,
+      removed: 0,
+    };
     old.exec(`
       INSERT INTO transcript_entries (id, person_id, chat_id, seq, turn_id, kind, text, revision, created_at, updated_at) VALUES
         ${entry(901, "m-v14", "message", "Dr Fictional gave me iron, I take it")},
@@ -916,16 +929,17 @@ it("upgrades a record of version 14 to Visits: the saves, follow-ups and briefs 
         ('rx-0', 'asha', 'Levothyroxine', '25 mcg', 'Dr Fictional', '2025-01', 'Jan 2025'),
         ('rx-1', 'asha', 'Ferrous sulfate', '200 mg', 'Dr Fictional', '2026-10-10', '10 Oct');
       INSERT INTO medicine_uses (id, person_id, name, strength, status) VALUES ('med-iron', 'asha', 'Iron', '200 mg', 'current');
-      INSERT INTO care_events (id, person_id, type, name, status) VALUES
-        ('ce-visit', 'asha', 'visit', 'Dr Fictional', 'done'),
-        ('ce-flu', 'asha', 'immunisation', 'Flu vaccine', 'done');
+      INSERT INTO care_events (id, person_id, type, name, status, date, date_words) VALUES
+        ('ce-visit', 'asha', 'visit', 'Dr Fictional', 'done', NULL, NULL),
+        ('ce-flu', 'asha', 'immunisation', 'Flu vaccine', 'done', '2026-10-02', '2 Oct');
       INSERT INTO follow_ups (id, person_id, title, due, due_words, status, linked_kind, linked_id) VALUES
         ('fu-1', 'asha', 'Review with Dr Fictional', '2026-12', 'in December', 'open', 'prescription', 'rx-1');
       INSERT INTO record_changes (operation_id, seq, person_id, kind, record_id, action, before, after, source_entry_id) VALUES
         ('op-v14-1', 1, 'asha', 'prescription', 'rx-1', 'add', NULL, ${json(rx)}, 'm-v14'),
         ('op-v14-1', 2, 'asha', 'medicine_use', 'med-iron', 'add', NULL, ${json(iron)}, 'm-v14'),
         ('op-v14-1', 3, 'asha', 'follow_up', 'fu-1', 'add', NULL, ${json(followUp)}, 'm-v14'),
-        ('op-v14-2', 1, 'asha', 'follow_up', 'fu-1', 'change', ${json(followUp)}, ${json(moved)}, 'm-v14');
+        ('op-v14-2', 1, 'asha', 'follow_up', 'fu-1', 'change', ${json(followUp)}, ${json(moved)}, 'm-v14'),
+        ('op-v14-2', 2, 'asha', 'care_event', 'ce-flu', 'change', ${json({ ...flu, type: "visit", date: "2026-10-01", date_words: "1 Oct" })}, ${json(flu)}, 'm-v14');
       INSERT INTO record_sources (person_id, kind, record_id, type, entry_id, document_id, page, operation_id) VALUES
         ('asha', 'prescription', 'rx-1', 'message', 'm-v14', NULL, NULL, 'op-v14-1'),
         ('asha', 'prescription', 'rx-1', 'document_page', NULL, 'doc-asha-aug', 1, 'op-v14-1'),
@@ -941,7 +955,9 @@ it("upgrades a record of version 14 to Visits: the saves, follow-ups and briefs 
   const store = await openRecord(home);
   try {
     const [latest, previous] = await recentSaves(store, "asha");
-    // The about-and-due change keeps the due; the gone prescription is in neither side.
+    // The about-and-due change keeps the due; the gone prescription is in
+    // neither side. The immunisation's change keeps its date, not the gone
+    // type.
     expect(latest?.changes).toEqual([
       {
         kind: "follow_up",
@@ -949,6 +965,13 @@ it("upgrades a record of version 14 to Visits: the saves, follow-ups and briefs 
         action: "change",
         before: { due: { date: "2026-11", words: "next month" } },
         after: { due: { date: "2026-12", words: "in December" } },
+      },
+      {
+        kind: "care_event",
+        id: "ce-flu",
+        action: "change",
+        before: { date: { date: "2026-10-01", words: "1 Oct" } },
+        after: { date: { date: "2026-10-02", words: "2 Oct" } },
       },
     ]);
     // The mixed save keeps its other changes; its receipt stays as written.
@@ -1000,17 +1023,12 @@ it("upgrades a record of version 14 to Visits: the saves, follow-ups and briefs 
       )(
         "save_changes",
         {
-          changes: [
-            {
-              kind: "follow_up",
-              action: "change",
-              id: "fu-1",
-              fields:
-                latest?.changes[0] && "before" in latest.changes[0]
-                  ? latest.changes[0].before
-                  : {},
-            },
-          ],
+          changes: (latest?.changes ?? []).map((change) => ({
+            kind: change.kind,
+            action: "change",
+            id: change.id,
+            fields: "before" in change ? change.before : {},
+          })),
         },
         "call-undo",
       );
@@ -1030,6 +1048,11 @@ it("upgrades a record of version 14 to Visits: the saves, follow-ups and briefs 
       linked_kind: null,
       linked_id: null,
     });
+    expect(
+      store.db
+        .prepare("SELECT type, date FROM care_events WHERE id = 'ce-flu'")
+        .get(),
+    ).toEqual({ type: "immunisation", date: "2026-10-01" });
   } finally {
     store.close();
   }

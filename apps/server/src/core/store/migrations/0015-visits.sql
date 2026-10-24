@@ -54,6 +54,14 @@ UPDATE briefs SET cited = (
     SELECT 1 FROM json_each(briefs.cited) c JOIN retired r ON r.kind = c.value ->> '$.kind' AND r.id = c.value ->> '$.id'
   );
 
+-- A care event that stays (a procedure or an immunisation) and was a
+-- visit once has its current type in its history, so no reverse sets it
+-- back to a type that is gone.
+UPDATE record_changes SET before = json_set(before, '$.type', (SELECT c.type FROM care_events c WHERE c.person_id = record_changes.person_id AND c.id = record_changes.record_id))
+  WHERE kind = 'care_event' AND before ->> '$.type' = 'visit';
+UPDATE record_changes SET after = json_set(after, '$.type', (SELECT c.type FROM care_events c WHERE c.person_id = record_changes.person_id AND c.id = record_changes.record_id))
+  WHERE kind = 'care_event' AND after ->> '$.type' = 'visit';
+
 DROP TABLE retired;
 DROP TABLE prescriptions;
 
