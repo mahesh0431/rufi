@@ -18,11 +18,14 @@ const chat = (page: Page) => page.getByRole("region", { name: "Chat" });
 const box = (page: Page) =>
   chat(page).getByRole("textbox", { name: "Message to Rufi" });
 
-test("a visit saves a free-text kind and shows it as written on the list and its page", async ({
+test("a visit saves a free-text kind and shows it as written on the list and its page; a follow-up's About opens a visit's page", async ({
   page,
   rufi,
 }) => {
-  await rufi.family();
+  await rufi.family(
+    "INSERT INTO visits (id, person_id, setting, doctor, as_written) VALUES ('v-eye', 'asha', 'Eye clinic', 'Dr Lens', 'Eyes checked.');",
+    "INSERT INTO follow_ups (id, person_id, title, linked_kind, linked_id) VALUES ('f-eye', 'asha', 'Eye check again', 'visit', 'v-eye');",
+  );
   await rufi.start({
     scenario: {
       calls: [
@@ -59,6 +62,13 @@ test("a visit saves a free-text kind and shows it as written on the list and its
   await expect(page.getByRole("main")).toContainText("Dental check-up");
   await page.getByRole("link", { name: "Dr Fictional", exact: true }).click();
   await expect(page.getByRole("main")).toContainText("Dental check-up");
+
+  await sidebar(page)
+    .getByRole("link", { name: /^Follow-ups/ })
+    .click();
+  await page.getByRole("link", { name: "Dr Lens" }).click();
+  await expect(page).toHaveURL(/\/people\/asha\/visits\/v-eye$/);
+  await expect(page.getByRole("main")).toContainText("Eyes checked.");
 });
 
 /** A save that removes the CRP result, or puts it back. */

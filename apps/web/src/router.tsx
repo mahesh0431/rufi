@@ -181,6 +181,16 @@ const record = createRoute({
         />
       );
     }
+    // A visit opens on its own page, whichever link asked for it.
+    if (person && kind === "visit" && open !== undefined) {
+      return (
+        <Navigate
+          to="/people/$personId/visits/$visitId"
+          params={{ personId, visitId: open }}
+          replace
+        />
+      );
+    }
     if (!person || !isPageKind(kind)) {
       return <div className="px-6 py-8 text-muted">There is no page here.</div>;
     }
