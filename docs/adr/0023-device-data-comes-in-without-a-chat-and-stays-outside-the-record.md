@@ -1,0 +1,21 @@
+# 0023 · Device data comes in without a chat and stays outside the record
+
+**Date:** 25 Oct 2026 · **Status:** accepted
+
+A person's devices measure things (their resting heart rate each day, later their heart rate through the day) and Apple Health keeps them. The phone app will send them to Rufi in batches. That data doesn't fit the record's rules: nobody says yes to each value in a chat, there are years of it, and the source takes values back.
+
+**Device data is not the record.** It has its own tables in `rufi.sqlite`: `device_sources` (a connection, bound to one person for good), `device_batches` (each batch as it came, and its conversion's state) and `device_values` (each thing measured, in Rufi's terms). No `operations`, `record_changes`, `record_sources` or receipts; the record's version, briefs and "changed since" don't move. "Records are never deleted" (ADR 0005) stays true: values aren't records, and only how long values are kept deletes them. Its trace is the batches while they are kept and each value's link to the batch that last changed it. Nothing shows it yet but Settings, and the AI doesn't read it.
+
+**The person comes from the source, never from a batch.** `pnpm rufi device-source add` binds a source to a person; `--person` may be left out only when the data folder has one person. Nothing changes a source's person later.
+
+**Store first, convert in order.** Receive is one transaction that checks only the source, the size (4 MB), that it is JSON and the envelope (a batch ID, a values list and a deleted list, at most 5,000 entries together), and stores the batch with the next arrival number (`seq`). The same batch again, while it is kept, is "already got"; the same batch ID with other bytes is refused. The converter (`server/converter.ts`) converts each batch in one transaction, in arrival order within its group: one person's batches from one system, `(person_id, system)`, the space its values' IDs live in, so a deletion from one phone never comes before the value another phone sent. It finds each group's head first, then asks whether it may go now; a failed head holds back its group only.
+
+**An item never fails a batch.** What is inside a batch can't change on a retry, so an item that can't be converted (a field missing or of the wrong type, a unit not accepted, a time without its offset, a series of the wrong length) is skipped with a fixed reason, and the rest converts. A batch fails only for an outside cause (a full disk, an I/O error, a bug): it is rolled back and tried again after 30 seconds, 1 minute and 2 minutes, then hourly and at each start. A batch with skipped items is kept until it is deleted: it holds the only copy of what Rufi couldn't read.
+
+**The type list is master data in code** (`core/devices/types.ts`): a key, a label, a UCUM unit, a LOINC code, Apple's identifier, the units accepted and the metadata kept. A value stores only its key. A shipped key is never removed or renamed, and its meaning and unit never change: a new meaning or unit is a new key, or a migration of the stored values.
+
+**Identity, time and values as sent.** A value is keyed by its source system's own ID, `(person_id, system, external_id)`, so two phones on one Apple Health store it once. The same content again changes nothing; other content replaces it; a deletion marks it removed, and a removed value stays removed. Times are the instants the source gave, in UTC; where it was taken (`utc_offset`, `time_zone`) is kept only when the source sends it, and nothing guesses it. Numbers are stored as sent: code checks the shape, never whether a value is likely.
+
+**Retention is the only deletion.** One setting for the whole data folder (30 days, 12 months or forever; forever by default), by each value's start. A shorter time says what it deletes and deletes only once confirmed. A converted batch goes 30 days after it was converted, unless it has skipped items.
+
+The reason: device data is many values no one confirms, and the source is its truth; keeping it apart lets it come in without a chat and leaves the record's guarantees as they are. The cost: device data has no receipts or undo, a deletion the source dropped before sending is missed, and a value with no time zone has no local day.

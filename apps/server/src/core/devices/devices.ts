@@ -13,7 +13,12 @@ import { v7 as uuid } from "uuid";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 import { errorCode } from "../../platform/logs.ts";
-import { convertDeletion, convertValue, type ConvertedValue, type Skip } from "./convert.ts";
+import {
+  convertDeletion,
+  convertValue,
+  type ConvertedValue,
+  type Skip,
+} from "./convert.ts";
 
 type Trx = Transaction<Tables>;
 
@@ -28,11 +33,15 @@ export const SYSTEMS = ["apple_health"] as const;
 export type System = (typeof SYSTEMS)[number];
 
 /** How long values are kept, for everyone in the data folder. */
-export const KEEPS = ["30d", "12m", "forever"] as const;
+const KEEPS = ["30d", "12m", "forever"] as const;
 export type Keep = (typeof KEEPS)[number];
 const KEEP_SETTING = "device.keep_values";
 const DAY_MS = 24 * 60 * 60 * 1000;
-const KEEP_MS: Record<Keep, number | undefined> = { "30d": 30 * DAY_MS, "12m": 365 * DAY_MS, forever: undefined };
+const KEEP_MS: Record<Keep, number | undefined> = {
+  "30d": 30 * DAY_MS,
+  "12m": 365 * DAY_MS,
+  forever: undefined,
+};
 /** A done batch with nothing skipped goes this long after it was converted. */
 const BATCH_KEEP_MS = 30 * DAY_MS;
 /** Rows one clean-up transaction deletes at most, so receives aren't held up. */
@@ -61,7 +70,7 @@ export type Step =
   | { failed: string; reason: string }
   | { idle: true; wake: string | undefined };
 
-export interface Counts {
+interface Counts {
   added: number;
   changed: number;
   already_had: number;
@@ -72,7 +81,14 @@ export interface Counts {
 }
 
 export type AddSource =
-  | { source: { id: string; name: string; system: System; person: { id: string; name: string } } }
+  | {
+      source: {
+        id: string;
+        name: string;
+        system: System;
+        person: { id: string; name: string };
+      };
+    }
   | { needsPerson: { id: string; name: string }[] };
 
 export interface SourceSummary {
@@ -106,7 +122,9 @@ const isKeep = (value: unknown): value is Keep => KEEPS.includes(value as Keep);
 /** The instant before which values aren't kept, or none. */
 function cutoffOf(keep: Keep, now: string): string | undefined {
   const ms = KEEP_MS[keep];
-  return ms === undefined ? undefined : new Date(Date.parse(now) - ms).toISOString();
+  return ms === undefined
+    ? undefined
+    : new Date(Date.parse(now) - ms).toISOString();
 }
 
 const sameContent = (row: Tables["device_values"], value: ConvertedValue) =>
@@ -120,13 +138,26 @@ const sameContent = (row: Tables["device_values"], value: ConvertedValue) =>
   row.context === value.context &&
   row.series === value.series;
 
-type Head = { id: string; person_id: string; source_id: string; seq: number; status: string; retry_at: string | null; tries: number; system: string };
+type Head = {
+  id: string;
+  person_id: string;
+  source_id: string;
+  seq: number;
+  status: string;
+  retry_at: string | null;
+  tries: number;
+  system: string;
+};
 
 export function devices(store: Store, now: () => string) {
   const db = store.query;
 
   const keepOf = async (q: Trx | typeof db): Promise<Keep> => {
-    const row = await q.selectFrom("settings").select("value").where("key", "=", KEEP_SETTING).executeTakeFirst();
+    const row = await q
+      .selectFrom("settings")
+      .select("value")
+      .where("key", "=", KEEP_SETTING)
+      .executeTakeFirst();
     return isKeep(row?.value) ? row.value : "forever";
   };
 
@@ -153,8 +184,19 @@ export function devices(store: Store, now: () => string) {
       .where("id", "=", head.id)
       .executeTakeFirstOrThrow();
     // Receive checked the envelope: here it is only read.
-    const page = JSON.parse(gunzipSync(body).toString("utf8")) as { values: unknown[]; deleted: unknown[] };
-    const counts: Counts = { added: 0, changed: 0, already_had: 0, removed: 0, unknown_removal: 0, skipped: 0, older_than_kept: 0 };
+    const page = JSON.parse(gunzipSync(body).toString("utf8")) as {
+      values: unknown[];
+      deleted: unknown[];
+    };
+    const counts: Counts = {
+      added: 0,
+      changed: 0,
+      already_had: 0,
+      removed: 0,
+      unknown_removal: 0,
+      skipped: 0,
+      older_than_kept: 0,
+    };
     const skipped: Skip[] = [];
     const find = (externalId: string) =>
       trx
@@ -192,7 +234,14 @@ export function devices(store: Store, now: () => string) {
       if (row === undefined) {
         await trx
           .insertInto("device_values")
-          .values({ person_id: head.person_id, system: head.system, external_id: value.externalId, source_id: head.source_id, batch_id: head.id, ...content })
+          .values({
+            person_id: head.person_id,
+            system: head.system,
+            external_id: value.externalId,
+            source_id: head.source_id,
+            batch_id: head.id,
+            ...content,
+          })
           .execute();
         counts.added++;
       } else if (row.removed_at !== null || sameContent(row, value)) {
@@ -250,8 +299,16 @@ export function devices(store: Store, now: () => string) {
 
   return {
     /** A source bound to its person for good; the person may be left out only when there is one. */
-    addSource: async (input: { name: string; system: System; personId?: string }): Promise<AddSource> => {
-      const people = await db.selectFrom("people").select(["id", "display_name as name"]).orderBy("display_name").execute();
+    addSource: async (input: {
+      name: string;
+      system: System;
+      personId?: string;
+    }): Promise<AddSource> => {
+      const people = await db
+        .selectFrom("people")
+        .select(["id", "display_name as name"])
+        .orderBy("display_name")
+        .execute();
       const person =
         input.personId === undefined
           ? people.length === 1
@@ -262,7 +319,13 @@ export function devices(store: Store, now: () => string) {
       const id = uuid();
       await db
         .insertInto("device_sources")
-        .values({ id, person_id: person.id, system: input.system, name: input.name, created_at: now() })
+        .values({
+          id,
+          person_id: person.id,
+          system: input.system,
+          name: input.name,
+          created_at: now(),
+        })
         .execute();
       return { source: { id, name: input.name, system: input.system, person } };
     },
@@ -273,22 +336,41 @@ export function devices(store: Store, now: () => string) {
      * inside the items.
      */
     receive: async (sourceId: string, bytes: Uint8Array): Promise<Receipt> => {
-      const source = await db.selectFrom("device_sources").select(["id", "person_id"]).where("id", "=", sourceId).executeTakeFirst();
-      if (source === undefined) return { answer: "refused", problems: ["no_such_source"] };
-      if (bytes.byteLength > MAX_BATCH_BYTES) return { answer: "refused", problems: ["too_big"] };
+      const source = await db
+        .selectFrom("device_sources")
+        .select(["id", "person_id"])
+        .where("id", "=", sourceId)
+        .executeTakeFirst();
+      if (source === undefined)
+        return { answer: "refused", problems: ["no_such_source"] };
+      if (bytes.byteLength > MAX_BATCH_BYTES)
+        return { answer: "refused", problems: ["too_big"] };
       let page: unknown;
       try {
-        page = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+        page = JSON.parse(
+          new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+        );
       } catch {
         return { answer: "refused", problems: ["not_json"] };
       }
-      const envelope = (typeof page === "object" && page !== null && !Array.isArray(page) ? page : {}) as Record<string, unknown>;
+      const envelope = (
+        typeof page === "object" && page !== null && !Array.isArray(page)
+          ? page
+          : {}
+      ) as Record<string, unknown>;
       const problems: Problem[] = [];
       const batchId = envelope.batch;
-      if (typeof batchId !== "string" || batchId.length === 0 || batchId.length > MAX_BATCH_ID) problems.push("no_batch_id");
+      if (
+        typeof batchId !== "string" ||
+        batchId.length === 0 ||
+        batchId.length > MAX_BATCH_ID
+      )
+        problems.push("no_batch_id");
       const { values, deleted } = envelope;
-      if (!Array.isArray(values) || !Array.isArray(deleted)) problems.push("lists_missing");
-      else if (values.length + deleted.length > MAX_ENTRIES) problems.push("too_many_entries");
+      if (!Array.isArray(values) || !Array.isArray(deleted))
+        problems.push("lists_missing");
+      else if (values.length + deleted.length > MAX_ENTRIES)
+        problems.push("too_many_entries");
       if (problems.length > 0) return { answer: "refused", problems };
 
       const sha = createHash("sha256").update(bytes).digest("hex");
@@ -301,10 +383,15 @@ export function devices(store: Store, now: () => string) {
           .where("sender_batch_id", "=", batchId as string)
           .executeTakeFirst();
         if (had !== undefined) {
-          return had.body_sha256 === sha ? { answer: "already_got", batch: had.id } : { answer: "refused", problems: ["batch_id_reused"] };
+          return had.body_sha256 === sha
+            ? { answer: "already_got", batch: had.id }
+            : { answer: "refused", problems: ["batch_id_reused"] };
         }
         const at = now();
-        const { last } = await trx.selectFrom("device_batches").select((eb) => eb.fn.max("seq").as("last")).executeTakeFirstOrThrow();
+        const { last } = await trx
+          .selectFrom("device_batches")
+          .select((eb) => eb.fn.max<number | null>("seq").as("last"))
+          .executeTakeFirstOrThrow();
         const id = uuid();
         await trx
           .insertInto("device_batches")
@@ -322,14 +409,22 @@ export function devices(store: Store, now: () => string) {
             tries: 0,
           })
           .execute();
-        await trx.updateTable("device_sources").set({ last_batch_at: at }).where("id", "=", source.id).execute();
+        await trx
+          .updateTable("device_sources")
+          .set({ last_batch_at: at })
+          .where("id", "=", source.id)
+          .execute();
         return { answer: "got_it", batch: id };
       });
     },
 
     /** At start: each failed group head is tried once at once (a start may follow a fix or freed space). */
     retryFailedNow: async () => {
-      await db.updateTable("device_batches").set({ retry_at: now() }).where("status", "=", "failed").execute();
+      await db
+        .updateTable("device_batches")
+        .set({ retry_at: now() })
+        .where("status", "=", "failed")
+        .execute();
     },
 
     /**
@@ -340,9 +435,14 @@ export function devices(store: Store, now: () => string) {
     convertNext: async (): Promise<Step> => {
       const at = now();
       const all = await heads();
-      const head = all.find((one) => one.status === "waiting" || (one.retry_at ?? "") <= at);
+      const head = all.find(
+        (one) => one.status === "waiting" || (one.retry_at ?? "") <= at,
+      );
       if (head === undefined) {
-        const wake = all.map((one) => one.retry_at).filter((one) => one !== null).sort()[0];
+        const wake = all
+          .map((one) => one.retry_at)
+          .filter((one) => one !== null)
+          .sort()[0];
         return { idle: true, wake };
       }
       try {
@@ -354,7 +454,12 @@ export function devices(store: Store, now: () => string) {
         const wait = RETRY_MS[tries - 1] ?? RETRY_LAST_MS;
         await db
           .updateTable("device_batches")
-          .set({ status: "failed", reason, tries, retry_at: new Date(Date.parse(now()) + wait).toISOString() })
+          .set({
+            status: "failed",
+            reason,
+            tries,
+            retry_at: new Date(Date.parse(now()) + wait).toISOString(),
+          })
           .where("person_id", "=", head.person_id)
           .where("id", "=", head.id)
           .execute();
@@ -365,7 +470,9 @@ export function devices(store: Store, now: () => string) {
     keep: () => keepOf(db),
 
     /** What keeping values for `keep` would delete now: live values measured before the cutoff. */
-    preview: async (keep: Keep): Promise<{ values: number; before: string | null }> => {
+    preview: async (
+      keep: Keep,
+    ): Promise<{ values: number; before: string | null }> => {
       const before = cutoffOf(keep, now());
       if (before === undefined) return { values: 0, before: null };
       const { count } = await db
@@ -374,7 +481,7 @@ export function devices(store: Store, now: () => string) {
         .where("start_at", "<", before)
         .where("removed_at", "is", null)
         .executeTakeFirstOrThrow();
-      return { values: Number(count), before };
+      return { values: count, before };
     },
 
     /** Saves how long values are kept; a shorter time is cleaned at once by the caller. */
@@ -409,7 +516,9 @@ export function devices(store: Store, now: () => string) {
       }
       for (;;) {
         const gone = await db.transaction().execute(async (trx) => {
-          const before = new Date(Date.parse(now()) - BATCH_KEEP_MS).toISOString();
+          const before = new Date(
+            Date.parse(now()) - BATCH_KEEP_MS,
+          ).toISOString();
           const old = await trx
             .selectFrom("device_batches")
             .select(["person_id", "id"])
@@ -426,7 +535,11 @@ export function devices(store: Store, now: () => string) {
               .where("person_id", "=", batch.person_id)
               .where("batch_id", "=", batch.id)
               .execute();
-            await trx.deleteFrom("device_batches").where("person_id", "=", batch.person_id).where("id", "=", batch.id).execute();
+            await trx
+              .deleteFrom("device_batches")
+              .where("person_id", "=", batch.person_id)
+              .where("id", "=", batch.id)
+              .execute();
           }
           return old.length;
         });
@@ -441,7 +554,14 @@ export function devices(store: Store, now: () => string) {
       const sources = await db
         .selectFrom("device_sources as s")
         .innerJoin("people as p", "p.id", "s.person_id")
-        .select(["s.id", "s.name", "s.system", "s.person_id", "p.display_name", "s.last_batch_at"])
+        .select([
+          "s.id",
+          "s.name",
+          "s.system",
+          "s.person_id",
+          "p.display_name",
+          "s.last_batch_at",
+        ])
         .orderBy("p.display_name")
         .orderBy("s.created_at")
         .execute();
@@ -453,32 +573,65 @@ export function devices(store: Store, now: () => string) {
         .execute();
       const batches = await db
         .selectFrom("device_batches")
-        .select(["source_id", "status", "skipped", "reason", "tries", "retry_at", "person_id", "seq"])
-        .where((eb) => eb.or([eb("status", "<>", "done"), eb("skipped", "is not", null)]))
+        .select([
+          "source_id",
+          "status",
+          "skipped",
+          "reason",
+          "tries",
+          "retry_at",
+          "person_id",
+          "seq",
+        ])
+        .where((eb) =>
+          eb.or([eb("status", "<>", "done"), eb("skipped", "is not", null)]),
+        )
         .orderBy("seq")
         .execute();
-      const failedHeads = (await heads()).filter((head) => head.status === "failed");
+      const failedHeads = (await heads()).filter(
+        (head) => head.status === "failed",
+      );
       const names = new Map(sources.map((source) => [source.id, source.name]));
       return sources.map((source) => {
         const own = batches.filter((batch) => batch.source_id === source.id);
         const failed = failedHeads.find((head) => head.source_id === source.id);
         const blocking = failedHeads.find(
-          (head) => head.person_id === source.person_id && head.system === source.system && head.source_id !== source.id,
+          (head) =>
+            head.person_id === source.person_id &&
+            head.system === source.system &&
+            head.source_id !== source.id,
         );
-        const skipped = own.reduce((sum, batch) => sum + (batch.skipped === null ? 0 : (JSON.parse(batch.skipped) as unknown[]).length), 0);
-        const failedRow = failed && own.find((batch) => batch.seq === failed.seq);
+        const skipped = own.reduce(
+          (sum, batch) =>
+            sum +
+            (batch.skipped === null
+              ? 0
+              : (JSON.parse(batch.skipped) as unknown[]).length),
+          0,
+        );
+        const failedRow =
+          failed && own.find((batch) => batch.seq === failed.seq);
         return {
           id: source.id,
           name: source.name,
           system: source.system as System,
           person: { id: source.person_id, name: source.display_name },
-          values: Number(values.find((row) => row.source_id === source.id)?.count ?? 0),
+          values: values.find((row) => row.source_id === source.id)?.count ?? 0,
           lastBatchAt: source.last_batch_at,
           waiting: own.filter((batch) => batch.status !== "done").length,
           skipped,
-          failed: failedRow ? { reason: failedRow.reason ?? "error:other", tries: failedRow.tries, retryAt: failedRow.retry_at } : null,
+          failed: failedRow
+            ? {
+                reason: failedRow.reason ?? "error:other",
+                tries: failedRow.tries,
+                retryAt: failedRow.retry_at,
+              }
+            : null,
           waitsBehind:
-            blocking !== undefined && own.some((batch) => batch.status !== "done") ? (names.get(blocking.source_id) ?? null) : null,
+            blocking !== undefined &&
+            own.some((batch) => batch.status !== "done")
+              ? (names.get(blocking.source_id) ?? null)
+              : null,
         };
       });
     },

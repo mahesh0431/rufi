@@ -182,9 +182,9 @@ export function DeviceDataSection() {
               </Button>
             </div>
             <p className="text-muted">
-              Nothing changes until you confirm; then Rufi deletes them at
-              once. A longer time saves at once, but what was deleted doesn't
-              come back.
+              Nothing changes until you confirm; then Rufi deletes them at once.
+              A longer time saves at once, but what was deleted doesn't come
+              back.
             </p>
           </div>
         ) : (

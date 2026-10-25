@@ -74,7 +74,9 @@ describe("Rufi's node:sqlite dialect", () => {
   });
 
   it("gives a full disk's own error when SQLite rolled the transaction back itself", async () => {
-    const { page_count } = db.prepare("PRAGMA page_count").get() as { page_count: number };
+    const { page_count } = db.prepare("PRAGMA page_count").get() as {
+      page_count: number;
+    };
     db.exec(`PRAGMA max_page_count = ${String(page_count)}`);
     await expect(
       query.transaction().execute(async (tx) => {

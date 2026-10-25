@@ -87,7 +87,10 @@ export interface ApiDeps {
   signIn: SignInFlow;
   backups: BackupJob;
   /** Device data: its sources for Settings, and how long values are kept. */
-  devices: Pick<Devices, "sources" | "keep" | "preview" | "setKeep" | "cleanUp"> & {
+  devices: Pick<
+    Devices,
+    "sources" | "keep" | "preview" | "setKeep" | "cleanUp"
+  > & {
     /** Why the converter couldn't even save a failure, while that lasts. */
     trouble: () => string | null;
   };
@@ -553,7 +556,8 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   // What keeping values for `keep` would delete, for the confirm.
   app.get("/api/devices/preview", async (c) => {
     const keep = Schema.decodeUnknownOption(KeepValues)(c.req.query("keep"));
-    if (Option.isNone(keep)) throw new HttpError(400, "That request isn't valid.");
+    if (Option.isNone(keep))
+      throw new HttpError(400, "That request isn't valid.");
     return c.json(await deps.devices.preview(keep.value));
   });
   // Back up: answers when it is done; a failure shows in the status.

@@ -7,5 +7,7 @@ import { DEVICE_TYPES } from "./types.ts";
 const SHIPPED = ["resting_heart_rate"];
 
 it("still has every key that has shipped", () => {
-  expect(DEVICE_TYPES.map((type) => type.key)).toEqual(expect.arrayContaining(SHIPPED));
+  expect(DEVICE_TYPES.map((type) => type.key)).toEqual(
+    expect.arrayContaining(SHIPPED),
+  );
 });

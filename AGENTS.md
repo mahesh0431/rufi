@@ -17,7 +17,7 @@ A family's health record on their Mac, with an AI that reads their documents and
 - Tests meet the `tdd` skill's bar and never show a window or take the focus.
 - Don't test purely visual sizes, colours, wrapping or layout (a screenshot shows them); the wording of copy, skills or tool descriptions; code restated (its constants, a copied list, its logic mirrored) or only wired; the words of an AI reply. Behaviour, so tested: a control visible to keyboard users and reachable by the pointer, and accessibility (axe, keyboard, reduced motion).
 - A flaky test is fixed at its cause, never retried.
-- Never delete: live safety tests, person scope, private-log, file-serving, backup/restore/export, migration and upgrade, capture and Codex protocol tests.
+- Never delete: live safety tests, person scope (device data's too), private-log, file-serving, backup/restore/export, migration and upgrade, the device type key guard, capture and Codex protocol tests.
 
 ## Code
 
@@ -36,6 +36,7 @@ A family's health record on their Mac, with an AI that reads their documents and
 - A schema change is a migration; a shipped one never changes (ADR 0011).
 - Backups are checked; restore never writes over anything (ADR 0008).
 - Values are stored as printed.
+- Device data: the person comes from its source, never the batch; a batch is converted whole or not at all, in arrival order per person and system; a shipped device type key is never removed or renamed, and its meaning and unit never change (ADR 0023).
 
 ## Docs
 

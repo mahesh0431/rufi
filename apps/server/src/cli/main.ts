@@ -174,10 +174,18 @@ const main = Effect.gen(function* () {
       });
       const [what, name, ...more] = positionals;
       if (what === "list" && name === undefined) {
-        return yield* deviceSourceList.pipe(Effect.scoped, Effect.provide(locked));
+        return yield* deviceSourceList.pipe(
+          Effect.scoped,
+          Effect.provide(locked),
+        );
       }
       const system = SYSTEMS.find((one) => one === values.system);
-      if (what !== "add" || !name?.trim() || more.length > 0 || system === undefined) {
+      if (
+        what !== "add" ||
+        !name?.trim() ||
+        more.length > 0 ||
+        system === undefined
+      ) {
         return yield* usageError;
       }
       return yield* deviceSourceAdd(name.trim(), system, values.person).pipe(
@@ -192,7 +200,11 @@ const main = Effect.gen(function* () {
         allowPositionals: true,
       });
       const [file, ...more] = positionals;
-      if (file === undefined || more.length > 0 || values.source === undefined) {
+      if (
+        file === undefined ||
+        more.length > 0 ||
+        values.source === undefined
+      ) {
         return yield* usageError;
       }
       return yield* deviceImport(file, values.source).pipe(
@@ -240,12 +252,17 @@ const deviceData = Effect.gen(function* () {
   const path = databasePath(yield* Home);
   if (!existsSync(path)) {
     return yield* Effect.fail(
-      new Error("There is no record in this data folder yet. Start Rufi first."),
+      new Error(
+        "There is no record in this data folder yet. Start Rufi first.",
+      ),
     );
   }
   const store = yield* Effect.acquireRelease(
     Effect.try({ try: () => openWritable(path), catch: (error) => error }),
-    (opened) => Effect.sync(() => opened.close()),
+    (opened) =>
+      Effect.sync(() => {
+        opened.close();
+      }),
   );
   return devices(store, () => new Date().toISOString());
 });
@@ -258,16 +275,23 @@ const deviceSourceAdd = (
   Effect.gen(function* () {
     const data = yield* deviceData;
     const made = yield* run(() =>
-      data.addSource({ name, system, ...(person !== undefined && { personId: person }) }),
+      data.addSource({
+        name,
+        system,
+        ...(person !== undefined && { personId: person }),
+      }),
     );
     if ("needsPerson" in made) {
-      if (person !== undefined) console.log(`No one here has the ID ${person}.`);
+      if (person !== undefined)
+        console.log(`No one here has the ID ${person}.`);
       for (const line of peopleLines(made.needsPerson)) console.log(line);
       console.log("Nothing was made.");
       process.exitCode = 1;
       return;
     }
-    console.log(`Made ${made.source.name} for ${made.source.person.name}, for good.`);
+    console.log(
+      `Made ${made.source.name} for ${made.source.person.name}, for good.`,
+    );
     console.log(`Its ID: ${made.source.id}`);
   });
 

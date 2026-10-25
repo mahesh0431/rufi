@@ -18,6 +18,8 @@ export function converter(deps: {
 }) {
   const now = deps.now ?? Date.now;
   const stop = new AbortController();
+  // A call, so a check inside the loop isn't taken as already known.
+  const stopped = () => stop.signal.aborted;
   let wakeUp: (() => void) | undefined;
   let loop: Promise<void> | undefined;
   let trouble: string | null = null;
@@ -47,16 +49,19 @@ export function converter(deps: {
         if (now() - cleaned >= CLEAN_MS) {
           const gone = await deps.devices.cleanUp();
           cleaned = now();
-          if (gone.values + gone.batches > 0) deps.log("devices.cleaned", { count: gone.values + gone.batches });
+          if (gone.values + gone.batches > 0)
+            deps.log("devices.cleaned", { count: gone.values + gone.batches });
         }
-        while (!stop.signal.aborted) {
+        while (!stopped()) {
           const step = await deps.devices.convertNext();
           trouble = null;
           if ("idle" in step) {
-            if (step.wake !== undefined) delay = Math.min(delay, Date.parse(step.wake) - now());
+            if (step.wake !== undefined)
+              delay = Math.min(delay, Date.parse(step.wake) - now());
             break;
           }
-          if ("failed" in step) deps.log("devices.batch_failed", { reason: step.reason });
+          if ("failed" in step)
+            deps.log("devices.batch_failed", { reason: step.reason });
           // Each batch is many small writes: let the screens be answered between batches.
           await nextTurn();
         }
@@ -82,5 +87,3 @@ export function converter(deps: {
     },
   };
 }
-
-export type Converter = ReturnType<typeof converter>;

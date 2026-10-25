@@ -5,7 +5,7 @@
 // Rufi doesn't judge it.
 import { typeOf } from "./types.ts";
 
-export type SkipReason =
+type SkipReason =
   | "not_an_object"
   | "missing_field"
   | "wrong_field"
@@ -47,10 +47,12 @@ const MAX_ID = 200;
 /** The furthest a clock is from UTC, in minutes (±18:00). */
 const MAX_OFFSET = 18 * 60;
 
-class Skipped {
+/** Thrown inside the converter only, and always caught there. */
+class Skipped extends Error {
   readonly reason: SkipReason;
   readonly field: string | undefined;
   constructor(reason: SkipReason, field?: string) {
+    super(reason);
     this.reason = reason;
     this.field = field;
   }
@@ -85,7 +87,8 @@ function optionalText(fields: Fields, name: string): string | null {
 
 const WITH_OFFSET =
   /^(\d{4})-(\d{2})-(\d{2})[Tt ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(?:([Zz])|([+-])(\d{2}):?(\d{2}))$/;
-const WITHOUT_OFFSET = /^\d{4}-\d{2}-\d{2}(?:[Tt ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?)?$/;
+const WITHOUT_OFFSET =
+  /^\d{4}-\d{2}-\d{2}(?:[Tt ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?)?$/;
 
 const daysIn = (year: number, month: number): number =>
   month === 2
@@ -100,28 +103,59 @@ const daysIn = (year: number, month: number): number =>
 function readInstant(input: unknown): string {
   if (typeof input !== "string") return skip("bad_time");
   const match = WITH_OFFSET.exec(input);
-  if (match === null) return skip(WITHOUT_OFFSET.test(input) ? "time_without_offset" : "bad_time");
-  const [, y, mo, d, h, mi, s = "0", fraction = "", , sign, oh = "0", om = "0"] = match;
-  const [year, month, day, hour, minute, second] = [y, mo, d, h, mi, s].map(Number) as [
-    number, number, number, number, number, number,
-  ];
+  if (match === null)
+    return skip(
+      WITHOUT_OFFSET.test(input) ? "time_without_offset" : "bad_time",
+    );
+  const [
+    ,
+    y,
+    mo,
+    d,
+    h,
+    mi,
+    s = "0",
+    fraction = "",
+    ,
+    sign,
+    oh = "0",
+    om = "0",
+  ] = match;
+  const [year, month, day, hour, minute, second] = [y, mo, d, h, mi, s].map(
+    Number,
+  ) as [number, number, number, number, number, number];
   const [offsetHours, offsetMinutes] = [Number(oh), Number(om)];
   if (
-    month < 1 || month > 12 || day < 1 || day > daysIn(year, month) ||
-    hour > 23 || minute > 59 || second > 59 ||
-    offsetMinutes > 59 || offsetHours * 60 + offsetMinutes > MAX_OFFSET
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > daysIn(year, month) ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetMinutes > 59 ||
+    offsetHours * 60 + offsetMinutes > MAX_OFFSET
   ) {
     return skip("bad_time");
   }
   const offset = (sign === "-" ? -1 : 1) * (offsetHours * 60 + offsetMinutes);
   const at = new Date(0);
   at.setUTCFullYear(year, month - 1, day);
-  at.setUTCHours(hour, minute - offset, second, Number(fraction.padEnd(3, "0").slice(0, 3)));
+  at.setUTCHours(
+    hour,
+    minute - offset,
+    second,
+    Number(fraction.padEnd(3, "0").slice(0, 3)),
+  );
   return at.toISOString();
 }
 
-function readSpan(fields: Fields, onBad: (reason: SkipReason, field?: string) => never) {
-  for (const name of ["start", "end"]) if (!sent(fields, name)) onBad("missing_field", name);
+function readSpan(
+  fields: Fields,
+  onBad: (reason: SkipReason, field?: string) => never,
+) {
+  for (const name of ["start", "end"])
+    if (!sent(fields, name)) onBad("missing_field", name);
   const startAt = readInstant(fields.start);
   const endAt = readInstant(fields.end);
   if (endAt < startAt) onBad("end_before_start");
@@ -129,7 +163,8 @@ function readSpan(fields: Fields, onBad: (reason: SkipReason, field?: string) =>
 }
 
 function readNumber(input: unknown): number {
-  if (typeof input !== "number" || !Number.isFinite(input)) skip("not_a_number");
+  if (typeof input !== "number" || !Number.isFinite(input))
+    skip("not_a_number");
   return input as number;
 }
 
@@ -137,21 +172,30 @@ function readNumber(input: unknown): number {
 function readSeries(fields: Fields, factor: number): string | null {
   const hasCount = sent(fields, "count");
   const count = fields.count;
-  if (hasCount && (typeof count !== "number" || !Number.isInteger(count) || count < 1)) {
+  if (
+    hasCount &&
+    (typeof count !== "number" || !Number.isInteger(count) || count < 1)
+  ) {
     skip("wrong_field", "count");
   }
   const series = fields.series;
-  const empty = !sent(fields, "series") || (Array.isArray(series) && series.length === 0);
+  const empty =
+    !sent(fields, "series") || (Array.isArray(series) && series.length === 0);
   if (empty) {
     if (hasCount && (count as number) > 1) skip("series_missing");
     return null;
   }
-  if (!Array.isArray(series) || (hasCount && series.length !== count)) skip("series_bad");
+  if (!Array.isArray(series) || (hasCount && series.length !== count))
+    skip("series_bad");
   const parts = (series as unknown[]).map((part) => {
     try {
       if (!isObject(part)) return skip("series_bad");
       const { startAt, endAt } = readSpan(part, () => skip("series_bad"));
-      return { start_at: startAt, end_at: endAt, value: readNumber(part.value) * factor };
+      return {
+        start_at: startAt,
+        end_at: endAt,
+        value: readNumber(part.value) * factor,
+      };
     } catch (error) {
       if (error instanceof Skipped) return skip("series_bad");
       throw error;
@@ -165,24 +209,32 @@ function readContext(fields: Fields, keep: readonly string[]): string | null {
   if (!sent(fields, "metadata")) return null;
   const metadata = fields.metadata;
   if (!isObject(metadata)) return skip("wrong_field", "metadata");
-  const kept = Object.fromEntries(keep.filter((key) => key in metadata).map((key) => [key, metadata[key]]));
+  const kept = Object.fromEntries(
+    keep.filter((key) => key in metadata).map((key) => [key, metadata[key]]),
+  );
   return Object.keys(kept).length === 0 ? null : JSON.stringify(kept);
 }
 
 function readValue(system: string, fields: Fields, id: string): ConvertedValue {
   if (!sent(fields, "type")) skip("missing_field", "type");
-  const type = typeof fields.type === "string" ? typeOf(system, fields.type) : undefined;
+  const type =
+    typeof fields.type === "string" ? typeOf(system, fields.type) : undefined;
   if (type === undefined) return skip("unknown_type");
   if (fields.value === undefined) skip("missing_field", "value");
   const number = readNumber(fields.value);
   if (!sent(fields, "unit")) skip("missing_field", "unit");
-  const factor = typeof fields.unit === "string" ? type.accepts[fields.unit] : undefined;
+  const factor =
+    typeof fields.unit === "string" ? type.accepts[fields.unit] : undefined;
   if (factor === undefined) return skip("unit_not_accepted");
   const { startAt, endAt } = readSpan(fields, skip);
   let utcOffset: number | null = null;
   if (sent(fields, "utc_offset")) {
     const offset = fields.utc_offset;
-    if (typeof offset !== "number" || !Number.isInteger(offset) || Math.abs(offset) > MAX_OFFSET) {
+    if (
+      typeof offset !== "number" ||
+      !Number.isInteger(offset) ||
+      Math.abs(offset) > MAX_OFFSET
+    ) {
       skip("wrong_field", "utc_offset");
     }
     utcOffset = offset as number;
@@ -203,7 +255,12 @@ function readValue(system: string, fields: Fields, id: string): ConvertedValue {
 
 function caught(error: unknown, id: string | null): { skip: Skip } {
   if (!(error instanceof Skipped)) throw error;
-  return { skip: error.field === undefined ? { id, reason: error.reason } : { id, reason: error.reason, field: error.field } };
+  return {
+    skip:
+      error.field === undefined
+        ? { id, reason: error.reason }
+        : { id, reason: error.reason, field: error.field },
+  };
 }
 
 /** One entry of a batch's `values`, from the given source system. */

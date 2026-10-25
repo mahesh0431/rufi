@@ -32,7 +32,12 @@ const VERSION = 1;
 const deviceTypes = (): Table => ({
   name: "device_types",
   columns: ["key", "label", "unit", "loinc"],
-  rows: DEVICE_TYPES.map((type) => [type.key, type.label, type.unit, type.loinc]),
+  rows: DEVICE_TYPES.map((type) => [
+    type.key,
+    type.label,
+    type.unit,
+    type.loinc,
+  ]),
 });
 
 /** Every table of a database, rows in a fixed order, values as JSON keeps them. */

@@ -95,7 +95,7 @@ Then Rufi doesn't read or change the location file, and **Settings** › **Data 
 
 > **Note:** When you ask Rufi something, the AI reads the parts of your health record it needs. That text goes to the AI service you signed in with (today OpenAI, through your ChatGPT plan) so it can answer. See [OpenAI's policies](https://openai.com/policies/) for how they handle it.
 
-When the AI reads your record with Rufi's tools, it gets only the records of the person whose chat it is: Rufi chooses the person, and the AI can't name another one. The AI can't read the chat or Rufi's settings this way, and it can't change anything.
+When the AI reads your record with Rufi's tools, it gets only the records of the person whose chat it is: Rufi chooses the person, and the AI can't name another one. The AI can't read the chat or Rufi's settings this way, and it can't change anything. It doesn't read your [device data](device-data.md) yet.
 
 Rufi's tools aren't all that the chat's AI can do: it also works in its own folder (see below). The [reader](#reading-your-documents) is different: Rufi locks it to two tools for one document.
 

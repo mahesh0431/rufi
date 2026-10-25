@@ -190,11 +190,18 @@ second line', NULL, '');
 
   it("holds a device batch exactly, as base64 gzip, and the type list its values name", async () => {
     const store = openWritable(databasePath(home));
-    const page = new TextEncoder().encode('{"batch":"p-1","values":[],"deleted":[]}');
+    const page = new TextEncoder().encode(
+      '{"batch":"p-1","values":[],"deleted":[]}',
+    );
     try {
-      store.db.exec("INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional')");
+      store.db.exec(
+        "INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional')",
+      );
       const data = devices(store, () => "2026-10-08T09:00:00.000Z");
-      const made = await data.addSource({ name: "Asha's iPhone", system: "apple_health" });
+      const made = await data.addSource({
+        name: "Asha's iPhone",
+        system: "apple_health",
+      });
       if (!("source" in made)) throw new Error("no source");
       await data.receive(made.source.id, page);
     } finally {
@@ -204,10 +211,14 @@ second line', NULL, '');
     const files = await unzipped();
 
     const batches = JSON.parse(
-      strFromU8(files[`${FOLDER}/json/device_batches.json`] ?? new Uint8Array()),
+      strFromU8(
+        files[`${FOLDER}/json/device_batches.json`] ?? new Uint8Array(),
+      ),
     ) as { rows: { body: string }[] };
     const body = batches.rows[0]?.body ?? "";
-    expect(new Uint8Array(gunzipSync(Buffer.from(body, "base64")))).toEqual(page);
+    expect(new Uint8Array(gunzipSync(Buffer.from(body, "base64")))).toEqual(
+      page,
+    );
     expect(
       strFromU8(files[`${FOLDER}/csv/device_types.csv`] ?? new Uint8Array()),
     ).toBe(

@@ -1471,7 +1471,10 @@ describe("what the screens read", () => {
   it("converts the device batches stored while it was closed, shows them in Settings, and a shorter keep deletes at once", async () => {
     await start();
     await stop();
-    const days = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString().slice(0, 19) + "Z";
+    const days = (n: number) =>
+      new Date(Date.now() - n * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 19) + "Z";
     const resting = (id: string, start: string) => ({
       id,
       type: "HKQuantityTypeIdentifierRestingHeartRate",
@@ -1482,14 +1485,25 @@ describe("what the screens read", () => {
     });
     const closed = openWritable(databasePath(home));
     try {
-      closed.db.exec("INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional')");
+      closed.db.exec(
+        "INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional')",
+      );
       const store = devices(closed, () => new Date().toISOString());
-      const made = await store.addSource({ name: "Asha's iPhone", system: "apple_health" });
+      const made = await store.addSource({
+        name: "Asha's iPhone",
+        system: "apple_health",
+      });
       if (!("source" in made)) throw new Error("no source");
       const bytes = new TextEncoder().encode(
-        JSON.stringify({ batch: "p-1", values: [resting("v-old", days(40)), resting("v-new", days(2))], deleted: [] }),
+        JSON.stringify({
+          batch: "p-1",
+          values: [resting("v-old", days(40)), resting("v-new", days(2))],
+          deleted: [],
+        }),
       );
-      expect(await store.receive(made.source.id, bytes)).toMatchObject({ answer: "got_it" });
+      expect(await store.receive(made.source.id, bytes)).toMatchObject({
+        answer: "got_it",
+      });
     } finally {
       closed.close();
     }
@@ -1497,17 +1511,37 @@ describe("what the screens read", () => {
     const core = await start();
     const page = await session(core);
     const values = async () =>
-      ((await page.api("GET", "/api/devices")).body["sources"] as { values: number }[])[0]?.values;
+      (
+        (await page.api("GET", "/api/devices")).body["sources"] as {
+          values: number;
+        }[]
+      )[0]?.values;
     await until(async () => (await values()) === 2);
     expect((await page.api("GET", "/api/devices")).body).toMatchObject({
-      sources: [{ name: "Asha's iPhone", person: { name: "Asha Fictional" }, waiting: 0, skipped: 0, failed: null }],
+      sources: [
+        {
+          name: "Asha's iPhone",
+          person: { name: "Asha Fictional" },
+          waiting: 0,
+          skipped: 0,
+          failed: null,
+        },
+      ],
       trouble: null,
     });
-    expect((await page.api("GET", "/api/settings")).body["deviceKeepValues"]).toBe("forever");
-    expect((await page.api("GET", "/api/devices/preview?keep=30d")).body).toMatchObject({ values: 1 });
-    expect((await page.api("GET", "/api/devices/preview?keep=week")).status).toBe(400);
+    expect(
+      (await page.api("GET", "/api/settings")).body["deviceKeepValues"],
+    ).toBe("forever");
+    expect(
+      (await page.api("GET", "/api/devices/preview?keep=30d")).body,
+    ).toMatchObject({ values: 1 });
+    expect(
+      (await page.api("GET", "/api/devices/preview?keep=week")).status,
+    ).toBe(400);
 
-    const saved = await page.api("PUT", "/api/settings", { deviceKeepValues: "30d" });
+    const saved = await page.api("PUT", "/api/settings", {
+      deviceKeepValues: "30d",
+    });
     expect(saved.body["deviceKeepValues"]).toBe("30d");
     expect(await values()).toBe(1);
   });
