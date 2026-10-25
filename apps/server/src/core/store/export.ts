@@ -9,8 +9,10 @@
 // its zip entry in chunks, each chunk on disk before the next is read, and
 // checked the same way, so years of device data never sit in memory whole.
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { mkdtemp, open, readdir, rm, stat } from "node:fs/promises";
+import { once } from "node:events";
+import { createReadStream, createWriteStream } from "node:fs";
+import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { finished } from "node:stream/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Unzip, UnzipInflate, Zip, ZipDeflate, ZipPassThrough } from "fflate";
@@ -352,19 +354,40 @@ const originalsOf = (db: DatabaseSync) =>
     .all()
     .map((row) => ({ id: String(row["id"]), type: String(row["media_type"]) }));
 
-/** A zip being written to `path`: each entry's chunks reach the disk before the next is read. */
-async function zipFile(path: string) {
-  const handle = await open(path, "wx", 0o600);
-  const written: Uint8Array[] = [];
+/** Every byte a zip writer wrote: how many, and their SHA-256. */
+interface Written {
+  bytes: number;
+  sha256: string;
+}
+
+/**
+ * A zip being written to `path` through Node's write stream, which finishes
+ * a short write itself; each entry's chunks are handed over before the next
+ * is read. It counts and hashes every byte it writes, its directory and
+ * end record too, for the check.
+ */
+async function zipFile(path: string, signal: AbortSignal | undefined) {
+  const out = createWriteStream(path, {
+    flags: "wx",
+    mode: 0o600,
+    flush: true,
+  });
+  await once(out, "open");
+  const hash = createHash("sha256");
+  const written = { bytes: 0 };
+  const pending: Uint8Array[] = [];
   const failure: { error?: Error } = {};
   const zip = new Zip((error, chunk) => {
     if (error) failure.error = error;
-    else written.push(chunk);
+    else pending.push(chunk);
   });
   const flush = async () => {
     if (failure.error) throw failure.error;
-    for (let chunk = written.shift(); chunk; chunk = written.shift()) {
-      await handle.write(chunk);
+    signal?.throwIfAborted();
+    for (let chunk = pending.shift(); chunk; chunk = pending.shift()) {
+      hash.update(chunk);
+      written.bytes += chunk.length;
+      if (!out.write(chunk)) await once(out, "drain", { signal });
     }
   };
   return {
@@ -383,12 +406,23 @@ async function zipFile(path: string) {
       entry.push(new Uint8Array(0), true);
       await flush();
     },
-    end: async () => {
+    /** How many bytes are written so far: where the next entry starts. */
+    offset: () => written.bytes,
+    end: async (): Promise<Written> => {
       zip.end();
       await flush();
-      await handle.sync();
+      out.end();
+      await finished(out);
+      return { bytes: written.bytes, sha256: hash.digest("hex") };
     },
-    close: () => handle.close(),
+    /**
+     * Lets go of the file, written or not. After a failure, the stream's own
+     * complaint about it (writes cut off) adds nothing to the cause.
+     */
+    close: async () => {
+      out.destroy();
+      await finished(out).catch(() => undefined);
+    },
   };
 }
 
@@ -452,10 +486,14 @@ function sameBytes(
 }
 
 /**
- * Reads the zip back in chunks and compares every entry with what it
- * should hold: each table's JSON and CSV made again from the copy (each row
- * read back as its values), the README and export.json, and each original
- * against its hash. Throws when anything differs or is missing.
+ * Reads the zip back in chunks. Every byte on disk, its directory and end
+ * record too, must be the bytes written (their count and SHA-256). And every
+ * entry but the originals must hold what it should: each table's JSON and
+ * CSV made again from the copy (each row read back as its values), the
+ * README and export.json. The originals were checked against their hashes as
+ * they were written, and are skipped here: their bytes are stored as they
+ * came, and could look like zip records to the reader. Throws when anything
+ * differs or is missing.
  */
 async function checkExport(
   path: string,
@@ -463,6 +501,9 @@ async function checkExport(
   db: DatabaseSync,
   tables: readonly TableInfo[],
   fixed: Record<string, string>,
+  written: Written,
+  originals: { from: number; to: number },
+  signal: AbortSignal | undefined,
 ): Promise<void> {
   const expected = new Map<string, () => EntryCheck>();
   for (const [name, text] of Object.entries(fixed)) {
@@ -472,22 +513,6 @@ async function checkExport(
         () => new CheckFailed(`The export's ${name} differs.`),
       ),
     );
-  }
-  for (const { id, type } of originalsOf(db)) {
-    const name = exportName(id, type);
-    expected.set(`${folder}/${name}`, () => {
-      const hash = createHash("sha256");
-      return {
-        push: (data) => hash.update(data),
-        end: () => {
-          if (hash.digest("hex") !== id) {
-            throw new CheckFailed(
-              `The export's ${name} differs from the original.`,
-            );
-          }
-        },
-      };
-    });
   }
   for (const table of tables) {
     const differs = (kind: string) => () =>
@@ -534,9 +559,27 @@ async function checkExport(
     file.start();
   });
   unzip.register(UnzipInflate);
-  for await (const chunk of createReadStream(path)) {
-    unzip.push(chunk as Uint8Array);
+  const read = createHash("sha256");
+  let at = 0;
+  for await (const chunk of createReadStream(path) as AsyncIterable<Buffer>) {
+    signal?.throwIfAborted();
+    read.update(chunk);
+    // The parts of the chunk before and after the originals.
+    const end = at + chunk.length;
+    const before = chunk.subarray(
+      0,
+      Math.max(0, Math.min(end, originals.from) - at),
+    );
+    const after = chunk.subarray(
+      Math.max(0, Math.min(chunk.length, originals.to - at)),
+    );
+    if (before.length > 0) unzip.push(before);
+    if (after.length > 0 && end > originals.to) unzip.push(after);
+    at = end;
     if (found.problem !== undefined) throw found.problem;
+  }
+  if (at !== written.bytes || read.digest("hex") !== written.sha256) {
+    throw new CheckFailed("The export on disk isn't the zip that was written.");
   }
   unzip.push(new Uint8Array(0), true);
   if (found.problem !== undefined) throw found.problem;
@@ -554,6 +597,8 @@ export async function exportZip(
   home: string,
   now: Date,
   gate?: FileGate,
+  /** The person went (the request was cut): stop and remove what was made. */
+  signal?: AbortSignal,
 ): Promise<MadeExport> {
   const folder = `rufi-export-${String(now.getFullYear())}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
   const staging = await mkdtemp(join(home, STAGING));
@@ -561,7 +606,8 @@ export async function exportZip(
   try {
     const copy = join(staging, "rufi.sqlite");
     const path = join(staging, `${folder}.zip`);
-    const zip = await zipFile(path);
+    const zip = await zipFile(path, signal);
+    const originals = { from: 0, to: 0 };
     const opened: { db?: DatabaseSync } = {};
     try {
       const createdAt = now.toISOString();
@@ -595,6 +641,7 @@ export async function exportZip(
         for (const [name, text] of Object.entries(fixed)) {
           await zip.add(`${folder}/${name}`, bytesOf([text]));
         }
+        originals.from = zip.offset();
         for (const { id, type } of originalsOf(db)) {
           await zip.add(
             `${folder}/${exportName(id, type)}`,
@@ -602,6 +649,7 @@ export async function exportZip(
             true,
           );
         }
+        originals.to = zip.offset();
         return { db, tables, fixed };
       };
       const { db, tables, fixed } = await (gate
@@ -617,8 +665,17 @@ export async function exportZip(
           bytesOf(csvText(table, rowsOf(db, table))),
         );
       }
-      await zip.end();
-      await checkExport(path, folder, db, tables, fixed);
+      const written = await zip.end();
+      await checkExport(
+        path,
+        folder,
+        db,
+        tables,
+        fixed,
+        written,
+        originals,
+        signal,
+      );
     } finally {
       opened.db?.close();
       await zip.close();
