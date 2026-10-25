@@ -9,6 +9,7 @@ import {
   chmod,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rm,
   stat,
@@ -2325,6 +2326,12 @@ describe("backups and export over the API", () => {
     expect(exported.headers["content-type"]).toBe("application/zip");
     expect(exported.headers["content-disposition"]).toMatch(
       /^attachment; filename="rufi-export-\d{4}-\d{2}-\d{2}\.zip"$/,
+    );
+    // Sent from its file, which goes once the answer has ended.
+    await until(
+      async () =>
+        (await readdir(home)).filter((n) => n.startsWith(".export-")).length ===
+        0,
     );
   });
 

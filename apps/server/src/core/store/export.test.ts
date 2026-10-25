@@ -30,9 +30,11 @@ beforeEach(async () => {
 });
 
 const unzipped = async () => {
-  const { name, bytes } = await exportZip(home, NOW);
-  expect(name).toBe(`${FOLDER}.zip`);
-  return unzipSync(bytes);
+  const made = await exportZip(home, NOW);
+  expect(made.name).toBe(`${FOLDER}.zip`);
+  const files = unzipSync(new Uint8Array(await readFile(made.path)));
+  await made.remove();
+  return files;
 };
 
 const FIXTURES = join(import.meta.dirname, "../../../tests/fixtures/documents");
@@ -257,6 +259,11 @@ second line', NULL, '');
     expect(results.columns).toContain("category");
     for (const bytes of Object.values(files)) {
       expect(strFromU8(bytes)).not.toContain(sentinel);
+    }
+    // Each JSON file is written as JSON.stringify writes it, empty or not.
+    for (const name of names.filter((n) => n.endsWith(".json"))) {
+      const text = strFromU8(files[name] ?? new Uint8Array());
+      expect(text).toBe(`${JSON.stringify(JSON.parse(text), null, 2)}\n`);
     }
     // The fixed copy it was made from is gone.
     expect(

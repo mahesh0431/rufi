@@ -643,7 +643,9 @@ describe("the bytes", () => {
 
     const made = await during;
     await verifyBackup(join(home, "backups", made.name));
-    expect((await exported).bytes.byteLength).toBeGreaterThan(0);
+    const zip = await exported;
+    expect(zip.size).toBeGreaterThan(0);
+    await zip.remove();
     const after = await makeBackup(home, new Date("2026-10-12T09:00:00Z"), {
       gate,
     });

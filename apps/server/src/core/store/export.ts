@@ -1,14 +1,19 @@
 // Export: everything in the record, the chat and settings, as one zip
 // a person can open without Rufi. Every table as JSON (exact) and CSV (for a
-// spreadsheet), every original document file as it came, with a README. Made from one fixed copy of the database, so
-// a save is in it whole or not at all, and read back against that copy
-// before it is given out. Never the sign-in, the AI's files or logs: they
-// aren't in the database.
+// spreadsheet), every original document file as it came, with a README.
+// Made from one fixed copy of the database, so a save is in it whole or not
+// at all, and read back against that copy before it is given out. Never the
+// sign-in, the AI's files or logs: they aren't in the database.
+//
+// It is streamed (ADR 0023): each table is read row by row and written into
+// its zip entry in chunks, each chunk on disk before the next is read, and
+// checked the same way, so years of device data never sit in memory whole.
 import { createHash } from "node:crypto";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { mkdtemp, open, readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+import { Unzip, UnzipInflate, Zip, ZipDeflate, ZipPassThrough } from "fflate";
 import { DEVICE_TYPES } from "../devices/types.ts";
 import { filesPath, OriginalMissing } from "../documents/originals.ts";
 import { CheckFailed, copyDatabase } from "./backup.ts";
@@ -16,57 +21,75 @@ import type { FileGate } from "../documents/gate.ts";
 import { databasePath } from "./database.ts";
 
 type Value = string | number | null;
-interface Table {
+/** A table of the export: its columns and how many rows it has. */
+interface TableInfo {
   name: string;
   columns: string[];
-  rows: Value[][];
+  rows: number;
+}
+
+/** A made export, checked, in its staging folder until it is removed. */
+export interface MadeExport {
+  name: string;
+  path: string;
+  size: number;
+  /** Removes the zip and its staging folder. */
+  remove: () => Promise<void>;
 }
 
 const STAGING = ".export-";
 const VERSION = 1;
+/** Text gathered before it goes into a zip entry. */
+const CHUNK_CHARS = 256 * 1024;
+const DEVICE_TYPES_TABLE = "device_types";
+
+const quoted = (name: string) => `"${name.replaceAll('"', '""')}"`;
 
 /**
- * Rufi's type list (core/devices/types.ts), which device_values.type names:
- * with it, the values can be read without Rufi.
+ * Every table of the copy, with its row count, then Rufi's type list
+ * (core/devices/types.ts), which device_values.type names: with it, the
+ * values can be read without Rufi.
  */
-const deviceTypes = (): Table => ({
-  name: "device_types",
-  columns: ["key", "label", "unit", "loinc"],
-  rows: DEVICE_TYPES.map((type) => [
-    type.key,
-    type.label,
-    type.unit,
-    type.loinc,
-  ]),
-});
-
-/** Every table of a database, rows in a fixed order, values as JSON keeps them. */
-function readTables(path: string): Table[] {
-  const db = new DatabaseSync(path, { readOnly: true, readBigInts: true });
-  try {
-    const names = db
-      .prepare(
-        "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-      )
-      .all()
-      .map((row) => String(row["name"]));
-    return names.map((name) => {
-      const quoted = `"${name.replaceAll('"', '""')}"`;
-      const columns = db
+function tablesOf(db: DatabaseSync): TableInfo[] {
+  const names = db
+    .prepare(
+      "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+    )
+    .all()
+    .map((row) => String(row["name"]));
+  return [
+    ...names.map((name) => ({
+      name,
+      columns: db
         .prepare(`SELECT name FROM pragma_table_info(?) ORDER BY cid`)
         .all(name)
-        .map((row) => String(row["name"]));
-      const statement = db.prepare(
-        `SELECT * FROM ${quoted} ORDER BY ${columns.map((_, i) => String(i + 1)).join(", ")}`,
-      );
-      statement.setReturnArrays(true);
-      const rows = (statement.all() as unknown as unknown[][]).map((row) =>
-        row.map((value) => valueOf(value, name)),
-      );
-      return { name, columns, rows };
-    });
-  } finally {
-    db.close();
+        .map((row) => String(row["name"])),
+      rows: Number(
+        db.prepare(`SELECT COUNT(*) AS n FROM ${quoted(name)}`).get()?.["n"],
+      ),
+    })),
+    {
+      name: DEVICE_TYPES_TABLE,
+      columns: ["key", "label", "unit", "loinc"],
+      rows: DEVICE_TYPES.length,
+    },
+  ];
+}
+
+/** A table's rows one by one, in a fixed order, values as JSON keeps them. */
+function* rowsOf(db: DatabaseSync, table: TableInfo): Generator<Value[]> {
+  if (table.name === DEVICE_TYPES_TABLE) {
+    for (const type of DEVICE_TYPES) {
+      yield [type.key, type.label, type.unit, type.loinc];
+    }
+    return;
+  }
+  const statement = db.prepare(
+    `SELECT * FROM ${quoted(table.name)} ORDER BY ${table.columns.map((_, i) => String(i + 1)).join(", ")}`,
+  );
+  statement.setReturnArrays(true);
+  for (const row of statement.iterate() as Iterable<unknown[]>) {
+    yield row.map((value) => valueOf(value, table.name));
   }
 }
 
@@ -96,12 +119,108 @@ function field(value: Value): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-function toCsv(table: Table): string {
-  const lines = [
-    table.columns.map(field),
-    ...table.rows.map((row) => row.map(field)),
-  ];
-  return lines.map((cells) => `${cells.join(",")}\r\n`).join("");
+const asCsv = (value: Value) => (value === null ? null : String(value));
+
+/** A row of a table's JSON file, as JSON.stringify writes it at that depth. */
+function jsonRow(table: TableInfo, row: Value[]): string {
+  return JSON.stringify(
+    Object.fromEntries(table.columns.map((c, i) => [c, row[i] ?? null])),
+    null,
+    2,
+  ).replaceAll("\n", "\n    ");
+}
+
+/**
+ * A table's JSON file, piece by piece: the same text as
+ * JSON.stringify({ table, columns, rows }, null, 2). With `check`, each row
+ * must read back as its values.
+ */
+function* jsonText(
+  table: TableInfo,
+  rows: Iterable<Value[]>,
+  check = false,
+): Generator<string> {
+  const head = JSON.stringify(
+    { table: table.name, columns: table.columns, rows: [] },
+    null,
+    2,
+  );
+  if (table.rows === 0) {
+    yield `${head}\n`;
+    return;
+  }
+  yield `${head.slice(0, -"[]\n}".length)}[\n`;
+  const columns = JSON.stringify(table.columns);
+  let first = true;
+  for (const row of rows) {
+    const text = jsonRow(table, row);
+    if (check) {
+      const read = JSON.parse(text) as Record<string, Value>;
+      // Every row has every column: a missing value isn't the same as null.
+      if (
+        JSON.stringify(Object.keys(read)) !== columns ||
+        JSON.stringify(table.columns.map((c) => read[c])) !==
+          JSON.stringify(row)
+      ) {
+        throw new CheckFailed(
+          `The export's ${table.name}.json differs from the record.`,
+        );
+      }
+    }
+    yield `${first ? "" : ",\n"}    ${text}`;
+    first = false;
+  }
+  yield "\n  ]\n}\n";
+}
+
+/**
+ * A table's CSV file, line by line. With `check`, each line must read back
+ * as its values.
+ */
+function* csvText(
+  table: TableInfo,
+  rows: Iterable<Value[]>,
+  check = false,
+): Generator<string> {
+  const header = `${table.columns.map(field).join(",")}\r\n`;
+  if (
+    check &&
+    JSON.stringify(fromCsv(header)) !== JSON.stringify([table.columns])
+  ) {
+    throw new CheckFailed(
+      `The export's ${table.name}.csv differs from the record.`,
+    );
+  }
+  yield header;
+  for (const row of rows) {
+    const line = `${row.map(field).join(",")}\r\n`;
+    if (
+      check &&
+      JSON.stringify(fromCsv(line)) !== JSON.stringify([row.map(asCsv)])
+    ) {
+      throw new CheckFailed(
+        `The export's ${table.name}.csv differs from the record.`,
+      );
+    }
+    yield line;
+  }
+}
+
+/** Text pieces as bytes, a few hundred kilobytes at a time. */
+function* bytesOf(pieces: Iterable<string>): Generator<Uint8Array> {
+  const encoder = new TextEncoder();
+  let gathered: string[] = [];
+  let size = 0;
+  for (const piece of pieces) {
+    gathered.push(piece);
+    size += piece.length;
+    if (size >= CHUNK_CHARS) {
+      yield encoder.encode(gathered.join(""));
+      gathered = [];
+      size = 0;
+    }
+  }
+  if (size > 0) yield encoder.encode(gathered.join(""));
 }
 
 /**
@@ -154,7 +273,7 @@ function fromCsv(text: string): (string | null)[][] {
 const README = (
   folder: string,
   createdAt: string,
-  tables: Table[],
+  tables: readonly TableInfo[],
 ) => `# Your Rufi data
 
 Exported from Rufi on ${createdAt}. This is everything in your health
@@ -207,7 +326,7 @@ log, and the JPEG copies Rufi makes to show HEIC photos.
 
 The tables (${String(tables.length)}):
 
-${tables.map((t) => `- \`${t.name}\`: ${String(t.rows.length)} rows`).join("\n")}
+${tables.map((t) => `- \`${t.name}\`: ${String(t.rows)} rows`).join("\n")}
 
 The folder name is \`${folder}\`.
 `;
@@ -223,170 +342,293 @@ const EXTENSIONS: Record<string, string> = {
 };
 
 /** An original's name in the export: its id and an extension for its type. */
-function exportName(table: Table, row: Value[]): string {
-  const id = String(row[table.columns.indexOf("id")]);
-  const type = String(row[table.columns.indexOf("media_type")]);
-  return `files/${id}.${EXTENSIONS[type] ?? "bin"}`;
+const exportName = (id: string, type: string) =>
+  `files/${id}.${EXTENSIONS[type] ?? "bin"}`;
+
+/** The originals the copy names: their ids and types, in a fixed order. */
+const originalsOf = (db: DatabaseSync) =>
+  db
+    .prepare("SELECT id, media_type FROM files ORDER BY id")
+    .all()
+    .map((row) => ({ id: String(row["id"]), type: String(row["media_type"]) }));
+
+/** A zip being written to `path`: each entry's chunks reach the disk before the next is read. */
+async function zipFile(path: string) {
+  const handle = await open(path, "wx", 0o600);
+  const written: Uint8Array[] = [];
+  const failure: { error?: Error } = {};
+  const zip = new Zip((error, chunk) => {
+    if (error) failure.error = error;
+    else written.push(chunk);
+  });
+  const flush = async () => {
+    if (failure.error) throw failure.error;
+    for (let chunk = written.shift(); chunk; chunk = written.shift()) {
+      await handle.write(chunk);
+    }
+  };
+  return {
+    add: async (
+      name: string,
+      chunks: Iterable<Uint8Array> | AsyncIterable<Uint8Array>,
+      // Already compressed (PDFs, photos): stored as they are.
+      stored = false,
+    ) => {
+      const entry = stored ? new ZipPassThrough(name) : new ZipDeflate(name);
+      zip.add(entry);
+      for await (const chunk of chunks) {
+        entry.push(chunk);
+        await flush();
+      }
+      entry.push(new Uint8Array(0), true);
+      await flush();
+    },
+    end: async () => {
+      zip.end();
+      await flush();
+      await handle.sync();
+    },
+    close: () => handle.close(),
+  };
 }
 
-const hashOf = (bytes: Uint8Array) =>
-  createHash("sha256").update(bytes).digest("hex");
+/** An original's bytes in chunks, checked against its hash as they pass. */
+async function* originalBytes(home: string, id: string) {
+  const hash = createHash("sha256");
+  try {
+    for await (const chunk of createReadStream(join(filesPath(home), id))) {
+      hash.update(chunk as Buffer);
+      yield chunk as Uint8Array;
+    }
+  } catch (error) {
+    throw new OriginalMissing(`The document file ${id} is missing.`, {
+      cause: error,
+    });
+  }
+  if (hash.digest("hex") !== id) {
+    throw new OriginalMissing(`The document file ${id} has changed.`);
+  }
+}
+
+interface EntryCheck {
+  push: (data: Uint8Array) => void;
+  end: () => void;
+}
+
+/** Takes an entry's bytes as they come; they must be exactly `expected`. */
+function sameBytes(
+  expected: Iterator<Uint8Array>,
+  differs: () => Error,
+): EntryCheck {
+  let have: Uint8Array = new Uint8Array(0);
+  let at = 0;
+  const more = () => {
+    while (at >= have.length) {
+      const next = expected.next();
+      if (next.done === true) return false;
+      have = next.value;
+      at = 0;
+    }
+    return true;
+  };
+  return {
+    push: (data) => {
+      let from = 0;
+      while (from < data.length) {
+        if (!more()) throw differs();
+        const n = Math.min(data.length - from, have.length - at);
+        const got = Buffer.from(data.buffer, data.byteOffset + from, n);
+        if (!got.equals(Buffer.from(have.buffer, have.byteOffset + at, n))) {
+          throw differs();
+        }
+        from += n;
+        at += n;
+      }
+    },
+    end: () => {
+      if (more()) throw differs();
+    },
+  };
+}
 
 /**
- * The export as zip bytes and its file name. Made from one fixed copy of the
- * database in the data folder, checked against it, then the copy is removed.
- * The copy and the reading of its originals are inside the running Rufi's
- * file `gate`, so a delete never removes an original the copy names.
+ * Reads the zip back in chunks and compares every entry with what it
+ * should hold: each table's JSON and CSV made again from the copy (each row
+ * read back as its values), the README and export.json, and each original
+ * against its hash. Throws when anything differs or is missing.
+ */
+async function checkExport(
+  path: string,
+  folder: string,
+  db: DatabaseSync,
+  tables: readonly TableInfo[],
+  fixed: Record<string, string>,
+): Promise<void> {
+  const expected = new Map<string, () => EntryCheck>();
+  for (const [name, text] of Object.entries(fixed)) {
+    expected.set(`${folder}/${name}`, () =>
+      sameBytes(
+        bytesOf([text]),
+        () => new CheckFailed(`The export's ${name} differs.`),
+      ),
+    );
+  }
+  for (const { id, type } of originalsOf(db)) {
+    const name = exportName(id, type);
+    expected.set(`${folder}/${name}`, () => {
+      const hash = createHash("sha256");
+      return {
+        push: (data) => hash.update(data),
+        end: () => {
+          if (hash.digest("hex") !== id) {
+            throw new CheckFailed(
+              `The export's ${name} differs from the original.`,
+            );
+          }
+        },
+      };
+    });
+  }
+  for (const table of tables) {
+    const differs = (kind: string) => () =>
+      new CheckFailed(
+        `The export's ${table.name}.${kind} differs from the record.`,
+      );
+    expected.set(`${folder}/json/${table.name}.json`, () =>
+      sameBytes(
+        bytesOf(jsonText(table, rowsOf(db, table), true)),
+        differs("json"),
+      ),
+    );
+    expected.set(`${folder}/csv/${table.name}.csv`, () =>
+      sameBytes(
+        bytesOf(csvText(table, rowsOf(db, table), true)),
+        differs("csv"),
+      ),
+    );
+  }
+
+  const holds = () =>
+    new CheckFailed("The export doesn't hold the files it should.");
+  const seen = new Set<string>();
+  const found: { problem?: Error } = {};
+  const unzip = new Unzip((file) => {
+    const make = expected.get(file.name);
+    if (make === undefined || seen.has(file.name)) {
+      found.problem ??= holds();
+      return;
+    }
+    seen.add(file.name);
+    const check = make();
+    file.ondata = (error, data, final) => {
+      if (found.problem !== undefined) return;
+      try {
+        if (error) throw error;
+        check.push(data);
+        if (final) check.end();
+      } catch (problem) {
+        found.problem =
+          problem instanceof Error ? problem : new CheckFailed(String(problem));
+      }
+    };
+    file.start();
+  });
+  unzip.register(UnzipInflate);
+  for await (const chunk of createReadStream(path)) {
+    unzip.push(chunk as Uint8Array);
+    if (found.problem !== undefined) throw found.problem;
+  }
+  unzip.push(new Uint8Array(0), true);
+  if (found.problem !== undefined) throw found.problem;
+  if (seen.size !== expected.size) throw holds();
+}
+
+/**
+ * The export, made and checked in a staging folder in the data folder: its
+ * file name, where it is, and how to remove it once it is sent. Made from one
+ * fixed copy of the database and checked against it. The copy and the
+ * reading of its originals are inside the running Rufi's file `gate`, so a
+ * delete never removes an original the copy names.
  */
 export async function exportZip(
   home: string,
   now: Date,
   gate?: FileGate,
-): Promise<{ name: string; bytes: Uint8Array }> {
+): Promise<MadeExport> {
   const folder = `rufi-export-${String(now.getFullYear())}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
   const staging = await mkdtemp(join(home, STAGING));
+  const remove = () => rm(staging, { recursive: true, force: true });
   try {
     const copy = join(staging, "rufi.sqlite");
-    const read = async () => {
-      await copyDatabase(databasePath(home), copy);
-      const tables = [...readTables(copy), deviceTypes()];
-      const bytes = new Map<string, Uint8Array>();
-      for (const row of tables.find((t) => t.name === "files")?.rows ?? []) {
-        const id = String(row[0]);
-        bytes.set(
-          id,
-          await readFile(join(filesPath(home), id)).catch((error: unknown) => {
-            throw new OriginalMissing(`The document file ${id} is missing.`, {
-              cause: error,
-            });
-          }),
+    const path = join(staging, `${folder}.zip`);
+    const zip = await zipFile(path);
+    const opened: { db?: DatabaseSync } = {};
+    try {
+      const createdAt = now.toISOString();
+      // The copy and every original it names, while no delete can remove one.
+      const withOriginals = async () => {
+        await copyDatabase(databasePath(home), copy);
+        const db = new DatabaseSync(copy, {
+          readOnly: true,
+          readBigInts: true,
+        });
+        opened.db = db;
+        const tables = tablesOf(db);
+        const fixed = {
+          "README.md": README(folder, createdAt, tables),
+          "export.json": `${JSON.stringify(
+            {
+              format: "rufi-export",
+              version: VERSION,
+              createdAt,
+              tables: Object.fromEntries(
+                tables.map((t) => [
+                  t.name,
+                  { columns: t.columns, rows: t.rows },
+                ]),
+              ),
+            },
+            null,
+            2,
+          )}\n`,
+        };
+        for (const [name, text] of Object.entries(fixed)) {
+          await zip.add(`${folder}/${name}`, bytesOf([text]));
+        }
+        for (const { id, type } of originalsOf(db)) {
+          await zip.add(
+            `${folder}/${exportName(id, type)}`,
+            originalBytes(home, id),
+            true,
+          );
+        }
+        return { db, tables, fixed };
+      };
+      const { db, tables, fixed } = await (gate
+        ? gate.shared(withOriginals)
+        : withOriginals());
+      for (const table of tables) {
+        await zip.add(
+          `${folder}/json/${table.name}.json`,
+          bytesOf(jsonText(table, rowsOf(db, table))),
+        );
+        await zip.add(
+          `${folder}/csv/${table.name}.csv`,
+          bytesOf(csvText(table, rowsOf(db, table))),
         );
       }
-      return { tables, bytes };
-    };
-    const { tables, bytes: originalBytes } = await (gate
-      ? gate.shared(read)
-      : read());
-    const createdAt = now.toISOString();
-    const files: Record<string, Uint8Array | [Uint8Array, { level: 0 }]> = {
-      [`${folder}/README.md`]: strToU8(README(folder, createdAt, tables)),
-      [`${folder}/export.json`]: strToU8(
-        `${JSON.stringify(
-          {
-            format: "rufi-export",
-            version: VERSION,
-            createdAt,
-            tables: Object.fromEntries(
-              tables.map((t) => [
-                t.name,
-                { columns: t.columns, rows: t.rows.length },
-              ]),
-            ),
-          },
-          null,
-          2,
-        )}\n`,
-      ),
-    };
-    const originals = tables.find((t) => t.name === "files");
-    for (const row of originals?.rows ?? []) {
-      const id = String(row[0]);
-      const bytes = originalBytes.get(id) ?? new Uint8Array();
-      if (hashOf(bytes) !== id) {
-        throw new OriginalMissing(`The document file ${id} has changed.`);
-      }
-      // Already compressed (PDFs, photos): stored as they are.
-      files[`${folder}/${exportName(originals as Table, row)}`] = [
-        bytes,
-        { level: 0 },
-      ];
+      await zip.end();
+      await checkExport(path, folder, db, tables, fixed);
+    } finally {
+      opened.db?.close();
+      await zip.close();
     }
-    for (const table of tables) {
-      files[`${folder}/json/${table.name}.json`] = strToU8(
-        `${JSON.stringify(
-          {
-            table: table.name,
-            columns: table.columns,
-            rows: table.rows.map((row) =>
-              Object.fromEntries(
-                table.columns.map((c, i) => [c, row[i] ?? null]),
-              ),
-            ),
-          },
-          null,
-          2,
-        )}\n`,
-      );
-      files[`${folder}/csv/${table.name}.csv`] = strToU8(toCsv(table));
-    }
-    const bytes = zipSync(files);
-    checkExport(bytes, folder, tables);
-    return { name: `${folder}.zip`, bytes };
-  } finally {
-    await rm(staging, { recursive: true, force: true });
-  }
-}
-
-/**
- * Reads the zip back and compares every table, row and value, in JSON and
- * in CSV, with the copy it was made from. Throws when anything differs.
- */
-function checkExport(
-  bytes: Uint8Array,
-  folder: string,
-  tables: readonly Table[],
-): void {
-  const files = unzipSync(bytes);
-  const originals = tables.find((t) => t.name === "files");
-  const expected = new Set([
-    `${folder}/README.md`,
-    `${folder}/export.json`,
-    ...tables.flatMap((t) => [
-      `${folder}/json/${t.name}.json`,
-      `${folder}/csv/${t.name}.csv`,
-    ]),
-    ...(originals?.rows ?? []).map(
-      (row) => `${folder}/${exportName(originals as Table, row)}`,
-    ),
-  ]);
-  const names = Object.keys(files);
-  if (names.length !== expected.size || names.some((n) => !expected.has(n))) {
-    throw new CheckFailed("The export doesn't hold the files it should.");
-  }
-  const text = (name: string) =>
-    strFromU8(files[`${folder}/${name}`] ?? new Uint8Array());
-  for (const row of originals?.rows ?? []) {
-    const name = exportName(originals as Table, row);
-    if (hashOf(files[`${folder}/${name}`] ?? new Uint8Array()) !== row[0]) {
-      throw new CheckFailed(`The export's ${name} differs from the original.`);
-    }
-  }
-  for (const table of tables) {
-    const json = JSON.parse(text(`json/${table.name}.json`)) as {
-      columns: string[];
-      rows: Record<string, Value>[];
-    };
-    const columns = JSON.stringify(table.columns);
-    if (
-      JSON.stringify(json.columns) !== columns ||
-      // Every row has every column: a missing value isn't the same as null.
-      json.rows.some((row) => JSON.stringify(Object.keys(row)) !== columns) ||
-      JSON.stringify(
-        json.rows.map((row) => table.columns.map((c) => row[c])),
-      ) !== JSON.stringify(table.rows)
-    ) {
-      throw new CheckFailed(
-        `The export's ${table.name}.json differs from the record.`,
-      );
-    }
-    const asCsv = (value: Value) => (value === null ? null : String(value));
-    const csv = fromCsv(text(`csv/${table.name}.csv`));
-    const wanted = [table.columns, ...table.rows.map((row) => row.map(asCsv))];
-    if (JSON.stringify(csv) !== JSON.stringify(wanted)) {
-      throw new CheckFailed(
-        `The export's ${table.name}.csv differs from the record.`,
-      );
-    }
+    await rm(copy, { force: true });
+    const { size } = await stat(path);
+    return { name: `${folder}.zip`, path, size, remove };
+  } catch (error) {
+    await remove();
+    throw error;
   }
 }
 

@@ -27,7 +27,9 @@ import { APPEARANCE_HEADER } from "@rufi/contracts/app";
 import type { Brief } from "@rufi/contracts/briefs";
 import { KeepValues, type DeviceData } from "@rufi/contracts/devices";
 import type { Overview } from "@rufi/contracts/record";
+import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { Readable } from "node:stream";
 import { Option, Result, Schema } from "effect";
 import type { HttpBindings } from "@hono/node-server";
 import { Hono, type Context, type Next } from "hono";
@@ -57,6 +59,7 @@ import { Refusal } from "../core/tools/registry.ts";
 import { DeleteDocument, FixItem } from "@rufi/contracts/documents";
 import { OriginalMissing } from "../core/documents/originals.ts";
 import type { BackupJob } from "../core/store/backup.ts";
+import type { MadeExport } from "../core/store/export.ts";
 import type { Devices } from "../core/devices/devices.ts";
 import type { Change, Transcripts } from "../core/chat/transcript.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
@@ -97,7 +100,7 @@ export interface ApiDeps {
   /** The data folder in use, and how it was chosen; `show` shows it in Finder. */
   folder: DataFolder & { show: () => Promise<void> };
   /** The export, made when asked: the zip and its file name. */
-  exportZip: () => Promise<{ name: string; bytes: Uint8Array }>;
+  exportZip: () => Promise<MadeExport>;
   /** Each person's documents. */
   documents: Documents;
   /** Deleting one: its preview, and the delete. */
@@ -582,7 +585,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   });
 
   app.get("/api/export", async (c) => {
-    let made: { name: string; bytes: Uint8Array };
+    let made: MadeExport;
     try {
       made = await deps.exportZip();
     } catch (error) {
@@ -596,7 +599,15 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     }
     c.header("Content-Type", "application/zip");
     c.header("Content-Disposition", `attachment; filename="${made.name}"`);
-    return c.body(new Uint8Array(made.bytes));
+    c.header("Content-Length", String(made.size));
+    // Sent from its file; the staging folder goes when the answer ends or is cut.
+    const file = createReadStream(made.path);
+    file.once("close", () => {
+      made.remove().catch((error: unknown) => {
+        deps.log("export.failed", { error: errorCode(error) });
+      });
+    });
+    return c.body(Readable.toWeb(file) as ReadableStream<Uint8Array>);
   });
 
   // A file a reply shows: a short-lived address for that one file.
