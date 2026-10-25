@@ -7,7 +7,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Status } from "@rufi/contracts";
 import type { RunSubAgent } from "../../server/src/agent/runtime.ts";
-import { test as base } from "@playwright/test";
+import {
+  expect,
+  test as base,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 import { Effect, Exit, Scope } from "effect";
 import type { Scenario } from "../../server/tests/fake-codex.ts";
 import { fakeModel, type FakeModel } from "../../server/tests/fake-model.ts";
@@ -186,4 +191,30 @@ export const test = base.extend<{ rufi: Rufi }>({
   },
 });
 
-export { expect } from "@playwright/test";
+/**
+ * Files into a reply as a person sends them from the Documents page: Add
+ * puts them in the chat box as chips (nothing starts), then Send, with
+ * `words` or none, sends them.
+ */
+export async function sendFiles(
+  page: Page,
+  files: Parameters<Locator["setInputFiles"]>[0],
+  words?: string,
+): Promise<void> {
+  await page
+    .getByLabel("Choose documents", { exact: true })
+    .setInputFiles(files);
+  const chat = page.getByRole("region", { name: "Chat" });
+  await expect(
+    chat
+      .getByRole("list", { name: "Added to this message" })
+      .getByRole("listitem")
+      .first(),
+  ).toBeVisible();
+  if (words !== undefined) {
+    await chat.getByRole("textbox", { name: "Message to Rufi" }).fill(words);
+  }
+  await chat.getByRole("button", { name: "Send" }).click();
+}
+
+export { expect };

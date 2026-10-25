@@ -3,7 +3,10 @@
 // disk before one transaction writes the files, the documents and their
 // pages. Several photos added together can be one document, pages in the
 // order they were added; a PDF is always a document of its own. The same
-// content for the same person is never added twice.
+// content for the same person is never added twice. A document added waits
+// unsent in the chat box: out of every list until a message sends it
+// (core/chat/queue.ts), and taking its chip out removes it
+// (core/documents/delete.ts). Nothing reads it before then.
 import { createHash } from "node:crypto";
 import type {
   Added,
@@ -18,7 +21,7 @@ import { fileGate, type FileGate } from "./gate.ts";
 import { inspect, type Inspected } from "./inspect.ts";
 import { displayCopy, publisher } from "./pages.ts";
 import type { Readings } from "./reading.ts";
-import { placesOf, sorting } from "./sorting.ts";
+import { placesOf, unsorted } from "./sorting.ts";
 import {
   displayPath,
   isFileId,
@@ -58,7 +61,7 @@ export function documents(
   store: Store,
   home: string,
   now: () => string = () => new Date().toISOString(),
-  /** Reads what is added. */
+  /** The readings, for the list. */
   reads?: Readings,
   /** Shared with backups, the export, drawn pages and deletes. */
   gate: FileGate = fileGate(),
@@ -87,8 +90,9 @@ export function documents(
      * them become one document; otherwise each its own. A file that isn't a
      * PDF, JPEG, PNG or HEIC, or doesn't open, refuses the whole add
      * (NotADocument). The same content as a document already there, or as
-     * an earlier file of this add, is left out and named in `already`.
-     * `from`: where the person added them.
+     * an earlier file of this add, is left out and named in `already`,
+     * sent or still unsent. `from`: where the person added them. Each new
+     * document is unsent, with no reading, until a message sends it.
      */
     add: async (
       personId: string,
@@ -164,6 +168,7 @@ export function documents(
                 added_at: at,
                 added_from: from,
                 version: 0,
+                sent_at: null,
               })
               .execute();
             let position = 0;
@@ -182,11 +187,9 @@ export function documents(
                   .execute();
               }
             }
-            await reads?.queueNew(trx, personId, documentId);
           }
         });
       });
-      if (added.length > 0) reads?.changed(personId);
       for (const { name, id } of repeats) {
         const index = groups.findIndex((g) => g.some((f) => f.id === id));
         already.push({ name, documentId: added[index] ?? "" });
@@ -195,8 +198,9 @@ export function documents(
     },
 
     /**
-     * The person's documents, newest first, each with its files in page
-     * order; the documents Rufi AI split from one add by their first page.
+     * The person's sent documents, newest first, each with its files in
+     * page order; the documents Rufi AI split from one add by their first
+     * page.
      */
     list: async (personId: string): Promise<DocumentSummary[]> => {
       const rows = await db
@@ -219,6 +223,7 @@ export function documents(
         ])
         .where("d.person_id", "=", personId)
         .where("d.deleted_at", "is", null)
+        .where("d.sent_at", "is not", null)
         .orderBy("d.added_at", "desc")
         .orderBy(sql`COALESCE(d.from_document, d.id)`, "desc")
         .orderBy(
@@ -227,7 +232,7 @@ export function documents(
         .orderBy("p.position")
         .execute();
       const statuses = await reads?.statuses(personId);
-      const sorts = await sorting(store, now).states(personId);
+      const waiting = await unsorted(db, personId);
       const places = await placesOf(db, personId);
       type File = { -readonly [K in keyof DocumentFile]: DocumentFile[K] };
       const list: (Omit<DocumentSummary, "files"> & { files: File[] })[] = [];
@@ -248,7 +253,7 @@ export function documents(
                 ? { pages: place.positions, of: place.of }
                 : null;
             })(),
-            sorting: sorts.get(row.id) ?? null,
+            notSorted: waiting.has(row.id),
             status: reading?.status ?? "not_read",
             reading: reading
               ? {

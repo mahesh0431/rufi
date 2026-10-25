@@ -1,19 +1,12 @@
-// Rufi AI's sort of an add, on a real database: a split into documents with their drafts in one transaction, the refusals that
-// write nothing, the same call again, what a turn Rufi started may sort,
-// pages a saved result cites, a fixed draft that moves with its page, and
-// Rufi's own work on the requests (tend) and the person's Retry. One
-// fictional PDF of five pages: two reports and a prescription.
+// Rufi AI's sort of an add, on a real database: a split into documents
+// with their drafts in one transaction, the refusals that write nothing,
+// pages a saved result cites, a fixed draft that moves with
+// its page, and a page read again placed on its own. One fictional PDF of
+// five pages: two reports and a prescription.
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { v7 as uuid } from "uuid";
 import { beforeEach, describe, expect, it } from "vitest";
-import { chatQueue } from "../chat/queue.ts";
-import {
-  transcripts as openTranscripts,
-  type ChatRow,
-  type Transcripts,
-} from "../chat/transcript.ts";
 import { databasePath, openWritable, type Store } from "../store/database.ts";
 import { documents as openDocuments } from "./documents.ts";
 import { sorting, type SortInput, type SortScope } from "./sorting.ts";
@@ -21,9 +14,6 @@ import { sorting, type SortInput, type SortScope } from "./sorting.ts";
 const T0 = "2026-10-18T09:00:00.000Z";
 let clock = T0;
 const now = () => clock;
-const later = (ms: number) => {
-  clock = new Date(Date.parse(clock) + ms).toISOString();
-};
 
 /** The reader's copy of each page of pile.pdf. */
 const COPIES = [
@@ -36,8 +26,6 @@ const COPIES = [
 
 let home: string;
 let store: Store;
-let transcripts: Transcripts;
-let chat: ChatRow;
 let sorts: ReturnType<typeof sorting>;
 let calls = 0;
 
@@ -49,7 +37,7 @@ beforeEach(async () => {
     INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional'), ('ravi', 'Ravi Fictional');
     INSERT INTO chats (id, person_id, created_at) VALUES ('c-asha', 'asha', '${T0}'), ('c-ravi', 'ravi', '${T0}');
     INSERT INTO files (id, size, media_type, created_at) VALUES ('f-pile', 1, 'application/pdf', '${T0}');
-    INSERT INTO documents (id, person_id, added_at, added_from, version) VALUES ('pile', 'asha', '${T0}', 'documents_page', 1);
+    INSERT INTO documents (id, person_id, added_at, added_from, version, sent_at) VALUES ('pile', 'asha', '${T0}', 'documents_page', 1, '${T0}');
     INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
       VALUES ('job-1', 'asha', 'document_read', 'pile', 'done', 1, '[1,2,3,4,5]', '${T0}', '${T0}');
   `);
@@ -68,8 +56,6 @@ beforeEach(async () => {
       )
       .run(page, copy);
   }
-  transcripts = openTranscripts(store, now);
-  chat = (await transcripts.chat("asha")) as ChatRow;
   sorts = sorting(store, now);
   return () => {
     store.close();
@@ -153,36 +139,35 @@ const drafts = () =>
   );
 
 describe("the Documents list", () => {
-  it("says an add is being sorted, then shows each of its documents with its place in the file, its kind, lab and date", async () => {
+  it("says an add isn't sorted yet, then shows each of its documents with its place in the file, its kind, lab and date", async () => {
     const list = () => openDocuments(store, home, now).list("asha");
-    await asked();
     expect(await list()).toEqual([
       expect.objectContaining({
         id: "pile",
         kind: null,
         place: null,
-        sorting: { state: "sorting", why: null },
+        notSorted: true,
       }),
     ]);
     await sorts.sort(personal(), THREE);
     expect(
-      (await list()).map((d) => [d.kind, d.date, d.lab, d.place, d.sorting]),
+      (await list()).map((d) => [d.kind, d.date, d.lab, d.place, d.notSorted]),
     ).toEqual([
       [
         "lab_report",
         "2026-03-12",
         "Sunrise Labs",
         { pages: [1, 2], of: 5 },
-        null,
+        false,
       ],
       [
         "lab_report",
         "2026-08-20",
         "Lakeside Diagnostics",
         { pages: [3, 4], of: 5 },
-        null,
+        false,
       ],
-      ["prescription", null, null, { pages: [5], of: 5 }, null],
+      ["prescription", null, null, { pages: [5], of: 5 }, false],
     ]);
   });
 });
@@ -307,18 +292,8 @@ describe("a sort", () => {
         quote: "HDL cholesterol | 41",
       },
     ]);
-    // Its reading is sorted, and the call is kept with its answer.
+    // Its reading is sorted.
     expect(rows("SELECT sorted_at FROM jobs")).toEqual([{ sorted_at: T0 }]);
-    expect(
-      rows("SELECT document_id, state, call_id, answer FROM sort_requests"),
-    ).toEqual([
-      {
-        document_id: "pile",
-        state: "done",
-        call_id: "call-split",
-        answer: JSON.stringify(answer),
-      },
-    ]);
     expect(
       answer.documents.map((d) => [d.kind, d.pages, d.drafts, d.worth_a_look]),
     ).toEqual([
@@ -326,11 +301,6 @@ describe("a sort", () => {
       ["lab_report", "3–4", 3, 0],
       ["prescription", "5", 0, 0],
     ]);
-
-    // The same call again gets the same answer and writes nothing.
-    expect(await sorts.sort(personal("call-split"), THREE)).toEqual(answer);
-    expect(documents()).toHaveLength(3);
-    expect(drafts()).toHaveLength(7);
   });
 
   it("refuses a call with every problem in it, and writes nothing", async () => {
@@ -361,7 +331,6 @@ describe("a sort", () => {
     expect({ documents: documents(), pages: pagesOfEach() }).toEqual(before);
     expect(drafts()).toEqual([]);
     expect(rows("SELECT sorted_at FROM jobs")).toEqual([{ sorted_at: null }]);
-    expect(rows("SELECT id FROM sort_requests")).toEqual([]);
   });
 
   it("refuses a document id not of this add or named twice, a new document without its kind, and the add's own document left out", async () => {
@@ -473,122 +442,9 @@ describe("a sort", () => {
       [own, 4, 3, "42"],
     ]);
   });
-});
-
-/** Rufi's request that Rufi AI sort the pile, as a reading's end writes it. */
-async function asked(jobId = "job-1") {
-  const queueId = uuid();
-  await transcripts.addEvent(
-    chat,
-    {
-      kind: "document_read",
-      line: "Read pile.pdf · 5 pages. Rufi AI is sorting it.",
-      ask: "A document reading finished: pile.pdf (document pile).",
-      askId: queueId,
-    },
-    async (trx) => {
-      await sorts.ask(
-        trx,
-        { personId: "asha", documentId: "pile", jobId },
-        queueId,
-      );
-      return undefined;
-    },
-  );
-  return queueId;
-}
-
-/** The chat hands its next row to Rufi AI: the turn it starts. */
-async function handOver(agentTurnId: string) {
-  const queue = chatQueue(store, now);
-  const given = await queue.claim(chat, true);
-  if (!given) throw new Error("Nothing to hand over.");
-  await transcripts.startTurn(
-    chat,
-    agentTurnId,
-    { id: "thread-1", model: "gpt-6.1-sol" },
-    given.id,
-  );
-  return given;
-}
-
-const requests = () =>
-  rows(
-    "SELECT r.state, r.tries, r.retry_at, q.state AS row, q.held FROM sort_requests r LEFT JOIN chat_queue q ON q.id = r.queue_id ORDER BY r.created_at",
-  );
-
-describe("a turn Rufi started", () => {
-  it("sorts only its request's add, and only the pages not sorted yet", async () => {
-    await asked();
-    const given = await handOver("turn-rufi");
-    expect(given.origin).toBe("rufi");
-    const scope = { ...personal("call-rufi"), agentTurnId: "turn-rufi" };
-    await sorts.sort(scope, THREE);
-    expect(requests()).toEqual([
-      { state: "done", tries: 0, retry_at: null, row: "sent", held: null },
-    ]);
-
-    // Its request is done: another call in it sorts nothing.
-    await expect(
-      sorts.sort({ ...scope, callId: "call-rufi-2" }, THREE),
-    ).rejects.toThrow("This turn was started by Rufi, not by the user");
-
-    // A page read again waits; the next Rufi turn sorts only that page.
-    store.db.exec(`
-      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
-        VALUES ('job-2', 'asha', 'document_read', 'pile', 'done', 1, '[2]', '${T0}', '${T0}');
-      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
-        VALUES ('asha', 'f-pile', 2, 'job-2', 1, 'read', '| Ferritin | 1,26 | ng/mL |', '${T0}');
-    `);
-    await asked("job-2");
-    await handOver("turn-rufi-2");
-    const again = { ...personal("call-rufi-3"), agentTurnId: "turn-rufi-2" };
-    await expect(sorts.sort(again, THREE)).rejects.toMatchObject({
-      issues: expect.arrayContaining([
-        expect.objectContaining({
-          fix: "Pages 1, 3–5 were sorted before. In a turn Rufi started you sort only the pages not sorted yet; the user can ask you to change the others.",
-        }),
-      ]) as unknown,
-    });
-    // Joining the first report, it may not change it.
-    await expect(
-      sorts.sort(again, {
-        document: "pile",
-        documents: [{ id: "pile", pages: [2], date: "2026-03-13" }],
-        drafts: [],
-      }),
-    ).rejects.toMatchObject({
-      issues: [
-        expect.objectContaining({
-          path: "documents.0.date",
-          got: '"2026-03-13"',
-        }),
-      ],
-    });
-    const joined = await sorts.sort(again, {
-      document: "pile",
-      documents: [{ id: "pile", pages: [2], lab: "Sunrise Labs" }],
-      drafts: [draft(2, "Ferritin", "1,26")],
-    });
-    expect(joined.documents).toMatchObject([
-      { id: "pile", kind: "lab_report", date: "2026-03-12", pages: "1–2" },
-    ]);
-    expect(documents()[0]).toMatchObject({
-      kind: "lab_report",
-      date: "2026-03-12",
-      issuer: "Sunrise Labs",
-      report_number: "SL-1",
-    });
-    expect(requests().map((r) => r["state"])).toEqual(["done", "done"]);
-  });
 
   it("places a page read again as a new document, and the document it was in keeps its pages, lab and date", async () => {
-    await asked();
-    await handOver("turn-rufi");
-    await sorts.sort(
-      { ...personal("call-rufi"), agentTurnId: "turn-rufi" },
-      THREE,
-    );
+    await sorts.sort(personal(), THREE);
     const lakeside = documents()[1];
     // Page 4 read again is a letter.
     store.db.exec(`
@@ -597,16 +453,11 @@ describe("a turn Rufi started", () => {
       INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
         VALUES ('asha', 'f-pile', 4, 'job-2', 1, 'read', 'Dear Asha, see you on 21/08/2026.', '${T0}');
     `);
-    await asked("job-2");
-    await handOver("turn-rufi-2");
-    const answer = await sorts.sort(
-      { ...personal("call-rufi-2"), agentTurnId: "turn-rufi-2" },
-      {
-        document: "pile",
-        documents: [{ pages: [4], kind: "letter", date: "2026-08-21" }],
-        drafts: [],
-      },
-    );
+    const answer = await sorts.sort(personal(), {
+      document: "pile",
+      documents: [{ pages: [4], kind: "letter", date: "2026-08-21" }],
+      drafts: [],
+    });
     const [, before, , letter] = documents();
     // A page left it: its version goes up, nothing else.
     expect(before).toEqual({ ...lakeside, version: 2 });
@@ -623,226 +474,5 @@ describe("a turn Rufi started", () => {
     expect(answer.documents).toMatchObject([
       { id: letter?.["id"], kind: "letter", pages: "4" },
     ]);
-  });
-});
-
-describe("Rufi's work on the requests", () => {
-  it("hands a waiting request over, tries a failed one again after a wait, three times, then waits for Retry", async () => {
-    await asked();
-    expect(await sorts.tend()).toEqual({
-      people: ["asha"],
-      changed: [],
-      wake: undefined,
-    });
-
-    for (const [index, wait] of [30_000, 60_000, 120_000].entries()) {
-      // The hand-over failed.
-      store.db.exec(
-        "UPDATE chat_queue SET held = 'failed', held_text = 'The AI could not start.' WHERE state = 'waiting'",
-      );
-      const due = new Date(Date.parse(clock) + wait).toISOString();
-      expect(await sorts.tend()).toEqual({
-        people: [],
-        changed: ["asha"],
-        wake: due,
-      });
-      expect(requests().at(-1)).toMatchObject({
-        tries: index + 1,
-        retry_at: due,
-      });
-      // Not yet: it waits.
-      expect((await sorts.tend()).people).toEqual([]);
-      later(wait);
-      expect((await sorts.tend()).people).toEqual(["asha"]);
-      expect(requests().at(-1)).toMatchObject({
-        retry_at: null,
-        row: "waiting",
-        held: null,
-      });
-    }
-    store.db.exec(
-      "UPDATE chat_queue SET held = 'failed', held_text = 'The AI could not start.' WHERE state = 'waiting'",
-    );
-    await sorts.tend();
-    expect(requests()).toEqual([
-      { state: "failed", tries: 3, retry_at: null, row: "removed", held: null },
-    ]);
-    expect(rows("SELECT error FROM sort_requests")).toEqual([
-      { error: "The AI could not start." },
-    ]);
-
-    // The person's Retry starts its tries again, at the end of the queue.
-    expect(await sorts.retry("asha", "pile")).toBe(true);
-    expect(requests()).toEqual([
-      { state: "open", tries: 0, retry_at: null, row: "waiting", held: null },
-    ]);
-    // One that waits to go needs no Retry.
-    expect(await sorts.retry("asha", "pile")).toBe(false);
-  });
-
-  it("a turn that ended without sorting asked the person; one they stopped waits for them; another end is tried again", async () => {
-    await asked();
-    await handOver("turn-1");
-    await transcripts.endTurn(chat, "turn-1", { status: "completed" });
-    await sorts.tend();
-    expect(requests().map((r) => r["state"])).toEqual(["asked"]);
-    expect(await sorts.retry("asha", "pile")).toBe(true);
-
-    await handOver("turn-2");
-    await transcripts.endTurn(chat, "turn-2", {
-      status: "interrupted",
-      reason: "stopped",
-      text: "Stopped.",
-    });
-    await sorts.tend();
-    expect(requests()).toEqual([
-      {
-        state: "open",
-        tries: 0,
-        retry_at: null,
-        row: "waiting",
-        held: "paused",
-      },
-    ]);
-    expect((await sorts.tend()).people).toEqual([]);
-
-    store.db.exec("UPDATE chat_queue SET held = NULL WHERE held = 'paused'");
-    await handOver("turn-3");
-    await transcripts.endTurn(chat, "turn-3", {
-      status: "failed",
-      reason: "connection",
-      text: "The connection to ChatGPT dropped.",
-    });
-    expect((await sorts.tend()).wake).toBe(
-      new Date(Date.parse(T0) + 30_000).toISOString(),
-    );
-    expect(rows("SELECT tries, error FROM sort_requests")).toEqual([
-      { tries: 1, error: "The connection to ChatGPT dropped." },
-    ]);
-    // Its wait over, it goes again.
-    later(30_000);
-    expect((await sorts.tend()).people).toEqual(["asha"]);
-    expect(requests().at(-1)).toMatchObject({
-      state: "open",
-      retry_at: null,
-      row: "waiting",
-    });
-    expect(await handOver("turn-4")).toMatchObject({ origin: "rufi" });
-  });
-
-  it("signed out, it isn't sorted yet, says how to go on, and goes once the person signs in", async () => {
-    const list = async () =>
-      (await openDocuments(store, home, now).list("asha"))[0]?.sorting;
-    const queue = chatQueue(store, now);
-    await asked();
-    expect(await queue.claim(chat, false)).toBeUndefined();
-    expect(await list()).toEqual({
-      state: "signed_out",
-      why: "Sign in with ChatGPT; Rufi AI sorts it then",
-    });
-    expect(await sorts.retry("asha", "pile")).toBe(false);
-    expect(await handOver("turn-1")).toMatchObject({ origin: "rufi" });
-    expect(await list()).toEqual({ state: "sorting", why: null });
-  });
-
-  it("a newer reading's request takes the place of the one that waited", async () => {
-    await asked();
-    await asked();
-    expect(requests()).toEqual([
-      { state: "void", tries: 0, retry_at: null, row: "removed", held: null },
-      { state: "open", tries: 0, retry_at: null, row: "waiting", held: null },
-    ]);
-  });
-});
-
-describe("a sort in the chat's queue", () => {
-  it("goes in a turn of its own, after the events before it and a person's message sent while it waits", async () => {
-    const queue = chatQueue(store, now);
-    await transcripts.addEvent(chat, {
-      kind: "backup",
-      line: "Backed up.",
-      ask: "A backup was made.",
-    });
-    await asked();
-    await queue.accept(chat, uuid(), "What did the reports say?");
-
-    const turns: { origin: string; notes: string[]; text?: string }[] = [];
-    for (const turn of ["turn-a", "turn-b", "turn-c"]) {
-      const given = await handOver(turn);
-      turns.push({
-        origin: given.origin,
-        notes: given.notes.map((n) => n.slice(0, 18)),
-        ...(given.text !== undefined && { text: given.text }),
-      });
-      await transcripts.endTurn(chat, turn, { status: "completed" });
-    }
-    expect(turns).toEqual([
-      { origin: "rufi", notes: ["A backup was made."] },
-      { origin: "person", notes: [], text: "What did the reports say?" },
-      { origin: "rufi", notes: ["A document reading"] },
-    ]);
-  });
-
-  it("after a restart, a sort Rufi was handing over waits again and goes, while the chat's other events wait for the person", async () => {
-    const queue = chatQueue(store, now);
-    await asked();
-    await transcripts.addEvent(chat, {
-      kind: "backup",
-      line: "Backed up.",
-      ask: "A backup was made.",
-    });
-    // Rufi stopped while handing the sort over.
-    expect(await queue.claim(chat, true)).toMatchObject({ origin: "rufi" });
-    expect(await queue.endStopped()).toBe(0);
-    expect(rows("SELECT paused FROM chats WHERE id = 'c-asha'")).toEqual([
-      { paused: "restarted" },
-    ]);
-    expect(
-      rows(
-        "SELECT substr(text, 1, 18) AS text, state, held FROM chat_queue ORDER BY position",
-      ),
-    ).toEqual([
-      { text: "A document reading", state: "waiting", held: null },
-      { text: "A backup was made.", state: "waiting", held: "paused" },
-    ]);
-    // The pause after a restart doesn't hold the sort; the backup's note
-    // rides with the person's next message.
-    expect(await handOver("turn-a")).toMatchObject({
-      origin: "rufi",
-      notes: [expect.stringMatching(/^A document reading/) as string],
-    });
-    await transcripts.endTurn(chat, "turn-a", { status: "completed" });
-    expect(await queue.claim(chat, true)).toBeUndefined();
-  });
-
-  it("after a restart while signed out, it waits for the sign-in, not for a message", async () => {
-    const queue = chatQueue(store, now);
-    await asked();
-    await queue.claim(chat, true);
-    await queue.endStopped();
-    expect(await queue.claim(chat, false)).toBeUndefined();
-    expect(rows("SELECT held FROM chat_queue")).toEqual([
-      { held: "signed_out" },
-    ]);
-    expect(
-      (await openDocuments(store, home, now).list("asha"))[0]?.sorting,
-    ).toMatchObject({ state: "signed_out" });
-    expect(await handOver("turn-a")).toMatchObject({ origin: "rufi" });
-  });
-
-  it("a Stop holds it, and it goes after the person's next message", async () => {
-    const queue = chatQueue(store, now);
-    await asked();
-    await queue.pause(chat);
-    expect(await queue.claim(chat, true)).toBeUndefined();
-    expect(rows("SELECT held FROM chat_queue")).toEqual([{ held: "paused" }]);
-    await queue.accept(chat, uuid(), "Go on");
-    expect(await handOver("turn-a")).toMatchObject({
-      origin: "person",
-      notes: [],
-      text: "Go on",
-    });
-    await transcripts.endTurn(chat, "turn-a", { status: "completed" });
-    expect(await handOver("turn-b")).toMatchObject({ origin: "rufi" });
   });
 });

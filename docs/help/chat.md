@@ -36,9 +36,9 @@ A line between days says which day the messages under it are from: "Today", "Yes
 
 ## Sending a message
 
-Type in the box and press Enter, or click the send button. Shift-Enter starts a new line.
+Type in the box and press Enter, or click the send button. Shift-Enter starts a new line. You can send files with no words: the send button works with at least one chip too.
 
-When you send, the box says "Sending…" for a moment, and you can't change it; then it empties. Rufi sends the text in this box, also when another tab saved other text just before. Then the message goes to the AI: at once when nothing else runs, or in its turn (see [Waiting messages](#waiting-messages)). It shows in the chat when the AI starts on it.
+When you send, the box says "Sending…" for a moment, and you can't change it; then it empties. Rufi sends the text in this box, also when another tab saved other text just before. Then the message goes to the AI: at once when nothing else runs, or in its turn (see [Waiting messages](#waiting-messages)). It shows in the chat when the AI starts on it, or, when it brings new files, when Rufi starts to read them (see [Documents](documents.md#while-a-document-is-read)).
 
 If you aren't signed in when you send, nothing goes to the AI and nothing waits: your text stays in the box, which says "You're signed out. Sign in with ChatGPT to chat." Click **Sign in** (see [Signing in with ChatGPT](signing-in.md)), then send again. A message that already waited when the sign-in went away keeps waiting. Signing in alone doesn't send it: it goes the next time Rufi gives the AI something, with your next message or with one of Rufi's notes (see [Rufi's lines](#rufis-lines)).
 
@@ -59,23 +59,13 @@ You can add your records and documents to a message, so the AI knows exactly wha
 - **A follow-up or a document that needs you:** on Overview, click **Ask Rufi** on its line in **Needs you**.
 - **A document:** on the Documents page, click **Ask Rufi** on its row.
 - **A draft result:** on a document's page, click **Ask Rufi** on its row (see [Documents](documents.md#add-some-results-to-the-chat)).
-- **A new file:** click the paperclip next to the box, or drop files on the chat panel or the chat page. Each file is added as a document at once, the same as on the Documents page (see [Documents](documents.md#add-documents)), and its chip goes in the box. Rufi starts to read it then, not when you send. A file you already added gives the chip of the document you have, and the box says so.
+- **A new file:** click the paperclip next to the box, or drop files on the chat panel or the chat page. The Documents page's **Add…**, and a drop on that page, do the same: they open the chat and put the files in its box. Each file is added at once (see [Documents](documents.md#add-documents)) and its chip goes in the box, but nothing is read until you send: your files and your words go as one message. A file you already added gives the chip of the document you have, and the box says so. The chat stays open after you add files.
 
 **Ask Rufi** never takes you away from the page, and doesn't open the panel: collect what you want to ask about while you read, then click the bar to write and send. When the panel is open, **Ask Rufi** adds to its box, and the panel stays open. If Rufi can't add it at that moment, the bar says why and what to do: the box is still loading, a message is being sent, or your last message may not have reached Rufi (send it again or change it first).
 
-A document's chip in the box says what Rufi is doing with that document:
+A chip shows only a name and what it is; it has no reading state. A chip marked **· read again** is a document whose unreadable pages Rufi reads again when you send (see [Retry](documents.md#retry)). While a file you added is on its way, the box says "Adding" and its name until its chip comes.
 
-| The chip says                                   | It means                                                                                 |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| **Reading…**, such as **Reading… 2 of 3 pages** | Rufi is reading it now, with the pages read so far.                                      |
-| **Waiting to read**                             | The reading waits for its turn, or to try again by itself.                               |
-| **Read**                                        | The reading ended. This doesn't mean anything is saved.                                  |
-| **Read · some pages unclear**                   | The reading ended, but some pages couldn't be read. **Retry** is on the document's page. |
-| **Couldn't read**                               | The reading failed.                                                                      |
-
-A document that was never read, or whose state Rufi doesn't know yet, shows no state. While a file you added is on its way, the box says "Adding" and its name until its chip comes. A chip in a message you sent shows no state.
-
-To take a chip out, click its **×**. This changes nothing in your health record. The chips are kept with what you typed, also when you reload or Rufi starts again, and they go with the message: your message in the chat shows them too.
+To take a chip out, click its **×**. This changes nothing in your health record. A file that was never sent is removed from Rufi, with its pages; a document you already sent only leaves the box. The chips are kept with what you typed, also when you reload or Rufi starts again, and they go with the message: your message in the chat shows them too.
 
 Rufi checks each chip: it must be in the health record of the person whose chat it is. If it isn't, the box says "Something added to this message isn't in this person's record. Take it out of the message and add it again." A chip of a document you deleted says "A document added to this message was deleted. Take it out of the message."
 
@@ -214,9 +204,11 @@ If you click Stop, what the AI did so far stays in Activity, and the folded line
 
 **Stop.** The stop button (the square, where the send button was) ends the reply now, in every size of the chat. What the AI wrote so far stays.
 
-**Stop.** After a Stop, nothing more goes to the AI until you send a message. Rufi keeps this also when you reload or Rufi starts again. A Stop while Rufi AI sorts a file stops the sorting too: it goes on after your next message.
+**Stop.** After a Stop, nothing more goes to the AI until you send a message. Rufi keeps this also when you reload or Rufi starts again.
 
-You can send while Rufi is replying; it carries on with your message in mind. Stop ends the reply.
+**Rufi's reader.** When your message brings files, your reply starts with Rufi's part: Rufi's reader copies the pages before the AI starts. Each file is a step in Activity, **Rufi's reader · thyrocare-aug.pdf**, with how far it is. Stop ends the reading too. The AI starts when all files are copied, and answers your message in the same reply (see [Documents](documents.md#while-a-document-is-read)). If the reading doesn't finish, the reply ends before the AI, with the reason and **Retry** (see [Documents](documents.md#when-a-reading-stops)).
+
+You can send while Rufi is replying. A message without new files goes into the reply, and the AI carries on with it in mind. A message with new files, or one you send while Rufi's reader is copying, waits for a reply of its own. Stop ends the reply.
 
 ## Waiting messages
 
@@ -229,9 +221,11 @@ What waits shows above the box, also after a reload, a restart of Rufi, or a cha
 The line above them says what happens next:
 
 - **Waiting · these go in order after the reply**: they go by themselves.
-- **Stopped · these go when you send a message**: you stopped a reply. Send a message, or click **Send now**, to go on. They go first, in order, then your new message. Rufi's request that Rufi AI sort a file goes after your message, in a reply of its own.
-- **Rufi restarted · these go when you send a message**: Rufi started again while messages waited. Nothing goes by itself after a restart: send a message, or click **Send now**. The one exception is Rufi's own request that Rufi AI sort a file: it goes on by itself (see [Documents](documents.md#how-rufi-ai-sorts-a-file)).
+- **Stopped · these go when you send a message**: you stopped a reply. Send a message, or click **Send now**, to go on. They go first, in order, then your new message.
+- **Rufi restarted · these go when you send a message**: Rufi started again while messages waited. Nothing goes by itself after a restart: send a message, or click **Send now**.
 - **Not sent · Rufi sends these only when you say**: some messages are held, as below.
+
+A message with new files waits like any other, and gets a reply of its own, which reads its files first. Removing a waiting message doesn't remove its files: they stay sent, and the Documents page shows **Not read yet** with **Retry**. A message whose reply ended while Rufi read its files isn't listed here: it is in the chat already, and its reply's last line has **Retry** (see [Documents](documents.md#when-a-reading-stops)).
 
 A held message says why under it, and goes only when you click its button: **Send**, **Send again**, or **Try again** or **New thread**:
 
@@ -242,13 +236,13 @@ A held message says why under it, and goes only when you click its button: **Sen
 
 ## Rufi's lines
 
-Some things happen outside your chat. Rufi tells you with its own line in the chat. For example, "Reading thyrocare-aug.pdf · 5 pages" says that Rufi started to read a document, and "Read thyrocare-aug.pdf · 5 pages. Rufi AI is sorting it. · Open" that the reading has finished; **Open** shows the document (see [Documents](documents.md#how-rufi-reads-a-document)). After you delete a document, its lines have no **Open** or **Retry**, and a new line says **Deleted Sunrise Labs August.pdf**. When you chose **Delete file and results**, the chat opens, and the AI asks you about the document's results (see [Documents](documents.md#when-results-from-it-are-in-your-health-record)). Rufi writes these lines, not the AI, and they are never your words. Readings at work show above the box, in the reader strip.
+Some things happen outside your chat. Rufi tells you with its own line in the chat. For example, after you delete a document, a line says **Deleted Sunrise Labs August.pdf**. When you chose **Delete file and results**, the chat opens, and the AI asks you about the document's results (see [Documents](documents.md#when-results-from-it-are-in-your-health-record)). Rufi writes these lines, not the AI, and they are never your words. Reading a file is not one of them: it is a step in your reply (see [While the AI replies](#while-the-ai-replies)). Lines from an earlier version, such as "Reading thyrocare-aug.pdf · 5 pages", stay in the chat as they were.
 
 When the AI should know too, Rufi gives it a note:
 
-- **When nothing runs**, the AI gets the note at once, in a short reply of its own. In that reply the AI can only read your health record: it can explain or ask, but it can't save anything. Only your own messages can save. The one thing it may do in such a reply is sort a file Rufi just read into documents and drafts, when Rufi asks it to (see [Documents](documents.md#how-rufi-ai-sorts-a-file)); a request to sort always gets a reply of its own, and Rufi tries it again by itself if the AI fails.
+- **When nothing runs**, the AI gets the note at once, in a short reply of its own. In that reply the AI can only read your health record: it can explain or ask, but it can't save anything or sort a file. Only your own messages can save.
 - **When a reply runs**, the note waits until the reply has ended. Notes that wait together go to the AI together, in one reply.
-- **After a Stop, or when you're signed out**, the note waits above the box as "Rufi's note", marked **Rufi**, with "Goes to the AI with your next message." It goes once, with your next message, never as a reply of its own later. **Remove** it if the AI doesn't need it. Rufi's request to sort a file is the exception: after a Stop it says "Goes after your next message, in a reply of its own.", and when you're signed out "Goes by itself once you sign in."
+- **After a Stop, or when you're signed out**, the note waits above the box as "Rufi's note", marked **Rufi**, with "Goes to the AI with your next message." It goes once, with your next message, never as a reply of its own later. **Remove** it if the AI doesn't need it.
 
 ## The model and effort
 

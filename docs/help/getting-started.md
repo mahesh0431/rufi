@@ -59,12 +59,12 @@ Each time, everything that was in the demo folder is removed first: the record, 
 
 In a new data folder, Rufi takes you through four short steps:
 
-1. **Welcome.** Rufi says what goes to the AI: what you ask, the documents you add and the parts of your health record the AI reads go to the AI provider you sign in with. Your health record is kept on your Mac. Tick "I understand Rufi is not a doctor", then click **Continue**. Here you can also choose how Rufi looks: **System**, **Light** or **Dark** (see [How Rufi looks](#how-rufi-looks)).
+1. **Welcome.** Rufi says what goes to the AI: what you ask, the documents you send and the parts of your health record the AI reads go to the AI provider you sign in with. Your health record is kept on your Mac. Tick "I understand Rufi is not a doctor", then click **Continue**. Here you can also choose how Rufi looks: **System**, **Light** or **Dark** (see [How Rufi looks](#how-rufi-looks)).
 2. **Your name.** Type it and click **Save and continue**. Rufi adds you to the record.
 3. **Sign in with ChatGPT.** See [Signing in with ChatGPT](signing-in.md#sign-in-in-rufi). To do it later, click **Skip for now**: your health record works without the AI.
 4. **Your emergency region,** for the number the AI gives in an emergency. Choose it and click **Save and continue**, or click **Skip for now**. You can change it in Settings.
 
-The steps fill the window. Each step shows Rufi at the top, and small dots for where you are: a screen reader reads them as "Step 1 of 4" and so on. While your browser has ChatGPT's sign-in open, Rufi thinks. The welcome step also shows what goes where in two boxes: **Your Mac** keeps your health record; **The AI provider** gets what you ask, the documents you add and the parts the AI reads. The sidebar, Help, Settings and your chat show when the first run is done.
+The steps fill the window. Each step shows Rufi at the top, and small dots for where you are: a screen reader reads them as "Step 1 of 4" and so on. While your browser has ChatGPT's sign-in open, Rufi thinks. The welcome step also shows what goes where in two boxes: **Your Mac** keeps your health record; **The AI provider** gets what you ask, the documents you send and the parts the AI reads. The sidebar, Help, Settings and your chat show when the first run is done.
 
 Rufi keeps each step you finished. If you reload the page, close it or open Rufi in another tab, you go on from the first step not done. Two tabs never add two people.
 
@@ -89,7 +89,7 @@ Rufi, at the top of the sidebar, shows what it is doing. When more than one thin
 | Rufi can't be reached, or the AI can't be used (you aren't signed in, or your plan can't be used)        | Asleep (z z)      |
 | Your last answer from the AI failed or broke off (not when you stopped it), until the next answer starts | Sorry             |
 | The AI chose a face in its last answer, until the next answer starts                                     | The AI's choice   |
-| A document is being read                                                                                 | Reads             |
+| A document is being read in your reply                                                                   | Reads             |
 | The AI is working on an answer                                                                           | Thinks (dots)     |
 | An answer or a reading just finished, for a few seconds                                                  | Happy, with a hop |
 | Your chat is new and empty                                                                               | Says hello        |

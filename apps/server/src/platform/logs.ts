@@ -32,7 +32,6 @@ const EVENTS = new Set([
   "subagent.unexpected",
   "reader.ended",
   "reader.failed",
-  "sorter.failed",
   "turn.ended",
   "chat.unknown_thread",
   "chat.save_failed",

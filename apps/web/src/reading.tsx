@@ -1,5 +1,4 @@
-// Reading documents on the screens: Retry, the reader strip above the chat
-// box, and View reading: a reading's work as the reader saved it (each
+// Reading documents on the screens: Retry through the chat, and View reading: a reading's work as the reader saved it (each
 // page's copy, or an older reader's items), read
 // only. Rufi's live stream says when readings change; the Documents page
 // also looks again while one reads.
@@ -9,51 +8,20 @@ import {
   type DraftItem,
   type Fixable,
   ReadingView,
-  Readings,
-  type ReadingNow,
 } from "@rufi/contracts/documents";
 import { useQuery } from "@tanstack/react-query";
-import { RotateCw, ScanText, X } from "lucide-react";
+import { RotateCw, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { create } from "zustand/react";
-import { read, request } from "./api.ts";
-import { chipState } from "./chip-state.ts";
-import { messageOf } from "./live.ts";
-import { queries, useDocumentItems } from "./reads.ts";
+import { read } from "./api.ts";
+import { useNavigate } from "@tanstack/react-router";
+import { showChat } from "./attach.tsx";
+import { askRufi } from "./panel.ts";
+import { useDocuments, useDocumentItems } from "./reads.ts";
 import { Button, IconButton, Problem } from "./ui.tsx";
 
 const documentsPath = (personId: string) =>
   `/api/people/${encodeURIComponent(personId)}/documents`;
-
-/** The person's readings that wait or run, for the strip. */
-export const useReadings = (personId: string) =>
-  useQuery({
-    queryKey: ["readings", personId],
-    queryFn: async () =>
-      (
-        await read(
-          Readings,
-          "GET",
-          `/api/people/${encodeURIComponent(personId)}/readings`,
-        )
-      ).readings,
-  });
-
-/** Everything the screens show about a person's readings, read again. */
-function readingsChanged(personId: string) {
-  for (const key of ["readings", "documents", "reading"]) {
-    void queries.invalidateQueries({ queryKey: [key, personId] });
-  }
-}
-
-/** Reads again what failed in a document's reading. */
-async function retry(personId: string, documentId: string) {
-  await request(
-    "POST",
-    `${documentsPath(personId)}/${encodeURIComponent(documentId)}/retry`,
-  );
-  readingsChanged(personId);
-}
 
 /**
  * What a document's page and its reading say once nothing waits, from its
@@ -127,77 +95,6 @@ function useElapsed(since: string | null): string {
   return minutes < 1 ? "under a minute" : `${String(minutes)} min`;
 }
 
-/** A reading that waits or runs, in words. */
-function stateOf(reading: ReadingNow, elapsed: string): string {
-  if (reading.state === "running") {
-    return [
-      ...(reading.again ? ["reading again"] : []),
-      `read ${String(reading.saved)} of ${String(reading.of)}`,
-      elapsed,
-    ].join(" · ");
-  }
-  return reading.again
-    ? `waiting to read again · read ${String(reading.saved)} of ${String(reading.of)}`
-    : "waiting";
-}
-
-/** Above the chat box: each reading that runs or waits, with View reading. */
-export function ReaderStrip({ personId }: { personId: string }) {
-  const readings = useReadings(personId);
-  const list = readings.data ?? [];
-  if (list.length === 0) return null;
-  return (
-    <section
-      aria-label="Reading documents"
-      className="mx-3 border-b border-line pt-1.5 pb-2"
-    >
-      <ol className="flex flex-col gap-0.5">
-        {list.map((reading) => (
-          <StripRow
-            key={reading.documentId}
-            personId={personId}
-            reading={reading}
-          />
-        ))}
-      </ol>
-    </section>
-  );
-}
-
-function StripRow({
-  personId,
-  reading,
-}: {
-  personId: string;
-  reading: ReadingNow;
-}) {
-  const elapsed = useElapsed(reading.runAt);
-  const running = reading.state === "running";
-  return (
-    <li className="flex items-center gap-2 rounded-lg px-1.5 py-0.5 hover:bg-side">
-      <span
-        aria-hidden
-        className={`size-3 shrink-0 rounded-full border-2 ${running ? "animate-spin border-line border-t-muted" : "border-dotted border-line"}`}
-      />
-      <span className="min-w-0 flex-1 truncate">{reading.name}</span>
-      <span className="text-xs whitespace-nowrap text-muted">
-        {stateOf(reading, elapsed)}
-      </span>
-      {(running || reading.saved > 0) && (
-        <Button
-          look="quiet"
-          icon={ScanText}
-          onClick={() => {
-            openReading(personId, reading.documentId);
-          }}
-        >
-          View reading
-        </Button>
-      )}
-    </li>
-  );
-}
-
 const PANEL =
   "fixed top-1/2 left-1/2 z-40 -translate-x-1/2 -translate-y-1/2 rounded-[14px] bg-surface shadow-menu outline-none";
 const BACKDROP = "fixed inset-0 z-40 bg-ink/25";
@@ -210,33 +107,29 @@ export function RetryButton({
   personId: string;
   documentId: string;
 }) {
-  const [problem, setProblem] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const navigate = useNavigate();
   return (
     <>
       <Button
         look="quiet"
         icon={RotateCw}
-        busy={busy && "Retrying…"}
         onClick={() => {
-          setProblem(null);
-          setBusy(true);
-          retry(personId, documentId)
-            .catch((error: unknown) => {
-              setProblem(messageOf(error));
-            })
-            .finally(() => {
-              setBusy(false);
-            });
+          if (
+            askRufi(personId, [
+              {
+                pointer: { type: "document", id: documentId, readAgain: true },
+                label: "",
+                detail: "",
+              },
+            ])
+          ) {
+            useOpen.setState(null, true);
+            showChat(personId, navigate);
+          }
         }}
       >
         Retry
       </Button>
-      {problem && (
-        <span role="alert" className="block text-xs text-muted">
-          {problem}
-        </span>
-      )}
     </>
   );
 }
@@ -291,14 +184,15 @@ function Sheet({
   });
   const reading = view.data;
   const items = useDocumentItems(personId, documentId);
-  // Until its work comes, what the strip knows: its name and where it is.
-  const now = useReadings(personId).data?.find(
-    (r) => r.documentId === documentId,
+  const document = useDocuments(personId).data?.find(
+    (d) => d.id === documentId,
   );
-  const elapsed = useElapsed(reading?.runAt ?? now?.runAt ?? null);
+  const elapsed = useElapsed(reading?.runAt ?? null);
   const status =
     reading === undefined
-      ? now && stateOf(now, elapsed)
+      ? document?.status === "reading" &&
+        document.reading &&
+        `reading · read ${String(document.reading.saved)} of ${String(document.reading.of)}`
       : reading.status === "reading"
         ? [
             "reading",
@@ -322,7 +216,7 @@ function Sheet({
       <div className="flex items-center gap-2.5 border-b border-line px-4 py-2.5">
         <Dialog.Title className="min-w-0 flex-1 truncate">
           <b className="text-[14px]">
-            {reading?.name ?? now?.name ?? "Reading"}
+            {reading?.name ?? document?.files[0]?.name ?? "Reading"}
           </b>
           {status && <span className="text-muted"> · {status}</span>}
         </Dialog.Title>
@@ -346,10 +240,6 @@ function Sheet({
         {reading?.status === "failed" && <p>{reading.error ?? "it stopped"}</p>}
         {items.error && (
           <Problem error={items.error} retry={() => void items.refetch()} />
-        )}
-        {!reading && now?.state === "running" && (
-          // Progress in the chip's words: no page can be named yet.
-          <p className="text-muted">{chipState(undefined, now)?.text}</p>
         )}
         {reading && (
           <>
@@ -376,6 +266,8 @@ function Sheet({
                   <PageWork
                     key={page.position}
                     page={page}
+                    personId={personId}
+                    documentId={documentId}
                     drafts={
                       items.isSuccess
                         ? items.data.items.filter(
@@ -417,9 +309,13 @@ function Sheet({
 }
 
 function PageWork({
+  personId,
+  documentId,
   page,
   drafts,
 }: {
+  personId: string;
+  documentId: string;
   page: ReadingView["pages"][number];
   /** The page's draft items, once the reading made them. */
   drafts: readonly DraftItem[] | undefined;
@@ -477,6 +373,9 @@ function PageWork({
           {summary}
         </span>
         {checks?.incomplete && <Tag>may be incomplete</Tag>}
+        {(page.state === "unreadable" || page.state === "not_looked_at") && (
+          <RetryButton personId={personId} documentId={documentId} />
+        )}
       </h4>
       {rows.length > 0 && <ItemTable rows={rows} />}
       {page.copy !== null && (
