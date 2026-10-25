@@ -104,6 +104,27 @@ const CASES: [string, unknown, unknown][] = [
   ],
   ["fields Rufi doesn't know", item({ colour: "blue" }), { value: stored() }],
   [
+    "a heart rate, with its motion context as sent",
+    item({
+      type: "HKQuantityTypeIdentifierHeartRate",
+      metadata: {
+        HKMetadataKeyHeartRateMotionContext: 1,
+        HKMetadataKeyWasUserEntered: false,
+      },
+    }),
+    {
+      value: stored({
+        type: "heart_rate",
+        context: '{"HKMetadataKeyHeartRateMotionContext":1}',
+      }),
+    },
+  ],
+  [
+    "a heart rate with no metadata",
+    item({ type: "HKQuantityTypeIdentifierHeartRate" }),
+    { value: stored({ type: "heart_rate" }) },
+  ],
+  [
     "a series of unequal values",
     item({ value: 125, count: 3, series }),
     {

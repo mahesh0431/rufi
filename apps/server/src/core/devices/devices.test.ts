@@ -632,3 +632,45 @@ describe("Asha's fictional 60 days", () => {
     });
   });
 });
+
+describe("Asha's fictional heart rate", () => {
+  it("keeps each reading's motion context, and a walk's three unequal values with their intervals, removed whole", async () => {
+    const file = await readFile(
+      join(
+        import.meta.dirname,
+        "../../../tests/fixtures/device/asha-heart-rate.jsonl",
+      ),
+      "utf8",
+    );
+    const [first, second] = file.trim().split("\n");
+    await got(watch, new TextEncoder().encode(first ?? ""));
+    await convertAll();
+    expect(
+      (await device.sources()).find((one) => one.id === watch),
+    ).toMatchObject({ values: 21, skipped: 0 });
+    const walk = () =>
+      rows(
+        "SELECT type, value, start_at, end_at, context, series, removed_at FROM device_values WHERE external_id = ?",
+        "4EA70099-0000-4000-8000-000000000099",
+      )[0];
+    expect(walk()).toEqual({
+      type: "heart_rate",
+      value: 125,
+      start_at: "2026-10-21T06:10:00.000Z",
+      end_at: "2026-10-21T06:16:00.000Z",
+      context: '{"HKMetadataKeyHeartRateMotionContext":2}',
+      series:
+        '[{"start_at":"2026-10-21T06:10:00.000Z","end_at":"2026-10-21T06:11:30.000Z","value":118},' +
+        '{"start_at":"2026-10-21T06:11:30.000Z","end_at":"2026-10-21T06:14:00.000Z","value":131},' +
+        '{"start_at":"2026-10-21T06:14:00.000Z","end_at":"2026-10-21T06:16:00.000Z","value":127}]',
+      removed_at: null,
+    });
+
+    await got(watch, new TextEncoder().encode(second ?? ""));
+    await convertAll();
+    expect(walk()).toMatchObject({ removed_at: T0 });
+    expect(
+      (await device.sources()).find((one) => one.id === watch),
+    ).toMatchObject({ values: 20 });
+  });
+});

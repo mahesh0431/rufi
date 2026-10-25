@@ -35,6 +35,16 @@ export const DEVICE_TYPES: readonly DeviceType[] = [
     accepts: PER_MINUTE,
     context: [],
   },
+  {
+    key: "heart_rate",
+    label: "Heart rate",
+    unit: "/min",
+    loinc: "8867-4",
+    apple: "HKQuantityTypeIdentifierHeartRate",
+    accepts: PER_MINUTE,
+    // Apple's motion context: 0 not set, 1 sedentary, 2 active.
+    context: ["HKMetadataKeyHeartRateMotionContext"],
+  },
 ];
 
 /** The type a source system names an item with, if Rufi knows it. */

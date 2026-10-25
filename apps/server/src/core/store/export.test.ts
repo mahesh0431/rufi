@@ -223,7 +223,8 @@ second line', NULL, '');
       strFromU8(files[`${FOLDER}/csv/device_types.csv`] ?? new Uint8Array()),
     ).toBe(
       '"key","label","unit","loinc"\r\n' +
-        '"resting_heart_rate","Resting heart rate","/min","40443-4"\r\n',
+        '"resting_heart_rate","Resting heart rate","/min","40443-4"\r\n' +
+        '"heart_rate","Heart rate","/min","8867-4"\r\n',
     );
   });
 
