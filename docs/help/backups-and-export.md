@@ -6,7 +6,7 @@ Rufi makes a backup of your health record and your documents each time it starts
 
 Rufi makes a backup each time it starts, and then once a day while it runs. If Rufi was closed for some days, it doesn't make up the days it missed. The backup at start runs in the background: you can use Rufi while it runs.
 
-A backup is a copy of your record: your people, their records with all their history, your chat, your drafts, the follow-up notices already shown and Rufi's settings, and every document you added, exactly as it came. Rufi checks each backup before it keeps it: the copy of the record, and each document against its fingerprint. A backup that fails its check, or that Rufi stopped in the middle, never counts, and your last good backup stays.
+A backup is a copy of your record: your people, their records with all their history, your chat, your drafts, the follow-up notices already shown, your [device data](device-data.md) and Rufi's settings, and every document you added, exactly as it came. Rufi checks each backup before it keeps it: the copy of the record, and each document against its fingerprint. A backup that fails its check, or that Rufi stopped in the middle, never counts, and your last good backup stays.
 
 If a document's file is missing from your data folder, or has changed, the backup fails and Settings says so: **a document file is missing or changed**. Your last good backup stays. To get the file back, restore that backup into a new folder (see below).
 
@@ -128,6 +128,8 @@ Settings says **Exported your data as a zip**. The file is named for the day, fo
 Rufi checks the export against your record and your documents before it gives it to you. If a document's file is missing or changed, Rufi doesn't make the export, and says so. An export never holds your ChatGPT sign-in, the AI's own files or Rufi's log.
 
 The `results` table holds your lab results and measurements; its `category` column says which each one is, `lab` or `measurement`.
+
+Your [device data](device-data.md) is in the export too: `device_values` holds the values, and `device_types` says what each `type` is, with its unit and LOINC code. In `device_batches`, `body` is each batch exactly as it came, as base64 of its gzip.
 
 In the export, a document's file is named by its fingerprint, with its type: for example `files/7f4a…8b54.pdf`. The `document_pages` table says which document and page each file is, and the name it had when you added it.
 

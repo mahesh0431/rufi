@@ -10,9 +10,11 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { gunzipSync } from "node:zlib";
 import { join } from "node:path";
 import { strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, it } from "vitest";
+import { devices } from "../devices/devices.ts";
 import { documents } from "../documents/documents.ts";
 import { filesPath } from "../documents/originals.ts";
 import { databasePath, openWritable } from "./database.ts";
@@ -185,6 +187,45 @@ second line', NULL, '');
     expect(
       strFromU8(files[`${FOLDER}/csv/page_copies.csv`] ?? new Uint8Array()),
     ).toContain(`"${copy.replaceAll('"', '""')}"`);
+  });
+
+  it("holds a device batch exactly, as base64 gzip, and the type list its values name", async () => {
+    const store = openWritable(databasePath(home));
+    const page = new TextEncoder().encode(
+      '{"batch":"p-1","values":[],"deleted":[]}',
+    );
+    try {
+      store.db.exec(
+        "INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional')",
+      );
+      const data = devices(store, () => "2026-10-08T09:00:00.000Z");
+      const made = await data.addSource({
+        name: "Asha's iPhone",
+        system: "apple_health",
+      });
+      if (!("source" in made)) throw new Error("no source");
+      await data.receive(made.source.id, page);
+    } finally {
+      store.close();
+    }
+
+    const files = await unzipped();
+
+    const batches = JSON.parse(
+      strFromU8(
+        files[`${FOLDER}/json/device_batches.json`] ?? new Uint8Array(),
+      ),
+    ) as { rows: { body: string }[] };
+    const body = batches.rows[0]?.body ?? "";
+    expect(new Uint8Array(gunzipSync(Buffer.from(body, "base64")))).toEqual(
+      page,
+    );
+    expect(
+      strFromU8(files[`${FOLDER}/csv/device_types.csv`] ?? new Uint8Array()),
+    ).toBe(
+      '"key","label","unit","loinc"\r\n' +
+        '"resting_heart_rate","Resting heart rate","/min","40443-4"\r\n',
+    );
   });
 
   it("holds every table, a README and its own record, and nothing of the sign-in, the AI's files or logs", async () => {

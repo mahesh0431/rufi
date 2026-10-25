@@ -3,6 +3,7 @@
 // each command gets only the parts it needs. Effect closes every part when the
 // command ends, fails or is stopped with Ctrl-C.
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { access } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
@@ -21,8 +22,11 @@ import type { AgentEvent } from "../agent/runtime.ts";
 import { DEFAULT_ALLOWLIST } from "../core/chat/models.ts";
 import { pages } from "../core/documents/pages.ts";
 import { coreInstructions } from "../core/chat/instructions.ts";
+import { devices, SYSTEMS, type System } from "../core/devices/devices.ts";
 import {
+  databasePath,
   onlyPersonId,
+  openWritable,
   RecordStore,
   recordLayer,
 } from "../core/store/database.ts";
@@ -48,6 +52,7 @@ import {
 } from "../platform/logs.ts";
 import { agentSetup, runningLink, startCore } from "../server/core.ts";
 import { ask } from "./ask.ts";
+import { importBatches, peopleLines, sourceLine } from "./devices.ts";
 import { subAgentRunner } from "../agent/codex/subagent.ts";
 import { appChannel, closeAppChannel } from "./app.ts";
 
@@ -65,7 +70,14 @@ const USAGE = `Usage: pnpm rufi <command>
   move-data <new folder>
                       move your data folder into a new or empty folder (quit Rufi first)
   move-data --finish | --cancel
-                      finish a move that stopped, or go back to the old folder`;
+                      finish a move that stopped, or go back to the old folder
+  device-source add "name" --system apple_health [--person id]
+                      connect a device to a person, for good (quit Rufi first;
+                      --person is not needed with one person)
+  device-source list  the device sources, with their people
+  device-import <file> --source <id>
+                      take a file of device batches, one per line, from a
+                      source; Rufi converts them when it starts (quit Rufi first)`;
 
 /** A promise-based step, with its error kept as it is. */
 const run = <A>(step: () => Promise<A>) =>
@@ -154,6 +166,52 @@ const main = Effect.gen(function* () {
       if (what === undefined || more.length > 0) return yield* usageError;
       return yield* moveCommand(what);
     }
+    case "device-source": {
+      const { values, positionals } = parseArgs({
+        args: rest,
+        options: { system: { type: "string" }, person: { type: "string" } },
+        allowPositionals: true,
+      });
+      const [what, name, ...more] = positionals;
+      if (what === "list" && name === undefined) {
+        return yield* deviceSourceList.pipe(
+          Effect.scoped,
+          Effect.provide(locked),
+        );
+      }
+      const system = SYSTEMS.find((one) => one === values.system);
+      if (
+        what !== "add" ||
+        !name?.trim() ||
+        more.length > 0 ||
+        system === undefined
+      ) {
+        return yield* usageError;
+      }
+      return yield* deviceSourceAdd(name.trim(), system, values.person).pipe(
+        Effect.scoped,
+        Effect.provide(locked),
+      );
+    }
+    case "device-import": {
+      const { values, positionals } = parseArgs({
+        args: rest,
+        options: { source: { type: "string" } },
+        allowPositionals: true,
+      });
+      const [file, ...more] = positionals;
+      if (
+        file === undefined ||
+        more.length > 0 ||
+        values.source === undefined
+      ) {
+        return yield* usageError;
+      }
+      return yield* deviceImport(file, values.source).pipe(
+        Effect.scoped,
+        Effect.provide(locked),
+      );
+    }
     case "ask": {
       const { values, positionals } = parseArgs({
         args: rest,
@@ -182,6 +240,79 @@ const main = Effect.gen(function* () {
       return yield* usageError;
   }
 });
+
+/** The data folder and its lock, for commands that write while Rufi is closed. */
+const locked = Layer.mergeAll(
+  homeLayer,
+  rufiLock.pipe(Layer.provide(homeLayer)),
+);
+
+/** Device data in the record, open for writing until the command ends. */
+const deviceData = Effect.gen(function* () {
+  const path = databasePath(yield* Home);
+  if (!existsSync(path)) {
+    return yield* Effect.fail(
+      new Error(
+        "There is no record in this data folder yet. Start Rufi first.",
+      ),
+    );
+  }
+  const store = yield* Effect.acquireRelease(
+    Effect.try({ try: () => openWritable(path), catch: (error) => error }),
+    (opened) =>
+      Effect.sync(() => {
+        opened.close();
+      }),
+  );
+  return devices(store, () => new Date().toISOString());
+});
+
+const deviceSourceAdd = (
+  name: string,
+  system: System,
+  person: string | undefined,
+) =>
+  Effect.gen(function* () {
+    const data = yield* deviceData;
+    const made = yield* run(() =>
+      data.addSource({
+        name,
+        system,
+        ...(person !== undefined && { personId: person }),
+      }),
+    );
+    if ("needsPerson" in made) {
+      if (person !== undefined)
+        console.log(`No one here has the ID ${person}.`);
+      for (const line of peopleLines(made.needsPerson)) console.log(line);
+      console.log("Nothing was made.");
+      process.exitCode = 1;
+      return;
+    }
+    console.log(
+      `Made ${made.source.name} for ${made.source.person.name}, for good.`,
+    );
+    console.log(`Its ID: ${made.source.id}`);
+  });
+
+const deviceSourceList = Effect.gen(function* () {
+  const data = yield* deviceData;
+  const sources = yield* run(() => data.sources());
+  if (sources.length === 0) console.log("No device sources yet.");
+  for (const source of sources) console.log(sourceLine(source));
+});
+
+const deviceImport = (file: string, source: string) =>
+  Effect.gen(function* () {
+    const data = yield* deviceData;
+    const path = resolve(process.env["INIT_CWD"] ?? process.cwd(), file);
+    const finished = yield* run(() =>
+      importBatches(data, source, path, (line) => {
+        console.log(line);
+      }),
+    );
+    if (!finished) process.exitCode = 1;
+  });
 
 const usageError = Effect.sync(() => {
   console.log(USAGE);

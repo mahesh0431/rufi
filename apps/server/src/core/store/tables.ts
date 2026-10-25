@@ -82,6 +82,49 @@ export interface Tables {
     details: string | null;
     removed: number;
   };
+  device_batches: {
+    id: string;
+    person_id: string;
+    source_id: string;
+    seq: number;
+    sender_batch_id: string;
+    received_at: string;
+    body: Uint8Array;
+    body_sha256: string;
+    body_bytes: number;
+    status: string;
+    tries: number;
+    retry_at: string | null;
+    reason: string | null;
+    done_at: string | null;
+    counts: string | null;
+    skipped: string | null;
+  };
+  device_sources: {
+    id: string;
+    person_id: string;
+    system: string;
+    name: string;
+    created_at: string;
+    last_batch_at: string | null;
+  };
+  device_values: {
+    person_id: string;
+    system: string;
+    external_id: string;
+    source_id: string;
+    type: string;
+    value: number;
+    start_at: string;
+    end_at: string;
+    utc_offset: number | null;
+    time_zone: string | null;
+    device: string | null;
+    context: string | null;
+    series: string | null;
+    batch_id: string | null;
+    removed_at: string | null;
+  };
   document_pages: {
     person_id: string;
     document_id: string;

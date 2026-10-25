@@ -599,6 +599,82 @@ CREATE TABLE briefs (
   FOREIGN KEY (person_id, id) REFERENCES transcript_entries (person_id, id) DEFERRABLE INITIALLY DEFERRED
 ) STRICT;
 
+-- Device data (docs/adr/0023): what a person's devices and apps measured,
+-- kept outside the record, with no chat and no save. A device source is a
+-- connection ("Apple Health on Asha's iPhone"), bound to one person for good:
+-- a batch's person comes only from its source, never from what it says.
+CREATE TABLE device_sources (
+  id TEXT PRIMARY KEY,         -- UUIDv7
+  person_id TEXT NOT NULL REFERENCES people (id),
+  system TEXT NOT NULL CHECK (system IN ('apple_health')), -- the space its values' IDs live in
+  name TEXT NOT NULL,          -- as given
+  created_at TEXT NOT NULL,
+  last_batch_at TEXT,          -- the last batch received: kept here, since batches go
+  UNIQUE (person_id, id),
+  UNIQUE (person_id, id, system)
+) STRICT;
+
+-- One page a source sent, its bytes exactly as they came (gzip), and its
+-- conversion's state: waiting, done, or failed with a reason and the time
+-- of its next try. seq is the order of arrival across all sources; within
+-- one person and system (a group), only the lowest batch not done may be
+-- converted, so a deletion never comes before the value it deletes. A done
+-- batch goes 30 days after it was converted, unless items were skipped
+-- (skipped is null when none were): then it holds the only copy of data
+-- Rufi got but couldn't read, and stays.
+CREATE TABLE device_batches (
+  id TEXT PRIMARY KEY,         -- UUIDv7
+  person_id TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  seq INTEGER NOT NULL UNIQUE, -- 1, 2, 3...: set by receive in its transaction
+  sender_batch_id TEXT NOT NULL, -- the sender's ID for the page: the same page again is the same batch
+  received_at TEXT NOT NULL,
+  body BLOB NOT NULL,          -- the page's bytes exactly, gzip
+  body_sha256 TEXT NOT NULL,   -- of the bytes before gzip
+  body_bytes INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'done', 'failed')),
+  tries INTEGER NOT NULL DEFAULT 0, -- failed tries
+  retry_at TEXT,               -- a failed batch's next try
+  reason TEXT,                 -- why the last try failed: a fixed code, never health text
+  done_at TEXT,
+  counts TEXT,                 -- JSON: what came of it (added, changed, already_had...)
+  skipped TEXT,                -- JSON: [{id, reason}] of the items not converted; null when none
+  UNIQUE (person_id, id),
+  UNIQUE (source_id, sender_batch_id),
+  FOREIGN KEY (person_id, source_id) REFERENCES device_sources (person_id, id),
+  CHECK ((status = 'done') = (done_at IS NOT NULL))
+) STRICT;
+
+-- One thing a device measured, in Rufi's terms: a type key from Rufi's type
+-- list (core/devices/types.ts), the number in that type's unit, the
+-- instants in UTC, and where it was taken (utc_offset, time_zone) only when
+-- the source knew it. Keyed by the source system's own ID, so the same
+-- value sent again, or by a second phone on the same Apple Health, is kept
+-- once. A series holds the single values a condensed sample stands for;
+-- value is then the source's average. batch_id is the batch that last
+-- wrote it, emptied when that batch goes. A value the source deleted is
+-- marked removed_at.
+CREATE TABLE device_values (
+  person_id TEXT NOT NULL,
+  system TEXT NOT NULL,
+  external_id TEXT NOT NULL,   -- the source system's ID, such as Apple's UUID
+  source_id TEXT NOT NULL,     -- the source that first sent it
+  type TEXT NOT NULL,          -- a key of the type list, never removed or renamed
+  value REAL NOT NULL,
+  start_at TEXT NOT NULL,
+  end_at TEXT NOT NULL,
+  utc_offset INTEGER,          -- minutes east of UTC at the start, when the source knew it
+  time_zone TEXT,              -- an IANA name, when the source gave one
+  device TEXT,                 -- what measured it, as the source named it
+  context TEXT,                -- JSON: the metadata the type keeps, as sent
+  series TEXT,                 -- JSON: [{start_at, end_at, value}], or null
+  batch_id TEXT,
+  removed_at TEXT,
+  PRIMARY KEY (person_id, system, external_id),
+  FOREIGN KEY (person_id, source_id, system) REFERENCES device_sources (person_id, id, system),
+  FOREIGN KEY (person_id, batch_id) REFERENCES device_batches (person_id, id)
+) STRICT, WITHOUT ROWID;
+
 CREATE INDEX documents_by_added ON documents (person_id, added_at);
 CREATE INDEX documents_by_add ON documents (person_id, from_document);
 CREATE INDEX jobs_by_state ON jobs (state, created_at);
@@ -618,6 +694,10 @@ CREATE INDEX changes_by_record ON record_changes (person_id, record_id);
 CREATE INDEX sources_by_record ON record_sources (person_id, record_id);
 CREATE INDEX sources_by_visit ON record_sources (person_id, visit_id);
 CREATE INDEX drafts_by_document ON draft_items (person_id, document_id, page, seq);
+CREATE INDEX device_batches_by_status ON device_batches (status, seq);
+CREATE INDEX device_batches_by_done ON device_batches (done_at);
+CREATE INDEX device_values_by_type ON device_values (person_id, type, start_at);
+CREATE INDEX device_values_by_batch ON device_values (person_id, batch_id) WHERE batch_id IS NOT NULL;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 16;
+PRAGMA user_version = 17;

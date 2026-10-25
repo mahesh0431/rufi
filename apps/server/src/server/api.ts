@@ -26,6 +26,7 @@ import {
 } from "@rufi/contracts";
 import { APPEARANCE_HEADER } from "@rufi/contracts/app";
 import type { Brief } from "@rufi/contracts/briefs";
+import { KeepValues, type DeviceData } from "@rufi/contracts/devices";
 import type { Overview } from "@rufi/contracts/record";
 import { readFile } from "node:fs/promises";
 import { Option, Result, Schema } from "effect";
@@ -57,6 +58,7 @@ import { Refusal } from "../core/tools/registry.ts";
 import { DeleteDocument, FixItem } from "@rufi/contracts/documents";
 import { OriginalMissing } from "../core/documents/originals.ts";
 import type { BackupJob } from "../core/store/backup.ts";
+import type { Devices } from "../core/devices/devices.ts";
 import type { Change, Transcripts } from "../core/chat/transcript.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { SUB_AGENT_MODELS } from "../agent/codex/subagent.ts";
@@ -85,6 +87,14 @@ export interface ApiDeps {
   /** Signing in from the screens. */
   signIn: SignInFlow;
   backups: BackupJob;
+  /** Device data: its sources for Settings, and how long values are kept. */
+  devices: Pick<
+    Devices,
+    "sources" | "keep" | "preview" | "setKeep" | "cleanUp"
+  > & {
+    /** Why the converter couldn't even save a failure, while that lasts. */
+    trouble: () => string | null;
+  };
   /** The data folder in use, and how it was chosen; `show` shows it in Finder. */
   folder: DataFolder & { show: () => Promise<void> };
   /** The export, made when asked: the zip and its file name. */
@@ -430,6 +440,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
         ...(await readerChoice(transcripts.setting)),
         models: SUB_AGENT_MODELS.map(({ id, name }) => ({ id, name })),
       },
+      deviceKeepValues: await deps.devices.keep(),
     };
   };
 
@@ -507,6 +518,11 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
         changed.readerEffort,
       );
     }
+    if (changed.deviceKeepValues !== undefined) {
+      // The screen confirmed what a shorter time deletes: it goes now.
+      await deps.devices.setKeep(changed.deviceKeepValues);
+      await deps.devices.cleanUp();
+    }
     return c.json(await settings(c));
   });
 
@@ -528,6 +544,20 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     };
   };
   app.get("/api/backups", (c) => c.json(backups()));
+
+  app.get("/api/devices", async (c) =>
+    c.json({
+      sources: await deps.devices.sources(),
+      trouble: deps.devices.trouble(),
+    } satisfies DeviceData),
+  );
+  // What keeping values for `keep` would delete, for the confirm.
+  app.get("/api/devices/preview", async (c) => {
+    const keep = Schema.decodeUnknownOption(KeepValues)(c.req.query("keep"));
+    if (Option.isNone(keep))
+      throw new HttpError(400, "That request isn't valid.");
+    return c.json(await deps.devices.preview(keep.value));
+  });
   // Back up: answers when it is done; a failure shows in the status.
   app.post("/api/backups", async (c) => {
     await deps.backups.backUp().catch(() => undefined);

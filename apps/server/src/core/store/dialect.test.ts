@@ -73,6 +73,24 @@ describe("Rufi's node:sqlite dialect", () => {
     expect(names()).toEqual([{ display_name: "Asha Fictional" }]);
   });
 
+  it("gives a full disk's own error when SQLite rolled the transaction back itself", async () => {
+    const { page_count } = db.prepare("PRAGMA page_count").get() as {
+      page_count: number;
+    };
+    db.exec(`PRAGMA max_page_count = ${String(page_count)}`);
+    await expect(
+      query.transaction().execute(async (tx) => {
+        for (let n = 0; n < 500; n++) {
+          await tx
+            .insertInto("people")
+            .values({ id: String(n), display_name: "Fictional ".repeat(50) })
+            .execute();
+        }
+      }),
+    ).rejects.toMatchObject({ errcode: 13 });
+    expect(db.isTransaction).toBe(false);
+  });
+
   it("runs one transaction at a time on the one connection", async () => {
     const order: string[] = [];
     const slow = query.transaction().execute(async (tx) => {

@@ -309,6 +309,32 @@ _Avoid_: onboarding, setup wizard
 A data folder of made-up people for trying Rufi, `~/Rufi-demo`, apart from yours. `pnpm demo` gives it the same test data each time and keeps only its sign-in.
 _Avoid_: sandbox, test account
 
+## Device data
+
+**Device data**:
+What a person's devices measure, such as their resting heart rate each day from Apple Health. Kept apart from the record: nobody confirms it in the chat, it has no receipts, and only **Keep values** deletes it. Nothing shows it yet but Settings.
+_Avoid_: health data (for this alone), wearable data, record (for it)
+
+**Device source**:
+One device or app connected for one person, for good, such as their iPhone sending Apple Health. Its data goes only to that person.
+_Avoid_: device (for the connection), integration, account
+
+**Batch**:
+What a device source sends in one go: values and the IDs of values it takes back. Rufi stores it first, exactly as it came, then converts it in the background, in the order batches came.
+_Avoid_: page, upload, sync
+
+**Device value**:
+One thing a device measured, in Rufi's terms: its type, number and unit, when, and the device; where it was measured only when the device says. Known by the source's own ID.
+_Avoid_: reading (that is a document's), sample, data point, measurement (that is a result)
+
+**Device type**:
+What a device value measures, from Rufi's own list, such as resting heart rate, with its unit and LOINC code. Its key never changes.
+_Avoid_: metric, kind (that is a record's)
+
+**Keep values**:
+How long Rufi keeps device values, for everyone in the data folder: 30 days, 12 months or forever. A shorter time asks before it deletes.
+_Avoid_: retention (on screen)
+
 ## Keeping your data safe
 
 **Backup**:
@@ -324,7 +350,7 @@ Putting a backup into a new, empty folder, with `pnpm rufi restore`. It never ch
 _Avoid_: recover, roll back
 
 **Export**:
-One zip with everything in the record, the chat and Rufi's settings, as JSON and CSV with a README, and every document's original file, so your data is never locked in Rufi. Not a backup: Rufi can't restore from it.
+One zip with everything in the record, the chat, device data and Rufi's settings, as JSON and CSV with a README, and every document's original file, so your data is never locked in Rufi. Not a backup: Rufi can't restore from it.
 _Avoid_: download, dump
 
 ## Relationships
@@ -338,4 +364,5 @@ _Avoid_: download, dump
 - A **person** has one **chat**, made with them; it can produce **saves**, **follow-ups** and **research entries**.
 - A **chat** has one **queue**: your messages and the notes of **Rufi events** wait there for the AI.
 - The **chat** has one **transcript**, one **draft** and a **model**; a **steer** and each **activity** belong to one reply.
+- A **device source** belongs to one **person** for good; a **batch** comes from one source; a **device value** comes from batches of one person's sources, and has one **device type**.
 - An answer's **basis** belongs to its reply: How, from the AI's words at the end of that reply.

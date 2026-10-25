@@ -1,6 +1,7 @@
 // What Rufi's local API takes and gives, shared by the server and the screens.
 // Requests are decoded with these schemas; responses are built to their types.
 import { Schema } from "effect";
+import { KeepValues } from "./devices.ts";
 
 /**
  * The longest message or draft Rufi takes, in characters. A draft must fit
@@ -411,6 +412,8 @@ export const Settings = Schema.Struct({
     effort: Effort,
     models: Schema.Array(Model),
   }),
+  /** How long device values are kept (docs/adr/0023). */
+  deviceKeepValues: KeepValues,
 });
 export type Settings = typeof Settings.Type;
 
@@ -499,6 +502,8 @@ export const SaveSettings = Schema.Struct({
   /** The document reader's model: one of the models it can run on. */
   readerModel: Schema.optionalKey(Id),
   readerEffort: Schema.optionalKey(Effort),
+  /** A shorter time deletes at once: the screen confirms it first. */
+  deviceKeepValues: Schema.optionalKey(KeepValues),
 });
 
 const Message = Schema.String.check(

@@ -9,7 +9,7 @@ let db: DatabaseSync;
 
 function insert(
   table: string,
-  row: Record<string, string | number | null>,
+  row: Record<string, string | number | Uint8Array | null>,
 ): void {
   const columns = Object.keys(row);
   db.prepare(
@@ -284,6 +284,60 @@ describe("schema", () => {
     it("rejects a page for one person in another person's document", () => {
       expect(() => {
         insert("document_pages", page("nanna", "doc-amma", 2, "sha-a"));
+      }).toThrow("FOREIGN KEY constraint failed");
+    });
+
+    it("keeps device data with its source's person: a batch, a value and its link", () => {
+      insert("device_sources", {
+        id: "src-a",
+        person_id: "amma",
+        system: "apple_health",
+        name: "Amma's iPhone",
+        created_at: now,
+      });
+      const batch = (id: string, person: string) => ({
+        id,
+        person_id: person,
+        source_id: "src-a",
+        seq: id === "b-a" ? 1 : 2,
+        sender_batch_id: id,
+        received_at: now,
+        body: new Uint8Array(),
+        body_sha256: "",
+        body_bytes: 0,
+        status: "waiting",
+      });
+      const value = (person: string, batchId: string | null) => ({
+        person_id: person,
+        system: "apple_health",
+        external_id: `v-${person}`,
+        source_id: "src-a",
+        type: "resting_heart_rate",
+        value: 54,
+        start_at: now,
+        end_at: now,
+        batch_id: batchId,
+      });
+      insert("device_batches", batch("b-a", "amma"));
+      insert("device_values", value("amma", "b-a"));
+      expect(() => {
+        insert("device_batches", batch("b-n", "nanna"));
+      }).toThrow("FOREIGN KEY constraint failed");
+      expect(() => {
+        insert("device_values", value("nanna", null));
+      }).toThrow("FOREIGN KEY constraint failed");
+      insert("device_sources", {
+        id: "src-n",
+        person_id: "nanna",
+        system: "apple_health",
+        name: "Nanna's iPhone",
+        created_at: now,
+      });
+      expect(() => {
+        insert("device_values", {
+          ...value("nanna", "b-a"),
+          source_id: "src-n",
+        });
       }).toThrow("FOREIGN KEY constraint failed");
     });
   });

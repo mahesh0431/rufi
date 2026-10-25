@@ -1,13 +1,14 @@
 // Settings: the ChatGPT plan the AI uses, how Rufi looks, when a reply's
 // Activity opens by itself, the region whose
 // emergency number the AI gives, the model and effort documents are read
-// with, backups, the export of your data, and where Rufi keeps it.
+// with, device data, backups, the export of your data, and where Rufi keeps it.
 import { Backups, DataFolder } from "@rufi/contracts";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { DatabaseBackup, Download, FolderOpen } from "lucide-react";
 import { download, read } from "./api.ts";
 import { AppearanceChoice } from "./appearance.tsx";
+import { DeviceDataSection } from "./devices.tsx";
 import { SettingChoice } from "./choice.tsx";
 import { printedTime } from "./dates.ts";
 import { EFFORTS } from "./model-menu.tsx";
@@ -105,6 +106,7 @@ export function SettingsPage() {
         )}
       </div>
       <DocumentsSection />
+      <DeviceDataSection />
       <BackupsSection />
       <ExportSection />
       <DataFolderSection />
