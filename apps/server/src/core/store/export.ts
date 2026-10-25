@@ -9,6 +9,7 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+import { DEVICE_TYPES } from "../devices/types.ts";
 import { filesPath, OriginalMissing } from "../documents/originals.ts";
 import { CheckFailed, copyDatabase } from "./backup.ts";
 import type { FileGate } from "../documents/gate.ts";
@@ -23,6 +24,16 @@ interface Table {
 
 const STAGING = ".export-";
 const VERSION = 1;
+
+/**
+ * Rufi's type list (core/devices/types.ts), which device_values.type names:
+ * with it, the values can be read without Rufi.
+ */
+const deviceTypes = (): Table => ({
+  name: "device_types",
+  columns: ["key", "label", "unit", "loinc"],
+  rows: DEVICE_TYPES.map((type) => [type.key, type.label, type.unit, type.loinc]),
+});
 
 /** Every table of a database, rows in a fixed order, values as JSON keeps them. */
 function readTables(path: string): Table[] {
@@ -68,6 +79,8 @@ function valueOf(value: unknown, table: string): Value {
     return Number(value);
   }
   if (typeof value === "number") return value;
+  // Bytes (a device batch as it came) as base64 text.
+  if (value instanceof Uint8Array) return Buffer.from(value).toString("base64");
   throw new CheckFailed(`${table} holds a value the export can't write.`);
 }
 
@@ -171,6 +184,15 @@ record, your chat, your documents and Rufi's settings, as Rufi stored it.
   written (\`as_written\`, Markdown).
 - \`record_sources\`: where each record came from: your message, a page of
   a document, or a visit.
+- \`device_values\`: what your devices measured (Apple Health), outside your
+  record, each with its source's own ID. \`type\` is a key in
+  \`device_types\`, which gives its name, unit (UCUM) and LOINC code; a
+  value with \`removed_at\` was deleted at its source. \`device_sources\` is
+  each connected device and whose it is.
+- \`device_batches\`: each batch a device sent, kept for a while: \`body\` is
+  the batch exactly as it came, as base64 of gzip of its JSON.
+- \`device_types\`: Rufi's list of what device values measure. Not a table
+  of Rufi's database: it is written from Rufi's own list.
 
 Dates and times are as Rufi stored them: ISO 8601, times in UTC; a date you
 gave in your own words keeps those words next to it.
@@ -222,7 +244,7 @@ export async function exportZip(
     const copy = join(staging, "rufi.sqlite");
     const read = async () => {
       await copyDatabase(databasePath(home), copy);
-      const tables = readTables(copy);
+      const tables = [...readTables(copy), deviceTypes()];
       const bytes = new Map<string, Uint8Array>();
       for (const row of tables.find((t) => t.name === "files")?.rows ?? []) {
         const id = String(row[0]);
