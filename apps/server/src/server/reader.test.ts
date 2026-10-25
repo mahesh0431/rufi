@@ -1,9 +1,9 @@
 // The document reader at work, on a real database and real files, with a
 // scripted reader sub-agent (tests/fake-reader.ts) and the real jobs, page
-// copies, page service, sorting requests and chat transcript: the reader's
-// model and effort, a reading from its start line to its end line and its
-// request that Rufi AI sort it, a restart in the middle, failures,
-// automatic retries and Retry, and an account problem.
+// copies and page service: the reader's model and effort, a reading opened
+// as a reply that sends its document starts it, its progress and Rufi's note
+// for the AI, a restart in the middle, failures, automatic retries, a Stop,
+// one reading at a time, an account problem and a delete.
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,6 +19,7 @@ import {
   scriptedReader,
   type Script,
 } from "../../tests/fake-reader.ts";
+import { addSent } from "../../tests/sent.ts";
 import {
   transcripts as openTranscripts,
   type Transcripts,
@@ -32,8 +33,11 @@ import { deletions } from "../core/documents/delete.ts";
 import { documents, type Documents } from "../core/documents/documents.ts";
 import { fileGate } from "../core/documents/gate.ts";
 import { pages } from "../core/documents/pages.ts";
-import { readings, type Readings } from "../core/documents/reading.ts";
-import { sorting } from "../core/documents/sorting.ts";
+import {
+  readings,
+  type Job,
+  type Readings,
+} from "../core/documents/reading.ts";
 import {
   databasePath,
   openWritable,
@@ -42,7 +46,7 @@ import {
 import { chatCaller } from "../core/tools/tools.ts";
 import { callTool } from "../../tests/mcp-client.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
-import { reader, readerChoice } from "./reader.ts";
+import { reader, readerChoice, type ReadProgress } from "./reader.ts";
 
 const FIXTURES = join(import.meta.dirname, "../../tests/fixtures/documents");
 const NOW = "2026-10-10T09:00:00.000Z";
@@ -73,17 +77,28 @@ beforeEach(async () => {
   };
 });
 
-/** Adds the fictional two-page report for a person; returns its document's id. */
-async function addReport(person = personId): Promise<string> {
-  const bytes = new Uint8Array(
-    await readFile(join(FIXTURES, "sunrise-labs-august.pdf")),
-  );
-  const { added } = await docs.add(
-    person,
-    [{ name: "sunrise-august.pdf", bytes }],
-    true,
-  );
+/** Adds and sends a fictional file; returns its document's id. */
+async function addFile(
+  fixture: string,
+  name: string,
+  person = personId,
+): Promise<string> {
+  const bytes = new Uint8Array(await readFile(join(FIXTURES, fixture)));
+  const { added } = await addSent(docs, store, person, [{ name, bytes }]);
   return added[0] ?? "";
+}
+
+/** Adds and sends the fictional two-page report; returns its document's id. */
+const addReport = (person = personId) =>
+  addFile("sunrise-labs-august.pdf", "sunrise-august.pdf", person);
+
+/** The document's reading, opened as the reply that sends it starts. */
+async function open(id: string, again = false, person = personId) {
+  const job = await store.query
+    .transaction()
+    .execute((trx) => reads.open(trx, person, id, again));
+  if (!job) throw new Error("Nothing to read.");
+  return job;
 }
 
 /** A reader running `scripts`, as the core starts it. */
@@ -110,12 +125,6 @@ async function startReader(
       pages(store, home),
       copies(store, () => NOW),
     ),
-    event: async (id, event, write) => {
-      const chat = await transcripts.chat(id);
-      if (!chat) throw new Error("No chat.");
-      await transcripts.addEvent(chat, event, write);
-    },
-    sort: sorting(store, () => NOW).ask,
     run: options.run ?? fake.run,
     choice: () => readerChoice(transcripts.setting),
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp/reader`, keys },
@@ -126,9 +135,24 @@ async function startReader(
       deadlineMs: () => options.deadlineMs ?? 0,
     }),
   });
-  reads.watch(running.poke);
-  running.start();
-  return { ...fake, reader: running };
+  /**
+   * Reads the job (or opens the document's) until it ends; what it heard
+   * of its progress, as the reply's step shows it.
+   */
+  const read = async (
+    what: string | Job,
+    signal = new AbortController().signal,
+    hear: (now: ReadProgress) => void = () => undefined,
+  ) => {
+    const job = typeof what === "string" ? await open(what) : what;
+    const heard: ReadProgress[] = [];
+    const end = await running.read(job, signal, (now) => {
+      heard.push(now);
+      hear(now);
+    });
+    return { end, heard, job };
+  };
+  return { ...fake, reader: running, read };
 }
 
 async function until(check: () => boolean | Promise<boolean>, ms = 5_000) {
@@ -163,92 +187,52 @@ const drafts = () =>
   );
 const pageStates = () =>
   rows("SELECT position, state FROM document_pages ORDER BY position");
-/** The requests that Rufi AI sort a reading. */
-const requests = () =>
-  rows(
-    "SELECT r.job_id, r.state, q.text FROM sort_requests r LEFT JOIN chat_queue q ON q.id = r.queue_id ORDER BY r.created_at",
-  );
 /** The pages copied, by page in the file. */
 const copied = () =>
   rows(
     "SELECT page_in_file FROM page_copies ORDER BY page_in_file, job_id",
   ).map((r) => r["page_in_file"]);
-const SORTING = "Read sunrise-august.pdf · 2 pages. Rufi AI is sorting it.";
-/** Rufi's note that asks Rufi AI to sort the report. */
-const sortNote = (id: string, copies = 2, more: string[] = []) =>
-  [
-    `A document reading finished: sunrise-august.pdf (document ${id}), ${String(copies)} ${copies === 1 ? "page" : "pages"} copied by the reader, not sorted yet.`,
-    ...more,
-    "Sort it now, as the sorting-documents skill says: read its page copies with get_documents, then split it into documents and write its drafts with one sort_documents call. Save nothing. Then tell the user in a few lines what you found and that nothing is saved; if you can't tell something, ask instead.",
-  ].join("\n");
-const done = () => job()?.["state"] === "done";
+const DONE = { ended: "done" };
+const readBoth: Script = async (turn) => {
+  for (const page of [1, 2]) {
+    await turn.look(page);
+    await turn.save(page, readPage());
+  }
+  return undefined;
+};
 
 describe("the reader's model and effort", () => {
   it("a run takes those chosen in Settings as it starts, and records them; a model the runner doesn't run is the default", async () => {
     await transcripts.saveSetting("reader_effort", "high");
     await transcripts.saveSetting("reader_model", "gpt-6-astra");
-    const { runs, reader: running } = await startReader([
-      async (turn) => {
-        await turn.look(1);
-        await turn.save(1, readPage());
-        await turn.look(2);
-        await turn.save(2, readPage());
-        return undefined;
-      },
-    ]);
-    await addReport();
-    await until(done);
+    const { runs, read } = await startReader([readBoth]);
+    expect((await read(await addReport())).end).toEqual(DONE);
     expect(runs.map(({ model, effort }) => ({ model, effort }))).toEqual([
       { model: "gpt-6.1-sol", effort: "high" },
     ]);
     expect(
       JSON.parse(String(rows("SELECT reader FROM jobs")[0]?.["reader"])),
     ).toMatchObject({ model: "gpt-6.1-sol", effort: "high" });
-    await running.close();
   });
 });
 
 describe("a reading", () => {
-  it("writes a start line, then page states, an end line and a request that Rufi AI sort it, in one go, deciding nothing", async () => {
-    let midway: unknown;
-    const { runs, reader: running } = await startReader([
-      async (turn) => {
-        await turn.look(1);
-        await turn.save(1, readPage());
-        midway = await reads.strip(personId);
-        await turn.look(2);
-        await turn.save(2, readPage());
-        return undefined;
-      },
-    ]);
+  it("copies every page of a document never read, tells how far it is, and decides nothing; Rufi's note asks the AI to sort it", async () => {
+    const { runs, read } = await startReader([readBoth]);
     const id = await addReport();
-    await until(done);
+    const { end, heard, job: reading } = await read(id);
 
-    expect(midway).toEqual([
-      {
-        documentId: id,
-        name: "sunrise-august.pdf",
-        state: "running",
-        again: false,
-        saved: 1,
-        of: 2,
-        runAt: NOW,
-      },
+    expect(end).toEqual(DONE);
+    expect(heard).toEqual([
+      { state: "waiting", saved: 0, of: 2 },
+      { state: "copying", saved: 0, of: 2 },
+      { state: "copying", saved: 1, of: 2 },
+      { state: "copying", saved: 2, of: 2 },
     ]);
     expect(runs.map((r) => r.instructions)).toEqual([COPY_INSTRUCTIONS]);
     expect(runs[0]?.input).toBe(
       "Copy this document: 2 pages (sunrise-august.pdf).\nSave these pages: 1–2.",
     );
-    expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages", SORTING]);
-    // The request and its note for the AI, its row in the queue.
-    expect(requests()).toEqual([
-      {
-        job_id: rows("SELECT id FROM jobs")[0]?.["id"],
-        state: "open",
-        text: sortNote(id),
-      },
-    ]);
-    expect(asks()).toEqual([sortNote(id)]);
     expect(pageStates()).toEqual([
       { position: 1, state: "read" },
       { position: 2, state: "read" },
@@ -258,41 +242,48 @@ describe("a reading", () => {
     expect(rows("SELECT kind, date, version FROM documents")).toEqual([
       { kind: null, date: null, version: 1 },
     ]);
-    expect(await reads.strip(personId)).toEqual([]);
     expect((await docs.list(personId))[0]).toMatchObject({
       status: "done",
-      sorting: { state: "sorting", why: null },
+      notSorted: true,
       reading: { saved: 2, of: 2, results: 0, canRetry: false },
     });
-    await running.close();
+    expect(await reads.note([reading.id])).toContain(
+      "Not sorted yet: sort it as the sorting-documents skill says",
+    );
+    // Read in full, a send doesn't read it again.
+    expect(await reads.needs(personId, id, false)).toBe(false);
+    expect(await reads.needs(personId, id, true)).toBe(false);
   });
 
-  it("asks for no sort when no page could be read: the line says so, and Retry reads them", async () => {
-    const { reader: running } = await startReader([
-      async (turn) => {
-        for (const page of [1, 2]) {
-          await turn.look(page);
-          await turn.save(page, {
-            outcome: "unreadable",
-            copy: "",
-            why: "Blurred.",
-          });
-        }
-        return undefined;
-      },
-    ]);
-    await addReport();
-    await until(done);
-    expect(lines().at(-1)).toBe(
-      "Couldn't read sunrise-august.pdf · 2 pages couldn't be read",
-    );
-    expect(requests()).toEqual([]);
-    expect(asks()).toEqual([]);
+  it("leaves nothing to sort when no page could be read; reading again reads them", async () => {
+    const unreadable: Script = async (turn) => {
+      for (const page of [1, 2]) {
+        await turn.look(page);
+        await turn.save(page, {
+          outcome: "unreadable",
+          copy: "",
+          why: "Blurred.",
+        });
+      }
+      return undefined;
+    };
+    const { runs, read } = await startReader([unreadable, readBoth]);
+    const id = await addReport();
+    const { job: first } = await read(id);
+    expect(await reads.note([first.id])).toContain("Nothing in it to sort");
     expect((await docs.list(personId))[0]).toMatchObject({
-      sorting: null,
+      notSorted: false,
       reading: { canRetry: true },
     });
-    await running.close();
+
+    // A plain send doesn't read it again; a read-again chip does.
+    expect(await reads.needs(personId, id, false)).toBe(false);
+    expect((await read(await open(id, true))).end).toEqual(DONE);
+    expect(runs[1]?.input).toContain("Save these pages: 1–2.");
+    expect(pageStates()).toEqual([
+      { position: 1, state: "read" },
+      { position: 2, state: "read" },
+    ]);
   });
 
   it("tells the reader nothing of whom the document was added for", async () => {
@@ -300,32 +291,22 @@ describe("a reading", () => {
       `INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
        INSERT INTO chats (id, person_id, created_at) VALUES ('c-ravi', 'ravi', '${NOW}');`,
     );
-    const { runs, reader: running } = await startReader([
-      async (turn) => {
-        for (const page of [1, 2]) {
-          await turn.look(page);
-          await turn.save(page, readPage());
-        }
-        return undefined;
-      },
-    ]);
-    await addReport("ravi");
-    await until(done);
+    const { runs, read } = await startReader([readBoth]);
+    await read(await open(await addReport("ravi"), false, "ravi"));
     expect(runs[0]?.input).toBe(
       "Copy this document: 2 pages (sunrise-august.pdf).\nSave these pages: 1–2.",
     );
-    await running.close();
   });
 
-  it("marks pages the reader never saved as not looked at, and Retry reads only those, for Rufi AI to sort", async () => {
-    const { runs, reader: running } = await startReader([
+  it("marks pages the reader never saved as not looked at, and reading again reads only those", async () => {
+    const { runs, read } = await startReader([
       async (turn) => {
         await turn.look(1);
         await turn.save(1, readPage());
         return undefined;
       },
       async (turn) => {
-        // Page 1 for context only: the retry can't change it.
+        // Page 1 for context only: the read-again can't change it.
         await turn.look(1);
         const refused = await turn.save(1, readPage("99"));
         expect(refused.ok).toBe(false);
@@ -335,43 +316,92 @@ describe("a reading", () => {
       },
     ]);
     const id = await addReport();
-    await until(done);
-    expect(lines().at(-1)).toBe(
-      "Read sunrise-august.pdf · 2 pages · 1 page not looked at. Rufi AI is sorting it.",
+    const { job: first } = await read(id);
+    expect(await reads.note([first.id])).toContain(
+      "It didn't look at pages 2.",
     );
-    expect(asks()).toEqual([
-      sortNote(id, 1, ["The reader didn't look at pages 2; Retry reads them."]),
-    ]);
     expect(pageStates()).toEqual([
       { position: 1, state: "read" },
       { position: 2, state: "not_looked_at" },
     ]);
 
-    expect(await reads.retry(personId, id)).toEqual([2]);
-    await until(
-      () => rows("SELECT state FROM jobs WHERE state = 'done'").length === 2,
-    );
+    const again = await open(id, true);
+    expect(again.targets).toEqual([2]);
+    expect((await read(again)).end).toEqual(DONE);
     expect(runs[1]?.input).toContain("Save these pages: 2.");
-    expect(lines().slice(-2)).toEqual([
-      "Reading sunrise-august.pdf again · page 2",
-      "Read sunrise-august.pdf again · page 2. Rufi AI is sorting it.",
-    ]);
-    // The newer request takes the place of the one that waited.
-    expect(requests().map((r) => r["state"])).toEqual(["void", "open"]);
     expect(copied()).toEqual([1, 2]);
     expect(pageStates()).toEqual([
       { position: 1, state: "read" },
       { position: 2, state: "read" },
     ]);
-    await expect(reads.retry(personId, id)).rejects.toThrow(
-      "Every page of this document was read",
-    );
-    await running.close();
+    expect(await reads.needs(personId, id, true)).toBe(false);
+  });
+});
+
+describe("a Stop, one reading at a time", () => {
+  it("a Stop ends the run at once: its key opens nothing more, and the job is left for its reply to fail with its copies kept", async () => {
+    const stop = new AbortController();
+    let late: unknown;
+    const { read } = await startReader([
+      async (turn) => {
+        await turn.look(1);
+        await turn.save(1, readPage());
+        stop.abort();
+        await turn.stopped();
+        late = (await turn.save(2, readPage())).json;
+        return { end: { status: "interrupted", reason: "stopped" } };
+      },
+    ]);
+    const { end, job: reading } = await read(await addReport(), stop.signal);
+    expect(end).toEqual({ ended: "stopped" });
+    expect(late).toMatchObject({ ok: false, error: "HTTP 401" });
+    expect(job()?.["state"]).toBe("running");
+    await store.query
+      .transaction()
+      .execute((trx) => reads.failOpen(trx, [reading.id], "Stopped"));
+    expect(job()).toMatchObject({ state: "failed", error: "Stopped" });
+    expect(copied()).toEqual([1]);
+  });
+
+  it("reads one document at a time: the next waits, and a Stop while it waits ends it without a run", async () => {
+    const first = Promise.withResolvers<undefined>();
+    let overlapping = false;
+    let active = 0;
+    const once =
+      (wait?: Promise<undefined>): Script =>
+      async (turn) => {
+        if (++active > 1) overlapping = true;
+        await wait;
+        await turn.look(1);
+        await turn.save(1, readPage());
+        active--;
+        return undefined;
+      };
+    const { runs, read } = await startReader([once(first.promise), once()]);
+    const a = await addFile("thyroid-recheck.jpg", "thyroid.jpg");
+    const b = await addFile("thyroid-recheck-version-1.jpg", "thyroid-1.jpg");
+    const c = await addReport();
+    const reading = read(a);
+    await until(() => runs.length === 1);
+
+    const later = read(b);
+    const stop = new AbortController();
+    const stopped = read(c, stop.signal);
+    await sleep(50);
+    expect(runs).toHaveLength(1);
+    stop.abort();
+    expect((await stopped).end).toEqual({ ended: "stopped" });
+
+    first.resolve(undefined);
+    expect((await reading).end).toEqual(DONE);
+    expect((await later).end).toEqual(DONE);
+    expect(runs).toHaveLength(2);
+    expect(overlapping).toBe(false);
   });
 });
 
 describe("a restart or a failure", () => {
-  it("stops a reader that used its refusal allowance, keeps why, and asks for no sort", async () => {
+  it("stops a reader that used its refusal allowance and keeps why", async () => {
     await transcripts.saveSetting("reader_model", "gpt-5.5");
     let attempts = 0;
     const late: number[] = [];
@@ -382,7 +412,7 @@ describe("a restart or a failure", () => {
         arguments: { page: 1, ...readPage() },
       },
     };
-    const { reader: running } = await startReader([], {
+    const { read } = await startReader([], {
       // One automatic retry is enough to see each attempt stopped.
       retryWaitsMs: [0],
       run: async (task, signal) => {
@@ -435,8 +465,8 @@ describe("a restart or a failure", () => {
             token: () => Promise.resolve("not-a-real-token"),
             version: "0.0.0",
           })(task, signal);
-          // Before returning to the owner: Stop must have revoked the key
-          // already, including while the runner is unwinding.
+          // Before returning to the owner: the stop must have revoked the
+          // key already, including while the runner is unwinding.
           const refused = await callTool(
             {
               url: task.tools.url,
@@ -457,55 +487,41 @@ describe("a restart or a failure", () => {
         }
       },
     });
-    try {
-      await addReport();
-      await until(
-        () => ["done", "failed"].includes(String(job()?.["state"])),
-        30_000,
-      );
-      expect(job()).toMatchObject({
-        state: "failed",
-        error: "The AI kept making requests Rufi couldn't accept.",
-      });
-      expect(attempts).toBe(2);
-      expect(late).toEqual([401, 401]);
-      expect(requests()).toEqual([]);
-      expect(rows("SELECT page_in_file, copy FROM page_copies")).toEqual([
-        { page_in_file: 2, copy: readPage().copy },
-      ]);
-    } finally {
-      await running.close();
-    }
-  }, 60_000);
-  it("Retry reads a document never read (from before Rufi read each one as it came) in full", async () => {
-    const id = await addReport();
-    store.db.exec("DELETE FROM jobs");
-    expect((await docs.list(personId))[0]?.status).toBe("not_read");
-    expect(await reads.retry(personId, id)).toEqual([1, 2]);
-    expect(rows("SELECT state, targets FROM jobs")).toEqual([
-      { state: "queued", targets: "[1,2]" },
+    const why = "The AI kept making requests Rufi couldn't accept.";
+    expect((await read(await addReport())).end).toEqual({
+      ended: "failed",
+      why,
+    });
+    expect(job()).toMatchObject({ state: "failed", error: why });
+    expect(attempts).toBe(2);
+    expect(late).toEqual([401, 401]);
+    expect(rows("SELECT page_in_file, copy FROM page_copies")).toEqual([
+      { page_in_file: 2, copy: readPage().copy },
     ]);
-  });
+  }, 60_000);
 
-  it("continues after a restart from its copies: no second start line, one request to sort", async () => {
+  it("fails a reading Rufi closed in the middle at the next start; sending it again goes on from its copies", async () => {
     const first = await startReader([
       async (turn) => {
         await turn.look(1);
         await turn.save(1, readPage());
-        // Rufi stops here, before page 2.
+        // Rufi closes here, before page 2.
         await turn.stopped();
         return { end: { status: "interrupted", reason: "stopped" } };
       },
     ]);
-    await addReport();
+    const id = await addReport();
+    const reading = first.read(id);
     await until(() => copied().length === 1);
-    await first.reader.close();
+    first.reader.close();
+    expect((await reading).end).toEqual({ ended: "stopped" });
     expect(job()?.["state"]).toBe("running");
 
     expect(await reads.recover()).toBe(1);
-    expect(await reads.strip(personId)).toMatchObject([
-      { state: "waiting", again: true, saved: 1, of: 2 },
-    ]);
+    expect(job()).toMatchObject({
+      state: "failed",
+      error: "Rufi closed while reading",
+    });
     const second = await startReader([
       async (turn) => {
         await turn.look(2);
@@ -513,42 +529,16 @@ describe("a restart or a failure", () => {
         return undefined;
       },
     ]);
-    await until(done);
+    expect((await second.read(id)).end).toEqual(DONE);
     expect(second.runs[0]?.input).toContain(
       "You saved pages 1 in an earlier run",
     );
-    expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages", SORTING]);
     expect(copied()).toEqual([1, 2]);
-    expect(requests()).toHaveLength(1);
-    await second.reader.close();
-  });
-
-  it("finishes without a reader when every page was saved before a crash", async () => {
-    const first = await startReader([
-      async (turn) => {
-        await turn.look(1);
-        await turn.save(1, readPage());
-        await turn.look(2);
-        await turn.save(2, readPage());
-        await turn.stopped();
-        return { end: { status: "interrupted", reason: "stopped" } };
-      },
-    ]);
-    await addReport();
-    await until(() => copied().length === 2);
-    await first.reader.close();
-    await reads.recover();
-
-    const second = await startReader([]);
-    await until(done);
-    expect(second.runs).toEqual([]);
-    expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages", SORTING]);
-    expect(requests()).toHaveLength(1);
-    await second.reader.close();
   });
 
   it("copies again, the new way, the pages an older reader saved as entries in a reading it left unfinished, each copy taking its entry's place", async () => {
     const id = await addReport();
+    await open(id);
     // An older reader's unfinished reading: page 1 in its notebook.
     store.db.exec(`
       UPDATE jobs SET state = 'running', attempt = 1, started_at = '${NOW}';
@@ -556,37 +546,22 @@ describe("a restart or a failure", () => {
         WHERE position = 1;
     `);
     await reads.recover();
-    const { runs, reader: running } = await startReader([
-      async (turn) => {
-        for (const page of [1, 2]) {
-          await turn.look(page);
-          await turn.save(page, readPage());
-        }
-        return undefined;
-      },
-    ]);
-    await until(done);
+    const { runs, read } = await startReader([readBoth]);
+    expect((await read(id)).end).toEqual(DONE);
     expect(runs).toHaveLength(1);
     expect(runs[0]?.input).not.toContain("earlier run");
     expect(copied()).toEqual([1, 2]);
-    expect(requests()).toEqual([
-      expect.objectContaining({ state: "open", text: sortNote(id) }),
-    ]);
     expect(
       rows("SELECT entry FROM document_pages ORDER BY position").map(
         (r) => r["entry"],
       ),
     ).toEqual([null, null]);
-    await running.close();
   });
 
   it("does not finish from failed copies after the retry is interrupted and Rufi restarts", async () => {
     const first = await startReader([
       async (turn) => {
-        await turn.look(1);
-        await turn.save(1, readPage());
-        await turn.look(2);
-        await turn.save(2, readPage());
+        await readBoth(turn);
         return { end: { status: "failed", reason: "connection" } };
       },
       async (turn) => {
@@ -594,37 +569,24 @@ describe("a restart or a failure", () => {
         return { end: { status: "interrupted", reason: "stopped" } };
       },
     ]);
-    try {
-      await addReport();
-      await until(() => first.runs.length === 2 || done());
-      expect(first.runs).toHaveLength(2);
-      expect(requests()).toEqual([]);
-    } finally {
-      await first.reader.close();
-    }
+    const id = await addReport();
+    const reading = first.read(id);
+    await until(() => first.runs.length === 2);
+    first.reader.close();
+    expect((await reading).end).toEqual({ ended: "stopped" });
     await reads.recover();
+
     const completed = Promise.withResolvers<undefined>();
     const second = await startReader([() => completed.promise]);
-    try {
-      await until(() => second.runs.length === 1 || done());
-      expect(second.runs).toHaveLength(1);
-      expect(requests()).toEqual([]);
-      expect(lines()).toEqual(["Reading sunrise-august.pdf · 2 pages"]);
-      completed.resolve(undefined);
-      await until(done);
-      expect(requests()).toHaveLength(1);
-      expect(lines()).toEqual([
-        "Reading sunrise-august.pdf · 2 pages",
-        SORTING,
-      ]);
-    } finally {
-      completed.resolve(undefined);
-      await second.reader.close();
-    }
+    const again = second.read(id);
+    await until(() => second.runs.length === 1);
+    expect(job()?.["state"]).toBe("running");
+    completed.resolve(undefined);
+    expect((await again).end).toEqual(DONE);
   });
 
-  it("a deadline fails the reading with its copies kept and no sort; Retry continues it", async () => {
-    const { runs, reader: running } = await startReader([
+  it("a deadline fails the reading with its copies kept; sending it again goes on", async () => {
+    const { runs, read } = await startReader([
       async (turn) => {
         await turn.look(1);
         await turn.save(1, readPage());
@@ -639,28 +601,24 @@ describe("a restart or a failure", () => {
       },
     ]);
     const id = await addReport();
-    await until(() => job()?.["state"] === "failed");
-    expect(lines().at(-1)).toBe(
-      "Couldn't finish reading sunrise-august.pdf · the reading took too long · read 1 of 2",
-    );
-    expect(requests()).toEqual([]);
-    expect(asks()).toEqual([]);
+    expect((await read(id)).end).toEqual({
+      ended: "failed",
+      why: "the reading took too long",
+    });
     expect((await docs.list(personId))[0]).toMatchObject({
       status: "failed",
       reading: { saved: 1, of: 2, canRetry: true },
     });
+    expect(await reads.needs(personId, id, false)).toBe(true);
 
-    expect(await reads.retry(personId, id)).toEqual([1, 2]);
-    await until(done);
+    expect((await read(id)).end).toEqual(DONE);
     expect(runs[1]?.input).toContain("You saved pages 1 in an earlier run");
-    expect(lines().at(-1)).toBe(SORTING);
     expect(copied()).toEqual([1, 2]);
-    await running.close();
   });
 
   it("refuses a call with an earlier attempt's key once that run has ended", async () => {
     let refused: unknown;
-    const { runs, reader: running } = await startReader([
+    const { runs, read } = await startReader([
       () =>
         Promise.resolve({
           end: { status: "failed", reason: "connection" },
@@ -680,74 +638,51 @@ describe("a restart or a failure", () => {
             turnId: "old",
           },
         );
-        await turn.look(1);
-        await turn.save(1, readPage());
-        await turn.look(2);
-        await turn.save(2, readPage());
-        return undefined;
+        return readBoth(turn);
       },
     ]);
-    await addReport();
-    await until(done);
+    expect((await read(await addReport())).end).toEqual(DONE);
     expect(runs[1]?.tools.key).not.toBe(runs[0]?.tools.key);
     expect(refused).toEqual({ status: 401 });
     expect(copied()).toEqual([1, 2]);
-    expect(requests()).toHaveLength(1);
-    await running.close();
   });
 
   it.each(["timeout", "connection"] as const)(
-    "keeps all copies without a sort after a %s failure; Retry needs a completed turn",
+    "keeps all copies after a %s failure; sending it again needs a completed turn",
     async (reason) => {
       const failure: Script = () =>
         Promise.resolve({
           end: { status: "failed", reason },
         });
-      const { runs, reader: running } = await startReader([
+      const { runs, read } = await startReader([
         async (turn) => {
-          await turn.look(1);
-          await turn.save(1, readPage());
-          await turn.look(2);
-          await turn.save(2, readPage());
+          await readBoth(turn);
           return failure(turn);
         },
         // A passing reason: tried again three times by itself.
         ...(reason === "connection" ? [failure, failure, failure] : []),
         () => Promise.resolve(undefined),
       ]);
-      try {
-        const id = await addReport();
-        await until(() =>
-          ["failed", "done"].includes(String(job()?.["state"])),
-        );
-        expect(job()?.["state"]).toBe("failed");
-        expect(runs).toHaveLength(reason === "connection" ? 4 : 1);
-        expect(
-          (await reads.view(personId, id))?.pages.map((p) => p.copy),
-        ).toEqual([null, null]);
-        expect(copied()).toEqual([1, 2]);
-        expect(requests()).toEqual([]);
-        expect(lines().at(-1)).toContain("Couldn't finish reading");
-        expect(asks()).toEqual([]);
+      const id = await addReport();
+      expect((await read(id)).end).toMatchObject({ ended: "failed" });
+      expect(runs).toHaveLength(reason === "connection" ? 4 : 1);
+      expect(
+        (await reads.view(personId, id))?.pages.map((p) => p.copy),
+      ).toEqual([null, null]);
+      expect(copied()).toEqual([1, 2]);
 
-        await reads.retry(personId, id);
-        await until(done);
-        expect(runs).toHaveLength(reason === "connection" ? 5 : 2);
-        expect(runs.at(-1)?.input).toContain(
-          "You saved pages 1–2 in an earlier run",
-        );
-        expect(requests()).toHaveLength(1);
-        expect(lines().at(-1)).toBe(SORTING);
-        expect(
-          (await reads.view(personId, id))?.pages.map((p) => p.copy),
-        ).toEqual([readPage().copy, readPage().copy]);
-      } finally {
-        await running.close();
-      }
+      expect((await read(id)).end).toEqual(DONE);
+      expect(runs).toHaveLength(reason === "connection" ? 5 : 2);
+      expect(runs.at(-1)?.input).toContain(
+        "You saved pages 1–2 in an earlier run",
+      );
+      expect(
+        (await reads.view(personId, id))?.pages.map((p) => p.copy),
+      ).toEqual([readPage().copy, readPage().copy]);
     },
   );
 
-  it("tries again by itself for a passing reason, three times after a longer wait each, also across a restart, then fails visibly with the service's words", async () => {
+  it("tries again by itself for a passing reason, three times after a longer wait each, then fails with the service's words", async () => {
     const lost = () =>
       Promise.resolve({
         end: {
@@ -756,51 +691,47 @@ describe("a restart or a failure", () => {
           text: "exceeded retry limit, last status: 429 Too Many Requests",
         },
       });
-    const waits = { retryWaitsMs: [30_000, 60_000, 120_000] };
-    const first = await startReader([lost], waits);
-    await addReport();
-    await until(() => job()?.["retries"] === 1);
-    await first.reader.close();
+    const { runs, read } = await startReader([lost, lost, lost, lost], {
+      retryWaitsMs: [30, 60, 120],
+    });
+    const waits: unknown[] = [];
+    const { end, heard } = await read(await addReport(), undefined, (now) => {
+      if (now.state === "again") waits.push(job()?.["retry_at"]);
+    });
+    expect(waits).toEqual(
+      [30, 60, 120].map((ms) => new Date(clock + ms).toISOString()),
+    );
+    expect(heard.filter((h) => h.state === "again")).toHaveLength(3);
+    expect(runs).toHaveLength(4);
+    expect(end).toEqual({
+      ended: "failed",
+      why: "exceeded retry limit, last status: 429 Too Many Requests",
+    });
+    expect(job()).toMatchObject({ state: "failed", retries: 3 });
+  });
 
-    // Rufi closes and starts again before the retry's time.
-    store.close();
-    store = openWritable(databasePath(home));
-    transcripts = openTranscripts(store, () => NOW);
-    reads = readings(store, () => new Date(clock).toISOString());
-    expect(await reads.recover()).toBe(0);
-    const second = await startReader([lost, lost, lost], waits);
-    const runs = () => first.runs.length + second.runs.length;
-    try {
-      for (const [tries, wait] of [
-        [1, 30_000],
-        [2, 60_000],
-        [3, 120_000],
-      ] as const) {
-        await until(() => job()?.["retries"] === tries);
-        expect(job()).toMatchObject({
-          state: "queued",
-          retry_at: new Date(clock + wait).toISOString(),
-        });
-        // Before its time, nothing more runs.
-        second.reader.poke();
-        await sleep(50);
-        expect(runs()).toBe(tries);
-        clock += wait;
-        second.reader.poke();
-      }
-      await until(() => job()?.["state"] === "failed");
-      expect(runs()).toBe(4);
-      expect(lines()).toEqual([
-        "Reading sunrise-august.pdf · 2 pages",
-        "Couldn't finish reading sunrise-august.pdf · exceeded retry limit, last status: 429 Too Many Requests · read 0 of 2",
-      ]);
-    } finally {
-      await second.reader.close();
-    }
+  it("a Stop during the wait before a retry ends it at once; a restart then fails the reading that waited", async () => {
+    const lost = () =>
+      Promise.resolve({
+        end: { status: "failed" as const, reason: "connection" as const },
+      });
+    const { runs, read } = await startReader([lost, lost], {
+      retryWaitsMs: [60_000],
+    });
+    const stop = new AbortController();
+    const { end } = await read(await addReport(), stop.signal, (now) => {
+      if (now.state === "again") stop.abort();
+    });
+    expect(end).toEqual({ ended: "stopped" });
+    expect(runs).toHaveLength(1);
+    // Rufi closed then: its next start fails the reading that waited.
+    expect(job()).toMatchObject({ state: "queued" });
+    expect(await reads.recover()).toBe(1);
+    expect(job()).toMatchObject({ state: "failed", retry_at: null });
   });
 
   it("tries again by itself when ChatGPT can't renew the sign-in just now, from its copies, and finishes", async () => {
-    const { runs, reader: running } = await startReader([
+    const { runs, read } = await startReader([
       async (turn) => {
         await turn.look(1);
         await turn.save(1, readPage());
@@ -815,19 +746,10 @@ describe("a restart or a failure", () => {
         return undefined;
       },
     ]);
-    try {
-      await addReport();
-      await until(done);
-      expect(job()).toMatchObject({ retries: 1, error: null });
-      expect(runs[1]?.input).toContain("You saved pages 1 in an earlier run");
-      expect(copied()).toEqual([1, 2]);
-      expect(lines()).toEqual([
-        "Reading sunrise-august.pdf · 2 pages",
-        SORTING,
-      ]);
-    } finally {
-      await running.close();
-    }
+    expect((await read(await addReport())).end).toEqual(DONE);
+    expect(job()).toMatchObject({ retries: 1, error: null });
+    expect(runs[1]?.input).toContain("You saved pages 1 in an earlier run");
+    expect(copied()).toEqual([1, 2]);
   });
 
   it("keeps the words of a sign-in ChatGPT can't renew when its tries run out", async () => {
@@ -838,18 +760,13 @@ describe("a restart or a failure", () => {
           "Couldn't reach ChatGPT. Try again shortly.",
         ),
       );
-    const { reader: running } = await startReader([renewal, renewal], {
+    const { read } = await startReader([renewal, renewal], {
       retryWaitsMs: [0],
     });
-    try {
-      await addReport();
-      await until(() => job()?.["state"] === "failed");
-      expect(lines().at(-1)).toBe(
-        "Couldn't finish reading sunrise-august.pdf · Couldn't reach ChatGPT. Try again shortly. · read 0 of 2",
-      );
-    } finally {
-      await running.close();
-    }
+    expect((await read(await addReport())).end).toEqual({
+      ended: "failed",
+      why: "Couldn't reach ChatGPT. Try again shortly.",
+    });
   });
 
   it.each([
@@ -890,9 +807,9 @@ describe("a restart or a failure", () => {
       "You've hit your usage limit.",
     ],
   ] as const)(
-    "%s: the reading fails at once with the reason, keeps its pages, and Retry continues it",
+    "%s: the reading fails at once with the reason and keeps its pages; sending it again goes on",
     async (_, problem, why) => {
-      const { runs, reader: running } = await startReader([
+      const { runs, read } = await startReader([
         async (turn) => {
           await turn.look(1);
           await turn.save(1, readPage());
@@ -904,33 +821,21 @@ describe("a restart or a failure", () => {
           return undefined;
         },
       ]);
-      try {
-        const id = await addReport();
-        await until(() => job()?.["state"] === "failed");
-        expect(job()).toMatchObject({ retries: 0, error: why });
-        expect(runs).toHaveLength(1);
-        expect(lines()).toEqual([
-          "Reading sunrise-august.pdf · 2 pages",
-          `Couldn't finish reading sunrise-august.pdf · ${why} · read 1 of 2`,
-        ]);
-        expect(requests()).toEqual([]);
-        expect(await reads.strip(personId)).toEqual([]);
+      const id = await addReport();
+      expect((await read(id)).end).toEqual({ ended: "failed", why });
+      expect(job()).toMatchObject({ retries: 0, error: why });
+      expect(runs).toHaveLength(1);
 
-        await reads.retry(personId, id);
-        await until(done);
-        expect(runs[1]?.input).toContain("You saved pages 1 in an earlier run");
-        expect(copied()).toEqual([1, 2]);
-        expect(requests()).toHaveLength(1);
-      } finally {
-        await running.close();
-      }
+      expect((await read(id)).end).toEqual(DONE);
+      expect(runs[1]?.input).toContain("You saved pages 1 in an earlier run");
+      expect(copied()).toEqual([1, 2]);
     },
   );
 });
 
 describe("the chat AI and a reading", () => {
-  it("sees the copies and what isn't sorted yet, and can read failed pages again only in the person's turn", async () => {
-    const { reader: running } = await startReader([
+  it("sees the copies and what isn't sorted yet", async () => {
+    const { read } = await startReader([
       async (turn) => {
         await turn.look(1);
         await turn.save(1, readPage());
@@ -944,10 +849,7 @@ describe("the chat AI and a reading", () => {
       },
     ]);
     const id = await addReport();
-    await until(done);
-    expect(lines().at(-1)).toBe(
-      "Read sunrise-august.pdf · 2 pages · 1 page couldn't be read. Rufi AI is sorting it.",
-    );
+    await read(id);
     const chat = await transcripts.chat(personId);
     if (!chat) throw new Error("No chat.");
     const caller = chatCaller(
@@ -955,15 +857,14 @@ describe("the chat AI and a reading", () => {
       transcripts,
       () => undefined,
       pages(store, home),
-      (person, document) => reads.retry(person, document),
     );
 
-    const read = await caller(
+    const got = await caller(
       chat,
       "turn-1",
       "person",
     )("get_documents", { document: id });
-    const answer = JSON.parse(read.text) as { result: Record<string, unknown> };
+    const answer = JSON.parse(got.text) as { result: Record<string, unknown> };
     expect(answer.result["document"]).toMatchObject({
       status: "done",
       draft_items: 0,
@@ -1005,27 +906,6 @@ describe("the chat AI and a reading", () => {
         ],
       },
     });
-
-    // A turn a Rufi event started can only read.
-    const fromEvent = await caller(
-      chat,
-      "turn-2",
-      "rufi",
-    )("retry_reading", { document: id });
-    expect(fromEvent.ok).toBe(false);
-    expect(fromEvent.text).toContain("started by a Rufi event");
-    expect(rows("SELECT id FROM jobs")).toHaveLength(1);
-
-    const asked = await caller(
-      chat,
-      "turn-3",
-      "person",
-    )("retry_reading", { document: id });
-    expect(JSON.parse(asked.text)).toMatchObject({
-      ok: true,
-      result: { pages: [2] },
-    });
-    await running.close();
   });
 });
 
@@ -1057,7 +937,7 @@ describe("a document deleted while it is read", () => {
         log: () => undefined,
         now: () => NOW,
       });
-      const { reader: started } = await startReader(
+      const { reader: started, read } = await startReader(
         [
           async (turn) => {
             await turn.look(1);
@@ -1073,8 +953,7 @@ describe("a document deleted while it is read", () => {
       );
       running.stopDocument = started.stopDocument;
       id = await addReport();
-      await until(() => late !== undefined);
-      await started.close();
+      expect((await read(id)).end).toEqual({ ended: "deleted" });
 
       expect(stopped).toBe(stop);
       // Stopped, its key opens nothing: the call never reaches the tool.
@@ -1088,10 +967,7 @@ describe("a document deleted while it is read", () => {
                 "This reading isn't running any more; nothing more is saved.",
             },
       );
-      expect(lines()).toEqual([
-        "Reading sunrise-august.pdf · 2 pages",
-        "Deleted sunrise-august.pdf",
-      ]);
+      expect(lines()).toEqual(["Deleted sunrise-august.pdf"]);
       // Only the delete's note: no reading's.
       expect(asks()).toEqual([
         expect.stringContaining(
@@ -1102,7 +978,6 @@ describe("a document deleted while it is read", () => {
       expect(rows("SELECT id FROM jobs")).toEqual([]);
       expect(logged).not.toContain("reader.failed");
       expect(await reads.recover()).toBe(0);
-      expect((await reads.next()).job).toBeUndefined();
     },
   );
 });

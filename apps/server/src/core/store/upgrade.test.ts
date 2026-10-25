@@ -19,7 +19,6 @@ import { familyFiles } from "../../../tests/fixtures/golden.ts";
 import { holdRufiLock } from "../../platform/files.ts";
 import { readBrief } from "../briefs/briefs.ts";
 import { transcripts, type ChatRow } from "../chat/transcript.ts";
-import { readings } from "../documents/reading.ts";
 import { claimNotices } from "../record/notices.ts";
 import { recentSaves } from "../record/read.ts";
 import { chatCaller } from "../tools/tools.ts";
@@ -431,7 +430,7 @@ it("keeps the backup made before the category upgrade at version 3, and a restor
 
 /**
  * Rows as a Rufi before sorting (version 11) had them: the columns
- * migration 12 adds are left out, to compare an older test's rows.
+ * migrations 12 and 15 add are left out, to compare an older test's rows.
  */
 const beforeSorting = (rows: readonly object[]) =>
   rows.map((row) =>
@@ -444,6 +443,7 @@ const beforeSorting = (rows: readonly object[]) =>
             "from_document",
             "sorted_at",
             "quote",
+            "sent_at",
           ].includes(key),
       ),
     ),
@@ -614,11 +614,10 @@ it("upgrades a record of version 8 so a reading no longer waits for the account:
     );
     expect(after.pages).toEqual(before.pages);
     expect(beforeSorting(after.drafts)).toEqual(before.drafts);
-    // Neither former wait waits any more: the oldest runs now, and no job
-    // has a time to wake for.
-    const next = await readings(store, () => "2026-10-17T09:00:00.000Z").next();
-    expect(next.job?.id).toBe("job-sign-in");
-    expect(next.wake).toBeUndefined();
+    // Neither former wait waits any more: no job has a time to wake for.
+    expect(
+      store.db.prepare("SELECT id FROM jobs WHERE retry_at IS NOT NULL").all(),
+    ).toEqual([]);
   } finally {
     store.close();
   }
@@ -1055,6 +1054,72 @@ it("upgrades a record of version 14 to Visits: the saves, follow-ups and briefs 
     ).toEqual({ type: "immunisation", date: "2026-10-01" });
   } finally {
     store.close();
+  }
+});
+
+it("upgrades a record of version 15 so files start on Send: every document sent as it was added, every reply, line and queued message kept, and an open sorting request gone with its note", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 15));
+  // Rufi's open request that Rufi AI sort Asha's August report, its note
+  // waiting in her chat's queue.
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, details, revision, created_at, updated_at)
+        SELECT 'line-sort', person_id, id, 1000, 'event', 'Read sunrise-labs-august.pdf · 2 pages. Rufi AI is sorting it.', '{"kind":"document_read","facts":null}', 0, '2026-10-20T09:00:00Z', '2026-10-20T09:00:00Z'
+        FROM chats WHERE person_id = 'asha';
+      INSERT INTO chat_queue (id, person_id, chat_id, origin, text, event_id, position, state, created_at, updated_at)
+        SELECT 'queue-sort', person_id, id, 'rufi', 'Sort it now.', 'line-sort', 1000, 'waiting', '2026-10-20T09:00:00Z', '2026-10-20T09:00:00Z'
+        FROM chats WHERE person_id = 'asha';
+      INSERT INTO sort_requests (id, person_id, document_id, state, queue_id, created_at)
+        VALUES ('request-1', 'asha', 'doc-asha-aug', 'open', 'queue-sort', '2026-10-20T09:00:00Z');
+    `);
+  } finally {
+    old.close();
+  }
+  const stored = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      const all = (table: string) =>
+        db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all();
+      return {
+        documents: all("documents"),
+        turns: all("turns"),
+        entries: all("transcript_entries"),
+        queue: all("chat_queue"),
+      };
+    } finally {
+      db.close();
+    }
+  };
+  const before = stored();
+  expect(before.documents.length).toBeGreaterThan(0);
+  expect(before.turns.length).toBeGreaterThan(0);
+
+  (await openRecord(home)).close();
+
+  const after = stored();
+  expect(after.documents).toEqual(
+    before.documents.map((row) => ({ ...row, sent_at: row["added_at"] })),
+  );
+  expect(after.turns).toEqual(before.turns);
+  expect(after.entries).toEqual(before.entries);
+  expect(after.queue).toEqual(
+    before.queue.map((row) =>
+      row["id"] === "queue-sort" ? { ...row, state: "removed" } : row,
+    ),
+  );
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    expect(
+      db
+        .prepare(
+          "SELECT name FROM sqlite_schema WHERE name LIKE 'sort_requests%'",
+        )
+        .all(),
+    ).toEqual([]);
+  } finally {
+    db.close();
   }
 });
 

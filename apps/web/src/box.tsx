@@ -6,8 +6,7 @@
 // is sent again by itself. Signed out, the core takes nothing: the box says so, with Sign in.
 // The model and effort are chosen beside Send; what waits shows above the
 // box. Chips (references to documents, draft items and records) sit above
-// the text and go with it; a document's chip says what Rufi is doing with
-// it. The paperclip adds files as documents. The bar is a pill of one fixed
+// the text and go with it; a document's chip names it. The paperclip adds files as documents. The bar is a pill of one fixed
 // size that opens the panel: on one line, what was added (the first chip's
 // name and how many more), then the text's start, or a reason when there is
 // one; the panel shows it whole.
@@ -52,10 +51,10 @@ import {
 import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
-import { request } from "./api.ts";
+import { ApiError, request } from "./api.ts";
 import { AttachButton, AttachStatus } from "./attach.tsx";
 import { boxFor } from "./boxes.ts";
-import { ChipView, useChipStates } from "./chips.tsx";
+import { ChipView } from "./chips.tsx";
 import { ContextMeter } from "./context-meter.tsx";
 import {
   type BoxChip,
@@ -65,7 +64,6 @@ import {
   tooMany,
 } from "./draft.ts";
 import { chatPath, type Live, messageOf } from "./live.ts";
-import { ReaderStrip } from "./reading.tsx";
 import { ModelMenu } from "./model-menu.tsx";
 import { usePanel } from "./panel.ts";
 import { isRunning } from "./transcript-state.ts";
@@ -104,13 +102,12 @@ export function Box({
   const notice = useStore(box.store, (state) => state.notice);
   const chips = useStore(box.store, (state) => state.refs);
   const refused = usePanel((state) => state.refused);
-  const stateOf = useChipStates(person.id);
   const running = useStore(live, isRunning);
   const navigate = useNavigate();
   const [problem, setProblem] = useState<string | null>(null);
   const long = tooLong(text);
   const many = tooMany(chips);
-  const hasText = text.trim() !== "" && !long && !many;
+  const hasText = (text.trim() !== "" || chips.length > 0) && !long && !many;
   const placeholder = `Ask or tell Rufi about ${person.displayName}…`;
 
   // Leaving the screen, the box saves at once what isn't saved yet.
@@ -206,7 +203,6 @@ export function Box({
         submit();
       }}
     >
-      {size !== "bar" && <ReaderStrip personId={person.id} />}
       {size !== "bar" && (
         <QueueView
           live={live}
@@ -264,10 +260,28 @@ export function Box({
                 <li key={chipKey(chip)} className="max-w-full">
                   <ChipView
                     chip={chip}
-                    state={stateOf(chip.pointer)}
                     {...(!locked && {
                       onRemove: () => {
-                        box.remove(chip);
+                        void act(async () => {
+                          if (chip.pointer.type === "document") {
+                            try {
+                              await request(
+                                "DELETE",
+                                `/api/people/${encodeURIComponent(person.id)}/documents/${encodeURIComponent(chip.pointer.id)}/unsent`,
+                              );
+                            } catch (error) {
+                              // Sent files stay in Rufi; only their chip leaves the box.
+                              if (
+                                !(
+                                  error instanceof ApiError &&
+                                  error.status === 409
+                                )
+                              )
+                                throw error;
+                            }
+                          }
+                          box.remove(chip);
+                        });
                       },
                     })}
                   />
@@ -366,13 +380,6 @@ function whyHeld(item: QueueItem): string | null {
   switch (item.held) {
     case "paused":
     case "signed_out":
-      // A sort goes in a reply of its own. A message an older Rufi held
-      // signed out says no more: Send or Remove.
-      if (item.sort) {
-        return item.held === "paused"
-          ? "Goes after your next message, in a reply of its own."
-          : "Goes by itself once you sign in.";
-      }
       return item.origin === "rufi"
         ? "Goes to the AI with your next message."
         : null;
@@ -380,6 +387,7 @@ function whyHeld(item: QueueItem): string | null {
       return "From a backup: it waited when the backup was made.";
     case "failed":
     case "open_failed":
+    case "reply_ended":
       return item.heldText;
     case null:
       return null;
@@ -402,7 +410,8 @@ function QueueView({
   running: boolean;
   act: (action: () => Promise<unknown>) => Promise<void>;
 }) {
-  const { items, paused } = useStore(live, (state) => state.queue);
+  const { items: all, paused } = useStore(live, (state) => state.queue);
+  const items = all.filter((item) => item.held !== "reply_ended");
   const error = useStore(live, (state) => state.queueError);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(
     null,

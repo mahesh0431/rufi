@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { readPage, scriptedReader } from "../../server/tests/fake-reader.ts";
-import { expect, test } from "./rufi.ts";
+import { expect, sendFiles, test } from "./rufi.ts";
 
 const REPORT = join(
   import.meta.dirname,
@@ -100,7 +100,7 @@ test("checks a report against its pages: worth a look only, a fix, a fix from an
   await rufi.start({ reader: reader.run, scenario: SORT });
   await page.goto(rufi.link());
   await page.getByRole("link", { name: "Documents" }).click();
-  await page.getByLabel("Choose documents", { exact: true }).setInputFiles({
+  await sendFiles(page, {
     name: "sunrise-labs-august.pdf",
     mimeType: "application/pdf",
     buffer: await readFile(REPORT),
@@ -108,6 +108,11 @@ test("checks a report against its pages: worth a look only, a fix, a fix from an
   await expect(
     page.getByRole("cell", { name: /Not saved · 3 results/ }),
   ).toBeVisible({ timeout: 10_000 });
+  // The reply is on its way; fold the chat back to its bar.
+  await page
+    .getByRole("region", { name: "Chat" })
+    .getByRole("button", { name: "Minimise" })
+    .click();
 
   // Items beside the page; a row shows its page and the words it came from.
   await page.getByRole("link", { name: "sunrise-labs-august.pdf" }).click();
@@ -237,9 +242,10 @@ test("checks a report against its pages: worth a look only, a fix, a fix from an
   );
   await expect(
     chat
+      .locator("form")
       .getByRole("list", { name: "Added to this message" })
       .getByRole("listitem"),
-  ).toHaveText(["sunrise-labs-august.pdf · Read"]);
+  ).toHaveText(["sunrise-labs-august.pdf"]);
   await accessible(page);
   await box.fill("What changed since March?");
 

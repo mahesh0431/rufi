@@ -11,7 +11,6 @@ import { useConnection } from "./api.ts";
 import { Dog } from "./dog.tsx";
 import { liveStore, type Live } from "./live.ts";
 import { moodOf } from "./mood.ts";
-import { useReadings } from "./reading.tsx";
 import { useStatus } from "./reads.ts";
 import { isRunning } from "./transcript-state.ts";
 
@@ -63,9 +62,11 @@ export function SidebarDog({ person }: { person: Person }) {
     live,
     (state) => state.status === "open" && state.order.length === 0,
   );
-  const reading =
-    useReadings(person.id).data?.some((one) => one.state === "running") ===
-    true;
+  const reading = useStore(live, (state) =>
+    Object.values(state.entries).some(
+      (entry) => entry.activity === "reading" && entry.status === "running",
+    ),
+  );
 
   // A reply or a reading that ended, with nothing else going on: done for a
   // few seconds. A reply the person stopped, or one that broke off, isn't

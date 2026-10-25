@@ -3,10 +3,12 @@
 // pages and, for a report, its lab and number) and drafts each result with
 // its page, in one sort_documents call. Code decides none of it. It keeps
 // only what must never go wrong: whose add it is, that every page ends in
-// one document, that a page a saved result cites stays where it is, that a
-// draft's page has a copy, and that a Rufi-started turn sorts only the pages
-// its request is for. A sort is written in one transaction, with its request
-// consumed; the stored tool call is its trace.
+// one document, that a page a saved result cites stays where it is, and
+// that a draft's page has a copy. Rufi AI sorts in the person's reply, after
+// Rufi's reader copied what they sent (server/chat.ts); a reply Rufi started
+// can't sort (core/tools/tools.ts). A sort is written in one transaction
+// with its stored tool call, which is its trace: the same call again gets
+// its answer.
 //
 // The add is the document as the person added it, with the documents split
 // from it (documents.from_document). Every document of an add shares its
@@ -17,11 +19,10 @@
 import { Schema } from "effect";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
-import { addRow } from "../chat/queue.ts";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 import { Refusal, type Issue } from "../tools/registry.ts";
-import { documentName, ranges } from "./naming.ts";
+import { ranges } from "./naming.ts";
 
 type Trx = Transaction<Tables>;
 type Db = Kysely<Tables> | Trx;
@@ -154,7 +155,7 @@ export const SortInput = Schema.Struct({
 });
 export type SortInput = typeof SortInput.Type;
 
-/** Who may sort what: a person's turn their adds; a Rufi turn its request's pages. */
+/** Whose sort, in which chat, by which call of the AI's. */
 export interface SortScope {
   personId: string;
   chatId: string;
@@ -195,7 +196,14 @@ export async function addOf(
   personId: string,
   documentId: string,
 ): Promise<
-  | { id: string; addedAt: string; addedFrom: string; deleted: boolean }
+  | {
+      id: string;
+      addedAt: string;
+      addedFrom: string;
+      /** When a message sent it; null while it waits unsent in the box. */
+      sentAt: string | null;
+      deleted: boolean;
+    }
   | undefined
 > {
   const document = await db
@@ -207,7 +215,7 @@ export async function addOf(
   if (!document) return undefined;
   const add = await db
     .selectFrom("documents")
-    .select(["id", "added_at", "added_from", "deleted_at"])
+    .select(["id", "added_at", "added_from", "sent_at", "deleted_at"])
     .where("person_id", "=", personId)
     .where("id", "=", document.from_document ?? document.id)
     .executeTakeFirstOrThrow();
@@ -215,6 +223,7 @@ export async function addOf(
     id: add.id,
     addedAt: add.added_at,
     addedFrom: add.added_from,
+    sentAt: add.sent_at,
     deleted: add.deleted_at !== null,
   };
 }
@@ -360,106 +369,11 @@ export async function placesOf(
 export const notSorted = (pages: readonly AddPage[]) =>
   pages.filter((p) => p.copy !== undefined && !p.copy.sorted);
 
-/** Waits between a failed sorting turn and the next try. */
-const SORT_WAITS_MS = [30_000, 60_000, 120_000];
-
-/** Rufi's note for the AI that asks for a sort, with the reading's end. */
-export function sortNote(about: {
-  name: string;
-  documentId: string;
-  copied: number;
-  unreadable: readonly number[];
-  notLooked: readonly number[];
-}): string {
-  return [
-    `A document reading finished: ${about.name} (document ${about.documentId}), ${String(about.copied)} ${about.copied === 1 ? "page" : "pages"} copied by the reader, not sorted yet.`,
-    ...(about.unreadable.length > 0
-      ? [`The reader couldn't read pages ${ranges(about.unreadable)}.`]
-      : []),
-    ...(about.notLooked.length > 0
-      ? [
-          `The reader didn't look at pages ${ranges(about.notLooked)}; Retry reads them.`,
-        ]
-      : []),
-    "Sort it now, as the sorting-documents skill says: read its page copies with get_documents, then split it into documents and write its drafts with one sort_documents call. Save nothing. Then tell the user in a few lines what you found and that nothing is saved; if you can't tell something, ask instead.",
-  ].join("\n");
-}
-
 export function sorting(
   store: Store,
   now: () => string = () => new Date().toISOString(),
 ) {
   const db = store.query;
-
-  /** The request the Rufi turn `agentTurnId` was handed, if it is a sort. */
-  const requestOfTurn = async (
-    trx: Trx,
-    scope: SortScope,
-  ): Promise<
-    | { origin: "person" }
-    | {
-        origin: "rufi";
-        request: { id: string; documentId: string } | undefined;
-      }
-  > => {
-    const turn = await trx
-      .selectFrom("turns")
-      .select(["id", "origin"])
-      .where("chat_id", "=", scope.chatId)
-      .where("agent_turn_id", "=", scope.agentTurnId)
-      .executeTakeFirst();
-    if (turn?.origin !== "rufi") return { origin: "person" };
-    const request = await trx
-      .selectFrom("sort_requests as r")
-      .innerJoin("chat_queue as q", (join) =>
-        join
-          .onRef("q.person_id", "=", "r.person_id")
-          .onRef("q.id", "=", "r.queue_id"),
-      )
-      .select(["r.id", "r.document_id"])
-      .where("r.person_id", "=", scope.personId)
-      .where("q.turn_id", "=", turn.id)
-      .where("r.state", "=", "open")
-      .executeTakeFirst();
-    return {
-      origin: "rufi",
-      request: request && { id: request.id, documentId: request.document_id },
-    };
-  };
-
-  /** Ends the add's other open requests: nothing is left to sort. */
-  const closeOthers = async (
-    trx: Trx,
-    personId: string,
-    addId: string,
-    keep: string | undefined,
-  ) => {
-    const open = await trx
-      .selectFrom("sort_requests")
-      .select(["id", "queue_id"])
-      .where("person_id", "=", personId)
-      .where("document_id", "=", addId)
-      .where("state", "in", ["open", "asked", "failed"])
-      .$if(keep !== undefined, (q) => q.where("id", "!=", keep ?? ""))
-      .execute();
-    for (const request of open) {
-      await trx
-        .updateTable("sort_requests")
-        .set({ state: "void", retry_at: null, ended_at: now() })
-        .where("person_id", "=", personId)
-        .where("id", "=", request.id)
-        .execute();
-      if (request.queue_id !== null) {
-        await trx
-          .updateTable("chat_queue")
-          .set({ state: "removed", held: null, updated_at: now() })
-          .where("person_id", "=", personId)
-          .where("id", "=", request.queue_id)
-          .where("state", "=", "waiting")
-          .execute();
-      }
-    }
-  };
 
   /**
    * Splits the add and writes its drafts, as the call says, in one
@@ -481,13 +395,19 @@ export function sorting(
     input: SortInput,
   ): Promise<SortAnswer> => {
     const { personId } = scope;
+    // The same call again: its kept answer.
     const earlier = await trx
-      .selectFrom("sort_requests")
+      .selectFrom("tool_calls")
       .select("answer")
       .where("person_id", "=", personId)
+      .where("chat_id", "=", scope.chatId)
       .where("call_id", "=", scope.callId)
+      .where("tool", "=", "sort_documents")
+      .where("ok", "=", 1)
       .executeTakeFirst();
-    if (earlier?.answer) return JSON.parse(earlier.answer) as SortAnswer;
+    if (earlier) {
+      return (JSON.parse(earlier.answer) as { result: SortAnswer }).result;
+    }
 
     // Pages move between documents below; their drafts move with them in
     // the same transaction, and the links are checked at its end.
@@ -500,7 +420,8 @@ export function sorting(
       .where("person_id", "=", personId)
       .where("id", "=", input.document)
       .executeTakeFirst();
-    if (!add || given?.deleted_at !== null) {
+    // Unsent, it waits in the chat box: not the AI's yet.
+    if (!add || given?.deleted_at !== null || add.sentAt === null) {
       throw new Refusal(
         "There is no such document for this person: read the list with get_documents for its id.",
       );
@@ -521,16 +442,8 @@ export function sorting(
       .executeTakeFirst();
     if (reading) {
       throw new Refusal(
-        "The reader is reading pages of this add now. Sort it once its reading has ended: Rufi asks you then.",
+        "The reader is reading pages of this add now. Sort it once its reading has ended.",
       );
-    }
-    const turn = await requestOfTurn(trx, scope);
-    if (turn.origin === "rufi") {
-      if (turn.request?.documentId !== add.id) {
-        throw new Refusal(
-          "This turn was started by Rufi, not by the user, and it isn't the sort of this add, so nothing can be sorted in it. Explain or ask; the user asks in a message of their own.",
-        );
-      }
     }
 
     const documents = await documentsOf(trx, personId, add.id);
@@ -572,18 +485,6 @@ export function sorting(
         `Pages ${ranges(left.map((p) => p.position))} aren't sorted yet: put each of them in one of the documents too.`,
       );
     }
-    if (turn.origin === "rufi") {
-      const placed = [...named.keys()].filter(
-        (page) => !waiting.some((p) => p.position === page),
-      );
-      if (placed.length > 0) {
-        problem(
-          "documents",
-          ranges(placed),
-          `Pages ${ranges(placed)} were sorted before. In a turn Rufi started you sort only the pages not sorted yet; the user can ask you to change the others.`,
-        );
-      }
-    }
     if (waiting.length === 0 && named.size === 0) {
       throw new Refusal("Nothing in this add is left to sort.");
     }
@@ -622,26 +523,6 @@ export function sorting(
         continue;
       }
       claimed.set(group.id, index);
-      // A turn Rufi started changes nothing of a document that holds
-      // pages sorted before: its pages join it as it is.
-      const sorted = pages.some(
-        (p) =>
-          p.documentId === document.id &&
-          !waiting.some((w) => w.position === p.position),
-      );
-      const changes = [
-        ["kind", group.kind, document.kind],
-        ["date", group.date, document.date],
-        ["lab", group.lab, document.issuer],
-        ["report_number", group.report_number, document.report_number],
-      ].filter(([, given, now]) => given !== undefined && given !== now);
-      if (turn.origin === "rufi" && sorted && changes.length > 0) {
-        problem(
-          `${at}.${String(changes[0]?.[0])}`,
-          changes[0]?.[1],
-          "This document holds pages sorted before, so in a turn Rufi started its kind, date, lab and report number stay as they are: leave them out to add these pages to it, or leave id out to make a new document. The user can ask you to change it.",
-        );
-      }
     }
     // The add's own document stays: it holds the add's readings.
     if (
@@ -738,6 +619,8 @@ export function sorting(
             person_id: personId,
             added_at: add.addedAt,
             added_from: add.addedFrom,
+            // Sent with the add it came from.
+            sent_at: add.sentAt,
             kind: group.kind ?? "other",
             date: null,
             issuer: null,
@@ -847,7 +730,7 @@ export function sorting(
         .execute();
     }
 
-    // The readings whose pages are sorted now, and the request it answers.
+    // The readings whose pages are sorted now.
     const jobs = [
       ...new Set(waiting.flatMap((p) => (p.copy ? [p.copy.jobId] : []))),
     ];
@@ -887,418 +770,39 @@ export function sorting(
       }),
       note: "Sorted. Nothing is saved: the drafts wait for the user on each document's page. Tell the user in a few lines what you found.",
     };
-    const request = turn.origin === "rufi" ? turn.request?.id : undefined;
-    if (request !== undefined) {
-      await trx
-        .updateTable("sort_requests")
-        .set({
-          state: "done",
-          call_id: scope.callId,
-          answer: JSON.stringify(answer),
-          retry_at: null,
-          error: null,
-          ended_at: at,
-        })
-        .where("person_id", "=", personId)
-        .where("id", "=", request)
-        .execute();
-    } else {
-      await trx
-        .insertInto("sort_requests")
-        .values({
-          id: uuid(),
-          person_id: personId,
-          document_id: add.id,
-          job_id: null,
-          state: "done",
-          queue_id: null,
-          tries: 0,
-          call_id: scope.callId,
-          answer: JSON.stringify(answer),
-          created_at: at,
-          ended_at: at,
-        })
-        .execute();
-    }
-    await closeOthers(trx, personId, add.id, request);
     return answer;
-  };
-
-  /**
-   * At a reading's normal end, inside its end line's transaction: a request
-   * to sort its add, handed to the AI as the queue row `queueId` (written
-   * with the line). Older requests of the add give way to it.
-   */
-  const ask = async (
-    trx: Trx,
-    run: { personId: string; documentId: string; jobId: string },
-    queueId: string,
-  ) => {
-    const add = await addOf(trx, run.personId, run.documentId);
-    if (!add) return;
-    await closeOthers(trx, run.personId, add.id, undefined);
-    await trx
-      .insertInto("sort_requests")
-      .values({
-        id: uuid(),
-        person_id: run.personId,
-        document_id: add.id,
-        job_id: run.jobId,
-        state: "open",
-        queue_id: queueId,
-        tries: 0,
-        created_at: now(),
-      })
-      .execute();
-  };
-
-  /** A request's row again, waiting at the end of the queue (held when `held`). */
-  const requeue = async (
-    trx: Trx,
-    request: { id: string; person_id: string; queue_id: string | null },
-    held: "paused" | null,
-  ) => {
-    const old = await trx
-      .selectFrom("chat_queue")
-      .select(["chat_id", "text", "event_id"])
-      .where("person_id", "=", request.person_id)
-      .where("id", "=", request.queue_id ?? "")
-      .executeTakeFirst();
-    if (!old) return;
-    const id = uuid();
-    await addRow(
-      trx,
-      { personId: request.person_id, id: old.chat_id },
-      {
-        id,
-        origin: "rufi",
-        text: old.text,
-        ...(old.event_id !== null && { eventId: old.event_id }),
-      },
-      now(),
-    );
-    await trx
-      .updateTable("chat_queue")
-      .set({ state: "removed", held: null, updated_at: now() })
-      .where("person_id", "=", request.person_id)
-      .where("id", "=", request.queue_id ?? "")
-      .where("state", "=", "waiting")
-      .execute();
-    if (held !== null) {
-      await trx
-        .updateTable("chat_queue")
-        .set({ held })
-        .where("id", "=", id)
-        .execute();
-    }
-    await trx
-      .updateTable("sort_requests")
-      .set({ queue_id: id, retry_at: null })
-      .where("id", "=", request.id)
-      .execute();
   };
 
   return {
     sort,
-    ask,
+  };
+}
 
-    /**
-     * Rufi's own work on the requests, after a turn ended, at start and as
-     * retries fall due: a turn that sorted is done (the call consumed it);
-     * one that completed without sorting waits for the person; one the
-     * person stopped waits for them to go on; a failed turn, or a hand-over
-     * that failed, is tried again after a wait, three times, then waits for
-     * Retry. Returns the people whose chat has a row to hand over now,
-     * those whose requests changed (for their screens), and when the next
-     * try falls due.
-     */
-    tend: async (): Promise<{
-      people: string[];
-      changed: string[];
-      wake: string | undefined;
-    }> =>
-      db.transaction().execute(async (trx) => {
-        const at = now();
-        const people = new Set<string>();
-        const changed = new Set<string>();
-        const open = await trx
-          .selectFrom("sort_requests as r")
-          .leftJoin("chat_queue as q", (join) =>
-            join
-              .onRef("q.person_id", "=", "r.person_id")
-              .onRef("q.id", "=", "r.queue_id"),
-          )
-          .leftJoin("turns as t", (join) =>
-            join
-              .onRef("t.person_id", "=", "q.person_id")
-              .onRef("t.id", "=", "q.turn_id"),
-          )
-          .select([
-            "r.id",
-            "r.person_id",
-            "r.queue_id",
-            "r.tries",
-            "r.retry_at",
-            "q.state as row",
-            "q.held",
-            "q.held_text",
-            "t.status as turn",
-            "t.end_reason",
-            "t.end_text",
-          ])
-          .where("r.state", "=", "open")
-          .execute();
-        let wake: string | undefined;
-        for (const request of open) {
-          const failed = async (why: string) => {
-            changed.add(request.person_id);
-            const wait = SORT_WAITS_MS[request.tries];
-            if (wait === undefined) {
-              await trx
-                .updateTable("sort_requests")
-                .set({ state: "failed", error: why, ended_at: at })
-                .where("id", "=", request.id)
-                .execute();
-              await trx
-                .updateTable("chat_queue")
-                .set({ state: "removed", held: null, updated_at: at })
-                .where("id", "=", request.queue_id ?? "")
-                .where("state", "=", "waiting")
-                .execute();
-              return;
-            }
-            const due = new Date(Date.parse(at) + wait).toISOString();
-            await trx
-              .updateTable("sort_requests")
-              .set({ tries: request.tries + 1, retry_at: due, error: why })
-              .where("id", "=", request.id)
-              .execute();
-            wake = wake === undefined || due < wake ? due : wake;
-          };
-          if (request.retry_at !== null) {
-            if (request.retry_at > at) {
-              wake =
-                wake === undefined || request.retry_at < wake
-                  ? request.retry_at
-                  : wake;
-            } else {
-              await requeue(trx, request, null);
-              people.add(request.person_id);
-              changed.add(request.person_id);
-            }
-            continue;
-          }
-          if (request.row === "waiting") {
-            if (request.held === "failed") {
-              await failed(
-                request.held_text ?? "Rufi couldn't hand it to the AI",
-              );
-            } else if (request.held !== "paused") people.add(request.person_id);
-            continue;
-          }
-          if (request.row === "handing_over") continue;
-          if (request.row === "removed" || request.row === null) {
-            // The person took it out of the queue: it waits for Retry.
-            changed.add(request.person_id);
-            await trx
-              .updateTable("sort_requests")
-              .set({ state: "failed", error: null, ended_at: at })
-              .where("id", "=", request.id)
-              .execute();
-            continue;
-          }
-          if (request.row === "not_sure" || request.turn === null) {
-            await failed("Rufi stopped while it handed it to the AI");
-            continue;
-          }
-          if (request.turn === "running") continue;
-          if (request.turn === "completed") {
-            // Rufi AI answered without sorting: it asked the person.
-            changed.add(request.person_id);
-            await trx
-              .updateTable("sort_requests")
-              .set({ state: "asked", ended_at: at })
-              .where("id", "=", request.id)
-              .execute();
-            continue;
-          }
-          if (request.end_reason === "stopped") {
-            await requeue(trx, request, "paused");
-            changed.add(request.person_id);
-            continue;
-          }
-          await failed(request.end_text ?? "the AI stopped");
-        }
-        return { people: [...people], changed: [...changed], wake };
-      }),
-
-    /**
-     * The person's Retry of an add's sort that waits (failed, asked or
-     * stopped): its tries start again and it goes at the end of the queue.
-     * Returns whether there was one.
-     */
-    retry: async (personId: string, documentId: string): Promise<boolean> =>
-      db.transaction().execute(async (trx) => {
-        const add = await addOf(trx, personId, documentId);
-        const live = await trx
-          .selectFrom("documents")
-          .select("id")
-          .where("person_id", "=", personId)
-          .where("id", "=", documentId)
-          .where("deleted_at", "is", null)
-          .executeTakeFirst();
-        if (!add || !live) {
-          throw new Refusal("There is no such document for this person.");
-        }
-        const request = await trx
-          .selectFrom("sort_requests as r")
-          .leftJoin("chat_queue as q", (join) =>
-            join
-              .onRef("q.person_id", "=", "r.person_id")
-              .onRef("q.id", "=", "r.queue_id"),
-          )
-          .select([
-            "r.id",
-            "r.person_id",
-            "r.queue_id",
-            "r.state",
-            "r.retry_at",
-            "q.held",
-          ])
-          .where("r.person_id", "=", personId)
-          .where("r.document_id", "=", add.id)
-          .where("r.state", "in", ["open", "asked", "failed"])
-          .orderBy("r.created_at", "desc")
-          .executeTakeFirst();
-        // One that waits to go or runs now needs no Retry.
-        if (
-          !request ||
-          (request.state === "open" &&
-            request.retry_at === null &&
-            request.held !== "paused")
-        ) {
-          return false;
-        }
-        await trx
-          .updateTable("sort_requests")
-          .set({ state: "open", tries: 0, error: null, ended_at: null })
-          .where("id", "=", request.id)
-          .execute();
-        await requeue(trx, request, null);
-        return true;
-      }),
-
-    /**
-     * Each live document's sorting, for the person's lists: sorting (its
-     * request waits to go or runs), waiting (it waits for the person:
-     * stopped, asked, or its tries used) with why, or none.
-     */
-    states: async (
-      personId: string,
-    ): Promise<
-      Map<
-        string,
-        { state: "sorting" | "waiting" | "signed_out"; why: string | null }
-      >
-    > => {
-      const requests = await db
-        .selectFrom("sort_requests as r")
-        .leftJoin("chat_queue as q", (join) =>
-          join
-            .onRef("q.person_id", "=", "r.person_id")
-            .onRef("q.id", "=", "r.queue_id"),
-        )
-        .select(["r.document_id", "r.state", "r.error", "r.retry_at", "q.held"])
-        .where("r.person_id", "=", personId)
-        .where("r.state", "in", ["open", "asked", "failed"])
-        .execute();
-      const documents = await db
-        .selectFrom("documents")
-        .select(["id", "from_document"])
-        .where("person_id", "=", personId)
-        .where("deleted_at", "is", null)
-        .execute();
-      const pages = await pagesOf(
+/**
+ * The person's live documents whose pages wait for Rufi AI to sort them:
+ * their copy comes from a reading it hasn't sorted.
+ */
+export async function unsorted(db: Db, personId: string): Promise<Set<string>> {
+  const documents = await db
+    .selectFrom("documents")
+    .select("id")
+    .where("person_id", "=", personId)
+    .where("deleted_at", "is", null)
+    .execute();
+  return new Set(
+    notSorted(
+      await pagesOf(
         db,
         personId,
         documents.map((d) => d.id),
         false,
-      );
-      const states = new Map<
-        string,
-        { state: "sorting" | "waiting" | "signed_out"; why: string | null }
-      >();
-      for (const request of requests) {
-        const state: {
-          state: "sorting" | "waiting" | "signed_out";
-          why: string | null;
-        } =
-          request.state === "asked"
-            ? {
-                state: "waiting",
-                why: "Rufi AI asked you about it in the chat",
-              }
-            : request.state === "failed"
-              ? { state: "waiting", why: request.error }
-              : request.held === "paused"
-                ? {
-                    state: "waiting",
-                    why: "It goes on after your next message in the chat",
-                  }
-                : request.held === "signed_out"
-                  ? {
-                      state: "signed_out",
-                      why: "Sign in with ChatGPT; Rufi AI sorts it then",
-                    }
-                  : request.retry_at !== null
-                    ? { state: "waiting", why: request.error }
-                    : { state: "sorting", why: null };
-        for (const document of documents) {
-          if ((document.from_document ?? document.id) !== request.document_id)
-            continue;
-          if (notSorted(pages).some((p) => p.documentId === document.id)) {
-            states.set(document.id, state);
-          }
-        }
-      }
-      return states;
-    },
-  };
+      ),
+    ).map((p) => p.documentId),
+  );
 }
-
-export type Sorting = ReturnType<typeof sorting>;
 
 /** "pages 1–2 of 5", "page 5 of 5", or "" for a document that is its whole add. */
 function pagesWords(positions: readonly number[], of: number): string {
   if (positions.length === of) return "";
   return `${positions.length === 1 ? "page" : "pages"} ${ranges(positions)} of ${String(of)}`;
-}
-
-/** The chat's line once a reading ended with pages to sort. */
-export function sortLine(about: {
-  files: readonly string[];
-  targets: readonly number[];
-  pages: number;
-  unreadable: number;
-  notLooked: number;
-}): string {
-  const name = documentName(about.files);
-  const head =
-    about.targets.length === about.pages
-      ? `Read ${name} · ${String(about.pages)} ${about.pages === 1 ? "page" : "pages"}`
-      : `Read ${name} again · ${about.targets.length === 1 ? "page" : "pages"} ${ranges(about.targets)}`;
-  const parts = [
-    head,
-    ...(about.unreadable > 0
-      ? [
-          `${String(about.unreadable)} ${about.unreadable === 1 ? "page" : "pages"} couldn't be read`,
-        ]
-      : []),
-    ...(about.notLooked > 0
-      ? [
-          `${String(about.notLooked)} ${about.notLooked === 1 ? "page" : "pages"} not looked at`,
-        ]
-      : []),
-  ];
-  return `${parts.join(" · ")}. Rufi AI is sorting it.`;
 }

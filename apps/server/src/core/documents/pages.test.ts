@@ -16,6 +16,7 @@ import { documents, type NewFile } from "./documents.ts";
 import { draftItems } from "./items.ts";
 import { displayPath, originalPath, pagePath } from "./originals.ts";
 import { pages, type PageView } from "./pages.ts";
+import { addSent } from "../../../tests/sent.ts";
 
 const FIXTURES = join(import.meta.dirname, "../../../tests/fixtures/documents");
 const fixture = async (file: string): Promise<NewFile> => ({
@@ -62,7 +63,7 @@ beforeEach(async () => {
 });
 
 const add = async (personId: string, ...files: NewFile[]) =>
-  (await documents(store, home).add(personId, files, false)).added;
+  (await addSent(documents(store, home), store, personId, files, false)).added;
 
 const ok = (view: PageView | undefined) => {
   if (!view?.ok) throw new Error(`not a page: ${JSON.stringify(view)}`);
@@ -174,7 +175,7 @@ describe("get_documents", () => {
       const at = `2026-08-${String(Math.ceil(n / 4)).padStart(2, "0")}T09:00:00.000Z`;
       store.db.exec(`
         INSERT INTO files (id, size, media_type, created_at) VALUES ('${String(n).padStart(64, "0")}', 1, 'application/pdf', '${at}');
-        INSERT INTO documents (id, person_id, added_at, added_from) VALUES ('d${String(n).padStart(3, "0")}', 'asha', '${at}', 'documents_page');
+        INSERT INTO documents (id, person_id, added_at, added_from, sent_at) VALUES ('d${String(n).padStart(3, "0")}', 'asha', '${at}', 'documents_page', '${at}');
         INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name)
           VALUES ('asha', 'd${String(n).padStart(3, "0")}', 1, '${String(n).padStart(64, "0")}', 1, 'report ${String(n)}.pdf');`);
     }
@@ -324,15 +325,35 @@ describe("get_documents", () => {
     ]);
   });
 
-  it("reads only the active person's documents, and refuses a page past the end", async () => {
+  it("reads only the active person's sent documents, and refuses a page past the end", async () => {
     const [id = ""] = await add("asha", await fixture("ravi-lipid-panel.pdf"));
-    for (const input of [{ document: id }, { document: id, page: 1 }]) {
-      const theirs = await call({ personId: "ravi" }, input);
-      expect(theirs.ok).toBe(false);
-      expect(theirs.body["error"]).toBe(
+    // Still unsent in the chat box: not the AI's yet.
+    const {
+      added: [unsent = ""],
+    } = await documents(store, home).add(
+      "asha",
+      [await fixture("sunrise-labs-august.pdf")],
+      true,
+    );
+    expect(
+      (
+        (await call({ personId: "asha" }, {})).body["result"] as {
+          documents: { id: string }[];
+        }
+      ).documents.map((d) => d.id),
+    ).toEqual([id]);
+    for (const [person, input] of [
+      ["ravi", { document: id }],
+      ["ravi", { document: id, page: 1 }],
+      ["asha", { document: unsent }],
+      ["asha", { document: unsent, page: 1 }],
+    ] as const) {
+      const refused = await call({ personId: person }, input);
+      expect(refused.ok).toBe(false);
+      expect(refused.body["error"]).toBe(
         "There is no such document for this person: read the list for its id.",
       );
-      expect(theirs.images).toBeUndefined();
+      expect(refused.images).toBeUndefined();
     }
     const past = await call({ personId: "asha" }, { document: id, page: 2 });
     expect(past.body["error"]).toBe(

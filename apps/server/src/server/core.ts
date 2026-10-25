@@ -26,7 +26,10 @@ import { fileGate } from "../core/documents/gate.ts";
 import { copies } from "../core/documents/copies.ts";
 import { copyReader } from "../core/documents/copy-reader.ts";
 import { sorting as openSorting } from "../core/documents/sorting.ts";
-import { readings as openReadings } from "../core/documents/reading.ts";
+import {
+  CLOSED_WHILE_READING,
+  readings as openReadings,
+} from "../core/documents/reading.ts";
 import { draftItems } from "../core/documents/items.ts";
 import { backupJob } from "../core/store/backup.ts";
 import {
@@ -54,7 +57,6 @@ import { aiFiles } from "./files.ts";
 import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
 import { reader as openReader, readerChoice } from "./reader.ts";
 import { converter as openConverter } from "./converter.ts";
-import { sorter as openSorter } from "./sorter.ts";
 import { secret, sessions } from "./session.ts";
 import { signInFlow, type SignIn } from "./signin.ts";
 
@@ -68,7 +70,7 @@ export interface CoreOptions {
   folder?: { source: FolderSource; show: (path: string) => Promise<void> };
   /** Makes the agent, with Rufi's tools (to show) and the host its events go to. */
   agent: (host: AgentHost) => AgentRuntime;
-  /** Runs the document reader; without it, readings wait. */
+  /** Runs the document reader; without it, a reading fails at once. */
   reader?: RunSubAgent;
   /** 0 (the default) picks a free port. */
   port?: number;
@@ -219,8 +221,6 @@ export const startCore = (options: CoreOptions) =>
       writer,
       options.now ?? (() => new Date().toISOString()),
     );
-    /** The sorter's poke, once it runs: a turn ended or a sort was made. */
-    const sorts = { poke: () => {} };
     // Before anything uses the files: what a delete left when Rufi stopped.
     yield* attempt(() => sweepFiles(writer, home));
     const gate = fileGate();
@@ -232,10 +232,12 @@ export const startCore = (options: CoreOptions) =>
     // In the background: a backup never delays or stops the start.
     backups.start();
     const interrupted = yield* attempt(() => transcripts.interruptRunning());
-    // Hand-overs Rufi stopped during are not sure, never sent again; what
-    // waits goes when the person sends.
-    yield* attempt(() => queue.endStopped());
-    // Readings Rufi stopped in the middle continue from their notebook.
+    // Hand-overs Rufi stopped after the AI may have got them are not sure,
+    // never sent again; one whose files Rufi was reading waits for its
+    // reply's Retry; what waits goes when the person sends.
+    yield* attempt(() => queue.endStopped(`${CLOSED_WHILE_READING}.`));
+    // Readings Rufi stopped in the middle fail, their copies kept: nothing
+    // reads by itself.
     yield* attempt(() => readings.recover());
 
     const tools = forAgent(() => ({ store: reader, personId: undefined }), log);
@@ -248,6 +250,25 @@ export const startCore = (options: CoreOptions) =>
     const account =
       options.account ??
       (() => Promise.resolve<Status>({ account: "signed_out", email: null }));
+    // The document reader, one reading at a time, for the replies that
+    // read what their message sent.
+    const pageService = pages(reader ?? writer, home, gate);
+    const documentReader = yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        openReader({
+          readings,
+          kind: copyReader(pageService, copies(writer, options.now)),
+          run: options.reader,
+          choice: () => readerChoice(transcripts.setting),
+          mcp: { url: () => mcpUrl(MCP_READER), keys: readerKeys },
+          log,
+        }),
+      ),
+      (opened) =>
+        Effect.sync(() => {
+          opened.close();
+        }),
+    );
     const chat = yield* Effect.acquireRelease(
       Effect.sync(() =>
         openChat({
@@ -268,56 +289,18 @@ export const startCore = (options: CoreOptions) =>
               transcripts,
               log,
               reader && pages(reader, home, gate),
-              (personId, documentId) => readings.retry(personId, documentId),
               {
                 run: sorting.sort,
                 done: (personId) => {
                   readings.changed(personId);
-                  sorts.poke();
                 },
               },
             ),
           },
           log,
-          ended: () => {
-            sorts.poke();
-          },
+          reading: { readings, read: documentReader.read },
         }),
       ),
-      (opened) => Effect.promise(() => opened.close()),
-    );
-
-    // The document reader: one reading at a time, in the background.
-    const pageService = pages(reader ?? writer, home, gate);
-    const documentReader = yield* Effect.acquireRelease(
-      Effect.sync(() => {
-        const opened = openReader({
-          readings,
-          kind: copyReader(pageService, copies(writer, options.now)),
-          event: chat.event,
-          sort: sorting.ask,
-          run: options.reader,
-          choice: () => readerChoice(transcripts.setting),
-          mcp: { url: () => mcpUrl(MCP_READER), keys: readerKeys },
-          log,
-        });
-        readings.watch(opened.poke);
-        return opened;
-      }),
-      (opened) => Effect.promise(() => opened.close()),
-    );
-
-    const sortLoop = yield* Effect.acquireRelease(
-      Effect.sync(() => {
-        const opened = openSorter({
-          sorting,
-          wake: chat.wake,
-          changed: readings.changed,
-          log,
-        });
-        sorts.poke = opened.poke;
-        return opened;
-      }),
       (opened) => Effect.promise(() => opened.close()),
     );
 
@@ -385,14 +368,6 @@ export const startCore = (options: CoreOptions) =>
         ...(options.now && { now: options.now }),
       }),
       readings,
-      sortAgain: async (personId, documentId) => {
-        const again = await sorting.retry(personId, documentId);
-        if (again) {
-          readings.changed(personId);
-          await chat.wake(personId);
-        }
-        return again;
-      },
       items: draftItems(writer, readings.changed),
       pages: pageService,
       files: aiFiles({
@@ -458,9 +433,6 @@ export const startCore = (options: CoreOptions) =>
         ),
     );
     port = (server.address() as AddressInfo).port;
-    // Its tools need the port.
-    documentReader.start();
-    sortLoop.start();
     convertLoop.start();
     yield* Effect.acquireRelease(
       attempt(() => writePrivateJson(coreFile(home), { port, launcher })),

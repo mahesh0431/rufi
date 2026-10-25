@@ -1,19 +1,19 @@
-// The document reader at work: runs the queued readings one at a time, each
-// as a Rufi sub-agent (agent/codex/subagent.ts) with the reader's two tools,
-// and writes its start and end into the person's chat as Rufi events; a
-// reading that copied pages ends with a request that Rufi AI sort them. Each
-// run uses the model and effort chosen in Settings when it starts. Only a
-// reader turn that completed normally finishes a reading. A run that failed
-// for a passing reason (also a sign-in ChatGPT can't renew just now) is
-// tried again by itself, up to three times, each after a longer wait; an
-// account problem (signed out, a sign-in that has ended, a usage limit),
-// Rufi's deadline or a fourth failure ends the reading as failed, with the
-// reason, its notebook kept for Retry. When Rufi stops, a running reading is
-// left as it is: the next start queues it again. The reader gets its two
-// tools from Rufi's MCP server, with a key for one attempt.
+// The document reader at work: reads one job when its reply asks
+// (server/chat.ts), as a Rufi sub-agent (agent/codex/subagent.ts) with the
+// reader's two tools, one reading at a time across Rufi. This call is the
+// one seam to the reader: whoever starts a reading calls it with the job,
+// a signal that stops it, and where its progress goes. Each run uses the
+// model and effort chosen in Settings when it starts. Only a reader turn
+// that completed normally finishes a reading. A run that failed for a
+// passing reason (also a sign-in ChatGPT can't renew just now) is tried
+// again by itself, up to three times, each after a longer wait, inside the
+// call; an account problem (signed out, a sign-in that has ended, a usage
+// limit), Rufi's deadline or a fourth failure ends the reading as failed,
+// with the reason, its copies kept. A stop leaves the job to its caller,
+// which fails it with its copies kept. The reader gets its two tools from
+// Rufi's MCP server, with a key for one attempt.
 import { Effort } from "@rufi/contracts";
 import { Option, Schema } from "effect";
-import { v7 as uuid } from "uuid";
 import { ChatGptError } from "../agent/chatgpt/openai.ts";
 import { SUB_AGENT_MODELS } from "../agent/codex/subagent.ts";
 import type {
@@ -34,25 +34,13 @@ import {
   type Usage,
 } from "../core/documents/reading.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
-import type { Chat } from "./chat.ts";
 import type { McpKeys } from "./mcp.ts";
 
 export interface ReaderDeps {
   readings: Readings;
   /** How the reader reads: its instructions, message, tools and version. */
   kind: ReaderKind;
-  /** Writes a Rufi event in the person's chat, with its producer's outcome. */
-  event: Chat["event"];
-  /**
-   * Asks Rufi AI to sort what a reading copied, in its end line's
-   * transaction: the request, handed over as the queue row `queueId`.
-   */
-  sort: (
-    trx: Parameters<Readings["finish"]>[0],
-    run: Run,
-    queueId: string,
-  ) => Promise<void>;
-  /** Runs the reader sub-agent; without one, readings wait. */
+  /** Runs the reader sub-agent; without one, a reading fails at once. */
   run: RunSubAgent | undefined;
   /** The model and effort chosen in Settings (readerChoice), read as a run starts. */
   choice: () => Promise<ReaderChoice>;
@@ -73,12 +61,29 @@ export interface ReaderDeps {
  */
 const deadlineFor = (pages: number) => Math.min(60, 5 + pages) * 60_000;
 
-/** A loop with nothing to do looks again this often. */
-const IDLE_MS = 60_000;
 /** A run that failed for a passing reason is tried again after these. */
 const RETRY_WAITS_MS = [30_000, 60_000, 120_000];
-/** After an unexpected failure of the loop itself. */
-const ERROR_MS = 5_000;
+
+/** How far a reading is, as it goes: for its step in the reply. */
+export interface ReadProgress {
+  /** waiting: for another reading; again: for an automatic retry. */
+  state: "waiting" | "copying" | "again";
+  saved: number;
+  of: number;
+}
+
+/** How a reading's call ended. */
+export type ReadEnd =
+  | { ended: "done" }
+  /** The job failed, with why in words for the person. */
+  | { ended: "failed"; why: string }
+  /** Its signal stopped it: the job is the caller's to fail. */
+  | { ended: "stopped" }
+  /** Its document was deleted meanwhile. */
+  | { ended: "deleted" };
+
+/** Why a reading can't start without the reader sub-agent. */
+const NO_READER = "Rufi's reader isn't available here";
 
 /** The settings that hold the reader's model and effort. */
 export const READER_SETTING = {
@@ -110,139 +115,50 @@ export async function readerChoice(
 export function reader(deps: ReaderDeps) {
   const { readings, log } = deps;
   const now = deps.now ?? Date.now;
-  const stop = new AbortController();
-  let wake: (() => void) | undefined;
-  /** A poke while no rest waits: the next rest ends at once. */
-  let poked = false;
-  let loop: Promise<void> | undefined;
-  /** The run under way: the delete of its document stops it. */
-  let current: { documentId: string; stop: AbortController } | undefined;
+  /** Closing: every reading stops. */
+  const closing = new AbortController();
+  /** One reading at a time: each waits for the one before. */
+  let slot: Promise<unknown> = Promise.resolve();
+  /** The runs under way, by document: its delete stops them. */
+  const running = new Map<string, AbortController>();
 
-  const poke = () => {
-    poked = true;
-    wake?.();
-  };
-
-  /** Sleeps `ms`, or less when poked or stopped. */
-  const rest = (ms: number) =>
+  /** Waits `ms`, or less when `signal` stops. */
+  const pause = (ms: number, signal: AbortSignal) =>
     new Promise<void>((resolve) => {
-      const timer = setTimeout(done, Math.max(0, ms));
-      function done() {
+      const done = () => {
         clearTimeout(timer);
-        wake = undefined;
-        poked = false;
+        signal.removeEventListener("abort", done);
         resolve();
-      }
-      wake = done;
-      if (poked || stop.signal.aborted) done();
+      };
+      const timer = setTimeout(done, Math.max(0, ms));
+      signal.addEventListener("abort", done, { once: true });
+      if (signal.aborted) done();
     });
 
-  /** A reading whose document was deleted meanwhile ends here, quietly. */
-  const unlessGone = async (work: Promise<void>) => {
-    try {
-      await work;
-    } catch (error) {
-      if (!(error instanceof ReadingGone)) throw error;
-    }
-  };
-
   /**
-   * Ends a run that completed: page states, the end line and, when it
-   * copied pages to sort, the request that asks Rufi AI to sort them.
+   * One run, from its start to its end: done, failed for good, a passing
+   * failure to try again, or stopped (the signal) and gone (the delete).
    */
-  const finish = async (run: Run) => {
-    const end = await readings.ending(run);
-    const askId = uuid();
-    await unlessGone(
-      deps.event(
-        run.personId,
-        {
-          kind: "document_read",
-          line: end.line,
-          facts: end.facts,
-          ...(end.ask !== undefined && { ask: end.ask, askId }),
-        },
-        async (trx) => {
-          await readings.finish(trx, run, end.ask !== undefined);
-          if (end.ask !== undefined) await deps.sort(trx, run, askId);
-        },
-      ),
-    );
-    readings.changed(run.personId);
-  };
-
-  /** Ends a reading as failed: its entries kept, no drafts, the end line. */
-  const fail = async (run: Run, why: string) => {
-    const end = await readings.ending(run, why);
-    await unlessGone(
-      deps.event(
-        run.personId,
-        { kind: "document_read", line: end.line, facts: end.facts },
-        async (trx) => {
-          await readings.fail(trx, run, why);
-        },
-      ),
-    );
-    readings.changed(run.personId);
-  };
-
-  /**
-   * A run that failed: tried again later for a passing reason while
-   * automatic retries remain, else failed with `why`.
-   */
-  const retryOrFail = async (run: Run, job: Job, why: string) => {
-    const wait = (deps.retryWaitsMs ?? RETRY_WAITS_MS)[job.retries];
-    if (wait === undefined) await fail(run, why);
-    else await readings.retryAt(run, new Date(now() + wait).toISOString());
-  };
-
-  /** One run of a reading, from its start to its end or its retry. */
-  const runJob = async (job: Job, runSubAgent: RunSubAgent) => {
-    const mine = { documentId: job.documentId, stop: new AbortController() };
-    current = mine;
-    try {
-      await runOnce(job, runSubAgent, mine.stop.signal);
-    } catch (error) {
-      if (!(error instanceof ReadingGone)) throw error;
-    } finally {
-      if (current === mine) current = undefined;
-    }
-  };
-
-  /** One run; `deleted` aborts when its document is deleted. */
   const runOnce = async (
     job: Job,
     runSubAgent: RunSubAgent,
+    signal: AbortSignal,
     deleted: AbortSignal,
-  ) => {
-    /** Rufi is stopping, or the document is gone: nothing more is written. */
-    const ended = () => stop.signal.aborted || deleted.aborted;
-    let run: Run | undefined;
-    if (job.startedAt === null) {
-      // The start line once per reading, with its first real start.
-      const line = await readings.startLine(job);
-      await deps.event(
-        job.personId,
-        { kind: "document_read_started", line },
-        async (trx) => {
-          run = await readings.begin(trx, job);
-        },
-      );
-    } else run = await readings.startRun(job);
-    if (!run) return;
-    const started = run;
-    readings.changed(job.personId);
-
-    // A crash after the last page was saved: finish without a reader.
-    if (await readings.allSaved(job)) {
-      started.closed = true;
-      await finish(started);
-      return;
-    }
-
-    const tools = deps.kind.tools(started, log);
+    progress: (saved: number) => void,
+  ): Promise<
+    | { ended: "done" | "stopped" | "deleted" }
+    | { ended: "failed" | "passing"; why: string; run: Run }
+  > => {
+    const run = await readings.startRun(job);
+    const ended = () =>
+      deleted.aborted
+        ? ({ ended: "deleted" } as const)
+        : ({ ended: "stopped" } as const);
+    const tools = deps.kind.tools(run, log);
     const { model, effort } = await deps.choice();
     const counts = { looks: 0, saves: 0 };
+    const about = await readings.about(run);
+    let saved = about.saved.length;
     const toolStop = new AbortController();
     let stopReason: string | undefined;
     // The attempt's key: its tools for this person, document and attempt.
@@ -257,18 +173,20 @@ export function reader(deps: ReaderDeps) {
         if (tool === "get_page") counts.looks++;
         if (tool === "save_page" && answer.ok) {
           counts.saves++;
-          readings.changed(started.personId);
+          progress(++saved);
+          readings.changed(run.personId);
         }
         return answer;
       },
     });
-    const signal = AbortSignal.any([stop.signal, deleted, toolStop.signal]);
-    /** From a Stop, a delete or the end on, the attempt takes no more calls. */
+    const stops = AbortSignal.any([signal, deleted, toolStop.signal]);
+    /** From a stop, a delete or the end on, the attempt takes no more calls. */
     const close = () => {
-      started.closed = true;
+      run.closed = true;
       deps.mcp.keys.revoke(key);
     };
-    signal.addEventListener("abort", close, { once: true });
+    stops.addEventListener("abort", close, { once: true });
+    if (stops.aborted) close();
     const t0 = Date.now();
     let outcome: SubAgentOutcome;
     try {
@@ -277,25 +195,24 @@ export function reader(deps: ReaderDeps) {
           model,
           effort,
           instructions: deps.kind.instructions,
-          input: deps.kind.input(await readings.about(started)),
+          input: deps.kind.input(about),
           tools: {
             url: deps.mcp.url(),
             key,
             names: tools.specs.map((spec) => spec.name),
           },
           onCompaction: () => {
-            started.lookedAt.clear();
+            run.lookedAt.clear();
           },
           deadlineMs: (deps.deadlineMs ?? deadlineFor)(job.targets.length),
         },
-        signal,
+        stops,
       );
     } catch (error) {
       close();
-      if (ended()) return;
+      if (signal.aborted || deleted.aborted) return ended();
       if (stopReason !== undefined) {
-        await fail(started, stopReason);
-        return;
+        return { ended: "failed", why: stopReason, run };
       }
       log("reader.failed", { error: errorCode(error) });
       if (
@@ -305,14 +222,13 @@ export function reader(deps: ReaderDeps) {
           error.code === "plan_use_off")
       ) {
         // The sign-in needs the person: its reason, in Rufi's words.
-        await fail(started, error.message);
-      } else if (error instanceof ChatGptError && error.code === "temporary") {
-        // ChatGPT can't renew the sign-in now: a passing reason, in Rufi's words.
-        await retryOrFail(started, job, error.message);
-      } else {
-        await retryOrFail(started, job, "Rufi couldn't start the AI");
+        return { ended: "failed", why: error.message, run };
       }
-      return;
+      if (error instanceof ChatGptError && error.code === "temporary") {
+        // ChatGPT can't renew the sign-in now: a passing reason.
+        return { ended: "passing", why: error.message, run };
+      }
+      return { ended: "passing", why: "Rufi couldn't start the AI", run };
     }
     close();
     const end: TurnEnd =
@@ -324,9 +240,7 @@ export function reader(deps: ReaderDeps) {
       ms: Date.now() - t0,
       count: counts.saves,
     });
-    // Rufi is stopping: the next start queues the reading again. Or the
-    // document was deleted: its reading is gone.
-    if (ended()) return;
+    if (signal.aborted || deleted.aborted) return ended();
     const usage: Usage = {
       inputTokens: outcome.usage?.inputTokens ?? 0,
       cachedInputTokens: outcome.usage?.cachedInputTokens ?? 0,
@@ -337,15 +251,14 @@ export function reader(deps: ReaderDeps) {
       saves: counts.saves,
       compactions: outcome.compactions,
     };
-    await readings.recordRun(started, usage, {
+    await readings.recordRun(run, usage, {
       ...deps.kind.version,
       model,
       effort,
     });
-
     if (end.status === "completed") {
-      await finish(started);
-      return;
+      await readings.finish(run);
+      return { ended: "done" };
     }
     // Rufi's own deadline in Rufi's words; anything else as the service or
     // Codex said it.
@@ -353,56 +266,103 @@ export function reader(deps: ReaderDeps) {
       stopReason ??
       (end.reason === "timeout" ? "the reading took too long" : end.text) ??
       "the reader stopped";
-    if (
-      end.reason === "timeout" ||
+    return end.reason === "timeout" ||
       end.reason === "sign_in" ||
       end.reason === "usage_limit"
-    ) {
-      await fail(started, why);
-    } else {
-      // A passing reason (a lost connection, a restart, a refused answer):
-      // an automatic retry, which continues from the notebook.
-      await retryOrFail(started, job, why);
-    }
+      ? { ended: "failed", why, run }
+      : // A passing reason (a lost connection, a restart, a refused answer).
+        { ended: "passing", why, run };
   };
 
-  const forever = async () => {
-    while (!stop.signal.aborted) {
-      let delay = IDLE_MS;
-      poked = false;
-      try {
-        const { job, wake: at } = await readings.next();
-        if (job && deps.run) {
-          await runJob(job, deps.run);
-          continue;
+  /**
+   * Reads the queued job, after any other reading, until it ends: done,
+   * failed (the job failed with why), stopped by `signal` (the job left
+   * for the caller to fail) or deleted. `progress` hears how far it is.
+   */
+  const read = async (
+    job: Job,
+    signal: AbortSignal,
+    progress: (now: ReadProgress) => void,
+  ): Promise<ReadEnd> => {
+    const stop = AbortSignal.any([signal, closing.signal]);
+    const deleted = new AbortController();
+    running.set(job.documentId, deleted);
+    const { saved, of } = await readings.progress(job);
+    progress({ state: "waiting", saved, of });
+    const before = slot;
+    const mine = Promise.withResolvers<undefined>();
+    slot = before.then(() => mine.promise);
+    try {
+      // Another reading first; a stop meanwhile ends the wait.
+      await Promise.race([
+        before,
+        new Promise<void>((resolve) => {
+          stop.addEventListener(
+            "abort",
+            () => {
+              resolve();
+            },
+            { once: true },
+          );
+          if (stop.aborted) resolve();
+        }),
+      ]);
+      let current = job;
+      let saving = saved;
+      for (;;) {
+        if (deleted.signal.aborted) return { ended: "deleted" };
+        if (stop.aborted) return { ended: "stopped" };
+        progress({ state: "copying", saved: saving, of });
+        if (!deps.run) {
+          const run = await readings.startRun(current);
+          await readings.fail(run, NO_READER);
+          return { ended: "failed", why: NO_READER };
         }
-        if (at !== undefined) {
-          delay = Math.min(delay, Date.parse(at) - now());
+        const end = await runOnce(
+          current,
+          deps.run,
+          stop,
+          deleted.signal,
+          (n) => {
+            saving = n;
+            progress({ state: "copying", saved: n, of });
+          },
+        );
+        if (!("run" in end)) return end;
+        const wait = (deps.retryWaitsMs ?? RETRY_WAITS_MS)[current.retries];
+        if (end.ended === "failed" || wait === undefined) {
+          await readings.fail(end.run, end.why);
+          return { ended: "failed", why: end.why };
         }
-      } catch (error) {
-        log("reader.failed", { error: errorCode(error) });
-        delay = ERROR_MS;
+        await readings.retryAt(end.run, new Date(now() + wait).toISOString());
+        progress({ state: "again", saved: saving, of });
+        await pause(wait, AbortSignal.any([stop, deleted.signal]));
+        const again = await readings.job(current.id);
+        if (!again) return { ended: "deleted" };
+        current = again;
       }
-      await rest(delay);
+    } catch (error) {
+      if (error instanceof ReadingGone) return { ended: "deleted" };
+      throw error;
+    } finally {
+      if (running.get(job.documentId) === deleted) {
+        running.delete(job.documentId);
+      }
+      mine.resolve(undefined);
     }
   };
 
   return {
-    /** Starts reading what is queued; Rufi starts it once. */
-    start: () => {
-      loop ??= forever();
-    },
-    /** Something was queued or changed: look again now. */
-    poke,
-    /** The document was deleted: its run, when one is under way, stops. */
+    read,
+    /** The document was deleted: its reading, when one is under way, stops. */
     stopDocument: (documentId: string) => {
-      if (current?.documentId === documentId) current.stop.abort();
+      running.get(documentId)?.abort();
     },
-    /** Stops: a running reading is interrupted and left for the next start. */
-    close: async () => {
-      stop.abort();
-      poke();
-      await loop;
+    /** Stops: a running reading is interrupted, for the next start to fail. */
+    close: () => {
+      closing.abort();
     },
   };
 }
+
+export type Reader = ReturnType<typeof reader>;

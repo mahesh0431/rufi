@@ -153,6 +153,7 @@ export interface Tables {
     version: number;
     deleted_at: string | null;
     from_document: string | null;
+    sent_at: string | null;
   };
   draft_items: {
     id: string;
@@ -328,21 +329,6 @@ export interface Tables {
     key: string;
     value: string;
   };
-  sort_requests: {
-    id: string;
-    person_id: string;
-    document_id: string;
-    job_id: string | null;
-    state: string;
-    queue_id: string | null;
-    tries: number;
-    retry_at: string | null;
-    error: string | null;
-    call_id: string | null;
-    answer: string | null;
-    created_at: string;
-    ended_at: string | null;
-  };
   symptoms: {
     id: string;
     person_id: string;
@@ -393,8 +379,8 @@ export interface Tables {
     id: string;
     person_id: string;
     chat_id: string;
-    agent_turn_id: string;
-    thread_id: string;
+    agent_turn_id: string | null;
+    thread_id: string | null;
     model: string;
     origin: string;
     status: string;
