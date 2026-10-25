@@ -30,11 +30,13 @@ export class NodeSqliteDialect implements Dialect {
  * belongs to the caller: closing Kysely doesn't close it.
  */
 class NodeSqliteDriver implements Driver {
+  readonly #db: DatabaseSync;
   readonly #connection: NodeSqliteConnection;
   #queue: Promise<void> = Promise.resolve();
   #release: (() => void) | undefined;
 
   constructor(db: DatabaseSync) {
+    this.#db = db;
     this.#connection = new NodeSqliteConnection(db);
   }
 
@@ -61,8 +63,10 @@ class NodeSqliteDriver implements Driver {
     run(connection, "BEGIN");
   commitTransaction = (connection: DatabaseConnection) =>
     run(connection, "COMMIT");
+  // SQLite rolls back by itself on some errors (a full disk): a ROLLBACK
+  // then would fail and hide the error that caused it.
   rollbackTransaction = (connection: DatabaseConnection) =>
-    run(connection, "ROLLBACK");
+    this.#db.isTransaction ? run(connection, "ROLLBACK") : Promise.resolve();
 
   destroy = () => Promise.resolve();
 }
