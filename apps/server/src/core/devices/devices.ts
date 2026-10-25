@@ -117,6 +117,13 @@ export function failureReason(error: unknown): string {
   return `error:${typeof sqlite === "number" ? String(sqlite) : errorCode(error)}`;
 }
 
+/**
+ * A batch's bytes as JSON, read the same way at receive and at conversion:
+ * UTF-8, a leading byte order mark dropped. The bytes are stored as they came.
+ */
+const readPage = (bytes: Uint8Array): unknown =>
+  JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+
 const isKeep = (value: unknown): value is Keep => KEEPS.includes(value as Keep);
 
 /** The instant before which values aren't kept, or none. */
@@ -183,8 +190,8 @@ export function devices(store: Store, now: () => string) {
       .where("person_id", "=", head.person_id)
       .where("id", "=", head.id)
       .executeTakeFirstOrThrow();
-    // Receive checked the envelope: here it is only read.
-    const page = JSON.parse(gunzipSync(body).toString("utf8")) as {
+    // Receive checked the envelope: here it is only read, the same way.
+    const page = readPage(gunzipSync(body)) as {
       values: unknown[];
       deleted: unknown[];
     };
@@ -250,7 +257,8 @@ export function devices(store: Store, now: () => string) {
       } else {
         await trx
           .updateTable("device_values")
-          .set({ ...content, source_id: head.source_id, batch_id: head.id })
+          // The value keeps the source that first sent it.
+          .set({ ...content, batch_id: head.id })
           .where("person_id", "=", head.person_id)
           .where("system", "=", head.system)
           .where("external_id", "=", value.externalId)
@@ -347,9 +355,7 @@ export function devices(store: Store, now: () => string) {
         return { answer: "refused", problems: ["too_big"] };
       let page: unknown;
       try {
-        page = JSON.parse(
-          new TextDecoder("utf-8", { fatal: true }).decode(bytes),
-        );
+        page = readPage(bytes);
       } catch {
         return { answer: "refused", problems: ["not_json"] };
       }
@@ -469,7 +475,10 @@ export function devices(store: Store, now: () => string) {
 
     keep: () => keepOf(db),
 
-    /** What keeping values for `keep` would delete now: live values measured before the cutoff. */
+    /**
+     * What keeping values for `keep` would delete now: exactly what the
+     * clean-up deletes, every value measured before the cutoff, removed ones too.
+     */
     preview: async (
       keep: Keep,
     ): Promise<{ values: number; before: string | null }> => {
@@ -479,7 +488,6 @@ export function devices(store: Store, now: () => string) {
         .selectFrom("device_values")
         .select((eb) => eb.fn.countAll<number>().as("count"))
         .where("start_at", "<", before)
-        .where("removed_at", "is", null)
         .executeTakeFirstOrThrow();
       return { values: count, before };
     },

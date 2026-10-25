@@ -283,10 +283,25 @@ describe("converting a batch", () => {
     ]);
   });
 
-  it("converts an empty batch to done with nothing", async () => {
-    const batch = await got(phone, page("p-1", []));
-    expect(await convertAll()).toEqual([{ done: batch }]);
+  it.each([
+    ["an empty batch", () => page("p-1", []), 0],
+    [
+      "a batch that starts with a UTF-8 byte order mark",
+      () =>
+        new Uint8Array([
+          0xef,
+          0xbb,
+          0xbf,
+          ...page("p-1", [resting("v-1", "2026-10-20", 54)]),
+        ]),
+      1,
+    ],
+  ])("converts %s to done", async (_case, bytes, values) => {
+    const batch = await got(phone, bytes());
+    const next = await got(phone, page("p-2", []));
+    expect(await convertAll()).toEqual([{ done: batch }, { done: next }]);
     expect(batchRow(batch)).toMatchObject({ status: "done", skipped: null });
+    expect(valuesOf()).toHaveLength(values);
   });
 
   it("writes nothing when the conversion fails part way, and marks the batch failed to try again", async () => {
@@ -375,7 +390,11 @@ describe("the same value again, and deletions", () => {
     );
     const third = await got(
       watch,
-      page("p-3", [resting("v-1", "2026-10-20", 54)], [{ id: "v-1" }]),
+      page(
+        "p-3",
+        [resting("v-1", "2026-10-20", 54), resting("v-2", "2026-10-21", 59)],
+        [{ id: "v-1" }],
+      ),
     );
     await convertAll();
 
@@ -390,6 +409,7 @@ describe("the same value again, and deletions", () => {
     });
     expect(JSON.parse(batchRow(third).counts as string)).toMatchObject({
       already_had: 2,
+      changed: 1,
       added: 0,
       removed: 0,
     });
@@ -404,10 +424,11 @@ describe("the same value again, and deletions", () => {
       },
       {
         external_id: "v-2",
-        value: 57,
+        value: 59,
         start_at: "2026-10-20T18:30:00.000Z",
         removed_at: null,
-        batch_id: second,
+        // Changed by the other phone: its link moves, its source stays.
+        batch_id: third,
         source_id: phone,
       },
       {
@@ -514,18 +535,21 @@ describe("how long values are kept", () => {
       phone,
       page("p-1", [
         resting("v-old", "2026-08-01", 50),
+        resting("v-gone", "2026-08-02", 51),
         resting("v-new", "2026-10-20", 54),
       ]),
     );
+    await got(phone, page("p-gone", [], [{ id: "v-gone" }]));
     await convertAll();
     expect(await device.keep()).toBe("forever");
+    // What the clean-up deletes, a removed value too.
     expect(await device.preview("30d")).toEqual({
-      values: 1,
+      values: 2,
       before: "2026-09-22T07:00:00.000Z",
     });
 
     await device.setKeep("30d");
-    expect(await device.cleanUp()).toEqual({ values: 1, batches: 0 });
+    expect(await device.cleanUp()).toEqual({ values: 2, batches: 0 });
     expect(valuesOf().map((row) => row.external_id)).toEqual(["v-new"]);
 
     const again = await got(
