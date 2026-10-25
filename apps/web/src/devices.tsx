@@ -95,7 +95,12 @@ export function DeviceDataSection() {
   const kept = settings.data?.deviceKeepValues;
   if (sources.length === 0 || kept === undefined) return null;
   const trouble = devices.data?.trouble ?? null;
-  const shown = asked?.keep ?? save.variables ?? kept;
+  // What was just picked shows at once, while its preview or save runs.
+  const shown =
+    (preview.isPending ? preview.variables : undefined) ??
+    asked?.keep ??
+    (save.isPending ? save.variables : undefined) ??
+    kept;
   const busy = save.isPending || preview.isPending;
   const choose = (keep: KeepValues) => {
     // Not disabled while busy: the choice keeps the keyboard's focus.
