@@ -37,6 +37,8 @@ export const DeviceData = Schema.Struct({
   sources: Schema.Array(DeviceSource),
   /** Why the converter couldn't even save a failure (a full disk), while that lasts. */
   trouble: Schema.NullOr(Schema.String),
+  /** A clean-up runs or is about to: values older than kept are going. */
+  cleaning: Schema.Boolean,
 });
 export type DeviceData = typeof DeviceData.Type;
 

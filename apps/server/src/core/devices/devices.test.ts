@@ -564,6 +564,28 @@ describe("how long values are kept", () => {
     expect(valuesOf().map((row) => row.external_id)).toEqual(["v-new"]);
   });
 
+  it("lets other work run between its chunks", async () => {
+    store.db.exec(`
+      WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 12000)
+      INSERT INTO device_values (person_id, system, external_id, source_id, type, value, start_at, end_at)
+        SELECT 'asha', 'apple_health', 'old-' || i, '${phone}', 'resting_heart_rate', 54,
+               '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z' FROM n`);
+    await device.setKeep("30d");
+    // Turns of the event loop that pass while it runs: none if it never yields.
+    const turns = { count: 0, counting: true };
+    const counting = (async () => {
+      while (turns.counting) {
+        await new Promise((resolve) => setImmediate(resolve));
+        turns.count++;
+      }
+    })();
+    expect(await device.cleanUp()).toEqual({ values: 12_000, batches: 0 });
+    const during = turns.count;
+    turns.counting = false;
+    await counting;
+    expect(during).toBeGreaterThanOrEqual(3);
+  });
+
   it("deletes done batches after 30 days, but keeps those with skipped items, and waiting and failed ones", async () => {
     const plain = await got(
       phone,

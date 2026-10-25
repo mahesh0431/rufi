@@ -364,7 +364,12 @@ export const startCore = (options: CoreOptions) =>
         reader && (await readBrief(reader.query, personId, briefId)),
       account,
       backups,
-      devices: { ...deviceData, trouble: convertLoop.trouble },
+      devices: {
+        ...deviceData,
+        trouble: convertLoop.trouble,
+        cleanSoon: convertLoop.cleanSoon,
+        cleaning: convertLoop.cleaning,
+      },
       folder: {
         path: home,
         source: options.folder?.source ?? "RUFI_HOME",

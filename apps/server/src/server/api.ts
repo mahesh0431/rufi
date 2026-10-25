@@ -90,10 +90,11 @@ export interface ApiDeps {
   signIn: SignInFlow;
   backups: BackupJob;
   /** Device data: its sources for Settings, and how long values are kept. */
-  devices: Pick<
-    Devices,
-    "sources" | "keep" | "preview" | "setKeep" | "cleanUp"
-  > & {
+  devices: Pick<Devices, "sources" | "keep" | "preview" | "setKeep"> & {
+    /** Cleans up now, in the converter's loop, without waiting for it. */
+    cleanSoon: () => void;
+    /** Whether a clean-up is asked for or running. */
+    cleaning: () => boolean;
     /** Why the converter couldn't even save a failure, while that lasts. */
     trouble: () => string | null;
   };
@@ -524,9 +525,10 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       );
     }
     if (changed.deviceKeepValues !== undefined) {
-      // The screen confirmed what a shorter time deletes: it goes now.
+      // The screen confirmed what a shorter time deletes: it goes now, in
+      // the background (years of values take a while), as Settings shows.
       await deps.devices.setKeep(changed.deviceKeepValues);
-      await deps.devices.cleanUp();
+      deps.devices.cleanSoon();
     }
     return c.json(await settings(c));
   });
@@ -554,6 +556,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     c.json({
       sources: await deps.devices.sources(),
       trouble: deps.devices.trouble(),
+      cleaning: deps.devices.cleaning(),
     } satisfies DeviceData),
   );
   // What keeping values for `keep` would delete, for the confirm.

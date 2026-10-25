@@ -1544,7 +1544,8 @@ describe("what the screens read", () => {
       deviceKeepValues: "30d",
     });
     expect(saved.body["deviceKeepValues"]).toBe("30d");
-    expect(await values()).toBe(1);
+    // Deleted at once, in the background.
+    await until(async () => (await values()) === 1);
   });
 });
 

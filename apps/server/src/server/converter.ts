@@ -23,6 +23,9 @@ export function converter(deps: {
   let wakeUp: (() => void) | undefined;
   let loop: Promise<void> | undefined;
   let trouble: string | null = null;
+  // A clean-up asked for now (a shorter "Keep values"), and one running.
+  const clean = { asked: false, running: false };
+  const cleanAsked = () => clean.asked;
 
   const rest = (ms: number) =>
     new Promise<void>((resolve) => {
@@ -33,7 +36,7 @@ export function converter(deps: {
         resolve();
       }
       wakeUp = done;
-      if (stop.signal.aborted) done();
+      if (stop.signal.aborted || clean.asked) done();
     });
 
   const forever = async () => {
@@ -46,8 +49,12 @@ export function converter(deps: {
           await deps.devices.retryFailedNow();
           started = true;
         }
-        if (now() - cleaned >= CLEAN_MS) {
-          const gone = await deps.devices.cleanUp();
+        if (clean.asked || now() - cleaned >= CLEAN_MS) {
+          clean.asked = false;
+          clean.running = true;
+          const gone = await deps.devices.cleanUp().finally(() => {
+            clean.running = false;
+          });
           cleaned = now();
           if (gone.values + gone.batches > 0)
             deps.log("devices.cleaned", { count: gone.values + gone.batches });
@@ -64,6 +71,7 @@ export function converter(deps: {
             deps.log("devices.batch_failed", { reason: step.reason });
           // Each batch is many small writes: let the screens be answered between batches.
           await nextTurn();
+          if (cleanAsked()) break;
         }
       } catch (error) {
         trouble = failureReason(error);
@@ -80,6 +88,13 @@ export function converter(deps: {
     },
     /** Why the last try couldn't even be written, while that lasts; null otherwise. */
     trouble: () => trouble,
+    /** "Keep values" got shorter: clean up now, in the background. */
+    cleanSoon: () => {
+      clean.asked = true;
+      wakeUp?.();
+    },
+    /** Whether a clean-up is asked for or running. */
+    cleaning: () => clean.asked || clean.running,
     close: async () => {
       stop.abort();
       wakeUp?.();

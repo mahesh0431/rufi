@@ -124,6 +124,11 @@ export function DeviceDataSection() {
               : `. This may need a fix in Rufi. Code: ${trouble}.`}
           </p>
         )}
+        {devices.data?.cleaning === true && (
+          <p role="status" className="text-muted">
+            Deleting values older than you keep…
+          </p>
+        )}
         <ul className="flex flex-col gap-2">
           {sources.map((source) => (
             <SourceLine key={source.id} source={source} />
