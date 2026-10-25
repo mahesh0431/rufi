@@ -48,7 +48,12 @@ const MAX_ID = 200;
 const MAX_OFFSET = 18 * 60;
 
 class Skipped {
-  constructor(readonly reason: SkipReason, readonly field?: string) {}
+  readonly reason: SkipReason;
+  readonly field: string | undefined;
+  constructor(reason: SkipReason, field?: string) {
+    this.reason = reason;
+    this.field = field;
+  }
 }
 
 const skip = (reason: SkipReason, field?: string): never => {

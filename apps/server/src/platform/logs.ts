@@ -50,6 +50,9 @@ const EVENTS = new Set([
   "documents.added",
   "documents.deleted",
   "documents.cleanup_failed",
+  "devices.batch_failed",
+  "devices.failed",
+  "devices.cleaned",
   "signin.failed",
 ] as const);
 
@@ -97,12 +100,16 @@ const FIELDS: Record<string, (value: unknown) => boolean> = {
   // A Codex thread item's type ("commandExecution"), as the binary sends it.
   item: (value) =>
     typeof value === "string" && /^[a-z][a-zA-Z]{0,40}$/.test(value),
-  // Why Rufi's MCP server refused a request or a call (server/mcp.ts, chat.ts).
+  // Why Rufi's MCP server refused a request or a call (server/mcp.ts,
+  // chat.ts), or why a device batch failed (core/devices/devices.ts).
   reason: (value) =>
     typeof value === "string" &&
-    ["forwarded", "host", "origin", "key", "no_call", "no_reply"].includes(
+    (["forwarded", "host", "origin", "key", "no_call", "no_reply"].includes(
       value,
-    ),
+    ) ||
+      /^(?:disk_full|io_error|error:(?:-?\d{1,10}|E[A-Z0-9_]{1,40}|[A-Za-z]{1,20}))$/.test(
+        value,
+      )),
   status: (value) =>
     value === "completed" || value === "failed" || value === "interrupted",
   code: isCode,

@@ -44,6 +44,7 @@ import { chatCaller, forAgent } from "../core/tools/tools.ts";
 import { coreInstructions, rulesVersion } from "../core/chat/instructions.ts";
 import { SKILLS } from "../core/skills/skills.ts";
 import { backupsPath } from "../core/store/backup.ts";
+import { devices as openDevices } from "../core/devices/devices.ts";
 import { holdRufiLock, readJson, writePrivateJson } from "../platform/files.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { api, LAUNCHER_HEADER } from "./api.ts";
@@ -52,6 +53,7 @@ import { generatedImages } from "../agent/codex/settings.ts";
 import { aiFiles } from "./files.ts";
 import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
 import { reader as openReader, readerChoice } from "./reader.ts";
+import { converter as openConverter } from "./converter.ts";
 import { sorter as openSorter } from "./sorter.ts";
 import { secret, sessions } from "./session.ts";
 import { signInFlow, type SignIn } from "./signin.ts";
@@ -213,6 +215,10 @@ export const startCore = (options: CoreOptions) =>
     const queue = chatQueue(writer, options.now);
     const readings = openReadings(writer, options.now);
     const sorting = openSorting(writer, options.now);
+    const deviceData = openDevices(
+      writer,
+      options.now ?? (() => new Date().toISOString()),
+    );
     /** The sorter's poke, once it runs: a turn ended or a sort was made. */
     const sorts = { poke: () => {} };
     // Before anything uses the files: what a delete left when Rufi stopped.
@@ -315,6 +321,11 @@ export const startCore = (options: CoreOptions) =>
       (opened) => Effect.promise(() => opened.close()),
     );
 
+    const convertLoop = yield* Effect.acquireRelease(
+      Effect.sync(() => openConverter({ devices: deviceData, log })),
+      (opened) => Effect.promise(() => opened.close()),
+    );
+
     const access = sessions();
     const launcher = secret();
     // The token is in the fragment: the browser never sends it in a request.
@@ -353,6 +364,7 @@ export const startCore = (options: CoreOptions) =>
         reader && (await readBrief(reader.query, personId, briefId)),
       account,
       backups,
+      devices: { ...deviceData, trouble: convertLoop.trouble },
       folder: {
         path: home,
         source: options.folder?.source ?? "RUFI_HOME",
@@ -449,6 +461,7 @@ export const startCore = (options: CoreOptions) =>
     // Its tools need the port.
     documentReader.start();
     sortLoop.start();
+    convertLoop.start();
     yield* Effect.acquireRelease(
       attempt(() => writePrivateJson(coreFile(home), { port, launcher })),
       () => Effect.promise(() => rm(coreFile(home), { force: true })),
