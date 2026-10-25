@@ -18,6 +18,7 @@ import { documents } from "../documents/documents.ts";
 import { filesPath } from "../documents/originals.ts";
 import { backupJob, backupsPath, listBackups, makeBackup } from "./backup.ts";
 import { databasePath, openWritable } from "./database.ts";
+import { addSent } from "../../../tests/sent.ts";
 
 let home: string;
 
@@ -141,7 +142,7 @@ async function withDocuments(): Promise<string[]> {
     const docs = documents(store, home);
     for (const name of ["sunrise-labs-august.pdf", "sideways.heic"]) {
       const bytes = new Uint8Array(await readFile(join(FIXTURES, name)));
-      await docs.add("asha", [{ name, bytes }], true);
+      await addSent(docs, store, "asha", [{ name, bytes }]);
     }
     return (await docs.list("asha")).flatMap((d) => d.files.map((f) => f.id));
   } finally {

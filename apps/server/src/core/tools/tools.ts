@@ -2,7 +2,7 @@
 // using them is in the core (core/chat/instructions.ts) and the skills.
 import { createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
-import { getDocuments, retryReading, sortDocuments } from "./documents.ts";
+import { getDocuments, sortDocuments } from "./documents.ts";
 import { showFace } from "./face.ts";
 import { getOverview } from "./overview.ts";
 import { dismissItems, saveChanges } from "./save.ts";
@@ -36,7 +36,6 @@ export const TOOLS: readonly Tool[] = [
   saveChanges,
   dismissItems,
   sortDocuments,
-  retryReading,
   createBrief,
   showFace,
 ];
@@ -47,13 +46,9 @@ export const TOOLS: readonly Tool[] = [
  */
 const SERVER = "rufi";
 
-/** Why a Rufi event's turn can't save or make a brief. */
+/** Why a Rufi event's turn can't save, sort or make a brief. */
 const EVENT_TURN =
-  "This turn was started by a Rufi event, not by the user, so nothing can be saved or made in it. Explain or ask; the user asks in a message of their own.";
-
-/** Why a Rufi event's turn can't start a reading. */
-const EVENT_TURN_RETRY =
-  "This turn was started by a Rufi event, not by the user, so no reading can start in it. Ask the user; they can ask you to read it again in a message of their own.";
+  "This turn was started by a Rufi event, not by the user, so nothing can be saved, sorted or made in it. Explain or ask; the user asks in a message of their own.";
 
 /**
  * The model's tools: their catalog for the MCP server, and a caller per
@@ -103,16 +98,13 @@ export function toolsJson(): string {
 /**
  * The tools of one turn in Rufi's own chat, the one place the AI can save,
  * sort or make a brief: each is written with its line in the chat. A turn a
- * Rufi event started can only read: the person didn't ask for it. The one
- * exception is a sort's own turn, which can sort its add (and nothing
- * else): Rufi asked for it.
+ * Rufi event started can only read: the person didn't ask for it.
  */
 export function chatCaller(
   reader: Store | undefined,
   transcripts: Transcripts,
   log: Log,
   pages?: Pages,
-  retry?: (personId: string, documentId: string) => Promise<number[]>,
   sort?: {
     run: (
       scope: SortScope,
@@ -162,9 +154,9 @@ export function chatCaller(
                   input,
                 ),
               ),
-        // A Rufi-started turn may sort only for its own request: sorting.ts
-        // checks that, in the sort's transaction, which keeps the call too.
+        // In the sort's transaction, which keeps the call too.
         sort: async (input, callId) => {
+          if (origin === "rufi") throw new Refusal(EVENT_TURN);
           if (!sort) throw new Refusal("Rufi can't sort documents here.");
           const sorted = await transcripts.withToolCall(
             chat,
@@ -186,12 +178,6 @@ export function chatCaller(
           sort.done(chat.personId);
           return sorted;
         },
-        retryReading: (documentId) =>
-          origin === "rufi"
-            ? Promise.reject(new Refusal(EVENT_TURN_RETRY))
-            : retry
-              ? retry(chat.personId, documentId)
-              : Promise.reject(new Refusal("Rufi can't read documents here.")),
         brief: (input, callId) =>
           origin === "rufi"
             ? Promise.reject(new Refusal(EVENT_TURN))

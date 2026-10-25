@@ -138,11 +138,6 @@ async function readFiles(home: string, files: NewFile[]) {
   const running = reader({
     readings: reads,
     kind: copyReader(pages(store, home), copies(store)),
-    event: async (id, event, write) => {
-      const chat = await transcripts.chat(id);
-      if (!chat) throw new Error("No chat.");
-      await transcripts.addEvent(chat, event, write);
-    },
     run: subAgentRunner({
       home,
       command: { file, args: [] },
@@ -151,8 +146,6 @@ async function readFiles(home: string, files: NewFile[]) {
       version,
       log,
     }),
-    // Rufi AI doesn't sort here: the pack judges the copies only.
-    sort: () => Promise.resolve(),
     choice: () => Promise.resolve(choice),
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp/reader`, keys },
     log,
@@ -163,20 +156,19 @@ async function readFiles(home: string, files: NewFile[]) {
     true,
   );
   const documentId = added[0] ?? "";
-  reads.watch(running.poke);
-  running.start();
-  const state = () =>
-    (
-      store.db
-        .prepare("SELECT state FROM jobs WHERE document_id = ?")
-        .get(documentId) as { state: string } | undefined
-    )?.state;
-  const started = Date.now();
-  while (state() === "queued" || state() === "running") {
-    if (Date.now() - started > 3 * 60 * 60_000) break;
-    await sleep(2_000);
+  // Read as a message that sends it would, without Rufi AI's sort: the
+  // pack judges the copies only.
+  const job = await store.query
+    .transaction()
+    .execute((trx) => reads.open(trx, person?.id ?? "", documentId, false));
+  if (job) {
+    await running.read(
+      job,
+      AbortSignal.timeout(3 * 60 * 60_000),
+      () => undefined,
+    );
   }
-  await running.close();
+  running.close();
   await served.close();
   return { store, documentId };
 }

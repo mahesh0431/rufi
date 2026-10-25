@@ -20,7 +20,7 @@ import { Refusal } from "../tools/registry.ts";
 import type { FileGate } from "./gate.ts";
 import { removeBytes, sweepBytes } from "./originals.ts";
 import { DELETED_DOCUMENT, documentName } from "./naming.ts";
-import { addOf, documentsOf, notSorted, pagesOf, placesOf } from "./sorting.ts";
+import { addOf, placesOf } from "./sorting.ts";
 
 type Db = Kysely<Tables> | Transaction<Tables>;
 
@@ -259,7 +259,28 @@ async function markDeleted(
       .where("id", "=", id)
       .execute();
   }
-  return [...sent, ...events].map((e) => e.id);
+  const steps = await trx
+    .selectFrom("transcript_entries")
+    .select(["id", "details"])
+    .where("person_id", "=", personId)
+    .where("activity", "=", "reading")
+    .where(sql<boolean>`json_extract(details, '$.document') = ${documentId}`)
+    .execute();
+  for (const { id, details } of steps) {
+    await trx
+      .updateTable("transcript_entries")
+      .set({
+        details: JSON.stringify({
+          ...(JSON.parse(details ?? "{}") as object),
+          deleted: true,
+        }),
+        revision,
+        updated_at: at,
+      })
+      .where("id", "=", id)
+      .execute();
+  }
+  return [...sent, ...events, ...steps].map((e) => e.id);
 }
 
 /** The AI's note of a delete: what is true now, and what to do. */
@@ -317,6 +338,61 @@ export function deletions(deps: {
   return {
     preview: async (personId: string, documentId: string) =>
       previewIn(db, personId, documentId),
+
+    /**
+     * Takes an unsent document out of Rufi, as its chip leaves the box: its
+     * row and pages go, and its original when nothing else uses it. Nothing
+     * points at it (it was never sent), so it leaves no tombstone. Refused
+     * once a message sent it: a Send and a removal never both win.
+     */
+    removeUnsent: async (personId: string, documentId: string) => {
+      const files = await db.transaction().execute(async (trx) => {
+        const found = await trx
+          .selectFrom("documents")
+          .select("sent_at")
+          .where("person_id", "=", personId)
+          .where("id", "=", documentId)
+          .where("deleted_at", "is", null)
+          .executeTakeFirst();
+        if (!found) throw new Refusal("There is no such document.");
+        if (found.sent_at !== null) {
+          throw new Refusal("This file was already sent.");
+        }
+        const used = (
+          await trx
+            .selectFrom("document_pages")
+            .select("file_id")
+            .distinct()
+            .where("person_id", "=", personId)
+            .where("document_id", "=", documentId)
+            .execute()
+        ).flatMap((p) => (p.file_id === null ? [] : [p.file_id]));
+        await trx
+          .deleteFrom("document_pages")
+          .where("person_id", "=", personId)
+          .where("document_id", "=", documentId)
+          .execute();
+        await trx
+          .deleteFrom("documents")
+          .where("person_id", "=", personId)
+          .where("id", "=", documentId)
+          .execute();
+        if (used.length > 0) {
+          await trx
+            .deleteFrom("files")
+            .where("id", "in", used)
+            .where(
+              sql<boolean>`NOT EXISTS (SELECT 1 FROM document_pages p WHERE p.file_id = files.id)`,
+            )
+            .execute();
+        }
+        return used;
+      });
+      // Bytes left behind go at the next start.
+      await removeUnused(files).catch((error: unknown) => {
+        deps.log("documents.cleanup_failed", { error: errorCode(error) });
+      });
+    },
 
     /** Whether the person's document was deleted: its tombstone is there. */
     deleted: async (personId: string, documentId: string) =>
@@ -445,12 +521,6 @@ export function deletions(deps: {
               sql<boolean>`NOT EXISTS (SELECT 1 FROM document_pages p WHERE p.person_id = j.person_id AND p.entry_job_id = j.id)`,
             );
           await trx
-            .updateTable("sort_requests")
-            .set({ job_id: null })
-            .where("person_id", "=", personId)
-            .where("job_id", "in", gone)
-            .execute();
-          await trx
             .deleteFrom("jobs")
             .where("person_id", "=", personId)
             .where("id", "in", gone)
@@ -468,41 +538,6 @@ export function deletions(deps: {
             .where("person_id", "=", personId)
             .where("id", "=", documentId)
             .execute();
-          // Nothing of its add left to sort: its sort waits no more.
-          const add = await addOf(trx, personId, documentId);
-          if (add) {
-            const live = await documentsOf(trx, personId, add.id);
-            const left = notSorted(
-              await pagesOf(
-                trx,
-                personId,
-                live.map((d) => d.id),
-                false,
-              ),
-            );
-            if (left.length === 0) {
-              const open = trx
-                .selectFrom("sort_requests")
-                .select("queue_id")
-                .where("person_id", "=", personId)
-                .where("document_id", "=", add.id)
-                .where("state", "in", ["open", "asked", "failed"]);
-              await trx
-                .updateTable("chat_queue")
-                .set({ state: "removed", held: null, updated_at: at })
-                .where("person_id", "=", personId)
-                .where("state", "=", "waiting")
-                .where("id", "in", open)
-                .execute();
-              await trx
-                .updateTable("sort_requests")
-                .set({ state: "void", retry_at: null, ended_at: at })
-                .where("person_id", "=", personId)
-                .where("document_id", "=", add.id)
-                .where("state", "in", ["open", "asked", "failed"])
-                .execute();
-            }
-          }
           // A file no live page of anyone uses any more.
           if (files.length > 0) {
             await trx

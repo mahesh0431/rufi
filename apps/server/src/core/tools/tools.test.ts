@@ -74,8 +74,11 @@ async function call(
 }
 
 describe("get_overview", () => {
-  it("shows a person's current results as printed, newest measured first", async () => {
-    const store = makeDatabase(family);
+  it("shows a person's current results as printed, newest measured first; a file still unsent in the chat box isn't counted", async () => {
+    const store = makeDatabase(
+      family,
+      "INSERT INTO documents (id, person_id, added_at, added_from) VALUES ('doc-unsent', 'asha', '2026-10-01T09:00:00Z', 'chat')",
+    );
     const { ok, body } = await call({ store, personId: "asha" });
     expect(ok).toBe(true);
     expect(body).toEqual({
@@ -795,7 +798,7 @@ describe("the error envelope", () => {
       "rm_rf",
     );
     expect(body["error"]).toBe(
-      "There is no tool called rm_rf. Rufi's tools: get_overview, get_records, get_documents, read_chat, save_changes, dismiss_items, sort_documents, retry_reading, create_brief, show_face.",
+      "There is no tool called rm_rf. Rufi's tools: get_overview, get_records, get_documents, read_chat, save_changes, dismiss_items, sort_documents, create_brief, show_face.",
     );
   });
 

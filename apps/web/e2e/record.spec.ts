@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { readPage, scriptedReader } from "../../server/tests/fake-reader.ts";
-import { expect, test } from "./rufi.ts";
+import { expect, sendFiles, test } from "./rufi.ts";
 
 async function accessible(page: Page) {
   const { violations } = await new AxeBuilder({ page }).analyze();
@@ -393,8 +393,8 @@ test("a reading that ends, with nothing saved, shows in Needs you on an open Ove
       return undefined;
     },
   ]);
-  // Rufi AI sorts each reading that copied a page: the report, then the
-  // letter.
+  // Rufi AI sorts the report and the letter in the replies that bring them;
+  // the blurred photo has nothing to sort.
   const sort = (kind: string, drafts: unknown[]) => [
     {
       id: `sort-${kind}`,
@@ -420,6 +420,7 @@ test("a reading that ends, with nothing saved, shows in Needs you on an open Ove
             quote: "Haemoglobin | 13.2 | g/dL",
           },
         ]),
+        [],
         sort("letter", []),
       ],
     },
@@ -436,7 +437,7 @@ test("a reading that ends, with nothing saved, shows in Needs you on an open Ove
   await other.goto(rufi.link());
   await sidebar(other).getByRole("link", { name: "Documents" }).click();
   const add = async (name: string, mimeType: string, file: string) => {
-    await other.getByLabel("Choose documents", { exact: true }).setInputFiles({
+    await sendFiles(other, {
       name,
       mimeType,
       buffer: await readFile(
@@ -459,10 +460,19 @@ test("a reading that ends, with nothing saved, shows in Needs you on an open Ove
   ]);
   await accessible(page);
 
-  // Read again cleanly with nothing to save, it waits for nothing.
+  // Read again cleanly with nothing to save, it waits for nothing. The
+  // chat steps back to its bar, off the row.
+  await other
+    .getByRole("region", { name: "Chat" })
+    .getByRole("button", { name: "Minimise" })
+    .click();
   await other
     .getByRole("row", { name: /clinic-letter\.heic/ })
     .getByRole("button", { name: "Retry" })
+    .click();
+  await other
+    .getByRole("region", { name: "Chat" })
+    .getByRole("button", { name: "Send" })
     .click();
   await expect(needsYou.getByRole("listitem")).toHaveText([
     /lotus-labs\.pdf · \d+ results? read, not saved/,

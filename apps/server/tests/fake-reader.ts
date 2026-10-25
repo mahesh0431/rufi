@@ -42,7 +42,20 @@ export function scriptedReader(scripts: Script[]) {
     const script = scripts.shift();
     if (!script) throw new Error("No script left for this run.");
     const call = async (name: string, input: unknown): Promise<Answer> => {
-      const { status, result } = await callTool(
+      // A call under way when Rufi stops the run ends with it, as the real
+      // reader's process does; one made after the stop gets its answer.
+      const ended = new Promise<never>((_, reject) => {
+        if (signal === undefined || signal.aborted) return;
+        signal.addEventListener(
+          "abort",
+          () => {
+            reject(new Error("The run was stopped."));
+          },
+          { once: true },
+        );
+      });
+      ended.catch(() => undefined);
+      const asked = callTool(
         {
           url: task.tools.url,
           http_headers: { Authorization: `Bearer ${task.tools.key}` },
@@ -55,6 +68,7 @@ export function scriptedReader(scripts: Script[]) {
           turnId: "fake-reader-turn",
         },
       );
+      const { status, result } = await Promise.race([asked, ended]);
       // A key that opens nothing any more: as Codex reports it to the model.
       if (status !== 200 || !result) {
         const text = JSON.stringify({

@@ -39,7 +39,9 @@ CREATE TABLE files (
 -- number. A deleted document stays as a tombstone (docs/adr/0015): its row
 -- and its pages' names and positions, for the history and sources that
 -- point at them; its files, reader's work, readings and draft items are
--- gone.
+-- gone. An upload is unsent while it sits in the chat box: it is out of
+-- every list and tool until the person sends it, and taking its chip out
+-- removes it.
 CREATE TABLE documents (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL REFERENCES people (id),
@@ -53,6 +55,7 @@ CREATE TABLE documents (
   version INTEGER NOT NULL DEFAULT 0, -- rises whenever its draft items or pages change (a sort, a fix, a reading)
   deleted_at TEXT,       -- when the person deleted it: a tombstone, out of every list and action
   from_document TEXT,    -- the add Rufi AI split it from; null for an add
+  sent_at TEXT,          -- when the person sent it in a message; null while it waits unsent in the chat box (a split document has its add's)
   UNIQUE (person_id, id),
   FOREIGN KEY (person_id, from_document) REFERENCES documents (person_id, id)
 ) STRICT;
@@ -88,12 +91,15 @@ CREATE TABLE document_pages (
   FOREIGN KEY (person_id, entry_job_id) REFERENCES jobs (person_id, id)
 ) STRICT;
 
--- Background work for a person, one row per job, run one at a time. A
--- reading targets some of its document's pages (all of them first; a retry
--- only the failed ones), and each run of it is a new attempt: save_page
--- accepts entries only from the running job's current attempt, for its
--- target pages. A run Rufi stopped for a restart is queued again; only a
--- reader turn that completed normally finishes the job.
+-- A document's readings, one row per job, run one at a time across Rufi.
+-- A job is made when the reply of the message that sent its document
+-- starts, and runs in Rufi's part of that reply: queued or running only
+-- while that reply lives, failed when it ends otherwise or at the next
+-- start. A reading targets some of its document's pages (all of them
+-- first; a read-again only the failed ones), and each run of it is a new
+-- attempt: save_page accepts entries only from the running job's current
+-- attempt, for its target pages. Only a reader turn that completed
+-- normally finishes the job.
 CREATE TABLE jobs (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL,
@@ -104,7 +110,7 @@ CREATE TABLE jobs (
   targets TEXT NOT NULL,               -- JSON array of page positions
   retries INTEGER NOT NULL DEFAULT 0,  -- automatic retries used since its start or the person's Retry
   retry_at TEXT,                       -- a queued automatic retry runs from then on
-  started_at TEXT,                     -- its first real start: the chat's start line
+  started_at TEXT,                     -- its first real start
   run_at TEXT,                         -- the current run's start
   ended_at TEXT,
   error TEXT,                          -- why it failed, in words for the person
@@ -169,39 +175,6 @@ CREATE TABLE page_copies (
   PRIMARY KEY (person_id, file_id, page_in_file, job_id),
   FOREIGN KEY (person_id, file_id, page_in_file) REFERENCES document_pages (person_id, file_id, page_in_file),
   FOREIGN KEY (person_id, job_id) REFERENCES jobs (person_id, id)
-) STRICT;
-
--- Rufi's own work of asking Rufi AI to sort an add (docs/adr/0019): one
--- per reading that ended with pages to sort, and one for each sort a
--- person's turn made. Rufi hands it to the AI as a row of the chat's queue
--- (queue_id: its row now), in a turn of its own, and tries again after a
--- failed turn, three times; a sort_documents call consumes it in the same
--- transaction as the split and the drafts, and keeps its answer, so the
--- same call again gets the same answer. Operational state, not the
--- record: the stored tool call is the trace of a sort.
-CREATE TABLE sort_requests (
-  id TEXT PRIMARY KEY,         -- UUIDv7
-  person_id TEXT NOT NULL,
-  document_id TEXT NOT NULL,   -- the add it sorts
-  job_id TEXT,                 -- the reading whose end asked for it; null: a person's sort, or a reading since deleted
-  -- open: waits, runs or will be tried again; asked: Rufi AI asked the
-  -- person instead, and it waits for them; failed: its tries are used,
-  -- Retry starts it again; done: sorted; void: nothing is left to sort.
-  state TEXT NOT NULL CHECK (state IN ('open', 'asked', 'failed', 'done', 'void')),
-  queue_id TEXT,               -- its row in the chat's queue now
-  tries INTEGER NOT NULL DEFAULT 0, -- failed turns since it was made or the person's Retry
-  retry_at TEXT,               -- its next try, after a failed turn
-  error TEXT,                  -- why its last turn failed, in words for the person
-  call_id TEXT,                -- the agent's id for the sort_documents call that did it
-  answer TEXT,                 -- what that call got back (JSON)
-  created_at TEXT NOT NULL,
-  ended_at TEXT,
-  UNIQUE (person_id, id),
-  UNIQUE (person_id, call_id),
-  FOREIGN KEY (person_id, document_id) REFERENCES documents (person_id, id),
-  FOREIGN KEY (person_id, job_id) REFERENCES jobs (person_id, id),
-  FOREIGN KEY (person_id, queue_id) REFERENCES chat_queue (person_id, id) DEFERRABLE INITIALLY DEFERRED,
-  CHECK ((state = 'done') = (call_id IS NOT NULL))
 ) STRICT;
 
 -- A report as printed, made when its results are saved. A draft's report
@@ -408,7 +381,7 @@ CREATE TABLE chats (
   thread_provider TEXT,        -- whose thread it is, so another agent never reuses it
   thread_model TEXT,           -- the model the thread started with
   thread_tools TEXT,           -- the tool set it started with (a thread keeps its tools)
-  paused TEXT CHECK (paused IN ('stopped', 'restarted')), -- nothing goes to the AI until the person sends: after a Stop, or Rufi started again with messages waiting; only Rufi's own sorting goes on after a restart
+  paused TEXT CHECK (paused IN ('stopped', 'restarted')), -- nothing goes to the AI until the person sends: after a Stop, or Rufi started again with messages waiting
   revision INTEGER NOT NULL DEFAULT 0, -- grows with every change to the transcript
   context_tokens INTEGER,      -- the tokens of the thread's last request to the model, as the agent last reported them
   context_window INTEGER,      -- the model's context window then; null: the agent didn't say
@@ -417,13 +390,16 @@ CREATE TABLE chats (
   UNIQUE (person_id, id)
 ) STRICT;
 
--- One per reply the agent ran. Final once it has ended.
+-- One per reply. Final once it has ended. A reply whose message brings
+-- documents to read starts with Rufi's part, before the agent's turn
+-- exists: its agent turn and thread are filled when the agent starts, and
+-- stay null when it ended in Rufi's part.
 CREATE TABLE turns (
   id TEXT PRIMARY KEY,         -- UUIDv7
   person_id TEXT NOT NULL,
   chat_id TEXT NOT NULL,
-  agent_turn_id TEXT NOT NULL, -- the agent's own id for it
-  thread_id TEXT NOT NULL,     -- the agent's thread it ran on: a turn on another thread than the one before started afresh
+  agent_turn_id TEXT,          -- the agent's own id for it
+  thread_id TEXT,              -- the agent's thread it ran on: a turn on another thread than the one before started afresh
   model TEXT NOT NULL,
   origin TEXT NOT NULL DEFAULT 'person' CHECK (origin IN ('person', 'rufi')), -- who started it: a Rufi event's turn can only read
   status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'interrupted', 'failed')),
@@ -450,9 +426,9 @@ CREATE TABLE transcript_entries (
   turn_id TEXT,                -- the reply it belongs to
   kind TEXT NOT NULL CHECK (kind IN ('message', 'steer', 'activity', 'reply', 'reasoning', 'receipt', 'event', 'brief')),
   text TEXT NOT NULL,          -- the message or the reply as it came; an activity's text as the agent reported it (the command, the tool, a note's words); the reasoning's summary; a receipt's, an event's or a brief's line
-  activity TEXT CHECK (activity IN ('tool', 'command', 'web_search', 'file_change', 'sub_agent', 'compaction', 'picture', 'note', 'other')),
-  detail TEXT,                 -- an activity's second reported part: a tool's arguments, a command's exit code; a picture's path, whole
-  details TEXT,                -- an activity's or reasoning's everything, as the agent gave it (JSON); an event's kind and facts (JSON); null: none
+  activity TEXT CHECK (activity IN ('tool', 'command', 'web_search', 'file_change', 'sub_agent', 'compaction', 'picture', 'note', 'reading', 'other')), -- reading: Rufi's reader copying one document, in Rufi's part of a reply
+  detail TEXT,                 -- an activity's second reported part: a tool's arguments, a command's exit code; a picture's path, whole; a reading's progress
+  details TEXT,                -- an activity's or reasoning's everything, as the agent gave it (JSON); a reading's job and document; an event's kind and facts (JSON); null: none
   refs TEXT,                   -- a message's references, its chips (JSON); null: none
   status TEXT CHECK (status IN ('running', 'done', 'failed', 'stopped')),
   agent_item_id TEXT,          -- the agent's id for a reply or an activity, to update it
@@ -509,8 +485,10 @@ CREATE TABLE drafts (
 -- What waits to go to the AI, Rufi's own (docs/adr/0004): the person's
 -- messages and Rufi's events that ask the AI. Rufi hands the AI one turn's
 -- rows at a time, claimed here before it calls the AI, and never hands a
--- row over twice. 'handing_over' when Rufi stops becomes 'not_sure': shown,
--- never sent again by itself.
+-- row over twice. sent_as is set just before the AI is called: a
+-- 'handing_over' row without it surely never reached the AI (Rufi's part of
+-- its reply ran, or the thread was opening); one with it becomes 'not_sure'
+-- when Rufi stops: shown, never sent again by itself.
 CREATE TABLE chat_queue (
   id TEXT PRIMARY KEY,         -- UUIDv7, given by the send: the acceptance identity; a person's message keeps it in the transcript
   person_id TEXT NOT NULL,
@@ -521,11 +499,11 @@ CREATE TABLE chat_queue (
   event_id TEXT,               -- a Rufi event's line in the transcript
   position INTEGER NOT NULL,   -- order among the waiting rows
   state TEXT NOT NULL DEFAULT 'waiting' CHECK (state IN ('waiting', 'handing_over', 'sent', 'not_sure', 'removed')),
-  held TEXT CHECK (held IN ('paused', 'signed_out', 'restored', 'failed', 'open_failed')), -- a waiting row Rufi doesn't hand over by itself, and why: an event that came while the chat was paused rides with the person's next message; open_failed: the AI's thread didn't open, and the person chooses Try again or New thread
+  held TEXT CHECK (held IN ('paused', 'signed_out', 'restored', 'failed', 'open_failed', 'reply_ended')), -- a waiting row Rufi doesn't hand over by itself, and why: an event that came while the chat was paused rides with the person's next message; open_failed: the AI's thread didn't open, and the person chooses Try again or New thread; reply_ended: its reply ended in Rufi's part (a reading stopped or failed), it is in the chat already, and its reply's Retry sends it again
   held_text TEXT,              -- why a hand-over failed, in words for the person
-  hold_id TEXT,                -- which open_failed hold this is: Try again and New thread name it, so a stale click changes nothing
-  sent_as TEXT,                -- the id the AI got the hand-over under (the rows of one turn share it)
-  turn_id TEXT,                -- the turn that used it
+  hold_id TEXT,                -- which open_failed or reply_ended hold this is: the person's choice names it, so a stale click changes nothing
+  sent_as TEXT,                -- the id the AI got the hand-over under (the rows of one turn share it); set just before the AI is called
+  turn_id TEXT,                -- the turn that used it; set when Rufi's part of its reply starts
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE (person_id, id),
@@ -534,7 +512,7 @@ CREATE TABLE chat_queue (
   FOREIGN KEY (person_id, turn_id) REFERENCES turns (person_id, id),
   CHECK ((origin = 'rufi') = (event_id IS NOT NULL)),
   CHECK (held IS NULL OR state = 'waiting'),
-  CHECK ((held IS 'open_failed') = (hold_id IS NOT NULL))
+  CHECK ((held IS 'open_failed' OR held IS 'reply_ended') = (hold_id IS NOT NULL))
 ) STRICT;
 
 -- One save to the record, made by the AI's call to save_changes in a
@@ -716,13 +694,10 @@ CREATE INDEX changes_by_record ON record_changes (person_id, record_id);
 CREATE INDEX sources_by_record ON record_sources (person_id, record_id);
 CREATE INDEX sources_by_visit ON record_sources (person_id, visit_id);
 CREATE INDEX drafts_by_document ON draft_items (person_id, document_id, page, seq);
-CREATE INDEX sort_requests_by_state ON sort_requests (state, retry_at);
-CREATE INDEX sort_requests_by_document ON sort_requests (person_id, document_id);
-CREATE INDEX sort_requests_by_queue ON sort_requests (person_id, queue_id);
 CREATE INDEX device_batches_by_status ON device_batches (status, seq);
 CREATE INDEX device_batches_by_done ON device_batches (done_at);
 CREATE INDEX device_values_by_type ON device_values (person_id, type, start_at);
 CREATE INDEX device_values_by_batch ON device_values (person_id, batch_id) WHERE batch_id IS NOT NULL;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 16;
+PRAGMA user_version = 17;

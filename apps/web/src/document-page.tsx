@@ -195,12 +195,8 @@ function Checking({
               Failed · {document.reading?.error ?? "it stopped"}
             </p>
           )}
-          {document.sorting && (
-            <p className="text-xs text-pretty">
-              {document.sorting.state === "sorting"
-                ? "Sorting…"
-                : `Not sorted yet${document.sorting.why ? ` · ${document.sorting.why}` : ""}`}
-            </p>
+          {document.notSorted && (
+            <p className="text-xs text-pretty">Not sorted yet</p>
           )}
           <p className="text-xs text-muted">
             {settled ??
@@ -223,8 +219,7 @@ function Checking({
           )}
         </div>
         {(document.status === "not_read" ||
-          document.reading?.canRetry === true ||
-          document.sorting?.state === "waiting") && (
+          document.reading?.canRetry === true) && (
           <RetryButton personId={person.id} documentId={document.id} />
         )}
         <Button

@@ -246,10 +246,19 @@ describe("the box's chips", () => {
   });
 
   it("reads the draft with its chips, as after a reload; a chip taken out is saved without it", async () => {
-    const { api, saves } = core({ text: "", refs: [named] });
+    const { api, saves } = core({
+      text: "",
+      refs: [{ ...named, ref: { ...named.ref, readAgain: true } }],
+    });
     const box = draftBox(api);
     await settle();
-    expect(box.store.getState().refs).toHaveLength(1);
+    expect(box.store.getState().refs).toEqual([
+      {
+        pointer: { type: "document", id: "doc-1", readAgain: true },
+        label: named.label,
+        detail: named.detail,
+      },
+    ]);
     box.remove(doc);
     await settle();
     expect(saves()[0]?.body).toEqual({ text: "", refs: [] });

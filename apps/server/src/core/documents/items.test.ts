@@ -28,7 +28,7 @@ beforeEach(async () => {
   store.db.exec(`
     INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional'), ('ravi', 'Ravi Fictional');
     INSERT INTO files (id, size, media_type, created_at) VALUES ('f1', 10, 'application/pdf', '${NOW}');
-    INSERT INTO documents (id, person_id, added_at, added_from, version) VALUES ('d1', 'asha', '${NOW}', 'documents_page', 1);
+    INSERT INTO documents (id, person_id, added_at, added_from, version, sent_at) VALUES ('d1', 'asha', '${NOW}', 'documents_page', 1, '${NOW}');
     INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at)
       VALUES ('j1', 'asha', 'document_read', 'd1', 'done', 1, '[1,2]', '${NOW}');
     INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name, entry_checks, state, state_why)

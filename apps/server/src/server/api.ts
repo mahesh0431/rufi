@@ -10,6 +10,7 @@ import {
   MAX_MESSAGE_CHARS,
   PAGE_ESCAPE,
   RecoverMessage,
+  RetryReply,
   ReorderQueue,
   SaveDraft,
   SaveSettings,
@@ -109,11 +110,6 @@ export interface ApiDeps {
   deletions: Deletions;
   /** Their readings: what waits and runs, and each one's work. */
   readings: Readings;
-  /**
-   * Starts a document's sort again when it waits (its tries used, Rufi AI
-   * asked, or a Stop): false when none waits.
-   */
-  sortAgain: (personId: string, documentId: string) => Promise<boolean>;
   /** A document's draft items, and the person's fixes. */
   items: DraftItems;
   /** A document's pages as the reader saw them. */
@@ -157,6 +153,8 @@ function notAdded({ file, reason }: NotADocument): string {
 }
 
 const MESSAGE_REFUSAL = `A message needs some text, and can be at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters.`;
+/** A send needs words, a file or another chip. */
+const SEND_REFUSAL = `A message needs some text or something added to it, and can be at most ${MAX_MESSAGE_CHARS.toLocaleString("en")} characters.`;
 /** A stream says it's alive this often when nothing happens. */
 const PING_MS = 15_000;
 /** Updates a screen may fall behind by before its stream is closed; it reconnects. */
@@ -772,26 +770,17 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     c.header("Content-Type", found.mediaType);
     return c.body(new Uint8Array(bytes));
   };
-  /** A reading's refusal (nothing to retry) as the answer shows it. */
-  const reading = async <T>(action: () => Promise<T>): Promise<T> => {
+  // A chip of an unsent file taken out of the box: the file leaves Rufi.
+  // One sent meanwhile stays, refused.
+  app.delete(`${documentsPath}/:documentId/unsent`, async (c) => {
+    const found = await person(c);
     try {
-      return await action();
+      await deps.deletions.removeUnsent(found.id, c.req.param("documentId"));
     } catch (error) {
       if (error instanceof Refusal) throw new HttpError(409, error.message);
       throw error;
     }
-  };
-  // Retry: a sort that waits goes again; otherwise what failed is read again.
-  app.post(`${documentsPath}/:documentId/retry`, async (c) => {
-    const found = await person(c);
-    const documentId = c.req.param("documentId");
-    if (await reading(() => deps.sortAgain(found.id, documentId))) {
-      return c.json({ pages: [], sorting: true });
-    }
-    const pages = await reading(() =>
-      deps.readings.retry(found.id, documentId),
-    );
-    return c.json({ pages });
+    return c.json({ removed: true });
   });
   // Delete: what it would do, then the delete made on that preview. A
   // preview that changed meanwhile refuses it with the preview as it is now.
@@ -825,10 +814,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     deps.log("documents.deleted", { ms: Date.now() - started });
     return c.json({ deleted: true });
   });
-  // What waits and runs, for the strip; one reading's work, for Open.
-  app.get("/api/people/:personId/readings", async (c) =>
-    c.json({ readings: await deps.readings.strip((await person(c)).id) }),
-  );
+  // One reading's work, for View reading.
   app.get(`${documentsPath}/:documentId/reading`, async (c) => {
     const found = await deps.readings.view(
       (await person(c)).id,
@@ -918,7 +904,10 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   // The same id again (a retry) finds the message it made.
   app.post(`${one}/messages`, async (c) => {
     const found = await chatOf(c);
-    const { id, text, refs } = await body(c, SendMessage, MESSAGE_REFUSAL);
+    const { id, text, refs } = await body(c, SendMessage, SEND_REFUSAL);
+    if (text === "" && (refs?.length ?? 0) === 0) {
+      throw new HttpError(400, SEND_REFUSAL);
+    }
     const { steered } = await acting(() => chat.send(found, id, text, refs));
     const draft = steered
       ? await drafts.save(found, "")
@@ -967,6 +956,12 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.post(`${one}/queue/:itemId/send`, async (c) => {
     const found = await chatOf(c);
     await acting(() => chat.queue.sendNow(found, c.req.param("itemId")));
+    return c.json(await chat.queue.list(found));
+  });
+  app.post(`${one}/queue/:itemId/retry`, async (c) => {
+    const found = await chatOf(c);
+    const { hold } = await body(c, RetryReply);
+    await acting(() => chat.queue.retry(found, c.req.param("itemId"), hold));
     return c.json(await chat.queue.list(found));
   });
   app.post(`${one}/queue/:itemId/recover`, async (c) => {

@@ -8,7 +8,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { read } from "./api.ts";
 import { chatPath } from "./live.ts";
-import { Problem } from "./ui.tsx";
+import { ScanText } from "lucide-react";
+import { openReading } from "./reading.tsx";
+import { Button, Problem } from "./ui.tsx";
 
 /** Lines a long output shows before "Show all". */
 const FOLDED_LINES = 12;
@@ -55,11 +57,14 @@ export function StepDetails({
   personId,
   id,
   version,
+  reading,
 }: {
   personId: string;
   id: string;
   /** When the step last changed: its details may have grown. */
   version: string;
+  /** A reading step's document, while it isn't deleted. */
+  reading?: string | undefined;
 }) {
   const details = useQuery({
     queryKey: ["entry", personId, id, version],
@@ -79,6 +84,19 @@ export function StepDetails({
   const item = details.data.details;
   if (item === null || typeof item !== "object") {
     return <p className="text-muted">Rufi kept no details for this step.</p>;
+  }
+  if (reading !== undefined) {
+    return (
+      <Button
+        look="quiet"
+        icon={ScanText}
+        onClick={() => {
+          openReading(personId, reading);
+        }}
+      >
+        View reading
+      </Button>
+    );
   }
   return <Reported item={item as Record<string, unknown>} />;
 }

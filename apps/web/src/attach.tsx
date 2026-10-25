@@ -1,9 +1,10 @@
 // Adding files in the chat: the box's paperclip, and dropping files on the
 // chat. Each file is added as a document when it is chosen or dropped (its
-// reading starts then, not when the message is sent), and its chip goes in
+// reading waits for Send), and its chip goes in
 // the box. Two or more photos first ask whether they are one document, as
 // on the Documents page. A file already added gives the chip of the document
 // the person has, and a line saying so.
+import type { useNavigate } from "@tanstack/react-router";
 import { Added } from "@rufi/contracts/documents";
 import { Paperclip } from "lucide-react";
 import {
@@ -18,10 +19,16 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import { upload } from "./api.ts";
 import { boxFor } from "./boxes.ts";
 import type { BoxChip } from "./draft.ts";
-import { ACCEPT, AddDialog, type Chosen, isPhoto, look } from "./documents.tsx";
+import {
+  ACCEPT,
+  AddDialog,
+  type Chosen,
+  isPhoto,
+  look,
+} from "./attach-choice.tsx";
 import { messageOf } from "./live.ts";
 import { Menus } from "./model-menu.tsx";
-import { whyClosed } from "./panel.ts";
+import { chatPage, isSmall, openPanel, whyClosed } from "./panel.ts";
 import { queries } from "./reads.ts";
 import { IconButton } from "./ui.tsx";
 
@@ -80,7 +87,7 @@ async function add(personId: string, files: File[], together: boolean) {
     const why = whyClosed(box.store.getState());
     if (why !== null) {
       state.setState({
-        notice: `Added to Documents, not to this message. ${why} Then use Ask Rufi on it there.`,
+        notice: `${why} Choose these files again in a moment.`,
       });
     } else if (box.append("", chips) && added.already.length > 0) {
       state.setState({
@@ -98,12 +105,30 @@ async function add(personId: string, files: File[], together: boolean) {
 }
 
 /** Files chosen or dropped in the chat: added now, or first grouped when 2+ are photos. */
-async function choose(personId: string, files: File[]) {
+export async function chooseFiles(personId: string, files: File[]) {
   if (files.length === 0) return;
-  const chosen = await Promise.all(files.map(look));
-  if (chosen.filter(isPhoto).length >= 2) {
-    attaching(personId).setState({ picked: chosen, notice: null });
-  } else void add(personId, files, true);
+  const why = whyClosed(boxFor(personId).store.getState());
+  if (why !== null) {
+    attaching(personId).setState({ notice: why });
+    return;
+  }
+  try {
+    const chosen = await Promise.all(files.map(look));
+    if (chosen.filter(isPhoto).length >= 2) {
+      attaching(personId).setState({ picked: chosen, notice: null });
+    } else void add(personId, files, true);
+  } catch (error) {
+    attaching(personId).setState({ notice: messageOf(error) });
+  }
+}
+
+/** Opens the chat after an attachment or Retry, keeping the current page when it fits. */
+export function showChat(
+  personId: string,
+  navigate: ReturnType<typeof useNavigate>,
+) {
+  if (isSmall()) void navigate(chatPage(personId));
+  else openPanel();
 }
 
 /** The box's paperclip: choose files to add as documents. */
@@ -124,7 +149,7 @@ export function AttachButton({ personId }: { personId: string }) {
         aria-label="Choose documents to add"
         className="hidden"
         onChange={(event) => {
-          void choose(personId, [...(event.target.files ?? [])]);
+          void chooseFiles(personId, [...(event.target.files ?? [])]);
           event.target.value = "";
         }}
       />
@@ -200,7 +225,7 @@ export function FileDrop({
         if (off || !event.dataTransfer.types.includes("Files")) return;
         event.preventDefault();
         setDragging(false);
-        void choose(personId, [...event.dataTransfer.files]);
+        void chooseFiles(personId, [...event.dataTransfer.files]);
       }}
     >
       {children}

@@ -2,7 +2,7 @@
 // the device batches that are due, one at a time, and cleans up kept values
 // and batches once a day. At start it tries each failed group head again at
 // once. When even a failure can't be written (the disk is still full), it
-// keeps the reason in memory for Settings and rests, as the sorter does.
+// keeps the reason in memory for Settings and rests.
 import { setImmediate as nextTurn } from "node:timers/promises";
 import { failureReason, type Devices } from "../core/devices/devices.ts";
 import { errorCode, type Log } from "../platform/logs.ts";

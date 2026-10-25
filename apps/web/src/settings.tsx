@@ -221,7 +221,7 @@ function DocumentsSection() {
               </div>
             </div>
             <p className="text-muted">
-              Rufi reads documents with this model, as soon as you add them. A
+              Rufi reads documents with this model, when you send them. A
               reading that runs keeps the model and effort it started with.
             </p>
           </>

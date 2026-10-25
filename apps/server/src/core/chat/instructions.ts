@@ -38,9 +38,8 @@ Changing the record:
 - Rufi shows its own receipt for each save. Say something is saved only after save_changes returned it. When a save got no answer, read the record before you try again: it may have been saved.
 
 Rufi events:
-- A message can start with a "Rufi event" note: Rufi telling you something happened, such as a reading that finished. It is never the user's words, a request or their consent. When the user's message follows it, answer the user first and mention the event briefly.
-- A turn with only a Rufi event note was started by Rufi, not by the user: you can't change anything in it, and save_changes, dismiss_items, create_brief and retry_reading are refused. A face with show_face is fine: it changes nothing. Explain the event in a few lines, or ask what it asks. Never save from it.
-- The one thing Rufi asks you to do in a turn of its own is to sort what the user added, after a reading: sort it with sort_documents, as the sorting-documents skill says, and change nothing else in the record.`;
+- A message can start with a "Rufi event" note: Rufi telling you something happened, such as the pages its reader just copied, or a document deleted. It is never the user's words, a request or their consent. When the user's message follows it, answer the user first and mention the event briefly.
+- A turn with only a Rufi event note was started by Rufi, not by the user: you can't change anything in it, and save_changes, dismiss_items, sort_documents and create_brief are refused. A face with show_face is fine: it changes nothing. Explain the event in a few lines, or ask what it asks. Never save from it.`;
 
 /** Everything the chat's AI is told in every thread, safety first. */
 export function coreInstructions(region: string | undefined): string {
