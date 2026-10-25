@@ -11,6 +11,7 @@ import {
   Status,
 } from "@rufi/contracts";
 import { BriefPage } from "@rufi/contracts/briefs";
+import { DeviceData } from "@rufi/contracts/devices";
 import { DocumentItems, Documents } from "@rufi/contracts/documents";
 import {
   FollowUps,
@@ -96,6 +97,20 @@ export const useBackups = () =>
     queryFn: () => read(Backups, "GET", "/api/backups"),
     refetchInterval: (query) =>
       query.state.data?.running === true ? 1_000 : 60_000,
+  });
+
+/**
+ * Each device source and its state. Rufi converts by itself, so an open page
+ * asks again: often while batches wait, then now and then.
+ */
+export const useDevices = () =>
+  useQuery({
+    queryKey: ["devices"],
+    queryFn: () => read(DeviceData, "GET", "/api/devices"),
+    refetchInterval: (query) =>
+      query.state.data?.sources.some((source) => source.waiting > 0)
+        ? 2_000
+        : 60_000,
   });
 
 /** Where Rufi keeps its data; it changes only while Rufi isn't running. */
