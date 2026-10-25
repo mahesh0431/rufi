@@ -34,6 +34,8 @@ export const MIGRATIONS: readonly string[] = [
   read("migrations/0013-drop-save-warnings-and-draft-reports.sql"),
   read("migrations/0014-reply-status.sql"),
   read("migrations/0015-visits.sql"),
+  // 0016 is attach-then-send's (#120); whichever lands second renumbers.
+  read("migrations/0017-device-data.sql"),
 ];
 
 /** What a database file is, read without changing it. */
