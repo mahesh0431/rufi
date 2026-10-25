@@ -125,7 +125,7 @@ Settings says **Exported your data as a zip**. The file is named for the day, fo
 | `csv/`        | The same tables, to open in a spreadsheet                                      |
 | `files/`      | Every document you added, exactly as it came, named by its fingerprint         |
 
-Rufi checks the export against your record and your documents before it gives it to you. If a document's file is missing or changed, Rufi doesn't make the export, and says so. An export never holds your ChatGPT sign-in, the AI's own files or Rufi's log.
+Rufi checks the export against your record and your documents before it gives it to you. With years of device data this takes longer: about a minute for five years of heart rate. If a document's file is missing or changed, Rufi doesn't make the export, and says so. An export never holds your ChatGPT sign-in, the AI's own files or Rufi's log.
 
 The `results` table holds your lab results and measurements; its `category` column says which each one is, `lab` or `measurement`.
 

@@ -564,6 +564,28 @@ describe("how long values are kept", () => {
     expect(valuesOf().map((row) => row.external_id)).toEqual(["v-new"]);
   });
 
+  it("lets other work run between its chunks", async () => {
+    store.db.exec(`
+      WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 12000)
+      INSERT INTO device_values (person_id, system, external_id, source_id, type, value, start_at, end_at)
+        SELECT 'asha', 'apple_health', 'old-' || i, '${phone}', 'resting_heart_rate', 54,
+               '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z' FROM n`);
+    await device.setKeep("30d");
+    // Turns of the event loop that pass while it runs: none if it never yields.
+    const turns = { count: 0, counting: true };
+    const counting = (async () => {
+      while (turns.counting) {
+        await new Promise((resolve) => setImmediate(resolve));
+        turns.count++;
+      }
+    })();
+    expect(await device.cleanUp()).toEqual({ values: 12_000, batches: 0 });
+    const during = turns.count;
+    turns.counting = false;
+    await counting;
+    expect(during).toBeGreaterThanOrEqual(3);
+  });
+
   it("deletes done batches after 30 days, but keeps those with skipped items, and waiting and failed ones", async () => {
     const plain = await got(
       phone,
@@ -654,5 +676,47 @@ describe("Asha's fictional 60 days", () => {
       start_at: "2026-10-24T23:00:00.000Z",
       removed_at: null,
     });
+  });
+});
+
+describe("Asha's fictional heart rate", () => {
+  it("keeps each reading's motion context, and a walk's three unequal values with their intervals, removed whole", async () => {
+    const file = await readFile(
+      join(
+        import.meta.dirname,
+        "../../../tests/fixtures/device/asha-heart-rate.jsonl",
+      ),
+      "utf8",
+    );
+    const [first, second] = file.trim().split("\n");
+    await got(watch, new TextEncoder().encode(first ?? ""));
+    await convertAll();
+    expect(
+      (await device.sources()).find((one) => one.id === watch),
+    ).toMatchObject({ values: 21, skipped: 0 });
+    const walk = () =>
+      rows(
+        "SELECT type, value, start_at, end_at, context, series, removed_at FROM device_values WHERE external_id = ?",
+        "4EA70099-0000-4000-8000-000000000099",
+      )[0];
+    expect(walk()).toEqual({
+      type: "heart_rate",
+      value: 125,
+      start_at: "2026-10-21T06:10:00.000Z",
+      end_at: "2026-10-21T06:16:00.000Z",
+      context: '{"HKMetadataKeyHeartRateMotionContext":2}',
+      series:
+        '[{"start_at":"2026-10-21T06:10:00.000Z","end_at":"2026-10-21T06:11:30.000Z","value":118},' +
+        '{"start_at":"2026-10-21T06:11:30.000Z","end_at":"2026-10-21T06:14:00.000Z","value":131},' +
+        '{"start_at":"2026-10-21T06:14:00.000Z","end_at":"2026-10-21T06:16:00.000Z","value":127}]',
+      removed_at: null,
+    });
+
+    await got(watch, new TextEncoder().encode(second ?? ""));
+    await convertAll();
+    expect(walk()).toMatchObject({ removed_at: T0 });
+    expect(
+      (await device.sources()).find((one) => one.id === watch),
+    ).toMatchObject({ values: 20 });
   });
 });

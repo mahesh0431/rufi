@@ -7,6 +7,7 @@
 // an item that can't be converted is skipped with its reason, and its batch
 // is kept until it is deleted.
 import { createHash } from "node:crypto";
+import { setImmediate as nextTurn } from "node:timers/promises";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { sql, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
@@ -520,6 +521,8 @@ export function devices(store: Store, now: () => string) {
           return Number(result.numAffectedRows ?? 0);
         });
         values += gone;
+        // A chunk at a time: saves and the screens go between them.
+        await nextTurn();
         if (gone < CHUNK) break;
       }
       for (;;) {
@@ -552,6 +555,7 @@ export function devices(store: Store, now: () => string) {
           return old.length;
         });
         batches += gone;
+        await nextTurn();
         if (gone < BATCH_CHUNK) break;
       }
       return { values, batches };

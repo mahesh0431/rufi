@@ -1,6 +1,8 @@
 // The export on a real data folder: what is in the zip, values exactly as
 // stored (in JSON and in CSV), nothing private, and a save made during an
 // export in it whole or not at all.
+import { spawn } from "node:child_process";
+import fs from "node:fs";
 import {
   mkdir,
   mkdtemp,
@@ -12,13 +14,14 @@ import {
 import { tmpdir } from "node:os";
 import { gunzipSync } from "node:zlib";
 import { join } from "node:path";
-import { strFromU8, unzipSync } from "fflate";
+import { strFromU8, unzipSync, zipSync } from "fflate";
 import { beforeEach, describe, expect, it } from "vitest";
 import { devices } from "../devices/devices.ts";
 import { documents } from "../documents/documents.ts";
 import { filesPath } from "../documents/originals.ts";
 import { databasePath, openWritable } from "./database.ts";
 import { exportZip } from "./export.ts";
+import { CheckFailed } from "./backup.ts";
 import { addSent } from "../../../tests/sent.ts";
 
 let home: string;
@@ -31,9 +34,11 @@ beforeEach(async () => {
 });
 
 const unzipped = async () => {
-  const { name, bytes } = await exportZip(home, NOW);
-  expect(name).toBe(`${FOLDER}.zip`);
-  return unzipSync(bytes);
+  const made = await exportZip(home, NOW);
+  expect(made.name).toBe(`${FOLDER}.zip`);
+  const files = unzipSync(new Uint8Array(await readFile(made.path)));
+  await made.remove();
+  return files;
 };
 
 const FIXTURES = join(import.meta.dirname, "../../../tests/fixtures/documents");
@@ -64,6 +69,111 @@ async function flipOneByte(path: string) {
   await writeFile(path, bytes);
 }
 
+/**
+ * The disk, as a faulty one would behave, while `run` runs: `fault` sees each
+ * buffer Rufi writes and may change it, or write only part of it. Node's own
+ * fs.write and fs.writev, which its write stream uses.
+ */
+async function faultyDisk<T>(
+  fault: (bytes: Buffer) => { bytes: Buffer; length?: number },
+  run: () => Promise<T>,
+): Promise<T> {
+  const { write, writev } = fs;
+  type Done = (error: Error | null, written: number) => void;
+  fs.write = ((
+    fd: number,
+    buffer: Buffer,
+    offset: number,
+    length: number,
+    position: number | null,
+    done: Done,
+  ) => {
+    const changed = fault(
+      Buffer.from(buffer.subarray(offset, offset + length)),
+    );
+    write(fd, changed.bytes, 0, changed.length ?? length, position, done);
+  }) as typeof fs.write;
+  fs.writev = ((
+    fd: number,
+    buffers: Buffer[],
+    position: number | null,
+    done: Done,
+  ) => {
+    writev(
+      fd,
+      buffers.map((buffer) => fault(Buffer.from(buffer)).bytes),
+      position,
+      done,
+    );
+  }) as typeof fs.writev;
+  try {
+    return await run();
+  } finally {
+    fs.write = write;
+    fs.writev = writev;
+  }
+}
+
+/** Changes the byte `at` past the first `find` in a buffer that holds it. */
+const spoil = (find: Buffer, at: number, to: number) => (bytes: Buffer) => {
+  const found = bytes.indexOf(find);
+  if (found >= 0) bytes[found + at] = to;
+  return { bytes };
+};
+
+describe("the export on disk", () => {
+  it.each([
+    // The end record says the zip holds no files: a reader sees an empty export.
+    ["its end record", spoil(Buffer.from([0x50, 0x4b, 0x05, 0x06]), 8, 0)],
+    ["an original's bytes", spoil(Buffer.from("%PDF-"), 4, 0x58)],
+  ])(
+    "is refused when %s changed on the way to the disk",
+    async (_case, fault) => {
+      await withDocuments();
+      await expect(
+        faultyDisk(fault, () => exportZip(home, NOW)),
+      ).rejects.toThrow(CheckFailed);
+      expect(
+        (await readdir(home)).filter((n) => n.startsWith(".export-")),
+      ).toEqual([]);
+    },
+  );
+
+  it("is refused, and Rufi goes on, when the disk fails a write while an original is read", async () => {
+    await withDocuments();
+    const child = spawn(
+      process.execPath,
+      [join(import.meta.dirname, "../../../tests/export-write-error.ts"), home],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let out = "";
+    child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
+    child.stderr.on("data", (chunk: Buffer) => (out += chunk.toString()));
+    const code = await new Promise((resolve) => child.once("exit", resolve));
+    expect(code, out).toBe(0);
+    expect(JSON.parse(out)).toEqual({ said: "ENOSPC", left: [] });
+  }, 30_000);
+
+  it("is whole when the disk takes a write only in part", async () => {
+    await withDocuments();
+    let shortened = false;
+    const made = await faultyDisk(
+      (bytes) => {
+        if (shortened || bytes.length <= 10) return { bytes };
+        shortened = true;
+        return { bytes, length: 10 };
+      },
+      () => exportZip(home, NOW),
+    );
+    expect(shortened).toBe(true);
+    const files = unzipSync(new Uint8Array(await readFile(made.path)));
+    expect(
+      Object.keys(files).filter((n) => n.includes("/files/")),
+    ).toHaveLength(2);
+    await made.remove();
+  });
+});
+
 describe("the export's original files", () => {
   it("holds every original exactly as it came, named by its hash and type", async () => {
     const [heic = "", pdf = ""] = await withDocuments();
@@ -79,6 +189,36 @@ describe("the export's original files", () => {
     expect(
       Object.keys(files).filter((name) => name.includes("/files/")),
     ).toHaveLength(2);
+  });
+
+  it("holds an original whose bytes look like zip records, as it came", async () => {
+    const store = openWritable(databasePath(home));
+    const pdf = new Uint8Array(
+      await readFile(join(FIXTURES, "sunrise-labs-august.pdf")),
+    );
+    const bytes = new Uint8Array([
+      ...pdf,
+      ...zipSync({ "inside.txt": new TextEncoder().encode("fictional") }),
+    ]);
+    try {
+      store.db.exec(
+        "INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional')",
+      );
+      await documents(store, home).add(
+        "asha",
+        [{ name: "with-attachment.pdf", bytes }],
+        true,
+      );
+    } finally {
+      store.close();
+    }
+
+    const files = await unzipped();
+
+    const originals = Object.entries(files).filter(([n]) =>
+      n.includes("/files/"),
+    );
+    expect(originals.map(([, held]) => held)).toEqual([bytes]);
   });
 
   it.each([
@@ -224,7 +364,8 @@ second line', NULL, '');
       strFromU8(files[`${FOLDER}/csv/device_types.csv`] ?? new Uint8Array()),
     ).toBe(
       '"key","label","unit","loinc"\r\n' +
-        '"resting_heart_rate","Resting heart rate","/min","40443-4"\r\n',
+        '"resting_heart_rate","Resting heart rate","/min","40443-4"\r\n' +
+        '"heart_rate","Heart rate","/min","8867-4"\r\n',
     );
   });
 
@@ -257,6 +398,11 @@ second line', NULL, '');
     expect(results.columns).toContain("category");
     for (const bytes of Object.values(files)) {
       expect(strFromU8(bytes)).not.toContain(sentinel);
+    }
+    // Each JSON file is written as JSON.stringify writes it, empty or not.
+    for (const name of names.filter((n) => n.endsWith(".json"))) {
+      const text = strFromU8(files[name] ?? new Uint8Array());
+      expect(text).toBe(`${JSON.stringify(JSON.parse(text), null, 2)}\n`);
     }
     // The fixed copy it was made from is gone.
     expect(

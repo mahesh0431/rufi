@@ -347,7 +347,12 @@ export const startCore = (options: CoreOptions) =>
         reader && (await readBrief(reader.query, personId, briefId)),
       account,
       backups,
-      devices: { ...deviceData, trouble: convertLoop.trouble },
+      devices: {
+        ...deviceData,
+        trouble: convertLoop.trouble,
+        cleanSoon: convertLoop.cleanSoon,
+        cleaning: convertLoop.cleaning,
+      },
       folder: {
         path: home,
         source: options.folder?.source ?? "RUFI_HOME",
@@ -355,7 +360,7 @@ export const startCore = (options: CoreOptions) =>
           options.folder?.show(home) ??
           Promise.reject(new Error("Finder isn't offered here.")),
       },
-      exportZip: () => exportZip(home, new Date(), gate),
+      exportZip: (signal) => exportZip(home, new Date(), gate, signal),
       documents: personDocuments,
       deletions: deletions({
         store: writer,

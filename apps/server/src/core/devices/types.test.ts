@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import { DEVICE_TYPES } from "./types.ts";
 
 /** Every key that has shipped. This list only grows. */
-const SHIPPED = ["resting_heart_rate"];
+const SHIPPED = ["resting_heart_rate", "heart_rate"];
 
 it("still has every key that has shipped", () => {
   expect(DEVICE_TYPES.map((type) => type.key)).toEqual(

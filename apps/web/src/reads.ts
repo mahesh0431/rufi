@@ -108,6 +108,7 @@ export const useDevices = () =>
     queryKey: ["devices"],
     queryFn: () => read(DeviceData, "GET", "/api/devices"),
     refetchInterval: (query) =>
+      query.state.data?.cleaning === true ||
       query.state.data?.sources.some((source) => source.waiting > 0)
         ? 2_000
         : 60_000,
