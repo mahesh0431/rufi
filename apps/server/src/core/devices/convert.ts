@@ -223,8 +223,11 @@ function readValue(system: string, fields: Fields, id: string): ConvertedValue {
   if (fields.value === undefined) skip("missing_field", "value");
   const number = readNumber(fields.value);
   if (!sent(fields, "unit")) skip("missing_field", "unit");
+  // Only the type's own units: not a name every object has ("constructor").
   const factor =
-    typeof fields.unit === "string" ? type.accepts[fields.unit] : undefined;
+    typeof fields.unit === "string" && Object.hasOwn(type.accepts, fields.unit)
+      ? type.accepts[fields.unit]
+      : undefined;
   if (factor === undefined) return skip("unit_not_accepted");
   const { startAt, endAt } = readSpan(fields, skip);
   let utcOffset: number | null = null;

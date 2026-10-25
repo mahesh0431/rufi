@@ -253,6 +253,16 @@ const CASES: [string, unknown, unknown][] = [
     { skip: { id: "9A01-91C0", reason: "unit_not_accepted" } },
   ],
   [
+    "a name every object has, as a unit",
+    item({ unit: "constructor" }),
+    { skip: { id: "9A01-91C0", reason: "unit_not_accepted" } },
+  ],
+  [
+    "__proto__ as a unit",
+    item({ unit: "__proto__" }),
+    { skip: { id: "9A01-91C0", reason: "unit_not_accepted" } },
+  ],
+  [
     "no start",
     without("start"),
     { skip: { id: "9A01-91C0", reason: "missing_field", field: "start" } },
