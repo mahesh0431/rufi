@@ -43,7 +43,7 @@
           "scripts/*.ts",
           "tests/core-process.ts",
           "tests/save-process.ts",
-        "tests/export-write-error.ts"
+          "tests/export-write-error.ts"
         ],
         "ignore": [
           "src/agent/codex/protocol/**"
