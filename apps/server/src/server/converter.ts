@@ -51,6 +51,8 @@ export function converter(deps: {
         }
         if (clean.asked || now() - cleaned >= CLEAN_MS) {
           clean.asked = false;
+          // Until it succeeds: a failed clean-up goes again on the next turn.
+          cleaned = Number.NEGATIVE_INFINITY;
           clean.running = true;
           const gone = await deps.devices.cleanUp().finally(() => {
             clean.running = false;

@@ -377,7 +377,7 @@ export const startCore = (options: CoreOptions) =>
           options.folder?.show(home) ??
           Promise.reject(new Error("Finder isn't offered here.")),
       },
-      exportZip: () => exportZip(home, new Date(), gate),
+      exportZip: (signal) => exportZip(home, new Date(), gate, signal),
       documents: personDocuments,
       deletions: deletions({
         store: writer,

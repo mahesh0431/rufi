@@ -101,7 +101,8 @@ export interface ApiDeps {
   /** The data folder in use, and how it was chosen; `show` shows it in Finder. */
   folder: DataFolder & { show: () => Promise<void> };
   /** The export, made when asked: the zip and its file name. */
-  exportZip: () => Promise<MadeExport>;
+  /** Stops, and removes what it made, when `signal` aborts. */
+  exportZip: (signal: AbortSignal) => Promise<MadeExport>;
   /** Each person's documents. */
   documents: Documents;
   /** Deleting one: its preview, and the delete. */
@@ -588,10 +589,14 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   });
 
   app.get("/api/export", async (c) => {
+    // The person may go while it is made (years of data take a minute): it
+    // stops then, and what was made goes.
+    const signal = c.req.raw.signal;
     let made: MadeExport;
     try {
-      made = await deps.exportZip();
+      made = await deps.exportZip(signal);
     } catch (error) {
+      if (signal.aborted) return new Response(null);
       deps.log("export.failed", { error: errorCode(error) });
       throw new HttpError(
         500,
@@ -600,17 +605,32 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
           : "Rufi couldn't make the export. Try again; if it fails again, make a backup and see Help.",
       );
     }
-    c.header("Content-Type", "application/zip");
-    c.header("Content-Disposition", `attachment; filename="${made.name}"`);
-    c.header("Content-Length", String(made.size));
-    // Sent from its file; the staging folder goes when the answer ends or is cut.
-    const file = createReadStream(made.path);
-    file.once("close", () => {
+    const remove = () => {
       made.remove().catch((error: unknown) => {
         deps.log("export.failed", { error: errorCode(error) });
       });
-    });
-    return c.body(Readable.toWeb(file) as ReadableStream<Uint8Array>);
+    };
+    // Sent from its file. Until the file is handed to the answer, any way
+    // out removes it; after that, its stream closing does (the answer ended,
+    // or the person went).
+    let handedOver = false;
+    try {
+      if (signal.aborted) return new Response(null);
+      c.header("Content-Type", "application/zip");
+      c.header("Content-Disposition", `attachment; filename="${made.name}"`);
+      c.header("Content-Length", String(made.size));
+      const file = createReadStream(made.path);
+      const cut = () => file.destroy();
+      signal.addEventListener("abort", cut, { once: true });
+      file.once("close", () => {
+        signal.removeEventListener("abort", cut);
+        remove();
+      });
+      handedOver = true;
+      return c.body(Readable.toWeb(file) as ReadableStream<Uint8Array>);
+    } finally {
+      if (!handedOver) remove();
+    }
   });
 
   // A file a reply shows: a short-lived address for that one file.

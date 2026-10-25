@@ -2336,6 +2336,43 @@ describe("backups and export over the API", () => {
     );
   });
 
+  it(
+    "stops the export and removes it when the person goes while it is made",
+    { timeout: 60_000 },
+    async () => {
+      await start();
+      await stop();
+      // Enough values that making the export takes a while.
+      const record = openWritable(databasePath(home));
+      record.db.exec(`
+      INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
+      INSERT INTO device_sources (id, person_id, system, name, created_at)
+        VALUES ('src', 'asha', 'apple_health', 'Asha''s Watch', '2026-10-01T00:00:00Z');
+      WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 200000)
+      INSERT INTO device_values (person_id, system, external_id, source_id, type, value, start_at, end_at)
+        SELECT 'asha', 'apple_health', 'v-' || i, 'src', 'heart_rate', 60 + i % 40,
+               '2026-10-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z' FROM n;`);
+      record.close();
+      const core = await start();
+      const page = await session(core);
+      const staging = async () =>
+        (await readdir(home)).filter((n) => n.startsWith(".export-"));
+
+      const request = httpRequest({
+        host: "127.0.0.1",
+        port: core.port,
+        path: "/api/export",
+        headers: { host: `127.0.0.1:${String(core.port)}`, ...page.headers },
+      });
+      request.on("error", () => undefined);
+      request.end();
+      await until(async () => (await staging()).length > 0);
+      request.destroy();
+
+      await until(async () => (await staging()).length === 0, 20_000);
+    },
+  );
+
   it("starts even when the backups folder can't be written, and says so in Settings", async () => {
     const left = join(backupsPath(home), ".staging-abc123");
     await mkdir(left, { recursive: true });
