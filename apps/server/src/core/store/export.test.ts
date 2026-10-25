@@ -1,6 +1,7 @@
 // The export on a real data folder: what is in the zip, values exactly as
 // stored (in JSON and in CSV), nothing private, and a save made during an
 // export in it whole or not at all.
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import {
   mkdir,
@@ -136,6 +137,21 @@ describe("the export on disk", () => {
       ).toEqual([]);
     },
   );
+
+  it("is refused, and Rufi goes on, when the disk fails a write while an original is read", async () => {
+    await withDocuments();
+    const child = spawn(
+      process.execPath,
+      [join(import.meta.dirname, "../../../tests/export-write-error.ts"), home],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let out = "";
+    child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
+    child.stderr.on("data", (chunk: Buffer) => (out += chunk.toString()));
+    const code = await new Promise((resolve) => child.once("exit", resolve));
+    expect(code, out).toBe(0);
+    expect(JSON.parse(out)).toEqual({ said: "ENOSPC", left: [] });
+  }, 30_000);
 
   it("is whole when the disk takes a write only in part", async () => {
     await withDocuments();

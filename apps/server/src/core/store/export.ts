@@ -372,22 +372,35 @@ async function zipFile(path: string, signal: AbortSignal | undefined) {
     mode: 0o600,
     flush: true,
   });
+  // The stream's first failure (a full disk), from its start to its close:
+  // kept for the next step, never left to end the process. A write the disk
+  // refuses later, while an original is read, lands here.
+  const failure: { error?: Error } = {};
+  out.on("error", (error) => {
+    failure.error ??= error;
+  });
   await once(out, "open");
   const hash = createHash("sha256");
   const written = { bytes: 0 };
   const pending: Uint8Array[] = [];
-  const failure: { error?: Error } = {};
   const zip = new Zip((error, chunk) => {
     if (error) failure.error = error;
     else pending.push(chunk);
   });
-  const flush = async () => {
+  const failed = () => {
     if (failure.error) throw failure.error;
+  };
+  const flush = async () => {
+    failed();
     signal?.throwIfAborted();
     for (let chunk = pending.shift(); chunk; chunk = pending.shift()) {
       hash.update(chunk);
       written.bytes += chunk.length;
-      if (!out.write(chunk)) await once(out, "drain", { signal });
+      if (!out.write(chunk)) {
+        failed();
+        await once(out, "drain", { signal });
+      }
+      failed();
     }
   };
   return {
@@ -413,6 +426,7 @@ async function zipFile(path: string, signal: AbortSignal | undefined) {
       await flush();
       out.end();
       await finished(out);
+      failed();
       return { bytes: written.bytes, sha256: hash.digest("hex") };
     },
     /**
