@@ -2,7 +2,7 @@
 // each batch into values in one transaction, in arrival order per person
 // and system, and a failure holds back only its group. Fictional people:
 // Asha (two phones) and Ravi.
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
@@ -307,5 +307,27 @@ describe("how long values are kept", () => {
     later(30 * DAY);
     expect(await device.cleanUp()).toEqual({ values: 0, batches: 1 });
     expect(valuesOf()).toMatchObject([{ external_id: "v-1", batch_id: null, value: 55 }]);
+  });
+});
+
+describe("Asha's fictional 60 days", () => {
+  it("converts to 60 values in their places: a travel day, the clock change, a day without its place, a rewrite, an odd unit", async () => {
+    const file = await readFile(join(import.meta.dirname, "../../../tests/fixtures/device/asha-resting-heart-rate.jsonl"), "utf8");
+    for (const line of file.trim().split("\n")) await got(phone, new TextEncoder().encode(line));
+    await convertAll();
+
+    expect((await device.sources()).find((one) => one.id === phone)).toMatchObject({ values: 60, skipped: 1, waiting: 0 });
+    const day = (id: string) => rows("SELECT start_at, end_at, utc_offset, time_zone, removed_at FROM device_values WHERE external_id = ?", id)[0];
+    // 27 Aug in Kolkata.
+    expect(day("5A1E0001-0000-4000-8000-000000000001")).toEqual({
+      start_at: "2026-08-26T18:30:00.000Z", end_at: "2026-08-27T18:29:59.000Z", utc_offset: 330, time_zone: "Asia/Kolkata", removed_at: null,
+    });
+    // 15 Sep, sent without its place: its local day is unknown.
+    expect(day("5A1E0020-0000-4000-8000-000000000020")).toMatchObject({ utc_offset: null, time_zone: null });
+    // 25 Oct in London: 25 hours, as the clocks went back.
+    expect(day("5A1E0060-0000-4000-8000-000000000060")).toMatchObject({
+      start_at: "2026-10-24T23:00:00.000Z", end_at: "2026-10-25T23:59:59.000Z", time_zone: "Europe/London", removed_at: T0,
+    });
+    expect(day("5A1E0061-0000-4000-8000-000000000061")).toMatchObject({ start_at: "2026-10-24T23:00:00.000Z", removed_at: null });
   });
 });
