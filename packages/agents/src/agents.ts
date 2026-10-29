@@ -164,8 +164,9 @@ export interface Agents {
    */
   send: (agent: string, input: Sent) => void;
   /**
-   * Starts handing inputs over, at start: first asks the providers about
-   * those a crash left with them, then hands over what waits.
+   * Starts handing inputs over, once the host has finished starting:
+   * first asks the providers about those a crash left with them, then
+   * hands over what waits. Nothing goes to a provider before it.
    */
   dispatch: () => Promise<void>;
   /** Lifts these inputs' holds, so they go again. */
@@ -298,13 +299,20 @@ export function createAgents(options: {
   store: AgentStore;
   adapters: readonly ProviderAdapter[];
   host: Host;
-  /** What the dispatcher couldn't put on an input. */
+  /** What the dispatcher couldn't put on an input, or a provider couldn't say. */
   onError: (error: unknown) => void;
 }): Agents {
   const { store, host } = options;
   const { db } = store;
   const adapters = new Map(options.adapters.map((a) => [a.id, a]));
   const lives = new Map<string, Live>();
+  /** A provider that can't say: its inputs stay unknown, the error told. */
+  const untold = (error: unknown) => {
+    options.onError(error);
+    return undefined;
+  };
+  /** Inputs go to providers only once dispatch has begun. */
+  let dispatching = false;
 
   const row = (id: string) =>
     db.prepare("SELECT * FROM agents WHERE id = ?").get(id) as
@@ -754,6 +762,7 @@ export function createAgents(options: {
    * while it runs, it looks again once it's done.
    */
   function pump(id: string): void {
+    if (!dispatching) return;
     const agent = get(id);
     if (!agent?.admitted) return;
     const live = liveOf(agent);
@@ -1060,11 +1069,10 @@ export function createAgents(options: {
         liveOf(agent),
         agent,
         "resume",
-      ).catch(() => undefined);
+      ).catch(untold);
       if (!conversation) return unknown;
-      const answers = await conversation
-        .reconcile(inputs)
-        .catch(() => new Map<string, Received>());
+      const answers =
+        (await conversation.reconcile(inputs).catch(untold)) ?? new Map();
       return new Map(
         inputs.map((input) => [input, answers.get(input) ?? "unknown"]),
       );
@@ -1112,13 +1120,12 @@ export function createAgents(options: {
           .map((input) => input.id);
         const conversation =
           asked.length > 0
-            ? await conversationOf(live, agent, "resume").catch(() => undefined)
+            ? await conversationOf(live, agent, "resume").catch(untold)
             : undefined;
-        const answers = conversation
-          ? await conversation
-              .reconcile(asked)
-              .catch(() => new Map<string, Received>())
-          : new Map<string, Received>();
+        const answers =
+          (conversation &&
+            (await conversation.reconcile(asked).catch(untold))) ??
+          new Map<string, Received>();
         for (const input of inputs) {
           move(
             live,
@@ -1142,6 +1149,7 @@ export function createAgents(options: {
           }
         });
       }
+      dispatching = true;
       const waiting = db
         .prepare(
           "SELECT DISTINCT agent_id AS id FROM queue WHERE state = 'waiting' AND held IS NULL",

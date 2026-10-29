@@ -72,13 +72,17 @@ const host = (): Host => ({
   claim,
 });
 
-const run = (adapter: ProviderAdapter, on: Host = host()) =>
-  createAgents({
+/** The package as Rufi starts it: nothing goes before it dispatches. */
+const run = async (adapter: ProviderAdapter, on: Host = host()) => {
+  const made = createAgents({
     store,
     adapters: [adapter],
     host: on,
     onError: (error) => errors.push(error),
   });
+  await made.dispatch();
+  return made;
+};
 
 /** The fake, with some of each conversation's calls changed. */
 const changed = (
@@ -100,7 +104,7 @@ beforeEach(async () => {
   chat = new Map();
   claims = [];
   errors = [];
-  agents = run(fake.adapter);
+  agents = await run(fake.adapter);
 });
 
 afterEach(async () => {
@@ -238,7 +242,7 @@ describe("an agent", () => {
     // Rufi restarts, and the provider no longer has the conversation.
     await agents.close();
     fake = fakeProvider({ answer: ANSWER });
-    agents = run(fake.adapter);
+    agents = await run(fake.adapter);
     agents.send(ASHA.id, note("note-2"));
     await until(() => {
       expect(states()["note-2"]).toBe("delivered");
@@ -290,7 +294,7 @@ describe("the queue", () => {
 
   it("holds a steer sent while the turn is starting, and puts it in the moment the turn is ready", async () => {
     const opened = Promise.withResolvers<undefined>();
-    agents = run(fake.adapter, {
+    agents = await run(fake.adapter, {
       ...host(),
       opening: async (agent, kind) => {
         await opened.promise;
@@ -356,7 +360,7 @@ describe("the queue", () => {
 
   it("settles an uncertain steer by what the provider can tell, and never sends one it can't tell again", async () => {
     let canTell = true;
-    agents = run(
+    agents = await run(
       changed((conversation) => ({
         reconcile: (ids) =>
           canTell
@@ -417,7 +421,7 @@ describe("a hand-over", () => {
     // Rufi committed its claim, then Rufi stopped before the package saved
     // the hand-over.
     let crashed = true;
-    agents = run(fake.adapter, {
+    agents = await run(fake.adapter, {
       ...host(),
       claim: async (asked) => {
         const answer = await claim(asked);
@@ -438,8 +442,7 @@ describe("a hand-over", () => {
 
     await agents.close();
     crashed = false;
-    agents = run(fake.adapter);
-    await agents.dispatch();
+    agents = await run(fake.adapter);
 
     await until(() => {
       expect(states()["msg-2"]).toBe("delivered");
@@ -462,7 +465,7 @@ describe("a hand-over", () => {
           ? new Promise<never>(() => undefined)
           : conversation.startTurn(start),
     }));
-    agents = run(adapter);
+    agents = await run(adapter);
     asha();
     agents.send(ASHA.id, note("note-1"));
     await until(() => {
@@ -471,8 +474,7 @@ describe("a hand-over", () => {
 
     await agents.close();
     crashed = false;
-    agents = run(adapter);
-    await agents.dispatch();
+    agents = await run(adapter);
 
     await until(() => {
       expect(agents.get(ASHA.id)?.status).toBe("done");
@@ -486,7 +488,7 @@ describe("a call to the host's tools", () => {
   it("is placed only in its turn while that is admitted and open", async () => {
     // The provider takes its time to stop, as a real one may.
     const stopping = Promise.withResolvers<undefined>();
-    agents = run(
+    agents = await run(
       changed((conversation) => ({
         stop: async (turn) => {
           await stopping.promise;
@@ -572,7 +574,7 @@ describe("Stop", () => {
   it("while a start is still opening keeps it from the provider and drops its input; what waits goes on", async () => {
     const asked = Promise.withResolvers<undefined>();
     const opened = Promise.withResolvers<undefined>();
-    agents = run(fake.adapter, {
+    agents = await run(fake.adapter, {
       ...host(),
       opening: async (agent, kind) => {
         asked.resolve(undefined);
@@ -600,7 +602,7 @@ describe("Stop", () => {
 describe("forget", () => {
   it("removes an agent, everything below it and all they kept, and lets go of their conversations", async () => {
     const closed: string[] = [];
-    agents = run(
+    agents = await run(
       changed((conversation) => ({
         close: async () => {
           closed.push(conversation.ref);
