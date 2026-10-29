@@ -160,25 +160,14 @@ function modelsOf(rows: readonly ModelInfo[]): ProviderModel[] {
   return [...models.values()];
 }
 
-interface Turn extends Pending {
+interface Turn {
+  ref: string;
+  /** Rufi stopped it: it ends stopped, however Claude ends it. */
   stopping: boolean;
   /** Claude's error in the turn, if it reported one. */
   error?: SDKAssistantMessageError;
   /** Claude's last request got no answer at all: no HTTP status. */
   unanswered?: boolean;
-}
-
-/** A turn, and when it ends (for a turn Rufi sees, once turnEnded is given). */
-interface Pending {
-  ref: string;
-  ended: Promise<void>;
-  end: () => void;
-}
-
-function pending(ref: string): Pending {
-  let end = () => {};
-  const ended = new Promise<void>((resolve) => (end = resolve));
-  return { ref, ended, end };
 }
 
 /** A steer with Claude, waiting for what Claude shows of it. */
@@ -205,7 +194,11 @@ async function openConversation(
   let pumped: Promise<void> = Promise.resolve();
   let running: Turn | undefined;
   /** A turn Claude began by itself, until its first answer names a steer. */
-  let unclaimed: Pending | undefined;
+  let unclaimed: string | undefined;
+  /** How many Stops are under way: a turn starting meanwhile is stopped too. */
+  let stops = 0;
+  /** Checks waiting for the conversation to change (see quiet). */
+  const waiting = new Set<() => void>();
   let starting:
     | { id: string; settle: (delivery: Delivery) => void }
     | undefined;
@@ -224,7 +217,7 @@ async function openConversation(
   };
 
   const begin = (turn: string, inputs: readonly string[]) => {
-    running = { ...pending(turn), stopping: false };
+    running = { ref: turn, stopping: stops > 0 };
     kept = true;
     emit({ type: "turnStarted", turn, inputs });
   };
@@ -234,7 +227,6 @@ async function openConversation(
     if (turn === undefined) return;
     running = undefined;
     emit({ type: "turnEnded", turn: turn.ref, end });
-    turn.end();
   };
 
   /** Lets the process go once nothing is running or with Claude. */
@@ -255,7 +247,7 @@ async function openConversation(
         begin(randomUUID(), [id]);
         delivered({ status: "delivered" });
       } else {
-        unclaimed = pending(randomUUID());
+        unclaimed = randomUUID();
       }
     } else if (message.type === "assistant") {
       const ids =
@@ -266,9 +258,8 @@ async function openConversation(
       if (unclaimed !== undefined && running === undefined) {
         const mine = ids.filter((id) => held.has(id));
         if (mine.length > 0) {
-          const { ref: turn, end } = unclaimed;
+          const turn = unclaimed;
           unclaimed = undefined;
-          end();
           begin(turn, mine);
           for (const id of mine) settle(id, { status: "next_turn", turn });
         }
@@ -288,7 +279,6 @@ async function openConversation(
         );
         finish(endOf(message, running, rateLimit));
       }
-      unclaimed?.end();
       unclaimed = undefined;
       idle();
     }
@@ -318,7 +308,6 @@ async function openConversation(
             },
       );
     }
-    unclaimed?.end();
     unclaimed = undefined;
     const start = starting;
     starting = undefined;
@@ -337,12 +326,34 @@ async function openConversation(
   const pump = async (current: ClaudeSession) => {
     let died: unknown;
     try {
-      for await (const message of current.messages) handle(message);
+      for await (const message of current.messages) {
+        handle(message);
+        for (const check of waiting) check();
+      }
     } catch (error) {
       died = error;
     }
     ended(current, died);
+    for (const check of waiting) check();
   };
+
+  /** Whether nothing of the conversation runs, within `ms`. */
+  const quiet = (ms: number) =>
+    new Promise<boolean>((resolve) => {
+      const done = (value: boolean) => {
+        clearTimeout(timer);
+        waiting.delete(check);
+        resolve(value);
+      };
+      const check = () => {
+        if (running === undefined && unclaimed === undefined) done(true);
+      };
+      const timer = setTimeout(() => {
+        done(false);
+      }, ms);
+      waiting.add(check);
+      check();
+    });
 
   /** The open process, after opening one and checking its sign-in. */
   const opened = async (): Promise<ClaudeSession> => {
@@ -405,32 +416,26 @@ async function openConversation(
   const interrupt = async (current: ClaudeSession) =>
     within(current.interrupt(), stopMs, "the interrupt").catch(() => undefined);
 
+  /**
+   * Stops `turn`, and whatever of the conversation runs with it: a turn
+   * Claude began by itself with its steers, also one that starts during the
+   * interrupt. Nothing of the conversation runs once it returns: the process
+   * is ended if Claude doesn't stop in time.
+   */
   const stop = async (turn: string) => {
     const current = session;
-    if (running?.ref === turn && current) {
-      const stopping = running;
-      stopping.stopping = true;
-      cancelled(await interrupt(current), turn);
-      const ends = await within(stopping.ended, stopMs, "the stop").then(
-        () => true,
-        () => false,
-      );
-      if (!ends) await closeProcess();
-      await stopping.ended;
-    } else if (
-      current &&
-      (unclaimed || [...held.values()].some((steer) => steer.turn === turn))
-    ) {
-      // The turn ended, but its steers are with Claude, or in a turn Claude
-      // began by itself that hasn't said which yet: that one ends too.
-      const own = unclaimed;
-      cancelled(await interrupt(current), turn);
-      if (own) {
-        const ends = await within(own.ended, stopMs, "the stop").then(
-          () => true,
-          () => false,
-        );
-        if (!ends) await closeProcess();
+    const targeted =
+      running?.ref === turn ||
+      unclaimed !== undefined ||
+      [...held.values()].some((steer) => steer.turn === turn);
+    if (current && targeted) {
+      stops++;
+      try {
+        if (running) running.stopping = true;
+        cancelled(await interrupt(current), turn);
+        if (!(await quiet(stopMs))) await closeProcess();
+      } finally {
+        stops--;
       }
     }
     idle();

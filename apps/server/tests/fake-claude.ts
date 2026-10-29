@@ -20,10 +20,16 @@ export function fakeClaude(
    * drops. Next turn: steers miss the running turn, which ends, and Claude
    * starts the next with them. With two, its first answer names the first
    * and its later ones both. Before an answer, it runs and never answers.
+   * Starts during interrupt: the next turn starts while an interrupt is
+   * answered. Answers during interrupt: its first answer comes then.
    */
   more: {
     connectionDrops?: true;
-    nextTurn?: "two" | "before_an_answer";
+    nextTurn?:
+      | "two"
+      | "before_an_answer"
+      | "starts_during_interrupt"
+      | "answers_during_interrupt";
     /** Claude takes the message, and starts its turn (and keeps it) this late. */
     slowStartMs?: number;
   } = {},
@@ -51,6 +57,8 @@ export function fakeClaude(
     /** Steers Claude holds and hasn't taken. */
     let queued: string[] = [];
     let closed = false;
+    /** What Claude does while it answers the next interrupt. */
+    let duringInterrupt: (() => void) | undefined;
 
     const keep = (message: string) => {
       kept.set(id, [...(kept.get(id) ?? []), message]);
@@ -183,6 +191,30 @@ export function fakeClaude(
         turn = message;
         return;
       }
+      if (more.nextTurn === "starts_during_interrupt") {
+        answer([running]);
+        keep(message);
+        duringInterrupt = () => {
+          frames.push({ type: "system", subtype: "init" });
+          turn = message;
+        };
+        return;
+      }
+      if (more.nextTurn === "answers_during_interrupt") {
+        answer([running]);
+        keep(message);
+        frames.push({ type: "system", subtype: "init" });
+        turn = message;
+        duringInterrupt = () => {
+          frames.push({
+            type: "assistant",
+            message: { content: [] },
+            user_message_uuid: message,
+            user_message_uuids: [message],
+          });
+        };
+        return;
+      }
       switch (script.steer ?? "takes") {
         case "takes":
           keep(message);
@@ -246,6 +278,8 @@ export function fakeClaude(
           { value: "claude-fictional-0", displayName: "Fictional 0" },
         ]),
       interrupt: (): Promise<unknown> => {
+        duringInterrupt?.();
+        duringInterrupt = undefined;
         if (script.cancelLost === true) return new Promise(() => {});
         const cancelled = queued;
         queued = [];

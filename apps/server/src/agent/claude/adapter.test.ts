@@ -194,6 +194,48 @@ describe("steers Claude takes into a turn of its own", () => {
   );
 });
 
+describe("Stop", () => {
+  it.each([
+    ["starts its own turn", "starts_during_interrupt", "uncertain"],
+    ["answers in its own turn", "answers_during_interrupt", "next_turn"],
+  ] as const)(
+    "leaves nothing running when Claude %s during the interrupt",
+    async (_, nextTurn, steered) => {
+      const fake = fakeClaude(
+        { turn: "runs", ignoresInterrupt: true },
+        { nextTurn },
+      );
+      const { adapter, conversation, start, events, first } = await onFake(
+        fake.query,
+        fake.sessions,
+        { stopMs: 50 },
+      );
+      expect(await start("message-1")).toEqual({ status: "delivered" });
+      const turn = await first();
+      const outcome = conversation.steer({
+        input: { id: "steer-1", parts: ["And the date?"] },
+        turn,
+      });
+      await vi.waitFor(() => {
+        expect(events.some((event) => event.type === "turnEnded")).toBe(true);
+      });
+      await conversation.stop(turn);
+
+      expect(fake.closes()).toBe(1);
+      expect((await outcome).status).toBe(steered);
+      // Every turn reported as started is reported as ended.
+      const started = events.flatMap((event) =>
+        event.type === "turnStarted" ? [event.turn] : [],
+      );
+      const ended = events.flatMap((event) =>
+        event.type === "turnEnded" ? [event.turn] : [],
+      );
+      expect(ended).toEqual(started);
+      await adapter.close();
+    },
+  );
+});
+
 describe("a message Claude is slow to start", () => {
   it("is uncertain, never not received, and can't start later unseen", async () => {
     const fake = fakeClaude({}, { slowStartMs: 300 });
