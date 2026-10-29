@@ -2,10 +2,10 @@
 // Codex (ADR 0016): the AI's file tools write only in its folder, and its
 // commands there and in the temp folders; both read anything but Rufi's
 // unreadable paths (the record's database, its backups, the core's secret),
-// and its commands reach the internet. Claude's sandbox
-// holds its commands; its permission rules hold its own file tools, which
-// the sandbox doesn't cover. Nothing waits for an approval: what the rules
-// don't allow is refused (`dontAsk`), and no command can leave the sandbox.
+// and its commands reach the internet. Claude's sandbox holds its commands;
+// its permission rules hold its own file tools, which the sandbox doesn't
+// cover. Nothing waits for an approval: what the rules don't allow is
+// refused (`dontAsk`), and no command can leave the sandbox.
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -29,7 +29,10 @@ const ALLOWED = [
 export interface ClaudeLockDown {
   permissionMode: NonNullable<Options["permissionMode"]>;
   settings: Pick<Settings, "sandbox" | "permissions">;
-  /** For the AI's commands: caches in its folder, the only place they write. */
+  /**
+   * For the AI's commands: their caches in its folder (on macOS, pip's and
+   * matplotlib's own are in HOME, which they can't write).
+   */
   env: Record<string, string>;
 }
 
