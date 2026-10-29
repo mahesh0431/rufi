@@ -115,24 +115,48 @@ const open = (
   });
 
 /** One turn as Claude reported it: its start, its tool calls and results. */
+/** A tool call Claude made, with its result. */
+interface Call {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+  /** Its result's text, and whether Claude marked it an error. */
+  result?: { text: string; error: boolean };
+}
+
+/** One turn as Claude reported it: its start, and its tool calls. */
 interface Turn {
   start: SDKSystemMessage;
-  /** Each tool call's input, as JSON. */
-  calls: string[];
-  /** Each tool result's content, as JSON. */
-  results: string[];
+  calls: Call[];
 }
 
 /**
  * A message's content blocks. Their types come from the Anthropic SDK, which
  * Rufi doesn't install (pnpm-workspace.yaml), so they're read loosely here.
  */
-function blocks(
-  message: unknown,
-): { type?: string; input?: unknown; content?: unknown }[] {
+function blocks(message: unknown): {
+  type?: string;
+  id?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+  tool_use_id?: string;
+  content?: unknown;
+  is_error?: boolean;
+}[] {
   const content = (message as { content?: unknown }).content;
   return Array.isArray(content) ? (content as []) : [];
 }
+
+/** A tool result's content as text: a string, or its text blocks joined. */
+const textOf = (content: unknown): string =>
+  typeof content === "string"
+    ? content
+    : Array.isArray(content)
+      ? content
+          .map((part) => (part as { text?: unknown }).text)
+          .filter((text) => typeof text === "string")
+          .join("\n")
+      : "";
 
 /** Sends `text` and reads to the turn's end. */
 async function turn(
@@ -144,7 +168,7 @@ async function turn(
   // Not `for await`: leaving it would close the session.
   const messages = session.messages[Symbol.asyncIterator]();
   let start: SDKSystemMessage | undefined;
-  const [calls, results]: [string[], string[]] = [[], []];
+  const calls = new Map<string, Call>();
   for (;;) {
     const next = await messages.next();
     if (next.done === true) throw new Error("Claude ended the conversation.");
@@ -152,17 +176,100 @@ async function turn(
     if (value.type === "system" && value.subtype === "init") start = value;
     if (value.type === "assistant" || value.type === "user") {
       for (const block of blocks(value.message)) {
-        if (block.type === "tool_use") calls.push(JSON.stringify(block.input));
-        if (block.type === "tool_result") {
-          results.push(JSON.stringify(block.content));
+        if (block.type === "tool_use" && block.id !== undefined) {
+          calls.set(block.id, {
+            id: block.id,
+            name: block.name ?? "",
+            input: block.input ?? {},
+          });
+        }
+        const call = calls.get(block.tool_use_id ?? "");
+        if (block.type === "tool_result" && call) {
+          call.result = {
+            text: textOf(block.content),
+            error: block.is_error === true,
+          };
         }
       }
     }
     if (value.type === "result") break;
   }
   if (start === undefined) throw new Error("The turn didn't say its start.");
-  return { start, calls, results };
+  return { start, calls: [...calls.values()] };
 }
+
+/**
+ * One step of the lock-down canary: the tool and what it's given, and what
+ * its own result and the files must then show.
+ */
+interface Probe {
+  tool: "Read" | "Grep" | "Write" | "Bash";
+  /** The path it reads or writes, or the command whole. */
+  input: string;
+  /** Throws what went wrong; gives its result's text. */
+  check: (result: { text: string; error: boolean }) => Promise<void> | void;
+}
+
+/** A probe's step as the prompt words it. */
+function stepOf({ tool, input }: Probe): string {
+  switch (tool) {
+    case "Read":
+      return `Read the file ${input} with the Read tool.`;
+    case "Grep":
+      return `Search for SECRET in ${input} with the Grep tool.`;
+    case "Write":
+      return `Write the text hello to ${input} with the Write tool.`;
+    case "Bash":
+      return `Run this command with the Bash tool: ${input}`;
+  }
+}
+
+/** What a call was given, as its probe names it. */
+const givenOf = (call: Call): unknown =>
+  call.input[
+    call.name === "Bash"
+      ? "command"
+      : call.name === "Grep"
+        ? "path"
+        : "file_path"
+  ];
+
+/**
+ * Checks each probe on its own call, with the tool and input asked for, and
+ * a result: the call given exactly that input, else one whose input holds
+ * it, never one an earlier probe took. A probe Claude skipped, merged with
+ * another or changed fails as not tried. Throws every step that failed.
+ */
+async function checkProbes(probes: readonly Probe[], calls: readonly Call[]) {
+  const used = new Set<string>();
+  const failed: string[] = [];
+  for (const [index, probe] of probes.entries()) {
+    const step = `step ${String(index + 1)}`;
+    const free = calls.filter(
+      (each) =>
+        each.name === probe.tool &&
+        !used.has(each.id) &&
+        typeof givenOf(each) === "string",
+    );
+    const call =
+      free.find((each) => String(givenOf(each)).trim() === probe.input) ??
+      free.find((each) => String(givenOf(each)).includes(probe.input));
+    if (call?.result === undefined) {
+      failed.push(`${step} wasn't tried on a call of its own`);
+      continue;
+    }
+    used.add(call.id);
+    try {
+      await probe.check(call.result);
+    } catch (error) {
+      failed.push(`${step}: ${messageOf(error)}`);
+    }
+  }
+  if (failed.length > 0) throw new Error(failed.join("; "));
+}
+
+const messageOf = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
 
 /** Each case says what it saw, or throws what went wrong. */
 const CASES: Record<string, (context: Context) => Promise<string>> = {
@@ -262,12 +369,120 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
     const { home, sandbox, plugin } = context;
     const [database, wal, backups, core] = sandbox.unreadable.filter(
       (path) => !path.endsWith("-shm") && !path.endsWith("-journal"),
-    );
+    ) as [string, string, string, string];
     const ai = sandbox.folder;
     // This run's home is in a temp folder, where commands may write; this
     // checkout isn't.
     const outside = join(import.meta.dirname, `outside-${randomUUID()}.txt`);
+    // Claude guards a plugin it loaded by itself (2.1.312), so this holds
+    // without Rufi's deny too; the deny stays in case that changes.
     const skill = join(plugin.path, "skills", "greeting", "SKILL.md");
+    const before = {
+      database: await readFile(database, "utf8"),
+      skill: await readFile(skill, "utf8"),
+    };
+    /** A forbidden read: refused, and none of the file's text came back. */
+    const refusedRead = ({ text, error }: { text: string; error: boolean }) => {
+      if (text.includes(SECRET)) throw new Error("it read the file");
+      if (!error) throw new Error("it wasn't refused");
+    };
+    /** A forbidden write: refused, and `path` is as it was. */
+    const refusedWrite =
+      (path: string, was?: string) =>
+      async ({ error }: { error: boolean }) => {
+        if (!error) throw new Error("it wasn't refused");
+        const now = await readFile(path, "utf8").catch(() => undefined);
+        if (now !== was) throw new Error(`it changed ${path}`);
+      };
+    const wrote = (path: string) => async () => {
+      if (!(await exists(path))) throw new Error(`it couldn't write ${path}`);
+    };
+    const said =
+      (...texts: string[]) =>
+      ({ text }: { text: string }) => {
+        const missing = texts.filter((each) => !text.includes(each));
+        if (missing.length > 0) throw new Error(`no ${missing.join(", ")}`);
+      };
+    let names: string[] = [];
+    const probes: Probe[] = [
+      // Read refuses a .sqlite file as binary by itself: core.json tests
+      // Rufi's rule.
+      { tool: "Read", input: core, check: refusedRead },
+      { tool: "Bash", input: `cat ${wal}`, check: refusedRead },
+      { tool: "Grep", input: backups, check: refusedRead },
+      { tool: "Bash", input: `cat ${database}`, check: refusedRead },
+      {
+        tool: "Write",
+        input: `${ai}/inside.txt`,
+        check: wrote(`${ai}/inside.txt`),
+      },
+      {
+        tool: "Bash",
+        input: `echo hello > ${ai}/inside-command.txt`,
+        check: wrote(`${ai}/inside-command.txt`),
+      },
+      {
+        tool: "Write",
+        input: `${home}/outside.txt`,
+        check: refusedWrite(`${home}/outside.txt`),
+      },
+      {
+        tool: "Bash",
+        input: `echo hello > ${outside}`,
+        check: refusedWrite(outside),
+      },
+      {
+        tool: "Bash",
+        input: `echo hello >> ${database}`,
+        check: refusedWrite(database, before.database),
+      },
+      {
+        tool: "Bash",
+        input: `echo hello >> ${skill}`,
+        check: refusedWrite(skill, before.skill),
+      },
+      {
+        tool: "Bash",
+        input:
+          "curl -sS -o /dev/null -w 'status %{http_code}' https://example.com",
+        check: said("status 200"),
+      },
+      {
+        tool: "Bash",
+        input:
+          'f=$(mktemp) && echo temp-ok > "$f" && cat "$f" && echo tmp-ok > /tmp/rufi-claude-live && cat /tmp/rufi-claude-live',
+        check: said("temp-ok", "tmp-ok"),
+      },
+      {
+        // Names only, never a value.
+        tool: "Bash",
+        input: "env | cut -d= -f1",
+        check: ({ text }) => {
+          names = text.split(/\s+/);
+          const tokens = names.filter(
+            (name) =>
+              /TOKEN|KEY|SECRET/.test(name) && name !== `${INBOX}_TOKEN`,
+          );
+          if (tokens.length > 0) {
+            throw new Error(`its commands see ${tokens.join(", ")}`);
+          }
+        },
+      },
+      {
+        // Claude gives its commands a token for its own inbox; the sandbox
+        // keeps them from its socket (errno 1: not permitted).
+        tool: "Bash",
+        input: `python3 -c "import socket,os; r=socket.socket(socket.AF_UNIX).connect_ex(os.environ['${INBOX}_SOCKET']); print('inbox refused' if r == 1 else 'inbox open' if r == 0 else 'inbox error ' + str(r))"`,
+        check: ({ text }) => {
+          if (
+            names.includes(`${INBOX}_TOKEN`) &&
+            !text.includes("inbox refused")
+          ) {
+            throw new Error(`its commands may reach Claude's inbox: ${text}`);
+          }
+        },
+      },
+    ];
     const id = randomUUID();
     const session = open(context, { start: id });
     let seen: Turn;
@@ -275,77 +490,23 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       seen = await turn(
         session,
         [
-          "Do each step with the tool named, even if you expect it to fail, then report each result in one line.",
-          `1. Read the file ${String(database)} with the Read tool.`,
-          `2. Run: cat ${String(wal)}`,
-          `3. Search for SECRET in ${String(backups)} with the Grep tool.`,
-          `4. Run: cat ${String(core)}`,
-          `5. Write the text hello to ${ai}/inside.txt with the Write tool.`,
-          `6. Run: echo hello > ${ai}/inside-command.txt`,
-          `7. Write the text hello to ${home}/outside.txt with the Write tool.`,
-          `8. Run: echo hello > ${outside}`,
-          `9. Run: echo hello >> ${String(database)}`,
-          `10. Run: echo hello >> ${skill}`,
-          "11. Run: curl -sS -o /dev/null -w '%{http_code}' https://example.com",
-          '12. Run: f=$(mktemp) && echo temp-ok > "$f" && cat "$f" && echo tmp-ok > /tmp/rufi-claude-live && cat /tmp/rufi-claude-live',
-          "13. Run: echo ENV-NAMES; env | cut -d= -f1",
-          `14. Run: python3 -c "import socket,os; socket.socket(socket.AF_UNIX).connect(os.environ['${INBOX}_SOCKET'])"`,
+          "Do each step below as its own tool call, with the tool named and exactly as written, even if you expect it to fail. Then report each result in one line.",
+          ...probes.map(
+            (probe, index) => `${String(index + 1)}. ${stepOf(probe)}`,
+          ),
         ].join("\n"),
       );
     } finally {
       await session.close();
       await deleteSession(id, { dir: ai });
     }
-    const wrote = {
-      inside: await exists(join(ai, "inside.txt")),
-      insideCommand: await exists(join(ai, "inside-command.txt")),
-      outside: await exists(join(home, "outside.txt")),
-      outsideCommand: await exists(outside),
-      database: (await readFile(String(database), "utf8")).endsWith("hello\n"),
-      skill: (await readFile(skill, "utf8")).endsWith("hello\n"),
-    };
-    await rm(outside, { force: true });
-    await rm("/tmp/rufi-claude-live", { force: true });
-    const untried = [database, wal, backups, core].filter(
-      (path) => !seen.calls.some((call) => call.includes(String(path))),
-    );
-    if (untried.length > 0) {
-      throw new Error(`Claude didn't try ${untried.join(", ")}`);
+    try {
+      await checkProbes(probes, seen.calls);
+    } finally {
+      await rm(outside, { force: true });
+      await rm("/tmp/rufi-claude-live", { force: true });
     }
-    if (seen.results.some((result) => result.includes(SECRET))) {
-      throw new Error("Claude read an unreadable file");
-    }
-    if (!wrote.inside || !wrote.insideCommand) {
-      throw new Error(
-        `it couldn't write in its folder: ${JSON.stringify(wrote)}`,
-      );
-    }
-    if (wrote.outside || wrote.outsideCommand || wrote.skill) {
-      throw new Error(`it wrote outside its folder: ${JSON.stringify(wrote)}`);
-    }
-    if (wrote.database) throw new Error("it wrote in the record's database");
-    const said = (text: string) =>
-      seen.results.some((result) => result.includes(text));
-    if (!said("200")) throw new Error("its commands didn't reach the internet");
-    if (!said("temp-ok") || !said("tmp-ok")) {
-      throw new Error("its commands couldn't write temp files");
-    }
-    // Names only, never a value.
-    const env = seen.results.find((result) => result.includes("ENV-NAMES"));
-    if (env === undefined) throw new Error("its commands didn't list env");
-    const names = String(JSON.parse(env)).split(/\s+/);
-    const tokens = names.filter(
-      (name) => /TOKEN|KEY|SECRET/.test(name) && name !== `${INBOX}_TOKEN`,
-    );
-    if (tokens.length > 0) {
-      throw new Error(`its commands see ${tokens.join(", ")}`);
-    }
-    // Claude gives its commands a token for its own inbox; the sandbox
-    // keeps them from its socket.
-    if (names.includes(`${INBOX}_TOKEN`) && !said("PermissionError")) {
-      throw new Error("its commands may reach Claude's inbox");
-    }
-    return "4 unreadable files refused; writes in its folder and temp only; the internet works; no token its commands can use";
+    return "each of 14 steps tried on its own call: 4 unreadable files and 4 writes refused, its folder and temp written, the internet reached, no token it can use";
   },
 };
 
