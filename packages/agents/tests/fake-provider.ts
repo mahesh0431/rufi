@@ -1,7 +1,9 @@
 // A provider in memory, for the package's own tests: it stands in for an
 // adapter and keeps the boundary's contract (tests/contract.ts) as the real
 // ones do. What it does is set by a Script, which a test may change at any
-// time, and a turn that runs ends when the test ends it.
+// time, and a turn that runs ends when the test ends it. A steer it holds
+// stays handing over, past its turn's end, until a Stop or a close settles
+// it.
 import { randomUUID } from "node:crypto";
 import {
   Missing,
@@ -29,17 +31,22 @@ export interface FakeProvider {
   received: (ref: string) => readonly Input[];
 }
 
-interface Running {
+/** A steer the provider holds, not taken, for the turn it was sent to. */
+interface Held {
+  input: Input;
   turn: string;
-  /** Steers the provider holds until the turn ends. */
-  held: { input: Input; answer: (outcome: SteerOutcome) => void }[];
+  answer: (outcome: SteerOutcome) => void;
 }
 
 /** A conversation as the provider keeps it, across opens. */
 interface Kept {
   received: Input[];
-  /** The open handle's events and running turn, while it is open. */
-  open?: { onEvent: (event: ProviderEvent) => void; running?: Running };
+  /** The open handle's events, running turn and held steers. */
+  open?: {
+    onEvent: (event: ProviderEvent) => void;
+    running?: string;
+    held: Held[];
+  };
 }
 
 const MODELS: readonly ProviderModel[] = [
@@ -49,6 +56,7 @@ const MODELS: readonly ProviderModel[] = [
     efforts: ["low", "medium", "high"],
     defaultEffort: "medium",
   },
+  { id: "fake-small", name: "Fake small model", efforts: [] },
 ];
 
 export function fakeProvider(
@@ -70,14 +78,13 @@ export function fakeProvider(
       family: options.family ?? "openai",
       models: () => Promise.resolve(options.models ?? MODELS),
       open: (open) => Promise.resolve().then(() => conversation(open)),
+      delete: (ref) => {
+        kept.delete(ref);
+        return Promise.resolve();
+      },
       usage: () => Promise.resolve([]),
       close: () => {
-        for (const [ref, conversation] of kept) {
-          if (conversation.open?.running) {
-            finish(ref, { status: "stopped" });
-          }
-          delete conversation.open;
-        }
+        for (const ref of kept.keys()) letGo(ref);
         return Promise.resolve();
       },
     },
@@ -97,14 +104,14 @@ export function fakeProvider(
     if (!open) throw new Error("The conversation isn't open.");
     turns += 1;
     const turn = `turn-${String(turns)}`;
-    open.running = { turn, held: [] };
+    open.running = turn;
     emit(ref, { type: "turnStarted", turn, inputs });
     return turn;
   }
 
   /** What a turn does once it has started, after the start has answered. */
   function run(ref: string, turn: string): void {
-    const now = () => kept.get(ref)?.open?.running?.turn === turn;
+    const now = () => kept.get(ref)?.open?.running === turn;
     setTimeout(() => {
       if (!now()) return;
       switch (fake.script.turn ?? "answers") {
@@ -164,21 +171,47 @@ export function fakeProvider(
     });
   }
 
-  /** The running turn ends: told once; a steer it held goes with it. */
+  /** The running turn ends, told once; the steers it holds stay held. */
   function finish(ref: string, end: TurnEnd): void {
     const open = kept.get(ref)?.open;
-    const running = open?.running;
-    if (!open || !running) return;
+    const turn = open?.running;
+    if (!open || turn === undefined) return;
     delete open.running;
-    for (const { input, answer: reply } of running.held) {
-      if (end.status === "done") {
-        kept.get(ref)?.received.push(input);
-        reply({ status: "delivered" });
-      } else {
-        reply({ status: "not_delivered", text: "The turn ended first." });
-      }
+    emit(ref, { type: "turnEnded", turn, end });
+  }
+
+  /**
+   * The provider cancels the steers it holds for `turn`, and says so,
+   * unless its answer is lost.
+   */
+  function cancel(ref: string, turn: string): void {
+    const open = kept.get(ref)?.open;
+    if (!open) return;
+    for (const held of open.held.filter((one) => one.turn === turn)) {
+      open.held.splice(open.held.indexOf(held), 1);
+      held.answer(
+        fake.script.cancelLost
+          ? {
+              status: "uncertain",
+              text: "The fake provider's answer was lost.",
+            }
+          : {
+              status: "not_delivered",
+              text: "The fake provider cancelled it.",
+            },
+      );
     }
-    emit(ref, { type: "turnEnded", turn: running.turn, end });
+  }
+
+  /** The conversation is let go of: what it still holds may have arrived. */
+  function letGo(ref: string): void {
+    const open = kept.get(ref)?.open;
+    if (!open) return;
+    finish(ref, { status: "stopped" });
+    for (const held of open.held.splice(0)) {
+      held.answer({ status: "uncertain", text: "The conversation closed." });
+    }
+    delete kept.get(ref)?.open;
   }
 
   function conversation(options: OpenOptions): Conversation {
@@ -191,7 +224,10 @@ export function fakeProvider(
     const ref = options.resume ?? randomUUID();
     const mine: Kept = kept.get(ref) ?? { received: [] };
     kept.set(ref, mine);
-    const open: NonNullable<Kept["open"]> = { onEvent: options.onEvent };
+    const open: NonNullable<Kept["open"]> = {
+      onEvent: options.onEvent,
+      held: [],
+    };
     mine.open = open;
     const isOpen = () => mine.open === open;
     const running = () => (isOpen() ? open.running : undefined);
@@ -239,8 +275,7 @@ export function fakeProvider(
       },
 
       steer: ({ input, turn }): Promise<SteerOutcome> => {
-        const now = running();
-        if (now?.turn !== turn) {
+        if (running() !== turn) {
           return Promise.resolve({
             status: "not_delivered",
             text: "That turn has ended.",
@@ -257,8 +292,13 @@ export function fakeProvider(
               text: "The fake provider's reply was lost.",
             });
           case "holds":
+          case "holds_past_end":
             return new Promise((resolve) => {
-              now.held.push({ input, answer: resolve });
+              open.held.push({ input, turn, answer: resolve });
+              // As when the turn's result comes before the steer is taken.
+              if (fake.script.steer === "holds_past_end") {
+                finish(ref, { status: "done", answer });
+              }
             });
           case "starts_next": {
             finish(ref, { status: "done", answer });
@@ -272,7 +312,9 @@ export function fakeProvider(
 
       // Whether or not it obeys an interrupt, the fake's turn ends at once.
       stop: (turn) => {
-        if (running()?.turn === turn) finish(ref, { status: "stopped" });
+        if (!isOpen()) return Promise.resolve();
+        if (running() === turn) finish(ref, { status: "stopped" });
+        cancel(ref, turn);
         return Promise.resolve();
       },
 
@@ -290,7 +332,7 @@ export function fakeProvider(
 
       placeCall: (meta) => {
         const fields = (meta ?? {}) as Record<string, unknown>;
-        const turn = running()?.turn;
+        const turn = running();
         const call = fields["fake/call"];
         return turn !== undefined &&
           fields["fake/turn"] === turn &&
@@ -300,8 +342,7 @@ export function fakeProvider(
       },
 
       close: () => {
-        if (running()) finish(ref, { status: "stopped" });
-        if (isOpen()) delete mine.open;
+        if (isOpen()) letGo(ref);
         return Promise.resolve();
       },
     };
