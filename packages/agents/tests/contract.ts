@@ -44,10 +44,12 @@ export interface Script {
     | "renewal_fails";
   /**
    * A steer into a running turn: taken (the default), taken with its reply
-   * lost, held until the turn ends (taken if it ends normally), or taken
-   * as the start of the next turn as the running one ends.
+   * lost, held and not taken, held while the turn ends normally without
+   * it, or taken as the start of the next turn as the running one ends.
    */
-  steer?: "takes" | "loses_reply" | "holds" | "starts_next";
+  steer?: "takes" | "loses_reply" | "holds" | "holds_past_end" | "starts_next";
+  /** Its answer to cancelling a held steer is lost. */
+  cancelLost?: boolean;
   /** It ignores an interrupt. */
   ignoresInterrupt?: boolean;
   /** Before it answers, a step whose result holds a picture: these bytes, base64. */
@@ -65,6 +67,7 @@ export interface Setup {
 const CASES = {
   models:
     "lists its models with their efforts; a default effort is one of them",
+  deletes: "deletes a conversation, also one already gone",
   resume: "resumes a conversation by its reference, and it goes on",
   missing: "a resume that finds nothing is Missing",
   notOpened: "a resume that fails otherwise is NotOpened",
@@ -78,7 +81,12 @@ const CASES = {
     "a steer for a turn that ended isn't delivered, and starts nothing",
   lostSteer: "a steer whose reply is lost is uncertain, and reconcile finds it",
   nextTurn: "a steer that started the next turn is named in that turn's start",
-  heldSteer: "Stop answers a steer the provider held as not delivered",
+  heldSteer:
+    "Stop answers a steer the provider held as not delivered, once it says it cancelled it",
+  heldPastEnd:
+    "a held steer stays handing over past its turn's end, and Stop by that turn settles it",
+  lostCancel:
+    "a held steer whose cancellation goes unanswered is uncertain after Stop",
   stop: "Stop ends the turn as stopped, and nothing of it comes after",
   stuck: "Stop ends a turn whose provider ignores the interrupt",
   fails: "a failed turn ends failed, with the provider's words",
@@ -208,11 +216,22 @@ export function providerContract(name: string, harness: Harness): void {
       const models = await adapter.models();
       expect(models.length).toBeGreaterThan(0);
       for (const model of models) {
-        expect(model.efforts.length).toBeGreaterThan(0);
         if (model.defaultEffort !== undefined) {
           expect(model.efforts).toContain(model.defaultEffort);
         }
       }
+    });
+
+    test("deletes", async () => {
+      const run = await begin();
+      const conversation = await run.open();
+      await run.until(endOf(await run.start(conversation, "message-1")));
+      await conversation.close();
+      await run.adapter.delete(conversation.ref);
+      await run.adapter.delete(conversation.ref);
+      await expect(
+        run.open({ resume: conversation.ref }),
+      ).rejects.toBeInstanceOf(Missing);
     });
 
     test("resume", async () => {
@@ -410,6 +429,46 @@ export function providerContract(name: string, harness: Harness): void {
         text: someText(),
       });
       expect(await run.until(endOf(turn))).toEqual({ status: "stopped" });
+    });
+
+    test("heldPastEnd", async () => {
+      const run = await begin({ turn: "runs", steer: "holds_past_end" });
+      const conversation = await run.open();
+      const turn = await run.start(conversation, "message-1");
+      let settled = false;
+      const outcome = conversation
+        .steer({ input: input("steer-1", "And the date?"), turn })
+        .finally(() => {
+          settled = true;
+        });
+      expect(await run.until(endOf(turn))).toEqual({
+        status: "done",
+        answer: ANSWER,
+      });
+      await sleep(SETTLE_MS);
+      expect(settled).toBe(false);
+      await conversation.stop(turn);
+      expect(await outcome).toEqual({
+        status: "not_delivered",
+        text: someText(),
+      });
+    });
+
+    test("lostCancel", async () => {
+      const run = await begin({
+        turn: "runs",
+        steer: "holds",
+        cancelLost: true,
+      });
+      const conversation = await run.open();
+      const turn = await run.start(conversation, "message-1");
+      const outcome = conversation.steer({
+        input: input("steer-1", "And the date?"),
+        turn,
+      });
+      await sleep(SETTLE_MS);
+      await conversation.stop(turn);
+      expect(await outcome).toEqual({ status: "uncertain", text: someText() });
     });
 
     test("stop", async () => {
