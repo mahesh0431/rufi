@@ -565,9 +565,10 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       },
       {
         // Claude gives its commands a token for its own inbox; the sandbox
-        // keeps them from its socket (errno 1: not permitted).
+        // keeps them from its socket (errno 1: not permitted). The probe is
+        // a file, so the prompt holds only a plain command to run.
         tool: "Bash",
-        input: `python3 -c "import socket,os; r=socket.socket(socket.AF_UNIX).connect_ex(os.environ['${INBOX}_SOCKET']); print('inbox refused' if r == 1 else 'inbox open' if r == 0 else 'inbox error ' + str(r))"`,
+        input: `python3 '${ai}/probe.py'`,
         check: ({ text }) => {
           if (
             names.includes(`${INBOX}_TOKEN`) &&
@@ -578,6 +579,10 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
         },
       },
     ];
+    await writeFile(
+      join(ai, "probe.py"),
+      `import socket, os\nr = socket.socket(socket.AF_UNIX).connect_ex(os.environ["${INBOX}_SOCKET"])\nprint("inbox refused" if r == 1 else "inbox open" if r == 0 else f"inbox error {r}")\n`,
+    );
     const id = randomUUID();
     const session = open(context, { start: id });
     let seen: Turn;
