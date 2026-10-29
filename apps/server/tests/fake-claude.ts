@@ -13,7 +13,11 @@ import type { ClaudeSessions } from "../src/agent/claude/adapter.ts";
 /** Longer than the adapter waits for a turn to start, in the tests. */
 const SILENT_MS = 1_000;
 
-export function fakeClaude(script: Script): {
+export function fakeClaude(
+  script: Script,
+  /** Beyond the contract's scripts: the turn's network drops. */
+  more: { connectionDrops?: true } = {},
+): {
   query: typeof query;
   sessions: ClaudeSessions;
 } {
@@ -77,6 +81,15 @@ export function fakeClaude(script: Script): {
       keep(message);
       frames.push({ type: "system", subtype: "init" });
       turn = message;
+      if (more.connectionDrops === true) {
+        frames.push({
+          type: "system",
+          subtype: "api_retry",
+          error_status: null,
+        });
+        fail("server_error", "API Error: Connection refused (ECONNREFUSED)");
+        return;
+      }
       switch (script.turn ?? "answers") {
         case "answers":
         case "renews":

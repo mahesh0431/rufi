@@ -165,6 +165,8 @@ interface Turn {
   stopping: boolean;
   /** Claude's error in the turn, if it reported one. */
   error?: SDKAssistantMessageError;
+  /** Claude's last request got no answer at all: no HTTP status. */
+  unanswered?: boolean;
   /** Resolves once its turnEnded is given. */
   ended: Promise<void>;
   end: () => void;
@@ -237,6 +239,8 @@ async function openConversation(
   const handle = (message: SDKMessage) => {
     if (message.type === "rate_limit_event") {
       rateLimit = message.rate_limit_info;
+    } else if (message.type === "system" && message.subtype === "api_retry") {
+      if (running) running.unanswered = message.error_status === null;
     } else if (message.type === "system" && message.subtype === "init") {
       if (starting) {
         const { id, settle: delivered } = starting;
@@ -262,7 +266,8 @@ async function openConversation(
         }
       }
       if (running) {
-        if (message.error !== undefined) running.error = message.error;
+        if (message.error === undefined) running.unanswered = false;
+        else running.error = message.error;
         settleTaken(ids, running.ref);
       }
     } else if (message.type === "result") {
@@ -522,7 +527,7 @@ function endOf(
   const text =
     result.subtype === "success" ? result.result : result.errors.join("\n");
   if (!result.is_error) return { status: "done", answer: text };
-  const reason = reasonOf(turn.error, rateLimit);
+  const reason = reasonOf(turn, rateLimit);
   const resetsAt =
     reason === "usage_limit" && rateLimit?.resetsAt !== undefined
       ? new Date(rateLimit.resetsAt * 1000).toISOString()
@@ -536,7 +541,7 @@ function endOf(
 }
 
 function reasonOf(
-  error: SDKAssistantMessageError | undefined,
+  { error, unanswered }: Turn,
   rateLimit: SDKRateLimitInfo | undefined,
 ): FailReason {
   if (error === "authentication_failed" || error === "oauth_org_not_allowed") {
@@ -545,6 +550,9 @@ function reasonOf(
   if (error === "rate_limit") {
     return rateLimit?.status === "rejected" ? "usage_limit" : "rate_limit";
   }
+  // A dropped network gives no HTTP status (ECONNREFUSED, behind a dead
+  // proxy, on 2.1.312).
+  if (unanswered === true) return "connection";
   return "other";
 }
 

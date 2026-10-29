@@ -5,6 +5,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { providerContract } from "@rufi/agents/contract";
+import type { ProviderEvent } from "@rufi/agents/provider";
 import { describe, expect, it, vi } from "vitest";
 import { fakeClaude } from "../../../tests/fake-claude.ts";
 import { claudeAdapter } from "./adapter.ts";
@@ -44,44 +45,58 @@ providerContract("Claude", {
   },
 });
 
+/** The adapter on a scripted Claude, and how to open a conversation. */
+async function onFake(
+  query: ReturnType<typeof fakeClaude>["query"],
+  sessions: ReturnType<typeof fakeClaude>["sessions"],
+) {
+  const folder = await mkdtemp(join(tmpdir(), "rufi-claude-adapter-"));
+  const adapter = claudeAdapter({
+    claude: { path: "/fictional/claude", version: "2.1.312" },
+    sandbox: { folder, unreadable: [] },
+    env: {},
+    plugin: { path: folder, skills: [] },
+    query,
+    sessions,
+  });
+  const events: ProviderEvent[] = [];
+  const conversation = await adapter.open({
+    cwd: folder,
+    instructions: "Answer briefly.",
+    model: "claude-fictional-1",
+    effort: "low",
+    tools: { url: "http://127.0.0.1:9/mcp", key: "key-1" },
+    onEvent: (event) => {
+      events.push(event);
+    },
+  });
+  const start = (id: string) =>
+    conversation.startTurn({
+      input: { id, parts: ["What was Asha's last TSH?"] },
+      model: "claude-fictional-1",
+      effort: "low",
+    });
+  const ends = () =>
+    events.flatMap((event) => (event.type === "turnEnded" ? [event.end] : []));
+  return { adapter, conversation, start, ends };
+}
+
 describe("Claude's process for a conversation", () => {
   it("closes when a turn ends, and the next turn carries the conversation on in a new one", async () => {
-    const folder = await mkdtemp(join(tmpdir(), "rufi-claude-adapter-"));
     const fake = fakeClaude({});
     const opens: { sessionId?: string; resume?: string }[] = [];
     const query = ((args: Parameters<typeof fake.query>[0]) => {
       opens.push({ ...args.options });
       return fake.query(args);
     }) as typeof fake.query;
-    const adapter = claudeAdapter({
-      claude: { path: "/fictional/claude", version: "2.1.312" },
-      sandbox: { folder, unreadable: [] },
-      env: {},
-      plugin: { path: folder, skills: [] },
+    const { adapter, conversation, start, ends } = await onFake(
       query,
-      sessions: fake.sessions,
-    });
-    const ends: string[] = [];
-    const conversation = await adapter.open({
-      cwd: folder,
-      instructions: "Answer briefly.",
-      model: "claude-fictional-1",
-      effort: "low",
-      tools: { url: "http://127.0.0.1:9/mcp", key: "key-1" },
-      onEvent: (event) => {
-        if (event.type === "turnEnded") ends.push(event.turn);
-      },
-    });
+      fake.sessions,
+    );
     for (const id of ["message-1", "message-2"]) {
-      expect(
-        await conversation.startTurn({
-          input: { id, parts: ["What was Asha's last TSH?"] },
-          model: "claude-fictional-1",
-          effort: "low",
-        }),
-      ).toEqual({ status: "delivered" });
+      expect(await start(id)).toEqual({ status: "delivered" });
       await vi.waitFor(() => {
-        expect(ends).toHaveLength(id === "message-1" ? 1 : 2);
+        expect(ends()).toHaveLength(id === "message-1" ? 1 : 2);
       });
     }
     await adapter.close();
@@ -92,5 +107,19 @@ describe("Claude's process for a conversation", () => {
       { sessionId: conversation.ref, resume: undefined },
       { sessionId: undefined, resume: conversation.ref },
     ]);
+  });
+});
+
+describe("a turn that fails", () => {
+  it("ends failed, connection, when Claude's requests got no answer at all", async () => {
+    const fake = fakeClaude({}, { connectionDrops: true });
+    const { adapter, start, ends } = await onFake(fake.query, fake.sessions);
+    expect(await start("message-1")).toEqual({ status: "delivered" });
+    await vi.waitFor(() => {
+      expect(ends()).toEqual([
+        expect.objectContaining({ status: "failed", reason: "connection" }),
+      ]);
+    });
+    await adapter.close();
   });
 });
