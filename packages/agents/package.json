@@ -6,6 +6,7 @@
   "exports": {
     "./provider": "./src/provider.ts",
     "./contract": "./tests/contract.ts",
-    "./store": "./src/store.ts"
+    "./store": "./src/store.ts",
+    "./agents": "./src/agents.ts"
   }
 }
