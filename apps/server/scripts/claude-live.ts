@@ -673,7 +673,16 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
         if (ended < 0 || next < ended) {
           throw new Error("the next turn didn't start after the first ended");
         }
-        await until(endOf(outcome.turn));
+      }
+      // Either way, every turn of it ended done: a failed one proves nothing.
+      const ends = [
+        await until(endOf(turn)),
+        ...(outcome.status === "next_turn"
+          ? [await until(endOf(outcome.turn))]
+          : []),
+      ];
+      if (ends.some((end) => end.status !== "done")) {
+        throw new Error(`the turns ended ${JSON.stringify(ends)}`);
       }
       return outcome.status === "next_turn"
         ? "it started the next turn, named in its start"
