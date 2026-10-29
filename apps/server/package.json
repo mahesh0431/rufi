@@ -16,6 +16,7 @@
     "@napi-rs/canvas": "1.0.12",
     "@napi-rs/keyring": "2.1.2",
     "@openai/codex": "0.163.0",
+    "@rufi/agents": "workspace:*",
     "@rufi/brand": "workspace:*",
     "@rufi/contracts": "workspace:*",
     "effect": "4.0.5",
