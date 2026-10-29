@@ -262,8 +262,10 @@ export const startCore = (options: CoreOptions) =>
           record: writer,
           adapters: options.adapters ?? [],
           host: { opening: notYet, claim: notYet },
-          tools: forAgent(() => ({ store: reader, personId: undefined }), log)
-            .specs.map((spec) => spec.name),
+          tools: forAgent(
+            () => ({ store: reader, personId: undefined }),
+            log,
+          ).specs.map((spec) => spec.name),
           cwd: aiSandbox(home).folder,
           model: DEFAULT_ALLOWLIST[0] ?? "",
           log,

@@ -1062,7 +1062,9 @@ export function createAgents(options: {
         .get(id) as { agent: string; state: string } | undefined,
 
     received: async (id, number, inputs) => {
-      const unknown = new Map(inputs.map((input) => [input, "unknown" as const]));
+      const unknown = new Map(
+        inputs.map((input) => [input, "unknown" as const]),
+      );
       const agent = get(id);
       if (!agent?.admitted || agent.conversation !== number) return unknown;
       const conversation = await conversationOf(

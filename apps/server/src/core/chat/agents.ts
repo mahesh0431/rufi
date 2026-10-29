@@ -251,9 +251,9 @@ export function chatAgents(
     /** Rows still handing over to an owned agent's conversation. */
     claimed: async (): Promise<Claimed[]> => {
       const owned = new Set(
-        (
-          await db.selectFrom("agent_owners").select("agent_id").execute()
-        ).map((row) => row.agent_id),
+        (await db.selectFrom("agent_owners").select("agent_id").execute()).map(
+          (row) => row.agent_id,
+        ),
       );
       const rows = await db
         .selectFrom("chat_queue")
@@ -263,7 +263,9 @@ export function chatAgents(
         .execute();
       return rows.flatMap((row) => {
         const claim = claimOf(row.sent_as ?? "");
-        return claim && owned.has(claim.agent) ? [{ id: row.id, ...claim }] : [];
+        return claim && owned.has(claim.agent)
+          ? [{ id: row.id, ...claim }]
+          : [];
       });
     },
 
