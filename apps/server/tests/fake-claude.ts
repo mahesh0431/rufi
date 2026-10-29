@@ -24,6 +24,8 @@ export function fakeClaude(
   more: {
     connectionDrops?: true;
     nextTurn?: "two" | "before_an_answer";
+    /** Claude takes the message, and starts its turn (and keeps it) this late. */
+    slowStartMs?: number;
   } = {},
 ): {
   query: typeof query;
@@ -48,6 +50,7 @@ export function fakeClaude(
     let turn: string | undefined;
     /** Steers Claude holds and hasn't taken. */
     let queued: string[] = [];
+    let closed = false;
 
     const keep = (message: string) => {
       kept.set(id, [...(kept.get(id) ?? []), message]);
@@ -85,6 +88,17 @@ export function fakeClaude(
     };
 
     const start = (message: string) => {
+      const late = more.slowStartMs;
+      if (late !== undefined) {
+        setTimeout(() => {
+          if (closed) return;
+          keep(message);
+          frames.push({ type: "system", subtype: "init" });
+          turn = message;
+          answer([message]);
+        }, late);
+        return;
+      }
       if (script.start === "loses_reply") {
         keep(message);
         return;
@@ -248,6 +262,7 @@ export function fakeClaude(
       },
       close: () => {
         closes++;
+        closed = true;
         frames.end();
       },
     });

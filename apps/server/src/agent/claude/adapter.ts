@@ -488,13 +488,17 @@ async function openConversation(
         starting = { id: start.input.id, settle: resolve };
       });
       current.send(parts.join("\n\n"), start.input.id as UUID);
+      // Claude may have the message and still start it later, unseen: its
+      // process ends first, so it can't.
       const timer = setTimeout(() => {
         const lost = starting;
         if (lost?.id !== start.input.id) return;
         starting = undefined;
-        lost.settle({
-          status: "uncertain",
-          text: "Claude didn't show it started the turn.",
+        void closeProcess().then(() => {
+          lost.settle({
+            status: "uncertain",
+            text: "Claude didn't show it started the turn, so it was stopped.",
+          });
         });
       }, startMs);
       return delivery.finally(() => {
@@ -520,17 +524,16 @@ async function openConversation(
       return outcome;
     },
     stop,
+    // The transcript proves what Claude kept; one it lacks may still have
+    // arrived, so it's unknown, never not received.
     reconcile: async (ids) => {
-      const received = new Map<string, Received>();
-      try {
-        const keptIds = new Set(await sessions.ids(ref, open.cwd));
-        for (const id of ids) {
-          received.set(id, keptIds.has(id) ? "received" : "not_received");
-        }
-      } catch {
-        for (const id of ids) received.set(id, "unknown");
-      }
-      return received;
+      const kept = await sessions.ids(ref, open.cwd).then(
+        (each) => new Set(each),
+        () => new Set<string>(),
+      );
+      return new Map<string, Received>(
+        ids.map((id) => [id, kept.has(id) ? "received" : "unknown"]),
+      );
     },
     placeCall: () => undefined,
     close: async () => {
