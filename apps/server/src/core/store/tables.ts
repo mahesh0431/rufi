@@ -1,5 +1,26 @@
 // Generated from schema.sql by pnpm db:types; a test fails if it differs.
 export interface Tables {
+  agent_conversations: {
+    person_id: string;
+    chat_id: string;
+    agent_id: string;
+    conversation: number;
+    provider: string;
+    ref: string;
+    created_at: string;
+  };
+  agent_cursor: {
+    id: number;
+    generation: string;
+    number: number;
+  };
+  agent_owners: {
+    agent_id: string;
+    person_id: string;
+    chat_id: string;
+    root: number;
+    created_at: string;
+  };
   allergies: {
     id: string;
     person_id: string;

@@ -67,6 +67,8 @@ export interface NewAgent {
   /** The host's tools it may use: a child's are among its parent's. */
   tools: readonly string[];
   cwd: string;
+  /** A provider conversation it takes over, by its reference: its first. */
+  adopt?: string;
 }
 
 /** What the host gives a conversation each time it opens. */
@@ -142,6 +144,20 @@ export interface Agents {
   /** The host keeps the agent's owner now, so it may run. Again does nothing. */
   admit: (id: string) => void;
   get: (id: string) => Agent | undefined;
+  /** The agents not admitted yet. */
+  unadmitted: () => string[];
+  /** Where an input is in its agent's queue; nothing when the queue has none. */
+  input: (id: string) => { agent: string; state: string } | undefined;
+  /**
+   * Which of these inputs the provider received in the agent's
+   * conversation of that number; unknown when it can't say, the agent or
+   * that conversation is gone, or another has replaced it.
+   */
+  received: (
+    agent: string,
+    conversation: number,
+    inputs: readonly string[],
+  ) => Promise<ReadonlyMap<string, Received>>;
   /**
    * Puts an input in the agent's queue, behind those waiting. It goes when
    * the agent can take it; the sender is never told no.
@@ -983,7 +999,7 @@ export function createAgents(options: {
         }
         const at = now();
         db.prepare(
-          "INSERT INTO agents (id, parent_id, root_id, title, provider, model, effort, tools, cwd, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO agents (id, parent_id, root_id, title, provider, model, effort, tools, cwd, provider_ref, conversation, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ).run(
           agent.id,
           agent.parent ?? null,
@@ -994,6 +1010,8 @@ export function createAgents(options: {
           agent.effort,
           JSON.stringify(agent.tools),
           agent.cwd,
+          agent.adopt ?? null,
+          agent.adopt === undefined ? 0 : 1,
           at,
           at,
         );
@@ -1021,6 +1039,36 @@ export function createAgents(options: {
     },
 
     get,
+
+    unadmitted: () =>
+      (
+        db.prepare("SELECT id FROM agents WHERE admitted = 0").all() as {
+          id: string;
+        }[]
+      ).map(({ id }) => id),
+
+    input: (id) =>
+      db
+        .prepare("SELECT agent_id AS agent, state FROM queue WHERE id = ?")
+        .get(id) as { agent: string; state: string } | undefined,
+
+    received: async (id, number, inputs) => {
+      const unknown = new Map(inputs.map((input) => [input, "unknown" as const]));
+      const agent = get(id);
+      if (!agent?.admitted || agent.conversation !== number) return unknown;
+      const conversation = await conversationOf(
+        liveOf(agent),
+        agent,
+        "resume",
+      ).catch(() => undefined);
+      if (!conversation) return unknown;
+      const answers = await conversation
+        .reconcile(inputs)
+        .catch(() => new Map<string, Received>());
+      return new Map(
+        inputs.map((input) => [input, answers.get(input) ?? "unknown"]),
+      );
+    },
 
     send: (id, input) => {
       if (!row(id)) throw new Error(`No agent ${id}.`);
