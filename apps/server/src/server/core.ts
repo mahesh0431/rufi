@@ -53,6 +53,8 @@ import { errorCode, type Log } from "../platform/logs.ts";
 import { api, LAUNCHER_HEADER } from "./api.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 import { generatedImages } from "../agent/codex/settings.ts";
+import { subAgentsHome } from "../agent/codex/subagent.ts";
+import { doorFolder } from "../agent/codex/token-door.ts";
 import { aiFiles } from "./files.ts";
 import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
 import { reader as openReader, readerChoice } from "./reader.ts";
@@ -108,6 +110,9 @@ export function aiSandbox(home: string): AgentSandbox {
       ...["-wal", "-shm", "-journal"].map((end) => `${database}${end}`),
       backupsPath(home),
       coreFile(home),
+      // The keys of the chat's Codex and the reader's to their token doors.
+      doorFolder(home),
+      doorFolder(subAgentsHome(home)),
     ],
   };
 }

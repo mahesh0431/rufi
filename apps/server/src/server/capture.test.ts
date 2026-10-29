@@ -5,11 +5,13 @@
 // pass it. It checks what the model is given (Codex's prompt, Rufi's core and
 // skills, the sandbox) and that one thread keeps it across a model change, a
 // Rufi update and a compaction.
+import { execFile } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { promisify } from "node:util";
 import { v7 as uuid } from "uuid";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -42,6 +44,8 @@ import type { ToolSpec } from "../core/tools/registry.ts";
 import { chatCaller, forAgent } from "../core/tools/tools.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 import { agentSetup, aiSandbox } from "./core.ts";
+import { subAgentsHome } from "../agent/codex/subagent.ts";
+import { doorFile } from "../agent/codex/token-door.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
 
 let home: string;
@@ -139,7 +143,7 @@ async function start(
         env: { PATH: process.env["PATH"] ?? "" },
         token: () => Promise.resolve("not-a-real-token"),
         version: "0.0.0",
-        deadlines: { requestMs: 20_000, turnMs: 60_000 },
+        deadlines: { requestMs: 20_000 },
         host,
         log,
       }),
@@ -620,6 +624,25 @@ interface Ran {
 }
 
 /** An exec step that runs each command in the AI's folder and prints all. */
+/**
+ * Reads each process's arguments and environment, as any of the user's
+ * programs can (sysctl KERN_PROCARGS2), and prints, for each, which of the
+ * named values it holds; nothing else of them leaves the command.
+ */
+const PROCARGS = `import ctypes, json, sys
+libc = ctypes.CDLL(None)
+values = json.load(open(sys.argv[1]))
+for pid in map(int, sys.argv[2:]):
+    mib = (ctypes.c_int * 3)(1, 49, pid)
+    size = ctypes.c_size_t(1 << 20)
+    buf = ctypes.create_string_buffer(size.value)
+    if libc.sysctl(mib, 3, buf, ctypes.byref(size), None, 0) != 0:
+        print(pid, "unreadable")
+        continue
+    raw = buf.raw[: size.value]
+    print(pid, "read", *sorted(n for n, v in values.items() if v.encode() in raw))
+`;
+
 const commands = (cmds: readonly string[]): Step => ({
   exec: [
     `const cmds = ${JSON.stringify(cmds)};`,
@@ -720,6 +743,8 @@ describe.runIf(process.platform === "darwin")(
         // Outside both the AI's folder and all temp roots. Prove that a
         // refusal isn't just the Mac's ordinary file permissions.
         const outsideRoot = await mkdtemp("/Users/Shared/rufi-canary-");
+        // What a command reads of Rufi's processes, and how.
+        const probe = await mkdtemp(join(tmpdir(), "rufi-canary-procargs-"));
         const outside = join(outsideRoot, "outside.txt");
         try {
           await writeFile(outside, "the test process can write here");
@@ -729,15 +754,52 @@ describe.runIf(process.platform === "darwin")(
           await mkdir(join(home, "backups"), { recursive: true });
           await writeFile(join(home, "backups", "copy.sqlite"), "a copy");
           await writeFile(join(home, "core.json"), '{"launcher":"secret"}');
+          // The chat's Codex replaces its door's file as it starts.
+          const doors = [home, subAgentsHome(home)].map(doorFile);
+          for (const door of doors) {
+            await mkdir(dirname(door), { recursive: true });
+            await writeFile(
+              door,
+              JSON.stringify({ key: `fictional-${uuid()}` }),
+            );
+          }
           expect(existsSync(`${databasePath(home)}-wal`)).toBe(true);
           const skill = join(home, "codex", "skills", "analysis", "SKILL.md");
           const q = (path: string) => JSON.stringify(path);
           // Each one that is there now; a journal isn't, in WAL mode.
           const journal = `${databasePath(home)}-journal`;
-          const denied = [...unreadable, join(home, "backups", "copy.sqlite")]
+          const denied = [
+            ...unreadable,
+            join(home, "backups", "copy.sqlite"),
+            ...doors,
+          ]
             .filter((path) => existsSync(path))
             .map((path) => `cat ${q(path)}`);
-          expect(denied).toHaveLength(unreadable.length);
+          expect(denied).toHaveLength(unreadable.length + doors.length);
+          // What a command reads of Rufi's processes: Rufi's own and the
+          // Codex it runs now, each with a value it surely holds.
+          await writeFile(join(probe, "procargs.py"), PROCARGS);
+          let codexChecked = 0;
+          const processes = async () => {
+            const { stdout } = await promisify(execFile)("ps", [
+              "-A",
+              "-o",
+              "pid=,ppid=,command=",
+            ]);
+            const codex = stdout
+              .split("\n")
+              .map((line) => /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line))
+              .filter(
+                (match) =>
+                  match?.[2] === String(process.pid) &&
+                  match[3]?.includes("app-server"),
+              )
+              .map((match) => ({
+                pid: Number(match?.[1]),
+                holds: join(home, "codex"),
+              }));
+            return [{ pid: process.pid, holds: process.execPath }, ...codex];
+          };
           const others = (url: string) => ({
             outside: `echo no > ${q(outside)}`,
             journal: `echo no > ${q(journal)}`,
@@ -756,9 +818,35 @@ describe.runIf(process.platform === "darwin")(
           const run = async (n: number, text: string) => {
             const url = model?.url ?? "";
             const named = others(url);
-            model?.script.push(commands([...denied, ...Object.values(named)]), {
-              text: "Ran.",
-            });
+            // Every secret Rufi has given so far: the token, the MCP keys
+            // and the token door's key.
+            const watched = await processes();
+            const door = JSON.parse(await readFile(doorFile(home), "utf8")) as {
+              key: string;
+            };
+            const secrets = [
+              "not-a-real-token",
+              door.key,
+              ...seen.flatMap((r) => r.auth?.replace("Bearer ", "") ?? []),
+            ];
+            await writeFile(
+              join(probe, "values.json"),
+              JSON.stringify({
+                ...Object.fromEntries(
+                  secrets.map((value, i) => [`secret-${String(i)}`, value]),
+                ),
+                ...Object.fromEntries(
+                  watched.map((p) => [`holds-${String(p.pid)}`, p.holds]),
+                ),
+              }),
+            );
+            const readOthers = `/usr/bin/python3 -I ${q(join(probe, "procargs.py"))} ${q(join(probe, "values.json"))} ${watched.map((p) => String(p.pid)).join(" ")}`;
+            model?.script.push(
+              commands([...denied, ...Object.values(named), readOthers]),
+              {
+                text: "Ran.",
+              },
+            );
             await say(text);
             await replies(n);
             const output = answering()
@@ -793,6 +881,21 @@ describe.runIf(process.platform === "darwin")(
               `yes\nyes\n${join(folder, ".cache")}\n`,
             );
             expect(by(named.network)?.output).toBe("404");
+            // The Mac lets a command read another process's arguments and
+            // environment: each one it read holds its own value, and none
+            // of Rufi's secrets.
+            // Only its answer lines: the Mac's python3 may warn first.
+            expect(
+              (by(readOthers)?.output ?? "")
+                .split("\n")
+                .filter((line) => /^\d+ /.test(line))
+                .sort(),
+            ).toEqual(
+              watched
+                .map((p) => `${String(p.pid)} read holds-${String(p.pid)}`)
+                .sort(),
+            );
+            codexChecked += watched.length - 1;
           };
 
           const opened = await start([]);
@@ -810,8 +913,11 @@ describe.runIf(process.platform === "darwin")(
           await transcripts.saveSetting("emergency_region", "IN");
           await run(4, "After reloading the rules.");
           expect(threadsUsed()).toBe(1);
+          // Codex was running for some of the runs.
+          expect(codexChecked).toBeGreaterThan(0);
         } finally {
           await rm(outsideRoot, { recursive: true, force: true });
+          await rm(probe, { recursive: true, force: true });
         }
       },
     );

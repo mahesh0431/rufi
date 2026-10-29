@@ -16,7 +16,7 @@ import {
 } from "../../../scripts/codex-types.ts";
 import { fakeModel } from "../../../tests/fake-model.ts";
 import { DEFAULT_ALLOWLIST } from "../../core/chat/models.ts";
-import type { AgentEvent, AgentRuntime } from "../runtime.ts";
+import type { AgentEvent, AgentRuntime, TurnEnd } from "../runtime.ts";
 import { DEADLINES } from "./appserver.ts";
 import { codexBinary } from "./binary.ts";
 import { codexRuntime } from "./codex.ts";
@@ -25,11 +25,12 @@ import type { CommandExecResponse } from "./protocol/v2/CommandExecResponse.ts";
 import type { SkillsListResponse } from "./protocol/v2/SkillsListResponse.ts";
 import { connect, type Rpc } from "./rpc.ts";
 import { prepareCodexHome } from "./settings.ts";
+import { openTokenDoor, type TokenDoor } from "./token-door.ts";
 
 let root: string;
 let fakeHome: string;
 let runtime: AgentRuntime | undefined;
-let raw: { rpc: Rpc; stop: () => void } | undefined;
+let raw: { rpc: Rpc; stop: () => Promise<void> } | undefined;
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "rufi-contract-"));
@@ -39,7 +40,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await runtime?.close();
   runtime = undefined;
-  raw?.stop();
+  await raw?.stop();
   raw = undefined;
 });
 
@@ -56,6 +57,7 @@ async function real(
   options: {
     args?: string[];
     onEvent?: (event: AgentEvent) => void;
+    token?: () => Promise<string>;
   } = {},
 ): Promise<AgentRuntime> {
   runtime = codexRuntime({
@@ -64,29 +66,30 @@ async function real(
     skills: [],
     command: { file: await codexBinary(), args: options.args ?? [] },
     env: env(),
-    token: () => Promise.resolve("not-a-real-token"),
+    token: options.token ?? (() => Promise.resolve("not-a-real-token")),
     version: "0.0.0",
     host: { onEvent: options.onEvent ?? (() => undefined) },
   });
   return runtime;
 }
 
+/** A token door for the Codex home kept in `home`, with a fake token. */
+const doorFor = (home: string) =>
+  openTokenDoor(home, () => Promise.resolve("not-a-real-token"));
+
 /** A bare app-server connection set up exactly as Rufi sets it up. */
 async function bare(): Promise<Rpc> {
-  const { codexHome, processHome } = await prepareCodexHome(
-    join(root, "bare"),
-    { userHome: fakeHome, sandbox: sandboxOf(join(root, "bare")) },
-  );
+  const home = join(root, "bare");
+  const { codexHome, processHome } = await prepareCodexHome(home, {
+    userHome: fakeHome,
+    sandbox: sandboxOf(home),
+  });
+  const door = await doorFor(home);
   const child = spawn(
     await codexBinary(),
     ["app-server", "--listen", "stdio://"],
     {
-      env: {
-        ...env(),
-        HOME: processHome,
-        CODEX_HOME: codexHome,
-        ACCESS_TOKEN: "not-a-real-token",
-      },
+      env: { ...env(), HOME: processHome, CODEX_HOME: codexHome },
       stdio: ["pipe", "pipe", "ignore"],
     },
   );
@@ -100,7 +103,13 @@ async function bare(): Promise<Rpc> {
     },
     DEADLINES.answerMs,
   );
-  raw = { rpc, stop: () => child.kill() };
+  raw = {
+    rpc,
+    stop: async () => {
+      child.kill();
+      await door.close();
+    },
+  };
   await rpc.request(
     "initialize",
     {
@@ -127,6 +136,44 @@ describe("the pinned Codex", () => {
       expect(await readFile(file, "utf8"), twin).toBe(
         await readFile(twin, "utf8"),
       );
+    }
+  }, 60_000);
+
+  // Undocumented on OpenAI's pages, so pinned here: Codex gets its token
+  // from the provider's auth command (Rufi's token door), and after OpenAI
+  // refuses one (a 401) it runs the command again and goes on with the new one.
+  it("asks Rufi's token door again when OpenAI refuses its token, and goes on with the new one", async () => {
+    const model = await fakeModel({ refuse: 1 });
+    let given = 0;
+    const ends: TurnEnd[] = [];
+    try {
+      const agent = await real({
+        args: [
+          "-c",
+          `model_providers.openai_chatgpt_plan.base_url="${model.url}"`,
+        ],
+        token: () => Promise.resolve(`fictional-token-${String((given += 1))}`),
+        onEvent: (event) => {
+          if (event.type === "turnEnded") ends.push(event.end);
+        },
+      });
+      const { threadId } = await agent.startThread({
+        model: "gpt-6.1-sol",
+        instructions: "Answer briefly.",
+      });
+      await agent.send(threadId, { id: "m-1", input: ["Hello"] });
+      await until(
+        "the reply to end",
+        () => Promise.resolve(ends.length > 0),
+        30_000,
+      );
+      expect(ends).toEqual([{ status: "completed" }]);
+      const [refused, renewed] = model.tokens;
+      expect(refused).toMatch(/^fictional-token-/);
+      expect(renewed).toMatch(/^fictional-token-/);
+      expect(renewed).not.toBe(refused);
+    } finally {
+      await model.close();
     }
   }, 60_000);
 
@@ -226,10 +273,12 @@ describe.each(["fake", "real"] as const)(
       "ends the command it runs $when, with what it left in the background, and itself",
       async ({ message, ended }) => {
         const model = await fakeModel();
-        const { codexHome, processHome } = await prepareCodexHome(
-          join(root, "gone"),
-          { userHome: fakeHome, sandbox: sandboxOf(join(root, "gone")) },
-        );
+        const home = join(root, "gone");
+        const { codexHome, processHome } = await prepareCodexHome(home, {
+          userHome: fakeHome,
+          sandbox: sandboxOf(home),
+        });
+        const door: TokenDoor = await doorFor(home);
         // Started as Rufi starts it (appserver.ts): its own process group, pipes.
         const codex = spawn(
           name === "real" ? await codexBinary() : process.execPath,
@@ -245,12 +294,7 @@ describe.each(["fake", "real"] as const)(
             "stdio://",
           ],
           {
-            env: {
-              ...env(),
-              HOME: processHome,
-              CODEX_HOME: codexHome,
-              ACCESS_TOKEN: "not-a-real-token",
-            },
+            env: { ...env(), HOME: processHome, CODEX_HOME: codexHome },
             stdio: ["pipe", "pipe", "ignore"],
             detached: true,
           },
@@ -339,6 +383,7 @@ describe.each(["fake", "real"] as const)(
         } finally {
           await killTree(pid, groups);
           await model.close();
+          await door.close();
         }
       },
       60_000,

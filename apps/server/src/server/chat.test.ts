@@ -184,7 +184,7 @@ async function startChat(
           return options.tokenProvider?.() ?? token;
         },
         version: "0.0.0",
-        deadlines: { requestMs: 10_000, turnMs: 20_000, ...options.deadlines },
+        deadlines: { requestMs: 10_000, ...options.deadlines },
         host,
         log,
       }),
@@ -785,18 +785,6 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       expect(await waiting()).toEqual([["Hello", "waiting", null]]);
     },
   );
-
-  it("stops a reply that runs past its deadline", timeout, async () => {
-    await startChat(name, { deadlines: { turnMs: 2_000 } });
-    const c = await newChat();
-    await say(c, "hang");
-    await ended(c.id);
-    expect((await transcript(c.id)).turns[0]).toMatchObject({
-      status: "failed",
-      endReason: "timeout",
-      endText: "The reply took too long, so Rufi stopped it.",
-    });
-  });
 
   it(
     "keeps the thread on a model change: the next reply runs on the new model, with the whole chat",

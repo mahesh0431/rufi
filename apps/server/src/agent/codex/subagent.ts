@@ -81,11 +81,11 @@ const RESOURCE_HELPERS = [
   "read_mcp_resource",
 ];
 
+/** Where the runner keeps its Codex home, in Rufi's data folder. */
+export const subAgentsHome = (home: string) => join(home, "sub-agents");
+
 /** Codex's id for a tool call made from a script in `exec` (0.159.3). */
 const VIA_EXEC = "exec-";
-
-/** A token must outlast the whole turn, plus this margin. */
-const TOKEN_MARGIN_MS = 5 * 60_000;
 
 /**
  * Codex's settings for a sub-agent thread on the pinned Codex, each turning
@@ -154,12 +154,13 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
       };
     }
     const started = Date.now();
-    const home = join(deps.home, "sub-agents");
+    const home = subAgentsHome(deps.home);
     const paths = await prepareCodexHome(home);
     // Its working folder, empty: with no environment it can't look in it.
     const cwd = join(home, "workspace");
     await mkdir(cwd, { recursive: true, mode: 0o700 });
-    const token = await deps.token(task.deadlineMs + TOKEN_MARGIN_MS);
+    // Signed out, the reading waits; Codex gets its tokens from its door.
+    await deps.token(60_000);
     signal?.throwIfAborted();
 
     let compactions = 0;
@@ -238,7 +239,8 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
         command: deps.command,
         env: { ...deps.env, HOME: paths.processHome },
         codexHome: paths.codexHome,
-        token,
+        home,
+        token: deps.token,
         version: deps.version,
         deadlines,
         ...(signal && { signal }),
@@ -278,8 +280,10 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
               turnStarted((params as TurnStartedNotification).turn.id);
             } else if (method === "turn/completed") {
               const { turn } = params as TurnCompletedNotification;
-              if (turn.id === turnId)
-                ended.resolve(stopped ?? endOf(turn, limits));
+              if (turn.id === turnId) {
+                const signedOut = (app?.signedOutAt() ?? -1) >= started;
+                ended.resolve(stopped ?? endOf(turn, limits, signedOut));
+              }
             }
           },
           ignored: (what, error) => {

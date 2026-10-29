@@ -57,7 +57,8 @@ export interface Move {
 }
 
 /**
- * Not copied: the running Rufi's locks and address, the source's own move
+ * Not copied: the running Rufi's locks and address, its Codex's token door
+ * (codex-door/: an address and key only that Codex uses), the source's own move
  * marks, and the database's files (its copy is made with SQLite's backup,
  * which takes in what its WAL holds). The AI's own folders stay too: Codex
  * keeps this folder's paths in them, and a thread resumed from a copy writes
@@ -69,6 +70,7 @@ const NOT_COPIED = new Set([
   "rufi.lock",
   "credentials.lock",
   "core.json",
+  "codex-door",
   MOVING_OUT,
   MOVED_TO,
   "rufi.sqlite",

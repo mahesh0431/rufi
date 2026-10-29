@@ -1,31 +1,30 @@
 // A live probe, not part of `pnpm check`: how the pinned Codex runs its
-// provider's auth command, the command that gives it a ChatGPT token. Each
-// case starts Codex in its own scratch folder with Rufi's settings, the
-// provider's `auth` set to a command that asks this script for a token over
-// loopback with a key from a file, and runs fictional turns. It reports when
-// Codex ran the command and how often, with what the command saw, and what
-// Codex did when the token was refused, or the command failed or hung.
-// Only the sign-in comes from RUFI_HOME (the test sign-in). No token is
-// printed or kept: the report is checked for every token served before it is
-// printed.
+// provider's auth command, the command that gives it a ChatGPT token from
+// Rufi's token door (agent/codex/token-door.ts). Each case starts Codex in
+// its own scratch folder with Rufi's settings and door, Codex's refresh
+// interval and command timeout set for the case, and runs fictional turns;
+// the door's sign-in answers as the case says. It reports when Codex asked
+// the door and how often, and what Codex did when the token was refused, or
+// the door had none or never answered. Only the sign-in comes from RUFI_HOME
+// (the test sign-in). No token is printed or kept: the report is checked for
+// every token served before it is printed. Rerun it when the Codex pin moves.
 //
 //   RUFI_HOME=<test sign-in folder> node apps/server/scripts/codex-auth-probe.ts <empty folder>
-import { randomBytes } from "node:crypto";
+import { execFile } from "node:child_process";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { createServer, type ServerResponse } from "node:http";
-import type { AddressInfo } from "node:net";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { promisify } from "node:util";
 import { Effect } from "effect";
-import type { ChatGptDeps } from "../src/agent/chatgpt/openai.ts";
+import { ChatGptError, type ChatGptDeps } from "../src/agent/chatgpt/openai.ts";
 import { accessToken } from "../src/agent/chatgpt/session.ts";
 import { DEADLINES, startAppServer } from "../src/agent/codex/appserver.ts";
 import { codexBinary } from "../src/agent/codex/binary.ts";
-import { isRunning } from "../src/agent/codex/processes.ts";
 import type { ThreadStartResponse } from "../src/agent/codex/protocol/v2/ThreadStartResponse.ts";
 import type { TurnCompletedNotification } from "../src/agent/codex/protocol/v2/TurnCompletedNotification.ts";
 import { AI_PROFILE, prepareCodexHome } from "../src/agent/codex/settings.ts";
+import { doorFile } from "../src/agent/codex/token-door.ts";
 import { childEnvironment, rufiHome } from "../src/platform/config.ts";
 import { Secrets, secretsLayer } from "../src/platform/keychain.ts";
 
@@ -52,24 +51,6 @@ const refused = (jwt: string) => {
   const flipped = signature.startsWith("A") ? "B" : "A";
   return `${header ?? ""}.${payload ?? ""}.${flipped}${signature.slice(1)}`;
 };
-
-/**
- * The command Codex runs: it reads the door's address and key from the file
- * it is given, asks for a token and prints it. It tells the door its process
- * id and whether it got Codex's environment (CODEX_HOME), never a value.
- */
-const COMMAND = `
-const { url, key } = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
-fetch(url, { headers: {
-  authorization: "Bearer " + key,
-  "x-pid": String(process.pid),
-  "x-codex-env": process.env.CODEX_HOME ? "yes" : "no",
-  "x-cwd": process.cwd(),
-} }).then(async (r) => {
-  const text = await r.text();
-  if (r.ok) process.stdout.write(text);
-  else { process.stderr.write("No token from the door: " + text); process.exitCode = 1; }
-});`;
 
 type Answer = "good" | "refused" | "fails" | "hangs";
 
@@ -116,21 +97,21 @@ const CASES: Case[] = [
     turns: [READY],
   },
   {
-    name: "the command fails (exit 1) every time",
+    name: "the door has no token (signed out) every time",
     answer: () => "fails",
     refreshMs: 0,
     timeoutMs: 10_000,
     turns: [READY],
   },
   {
-    name: "the command fails once, then works",
+    name: "the door has no token once, then gives one",
     answer: (n) => (n === 1 ? "fails" : "good"),
     refreshMs: 0,
     timeoutMs: 10_000,
     turns: [READY, READY],
   },
   {
-    name: "the command hangs, with a 3 s timeout",
+    name: "the door never answers, with a 3 s timeout",
     answer: () => "hangs",
     refreshMs: 0,
     timeoutMs: 3_000,
@@ -149,77 +130,49 @@ async function run(probe: Case, folder: string) {
   const timeline: string[] = [];
   const mark = (what: string) => timeline.push(`${String(at())} ms ${what}`);
 
-  const key = randomBytes(32).toString("base64url");
-  const pids: number[] = [];
-  const hung = new Set<ServerResponse>();
+  // The door's sign-in, answering as the case says.
   let asked = 0;
-  const door = createServer((request, response) => {
-    if (request.headers.authorization !== `Bearer ${key}`) {
-      mark(
-        `door: refused a request without the key (${String(request.method)} ${String(request.url)}, ${String(request.headers["user-agent"])})`,
-      );
-      response.writeHead(401).end("Wrong key.");
-      return;
-    }
+  const token = async (validForMs: number) => {
     asked += 1;
-    const n = asked;
-    const answer = probe.answer(n);
-    pids.push(Number(request.headers["x-pid"]));
-    mark(
-      `command run ${String(n)}: ${answer}; Codex's environment: ${String(request.headers["x-codex-env"])}; cwd: ${String(request.headers["x-cwd"])}`,
-    );
-    if (answer === "hangs") {
-      hung.add(response);
-      return;
-    }
+    const answer = probe.answer(asked);
+    mark(`door asked (${String(asked)}): ${answer}`);
+    if (answer === "hangs") return new Promise<string>(() => undefined);
     if (answer === "fails") {
-      response.writeHead(503).end("Rufi is signed out of ChatGPT.");
-      return;
+      throw new ChatGptError("sign_in_again", "Fictional: the sign-in ended.");
     }
-    // A token valid for two minutes at least: a longer ask can fall
-    // between the token's end and the earliest renewal ChatGPT allows.
-    void accessToken(signIn, 2 * 60_000).then(
-      (token) => {
-        const given = answer === "refused" ? refused(token) : token;
-        served.add(token);
-        served.add(given);
-        response.end(given);
-      },
-      (error: unknown) => {
-        mark(
-          `door: no sign-in (${String((error as { code?: unknown }).code)})`,
-        );
-        response.writeHead(500).end("No sign-in.");
-      },
-    );
-  });
-  await new Promise<void>((done) => door.listen(0, "127.0.0.1", done));
-  const { port } = door.address() as AddressInfo;
-  const doorFile = join(folder, "door.json");
-  await writeFile(
-    doorFile,
-    JSON.stringify({ url: `http://127.0.0.1:${String(port)}/`, key }),
-    { mode: 0o600 },
-  );
+    const real = await accessToken(signIn, validForMs);
+    const given = answer === "refused" ? refused(real) : real;
+    served.add(real);
+    served.add(given);
+    return given;
+  };
 
-  const paths = await prepareCodexHome(join(folder, "rufi"), {
+  const home = join(folder, "rufi");
+  const paths = await prepareCodexHome(home, {
     userHome: join(folder, "user"),
-    sandbox: { folder: join(folder, "rufi", "ai"), unreadable: [doorFile] },
+    sandbox: { folder: join(home, "ai"), unreadable: [] },
   });
   const config = join(paths.codexHome, "config.toml");
-  const auth = `auth = { command = ${JSON.stringify(process.execPath)}, args = ${JSON.stringify(["-e", COMMAND, doorFile])}, timeout_ms = ${String(probe.timeoutMs)}, refresh_interval_ms = ${String(probe.refreshMs)} }\n`;
   const before = await readFile(config, "utf8");
-  if (!before.includes('env_key = "ACCESS_TOKEN"\n')) {
+  const timing = /^timeout_ms = \d+\nrefresh_interval_ms = \d+$/m;
+  if (!timing.test(before)) {
     throw new Error("Rufi's provider settings changed: update the probe.");
   }
-  await writeFile(config, before.replace('env_key = "ACCESS_TOKEN"\n', auth));
+  await writeFile(
+    config,
+    before.replace(
+      timing,
+      `timeout_ms = ${String(probe.timeoutMs)}\nrefresh_interval_ms = ${String(probe.refreshMs)}`,
+    ),
+  );
 
   let completed = Promise.withResolvers<TurnCompletedNotification>();
   const app = await startAppServer({
     command: { file: await codexBinary(), args: [] },
     env: { ...childEnvironment(), HOME: paths.processHome },
     codexHome: paths.codexHome,
-    token: "",
+    home,
+    token,
     version,
     deadlines: DEADLINES,
     handlers: {
@@ -287,7 +240,7 @@ async function run(probe: Case, folder: string) {
       mark(`turn ${String(index + 1)} sent`);
       const end = await Promise.race([
         completed.promise,
-        sleep(TURN_MS).then(() => undefined),
+        sleep(TURN_MS, undefined, { ref: false }),
       ]);
       if (end === undefined) {
         mark(`turn ${String(index + 1)} didn't end in ${String(TURN_MS)} ms`);
@@ -307,14 +260,16 @@ async function run(probe: Case, folder: string) {
     }
   } finally {
     await app.stop();
-    for (const response of hung) response.destroy();
-    door.close();
   }
+  // The command's arguments name the door's file.
+  const { stdout } = await promisify(execFile)("ps", ["-A", "-o", "command="]);
   return {
     case: probe.name,
-    commandRuns: asked,
-    commandsStillRunning: pids.filter((pid) => pid > 0 && isRunning(pid))
-      .length,
+    doorAsked: asked,
+    signedOutAt: app.signedOutAt() === undefined ? null : "during the case",
+    commandsStillRunning: stdout
+      .split("\n")
+      .filter((line) => line.includes(doorFile(home))).length,
     turns: ends,
     timeline,
   };

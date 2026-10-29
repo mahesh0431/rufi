@@ -66,7 +66,10 @@ export interface CodexDeps {
   command: CodexCommand;
   /** The child's environment, without secrets (platform/config.ts). */
   env: Readonly<Record<string, string>>;
-  /** An access token valid for at least `validForMs`. */
+  /**
+   * An access token valid for at least `validForMs`: for Codex's token door,
+   * and to check the sign-in before Rufi sends anything.
+   */
   token: (validForMs: number) => Promise<string>;
   version: string;
   deadlines?: Partial<Deadlines>;
@@ -76,16 +79,18 @@ export interface CodexDeps {
   log?: Log;
 }
 
-/** A token must outlast a whole turn, plus this margin. */
-const TOKEN_MARGIN_MS = 5 * 60_000;
+/** The sign-in check before Rufi sends anything: a token valid this long. */
+const SIGNED_IN_MS = 60_000;
 /** How often Rufi notes the process groups of running commands. */
 const TRACK_EVERY_MS = 500;
 
 interface Running {
   threadId: string;
   turnId: string;
-  /** How it ended, when Rufi decided it (a deadline, a tool loop). */
+  /** How it ended, when Rufi decided it (a Stop, a tool loop). */
   end: TurnEnd | undefined;
+  /** When Codex said it started. */
+  startedAt: number;
   /**
    * Agent messages whose text came as they started or in deltas; the others
    * arrive whole at their end.
@@ -104,7 +109,6 @@ interface Running {
   stopping: Promise<void> | undefined;
   /** Settles once Codex has shown the user's message that started it. */
   messaged: PromiseWithResolvers<void>;
-  deadline: NodeJS.Timeout;
 }
 
 const textInput = (text: string): UserInput => ({
@@ -161,10 +165,12 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
     app.rpc.request<T>(method, params, deadlines.requestMs);
 
   /**
-   * Codex with a token that outlasts a turn. The token is always awaited to
-   * the end (a renewed one must be saved); after it, a Stop ends the wait.
-   * Thread preparation and its hand-over share a signal: a new thread has
-   * no saved rollout to resume if a second decision replaces its server.
+   * Codex, once the sign-in holds: signed out, nothing is sent. Codex gets
+   * its tokens from its door, renewed as it goes, so a running app-server
+   * is kept. The sign-in is always awaited to the end (a renewed token must
+   * be saved); after it, a Stop ends the wait. Thread preparation and its
+   * hand-over share a signal: a new thread has no saved rollout to resume if
+   * a second decision replaces its server.
    */
   async function ready(signal?: AbortSignal): Promise<AppServer> {
     if (lifetime.signal.aborted) throw new Error("Codex is closed.");
@@ -173,14 +179,13 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
       if (signal?.aborted) throw new Stopped();
       return previous;
     }
-    const token = await deps.token(deadlines.turnMs + TOKEN_MARGIN_MS);
+    await deps.token(SIGNED_IN_MS);
     if (signal?.aborted) throw new Stopped();
-    // A running reply keeps its app-server: Codex keeps the turn in it.
-    if (server?.running() && (server.token === token || turns.size > 0)) {
+    if (server?.running()) {
       if (signal) prepared.set(signal, server);
       return server;
     }
-    starting ??= start(token).finally(() => {
+    starting ??= start().finally(() => {
       starting = undefined;
     });
     const app = await abortable(starting, signal);
@@ -188,7 +193,7 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
     return app;
   }
 
-  async function start(token: string): Promise<AppServer> {
+  async function start(): Promise<AppServer> {
     await shutDown();
     const paths = await prepareCodexHome(deps.home, {
       userHome: deps.env["HOME"],
@@ -199,7 +204,8 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
       command: deps.command,
       env: { ...deps.env, HOME: paths.processHome },
       codexHome: paths.codexHome,
-      token,
+      home: deps.home,
+      token: deps.token,
       version: deps.version,
       deadlines,
       signal: lifetime.signal,
@@ -262,7 +268,6 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
   function finish(running: Running, end: TurnEnd): void {
     if (turns.get(running.threadId) !== running) return;
     turns.delete(running.threadId);
-    clearTimeout(running.deadline);
     if (turns.size === 0) {
       clearInterval(tracking);
       tracking = undefined;
@@ -402,7 +407,11 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
       const stopped = running.stopping && turn.status === "completed";
       finish(
         running,
-        endOf(stopped ? { ...turn, status: "interrupted" } : turn, limits),
+        endOf(
+          stopped ? { ...turn, status: "interrupted" } : turn,
+          limits,
+          (server?.signedOutAt() ?? -1) >= running.startedAt,
+        ),
       );
       return;
     }
@@ -428,20 +437,13 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
       threadId,
       turnId,
       end: undefined,
+      startedAt: Date.now(),
       streamed: new Set(),
       notes: new Set(),
       thinking: new Map(),
       messaged: Promise.withResolvers(),
       ended: Promise.withResolvers(),
       stopping: undefined,
-      deadline: setTimeout(() => {
-        running.end ??= {
-          status: "failed",
-          reason: "timeout",
-          text: "The reply took too long, so Rufi stopped it.",
-        };
-        void stopTurn(running);
-      }, deadlines.turnMs),
     };
     turns.set(threadId, running);
     tracking ??= setInterval(() => void track(), TRACK_EVERY_MS);
@@ -844,7 +846,7 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
     return models;
   }
 
-  /** A renewed sign-in replaces Codex, so its known thread is picked up again. */
+  /** A new app-server (after a crash) picks a known thread up again. */
   async function open(
     threadId: string,
     signal?: AbortSignal,
