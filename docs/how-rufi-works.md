@@ -164,6 +164,13 @@ Each person has one chat, and each chat has one Codex thread. The transcript in 
 - **Any other failure to open the thread holds the message.** The hold is its own state (`open_failed`) with an id for that occurrence, and the message shows Codex's error. **Try again** and **New thread** name that hold; one transaction in the chat's lane checks it is still the current one and releases the message (New thread also clears the chat's thread), so a click on an older hold or in a second tab changes nothing. New thread is refused while a reply runs, and a message that is "not sure" never gets these choices.
 - **New rules reach the same thread.** When the rules version changes (a Rufi update, another emergency region), Rufi lets the thread go, resumes it with the new core, and adds the complete new rules to its history as one developer message with `thread/inject_items`. The version is stored only after Codex acknowledged it, so a Stop or a crash before then gives the rules again with the next hand-over.
 
+## The agent system, being built
+
+`packages/agents` (`@rufi/agents`) will run every agent: Rufi AI's chat and the sub-agents it starts, on Codex or Claude. Nothing uses it yet; the chat still runs as above.
+
+- **The provider boundary** (`src/provider.ts`) is what every provider's adapter does, so nothing above it names a provider: say its family and list its models with their efforts; open or resume a conversation, given its folder and, each time, Rufi's instructions and tools; start a turn and steer it, each answering delivered, not delivered or uncertain (a steer may also have started the next turn); stop a turn within a bound; reconcile which inputs arrived; place each call to Rufi's tools in its open turn, with the provider's call id; and report the turn's events as the provider gave them. An input that may have arrived is never sent again by itself.
+- **One contract suite** (`tests/contract.ts`) checks this for every adapter, on its own fixtures. A fake provider (`tests/fake-provider.ts`) keeps the same contract and stands in for adapters in the package's own tests.
+
 ## The reader
 
 Rufi reads each document when the person sends it, with its own sub-agent, one document at a time across Rufi. The chat calls it for one job and an abort signal (`server/reader.ts`); there is no loop and no queue of work waiting in the background. See [ADR 0009](adr/0009-background-readings-by-a-rufi-sub-agent.md), [ADR 0010](adr/0010-the-reader-runs-on-gpt-6-1-sol-through-exec.md) and [ADR 0022](adr/0022-files-start-on-send.md).
