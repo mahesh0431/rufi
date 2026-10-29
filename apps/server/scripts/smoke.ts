@@ -1528,7 +1528,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
           const got = found(want);
           return (
             got !== undefined &&
-            [want.value, ...(want.or ?? [])].includes(got.value) &&
+            got.value === want.value &&
             got.date === want.date
           );
         }),
