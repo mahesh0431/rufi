@@ -294,5 +294,3 @@ export function chatAgents(
       }),
   };
 }
-
-export type ChatAgents = ReturnType<typeof chatAgents>;

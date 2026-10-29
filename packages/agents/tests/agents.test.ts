@@ -263,6 +263,25 @@ describe("an agent", () => {
 });
 
 describe("the queue", () => {
+  it("hands nothing over before the host dispatches", async () => {
+    agents = createAgents({
+      store,
+      adapters: [fake.adapter],
+      host: host(),
+      onError: (error) => errors.push(error),
+    });
+    asha();
+    agents.send(ASHA.id, note("note-1"));
+    // A new task: whatever a hand-over would have begun has run by now.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(openings).toEqual([]);
+
+    await agents.dispatch();
+    await until(() => {
+      expect(states()["note-1"]).toBe("delivered");
+    });
+  });
+
   it("starts a turn with the first input; a steer goes into it at once, a queued input waits for its end", async () => {
     asha();
     fake.script.turn = "runs";
