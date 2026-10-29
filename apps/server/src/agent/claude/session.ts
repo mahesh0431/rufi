@@ -19,6 +19,7 @@ import {
   type SDKMessage,
   type SDKSystemMessage,
   type SDKUserMessage,
+  type Settings,
 } from "@anthropic-ai/claude-agent-sdk";
 import { killTree } from "../codex/processes.ts";
 import type { AgentSkill } from "../runtime.ts";
@@ -62,12 +63,17 @@ const SETTINGS = {
   disableClaudeAiConnectors: true,
   syncClaudeAiSkills: false,
   syncClaudeAiPlugins: false,
+  /**
+   * The person's other Claude sessions on this Mac can't message Rufi AI's
+   * conversation (Claude's cross-session messages): only Rufi puts words in.
+   */
+  crossSessionInbound: "refuse",
   /** Rufi's skills only: none of Claude Code's own skills and workflows. */
   disableBundledSkills: true,
   enabledPlugins: Object.fromEntries(
     BUILT_IN_PLUGINS.map((name) => [`${name}@builtin`, false]),
   ),
-};
+} satisfies Settings;
 
 /**
  * Set for Claude's process. A background command would outlive Stop, and
