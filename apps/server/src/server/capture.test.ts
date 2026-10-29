@@ -9,7 +9,7 @@ import { execFile } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
 import { v7 as uuid } from "uuid";
@@ -416,8 +416,9 @@ describe("What the AI is given, on the pinned Codex", () => {
 
       // The sandbox as Codex tells the model, and its working folder.
       const sandbox = aiSandbox(home);
+      // Each path is in the data folder; some aren't made yet.
       const real = (path: string) =>
-        join(realpathSync(dirname(path)), basename(path));
+        join(realpathSync(home), relative(home, path));
       const permissions =
         given.find((text) => text.startsWith("<permissions instructions>")) ??
         "";

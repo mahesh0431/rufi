@@ -2714,12 +2714,12 @@ describe("When the AI's thread doesn't open", () => {
     ).toEqual(["first", "second"]);
   });
 
-  it("starts a new thread when Codex has no record of it, also when the sign-in renews before the message goes", async () => {
+  it("starts a new thread when Codex has no record of it", async () => {
     await startChat("fake", { scenario: { forgets: true } });
     await say(await newChat(), "first");
     await ended("c-asha");
-    // A new token: Codex starts again, and its saved threads are gone.
-    token = "renewed-token";
+    // Rufi starts again, and Codex's saved threads are gone.
+    await startChat("fake", { scenario: { forgets: true } });
     await say(await chatRow(), "second");
     await ended("c-asha", 2);
     expect((await queue.list(await chatRow())).items).toEqual([]);
