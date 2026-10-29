@@ -225,6 +225,18 @@ export function fakeClaude(
             user_message_uuids: [running, message],
           });
           break;
+        case "takes_later":
+          setTimeout(() => {
+            if (turn !== running) return;
+            keep(message);
+            frames.push({
+              type: "assistant",
+              message: { content: [] },
+              user_message_uuid: message,
+              user_message_uuids: [running, message],
+            });
+          }, 50);
+          break;
         case "holds":
           queued.push(message);
           break;
