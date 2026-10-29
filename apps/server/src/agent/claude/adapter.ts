@@ -289,7 +289,9 @@ async function openConversation(
 
   /** The process ended: by Rufi, or by itself (`died`, when it said why). */
   const ended = (current: ClaudeSession, died: unknown) => {
-    if (session === current) session = undefined;
+    // One closed while idle may end after the next turn opened another.
+    if (session !== undefined && session !== current) return;
+    session = undefined;
     if (running) {
       finish(
         running.stopping
