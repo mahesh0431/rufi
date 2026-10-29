@@ -13,8 +13,9 @@
 // writes a progress note (fake-model.ts's NOTE) before it answers ("whole
 // commentary": only when it completes; "cut commentary": half of it, and
 // the turn never ends), "seeded" gives the first words of the note and the
-// answer as each starts, before their deltas, and anything else answers
-// "ok:<text>".
+// answer as each starts, before their deltas, "crash" ends the fake as the
+// turn starts, and anything else answers "ok:<text>". A scenario's `words`
+// count as part of every message.
 // Like Codex, it calls Rufi's tools on the MCP server a thread was given
 // (its config's mcp_servers.rufi), checking it answers when the thread starts
 // or resumes. Like Codex, a thread keeps the developer instructions it was
@@ -40,8 +41,12 @@ import { NOTE, THINKING } from "./fake-model.ts";
 import { callTool, initialize, type McpServerConfig } from "./mcp-client.ts";
 
 export interface Scenario {
+  /** Words that choose what every turn does, as if its message had them. */
+  words?: string;
   /** Methods the fake never answers. */
   hang?: string[];
+  /** Methods the fake refuses with an error, doing nothing. */
+  refuse?: string[];
   /** Methods the fake takes and answers after `slowMs` (200 ms). */
   slow?: string[];
   slowMs?: number;
@@ -85,10 +90,10 @@ export interface Scenario {
   reasoningMs?: number;
   /**
    * The turn generates a picture before answering, as Codex's image
-   * generation does: started, then completed with its bytes and, unless
-   * null, the path it saved them at.
+   * generation does: started, then completed with its bytes (base64, these
+   * or a PNG's) and, unless null, the path it saved them at.
    */
-  picture?: { savedPath: string | null };
+  picture?: { savedPath: string | null; bytes?: string };
   /**
    * Codex compacts the thread's context during the turn, before answering;
    * the compaction ends `compactionMs` (0) after it starts.
@@ -133,6 +138,8 @@ export interface Scenario {
   resetsAt?: number;
   /** The message Codex gives a failed turn (a usage-limit message). */
   failMessage?: string;
+  /** What Codex says a failed turn failed of (`usageLimitExceeded`). */
+  failInfo?: string | null;
   /** Each thread's first turns fail, as on the usage limit. */
   failTurns?: number;
   /** Sparse account rate-limit updates following that snapshot. */
@@ -278,7 +285,10 @@ const turnObject = (id: string, status: string) => ({
     status === "failed"
       ? {
           message: scenario.failMessage ?? USAGE_LIMIT,
-          codexErrorInfo: "usageLimitExceeded",
+          codexErrorInfo:
+            scenario.failInfo === undefined
+              ? "usageLimitExceeded"
+              : scenario.failInfo,
           additionalDetails: null,
           misalignment: null,
         }
@@ -322,6 +332,16 @@ function dispatch(thread: Thread, next: Queued) {
   return turnObject(turnId, "inProgress");
 }
 
+/** Like Codex: a steer joins the running turn, and its record. */
+function steer(thread: Thread, entry: Queued) {
+  if (!thread.running) return;
+  thread.running.steers.push(entry);
+  thread.history
+    .find((turn) => turn.id === thread.running?.turnId)
+    ?.messages.push(entry);
+  persist();
+}
+
 function complete(thread: Thread, turnId: string, status: string) {
   const turn = thread.history.find((t) => t.id === turnId);
   if (turn) turn.status = status;
@@ -339,7 +359,10 @@ function complete(thread: Thread, turnId: string, status: string) {
 
 async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   const threadId = thread.id;
-  const text = textOf(entry);
+  const text =
+    scenario.words === undefined
+      ? textOf(entry)
+      : `${textOf(entry)} ${scenario.words}`;
   const event = (method: string, params: object) => {
     send({ method, params: { threadId, turnId, ...params } });
   };
@@ -373,6 +396,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     persist();
   }
   event("item/started", { item: userItem(entry) });
+  if (text.includes("crash")) process.exit(1);
   const turnIndex = thread.history.findIndex((turn) => turn.id === turnId);
   const calls = text.includes("quiet")
     ? []
@@ -583,7 +607,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
         ...item,
         status: "completed",
         revisedPrompt: "A fictional watercolour of a sleeping cat",
-        result: "iVBORw0KGgo".repeat(1_000),
+        result: scenario.picture.bytes ?? "iVBORw0KGgo".repeat(1_000),
         ...(scenario.picture.savedPath !== null && {
           savedPath: scenario.picture.savedPath,
         }),
@@ -665,6 +689,16 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   }
   complete(thread, turnId, "completed");
 }
+
+/** A model as model/list gives it, with the efforts it takes. */
+const model = (id: string, displayName: string) => ({
+  id,
+  displayName,
+  supportedReasoningEfforts: ["low", "medium", "high"].map(
+    (reasoningEffort) => ({ reasoningEffort, description: reasoningEffort }),
+  ),
+  defaultReasoningEffort: "medium",
+});
 
 /** A usage breakdown as Codex reports it, of `totalTokens` tokens. */
 const usageOf = (totalTokens: number) => ({
@@ -830,13 +864,13 @@ async function handle(
       return params["cursor"]
         ? {
             data: [
-              { id: "gpt-6-astra", displayName: "GPT-6-Astra" },
-              { id: "gpt-5.5", displayName: "GPT-5.5" },
+              model("gpt-6-astra", "GPT-6-Astra"),
+              model("gpt-5.5", "GPT-5.5"),
             ],
             nextCursor: null,
           }
         : {
-            data: [{ id: "gpt-6.1-sol", displayName: "GPT-6.1-Sol" }],
+            data: [model("gpt-6.1-sol", "GPT-6.1-Sol")],
             nextCursor: "page-2",
           };
     case "thread/start": {
@@ -917,7 +951,7 @@ async function handle(
       };
       // Like Codex: into a running turn it steers.
       if (thread.running) {
-        thread.running.steers.push(entry);
+        steer(thread, entry);
         return { turn: turnObject(thread.running.turnId, "inProgress") };
       }
       // Like Codex: the model and effort hold for this turn and the ones after.
@@ -948,12 +982,13 @@ async function handle(
       ) {
         throw new Error("no active turn to steer");
       }
-      thread.running.steers.push({
+      const { turnId } = thread.running;
+      steer(thread, {
         id: "steer",
         input: params["input"] as Queued["input"],
         clientUserMessageId: String(params["clientUserMessageId"]),
       });
-      return { turnId: thread.running.turnId };
+      return { turnId };
     }
     case "turn/interrupt": {
       if (scenario.ignoreInterrupt) return undefined;
@@ -1036,6 +1071,13 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   if (message.id === undefined) return; // a notification, e.g. initialized
   if (scenario.hang?.includes(message.method)) return;
   const { id, method } = message;
+  if (scenario.refuse?.includes(method)) {
+    send({
+      id,
+      error: { code: -32600, message: `The fake refused ${method}.` },
+    });
+    return;
+  }
   const reply = () => {
     handle(method, message.params ?? {}).then(
       (result) => {

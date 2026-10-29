@@ -25,6 +25,8 @@ const EVENTS = new Set([
   "codex.process_list_failed",
   "codex.commands_left",
   "codex.interrupt_failed",
+  "codex.reconcile_failed",
+  "codex.release_failed",
   "tool.failed",
   "mcp.refused",
   "mcp.failed",

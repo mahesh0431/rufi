@@ -113,7 +113,26 @@ const textInput = (text: string): UserInput => ({
   text_elements: [],
 });
 
-export function codexRuntime(deps: CodexDeps): AgentRuntime {
+/** A model as Codex lists it, with the efforts it takes. */
+interface CodexModel extends Model {
+  efforts: string[];
+  defaultEffort: string;
+}
+
+/** What the Codex adapter needs beyond what the chat uses. */
+export interface CodexRuntime extends AgentRuntime {
+  /** The models Codex offers now, with their efforts. */
+  catalog: (signal?: AbortSignal) => Promise<CodexModel[]>;
+  /** Codex's usage limits as it last reported them. */
+  limits: () => RateLimitSnapshot | undefined;
+  /**
+   * Lets go of a thread Codex has open, once no reply runs in it, so the
+   * next resume gives it new settings.
+   */
+  release: (threadId: string) => Promise<void>;
+}
+
+export function codexRuntime(deps: CodexDeps): CodexRuntime {
   const deadlines = { ...DEADLINES, ...deps.deadlines };
   const log = deps.log ?? (() => undefined);
   const emit = (event: AgentEvent) => {
@@ -199,6 +218,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           status: "failed",
           reason: "provider_failed",
           text: "Codex stopped unexpectedly.",
+          died: true,
         });
       },
     });
@@ -219,6 +239,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       status: "failed",
       reason: "provider_failed",
       text: "Codex stopped.",
+      died: true,
     });
   }
 
@@ -269,7 +290,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     };
     return {
       model: settings.model,
-      cwd: deps.sandbox.folder,
+      cwd: settings.cwd ?? deps.sandbox.folder,
       approvalPolicy: "never",
       // The named profile, never the legacy `sandbox`: only a profile can
       // deny reads.
@@ -769,6 +790,58 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     return { model: response.model, running };
   }
 
+  /**
+   * Lets go of a thread Codex has open; it closes at once
+   * (thread_unload_delay_secs = 0).
+   */
+  async function unload(
+    app: AppServer,
+    threadId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!loaded.has(threadId)) return;
+    const closed = Promise.withResolvers<undefined>();
+    closing.set(threadId, closed);
+    try {
+      const { status } = await request<ThreadUnsubscribeResponse>(
+        app,
+        "thread/unsubscribe",
+        { threadId },
+      );
+      if (status === "unsubscribed") {
+        await within(closed.promise, deadlines.requestMs, signal);
+      }
+    } finally {
+      closing.delete(threadId);
+    }
+    loaded.delete(threadId);
+  }
+
+  /** The models, every page, with their efforts. */
+  async function catalog(signal?: AbortSignal): Promise<CodexModel[]> {
+    const app = await ready(signal);
+    const models: CodexModel[] = [];
+    let cursor: string | null = null;
+    do {
+      const page: ModelListResponse = await request(app, "model/list", {
+        cursor,
+        includeHidden: false,
+      });
+      for (const model of page.data) {
+        models.push({
+          id: model.id,
+          name: model.displayName,
+          efforts: model.supportedReasoningEfforts.map(
+            (option) => option.reasoningEffort,
+          ),
+          defaultEffort: model.defaultReasoningEffort,
+        });
+      }
+      cursor = page.nextCursor;
+    } while (cursor);
+    return models;
+  }
+
   /** A renewed sign-in replaces Codex, so its known thread is picked up again. */
   async function open(
     threadId: string,
@@ -787,21 +860,18 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   return {
     provider: "codex",
 
-    models: async (signal) => {
-      const app = await ready(signal);
-      const models: Model[] = [];
-      let cursor: string | null = null;
-      do {
-        const page: ModelListResponse = await request(app, "model/list", {
-          cursor,
-          includeHidden: false,
-        });
-        for (const model of page.data) {
-          models.push({ id: model.id, name: model.displayName });
-        }
-        cursor = page.nextCursor;
-      } while (cursor);
-      return models;
+    models: async (signal) =>
+      (await catalog(signal)).map(({ id, name }) => ({ id, name })),
+
+    catalog,
+
+    limits: () => limits,
+
+    release: async (threadId) => {
+      if (turns.has(threadId)) throw new Error("A reply is running.");
+      threads.delete(threadId);
+      const app = server;
+      if (app?.running()) await unload(app, threadId);
     },
 
     startThread: async (settings, signal) => {
@@ -833,26 +903,12 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         );
       }
       // Codex ignores new settings for a thread it has open: it is let go
-      // of first, and closes at once (thread_unload_delay_secs = 0).
-      if (loaded.has(threadId)) {
-        const closed = Promise.withResolvers<undefined>();
-        closing.set(threadId, closed);
-        try {
-          const { status } = await request<ThreadUnsubscribeResponse>(
-            app,
-            "thread/unsubscribe",
-            { threadId },
-          );
-          if (status === "unsubscribed") {
-            await within(closed.promise, deadlines.requestMs, signal);
-          }
-        } catch (error) {
-          if (error instanceof Stopped) throw error;
-          throw new NotReloaded(undefined, { cause: error });
-        } finally {
-          closing.delete(threadId);
-        }
-        loaded.delete(threadId);
+      // of first.
+      try {
+        await unload(app, threadId, signal);
+      } catch (error) {
+        if (error instanceof Stopped) throw error;
+        throw new NotReloaded(undefined, { cause: error });
       }
       const response = await resume(app, threadId, settings, signal);
       // The history still holds the instructions the thread was first given
@@ -924,7 +980,12 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     },
 
     steer: async (threadId, message) => {
-      const app = await open(threadId);
+      let app: AppServer;
+      try {
+        app = await open(threadId);
+      } catch (error) {
+        throw new NotSent(errorText(error), { cause: error });
+      }
       const running = turns.get(threadId);
       if (!running || running.stopping) {
         throw new NotSent("No reply is running to steer.");

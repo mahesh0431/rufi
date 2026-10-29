@@ -125,7 +125,21 @@ export const readResource = (server: McpServerConfig, uri: string) =>
     { "mcp-protocol-version": PROTOCOL },
   );
 
-/** Calls a tool with the `_meta` Codex gives a call: its id, thread and turn. */
+/** The `_meta` Codex gives a call to an MCP tool: its id, thread and turn. */
+export const codexMeta = (call: {
+  callId: string;
+  threadId: string;
+  turnId: string;
+}) => ({
+  callId: call.callId,
+  threadId: call.threadId,
+  "x-codex-turn-metadata": {
+    thread_id: call.threadId,
+    turn_id: call.turnId,
+  },
+});
+
+/** Calls a tool with the `_meta` Codex gives a call. */
 export const callTool = (
   server: McpServerConfig,
   call: {
@@ -144,14 +158,7 @@ export const callTool = (
       params: {
         name: call.name,
         arguments: call.arguments,
-        _meta: {
-          callId: call.callId,
-          threadId: call.threadId,
-          "x-codex-turn-metadata": {
-            thread_id: call.threadId,
-            turn_id: call.turnId,
-          },
-        },
+        _meta: codexMeta(call),
       },
     },
     { "mcp-protocol-version": PROTOCOL },
