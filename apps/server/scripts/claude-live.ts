@@ -84,7 +84,10 @@ const open = (
     plugin,
   });
 
-/** Sends `text` and reads to the turn's end; gives the turn's start. */
+/**
+ * Sends `text` and reads to the turn's end; gives the turn's start. A turn
+ * that ends in error throws: a case on a failed turn proves nothing.
+ */
 async function turn(
   session: ClaudeSession,
   text: string,
@@ -99,7 +102,14 @@ async function turn(
     if (next.done === true) throw new Error("Claude ended the conversation.");
     const value = next.value;
     if (value.type === "system" && value.subtype === "init") start = value;
-    if (value.type === "result") break;
+    if (value.type === "result") {
+      if (value.subtype !== "success" || value.is_error) {
+        throw new Error(
+          `the turn ended in error: ${value.subtype === "success" ? value.result : value.errors.join("; ")}`,
+        );
+      }
+      break;
+    }
   }
   if (start === undefined) throw new Error("The turn didn't say its start.");
   return start;
