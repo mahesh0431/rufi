@@ -13,7 +13,7 @@ export type Family = "openai" | "anthropic";
 export interface ProviderModel {
   id: string;
   name: string;
-  /** The efforts it takes, as the provider names them. */
+  /** The efforts it takes, as the provider names them; none for some. */
   efforts: readonly string[];
   /** The provider's default effort, when it gives one. */
   defaultEffort?: string;
@@ -44,8 +44,9 @@ export interface OpenOptions {
   /** Rufi's tools, registered at every open. */
   tools: McpRegistration;
   /**
-   * Earlier history as text, for a new conversation: the provider has it
-   * before the first input.
+   * Earlier history as text, for a new conversation. It goes in front of the
+   * first input, never during open, so nothing of Rufi's is in the
+   * conversation before Rufi has kept its reference.
    */
   seed?: string;
   /** Where the conversation's events go, in order. */
@@ -82,8 +83,11 @@ export type Delivery =
   | { status: "uncertain"; text: string };
 
 /**
- * What became of a steer. Started the next turn: the provider began a new
- * turn with it, whose turnStarted event, given first, names it.
+ * What became of a steer, from what the provider showed, never from what
+ * it left out. Delivered: taken into its turn. Started the next turn: taken
+ * into a turn the provider began by itself, whose turnStarted, given first,
+ * names it. Not delivered: its turn had ended, or the provider refused it
+ * or said it cancelled it. Else uncertain.
  */
 export type SteerOutcome =
   | { status: "delivered" }
@@ -121,15 +125,17 @@ export interface Conversation {
   /** Starts a turn when none runs. */
   startTurn: (start: TurnStart) => Promise<Delivery>;
   /**
-   * Puts an input into the running turn. The outcome may come only when
-   * the turn ends; until then the input is with the provider.
+   * Puts an input into the running turn. The outcome may come after the
+   * turn ends; until then the input is with the provider, handing over.
    */
   steer: (steer: Steer) => Promise<SteerOutcome>;
   /**
    * Stops the turn, if it still runs, within a bound: interrupted, or else
    * its process is ended. Resolves once its turnEnded event is given, after
-   * which nothing more of it comes. A steer the provider held and didn't
-   * take is answered not delivered first.
+   * which nothing more of it comes. Every steer still handing over for the
+   * turn is answered, also when the turn had ended before: not delivered
+   * only when the provider says it cancelled it, else delivered or
+   * uncertain.
    */
   stop: (turn: string) => Promise<void>;
   /** Which of these inputs the provider received. */
@@ -140,7 +146,10 @@ export interface Conversation {
    * open turn of this conversation, and the call is refused.
    */
   placeCall: (meta: unknown) => PlacedCall | undefined;
-  /** Lets go of the conversation, stopping a running turn first. */
+  /**
+   * Lets go of the conversation, stopping a running turn first. A steer
+   * still handing over is then uncertain.
+   */
   close: () => Promise<void>;
 }
 
@@ -164,6 +173,11 @@ export interface ProviderAdapter {
    * finds nothing, NotOpened for any other failure.
    */
   open: (options: OpenOptions) => Promise<Conversation>;
+  /**
+   * Removes a conversation, not open, by its reference; one already gone
+   * counts as removed.
+   */
+  delete: (ref: string) => Promise<void>;
   /** Usage now and when limits reset; empty when the provider says nothing. */
   usage: () => Promise<readonly UsageWindow[]>;
   /** Ends the adapter's processes and everything they started. */
