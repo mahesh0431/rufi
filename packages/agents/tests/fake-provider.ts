@@ -291,6 +291,17 @@ export function fakeProvider(
               status: "uncertain",
               text: "The fake provider's reply was lost.",
             });
+          case "takes_later":
+            return new Promise((resolve) => {
+              const held = { input, turn, answer: resolve };
+              open.held.push(held);
+              setTimeout(() => {
+                if (!open.held.includes(held) || running() !== turn) return;
+                open.held.splice(open.held.indexOf(held), 1);
+                mine.received.push(input);
+                resolve({ status: "delivered" });
+              }, 50);
+            });
           case "holds":
           case "holds_past_end":
             return new Promise((resolve) => {
