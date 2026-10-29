@@ -302,7 +302,8 @@ test("waiting messages: edit, reorder, remove, and send one now", async ({
       .nth(n)
       .evaluate(
         (row) =>
-          new DOMMatrix(getComputedStyle(row).transform).m42 / row.offsetHeight,
+          new DOMMatrix(getComputedStyle(row).transform).m42 /
+          row.getBoundingClientRect().height,
       );
   const liftUp = async (n: number) => {
     await handle(n).focus();
