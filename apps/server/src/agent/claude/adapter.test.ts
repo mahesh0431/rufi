@@ -49,6 +49,7 @@ providerContract("Claude", {
 async function onFake(
   query: ReturnType<typeof fakeClaude>["query"],
   sessions: ReturnType<typeof fakeClaude>["sessions"],
+  more: { stopMs?: number } = {},
 ) {
   const folder = await mkdtemp(join(tmpdir(), "rufi-claude-adapter-"));
   const adapter = claudeAdapter({
@@ -58,6 +59,7 @@ async function onFake(
     plugin: { path: folder, skills: [] },
     query,
     sessions,
+    ...more,
   });
   const events: ProviderEvent[] = [];
   const conversation = await adapter.open({
@@ -78,7 +80,14 @@ async function onFake(
     });
   const ends = () =>
     events.flatMap((event) => (event.type === "turnEnded" ? [event.end] : []));
-  return { adapter, conversation, start, ends };
+  /** The first turn, once it has started. */
+  const first = () =>
+    vi.waitFor(() => {
+      const started = events.find((event) => event.type === "turnStarted");
+      expect(started).toBeDefined();
+      return started?.turn ?? "";
+    });
+  return { adapter, conversation, start, ends, first };
 }
 
 describe("Claude's process for a conversation", () => {
@@ -119,6 +128,61 @@ describe("a turn that fails", () => {
       expect(ends()).toEqual([
         expect.objectContaining({ status: "failed", reason: "connection" }),
       ]);
+    });
+    await adapter.close();
+  });
+});
+
+describe("steers Claude takes into a turn of its own", () => {
+  it("settles a second steer the turn names later, and lets the next turn start", async () => {
+    const fake = fakeClaude({ turn: "runs" }, { nextTurn: "two" });
+    const { adapter, conversation, start, ends, first } = await onFake(
+      fake.query,
+      fake.sessions,
+    );
+    expect(await start("message-1")).toEqual({ status: "delivered" });
+    const turn = await first();
+    const outcomes = ["steer-1", "steer-2"].map((id) =>
+      conversation.steer({ input: { id, parts: ["And the date?"] }, turn }),
+    );
+
+    expect(await outcomes[0]).toEqual({
+      status: "next_turn",
+      turn: expect.any(String) as string,
+    });
+    expect(await outcomes[1]).toEqual({ status: "delivered" });
+    await vi.waitFor(() => {
+      expect(ends()).toHaveLength(2);
+    });
+    expect(await start("message-2")).toEqual({ status: "delivered" });
+    await adapter.close();
+  });
+
+  it("are stopped, and the process ended, when Stop comes before the turn's first answer", async () => {
+    const fake = fakeClaude(
+      { turn: "runs", ignoresInterrupt: true },
+      { nextTurn: "before_an_answer" },
+    );
+    const { adapter, conversation, start, ends, first } = await onFake(
+      fake.query,
+      fake.sessions,
+      { stopMs: 50 },
+    );
+    expect(await start("message-1")).toEqual({ status: "delivered" });
+    const turn = await first();
+    const outcome = conversation.steer({
+      input: { id: "steer-1", parts: ["And the date?"] },
+      turn,
+    });
+    await vi.waitFor(() => {
+      expect(ends()).toHaveLength(1);
+    });
+    await conversation.stop(turn);
+
+    expect(fake.closes()).toBe(1);
+    expect(await outcome).toEqual({
+      status: "uncertain",
+      text: expect.any(String) as string,
     });
     await adapter.close();
   });

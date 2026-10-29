@@ -160,16 +160,25 @@ function modelsOf(rows: readonly ModelInfo[]): ProviderModel[] {
   return [...models.values()];
 }
 
-interface Turn {
-  ref: string;
+interface Turn extends Pending {
   stopping: boolean;
   /** Claude's error in the turn, if it reported one. */
   error?: SDKAssistantMessageError;
   /** Claude's last request got no answer at all: no HTTP status. */
   unanswered?: boolean;
-  /** Resolves once its turnEnded is given. */
+}
+
+/** A turn, and when it ends (for a turn Rufi sees, once turnEnded is given). */
+interface Pending {
+  ref: string;
   ended: Promise<void>;
   end: () => void;
+}
+
+function pending(ref: string): Pending {
+  let end = () => {};
+  const ended = new Promise<void>((resolve) => (end = resolve));
+  return { ref, ended, end };
 }
 
 /** A steer with Claude, waiting for what Claude shows of it. */
@@ -196,7 +205,7 @@ async function openConversation(
   let pumped: Promise<void> = Promise.resolve();
   let running: Turn | undefined;
   /** A turn Claude began by itself, until its first answer names a steer. */
-  let unclaimed: string | undefined;
+  let unclaimed: Pending | undefined;
   let starting:
     | { id: string; settle: (delivery: Delivery) => void }
     | undefined;
@@ -215,9 +224,7 @@ async function openConversation(
   };
 
   const begin = (turn: string, inputs: readonly string[]) => {
-    let end = () => {};
-    const ended = new Promise<void>((resolve) => (end = resolve));
-    running = { ref: turn, stopping: false, ended, end };
+    running = { ...pending(turn), stopping: false };
     kept = true;
     emit({ type: "turnStarted", turn, inputs });
   };
@@ -248,7 +255,7 @@ async function openConversation(
         begin(randomUUID(), [id]);
         delivered({ status: "delivered" });
       } else {
-        unclaimed = randomUUID();
+        unclaimed = pending(randomUUID());
       }
     } else if (message.type === "assistant") {
       const ids =
@@ -259,8 +266,9 @@ async function openConversation(
       if (unclaimed !== undefined && running === undefined) {
         const mine = ids.filter((id) => held.has(id));
         if (mine.length > 0) {
-          const turn = unclaimed;
+          const { ref: turn, end } = unclaimed;
           unclaimed = undefined;
+          end();
           begin(turn, mine);
           for (const id of mine) settle(id, { status: "next_turn", turn });
         }
@@ -268,28 +276,30 @@ async function openConversation(
       if (running) {
         if (message.error === undefined) running.unanswered = false;
         else running.error = message.error;
-        settleTaken(ids, running.ref);
+        taken(ids);
       }
     } else if (message.type === "result") {
       if (running) {
-        settleTaken(
+        taken(
           message.user_message_uuids ??
             (message.user_message_uuid === undefined
               ? []
               : [message.user_message_uuid]),
-          running.ref,
         );
         finish(endOf(message, running, rateLimit));
       }
+      unclaimed?.end();
       unclaimed = undefined;
       idle();
     }
   };
 
-  const settleTaken = (ids: readonly string[], turn: string) => {
-    for (const id of ids) {
-      if (held.get(id)?.turn === turn) settle(id, { status: "delivered" });
-    }
+  /**
+   * Steers the running turn names are delivered, also one sent for an
+   * earlier turn that Claude took into this one after its start.
+   */
+  const taken = (ids: readonly string[]) => {
+    for (const id of ids) settle(id, { status: "delivered" });
   };
 
   /** The process ended: by Rufi, or by itself (`died`, when it said why). */
@@ -308,6 +318,7 @@ async function openConversation(
             },
       );
     }
+    unclaimed?.end();
     unclaimed = undefined;
     const start = starting;
     starting = undefined;
@@ -406,8 +417,21 @@ async function openConversation(
       );
       if (!ends) await closeProcess();
       await stopping.ended;
-    } else if (current && [...held.values()].some((s) => s.turn === turn)) {
+    } else if (
+      current &&
+      (unclaimed || [...held.values()].some((steer) => steer.turn === turn))
+    ) {
+      // The turn ended, but its steers are with Claude, or in a turn Claude
+      // began by itself that hasn't said which yet: that one ends too.
+      const own = unclaimed;
       cancelled(await interrupt(current), turn);
+      if (own) {
+        const ends = await within(own.ended, stopMs, "the stop").then(
+          () => true,
+          () => false,
+        );
+        if (!ends) await closeProcess();
+      }
     }
     idle();
   };

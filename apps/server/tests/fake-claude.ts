@@ -15,12 +15,23 @@ const SILENT_MS = 1_000;
 
 export function fakeClaude(
   script: Script,
-  /** Beyond the contract's scripts: the turn's network drops. */
-  more: { connectionDrops?: true } = {},
+  /**
+   * Beyond the contract's scripts. Connection drops: the turn's network
+   * drops. Next turn: steers miss the running turn, which ends, and Claude
+   * starts the next with them. With two, its first answer names the first
+   * and its later ones both. Before an answer, it runs and never answers.
+   */
+  more: {
+    connectionDrops?: true;
+    nextTurn?: "two" | "before_an_answer";
+  } = {},
 ): {
   query: typeof query;
   sessions: ClaudeSessions;
+  /** How many times a process was closed. */
+  closes: () => number;
 } {
+  let closes = 0;
   /** Each conversation Claude keeps, with the ids of its messages. */
   const kept = new Map<string, string[]>();
 
@@ -133,6 +144,31 @@ export function fakeClaude(
     const steer = (message: string) => {
       const running = turn;
       if (running === undefined) return;
+      if (more.nextTurn === "two") {
+        queued.push(message);
+        if (queued.length < 2) return;
+        const [first = "", second = ""] = queued;
+        queued = [];
+        answer([running]);
+        keep(first);
+        keep(second);
+        frames.push({ type: "system", subtype: "init" });
+        frames.push({
+          type: "assistant",
+          message: { content: [] },
+          user_message_uuid: first,
+          user_message_uuids: [first],
+        });
+        answer([first, second]);
+        return;
+      }
+      if (more.nextTurn === "before_an_answer") {
+        answer([running]);
+        keep(message);
+        frames.push({ type: "system", subtype: "init" });
+        turn = message;
+        return;
+      }
       switch (script.steer ?? "takes") {
         case "takes":
           keep(message);
@@ -211,12 +247,14 @@ export function fakeClaude(
         return Promise.resolve({ still_queued: [], cancelled });
       },
       close: () => {
+        closes++;
         frames.end();
       },
     });
   };
 
   return {
+    closes: () => closes,
     query: run as unknown as typeof query,
     sessions: {
       info: (id) =>
