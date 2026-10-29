@@ -12,8 +12,12 @@ import { join } from "node:path";
 import type { Options, Settings } from "@anthropic-ai/claude-agent-sdk";
 import type { AgentSandbox } from "../runtime.ts";
 
-/** A path in a Claude permission rule: `//` starts an absolute one. */
-const rulePath = (path: string) => `/${path}`;
+/**
+ * A path in a Claude permission rule, which is a gitignore pattern: `//`
+ * starts an absolute one, and `*`, `?`, `[`, `]` and `\` are escaped so that
+ * a folder named, say, `Health [Asha]` stands for itself.
+ */
+const rulePath = (path: string) => `/${path.replace(/[\\*?[\]]/g, "\\$&")}`;
 
 /** The tools Rufi AI uses without asking, beside writing in its folder. */
 const ALLOWED = [
