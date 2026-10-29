@@ -558,7 +558,7 @@ describe("a turn the provider began by itself", () => {
 });
 
 describe("Stop", () => {
-  it("while a start is still opening keeps it from the provider, and drops its input", async () => {
+  it("while a start is still opening keeps it from the provider and drops its input; what waits goes on", async () => {
     const asked = Promise.withResolvers<undefined>();
     const opened = Promise.withResolvers<undefined>();
     agents = run(fake.adapter, {
@@ -572,14 +572,17 @@ describe("Stop", () => {
     asha();
     agents.send(ASHA.id, note("note-1"));
     await asked.promise;
+    agents.send(ASHA.id, note("note-2"));
     const stopped = agents.stop(ASHA.id, "person");
     opened.resolve(undefined);
     await stopped;
 
-    expect(states()).toEqual({ "note-1": "dropped" });
-    expect(received()).toEqual([]);
-    expect(rows("SELECT id FROM turns")).toEqual([]);
-    expect(agents.get(ASHA.id)?.status).toBe("idle");
+    await until(() => {
+      expect(agents.get(ASHA.id)?.status).toBe("done");
+    });
+    expect(states()).toEqual({ "note-1": "dropped", "note-2": "delivered" });
+    expect(received()).toEqual(["note-2"]);
+    expect(rows("SELECT status FROM turns")).toEqual([{ status: "done" }]);
   });
 });
 

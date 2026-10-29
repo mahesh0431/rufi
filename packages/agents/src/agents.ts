@@ -896,7 +896,12 @@ export function createAgents(options: {
     if (!current || !conversation) return;
     const parts = await claimed(live, input);
     // The turn ended meanwhile: the input starts the next one.
-    if (!parts || live.current !== current || live.stopBy !== undefined) {
+    if (
+      !parts ||
+      lives.get(live.id) !== live ||
+      live.current !== current ||
+      live.stopBy !== undefined
+    ) {
       return;
     }
     store.change(({ event }) => {
@@ -1106,20 +1111,24 @@ export function createAgents(options: {
     stop: async (id, by) => {
       const live = lives.get(id);
       if (!live) return;
-      const starting = live.starting;
-      if (starting) {
-        starting.stopBy ??= by;
-        if (starting.turn !== undefined) closeTurn(live, starting.turn);
-        await starting.settled.promise;
+      try {
+        const starting = live.starting;
+        if (starting) {
+          starting.stopBy ??= by;
+          if (starting.turn !== undefined) closeTurn(live, starting.turn);
+          await starting.settled.promise;
+        }
+        const current = live.current;
+        if (!current || !live.conversation) return;
+        if (live.stopBy === undefined) {
+          live.stopBy = by;
+          closeTurn(live, current.turn);
+        }
+        await live.conversation.stop(current.ref);
+      } finally {
+        // What waits for the agent goes on.
+        pump(id);
       }
-      const current = live.current;
-      if (!current || !live.conversation) return;
-      if (live.stopBy === undefined) {
-        live.stopBy = by;
-        closeTurn(live, current.turn);
-      }
-      await live.conversation.stop(current.ref);
-      pump(id);
     },
 
     place: async (id, meta, signal) => {
