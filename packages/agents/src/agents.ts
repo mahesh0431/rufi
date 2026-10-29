@@ -195,6 +195,8 @@ interface Live {
   starting?: Starting;
   /** The turn running now, once admitted. */
   current?: { turn: string; ref: string };
+  /** The provider's reference for the turn that ended last. */
+  last?: string;
   /** Who asked to stop the current turn. */
   stopBy?: string;
   /** Calls waiting for a turn's admission, by the provider's reference. */
@@ -626,6 +628,7 @@ export function createAgents(options: {
       live.current = undefined;
       live.stopBy = undefined;
     }
+    live.last = ref;
     pump(live.id);
   }
 
@@ -715,12 +718,19 @@ export function createAgents(options: {
         .catch(() => new Map<string, Received>())
     ).get(input) ?? "unknown";
 
-  /** Where an input the provider may have taken goes, by what it says now. */
-  const byAnswer = (received: Received, turn: string | null): Move =>
+  /**
+   * Where an input the provider may have taken goes, by what it says now:
+   * one it didn't get waits again, a steer first in line.
+   */
+  const byAnswer = (
+    received: Received,
+    turn: string | null,
+    steer = false,
+  ): Move =>
     received === "received"
       ? { state: "delivered", turn }
       : received === "not_received"
-        ? { state: "waiting" }
+        ? { state: "waiting", ...(steer && { first: true as const }) }
         : { state: "not_sure" };
 
   /**
@@ -932,7 +942,11 @@ export function createAgents(options: {
               : outcome.status === "not_delivered"
                 ? // A steer that missed its turn goes first, and starts the next.
                   { state: "waiting", first: true }
-                : byAnswer(await ask(conversation, input.id), current.turn);
+                : byAnswer(
+                    await ask(conversation, input.id),
+                    current.turn,
+                    true,
+                  );
         move(live, input.id, "handing_over", to);
         pump(live.id);
       })
@@ -1118,13 +1132,19 @@ export function createAgents(options: {
           if (starting.turn !== undefined) closeTurn(live, starting.turn);
           await starting.settled.promise;
         }
-        const current = live.current;
-        if (!current || !live.conversation) return;
-        if (live.stopBy === undefined) {
-          live.stopBy = by;
-          closeTurn(live, current.turn);
+        const { current, conversation } = live;
+        if (!conversation) return;
+        if (current) {
+          if (live.stopBy === undefined) {
+            live.stopBy = by;
+            closeTurn(live, current.turn);
+          }
+          await conversation.stop(current.ref);
+        } else if (live.last !== undefined && handingOver(id)) {
+          // Its turn has ended, but steers handed over for it may still be
+          // taken: the provider settles them now.
+          await conversation.stop(live.last);
         }
-        await live.conversation.stop(current.ref);
       } finally {
         // What waits for the agent goes on.
         pump(id);

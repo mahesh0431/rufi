@@ -312,21 +312,32 @@ describe("the queue", () => {
     expect(received()).toEqual(["note-1", "note-2"]);
   });
 
-  it("starts nothing while a steer is still with the provider; one it didn't take goes first, and starts the next turn", async () => {
+  it("starts nothing while a steer is still with the provider after its turn; one Stop cancels goes first, and starts the next turn", async () => {
     asha();
     fake.script.turn = "runs";
     agents.send(ASHA.id, note("note-1"));
     await running();
     agents.send(ASHA.id, note("note-2", "queue"));
 
-    // The provider holds the steer until its turn ends, and then doesn't take it.
+    // The provider holds the steer, and its turn ends without taking it.
     fake.script.steer = "holds";
     agents.send(ASHA.id, note("note-3", "steer"));
     await until(() => {
       expect(states()["note-3"]).toBe("handing_over");
     });
     fake.end(ledger[0]?.ref ?? "", { status: "failed", reason: "other" });
+    await until(() => {
+      expect(agents.get(ASHA.id)?.status).toBe("failed");
+    });
+    await sleep(20);
+    expect(states()).toMatchObject({
+      "note-2": "waiting",
+      "note-3": "handing_over",
+    });
+    expect(rows("SELECT id FROM turns")).toHaveLength(1);
 
+    // Stop: the provider cancels it, and it goes ahead of the queued input.
+    await agents.stop(ASHA.id, "person");
     await until(() => {
       expect(states()["note-3"]).toBe("delivered");
     });
