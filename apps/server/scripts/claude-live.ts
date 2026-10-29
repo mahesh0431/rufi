@@ -265,7 +265,10 @@ async function checkProbes(probes: readonly Probe[], calls: readonly Call[]) {
       free.find((each) => String(givenOf(each)).trim() === probe.input) ??
       free.find((each) => String(givenOf(each)).includes(probe.input));
     if (call?.result === undefined) {
-      failed.push(`${step} wasn't tried on a call of its own`);
+      const others = free.map((each) => JSON.stringify(givenOf(each)));
+      failed.push(
+        `${step} wasn't tried on a call of its own (${probe.tool} calls left: ${others.join(", ") || "none"})`,
+      );
       continue;
     }
     used.add(call.id);
@@ -418,9 +421,9 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       // Read refuses a .sqlite file as binary by itself: core.json tests
       // Rufi's rule.
       { tool: "Read", input: core, check: refusedRead },
-      { tool: "Bash", input: `cat ${wal}`, check: refusedRead },
+      { tool: "Bash", input: `cat '${wal}'`, check: refusedRead },
       { tool: "Grep", input: backups, check: refusedRead },
-      { tool: "Bash", input: `cat ${database}`, check: refusedRead },
+      { tool: "Bash", input: `cat '${database}'`, check: refusedRead },
       {
         tool: "Write",
         input: `${ai}/inside.txt`,
@@ -428,7 +431,7 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       },
       {
         tool: "Bash",
-        input: `echo hello > ${ai}/inside-command.txt`,
+        input: `echo hello > '${ai}/inside-command.txt'`,
         check: wrote(`${ai}/inside-command.txt`),
       },
       {
@@ -438,17 +441,17 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       },
       {
         tool: "Bash",
-        input: `echo hello > ${outside}`,
+        input: `echo hello > '${outside}'`,
         check: refusedWrite(outside),
       },
       {
         tool: "Bash",
-        input: `echo hello >> ${database}`,
+        input: `echo hello >> '${database}'`,
         check: refusedWrite(database, before.database),
       },
       {
         tool: "Bash",
-        input: `echo hello >> ${skill}`,
+        input: `echo hello >> '${skill}'`,
         check: refusedWrite(skill, before.skill),
       },
       {
@@ -523,7 +526,9 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
 const claude = await findClaude();
 console.log(`Claude ${claude.version} at ${claude.path}`);
 const folder = await mkdtemp(join(tmpdir(), "rufi-claude-live-"));
-const home = join(folder, "home");
+// Brackets, which Claude's permission rules read as a pattern unless
+// escaped, and a space and parentheses, which a rule holds too.
+const home = join(folder, "home [fictional] (2)");
 const sandbox = aiSandbox(home);
 await aiFolder(sandbox.folder);
 await unreadableFiles(home, sandbox);
