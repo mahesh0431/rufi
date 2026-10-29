@@ -44,10 +44,17 @@ export interface Script {
     | "renewal_fails";
   /**
    * A steer into a running turn: taken (the default), taken with its reply
-   * lost, held and not taken, held while the turn ends normally without
-   * it, or taken as the start of the next turn as the running one ends.
+   * lost, held and then taken into the turn, held and not taken, held while
+   * the turn ends normally without it, or taken as the start of the next
+   * turn as the running one ends.
    */
-  steer?: "takes" | "loses_reply" | "holds" | "holds_past_end" | "starts_next";
+  steer?:
+    | "takes"
+    | "loses_reply"
+    | "takes_later"
+    | "holds"
+    | "holds_past_end"
+    | "starts_next";
   /** Its answer to cancelling a held steer is lost. */
   cancelLost?: boolean;
   /** It ignores an interrupt. */
@@ -81,6 +88,8 @@ const CASES = {
     "a steer for a turn that ended isn't delivered, and starts nothing",
   lostSteer: "a steer whose reply is lost is uncertain, and reconcile finds it",
   nextTurn: "a steer that started the next turn is named in that turn's start",
+  takenSteer:
+    "a held steer the provider then takes is delivered, and Stop after it doesn't undo that",
   heldSteer:
     "Stop answers a steer the provider held as not delivered, once it says it cancelled it",
   heldPastEnd:
@@ -452,6 +461,19 @@ export function providerContract(name: string, harness: Harness): void {
         status: "not_delivered",
         text: someText(),
       });
+    });
+
+    test("takenSteer", async () => {
+      const run = await begin({ turn: "runs", steer: "takes_later" });
+      const conversation = await run.open();
+      const turn = await run.start(conversation, "message-1");
+      const outcome = conversation.steer({
+        input: input("steer-1", "And the date?"),
+        turn,
+      });
+      await sleep(SETTLE_MS);
+      await conversation.stop(turn);
+      expect(await outcome).toEqual({ status: "delivered" });
     });
 
     test("lostCancel", async () => {
