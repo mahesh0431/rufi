@@ -210,8 +210,8 @@ export type TurnEnd =
 /**
  * What happens in a conversation, in order. Every event names its turn by
  * the provider's reference; a turn's events come between its turnStarted
- * and its turnEnded. Payloads are as the provider reported them, plain
- * JSON, with images left out.
+ * and its turnEnded, except usage. Payloads are as the provider reported
+ * them, plain JSON, with images left out.
  */
 export type ProviderEvent =
   /** A turn started, with the inputs that started it. */
