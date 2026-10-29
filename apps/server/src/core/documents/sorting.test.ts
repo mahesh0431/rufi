@@ -187,13 +187,14 @@ describe("a draft's value", () => {
 
 describe("a draft's reading", () => {
   /** Page 2 read again, by a reading not sorted yet: its current copy now. */
-  const readAgain = () =>
+  const readAgain = () => {
     store.db.exec(`
       INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
         VALUES ('job-2', 'asha', 'document_read', 'pile', 'done', 1, '[2]', '${T0}', '${T0}');
       INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
         VALUES ('asha', 'f-pile', 2, 'job-2', 1, 'read', '| Ferritin | 1,25 | ng/mL |\n| Vitamin B12 | 104 | pg/mL |', '${T0}');
     `);
+  };
 
   it("is the one the draft names: a draft from an older copy of its page is out of date, and the answer counts it", async () => {
     readAgain();
