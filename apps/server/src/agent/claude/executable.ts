@@ -9,6 +9,8 @@ import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
 import {
   query as sdkQuery,
+  type AccountInfo,
+  type Query,
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { within } from "./deadline.ts";
@@ -117,23 +119,45 @@ function olderThan(version: string, floor: string): boolean {
 /** What kind of sign-in Claude has: never who, never the plan's details. */
 export type ClaudeSignIn = "subscription" | "api key" | "none";
 
-const SIGN_IN_MS = 15_000;
+const ASK_MS = 15_000;
+
+/** The kind of sign-in an account shows. */
+export function signInOf(account: AccountInfo): ClaudeSignIn {
+  if (account.subscriptionType) return "subscription";
+  if (account.apiKeySource && account.apiKeySource !== "none") {
+    return "api key";
+  }
+  return "none";
+}
+
+/** Asks the installed Claude how it's signed in; see askClaude. */
+export function claudeSignIn(
+  claude: InstalledClaude,
+  options: AskOptions,
+): Promise<ClaudeSignIn> {
+  return askClaude(claude, options, async (run) =>
+    signInOf(await within(run.accountInfo(), ASK_MS, "how it's signed in")),
+  );
+}
+
+export interface AskOptions {
+  /** Where the asking session runs; nothing is written there. */
+  cwd: string;
+  /** Claude's environment, without Rufi's secrets (platform/config.ts). */
+  env: Record<string, string>;
+  query?: typeof sdkQuery;
+}
 
 /**
- * Asks the installed Claude how it's signed in, through the SDK, without
- * sending a message: a session is opened with none of the person's Claude
- * setup and no tools, asked, and closed.
+ * Asks the installed Claude something through the SDK, without sending a
+ * message: a session is opened with none of the person's Claude setup and
+ * no tools, asked, and closed.
  */
-export async function claudeSignIn(
+export async function askClaude<T>(
   claude: InstalledClaude,
-  options: {
-    /** Where the asking session runs; nothing is written there. */
-    cwd: string;
-    /** Claude's environment, without Rufi's secrets (platform/config.ts). */
-    env: Record<string, string>;
-    query?: typeof sdkQuery;
-  },
-): Promise<ClaudeSignIn> {
+  options: AskOptions,
+  ask: (run: Query) => Promise<T>,
+): Promise<T> {
   const query = options.query ?? sdkQuery;
   const closed = new AbortController();
   const run = query({
@@ -150,16 +174,7 @@ export async function claudeSignIn(
     },
   });
   try {
-    const account = await within(
-      run.accountInfo(),
-      SIGN_IN_MS,
-      "how it's signed in",
-    );
-    if (account.subscriptionType) return "subscription";
-    if (account.apiKeySource && account.apiKeySource !== "none") {
-      return "api key";
-    }
-    return "none";
+    return await ask(run);
   } finally {
     closed.abort();
     run.close();

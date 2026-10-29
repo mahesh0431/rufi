@@ -17,6 +17,8 @@ import {
   query as sdkQuery,
   type EffortLevel,
   type Options,
+  type Query,
+  type SDKControlInterruptResponse,
   type SDKMessage,
   type SDKSystemMessage,
   type SDKUserMessage,
@@ -147,8 +149,22 @@ export interface ClaudeSession {
    * the session.
    */
   messages: AsyncIterable<SDKMessage>;
-  /** A message, delivered as written, under Rufi's id for it. */
-  send: (text: string, id: UUID) => void;
+  /**
+   * A message, delivered as written, under Rufi's id for it. A steer joins
+   * the running turn once the tool running now finishes (`next`), never
+   * cutting it.
+   */
+  send: (text: string, id: UUID, steer?: boolean) => void;
+  /** Claude's own controls: its model, effort, sign-in and models. */
+  controls: Pick<
+    Query,
+    "setModel" | "applyFlagSettings" | "accountInfo" | "supportedModels"
+  >;
+  /**
+   * Interrupts the running turn and cancels every message still queued;
+   * Claude's answer names the ids it cancelled.
+   */
+  interrupt: () => Promise<SDKControlInterruptResponse | undefined>;
   /**
    * What Claude loaded that Rufi didn't ask for (another MCP server, a
    * CLAUDE.md, a skill or agent not Rufi's), as one line each; empty when
@@ -207,15 +223,25 @@ export function openClaudeSession(
   });
   return {
     messages: run,
-    send: (text, id) => {
+    send: (text, id, steer) => {
       input.push({
         type: "user",
         message: { role: "user", content: text },
         parent_tool_use_id: null,
         uuid: id,
         client_composed: true,
+        ...(steer === true && { priority: "next" }),
       });
     },
+    controls: run,
+    // `cancelQueued` is in the SDK's code but not in interrupt()'s type at
+    // 0.3.312; the live check proves Claude still takes it.
+    interrupt: () =>
+      (
+        run.interrupt as (options: {
+          cancelQueued: boolean;
+        }) => Promise<SDKControlInterruptResponse | undefined>
+      )({ cancelQueued: true }),
     unexpected: async () => {
       const [servers, context] = await Promise.all([
         within(run.mcpServerStatus(), ASK_MS, "its MCP servers"),

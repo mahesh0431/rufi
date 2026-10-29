@@ -248,6 +248,9 @@ importers:
       '@openai/codex':
         specifier: 0.163.0
         version: 0.163.0
+      '@rufi/agents':
+        specifier: workspace:*
+        version: link:../../packages/agents
       '@rufi/brand':
         specifier: workspace:*
         version: link:../../packages/brand
@@ -397,6 +400,8 @@ importers:
       vite:
         specifier: 8.3.4
         version: 8.3.4(@types/node@24.19.2)(jiti@2.7.0)(yaml@2.9.1)
+
+  packages/agents: {}
 
   packages/brand:
     devDependencies:
