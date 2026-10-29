@@ -253,6 +253,20 @@ let queuedCount = 0;
 let command: ReturnType<typeof spawn> | undefined;
 let commandRunning = false;
 
+/** Whether anything of process group `pgid` is left, also not yet reaped. */
+function groupLeft(pgid: number): boolean {
+  try {
+    process.kill(-pgid, 0);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // EPERM is macOS's answer for a group not yet reaped.
+    if (code === "EPERM") return true;
+    if (code === "ESRCH") return false;
+    throw error;
+  }
+}
+
 const textOf = (entry: Queued) => entry.input.at(-1)?.text ?? "";
 const queued = (clientUserMessageId: string, text: string): Queued => ({
   id: `q-${String(++queuedCount)}`,
@@ -551,7 +565,12 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
       { detached: true, stdio: ["ignore", "pipe", "ignore"] },
     ));
     commandRunning = true;
-    shell.once("exit", () => (commandRunning = false));
+    // It lists the command until nothing of its process group is left, the
+    // program in the background too, reaped: a check of a pid then agrees.
+    shell.once("exit", function gone() {
+      if (shell.pid !== undefined && groupLeft(shell.pid)) setTimeout(gone, 10);
+      else commandRunning = false;
+    });
     shell.stdout.once("data", (chunk: Buffer) => {
       record({ command: shell.pid, child: Number(chunk.toString().trim()) });
       event("item/started", {

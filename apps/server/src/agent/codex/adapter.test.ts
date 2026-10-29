@@ -2,11 +2,11 @@
 // (tests/fake-codex.ts) as the pinned protocol has it.
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ANSWER, providerContract, type Script } from "@rufi/agents/contract";
-import type { ProviderEvent } from "@rufi/agents/provider";
+import type { Conversation, ProviderEvent } from "@rufi/agents/provider";
 import { afterEach, expect, it } from "vitest";
 import type { Scenario } from "../../../tests/fake-codex.ts";
 import { codexMeta } from "../../../tests/mcp-client.ts";
@@ -128,6 +128,14 @@ async function setUp(script: Script, scenario = scenarioOf(script)) {
       tools: mcp.tools,
     },
     close: mcp.close,
+    /** The instructions each turn ran with, as the scripted Codex logs them. */
+    told: async () =>
+      (await readFile(join(home, "fake.jsonl"), "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as { turn?: string; told?: unknown })
+        .filter((entry) => entry.turn !== undefined)
+        .map((entry) => entry.told),
   };
 }
 
@@ -183,4 +191,39 @@ it("reports Codex's usage limits as it last gave them", async () => {
       resetsAt: new Date(resetsAt * 1000).toISOString(),
     },
   ]);
+});
+
+it("gives a resumed conversation the instructions it is opened with, in place of the earlier ones", async () => {
+  const { adapter, options, close, told } = await setUp({});
+  closing.push(close, () => adapter.close());
+  let ended = 0;
+  const onEvent = (event: ProviderEvent) => {
+    if (event.type === "turnEnded") ended += 1;
+  };
+  const answer = async (conversation: Conversation, id: string) => {
+    const before = ended;
+    await conversation.startTurn({
+      input: { id, parts: ["What was Asha's last TSH?"] },
+      model: options.model,
+      effort: options.effort,
+    });
+    await expect.poll(() => ended).toBe(before + 1);
+  };
+  const first = await adapter.open({
+    ...options,
+    instructions: "Use the old reading rules.",
+    onEvent,
+  });
+  await answer(first, "message-1");
+  await first.close();
+  const again = await adapter.open({
+    ...options,
+    resume: first.ref,
+    instructions: "Use the new reading rules.",
+    onEvent,
+  });
+  await answer(again, "message-2");
+  const [before, after] = await told();
+  expect(before).toBe("Use the old reading rules.");
+  expect(after).toMatch(/replace[\s\S]*Use the new reading rules\.$/);
 });

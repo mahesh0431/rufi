@@ -48,6 +48,14 @@ function signedOut(error: unknown): boolean {
 const textOf = (error: unknown) =>
   error instanceof Error ? error.message : "Codex couldn't take it.";
 
+/**
+ * What a resumed conversation is told: Codex's history still holds the
+ * instructions it was given before (docs/adr/0018), so they come again
+ * whole, saying they replace those.
+ */
+const instructionsNote = (instructions: string) =>
+  `Your instructions, given again as this conversation is opened. They replace any given before.\n\n${instructions}`;
+
 /** An open conversation, as the adapter keeps it. */
 interface Open {
   onEvent: (event: ProviderEvent) => void;
@@ -186,7 +194,14 @@ export function codexAdapter(
         if (conversations.has(options.resume)) {
           throw new NotOpened("The conversation is open already.");
         }
-        await runtime.resumeThread(options.resume, settings, options.signal);
+        // Also lets go of the thread first if Codex still has it open (a
+        // release that failed), so it takes the new settings or doesn't open.
+        await runtime.reloadThread(
+          options.resume,
+          settings,
+          instructionsNote(options.instructions),
+          options.signal,
+        );
         ref = options.resume;
       }
     } catch (error) {
@@ -312,7 +327,7 @@ export function codexAdapter(
         try {
           await runtime.release(ref);
         } catch (error) {
-          // Still open in Codex: its next resume keeps the settings it has.
+          // Still open in Codex: the next resume lets go of it first.
           log("codex.release_failed", { error: errorCode(error) });
         }
       },
@@ -344,9 +359,10 @@ export function codexAdapter(
       );
     },
 
+    // The running turns' ends still reach their conversations.
     close: async () => {
-      conversations.clear();
       await runtime.close();
+      conversations.clear();
     },
   };
 }
