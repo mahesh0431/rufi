@@ -164,7 +164,10 @@ const textOf = (content: unknown): string =>
           .join("\n")
       : "";
 
-/** Sends `text` and reads to the turn's end. */
+/**
+ * Sends `text` and reads to the turn's end. A turn that ends in error
+ * throws: a case on a failed turn proves nothing.
+ */
 async function turn(
   session: ClaudeSession,
   text: string,
@@ -198,7 +201,14 @@ async function turn(
         }
       }
     }
-    if (value.type === "result") break;
+    if (value.type === "result") {
+      if (value.subtype !== "success" || value.is_error) {
+        throw new Error(
+          `the turn ended in error: ${value.subtype === "success" ? value.result : value.errors.join("; ")}`,
+        );
+      }
+      break;
+    }
   }
   if (start === undefined) throw new Error("The turn didn't say its start.");
   return { start, calls: [...calls.values()] };
