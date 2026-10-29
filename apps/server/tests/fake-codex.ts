@@ -922,6 +922,19 @@ async function handle(
     }
     case "thread/read":
       return threadResponse(threadOf(params));
+    case "thread/delete": {
+      // Like Codex 0.163.0: one it has no record of is refused.
+      const id = String(params["threadId"]);
+      if (!threads.delete(id)) {
+        throw new Error(`no rollout found for thread id ${id}`);
+      }
+      loaded.delete(id);
+      persist();
+      setImmediate(() => {
+        send({ method: "thread/deleted", params: { threadId: id } });
+      });
+      return {};
+    }
     case "thread/unsubscribe": {
       const thread = threadOf(params);
       if (!loaded.delete(thread.id)) return { status: "notLoaded" };

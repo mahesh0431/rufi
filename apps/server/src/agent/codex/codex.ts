@@ -130,6 +130,8 @@ export interface CodexRuntime extends AgentRuntime {
    * next resume gives it new settings.
    */
   release: (threadId: string) => Promise<void>;
+  /** Deletes a thread no reply runs in; one Codex hasn't got counts as deleted. */
+  deleteThread: (threadId: string) => Promise<void>;
 }
 
 export function codexRuntime(deps: CodexDeps): CodexRuntime {
@@ -866,6 +868,26 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
     catalog,
 
     limits: () => limits,
+
+    deleteThread: async (threadId) => {
+      if (turns.has(threadId)) throw new Error("A reply is running.");
+      const app = await ready();
+      threads.delete(threadId);
+      try {
+        await request(app, "thread/delete", { threadId });
+      } catch (error) {
+        // Codex's answer for a thread it has no files of (0.163.0).
+        if (
+          !(error instanceof RpcError) ||
+          error.code !== -32600 ||
+          error.message !==
+            `Codex refused thread/delete: no rollout found for thread id ${threadId}`
+        ) {
+          throw error;
+        }
+      }
+      loaded.delete(threadId);
+    },
 
     release: async (threadId) => {
       if (turns.has(threadId)) throw new Error("A reply is running.");

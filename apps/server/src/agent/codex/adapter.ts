@@ -333,6 +333,8 @@ export function codexAdapter(
 
     open,
 
+    delete: (ref) => runtime.deleteThread(ref),
+
     usage: () => {
       const limits = runtime.limits();
       return Promise.resolve(

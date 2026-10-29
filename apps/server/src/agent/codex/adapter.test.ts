@@ -139,6 +139,8 @@ providerContract("Codex", {
     ),
   cannot: {
     heldSteer: "Codex takes a steer at once or refuses it",
+    heldPastEnd: "Codex takes a steer at once or refuses it",
+    lostCancel: "Codex takes a steer at once or refuses it",
     nextTurn: "Codex never starts a turn by itself",
   },
   pending: {
