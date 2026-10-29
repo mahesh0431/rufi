@@ -296,20 +296,28 @@ test("waiting messages: edit, reorder, remove, and send one now", async ({
   await expect(items).toHaveText(["Third", "Second"]);
   expect((await saved).ok()).toBe(true);
 
-  const top = async (n: number) => (await items.nth(n).boundingBox())?.y ?? 0;
+  /** How far a row is moved down to make room, in rows. */
+  const shifted = (n: number) =>
+    items
+      .nth(n)
+      .evaluate(
+        (row) =>
+          new DOMMatrix(getComputedStyle(row).transform).m42 /
+          row.getBoundingClientRect().height,
+      );
   const liftUp = async (n: number) => {
     await handle(n).focus();
     await page.keyboard.press("Space");
     await expect(handle(n)).toHaveAttribute("aria-pressed", "true");
     // The handle hears the arrows from just after it is picked up: until the
     // row above makes room, press again, as a person would. At the top, a
-    // press does nothing.
-    const was = await top(n - 1);
+    // press does nothing. Room is the row's own shift, not its place: the
+    // last drop still settling moves it down too.
     await expect(async () => {
       await page.keyboard.press("ArrowUp");
       await expect
-        .poll(() => top(n - 1), { timeout: 1_000 })
-        .toBeGreaterThan(was);
+        .poll(() => shifted(n - 1), { timeout: 1_000 })
+        .toBeGreaterThan(0.5);
     }).toPass();
   };
   await liftUp(1);
