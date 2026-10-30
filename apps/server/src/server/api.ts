@@ -17,6 +17,7 @@ import {
   SelectEffort,
   SelectModel,
   SendMessage,
+  WhileReplying,
   type Backups,
   type DataFolder,
   type FirstRun,
@@ -438,6 +439,10 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       activity: Schema.decodeUnknownOption(ActivityShown)(
         await transcripts.setting("activity"),
       ).pipe(Option.getOrElse(() => "working" as const)),
+      // Into the running reply, until another is chosen.
+      whileReplying: Schema.decodeUnknownOption(WhileReplying)(
+        await transcripts.setting("while_replying"),
+      ).pipe(Option.getOrElse(() => "steer" as const)),
       emergencyRegion: known?.region ?? null,
       emergency: known ? { name: known.name, number: known.number } : null,
       regions: emergencyRegions(),
@@ -509,6 +514,9 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     }
     if (changed.activity !== undefined) {
       await transcripts.saveSetting("activity", changed.activity);
+    }
+    if (changed.whileReplying !== undefined) {
+      await transcripts.saveSetting("while_replying", changed.whileReplying);
     }
     const model = changed.readerModel;
     if (model !== undefined && !SUB_AGENT_MODELS.some((m) => m.id === model)) {
@@ -901,15 +909,16 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     return c.json(found);
   });
   // Send: into the queue, and the box emptied, in one step; from there it
-  // goes into the running reply or in its turn. The same id again (a retry)
+  // goes into the running reply (steer) or after it (queue), as the person
+  // chose. The same id again (a retry)
   // finds the message it made.
   app.post(`${one}/messages`, async (c) => {
     const found = await chatOf(c);
-    const { id, text, refs } = await body(c, SendMessage, SEND_REFUSAL);
+    const { id, text, refs, kind } = await body(c, SendMessage, SEND_REFUSAL);
     if (text === "" && (refs?.length ?? 0) === 0) {
       throw new HttpError(400, SEND_REFUSAL);
     }
-    await acting(() => chat.send(found, id, text, refs));
+    await acting(() => chat.send(found, id, text, refs, kind));
     return c.json({ id, draft: await drafts.read(found) }, 202);
   });
   app.post(`${one}/stop`, async (c) => {
@@ -951,9 +960,14 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     await acting(() => chat.queue.remove(found, c.req.param("itemId")));
     return c.json(await chat.queue.list(found));
   });
+  app.post(`${one}/queue/:itemId/steer`, async (c) => {
+    const found = await chatOf(c);
+    await acting(() => chat.queue.steer(found, c.req.param("itemId")));
+    return c.json(await chat.queue.list(found));
+  });
   app.post(`${one}/queue/:itemId/send`, async (c) => {
     const found = await chatOf(c);
-    await acting(() => chat.queue.sendNow(found, c.req.param("itemId")));
+    await acting(() => chat.queue.send(found, c.req.param("itemId")));
     return c.json(await chat.queue.list(found));
   });
   app.post(`${one}/queue/:itemId/retry`, async (c) => {

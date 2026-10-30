@@ -5,7 +5,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { queries, saveSettings, useSettings } from "./reads.ts";
 
-type Chosen = "appearance" | "activity";
+type Chosen = "appearance" | "activity" | "whileReplying";
 
 /**
  * The choices of a setting, the chosen one checked. Named by `labelledBy`,

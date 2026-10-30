@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fakeProvider } from "@rufi/agents/fake";
 import type { ProviderAdapter, ProviderEvent } from "@rufi/agents/provider";
-import { openAgentStore } from "@rufi/agents/store";
+import { openAgentStore, type AgentStore } from "@rufi/agents/store";
 import type { Pointer } from "@rufi/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { scriptedReader, type Script } from "../../tests/fake-reader.ts";
@@ -102,7 +102,6 @@ async function start(
     },
     log: () => undefined,
   });
-  await system.recover();
   await chat.carryAll();
   await system.agents.dispatch();
   const row = async () => (await transcripts.chat("asha")) as ChatRow;
@@ -153,6 +152,9 @@ async function start(
 
 const cursor = () =>
   Number(rows("SELECT number FROM agent_cursor")[0]?.["number"]);
+/** The number of the agent database's last event. */
+const lastEvent = (store: AgentStore) =>
+  store.eventsAfter(0, Number.MAX_SAFE_INTEGER).at(-1)?.number ?? 0;
 const replies = () =>
   rows(
     "SELECT id, text, status FROM transcript_entries WHERE kind = 'reply' ORDER BY seq",
@@ -229,7 +231,7 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
     effort: "low",
   });
   await vi.waitFor(() => {
-    expect(cursor()).toBe(rufi.store.highWater());
+    expect(cursor()).toBe(lastEvent(rufi.store));
   });
   expect(replies()).toMatchObject([{}, { id: streamed, status: "done" }]);
   const firstTurn = [note, which, `Your last TSH was 2.1.${asked}`];
@@ -244,7 +246,7 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
       { status: "completed" },
       { status: "completed" },
     ]);
-    expect(cursor()).toBe(rufi.store.highWater());
+    expect(cursor()).toBe(lastEvent(rufi.store));
   });
 
   // The chat saves nothing of the next turn: its start and answer come
@@ -273,7 +275,7 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
   const completed = { status: "completed", end_text: null };
   await vi.waitFor(() => {
     expect(turns()).toEqual([completed, completed, completed]);
-    expect(cursor()).toBe(rufi.store.highWater());
+    expect(cursor()).toBe(lastEvent(rufi.store));
   });
   const whole = replies();
   expect(whole).toMatchObject([
@@ -285,7 +287,10 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
 
   // Nor of one that starts while Rufi's cursor can't move, and still runs
   // when Rufi closes.
-  record.db.exec("UPDATE agent_cursor SET generation = 'elsewhere'");
+  record.db.exec(`
+    CREATE TRIGGER fictional_stuck BEFORE UPDATE ON agent_cursor
+    BEGIN SELECT RAISE(ABORT, 'A fictional failure.'); END;
+  `);
   await ask("message-4");
   await vi.waitFor(() => {
     expect(logged.filter((event) => event === "agents.failed")).toHaveLength(2);
@@ -294,11 +299,10 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
 
   // Read again from the start: each answer is there once, and the turn
   // that ran on is there, cut when Rufi closed.
-  record.db
-    .prepare("UPDATE agent_cursor SET generation = ?, number = 0")
-    .run(rufi.store.generation);
+  record.db.exec("DROP TRIGGER fictional_stuck");
+  record.db.exec("UPDATE agent_cursor SET number = 0");
   rufi = await start(adapter);
-  expect(cursor()).toBe(rufi.store.highWater());
+  expect(cursor()).toBe(lastEvent(rufi.store));
   expect(turns()).toEqual([
     completed,
     completed,

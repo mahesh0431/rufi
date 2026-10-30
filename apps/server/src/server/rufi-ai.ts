@@ -1,10 +1,9 @@
 // Rufi AI's replies, through the agent package (docs/adr/0024). Each chat's
 // own agent, Rufi AI, keeps its conversation and turns in the package, and
 // the package's queue hands the chat's waiting messages over, in order: the
-// chat puts each in by its id without its words, and the package claims
-// them from the chat's queue before they go (server/chat.ts). A message sent
-// into a running reply goes in the same way, as a steer. What the package
-// shows of a conversation as it comes
+// chat puts each in by its id without its words, as a steer or queued, and
+// the package claims them from the chat's queue as they go
+// (server/chat.ts). What the package shows of a conversation as it comes
 // reaches the chat as the agent's events; what became of each turn and each
 // hand-over is applied from the package's events, with Rufi's cursor.
 import type { Agent, Claim, Hold, Opening } from "@rufi/agents/agents";
@@ -96,8 +95,6 @@ export interface RufiAi {
   rules: (chat: ChatRow) => Promise<string | undefined>;
   /** Whether a turn of the chat's agent starts or runs now. */
   busy: (chat: ChatRow) => Promise<boolean>;
-  /** The message a turn of the chat's agent starts with now, before it runs. */
-  starting: (chat: ChatRow) => Promise<string | undefined>;
   /** Whether a reply starts or runs in the thread now. */
   running: (threadId: string) => boolean;
   /** The running reply that may still use Rufi's tools, unless it stops. */
@@ -127,8 +124,8 @@ export interface RufiAi {
   input: (input: string) => { state: string; held: string | null } | undefined;
   /** These rows don't go: removed from the agent's queue. */
   remove: (inputs: readonly string[]) => void;
-  /** The row goes next, also one a Stop dropped or the queue removed. */
-  sendNow: (input: string) => void;
+  /** The waiting row goes in as a steer: into the running reply, or next. */
+  steer: (input: string) => void;
   /** These rows' holds lift: they go again. */
   release: (inputs: readonly string[]) => void;
   /** The person's Stop: the chat's reply stops, and what waits goes on. */
@@ -146,15 +143,19 @@ const APPLIED = new Set([
   "input.delivered",
   "input.held",
   "input.waiting",
-  "input.not_sure",
-  "input.dropped",
 ]);
 
 /** An input's hold as the chat shows it: signed out with Rufi's line. */
 const holdOf = (held: Hold, text: string) =>
   held === "signed_out"
     ? { held, text: SIGNED_OUT }
-    : { held: held === "open_failed" ? held : ("failed" as const), text };
+    : {
+        held:
+          held === "open_failed" || held === "stopped"
+            ? held
+            : ("failed" as const),
+        text,
+      };
 
 /** How a turn ended, as today's chat shows it. */
 function endOf(end: Ended): TurnEnd {
@@ -431,19 +432,10 @@ export async function startRufiAi(
         );
         break;
       case "input.waiting":
-      case "input.not_sure":
-      case "input.dropped":
         await transcripts.applyInput(
           row,
           payload.input,
-          {
-            state:
-              event.type === "input.waiting"
-                ? "waiting"
-                : event.type === "input.not_sure"
-                  ? "not_sure"
-                  : "dropped",
-          },
+          { state: "waiting" },
           advance,
         );
     }
@@ -482,6 +474,20 @@ export async function startRufiAi(
     },
   });
   const { agents } = system;
+  // A message Rufi claimed that the agent database doesn't hold (a new one)
+  // counts as sent: it enters its chat in a reply, which Rufi's start then
+  // shows stopped (core.ts).
+  for (const claim of await kept.claimed()) {
+    if (agents.input(claim.id) !== undefined) continue;
+    const row = await transcripts.chat(claim.personId);
+    if (row?.id !== claim.chatId) continue;
+    await transcripts.startTurn(
+      row,
+      claim.id,
+      { id: row.threadId ?? "", model: row.model ?? row.threadModel ?? "" },
+      [claim.id],
+    );
+  }
   // A chat's replies' steps show from the agent database, by its own agent.
   transcripts.readSteps({
     of: (agent, agentTurns) =>
@@ -525,11 +531,6 @@ export async function startRufiAi(
 
       busy: async (row) =>
         agents.current(await system.root(row.id)) !== undefined,
-
-      starting: async (row) => {
-        const current = agents.current(await system.root(row.id));
-        return current?.status === "starting" ? current.input : undefined;
-      },
 
       running: (threadId) => {
         const agent = threads.get(threadId);
@@ -581,8 +582,8 @@ export async function startRufiAi(
         agents.remove(inputs);
       },
 
-      sendNow: (input) => {
-        agents.sendNow(input);
+      steer: (input) => {
+        agents.steer(input);
       },
 
       release: (inputs) => {

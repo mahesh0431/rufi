@@ -34,11 +34,10 @@ CREATE TABLE agent_conversations (
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id)
 ) STRICT;
 
--- How far Rufi has applied the agent system's event log: the agents.sqlite
--- it read (its generation) and the last event applied, moved in the same
--- transaction as that event's change. Another generation is a new file.
+-- How far Rufi has applied the agent system's event log: the last event
+-- applied, moved in the same transaction as that event's change. A new
+-- agents.sqlite starts it again at 0.
 CREATE TABLE agent_cursor (
   id INTEGER PRIMARY KEY CHECK (id = 1),
-  generation TEXT NOT NULL,
   number INTEGER NOT NULL
 ) STRICT;

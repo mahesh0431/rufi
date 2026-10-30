@@ -193,19 +193,27 @@ async function session(core: Pick<Core, "port" | "launchUrl">) {
     headers,
     api: (method: string, path: string, body?: unknown) =>
       call(core.port, method, path, headers, body),
-    /** Sends a box's text, by a new send id (or `id`, to send it again). */
+    /**
+     * Sends a box's text, by a new send id (or `id`, to send it again);
+     * while a reply runs, it steers unless queued.
+     */
     say: (
       path: string,
       text: string,
-      kind: "messages" = "messages",
       id: string = randomUUID(),
-    ) => call(core.port, "POST", `${path}/${kind}`, headers, { id, text }),
+      kind?: "steer" | "queue",
+    ) =>
+      call(core.port, "POST", `${path}/messages`, headers, {
+        id,
+        text,
+        ...(kind && { kind }),
+      }),
   };
 }
 
 /**
  * A reply Rufi started, with its note: "hang" runs until it is stopped. A
- * message the person sends meanwhile waits for a reply of its own.
+ * message the person queues meanwhile waits for a reply of its own.
  */
 async function rufiReply(
   core: Core,
@@ -361,7 +369,7 @@ describe("the core", () => {
     await release();
   });
 
-  it("marks a hand-over a crash cut off as not sure and never sends it again; what waits goes; a reply cut off in Rufi's part ends there, its message held for Retry", async () => {
+  it("counts a hand-over a crash cut off as sent, its reply stopped; what waits goes; a reply cut off in Rufi's part ends there, its message held for Retry", async () => {
     const left = openWritable(databasePath(home));
     left.db.exec(`
       INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional'), ('ravi', 'Ravi Fictional');
@@ -383,30 +391,25 @@ describe("the core", () => {
           "entries"
         ] as { id: string; kind: string; text: string }[]
       ).filter((entry) => entry.kind === "message");
-    // What waited goes by itself; the one not sure stays.
-    await until(async () => (await said("asha")).length === 1);
-    expect((await said("asha"))[0]?.id).toBe("q-2");
-    const queue = "/api/people/asha/chat/queue";
-    expect((await page.api("GET", queue)).body).toEqual({
-      items: [
-        {
-          id: "q-1",
-          origin: "person",
-          text: "Being handed over",
-          state: "not_sure",
-          held: null,
-          heldText: null,
-          holdId: null,
-          refs: [],
-        },
-      ],
-    });
-    // Sent again only when asked, as a new message.
-    expect((await page.api("POST", `${queue}/q-1/send`)).status).toBe(200);
+    // The one handed over is in the chat, its reply stopped; what waited
+    // goes by itself.
     await until(async () => (await said("asha")).length === 2);
-    const [, again] = await said("asha");
-    expect(again?.text).toBe("Being handed over");
-    expect(again?.id).not.toBe("q-1");
+    expect((await said("asha")).map((entry) => entry.id)).toEqual([
+      "q-1",
+      "q-2",
+    ]);
+    expect(
+      (await page.api("GET", "/api/people/asha/chat")).body["turns"],
+    ).toMatchObject([
+      {
+        status: "interrupted",
+        endText: "Rufi closed before the reply finished.",
+      },
+      {},
+    ]);
+    expect(
+      (await page.api("GET", "/api/people/asha/chat/queue")).body["items"],
+    ).toEqual([]);
 
     const ravi = "/api/people/ravi/chat";
     await until(async () => (await said("ravi")).length === 1);
@@ -451,7 +454,7 @@ describe("the core", () => {
     ]);
   });
 
-  it("after an upgrade, sends each message that waited once and never one that may have reached the AI, also when its first start is cut short", async () => {
+  it("after an upgrade, sends each message that waited once and counts one that may have reached the AI as sent, also when its first start is cut short", async () => {
     // Asha's chat as Rufi of version 19 left it, stopped: one message to
     // go, one behind it, and one it may have given the AI.
     const path = databasePath(home);
@@ -478,7 +481,9 @@ describe("the core", () => {
       ).filter((entry) => entry.kind === "message" || entry.kind === "reply");
     // The first goes and runs on; Rufi closes before the second goes.
     let page = await session(await start());
-    await until(async () => (await said(page)).length === 1);
+    await until(async () =>
+      (await said(page)).some((entry) => entry.id === "q-first"),
+    );
     await stop();
     page = await session(await start());
     await until(async () =>
@@ -490,10 +495,10 @@ describe("the core", () => {
       (await said(page)).map((entry) =>
         entry.kind === "message" ? entry.id : entry.text,
       ),
-    ).toEqual(["q-first", "q-second", "ok:Second"]);
+    ).toEqual(["q-handed", "q-first", "q-second", "ok:Second"]);
     expect(
       (await page.api("GET", "/api/people/asha/chat/queue")).body["items"],
-    ).toMatchObject([{ id: "q-handed", state: "not_sure" }]);
+    ).toEqual([]);
   });
 
   it("marks replies cut off by a crash as interrupted when it starts", async () => {
@@ -918,9 +923,7 @@ describe("the local API", () => {
       ).filter((entry) => entry.kind === "message" || entry.kind === "steer");
     // No reply runs: into the queue, and it starts.
     const first = randomUUID();
-    expect((await page.say(c.path, "hang", "messages", first)).status).toBe(
-      202,
-    );
+    expect((await page.say(c.path, "hang", first)).status).toBe(202);
     await until(
       async () =>
         ((await page.api("GET", c.path)).body["turns"] as unknown[]).length > 0,
@@ -928,23 +931,22 @@ describe("the local API", () => {
     // A retry whose answer was lost, while its reply runs: still one
     // message, not passed into the reply, and a newer draft stays.
     await page.api("PUT", c.draft, { text: "A newer draft" });
-    expect(await page.say(c.path, "hang", "messages", first)).toMatchObject({
+    expect(await page.say(c.path, "hang", first)).toMatchObject({
       status: 202,
       body: { draft: { text: "A newer draft" } },
     });
     // The reply runs: into it, and the box is empty.
     await page.api("PUT", c.draft, { text: "Only the latest" });
     const id = randomUUID();
-    expect(
-      await page.say(c.path, "Only the latest", "messages", id),
-    ).toMatchObject({
+    expect(await page.say(c.path, "Only the latest", id)).toMatchObject({
       status: 202,
       body: { id, draft: { text: "", refs: [] } },
     });
     await page.api("PUT", c.draft, { text: "Newer still" });
-    expect(
-      await page.say(c.path, "Only the latest", "messages", id),
-    ).toMatchObject({ status: 202, body: { draft: { text: "Newer still" } } });
+    expect(await page.say(c.path, "Only the latest", id)).toMatchObject({
+      status: 202,
+      body: { draft: { text: "Newer still" } },
+    });
     await until(async () => (await entries()).length === 2);
     await sleep(200);
     expect(await entries()).toMatchObject([
@@ -981,8 +983,8 @@ describe("the local API", () => {
     }
     const id = randomUUID();
     const [sentA, sentB] = await Promise.all([
-      page.say(a.path, "Fictional A private text", "messages", id),
-      page.say(b.path, "Fictional B private text", "messages", id),
+      page.say(a.path, "Fictional A private text", id),
+      page.say(b.path, "Fictional B private text", id),
     ]);
     expect(sentA.status).toBe(202);
     expect(sentB).toMatchObject({
@@ -1182,8 +1184,8 @@ describe("the local API", () => {
     const c = await chat(page);
     const queue = `${c.path}/queue`;
     await rufiReply(core, page, c.path);
-    await page.say(c.path, "B");
-    await page.say(c.path, "C");
+    await page.say(c.path, "B", undefined, "queue");
+    await page.say(c.path, "C", undefined, "queue");
     const items = async () =>
       (await page.api("GET", queue)).body["items"] as {
         id: string;
@@ -2515,7 +2517,12 @@ describe("backups and export over the API", () => {
         ).every((turn) => turn.status === "completed"),
       );
       await rufiReply(core, page, c.path);
-      await page.say(c.path, "A waiting fictional question");
+      await page.say(
+        c.path,
+        "A waiting fictional question",
+        undefined,
+        "queue",
+      );
       await page.api("PUT", c.draft, { text: "An unsent fictional note" });
       const made = (await page.api("POST", "/api/backups")).body["last"] as {
         name: string;

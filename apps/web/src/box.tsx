@@ -1,8 +1,9 @@
 // The chat's box, the same in every size: what you type is the chat's
 // draft, kept by the core, saved quietly; the box says only when it couldn't
-// be. Enter sends; while a reply runs, the message goes into that reply,
-// and Stop is beside the box (Activity shows what the AI does; the bar,
-// where it doesn't show, has a busy sign). The box clears only when the core took the message, and nothing
+// be. Enter sends. While a reply runs, Steer puts the message into it and
+// Queue keeps it for after it, Enter doing what Settings chose, and Stop is
+// beside the box (Activity shows what the AI does; the bar, where it
+// doesn't show, has a busy sign). The box clears only when the core took the message, and nothing
 // is sent again by itself. Signed out, the core takes nothing: the box says so, with Sign in.
 // The model and effort are chosen beside Send; what waits shows in the
 // chat (waiting.tsx). Chips (references to documents, draft items and records) sit above
@@ -15,12 +16,15 @@ import {
   MAX_REFS,
   type Person,
   SIGNED_OUT,
+  type WhileReplying,
 } from "@rufi/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  ListEnd,
   LoaderCircle,
   LogIn,
   type LucideProps,
+  Merge,
   RotateCw,
   Send,
   Square,
@@ -43,6 +47,7 @@ import {
 import { chatPath, type Live, messageOf } from "./live.ts";
 import { ModelMenu } from "./model-menu.tsx";
 import { usePanel } from "./panel.ts";
+import { useSettings } from "./reads.ts";
 import { isRunning } from "./transcript-state.ts";
 import { Button, IconButton } from "./ui.tsx";
 
@@ -80,6 +85,8 @@ export function Box({
   const chips = useStore(box.store, (state) => state.refs);
   const refused = usePanel((state) => state.refused);
   const running = useStore(live, isRunning);
+  // What Enter does while a reply runs.
+  const enter = useSettings().data?.whileReplying ?? "steer";
   const navigate = useNavigate();
   const [problem, setProblem] = useState<string | null>(null);
   const long = tooLong(text);
@@ -90,9 +97,9 @@ export function Box({
   // Leaving the screen, the box saves at once what isn't saved yet.
   useEffect(() => () => void box.saveNow(), [box]);
 
-  const submit = () => {
+  const submit = (kind: WhileReplying = enter) => {
     setProblem(null);
-    void box.submit();
+    void box.submit(kind);
   };
 
   async function act(action: () => Promise<unknown>) {
@@ -171,6 +178,19 @@ export function Box({
       className="rounded-full bg-ink text-surface not-disabled:hover:bg-ink"
     />
   );
+  /** While a reply runs: into it, or after it. */
+  const sendWhile = (kind: WhileReplying) => (
+    <IconButton
+      look={kind === enter ? "main" : "quiet"}
+      label={kind === "steer" ? "Steer" : "Queue"}
+      icon={kind === "steer" ? Merge : ListEnd}
+      disabled={!hasText || locked}
+      onClick={() => {
+        submit(kind);
+      }}
+      className="rounded-full"
+    />
+  );
 
   return (
     <form
@@ -214,7 +234,15 @@ export function Box({
             </span>
           </button>
           {choice}
-          {running ? stopButton : sendButton}
+          {running ? (
+            <>
+              {hasText && sendWhile("steer")}
+              {hasText && sendWhile("queue")}
+              {stopButton}
+            </>
+          ) : (
+            sendButton
+          )}
         </div>
       ) : (
         <div
@@ -264,8 +292,15 @@ export function Box({
             <span className="flex-1" />
             {choice}
             <ContextMeter live={live} />
-            {(!running || hasText) && sendButton}
-            {running && stopButton}
+            {running ? (
+              <>
+                {sendWhile("steer")}
+                {sendWhile("queue")}
+                {stopButton}
+              </>
+            ) : (
+              sendButton
+            )}
           </div>
         </div>
       )}

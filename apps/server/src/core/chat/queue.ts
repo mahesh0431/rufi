@@ -1,17 +1,17 @@
 // Each chat's queue, Rufi's own (docs/adr/0004): the person's messages and
 // Rufi's notes that ask the AI, waiting their turn. A send moves the box's
 // text into a new row and empties the draft in one transaction; the row's id
-// is the send's, so a retried send never makes a second row. The agent
-// system's queue hands each row over in order, by its id (server/chat.ts);
-// before a row goes to the AI, Rufi claims it here: one transaction marks it
-// handing over to that agent's conversation (`sent_as`) and gives back its
-// words, so an edit that came first is what goes and one after is refused.
-// A row Rufi stopped while handing it over is "not sure", shown and never
-// sent again by itself. A message whose AI thread didn't open waits with
-// that hold until the person chooses Try again or New thread. A message
-// whose reply ended in Rufi's part (its files' reading stopped or failed,
-// server/chat.ts) is in the chat already and waits with a hold of its own
-// until the person presses its reply's Retry.
+// is the send's, so a retried send never makes a second row. A message sent
+// while a reply runs goes into it (steer) or after it (queue), as the
+// person chose. The agent system's queue hands each row over in order, by
+// its id (server/chat.ts); as a row goes to the AI, Rufi claims it here:
+// one transaction marks it handing over to that agent's conversation
+// (`sent_as`) and gives back its words, so an edit that came first is what
+// goes and one after is refused. A row Rufi didn't send shows why, and
+// goes when the person sends it; one whose AI thread didn't open can go in
+// a new thread too. A message whose reply ended in Rufi's part (its files'
+// reading stopped or failed, server/chat.ts) is in the chat already and
+// waits with a hold of its own until the person presses its reply's Retry.
 import type { Chip, Pointer, Queue, QueueItem } from "@rufi/contracts";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
@@ -58,6 +58,8 @@ export type Claimed =
 export interface Waiting {
   id: string;
   origin: "person" | "rufi";
+  /** While a reply runs: into it, or after it. */
+  kind: "steer" | "queue";
   held: string | null;
   refs: Chip[];
 }
@@ -87,6 +89,7 @@ export async function addRow(
   row: {
     id: string;
     origin: "person" | "rufi";
+    kind?: "steer" | "queue";
     text: string;
     eventId?: string;
     refs?: readonly Chip[];
@@ -106,6 +109,7 @@ export async function addRow(
       person_id: chat.personId,
       chat_id: chat.id,
       origin: row.origin,
+      kind: row.kind ?? "queue",
       text: row.text,
       refs: JSON.stringify(row.refs ?? []),
       event_id: row.eventId ?? null,
@@ -259,7 +263,7 @@ export function chatQueue(
         ])
         .where("q.person_id", "=", chat.personId)
         .where("q.chat_id", "=", chat.id)
-        .where("q.state", "in", ["waiting", "handing_over", "not_sure"])
+        .where("q.state", "in", ["waiting", "handing_over"])
         .orderBy("q.position")
         .execute();
       return {
@@ -282,13 +286,14 @@ export function chatQueue(
     waiting: async (chat: ChatOf): Promise<Waiting[]> =>
       (
         await rows(db, chat)
-          .select(["id", "origin", "held", "refs"])
+          .select(["id", "origin", "kind", "held", "refs"])
           .where("state", "=", "waiting")
           .orderBy("position")
           .execute()
       ).map((row) => ({
         id: row.id,
         origin: row.origin as Waiting["origin"],
+        kind: row.kind as Waiting["kind"],
         held: row.held,
         refs: JSON.parse(row.refs) as Chip[],
       })),
@@ -325,16 +330,18 @@ export function chatQueue(
 
     /**
      * Takes a message from the box: a new waiting row by the send's id, with
-     * its references checked against the person, its unsent documents sent
-     * and the draft emptied, in one transaction. The same id again finds the row it
-     * made, or the message it sent into a running reply: `fresh` is false
-     * then, and nothing changes.
+     * how it goes while a reply runs, its references checked against the
+     * person, its unsent documents sent and the draft emptied, in one
+     * transaction. The same id again finds the row it made, or the message
+     * it sent into a running reply: `fresh` is false then, and nothing
+     * changes.
      */
     accept: (
       chat: ChatOf,
       id: string,
       text: string,
       refs: readonly Pointer[] = [],
+      kind: "steer" | "queue" = "steer",
     ) =>
       write(chat, async (trx) => {
         const there = await trx
@@ -382,7 +389,7 @@ export function chatQueue(
         await addRow(
           trx,
           chat,
-          { id, origin: "person", text, refs: chips },
+          { id, origin: "person", kind, text, refs: chips },
           at,
         );
         await trx
@@ -417,7 +424,7 @@ export function chatQueue(
           .execute();
       }),
 
-    /** A waiting or not-sure row, removed: it never goes to the AI. */
+    /** A waiting row, removed: it never goes to the AI. */
     remove: (chat: ChatOf, id: string) =>
       write(chat, async (trx) => {
         const { numUpdatedRows } = await trx
@@ -431,7 +438,7 @@ export function chatQueue(
           .where("person_id", "=", chat.personId)
           .where("chat_id", "=", chat.id)
           .where("id", "=", id)
-          .where("state", "in", ["waiting", "not_sure"])
+          .where("state", "=", "waiting")
           .executeTakeFirst();
         if (numUpdatedRows !== 1n) {
           throw new QueueRefusal("That message isn't waiting any more.");
@@ -474,54 +481,47 @@ export function chatQueue(
       }),
 
     /**
-     * The person sends one row now: first in line, no longer held. A
-     * not-sure row goes again as a new row (its own id), and the old one is
-     * removed, so one id is never handed over twice. A row whose thread
-     * didn't open goes only by `recover`. Returns the id that goes.
+     * The person steers a waiting row: first in line, into the running
+     * reply as soon as it can take it.
      */
-    sendNow: (chat: ChatOf, id: string) =>
+    steer: (chat: ChatOf, id: string) =>
       write(chat, async (trx) => {
-        const row = await rows(trx, chat)
-          .selectAll()
-          .where("id", "=", id)
-          .where("state", "in", ["waiting", "not_sure"])
-          .where("held", "is not", "open_failed")
-          .executeTakeFirst();
-        if (!row)
+        const row = await waitingRow(trx, chat, id);
+        if (row.held !== null) {
           throw new QueueRefusal("That message isn't waiting any more.");
-        const at = now();
-        const position = await front(trx, chat);
-        if (row.state === "waiting") {
-          await trx
-            .updateTable("chat_queue")
-            .set({ held: null, held_text: null, position, updated_at: at })
-            .where("id", "=", id)
-            .execute();
-          return id;
         }
         await trx
           .updateTable("chat_queue")
-          .set({ state: "removed", updated_at: at })
+          .set({
+            kind: "steer",
+            position: await front(trx, chat),
+            updated_at: now(),
+          })
           .where("id", "=", id)
           .execute();
-        const again = uuid();
+      }),
+
+    /**
+     * The person sends a row Rufi didn't: first in line, no longer held. A
+     * row whose thread didn't open goes by `recover`, one whose reply ended
+     * by `retry`.
+     */
+    send: (chat: ChatOf, id: string) =>
+      write(chat, async (trx) => {
+        const row = await waitingRow(trx, chat, id);
+        if (row.held === "open_failed" || row.held === "reply_ended") {
+          throw new QueueRefusal(CHANGED_ELSEWHERE);
+        }
         await trx
-          .insertInto("chat_queue")
-          .values({
-            ...row,
-            id: again,
-            state: "waiting",
+          .updateTable("chat_queue")
+          .set({
             held: null,
             held_text: null,
-            hold_id: null,
-            sent_as: null,
-            turn_id: null,
-            position,
-            created_at: at,
-            updated_at: at,
+            position: await front(trx, chat),
+            updated_at: now(),
           })
+          .where("id", "=", id)
           .execute();
-        return again;
       }),
 
     /**

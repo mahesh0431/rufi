@@ -1,9 +1,10 @@
 // What waits to go to the AI, shown in the chat after its last message: your
 // messages, as dashed bubbles, and Rufi's notes, in the order they go. A
 // message shows here as soon as you send it, until the AI takes it: into the
-// running reply, or in a reply of its own. A waiting message can be edited,
-// moved by its handle (dragged, or by keyboard), sent now or removed; a held
-// one says why, and goes only when you send it. A message already in the
+// running reply, or in a reply of its own. A waiting message can be steered
+// into the running reply, edited, moved by its handle (dragged, or by
+// keyboard) or removed; one Rufi didn't send says Failed, or Not sent, with
+// why as it came, and goes only when you send it. A message already in the
 // chat (Rufi's part reads its files, or its reply ended there with Retry)
 // shows only there.
 import {
@@ -25,13 +26,12 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { QueueItem } from "@rufi/contracts";
 import {
-  ArrowUpToLine,
   Bell,
   Check,
   GripVertical,
+  Merge,
   MessageSquarePlus,
   Pencil,
-  RotateCw,
   Send,
   X,
 } from "lucide-react";
@@ -50,25 +50,23 @@ import { Button, buttonLook, ICON, IconButton } from "./ui.tsx";
  * (from a backup) shows here with its actions, also when its reply has it.
  */
 const waitsHere = (item: QueueItem) =>
-  item.state === "not_sure" ||
-  item.turnId == null ||
-  (item.held !== null && item.held !== "reply_ended");
+  item.turnId == null || (item.held !== null && item.held !== "reply_ended");
 
 /** Whether anything waits to show in the chat. */
 export const anyWaiting = (state: Live) => state.queue.items.some(waitsHere);
 
-/** Why a row doesn't go by itself, in words for the person. */
+/** Why a row doesn't go by itself: Failed, or Not sent, and why as it came. */
 function whyHeld(item: QueueItem): string | null {
-  if (item.state === "not_sure") {
-    return "Not sure this reached the AI. Check the chat before you send it again.";
-  }
   if (item.state === "handing_over") return "Sending…";
   switch (item.held) {
     case "restored":
-      return "From a backup: it waited when the backup was made.";
-    case "signed_out":
+      return "Not sent · From a backup: it waited when the backup was made.";
+    case "stopped":
+      return `Not sent · ${item.heldText ?? ""}`;
     case "failed":
     case "open_failed":
+      return `Failed · ${item.heldText ?? ""}`;
+    case "signed_out":
     case "reply_ended":
       return item.heldText;
     case null:
@@ -110,10 +108,6 @@ export function WaitingView({
   const ids = shown
     .filter((item) => item.state === "waiting")
     .map((item) => item.id);
-  /** The next to go by itself; the others can be sent now, before it. */
-  const next = shown.find(
-    (item) => item.state === "waiting" && item.held === null,
-  );
   const reorder = (order: readonly string[]) => {
     setDropped({ from: items, ids: order });
     void act(async () => {
@@ -127,6 +121,9 @@ export function WaitingView({
   };
   const one = (item: QueueItem) =>
     `${path}/queue/${encodeURIComponent(item.id)}`;
+  /** A waiting row into the running reply; a held one sent. */
+  const steer = (item: QueueItem) =>
+    void act(() => request("POST", `${one(item)}/steer`));
   const send = (item: QueueItem) =>
     void act(() => request("POST", `${one(item)}/send`));
   /** The person's choice for a message whose AI thread didn't open. */
@@ -165,15 +162,13 @@ export function WaitingView({
             <>
               {hold !== null ? (
                 <>
-                  <Button
-                    look="quiet"
-                    icon={RotateCw}
+                  <IconButton
+                    label="Send"
+                    icon={Send}
                     onClick={() => {
                       recover(item, hold, "retry");
                     }}
-                  >
-                    Try again
-                  </Button>
+                  />
                   {/* Not while a reply runs: its thread stays. */}
                   {!running && (
                     <Button
@@ -187,28 +182,24 @@ export function WaitingView({
                     </Button>
                   )}
                 </>
-              ) : item.state === "not_sure" || (isWaiting && !free) ? (
-                <Button
-                  look="quiet"
+              ) : isWaiting && !free ? (
+                <IconButton
+                  label="Send"
                   icon={Send}
                   onClick={() => {
                     send(item);
                   }}
-                >
-                  {item.state === "not_sure" ? "Send again" : "Send"}
-                </Button>
+                />
               ) : (
                 free &&
-                item !== next && (
-                  <Button
-                    look="quiet"
-                    icon={ArrowUpToLine}
+                running && (
+                  <IconButton
+                    label="Steer"
+                    icon={Merge}
                     onClick={() => {
-                      send(item);
+                      steer(item);
                     }}
-                  >
-                    Send now
-                  </Button>
+                  />
                 )
               )}
               {isWaiting && person && (
@@ -220,7 +211,7 @@ export function WaitingView({
                   }}
                 />
               )}
-              {item.state !== "handing_over" && (
+              {isWaiting && (
                 <IconButton
                   label="Remove"
                   icon={X}

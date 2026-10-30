@@ -668,7 +668,12 @@ it("upgrades a record of version 9 so a chat keeps the context its thread used a
       })),
     );
     expect(after.queue).toEqual(
-      before.queue.map((row) => ({ ...row, hold_id: null, note: null })),
+      before.queue.map((row) => ({
+        ...row,
+        hold_id: null,
+        note: null,
+        kind: "queue",
+      })),
     );
     // No meter until the thread reports again.
     expect((await transcripts(store).chat("asha"))?.context).toBeNull();
@@ -1116,6 +1121,7 @@ it("upgrades a record of version 15 so files start on Send: every document sent 
       ...row,
       ...(row["id"] === "queue-sort" && { state: "removed" }),
       note: null,
+      kind: "queue",
     })),
   );
   const db = new DatabaseSync(path, { readOnly: true });
@@ -1189,7 +1195,7 @@ it.each([
   },
 );
 
-it("upgrades a record of version 19 so its waiting messages go to the agent queue: every message keeps its words, chips and id; a chat's pause ends, and a hand-over that may have reached the AI is not sure; cut short, the upgrade changes nothing and runs again", async () => {
+it("upgrades a record of version 19 so its waiting messages go to the agent queue: every message keeps its words, chips and id; a chat's pause ends, and one not sure counts as sent at the next start; cut short, the upgrade changes nothing and runs again", async () => {
   const path = databasePath(home);
   migrate(path, MIGRATIONS.slice(0, 19));
   // Asha's chat as Rufi of version 19 left it, stopped: a message of each
@@ -1260,13 +1266,15 @@ it("upgrades a record of version 19 so its waiting messages go to the agent queu
   store.close();
   const after = stored();
   expect(after.paused).toEqual([{ paused: null }]);
-  // Each row has room for Rufi's note on what its part read: none yet.
+  // Each row has room for Rufi's note on what its part read (none yet),
+  // and is queued.
   expect(after.queue).toEqual(
     before.queue.map((row) => ({
       ...row,
       ...(row["id"] === "riding" && { held: null }),
-      ...(row["id"] === "handed" && { state: "not_sure" }),
+      ...(row["id"] === "not-sure" && { state: "handing_over" }),
       note: null,
+      kind: "queue",
     })),
   );
 });

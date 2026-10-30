@@ -506,11 +506,9 @@ export const startCore = (options: CoreOptions) =>
         ),
     );
     port = (server.address() as AddressInfo).port;
-    // Rufi's MCP server listens and the chat is open: hand-overs Rufi
-    // claimed that the package never saved are settled by their provider,
-    // each chat's waiting messages go into Rufi AI's queue, in order, and
-    // only now may the agents' inputs go.
-    yield* attempt(() => agentSystem.recover());
+    // Rufi's MCP server listens and the chat is open: each chat's waiting
+    // messages go into Rufi AI's queue, in order, and only now may the
+    // agents' inputs go.
     yield* attempt(() => chat.carryAll());
     yield* attempt(() => agentSystem.agents.dispatch());
     convertLoop.start();

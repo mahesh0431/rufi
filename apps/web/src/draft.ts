@@ -17,6 +17,7 @@ import {
   MAX_REFS,
   Pointer,
   Sent,
+  type WhileReplying,
 } from "@rufi/contracts";
 import type { QueryClient } from "@tanstack/react-query";
 import { Schema } from "effect";
@@ -308,11 +309,11 @@ export function draftBox(api: DraftApi) {
     },
 
     /**
-     * Sends the text: into the running reply, or into the queue.
-     * The box empties when the core took it; a refusal leaves the text with
-     * the reason.
+     * Sends the text; while a reply runs, into it (steer) or after it
+     * (queue). The box empties when the core took it; a refusal leaves the
+     * text with the reason.
      */
-    async submit(): Promise<void> {
+    async submit(kind?: WhileReplying): Promise<void> {
       const state = store.getState();
       const text = state.text.trim();
       if (
@@ -335,6 +336,7 @@ export function draftBox(api: DraftApi) {
               id,
               text,
               refs: pointers(state.refs),
+              ...(kind && { kind }),
             }),
           );
           forget();

@@ -128,8 +128,16 @@ export interface Sent {
 /** Why an input from one agent to another came. */
 export type About = "done" | "stopped" | "failed" | "asked" | "wrote";
 
-/** Why a waiting input isn't handed over by itself. */
-export type Hold = "signed_out" | "open_failed" | "failed" | "restarts";
+/**
+ * Why a waiting input isn't handed over by itself. Stopped: a Stop came
+ * before it went.
+ */
+export type Hold =
+  | "signed_out"
+  | "open_failed"
+  | "failed"
+  | "stopped"
+  | "restarts";
 
 /**
  * The agent's turn in this process: starting, with the input it starts
@@ -280,16 +288,16 @@ export interface Agents {
    */
   reorder: (agent: string, inputs: readonly string[]) => void;
   /**
-   * The input goes next: first in line, its hold lifted. One that surely
-   * never reached a provider (dropped, or removed) waits again so.
+   * The waiting input goes in as a steer, its hold lifted: into the running
+   * turn at once, or first when none runs.
    */
-  sendNow: (input: string) => void;
+  steer: (input: string) => void;
   /** The sign-in is back: inputs held as signed out go again. */
   signedIn: () => void;
   /**
    * Stops the agent's turn: closed to new calls at once, then stopped by
    * the provider; the inputs waiting for it go on after. A start not yet
-   * with the provider doesn't go, and its input is dropped.
+   * with the provider doesn't go: its input waits, held as stopped.
    */
   stop: (agent: string, by: string) => Promise<void>;
   /**
@@ -358,8 +366,19 @@ interface Live {
 interface Waiting {
   id: string;
   kind: "steer" | "queue";
+  sender: string;
   parts: string | null;
 }
+
+/**
+ * The line before a steered input, so the agent adds it to its work; it
+ * names the agent that steers, when one does.
+ */
+const steerLine = (by?: { title: string; id: string }) =>
+  `You're being steered${by ? ` by ${by.title} (${by.id})` : ""}: don't drop what you're working on unless you have to; take this into account.`;
+
+/** A start a Stop cut before it went: it waits, held. */
+const STOPPED = { state: "held", held: "stopped", text: "Stopped." } as const;
 
 /** Where an input goes next. */
 type Move =
@@ -370,7 +389,6 @@ type Move =
    */
   | { state: "waiting"; first?: true; next?: true }
   | { state: "held"; held: Hold; text: string }
-  | { state: "dropped" }
   | { state: "removed" };
 
 interface Starting {
@@ -998,7 +1016,7 @@ export function createAgents(options: {
   const waitingOf = (agent: string) =>
     db
       .prepare(
-        "SELECT id, kind, parts FROM queue WHERE agent_id = ? AND state = 'waiting' AND held IS NULL ORDER BY position",
+        "SELECT id, kind, sender, parts FROM queue WHERE agent_id = ? AND state = 'waiting' AND held IS NULL ORDER BY position",
       )
       .all(agent) as unknown as Waiting[];
   const stateOf = (input: string) =>
@@ -1041,11 +1059,10 @@ export function createAgents(options: {
             "UPDATE queue SET state = 'waiting', held = ?, held_text = ?, conversation = NULL, turn_id = NULL, updated_at = ? WHERE id = ?",
           ).run(to.held, to.text, at, input);
           break;
-        case "dropped":
         case "removed":
           db.prepare(
-            "UPDATE queue SET state = ?, turn_id = NULL, updated_at = ? WHERE id = ?",
-          ).run(to.state, at, input);
+            "UPDATE queue SET state = 'removed', turn_id = NULL, updated_at = ? WHERE id = ?",
+          ).run(at, input);
       }
       if (start !== undefined) {
         db.prepare(
@@ -1217,7 +1234,7 @@ export function createAgents(options: {
       const stopped = () =>
         starting.stopBy !== undefined || lives.get(live.id) !== live;
       if (stopped()) {
-        move(live, input.id, "waiting", { state: "dropped" });
+        move(live, input.id, "waiting", STOPPED);
         return;
       }
       const turn = randomUUID();
@@ -1226,7 +1243,7 @@ export function createAgents(options: {
       const parts = await claimed(live, input, turn);
       if (!parts) return;
       if (stopped()) {
-        move(live, input.id, "handing_over", { state: "dropped" }, turn);
+        move(live, input.id, "handing_over", STOPPED, turn);
         return;
       }
       let delivery: Delivery;
@@ -1308,8 +1325,18 @@ export function createAgents(options: {
       live.asks += 1;
       return;
     }
+    const sender = get(input.sender);
     conversation
-      .steer({ input: { id: input.id, parts }, turn: current.ref })
+      .steer({
+        input: {
+          id: input.id,
+          parts: [
+            steerLine(sender && { title: sender.title, id: sender.id }),
+            ...parts,
+          ],
+        },
+        turn: current.ref,
+      })
       .then(
         (outcome: SteerOutcome): Move =>
           outcome.status === "delivered"
@@ -1754,20 +1781,20 @@ export function createAgents(options: {
       pump(agent);
     },
 
-    sendNow: (input) => {
+    steer: (input) => {
       const found = db
-        .prepare("SELECT agent_id AS agent, state FROM queue WHERE id = ?")
-        .get(input) as { agent: string; state: string } | undefined;
-      if (!found || !["waiting", "dropped", "removed"].includes(found.state)) {
-        return;
-      }
+        .prepare(
+          "SELECT agent_id AS agent FROM queue WHERE id = ? AND state = 'waiting'",
+        )
+        .get(input) as { agent: string } | undefined;
+      if (!found) return;
       store.change(({ event }) => {
         db.prepare(
-          `UPDATE queue SET state = 'waiting', held = NULL, held_text = NULL, conversation = NULL, updated_at = ?,
-             position = (SELECT COALESCE(MIN(position), 1) - 1 FROM queue WHERE agent_id = ? AND state = 'waiting')
+          `UPDATE queue SET kind = 'steer', held = NULL, held_text = NULL, updated_at = ?,
+             position = (SELECT MIN(position) - 1 FROM queue WHERE agent_id = ? AND state = 'waiting')
            WHERE id = ?`,
         ).run(now(), found.agent, input);
-        event("input.sent_now", found.agent, { input });
+        event("input.steered", found.agent, { input });
       });
       pump(found.agent);
     },

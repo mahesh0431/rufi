@@ -458,9 +458,21 @@ describe("the queue", () => {
       { id: "note-3", turn_id: first.id },
     ]);
     expect(received()).toEqual(["note-1", "note-3", "note-2"]);
+    // A steer reaches the agent after a line saying it is one.
+    expect(
+      fake
+        .received(ledger[0]?.ref ?? "")
+        .find((input) => input.id === "note-3"),
+    ).toEqual({
+      id: "note-3",
+      parts: [
+        "You're being steered: don't drop what you're working on unless you have to; take this into account.",
+        "Reading report.pdf: note-3",
+      ],
+    });
   });
 
-  it("takes the host's changes to what waits: a removed input doesn't go, a new order holds, and one sent now goes first, also one removed before", async () => {
+  it("takes the host's changes to what waits: a removed input doesn't go, a new order holds, and a steered one goes into the running turn", async () => {
     asha();
     fake.script.turn = "runs";
     agents.send(ASHA.id, note("note-1"));
@@ -468,11 +480,14 @@ describe("the queue", () => {
     for (const id of ["note-2", "note-3", "note-4", "note-5"]) {
       agents.send(ASHA.id, note(id, "queue"));
     }
-    agents.remove(["note-3", "note-5"]);
+    agents.remove(["note-3"]);
     agents.reorder(ASHA.id, ["note-4", "note-2"]);
-    agents.sendNow("note-5");
+    agents.steer("note-5");
+    await until(() => {
+      expect(states()["note-5"]).toBe("delivered");
+    });
     const ref = ledger[0]?.ref ?? "";
-    for (const next of ["note-5", "note-4", "note-2"]) {
+    for (const next of ["note-4", "note-2"]) {
       fake.end(ref);
       await until(() => {
         expect(states()[next]).toBe("delivered");
@@ -741,7 +756,7 @@ describe("a turn the provider began by itself", () => {
 });
 
 describe("Stop", () => {
-  it("while a start is still opening keeps it from the provider and drops its input; what waits goes on", async () => {
+  it("while a start is still opening keeps it from the provider: its input waits, not sent; what waits behind goes on", async () => {
     const asked = Promise.withResolvers<undefined>();
     const opened = Promise.withResolvers<undefined>();
     agents = await run(fake.adapter, {
@@ -763,7 +778,12 @@ describe("Stop", () => {
     await until(() => {
       expect(agents.get(ASHA.id)?.status).toBe("done");
     });
-    expect(states()).toEqual({ "note-1": "dropped", "note-2": "delivered" });
+    expect(rows("SELECT id, state, held FROM queue ORDER BY position")).toEqual(
+      [
+        { id: "note-1", state: "waiting", held: "stopped" },
+        { id: "note-2", state: "delivered", held: null },
+      ],
+    );
     expect(received()).toEqual(["note-2"]);
     expect(rows("SELECT status FROM turns")).toEqual([{ status: "done" }]);
   });

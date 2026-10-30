@@ -1,16 +1,54 @@
 -- Rufi's waiting messages go to the agent system's queue, which hands them
 -- over in order (server/chat.ts), and a chat no longer pauses after a Stop
--- or a restart. What an older Rufi left, mapped once:
+-- or a restart. A message is sent once Rufi hands it over: there is no
+-- "not sure" any more. What an older Rufi left, mapped once:
 -- - a chat's pause ends, and a Rufi note held for it waits free;
--- - a hand-over that Rufi marked (its id in sent_as) may have reached the
---   AI: it is not sure, keeping sent_as, and never goes again by itself.
+-- - a hand-over not sure is one Rufi marked (its sent_as, or its own id):
+--   at the next start it counts as sent, in its chat with its reply
+--   stopped (server/rufi-ai.ts).
 -- A hand-over Rufi didn't mark is settled at every start, as before
 -- (core/chat/queue.ts, endStopped). A row held from a restored backup, or
--- for the person's choice, stays held; sent and removed rows stay as they are.
+-- for the person's choice, stays held; sent and removed rows stay as they
+-- are. Each message keeps how the person sent it while a reply ran: into
+-- the reply (steer), or after it (queue); a waiting one is queued. The
+-- table is made again, as SQLite does it: new table, copy, drop, rename.
 UPDATE chats SET paused = NULL;
 UPDATE chat_queue SET held = NULL WHERE state = 'waiting' AND held = 'paused';
-UPDATE chat_queue SET state = 'not_sure'
-  WHERE state = 'handing_over' AND sent_as IS NOT NULL;
--- Rufi's note on what its part of a message's reply read, kept with the
--- message once the reading ends, so every claim of it gives the same input.
-ALTER TABLE chat_queue ADD COLUMN note TEXT;
+UPDATE chat_queue SET state = 'handing_over', sent_as = COALESCE(sent_as, id)
+  WHERE state = 'not_sure';
+
+CREATE TABLE chat_queue_new (
+  id TEXT PRIMARY KEY,
+  person_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('person', 'rufi')),
+  kind TEXT NOT NULL DEFAULT 'queue' CHECK (kind IN ('steer', 'queue')),
+  text TEXT NOT NULL,
+  refs TEXT NOT NULL DEFAULT '[]',
+  event_id TEXT,
+  position INTEGER NOT NULL,
+  state TEXT NOT NULL DEFAULT 'waiting' CHECK (state IN ('waiting', 'handing_over', 'sent', 'removed')),
+  held TEXT CHECK (held IN ('signed_out', 'restored', 'failed', 'stopped', 'open_failed', 'reply_ended')),
+  held_text TEXT,
+  hold_id TEXT,
+  sent_as TEXT,
+  turn_id TEXT,
+  note TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (person_id, id),
+  FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
+  FOREIGN KEY (person_id, event_id) REFERENCES transcript_entries (person_id, id),
+  FOREIGN KEY (person_id, turn_id) REFERENCES turns (person_id, id),
+  CHECK ((origin = 'rufi') = (event_id IS NOT NULL)),
+  CHECK (held IS NULL OR state = 'waiting'),
+  CHECK ((held IS 'open_failed' OR held IS 'reply_ended') = (hold_id IS NOT NULL))
+) STRICT;
+
+INSERT INTO chat_queue_new (id, person_id, chat_id, origin, text, refs, event_id, position, state, held, held_text, hold_id, sent_as, turn_id, created_at, updated_at)
+  SELECT id, person_id, chat_id, origin, text, refs, event_id, position, state, held, held_text, hold_id, sent_as, turn_id, created_at, updated_at
+  FROM chat_queue ORDER BY rowid;
+
+DROP TABLE chat_queue;
+ALTER TABLE chat_queue_new RENAME TO chat_queue;
+CREATE INDEX queue_by_chat ON chat_queue (person_id, chat_id, state, position);

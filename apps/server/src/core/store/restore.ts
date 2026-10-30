@@ -111,17 +111,17 @@ export async function restore(
 
 /**
  * Nothing from the past runs by itself: what waited to go to the AI comes
- * back held, for the person to send again or remove, and a hand-over the
- * backup caught after the AI may have got it is not sure; one caught before
- * (while Rufi read its files) waits held too (core/chat/queue.ts).
+ * back held, for the person to send again or remove; a hand-over the backup
+ * caught after the AI may have got it counts as sent (server/rufi-ai.ts),
+ * and one caught before (while Rufi read its files) waits held too
+ * (core/chat/queue.ts).
  */
 function holdQueue(path: string): void {
   const db = new DatabaseSync(path);
   try {
     db.exec(`
       BEGIN;
-      UPDATE chat_queue SET state = 'not_sure' WHERE state = 'handing_over' AND sent_as IS NOT NULL;
-      UPDATE chat_queue SET state = 'waiting', held = NULL, hold_id = NULL WHERE state = 'handing_over';
+      UPDATE chat_queue SET state = 'waiting', held = NULL, hold_id = NULL WHERE state = 'handing_over' AND sent_as IS NULL;
       UPDATE chat_queue SET held = 'restored', held_text = NULL, hold_id = NULL WHERE state = 'waiting';
       COMMIT;
     `);
