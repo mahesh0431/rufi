@@ -11,7 +11,7 @@ import type { Page } from "@playwright/test";
 import { ChatGptError } from "../../server/src/agent/chatgpt/openai.ts";
 import type { Scenario } from "../../server/tests/fake-codex.ts";
 import { readPage, scriptedReader } from "../../server/tests/fake-reader.ts";
-import { expect, sendFiles, test, type Rufi } from "./rufi.ts";
+import { expect, FILE_WORK_MS, sendFiles, test, type Rufi } from "./rufi.ts";
 
 // Wide enough for the Documents page beside the chat panel.
 test.use({ viewport: { width: 2000, height: 800 } });
@@ -342,7 +342,7 @@ test("Settings keeps the reader's model and effort, and the next reading runs wi
   await sendFiles(page, await report());
   await expect(
     page.getByRole("cell", { name: /Not saved · 2 results/ }),
-  ).toBeVisible({ timeout: 10_000 });
+  ).toBeVisible({ timeout: FILE_WORK_MS });
   expect(reader.runs.map(({ model, effort }) => ({ model, effort }))).toEqual([
     { model: "gpt-5.5", effort: "high" },
   ]);
@@ -393,7 +393,7 @@ test("keeps unreadable pages to check and reserves Nothing to save for a complet
   });
   await sendFiles(page, await report());
   const status = row(page).getByRole("cell").nth(4); // Status
-  await expect(status).toContainText("To check", { timeout: 10_000 });
+  await expect(status).toContainText("To check", { timeout: FILE_WORK_MS });
   await expect(status).not.toContainText("Nothing to save");
 
   await status.getByRole("button", { name: "Retry" }).click();
