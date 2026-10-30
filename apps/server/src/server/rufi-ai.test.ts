@@ -82,6 +82,11 @@ async function start(adapter: ProviderAdapter, logged: string[] = []) {
     store,
     system,
     row,
+    /** The replies' text as the screens get it. */
+    shown: async () =>
+      (await transcripts.page(await row())).entries
+        .filter((entry) => entry.kind === "reply")
+        .map((entry) => entry.text),
     send: async (id: string, text: string) => chat.send(await row(), id, text),
     /** Waits for the chat's reply to run; its provider turn. */
     running: async () => {
@@ -120,17 +125,26 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
   const logged: string[] = [];
   let rufi = await start(adapter, logged);
 
-  // Only part of the answer streams before the turn ends with all of it.
+  // Only part of the answer streams, then a question on the same item,
+  // before the turn ends with all of the answer.
   await rufi.send("message-1", "What was my last TSH?");
   const first = await rufi.running();
   emit({
     type: "text",
     turn: first,
     item: "answer-1",
-    delta: "Your last TSH was ",
+    delta: "Your last TSH",
   });
-  await vi.waitFor(() => {
-    expect(replies()).toHaveLength(1);
+  emit({
+    type: "question",
+    turn: first,
+    item: "answer-1",
+    title: "Which one?",
+    options: ["March", "May"],
+  });
+  const asked = "\n\n**Which one?**\n- March\n- May";
+  await vi.waitFor(async () => {
+    expect(await rufi.shown()).toEqual([`Your last TSH${asked}`]);
   });
   const streamed = String(replies()[0]?.["id"]);
   // Writing the answer fails after the cursor moved: both roll back.
@@ -145,14 +159,13 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
     expect(logged).toContain("agents.failed");
   });
   expect(rows("SELECT status FROM turns")).toEqual([{ status: "completed" }]);
-  expect(replies()).toEqual([
-    { id: streamed, text: "Your last TSH was ", status: "stopped" },
-  ]);
+  expect(replies()).toMatchObject([{ id: streamed, status: "stopped" }]);
+  expect(await rufi.shown()).toEqual([`Your last TSH${asked}`]);
   expect(rufi.store.eventsAfter(cursor()).map((event) => event.type)).toContain(
     "turn.ended",
   );
 
-  // The next reading puts it on the streamed row.
+  // The next reading puts it on the streamed row; the question stays.
   record.db.exec("DROP TRIGGER fictional_failure");
   rufi.system.agents.configure(await rufi.system.root("c-asha"), {
     model: "fake-model",
@@ -161,9 +174,8 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
   await vi.waitFor(() => {
     expect(cursor()).toBe(rufi.store.highWater());
   });
-  expect(replies()).toEqual([
-    { id: streamed, text: "Your last TSH was 2.1.", status: "done" },
-  ]);
+  expect(replies()).toMatchObject([{ id: streamed, status: "done" }]);
+  expect(await rufi.shown()).toEqual([`Your last TSH was 2.1.${asked}`]);
 
   // Nothing streams: the answer gets a row of its own.
   await rufi.send("message-2", "And the one before?");

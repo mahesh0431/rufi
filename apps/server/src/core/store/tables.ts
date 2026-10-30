@@ -395,6 +395,8 @@ export interface Tables {
     revision: number;
     created_at: string;
     updated_at: string;
+    /** A reply's questions, JSON, apart from its answer. */
+    questions: string | null;
   };
   turns: {
     id: string;

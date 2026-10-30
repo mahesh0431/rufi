@@ -26,7 +26,7 @@ import {
   type HandOver,
 } from "../core/chat/queue.ts";
 import { refsForAi, RefRefusal } from "../core/chat/refs.ts";
-import type { ChatRow, Transcripts } from "../core/chat/transcript.ts";
+import type { ChatRow, Step, Transcripts } from "../core/chat/transcript.ts";
 import type { Job, Readings } from "../core/documents/reading.ts";
 import type { ToolAnswer, ToolSpec } from "../core/tools/registry.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
@@ -121,8 +121,12 @@ export function chat(deps: ChatDeps) {
   const handedTo = new Map<string, string>();
   /** Closing: nothing more is handed over. */
   let closed = false;
-  /** Messages already given their reply text, so a question starts a new paragraph. */
-  const replied = new Set<string>();
+  /**
+   * Each reply's note, reasoning or running step as it comes, by turn and
+   * item: since when, and a note's or reasoning's text so far. The agent
+   * database keeps them.
+   */
+  const streaming = new Map<string, { since: string; text: string }>();
   /** Turns with a part Rufi couldn't save: stopped, and ended as failed. */
   const unsaved = new Set<string>();
   /** Rufi's parts of replies under way, so closing waits for them. */
@@ -147,8 +151,17 @@ export function chat(deps: ChatDeps) {
             error: errorCode(error),
           });
           // A transcript with a hole is never shown as a whole reply; the
-          // context used is no part of it.
-          if (event.type === "turnEnded" || event.type === "usage") return;
+          // context used and what is only shown are no part of it.
+          if (
+            event.type === "turnEnded" ||
+            event.type === "usage" ||
+            event.type === "note" ||
+            event.type === "thinking" ||
+            event.type === "reasoning" ||
+            event.type === "activity"
+          ) {
+            return;
+          }
           lost(event.threadId, event.turnId);
         }),
       );
@@ -291,7 +304,6 @@ export function chat(deps: ChatDeps) {
         return;
       }
       case "text":
-        replied.add(event.itemId);
         await transcripts.appendReply(
           chat,
           event.turnId,
@@ -300,46 +312,58 @@ export function chat(deps: ChatDeps) {
           event.done === true,
         );
         return;
-      case "note":
-        await transcripts.appendNote(
-          chat,
-          event.turnId,
-          event.itemId,
-          event.delta,
-          event.done === true,
-        );
+      // The question is part of the reply, so it is never lost; it is kept
+      // apart from the answer's text.
+      case "question":
+        await transcripts.addQuestion(chat, event.turnId, event.itemId, {
+          title: event.title,
+          options: event.options,
+        });
         return;
-      case "question": {
-        // The question is part of the reply, so it is never lost.
-        const options = event.options.map((option) => `\n- ${option}`).join("");
-        const text = `${replied.has(event.itemId) ? "\n\n" : ""}**${event.title}**${options}`;
-        replied.add(event.itemId);
-        await transcripts.appendReply(chat, event.turnId, event.itemId, text);
+      // Steps, notes and reasoning are kept by the agent database, and
+      // only shown here as they come.
+      case "note":
+      case "thinking": {
+        const key = `${event.turnId}/${event.itemId}`;
+        const so = streaming.get(key) ?? { since: transcripts.now(), text: "" };
+        so.text += event.delta;
+        streaming.set(key, so);
+        const done = event.type === "note" && event.done === true;
+        if (done) streaming.delete(key);
+        await show(chat, event, {
+          type: event.type === "note" ? "note" : "reasoning",
+          text: so.text,
+          status: done ? "done" : null,
+          since: so.since,
+        });
         return;
       }
-      case "activity":
-        await transcripts.setActivity(chat, event.turnId, event.itemId, {
-          activity: event.activity,
-          title: event.title,
-          ...(event.detail !== undefined && { detail: event.detail }),
-          status: event.status,
-          ...(event.details !== undefined && { details: event.details }),
-        });
-        return;
-      case "thinking":
-        await transcripts.appendReasoning(
-          chat,
-          event.turnId,
-          event.itemId,
-          event.delta,
-        );
-        return;
       case "reasoning":
-        await transcripts.addReasoning(chat, event.turnId, event.itemId, {
-          summary: event.summary,
-          details: event.details,
+        await show(chat, event, {
+          type: "reasoning",
+          text: event.summary,
+          status: "done",
+          since:
+            streaming.get(`${event.turnId}/${event.itemId}`)?.since ??
+            transcripts.now(),
+        });
+        streaming.delete(`${event.turnId}/${event.itemId}`);
+        return;
+      case "activity": {
+        const key = `${event.turnId}/${event.itemId}`;
+        const since = streaming.get(key)?.since ?? transcripts.now();
+        if (event.status === "running") streaming.set(key, { since, text: "" });
+        else streaming.delete(key);
+        await show(chat, event, {
+          type: "step",
+          kind: event.activity,
+          title: event.title,
+          detail: event.detail ?? null,
+          status: event.status,
+          since,
         });
         return;
+      }
       case "usage":
         await transcripts.setContext(chat, event.threadId, {
           tokens: event.tokens,
@@ -352,10 +376,40 @@ export function chat(deps: ChatDeps) {
         }
         await transcripts.endTurn(chat, event.turnId, event.end);
         await endHandOver(chat, event.turnId);
+        // Its steps as the agent database keeps them now it ended.
+        for (const key of streaming.keys()) {
+          if (key.startsWith(`${event.turnId}/`)) streaming.delete(key);
+        }
+        await transcripts.show(chat, event.turnId);
         // The turn and its writes have ended: the next rows may go.
         next(chat);
         return;
     }
+  }
+
+  /** One step of a reply as it is now, shown and not stored here. */
+  async function show(
+    chat: ChatRow,
+    event: RufiAiEvent & { turnId: string; itemId: string },
+    step: Pick<Step, "type" | "status"> &
+      Partial<Pick<Step, "kind" | "title" | "detail" | "text">> & {
+        since: string;
+      },
+  ): Promise<void> {
+    const { since, ...rest } = step;
+    await transcripts.show(chat, event.turnId, [
+      {
+        id: event.itemId,
+        position: event.position ?? 0,
+        kind: null,
+        title: null,
+        detail: null,
+        text: null,
+        ...rest,
+        createdAt: since,
+        updatedAt: transcripts.now(),
+      },
+    ]);
   }
 
   /**

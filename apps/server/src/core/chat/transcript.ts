@@ -70,6 +70,47 @@ export interface TurnEnding {
   resetsAt?: string;
 }
 
+/**
+ * What a reply reported, as the agent system keeps it (server/rufi-ai.ts):
+ * its steps, notes and reasoning show from there.
+ */
+export interface Step {
+  /** The agent's item id. */
+  id: string;
+  /** Its place in its reply, from when the reply first reported it. */
+  position: number;
+  type: "text" | "note" | "question" | "reasoning" | "step";
+  kind: string | null;
+  title: string | null;
+  detail: string | null;
+  /** A step's, as reported; `done` for a note or reasoning once whole. */
+  status: string | null;
+  text: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Where the agent system keeps the steps of a chat's replies, by its agent. */
+export interface Steps {
+  /** What these turns of the agent reported, by agent turn. */
+  of: (
+    agent: string,
+    agentTurns: readonly string[],
+  ) => ReadonlyMap<string, readonly Step[]>;
+  /** Everything the agent gave about one item; undefined when it has none. */
+  details: (
+    agent: string,
+    agentTurn: string,
+    id: string,
+  ) => { details: unknown } | undefined;
+}
+
+/** A question the AI asked in its reply, as it gave it. */
+export interface Question {
+  title: string;
+  options: readonly string[];
+}
+
 type Db = Kysely<Tables> | Transaction<Tables>;
 
 /**
@@ -81,6 +122,68 @@ export const PAGE_ROWS = 60;
 
 type EntryRow = Selectable<Tables["transcript_entries"]>;
 type TurnRow = Selectable<Tables["turns"]>;
+
+/** Places a reply's steps may take between two of Rufi's entries. */
+const STEP_PLACES = 1_000_000;
+
+/** What a reply reported that shows in its Activity, not as its answer. */
+const isStep = (step: Step) =>
+  step.type === "note" || step.type === "reasoning" || step.type === "step";
+
+/** A step's id on the screens: its reply's, then the agent's item id. */
+const stepId = (turnId: string, itemId: string) =>
+  `${turnId}.${Buffer.from(itemId).toString("base64url")}`;
+
+/**
+ * A step as the screens get it, after `anchor` by its place in its reply.
+ * One still running when its reply ended was stopped.
+ */
+function stepEntry(turn: TurnRow, step: Step, anchor: number): Entry {
+  const ended = turn.status !== "running";
+  const reported = step.status as Entry["status"];
+  return {
+    id: stepId(turn.id, step.id),
+    seq: anchor + step.position / STEP_PLACES,
+    turnId: turn.id,
+    kind: step.type === "reasoning" ? "reasoning" : "activity",
+    text: (step.type === "step" ? step.title : step.text) ?? "",
+    activity:
+      step.type === "note"
+        ? "note"
+        : step.type === "step"
+          ? (step.kind as ActivityKind)
+          : null,
+    detail: step.type === "step" ? step.detail : null,
+    status:
+      step.type === "step"
+        ? reported === "running" && ended
+          ? "stopped"
+          : reported
+        : reported === "done"
+          ? "done"
+          : ended
+            ? "stopped"
+            : "running",
+    createdAt: step.createdAt,
+    updatedAt: step.updatedAt,
+  };
+}
+
+/** A reply's questions, as its row keeps them apart from its answer. */
+const questionsOf = (questions: string | null): Question[] =>
+  questions === null ? [] : (JSON.parse(questions) as Question[]);
+
+/** A reply's text as it shows: its answer, then each question it asked. */
+const withQuestions = (answer: string, questions: string | null) =>
+  [
+    answer,
+    ...questionsOf(questions).map(
+      ({ title, options }) =>
+        `**${title}**${options.map((option) => `\n- ${option}`).join("")}`,
+    ),
+  ]
+    .filter((part) => part !== "")
+    .join("\n\n");
 
 /**
  * Whether a reply or note is whole: its turn completed and it wasn't cut
@@ -103,7 +206,10 @@ const toEntry = (
   kind: row.kind as Entry["kind"],
   text:
     row.kind === "reply"
-      ? splitBasis(row.text, whole(row.status, turnStatus)).answer
+      ? withQuestions(
+          splitBasis(row.text, whole(row.status, turnStatus)).answer,
+          row.questions,
+        )
       : row.text,
   activity: row.activity as Entry["activity"],
   detail: row.detail,
@@ -289,6 +395,8 @@ export function transcripts(
 ) {
   const db = store.query;
   const listeners = new Map<string, Set<(change: Change) => void>>();
+  /** Where the agent system keeps replies' steps, once it says. */
+  let steps: Steps | undefined;
 
   /**
    * One write to a chat: `write` gets the new revision and returns
@@ -301,7 +409,14 @@ export function transcripts(
       trx: Transaction<Tables>,
       revision: number,
     ) => Promise<
-      { entries: string[]; turns: string[]; chat?: true } | undefined
+      | {
+          entries: string[];
+          turns: string[];
+          chat?: true;
+          /** Steps shown as they are, stored elsewhere. */
+          shown?: Entry[];
+        }
+      | undefined
     >,
   ): Promise<Change | undefined> {
     const changed = await db.transaction().execute(async (trx) => {
@@ -348,7 +463,7 @@ export function transcripts(
       return {
         chatId,
         revision,
-        entries: await entriesOut(trx, entries),
+        entries: [...(await entriesOut(trx, entries)), ...(ids.shown ?? [])],
         turns: await turnsOut(trx, turns),
         ...(chat && {
           chat: shown(toChat(chat)),
@@ -421,6 +536,89 @@ export function transcripts(
       .where("kind", "=", kind)
       .executeTakeFirst();
 
+  /**
+   * Where a reply's steps go: after the last of what it started with (its
+   * messages, Rufi's events and Rufi's reading), else after the last entry
+   * before it started.
+   */
+  async function anchorOf(trx: Db, turn: TurnRow): Promise<number> {
+    const { opening } = await trx
+      .selectFrom("transcript_entries")
+      .select((eb) => eb.fn.max<number | null>("seq").as("opening"))
+      .where("person_id", "=", turn.person_id)
+      .where("turn_id", "=", turn.id)
+      .where("kind", "in", ["message", "event", "activity"])
+      .executeTakeFirstOrThrow();
+    if (opening !== null) return opening;
+    const { before } = await trx
+      .selectFrom("transcript_entries")
+      .select((eb) => eb.fn.max<number | null>("seq").as("before"))
+      .where("person_id", "=", turn.person_id)
+      .where("chat_id", "=", turn.chat_id)
+      .where("created_at", "<=", turn.started_at)
+      .executeTakeFirstOrThrow();
+    return before ?? 0;
+  }
+
+  /** The chat's own agent in the agent system, when it has one. */
+  const rootOf = async (trx: Db, chat: ChatRow) =>
+    (
+      await trx
+        .selectFrom("agent_owners")
+        .select("agent_id")
+        .where("person_id", "=", chat.personId)
+        .where("chat_id", "=", chat.id)
+        .where("root", "=", 1)
+        .executeTakeFirst()
+    )?.agent_id;
+
+  /**
+   * The steps of these replies the agent system keeps, as the screens get
+   * them. A reply whose steps Rufi stored itself (one from before) has
+   * none from there.
+   */
+  async function stepsOf(
+    trx: Db,
+    chat: ChatRow,
+    turns: readonly TurnRow[],
+  ): Promise<Entry[]> {
+    if (!steps) return [];
+    const fresh: (TurnRow & { agent_turn_id: string })[] = [];
+    for (const turn of turns) {
+      if (turn.agent_turn_id === null) continue;
+      const stored = await trx
+        .selectFrom("transcript_entries")
+        .select("id")
+        .where("person_id", "=", turn.person_id)
+        .where("turn_id", "=", turn.id)
+        .where((eb) =>
+          eb.or([
+            eb("kind", "=", "reasoning"),
+            eb.and([
+              eb("kind", "=", "activity"),
+              eb("activity", "!=", "reading"),
+            ]),
+          ]),
+        )
+        .executeTakeFirst();
+      if (!stored) fresh.push({ ...turn, agent_turn_id: turn.agent_turn_id });
+    }
+    const agent = await rootOf(trx, chat);
+    if (fresh.length === 0 || agent === undefined) return [];
+    const kept = steps.of(
+      agent,
+      fresh.map((turn) => turn.agent_turn_id),
+    );
+    const out: Entry[] = [];
+    for (const turn of fresh) {
+      const shown = (kept.get(turn.agent_turn_id) ?? []).filter(isStep);
+      if (shown.length === 0) continue;
+      const anchor = await anchorOf(trx, turn);
+      out.push(...shown.map((step) => stepEntry(turn, step, anchor)));
+    }
+    return out;
+  }
+
   async function insertEntry(
     trx: Transaction<Tables>,
     chat: ChatRow,
@@ -435,6 +633,8 @@ export function transcripts(
       status?: NonNullable<Entry["status"]>;
       agentItemId?: string;
       details?: string;
+      /** A reply's questions, JSON. */
+      questions?: string;
       /** A message's chips. */
       refs?: readonly Chip[];
     },
@@ -454,6 +654,7 @@ export function transcripts(
         activity: entry.activity ?? null,
         detail: entry.detail ?? null,
         details: entry.details ?? null,
+        questions: entry.questions ?? null,
         refs:
           entry.refs === undefined || entry.refs.length === 0
             ? null
@@ -797,10 +998,40 @@ export function transcripts(
         return {
           revision: row.revision,
           chat: shown(toChat(row)),
-          entries: await entriesOut(trx, entries),
+          entries: [
+            ...(await entriesOut(trx, entries)),
+            ...(await stepsOf(trx, chat, turns)),
+          ].toSorted((a, b) => a.seq - b.seq),
           turns: await turnsOut(trx, turns),
           before: older ? (low ?? null) : null,
         };
+      }),
+
+    /** The agent system says where it keeps replies' steps. */
+    readSteps: (source: Steps) => {
+      steps = source;
+    },
+
+    /**
+     * Steps of a reply as the agent reports them, shown on the screens and
+     * stored only where the agent system keeps them; without `shown`, all
+     * it kept of the reply, as they end with it. They move the chat's
+     * revision on like any change.
+     */
+    show: (chat: ChatRow, agentTurnId: string, shown?: readonly Step[]) =>
+      change(chat.id, async (trx) => {
+        const turn = await turnOf(trx, chat.id, agentTurnId);
+        if (!turn) return undefined;
+        let entries: Entry[];
+        if (shown === undefined) entries = await stepsOf(trx, chat, [turn]);
+        else {
+          const anchor = await anchorOf(trx, turn);
+          entries = shown
+            .filter(isStep)
+            .map((step) => stepEntry(turn, step, anchor));
+        }
+        if (entries.length === 0) return undefined;
+        return { entries: [], turns: [], shown: entries };
       }),
 
     /**
@@ -1190,8 +1421,8 @@ export function transcripts(
      * running, or one Rufi closed before it saved it. A whole answer goes on
      * the reply row of the item it streamed as (or its own row when nothing
      * streamed), also after the chat saved the end itself, unless Rufi
-     * ended the turn on its own (Stop, a failed save); a row that starts
-     * with it already has it.
+     * ended the turn on its own (Stop, a failed save). The row's questions
+     * stay as they are.
      */
     applyEnd: (
       chat: ChatRow,
@@ -1240,14 +1471,16 @@ export function transcripts(
             )
             .executeTakeFirst();
           if (reply) {
-            // One that starts with it has it: a question may follow.
-            const text = reply.text.startsWith(answer.text)
-              ? reply.text
-              : answer.text;
-            if (text !== reply.text || reply.status !== "done") {
+            // Only its text: its questions are kept apart.
+            if (reply.text !== answer.text || reply.status !== "done") {
               await trx
                 .updateTable("transcript_entries")
-                .set({ text, status: "done", revision, updated_at: at })
+                .set({
+                  text: answer.text,
+                  status: "done",
+                  revision,
+                  updated_at: at,
+                })
                 .where("id", "=", reply.id)
                 .execute();
               entries.push(reply.id);
@@ -1350,6 +1583,46 @@ export function transcripts(
           .set({
             text: sql<string>`text || ${text}`,
             ...(done && { status: "done" }),
+            revision,
+            updated_at: now(),
+          })
+          .where("id", "=", reply.id)
+          .execute();
+        return { entries: [reply.id], turns: [] };
+      }),
+
+    /**
+     * A question the AI asks in its reply, kept apart from the answer's
+     * text so the answer can be made whole without it.
+     */
+    addQuestion: (
+      chat: ChatRow,
+      agentTurnId: string,
+      itemId: string,
+      question: Question,
+    ) =>
+      change(chat.id, async (trx, revision) => {
+        const turn = await turnOf(trx, chat.id, agentTurnId);
+        if (turn?.status !== "running") return undefined;
+        const reply = await itemOf(trx, turn, itemId, "reply");
+        if (!reply) {
+          const id = await insertEntry(trx, chat, revision, {
+            turnId: turn.id,
+            kind: "reply",
+            text: "",
+            status: "running",
+            agentItemId: itemId,
+            questions: JSON.stringify([question]),
+          });
+          return { entries: [id], turns: [] };
+        }
+        await trx
+          .updateTable("transcript_entries")
+          .set({
+            questions: JSON.stringify([
+              ...questionsOf(reply.questions),
+              question,
+            ]),
             revision,
             updated_at: now(),
           })
@@ -1728,6 +2001,7 @@ export function transcripts(
           "e.kind",
           "e.text",
           "e.activity",
+          "e.questions",
           "e.status as entryStatus",
           "t.status",
         ])
@@ -1777,7 +2051,10 @@ export function transcripts(
         }
         return {
           from: "ai" as const,
-          text: finished ? row.text : splitBasis(row.text, false).answer,
+          text: withQuestions(
+            finished ? row.text : splitBasis(row.text, false).answer,
+            row.questions,
+          ),
           ...(!finished && { unfinished: true }),
         };
       });
@@ -1789,6 +2066,26 @@ export function transcripts(
      * has no such line.
      */
     details: async (chat: ChatRow, entryId: string) => {
+      // A step the agent system keeps: `<reply>.<item, base64url>`.
+      const dot = entryId.indexOf(".");
+      if (dot !== -1) {
+        const turn = await db
+          .selectFrom("turns")
+          .select("agent_turn_id")
+          .where("person_id", "=", chat.personId)
+          .where("chat_id", "=", chat.id)
+          .where("id", "=", entryId.slice(0, dot))
+          .executeTakeFirst();
+        const agent = await rootOf(db, chat);
+        if (!turn?.agent_turn_id || !steps || agent === undefined) {
+          return undefined;
+        }
+        return steps.details(
+          agent,
+          turn.agent_turn_id,
+          Buffer.from(entryId.slice(dot + 1), "base64url").toString(),
+        );
+      }
       const row = await db
         .selectFrom("transcript_entries")
         .select("details")
