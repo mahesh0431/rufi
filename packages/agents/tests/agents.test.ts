@@ -11,7 +11,7 @@ import {
   type NewAgent,
   type Sent,
 } from "../src/agents.ts";
-import type { ProviderAdapter } from "../src/provider.ts";
+import type { ProviderAdapter, ProviderEvent } from "../src/provider.ts";
 import { openAgentStore, type AgentStore } from "../src/store.ts";
 import { ANSWER } from "./contract.ts";
 import { fakeProvider, type FakeProvider } from "./fake-provider.ts";
@@ -217,6 +217,46 @@ describe("a call to the host's tools", () => {
   });
 });
 
+describe("a call waiting for its turn's admission", () => {
+  it("is refused when the conversation closes before it goes on", async () => {
+    // The provider's word that the turn started is held back.
+    const held: ProviderEvent[] = [];
+    let deliver: (event: ProviderEvent) => void = () => undefined;
+    agents = run({
+      ...fake.adapter,
+      open: (options) => {
+        deliver = options.onEvent;
+        return fake.adapter.open({
+          ...options,
+          onEvent: (event) => {
+            if (event.type === "turnStarted") held.push(event);
+            else options.onEvent(event);
+          },
+        });
+      },
+    });
+    agents.create(ASHA);
+    agents.admit(ASHA.id);
+    fake.script.turn = "runs";
+    await agents.start(ASHA.id, message("msg-1"));
+    const [started] = held;
+    if (started?.type !== "turnStarted") throw new Error("No turn started.");
+
+    const placed = agents.place(
+      ASHA.id,
+      meta(started.turn, "save-1"),
+      deadline(),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The turn is admitted, and Rufi closes before the call goes on.
+    deliver(started);
+    const closed = agents.close();
+
+    expect(await placed).toBeUndefined();
+    await closed;
+  });
+});
+
 describe("a turn the provider began by itself", () => {
   it("is admitted once, with the steer it took, and its calls are placed in it", async () => {
     agents.create(ASHA);
@@ -281,6 +321,47 @@ describe("Stop", () => {
 });
 
 describe("forget", () => {
+  it("lets go of every conversation it can, and the next forget tries again the one that failed", async () => {
+    const closed: string[] = [];
+    agents = run({
+      ...fake.adapter,
+      open: async (options) => {
+        const conversation = await fake.adapter.open(options);
+        return {
+          ...conversation,
+          close: async () => {
+            closed.push(conversation.ref);
+            if (closed.length === 1) {
+              throw new Error("The fake provider couldn't close it.");
+            }
+            await conversation.close();
+          },
+        };
+      },
+    });
+    agents.create(ASHA);
+    agents.admit(ASHA.id);
+    const reader: NewAgent = {
+      ...ASHA,
+      id: "agent-reader",
+      parent: ASHA.id,
+      title: "Reading report.pdf",
+      tools: ["get_records"],
+    };
+    agents.create(reader);
+    agents.admit(reader.id);
+    fake.script.turn = "runs";
+    await agents.start(ASHA.id, message("msg-1"));
+    await agents.start(reader.id, message("msg-2"));
+    const [asha, child] = ledger.map((entry) => entry.ref);
+
+    await expect(agents.forget([ASHA.id])).rejects.toThrow();
+    await agents.forget([ASHA.id]);
+
+    expect(closed).toEqual([asha, child, asha]);
+    expect(rows("SELECT id FROM agents")).toEqual([]);
+  });
+
   it("removes an agent, everything below it and all they kept, and lets go of their conversations", async () => {
     const closed: string[] = [];
     agents = run({

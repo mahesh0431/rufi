@@ -136,7 +136,8 @@ export interface Agents {
   ) => Promise<Placed | undefined>;
   /**
    * Removes these agents, everything below them and all they kept, then
-   * lets go of their conversations. Again does nothing.
+   * lets go of their conversations, each one even when another fails.
+   * Again tries those that failed.
    */
   forget: (agents: readonly string[]) => Promise<void>;
   /**
@@ -223,6 +224,8 @@ export function createAgents(options: {
   const { db } = store;
   const adapters = new Map(options.adapters.map((a) => [a.id, a]));
   const lives = new Map<string, Live>();
+  /** Conversations of agents no longer run here, until they have closed. */
+  const closing = new Set<Conversation>();
 
   const row = (id: string) =>
     db.prepare("SELECT * FROM agents WHERE id = ?").get(id) as
@@ -240,6 +243,36 @@ export function createAgents(options: {
       .get(live.id, live.number, ref) as
       | { id: string; status: string }
       | undefined;
+
+  /**
+   * The agent isn't run here any more: nothing of its live state goes on,
+   * and calls waiting for a turn's admission are refused. Its conversation
+   * is to close.
+   */
+  function revoke(id: string): void {
+    const live = lives.get(id);
+    if (!live) return;
+    lives.delete(id);
+    if (live.conversation) closing.add(live.conversation);
+    for (const wakes of live.waiting.values()) for (const wake of wakes) wake();
+    live.waiting.clear();
+  }
+
+  /** Closes every conversation still to close, each even when one fails. */
+  async function letGo(): Promise<void> {
+    const failed: unknown[] = [];
+    for (const conversation of closing) {
+      try {
+        await conversation.close();
+        closing.delete(conversation);
+      } catch (error) {
+        failed.push(error);
+      }
+    }
+    if (failed.length > 0) {
+      throw new AggregateError(failed, "Some conversations didn't close.");
+    }
+  }
 
   function liveOf(agent: Agent): Live {
     let live = lives.get(agent.id);
@@ -756,6 +789,8 @@ export function createAgents(options: {
       const placed = live?.conversation?.placeCall(meta);
       if (!live || !placed) return undefined;
       for (;;) {
+        // Its conversation may have closed while it waited.
+        if (signal.aborted || lives.get(id) !== live) return undefined;
         const turn = turnOf(live, placed.turn);
         if (turn) {
           return turn.status === "running"
@@ -767,7 +802,6 @@ export function createAgents(options: {
               }
             : undefined;
         }
-        if (signal.aborted || lives.get(id) !== live) return undefined;
         await new Promise<void>((resolve) => {
           const wake = () => {
             signal.removeEventListener("abort", wake);
@@ -792,24 +826,21 @@ export function createAgents(options: {
         )
         .all(JSON.stringify(ids))
         .map((found) => found["id"] as string);
-      if (tree.length === 0) return;
-      store.change(({ event }) => {
-        db.prepare(
-          "DELETE FROM agents WHERE id IN (SELECT value FROM json_each(?))",
-        ).run(JSON.stringify(tree));
-        event("agents.forgotten", null, { agents: tree });
-      });
-      for (const id of tree) {
-        const live = lives.get(id);
-        lives.delete(id);
-        await live?.conversation?.close();
+      if (tree.length > 0) {
+        store.change(({ event }) => {
+          db.prepare(
+            "DELETE FROM agents WHERE id IN (SELECT value FROM json_each(?))",
+          ).run(JSON.stringify(tree));
+          event("agents.forgotten", null, { agents: tree });
+        });
       }
+      for (const id of tree) revoke(id);
+      await letGo();
     },
 
     close: async () => {
-      const open = [...lives.values()];
-      lives.clear();
-      for (const live of open) await live.conversation?.close();
+      for (const id of lives.keys()) revoke(id);
+      await letGo();
     },
   };
 }
