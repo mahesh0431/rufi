@@ -512,7 +512,7 @@ describe("a turn", () => {
               required: true,
               default_tools_approval_mode: "approve",
               startup_timeout_sec: 10,
-              tool_timeout_sec: 11,
+              tool_timeout_sec: 86_460,
               tool_input_schema_max_bytes: 65_536,
             },
           },

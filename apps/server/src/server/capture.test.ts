@@ -214,6 +214,7 @@ const RUFI_TOOLS = [
   "mcp__rufi__read_agent",
   "mcp__rufi__read_chat",
   "mcp__rufi__save_changes",
+  "mcp__rufi__send_agent",
   "mcp__rufi__show_face",
   "mcp__rufi__sort_documents",
   "mcp__rufi__start_agent",

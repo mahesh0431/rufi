@@ -295,7 +295,7 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
       }),
       // Codex keeps no MCP settings with a thread: given on every resume.
       ...(settings.tools && {
-        mcp_servers: mcpServers(settings.tools, deadlines.toolMs),
+        mcp_servers: mcpServers(settings.tools),
       }),
     };
     return {

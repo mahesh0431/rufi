@@ -339,7 +339,7 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
           model_reasoning_effort: task.effort,
           // Its two tools at once, as the reader always had them: no search
           // for them first, also after a compaction.
-          mcp_servers: mcpServers(task.tools, deadlines.toolMs, true),
+          mcp_servers: mcpServers(task.tools, true),
         },
       };
       const response = await app.rpc.request<ThreadStartResponse>(

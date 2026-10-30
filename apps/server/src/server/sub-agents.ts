@@ -2,11 +2,14 @@
 // system (docs/adr/0025). A child of the calling agent is made by the call
 // that starts it, and its id is that call's, so the same call again finds
 // it; it is the caller's chat's, on the caller's model and effort, with no
-// more of Rufi's tools than the caller has. An agent sees how the agents
-// below it are, and reads its own conversation or one below it, by pages.
+// more of Rufi's tools than the caller has. Each turn's end goes to its
+// parent as a done message (the package's). An agent sees how the agents
+// below it are, waiting for one to end a turn if it asks, writes to one or
+// to its parent, and reads its own conversation or one below it, by pages.
 import type { Agents } from "@rufi/agents/agents";
 import type { chatAgents } from "../core/chat/agents.ts";
 import type { ChatQueue } from "../core/chat/queue.ts";
+import { waitMs } from "../core/tools/agents.ts";
 import { Refusal, type AgentTools } from "../core/tools/registry.ts";
 import type { TurnScope } from "../core/tools/tools.ts";
 
@@ -68,10 +71,23 @@ export function subAgents(deps: {
         return { agent: callId, title: agents.get(callId)?.title ?? title };
       },
 
-      status: ({ agents: asked }) => {
+      status: async (input) => {
         const below = agents.below(scope.agent);
+        const asked = input.agents ?? below;
+        const ms = waitMs(input);
+        // Its own turn ends the wait: the call keeps the turn it came in.
+        const ended =
+          ms > 0
+            ? ((await agents.wait(
+                scope.agent,
+                scope.turn,
+                asked.filter((id) => below.includes(id)),
+                ms,
+              )) ?? null)
+            : undefined;
         return {
-          agents: (asked ?? below).map((id) => {
+          ...(ended !== undefined && { ended }),
+          agents: asked.map((id) => {
             const found = below.includes(id) ? agents.get(id) : undefined;
             if (!found) return { agent: id, status: "not found" };
             return {
@@ -82,6 +98,35 @@ export function subAgents(deps: {
               result: found.result,
             };
           }),
+        };
+      },
+
+      send: ({ to, text, kind = "steer" }, callId) => {
+        const self = agents.get(scope.agent);
+        const target =
+          to === "parent" ? (self?.parent ?? undefined) : reachable(to)?.id;
+        if (!self || target === undefined || target === scope.agent) {
+          throw new Refusal(
+            to === "parent"
+              ? "You have no parent: you are Rufi AI. Answer the user in your reply."
+              : `No agent ${to} is below you: write to "parent", or to an agent agent_status lists.`,
+          );
+        }
+        agents.send(target, {
+          id: callId,
+          sender: scope.agent,
+          kind,
+          parts: [`${self.title} (${self.id}) writes:\n\n${text}`],
+          about: "wrote",
+        });
+        return {
+          agent: target,
+          sent:
+            kind === "queue"
+              ? "queued"
+              : agents.current(target)?.status === "running"
+                ? "steered"
+                : "will start the next turn",
         };
       },
 
