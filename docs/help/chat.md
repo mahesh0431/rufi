@@ -221,7 +221,7 @@ If you click Stop, what the AI did so far stays in Activity, and the folded line
 
 Enter does what you chose in **Settings** › **Sending while Rufi replies**: **Steer** (the start) or **Queue**. The other button beside the box does the other. A message with new files always waits for a reply of its own, which reads its files first.
 
-If a reply ends just as you steer, your message starts the next reply, before your other waiting messages.
+If the reply ends before your steer reaches it, your message goes in a following reply.
 
 ## Waiting messages
 
