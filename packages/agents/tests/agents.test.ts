@@ -377,19 +377,9 @@ describe("the host", () => {
     });
     deliver({ type: "note", ...at, item: "note", delta: "", done: true });
     deliver({ type: "thinking", ...at, item: "reasoning", delta: "Asha's" });
-
-    fake.end(ref);
-    await until(() => {
-      expect(shown.at(-1)).toEqual({ ref, type: "turnEnded" });
-    });
-    expect(shown[0]).toEqual({ ref, type: "turnStarted", turn: "running" });
-    expect(shown.slice(1, -1).map((event) => event.position)).toEqual([
-      1, 2, 1, 3,
-    ]);
-    expect(agents.current(ASHA.id)).toBeUndefined();
     // In the order the turn first reported them; the reasoning as far as
-    // it came.
-    expect(agents.items(ASHA.id, [turn.ref])).toMatchObject([
+    // it came, while it streams and once the turn ends.
+    const reported = [
       {
         id: "note",
         position: 1,
@@ -405,7 +395,19 @@ describe("the host", () => {
         status: null,
         text: "Asha's",
       },
+    ];
+    expect(agents.items(ASHA.id, [turn.ref])).toMatchObject(reported);
+
+    fake.end(ref);
+    await until(() => {
+      expect(shown.at(-1)).toEqual({ ref, type: "turnEnded" });
+    });
+    expect(shown[0]).toEqual({ ref, type: "turnStarted", turn: "running" });
+    expect(shown.slice(1, -1).map((event) => event.position)).toEqual([
+      1, 2, 1, 3,
     ]);
+    expect(agents.current(ASHA.id)).toBeUndefined();
+    expect(agents.items(ASHA.id, [turn.ref])).toMatchObject(reported);
     expect(agents.item(ASHA.id, turn.ref, "step")?.payload).toEqual({
       result: "fictional",
     });

@@ -180,6 +180,7 @@ export interface Agents {
   /**
    * What these turns of the agent reported, by the provider's references,
    * each turn's items in order; without what the provider gave about each.
+   * Text, a note or a reasoning still streaming is there as far as it came.
    */
   items: (agent: string, turns: readonly string[]) => Item[];
   /** One item, with everything the provider gave about it. */
@@ -296,6 +297,8 @@ interface Live {
       item: string;
       type: "text" | "note" | "reasoning";
       text: string;
+      /** When it began. */
+      at: string;
     }
   >;
   /** The item of each turn's last text, its answer, by the provider's turn. */
@@ -607,6 +610,7 @@ export function createAgents(options: {
           item: event.item,
           type: event.type === "thinking" ? "reasoning" : event.type,
           text: "",
+          at: now(),
         };
         stream.text += event.delta;
         live.streams.set(key, stream);
@@ -1290,16 +1294,45 @@ export function createAgents(options: {
       };
     },
 
-    items: (agent, turns) =>
-      turns.length === 0
-        ? []
-        : (db
-            .prepare(
-              `SELECT ${ITEM} FROM items JOIN turns ON turns.id = items.turn_id
-               WHERE turns.agent_id = ? AND turns.provider_turn IN (SELECT value FROM json_each(?))
-               ORDER BY turns.started_at, turns.rowid, items.position`,
-            )
-            .all(agent, JSON.stringify(turns)) as unknown as Item[]),
+    items: (agent, turns) => {
+      if (turns.length === 0) return [];
+      const saved = db
+        .prepare(
+          `SELECT ${ITEM} FROM items JOIN turns ON turns.id = items.turn_id
+           WHERE turns.agent_id = ? AND turns.provider_turn IN (SELECT value FROM json_each(?))
+           ORDER BY turns.started_at, turns.rowid, items.position`,
+        )
+        .all(agent, JSON.stringify(turns)) as unknown as Item[];
+      // The running turn, the last to start, streams what isn't saved yet.
+      const live = lives.get(agent);
+      const running = live?.current?.ref;
+      if (!live || running === undefined || !turns.includes(running)) {
+        return saved;
+      }
+      const streaming = [...live.streams.values()].flatMap((stream) => {
+        const position = live.places.get(running)?.get(stream.item);
+        if (stream.turn !== running || position === undefined) return [];
+        return [
+          {
+            turn: running,
+            id: stream.item,
+            position,
+            type: stream.type,
+            kind: null,
+            title: null,
+            detail: null,
+            status: null,
+            text: stream.text,
+            createdAt: stream.at,
+            updatedAt: now(),
+          } satisfies Item,
+        ];
+      });
+      const last = (item: Item) => Number(item.turn === running);
+      return [...saved, ...streaming].toSorted((a, b) =>
+        last(a) && last(b) ? a.position - b.position : last(a) - last(b),
+      );
+    },
 
     item: (agent, turn, id) => {
       const found = db
