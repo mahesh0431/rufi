@@ -412,6 +412,26 @@ function agentRows(
   }
 }
 
+/**
+ * The chat's agents have settled: nothing of theirs waits or runs, and Rufi
+ * has a reply, ended, for each of Rufi AI's turns.
+ */
+const settled = (id: string) =>
+  until(async () => {
+    const { turns } = await transcript(id);
+    const busy = agentRows(
+      "SELECT 1 FROM queue WHERE (state = 'waiting' AND held IS NULL) OR state = 'handing_over' UNION ALL SELECT 1 FROM turns WHERE status IN ('running', 'stopping')",
+    );
+    const [root] = agentRows(
+      "SELECT count(*) AS n FROM turns WHERE agent_id = (SELECT id FROM agents WHERE parent_id IS NULL)",
+    );
+    return (
+      busy.length === 0 &&
+      turns.length === root?.["n"] &&
+      turns.every((turn) => turn.status !== "running")
+    );
+  });
+
 /** The thread's files are gone: Codex has no record of the chat's thread. */
 async function loseThread(chatId?: string): Promise<void> {
   const { threadId } = await chatRow(chatId);
@@ -2173,15 +2193,14 @@ describe("the chat, on the scripted Codex", () => {
     // Each of the helper's turns ends with a done message to Rufi AI: the
     // second, woken by the second helper's, says what that one said.
     const helperSaid = `ok:Second helper (${second}) done:\n\nok:second: hello`;
-    await until(
-      async () =>
-        (await inputs()).some((input) =>
-          input.join("").includes(`Helper (${helper}) done:\n\n${helperSaid}`),
-        ) && agentRows().every((row) => row["status"] === "done"),
+    await until(async () =>
+      (await inputs()).some((input) =>
+        input.join("").includes(`Helper (${helper}) done:\n\n${helperSaid}`),
+      ),
     );
+    await settled(c.id);
     const { turns } = await transcript(c.id);
     expect(turns[1]?.cause).toEqual({ title: "Helper", about: "done" });
-    await ended(c.id, turns.length);
     await startChat("fake", {
       scenario: {
         callsByText: {
@@ -2262,15 +2281,14 @@ describe("the chat, on the scripted Codex", () => {
     await say(c, "Ask a helper");
     const helper = ownCall("call-0");
     // Its question wakes Rufi AI, with the options.
-    await until(
-      async () =>
-        (await inputs()).some((input) =>
-          input.join("").startsWith(`Brief (${helper}) asks:`),
-        ) && agentRows().every((row) => row["status"] === "done"),
+    await until(async () =>
+      (await inputs()).some((input) =>
+        input.join("").startsWith(`Brief (${helper}) asks:`),
+      ),
     );
+    await settled(c.id);
     const { turns } = await transcript(c.id);
     expect(turns[1]?.cause).toEqual({ title: "Brief", about: "asked" });
-    await ended(c.id, turns.length);
     await startChat("fake", {
       scenario: {
         callsByText: {
