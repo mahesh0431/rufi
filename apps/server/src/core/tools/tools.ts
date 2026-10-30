@@ -59,7 +59,7 @@ const SERVER = "rufi";
 
 /** Why a Rufi event's turn can't save, sort or make a brief. */
 const EVENT_TURN =
-  "This turn was started by a Rufi event, not by the user, so nothing can be saved, sorted, made or started in it. Explain or ask; the user asks in a message of their own.";
+  "This turn was started by a Rufi event, not by the user, so nothing can be saved, sorted or made in it. Explain or ask; the user asks in a message of their own.";
 
 /**
  * The model's tools: their catalog for the MCP server, and a caller per
@@ -160,17 +160,7 @@ export function rufiCaller(
 ) {
   return (scope: TurnScope, origin: "person" | "rufi") => {
     const { chat, ref } = scope;
-    const mine = agents?.(scope);
-    // An agent it starts would write what the person didn't ask for.
-    const below: AgentTools | undefined =
-      mine && origin === "rufi"
-        ? {
-            ...mine,
-            start: () => {
-              throw new Refusal(EVENT_TURN);
-            },
-          }
-        : mine;
+    const below = agents?.(scope);
     const call = forAgent(
       () => ({
         store: reader,

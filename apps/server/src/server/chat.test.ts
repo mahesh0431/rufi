@@ -2246,51 +2246,6 @@ describe("the chat, on the scripted Codex", () => {
     });
   });
 
-  it("starts no sub-agent from a turn a Rufi event started, so nothing is saved from it", async () => {
-    await startChat("fake", {
-      scenario: {
-        callsByText: {
-          "Note: Lab report read": [
-            {
-              tool: "start_agent",
-              arguments: {
-                title: "Helper",
-                task: "helper: save it, from the user's message at 1",
-              },
-            },
-          ],
-          "helper:": [
-            {
-              tool: "save_changes",
-              arguments: {
-                changes: [
-                  {
-                    kind: "symptom",
-                    action: "add",
-                    source: 1,
-                    fields: { name: "Headache" },
-                  },
-                ],
-              },
-            },
-          ],
-        },
-      },
-    });
-    const c = await newChat();
-    await say(c, "I have a headache");
-    await ended(c.id);
-    await event("Lab report read");
-    await ended(c.id, 2);
-    const started = store.db
-      .prepare("SELECT ok, answer FROM tool_calls WHERE tool = 'start_agent'")
-      .all() as { ok: number; answer: string }[];
-    expect(started).toHaveLength(1);
-    expect(started[0]?.answer).toContain("started by a Rufi event");
-    expect(agentRows().map((row) => row["title"])).toEqual(["Rufi AI"]);
-    expect(store.db.prepare("SELECT * FROM symptoms").all()).toEqual([]);
-  });
-
   it("gives a sub-agent only the tools it was given, and its own sub-agent no more than those", async () => {
     await startChat("fake", {
       scenario: {

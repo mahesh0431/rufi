@@ -248,6 +248,15 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
         description: string;
       }[];
       expect(offered.map((tool) => tool.name).sort()).toEqual(RUFI_TOOLS);
+      // Rufi's start_agent is the one way to start an agent: none of Codex's.
+      expect(
+        JSON.stringify(
+          model?.requests.map((r) => [
+            r.tools,
+            r.input.filter((item) => item.type === "additional_tools"),
+          ]),
+        ),
+      ).not.toContain("spawn_agent");
       // What the model writes a save from: the declaration, not the schema.
       const save =
         offered

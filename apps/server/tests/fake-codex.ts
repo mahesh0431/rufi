@@ -780,6 +780,7 @@ function featureList() {
     daemon_auto_start: false,
     plugins: false,
     apps: false,
+    multi_agent_v2: false,
     ...scenario.features,
   };
   return Object.entries(reported).map(([name, enabled]) => ({
