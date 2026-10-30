@@ -256,7 +256,7 @@ The AI agent that answers in the chat and works with the record through Rufi's t
 _Avoid_: assistant, bot; "model" only for a version of the AI (see Model)
 
 **The AI's folder**:
-The folder where the AI works: `ai/` in the data folder. It keeps its programs, notes and research files there between messages, with their caches in `ai/.cache`, and it is the only place where the AI's programs can write. Nothing in it is part of the record. It isn't in backups, the export or a move yet.
+The folder where the AI works: `ai/` in the data folder. It keeps its programs, notes and research files there between messages, with their caches in `ai/.cache`, and it is the only place where the AI's programs can write. Its working notes go in `ai/work/`, a folder for each day, which Rufi removes after 3 days; a deleted document's notes go with it. Nothing in it is part of the record. It isn't in backups, the export or a move yet.
 _Avoid_: workspace, sandbox, scratch folder
 
 **Tool**:

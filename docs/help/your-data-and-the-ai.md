@@ -114,7 +114,9 @@ Rufi doesn't check what the AI sends to the internet or gets from it. Text from 
 
 When the AI makes a picture or a page to show you, the reply shows it from the AI's folder, or from `codex/generated_images/` for a picture the AI generated. Rufi shows nothing from anywhere else. See [Pictures, pages and diagrams](chat.md#pictures-pages-and-diagrams).
 
-The AI's folder isn't part of your health record. What you want to keep goes in your record, through the chat, after your yes. The folder isn't in your backups, your export or a move yet, and Rufi doesn't remove anything in it: when you delete a document, notes that the AI made about it stay.
+The AI's folder isn't part of your health record. What you want to keep goes in your record, through the chat, after your yes. The folder isn't in your backups, your export or a move yet.
+
+The AI keeps its working notes in `ai/work/`, a folder for each day: for example its copy of a document's pages while it reads them. Rufi removes each day's folder after 3 days. When you delete a document, Rufi also removes the AI's working notes on it; other files the AI made from it stay.
 
 ## The pages the AI looks at
 
