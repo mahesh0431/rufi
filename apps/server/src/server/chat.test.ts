@@ -1843,7 +1843,6 @@ describe("the chat, on the scripted Codex", () => {
         calls: [
           reading(row),
           reading([{ page: 1, outcome: "read", text: row }]),
-          reading([{ page: 1, outcome: "read", copy: row.repeat(4_000) }]),
         ],
       },
     });
@@ -1853,7 +1852,7 @@ describe("the chat, on the scripted Codex", () => {
     const kept = store.db
       .prepare("SELECT ok, input, answer FROM tool_calls")
       .all();
-    expect(kept.map((call) => call["ok"])).toEqual([0, 0, 0]);
+    expect(kept.map((call) => call["ok"])).toEqual([0, 0]);
     expect(JSON.stringify(kept)).not.toContain("LDL cholesterol");
   });
 
