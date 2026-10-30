@@ -738,9 +738,6 @@ describe("starting a reply", () => {
       { id: "m-a", text: "hang" },
     ]);
     expect(seen(threadId).filter((e) => e.type === "text")).toEqual([]);
-    await expect(agent.startedMessages(threadId)).resolves.toEqual([
-      { id: "m-a", text: "hang" },
-    ]);
   });
 
   it("stops a reply only when it is the one asked for", async () => {
@@ -785,27 +782,6 @@ describe("starting a reply", () => {
       agent.steer(thread, { id: "s-1", text: "late" }),
     ).rejects.toBeInstanceOf(NotSent);
     await stopping;
-  });
-
-  it("lists the messages a thread ran, with Rufi's ids", async () => {
-    const agent = start();
-    const thread = await ask(agent, "first");
-    await ended(thread);
-    await agent.send(thread, { id: "m-2", input: ["second"] });
-    await ended(thread, 2);
-    await expect(agent.startedMessages(thread)).resolves.toEqual([
-      { id: "m-first", text: "first" },
-      { id: "m-2", text: "second" },
-    ]);
-  });
-
-  it("lists every message of a long thread, page after page", async () => {
-    const history = Array.from({ length: 120 }, (_, i) => `m-${String(i)}`);
-    const agent = start({ threads: { "old-1": { history } } });
-    await agent.resumeThread("old-1", SETTINGS);
-    const messages = await agent.startedMessages("old-1");
-    expect(messages.map((m) => m.id)).toEqual(history);
-    expect(await sent("thread/turns/list")).toHaveLength(3);
   });
 
   it("resumes a thread with the settings", async () => {

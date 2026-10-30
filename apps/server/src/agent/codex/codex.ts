@@ -45,7 +45,6 @@ import type { ThreadInjectItemsParams } from "./protocol/v2/ThreadInjectItemsPar
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
 import type { ThreadStartResponse } from "./protocol/v2/ThreadStartResponse.ts";
 import type { ThreadTokenUsageUpdatedNotification } from "./protocol/v2/ThreadTokenUsageUpdatedNotification.ts";
-import type { ThreadTurnsListResponse } from "./protocol/v2/ThreadTurnsListResponse.ts";
 import type { ThreadUnsubscribeResponse } from "./protocol/v2/ThreadUnsubscribeResponse.ts";
 import type { TurnCompletedNotification } from "./protocol/v2/TurnCompletedNotification.ts";
 import type { TurnStartParams } from "./protocol/v2/TurnStartParams.ts";
@@ -1040,37 +1039,6 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
         running.end ??= end;
         await stopTurn(running);
       }
-    },
-
-    startedMessages: async (threadId) => {
-      const app = await open(threadId);
-      // Every page, newest first; then oldest first.
-      const turnsRun: ThreadTurnsListResponse["data"] = [];
-      let cursor: string | null = null;
-      do {
-        const page: ThreadTurnsListResponse = await request(
-          app,
-          "thread/turns/list",
-          {
-            threadId,
-            cursor,
-            limit: 50,
-            sortDirection: "desc",
-            itemsView: "full",
-          },
-        );
-        turnsRun.push(...page.data);
-        cursor = page.nextCursor;
-      } while (cursor);
-      return turnsRun
-        .reverse()
-        .flatMap((turn) =>
-          turn.items.flatMap((item) =>
-            item.type === "userMessage" && item.clientId !== null
-              ? [{ id: item.clientId, text: messageText(item.content) }]
-              : [],
-          ),
-        );
     },
 
     close: async () => {

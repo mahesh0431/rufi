@@ -148,8 +148,8 @@ export function chat(deps: ChatDeps) {
     // doesn't go.
     claim: async (chat, input, sentAs) => {
       const claimed = await queue.claim(chat, input, sentAs);
-      if (claimed === undefined || claimed.status === "gone") return claimed;
-      return { status: claimed.status, parts: inputOf(claimed.handOver) };
+      if (claimed.status === "gone") return claimed;
+      return { status: "claimed", parts: inputOf(claimed.handOver) };
     },
     changed: (chat) => {
       queue.changed(chat.id);
@@ -250,7 +250,7 @@ export function chat(deps: ChatDeps) {
   const door = agentDoor({
     mcp: deps.mcp,
     specs: deps.tools.specs,
-    place: (id, meta, signal) => agent.place(id, meta, signal),
+    place: (id, meta) => agent.place(id, meta),
     run: callTool,
     log,
   });

@@ -1,9 +1,8 @@
 // Rufi AI on the agent package: the chat through startRufiAi, on a real
 // record, a real agent database and the package's fake provider.
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { fakeProvider } from "@rufi/agents/fake";
 import type { ProviderAdapter, ProviderEvent } from "@rufi/agents/provider";
 import { openAgentStore } from "@rufi/agents/store";
@@ -17,7 +16,6 @@ import {
 } from "../core/chat/transcript.ts";
 import { copies } from "../core/documents/copies.ts";
 import { copyReader } from "../core/documents/copy-reader.ts";
-import { documents } from "../core/documents/documents.ts";
 import { pages } from "../core/documents/pages.ts";
 import { readings } from "../core/documents/reading.ts";
 import {
@@ -358,42 +356,6 @@ it("saves a steer the provider confirms after its turn ended under that turn; th
   await rufi.close();
 });
 
-it("keeps a message sent while a reply runs through a crash before it reached the AI, and sends it once at the next start", async () => {
-  const fake = fakeProvider({ id: "codex", script: { turn: "runs" } });
-  let rufi = await start(fake.adapter);
-  await rufi.send("message-1", "Summarise my fictional record.");
-  await rufi.running();
-  // The package can't keep the hand-over Rufi has just claimed.
-  const agents = new DatabaseSync(agentsPath(home));
-  agents.exec(`
-    CREATE TRIGGER fictional_crash BEFORE UPDATE OF state ON queue
-    WHEN NEW.state = 'handing_over'
-    BEGIN SELECT RAISE(ABORT, 'A fictional crash.'); END;
-  `);
-  const words = "Please include my fictional TSH.";
-  await rufi.send("message-2", words);
-  // Saved and shown before it goes.
-  await vi.waitFor(async () => {
-    expect(await rufi.waiting()).toEqual([["message-2", "handing_over"]]);
-  });
-  expect(rufi.system.agents.input("message-2")?.state).toBe("waiting");
-  await rufi.close();
-  agents.exec("DROP TRIGGER fictional_crash");
-  agents.close();
-
-  rufi = await start(fake.adapter);
-  await rufi.running();
-  expect(await rufi.waiting()).toEqual([]);
-  const thread = (await rufi.row()).threadId ?? "";
-  expect(
-    fake
-      .received(thread)
-      .filter((input) => input.id === "message-2")
-      .map((input) => input.parts),
-  ).toEqual([[words]]);
-  await rufi.close();
-});
-
 it("sends a waiting message with its words as they are when it goes: an edit before Rufi's claim goes, one after is refused", async () => {
   const fake = fakeProvider({ id: "codex", script: { turn: "runs" } });
   const held = Promise.withResolvers<undefined>();
@@ -434,71 +396,5 @@ it("sends a waiting message with its words as they are when it goes: an edit bef
       .filter((input) => input.id === "message-1")
       .map((input) => input.parts),
   ).toEqual([["Is my fictional TSH high?"]]);
-  await rufi.close();
-});
-
-it("after a crash between Rufi's claim and the package's hand-over, sends the message once at the next start, with Rufi's note on what it read", async () => {
-  const fake = fakeProvider({ id: "codex", script: { turn: "runs" } });
-  // The reader finishes without looking at the page.
-  let rufi = await start(fake.adapter, [], [() => Promise.resolve(undefined)]);
-  const { added } = await documents(record, home).add(
-    "asha",
-    [
-      {
-        name: "Sunrise Labs August.pdf",
-        bytes: new Uint8Array(
-          await readFile(
-            join(
-              import.meta.dirname,
-              "../../tests/fixtures/documents/sunrise-labs-august.pdf",
-            ),
-          ),
-        ),
-      },
-    ],
-    true,
-  );
-  const document = added[0] ?? "";
-  await rufi.event("A fictional report was read.");
-  await rufi.running();
-  await rufi.send("message-1", "Is my TSH high?", [
-    { type: "document", id: document },
-  ]);
-  // The package can't keep the hand-over Rufi has just claimed.
-  const agents = new DatabaseSync(agentsPath(home));
-  agents.exec(`
-    CREATE TRIGGER fictional_crash BEFORE UPDATE OF state ON queue
-    WHEN NEW.state = 'handing_over'
-    BEGIN SELECT RAISE(ABORT, 'A fictional crash.'); END;
-  `);
-  const thread = (await rufi.row()).threadId ?? "";
-  fake.end(thread);
-  await vi.waitFor(async () => {
-    expect(await rufi.waiting()).toEqual([["message-1", "handing_over"]]);
-    expect(
-      rows("SELECT sent_as FROM chat_queue WHERE id = 'message-1'"),
-    ).not.toEqual([{ sent_as: null }]);
-  });
-  expect(rufi.system.agents.input("message-1")?.state).toBe("waiting");
-  await rufi.close();
-  agents.exec("DROP TRIGGER fictional_crash");
-  agents.close();
-
-  rufi = await start(fake.adapter);
-  await rufi.running();
-  expect(await rufi.waiting()).toEqual([]);
-  expect(
-    fake
-      .received(thread)
-      .filter((input) => input.id === "message-1")
-      .map((input) => input.parts),
-  ).toEqual([
-    [
-      expect.stringContaining(
-        `Rufi's reader copied Sunrise Labs August.pdf (document ${document})`,
-      ),
-      expect.stringMatching(/^Is my TSH high\?/),
-    ],
-  ]);
   await rufi.close();
 });

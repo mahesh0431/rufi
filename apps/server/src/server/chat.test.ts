@@ -1988,7 +1988,7 @@ describe("the chat, on the scripted Codex", () => {
     return server;
   };
 
-  it("refuses another chat's key for a cached caller, for reads and saves", async () => {
+  it("runs a call for the key's own chat, whatever another chat's turn its _meta names", async () => {
     await startChat("fake", { scenario: { bare: true } });
     store.db.exec(`
       INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
@@ -2009,36 +2009,31 @@ describe("the chat, on the scripted Codex", () => {
         chat?.agent.activeTurn(row.threadId) !== undefined
       );
     });
+    // Asha's reply, named in the _meta of calls made with Ravi's key.
     const { threadId } = await chatRow();
-    const reply = { threadId: threadId ?? "", turnId: agentTurn() };
-    const own = await threadMcp();
+    const ashaReply = { threadId: threadId ?? "", turnId: agentTurn() };
     const other = await threadMcp(1);
-    const read = { name: "get_overview", arguments: {}, ...reply };
-    const before = await callTool(other, { ...read, callId: "wrong-before" });
-    const proper = await callTool(own, { ...read, callId: "proper-read" });
-    const after = await callTool(other, { ...read, callId: "wrong-after" });
-    const save = await callTool(other, {
+    const read = await callTool(other, {
+      name: "get_overview",
+      arguments: {},
+      ...ashaReply,
+      callId: "ravi-read",
+    });
+    await callTool(other, {
       name: "save_changes",
       arguments: saveHeadache.arguments,
-      ...reply,
-      callId: "wrong-save",
+      ...ashaReply,
+      callId: "ravi-save",
     });
-    expect(proper.result?.["isError"]).not.toBe(true);
-    const refused = {
-      content: [
-        { type: "text", text: '{"ok":false,"error":"No reply is running."}' },
-      ],
-      isError: true,
-    };
-    expect([before.result, after.result, save.result]).toEqual([
-      refused,
-      refused,
-      refused,
+    expect(read.result?.["content"]).toEqual([
+      {
+        type: "text",
+        text: expect.stringContaining('"person":"Ravi Fictional"') as string,
+      },
     ]);
-    expect(
-      store.db.prepare("SELECT tool, call_id FROM tool_calls").all(),
-    ).toEqual([{ tool: "get_overview", call_id: ownCall("proper-read") }]);
-    expect(store.db.prepare("SELECT * FROM symptoms").all()).toEqual([]);
+    expect(store.db.prepare("SELECT person_id FROM symptoms").all()).toEqual([
+      { person_id: "ravi" },
+    ]);
     expect(
       (await transcript(asha.id)).entries.filter(
         ([kind]) => kind === "receipt",

@@ -1031,20 +1031,30 @@ describe("the local API", () => {
     ]);
   });
 
-  it("marks a hand-over the AI didn't answer as not sure", async () => {
+  it("counts a message the AI didn't answer as sent: its reply fails with the error", async () => {
     const core = await start({
       adapters: scripted({ hang: ["turn/start"] }, { requestMs: 300 }),
     });
     const page = await session(core);
     const c = await chat(page);
     await page.say(c.path, "Hello");
-    await until(
-      async () =>
-        (
-          (await page.api("GET", `${c.path}/queue`)).body["items"] as {
-            state: string;
-          }[]
-        )[0]?.state === "not_sure",
+    await until(async () => {
+      const turns = (await page.api("GET", c.path)).body["turns"] as {
+        status: string;
+      }[];
+      return turns[0]?.status === "failed";
+    });
+    expect((await page.api("GET", c.path)).body).toMatchObject({
+      entries: [{ kind: "message", text: "Hello" }],
+      turns: [
+        {
+          status: "failed",
+          endText: "Codex didn't answer turn/start within 0.3 s.",
+        },
+      ],
+    });
+    expect((await page.api("GET", `${c.path}/queue`)).body["items"]).toEqual(
+      [],
     );
   });
 
@@ -1089,7 +1099,7 @@ describe("the local API", () => {
   });
 
   it(
-    "marks a message Rufi stopped during after sending it to the AI as not sure, never sent again",
+    "keeps a message Rufi stopped during after sending it to the AI as sent, its reply stopped, and goes on",
     { timeout: 20_000 },
     async () => {
       // A core of its own, whose Codex never answers thread/start.
@@ -1138,10 +1148,17 @@ describe("the local API", () => {
       // The crash's lock would go stale in 10 s; Rufi starts again.
       await rm(join(home, "rufi.lock"), { recursive: true, force: true });
       const page = await session(await start());
-      await sleep(300);
-      expect((await page.api("GET", queue)).body["items"]).toMatchObject([
-        { text: "Outgoing text", state: "not_sure" },
-      ]);
+      const path = queue.replace(/\/queue$/, "");
+      const turns = async () =>
+        (await page.api("GET", path)).body["turns"] as { status: string }[];
+      await until(async () => (await turns())[0]?.status === "interrupted");
+      expect((await page.api("GET", path)).body).toMatchObject({
+        entries: [{ kind: "message", text: "Outgoing text" }],
+      });
+      expect((await page.api("GET", queue)).body["items"]).toEqual([]);
+      // The chat goes on with the next message.
+      await page.say(path, "Is my TSH still high?");
+      await until(async () => (await turns())[1]?.status === "completed");
     },
   );
 

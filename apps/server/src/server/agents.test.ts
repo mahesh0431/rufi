@@ -305,34 +305,6 @@ describe("a restored copy of the agent database", () => {
   });
 });
 
-describe("a claim the package never saved", () => {
-  it("is settled at the next start by what its provider says", async () => {
-    // Asha's thread is one the provider has; Ravi's it no longer finds.
-    await ashaThread();
-    record.db.exec(
-      "UPDATE chats SET thread_id = 'thread-gone', thread_provider = 'fake' WHERE id = 'c-ravi'",
-    );
-    await start();
-    // Rufi claimed a message for each, and stopped before the package
-    // saved the hand-over.
-    handingOver("asha", "msg-asha", sentAs(rootOf("c-asha"), 1));
-    handingOver("ravi", "msg-ravi", sentAs(rootOf("c-ravi"), 1));
-    await stop();
-
-    await start();
-
-    expect(queued()).toEqual([
-      { id: "msg-asha", state: "waiting", sent_as: null },
-      {
-        id: "msg-ravi",
-        state: "not_sure",
-        sent_as: sentAs(rootOf("c-ravi"), 1),
-      },
-    ]);
-    expect(logged).toEqual([]);
-  });
-});
-
 describe("a crash between the steps of making an agent", () => {
   it("is finished or undone at the next start", async () => {
     record.db.exec(`

@@ -49,9 +49,9 @@ export interface HandOver {
 
 /** Rufi's answer when the agent system claims a row (Host.claim). */
 export type Claimed =
-  /** It was waiting, or it is this same hand-over again: its words. */
-  | { status: "claimed" | "already_claimed"; handOver: HandOver }
-  /** Removed, sent, not sure, or held: it doesn't go. */
+  /** It was waiting: its words. */
+  | { status: "claimed"; handOver: HandOver }
+  /** It doesn't wait any more, or is held: it doesn't go. */
   | { status: "gone" };
 
 /** A waiting row, in order, as the hand-over to the agent queue sees it. */
@@ -569,29 +569,19 @@ export function chatQueue(
     /**
      * Rufi's claim of a row the agent system hands over to an agent's
      * conversation (`sentAs`), in one transaction: a waiting row, or one
-     * whose files Rufi's part read, is handing over to it, and its words go;
-     * the same hand-over again gets the same words. A row handing over to
-     * another conversation gets nothing: Rufi's recovery at start settles it.
+     * whose files Rufi's part read, is handing over to it, and its words go.
+     * Any other is gone.
      */
-    claim: (
-      chat: ChatOf,
-      id: string,
-      sentAs: string,
-    ): Promise<Claimed | undefined> =>
+    claim: (chat: ChatOf, id: string, sentAs: string): Promise<Claimed> =>
       write(chat, async (trx) => {
         const row = await rows(trx, chat)
           .selectAll()
           .where("id", "=", id)
           .executeTakeFirst();
-        if (!row) return { status: "gone" };
-        if (row.state === "handing_over" && row.sent_as === sentAs) {
-          return { status: "already_claimed", handOver: handOverOf(row) };
-        }
         const free =
-          (row.state === "waiting" && row.held === null) ||
-          (row.state === "handing_over" && row.sent_as === null);
-        if (row.state === "handing_over" && !free) return undefined;
-        if (!free) return { status: "gone" };
+          (row?.state === "waiting" && row.held === null) ||
+          (row?.state === "handing_over" && row.sent_as === null);
+        if (!row || !free) return { status: "gone" };
         await trx
           .updateTable("chat_queue")
           .set({ state: "handing_over", sent_as: sentAs, updated_at: now() })

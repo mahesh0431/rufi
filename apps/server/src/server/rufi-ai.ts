@@ -103,16 +103,11 @@ export interface RufiAi {
   /** The running reply that may still use Rufi's tools, unless it stops. */
   activeTurn: (threadId: string) => string | undefined;
   /**
-   * The admitted, open turn an agent's call to Rufi's tools left, as its
-   * adapter places it from the call's `_meta`, with whose the agent is and
-   * its tools. A turn the provider began by itself is waited for until
-   * `signal` aborts. Nothing: the call is refused.
+   * The running turn of the agent an agent's call to Rufi's tools belongs
+   * to, with whose the agent is and its tools. Nothing: no turn runs, a
+   * Stop closed it, or the call has no id; the call is refused.
    */
-  place: (
-    agent: string,
-    meta: unknown,
-    signal: AbortSignal,
-  ) => Promise<Placed | undefined>;
+  place: (agent: string, meta: unknown) => Promise<Placed | undefined>;
   /**
    * Puts the chat's rows in its agent's queue by their ids, each once, then
    * the agent's waiting ones among `order` in that order. The package claims
@@ -547,8 +542,8 @@ export async function startRufiAi(
         return current?.status === "running" ? current.ref : undefined;
       },
 
-      place: async (agent, meta, signal) => {
-        const placed = await agents.place(agent, meta, signal);
+      place: async (agent, meta) => {
+        const placed = agents.place(agent, meta);
         if (!placed) return undefined;
         // Whose the agent is, as Rufi keeps it now: a call of an agent Rufi
         // no longer owns, or of another chat's, finds nothing.

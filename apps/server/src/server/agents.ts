@@ -14,13 +14,7 @@ import type { ProviderAdapter, ProviderEvent } from "@rufi/agents/provider";
 import type { AgentStore, StoredEvent } from "@rufi/agents/store";
 import type { Kysely } from "kysely";
 import { v7 as uuid } from "uuid";
-import {
-  chatAgents,
-  sentAs,
-  type Answer,
-  type Claimed,
-  type Unrooted,
-} from "../core/chat/agents.ts";
+import { chatAgents, type Unrooted } from "../core/chat/agents.ts";
 import type { Store } from "../core/store/database.ts";
 import type { Tables } from "../core/store/tables.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
@@ -53,7 +47,7 @@ export type Apply = (
 ) => Promise<boolean>;
 
 /** Where the package holds an input Rufi claimed: it settles those itself. */
-const HELD = new Set(["handing_over", "delivered", "not_sure"]);
+const HELD = new Set(["handing_over", "delivered"]);
 
 export async function startAgents(options: {
   store: AgentStore;
@@ -192,27 +186,16 @@ export async function startAgents(options: {
 
   return {
     agents,
-    // 5. Claims the package never saved, asked of the provider by the
-    // conversation they went to, in the same generation too.
+    // 5. Claims the package doesn't hold.
     recover: async () => {
       const claims = (await kept.claimed()).filter(
         (claim) => !HELD.has(agents.input(claim.id)?.state ?? ""),
       );
-      const answers = new Map<string, Answer>();
-      const byConversation = Map.groupBy(claims, (claim: Claimed) =>
-        sentAs(claim.agent, claim.conversation),
-      );
-      for (const [first, ...rest] of byConversation.values()) {
-        if (!first) continue;
-        const ids = [first, ...rest].map((claim) => claim.id);
-        const said = await agents.received(
-          first.agent,
-          first.conversation,
-          ids,
+      if (claims.length > 0) {
+        await kept.settle(
+          new Map(claims.map((claim) => [claim.id, "unknown"])),
         );
-        for (const id of ids) answers.set(id, said.get(id) ?? "unknown");
       }
-      if (answers.size > 0) await kept.settle(answers);
     },
     root: async (chatId) => {
       const found = await kept.root(chatId);

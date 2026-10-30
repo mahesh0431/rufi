@@ -149,12 +149,7 @@ providerContract("Codex", {
     Promise.resolve(
       codexMeta({ callId: call, threadId: conversation.ref, turnId: turn }),
     ),
-  cannot: {
-    heldSteer: "Codex takes a steer at once or refuses it",
-    heldPastEnd: "Codex takes a steer at once or refuses it",
-    lostCancel: "Codex takes a steer at once or refuses it",
-    nextTurn: "Codex never starts a turn by itself",
-  },
+  cannot: { nextTurn: "Codex never starts a turn by itself" },
 });
 
 const closing: (() => Promise<void>)[] = [];
