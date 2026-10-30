@@ -159,8 +159,13 @@ interface Live {
   current?: { turn: string; ref: string };
   /** The provider's reference for the turn that ended last. */
   last?: string;
-  /** Who asked to stop the current turn, or the steers held past the last. */
+  /**
+   * Who asked to stop the current turn, or the steers held past the last.
+   * It stays while a Stop is under way, also past the turn's end.
+   */
   stopBy?: string;
+  /** Stops under way. */
+  stops: number;
   /** Calls waiting for a turn's admission, by the provider's reference. */
   waiting: Map<string, (() => void)[]>;
   /** Text and notes as they stream, by turn and item, until whole. */
@@ -282,6 +287,7 @@ export function createAgents(options: {
       live = {
         id: agent.id,
         number: agent.conversation,
+        stops: 0,
         waiting: new Map(),
         streams: new Map(),
       };
@@ -452,9 +458,8 @@ export function createAgents(options: {
         ? live.starting
         : undefined;
     // A turn begun while a Stop is under way is closed from the start.
-    const closed = starting
-      ? starting.stopBy !== undefined
-      : live.stopBy !== undefined;
+    const stopBy = starting?.stopBy ?? live.stopBy;
+    const closed = stopBy !== undefined;
     const turn = store.change(({ event }) => {
       const at = now();
       let id = starting?.turn;
@@ -494,7 +499,7 @@ export function createAgents(options: {
     });
     live.current = { turn, ref };
     if (starting) {
-      live.stopBy = starting.stopBy;
+      live.stopBy = stopBy;
       live.starting = undefined;
       starting.settled.resolve();
     }
@@ -590,7 +595,7 @@ export function createAgents(options: {
     });
     if (live.current?.ref === ref) {
       live.current = undefined;
-      live.stopBy = undefined;
+      if (live.stops === 0) live.stopBy = undefined;
     }
     live.last = ref;
   }
@@ -815,6 +820,7 @@ export function createAgents(options: {
       } else {
         return;
       }
+      live.stops += 1;
       try {
         await conversation.stop(ref);
         // A turn the provider began meanwhile with a steer it held was
@@ -824,7 +830,8 @@ export function createAgents(options: {
           await conversation.stop(started.ref);
         }
       } finally {
-        if (!live.current) live.stopBy = undefined;
+        live.stops -= 1;
+        if (live.stops === 0 && !live.current) live.stopBy = undefined;
       }
     },
 
