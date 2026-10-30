@@ -6,7 +6,9 @@
 // Every change writes its events in the same transaction, so the host, which
 // reads the event log after its cursor (generation, number), learns of a
 // change exactly when it's there. A change is one synchronous transaction:
-// nothing else in the process runs between its writes.
+// nothing else in the process runs between its writes. The connection
+// writes only inside a change, so nothing a change started can write after
+// it ends.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 
@@ -32,6 +34,9 @@ export interface StoredEvent {
   at: string;
 }
 
+/** What a change's body returns: anything but a promise, as it can't wait. */
+type Sync<T> = T extends PromiseLike<unknown> ? never : T;
+
 /** One change, inside its transaction. */
 export interface Change {
   /** The connection, for the change's reads and writes. */
@@ -43,14 +48,14 @@ export interface Change {
 export interface AgentStore {
   /** The random id made with the file: another file has another. */
   readonly generation: string;
-  /** The connection, for reads outside a change. */
+  /** The connection, for reads outside a change: it writes only in one. */
   readonly db: DatabaseSync;
   /**
    * Runs `work` as one transaction, and returns what it returns. Its writes
    * and the events it records commit together; if it throws, or records no
    * event, none of them do. It runs at once: it can't wait for anything.
    */
-  change: <T>(work: (change: Change) => T) => T;
+  change: <T>(work: (change: Change) => Sync<T>) => T;
   /** Up to `limit` events after `number`, in order. */
   eventsAfter: (number: number, limit?: number) => StoredEvent[];
   /**
@@ -89,7 +94,7 @@ export function openAgentStore(path: string): AgentStore {
       "PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA secure_delete = ON;",
     );
     if (version < MIGRATIONS.length) migrate(db, version);
-    db.exec("PRAGMA foreign_keys = ON");
+    db.exec("PRAGMA foreign_keys = ON; PRAGMA query_only = ON");
   } catch (error) {
     db.close();
     throw error;
@@ -120,12 +125,16 @@ function store(db: DatabaseSync): AgentStore {
     "SELECT number, type, agent_id, payload, created_at FROM events WHERE number > ? ORDER BY number LIMIT ?",
   );
   const listeners = new Set<(number: number) => void>();
+  const inTransaction = () => db.isTransaction;
 
   return {
     generation,
     db,
 
     change: (work) => {
+      if (inTransaction()) {
+        throw new Error("A change can't run inside another.");
+      }
       let last: number | undefined;
       const change: Change = {
         db,
@@ -139,11 +148,12 @@ function store(db: DatabaseSync): AgentStore {
           last = row.number;
         },
       };
-      db.exec("BEGIN IMMEDIATE");
       let result;
+      db.exec("PRAGMA query_only = OFF");
       try {
+        db.exec("BEGIN IMMEDIATE");
         result = work(change);
-        if (result instanceof Promise) {
+        if (typeof (result as { then?: unknown } | null)?.then === "function") {
           throw new Error("A change can't wait: it runs as one transaction.");
         }
         if (last === undefined) {
@@ -155,6 +165,9 @@ function store(db: DatabaseSync): AgentStore {
         // then would fail and hide the error that caused it.
         if (db.isTransaction) db.exec("ROLLBACK");
         throw error;
+      } finally {
+        // Whatever the body left running can't write now.
+        db.exec("PRAGMA query_only = ON");
       }
       const number = last;
       for (const listener of listeners) {
