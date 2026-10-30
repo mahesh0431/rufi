@@ -13,7 +13,6 @@ import {
   Refusal,
   specOf,
   toolCaller,
-  type Issue,
   type Tool,
   type ToolAnswer,
   type ToolContext,
@@ -25,7 +24,7 @@ import { createBrief as makeBrief } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
 import {
   keptReading,
-  sized,
+  keptUnsaved,
   type SaveReadingAnswer,
   type SaveReadingInput,
   type SaveReadingScope,
@@ -88,31 +87,6 @@ async function rejectionsPerReply(
 ): Promise<number> {
   const value = Number(await setting(REJECTIONS_SETTING));
   return Number.isInteger(value) && value > 0 ? value : REJECTIONS_PER_TURN;
-}
-
-/**
- * What Rufi keeps of a call: as it came, but for a reading, whose page text
- * goes with its document: its input as keptReading keeps it, and what a
- * refusal says it got by its length.
- */
-export function keptCall(tool: string, input: unknown, answer: ToolAnswer) {
-  if (tool !== saveReading.name) return { input, answer };
-  const said = JSON.parse(answer.text) as { issues?: Issue[] };
-  return {
-    input: keptReading(input),
-    answer: said.issues
-      ? {
-          ...answer,
-          text: JSON.stringify({
-            ...said,
-            issues: said.issues.map((issue) => ({
-              ...issue,
-              got: sized(issue.got),
-            })),
-          }),
-        }
-      : answer,
-  };
 }
 
 /** tools.json: every tool as documentation, generated (pnpm tools:json). */
@@ -229,7 +203,8 @@ export function chatCaller(
           const saved = await transcripts.withToolCall(
             chat,
             agentTurnId,
-            { callId, tool: saveReading.name, input: keptReading(input) },
+            // Kept only once saved: its document is the person's.
+            { callId, tool: saveReading.name, input: keptReading(input, true) },
             (trx) =>
               reading.run(
                 { personId: chat.personId, chatId: chat.id, callId },
@@ -267,8 +242,16 @@ export function chatCaller(
       callId?: string,
     ): Promise<ToolAnswer> => {
       const answer = await call(name, input, callId);
-      return callId !== undefined && kept.delete(callId)
-        ? { ...answer, kept: true }
+      if (callId !== undefined && kept.delete(callId)) {
+        return { ...answer, kept: true };
+      }
+      // A reading not saved is kept without its page text: that goes with
+      // its document.
+      return name === saveReading.name
+        ? {
+            ...answer,
+            keep: await keptUnsaved(reader, chat.personId, input, answer),
+          }
         : answer;
     };
   };

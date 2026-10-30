@@ -120,6 +120,8 @@ export interface ToolAnswer {
   stopTurn?: string;
   /** Kept already, with what the call changed: the chat keeps it no more. */
   kept?: true;
+  /** What the chat keeps of the call, when not the call as it came. */
+  keep?: { input: unknown; answer: { ok: boolean; text: string } };
 }
 
 /** A tool as an agent is told about it. */

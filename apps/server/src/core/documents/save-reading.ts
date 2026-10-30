@@ -11,6 +11,7 @@
 import { Schema } from "effect";
 import type { Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
+import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 import { Refusal, type Issue } from "../tools/registry.ts";
 import { PageCopy, writeCopy } from "./copies.ts";
@@ -63,7 +64,7 @@ export interface SaveReadingAnswer {
 }
 
 /** A value Rufi keeps by its length only, never its words. */
-export function sized(value: unknown): string | undefined {
+function sized(value: unknown): string | undefined {
   if (value === undefined) return undefined;
   const text = typeof value === "string" ? value : JSON.stringify(value);
   return `(${String(text.length)} characters)`;
@@ -76,18 +77,19 @@ const fields = (value: unknown): Record<string, unknown> =>
 
 const OUTCOMES: readonly unknown[] = PageCopy.outcome.literals;
 
+/** The names in save_reading's input: a kept path keeps only these. */
+const NAMES = new Set(["document", "pages", "page", "outcome", "copy", "why"]);
+
 /**
  * What Rufi keeps of a save_reading call's input, also a refused one's of
- * any shape: the document, and each page's number and outcome; everything
- * else by its length, never its words.
+ * any shape: the document when it is one of the person's (`known`), and
+ * each page's number and outcome; everything else by its length, never its
+ * words.
  */
-export function keptReading(input: unknown): unknown {
+export function keptReading(input: unknown, known: boolean): unknown {
   const { document, pages } = fields(input);
   return {
-    document:
-      typeof document === "string" && document.length <= 100
-        ? document
-        : sized(document),
+    document: known ? document : sized(document),
     pages: Array.isArray(pages)
       ? pages.map((entry: unknown) => {
           const { page, outcome, copy, why } = fields(entry);
@@ -99,6 +101,55 @@ export function keptReading(input: unknown): unknown {
           };
         })
       : sized(pages),
+  };
+}
+
+/**
+ * What Rufi keeps of a save_reading call it didn't save, and of its answer:
+ * the input as keptReading keeps it, and each problem the answer names with
+ * its path in the input's own names and numbers, any other part (an unknown
+ * field's name) and what it got by their length. The AI gets the answer
+ * whole.
+ */
+export async function keptUnsaved(
+  store: Store | undefined,
+  personId: string,
+  input: unknown,
+  answer: { ok: boolean; text: string },
+) {
+  const { document } = fields(input);
+  const known =
+    typeof document === "string" &&
+    (await store?.query
+      .selectFrom("documents")
+      .select("id")
+      .where("person_id", "=", personId)
+      .where("id", "=", document)
+      .executeTakeFirst()) !== undefined;
+  const said = JSON.parse(answer.text) as { issues?: Issue[] };
+  const path = (at: string) =>
+    at
+      .split(".")
+      .map((part) =>
+        // A name of its own, a number, or nothing (the input itself).
+        NAMES.has(part) || /^\d*$/.test(part) ? part : sized(part),
+      )
+      .join(".");
+  return {
+    input: keptReading(input, known),
+    answer: {
+      ok: answer.ok,
+      text: said.issues
+        ? JSON.stringify({
+            ...said,
+            issues: said.issues.map((issue) => ({
+              ...issue,
+              path: path(issue.path),
+              got: sized(issue.got),
+            })),
+          })
+        : answer.text,
+    },
   };
 }
 
@@ -222,7 +273,7 @@ export function saveReading(
       reading: run.jobId,
       pages: ranges(targets),
       ...(unreadable.length > 0 && { unreadable: ranges(unreadable) }),
-      note: "Saved. Rufi AI sorts it from here: end with one short line on what you read.",
+      note: "Saved. Rufi AI sorts it from here; a short line on what you read is a good way to end.",
     };
   };
 }

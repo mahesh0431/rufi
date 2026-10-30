@@ -116,7 +116,7 @@ When the AI makes a picture or a page to show you, the reply shows it from the A
 
 The AI's folder isn't part of your health record. What you want to keep goes in your record, through the chat, after your yes. The folder isn't in your backups, your export or a move yet.
 
-The AI keeps its working notes in `ai/work/`, a folder for each day: for example its copy of a document's pages while it reads them. Rufi removes each day's folder after 3 days. When you delete a document, Rufi also removes the AI's working notes on it; other files the AI made from it stay.
+The AI keeps its working notes in `ai/work/`, a folder for each day: for example its copy of a document's pages while it reads them. At each start and once a day, Rufi removes the days older than 3. When you delete a document, Rufi also removes the AI's working notes on it; other files the AI made from it stay.
 
 ## The pages the AI looks at
 

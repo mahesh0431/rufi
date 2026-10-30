@@ -1833,16 +1833,20 @@ describe("the chat, on the scripted Codex", () => {
   });
 
   it("keeps a reading's refused calls, of any shape, without their page text", async () => {
-    const row = "| LDL cholesterol | 142 | mg/dL |\n";
-    const reading = (pages: unknown) => ({
+    const row = "| LDL cholesterol | 142 | mg/dL |";
+    const reading = (document: string, pages: unknown) => ({
       tool: "save_reading",
-      arguments: { document: "doc-asha-aug", pages },
+      arguments: { document, pages },
     });
     await startChat("fake", {
       scenario: {
         calls: [
-          reading(row),
-          reading([{ page: 1, outcome: "read", text: row }]),
+          // Page text as the document and as the pages.
+          reading(row, row),
+          // In a field Rufi doesn't know, and as the name of one.
+          reading("doc-asha-aug", [
+            { page: 1, outcome: "read", text: row, [row]: true },
+          ]),
         ],
       },
     });
