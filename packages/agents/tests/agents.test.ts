@@ -225,7 +225,7 @@ describe("an agent", () => {
       rows("SELECT type, title, status, text FROM items ORDER BY position"),
     ).toEqual([
       { type: "step", title: "get_page", status: "done", text: null },
-      { type: "text", title: null, status: null, text: ANSWER },
+      { type: "text", title: null, status: "done", text: ANSWER },
     ]);
     expect(rows("SELECT id, state, turn_id FROM queue")).toEqual([
       { id: "msg-1", state: "delivered", turn_id: turn.id },
@@ -320,19 +320,34 @@ describe("the host", () => {
     await expect(agents.reopen(ASHA.id)).rejects.toThrow("in use");
   });
 
-  it("is shown each event of the open conversation once the package has kept it", async () => {
+  it("is shown each event of the open conversation once the package has kept it, with its item's place", async () => {
     await agents.close();
-    const shown: { ref: string; type: string; turn?: string }[] = [];
+    const shown: {
+      ref: string;
+      type: string;
+      turn?: string;
+      position?: number;
+    }[] = [];
+    let deliver: (event: ProviderEvent) => void = () => undefined;
     agents = createAgents({
       store,
-      adapters: [fake.adapter],
+      adapters: [
+        {
+          ...fake.adapter,
+          open: (options) => {
+            deliver = options.onEvent;
+            return fake.adapter.open(options);
+          },
+        },
+      ],
       host: host(),
       onError: (error) => errors.push(error),
-      live: (agent, ref, event) => {
+      live: (agent, ref, event, position) => {
         shown.push({
           ref,
           type: event.type,
           turn: agents.current(agent)?.status,
+          ...(position !== undefined && { position }),
         });
       },
     });
@@ -348,13 +363,52 @@ describe("the host", () => {
       turn: turn.id,
       ref: turn.ref,
     });
+    // A note starts, a step runs, the note ends, and a reasoning starts.
+    const at = { turn: turn.ref };
+    deliver({ type: "note", ...at, item: "note", delta: "Looking." });
+    deliver({
+      type: "step",
+      ...at,
+      item: "step",
+      kind: "tool",
+      title: "get_records",
+      status: "done",
+      payload: { result: "fictional" },
+    });
+    deliver({ type: "note", ...at, item: "note", delta: "", done: true });
+    deliver({ type: "thinking", ...at, item: "reasoning", delta: "Asha's" });
 
     fake.end(ref);
     await until(() => {
       expect(shown.at(-1)).toEqual({ ref, type: "turnEnded" });
     });
     expect(shown[0]).toEqual({ ref, type: "turnStarted", turn: "running" });
+    expect(shown.slice(1, -1).map((event) => event.position)).toEqual([
+      1, 2, 1, 3,
+    ]);
     expect(agents.current(ASHA.id)).toBeUndefined();
+    // In the order the turn first reported them; the reasoning as far as
+    // it came.
+    expect(agents.items(ASHA.id, [turn.ref])).toMatchObject([
+      {
+        id: "note",
+        position: 1,
+        type: "note",
+        status: "done",
+        text: "Looking.",
+      },
+      { id: "step", position: 2, type: "step", kind: "tool", status: "done" },
+      {
+        id: "reasoning",
+        position: 3,
+        type: "reasoning",
+        status: null,
+        text: "Asha's",
+      },
+    ]);
+    expect(agents.item(ASHA.id, turn.ref, "step")?.payload).toEqual({
+      result: "fictional",
+    });
   });
 });
 
