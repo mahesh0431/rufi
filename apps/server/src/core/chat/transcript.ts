@@ -7,6 +7,7 @@
 // it is stored.
 import {
   type ActivityKind,
+  type Cause,
   type Chat,
   type Chip,
   DEFAULT_EFFORT,
@@ -414,6 +415,7 @@ async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
         threadBefore !== null &&
         threadBefore !== row.thread_id,
       how: how ?? null,
+      ...(row.cause !== null && { cause: JSON.parse(row.cause) as Cause }),
     };
   });
 }
@@ -726,6 +728,8 @@ export function transcripts(
     agentTurnId: string,
     thread: { id: string; model: string },
     inputs: readonly string[],
+    /** The agent's message that started it, when Rufi AI replies by itself. */
+    cause?: Cause,
   ): Promise<{ entries: string[]; turns: string[] } | undefined> {
     if (await turnOf(trx, chat.id, agentTurnId)) return undefined;
     const rows = await handedOver(trx, chat, inputs);
@@ -776,6 +780,7 @@ export function transcripts(
         resets_at: null,
         started_at: now(),
         ended_at: null,
+        cause: cause === undefined ? null : JSON.stringify(cause),
       })
       .execute();
     const entries = await sent(trx, chat, revision, rows, id);
@@ -1154,9 +1159,10 @@ export function transcripts(
       agentTurnId: string,
       thread: { id: string; model: string },
       inputs: readonly string[] = [],
+      cause?: Cause,
     ) =>
       change(chat.id, (trx, revision) =>
-        begin(trx, chat, revision, agentTurnId, thread, inputs),
+        begin(trx, chat, revision, agentTurnId, thread, inputs, cause),
       ),
 
     /**
@@ -1444,11 +1450,12 @@ export function transcripts(
       agentTurnId: string,
       thread: { id: string; model: string },
       inputs: readonly string[],
+      cause: Cause | undefined,
       write: (trx: Transaction<Tables>) => Promise<void>,
     ) =>
       change(chat.id, async (trx, revision) => {
         await write(trx);
-        return begin(trx, chat, revision, agentTurnId, thread, inputs);
+        return begin(trx, chat, revision, agentTurnId, thread, inputs, cause);
       }),
 
     /**

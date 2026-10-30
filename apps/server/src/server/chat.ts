@@ -283,6 +283,7 @@ export function chat(deps: ChatDeps) {
           event.turnId,
           { id: event.threadId, model: chat.model ?? chat.threadModel ?? "" },
           event.inputs,
+          event.cause,
         );
         if (event.inputs.length > 0) queue.changed(chat.id);
         return;

@@ -13,7 +13,7 @@ import {
   type ProviderEvent,
   type TurnEnd as Ended,
 } from "@rufi/agents/provider";
-import { SIGNED_OUT } from "@rufi/contracts";
+import { type Cause, SIGNED_OUT } from "@rufi/contracts";
 import { type AgentEvent, type Model, type TurnEnd } from "../agent/runtime.ts";
 import { chatAgents, sentAs } from "../core/chat/agents.ts";
 import type { ChatRow, Transcripts } from "../core/chat/transcript.ts";
@@ -29,6 +29,8 @@ export type RufiAiEvent = (
       turnId: string;
       /** The inputs it took: the chat's rows, by their ids. */
       inputs: readonly string[];
+      /** It took only messages from agents below: the first one's. */
+      cause?: Cause;
     }
 ) & {
   /** Its item's place in its turn, as the package keeps it. */
@@ -318,6 +320,20 @@ export async function startRufiAi(
     };
   };
 
+  /**
+   * Why Rufi AI replies by itself: a turn that took only messages from the
+   * agents below it, by the first one's agent and reason.
+   */
+  const causeOf = (inputs: readonly string[]): Cause | undefined => {
+    const taken = inputs.map((id) => system.agents.input(id));
+    const [first] = taken;
+    if (!first || taken.some((input) => !input?.about)) return undefined;
+    const title = system.agents.get(first.sender)?.title;
+    return first.about && title !== undefined
+      ? { title, about: first.about }
+      : undefined;
+  };
+
   // The package keeps out what an older conversation reports: what comes
   // is the agent's open conversation's.
   const live = (
@@ -342,8 +358,11 @@ export async function startRufiAi(
         return;
       }
     }
+    const cause =
+      event.type === "turnStarted" ? causeOf(event.inputs) : undefined;
     chat?.onEvent({
       ...eventOf(ref, event),
+      ...(cause && { cause }),
       ...(position !== undefined && { position }),
     });
   };
@@ -376,6 +395,7 @@ export async function startRufiAi(
           ref,
           { id: row.threadId ?? "", model: row.model ?? row.threadModel ?? "" },
           inputs,
+          causeOf(inputs),
           advance,
         );
         break;

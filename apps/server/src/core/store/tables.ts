@@ -414,6 +414,7 @@ export interface Tables {
     resets_at: string | null;
     started_at: string;
     ended_at: string | null;
+    cause: string | null;
   };
   visits: {
     id: string;

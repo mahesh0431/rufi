@@ -233,8 +233,22 @@ export const Turn = Schema.Struct({
    * from, in the AI's words. Only once the reply completed.
    */
   how: Schema.NullOr(Schema.String),
+  /**
+   * The agent whose message started this reply, Rufi AI's by itself, and
+   * why: its turn ended done, stopped or failed, it asked a question, or it
+   * wrote.
+   */
+  cause: Schema.optionalKey(
+    Schema.Struct({
+      title: Schema.String,
+      about: Schema.Literals(["done", "stopped", "failed", "asked", "wrote"]),
+    }),
+  ),
 });
 export type Turn = typeof Turn.Type;
+
+/** Why Rufi AI replied by itself: the agent's message that started it. */
+export type Cause = NonNullable<Turn["cause"]>;
 
 /** How hard the AI thinks for a reply: low is faster, high thinks longer. */
 export const Effort = Schema.Literals(["low", "medium", "high"]);
