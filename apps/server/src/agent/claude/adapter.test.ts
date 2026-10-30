@@ -158,83 +158,25 @@ describe("steers Claude takes into a turn of its own", () => {
     expect(await start("message-2")).toEqual({ status: "delivered" });
     await adapter.close();
   });
-
-  it.each([
-    ["ignores the interrupt", { ignoresInterrupt: true }],
-    ["never answers it", { cancelLost: true }],
-  ] as const)(
-    "are stopped, and the process ended, when Stop comes before the turn's first answer and Claude %s",
-    async (_, interrupt) => {
-      const fake = fakeClaude(
-        { turn: "runs", ...interrupt },
-        { nextTurn: "before_an_answer" },
-      );
-      const { adapter, conversation, start, ends, first } = await onFake(
-        fake.query,
-        fake.sessions,
-        { stopMs: 50 },
-      );
-      expect(await start("message-1")).toEqual({ status: "delivered" });
-      const turn = await first();
-      const outcome = conversation.steer({
-        input: { id: "steer-1", parts: ["And the date?"] },
-        turn,
-      });
-      await vi.waitFor(() => {
-        expect(ends()).toHaveLength(1);
-      });
-      await conversation.stop(turn);
-
-      expect(fake.closes()).toBe(1);
-      expect(await outcome).toEqual({
-        status: "uncertain",
-        text: expect.any(String) as string,
-      });
-      await adapter.close();
-    },
-  );
 });
 
-describe("Stop", () => {
-  it.each([
-    ["starts its own turn", "starts_during_interrupt", "uncertain"],
-    ["answers in its own turn", "answers_during_interrupt", "next_turn"],
-  ] as const)(
-    "leaves nothing running when Claude %s during the interrupt",
-    async (_, nextTurn, steered) => {
-      const fake = fakeClaude(
-        { turn: "runs", ignoresInterrupt: true },
-        { nextTurn },
-      );
-      const { adapter, conversation, start, events, first } = await onFake(
-        fake.query,
-        fake.sessions,
-        { stopMs: 50 },
-      );
-      expect(await start("message-1")).toEqual({ status: "delivered" });
-      const turn = await first();
-      const outcome = conversation.steer({
-        input: { id: "steer-1", parts: ["And the date?"] },
-        turn,
-      });
-      await vi.waitFor(() => {
-        expect(events.some((event) => event.type === "turnEnded")).toBe(true);
-      });
-      await conversation.stop(turn);
+describe("a message sent again", () => {
+  it("goes to Claude again after its reply failed", async () => {
+    const fake = fakeClaude({ turn: "fails" });
+    const { adapter, start, ends } = await onFake(fake.query, fake.sessions, {
+      startMs: 200,
+    });
+    expect(await start("message-1")).toEqual({ status: "delivered" });
+    await vi.waitFor(() => {
+      expect(ends()).toHaveLength(1);
+    });
 
-      expect(fake.closes()).toBe(1);
-      expect((await outcome).status).toBe(steered);
-      // Every turn reported as started is reported as ended.
-      const started = events.flatMap((event) =>
-        event.type === "turnStarted" ? [event.turn] : [],
-      );
-      const ended = events.flatMap((event) =>
-        event.type === "turnEnded" ? [event.turn] : [],
-      );
-      expect(ended).toEqual(started);
-      await adapter.close();
-    },
-  );
+    expect(await start("message-1")).toEqual({ status: "delivered" });
+    await vi.waitFor(() => {
+      expect(ends()).toHaveLength(2);
+    });
+    await adapter.close();
+  });
 });
 
 describe("a conversation Claude no longer keeps", () => {

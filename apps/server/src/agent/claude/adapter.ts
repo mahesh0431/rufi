@@ -228,14 +228,27 @@ async function openConversation(
   let unclaimed: string | undefined;
   /** How many Stops are under way: a turn starting meanwhile is stopped too. */
   let stops = 0;
-  /** Checks waiting for the conversation to change (see quiet). */
-  const waiting = new Set<() => void>();
   let starting:
     | { id: string; settle: (delivery: Delivery) => void }
     | undefined;
   const held = new Map<string, Held>();
   /** Claude's ids for calls to Rufi's tools, with the turn each left. */
   const calls = new Map<string, string>();
+  /**
+   * Rufi's ids for the messages it gave Claude, by the fresh uuid each went
+   * under: Claude skips a uuid it has stored before, so a message sent
+   * again would do nothing (T3 Code's `ClaudeAdapterV2.ts`).
+   */
+  const given = new Map<string, string>();
+  /** A new uuid for message `id`. */
+  const fresh = (id: string): UUID => {
+    const uuid = randomUUID();
+    given.set(uuid, id);
+    return uuid;
+  };
+  /** Rufi's ids for the uuids Claude names; none for one not Rufi's. */
+  const rufiIds = (uuids: readonly string[] | undefined) =>
+    (uuids ?? []).flatMap((uuid) => given.get(uuid) ?? []);
   let rateLimit: SDKRateLimitInfo | undefined;
 
   const emit = (event: ProviderEvent) => {
@@ -310,11 +323,12 @@ async function openConversation(
         unclaimed = randomUUID();
       }
     } else if (message.type === "assistant") {
-      const ids =
+      const ids = rufiIds(
         message.user_message_uuids ??
-        (message.user_message_uuid === undefined
-          ? []
-          : [message.user_message_uuid]);
+          (message.user_message_uuid === undefined
+            ? []
+            : [message.user_message_uuid]),
+      );
       if (unclaimed !== undefined && running === undefined) {
         const mine = ids.filter((id) => held.has(id));
         if (mine.length > 0) {
@@ -335,10 +349,12 @@ async function openConversation(
     } else if (message.type === "result") {
       if (running) {
         taken(
-          message.user_message_uuids ??
-            (message.user_message_uuid === undefined
-              ? []
-              : [message.user_message_uuid]),
+          rufiIds(
+            message.user_message_uuids ??
+              (message.user_message_uuid === undefined
+                ? []
+                : [message.user_message_uuid]),
+          ),
         );
         if (running.context !== undefined) {
           const model = running.model && message.modelUsage[running.model];
@@ -461,32 +477,12 @@ async function openConversation(
     try {
       for await (const message of current.messages) {
         handle(message);
-        for (const check of waiting) check();
       }
     } catch (error) {
       died = error;
     }
     ended(current, died);
-    for (const check of waiting) check();
   };
-
-  /** Whether nothing of the conversation runs, within `ms`. */
-  const quiet = (ms: number) =>
-    new Promise<boolean>((resolve) => {
-      const done = (value: boolean) => {
-        clearTimeout(timer);
-        waiting.delete(check);
-        resolve(value);
-      };
-      const check = () => {
-        if (running === undefined && unclaimed === undefined) done(true);
-      };
-      const timer = setTimeout(() => {
-        done(false);
-      }, ms);
-      waiting.add(check);
-      check();
-    });
 
   /** The open process, after opening one and checking its sign-in. */
   const opened = async (): Promise<ClaudeSession> => {
@@ -542,7 +538,7 @@ async function openConversation(
       if (steer.turn !== turn) continue;
       settle(
         id,
-        answer?.cancelled?.includes(id) === true
+        rufiIds(answer?.cancelled).includes(id)
           ? { status: "not_delivered", text: "Stopped before Claude took it." }
           : {
               status: "uncertain",
@@ -556,10 +552,10 @@ async function openConversation(
     within(current.interrupt(), stopMs, "the interrupt").catch(() => undefined);
 
   /**
-   * Stops `turn`, and whatever of the conversation runs with it: a turn
-   * Claude began by itself with its steers, also one that starts during the
-   * interrupt. Nothing of the conversation runs once it returns: the process
-   * is ended if Claude doesn't stop in time.
+   * Stops `turn`, as T3 Code does: interrupts Claude, which says which
+   * waiting steers it cancelled, then ends its process, so nothing Claude
+   * took, also a turn it began by itself, runs on. The next turn carries
+   * the conversation on in a new process.
    */
   const stop = async (turn: string) => {
     const current = session;
@@ -572,7 +568,7 @@ async function openConversation(
       try {
         if (running) running.stopping = true;
         cancelled(await interrupt(current), turn);
-        if (!(await quiet(stopMs))) await closeProcess();
+        await closeProcess();
       } finally {
         stops--;
       }
@@ -646,7 +642,7 @@ async function openConversation(
       const delivery = new Promise<Delivery>((resolve) => {
         starting = { id: start.input.id, settle: resolve };
       });
-      current.send(parts.join("\n\n"), start.input.id as UUID);
+      current.send(parts.join("\n\n"), fresh(start.input.id));
       // Claude may have the message and still start it later, unseen: its
       // process ends first, so it can't.
       const timer = setTimeout(() => {
@@ -675,11 +671,7 @@ async function openConversation(
       const outcome = new Promise<SteerOutcome>((resolve) => {
         held.set(steer.input.id, { turn: steer.turn, settle: resolve });
       });
-      current.send(
-        steer.input.parts.join("\n\n"),
-        steer.input.id as UUID,
-        true,
-      );
+      current.send(steer.input.parts.join("\n\n"), fresh(steer.input.id), true);
       return outcome;
     },
     stop,
@@ -687,7 +679,7 @@ async function openConversation(
     // arrived, so it's unknown, never not received.
     reconcile: async (ids) => {
       const kept = await sessions.ids(ref, open.cwd).then(
-        (each) => new Set(each),
+        (each) => new Set(rufiIds(each)),
         () => new Set<string>(),
       );
       return new Map<string, Received>(
