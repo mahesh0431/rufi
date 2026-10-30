@@ -21,7 +21,8 @@ import {
   openWritable,
   type Store,
 } from "../store/database.ts";
-import { chatCaller } from "../tools/tools.ts";
+import { rufiCaller } from "../tools/tools.ts";
+import { turnScope } from "../../../tests/scope.ts";
 
 const TZ = process.env["TZ"];
 process.env["TZ"] = "Asia/Kolkata";
@@ -243,13 +244,13 @@ async function call(
   origin: "person" | "rufi" = "person",
   callId = `call-${String(++calls)}`,
 ) {
-  const answer = await chatCaller(
+  const answer = await rufiCaller(
     reader,
     transcripts,
     () => undefined,
     undefined,
     { run: sorting(store, () => SUNDAY_10AM).sort, done: () => undefined },
-  )(chat, "t-1", origin)(tool, input, callId);
+  )(turnScope(chat, "t-1"), origin)(tool, input, callId);
   return {
     ...(JSON.parse(answer.text) as object),
     kept: answer.kept,

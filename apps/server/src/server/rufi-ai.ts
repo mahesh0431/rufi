@@ -18,6 +18,7 @@ import { type AgentEvent, type Model, type TurnEnd } from "../agent/runtime.ts";
 import { chatAgents, sentAs } from "../core/chat/agents.ts";
 import type { ChatRow, Transcripts } from "../core/chat/transcript.ts";
 import { startAgents, type AgentSystem, type Apply } from "./agents.ts";
+import type { Placed } from "./door.ts";
 
 /** What Rufi AI does, as it comes: its thread is its conversation. */
 export type RufiAiEvent = (
@@ -39,8 +40,14 @@ export interface RufiAiHost {
   onEvent: (event: RufiAiEvent) => void;
   /** Resolves once what the chat was told so far is saved. */
   saved: () => Promise<void>;
-  /** What the chat's conversation opens with now. */
-  opening: (chat: ChatRow) => Promise<ChatOpening>;
+  /**
+   * What the chat's agent's conversation opens with now: Rufi's tools are
+   * the agent's own, with its key.
+   */
+  opening: (
+    chat: ChatRow,
+    agent: { id: string; tools: readonly string[] },
+  ) => Promise<ChatOpening>;
   /**
    * Claims a row of the chat's queue as it goes to the agent's conversation
    * `sentAs`: its words, or that it doesn't go (Host.claim).
@@ -84,6 +91,17 @@ export interface RufiAi {
   running: (threadId: string) => boolean;
   /** The running reply that may still use Rufi's tools, unless it stops. */
   activeTurn: (threadId: string) => string | undefined;
+  /**
+   * The admitted, open turn an agent's call to Rufi's tools left, as its
+   * adapter places it from the call's `_meta`, with whose the agent is and
+   * its tools. A turn the provider began by itself is waited for until
+   * `signal` aborts. Nothing: the call is refused.
+   */
+  place: (
+    agent: string,
+    meta: unknown,
+    signal: AbortSignal,
+  ) => Promise<Placed | undefined>;
   /**
    * Puts the chat's rows in its agent's queue by their ids, each once, then
    * the agent's waiting ones among `order` in that order. The package claims
@@ -248,6 +266,12 @@ export async function startRufiAi(
   const ends = new Map<string, TurnEnd>();
   let closed = false;
 
+  /** The agent's open conversation, by the provider's reference. */
+  const threadOf = (agent: string) => {
+    for (const [thread, owner] of threads) if (owner === agent) return thread;
+    return undefined;
+  };
+
   /** The chat whose own agent `agent` is, as stored now. */
   const chatOf = async (agent: string) => {
     const owner = await kept.owner(agent);
@@ -262,7 +286,7 @@ export async function startRufiAi(
   ): Promise<Opening> => {
     const row = await chatOf(agent.id);
     if (!row || !chat) throw new Error("Rufi AI's chat isn't open.");
-    const now = await chat.opening(row);
+    const now = await chat.opening(row, agent);
     given.set(agent.id, now.version);
     const seed = kind === "new" ? await now.seed() : undefined;
     return {
@@ -469,6 +493,30 @@ export async function startRufiAi(
         const agent = threads.get(threadId);
         const current = agent === undefined ? undefined : agents.current(agent);
         return current?.status === "running" ? current.ref : undefined;
+      },
+
+      place: async (agent, meta, signal) => {
+        const placed = await agents.place(agent, meta, signal);
+        if (!placed) return undefined;
+        // Whose the agent is, as Rufi keeps it now: a call of an agent Rufi
+        // no longer owns, or of another chat's, finds nothing.
+        const owner = await kept.owner(agent);
+        const row = owner && (await transcripts.chat(owner.personId));
+        const tools = agents.get(agent)?.tools;
+        const thread = threadOf(agent);
+        if (row?.id !== owner?.chatId || !row || !tools || !thread) {
+          return undefined;
+        }
+        return {
+          chat: row,
+          agent,
+          thread,
+          conversation: placed.conversation,
+          turn: placed.turn,
+          ref: placed.ref,
+          call: placed.call,
+          tools,
+        };
       },
 
       queue: async (row, rows, order) => {

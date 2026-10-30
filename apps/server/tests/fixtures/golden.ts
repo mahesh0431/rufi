@@ -18,7 +18,8 @@ import {
 import { originalPath } from "../../src/core/documents/originals.ts";
 import { shownDate } from "../../src/core/record/dates.ts";
 import { sha256 } from "../../src/platform/files.ts";
-import { chatCaller } from "../../src/core/tools/tools.ts";
+import { rufiCaller } from "../../src/core/tools/tools.ts";
+import { turnScope } from "../scope.ts";
 
 export const FAMILY = join(import.meta.dirname, "fictional-family.sql");
 
@@ -91,7 +92,7 @@ async function ashasChat(home: string, store: Store, today: Date) {
   const chats = transcripts(store, () => clock.toISOString());
   const chat = (await chats.chat("asha")) as ChatRow;
   const reader = openReadOnly(databasePath(home));
-  const tools = chatCaller(reader, chats, () => undefined);
+  const tools = rufiCaller(reader, chats, () => undefined);
   const thread = { id: "golden-thread", model: DEFAULT_ALLOWLIST[0] ?? "" };
 
   /**
@@ -114,7 +115,7 @@ async function ashasChat(home: string, store: Store, today: Date) {
       text: message,
       agentTurnId: agentTurn,
     });
-    const call = tools(chat, agentTurn, "person");
+    const call = tools(turnScope(chat, agentTurn), "person");
     for (const { tool, input } of calls) {
       clock = new Date(clock.getTime() + 2_000);
       const callId = uuid();

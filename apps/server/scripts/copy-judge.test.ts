@@ -113,9 +113,8 @@ describe("the reader pack's judge of a page", () => {
           const saved = await scope.call({
             tool: "give_verdicts",
             input: given,
-            callId: "call-1",
-            threadId: undefined,
-            turnId: undefined,
+            meta: { callId: "call-1" },
+            signal: new AbortController().signal,
           });
           expect(saved.ok).toBe(true);
           return { end, compactions: 0 };

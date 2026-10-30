@@ -21,7 +21,7 @@ import { readBrief } from "../briefs/briefs.ts";
 import { transcripts, type ChatRow } from "../chat/transcript.ts";
 import { claimNotices } from "../record/notices.ts";
 import { recentSaves } from "../record/read.ts";
-import { chatCaller } from "../tools/tools.ts";
+import { rufiCaller } from "../tools/tools.ts";
 import { backupsPath, makeBackup, upgradeBackupsPath } from "./backup.ts";
 import {
   databasePath,
@@ -32,6 +32,7 @@ import {
 import { markerPath, openRecord } from "./install.ts";
 import { MIGRATIONS, inspect, migrate } from "./migrations.ts";
 import { restore } from "./restore.ts";
+import { turnScope } from "../../../tests/scope.ts";
 
 const VERSION_1 = [
   await readFile(
@@ -149,11 +150,11 @@ async function ravisSave(store: Store, at: string): Promise<void> {
   });
   const reader = openReadOnly(databasePath(home)) as Store;
   try {
-    const answer = await chatCaller(reader, chats, () => undefined)(
-      chat,
-      "t-after",
-      "person",
-    )(
+    const answer = await rufiCaller(
+      reader,
+      chats,
+      () => undefined,
+    )(turnScope(chat, "t-after"), "person")(
       "save_changes",
       {
         changes: [
@@ -1017,11 +1018,11 @@ it("upgrades a record of version 14 to Visits: the saves, follow-ups and briefs 
     });
     const reader = openReadOnly(databasePath(home)) as Store;
     try {
-      const answer = await chatCaller(reader, chats, () => undefined)(
-        chat,
-        "t-undo",
-        "person",
-      )(
+      const answer = await rufiCaller(
+        reader,
+        chats,
+        () => undefined,
+      )(turnScope(chat, "t-undo"), "person")(
         "save_changes",
         {
           changes: (latest?.changes ?? []).map((change) => ({

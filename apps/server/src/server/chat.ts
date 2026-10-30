@@ -30,8 +30,10 @@ import { refsForAi } from "../core/chat/refs.ts";
 import type { ChatRow, Step, Transcripts } from "../core/chat/transcript.ts";
 import type { Job, Readings } from "../core/documents/reading.ts";
 import type { ToolAnswer, ToolSpec } from "../core/tools/registry.ts";
+import type { CallScope, TurnScope } from "../core/tools/tools.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
-import type { McpCall, McpKeys } from "./mcp.ts";
+import { agentDoor } from "./door.ts";
+import type { McpKeys } from "./mcp.ts";
 import type { ReadProgress, Reader } from "./reader.ts";
 import type {
   ChatOpening,
@@ -52,7 +54,7 @@ export interface ChatDeps {
   /** Rufi AI, given where its events go. */
   agent: (host: RufiAiHost) => RufiAi;
   allowlist: readonly string[];
-  /** Rufi's MCP endpoint for the chat: its address and its keys. */
+  /** Rufi's MCP endpoint for the chat's agents: its address and its keys. */
   mcp: { url: () => string; keys: McpKeys };
   /**
    * What the AI is told in every thread, for the emergency region chosen,
@@ -66,12 +68,12 @@ export interface ChatDeps {
     /** What the MCP server lists. */
     specs: readonly ToolSpec[];
     /**
-     * A caller for one turn of a chat; the agent gives each call's id. A
-     * turn a Rufi event started can only read.
+     * A caller for one turn of an agent, from the scope the door placed its
+     * calls in (rufiCaller), given Rufi's id for each call. A turn a Rufi
+     * event started can only read.
      */
     caller: (
-      chat: ChatRow,
-      agentTurnId: string,
+      scope: TurnScope,
       origin: "person" | "rufi",
     ) => (name: string, input: unknown, callId: string) => Promise<ToolAnswer>;
   };
@@ -100,12 +102,11 @@ export function chat(deps: ChatDeps) {
   const lanes = new Map<string, Promise<unknown>>();
   /** Actions under way, so Stop can end them while they get ready. */
   const acting = new Map<string, Set<AbortController>>();
-  /** Each running turn's tool caller and chat, by thread. */
+  /** Each agent's tool caller for its latest turn that called Rufi's tools. */
   const callers = new Map<
     string,
     {
-      turnId: string;
-      chat: ChatRow;
+      turn: string;
       call: (
         name: string,
         input: unknown,
@@ -113,8 +114,6 @@ export function chat(deps: ChatDeps) {
       ) => Promise<ToolAnswer>;
     }
   >();
-  /** Each chat's key to Rufi's MCP server, for this run of Rufi. */
-  const keys = new Map<string, string>();
   /** Closing: nothing more is handed over. */
   let closed = false;
   /**
@@ -139,7 +138,7 @@ export function chat(deps: ChatDeps) {
 
   const host: RufiAiHost = {
     saved: () => saving,
-    opening: (chat) => openingOf(chat),
+    opening: (chat, agent) => openingOf(chat, agent),
     // Rufi's queue decides: the row's words as they are now, or that it
     // doesn't go.
     claim: async (chat, input, sentAs) => {
@@ -177,66 +176,47 @@ export function chat(deps: ChatDeps) {
   };
 
   /**
-   * One call to Rufi's tools through the MCP server, with a key of `chatId`.
-   * It is admitted only for the reply running in the chat's thread now, and
-   * not once Stop was pressed; it then runs for that reply, whatever comes
-   * after. Origin and what the reply may do come from Rufi's own record.
+   * One call to Rufi's tools, as the door placed it in its agent's admitted
+   * turn: it runs for that turn, whatever comes after. Origin and what the
+   * turn may do come from Rufi's own record.
    */
-  async function callTool(chatId: string, call: McpCall): Promise<ToolAnswer> {
-    const { threadId, turnId, callId } = call;
-    const refuse = (reason: "no_call" | "no_reply", error: string) => {
-      log("mcp.refused", { reason });
-      return { ok: false, text: JSON.stringify({ ok: false, error }) };
-    };
-    if (
-      threadId === undefined ||
-      turnId === undefined ||
-      callId === undefined
-    ) {
-      return refuse("no_call", "Rufi's tools take calls only from a reply.");
-    }
-    if (agent.activeTurn(threadId) !== turnId) {
-      return refuse("no_reply", "No reply is running.");
-    }
+  async function callTool(
+    scope: CallScope,
+    tool: string,
+    input: unknown,
+  ): Promise<ToolAnswer> {
+    const { callId, thread, ref } = scope;
     // What the agent did before the call is stored first: the user's
     // message a save rests on, and the turn its receipt belongs to.
     await saving;
-    let caller = callers.get(threadId);
-    if (caller?.turnId !== turnId) {
-      const chat = await transcripts.byThread(threadId);
-      if (!chat) return refuse("no_reply", "No reply is running.");
+    let caller = callers.get(scope.agent);
+    if (caller?.turn !== scope.turn) {
       caller = {
-        turnId,
-        chat,
+        turn: scope.turn,
         call: deps.tools.caller(
-          chat,
-          turnId,
-          await transcripts.origin(chat, turnId),
+          scope,
+          await transcripts.origin(scope.chat, ref),
         ),
       };
-      callers.set(threadId, caller);
-    }
-    // The thread is the key's own chat's, also for a caller kept from before.
-    if (caller.chat.id !== chatId) {
-      return refuse("no_reply", "No reply is running.");
+      callers.set(scope.agent, caller);
     }
     const startedAt = transcripts.now();
-    const answer = await caller.call(call.tool, call.input, callId);
+    const answer = await caller.call(tool, input, callId);
     // Kept before the AI has it: Rufi keeps every answer the AI got (a sort
     // keeps its own, with what it changed).
     try {
       if (!answer.kept) {
-        await transcripts.recordToolCall(caller.chat, turnId, {
+        await transcripts.recordToolCall(scope.chat, ref, {
           callId,
-          tool: call.tool,
-          input: call.input,
+          tool,
+          input,
           answer,
           startedAt,
         });
       }
     } catch (error) {
       log("chat.save_failed", { kind: "tool_call", error: errorCode(error) });
-      lost(threadId, turnId);
+      lost(thread, ref);
       return {
         ok: false,
         text: JSON.stringify({
@@ -247,7 +227,7 @@ export function chat(deps: ChatDeps) {
     }
     if (answer.stopTurn !== undefined) {
       agent
-        .cut(threadId, turnId, { status: "failed", text: answer.stopTurn })
+        .cut(thread, ref, { status: "failed", text: answer.stopTurn })
         .catch((error: unknown) => {
           log("chat.save_failed", { kind: "stop", error: errorCode(error) });
         });
@@ -255,24 +235,14 @@ export function chat(deps: ChatDeps) {
     return answer;
   }
 
-  /** A key that opens the chat's tools, for one of its threads. */
-  const issueKey = (chat: ChatRow) =>
-    deps.mcp.keys.issue({
-      tools: deps.tools.specs,
-      call: (call) => callTool(chat.id, call),
-    });
-
-  /** The chat's tools: its key from this run, or a new one. */
-  function toolsOf(chat: ChatRow) {
-    let key = keys.get(chat.id);
-    if (key === undefined) {
-      key = issueKey(chat);
-      keys.set(chat.id, key);
-    }
-    return { url: deps.mcp.url(), key };
-  }
-
   const agent = deps.agent(host);
+  const door = agentDoor({
+    mcp: deps.mcp,
+    specs: deps.tools.specs,
+    place: (id, meta, signal) => agent.place(id, meta, signal),
+    run: callTool,
+    log,
+  });
 
   /** Stores one agent event; listeners see it once stored. */
   async function save(event: RufiAiEvent): Promise<void> {
@@ -374,9 +344,6 @@ export function chat(deps: ChatDeps) {
         });
         return;
       case "turnEnded":
-        if (callers.get(event.threadId)?.turnId === event.turnId) {
-          callers.delete(event.threadId);
-        }
         await transcripts.endTurn(chat, event.turnId, event.end);
         // Its steps as the agent database keeps them now it ended.
         for (const key of streaming.keys()) {
@@ -755,17 +722,20 @@ export function chat(deps: ChatDeps) {
 
   /**
    * What the chat's conversation with Rufi AI opens with now: the current
-   * rules, its tools, and for a new one the chat's last messages, read once
-   * the old conversation's events are saved.
+   * rules, its tools with the agent's key, and for a new one the chat's
+   * last messages, read once the old conversation's events are saved.
    */
-  async function openingOf(chat: ChatRow): Promise<ChatOpening> {
+  async function openingOf(
+    chat: ChatRow,
+    own: { id: string; tools: readonly string[] },
+  ): Promise<ChatOpening> {
     const { instructions, version } = deps.rules(
       await transcripts.setting("emergency_region"),
     );
     return {
       instructions,
       version,
-      tools: toolsOf(chat),
+      tools: door.registration(own.id, own.tools),
       seed: async () => {
         await saving;
         const earlier = await transcripts.lastMessages(
@@ -919,15 +889,8 @@ export function chat(deps: ChatDeps) {
             return;
           }
           await refused(() => queue.recover(fresh, id, hold, newThread));
-          if (newThread) {
-            await agent.reopen(fresh, true);
-            // The old conversation's key opens nothing any more.
-            const key = keys.get(fresh.id);
-            if (key !== undefined) {
-              deps.mcp.keys.revoke(key);
-              keys.delete(fresh.id);
-            }
-          }
+          // The old conversation's calls are placed no more.
+          if (newThread) await agent.reopen(fresh, true);
           agent.sendNow(id);
         });
         next(chat);

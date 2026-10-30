@@ -25,7 +25,7 @@ import {
   openWritable,
   type Store,
 } from "../store/database.ts";
-import { chatCaller } from "../tools/tools.ts";
+import { rufiCaller } from "../tools/tools.ts";
 import { deletions, NoChoice, StalePreview, sweepFiles } from "./delete.ts";
 import { documents, type Documents } from "./documents.ts";
 import { fileGate, type FileGate } from "./gate.ts";
@@ -34,6 +34,7 @@ import { pages, publisher } from "./pages.ts";
 import { readings } from "./reading.ts";
 import { sorting } from "./sorting.ts";
 import { addSent } from "../../../tests/sent.ts";
+import { turnScope } from "../../../tests/scope.ts";
 
 const family = await readFile(
   new URL("../../../tests/fixtures/fictional-family.sql", import.meta.url),
@@ -128,11 +129,15 @@ async function save(said: string, changes: unknown[]) {
     text: said,
     agentTurnId: "t-1",
   });
-  const answer = await chatCaller(reader, transcripts, () => undefined)(
-    chat,
-    "t-1",
-    "person",
-  )("save_changes", { changes }, `call-${id}`);
+  const answer = await rufiCaller(
+    reader,
+    transcripts,
+    () => undefined,
+  )(turnScope(chat, "t-1"), "person")(
+    "save_changes",
+    { changes },
+    `call-${id}`,
+  );
   expect(answer.text).not.toContain('"issues"');
   expect(answer.ok).toBe(true);
 }
@@ -356,11 +361,11 @@ describe("a document with saved results", () => {
     expect(typed?.removed).toBe(false);
     expect(typed?.sources).toEqual([]);
     // The AI's fresh reads can't get it; the chat says it went.
-    const call = chatCaller(reader, transcripts, () => undefined)(
-      chat,
-      "t-1",
-      "person",
-    );
+    const call = rufiCaller(
+      reader,
+      transcripts,
+      () => undefined,
+    )(turnScope(chat, "t-1"), "person");
     const list = await call("get_documents", {}, "call-list");
     expect(list.text).not.toContain(AUG);
     const overview = JSON.parse(

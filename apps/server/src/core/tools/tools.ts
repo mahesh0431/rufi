@@ -58,8 +58,14 @@ export function forAgent(
   context: () => ToolContext,
   log: Log,
   rejections?: () => Promise<number>,
+  /** The agent's own tools, by name; all of them when not given. */
+  names?: readonly string[],
 ) {
-  const tools = TOOLS.filter((tool) => tool.callers !== "ui");
+  const tools = TOOLS.filter(
+    (tool) =>
+      tool.callers !== "ui" &&
+      (names === undefined || names.includes(tool.name)),
+  );
   return {
     server: SERVER,
     specs: tools.map(specOf),
@@ -95,12 +101,34 @@ export function toolsJson(): string {
   return `${JSON.stringify({ tools }, null, 2)}\n`;
 }
 
+/** What a call to Rufi's tools runs with, as the door placed it (server/door.ts). */
+export interface CallScope {
+  /** Whose the agent is: its chat. */
+  chat: ChatRow;
+  agent: string;
+  /** The agent's conversation: the provider's reference, and its number. */
+  thread: string;
+  conversation: number;
+  /** The agent's turn: in the agent database, and as the provider names it. */
+  turn: string;
+  ref: string;
+  /** Rufi's id for the call: `<agent>/<conversation>/<provider call id>`. */
+  callId: string;
+  /** Rufi's tools the agent may use. */
+  tools: readonly string[];
+}
+
+/** What every call of one turn runs with. */
+export type TurnScope = Omit<CallScope, "callId">;
+
 /**
- * The tools of one turn in Rufi's own chat, the one place the AI can save,
- * sort or make a brief: each is written with its line in the chat. A turn a
- * Rufi event started can only read: the person didn't ask for it.
+ * The one Rufi caller, for an agent's turn, from the scope the door placed
+ * its calls in; each call gives Rufi's id for it: the agent's own tools, in its chat, the one place
+ * the AI can save, sort or make a brief. Each is written with its line in
+ * the chat. A turn a Rufi event started can only read: the person didn't
+ * ask for it.
  */
-export function chatCaller(
+export function rufiCaller(
   reader: Store | undefined,
   transcripts: Transcripts,
   log: Log,
@@ -115,7 +143,8 @@ export function chatCaller(
     done: (personId: string) => void;
   },
 ) {
-  return (chat: ChatRow, agentTurnId: string, origin: "person" | "rufi") => {
+  return (scope: TurnScope, origin: "person" | "rufi") => {
+    const { chat, ref: agentTurnId } = scope;
     // Sorts kept with their call, by call id, till their answer goes out.
     const kept = new Set<string>();
     const call = forAgent(
@@ -197,16 +226,15 @@ export function chatCaller(
       }),
       log,
       () => rejectionsPerReply(transcripts.setting),
+      scope.tools,
     ).forTurn();
     return async (
       name: string,
       input: unknown,
-      callId?: string,
+      callId: string,
     ): Promise<ToolAnswer> => {
       const answer = await call(name, input, callId);
-      return callId !== undefined && kept.delete(callId)
-        ? { ...answer, kept: true }
-        : answer;
+      return kept.delete(callId) ? { ...answer, kept: true } : answer;
     };
   };
 }

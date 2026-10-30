@@ -51,6 +51,14 @@ export type Answer = "received" | "not_received" | "unknown";
 export const sentAs = (agent: string, conversation: number) =>
   `${agent}/${String(conversation)}`;
 
+/**
+ * Rufi's id for an agent's call to its tools, for every provider:
+ * `<agent>/<conversation>/<provider call id>`. A repeat has the same; two
+ * agents, or two conversations of one, never do.
+ */
+export const callIdOf = (agent: string, conversation: number, call: string) =>
+  `${sentAs(agent, conversation)}/${call}`;
+
 const claimOf = (value: string) => {
   const at = value.lastIndexOf("/");
   const conversation = Number(value.slice(at + 1));
