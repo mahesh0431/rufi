@@ -1647,6 +1647,8 @@ test("a tool step shows the tool and its arguments as reported, and opens to its
   });
   await send(page, "My results");
   await expect(log(chat(page)).locator(".reply")).toHaveText("ok:My results");
+  // Opened once the reply has ended: a click while it runs closes it.
+  await expect(activity(chat(page))).toHaveText(/^Activity · \d+ steps? · /);
   await activity(chat(page)).click();
   const own = steps(chat(page)).first();
   await expect(own).toHaveText(
@@ -1761,6 +1763,8 @@ test.describe("on the real Codex binary, with a local fake model", () => {
     await expect(log(chat(page)).locator(".reply")).toHaveText(
       "ok:Read my overview",
     );
+    // Opened once the reply has ended: a click while it runs closes it.
+    await expect(activity(chat(page))).toHaveText(/^Activity · \d+ steps? · /);
     await activity(chat(page)).click();
     await expect(
       log(chat(page)).getByRole("list", { name: "Activity" }),
