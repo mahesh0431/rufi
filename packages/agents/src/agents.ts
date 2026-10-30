@@ -123,7 +123,12 @@ export interface Sent {
   kind: "steer" | "queue";
   /** What is sent; none when the host keeps the words and claims give them. */
   parts?: readonly string[];
+  /** A message one agent wrote to another (its done messages are the package's). */
+  about?: "wrote";
 }
+
+/** Why an input from one agent to another came. */
+export type About = "done" | "stopped" | "failed" | "asked" | "wrote";
 
 /** Why a waiting input isn't handed over by itself. */
 export type Hold = "signed_out" | "open_failed" | "failed" | "restarts";
@@ -206,10 +211,19 @@ export interface Agents {
     agent: string,
     page: { before?: string; limit: number },
   ) => { turns: KeptTurn[]; earlier: string | null };
-  /** Where an input is in its agent's queue; nothing when the queue has none. */
-  input: (
-    id: string,
-  ) => { agent: string; state: string; held: Hold | null } | undefined;
+  /**
+   * Where an input is in its agent's queue, who sent it and, from another
+   * agent, why; nothing when the queue has none.
+   */
+  input: (id: string) =>
+    | {
+        agent: string;
+        state: string;
+        held: Hold | null;
+        sender: string;
+        about: About | null;
+      }
+    | undefined;
   /** The agent's turn now, if one starts or runs. */
   current: (agent: string) => Current | undefined;
   /**
@@ -260,6 +274,20 @@ export interface Agents {
    * the agent can take it; the sender is never told no.
    */
   send: (agent: string, input: Sent) => void;
+  /**
+   * Waits, in the agent's running turn `turn`, until one of `below` ends a
+   * turn: that agent's id, its done message read (it never goes). One whose
+   * done message still waits is read at once. Nothing when none of them
+   * runs or has an input to take, or when `ms` pass, the turn ends or
+   * `signal` aborts first.
+   */
+  wait: (
+    agent: string,
+    turn: string,
+    below: readonly string[],
+    ms: number,
+    signal?: AbortSignal,
+  ) => Promise<string | undefined>;
   /**
    * Starts handing inputs over, once the host has finished starting:
    * first asks the providers about those a crash left with them, then
@@ -427,6 +455,38 @@ const now = () => new Date().toISOString();
 const message = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
+/**
+ * What an agent's parent is told when its turn ends, in its done message:
+ * its title and id, and its answer and questions, or how it stopped or failed.
+ */
+function doneText(
+  agent: Agent,
+  end: TurnEnd,
+  by: string | null,
+  questions: readonly { title: string; options: readonly string[] }[],
+): string {
+  const who = `${agent.title} (${agent.id})`;
+  switch (end.status) {
+    case "done":
+      return [
+        `${who} ${questions.length > 0 ? "asks" : "done"}:`,
+        end.answer,
+        ...questions.map((question) =>
+          [
+            `**${question.title}**`,
+            ...question.options.map((option) => `- ${option}`),
+          ].join("\n"),
+        ),
+      ]
+        .filter((part) => part !== "")
+        .join("\n\n");
+    case "stopped":
+      return `${who} stopped${by === null ? "" : ` (by ${by})`}.`;
+    case "failed":
+      return `${who} failed: ${end.text ?? end.reason}.`;
+  }
+}
+
 export function createAgents(options: {
   store: AgentStore;
   adapters: readonly ProviderAdapter[];
@@ -461,6 +521,13 @@ export function createAgents(options: {
   let dispatching = false;
   /** Conversations of agents no longer run here, until they have closed. */
   const closing = new Set<Conversation>();
+  /** Agents waiting in a turn for one below them to end a turn. */
+  const waiters = new Set<{
+    agent: string;
+    turn: string;
+    below: ReadonlySet<string>;
+    end: (ended: string | undefined) => void;
+  }>();
 
   const row = (id: string) =>
     db.prepare("SELECT * FROM agents WHERE id = ?").get(id) as
@@ -861,6 +928,15 @@ export function createAgents(options: {
     live.places.delete(ref);
     const stopBy =
       end.status === "stopped" ? (live.stopBy ?? "provider") : null;
+    const agent = get(live.id);
+    const parent = agent?.parent ?? null;
+    // The parent waits for it in its running turn: the wait reads it.
+    const read = [...waiters].some(
+      (waiter) =>
+        waiter.agent === parent &&
+        waiter.below.has(live.id) &&
+        lives.get(waiter.agent)?.current?.turn === waiter.turn,
+    );
     store.change(({ event }) => {
       const at = now();
       db.prepare(
@@ -892,7 +968,52 @@ export function createAgents(options: {
       // A whole answer names the item it streamed as, when it did.
       const item = end.status === "done" ? answer : undefined;
       event("turn.ended", live.id, { turn: turn.id, ref, ...end, item });
+      // Its parent hears how it went: a steer from it, until it takes it.
+      if (agent && parent !== null) {
+        const questions = (
+          db
+            .prepare(
+              "SELECT title, options FROM questions WHERE turn_id = ? ORDER BY rowid",
+            )
+            .all(turn.id) as { title: string; options: string }[]
+        ).map((question) => ({
+          title: question.title,
+          options: JSON.parse(question.options) as string[],
+        }));
+        const about: About =
+          end.status === "done"
+            ? questions.length > 0
+              ? "asked"
+              : "done"
+            : end.status;
+        const input = `done:${turn.id}`;
+        db.prepare(
+          `INSERT INTO queue (id, agent_id, sender, kind, parts, about, state, position, created_at, updated_at)
+           VALUES (?, ?, ?, 'steer', ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
+        ).run(
+          input,
+          parent,
+          live.id,
+          JSON.stringify([doneText(agent, end, stopBy, questions)]),
+          about,
+          read ? "removed" : "waiting",
+          parent,
+          at,
+          at,
+        );
+        event("input.added", parent, { input, kind: "steer", about });
+        if (read) event("input.read", parent, { input });
+      }
     });
+    for (const waiter of waiters) {
+      if (
+        (waiter.agent === parent && waiter.below.has(live.id)) ||
+        (waiter.agent === live.id && waiter.turn === turn.id)
+      ) {
+        waiter.end(waiter.agent === parent ? live.id : undefined);
+      }
+    }
+    if (parent !== null) pump(parent);
     if (live.current?.ref === ref) {
       live.current = undefined;
       if (live.stops === 0) live.stopBy = undefined;
@@ -1349,10 +1470,16 @@ export function createAgents(options: {
     input: (id) =>
       db
         .prepare(
-          "SELECT agent_id AS agent, state, held FROM queue WHERE id = ?",
+          "SELECT agent_id AS agent, state, held, sender, about FROM queue WHERE id = ?",
         )
         .get(id) as
-        | { agent: string; state: string; held: Hold | null }
+        | {
+            agent: string;
+            state: string;
+            held: Hold | null;
+            sender: string;
+            about: About | null;
+          }
         | undefined,
 
     current: (id) => {
@@ -1583,21 +1710,84 @@ export function createAgents(options: {
       store.change(({ event }) => {
         const at = now();
         db.prepare(
-          `INSERT INTO queue (id, agent_id, sender, kind, parts, position, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
+          `INSERT INTO queue (id, agent_id, sender, kind, parts, about, position, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
         ).run(
           input.id,
           id,
           input.sender,
           input.kind,
           input.parts === undefined ? null : JSON.stringify(input.parts),
+          input.about ?? null,
           id,
           at,
           at,
         );
-        event("input.added", id, { input: input.id, kind: input.kind });
+        event("input.added", id, {
+          input: input.id,
+          kind: input.kind,
+          ...(input.about && { about: input.about }),
+        });
       });
       pump(id);
+    },
+
+    wait: (agent, turn, below, ms, signal) => {
+      const ids = JSON.stringify(below);
+      const unread = db
+        .prepare(
+          `SELECT id, sender FROM queue WHERE agent_id = ? AND state = 'waiting'
+             AND about IN ('done', 'stopped', 'failed', 'asked')
+             AND sender IN (SELECT value FROM json_each(?)) ORDER BY position LIMIT 1`,
+        )
+        .get(agent, ids) as { id: string; sender: string } | undefined;
+      if (unread) {
+        store.change(({ event }) => {
+          db.prepare(
+            "UPDATE queue SET state = 'removed', updated_at = ? WHERE id = ?",
+          ).run(now(), unread.id);
+          event("input.read", agent, { input: unread.id });
+        });
+        return Promise.resolve(unread.sender);
+      }
+      const runs = (id: string) => {
+        const live = lives.get(id);
+        return (
+          live?.starting !== undefined ||
+          live?.current !== undefined ||
+          db
+            .prepare(
+              "SELECT 1 FROM queue WHERE agent_id = ? AND ((state = 'waiting' AND held IS NULL) OR state = 'handing_over') LIMIT 1",
+            )
+            .get(id) !== undefined
+        );
+      };
+      if (
+        lives.get(agent)?.current?.turn !== turn ||
+        !below.some(runs) ||
+        signal?.aborted === true
+      ) {
+        return Promise.resolve(undefined);
+      }
+      return new Promise((resolve) => {
+        const waiter = {
+          agent,
+          turn,
+          below: new Set(below),
+          end: (ended: string | undefined) => {
+            waiters.delete(waiter);
+            clearTimeout(timer);
+            signal?.removeEventListener("abort", aborted);
+            resolve(ended);
+          },
+        };
+        const aborted = () => {
+          waiter.end(undefined);
+        };
+        const timer = setTimeout(aborted, ms);
+        signal?.addEventListener("abort", aborted, { once: true });
+        waiters.add(waiter);
+      });
     },
 
     dispatch: async () => {
@@ -1840,6 +2030,7 @@ export function createAgents(options: {
     },
 
     close: async () => {
+      for (const waiter of waiters) waiter.end(undefined);
       for (const id of lives.keys()) revoke(id);
       await letGo();
     },
