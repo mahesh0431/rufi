@@ -2121,8 +2121,9 @@ export function transcripts(
      * notes, Rufi's receipts, events and brief lines) from replies that
      * reached the AI and have ended, oldest first: what a new thread starts
      * with. A reply that ended in Rufi's part never had the AI. The user's
-     * message is there once it went, in a reply that has ended, also when
-     * it went on a Retry after its first reply ended in Rufi's part. A reply that
+     * message is there once it went, in a reply that has ended (also on a
+     * Retry after its first reply ended in Rufi's part), or with no turn of
+     * Rufi's, when a start confirmed it after a crash. A reply that
      * completed is as it came, with its rufi-basis block, so the new thread
      * sees the convention; one that didn't is its answer only, marked
      * unfinished, as are its notes. Commands and thinking are left out.
@@ -2174,10 +2175,11 @@ export function transcripts(
         )
         .where((eb) =>
           eb.or([
+            // Sent: in a reply that has ended, or confirmed with no turn.
             eb.and([
               eb("e.kind", "=", "message"),
               eb("q.state", "=", "sent"),
-              eb("d.status", "!=", "running"),
+              eb.or([eb("d.id", "is", null), eb("d.status", "!=", "running")]),
             ]),
             eb.and([
               eb("e.kind", "!=", "message"),

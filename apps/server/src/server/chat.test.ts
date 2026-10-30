@@ -1565,13 +1565,29 @@ describe("the chat, on the scripted Codex", () => {
       expect((await inputs()).at(-1)?.at(-1)).toMatch(/^quiet Read this/);
       expect(await waiting()).toEqual([]);
 
-      // A new thread has the message that went on Retry, once.
+      // The AI took one before a crash, and the next start confirmed it,
+      // with no turn of Rufi's.
+      store.db.exec(`
+        INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, sent_as, created_at, updated_at)
+          VALUES ('confirmed', 'asha', 'c-asha', 'person', 'quiet Confirmed after a crash', 99, 'handing_over', 'gone/1', '2026-10-30T10:00:00Z', '2026-10-30T10:00:00Z');`);
+      await transcripts.applyInput(
+        await chatRow(),
+        "confirmed",
+        { state: "delivered", agentTurn: null },
+        () => Promise.resolve(),
+      );
+
+      // A new thread has the message that went on Retry, and the confirmed
+      // one, once each.
       await loseThread(c.id);
       await startChat("fake");
       await say(await chatRow(), "quiet And now?");
       await ended(c.id, 5);
       const seed = (await backendOf("fake").contexts()).at(-1) ?? "";
       expect(seed.match(/User: quiet Read this/g)).toHaveLength(1);
+      expect(seed.match(/User: quiet Confirmed after a crash/g)).toHaveLength(
+        1,
+      );
     });
   });
 
