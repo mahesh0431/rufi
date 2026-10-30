@@ -36,7 +36,10 @@ export interface HandOver {
   id: string;
   /** The person's message: their turn; else Rufi's note, a Rufi event turn. */
   origin: "person" | "rufi";
-  /** Rufi's note for the AI, for a Rufi event. */
+  /**
+   * Rufi's notes for the AI: a Rufi event's, or what its part of a
+   * message's reply read.
+   */
   notes: string[];
   /** The person's message, when it is one. */
   text: string | undefined;
@@ -64,10 +67,12 @@ const handOverOf = (row: {
   origin: string;
   text: string;
   refs: string;
+  note: string | null;
 }): HandOver => ({
   id: row.id,
   origin: row.origin as HandOver["origin"],
-  notes: row.origin === "rufi" ? [row.text] : [],
+  notes:
+    row.origin === "rufi" ? [row.text] : row.note === null ? [] : [row.note],
   text: row.origin === "person" ? row.text : undefined,
   refs: row.origin === "person" ? (JSON.parse(row.refs) as Chip[]) : [],
 });
@@ -608,6 +613,23 @@ export function chatQueue(
           .where("held", "is", null)
           .executeTakeFirst();
         return numUpdatedRows === 1n;
+      }),
+
+    /**
+     * Rufi's part read a message's files: its note on what it read goes
+     * with the message, in every claim of it from now on.
+     */
+    readNote: (chat: ChatOf, id: string, note: string | undefined) =>
+      write(chat, async (trx) => {
+        await trx
+          .updateTable("chat_queue")
+          .set({ note: note ?? null, updated_at: now() })
+          .where("person_id", "=", chat.personId)
+          .where("chat_id", "=", chat.id)
+          .where("id", "=", id)
+          .where("state", "=", "handing_over")
+          .where("sent_as", "is", null)
+          .execute();
       }),
 
     /** A message Rufi's part had nothing to read for waits again. */

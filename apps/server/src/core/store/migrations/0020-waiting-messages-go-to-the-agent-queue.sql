@@ -11,3 +11,6 @@ UPDATE chats SET paused = NULL;
 UPDATE chat_queue SET held = NULL WHERE state = 'waiting' AND held = 'paused';
 UPDATE chat_queue SET state = 'not_sure'
   WHERE state = 'handing_over' AND sent_as IS NOT NULL;
+-- Rufi's note on what its part of a message's reply read, kept with the
+-- message once the reading ends, so every claim of it gives the same input.
+ALTER TABLE chat_queue ADD COLUMN note TEXT;

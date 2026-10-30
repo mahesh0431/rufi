@@ -73,6 +73,7 @@ export interface Tables {
     turn_id: string | null;
     created_at: string;
     updated_at: string;
+    note: string | null;
   };
   chats: {
     id: string;

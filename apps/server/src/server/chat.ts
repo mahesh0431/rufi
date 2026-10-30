@@ -121,8 +121,6 @@ export function chat(deps: ChatDeps) {
   >();
   /** Each chat's key to Rufi's MCP server, for this run of Rufi. */
   const keys = new Map<string, string>();
-  /** Rufi's note on what its part read, by message, until it goes. */
-  const notes = new Map<string, string[]>();
   /** Closing: nothing more is handed over. */
   let closed = false;
   /**
@@ -153,10 +151,7 @@ export function chat(deps: ChatDeps) {
     claim: async (chat, input, sentAs) => {
       const claimed = await queue.claim(chat, input, sentAs);
       if (claimed === undefined || claimed.status === "gone") return claimed;
-      return {
-        status: claimed.status,
-        parts: inputOf(claimed.handOver, notes.get(input) ?? []),
-      };
+      return { status: claimed.status, parts: inputOf(claimed.handOver) };
     },
     changed: (chat) => {
       queue.changed(chat.id);
@@ -314,7 +309,6 @@ export function chat(deps: ChatDeps) {
           { id: event.threadId, model: chat.model ?? chat.threadModel ?? "" },
           event.inputs,
         );
-        for (const input of event.inputs) notes.delete(input);
         if (event.inputs.length > 0) queue.changed(chat.id);
         return;
       }
@@ -554,7 +548,7 @@ export function chat(deps: ChatDeps) {
       },
     );
     if (!started) {
-      await toAgent(chat, row.id, []);
+      await toAgent(chat, row.id, undefined);
       return;
     }
     // Their readings start: the Documents page says so.
@@ -564,14 +558,15 @@ export function chat(deps: ChatDeps) {
 
   /**
    * A message Rufi's part has read for goes to Rufi AI next, with Rufi's
-   * note on what it read; the rows behind it follow.
+   * note on what it read, kept with the message first; the rows behind it
+   * follow.
    */
   async function toAgent(
     chat: ChatRow,
     id: string,
-    note: string[],
+    note: string | undefined,
   ): Promise<void> {
-    notes.set(id, note);
+    await queue.readNote(chat, id, note);
     if (agent.input(id) === undefined) {
       await agent.queue(chat, [{ id, sender: "person" }], []);
     }
@@ -685,7 +680,7 @@ export function chat(deps: ChatDeps) {
         return;
       }
       const note = await reading.readings.note(done);
-      await toAgent(chat, id, note === undefined ? [] : [note]);
+      await toAgent(chat, id, note);
     })()
       .catch((error: unknown) => {
         log("chat.dispatch_failed", { error: errorCode(error) });
@@ -1146,8 +1141,8 @@ const textOf = (error: unknown) =>
   error instanceof Error ? error.message : "The AI couldn't take it.";
 
 /** A turn's input: Rufi's notes, then the message. */
-function inputOf(handOver: HandOver, more: readonly string[]): string[] {
-  const notes = [...handOver.notes, ...more];
+function inputOf(handOver: HandOver): string[] {
+  const { notes } = handOver;
   return [
     ...(notes.length === 0 ? [] : [`${NOTES_HEAD}\n\n${notes.join("\n\n")}`]),
     ...(handOver.text === undefined
