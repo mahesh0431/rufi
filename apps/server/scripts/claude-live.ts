@@ -22,11 +22,13 @@ import {
   getSessionMessages,
   type SDKSystemMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import { createAgents, type Agents } from "@rufi/agents/agents";
 import type {
   Conversation,
   ProviderAdapter,
   ProviderEvent,
 } from "@rufi/agents/provider";
+import { openAgentStore } from "@rufi/agents/store";
 import { claudeAdapter } from "../src/agent/claude/adapter.ts";
 import {
   claudeSignIn,
@@ -41,6 +43,11 @@ import {
   type ClaudeSession,
 } from "../src/agent/claude/session.ts";
 import type { AgentSandbox } from "../src/agent/runtime.ts";
+import { callIdOf } from "../src/core/chat/agents.ts";
+import type { ChatRow } from "../src/core/chat/transcript.ts";
+import type { ToolAnswer, ToolSpec } from "../src/core/tools/registry.ts";
+import { agentDoor } from "../src/server/door.ts";
+import { mcpEndpoint, mcpKeys, serveMcp } from "../src/server/mcp.ts";
 import { backupsPath } from "../src/core/store/backup.ts";
 import { childEnvironment } from "../src/platform/config.ts";
 import { aiSandbox } from "../src/server/core.ts";
@@ -219,7 +226,8 @@ const TURN_MS = 120_000;
 
 /**
  * Runs `body` with the Claude adapter, a conversation's events, and a way to
- * open one; deletes the conversations it opened.
+ * open one, with Rufi's door giving it no tools; deletes the conversations
+ * it opened.
  */
 async function withAdapter<T>(
   { claude, sandbox, env, plugin }: Context,
@@ -236,6 +244,19 @@ async function withAdapter<T>(
   }) => Promise<T>,
 ): Promise<T> {
   const adapter = claudeAdapter({ claude, sandbox, env, plugin });
+  const keys = mcpKeys();
+  let port = 0;
+  const served = await serveMcp(
+    mcpEndpoint({ keys, port: () => port, log: () => undefined }),
+  );
+  port = served.port;
+  const tools = {
+    url: `http://127.0.0.1:${String(port)}/mcp`,
+    key: keys.issue({
+      tools: [],
+      call: () => Promise.reject(new Error("No tools here.")),
+    }),
+  };
   const events: ProviderEvent[] = [];
   const opened: string[] = [];
   const until = async <F>(pick: (event: ProviderEvent) => F | undefined) => {
@@ -255,7 +276,7 @@ async function withAdapter<T>(
       instructions: "You help with a fictional test. Keep replies short.",
       model: MODEL,
       effort: "low",
-      tools: { url: "http://127.0.0.1:9/mcp", key: "unused" },
+      tools,
       onEvent: (event) => {
         events.push(event);
       },
@@ -284,11 +305,161 @@ async function withAdapter<T>(
   } finally {
     await adapter.close();
     for (const ref of opened) await adapter.delete(ref);
+    await served.close();
   }
 }
 
 const endOf = (turn: string) => (event: ProviderEvent) =>
   event.type === "turnEnded" && event.turn === turn ? event.end : undefined;
+
+const startedBy = (input: string) => (event: ProviderEvent) =>
+  event.type === "turnStarted" && event.inputs.includes(input)
+    ? event.turn
+    : undefined;
+
+/** The fictional agent of the door's cases, and its one tool. */
+const AGENT = "agent-fictional";
+const SAVE_NOTE: ToolSpec = {
+  name: "save_note",
+  description: "Saves one short note to the fictional record.",
+  inputSchema: {
+    type: "object",
+    properties: { text: { type: "string" } },
+    required: ["text"],
+  },
+  readOnly: false,
+  destructive: false,
+};
+
+/** A note saved through the door: Rufi's id for its call, and its turn. */
+interface Save {
+  callId: string;
+  ref: string;
+  text: unknown;
+}
+
+/**
+ * Runs `body` with Rufi's door (its MCP endpoint and the agent door), the
+ * agent package on the Claude adapter with one admitted fictional agent,
+ * and a save_note that keeps each call's answer by Rufi's id for it, as
+ * Rufi's saves do; deletes the conversations it made.
+ */
+async function withDoor<T>(
+  { claude, folder, sandbox, env, plugin }: Context,
+  body: (run: {
+    events: ProviderEvent[];
+    saves: Save[];
+    /** Sends text to the agent; its input's id. */
+    send: (kind: "queue" | "steer", text: string) => string;
+    until: <F>(pick: (event: ProviderEvent) => F | undefined) => Promise<F>;
+  }) => Promise<T>,
+): Promise<T> {
+  const keys = mcpKeys();
+  let port = 0;
+  const served = await serveMcp(
+    mcpEndpoint({ keys, port: () => port, log: () => undefined }),
+  );
+  port = served.port;
+  const events: ProviderEvent[] = [];
+  const saves: Save[] = [];
+  const answers = new Map<string, ToolAnswer>();
+  const refs: string[] = [];
+  const adapter = claudeAdapter({ claude, sandbox, env, plugin });
+  const store = openAgentStore(join(folder, `agents-${randomUUID()}.sqlite`));
+  const door = agentDoor({
+    mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
+    specs: [SAVE_NOTE],
+    place: async (agent, meta, signal) => {
+      const placed = await agents.place(agent, meta, signal);
+      // Whose the agent is doesn't matter to a fictional note.
+      return (
+        placed && {
+          ...placed,
+          chat: {} as ChatRow,
+          thread: refs.at(-1) ?? "",
+          tools: [SAVE_NOTE.name],
+        }
+      );
+    },
+    run: (scope, _tool, input) => {
+      const kept = answers.get(scope.callId);
+      if (kept) return Promise.resolve(kept);
+      saves.push({
+        callId: scope.callId,
+        ref: scope.ref,
+        text: (input as { text?: unknown }).text,
+      });
+      const answer = {
+        ok: true,
+        text: JSON.stringify({
+          ok: true,
+          saved: `note-${String(saves.length)}`,
+        }),
+      };
+      answers.set(scope.callId, answer);
+      return Promise.resolve(answer);
+    },
+    log: () => undefined,
+  });
+  const agents: Agents = createAgents({
+    store,
+    adapters: [adapter],
+    host: {
+      opening: () =>
+        Promise.resolve({
+          instructions: "You help with a fictional test. Keep replies short.",
+          tools: door.registration(AGENT, [SAVE_NOTE.name]),
+        }),
+      ledger: ({ ref }) => {
+        refs.push(ref);
+        return Promise.resolve();
+      },
+      claim: () => Promise.resolve(undefined),
+    },
+    onError: (error) => {
+      console.log(`      the package: ${messageOf(error)}`);
+    },
+    live: (_agent, _ref, event) => {
+      events.push(event);
+    },
+  });
+  await agents.dispatch();
+  agents.create({
+    id: AGENT,
+    title: "Fictional",
+    provider: "claude",
+    model: MODEL,
+    effort: "low",
+    tools: [SAVE_NOTE.name],
+    cwd: sandbox.folder,
+  });
+  agents.admit(AGENT);
+  const until = async <F>(pick: (event: ProviderEvent) => F | undefined) => {
+    const deadline = Date.now() + TURN_MS;
+    for (;;) {
+      for (const event of events) {
+        const found = pick(event);
+        if (found !== undefined) return found;
+      }
+      if (Date.now() > deadline) throw new Error("an event didn't come");
+      await sleep(50);
+    }
+  };
+  const send = (kind: "queue" | "steer", text: string) => {
+    const id = randomUUID();
+    agents.send(AGENT, { id, sender: "asha", kind, parts: [text] });
+    return id;
+  };
+  try {
+    return await body({ events, saves, send, until });
+  } finally {
+    await agents.close();
+    await adapter.close();
+    for (const ref of refs) await adapter.delete(ref);
+    store.close();
+    await served.close();
+  }
+}
 
 /**
  * One step of the lock-down canary: the tool and what it's given, and what
@@ -734,6 +905,71 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       }
       return "the turn stopped; Claude cancelled the steer";
     }),
+
+  "a call to Rufi's tools goes through the door, in its turn, by Rufi's id for it":
+    async (context) =>
+      withDoor(context, async ({ events, saves, send, until }) => {
+        const turn = await until(
+          startedBy(
+            send(
+              "queue",
+              "Use the save_note tool once to save the note 'Fictional: Asha walked 3 km.' Then reply 'done'.",
+            ),
+          ),
+        );
+        const end = await until(endOf(turn));
+        if (end.status !== "done") {
+          throw new Error(`the turn ended ${JSON.stringify(end)}`);
+        }
+        const step = events.findLast(
+          (event) => event.type === "step" && event.title === "rufi.save_note",
+        );
+        const [save, ...more] = saves;
+        if (step?.type !== "step" || step.status !== "done" || !save) {
+          throw new Error(`the call was ${JSON.stringify(step)}`);
+        }
+        if (more.length > 0)
+          throw new Error(`it saved ${String(saves.length)}`);
+        if (
+          save.callId !== callIdOf(AGENT, 1, step.item) ||
+          save.ref !== turn
+        ) {
+          throw new Error(`the save was ${JSON.stringify(save)}`);
+        }
+        return "one save, in its turn, as <agent>/1/<Claude's toolUseId>";
+      }),
+
+  "a steer's own turn calls the door, and the call is placed in that turn":
+    async (context) =>
+      withDoor(context, async ({ saves, send, until }) => {
+        const first = send(
+          "queue",
+          "Write 12 short numbered lines about a fictional morning walk.",
+        );
+        const turn = await until(startedBy(first));
+        // A reply with no tools has no point to fold a steer into, so
+        // Claude holds it to the turn's end, and starts a turn with it.
+        const steer = send(
+          "steer",
+          "Now use the save_note tool once to save the note 'Fictional: PINEAPPLE'. Then reply 'done'.",
+        );
+        const save = await until(() => saves[0]);
+        const own = await until((event) =>
+          event.type === "turnStarted" && event.turn === save.ref
+            ? event
+            : undefined,
+        );
+        const ends = [await until(endOf(turn)), await until(endOf(save.ref))];
+        if (ends.some((end) => end.status !== "done")) {
+          throw new Error(`the turns ended ${JSON.stringify(ends)}`);
+        }
+        if (!own.inputs.includes(steer) && save.ref !== turn) {
+          throw new Error("the save was placed in a turn the steer wasn't in");
+        }
+        return own.inputs.includes(steer)
+          ? "the steer started its own turn, and the save was placed in it"
+          : "the steer joined the running turn, and the save was placed in it";
+      }),
 
   "what Claude does shows as steps, with no picture's bytes, and its usage":
     async (context) =>
