@@ -1870,12 +1870,8 @@ describe("the chat, on the scripted Codex", () => {
     ]);
   });
 
-  it("stops a reply when Rufi can't keep a call to its tools, and tells the AI", async () => {
-    await startChat("fake", {
-      scenario: {
-        calls: [{ tool: "get_overview", arguments: {} }],
-      },
-    });
+  it("stops a reply when Rufi can't keep a call to its tools, and tells the AI; a save it can't keep saves nothing", async () => {
+    await startChat("fake", { scenario: { calls: [saveHeadache] } });
     const c = await newChat();
     // The store itself refuses the write, as a full disk would.
     store.db.exec(
@@ -1891,7 +1887,10 @@ describe("the chat, on the scripted Codex", () => {
       .filter((line) => line.includes('"answered":"tools/call"'));
     expect(answered).toHaveLength(1);
     expect(answered[0]).toContain("Rufi couldn't keep this call");
-    expect(answered[0]).not.toContain("Asha Fictional");
+    expect(store.db.prepare("SELECT * FROM symptoms").all()).toEqual([]);
+    expect(
+      (await transcript(c.id)).entries.filter(([kind]) => kind === "receipt"),
+    ).toEqual([]);
   });
 
   it("keeps a tool's late result out: the activity is stopped, not done", async () => {

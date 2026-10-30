@@ -370,7 +370,9 @@ export interface Tables {
     id: string;
     person_id: string;
     chat_id: string;
-    turn_id: string;
+    turn_id: string | null;
+    agent_id: string | null;
+    agent_turn_id: string | null;
     call_id: string;
     tool: string;
     input: string;

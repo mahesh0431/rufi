@@ -112,6 +112,27 @@ export interface Question {
   options: readonly string[];
 }
 
+/** An agent's call to Rufi's tools, as Rufi keeps it with its answer. */
+export interface ToolCall {
+  /** The agent, and its turn in the agent database. */
+  agent: string;
+  agentTurn: string;
+  /** That turn as its provider names it: a root turn's reply has it. */
+  ref: string;
+  /** Rufi's id for the call. */
+  callId: string;
+  tool: string;
+  /** What the AI sent, as it came. */
+  input: unknown;
+  startedAt: string;
+}
+
+/** The answer the AI gets, as Rufi keeps it. */
+export interface Answered {
+  ok: boolean;
+  text: string;
+}
+
 type Db = Kysely<Tables> | Transaction<Tables>;
 
 /**
@@ -495,30 +516,31 @@ export function transcripts(
       .where("agent_turn_id", "=", agentTurnId)
       .executeTakeFirst();
 
-  /** A tool call of a turn, with the answer the AI got. */
+  /**
+   * An agent's call, with the answer the AI got: in its reply, when it is
+   * a root turn's.
+   */
   const keepCall = async (
     trx: Db,
-    turn: TurnRow,
-    call: {
-      callId: string;
-      tool: string;
-      input: unknown;
-      answer: { ok: boolean; text: string };
-      startedAt: string;
-    },
+    chat: ChatRow,
+    reply: TurnRow | undefined,
+    call: ToolCall,
+    answer: Answered,
   ) => {
     await trx
       .insertInto("tool_calls")
       .values({
         id: uuid(),
-        person_id: turn.person_id,
-        chat_id: turn.chat_id,
-        turn_id: turn.id,
+        person_id: chat.personId,
+        chat_id: chat.id,
+        turn_id: reply?.id ?? null,
+        agent_id: call.agent,
+        agent_turn_id: call.agentTurn,
         call_id: call.callId,
         tool: call.tool,
         input: JSON.stringify(call.input ?? null),
-        answer: call.answer.text,
-        ok: call.answer.ok ? 1 : 0,
+        answer: answer.text,
+        ok: answer.ok ? 1 : 0,
         started_at: call.startedAt,
         ended_at: now(),
       })
@@ -1812,26 +1834,28 @@ export function transcripts(
       }),
 
     /**
-     * A save to the record (or a dismissal of draft items) and its
-     * receipt, in one transaction (docs/adr/0005): `save` writes it, given
-     * the references of the user's messages in this turn and the turn's id
-     * (the turn its messages belong to). The line is added
-     * also when the reply has ended meanwhile (a Stop, a deadline): what is
-     * saved is shown. The same call saved before adds no second line.
+     * A save to the record (or a dismissal of draft items), its receipt and
+     * the call with the answer the AI gets (`answer`), in one transaction
+     * (docs/adr/0005): `save` writes it, given the references of the
+     * user's messages in this turn and the turn's id (the turn its messages
+     * belong to). The line is added also when the reply has ended
+     * meanwhile (a Stop, a deadline): what is saved is shown. The same call
+     * saved before adds no second line.
      */
     saveWithReceipt: async <T extends Receipted = Saved>(
       chat: ChatRow,
-      agentTurnId: string,
+      call: ToolCall,
       save: (
         trx: Transaction<Tables>,
         at: string,
         refs: Ref[],
         turnId: string | undefined,
       ) => Promise<T>,
+      answer: (saved: T) => Answered,
     ): Promise<T> => {
       let saved: T | undefined;
       await change(chat.id, async (trx, revision) => {
-        const turn = await turnOf(trx, chat.id, agentTurnId);
+        const turn = await turnOf(trx, chat.id, call.ref);
         // What the user pointed at in this turn's messages.
         const messages =
           turn === undefined
@@ -1851,6 +1875,7 @@ export function transcripts(
           ),
           turn?.id,
         );
+        await keepCall(trx, chat, turn, call, answer(saved));
         if (!saved.fresh) return undefined;
         const id = await insertEntry(trx, chat, revision, {
           id: saved.id,
@@ -1864,23 +1889,26 @@ export function transcripts(
     },
 
     /**
-     * A visit brief and its line, in one transaction: `make` writes the
-     * brief in it. Like a receipt, the line is added also when the reply has
-     * ended meanwhile, and the same call made before adds no second line.
+     * A visit brief, its line and the call with the answer the AI gets
+     * (`answer`), in one transaction: `make` writes the brief in it. Like a
+     * receipt, the line is added also when the reply has ended meanwhile,
+     * and the same call made before adds no second line.
      */
     briefWithLine: async (
       chat: ChatRow,
-      agentTurnId: string,
+      call: ToolCall,
       make: (
         trx: Transaction<Tables>,
         at: string,
         turnId: string | null,
       ) => Promise<Made>,
+      answer: (made: Made) => Answered,
     ): Promise<Made> => {
       let made: Made | undefined;
       await change(chat.id, async (trx, revision) => {
-        const turn = await turnOf(trx, chat.id, agentTurnId);
+        const turn = await turnOf(trx, chat.id, call.ref);
         made = await make(trx, now(), turn?.id ?? null);
+        await keepCall(trx, chat, turn, call, answer(made));
         if (!made.fresh) return undefined;
         const id = await insertEntry(trx, chat, revision, {
           id: made.id,
@@ -2030,21 +2058,15 @@ export function transcripts(
      * after the reply ended (a save that finished after a Stop). Nothing
      * the screens show changes, so the chat's revision stays.
      */
-    recordToolCall: (
-      chat: ChatRow,
-      agentTurnId: string,
-      call: {
-        callId: string;
-        tool: string;
-        input: unknown;
-        answer: { ok: boolean; text: string };
-        startedAt: string;
-      },
-    ) =>
+    recordToolCall: (chat: ChatRow, call: ToolCall, answer: Answered) =>
       change(chat.id, async (trx) => {
-        const turn = await turnOf(trx, chat.id, agentTurnId);
-        if (!turn) throw new Error("The call's reply isn't saved.");
-        await keepCall(trx, turn, call);
+        await keepCall(
+          trx,
+          chat,
+          await turnOf(trx, chat.id, call.ref),
+          call,
+          answer,
+        );
         return undefined;
       }),
 
@@ -2056,21 +2078,16 @@ export function transcripts(
      */
     withToolCall: async <T>(
       chat: ChatRow,
-      agentTurnId: string,
-      call: { callId: string; tool: string; input: unknown },
+      call: ToolCall,
       run: (trx: Transaction<Tables>) => Promise<T>,
+      answer: (result: T) => Answered,
     ): Promise<T> => {
-      const startedAt = now();
       let result: T | undefined;
       await change(chat.id, async (trx) => {
-        const turn = await turnOf(trx, chat.id, agentTurnId);
-        if (!turn) throw new Error("The call's reply isn't saved.");
-        result = await run(trx);
-        await keepCall(trx, turn, {
-          ...call,
-          answer: { ok: true, text: JSON.stringify({ ok: true, result }) },
-          startedAt,
-        });
+        const turn = await turnOf(trx, chat.id, call.ref);
+        const done = await run(trx);
+        result = done;
+        await keepCall(trx, chat, turn, call, answer(done));
         return undefined;
       });
       return result as T;

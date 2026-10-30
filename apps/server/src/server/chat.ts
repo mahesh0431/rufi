@@ -202,17 +202,23 @@ export function chat(deps: ChatDeps) {
     }
     const startedAt = transcripts.now();
     const answer = await caller.call(tool, input, callId);
-    // Kept before the AI has it: Rufi keeps every answer the AI got (a sort
-    // keeps its own, with what it changed).
+    // Kept before the AI has it: Rufi keeps every answer the AI got (a
+    // write keeps its own, with what it changed).
     try {
       if (!answer.kept) {
-        await transcripts.recordToolCall(scope.chat, ref, {
-          callId,
-          tool,
-          input,
+        await transcripts.recordToolCall(
+          scope.chat,
+          {
+            agent: scope.agent,
+            agentTurn: scope.turn,
+            ref,
+            callId,
+            tool,
+            input,
+            startedAt,
+          },
           answer,
-          startedAt,
-        });
+        );
       }
     } catch (error) {
       log("chat.save_failed", { kind: "tool_call", error: errorCode(error) });

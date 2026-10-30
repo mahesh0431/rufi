@@ -138,13 +138,23 @@ async function ashasChat(home: string, store: Store, today: Date) {
           `The golden chat's ${tool} was refused: ${answer.text}`,
         );
       }
-      await chats.recordToolCall(chat, agentTurn, {
-        callId,
-        tool,
-        input,
-        answer,
-        startedAt,
-      });
+      // A write keeps its own, with what it changed.
+      if (!answer.kept) {
+        const scope = turnScope(chat, agentTurn);
+        await chats.recordToolCall(
+          chat,
+          {
+            agent: scope.agent,
+            agentTurn: scope.turn,
+            ref: agentTurn,
+            callId,
+            tool,
+            input,
+            startedAt,
+          },
+          answer,
+        );
+      }
       await chats.setActivity(chat, agentTurn, callId, {
         ...line,
         status: "done",

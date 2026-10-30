@@ -451,14 +451,17 @@ CREATE TABLE transcript_entries (
   CHECK (refs IS NULL OR kind IN ('message', 'steer'))
 ) STRICT;
 
--- Each call the AI made to one of Rufi's own tools, kept by Rufi as it
--- answered: what the AI sent and exactly what it got back.
+-- Each call an agent made to one of Rufi's own tools, kept by Rufi as it
+-- answered: what the AI sent and exactly what it got back. A write's is
+-- kept in its transaction, with what it changed and its receipt.
 CREATE TABLE tool_calls (
   id TEXT PRIMARY KEY,         -- UUIDv7
   person_id TEXT NOT NULL,
   chat_id TEXT NOT NULL,
-  turn_id TEXT NOT NULL,       -- the reply it belongs to
-  call_id TEXT NOT NULL,       -- the agent's id for the call: its activity line's agent_item_id
+  turn_id TEXT,                -- the reply it belongs to: a root turn's call
+  agent_id TEXT,               -- the agent that made it, in agents.sqlite; none for a call kept before
+  agent_turn_id TEXT,          -- that agent's turn, in agents.sqlite
+  call_id TEXT NOT NULL,       -- Rufi's id for the call: <agent>/<conversation>/<provider call id>; the agent's own for a call kept before
   tool TEXT NOT NULL,          -- 'get_overview', 'get_records'...
   input TEXT NOT NULL,         -- what the AI sent (JSON)
   answer TEXT NOT NULL,        -- exactly what the AI got back (JSON)
@@ -744,4 +747,4 @@ CREATE TABLE agent_cursor (
 ) STRICT;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 20;
+PRAGMA user_version = 21;
