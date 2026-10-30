@@ -134,11 +134,12 @@ export type About = "done" | "stopped" | "failed" | "asked" | "wrote";
 export type Hold = "signed_out" | "open_failed" | "failed" | "restarts";
 
 /**
- * The agent's turn in this process: starting, or admitted, by the
- * provider's reference, and stopping once its Stop is under way.
+ * The agent's turn in this process: starting, with the input it starts
+ * with, or admitted, by the provider's reference, and stopping once its
+ * Stop is under way.
  */
 export type Current =
-  | { status: "starting" }
+  | { status: "starting"; input: string }
   | { status: "running" | "stopping"; turn: string; ref: string };
 
 /** A call to the host's tools, placed in the open turn it left. */
@@ -1466,7 +1467,9 @@ export function createAgents(options: {
 
     current: (id) => {
       const live = lives.get(id);
-      if (live?.starting) return { status: "starting" };
+      if (live?.starting) {
+        return { status: "starting", input: live.starting.input };
+      }
       if (!live?.current) return undefined;
       return {
         status: live.stopBy === undefined ? "running" : "stopping",

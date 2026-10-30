@@ -96,6 +96,8 @@ export interface RufiAi {
   rules: (chat: ChatRow) => Promise<string | undefined>;
   /** Whether a turn of the chat's agent starts or runs now. */
   busy: (chat: ChatRow) => Promise<boolean>;
+  /** The message a turn of the chat's agent starts with now, before it runs. */
+  starting: (chat: ChatRow) => Promise<string | undefined>;
   /** Whether a reply starts or runs in the thread now. */
   running: (threadId: string) => boolean;
   /** The running reply that may still use Rufi's tools, unless it stops. */
@@ -528,6 +530,11 @@ export async function startRufiAi(
 
       busy: async (row) =>
         agents.current(await system.root(row.id)) !== undefined,
+
+      starting: async (row) => {
+        const current = agents.current(await system.root(row.id));
+        return current?.status === "starting" ? current.input : undefined;
+      },
 
       running: (threadId) => {
         const agent = threads.get(threadId);

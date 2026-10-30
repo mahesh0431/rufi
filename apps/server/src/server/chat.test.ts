@@ -813,16 +813,24 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
-    "a message sent while a reply runs goes into that reply; one sent after goes as a new message",
+    "a message sent while a reply starts or runs goes into that reply; one sent after goes as a new message",
     timeout,
     async () => {
       await startChat(name);
       const c = await newChat();
-      await say(c, "slow");
+      await chat?.selectModel(c, "gpt-6.1-sol");
+      // Its conversation opens: Codex waits for a token, and the reply starts.
+      const gate = Promise.withResolvers<undefined>();
+      tokenGate = gate.promise;
+      await say(await chatRow(c.id), "slow");
+      await until(async () => (await chat?.agent.busy(c)) === true);
+      await say(await chatRow(c.id), "the latest one");
+      gate.resolve(undefined);
       await running(c.id);
-      await say(c, "shorter please");
+      await say(await chatRow(c.id), "shorter please");
       await ended(c.id);
       const { entries } = await transcript(c.id);
+      expect(entries).toContainEqual(["steer", "the latest one"]);
       expect(entries).toContainEqual(["steer", "shorter please"]);
       expect(entries).toContainEqual(["reply", "ok:shorter please"]);
       await say(c, "after");
