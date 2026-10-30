@@ -204,7 +204,7 @@ If you click Stop, what the AI did so far stays in Activity, and the folded line
 
 **Stop.** The stop button (the square, where the send button was) ends the reply now, in every size of the chat. What the AI wrote so far stays.
 
-**Stop.** After a Stop, nothing more goes to the AI until you send a message. Rufi keeps this also when you reload or Rufi starts again.
+**Stop.** Stop ends the reply, and only the reply: your waiting messages go next, in order. A message Rufi was just giving the AI when you clicked Stop doesn't go: it waits with "Not sent: stopped.", for you to **Send** or remove.
 
 **Rufi's reader.** When your message brings files, your reply starts with Rufi's part: Rufi's reader copies the pages before the AI starts. Each file is a step in Activity, **Rufi's reader · thyrocare-aug.pdf**, with how far it is. Stop ends the reading too. The AI starts when all files are copied, and answers your message in the same reply (see [Documents](documents.md#while-a-document-is-read)). If the reading doesn't finish, the reply ends before the AI, with the reason and **Retry** (see [Documents](documents.md#when-a-reading-stops)).
 
@@ -221,15 +221,14 @@ What waits shows above the box, also after a reload, a restart of Rufi, or a cha
 The line above them says what happens next:
 
 - **Waiting · these go in order after the reply**: they go by themselves.
-- **Stopped · these go when you send a message**: you stopped a reply. Send a message, or click **Send now**, to go on. They go first, in order, then your new message.
-- **Rufi restarted · these go when you send a message**: Rufi started again while messages waited. Nothing goes by itself after a restart: send a message, or click **Send now**.
 - **Not sent · Rufi sends these only when you say**: some messages are held, as below.
 
 A message with new files waits like any other, and gets a reply of its own, which reads its files first. Removing a waiting message doesn't remove its files: they stay sent, and the Documents page shows **Not read yet** with **Retry**. A message whose reply ended while Rufi read its files isn't listed here: it is in the chat already, and its reply's last line has **Retry** (see [Documents](documents.md#when-a-reading-stops)).
 
 A held message says why under it, and goes only when you click its button: **Send**, **Send again**, or **Try again** or **New thread**:
 
-- **"Not sure this reached the AI."** Rufi stopped, or the AI didn't answer, while Rufi gave it the message. The AI may have it. Check the chat before you send it again. After this, nothing more goes to the AI until you send a message.
+- **"Not sure this reached the AI."** Rufi stopped, or the AI didn't answer, while Rufi gave it the message. The AI may have it. Check the chat before you send it again. Your other waiting messages go on.
+- **"Not sent: stopped."** You clicked Stop just as Rufi gave the AI this message, so it didn't go. Click **Send** to send it.
 - **"From a backup: it waited when the backup was made."** After a restore, nothing from the past goes to the AI by itself.
 - **The AI's reason**, when the AI couldn't take it, for example when none of your allowed models is offered.
 - **The error, with Try again and New thread**, when Rufi couldn't open the AI's memory of the chat (its thread), or start a new one. The message shows the error as it came. **Try again** opens the same thread again, and the AI keeps its memory of the chat. **New thread** starts the AI with a new memory, and your chat and your health record stay as they are (see [The AI's memory of the chat](#the-ais-memory-of-the-chat)). While a reply runs, only **Try again** shows (the message then goes after the reply); **New thread** shows again once the reply has ended. If Try again meets an error again, the message waits again with both buttons. The message keeps waiting like this when you reload or Rufi starts again. When you click in two tabs, the first click counts, and the other tab shows what happened.
@@ -241,8 +240,8 @@ Some things happen outside your chat. Rufi tells you with its own line in the ch
 When the AI should know too, Rufi gives it a note:
 
 - **When nothing runs**, the AI gets the note at once, in a short reply of its own. In that reply the AI can only read your health record: it can explain or ask, but it can't save anything or sort a file. Only your own messages can save.
-- **When a reply runs**, the note waits until the reply has ended. Notes that wait together go to the AI together, in one reply.
-- **After a Stop, or when you're signed out**, the note waits above the box as "Rufi's note", marked **Rufi**, with "Goes to the AI with your next message." It goes once, with your next message, never as a reply of its own later. **Remove** it if the AI doesn't need it.
+- **When a reply runs**, the note waits above the box as "Rufi's note", marked **Rufi**, and goes in its turn after the reply, in a short reply of its own. Each note gets its own reply. **Remove** it if the AI doesn't need it.
+- **When you're signed out**, it waits, and goes the next time Rufi gives the AI something after you sign in again.
 
 ## The model and effort
 

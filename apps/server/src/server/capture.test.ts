@@ -163,6 +163,9 @@ async function start(
     },
     log,
   });
+  await ai.recover();
+  await chat.carryAll();
+  await ai.dispatch();
   return { tools, chat };
 }
 

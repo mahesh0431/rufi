@@ -3,6 +3,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { fakeProvider } from "@rufi/agents/fake";
 import type { ProviderAdapter, ProviderEvent } from "@rufi/agents/provider";
 import { openAgentStore } from "@rufi/agents/store";
@@ -62,7 +63,6 @@ async function start(adapter: ProviderAdapter, logged: string[] = []) {
   });
   // Replies still running once Rufi has read the events were cut.
   await transcripts.interruptRunning();
-  await system.agents.dispatch();
   const chat = openChat({
     transcripts,
     queue: chatQueue(record),
@@ -77,11 +77,31 @@ async function start(adapter: ProviderAdapter, logged: string[] = []) {
     },
     log: () => undefined,
   });
+  await system.recover();
+  await chat.carryAll();
+  await system.agents.dispatch();
   const row = async () => (await transcripts.chat("asha")) as ChatRow;
   return {
     store,
     system,
     row,
+    /** A Rufi event whose note asks the AI: a reply of its own. */
+    event: async (note: string) => {
+      await chat.event("asha", {
+        kind: "test",
+        line: "Rufi's line",
+        ask: note,
+      });
+    },
+    edit: async (id: string, text: string) => {
+      await chat.queue.edit(await row(), id, text);
+    },
+    /** The chat's waiting messages, by id, and their states. */
+    waiting: async () =>
+      (await chat.queue.list(await row())).items.map((item) => [
+        item.id,
+        item.state,
+      ]),
     /** The replies' and the AI's notes' text as the screens get it. */
     shown: async () =>
       (await transcripts.page(await row())).entries
@@ -305,6 +325,80 @@ it("saves a steer the provider confirms after its turn ended under that turn; th
   const thread = (await rufi.row()).threadId ?? "";
   expect(
     fake.received(thread).filter((input) => input.parts.includes(words)),
+  ).toHaveLength(1);
+  await rufi.close();
+});
+
+it("sends a waiting message with its words as they are when it goes: an edit before Rufi's claim goes, one after is refused", async () => {
+  const fake = fakeProvider({ id: "codex", script: { turn: "runs" } });
+  let held: PromiseWithResolvers<undefined> | undefined;
+  const rufi = await start({
+    ...fake.adapter,
+    open: async (options) => {
+      const conversation = await fake.adapter.open(options);
+      return {
+        ...conversation,
+        // A start can wait at the provider, after Rufi's claim.
+        startTurn: async (turn) => {
+          await held?.promise;
+          return conversation.startTurn(turn);
+        },
+      };
+    },
+  });
+  // Rufi's note has a reply of its own: the person's message waits.
+  await rufi.event("A fictional report was read.");
+  await rufi.running();
+  await rufi.send("message-1", "Is my TSH high?");
+  await rufi.edit("message-1", "Is my fictional TSH high?");
+  held = Promise.withResolvers();
+  const thread = (await rufi.row()).threadId ?? "";
+  fake.end(thread);
+  await vi.waitFor(async () => {
+    expect(await rufi.waiting()).toEqual([["message-1", "handing_over"]]);
+  });
+  await expect(rufi.edit("message-1", "Never mind.")).rejects.toThrow(
+    "That message isn't waiting any more.",
+  );
+  held.resolve(undefined);
+  await rufi.running();
+  expect(
+    fake
+      .received(thread)
+      .filter((input) => input.id === "message-1")
+      .map((input) => input.parts),
+  ).toEqual([["Is my fictional TSH high?"]]);
+  await rufi.close();
+});
+
+it("after a crash between Rufi's claim and the package's hand-over, sends the message once at the next start", async () => {
+  const fake = fakeProvider({ id: "codex", script: { turn: "runs" } });
+  let rufi = await start(fake.adapter);
+  await rufi.event("A fictional report was read.");
+  await rufi.running();
+  await rufi.send("message-1", "Is my TSH high?");
+  // The package can't keep the hand-over Rufi has just claimed.
+  const agents = new DatabaseSync(agentsPath(home));
+  agents.exec(`
+    CREATE TRIGGER fictional_crash BEFORE UPDATE OF state ON queue
+    WHEN NEW.state = 'handing_over'
+    BEGIN SELECT RAISE(ABORT, 'A fictional crash.'); END;
+  `);
+  const thread = (await rufi.row()).threadId ?? "";
+  fake.end(thread);
+  await vi.waitFor(async () => {
+    expect(await rufi.waiting()).toEqual([["message-1", "handing_over"]]);
+  });
+  expect(rufi.system.agents.input("message-1")?.state).toBe("waiting");
+  await rufi.close();
+  agents.exec("DROP TRIGGER fictional_crash");
+  agents.close();
+
+  rufi = await start(fake.adapter);
+  await rufi.running();
+  expect(await rufi.waiting()).toEqual([]);
+  expect(
+    fake.received(thread).filter((input) => input.id === "message-1"),
   ).toHaveLength(1);
   await rufi.close();
 });

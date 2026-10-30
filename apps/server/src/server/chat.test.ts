@@ -237,6 +237,9 @@ async function startChat(
     },
     log,
   });
+  await ai.recover();
+  await chat.carryAll();
+  await ai.dispatch();
   return chat;
 }
 
@@ -645,7 +648,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
-    "holds a message sent during a reply, keeps it waiting after Stop, and runs it first at the next send",
+    "holds a message sent during a reply; after Stop, it goes next",
     timeout,
     async () => {
       await startChat(name);
@@ -658,16 +661,11 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
         (await transcript(c.id)).entries.filter(([kind]) => kind === "message"),
       ).toEqual([]);
       await chat?.stop(c);
-      await ended(c.id);
+      await ended(c.id, 2);
       expect((await transcript(c.id)).turns[0]).toMatchObject({
         status: "interrupted",
         endReason: "stopped",
       });
-      await sleep(500);
-      expect(await waiting()).toEqual([["B", "waiting", null]]);
-      expect((await chatRow()).paused).toBe("stopped");
-      await say(c, "C");
-      await ended(c.id, 3);
       expect(
         (await transcript(c.id)).entries.filter(
           ([kind]) => kind === "message" || kind === "reply",
@@ -675,9 +673,8 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       ).toEqual([
         ["message", "B"],
         ["reply", "ok:B"],
-        ["message", "C"],
-        ["reply", "ok:C"],
       ]);
+      expect(await waiting()).toEqual([]);
     },
   );
 
@@ -727,13 +724,12 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       await rufiReply(c);
       await say(c, "B");
       await say(c, "C");
-      await chat?.stop(c);
-      await ended(c.id);
       const { items } = await queue.list(c);
       await chat?.queue.sendNow(
         c,
         items.find((item) => item.text === "C")?.id ?? "",
       );
+      await chat?.stop(c);
       await ended(c.id, 3);
       expect(
         (await transcript(c.id)).entries
@@ -768,7 +764,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
-    "a Stop while a send is routed into the reply keeps it out, and the chat stays stopped",
+    "a Stop while a send is routed into the reply keeps it out",
     timeout,
     async () => {
       // Stop lands while the send looks its id up.
@@ -794,12 +790,11 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       go.resolve(undefined);
       await expect(sending).rejects.toThrow("Stopped.");
       expect(await waiting()).toEqual([]);
-      expect((await chatRow()).paused).toBe("stopped");
     },
   );
 
   it(
-    "hands nothing over when Stop comes while the message is getting ready; it waits",
+    "hands nothing over when Stop comes while the message is getting ready; it waits, not sent, and goes once when sent now",
     timeout,
     async () => {
       await startChat(name);
@@ -807,13 +802,28 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       const gate = Promise.withResolvers<undefined>();
       tokenGate = gate.promise;
       await say(c, "Hello");
-      await until(async () => (await waiting())[0]?.[1] === "handing_over");
-      await chat?.stop(c);
+      await until(async () => (await chat?.agent.busy(c)) === true);
+      const stopping = chat?.stop(c);
       gate.resolve(undefined);
-      await until(async () => (await waiting())[0]?.[1] === "waiting");
-      await sleep(300);
+      await stopping;
+      await until(async () => (await waiting())[0]?.[2] === "failed");
       expect((await transcript(c.id)).entries).toEqual([]);
-      expect(await waiting()).toEqual([["Hello", "waiting", null]]);
+      const [held] = (await queue.list(c)).items;
+      expect(held).toMatchObject({
+        text: "Hello",
+        state: "waiting",
+        heldText: "Not sent: stopped.",
+      });
+      await chat?.queue.sendNow(c, held?.id ?? "");
+      await ended(c.id);
+      expect(
+        (await transcript(c.id)).entries.filter(
+          ([kind]) => kind === "message" || kind === "reply",
+        ),
+      ).toEqual([
+        ["message", "Hello"],
+        ["reply", "ok:Hello"],
+      ]);
     },
   );
 

@@ -59,6 +59,7 @@ async function start(adapters: readonly ProviderAdapter[] = [fake.adapter]) {
     model: "gpt-6-astra",
     log: (event) => logged.push(event),
   });
+  await system.recover();
   running = { store, system };
   return running;
 }

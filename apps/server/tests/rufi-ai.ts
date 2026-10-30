@@ -27,9 +27,11 @@ export async function rufiAiFor(options: {
     model: DEFAULT_ALLOWLIST[0] ?? "",
     log: () => undefined,
   });
-  await system.agents.dispatch();
   return {
     agent: system.rufiAi,
+    /** As the core does once the chat is open: recover, then dispatch. */
+    recover: () => system.recover(),
+    dispatch: () => system.agents.dispatch(),
     close: async () => {
       await system.close();
       store.close();
