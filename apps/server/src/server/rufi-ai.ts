@@ -527,9 +527,8 @@ export async function startRufiAi(
         const owner = await kept.owner(agent);
         const row = owner && (await transcripts.chat(owner.personId));
         const found = agents.get(agent);
-        const tools = found?.tools;
         const thread = threadOf(agent);
-        if (row?.id !== owner?.chatId || !row || !tools || !thread) {
+        if (row?.id !== owner?.chatId || !row || !found || !thread) {
           return undefined;
         }
         return {
@@ -540,8 +539,8 @@ export async function startRufiAi(
           turn: placed.turn,
           ref: placed.ref,
           call: placed.call,
-          tools,
-          ...(found && found.parent !== null && { label: found.title }),
+          tools: found.tools,
+          ...(found.parent !== null && { label: found.title }),
         };
       },
 
