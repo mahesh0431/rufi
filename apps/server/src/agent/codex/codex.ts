@@ -55,6 +55,7 @@ import type { UserInput } from "./protocol/v2/UserInput.ts";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import { RpcError } from "./rpc.ts";
 import { AI_PROFILE, mcpServers, prepareCodexHome } from "./settings.ts";
+import { doorFile } from "./token-door.ts";
 
 export interface CodexDeps {
   /** Rufi's data folder; Codex gets `codex/` inside it. */
@@ -195,7 +196,9 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
 
   async function start(): Promise<AppServer> {
     await shutDown();
+    const door = doorFile(deps.home, "chat");
     const paths = await prepareCodexHome(deps.home, {
+      door,
       userHome: deps.env["HOME"],
       sandbox: deps.sandbox,
       skills: deps.skills,
@@ -204,7 +207,7 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
       command: deps.command,
       env: { ...deps.env, HOME: paths.processHome },
       codexHome: paths.codexHome,
-      home: deps.home,
+      door,
       token: deps.token,
       version: deps.version,
       deadlines,

@@ -44,7 +44,6 @@ import type { ToolSpec } from "../core/tools/registry.ts";
 import { chatCaller, forAgent } from "../core/tools/tools.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 import { agentSetup, aiSandbox } from "./core.ts";
-import { subAgentsHome } from "../agent/codex/subagent.ts";
 import { doorFile } from "../agent/codex/token-door.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
 
@@ -756,7 +755,7 @@ describe.runIf(process.platform === "darwin")(
           await writeFile(join(home, "backups", "copy.sqlite"), "a copy");
           await writeFile(join(home, "core.json"), '{"launcher":"secret"}');
           // The chat's Codex replaces its door's file as it starts.
-          const doors = [home, subAgentsHome(home)].map(doorFile);
+          const doors = [doorFile(home, "chat"), doorFile(home, "reader")];
           for (const door of doors) {
             await mkdir(dirname(door), { recursive: true });
             await writeFile(
@@ -822,9 +821,9 @@ describe.runIf(process.platform === "darwin")(
             // Every secret Rufi has given so far: the token, the MCP keys
             // and the token door's key.
             const watched = await processes();
-            const door = JSON.parse(await readFile(doorFile(home), "utf8")) as {
-              key: string;
-            };
+            const door = JSON.parse(
+              await readFile(doorFile(home, "chat"), "utf8"),
+            ) as { key: string };
             const secrets = [
               "not-a-real-token",
               door.key,

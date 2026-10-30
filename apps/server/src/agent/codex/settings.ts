@@ -13,21 +13,16 @@ import type { AgentSandbox, AgentSkill, McpServer } from "../runtime.ts";
 import type { ConfigReadResponse } from "./protocol/v2/ConfigReadResponse.ts";
 import type { ExperimentalFeatureListResponse } from "./protocol/v2/ExperimentalFeatureListResponse.ts";
 import type { Rpc } from "./rpc.ts";
-import {
-  COMMAND_MS,
-  doorFile,
-  REFRESH_MS,
-  TOKEN_COMMAND,
-} from "./token-door.ts";
+import { COMMAND_MS, REFRESH_MS, TOKEN_COMMAND } from "./token-door.ts";
 
 /**
  * OpenAI's documented settings for ChatGPT plan use through app-server
  * (developers.openai.com/siwc/token-sharing-open-source/codex-app-server),
  * but for the token: in place of an ACCESS_TOKEN in its environment, Codex
  * asks Rufi's token door for one with the provider's auth command
- * (token-door.ts, docs/adr/0024). The door's file is in `home`.
+ * (token-door.ts, docs/adr/0024), named by its file.
  */
-function provider(home: string): string {
+function provider(door: string): string {
   return `[model_providers.openai_chatgpt_plan]
 name = "ChatGPT plan"
 base_url = "https://api.openai.com/v1"
@@ -37,7 +32,7 @@ supports_websockets = false
 
 [model_providers.openai_chatgpt_plan.auth]
 command = ${key(process.execPath)}
-args = [${key(TOKEN_COMMAND)}, ${key(doorFile(home))}]
+args = [${key(TOKEN_COMMAND)}, ${key(door)}]
 timeout_ms = ${String(COMMAND_MS)}
 refresh_interval_ms = ${String(REFRESH_MS)}`;
 }
@@ -119,11 +114,7 @@ function commandsEnvironment(options: CodexHomeOptions): string {
     : `\n# The real HOME, and caches where the commands can write.\n[shell_environment_policy.set]\n${set.join("\n")}\n`;
 }
 
-function configToml(
-  home: string,
-  options: CodexHomeOptions,
-  skills: string,
-): string {
+function configToml(options: CodexHomeOptions, skills: string): string {
   const features = Object.entries(SETTINGS.features)
     .map(([name, on]) => `${name} = ${String(on)}`)
     .join("\n");
@@ -148,11 +139,13 @@ enabled = false
 [shell_environment_policy]
 ignore_default_excludes = false
 ${commandsEnvironment(options)}${options.sandbox ? aiProfile(options.sandbox, skills) : ""}
-${provider(home)}
+${provider(options.door)}
 `;
 }
 
 export interface CodexHomeOptions {
+  /** The file of this Codex's token door (doorFile). */
+  door: string;
   /** The user's real HOME, for the agent's commands. */
   userHome?: string | undefined;
   /** The AI's folder and what its commands may never read. */
@@ -182,7 +175,7 @@ export const generatedImages = (home: string) =>
  */
 export async function prepareCodexHome(
   home: string,
-  options: CodexHomeOptions = {},
+  options: CodexHomeOptions,
 ): Promise<CodexPaths> {
   const paths = {
     codexHome: join(home, "codex"),
@@ -207,7 +200,7 @@ export async function prepareCodexHome(
   }
   await writeFile(
     join(paths.codexHome, "config.toml"),
-    configToml(home, options, skills),
+    configToml(options, skills),
     {
       mode: 0o600,
     },

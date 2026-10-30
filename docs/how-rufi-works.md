@@ -92,7 +92,7 @@ One data folder holds everything (default `~/.rufi/data`). The core finds it onc
 | `sub-agents/`                                        | The reader's Codex home and an empty working folder; no document                                                            |
 | `ai/`                                                | The AI's folder: the only place the chat AI's commands can write                                                            |
 | `core.json`                                          | While the core runs: how `pnpm start` and the app find it                                                                   |
-| `codex-door/`                                        | While the chat's Codex runs: its token door's address and key, which the AI can't read (the reader's is in `sub-agents/`)   |
+| `codex-door/`                                        | While a Codex runs: its token door's address and key (`chat.json`, `reader.json`), which the AI can't read                  |
 | `rufi.lock`, `credentials.lock`                      | Folders held while a process uses the data folder, and while the sign-in changes (always `rufi.lock` first)                 |
 | `installed.json`, `creating.json`                    | A record was made here; a first start that hasn't finished                                                                  |
 | `restoring/`                                         | A restore that didn't finish                                                                                                |

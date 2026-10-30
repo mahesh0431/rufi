@@ -148,7 +148,9 @@ async function run(probe: Case, folder: string) {
   };
 
   const home = join(folder, "rufi");
+  const door = doorFile(home, "chat");
   const paths = await prepareCodexHome(home, {
+    door,
     userHome: join(folder, "user"),
     sandbox: { folder: join(home, "ai"), unreadable: [] },
   });
@@ -171,7 +173,7 @@ async function run(probe: Case, folder: string) {
     command: { file: await codexBinary(), args: [] },
     env: { ...childEnvironment(), HOME: paths.processHome },
     codexHome: paths.codexHome,
-    home,
+    door,
     token,
     version,
     deadlines: DEADLINES,
@@ -269,7 +271,7 @@ async function run(probe: Case, folder: string) {
     signedOutAt: app.signedOutAt() === undefined ? null : "during the case",
     commandsStillRunning: stdout
       .split("\n")
-      .filter((line) => line.includes(doorFile(home))).length,
+      .filter((line) => line.includes(door)).length,
     turns: ends,
     timeline,
   };

@@ -37,13 +37,17 @@ export const TOKEN_COMMAND = fileURLToPath(
 );
 
 /**
- * The folder of the door's file, for the Codex home kept in `home`: the AI's
- * sandbox denies the whole folder, the file's temporary copy too.
+ * The folder of the doors' files in Rufi's data folder, the chat's Codex's
+ * and the reader's: the AI's sandbox denies the whole folder, the files'
+ * temporary copies too. Each door writes its file before its Codex starts,
+ * so the folder is there whenever a Codex runs: Codex's Linux sandbox can't
+ * deny a missing path inside a missing folder (0.163.0).
  */
 export const doorFolder = (home: string) => join(home, "codex-door");
 
-/** The file the command reads: the door's address and key. */
-export const doorFile = (home: string) => join(doorFolder(home), "door.json");
+/** The file one Codex's command reads: its door's address and key. */
+export const doorFile = (home: string, codex: "chat" | "reader") =>
+  join(doorFolder(home), `${codex}.json`);
 
 /** Sign-in failures that only signing in again ends. */
 const SIGNED_OUT = new Set(["not_signed_in", "sign_in_again", "plan_use_off"]);
@@ -55,11 +59,11 @@ export interface TokenDoor {
 }
 
 /**
- * Opens the door for the Codex home kept in `home`, on loopback with a new
- * key, and writes its file. `token` is Rufi's sign-in.
+ * Opens a door on loopback with a new key, and writes its `file` (doorFile).
+ * `token` is Rufi's sign-in.
  */
 export async function openTokenDoor(
-  home: string,
+  file: string,
   token: (validForMs: number) => Promise<string>,
 ): Promise<TokenDoor> {
   const key = randomBytes(32);
@@ -103,7 +107,6 @@ export async function openTokenDoor(
     });
   });
   const { port } = server.address() as AddressInfo;
-  const file = doorFile(home);
   try {
     await writePrivateJson(file, {
       url: `http://127.0.0.1:${String(port)}/`,

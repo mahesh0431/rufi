@@ -58,8 +58,8 @@ export interface StartOptions {
   /** The child's whole environment, apart from CODEX_HOME. */
   env: Readonly<Record<string, string>>;
   codexHome: string;
-  /** Where its door's file goes: the folder given to prepareCodexHome. */
-  home: string;
+  /** Its door's file: the one given to prepareCodexHome. */
+  door: string;
   /** Rufi's sign-in, for the door. */
   token: (validForMs: number) => Promise<string>;
   version: string;
@@ -75,7 +75,7 @@ export async function startAppServer(
   options: StartOptions,
 ): Promise<AppServer> {
   options.signal?.throwIfAborted();
-  const door = await openTokenDoor(options.home, options.token);
+  const door = await openTokenDoor(options.door, options.token);
   const child = spawn(
     options.command.file,
     [...options.command.args, "app-server", "--listen", "stdio://"],

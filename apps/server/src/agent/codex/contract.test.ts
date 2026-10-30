@@ -25,7 +25,7 @@ import type { CommandExecResponse } from "./protocol/v2/CommandExecResponse.ts";
 import type { SkillsListResponse } from "./protocol/v2/SkillsListResponse.ts";
 import { connect, type Rpc } from "./rpc.ts";
 import { prepareCodexHome } from "./settings.ts";
-import { openTokenDoor, type TokenDoor } from "./token-door.ts";
+import { doorFile, openTokenDoor, type TokenDoor } from "./token-door.ts";
 
 let root: string;
 let fakeHome: string;
@@ -73,14 +73,17 @@ async function real(
   return runtime;
 }
 
-/** A token door for the Codex home kept in `home`, with a fake token. */
+/** The chat's token door in the data folder `home`, with a fake token. */
 const doorFor = (home: string) =>
-  openTokenDoor(home, () => Promise.resolve("not-a-real-token"));
+  openTokenDoor(doorFile(home, "chat"), () =>
+    Promise.resolve("not-a-real-token"),
+  );
 
 /** A bare app-server connection set up exactly as Rufi sets it up. */
 async function bare(): Promise<Rpc> {
   const home = join(root, "bare");
   const { codexHome, processHome } = await prepareCodexHome(home, {
+    door: doorFile(home, "chat"),
     userHome: fakeHome,
     sandbox: sandboxOf(home),
   });
@@ -275,6 +278,7 @@ describe.each(["fake", "real"] as const)(
         const model = await fakeModel();
         const home = join(root, "gone");
         const { codexHome, processHome } = await prepareCodexHome(home, {
+          door: doorFile(home, "chat"),
           userHome: fakeHome,
           sandbox: sandboxOf(home),
         });

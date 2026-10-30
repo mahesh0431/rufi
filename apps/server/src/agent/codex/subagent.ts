@@ -43,6 +43,7 @@ import type { TurnStartedNotification } from "./protocol/v2/TurnStartedNotificat
 import type { TurnStartResponse } from "./protocol/v2/TurnStartResponse.ts";
 import { RpcError } from "./rpc.ts";
 import { mcpServers, prepareCodexHome, RUFI_SERVER } from "./settings.ts";
+import { doorFile } from "./token-door.ts";
 
 export interface SubAgentDeps {
   /** Rufi's data folder; the runner uses `sub-agents/` inside it. */
@@ -80,9 +81,6 @@ const RESOURCE_HELPERS = [
   "list_mcp_resource_templates",
   "read_mcp_resource",
 ];
-
-/** Where the runner keeps its Codex home, in Rufi's data folder. */
-export const subAgentsHome = (home: string) => join(home, "sub-agents");
 
 /** Codex's id for a tool call made from a script in `exec` (0.159.3). */
 const VIA_EXEC = "exec-";
@@ -154,8 +152,9 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
       };
     }
     const started = Date.now();
-    const home = subAgentsHome(deps.home);
-    const paths = await prepareCodexHome(home);
+    const home = join(deps.home, "sub-agents");
+    const door = doorFile(deps.home, "reader");
+    const paths = await prepareCodexHome(home, { door });
     // Its working folder, empty: with no environment it can't look in it.
     const cwd = join(home, "workspace");
     await mkdir(cwd, { recursive: true, mode: 0o700 });
@@ -239,7 +238,7 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
         command: deps.command,
         env: { ...deps.env, HOME: paths.processHome },
         codexHome: paths.codexHome,
-        home,
+        door,
         token: deps.token,
         version: deps.version,
         deadlines,
