@@ -87,7 +87,7 @@ export const agentStatus = defineTool({
 export const readAgent = defineTool({
   name: "read_agent",
   description:
-    "Reads an agent's conversation, yours (\"self\") or one below you: its turns, the latest page first, each with what it was sent and by whom, its steps and its result. Give before: the page's earlier for the page before it; earlier is null on the first page. An agent that isn't you or below you is not found.",
+    "Reads an agent's conversation, yours (\"self\") or one below you: its turns, the latest page first, each with what it was sent and by whom, its steps, the questions it asked (with their options) and its result. Give before: the page's earlier for the page before it; earlier is null on the first page. An agent that isn't you or below you is not found.",
   input: ReadAgentInput,
   callers: "model",
   readOnly: true,

@@ -164,6 +164,8 @@ export interface KeptTurn {
   inputs: { id: string; sender: string; parts: string[] | null }[];
   /** What it reported, in order. */
   items: Item[];
+  /** What it asked, kept apart from the items they came with, in order. */
+  questions: { item: string; title: string; options: string[] }[];
 }
 
 /** One thing a turn reported, as the package kept it. */
@@ -1402,6 +1404,9 @@ export function createAgents(options: {
       const inputs = db.prepare(
         "SELECT id, sender, parts FROM queue WHERE turn_id = ? ORDER BY position",
       );
+      const questions = db.prepare(
+        "SELECT item_id AS item, title, options FROM questions WHERE turn_id = ? ORDER BY rowid",
+      );
       return {
         turns: page.map((turn) => ({
           ...turn,
@@ -1420,6 +1425,16 @@ export function createAgents(options: {
                 : (JSON.parse(input.parts) as string[]),
           })),
           items: turn.ref === null ? [] : (items.get(turn.ref) ?? []),
+          questions: (
+            questions.all(turn.id) as {
+              item: string;
+              title: string;
+              options: string;
+            }[]
+          ).map((question) => ({
+            ...question,
+            options: JSON.parse(question.options) as string[],
+          })),
         })),
         earlier: found.length > limit ? (page[0]?.id ?? null) : null,
       };
