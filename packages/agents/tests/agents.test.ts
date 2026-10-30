@@ -267,6 +267,75 @@ describe("an agent", () => {
   });
 });
 
+describe("the host", () => {
+  it("opens the agent's conversation when it asks, sets its next turn's model, and opens it again, or anew, while it is idle", async () => {
+    asha();
+    const ref = await agents.open(ASHA.id);
+    expect(await agents.open(ASHA.id)).toBe(ref);
+    agents.configure(ASHA.id, { model: "fake-small", effort: "low" });
+    agents.send(ASHA.id, note("note-1"));
+    await until(() => {
+      expect(agents.get(ASHA.id)?.status).toBe("done");
+    });
+    expect(rows("SELECT model, effort FROM turns")).toEqual([
+      { model: "fake-small", effort: "low" },
+    ]);
+
+    // New rules: its own conversation opens again.
+    await agents.reopen(ASHA.id);
+    expect(await agents.open(ASHA.id)).toBe(ref);
+    // A new one, under the next number.
+    await agents.reopen(ASHA.id, true);
+    const next = await agents.open(ASHA.id);
+    expect(openings).toEqual(["new", "resume", "new"]);
+    expect(ledger.map((entry) => entry.ref)).toEqual([ref, next]);
+    expect(agents.get(ASHA.id)?.conversation).toBe(2);
+
+    // Never while a turn runs.
+    fake.script.turn = "runs";
+    agents.send(ASHA.id, note("note-2"));
+    await running();
+    await expect(agents.reopen(ASHA.id)).rejects.toThrow("in use");
+  });
+
+  it("is shown each event of the open conversation once the package has kept it", async () => {
+    await agents.close();
+    const shown: { ref: string; type: string; turn?: string }[] = [];
+    agents = createAgents({
+      store,
+      adapters: [fake.adapter],
+      host: host(),
+      onError: (error) => errors.push(error),
+      live: (agent, ref, event) => {
+        shown.push({
+          ref,
+          type: event.type,
+          turn: agents.current(agent)?.status,
+        });
+      },
+    });
+    await agents.dispatch();
+    asha();
+    fake.script.turn = "runs";
+    agents.send(ASHA.id, note("note-1"));
+    await running();
+    const ref = ledger[0]?.ref ?? "";
+    const turn = latestTurn(ASHA.id);
+    expect(agents.current(ASHA.id)).toEqual({
+      status: "running",
+      turn: turn.id,
+      ref: turn.ref,
+    });
+
+    fake.end(ref);
+    await until(() => {
+      expect(shown.at(-1)).toEqual({ ref, type: "turnEnded" });
+    });
+    expect(shown[0]).toEqual({ ref, type: "turnStarted", turn: "running" });
+    expect(agents.current(ASHA.id)).toBeUndefined();
+  });
+});
+
 describe("the queue", () => {
   it("hands nothing over before the host dispatches, and a second dispatch leaves a start alone", async () => {
     const asked = Promise.withResolvers<undefined>();
@@ -672,8 +741,8 @@ describe("a turn the provider began by itself", () => {
         .filter((event) => event.type === "turn.started")
         .map((event) => event.payload),
     ).toEqual([
-      { turn: first.id, inputs: ["note-1"], by: "package" },
-      { turn: next.id, inputs: ["note-2"], by: "provider" },
+      { turn: first.id, ref: first.ref, inputs: ["note-1"], by: "package" },
+      { turn: next.id, ref: next.ref, inputs: ["note-2"], by: "provider" },
     ]);
     expect(
       await agents.place(ASHA.id, meta(next.ref, "call-1"), deadline()),
