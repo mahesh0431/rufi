@@ -1466,6 +1466,8 @@ export function transcripts(
       outcome:
         | { state: "delivered"; agentTurn: string | null }
         | { state: "waiting" }
+        /** Its hold lifted: it goes. */
+        | { state: "released" }
         | {
             state: "held";
             held: "signed_out" | "open_failed" | "failed" | "stopped";
@@ -1502,6 +1504,15 @@ export function transcripts(
             .set({ state: "waiting", sent_as: null, updated_at: at })
             .where("id", "=", input)
             .where("state", "=", "handing_over")
+            .execute();
+          return undefined;
+        }
+        if (outcome.state === "released") {
+          await trx
+            .updateTable("chat_queue")
+            .set({ held: null, held_text: null, hold_id: null, updated_at: at })
+            .where("id", "=", input)
+            .where("state", "=", "waiting")
             .execute();
           return undefined;
         }
