@@ -8,8 +8,9 @@
 // Claude's own sub-agents, workflows, schedules and background commands are
 // off: their tools aren't given. Claude works in the AI's folder under Rufi
 // AI's lock-down (sandbox.ts). Rufi picks a new conversation's id, and
-// carries on a kept one by it. A call to Rufi's tools leaves Claude only
-// when Rufi's own hook, run before it goes, says it may.
+// carries on a kept one by it. Rufi's tools come from its door, with the
+// agent's key, over Claude's control channel; a call to them leaves Claude
+// only when Rufi's own hook, run before it goes, says it may.
 import { spawn, type ChildProcess } from "node:child_process";
 import type { UUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -26,11 +27,13 @@ import {
   type SDKUserMessage,
   type Settings,
 } from "@anthropic-ai/claude-agent-sdk";
+import type { McpRegistration } from "@rufi/agents/provider";
+import { DEADLINES } from "../codex/appserver.ts";
 import { killTree } from "../codex/processes.ts";
 import type { AgentSandbox, AgentSkill } from "../runtime.ts";
 import { within } from "./deadline.ts";
 import type { InstalledClaude } from "./executable.ts";
-import { claudeLockDown } from "./sandbox.ts";
+import { claudeLockDown, RUFI_TOOLS } from "./sandbox.ts";
 
 /**
  * Claude's own tools the AI gets: those Rufi AI has on Codex (commands, the
@@ -51,8 +54,6 @@ const TOOLS = [
 
 /** The name Claude knows Rufi's plugin by: its skills are `rufi:<name>`. */
 const PLUGIN = "rufi";
-/** The name Claude knows Rufi's tools by: they are `mcp__rufi__<tool>`. */
-const TOOLS_SERVER = "rufi";
 
 /** Claude Code's own plugins (2.1.312), off like everything not Rufi's. */
 const BUILT_IN_PLUGINS = [
@@ -91,6 +92,12 @@ const ENVIRONMENT = { CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1" };
 
 /** How long Claude has to end after its session closes, before it's killed. */
 const CLOSE_MS = 10_000;
+/**
+ * How long Claude waits for one of Rufi's tools: a little after the door's
+ * own deadline for a call, as Codex does, so the door's answer comes first.
+ */
+const TOOL_MS = DEADLINES.toolMs + 10_000;
+
 /** How long Claude has to say what it loaded. */
 const ASK_MS = 15_000;
 
@@ -170,6 +177,11 @@ export interface ClaudeSession {
     "setModel" | "applyFlagSettings" | "accountInfo" | "supportedModels"
   >;
   /**
+   * Gives Claude Rufi's tools: its door, with the agent's key. Throws when
+   * Claude can't reach them, as an agent doesn't run without its tools.
+   */
+  giveTools: (tools: McpRegistration) => Promise<void>;
+  /**
    * Interrupts the running turn and cancels every message still queued;
    * Claude's answer names the ids it cancelled.
    */
@@ -232,7 +244,7 @@ export function openClaudeSession(
       hooks: {
         PreToolUse: [
           {
-            matcher: `mcp__${TOOLS_SERVER}__.*`,
+            matcher: `mcp__${RUFI_TOOLS}__.*`,
             hooks: [rufiCalls(options.mayCall)],
           },
         ],
@@ -269,6 +281,23 @@ export function openClaudeSession(
       });
     },
     controls: run,
+    // Over stdin, never in argv or the environment. Every tool is in the
+    // first prompt (`alwaysLoad`), as Claude waits for the door to connect.
+    giveTools: async ({ url, key }) => {
+      const result = await run.setMcpServers({
+        [RUFI_TOOLS]: {
+          type: "http",
+          url,
+          headers: { Authorization: `Bearer ${key}` },
+          alwaysLoad: true,
+          timeout: TOOL_MS,
+        },
+      });
+      const error = result.errors[RUFI_TOOLS];
+      if (error !== undefined) {
+        throw new Error(`Claude couldn't reach Rufi's tools: ${error}`);
+      }
+    },
     // `cancelQueued` is in the SDK's code but not in interrupt()'s type at
     // 0.3.312; the live check proves Claude still takes it.
     interrupt: () =>
@@ -288,7 +317,9 @@ export function openClaudeSession(
       ]);
       return [
         ...servers
-          .filter((server) => server.name !== PLUGIN)
+          .filter(
+            (server) => server.name !== PLUGIN && server.name !== RUFI_TOOLS,
+          )
           .map((server) => `MCP server ${server.name}`),
         ...context.memoryFiles.map((file) => `instructions in ${file.path}`),
         ...(context.skills?.skillFrontmatter ?? [])

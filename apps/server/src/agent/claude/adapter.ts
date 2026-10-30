@@ -518,6 +518,7 @@ async function openConversation(
       if (signInOf(account) === "none") {
         throw new SignedOut("Claude isn't signed in.");
       }
+      await within(current.giveTools(open.tools), ASK_MS, "Rufi's tools");
     } catch (error) {
       await closeProcess();
       throw error;

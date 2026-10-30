@@ -352,6 +352,8 @@ export function fakeClaude(
           ? Promise.reject(new Error("The fictional model isn't available."))
           : Promise.resolve(),
       applyFlagSettings: () => Promise.resolve(),
+      setMcpServers: () =>
+        Promise.resolve({ added: ["rufi"], removed: [], errors: {} }),
       supportedModels: () =>
         Promise.resolve([
           { value: "default", resolvedModel: "claude-fictional-1" },
