@@ -174,7 +174,9 @@ export interface Agents {
   /** Every agent the database keeps, admitted or not. */
   list: () => string[];
   /** Where an input is in its agent's queue; nothing when the queue has none. */
-  input: (id: string) => { agent: string; state: string } | undefined;
+  input: (
+    id: string,
+  ) => { agent: string; state: string; held: Hold | null } | undefined;
   /** The agent's turn now, if one starts or runs. */
   current: (agent: string) => Current | undefined;
   /**
@@ -1310,8 +1312,12 @@ export function createAgents(options: {
 
     input: (id) =>
       db
-        .prepare("SELECT agent_id AS agent, state FROM queue WHERE id = ?")
-        .get(id) as { agent: string; state: string } | undefined,
+        .prepare(
+          "SELECT agent_id AS agent, state, held FROM queue WHERE id = ?",
+        )
+        .get(id) as
+        | { agent: string; state: string; held: Hold | null }
+        | undefined,
 
     current: (id) => {
       const live = lives.get(id);

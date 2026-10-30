@@ -671,17 +671,99 @@ export function transcripts(
     return id;
   }
 
-  /** The queue's rows of a hand-over not yet marked sent. */
-  const handedOver = (trx: Db, chat: ChatRow, handOver: string) =>
+  /** The queue's rows among `inputs` the AI got that aren't marked sent. */
+  const handedOver = (trx: Db, chat: ChatRow, inputs: readonly string[]) =>
     trx
       .selectFrom("chat_queue")
       .select(["id", "origin", "text", "refs", "turn_id"])
       .where("person_id", "=", chat.personId)
       .where("chat_id", "=", chat.id)
-      .where("sent_as", "=", handOver)
-      .where("state", "in", ["handing_over", "not_sure"])
+      .where("id", "in", inputs.length === 0 ? [""] : inputs)
+      .where("state", "in", ["waiting", "handing_over", "not_sure"])
       .orderBy("position")
       .execute();
+
+  /**
+   * A turn starts with these rows, in `trx`: its reply (the one Rufi's part
+   * started for them, or a new one), the rows sent, the person's message in
+   * the transcript by its row's id, and the turn's origin from them (a Rufi
+   * event's turn can only read). Nothing when the turn has its reply.
+   */
+  async function begin(
+    trx: Transaction<Tables>,
+    chat: ChatRow,
+    revision: number,
+    agentTurnId: string,
+    thread: { id: string; model: string },
+    inputs: readonly string[],
+  ): Promise<{ entries: string[]; turns: string[] } | undefined> {
+    if (await turnOf(trx, chat.id, agentTurnId)) return undefined;
+    const rows = await handedOver(trx, chat, inputs);
+    // The reply Rufi's part started for these rows goes on as this turn.
+    const part = await trx
+      .selectFrom("turns")
+      .select("id")
+      .where("person_id", "=", chat.personId)
+      .where("chat_id", "=", chat.id)
+      .where("status", "=", "running")
+      .where("agent_turn_id", "is", null)
+      .where(
+        "id",
+        "in",
+        rows.flatMap((row) => (row.turn_id === null ? [] : [row.turn_id])),
+      )
+      .executeTakeFirst();
+    if (part) {
+      await trx
+        .updateTable("turns")
+        .set({
+          agent_turn_id: agentTurnId,
+          thread_id: thread.id,
+          model: thread.model,
+        })
+        .where("id", "=", part.id)
+        .execute();
+      const entries = await sent(trx, chat, revision, rows, part.id);
+      return { entries, turns: [part.id] };
+    }
+    const id = uuid();
+    await trx
+      .insertInto("turns")
+      .values({
+        id,
+        person_id: chat.personId,
+        chat_id: chat.id,
+        agent_turn_id: agentTurnId,
+        thread_id: thread.id,
+        model: thread.model,
+        origin:
+          rows.length > 0 && rows.every((row) => row.origin === "rufi")
+            ? "rufi"
+            : "person",
+        status: "running",
+        end_reason: null,
+        end_text: null,
+        resets_at: null,
+        started_at: now(),
+        ended_at: null,
+      })
+      .execute();
+    const entries = await sent(trx, chat, revision, rows, id);
+    return { entries, turns: [id] };
+  }
+
+  /** The reply Rufi's part started for a row, while it runs before the AI. */
+  const partOf = async (trx: Db, chat: ChatRow, turnId: string | null) =>
+    turnId === null
+      ? undefined
+      : await trx
+          .selectFrom("turns")
+          .select("id")
+          .where("person_id", "=", chat.personId)
+          .where("id", "=", turnId)
+          .where("status", "=", "running")
+          .where("agent_turn_id", "is", null)
+          .executeTakeFirst();
 
   /** Marks handed-over rows sent; the person's message enters the transcript. */
   async function sent(
@@ -1038,75 +1120,21 @@ export function transcripts(
 
     /**
      * A reply the agent started, with the thread and model it runs on. Once
-     * per agent turn. `handOver` is the id of the queue's rows Rufi handed
-     * over for it: in the same transaction they are sent, the person's
-     * message enters the transcript by its row's id, and the turn takes its
-     * origin from them (a Rufi event's turn can only read). A reply whose
-     * Rufi's part read the message's files is this turn: it takes the
-     * agent's ids.
+     * per agent turn. `inputs` are the queue's rows it took: in the same
+     * transaction they are sent, the person's message enters the transcript
+     * by its row's id, and the turn takes its origin from them (a Rufi
+     * event's turn can only read). A reply whose Rufi's part read the
+     * message's files is this turn: it takes the agent's ids.
      */
     startTurn: (
       chat: ChatRow,
       agentTurnId: string,
       thread: { id: string; model: string },
-      handOver?: string,
+      inputs: readonly string[] = [],
     ) =>
-      change(chat.id, async (trx, revision) => {
-        if (await turnOf(trx, chat.id, agentTurnId)) return undefined;
-        const rows =
-          handOver === undefined ? [] : await handedOver(trx, chat, handOver);
-        // The reply Rufi's part started for these rows goes on as this turn.
-        const part = await trx
-          .selectFrom("turns")
-          .select("id")
-          .where("person_id", "=", chat.personId)
-          .where("chat_id", "=", chat.id)
-          .where("status", "=", "running")
-          .where("agent_turn_id", "is", null)
-          .where(
-            "id",
-            "in",
-            rows.flatMap((row) => (row.turn_id === null ? [] : [row.turn_id])),
-          )
-          .executeTakeFirst();
-        if (part) {
-          await trx
-            .updateTable("turns")
-            .set({
-              agent_turn_id: agentTurnId,
-              thread_id: thread.id,
-              model: thread.model,
-            })
-            .where("id", "=", part.id)
-            .execute();
-          const entries = await sent(trx, chat, revision, rows, part.id);
-          return { entries, turns: [part.id] };
-        }
-        const id = uuid();
-        await trx
-          .insertInto("turns")
-          .values({
-            id,
-            person_id: chat.personId,
-            chat_id: chat.id,
-            agent_turn_id: agentTurnId,
-            thread_id: thread.id,
-            model: thread.model,
-            origin:
-              rows.length > 0 && rows.every((row) => row.origin === "rufi")
-                ? "rufi"
-                : "person",
-            status: "running",
-            end_reason: null,
-            end_text: null,
-            resets_at: null,
-            started_at: now(),
-            ended_at: null,
-          })
-          .execute();
-        const entries = await sent(trx, chat, revision, rows, id);
-        return { entries, turns: [id] };
-      }),
+      change(chat.id, (trx, revision) =>
+        begin(trx, chat, revision, agentTurnId, thread, inputs),
+      ),
 
     /**
      * The start of a reply whose message brings files to read, before the
@@ -1131,8 +1159,9 @@ export function transcripts(
           .select(["id", "origin", "text", "refs"])
           .where("person_id", "=", chat.personId)
           .where("chat_id", "=", chat.id)
+          .where("id", "=", handOver)
           .where("state", "=", "handing_over")
-          .orderBy("position")
+          .where("sent_as", "is", null)
           .execute();
         const id = uuid();
         await trx
@@ -1275,7 +1304,7 @@ export function transcripts(
           .where("status", "=", "running")
           .returning("id")
           .execute();
-        await endPart(trx, chat, end.text, at);
+        await endPart(trx, chat, turnId, end.text, at);
         await write(trx);
         return { entries: stopped.map((row) => row.id), turns: [turnId] };
       }),
@@ -1382,39 +1411,149 @@ export function transcripts(
 
     /**
      * A turn's start as the agent database keeps it (server/rufi-ai.ts),
-     * with `write` in the same transaction: its turn, running, when the chat
-     * didn't save it. Its end follows the same way; at a start, one that
-     * still runs once Rufi has read the events is ended (interruptRunning).
+     * with `write` in the same transaction: its reply, running, with the
+     * rows it took sent, when the chat didn't save it. Its end follows the
+     * same way; at a start, one that still runs once Rufi has read the
+     * events is ended (interruptRunning).
      */
     applyStart: (
       chat: ChatRow,
       agentTurnId: string,
       thread: { id: string; model: string },
+      inputs: readonly string[],
       write: (trx: Transaction<Tables>) => Promise<void>,
     ) =>
-      change(chat.id, async (trx) => {
+      change(chat.id, async (trx, revision) => {
         await write(trx);
-        if (await turnOf(trx, chat.id, agentTurnId)) return undefined;
-        const id = uuid();
+        return begin(trx, chat, revision, agentTurnId, thread, inputs);
+      }),
+
+    /**
+     * What became of a row the agent system handed over, from its events
+     * (server/rufi-ai.ts), with `write` in the same transaction. Delivered:
+     * sent, in the reply of the agent's turn, if Rufi has it. Waiting: it
+     * goes again. Held: it waits with the hold and its line. Not sure: shown
+     * so, never sent again by itself. Dropped: a Stop cut its start, and it
+     * waits held as not sent. In a reply Rufi's part started, any but
+     * delivered or waiting ends that reply, its message held for Retry.
+     */
+    applyInput: (
+      chat: ChatRow,
+      input: string,
+      outcome:
+        | { state: "delivered"; agentTurn: string | null }
+        | { state: "waiting" }
+        | {
+            state: "held";
+            held: "signed_out" | "open_failed" | "failed";
+            text: string;
+          }
+        | { state: "not_sure" }
+        | { state: "dropped" },
+      write: (trx: Transaction<Tables>) => Promise<void>,
+    ) =>
+      change(chat.id, async (trx, revision) => {
+        await write(trx);
+        const [row] = await handedOver(trx, chat, [input]);
+        if (!row) return undefined;
+        const at = now();
+        if (outcome.state === "delivered") {
+          const turn =
+            outcome.agentTurn === null
+              ? undefined
+              : await turnOf(trx, chat.id, outcome.agentTurn);
+          const entries = await sent(
+            trx,
+            chat,
+            revision,
+            [row],
+            turn?.id ?? null,
+          );
+          return { entries, turns: [] };
+        }
+        if (outcome.state === "waiting") {
+          await trx
+            .updateTable("chat_queue")
+            .set({ state: "waiting", sent_as: null, updated_at: at })
+            .where("id", "=", input)
+            .where("state", "=", "handing_over")
+            .execute();
+          return undefined;
+        }
+        const part = await partOf(trx, chat, row.turn_id);
+        const ending =
+          outcome.state === "held"
+            ? { status: "failed" as const, text: outcome.text }
+            : outcome.state === "dropped"
+              ? {
+                  status: "interrupted" as const,
+                  reason: "stopped" as const,
+                  text: "Stopped.",
+                }
+              : {
+                  status: "interrupted" as const,
+                  text: "Not sure this reached the AI.",
+                };
+        if (part) {
+          await trx
+            .updateTable("turns")
+            .set({
+              status: ending.status,
+              end_reason: "reason" in ending ? ending.reason : null,
+              end_text: ending.text,
+              ended_at: at,
+            })
+            .where("id", "=", part.id)
+            .execute();
+          const stopped = await trx
+            .updateTable("transcript_entries")
+            .set({ status: "stopped", revision, updated_at: at })
+            .where("person_id", "=", chat.personId)
+            .where("turn_id", "=", part.id)
+            .where("status", "=", "running")
+            .returning("id")
+            .execute();
+          if (outcome.state === "not_sure") {
+            await trx
+              .updateTable("chat_queue")
+              .set({ state: "not_sure", updated_at: at })
+              .where("id", "=", input)
+              .execute();
+          } else {
+            await endPart(trx, chat, part.id, ending.text, at);
+          }
+          return {
+            entries: stopped.map((entry) => entry.id),
+            turns: [part.id],
+          };
+        }
+        if (outcome.state === "not_sure") {
+          await trx
+            .updateTable("chat_queue")
+            .set({ state: "not_sure", updated_at: at })
+            .where("id", "=", input)
+            .where("state", "=", "handing_over")
+            .execute();
+          return undefined;
+        }
+        const held =
+          outcome.state === "dropped"
+            ? { held: "failed", text: "Not sent: stopped." }
+            : { held: outcome.held, text: outcome.text };
         await trx
-          .insertInto("turns")
-          .values({
-            id,
-            person_id: chat.personId,
-            chat_id: chat.id,
-            agent_turn_id: agentTurnId,
-            thread_id: thread.id,
-            model: thread.model,
-            origin: "person",
-            status: "running",
-            end_reason: null,
-            end_text: null,
-            resets_at: null,
-            started_at: now(),
-            ended_at: null,
+          .updateTable("chat_queue")
+          .set({
+            state: "waiting",
+            sent_as: null,
+            held: held.held,
+            held_text: held.text,
+            hold_id: held.held === "open_failed" ? uuid() : null,
+            updated_at: at,
           })
+          .where("id", "=", input)
+          .where("state", "in", ["waiting", "handing_over"])
           .execute();
-        return { entries: [], turns: [id] };
+        return undefined;
       }),
 
     /**

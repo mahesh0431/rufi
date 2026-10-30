@@ -38,6 +38,7 @@ export const MIGRATIONS: readonly string[] = [
   read("migrations/0017-device-data.sql"),
   read("migrations/0018-agents-keep-in-step.sql"),
   read("migrations/0019-reply-questions.sql"),
+  read("migrations/0020-waiting-messages-go-to-the-agent-queue.sql"),
 ];
 
 /** What a database file is, read without changing it. */

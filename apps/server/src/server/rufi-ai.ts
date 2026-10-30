@@ -1,36 +1,43 @@
-// Rufi AI's replies, through the agent package (docs/adr/0024). Today's chat
-// (server/chat.ts) still decides what goes to the AI and when: it claims the
-// rows, runs Rufi's reader first, and writes the screen's transcript. Each
-// chat's own agent, Rufi AI, keeps its conversation and turns in the
-// package. A hand-over goes into the package's queue without its words: the
-// package claims them here, and only the hand-over still waiting for its
-// outcome gives them, so the package never sends one again by itself. What
-// the package shows of a conversation as it comes reaches the chat as the
-// agent's events; the end of a turn is applied from the package's events
-// too, with Rufi's cursor, when the chat didn't save it.
-import type { Agent, Opening } from "@rufi/agents/agents";
+// Rufi AI's replies, through the agent package (docs/adr/0024). Each chat's
+// own agent, Rufi AI, keeps its conversation and turns in the package, and
+// the package's queue hands the chat's waiting messages over, in order: the
+// chat puts each in by its id without its words, and the package claims
+// them from the chat's queue before they go (server/chat.ts). A message sent
+// into a running reply goes in as a steer, its words kept here until the
+// package claims it. What the package shows of a conversation as it comes
+// reaches the chat as the agent's events; what became of each turn and each
+// hand-over is applied from the package's events, with Rufi's cursor.
+import type { Agent, Claim, Hold, Opening } from "@rufi/agents/agents";
 import {
-  NotOpened as NotOpenedHere,
   type McpRegistration,
   type ProviderEvent,
   type TurnEnd as Ended,
 } from "@rufi/agents/provider";
 import type { StoredEvent } from "@rufi/agents/store";
+import { SIGNED_OUT } from "@rufi/contracts";
 import { v7 as uuid } from "uuid";
 import {
-  NotOpened,
   NotSent,
   Stopped,
   type AgentEvent,
   type Model,
   type TurnEnd,
 } from "../agent/runtime.ts";
-import { chatAgents } from "../core/chat/agents.ts";
+import { chatAgents, sentAs } from "../core/chat/agents.ts";
 import type { ChatRow, Transcripts } from "../core/chat/transcript.ts";
 import { startAgents, type AgentSystem, type Apply } from "./agents.ts";
 
 /** What Rufi AI does, as it comes: its thread is its conversation. */
-export type RufiAiEvent = Exclude<AgentEvent, { type: "message" }> & {
+export type RufiAiEvent = (
+  | Exclude<AgentEvent, { type: "message" | "turnStarted" }>
+  | {
+      threadId: string;
+      type: "turnStarted";
+      turnId: string;
+      /** The inputs it took: the chat's rows, by their ids. */
+      inputs: readonly string[];
+    }
+) & {
   /** Its item's place in its turn, as the package keeps it. */
   position?: number;
 };
@@ -40,10 +47,23 @@ export interface RufiAiHost {
   onEvent: (event: RufiAiEvent) => void;
   /** Resolves once what the chat was told so far is saved. */
   saved: () => Promise<void>;
+  /** What the chat's conversation opens with now. */
+  opening: (chat: ChatRow) => Promise<ChatOpening>;
+  /**
+   * Claims a row of the chat's queue as it goes to the agent's conversation
+   * `sentAs`: its words, or that it doesn't go (Host.claim).
+   */
+  claim: (
+    chat: ChatRow,
+    input: string,
+    sentAs: string,
+  ) => Promise<Claim | undefined>;
+  /** What the package did changed the chat's waiting messages. */
+  changed: (chat: ChatRow) => void;
 }
 
 /** What a chat's conversation is given each time it opens. */
-interface ChatOpening {
+export interface ChatOpening {
   instructions: string;
   /** The version of the rules in `instructions`. */
   version: string;
@@ -52,42 +72,44 @@ interface ChatOpening {
   seed: () => Promise<string | undefined>;
 }
 
-/** Rufi AI for today's chat, by each chat's thread: its conversation. */
+/** Rufi AI for today's chat: each chat's own agent, its thread its conversation. */
 export interface RufiAi {
   provider: string;
   /** The models the provider offers now. */
   models: (signal?: AbortSignal) => Promise<Model[]>;
+  /** The chat's next turns run on its model and effort. */
+  configure: (chat: ChatRow) => Promise<void>;
   /**
-   * Opens the chat's conversation now, if it isn't open: its own, opened
-   * again first when its rules changed (`reload`), or a new one (`fresh`).
-   * One the provider no longer has is replaced by a new one. Returns its
-   * thread. Throws NotOpened when it didn't open.
+   * The chat's conversation opens again at its next turn, with what the chat
+   * gives then: its own, or a new one (`fresh`). Refused while it is in use.
    */
-  open: (
-    chat: ChatRow,
-    opening: ChatOpening,
-    how: { fresh: boolean; reload: boolean },
-  ) => Promise<string>;
+  reopen: (chat: ChatRow, fresh: boolean) => Promise<void>;
+  /** The rules' version the chat's open conversation got; none when it isn't open. */
+  rules: (chat: ChatRow) => Promise<string | undefined>;
+  /** Whether a turn of the chat's agent starts or runs now. */
+  busy: (chat: ChatRow) => Promise<boolean>;
   /** Whether a reply starts or runs in the thread now. */
   running: (threadId: string) => boolean;
   /** The running reply that may still use Rufi's tools, unless it stops. */
   activeTurn: (threadId: string) => string | undefined;
   /**
-   * Starts a reply to `input`, its parts in order; resolves once it has
-   * started. Throws NotSent when the AI surely didn't get it; any other
-   * error leaves that unknown.
+   * Puts the chat's rows in its agent's queue by their ids, each once, then
+   * the agent's waiting ones among `order` in that order. The package claims
+   * their words from the chat as they go.
    */
-  send: (
-    threadId: string,
-    message: {
-      id: string;
-      sender: string;
-      input: string[];
-      model?: string;
-      effort: string;
-    },
-    signal?: AbortSignal,
+  queue: (
+    chat: ChatRow,
+    rows: readonly { id: string; sender: string }[],
+    order: readonly string[],
   ) => Promise<void>;
+  /** Where a row is in its agent's queue; nothing when it isn't there. */
+  input: (input: string) => { state: string; held: string | null } | undefined;
+  /** These rows don't go: removed from the agent's queue. */
+  remove: (inputs: readonly string[]) => void;
+  /** The row goes next, also one a Stop dropped or the queue removed. */
+  sendNow: (input: string) => void;
+  /** These rows' holds lift: they go again. */
+  release: (inputs: readonly string[]) => void;
   /**
    * Passes a message into the running reply; returns that reply's turn.
    * Throws NotSent when it surely didn't reach it.
@@ -96,22 +118,37 @@ export interface RufiAi {
     threadId: string,
     message: { id: string; text: string },
   ) => Promise<{ turnId: string }>;
-  /**
-   * Stops the running reply (only when it is `turnId`, if given); `end`
-   * says why, when Rufi decided it.
-   */
-  stop: (threadId: string, turnId?: string, end?: TurnEnd) => Promise<void>;
+  /** The person's Stop: the chat's reply stops, and what waits goes on. */
+  stop: (chat: ChatRow) => Promise<void>;
+  /** Rufi stops the reply `turnId` in the thread, if it runs; `end` says why. */
+  cut: (threadId: string, turnId: string, end?: TurnEnd) => Promise<void>;
   /** Takes no more: what is under way is settled as far as it can be. */
   close: () => Promise<void>;
 }
 
-/** A hand-over waiting for its outcome, by the package's input id. */
+/** A steer waiting for its outcome, by the package's input id. */
 interface Pending {
   agent: string;
-  kind: "steer" | "queue";
   parts: string[];
   done: PromiseWithResolvers<string | undefined>;
 }
+
+/** The package's events Rufi applies to a chat. */
+const APPLIED = new Set([
+  "turn.started",
+  "turn.ended",
+  "input.delivered",
+  "input.held",
+  "input.waiting",
+  "input.not_sure",
+  "input.dropped",
+]);
+
+/** An input's hold as the chat shows it: signed out with Rufi's line. */
+const holdOf = (held: Hold, text: string) =>
+  held === "signed_out"
+    ? { held, text: SIGNED_OUT }
+    : { held: held === "open_failed" ? held : ("failed" as const), text };
 
 /** How a turn ended, as today's chat shows it. */
 function endOf(end: Ended): TurnEnd {
@@ -141,7 +178,7 @@ function eventOf(threadId: string, event: ProviderEvent): RufiAiEvent {
   const turnId = event.turn;
   switch (event.type) {
     case "turnStarted":
-      return { threadId, type: "turnStarted", turnId };
+      return { threadId, type: "turnStarted", turnId, inputs: event.inputs };
     case "text":
     case "note":
       return {
@@ -214,8 +251,8 @@ export async function startRufiAi(
   const kept = chatAgents(options.record, options.now);
   /** The chat, once it runs. */
   let chat: RufiAiHost | undefined;
-  /** What each agent's conversation opens with, as its chat last gave it. */
-  const openings = new Map<string, ChatOpening>();
+  /** The rules' version each agent's conversation last opened with. */
+  const given = new Map<string, string>();
   const pending = new Map<string, Pending>();
   /** Each open conversation's agent, by its thread. */
   const threads = new Map<string, string>();
@@ -230,21 +267,31 @@ export async function startRufiAi(
   const ends = new Map<string, TurnEnd>();
   let closed = false;
 
+  /** The chat whose own agent `agent` is, as stored now. */
+  const chatOf = async (agent: string) => {
+    const owner = await kept.owner(agent);
+    if (!owner?.root) return undefined;
+    const row = await transcripts.chat(owner.personId);
+    return row?.id === owner.chatId ? row : undefined;
+  };
+
   const opening = async (
     agent: Agent,
     kind: "resume" | "new",
   ): Promise<Opening> => {
-    const given = openings.get(agent.id);
-    if (!given) throw new Error("Rufi AI's chat hasn't opened it.");
-    const seed = kind === "new" ? await given.seed() : undefined;
+    const row = await chatOf(agent.id);
+    if (!row || !chat) throw new Error("Rufi AI's chat isn't open.");
+    const now = await chat.opening(row);
+    given.set(agent.id, now.version);
+    const seed = kind === "new" ? await now.seed() : undefined;
     return {
-      instructions: given.instructions,
-      tools: given.tools,
+      instructions: now.instructions,
+      tools: now.tools,
       ...(seed !== undefined && { seed }),
     };
   };
 
-  /** The hand-over gets its outcome; nothing claims it again. */
+  /** The steer gets its outcome; nothing claims it again. */
   const settle = (input: string, outcome: string | undefined | Error) => {
     const waiting = pending.get(input);
     if (!waiting) return;
@@ -253,13 +300,15 @@ export async function startRufiAi(
     else waiting.done.resolve(outcome);
   };
 
+  // The package keeps out what an older conversation reports: what comes
+  // is the agent's open conversation's.
   const live = (
     agent: string,
     ref: string,
     event: ProviderEvent,
     position?: number,
   ) => {
-    if (threads.get(ref) !== agent) return;
+    if (threads.get(ref) !== agent) follow(agent, ref);
     if (event.type === "turnEnded") {
       const own = ends.get(event.turn);
       ends.delete(event.turn);
@@ -279,43 +328,88 @@ export async function startRufiAi(
     });
   };
 
-  // A root's turn from the package's events, after what the chat was told
-  // was saved: its start when the chat didn't save it, the record of its
-  // whole answer, and its end when the chat didn't save it
-  // (transcripts.applyStart, applyEnd).
+  // A root's turns and its chat's hand-overs from the package's events,
+  // after what the chat was told was saved: a turn's start when the chat
+  // didn't save it, with the rows it took sent; the record of its whole
+  // answer, and its end when the chat didn't save it; and what became of
+  // each row the package handed over (transcripts.applyStart, applyEnd,
+  // applyInput).
   const apply: Apply = async (event, advance) => {
-    if (event.type !== "turn.started" && event.type !== "turn.ended") {
-      return false;
-    }
-    if (event.agent === null) return false;
-    const owner = await kept.owner(event.agent);
-    if (!owner?.root) return false;
-    const row = await transcripts.chat(owner.personId);
-    if (row?.id !== owner.chatId) return false;
+    if (event.agent === null || !APPLIED.has(event.type)) return false;
+    const row = await chatOf(event.agent);
+    if (!row) return false;
     await chat?.saved();
-    if (event.type === "turn.started") {
-      const { ref } = event.payload as { ref: string };
-      await transcripts.applyStart(
-        row,
-        ref,
-        { id: row.threadId ?? "", model: row.model ?? row.threadModel ?? "" },
-        advance,
-      );
-      return true;
-    }
-    const { ref, item, ...end } = event.payload as Ended & {
-      ref: string;
-      item?: string;
+    const payload = event.payload as {
+      input: string;
+      ref?: string | null;
+      held: Hold;
+      text: string;
     };
-    await transcripts.applyEnd(
-      row,
-      ref,
-      endOf(end),
-      end.status === "done"
-        ? { text: end.answer, ...(item !== undefined && { item }) }
-        : undefined,
-      advance,
-    );
+    switch (event.type) {
+      case "turn.started": {
+        const { ref, inputs } = event.payload as {
+          ref: string;
+          inputs: string[];
+        };
+        await transcripts.applyStart(
+          row,
+          ref,
+          { id: row.threadId ?? "", model: row.model ?? row.threadModel ?? "" },
+          inputs,
+          advance,
+        );
+        break;
+      }
+      case "turn.ended": {
+        const { ref, item, ...end } = event.payload as Ended & {
+          ref: string;
+          item?: string;
+        };
+        await transcripts.applyEnd(
+          row,
+          ref,
+          endOf(end),
+          end.status === "done"
+            ? { text: end.answer, ...(item !== undefined && { item }) }
+            : undefined,
+          advance,
+        );
+        break;
+      }
+      case "input.delivered":
+        await transcripts.applyInput(
+          row,
+          payload.input,
+          { state: "delivered", agentTurn: payload.ref ?? null },
+          advance,
+        );
+        break;
+      case "input.held":
+        await transcripts.applyInput(
+          row,
+          payload.input,
+          { state: "held", ...holdOf(payload.held, payload.text) },
+          advance,
+        );
+        break;
+      case "input.waiting":
+      case "input.not_sure":
+      case "input.dropped":
+        await transcripts.applyInput(
+          row,
+          payload.input,
+          {
+            state:
+              event.type === "input.waiting"
+                ? "waiting"
+                : event.type === "input.not_sure"
+                  ? "not_sure"
+                  : "dropped",
+          },
+          advance,
+        );
+    }
+    chat?.changed(row);
     return true;
   };
 
@@ -323,28 +417,30 @@ export async function startRufiAi(
     ...options,
     host: {
       opening,
-      // Only the hand-over waiting for its outcome gives its words; a steer
-      // only into the turn it was meant for.
-      claim: ({ agent, input }) => {
+      claim: async ({ agent, conversation, input }) => {
+        // A steer gives its words only into the turn it was meant for.
         const waiting = pending.get(input);
-        if (!waiting || closed) return Promise.resolve({ status: "gone" });
-        if (
-          waiting.kind === "steer" &&
-          system.agents.current(agent)?.status !== "running"
-        ) {
-          settle(input, new NotSent("That reply has ended."));
-          return Promise.resolve({ status: "gone" });
+        if (waiting) {
+          if (closed) return { status: "gone" };
+          if (system.agents.current(agent)?.status !== "running") {
+            settle(input, new NotSent("That reply has ended."));
+            return { status: "gone" };
+          }
+          return { status: "claimed", parts: waiting.parts };
         }
-        return Promise.resolve({ status: "claimed", parts: waiting.parts });
+        // Rufi closing: the row stays for the next start.
+        if (closed || !chat) return undefined;
+        const row = await chatOf(agent);
+        if (!row) return { status: "gone" };
+        return chat.claim(row, input, sentAs(agent, conversation));
       },
     },
     live,
     apply,
     // A root's new conversation is its chat's thread from now on.
     opened: async ({ agent, provider, ref }) => {
-      const owner = await kept.owner(agent);
-      const row = owner?.root && (await transcripts.chat(owner.personId));
-      if (!row || row.id !== owner.chatId) return;
+      const row = await chatOf(agent);
+      if (!row) return;
       // Once the pointer moves, the old thread's events can't find the
       // chat: they are saved first.
       await chat?.saved();
@@ -352,7 +448,7 @@ export async function startRufiAi(
         id: ref,
         provider,
         model: system.agents.get(agent)?.model ?? "",
-        tools: openings.get(agent)?.version ?? "",
+        tools: given.get(agent) ?? "",
       });
       follow(agent, ref);
     },
@@ -368,7 +464,7 @@ export async function startRufiAi(
     },
   });
 
-  /** What became of the hand-overs, from the package's events. */
+  /** What became of the steers, from the package's events. */
   const outcome = (event: StoredEvent) => {
     const payload = event.payload as {
       ref?: string | null;
@@ -388,21 +484,11 @@ export async function startRufiAi(
         settle(payload.input, payload.ref ?? undefined);
         return;
       case "input.held":
-        settle(
-          payload.input,
-          payload.held === "failed"
-            ? new NotSent(payload.text)
-            : new NotSent(payload.text, {
-                cause: new NotOpened(payload.text),
-              }),
-        );
+        settle(payload.input, new NotSent(payload.text));
         return;
-      // A queued input the provider surely didn't get goes again, claimed
-      // here again; a steer that missed its turn waits in Rufi's queue.
+      // A steer that missed its turn waits in Rufi's queue.
       case "input.waiting":
-        if (pending.get(payload.input)?.kind === "steer") {
-          settle(payload.input, new NotSent("That reply has ended."));
-        }
+        settle(payload.input, new NotSent("That reply has ended."));
         return;
       case "input.not_sure":
         settle(payload.input, new Error("Not sure this reached the AI."));
@@ -427,25 +513,6 @@ export async function startRufiAi(
     }
   });
 
-  /** A hand-over into the agent's queue; resolves with its turn. */
-  const handOver = (
-    agent: string,
-    kind: Pending["kind"],
-    sender: string,
-    parts: string[],
-  ) => {
-    const id = uuid();
-    const done = Promise.withResolvers<string | undefined>();
-    pending.set(id, { agent, kind, parts, done });
-    try {
-      agents.send(agent, { id, sender, kind });
-    } catch (error) {
-      pending.delete(id);
-      throw new NotSent("Rufi couldn't hand it over.", { cause: error });
-    }
-    return done.promise;
-  };
-
   const agentOf = (threadId: string) => {
     const agent = threads.get(threadId);
     if (agent === undefined) {
@@ -467,41 +534,26 @@ export async function startRufiAi(
         return offered.map(({ id, name }) => ({ id, name }));
       },
 
-      open: async (row, given, how) => {
+      configure: async (row) => {
         const agent = await system.root(row.id);
-        openings.set(agent, given);
-        // What it opens with: the chat's model and effort.
         const now = agents.get(agent);
-        if (now) {
-          agents.configure(agent, {
-            model: row.model ?? now.model,
-            effort: row.effort,
-          });
-        }
-        if (how.fresh || how.reload) await agents.reopen(agent, how.fresh);
-        let ref: string;
-        try {
-          ref = await agents.open(agent);
-        } catch (error) {
-          if (error instanceof NotOpenedHere) {
-            throw new NotOpened(error.message, { cause: error });
-          }
-          throw error;
-        }
-        follow(agent, ref);
-        // The chat's thread is its conversation.
-        const stored = await transcripts.chat(row.personId);
-        if (stored && stored.threadId !== ref) {
-          await chat?.saved();
-          await transcripts.setThread(stored, {
-            id: ref,
-            provider: agents.get(agent)?.provider ?? provider,
-            model: agents.get(agent)?.model ?? "",
-            tools: given.version,
-          });
-        }
-        return ref;
+        if (!now) return;
+        agents.configure(agent, {
+          model: row.model ?? now.model,
+          effort: row.effort,
+        });
       },
+
+      reopen: async (row, fresh) => {
+        const agent = await system.root(row.id);
+        await agents.reopen(agent, fresh);
+        given.delete(agent);
+      },
+
+      rules: async (row) => given.get(await system.root(row.id)),
+
+      busy: async (row) =>
+        agents.current(await system.root(row.id)) !== undefined,
 
       running: (threadId) => {
         const agent = threads.get(threadId);
@@ -514,42 +566,63 @@ export async function startRufiAi(
         return current?.status === "running" ? current.ref : undefined;
       },
 
-      send: async (threadId, message, signal) => {
-        const agent = agentOf(threadId);
-        if (signal?.aborted) {
-          throw new NotSent("Stopped.", { cause: new Stopped() });
+      queue: async (row, rows, order) => {
+        const agent = await system.root(row.id);
+        for (const { id, sender } of rows) {
+          agents.send(agent, { id, sender, kind: "queue" });
         }
-        const now = agents.get(agent);
-        if (!now) throw new NotSent("Rufi AI isn't there.");
-        // A new model or effort goes with this reply, in the same conversation.
-        agents.configure(agent, {
-          model: message.model ?? now.model,
-          effort: message.effort,
-        });
-        await handOver(agent, "queue", message.sender, message.input);
+        agents.reorder(agent, order);
       },
 
+      input: (input) => agents.input(input),
+
+      remove: (inputs) => {
+        agents.remove(inputs);
+      },
+
+      sendNow: (input) => {
+        agents.sendNow(input);
+      },
+
+      release: (inputs) => {
+        agents.release(inputs);
+      },
+
+      // Its words wait here, for the package's claim.
       steer: async (threadId, message) => {
-        const turnId = await handOver(agentOf(threadId), "steer", "person", [
-          message.text,
-        ]);
-        if (turnId === undefined)
+        const agent = agentOf(threadId);
+        const id = uuid();
+        const done = Promise.withResolvers<string | undefined>();
+        pending.set(id, { agent, parts: [message.text], done });
+        try {
+          agents.send(agent, { id, sender: "person", kind: "steer" });
+        } catch (error) {
+          pending.delete(id);
+          throw new NotSent("Rufi couldn't hand it over.", { cause: error });
+        }
+        const turnId = await done.promise;
+        if (turnId === undefined) {
           throw new Error("The steer's reply is unknown.");
+        }
         return { turnId };
       },
 
-      stop: async (threadId, turnId, end) => {
+      stop: async (row) => {
+        await agents.stop(await system.root(row.id), "person");
+      },
+
+      cut: async (threadId, turnId, end) => {
         const agent = threads.get(threadId);
         if (agent === undefined) return;
         const current = agents.current(agent);
         const ref = current?.status === "starting" ? undefined : current?.ref;
-        if (turnId !== undefined && ref !== turnId) return;
-        if (end && ref !== undefined) ends.set(ref, end);
-        await agents.stop(agent, turnId === undefined ? "person" : "rufi");
+        if (ref !== turnId) return;
+        if (end) ends.set(ref, end);
+        await agents.stop(agent, "rufi");
       },
 
-      // A hand-over the package hasn't claimed doesn't go any more; one it
-      // has may have reached the AI.
+      // A steer the package hasn't claimed doesn't go any more; one it has
+      // may have reached the AI.
       close: () => {
         closed = true;
         for (const input of pending.keys()) {
