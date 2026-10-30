@@ -1,6 +1,6 @@
 // Rufi's agent tools: an agent starts agents of its own, sees how the ones
-// below it are, writes to one or to the agent that started it, and reads its
-// own conversation or one below it. Rufi's chat does them in the agent
+// below it are, writes to one or to the agent that started it, and reads
+// the conversation of any agent in its chat. Rufi's chat does them in the agent
 // system (server/sub-agents.ts); a sub-agent never gets more tools than the
 // agent that starts it.
 import { Schema } from "effect";
@@ -52,7 +52,7 @@ export type SendAgentInput = typeof SendAgentInput.Type;
 
 export const ReadAgentInput = Schema.Struct({
   agent: Schema.String.annotate({
-    description: 'An agent below you, by id, or "self".',
+    description: 'An agent in your chat, by id, or "self".',
   }).check(Schema.isMinLength(1)),
   before: Schema.optionalKey(
     Schema.String.annotate({
@@ -122,7 +122,7 @@ export const sendAgent = defineTool({
 export const readAgent = defineTool({
   name: "read_agent",
   description:
-    "Reads an agent's conversation, yours (\"self\") or one below you: its turns, the latest page first, each with what it was sent and by whom, its steps, the questions it asked (with their options) and its result. Give before: the page's earlier for the page before it; earlier is null on the first page. An agent that isn't you or below you is not found.",
+    "Reads the conversation of an agent in your chat, yours (\"self\") or another's: its turns, the latest page first, each with what it was sent and by whom, its steps, the questions it asked (with their options) and its result. Give before: the page's earlier for the page before it; earlier is null on the first page. An agent outside your chat is not found.",
   input: ReadAgentInput,
   callers: "model",
   readOnly: true,

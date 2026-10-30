@@ -4,8 +4,8 @@
 // it; it is the caller's chat's, on the caller's model and effort, with no
 // more of Rufi's tools than the caller has. Each turn's end goes to its
 // parent as a done message (the package's). An agent sees how the agents
-// below it are, writes to one or to its parent, and reads its own
-// conversation or one below it, by pages.
+// below it are, writes to one or to its parent, and reads the conversation
+// of any agent in its chat, its own too, by pages.
 import type { Agents } from "@rufi/agents/agents";
 import type { chatAgents } from "../core/chat/agents.ts";
 import type { ChatQueue } from "../core/chat/queue.ts";
@@ -118,10 +118,11 @@ export function subAgents(deps: {
 
       read: async ({ agent, before }) => {
         const id = agent === "self" ? scope.agent : agent;
-        const found = reachable(id);
-        if (!found) {
+        // The chat's agents share its root.
+        const found = agents.get(id);
+        if (!found || found.root !== agents.get(scope.agent)?.root) {
           throw new Refusal(
-            `No agent ${agent} is you or below you: read "self", or an agent agent_status lists.`,
+            `No agent ${agent} is in your chat: read "self", or an agent agent_status lists.`,
           );
         }
         const page = agents.history(id, {

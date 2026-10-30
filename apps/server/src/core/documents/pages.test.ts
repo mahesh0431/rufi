@@ -162,7 +162,7 @@ describe("get_documents", () => {
     const answer = await forAgent(
       () => ({ store, pages: pages(store, home), ...context }) as ToolContext,
       () => undefined,
-    ).forTurn()("get_documents", input);
+    ).call("get_documents", input);
     return {
       ...answer,
       body: JSON.parse(answer.text) as Record<string, unknown>,

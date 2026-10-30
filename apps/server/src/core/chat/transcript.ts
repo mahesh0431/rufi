@@ -1342,12 +1342,6 @@ export function transcripts(
     chips: (personId: string, refs: readonly Pointer[]) =>
       chipsOf(db, personId, refs),
 
-    /** Who started a turn: a Rufi event's turn can only read. */
-    origin: async (chat: ChatRow, agentTurnId: string) =>
-      ((await turnOf(db, chat.id, agentTurnId))?.origin ?? "person") as
-        | "person"
-        | "rufi",
-
     /**
      * A Rufi event: its outcome (`write`, the producer's own), the line in
      * the chat and, when it asks the AI, its note in the queue, all in one

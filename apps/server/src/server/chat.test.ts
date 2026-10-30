@@ -237,7 +237,7 @@ async function startChat(
     }),
     tools: {
       specs: tools.specs,
-      caller: (scope, origin) => {
+      caller: (scope) => {
         const call = rufiCaller(
           reader,
           transcripts,
@@ -245,7 +245,7 @@ async function startChat(
           reader && pages(reader, home),
           { run: sorting(store).sort, done: () => undefined },
           subAgents({ agents: system.agents, kept: chatAgents(store), queue }),
-        )(scope, origin);
+        )(scope);
         return async (name, input, callId) => {
           admitted.push(name);
           await options.waitFor?.(name);
@@ -1364,7 +1364,7 @@ describe("the chat, on the scripted Codex", () => {
     }
   });
 
-  it("gives each Rufi event that came during a reply to the AI after it, in a turn of its own that can only read", async () => {
+  it("gives each Rufi event that came during a reply to the AI after it, in a turn of its own", async () => {
     await startChat("fake", { scenario: { calls: [saveHeadache] } });
     const c = await newChat();
     await say(c, "slow quiet");
@@ -1387,14 +1387,14 @@ describe("the chat, on the scripted Codex", () => {
       [expect.stringContaining("Note: Lab report read")],
       [expect.stringContaining("Note: Second report read")],
     ]);
-    // Their saves were refused, with the reason, and nothing was saved.
+    // Their saves rest on no message of the person's, so Rufi refused them.
     const calls = store.db
       .prepare("SELECT tool, ok, answer FROM tool_calls")
       .all() as { tool: string; ok: number; answer: string }[];
     expect(calls.length).toBeGreaterThan(0);
     for (const call of calls) {
       expect(call).toMatchObject({ tool: "save_changes", ok: 0 });
-      expect(call.answer).toContain("started by a Rufi event");
+      expect(call.answer).toContain("This turn has no message of the user's");
     }
     expect(store.db.prepare("SELECT * FROM symptoms").all()).toEqual([]);
     expect(await waiting()).toEqual([]);
@@ -2181,7 +2181,7 @@ describe("the chat, on the scripted Codex", () => {
     expect(all.find((entry) => entry.kind === "receipt")?.turnId).toBeNull();
   });
 
-  it("runs a sub-agent's own sub-agent, whose done message wakes its parent, whose own wakes Rufi AI; then Rufi AI reads how each went and the conversation of the one below", async () => {
+  it("runs a sub-agent's own sub-agent, whose done message wakes its parent, whose own wakes Rufi AI; then Rufi AI reads how each went and the conversation of the one below, and that one reads the one that started it", async () => {
     await startChat("fake", {
       scenario: {
         callsByText: {
@@ -2270,6 +2270,40 @@ describe("the chat, on the scripted Codex", () => {
         earlier: null,
       },
     });
+
+    // A sub-agent reads any agent in its chat: here, the one that started it.
+    const root = ownCall("call-0").split("/")[0];
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          // Its own call id: the scripted Codex numbers them from call-0
+          // again after a restart, and start_agent's was call-0.
+          "Ask the second helper": [
+            {
+              id: "call-write",
+              tool: "send_agent",
+              arguments: { to: second, text: "read your parent" },
+            },
+          ],
+          [`Rufi AI (${String(root)}) writes:`]: [
+            { tool: "read_agent", arguments: { agent: helper } },
+          ],
+        },
+      },
+    });
+    await say(await chatRow(c.id), "Ask the second helper to read");
+    const readBy = () =>
+      store.db
+        .prepare(
+          "SELECT answer FROM tool_calls WHERE tool = 'read_agent' AND agent_id = ?",
+        )
+        .get(second) as { answer: string } | undefined;
+    await until(() => Promise.resolve(readBy() !== undefined));
+    expect(JSON.parse(readBy()?.answer ?? "")).toMatchObject({
+      ok: true,
+      result: { agent: { agent: helper, title: "Helper" } },
+    });
+    await settled(c.id);
   });
 
   it("reads a sub-agent's question, with its options, from its conversation", async () => {
@@ -2551,20 +2585,6 @@ describe("the chat, on the scripted Codex", () => {
       ...first?.result,
       note: "This call was already saved.",
     });
-  });
-
-  it("stops a reply whose AI keeps making calls Rufi can't accept, and says why", async () => {
-    const wrong = { tool: "read_database", arguments: {} };
-    await startChat("fake", { scenario: { calls: [wrong, wrong, wrong] } });
-    const c = await newChat();
-    await say(c, "hang");
-    await ended(c.id);
-    expect((await transcript(c.id)).turns).toMatchObject([
-      {
-        status: "failed",
-        endText: "The AI kept making requests Rufi couldn't accept.",
-      },
-    ]);
   });
 
   it("keeps a save that lands after Stop, with its receipt", async () => {

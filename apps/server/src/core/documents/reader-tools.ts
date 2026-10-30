@@ -5,12 +5,6 @@ import type { Log } from "../../platform/logs.ts";
 import { specOf, toolCaller, type Tool } from "../tools/registry.ts";
 import type { Run } from "./notebook.ts";
 
-/**
- * Wrong inputs a reading may make before Rufi stops it: more than a chat
- * turn's, as one reading saves many pages.
- */
-const READER_REJECTIONS = 10;
-
 /** A reader's tools for one run: their catalog for its MCP endpoint, and its caller. */
 export function readerCaller(run: Run, tools: readonly Tool[], log: Log) {
   return {
@@ -19,7 +13,6 @@ export function readerCaller(run: Run, tools: readonly Tool[], log: Log) {
       tools,
       () => ({ store: undefined, personId: run.personId }),
       log,
-      READER_REJECTIONS,
     ),
   };
 }

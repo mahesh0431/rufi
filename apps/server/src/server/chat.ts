@@ -74,12 +74,10 @@ export interface ChatDeps {
     specs: readonly ToolSpec[];
     /**
      * A caller for one turn of an agent, from the scope the door placed its
-     * calls in (rufiCaller), given Rufi's id for each call. A turn a Rufi
-     * event started can only read.
+     * calls in (rufiCaller), given Rufi's id for each call.
      */
     caller: (
       scope: TurnScope,
-      origin: "person" | "rufi",
     ) => (name: string, input: unknown, callId: string) => Promise<ToolAnswer>;
   };
   log: Log;
@@ -198,10 +196,7 @@ export function chat(deps: ChatDeps) {
     if (caller?.turn !== scope.turn) {
       caller = {
         turn: scope.turn,
-        call: deps.tools.caller(
-          scope,
-          await transcripts.origin(scope.chat, ref),
-        ),
+        call: deps.tools.caller(scope),
       };
       callers.set(scope.agent, caller);
     }
@@ -235,13 +230,6 @@ export function chat(deps: ChatDeps) {
           error: "Rufi couldn't keep this call, so it stopped the reply.",
         }),
       };
-    }
-    if (answer.stopTurn !== undefined) {
-      agent
-        .cut(thread, ref, { status: "failed", text: answer.stopTurn })
-        .catch((error: unknown) => {
-          log("chat.save_failed", { kind: "stop", error: errorCode(error) });
-        });
     }
     return answer;
   }

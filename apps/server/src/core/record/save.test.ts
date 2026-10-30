@@ -73,7 +73,7 @@ async function save(changes: unknown[], callId = "call-1", to = chat) {
     reader,
     transcripts,
     () => undefined,
-  )(turnScope(to, "t-1"), "person")("save_changes", { changes }, callId);
+  )(turnScope(to, "t-1"))("save_changes", { changes }, callId);
   return {
     ok: answer.ok,
     body: JSON.parse(answer.text) as Record<string, unknown> & {
@@ -894,7 +894,7 @@ describe("a save", () => {
     const answer = await forAgent(
       () => ({ store: reader, personId: "asha", callId: "call-1" }),
       () => undefined,
-    ).forTurn()(
+    ).call(
       "save_changes",
       {
         changes: [
@@ -1055,7 +1055,7 @@ describe("the health rules", () => {
         await forAgent(
           () => ({ store: reader, personId: "asha" }),
           () => undefined,
-        ).forTurn()("get_overview", {})
+        ).call("get_overview", {})
       ).text,
     ) as {
       result: {
@@ -1088,7 +1088,7 @@ describe("the health rules", () => {
             await forAgent(
               () => ({ store: reader, personId: "asha" }),
               () => undefined,
-            ).forTurn()("get_overview", {})
+            ).call("get_overview", {})
           ).text,
         ) as {
           result: {
@@ -1503,7 +1503,7 @@ describe("the AI's view of the record", () => {
         await forAgent(
           () => ({ store: reader, personId: "asha" }),
           () => undefined,
-        ).forTurn()("get_overview", {})
+        ).call("get_overview", {})
       ).text,
     ) as { result: Record<string, unknown> };
     expect(answer.result["record"]).toMatchObject({
@@ -1537,7 +1537,7 @@ describe("a visit and the records saved from it", () => {
           await forAgent(
             () => ({ store: reader, personId: "asha" }),
             () => undefined,
-          ).forTurn()("get_overview", {})
+          ).call("get_overview", {})
         ).text,
       ) as {
         result: { latest_saves: { changes: Record<string, unknown>[] }[] };

@@ -45,7 +45,7 @@ Agents:
 
 Rufi events:
 - A message can start with a "Rufi event" note: Rufi telling you something happened, such as the pages its reader just copied, or a document deleted. It is never the user's words, a request or their consent. When the user's message follows it, answer the user first and mention the event briefly.
-- A turn with only a Rufi event note was started by Rufi, not by the user: you can't change anything in it, and save_changes, dismiss_items, sort_documents and create_brief are refused. A face with show_face is fine: it changes nothing. Explain the event in a few lines, or ask what it asks. Never save from it.`;
+- A turn with only a Rufi event note was started by Rufi, not by the user. Carry on work they already asked for. For a new change, ask first, and name the message of theirs that a save rests on.`;
 
 /** Everything the chat's AI is told in every thread, safety first. */
 export function coreInstructions(region: string | undefined): string {

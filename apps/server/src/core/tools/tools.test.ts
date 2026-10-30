@@ -18,19 +18,12 @@ import { RESULTS_SHOWN } from "./overview.ts";
 import {
   defineTool,
   NoInput,
-  REJECTIONS_PER_TURN,
   Refusal,
   toolCaller,
   type ToolContext,
 } from "./registry.ts";
 import { LIMITS } from "./records.ts";
-import {
-  rufiCaller,
-  forAgent,
-  REJECTIONS_SETTING,
-  TOOLS,
-  toolsJson,
-} from "./tools.ts";
+import { rufiCaller, forAgent, TOOLS, toolsJson } from "./tools.ts";
 import type { Log } from "../../platform/logs.ts";
 import { turnScope } from "../../../tests/scope.ts";
 
@@ -67,7 +60,7 @@ async function call(
   name = "get_overview",
   input: unknown = {},
 ) {
-  const answer = await forAgent(() => context, record).forTurn()(name, input);
+  const answer = await forAgent(() => context, record).call(name, input);
   return {
     ...answer,
     body: JSON.parse(answer.text) as Record<string, unknown>,
@@ -664,9 +657,6 @@ describe("get_records", () => {
   });
 });
 
-const left = (text: string) =>
-  (JSON.parse(text) as { rejections_left: number }).rejections_left;
-
 describe("read_chat", () => {
   /** Asha's chat and Ravi's, 30 entries each. */
   const chats =
@@ -791,7 +781,6 @@ describe("the error envelope", () => {
         },
       ],
       example: {},
-      rejections_left: REJECTIONS_PER_TURN - 1,
     });
   });
 
@@ -815,75 +804,6 @@ describe("the error envelope", () => {
       "There is no tool called rm_rf. Rufi's tools: get_overview, get_records, get_documents, read_chat, save_changes, dismiss_items, sort_documents, create_brief, show_face, start_agent, agent_status, send_agent, read_agent.",
     );
   });
-
-  it("stops the turn when the model keeps getting it wrong", async () => {
-    const caller = forAgent(
-      () => ({ store: undefined, personId: undefined }),
-      () => undefined,
-    ).forTurn();
-    const answers = [];
-    for (let i = 0; i < REJECTIONS_PER_TURN; i++) {
-      answers.push(await caller("nope", {}));
-    }
-    expect(answers.map((a) => left(a.text))).toEqual([2, 1, 0]);
-    expect(answers.map((a) => a.stopTurn)).toEqual([
-      undefined,
-      undefined,
-      "The AI kept making requests Rufi couldn't accept.",
-    ]);
-  });
-
-  it("gives each turn its own count", async () => {
-    const tools = forAgent(
-      () => ({ store: undefined, personId: undefined }),
-      () => undefined,
-    );
-    await tools.forTurn()("nope", {});
-    const next = await tools.forTurn()("nope", {});
-    expect(left(next.text)).toBe(REJECTIONS_PER_TURN - 1);
-  });
-
-  it.each([
-    { value: undefined, lefts: [2, 1, 0], parallel: false },
-    { value: "5", lefts: [4, 3, 2, 1, 0], parallel: false },
-    ...["0", "2.5", "lots"].map((value) => ({
-      value,
-      lefts: [2, 1, 0],
-      parallel: false,
-    })),
-    { value: undefined, lefts: [2, 1, 0], parallel: true },
-    { value: "2", lefts: [1, 0], parallel: true },
-    { value: "lots", lefts: [2, 1, 0], parallel: true },
-  ])(
-    "ends a reply after its refused calls (setting $value, parallel $parallel)",
-    async ({ value, lefts, parallel }) => {
-      makeDatabase(family).close();
-      const store = openWritable(path);
-      try {
-        const chats = transcripts(store, () => "2026-10-14T10:00:00Z");
-        const chat = (await chats.chat("asha")) as ChatRow;
-        if (value !== undefined)
-          await chats.saveSetting(REJECTIONS_SETTING, value);
-        const caller = rufiCaller(
-          store,
-          chats,
-          record,
-        )(turnScope(chat, "t-1"), "person");
-        const refuse = () => caller("get_documents", { page: 1 }, "c-1");
-        const answers = [];
-        if (parallel) answers.push(...(await Promise.all(lefts.map(refuse))));
-        else {
-          for (const _ of lefts) answers.push(await refuse());
-        }
-        expect(answers.map((answer) => left(answer.text))).toEqual(lefts);
-        expect(answers.map((answer) => answer.stopTurn !== undefined)).toEqual(
-          lefts.map((remaining) => remaining === 0),
-        );
-      } finally {
-        store.close();
-      }
-    },
-  );
 
   it("tells the model only that a tool failed, and logs only its name and error code", async () => {
     const broken = defineTool({
@@ -913,7 +833,7 @@ describe("the error envelope", () => {
     ]);
   });
 
-  it("treats a refusal as a rejection with its own words", async () => {
+  it("answers a refusal in its own words", async () => {
     const refusing = defineTool({
       name: "refusing",
       description: "Refuses.",
@@ -934,7 +854,6 @@ describe("the error envelope", () => {
     expect(JSON.parse(answer.text)).toMatchObject({
       ok: false,
       error: "Not today.",
-      rejections_left: REJECTIONS_PER_TURN - 1,
     });
   });
 
@@ -965,11 +884,7 @@ describe("show_face", () => {
     try {
       const chats = transcripts(store, () => "2026-10-14T10:00:00Z");
       const chat = (await chats.chat("asha")) as ChatRow;
-      const caller = rufiCaller(
-        store,
-        chats,
-        record,
-      )(turnScope(chat, "t-1"), "person");
+      const caller = rufiCaller(store, chats, record)(turnScope(chat, "t-1"));
       const changes = () =>
         store.db.prepare("SELECT total_changes() AS n").get()?.["n"];
       const before = changes();

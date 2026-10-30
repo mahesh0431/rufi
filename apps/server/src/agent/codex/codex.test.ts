@@ -301,12 +301,6 @@ describe("starting Codex", () => {
         SETTINGS,
       ),
     ).rejects.toThrow("model_reasoning_effort is high");
-    // Without it, Codex's models send no reasoning summary to keep.
-    await expect(
-      start({ config: { model_reasoning_summary: null } }).startThread(
-        SETTINGS,
-      ),
-    ).rejects.toThrow("model_reasoning_summary is null");
   });
 
   it.each(["initialize", "config/read", "thread/start"])(

@@ -36,7 +36,7 @@ await rufiCaller(
   openReadOnly(path),
   transcripts,
   () => undefined,
-)(turnScope(chat, "t-1"), "person")(
+)(turnScope(chat, "t-1"))(
   "save_changes",
   {
     changes: [

@@ -154,7 +154,7 @@ async function ravisSave(store: Store, at: string): Promise<void> {
       reader,
       chats,
       () => undefined,
-    )(turnScope(chat, "t-after"), "person")(
+    )(turnScope(chat, "t-after"))(
       "save_changes",
       {
         changes: [
@@ -1027,7 +1027,7 @@ it("upgrades a record of version 14 to Visits: the saves, follow-ups and briefs 
         reader,
         chats,
         () => undefined,
-      )(turnScope(chat, "t-undo"), "person")(
+      )(turnScope(chat, "t-undo"))(
         "save_changes",
         {
           changes: (latest?.changes ?? []).map((change) => ({
