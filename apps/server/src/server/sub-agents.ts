@@ -52,7 +52,8 @@ export function subAgents(deps: {
       start: async ({ title, task, tools, model, effort }, callId) => {
         const parent = agents.get(scope.agent);
         if (!parent) throw new Error(`No agent ${scope.agent}.`);
-        const on = model === undefined ? undefined : await shortlisted(model);
+        // Its own or its parent's: the shortlist decides either way.
+        const on = await shortlisted(model ?? parent.model);
         const given = [...new Set(tools ?? parent.tools)];
         const wider = given.filter((tool) => !parent.tools.includes(tool));
         if (wider.length > 0) {
@@ -67,8 +68,8 @@ export function subAgents(deps: {
             id: callId,
             parent: scope.agent,
             title,
-            provider: on?.provider ?? parent.provider,
-            model: on?.id ?? parent.model,
+            provider: on.provider,
+            model: on.id,
             effort: effort ?? parent.effort,
             tools: given,
             cwd: parent.cwd,

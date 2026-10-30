@@ -540,27 +540,48 @@ test("the model and effort are chosen in the box, also in the bar, and kept for 
   await expect(choice("GPT-6-Astra, High")).toBeVisible();
 });
 
-test("the models ticked in Settings are the chat menu's: one ticked shows there, one unticked doesn't, and a new chat starts on the first", async ({
+test("the models ticked in Settings are the chat menu's, the first ticked is a new chat's, and a chat on a model unticked still shows it", async ({
   page,
   rufi,
 }) => {
   await opened(page, rufi);
-  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  const choice = (now: string) =>
+    chat(page).getByRole("button", { name: `Model and effort: ${now}` });
+  await expect(choice("GPT-6-Astra, Medium")).toBeVisible();
+  const settings = () =>
+    sidebar(page).getByRole("link", { name: "Settings" }).click();
   const models = page.getByRole("group", { name: "Models" });
   const tick = (name: string) => models.getByRole("checkbox", { name });
-  await expect(tick("GPT-6.1-Sol")).toBeChecked();
+
+  // Untouched: the first one ticked is the one a new chat starts on.
+  await settings();
+  await expect(models.locator("label")).toHaveText([
+    "GPT-6-Astra",
+    "GPT-6.1-Sol",
+    "GPT-5.5",
+  ]);
   await expect(tick("GPT-6-Astra")).toBeChecked();
+  await expect(tick("GPT-6.1-Sol")).toBeChecked();
   await expect(tick("GPT-5.5")).not.toBeChecked();
+
+  // The chat answers on GPT-6-Astra; then the user unticks it.
+  await page.goBack();
+  await send(page, "Hello");
+  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
+  await settings();
   await tick("GPT-5.5").click();
   await expect(tick("GPT-5.5")).toBeChecked();
   await tick("GPT-6-Astra").click();
   await expect(tick("GPT-6-Astra")).not.toBeChecked();
+  await expect(models.locator("label")).toHaveText([
+    "GPT-6.1-Sol",
+    "GPT-5.5",
+    "GPT-6-Astra",
+  ]);
 
-  await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
-  await page
-    .getByRole("main")
-    .getByRole("button", { name: "Model and effort: GPT-6.1-Sol, Medium" })
-    .click();
+  // The chat still says which model answers; the menu offers the ticked.
+  await page.goBack();
+  await choice("GPT-6-Astra, Medium").click();
   await expect(page.getByRole("menuitemradio")).toHaveText([
     "GPT-6.1-Sol",
     "GPT-5.5",

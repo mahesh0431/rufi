@@ -573,14 +573,12 @@ export async function startRufiAi(
         const now = agents.get(agent);
         if (!now) return;
         const model = row.model ?? now.model;
-        // A model of another provider moves Rufi AI there. The menu and the
-        // choice listed the models already; only a model unknown since is
-        // looked up.
+        // Rufi AI runs on its model's provider, also when it was made anew
+        // on another. The menu and the choice listed the models already;
+        // only a model unknown since Rufi started is looked up.
         const provider =
-          model === now.model
-            ? undefined
-            : (providers.get(model) ??
-              (await models()).find((one) => one.id === model)?.provider);
+          providers.get(model) ??
+          (await models()).find((one) => one.id === model)?.provider;
         agents.configure(agent, {
           ...(provider !== undefined && { provider }),
           model,
