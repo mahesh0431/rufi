@@ -1149,67 +1149,86 @@ export function transcripts(
 
     /**
      * A turn's end as the agent database keeps it (server/rufi-ai.ts), with
-     * `write` in the same transaction. Only when Rufi didn't save the end
-     * itself: a reply still running ends so, and one that completed, also
-     * when Rufi closed before it saved it, has its whole answer.
+     * `write` in the same transaction. The end goes on a reply still
+     * running, or one Rufi closed before it saved it. A whole answer goes on
+     * the reply row of the item it streamed as (or its own row when nothing
+     * streamed), also after the chat saved the end itself, unless Rufi
+     * ended the turn on its own (Stop, a failed save).
      */
     applyEnd: (
       chat: ChatRow,
       agentTurnId: string,
       end: TurnEnding,
-      answer: string | undefined,
+      answer: { text: string; item?: string } | undefined,
       write: (trx: Transaction<Tables>) => Promise<void>,
     ) =>
       change(chat.id, async (trx, revision) => {
         await write(trx);
         const turn = await turnOf(trx, chat.id, agentTurnId);
+        if (!turn) return undefined;
         const closed =
-          turn?.status === "interrupted" && turn.end_reason === null;
-        if (
-          !turn ||
-          !(turn.status === "running" || (answer !== undefined && closed))
-        ) {
+          turn.status === "interrupted" && turn.end_reason === null;
+        const ends =
+          turn.status === "running" || (answer !== undefined && closed);
+        if (!ends && !(answer !== undefined && turn.status === "completed")) {
           return undefined;
         }
         const at = now();
-        await trx
-          .updateTable("turns")
-          .set({
-            status: end.status,
-            end_reason: end.reason ?? null,
-            end_text: end.text ?? null,
-            resets_at: end.resetsAt ?? null,
-            ended_at: at,
-          })
-          .where("id", "=", turn.id)
-          .execute();
+        if (ends) {
+          await trx
+            .updateTable("turns")
+            .set({
+              status: end.status,
+              end_reason: end.reason ?? null,
+              end_text: end.text ?? null,
+              resets_at: end.resetsAt ?? null,
+              ended_at: at,
+            })
+            .where("id", "=", turn.id)
+            .execute();
+        }
         const entries: string[] = [];
         if (answer !== undefined) {
           const reply = await trx
             .selectFrom("transcript_entries")
-            .select("id")
+            .select(["id", "text", "status"])
             .where("person_id", "=", turn.person_id)
             .where("turn_id", "=", turn.id)
             .where("kind", "=", "reply")
-            .orderBy("seq", "desc")
+            .where((eb) =>
+              answer.item === undefined
+                ? eb("agent_item_id", "is", null)
+                : eb("agent_item_id", "=", answer.item),
+            )
             .executeTakeFirst();
           if (reply) {
-            await trx
-              .updateTable("transcript_entries")
-              .set({ text: answer, status: "done", revision, updated_at: at })
-              .where("id", "=", reply.id)
-              .execute();
-            entries.push(reply.id);
-          } else if (answer !== "") {
+            if (reply.text !== answer.text || reply.status !== "done") {
+              await trx
+                .updateTable("transcript_entries")
+                .set({
+                  text: answer.text,
+                  status: "done",
+                  revision,
+                  updated_at: at,
+                })
+                .where("id", "=", reply.id)
+                .execute();
+              entries.push(reply.id);
+            }
+          } else if (answer.text !== "") {
             entries.push(
               await insertEntry(trx, chat, revision, {
                 turnId: turn.id,
                 kind: "reply",
-                text: answer,
+                text: answer.text,
                 status: "done",
+                ...(answer.item !== undefined && { agentItemId: answer.item }),
               }),
             );
           }
+        }
+        if (!ends) {
+          return entries.length > 0 ? { entries, turns: [] } : undefined;
         }
         const stopped = await trx
           .updateTable("transcript_entries")

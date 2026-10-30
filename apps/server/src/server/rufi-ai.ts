@@ -223,8 +223,6 @@ export async function startRufiAi(
     }
     threads.set(ref, agent);
   };
-  /** The provider's turn of each of the package's, while it runs. */
-  const turns = new Map<string, string>();
   /** Rufi's own end for a turn it stopped, by the provider's turn. */
   const ends = new Map<string, TurnEnd>();
   let closed = false;
@@ -270,8 +268,9 @@ export async function startRufiAi(
     chat?.onEvent(eventOf(ref, event));
   };
 
-  // The end of a root's turn, when the chat didn't save it, from the
-  // package's events (transcripts.applyEnd), after what the chat was told.
+  // The end of a root's turn from the package's events, after what the
+  // chat was told was saved: the record of its whole answer, and its end
+  // when the chat didn't save it (transcripts.applyEnd).
   const apply: Apply = async (event, advance) => {
     if (event.type !== "turn.ended" || event.agent === null) return false;
     const owner = await kept.owner(event.agent);
@@ -279,12 +278,17 @@ export async function startRufiAi(
     const row = await transcripts.chat(owner.personId);
     if (row?.id !== owner.chatId) return false;
     await chat?.saved();
-    const { ref, ...end } = event.payload as Ended & { ref: string };
+    const { ref, item, ...end } = event.payload as Ended & {
+      ref: string;
+      item?: string;
+    };
     await transcripts.applyEnd(
       row,
       ref,
       endOf(end),
-      end.status === "done" ? end.answer : undefined,
+      end.status === "done"
+        ? { text: end.answer, ...(item !== undefined && { item }) }
+        : undefined,
       advance,
     );
     return true;
@@ -333,8 +337,7 @@ export async function startRufiAi(
   /** What became of the hand-overs, from the package's events. */
   const outcome = (event: StoredEvent) => {
     const payload = event.payload as {
-      turn: string;
-      ref: string;
+      ref?: string | null;
       inputs: string[];
       input: string;
       held: string;
@@ -342,14 +345,13 @@ export async function startRufiAi(
     };
     switch (event.type) {
       case "turn.started":
-        turns.set(payload.turn, payload.ref);
-        for (const input of payload.inputs) settle(input, payload.ref);
+        for (const input of payload.inputs) {
+          settle(input, payload.ref ?? undefined);
+        }
         return;
-      case "turn.ended":
-        turns.delete(payload.turn);
-        return;
+      // Also when it comes after the turn's end.
       case "input.delivered":
-        settle(payload.input, turns.get(payload.turn));
+        settle(payload.input, payload.ref ?? undefined);
         return;
       case "input.held":
         settle(

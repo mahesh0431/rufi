@@ -748,7 +748,18 @@ export function createAgents(options: {
         at,
         live.id,
       );
-      event("turn.ended", live.id, { turn: turn.id, ref, ...end });
+      // A whole answer names the item it streamed as, when it did.
+      const item =
+        end.status === "done"
+          ? (
+              db
+                .prepare(
+                  "SELECT id FROM items WHERE turn_id = ? AND type = 'text' ORDER BY position DESC LIMIT 1",
+                )
+                .get(turn.id) as { id: string } | undefined
+            )?.id
+          : undefined;
+      event("turn.ended", live.id, { turn: turn.id, ref, ...end, item });
     });
     if (live.current?.ref === ref) {
       live.current = undefined;
@@ -852,7 +863,16 @@ export function createAgents(options: {
           ).run(to.state, at, input);
       }
       const { state, ...rest } = to;
-      event(`input.${state}`, live.id, { input, ...rest });
+      // Delivered names its turn by the provider's reference too.
+      const ref =
+        to.state === "delivered" && to.turn !== null
+          ? (
+              db
+                .prepare("SELECT provider_turn AS ref FROM turns WHERE id = ?")
+                .get(to.turn) as { ref: string | null } | undefined
+            )?.ref
+          : undefined;
+      event(`input.${state}`, live.id, { input, ...rest, ref });
     });
   }
 
