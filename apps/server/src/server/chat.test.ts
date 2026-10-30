@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { SIGNED_OUT, type Entry } from "@rufi/contracts";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Scenario } from "../../tests/fake-codex.ts";
 import {
@@ -127,6 +128,8 @@ async function startChat(
     toolMs?: number;
     /** How long the agent waits for a call's answer. */
     doorMs?: number;
+    /** What a call of this tool waits for before it runs. */
+    waitFor?: (tool: string) => Promise<void> | undefined;
     allowlist?: string[];
     /** Names this Rufi's rules: another one is an update. */
     rules?: string;
@@ -239,6 +242,7 @@ async function startChat(
         )(scope, origin);
         return async (name, input, callId) => {
           admitted.push(name);
+          await options.waitFor?.(name);
           await sleep(options.toolMs ?? 0);
           return call(name, input, callId);
         };
@@ -385,6 +389,21 @@ function ownCall(call: string, chatId = "c-asha", conversation = 1): string {
     .prepare("SELECT agent_id FROM agent_owners WHERE chat_id = ? AND root = 1")
     .get(chatId);
   return `${String(owner?.["agent_id"])}/${String(conversation)}/${call}`;
+}
+
+/** The agents in the agent database, oldest first. */
+function agentRows(): Record<string, unknown>[] {
+  const db = new DatabaseSync(agentsPath(home), { readOnly: true });
+  try {
+    return db
+      .prepare(
+        "SELECT id, parent_id, title, status, result FROM agents ORDER BY rowid",
+      )
+      .all()
+      .map((row) => ({ ...row }));
+  } finally {
+    db.close();
+  }
 }
 
 /** The thread's files are gone: Codex has no record of the chat's thread. */
@@ -2068,6 +2087,193 @@ describe("the chat, on the scripted Codex", () => {
     ]);
     expect(store.db.prepare("SELECT call_id FROM tool_calls").all()).toEqual([
       { call_id: ownCall("call-0") },
+    ]);
+  });
+
+  it("keeps a sub-agent's save made after Rufi AI's reply ended, with its kept answer and its receipt", async () => {
+    const replied = Promise.withResolvers<undefined>();
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Ask a helper": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Helper", task: "helper: save it" },
+            },
+          ],
+          "helper:": [saveHeadache],
+        },
+      },
+      waitFor: (tool) =>
+        tool === "save_changes" ? replied.promise : undefined,
+    });
+    const c = await newChat();
+    await say(c, "Ask a helper");
+    await ended(c.id);
+    replied.resolve(undefined);
+    await until(async () =>
+      (await transcript(c.id)).entries.some(([kind]) => kind === "receipt"),
+    );
+    expect(store.db.prepare("SELECT name FROM symptoms").all()).toEqual([
+      { name: "Headache" },
+    ]);
+    // The helper's id is the call that started it.
+    const helper = ownCall("call-0");
+    expect(
+      store.db
+        .prepare(
+          "SELECT agent_id, turn_id, ok FROM tool_calls WHERE tool = 'save_changes'",
+        )
+        .all(),
+    ).toEqual([{ agent_id: helper, turn_id: null, ok: 1 }]);
+    const { entries, all } = await transcript(c.id);
+    expect(entries.filter(([kind]) => kind === "receipt")).toEqual([
+      ["receipt", "**Saved**\n\n- Added symptom **Headache**"],
+    ]);
+    expect(all.find((entry) => entry.kind === "receipt")?.turnId).toBeNull();
+  });
+
+  it("runs a sub-agent's own sub-agent, and Rufi AI reads how each went and the conversation of the one below", async () => {
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Ask a helper": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Helper", task: "helper: ask yours" },
+            },
+          ],
+          "helper:": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Second helper", task: "second: hello" },
+            },
+          ],
+        },
+      },
+    });
+    const c = await newChat();
+    await say(c, "Ask a helper");
+    await ended(c.id);
+    const helper = ownCall("call-0");
+    const second = `${helper}/1/call-0`;
+    await until(() =>
+      Promise.resolve(
+        agentRows().some(
+          (row) => row["id"] === second && row["status"] === "done",
+        ),
+      ),
+    );
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "How did they do": [
+            { tool: "agent_status", arguments: {} },
+            { tool: "read_agent", arguments: { agent: second } },
+          ],
+        },
+      },
+    });
+    await say(await chatRow(c.id), "How did they do?");
+    await ended(c.id, 2);
+    const answers = store.db
+      .prepare(
+        "SELECT tool, answer FROM tool_calls WHERE tool IN ('agent_status', 'read_agent') ORDER BY started_at",
+      )
+      .all() as { tool: string; answer: string }[];
+    const [status, read] = answers.map(
+      (row) => JSON.parse(row.answer) as { ok: boolean; result: unknown },
+    );
+    expect(status).toEqual({
+      ok: true,
+      result: {
+        agents: [
+          {
+            agent: helper,
+            title: "Helper",
+            parent: "self",
+            status: "done",
+            result: "ok:helper: ask yours",
+          },
+          {
+            agent: second,
+            title: "Second helper",
+            parent: helper,
+            status: "done",
+            result: "ok:second: hello",
+          },
+        ],
+      },
+    });
+    expect(read).toMatchObject({
+      ok: true,
+      result: {
+        agent: { agent: second, title: "Second helper", status: "done" },
+        turns: [
+          {
+            status: "done",
+            inputs: [{ from: helper, text: "second: hello" }],
+            answer: "ok:second: hello",
+          },
+        ],
+        earlier: null,
+      },
+    });
+  });
+
+  it("gives a sub-agent only the tools it was given, and its own sub-agent no more than those", async () => {
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Ask a reader": [
+            {
+              tool: "start_agent",
+              arguments: {
+                title: "Reader",
+                task: "reader: try",
+                tools: ["get_overview", "start_agent"],
+              },
+            },
+          ],
+          "reader:": [
+            saveHeadache,
+            {
+              tool: "start_agent",
+              arguments: {
+                title: "Wider",
+                task: "wider: try",
+                tools: ["get_overview", "save_changes"],
+              },
+            },
+          ],
+        },
+      },
+    });
+    const c = await newChat();
+    await say(c, "Ask a reader");
+    await ended(c.id);
+    const reader = ownCall("call-0");
+    await until(() =>
+      Promise.resolve(
+        agentRows().some(
+          (row) => row["id"] === reader && row["status"] === "done",
+        ),
+      ),
+    );
+    expect(
+      store.db
+        .prepare(
+          "SELECT tool, ok FROM tool_calls WHERE agent_id = ? ORDER BY started_at",
+        )
+        .all(reader),
+    ).toEqual([
+      { tool: "save_changes", ok: 0 },
+      { tool: "start_agent", ok: 0 },
+    ]);
+    expect(store.db.prepare("SELECT * FROM symptoms").all()).toEqual([]);
+    expect(agentRows().map((row) => row["title"])).toEqual([
+      "Rufi AI",
+      "Reader",
     ]);
   });
 
