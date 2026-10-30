@@ -174,7 +174,9 @@ describe("a reading agent's saved reading", () => {
     expect(again).toEqual(first);
     expect(rows(rufi.store, "SELECT id FROM jobs")).toHaveLength(1);
     const kept = rows(rufi.store, "SELECT input, answer FROM tool_calls");
-    expect(kept.map((call) => JSON.parse(String(call["input"])))).toEqual(
+    expect(
+      kept.map((call): unknown => JSON.parse(String(call["input"]))),
+    ).toEqual(
       kept.map(() => ({
         document: "doc-asha-aug",
         pages: [
