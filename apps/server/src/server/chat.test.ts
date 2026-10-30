@@ -3365,6 +3365,32 @@ describe("When the AI's thread doesn't open", () => {
     expect(await threadStarts()).toBe(1);
   });
 
+  it("sends the held message in the same thread when the user asks Rufi AI to, once the error has passed", async () => {
+    const thread = await afterOneReply({
+      resumeFails: 1,
+      callsByText: {
+        // The message names the held one: "(agent <its id>)".
+        "Send my held question": [
+          {
+            tool: "waiting_messages",
+            arguments: { action: "steer", id: "$agent" },
+          },
+        ],
+      },
+    });
+    await say(await chatRow(), "held question");
+    const item = await held();
+    const ask = `Send my held question (agent ${item.id})`;
+    await say(await chatRow(), ask);
+    await ended("c-asha", 3);
+    const { entries } = await transcript("c-asha");
+    expect(
+      entries.filter(([kind]) => kind === "message").map(([, text]) => text),
+    ).toEqual(["first", ask, "held question"]);
+    expect((await queue.list(await chatRow())).items).toEqual([]);
+    expect((await chatRow()).threadId).toBe(thread);
+  });
+
   it("keeps the held message with its choices when Rufi starts again", async () => {
     await afterOneReply({ profile: ":workspace" });
     await say(await chatRow(), "second");

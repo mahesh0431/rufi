@@ -306,11 +306,15 @@ export function subAgents(deps: {
           case "steer": {
             const found = await find(id);
             const { row } = found;
+            // A held one goes as the screens' Send sends it.
             if (row) {
+              const { holdId } = row;
               await asPerson(() =>
                 row.held === null
                   ? chat.steer(scope.chat, row.id)
-                  : chat.send(scope.chat, row.id),
+                  : row.held === "open_failed" && holdId !== null
+                    ? chat.recover(scope.chat, row.id, holdId, "retry")
+                    : chat.send(scope.chat, row.id),
               );
             } else agents.steer(id ?? "");
             break;
