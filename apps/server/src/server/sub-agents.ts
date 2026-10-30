@@ -1,5 +1,5 @@
 // What an agent does with agents (core/tools/agents.ts), in the agent
-// system (docs/adr/0025). A child of the calling agent is made by the call
+// system (docs/adr/0026). A child of the calling agent is made by the call
 // that starts it, and its id is that call's, so the same call again finds
 // it; it is the caller's chat's, on the caller's model and effort, with no
 // more of Rufi's tools than the caller has. An agent sees how the agents
