@@ -17,11 +17,7 @@ import { Option, Schema } from "effect";
 import { ChatGptError } from "../agent/chatgpt/openai.ts";
 import { callOf } from "../agent/codex/events.ts";
 import { SUB_AGENT_MODELS } from "../agent/codex/subagent.ts";
-import type {
-  RunSubAgent,
-  SubAgentOutcome,
-  TurnEnd,
-} from "../agent/runtime.ts";
+import type { RunSubAgent, SubAgentOutcome } from "../agent/runtime.ts";
 import type { Run } from "../core/documents/notebook.ts";
 import {
   READER_EFFORT,
@@ -160,17 +156,11 @@ export function reader(deps: ReaderDeps) {
     const counts = { looks: 0, saves: 0 };
     const about = await readings.about(run);
     let saved = about.saved.length;
-    const toolStop = new AbortController();
-    let stopReason: string | undefined;
     // The attempt's key: its tools for this person, document and attempt.
     const key = deps.mcp.keys.issue({
       tools: tools.specs,
       call: async ({ tool, input, meta }) => {
         const answer = await tools.call(tool, input, callOf(meta).callId);
-        if (answer.stopTurn !== undefined) {
-          stopReason ??= answer.stopTurn;
-          toolStop.abort();
-        }
         if (tool === "get_page") counts.looks++;
         if (tool === "save_page" && answer.ok) {
           counts.saves++;
@@ -180,7 +170,7 @@ export function reader(deps: ReaderDeps) {
         return answer;
       },
     });
-    const stops = AbortSignal.any([signal, deleted, toolStop.signal]);
+    const stops = AbortSignal.any([signal, deleted]);
     /** From a stop, a delete or the end on, the attempt takes no more calls. */
     const close = () => {
       run.closed = true;
@@ -212,9 +202,6 @@ export function reader(deps: ReaderDeps) {
     } catch (error) {
       close();
       if (signal.aborted || deleted.aborted) return ended();
-      if (stopReason !== undefined) {
-        return { ended: "failed", why: stopReason, run };
-      }
       log("reader.failed", { error: errorCode(error) });
       if (
         error instanceof ChatGptError &&
@@ -232,10 +219,7 @@ export function reader(deps: ReaderDeps) {
       return { ended: "passing", why: "Rufi couldn't start the AI", run };
     }
     close();
-    const end: TurnEnd =
-      stopReason === undefined
-        ? outcome.end
-        : { status: "failed", text: stopReason };
+    const end = outcome.end;
     log("reader.ended", {
       status: end.status,
       ms: Date.now() - t0,
@@ -264,7 +248,6 @@ export function reader(deps: ReaderDeps) {
     // Rufi's own deadline in Rufi's words; anything else as the service or
     // Codex said it.
     const why =
-      stopReason ??
       (end.reason === "timeout" ? "the reading took too long" : end.text) ??
       "the reader stopped";
     return end.reason === "timeout" ||

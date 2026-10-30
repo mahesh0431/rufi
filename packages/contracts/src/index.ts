@@ -233,8 +233,22 @@ export const Turn = Schema.Struct({
    * from, in the AI's words. Only once the reply completed.
    */
   how: Schema.NullOr(Schema.String),
+  /**
+   * The agent whose message started this reply, Rufi AI's by itself, and
+   * why: its turn ended done, stopped or failed, it asked a question, or it
+   * wrote.
+   */
+  cause: Schema.optionalKey(
+    Schema.Struct({
+      title: Schema.String,
+      about: Schema.Literals(["done", "stopped", "failed", "asked", "wrote"]),
+    }),
+  ),
 });
 export type Turn = typeof Turn.Type;
+
+/** Why Rufi AI replied by itself: the agent's message that started it. */
+export type Cause = NonNullable<Turn["cause"]>;
 
 /** How hard the AI thinks for a reply: low is faster, high thinks longer. */
 export const Effort = Schema.Literals(["low", "medium", "high"]);
@@ -280,29 +294,29 @@ export type Page = typeof Page.Type;
 /**
  * One row of the chat's queue: a message of the person's, or Rufi's note
  * for the AI about an event (its text is the event's line). waiting: it
- * goes in turn, unless held; handing_over: Rufi is giving it to the AI;
- * not_sure: Rufi stopped while handing it over, so nobody knows whether
- * the AI got it, and it is never sent again by itself.
+ * goes in turn, unless held; handing_over: Rufi is giving it to the AI.
  */
 export const QueueItem = Schema.Struct({
   id: Schema.String,
   origin: Schema.Literals(["person", "rufi"]),
   text: Schema.String,
-  state: Schema.Literals(["waiting", "handing_over", "not_sure"]),
+  state: Schema.Literals(["waiting", "handing_over"]),
   /**
    * Why a waiting row doesn't go by itself: signed_out (the AI found the
    * sign-in missing; it goes once the sign-in is back; heldText says so),
-   * restored (from a backup), failed (the AI refused it, or a Stop cut its
-   * start; heldText says why), open_failed (the AI's thread didn't open;
-   * heldText says why, and the person chooses Try again or New thread),
-   * reply_ended (its reply ended while Rufi read its files; it is in the
-   * chat already, and its reply's Retry sends it again; heldText says why).
+   * restored (from a backup), failed (the AI couldn't take it; heldText
+   * says why, as it came), stopped (a Stop came before it went),
+   * open_failed (the AI's thread didn't open; heldText says why, and the
+   * person chooses Send or New thread), reply_ended (its reply ended while
+   * Rufi read its files; it is in the chat already, and its reply's Retry
+   * sends it again; heldText says why).
    */
   held: Schema.NullOr(
     Schema.Literals([
       "signed_out",
       "restored",
       "failed",
+      "stopped",
       "open_failed",
       "reply_ended",
     ]),
@@ -399,9 +413,15 @@ export type Appearance = typeof Appearance.Type;
 export const ActivityShown = Schema.Literals(["working", "shown", "hidden"]);
 export type ActivityShown = typeof ActivityShown.Type;
 
+/** What a message sent while a reply runs does: goes into it, or after it. */
+export const WhileReplying = Schema.Literals(["steer", "queue"]);
+export type WhileReplying = typeof WhileReplying.Type;
+
 export const Settings = Schema.Struct({
   appearance: Appearance,
   activity: ActivityShown,
+  /** What Enter does while a reply runs. */
+  whileReplying: WhileReplying,
   /** The chosen region; null when none is chosen. */
   emergencyRegion: Schema.NullOr(Schema.String),
   emergency: Schema.NullOr(
@@ -500,6 +520,7 @@ export const AddPerson = Schema.Struct({ displayName: Line(200) });
 export const SaveSettings = Schema.Struct({
   appearance: Schema.optionalKey(Appearance),
   activity: Schema.optionalKey(ActivityShown),
+  whileReplying: Schema.optionalKey(WhileReplying),
   /** A region code Rufi knows, such as "IN"; null clears it. */
   emergencyRegion: Schema.optionalKey(Schema.NullOr(Line(10))),
   /** The document reader's model: one of the models it can run on. */
@@ -532,6 +553,8 @@ export const SendMessage = Schema.Struct({
   ),
   /** Its chips: what it points at. */
   refs: Schema.optionalKey(Pointers),
+  /** While a reply runs: into it (steer, the default), or after it (queue). */
+  kind: Schema.optionalKey(WhileReplying),
 });
 
 /** The box's text and chips, saved over the draft unless a send holds it. */

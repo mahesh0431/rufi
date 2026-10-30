@@ -84,10 +84,10 @@ Your choice is used by the next reading that starts. A reading that runs keeps t
 
 - Your reply starts at once, with your message. Its Activity is open (see [Activity](chat.md#activity)) and shows a step for each file, **Rufi's reader · thyrocare-aug.pdf**, with how far it is (**13 of 60 pages**). Files are copied one after another, in the order you sent them. Rufi AI starts when all are copied.
 - A reading waits when another reading is at work, also another person's: the step says **waiting for another reading**.
-- The chat bar shows the turning circle, and the stop button is where the send button was (see [While the AI replies](chat.md#while-the-ai-replies)).
+- The chat bar shows the turning circle, and **Steer**, **Queue** and **Stop** are where the send button was (see [While the AI replies](chat.md#while-the-ai-replies)).
 - On the Documents page, the file's row says **Reading · 13 of 60**, with **View reading**. It has no **Ask Rufi** meanwhile.
 - Click **View reading** to see the reader's work as it goes: each page's copy as the reader saved it, with its marks, what couldn't be read and why, and how much of your plan it used. **View reading** shows only; you check and fix the drafts on the document's page (see [Check a report](#check-a-report)).
-- A message you send meanwhile waits for a reply of its own (see [Waiting messages](chat.md#waiting-messages)), because the AI hasn't started yet.
+- A message you send meanwhile goes as you choose: steered, it goes into this reply once Rufi AI starts; queued, it waits for a reply of its own (see [While the AI replies](chat.md#while-the-ai-replies)).
 
 ### When the reading ends
 

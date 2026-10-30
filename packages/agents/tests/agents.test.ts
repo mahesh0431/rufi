@@ -15,10 +15,8 @@ import {
 } from "../src/agents.ts";
 import type {
   Conversation,
-  Input,
   ProviderAdapter,
   ProviderEvent,
-  SteerOutcome,
 } from "../src/provider.ts";
 import { openAgentStore, type AgentStore } from "../src/store.ts";
 import { ANSWER } from "./contract.ts";
@@ -32,33 +30,19 @@ let agents: Agents;
 let ledger: { conversation: number; ref: string; received: number }[];
 let openings: string[];
 /** The person's messages as Rufi keeps them (its chat_queue). */
-let chat: Map<
-  string,
-  { state: string; sentAs?: string; parts: readonly string[] }
->;
+let chat: Map<string, { state: string; parts: readonly string[] }>;
 let claims: { input: string; status: string }[];
 let errors: unknown[];
 
 /** Rufi's claim, as one transaction of its own would answer it. */
-function claim({
-  agent,
-  conversation,
-  input,
-}: Parameters<Host["claim"]>[0]): Promise<Claim | undefined> {
+function claim({ input }: Parameters<Host["claim"]>[0]): Promise<Claim> {
   const row = chat.get(input);
-  const sentAs = `${agent}/${String(conversation)}`;
-  let answer: Claim | undefined;
+  let answer: Claim = { status: "gone" };
   if (row?.state === "waiting") {
-    Object.assign(row, { state: "handing_over", sentAs });
+    row.state = "handing_over";
     answer = { status: "claimed", parts: row.parts };
-  } else if (row?.state === "handing_over") {
-    if (row.sentAs === sentAs) {
-      answer = { status: "already_claimed", parts: row.parts };
-    }
-  } else {
-    answer = { status: "gone" };
   }
-  claims.push({ input, status: answer?.status ?? "none" });
+  claims.push({ input, status: answer.status });
   return Promise.resolve(answer);
 }
 
@@ -184,12 +168,7 @@ const running = () =>
 const received = () =>
   fake.received(ledger[0]?.ref ?? "").map((input) => input.id);
 
-const meta = (turn: string, call: string) => ({
-  "fake/turn": turn,
-  "fake/call": call,
-});
-
-const deadline = () => AbortSignal.timeout(2_000);
+const meta = (call: string) => ({ "fake/call": call });
 
 describe("an agent", () => {
   it("runs only once the host has admitted it", async () => {
@@ -213,10 +192,7 @@ describe("an agent", () => {
     expect(ledger).toEqual([
       { conversation: 1, ref: expect.any(String) as string, received: 0 },
     ]);
-    expect(chat.get("msg-1")).toMatchObject({
-      state: "handing_over",
-      sentAs: `${ASHA.id}/1`,
-    });
+    expect(chat.get("msg-1")?.state).toBe("handing_over");
     expect(fake.received(ledger[0]?.ref ?? "")).toEqual([
       { id: "msg-1", parts: ["What was my last TSH?"] },
     ]);
@@ -462,6 +438,13 @@ describe("the queue", () => {
     await running();
     const first = latestTurn(ASHA.id);
 
+    // The steer's sender is an agent of its own.
+    agents.create({
+      ...ASHA,
+      id: "agent-reader",
+      parent: ASHA.id,
+      title: "Reading report.pdf",
+    });
     agents.send(ASHA.id, note("note-2", "queue"));
     agents.send(ASHA.id, note("note-3", "steer"));
     await until(() => {
@@ -482,9 +465,22 @@ describe("the queue", () => {
       { id: "note-3", turn_id: first.id },
     ]);
     expect(received()).toEqual(["note-1", "note-3", "note-2"]);
+    // A steer reaches the agent after a line saying it is one, which names
+    // the agent that sent it.
+    expect(
+      fake
+        .received(ledger[0]?.ref ?? "")
+        .find((input) => input.id === "note-3"),
+    ).toEqual({
+      id: "note-3",
+      parts: [
+        "You're being steered by Reading report.pdf (agent-reader): don't drop what you're working on unless you have to; take this into account.",
+        "Reading report.pdf: note-3",
+      ],
+    });
   });
 
-  it("takes the host's changes to what waits: a removed input doesn't go, a new order holds, and one sent now goes first, also one removed before", async () => {
+  it("takes the host's changes to what waits: a removed input doesn't go, a new order holds, and a steered one goes into the running turn", async () => {
     asha();
     fake.script.turn = "runs";
     agents.send(ASHA.id, note("note-1"));
@@ -492,11 +488,14 @@ describe("the queue", () => {
     for (const id of ["note-2", "note-3", "note-4", "note-5"]) {
       agents.send(ASHA.id, note(id, "queue"));
     }
-    agents.remove(["note-3", "note-5"]);
+    agents.remove(["note-3"]);
     agents.reorder(ASHA.id, ["note-4", "note-2"]);
-    agents.sendNow("note-5");
+    agents.steer("note-5");
+    await until(() => {
+      expect(states()["note-5"]).toBe("delivered");
+    });
     const ref = ledger[0]?.ref ?? "";
-    for (const next of ["note-5", "note-4", "note-2"]) {
+    for (const next of ["note-4", "note-2"]) {
       fake.end(ref);
       await until(() => {
         expect(states()[next]).toBe("delivered");
@@ -530,80 +529,46 @@ describe("the queue", () => {
     expect(received()).toEqual(["note-1", "note-2"]);
   });
 
-  it("starts nothing while a steer is still with the provider after its turn; one Stop cancels goes first, and starts the next turn", async () => {
-    asha();
-    fake.script.turn = "runs";
-    agents.send(ASHA.id, note("note-1"));
-    await running();
-    agents.send(ASHA.id, note("note-2", "queue"));
-
-    // The provider holds the steer, and its turn ends without taking it.
-    fake.script.steer = "holds";
-    agents.send(ASHA.id, note("note-3", "steer"));
-    await until(() => {
-      expect(states()["note-3"]).toBe("handing_over");
-    });
-    fake.end(ledger[0]?.ref ?? "", { status: "failed", reason: "other" });
-    await until(() => {
-      expect(agents.get(ASHA.id)?.status).toBe("failed");
-    });
-    await sleep(20);
-    expect(states()).toMatchObject({
-      "note-2": "waiting",
-      "note-3": "handing_over",
-    });
-    expect(rows("SELECT id FROM turns")).toHaveLength(1);
-
-    // Stop: the provider cancels it, and it goes ahead of the queued input.
-    await agents.stop(ASHA.id, "person");
-    await until(() => {
-      expect(states()["note-3"]).toBe("delivered");
-    });
-    const next = latestTurn(ASHA.id);
-    expect(rows("SELECT id, state, turn_id FROM queue ORDER BY id")).toEqual([
-      {
-        id: "note-1",
-        state: "delivered",
-        turn_id: expect.any(String) as string,
-      },
-      { id: "note-2", state: "waiting", turn_id: null },
-      { id: "note-3", state: "delivered", turn_id: next.id },
-    ]);
-    expect(received()).toEqual(["note-1", "note-3"]);
-  });
-
-  it("settles an uncertain steer by what the provider can tell, and never sends one it can't tell again", async () => {
-    let canTell = true;
+  it("starts the next turn with a steer whose turn ended before it went, ahead of what was queued", async () => {
     agents = await run(
       changed((conversation) => ({
-        reconcile: (ids) =>
-          canTell
-            ? conversation.reconcile(ids)
-            : Promise.resolve(new Map(ids.map((id) => [id, "unknown"]))),
+        // The turn ends just as the steer reaches the provider.
+        steer: (steer) => {
+          fake.end(conversation.ref);
+          return conversation.steer(steer);
+        },
       })),
     );
     asha();
     fake.script.turn = "runs";
     agents.send(ASHA.id, note("note-1"));
     await running();
+    agents.send(ASHA.id, note("note-2", "queue"));
+    agents.send(ASHA.id, note("note-3", "steer"));
+    await until(() => {
+      expect(states()["note-3"]).toBe("delivered");
+    });
+    expect(states()["note-2"]).toBe("waiting");
+    expect(received()).toEqual(["note-1", "note-3"]);
+    expect(errors).toEqual([]);
+  });
 
+  it("counts a steer whose answer was lost as sent, and never sends it again", async () => {
+    asha();
+    fake.script.turn = "runs";
+    agents.send(ASHA.id, note("note-1"));
+    await running();
     fake.script.steer = "loses_reply";
     agents.send(ASHA.id, note("note-2", "steer"));
     await until(() => {
       expect(states()["note-2"]).toBe("delivered");
-    });
-
-    canTell = false;
-    agents.send(ASHA.id, note("note-3", "steer"));
-    await until(() => {
-      expect(states()["note-3"]).toBe("not_sure");
     });
     fake.end(ledger[0]?.ref ?? "");
     await until(() => {
       expect(agents.get(ASHA.id)?.status).toBe("done");
     });
     await sleep(20);
-    expect(received()).toEqual(["note-1", "note-2", "note-3"]);
+    expect(received()).toEqual(["note-1", "note-2"]);
     expect(rows("SELECT id FROM turns")).toHaveLength(1);
   });
 
@@ -655,47 +620,8 @@ describe("the queue", () => {
 });
 
 describe("a hand-over", () => {
-  it("drops what Rufi says is gone, and after a crash between Rufi's claim and its own save, sends the message once", async () => {
-    // Rufi committed its claim, then Rufi stopped before the package saved
-    // the hand-over.
-    let crashed = true;
-    agents = await run(fake.adapter, {
-      ...host(),
-      claim: async (asked) => {
-        const answer = await claim(asked);
-        return crashed && asked.input === "msg-2"
-          ? new Promise<never>(() => undefined)
-          : answer;
-      },
-    });
-    asha();
-    agents.send(ASHA.id, person("msg-1"));
-    agents.send(ASHA.id, person("msg-2", "And my last HbA1c?"));
-    // The person removed the first before it went.
-    chat.set("msg-1", { state: "removed", parts: ["What was my last TSH?"] });
-    await until(() => {
-      expect(chat.get("msg-2")?.state).toBe("handing_over");
-    });
-    expect(states()).toEqual({ "msg-1": "removed", "msg-2": "waiting" });
-
-    await agents.close();
-    crashed = false;
-    agents = await run(fake.adapter);
-
-    await until(() => {
-      expect(states()["msg-2"]).toBe("delivered");
-    });
-    expect(claims.filter(({ input }) => input === "msg-2")).toEqual([
-      { input: "msg-2", status: "claimed" },
-      { input: "msg-2", status: "already_claimed" },
-    ]);
-    expect(fake.received(ledger[0]?.ref ?? "")).toEqual([
-      { id: "msg-2", parts: ["And my last HbA1c?"] },
-    ]);
-  });
-
-  it("cut off by a crash is asked about at the next start, and goes once", async () => {
-    // Rufi stops after the hand-over was saved, before the provider had it.
+  it("drops what Rufi says is gone; one a crash cut off counts as sent, its turn stopped by the restart", async () => {
+    // Rufi stops once the hand-over is saved, before the provider answers.
     let crashed = true;
     const adapter = changed((conversation) => ({
       startTurn: (start) =>
@@ -705,25 +631,57 @@ describe("a hand-over", () => {
     }));
     agents = await run(adapter);
     asha();
-    agents.send(ASHA.id, note("note-1"));
+    agents.send(ASHA.id, person("msg-1"));
+    agents.send(ASHA.id, person("msg-2", "And my last HbA1c?"));
+    // The person removed the first before it went.
+    chat.set("msg-1", { state: "removed", parts: ["What was my last TSH?"] });
     await until(() => {
-      expect(states()["note-1"]).toBe("handing_over");
+      expect(states()).toEqual({ "msg-1": "removed", "msg-2": "handing_over" });
     });
 
     await agents.close();
     crashed = false;
     agents = await run(adapter);
 
+    expect(states()).toEqual({ "msg-1": "removed", "msg-2": "delivered" });
+    expect(rows("SELECT status, reason FROM turns")).toEqual([
+      { status: "stopped", reason: "restart" },
+    ]);
+    agents.send(ASHA.id, person("msg-3", "Thanks."));
     await until(() => {
       expect(agents.get(ASHA.id)?.status).toBe("done");
     });
-    expect(received()).toEqual(["note-1"]);
-    expect(rows("SELECT status FROM turns")).toEqual([{ status: "done" }]);
+    expect(received()).toEqual(["msg-3"]);
+    expect(claims.map(({ input }) => input)).toEqual([
+      "msg-1",
+      "msg-2",
+      "msg-3",
+    ]);
+  });
+
+  it("counts a start that failed after it may have gone as sent: its turn fails with the error", async () => {
+    agents = await run(
+      changed(() => ({
+        startTurn: () => Promise.reject(new Error("Codex didn't answer.")),
+      })),
+    );
+    asha();
+    agents.send(ASHA.id, note("note-1"));
+    await until(() => {
+      expect(agents.get(ASHA.id)).toMatchObject({
+        status: "failed",
+        result: "Codex didn't answer.",
+      });
+    });
+    expect(states()).toEqual({ "note-1": "delivered" });
+    expect(rows("SELECT status, result FROM turns")).toEqual([
+      { status: "failed", result: "Codex didn't answer." },
+    ]);
   });
 });
 
 describe("a call to the host's tools", () => {
-  it("is placed only in its turn while that is admitted and open", async () => {
+  it("goes under its agent's running turn, until a Stop closes it; what waits goes on after", async () => {
     // The provider takes its time to stop, as a real one may.
     const stopping = Promise.withResolvers<undefined>();
     agents = await run(
@@ -739,77 +697,31 @@ describe("a call to the host's tools", () => {
     agents.send(ASHA.id, note("note-1"));
     await running();
     const first = latestTurn(ASHA.id);
-
-    expect(
-      await agents.place(ASHA.id, meta(first.ref, "call-1"), deadline()),
-    ).toEqual({
+    expect(agents.place(ASHA.id, meta("call-1"))).toEqual({
       agent: ASHA.id,
       turn: first.id,
       ref: first.ref,
       conversation: 1,
       call: "call-1",
     });
+    expect(agents.place(ASHA.id, {})).toBeUndefined();
 
     // Stop closes the turn before the provider has stopped it.
+    agents.send(ASHA.id, note("note-2", "queue"));
     const stopped = agents.stop(ASHA.id, "person");
-    expect(
-      await agents.place(ASHA.id, meta(first.ref, "call-2"), deadline()),
-    ).toBeUndefined();
+    expect(agents.place(ASHA.id, meta("call-2"))).toBeUndefined();
     stopping.resolve(undefined);
     await stopped;
-    expect(agents.get(ASHA.id)).toMatchObject({
-      status: "stopped",
-      stoppedBy: "person",
-    });
-
-    // A newer turn doesn't open the old one again.
-    agents.send(ASHA.id, note("note-2"));
-    await running();
     expect(
-      await agents.place(ASHA.id, meta(first.ref, "call-3"), deadline()),
-    ).toBeUndefined();
-  });
-});
+      rows("SELECT status, reason FROM turns WHERE id = ?", first.id),
+    ).toEqual([{ status: "stopped", reason: "person" }]);
 
-describe("a call waiting for its turn's admission", () => {
-  it("is refused when the conversation closes before it goes on", async () => {
-    // The provider's word that the turn started is held back.
-    const held: ProviderEvent[] = [];
-    let deliver: (event: ProviderEvent) => void = () => undefined;
-    agents = await run({
-      ...fake.adapter,
-      open: (options) => {
-        deliver = options.onEvent;
-        return fake.adapter.open({
-          ...options,
-          onEvent: (event) => {
-            if (event.type === "turnStarted") held.push(event);
-            else options.onEvent(event);
-          },
-        });
-      },
+    // The next turn takes calls again.
+    await running();
+    expect(agents.place(ASHA.id, meta("call-3"))).toMatchObject({
+      turn: latestTurn(ASHA.id).id,
     });
-    asha();
-    fake.script.turn = "runs";
-    agents.send(ASHA.id, note("note-1"));
-    await until(() => {
-      expect(held).toHaveLength(1);
-    });
-    const [started] = held;
-    if (started?.type !== "turnStarted") throw new Error("No turn started.");
-
-    const placed = agents.place(
-      ASHA.id,
-      meta(started.turn, "save-1"),
-      deadline(),
-    );
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    // The turn is admitted, and Rufi closes before the call goes on.
-    deliver(started);
-    const closed = agents.close();
-
-    expect(await placed).toBeUndefined();
-    await closed;
+    expect(received()).toEqual(["note-1", "note-2"]);
   });
 });
 
@@ -845,127 +757,14 @@ describe("a turn the provider began by itself", () => {
       { turn: first.id, ref: first.ref, inputs: ["note-1"], by: "package" },
       { turn: next.id, ref: next.ref, inputs: ["note-2"], by: "provider" },
     ]);
-    expect(
-      await agents.place(ASHA.id, meta(next.ref, "call-1"), deadline()),
-    ).toMatchObject({ turn: next.id });
+    expect(agents.place(ASHA.id, meta("call-1"))).toMatchObject({
+      turn: next.id,
+    });
   });
 });
 
 describe("Stop", () => {
-  it("closes and stops a turn the provider begins with a held steer as it settles it", async () => {
-    let held = Promise.withResolvers<SteerOutcome>();
-    let taking: Input | undefined;
-    const taken: string[] = [];
-    const stopped: { turn: string; status: unknown }[] = [];
-    const placed: unknown[] = [];
-    agents = await run({
-      ...fake.adapter,
-      open: async (options) => {
-        const conversation = await fake.adapter.open(options);
-        return {
-          ...conversation,
-          // The provider holds every steer.
-          steer: ({ input }) => {
-            taking = input;
-            held = Promise.withResolvers();
-            return held.promise;
-          },
-          stop: async (turn) => {
-            stopped.push({
-              turn,
-              status: rows(
-                "SELECT status FROM turns WHERE provider_turn = ?",
-                turn,
-              )[0]?.["status"],
-            });
-            if (!taking) return conversation.stop(turn);
-            // Just then the turn ends, if it still ran, and the provider
-            // takes the held steer as a turn of its own, which calls a tool.
-            fake.end(conversation.ref);
-            await conversation.startTurn({
-              input: taking,
-              model: ASHA.model,
-              effort: ASHA.effort,
-            });
-            taking = undefined;
-            const next = latestTurn(ASHA.id).ref;
-            taken.push(next);
-            held.resolve({ status: "next_turn", turn: next });
-            placed.push(
-              await agents.place(ASHA.id, meta(next, "call-1"), deadline()),
-            );
-          },
-        };
-      },
-    });
-    asha();
-    fake.script.turn = "runs";
-
-    // The turn ends before Stop.
-    agents.send(ASHA.id, note("note-1"));
-    await running();
-    const first = latestTurn(ASHA.id);
-    agents.send(ASHA.id, note("note-2", "steer"));
-    await until(() => {
-      expect(states()["note-2"]).toBe("handing_over");
-    });
-    fake.end(ledger[0]?.ref ?? "");
-    await until(() => {
-      expect(agents.get(ASHA.id)?.status).toBe("done");
-    });
-    await agents.stop(ASHA.id, "person");
-    expect(agents.get(ASHA.id)).toMatchObject({
-      status: "stopped",
-      stoppedBy: "person",
-    });
-
-    // The turn ends during Stop, with an input waiting behind it.
-    agents.send(ASHA.id, note("note-3"));
-    await running();
-    const second = latestTurn(ASHA.id);
-    agents.send(ASHA.id, note("note-4", "steer"));
-    await until(() => {
-      expect(states()["note-4"]).toBe("handing_over");
-    });
-    agents.send(ASHA.id, note("note-5"));
-    await agents.stop(ASHA.id, "person");
-
-    // Closed to calls from the moment they were admitted.
-    expect(placed).toEqual([undefined, undefined]);
-    expect(stopped).toEqual([
-      { turn: first.ref, status: "done" },
-      { turn: taken[0], status: "stopping" },
-      { turn: second.ref, status: "stopping" },
-      { turn: taken[1], status: "stopping" },
-    ]);
-    // What waited goes on once Stop has finished, open to calls.
-    await running();
-    const third = latestTurn(ASHA.id);
-    expect(
-      rows(
-        "SELECT provider_turn AS turn, status, reason FROM turns ORDER BY rowid",
-      ),
-    ).toEqual([
-      { turn: first.ref, status: "done", reason: null },
-      { turn: taken[0], status: "stopped", reason: "person" },
-      { turn: second.ref, status: "done", reason: null },
-      { turn: taken[1], status: "stopped", reason: "person" },
-      { turn: third.ref, status: "running", reason: null },
-    ]);
-    expect(
-      rows(
-        "SELECT queue.id, provider_turn AS turn FROM queue JOIN turns ON turns.id = turn_id WHERE queue.id IN ('note-2', 'note-4') ORDER BY position",
-      ),
-    ).toEqual([
-      { id: "note-2", turn: taken[0] },
-      { id: "note-4", turn: taken[1] },
-    ]);
-    expect(
-      await agents.place(ASHA.id, meta(third.ref, "call-2"), deadline()),
-    ).toMatchObject({ turn: third.id });
-  });
-
-  it("while a start is still opening keeps it from the provider and drops its input; what waits goes on", async () => {
+  it("while a start is still opening keeps it from the provider: its input waits, not sent; what waits behind goes on", async () => {
     const asked = Promise.withResolvers<undefined>();
     const opened = Promise.withResolvers<undefined>();
     agents = await run(fake.adapter, {
@@ -987,7 +786,12 @@ describe("Stop", () => {
     await until(() => {
       expect(agents.get(ASHA.id)?.status).toBe("done");
     });
-    expect(states()).toEqual({ "note-1": "dropped", "note-2": "delivered" });
+    expect(rows("SELECT id, state, held FROM queue ORDER BY position")).toEqual(
+      [
+        { id: "note-1", state: "waiting", held: "stopped" },
+        { id: "note-2", state: "delivered", held: null },
+      ],
+    );
     expect(received()).toEqual(["note-2"]);
     expect(rows("SELECT status FROM turns")).toEqual([{ status: "done" }]);
   });
@@ -1070,10 +874,12 @@ describe("forget", () => {
     agents.admit(reader.id);
     fake.script.picture = "ZmljdGlvbmFs";
     agents.send(reader.id, note("note-1"));
+    // Its done message wakes its parent, which answers it.
     await until(() => {
       expect(agents.get(reader.id)?.status).toBe("done");
+      expect(agents.get(ASHA.id)?.status).toBe("done");
     });
-    expect(rows("SELECT id FROM items")).toHaveLength(2);
+    expect(rows("SELECT id FROM items")).toHaveLength(4);
 
     await agents.forget([ASHA.id]);
 
@@ -1083,7 +889,9 @@ describe("forget", () => {
     expect(store.eventsAfter(0).map((event) => event.type)).toEqual([
       "agents.forgotten",
     ]);
-    expect(closed).toEqual([ledger[0]?.ref]);
+    expect(closed.toSorted()).toEqual(
+      ledger.map((entry) => entry.ref).toSorted(),
+    );
     // Again, it does nothing.
     await agents.forget([ASHA.id]);
     expect(store.eventsAfter(0)).toHaveLength(1);

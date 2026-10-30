@@ -10,10 +10,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ChatGptError } from "../agent/chatgpt/openai.ts";
-import { codexBinary } from "../agent/codex/binary.ts";
-import { subAgentRunner } from "../agent/codex/subagent.ts";
 import type { RunSubAgent } from "../agent/runtime.ts";
-import { fakeModel, type Step } from "../../tests/fake-model.ts";
 import {
   readPage,
   scriptedReader,
@@ -402,105 +399,6 @@ describe("a Stop, one reading at a time", () => {
 });
 
 describe("a restart or a failure", () => {
-  it("stops a reader that used its refusal allowance and keeps why", async () => {
-    await transcripts.saveSetting("reader_model", "gpt-5.5");
-    let attempts = 0;
-    const late: number[] = [];
-    const bad: Step = {
-      call: {
-        namespace: "mcp__rufi",
-        name: "save_page",
-        arguments: { page: 1, ...readPage() },
-      },
-    };
-    const { read } = await startReader([], {
-      // One automatic retry is enough to see each attempt stopped.
-      retryWaitsMs: [0],
-      run: async (task, signal) => {
-        attempts++;
-        const model = await fakeModel({
-          script: [
-            {
-              call: {
-                namespace: "mcp__rufi",
-                name: "get_page",
-                arguments: { page: 2 },
-              },
-            },
-            {
-              call: {
-                namespace: "mcp__rufi",
-                name: "save_page",
-                arguments: { page: 2, ...readPage() },
-              },
-            },
-            ...Array.from({ length: 10 }, () => bad),
-            {
-              call: {
-                namespace: "mcp__rufi",
-                name: "get_page",
-                arguments: { page: 1 },
-              },
-            },
-            {
-              call: {
-                namespace: "mcp__rufi",
-                name: "save_page",
-                arguments: { page: 1, ...readPage() },
-              },
-            },
-            { text: "Done." },
-          ],
-        });
-        try {
-          const outcome = await subAgentRunner({
-            home,
-            command: {
-              file: await codexBinary(),
-              args: [
-                "-c",
-                `model_providers.openai_chatgpt_plan.base_url="${model.url}"`,
-              ],
-            },
-            env: { PATH: process.env["PATH"] ?? "" },
-            token: () => Promise.resolve("not-a-real-token"),
-            version: "0.0.0",
-          })(task, signal);
-          // Before returning to the owner: the stop must have revoked the
-          // key already, including while the runner is unwinding.
-          const refused = await callTool(
-            {
-              url: task.tools.url,
-              http_headers: { Authorization: `Bearer ${task.tools.key}` },
-            },
-            {
-              name: "save_page",
-              arguments: { page: 2, ...readPage() },
-              callId: "call-late",
-              threadId: "ended",
-              turnId: "ended",
-            },
-          );
-          late.push(refused.status);
-          return outcome;
-        } finally {
-          await model.close();
-        }
-      },
-    });
-    const why = "The AI kept making requests Rufi couldn't accept.";
-    expect((await read(await addReport())).end).toEqual({
-      ended: "failed",
-      why,
-    });
-    expect(job()).toMatchObject({ state: "failed", error: why });
-    expect(attempts).toBe(2);
-    expect(late).toEqual([401, 401]);
-    expect(rows("SELECT page_in_file, copy FROM page_copies")).toEqual([
-      { page_in_file: 2, copy: readPage().copy },
-    ]);
-  }, 60_000);
-
   it("fails a reading Rufi closed in the middle at the next start; sending it again goes on from its copies", async () => {
     const first = await startReader([
       async (turn) => {
@@ -860,7 +758,7 @@ describe("the chat AI and a reading", () => {
       pages(store, home),
     );
 
-    const got = await caller(turnScope(chat, "turn-1"), "person")(
+    const got = await caller(turnScope(chat, "turn-1"))(
       "get_documents",
       { document: id },
       "call-1",
@@ -880,7 +778,7 @@ describe("the chat AI and a reading", () => {
         sorted: false,
       }),
     ]);
-    const copies = await caller(turnScope(chat, "turn-1"), "person")(
+    const copies = await caller(turnScope(chat, "turn-1"))(
       "get_documents",
       { document: id, copies: true },
       "call-2",

@@ -8,6 +8,12 @@ import type { SortAnswer, SortInput } from "../documents/sorting.ts";
 import type { DismissInput, Dismissed } from "../record/items.ts";
 import type { SaveRequest, Saved } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
+import type {
+  AgentStatusInput,
+  ReadAgentInput,
+  SendAgentInput,
+  StartAgentInput,
+} from "./agents.ts";
 
 /** What a tool gets from Rufi, never from the model. */
 export interface ToolContext {
@@ -44,6 +50,20 @@ export interface ToolContext {
     | undefined;
   /** Makes a visit brief with its line: only in Rufi's own chat. */
   brief?: ((input: BriefInput, callId: string) => Promise<Made>) | undefined;
+  /** What the calling agent does with agents: only in Rufi's own chat. */
+  agents?: AgentTools | undefined;
+}
+
+/** The calling agent's agents (core/tools/agents.ts). */
+export interface AgentTools {
+  /** A child of the caller, started by this call: its id is the call's. */
+  start: (input: StartAgentInput, callId: string) => Promise<unknown>;
+  /** The agents below the caller, as they are now. */
+  status: (input: AgentStatusInput) => unknown;
+  /** A message from the caller to an agent below it, or to its parent. */
+  send: (input: SendAgentInput, callId: string) => unknown;
+  /** A page of the caller's conversation, or of one below it. */
+  read: (input: ReadAgentInput) => Promise<unknown>;
 }
 
 /** A tool's input: decoded without services, like JSON. */
@@ -102,14 +122,13 @@ export class WithImage {
   }
 }
 
-/** One answer for the agent; `stopTurn` says Rufi should end the turn. */
+/** One answer for the agent. */
 export interface ToolAnswer {
   ok: boolean;
   /** JSON, for the model. */
   text: string;
   /** Images the model sees after the text, in base64. Never stored. */
   images?: readonly { mimeType: string; data: string }[];
-  stopTurn?: string;
   /** Kept already, with what the call changed: the chat keeps it no more. */
   kept?: true;
 }
@@ -131,25 +150,20 @@ export const specOf = (tool: Tool): ToolSpec => ({
   destructive: tool.destructive,
 });
 
-/** Rejections a turn may have before Rufi stops it, so the model can't loop. */
-export const REJECTIONS_PER_TURN = 3;
-
-/**
- * A caller for one turn. Bad input, an unknown tool and a refusal each come
- * back as the error envelope and use up one of the turn's `rejections`: a
- * number, or a setting read at the turn's first refusal.
- */
 /** A tool's result as the answer the AI gets. */
 export const answerOf = (result: unknown): ToolAnswer => ({
   ok: true,
   text: JSON.stringify({ ok: true, result }),
 });
 
+/**
+ * The caller of some tools. Bad input, an unknown tool and a refusal each
+ * come back as the error envelope; what the AI does next is its call.
+ */
 export function toolCaller(
   tools: readonly Tool[],
   context: () => ToolContext,
   log: Log,
-  rejections: number | (() => Promise<number>) = REJECTIONS_PER_TURN,
 ): (
   name: string,
   input: unknown,
@@ -157,34 +171,14 @@ export function toolCaller(
   /** What this call alone runs with, over the turn's context. */
   own?: Partial<ToolContext>,
 ) => Promise<ToolAnswer> {
-  // Counted as each refusal comes, before any wait: refusals made at the
-  // same time each use one. The limit is read once, at the first.
-  let refused = 0;
-  let limit: Promise<number> | undefined;
-  const reject = async (
+  const reject = (
     error: string,
     issues: Issue[] = [],
     example?: unknown,
-  ): Promise<ToolAnswer> => {
-    const count = ++refused;
-    limit ??= Promise.resolve(
-      typeof rejections === "number" ? rejections : rejections(),
-    );
-    const left = Math.max(0, (await limit) - count);
-    return {
-      ok: false,
-      text: JSON.stringify({
-        ok: false,
-        error,
-        issues,
-        example,
-        rejections_left: left,
-      }),
-      ...(left === 0 && {
-        stopTurn: "The AI kept making requests Rufi couldn't accept.",
-      }),
-    };
-  };
+  ): ToolAnswer => ({
+    ok: false,
+    text: JSON.stringify({ ok: false, error, issues, example }),
+  });
   return async (name, input, callId, own) => {
     const tool = tools.find(
       (candidate) => candidate.name === name && candidate.callers !== "ui",

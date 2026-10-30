@@ -1,10 +1,9 @@
 // Codex behind the provider boundary (@rufi/agents/provider): the agent
 // system's conversations run as Codex threads on one shared app-server,
 // through the same runtime as the chat (codex.ts). A start or a steer that
-// Codex surely didn't get is not delivered; one whose answer was lost is
-// uncertain, and Codex's thread tells later whether it arrived. A call to
-// Rufi's tools is placed in its turn by the turn id and call id Codex gives
-// in its `_meta`.
+// Codex surely didn't get is not delivered; one whose answer was lost
+// rejects, as it may have gone. A call to Rufi's tools is known by the call
+// id Codex gives in its `_meta`.
 import {
   Missing,
   NotOpened,
@@ -13,7 +12,6 @@ import {
   type OpenOptions,
   type ProviderAdapter,
   type ProviderEvent,
-  type Received,
   type StepKind,
   type TurnEnd as ProviderTurnEnd,
   type UsageWindow,
@@ -281,7 +279,7 @@ export function codexAdapter(
           }
           // Codex may still start it: its turn names the input.
           mine.seed = undefined;
-          return { status: "uncertain", text: textOf(error) };
+          throw error;
         }
         mine.seed = undefined;
         return { status: "delivered" };
@@ -300,46 +298,16 @@ export function codexAdapter(
           });
           return { status: "delivered" };
         } catch (error) {
-          return error instanceof NotSent
-            ? { status: "not_delivered", text: textOf(error) }
-            : { status: "uncertain", text: textOf(error) };
+          if (error instanceof NotSent) {
+            return { status: "not_delivered", text: textOf(error) };
+          }
+          throw error;
         }
       },
 
       // The runtime interrupts, and else ends the shared app-server: every
       // turn on it then ends with its process.
       stop: (turn) => runtime.stop(ref, turn),
-
-      // Codex may still act on a request it didn't answer, so an input its
-      // thread doesn't list is unknown, never not received.
-      reconcile: async (ids) => {
-        let listed: Set<string>;
-        try {
-          listed = new Set(
-            (await runtime.startedMessages(ref)).map((message) => message.id),
-          );
-        } catch (error) {
-          log("codex.reconcile_failed", { error: errorCode(error) });
-          listed = new Set();
-        }
-        return new Map<string, Received>(
-          ids.map((id) => [id, listed.has(id) ? "received" : "unknown"]),
-        );
-      },
-
-      placeCall: (meta) => {
-        const { callId, threadId, turnId } = callOf(meta);
-        if (
-          !isOpen() ||
-          callId === undefined ||
-          threadId !== ref ||
-          turnId === undefined ||
-          runtime.activeTurn(ref) !== turnId
-        ) {
-          return undefined;
-        }
-        return { turn: turnId, call: callId };
-      },
 
       close: async () => {
         if (!isOpen()) return;
@@ -370,6 +338,8 @@ export function codexAdapter(
     open,
 
     delete: (ref) => runtime.deleteThread(ref),
+
+    callOf: (meta) => callOf(meta).callId,
 
     usage: () => {
       const limits = runtime.limits();
@@ -425,7 +395,7 @@ function reasonOf(end: TurnEnd): FailReason {
     case "rate_limit":
     case "connection":
       return end.reason;
-    // Until the turn's time limit goes, Rufi's own ending of a turn is other.
+    // A turn has no time limit; Rufi's own ending of one is other.
     case "timeout":
     case "provider_failed":
     case "save_failed":

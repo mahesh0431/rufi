@@ -103,7 +103,7 @@ One change to the record that the user agreed to in the chat: the AI's call to s
 _Avoid_: change set, batch, transaction, commit
 
 **Receipt**:
-What Rufi adds to the chat for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words. A save of a document's draft items starts with a summary (how many new, more sources and corrections), and its lines say each one's page.
+What Rufi adds to the chat for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words. A save of a document's draft items starts with a summary (how many new, more sources and corrections), and its lines say each one's page. A **sub-agent**'s names it by its title after "Saved".
 _Avoid_: toast, success message, confirmation
 
 **Undo**:
@@ -180,19 +180,19 @@ What an answer rests on: **How**, the AI's own words on where the answer comes f
 _Avoid_: reason, rationale, citation; "reasoning" is the AI's thinking, and a **source** is what a record rests on
 
 **Steer**:
-A message sent while the AI is replying, passed into that reply; the AI carries on with it in mind. It waits in the **queue** like any other until the AI takes it. A word of the code: on screen it is your message, as any other.
+A message sent while the AI is replying, passed into that reply; the AI carries on with it in mind, told in one line that it is being steered. It waits in the **queue** like any other until the AI takes it. While a reply runs, Enter steers unless Settings says queue; **Steer** beside the box, or on a waiting message, does it too.
 _Avoid_: nudge, interrupt
 
 **Queue**:
-What waits to go to the AI, kept by Rufi with the chat: your messages and Rufi's notes about **Rufi events**. Rufi gives the AI one at a time, and never the same message twice. Each starts a turn of its own, except a message of yours without new files sent while the AI replies to you: it goes into that reply, as a **steer**. It survives a restart and a model change. Shown in the chat as the **waiting messages**.
+What waits to go to the AI, kept by Rufi with the chat: your messages and Rufi's notes about **Rufi events**. Rufi gives the AI one at a time, and never the same message twice: a message counts as sent once Rufi hands it to the AI. Each starts a turn of its own, except a message you **steer** into the running reply; one you queue while the AI replies waits for a reply of its own. A message with new files always waits for its own. It survives a restart and a model change. Shown in the chat as the **waiting messages**.
 _Avoid_: inbox, outbox
 
 **Waiting messages**:
-What the queue holds, shown in the chat after its last message as soon as you send; you can edit, reorder, send now or remove your messages there. A held one says why (it came from a backup, the AI couldn't take it, or Rufi isn't sure it reached the AI) and goes only when you send it. A message that brings new files waits for a reply of its own, which reads them first; so does anything sent while Rufi's reader copies. A message whose reply ended in Rufi's part is not listed: its reply has **Retry**. Signed out, a send takes nothing: the text and chips stay in the box. After a Stop, and when Rufi starts again, what waits goes on, in order; a message whose start a Stop cut off is held, **Not sent: stopped.**
+What the queue holds, shown in the chat after its last message as soon as you send; you can steer, edit, reorder or remove your messages there. A held one says **Failed** with the error as it came, or **Not sent** with why (Stop cut its start off, or it came from a backup), and goes only when you send it. A message that brings new files waits for a reply of its own, which reads them first. A message whose reply ended in Rufi's part is not listed: its reply has **Retry**. Signed out, a send takes nothing: the text and chips stay in the box. After a Stop, and when Rufi starts again, what waits goes on, in order; a message whose start a Stop cut off is held, **Not sent · Stopped.**
 _Avoid_: backlog, pending messages
 
 **Rufi event**:
-Rufi's own note that something happened outside your chat, such as a deleted document: a line in the chat, and sometimes a note for the AI. It is never your words, a request or your yes: a reply it starts can change nothing, never save or sort. Its note goes in a reply of its own, also after a Stop.
+Rufi's own note that something happened outside your chat, such as a deleted document: a line in the chat, and sometimes a note for the AI. It is never your words, a request or your yes: in a reply it starts, the AI carries on work you already asked for and asks you before a new change. Its note goes in a reply of its own, also after a Stop.
 _Avoid_: notification, system message
 
 **Stop**:
@@ -254,6 +254,18 @@ _Avoid_: medical ID card
 **The AI**:
 The AI agent that answers in the chat and works with the record through Rufi's tools; also called **Rufi AI**, beside the **reader**, where both are named. It works in the AI's folder, where it can write and run programs and use the internet. Screens and help say "the AI", or "Rufi AI" next to the reader; "Codex" appears only where its folder is named.
 _Avoid_: assistant, bot; "model" only for a version of the AI (see Model)
+
+**Agent**:
+An AI working in a conversation of its own, on a model and effort, with the tools Rufi gives it. Rufi AI is the chat's own agent; the agents it starts, and theirs, are its **sub-agents**. Every agent is one chat's, and works for that person only.
+_Avoid_: worker, thread (a conversation is the agent's, not the agent)
+
+**Sub-agent**:
+An agent another agent started for one task, with a title, such as checking a set of results. It sees its task and nothing of the chat, runs on the model and effort of the agent that started it with the same tools or fewer, and goes on after the reply ends. What it saves shows in the chat with Rufi's **receipt**, which names it by its title. When its turn ends, the agent that started it hears how it went (its **done message**), and Rufi AI says what it found. Screens don't show sub-agents yet.
+_Avoid_: helper, child (in screens and help), delegate
+
+**Done message**:
+What an agent is told when one it started ends a turn: its title, and its whole answer with any questions and their options, or that it stopped or failed and why. It goes into the agent's turn, or starts one; for Rufi AI, that reply shows a small line naming the sub-agent ("Reading report.pdf: done"). It is never the user's words.
+_Avoid_: callback, notification
 
 **The AI's folder**:
 The folder where the AI works: `ai/` in the data folder. It keeps its programs, notes and research files there between messages, with their caches in `ai/.cache`, and it is the only place where the AI's programs can write. Nothing in it is part of the record. It isn't in backups, the export or a move yet.

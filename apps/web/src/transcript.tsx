@@ -294,10 +294,12 @@ function lines(state: Live): string[] {
           (id) => (entries[id]?.createdAt ?? "") <= turn.startedAt,
         ) ?? "";
       if (turn.newThread) add(after, at, `a:${turn.id}`);
+      if (turn.cause) add(after, at, `w:${turn.id}`);
       if (cut(turn)) add(after, at, `x:${turn.id}`);
       continue;
     }
     if (turn.newThread) add(before, opens, `a:${turn.id}`);
+    if (turn.cause) add(before, opens, `w:${turn.id}`);
     const step = firstStep.get(turn.id);
     const answer = lastReply.get(turn.id);
     if (turn.status !== "running" && answer !== undefined) {
@@ -552,6 +554,8 @@ function Line({ live, line }: { live: StoreApi<Live>; line: string }) {
       return <DayLine live={live} id={id} />;
     case "a:":
       return <QuietLine>New thread started</QuietLine>;
+    case "w:":
+      return <WhyLine live={live} turnId={id} />;
     case "k:":
       return <QuietLine>Compacting chat history…</QuietLine>;
     case "c:":
@@ -614,6 +618,22 @@ function DayLine({ live, id }: { live: StoreApi<Live>; id: string }) {
 /** Where a new AI thread started, or Codex compacts the chat history. */
 function QuietLine({ children }: { children: ReactNode }) {
   return <p className="text-center text-xs text-muted italic">{children}</p>;
+}
+
+/** Why the AI replied by itself: the agent whose message started it. */
+function WhyLine({ live, turnId }: { live: StoreApi<Live>; turnId: string }) {
+  const cause = useStore(live, (state) => state.turns[turnId]?.cause);
+  if (!cause) return null;
+  const { title, about } = cause;
+  return (
+    <QuietLine>
+      {about === "asked"
+        ? `${title} asks a question`
+        : about === "wrote"
+          ? `${title} wrote`
+          : `${title}: ${about}`}
+    </QuietLine>
+  );
 }
 
 function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {

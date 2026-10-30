@@ -1,11 +1,11 @@
 // The agent database: the package's own SQLite file (agents.sqlite in the
 // host's data folder), apart from the host's records. It isn't backed up,
-// exported or moved; when it's lost, a new file starts with a new
-// generation and the host carries on from its own history.
+// exported or moved; when it's lost, a new file starts, says it is new, and
+// the host carries on from its own history.
 //
 // Every change writes its events in the same transaction, so the host, which
-// reads the event log after its cursor (generation, number), learns of a
-// change exactly when it's there. A change is one synchronous transaction:
+// reads the event log after its cursor, learns of a change exactly when it's
+// there. A change is one synchronous transaction:
 // nothing else in the process runs between its writes. The connection
 // writes only inside a change, so nothing a change started can write after
 // it ends.
@@ -23,6 +23,7 @@ const read = (name: string) =>
 const MIGRATIONS: readonly string[] = [
   read("migrations/0001-agents.sql"),
   read("migrations/0002-questions.sql"),
+  read("migrations/0003-agents-talk-back.sql"),
 ];
 
 /** An event as the log keeps it. */
@@ -49,21 +50,8 @@ export interface Change {
 }
 
 export interface AgentStore {
-  /**
-   * The random id made with the file: another file has another, and so has
-   * this one once renewed.
-   */
-  readonly generation: string;
-  /**
-   * The number of the last event this file ever gave, counting those
-   * forgotten since: an older copy of the file has a lower one.
-   */
-  highWater: () => number;
-  /**
-   * Gives the file a new generation, so the host reads it as a new one:
-   * for an older copy, whose waiting inputs may have gone already.
-   */
-  renew: () => void;
+  /** The file was made by this open: whatever ran before is gone. */
+  readonly fresh: boolean;
   /** The connection, for reads outside a change: it writes only in one. */
   readonly db: DatabaseSync;
   /**
@@ -97,10 +85,11 @@ export class NewerAgentStore extends Error {}
 export function openAgentStore(path: string): AgentStore {
   if (!existsSync(path)) writeFileSync(path, "", { flag: "wx", mode: 0o600 });
   const db = new DatabaseSync(path);
+  let version: number;
   try {
-    const { user_version: version } = db
-      .prepare("PRAGMA user_version")
-      .get() as { user_version: number };
+    ({ user_version: version } = db.prepare("PRAGMA user_version").get() as {
+      user_version: number;
+    });
     if (version > MIGRATIONS.length) {
       throw new NewerAgentStore(
         `${path} was made by a newer Rufi (version ${String(version)}); this one left it unchanged.`,
@@ -115,7 +104,7 @@ export function openAgentStore(path: string): AgentStore {
     db.close();
     throw error;
   }
-  return store(db);
+  return store(db, version === 0);
 }
 
 function migrate(db: DatabaseSync, from: number): void {
@@ -130,14 +119,7 @@ function migrate(db: DatabaseSync, from: number): void {
   }
 }
 
-function store(db: DatabaseSync): AgentStore {
-  const generationOf = () =>
-    (
-      db.prepare("SELECT generation FROM meta WHERE id = 1").get() as {
-        generation: string;
-      }
-    ).generation;
-  let generation = generationOf();
+function store(db: DatabaseSync, fresh: boolean): AgentStore {
   const append = db.prepare(
     "INSERT INTO events (type, agent_id, payload, created_at) VALUES (?, ?, ?, ?) RETURNING number",
   );
@@ -148,30 +130,8 @@ function store(db: DatabaseSync): AgentStore {
   const inTransaction = () => db.isTransaction;
 
   const self: AgentStore = {
-    get generation() {
-      return generation;
-    },
+    fresh,
     db,
-
-    highWater: () =>
-      (
-        db
-          .prepare("SELECT seq FROM sqlite_sequence WHERE name = 'events'")
-          .get() as { seq: number } | undefined
-      )?.seq ?? 0,
-
-    renew: () => {
-      const from = generation;
-      self.change(({ db: change, event }) => {
-        change
-          .prepare(
-            "UPDATE meta SET generation = lower(hex(randomblob(16))) WHERE id = 1",
-          )
-          .run();
-        event("store.renewed", null, { from });
-      });
-      generation = generationOf();
-    },
 
     change: (work) => {
       if (inTransaction()) {

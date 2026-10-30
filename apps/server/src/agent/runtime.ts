@@ -280,13 +280,6 @@ export interface AgentRuntime {
    * started; `end` says why, when Rufi decided it.
    */
   stop: (threadId: string, turnId?: string, end?: TurnEnd) => Promise<void>;
-  /**
-   * The messages the thread has run, oldest first, with the ids Rufi gave
-   * them: to fill what a crash kept Rufi from saving.
-   */
-  startedMessages: (
-    threadId: string,
-  ) => Promise<{ id: string; text: string }[]>;
   /** Ends the agent process and everything it started. */
   close: () => Promise<void>;
 }

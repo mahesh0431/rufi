@@ -7,6 +7,7 @@
 // it is stored.
 import {
   type ActivityKind,
+  type Cause,
   type Chat,
   type Chip,
   DEFAULT_EFFORT,
@@ -21,6 +22,7 @@ import {
 import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
 import type { Made } from "../briefs/briefs.ts";
+import { literal } from "../record/kinds.ts";
 import type { Saved } from "../record/save.ts";
 import { addRow, endPart } from "./queue.ts";
 import { chipsOf } from "./refs.ts";
@@ -125,7 +127,16 @@ export interface ToolCall {
   /** What the AI sent, as it came. */
   input: unknown;
   startedAt: string;
+  /** A sub-agent's title, which the call's line in the chat names. */
+  label?: string;
 }
+
+/** A receipt's heading, then the sub-agent's title that saved it, if any. */
+const labelled = (receipt: string, label: string | undefined) => {
+  if (label === undefined) return receipt;
+  const [head = "", ...rest] = receipt.split("\n\n");
+  return [`${head} · ${literal(label)}`, ...rest].join("\n\n");
+};
 
 /** The answer the AI gets, as Rufi keeps it. */
 export interface Answered {
@@ -404,6 +415,7 @@ async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
         threadBefore !== null &&
         threadBefore !== row.thread_id,
       how: how ?? null,
+      ...(row.cause !== null && { cause: JSON.parse(row.cause) as Cause }),
     };
   });
 }
@@ -699,7 +711,7 @@ export function transcripts(
       .where("person_id", "=", chat.personId)
       .where("chat_id", "=", chat.id)
       .where("id", "in", inputs.length === 0 ? [""] : inputs)
-      .where("state", "in", ["waiting", "handing_over", "not_sure"])
+      .where("state", "in", ["waiting", "handing_over"])
       .orderBy("position")
       .execute();
 
@@ -716,6 +728,8 @@ export function transcripts(
     agentTurnId: string,
     thread: { id: string; model: string },
     inputs: readonly string[],
+    /** The agent's message that started it, when Rufi AI replies by itself. */
+    cause?: Cause,
   ): Promise<{ entries: string[]; turns: string[] } | undefined> {
     if (await turnOf(trx, chat.id, agentTurnId)) return undefined;
     const rows = await handedOver(trx, chat, inputs);
@@ -766,6 +780,7 @@ export function transcripts(
         resets_at: null,
         started_at: now(),
         ended_at: null,
+        cause: cause === undefined ? null : JSON.stringify(cause),
       })
       .execute();
     const entries = await sent(trx, chat, revision, rows, id);
@@ -1144,9 +1159,10 @@ export function transcripts(
       agentTurnId: string,
       thread: { id: string; model: string },
       inputs: readonly string[] = [],
+      cause?: Cause,
     ) =>
       change(chat.id, (trx, revision) =>
-        begin(trx, chat, revision, agentTurnId, thread, inputs),
+        begin(trx, chat, revision, agentTurnId, thread, inputs, cause),
       ),
 
     /**
@@ -1326,12 +1342,6 @@ export function transcripts(
     chips: (personId: string, refs: readonly Pointer[]) =>
       chipsOf(db, personId, refs),
 
-    /** Who started a turn: a Rufi event's turn can only read. */
-    origin: async (chat: ChatRow, agentTurnId: string) =>
-      ((await turnOf(db, chat.id, agentTurnId))?.origin ?? "person") as
-        | "person"
-        | "rufi",
-
     /**
      * A Rufi event: its outcome (`write`, the producer's own), the line in
      * the chat and, when it asks the AI, its note in the queue, all in one
@@ -1434,21 +1444,21 @@ export function transcripts(
       agentTurnId: string,
       thread: { id: string; model: string },
       inputs: readonly string[],
+      cause: Cause | undefined,
       write: (trx: Transaction<Tables>) => Promise<void>,
     ) =>
       change(chat.id, async (trx, revision) => {
         await write(trx);
-        return begin(trx, chat, revision, agentTurnId, thread, inputs);
+        return begin(trx, chat, revision, agentTurnId, thread, inputs, cause);
       }),
 
     /**
      * What became of a row the agent system handed over, from its events
      * (server/rufi-ai.ts), with `write` in the same transaction. Delivered:
      * sent, in the reply of the agent's turn, if Rufi has it. Waiting: it
-     * goes again. Held: it waits with the hold and its line. Not sure: shown
-     * so, never sent again by itself. Dropped: a Stop cut its start, and it
-     * waits held as not sent. In a reply Rufi's part started, any but
-     * delivered or waiting ends that reply, its message held for Retry.
+     * goes again. Held: it waits with the hold and its line. In a reply
+     * Rufi's part started, a hold ends that reply, its message held for
+     * Retry.
      */
     applyInput: (
       chat: ChatRow,
@@ -1458,11 +1468,9 @@ export function transcripts(
         | { state: "waiting" }
         | {
             state: "held";
-            held: "signed_out" | "open_failed" | "failed";
+            held: "signed_out" | "open_failed" | "failed" | "stopped";
             text: string;
-          }
-        | { state: "not_sure" }
-        | { state: "dropped" },
+          },
       write: (trx: Transaction<Tables>) => Promise<void>,
     ) =>
       change(chat.id, async (trx, revision) => {
@@ -1472,7 +1480,7 @@ export function transcripts(
         const at = now();
         // A turn's own inputs are sent as it starts: one taken into a turn
         // the package names went into a turn that ran already, a steer. One
-        // confirmed with no turn (after a crash) is a message.
+        // with no turn is a message.
         if (outcome.state === "delivered") {
           const turn =
             outcome.agentTurn === null
@@ -1498,31 +1506,19 @@ export function transcripts(
           return undefined;
         }
         const part = await partOf(trx, chat, row.turn_id);
-        const ending =
-          outcome.state === "held"
-            ? { status: "failed" as const, text: outcome.text }
-            : outcome.state === "dropped"
-              ? {
-                  status: "interrupted" as const,
-                  reason: "stopped" as const,
-                  text: "Stopped.",
-                }
-              : {
-                  status: "interrupted" as const,
-                  text: "Not sure this reached the AI.",
-                };
         if (part) {
+          const stopped = outcome.held === "stopped";
           await trx
             .updateTable("turns")
             .set({
-              status: ending.status,
-              end_reason: "reason" in ending ? ending.reason : null,
-              end_text: ending.text,
+              status: stopped ? "interrupted" : "failed",
+              end_reason: stopped ? "stopped" : null,
+              end_text: outcome.text,
               ended_at: at,
             })
             .where("id", "=", part.id)
             .execute();
-          const stopped = await trx
+          const ended = await trx
             .updateTable("transcript_entries")
             .set({ status: "stopped", revision, updated_at: at })
             .where("person_id", "=", chat.personId)
@@ -1530,41 +1526,17 @@ export function transcripts(
             .where("status", "=", "running")
             .returning("id")
             .execute();
-          if (outcome.state === "not_sure") {
-            await trx
-              .updateTable("chat_queue")
-              .set({ state: "not_sure", updated_at: at })
-              .where("id", "=", input)
-              .execute();
-          } else {
-            await endPart(trx, chat, part.id, ending.text, at);
-          }
-          return {
-            entries: stopped.map((entry) => entry.id),
-            turns: [part.id],
-          };
+          await endPart(trx, chat, part.id, outcome.text, at);
+          return { entries: ended.map((entry) => entry.id), turns: [part.id] };
         }
-        if (outcome.state === "not_sure") {
-          await trx
-            .updateTable("chat_queue")
-            .set({ state: "not_sure", updated_at: at })
-            .where("id", "=", input)
-            .where("state", "=", "handing_over")
-            .execute();
-          return undefined;
-        }
-        const held =
-          outcome.state === "dropped"
-            ? { held: "failed", text: "Not sent: stopped." }
-            : { held: outcome.held, text: outcome.text };
         await trx
           .updateTable("chat_queue")
           .set({
             state: "waiting",
             sent_as: null,
-            held: held.held,
-            held_text: held.text,
-            hold_id: held.held === "open_failed" ? uuid() : null,
+            held: outcome.held,
+            held_text: outcome.text,
+            hold_id: outcome.held === "open_failed" ? uuid() : null,
             updated_at: at,
           })
           .where("id", "=", input)
@@ -1881,7 +1853,7 @@ export function transcripts(
           id: saved.id,
           turnId: turn?.id ?? null,
           kind: "receipt",
-          text: saved.receipt,
+          text: labelled(saved.receipt, call.label),
         });
         return { entries: [id], turns: [] };
       });
@@ -1914,7 +1886,10 @@ export function transcripts(
           id: made.id,
           turnId: turn?.id ?? null,
           kind: "brief",
-          text: made.line,
+          text:
+            call.label === undefined
+              ? made.line
+              : `${made.line} · ${call.label}`,
         });
         return { entries: [id], turns: [] };
       });

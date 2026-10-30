@@ -209,7 +209,6 @@ export async function judgePage(
     [tool],
     () => ({ store: undefined, personId: undefined }),
     deps.log,
-    5,
   );
   const mcpKey = deps.mcp.keys.issue({
     tools: [specOf(tool)],

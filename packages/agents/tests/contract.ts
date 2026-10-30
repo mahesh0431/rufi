@@ -3,7 +3,7 @@
 // case needs. What the agent system relies on is checked here once, so no
 // part of it has to know which provider runs an agent.
 import { setTimeout as sleep } from "node:timers/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   Missing,
   NotOpened,
@@ -24,39 +24,27 @@ export interface Script {
   signedIn?: boolean;
   /** A resume of a conversation it has fails, as if it couldn't open now. */
   resumeFails?: boolean;
-  /** A turn's start: taken (the default), refused, or taken with its reply lost. */
+  /** A turn's start: taken (the default), refused, or taken with its answer lost. */
   start?: "takes" | "refuses" | "loses_reply";
   /**
    * What a turn does once started. Answers: ANSWER at once (the default).
-   * Runs: until stopped. Silent: longer than any limit the adapter has, then
-   * answers. Fails, or hits the usage limit (with a reset time), or its
-   * process dies. Renews: its sign-in is renewed during it, then it answers.
+   * Runs: until stopped. Fails, or hits the usage limit (with a reset time),
+   * or its process dies. Renews: its sign-in is renewed during it, then it answers.
    * Renewal fails: its sign-in can't be renewed during it.
    */
   turn?:
     | "answers"
     | "runs"
-    | "silent"
     | "fails"
     | "usage_limit"
     | "dies"
     | "renews"
     | "renewal_fails";
   /**
-   * A steer into a running turn: taken (the default), taken with its reply
-   * lost, held and then taken into the turn, held and not taken, held while
-   * the turn ends normally without it, or taken as the start of the next
-   * turn as the running one ends.
+   * A steer into a running turn: taken (the default), taken with its answer
+   * lost, or taken as the start of the next turn as the running one ends.
    */
-  steer?:
-    | "takes"
-    | "loses_reply"
-    | "takes_later"
-    | "holds"
-    | "holds_past_end"
-    | "starts_next";
-  /** Its answer to cancelling a held steer is lost. */
-  cancelLost?: boolean;
+  steer?: "takes" | "loses_reply" | "starts_next";
   /** It ignores an interrupt. */
   ignoresInterrupt?: boolean;
   /** Before it answers, a step whose result holds a picture: these bytes, base64. */
@@ -81,21 +69,13 @@ const CASES = {
   turn: "a turn's events come between its start and end, and it ends done with its answer",
   refused: "a refused start is not delivered, and no turn starts",
   signedOut: "signed out, an input is never delivered, and the reason says so",
-  lostStart:
-    "a start whose reply is lost is uncertain, and reconcile tells what arrived",
+  lostStart: "a start whose answer is lost rejects: it may have gone",
   steer: "a steer into the running turn is delivered",
   lateSteer:
     "a steer for a turn that ended isn't delivered, and starts nothing",
-  lostSteer: "a steer whose reply is lost is uncertain, and reconcile finds it",
-  nextTurn: "a steer that started the next turn is named in that turn's start",
-  takenSteer:
-    "a held steer the provider then takes is delivered, and Stop after it doesn't undo that",
-  heldSteer:
-    "Stop answers a steer the provider held as not delivered, once it says it cancelled it",
-  heldPastEnd:
-    "a held steer stays handing over past its turn's end, and Stop by that turn settles it",
-  lostCancel:
-    "a held steer whose cancellation goes unanswered is uncertain after Stop",
+  lostSteer: "a steer whose answer is lost rejects: it may have gone",
+  nextTurn:
+    "a steer taken into a turn the provider begins by itself is delivered, and that turn's start names it",
   stop: "Stop ends the turn as stopped, and nothing of it comes after",
   stuck: "Stop ends a turn whose provider ignores the interrupt",
   fails: "a failed turn ends failed, with the provider's words",
@@ -104,10 +84,10 @@ const CASES = {
   renews: "a turn that crosses a sign-in renewal ends done",
   renewalFails:
     "a renewal that fails ends the turn signed out, and the input isn't sent again",
-  noLimit: "a long silent turn isn't cut",
-  placed:
-    "a call from the open turn is placed in it with its call id, also when repeated",
-  closedTurn: "a call from a turn that ended is refused",
+  noLimit:
+    "a turn open for hours isn't ended or interrupted, and Stop still ends it",
+  callId:
+    "a call's id comes from its _meta, the same when repeated; a call without one has none",
   pictures: "a picture's bytes are left out of the events",
 } as const;
 
@@ -118,7 +98,7 @@ export interface Harness {
   setUp: (script: Script) => Promise<Setup>;
   /**
    * The `_meta` the provider sends with call `call` it makes to Rufi's tools
-   * from `turn` of `conversation`, having made the call as it would.
+   * from `turn` of `conversation`, as it would.
    */
   callMeta: (
     conversation: Conversation,
@@ -137,6 +117,8 @@ const CASE_MS = 30_000;
 const UNTIL_MS = 15_000;
 /** How long nothing more must happen. */
 const SETTLE_MS = 200;
+/** Hours: far past any limit a reply ever had (five minutes, then none). */
+const HOURS_MS = 6 * 60 * 60_000;
 
 /** Any text with words in it, in an expected value. */
 const someText = () => expect.stringMatching(/\S/) as string;
@@ -340,19 +322,13 @@ export function providerContract(name: string, harness: Harness): void {
     test("lostStart", async () => {
       const run = await begin({ start: "loses_reply" });
       const conversation = await run.open();
-      expect(
-        await conversation.startTurn({
+      await expect(
+        conversation.startTurn({
           input: input("message-1"),
           model: run.options.model,
           effort: run.options.effort,
         }),
-      ).toEqual({ status: "uncertain", text: someText() });
-      const received = await conversation.reconcile([
-        "message-1",
-        "never-sent",
-      ]);
-      expect(received.get("message-1")).toBe("received");
-      expect(received.get("never-sent")).not.toBe("received");
+      ).rejects.toThrow();
     });
 
     test("steer", async () => {
@@ -388,109 +364,26 @@ export function providerContract(name: string, harness: Harness): void {
       const run = await begin({ turn: "runs", steer: "loses_reply" });
       const conversation = await run.open();
       const turn = await run.start(conversation, "message-1");
-      expect(
-        await conversation.steer({
-          input: input("steer-1", "And the date?"),
-          turn,
-        }),
-      ).toEqual({ status: "uncertain", text: someText() });
-      const received = await conversation.reconcile(["steer-1"]);
-      expect(received.get("steer-1")).toBe("received");
+      await expect(
+        conversation.steer({ input: input("steer-1", "And the date?"), turn }),
+      ).rejects.toThrow();
     });
 
     test("nextTurn", async () => {
       const run = await begin({ turn: "runs", steer: "starts_next" });
       const conversation = await run.open();
       const turn = await run.start(conversation, "message-1");
-      const outcome = await conversation.steer({
-        input: input("steer-1", "And the date?"),
-        turn,
-      });
-      const before = run.events.slice();
-      expect(outcome).toEqual({
-        status: "next_turn",
-        turn: someText(),
-      });
-      const next = outcome.status === "next_turn" ? outcome.turn : "";
+      expect(
+        await conversation.steer({
+          input: input("steer-1", "And the date?"),
+          turn,
+        }),
+      ).toEqual({ status: "delivered" });
+      const next = await run.until(startedBy("steer-1"));
       expect(next).not.toBe(turn);
-      expect(before).toContainEqual({
-        type: "turnStarted",
-        turn: next,
-        inputs: ["steer-1"],
-      });
-      expect(before.findIndex(endOf(turn))).toBeLessThan(
-        before.findIndex(startedBy("steer-1")),
+      expect(run.events.findIndex(endOf(turn))).toBeLessThan(
+        run.events.findIndex(startedBy("steer-1")),
       );
-    });
-
-    test("heldSteer", async () => {
-      const run = await begin({ turn: "runs", steer: "holds" });
-      const conversation = await run.open();
-      const turn = await run.start(conversation, "message-1");
-      const outcome = conversation.steer({
-        input: input("steer-1", "And the date?"),
-        turn,
-      });
-      await sleep(SETTLE_MS);
-      await conversation.stop(turn);
-      expect(await outcome).toEqual({
-        status: "not_delivered",
-        text: someText(),
-      });
-      expect(await run.until(endOf(turn))).toEqual({ status: "stopped" });
-    });
-
-    test("heldPastEnd", async () => {
-      const run = await begin({ turn: "runs", steer: "holds_past_end" });
-      const conversation = await run.open();
-      const turn = await run.start(conversation, "message-1");
-      let settled = false;
-      const outcome = conversation
-        .steer({ input: input("steer-1", "And the date?"), turn })
-        .finally(() => {
-          settled = true;
-        });
-      expect(await run.until(endOf(turn))).toEqual({
-        status: "done",
-        answer: ANSWER,
-      });
-      await sleep(SETTLE_MS);
-      expect(settled).toBe(false);
-      await conversation.stop(turn);
-      expect(await outcome).toEqual({
-        status: "not_delivered",
-        text: someText(),
-      });
-    });
-
-    test("takenSteer", async () => {
-      const run = await begin({ turn: "runs", steer: "takes_later" });
-      const conversation = await run.open();
-      const turn = await run.start(conversation, "message-1");
-      const outcome = conversation.steer({
-        input: input("steer-1", "And the date?"),
-        turn,
-      });
-      await sleep(SETTLE_MS);
-      await conversation.stop(turn);
-      expect(await outcome).toEqual({ status: "delivered" });
-    });
-
-    test("lostCancel", async () => {
-      const run = await begin({
-        turn: "runs",
-        steer: "holds",
-        cancelLost: true,
-      });
-      const conversation = await run.open();
-      const turn = await run.start(conversation, "message-1");
-      const outcome = conversation.steer({
-        input: input("steer-1", "And the date?"),
-        turn,
-      });
-      await sleep(SETTLE_MS);
-      await conversation.stop(turn);
-      expect(await outcome).toEqual({ status: "uncertain", text: someText() });
     });
 
     test("stop", async () => {
@@ -571,37 +464,41 @@ export function providerContract(name: string, harness: Harness): void {
       expect(
         run.events.filter((event) => event.type === "turnStarted"),
       ).toHaveLength(1);
-      expect(
-        (await conversation.reconcile(["message-1"])).get("message-1"),
-      ).toBe("received");
     });
 
     test("noLimit", async () => {
-      const run = await begin({ turn: "silent" });
-      const conversation = await run.open();
-      expect(
-        await run.until(endOf(await run.start(conversation, "message-1"))),
-      ).toEqual({ status: "done", answer: ANSWER });
-    });
-
-    test("placed", async () => {
       const run = await begin({ turn: "runs" });
       const conversation = await run.open();
-      const turn = await run.start(conversation, "message-1");
-      const meta = await harness.callMeta(conversation, turn, "call-1");
-      expect(conversation.placeCall(meta)).toEqual({ turn, call: "call-1" });
-      expect(conversation.placeCall(meta)).toEqual({ turn, call: "call-1" });
-      expect(conversation.placeCall({})).toBeUndefined();
-      expect(conversation.placeCall(undefined)).toBeUndefined();
-    });
-
-    test("closedTurn", async () => {
-      const run = await begin({ turn: "runs" });
-      const conversation = await run.open();
-      const turn = await run.start(conversation, "message-1");
-      const meta = await harness.callMeta(conversation, turn, "call-1");
+      // The adapter's clock: its timeouts and Date. Its intervals stay real,
+      // and so does the provider's own clock.
+      vi.useFakeTimers({
+        toFake: ["setTimeout", "clearTimeout", "Date"],
+        now: Date.now(),
+      });
+      let turn: string;
+      try {
+        turn = await run.start(conversation, "message-1");
+        await vi.advanceTimersByTimeAsync(HOURS_MS);
+      } finally {
+        vi.useRealTimers();
+      }
+      await sleep(SETTLE_MS);
+      expect(run.events.filter((event) => event.type === "turnEnded")).toEqual(
+        [],
+      );
       await conversation.stop(turn);
-      expect(conversation.placeCall(meta)).toBeUndefined();
+      expect(await run.until(endOf(turn))).toEqual({ status: "stopped" });
+    });
+
+    test("callId", async () => {
+      const run = await begin({ turn: "runs" });
+      const conversation = await run.open();
+      const turn = await run.start(conversation, "message-1");
+      const meta = await harness.callMeta(conversation, turn, "call-1");
+      expect(run.adapter.callOf(meta)).toBe("call-1");
+      expect(run.adapter.callOf(meta)).toBe("call-1");
+      expect(run.adapter.callOf({})).toBeUndefined();
+      expect(run.adapter.callOf(undefined)).toBeUndefined();
     });
 
     test("pictures", async () => {

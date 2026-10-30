@@ -237,11 +237,10 @@ async function say(text: string, refs?: Chip[]): Promise<string> {
   return id;
 }
 
-/** The AI calls a tool in the chat's turn, started by `origin`. */
+/** The AI calls a tool in the chat's turn. */
 async function call(
   tool: string,
   input: unknown,
-  origin: "person" | "rufi" = "person",
   callId = `call-${String(++calls)}`,
 ) {
   const answer = await rufiCaller(
@@ -250,7 +249,7 @@ async function call(
     () => undefined,
     undefined,
     { run: sorting(store, () => SUNDAY_10AM).sort, done: () => undefined },
-  )(turnScope(chat, "t-1"), origin)(tool, input, callId);
+  )(turnScope(chat, "t-1"))(tool, input, callId);
   return {
     ...(JSON.parse(answer.text) as object),
     kept: answer.kept,
@@ -1187,7 +1186,7 @@ describe("a sort's trace", () => {
     store.db.exec(
       "CREATE TRIGGER no_trace BEFORE INSERT ON tool_calls BEGIN SELECT RAISE(ABORT, 'disk full'); END",
     );
-    const failed = await call("sort_documents", input, "person", "call-sort");
+    const failed = await call("sort_documents", input, "call-sort");
     expect(failed.ok).toBe(false);
     expect(rows("SELECT * FROM documents WHERE id = 'doc-asha-aug'")).toEqual(
       before,
@@ -1201,7 +1200,6 @@ describe("a sort's trace", () => {
     const { kept: given, ...sorted } = await call(
       "sort_documents",
       input,
-      "person",
       "call-sort",
     );
     expect(sorted.ok).toBe(true);
@@ -1225,7 +1223,6 @@ describe("a sort's trace", () => {
     const { kept: _, ...again } = await call(
       "sort_documents",
       input,
-      "person",
       "call-sort",
     );
     expect(again).toEqual(sorted);
@@ -1284,37 +1281,5 @@ describe("dismissing draft items", () => {
       items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }],
     });
     expect(saved.ok).toBe(true);
-  });
-});
-
-describe("a turn a Rufi event started", () => {
-  it("can't save, dismiss or sort draft items", async () => {
-    await read();
-    const { HbA1c = "" } = drafts();
-    const before = written();
-    const sorted = drafts();
-    for (const [tool, input] of [
-      [
-        "save_changes",
-        { items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }] },
-      ],
-      ["dismiss_items", { items: [{ item: HbA1c, version: 1 }] }],
-      [
-        "sort_documents",
-        {
-          document: "doc-asha-aug",
-          documents: [{ id: "doc-asha-aug", pages: [1], kind: "letter" }],
-          drafts: [],
-        },
-      ],
-    ] as const) {
-      const answer = await call(tool, input, "rufi");
-      expect(answer.ok).toBe(false);
-      expect(answer.error).toBe(
-        "This turn was started by a Rufi event, not by the user, so nothing can be saved, sorted or made in it. Explain or ask; the user asks in a message of their own.",
-      );
-    }
-    expect(written()).toEqual(before);
-    expect(drafts()).toEqual(sorted);
   });
 });

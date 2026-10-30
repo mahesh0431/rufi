@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { SIGNED_OUT, type Entry } from "@rufi/contracts";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Scenario } from "../../tests/fake-codex.ts";
 import {
@@ -41,6 +42,7 @@ import { documents } from "../core/documents/documents.ts";
 import { deletions } from "../core/documents/delete.ts";
 import { fileGate } from "../core/documents/gate.ts";
 import { pages } from "../core/documents/pages.ts";
+import { sorting } from "../core/documents/sorting.ts";
 import {
   databasePath,
   openReadOnly,
@@ -50,8 +52,10 @@ import {
 import { forAgent, rufiCaller } from "../core/tools/tools.ts";
 import { v7 as uuid } from "uuid";
 import { chatQueue, type ChatQueue } from "../core/chat/queue.ts";
+import { chatAgents } from "../core/chat/agents.ts";
 import { agentsPath } from "./agents.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
+import { subAgents } from "./sub-agents.ts";
 import { agentSetup } from "./core.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
 
@@ -127,6 +131,8 @@ async function startChat(
     toolMs?: number;
     /** How long the agent waits for a call's answer. */
     doorMs?: number;
+    /** What a call of this tool waits for before it runs. */
+    waitFor?: (tool: string) => Promise<void> | undefined;
     allowlist?: string[];
     /** Names this Rufi's rules: another one is an update. */
     rules?: string;
@@ -198,16 +204,17 @@ async function startChat(
       return options.tokenProvider?.() ?? token;
     },
     version: "0.0.0",
-    deadlines: { requestMs: 10_000, turnMs: 20_000, ...options.deadlines },
+    deadlines: { requestMs: 10_000, ...options.deadlines },
     log,
   });
-  ai = await rufiAiFor({
+  const system = await rufiAiFor({
     home,
     record: store,
     transcripts,
     adapter: codex,
     tools: tools.specs.map((spec) => spec.name),
   });
+  ai = system;
   // As the core does when it starts again, once Rufi has read the agent
   // database's events.
   if (again) {
@@ -230,15 +237,18 @@ async function startChat(
     }),
     tools: {
       specs: tools.specs,
-      caller: (scope, origin) => {
+      caller: (scope) => {
         const call = rufiCaller(
           reader,
           transcripts,
           log,
           reader && pages(reader, home),
-        )(scope, origin);
+          { run: sorting(store).sort, done: () => undefined },
+          subAgents({ agents: system.agents, kept: chatAgents(store), queue }),
+        )(scope);
         return async (name, input, callId) => {
           admitted.push(name);
+          await options.waitFor?.(name);
           await sleep(options.toolMs ?? 0);
           return call(name, input, callId);
         };
@@ -246,7 +256,6 @@ async function startChat(
     },
     log,
   });
-  await ai.recover();
   await chat.carryAll();
   await ai.dispatch();
   return chat;
@@ -347,14 +356,15 @@ const saveHeadache = {
 };
 
 /** Sends a message from the box, by a new send id. */
-const say = (c: ChatRow, text: string) => {
+/** The person's message; while a reply runs, it steers unless queued. */
+const say = (c: ChatRow, text: string, kind?: "steer" | "queue") => {
   if (!chat) throw new Error("no chat");
-  return chat.send(c, uuid(), text);
+  return chat.send(c, uuid(), text, [], kind);
 };
 
 /**
  * A reply Rufi started, with its note: "hang" runs until it is stopped. A
- * message the person sends meanwhile waits for a reply of its own.
+ * message the person queues meanwhile waits for a reply of its own.
  */
 const rufiReply = async (c: ChatRow, note = "Rufi's note: hang") => {
   if (!chat) throw new Error("no chat");
@@ -386,6 +396,41 @@ function ownCall(call: string, chatId = "c-asha", conversation = 1): string {
     .get(chatId);
   return `${String(owner?.["agent_id"])}/${String(conversation)}/${call}`;
 }
+
+/** The agents in the agent database, oldest first. */
+function agentRows(
+  query = "SELECT id, parent_id, title, status, result FROM agents ORDER BY rowid",
+): Record<string, unknown>[] {
+  const db = new DatabaseSync(agentsPath(home), { readOnly: true });
+  try {
+    return db
+      .prepare(query)
+      .all()
+      .map((row) => ({ ...row }));
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * The chat's agents have settled: nothing of theirs waits or runs, and Rufi
+ * has a reply, ended, for each of Rufi AI's turns.
+ */
+const settled = (id: string) =>
+  until(async () => {
+    const { turns } = await transcript(id);
+    const busy = agentRows(
+      "SELECT 1 FROM queue WHERE (state = 'waiting' AND held IS NULL) OR state = 'handing_over' UNION ALL SELECT 1 FROM turns WHERE status IN ('running', 'stopping')",
+    );
+    const [root] = agentRows(
+      "SELECT count(*) AS n FROM turns WHERE agent_id = (SELECT id FROM agents WHERE parent_id IS NULL)",
+    );
+    return (
+      busy.length === 0 &&
+      turns.length === root?.["n"] &&
+      turns.every((turn) => turn.status !== "running")
+    );
+  });
 
 /** The thread's files are gone: Codex has no record of the chat's thread. */
 async function loseThread(chatId?: string): Promise<void> {
@@ -676,13 +721,13 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
-    "holds a message sent during a reply; after Stop, it goes next",
+    "holds a message queued during a reply; after Stop, it goes next",
     timeout,
     async () => {
       await startChat(name);
       const c = await newChat();
       await rufiReply(c);
-      await say(c, "B");
+      await say(c, "B", "queue");
       expect(await waiting()).toEqual([["B", "waiting", null]]);
       // A waiting message is not in the transcript.
       expect(
@@ -714,7 +759,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       const c = await newChat();
       // Two requests, each with the chat as it read it.
       const again = await chatRow(c.id);
-      await Promise.all([say(c, "slow first"), say(again, "B")]);
+      await Promise.all([say(c, "slow first"), say(again, "B", "queue")]);
       await ended(c.id, 2);
       const { entries, turns } = await transcript(c.id);
       expect(
@@ -744,42 +789,63 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
-    "sends a waiting message now; the others follow in order",
+    "steers a queued message into the running reply; the others wait for its end",
     timeout,
     async () => {
       await startChat(name);
       const c = await newChat();
       await rufiReply(c);
-      await say(c, "B");
-      await say(c, "C");
+      await say(c, "B", "queue");
+      await say(c, "C", "queue");
       const { items } = await queue.list(c);
-      await chat?.queue.sendNow(
+      await chat?.queue.steer(
         c,
         items.find((item) => item.text === "C")?.id ?? "",
       );
+      await until(async () =>
+        (await transcript(c.id)).entries.some(
+          ([kind, text]) => kind === "steer" && text === "C",
+        ),
+      );
+      expect(await waiting()).toEqual([["B", "waiting", null]]);
       await chat?.stop(c);
-      await ended(c.id, 3);
+      await ended(c.id, 2);
       expect(
         (await transcript(c.id)).entries
-          .filter(([kind]) => kind === "message")
-          .map(([, text]) => text),
-      ).toEqual(["C", "B"]);
+          .filter(([kind]) => kind === "message" || kind === "steer")
+          .map(([kind, text]) => [kind, text]),
+      ).toEqual([
+        ["steer", "C"],
+        ["message", "B"],
+      ]);
     },
   );
 
   it(
-    "a message sent while a reply runs goes into that reply; one sent after goes as a new message",
+    "a message sent while a reply starts or runs goes into that reply; one sent after goes as a new message",
     timeout,
     async () => {
       await startChat(name);
       const c = await newChat();
-      await say(c, "slow");
+      await chat?.selectModel(c, "gpt-6.1-sol");
+      // Its conversation opens: Codex waits for a token, and the reply starts.
+      const gate = Promise.withResolvers<undefined>();
+      tokenGate = gate.promise;
+      await say(await chatRow(c.id), "slow");
+      await until(async () => (await chat?.agent.busy(c)) === true);
+      await say(await chatRow(c.id), "the latest one");
+      gate.resolve(undefined);
       await running(c.id);
-      await say(c, "shorter please");
+      await say(await chatRow(c.id), "shorter please");
       await ended(c.id);
       const { entries } = await transcript(c.id);
+      expect(entries).toContainEqual(["steer", "the latest one"]);
       expect(entries).toContainEqual(["steer", "shorter please"]);
-      expect(entries).toContainEqual(["reply", "ok:shorter please"]);
+      // The AI gets each steer after a line saying it is one.
+      expect(entries).toContainEqual([
+        "reply",
+        "ok:You're being steered: don't drop what you're working on unless you have to; take this into account.\n\nshorter please",
+      ]);
       await say(c, "after");
       await ended(c.id, 2);
       expect((await transcript(c.id)).entries).toContainEqual([
@@ -790,7 +856,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
-    "hands nothing over when Stop comes while the message is getting ready; it waits, not sent, and goes once when sent now",
+    "hands nothing over when Stop comes while the message is getting ready; it waits, not sent, and goes once sent",
     timeout,
     async () => {
       await startChat(name);
@@ -804,15 +870,15 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       const stopping = chat?.stop(c);
       gate.resolve(undefined);
       await stopping;
-      await until(async () => (await waiting())[0]?.[2] === "failed");
+      await until(async () => (await waiting())[0]?.[2] === "stopped");
       expect((await transcript(c.id)).entries).toEqual([]);
       const [held] = (await queue.list(c)).items;
       expect(held).toMatchObject({
         text: "Hello",
         state: "waiting",
-        heldText: "Not sent: stopped.",
+        heldText: "Stopped.",
       });
-      await chat?.queue.sendNow(c, held?.id ?? "");
+      await chat?.queue.send(c, held?.id ?? "");
       await ended(c.id);
       expect(
         (await transcript(c.id)).entries.filter(
@@ -824,18 +890,6 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       ]);
     },
   );
-
-  it("stops a reply that runs past its deadline", timeout, async () => {
-    await startChat(name, { deadlines: { turnMs: 2_000 } });
-    const c = await newChat();
-    await say(c, "hang");
-    await ended(c.id);
-    expect((await transcript(c.id)).turns[0]).toMatchObject({
-      status: "failed",
-      endReason: "provider_failed",
-      endText: "The reply took too long, so Rufi stopped it.",
-    });
-  });
 
   it(
     "keeps the thread on a model change: the next reply runs on the new model, with the whole chat",
@@ -946,7 +1000,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       const c = await chatRow();
       await rufiReply(c);
       await until(async () => (await backend.efforts()).length === 1);
-      await say(c, "B");
+      await say(c, "B", "queue");
       await startChat(name); // Rufi restarts.
       await ended(c.id, 2);
       expect((await transcript(c.id)).turns).toMatchObject([
@@ -1310,7 +1364,7 @@ describe("the chat, on the scripted Codex", () => {
     }
   });
 
-  it("gives each Rufi event that came during a reply to the AI after it, in a turn of its own that can only read", async () => {
+  it("gives each Rufi event that came during a reply to the AI after it, in a turn of its own", async () => {
     await startChat("fake", { scenario: { calls: [saveHeadache] } });
     const c = await newChat();
     await say(c, "slow quiet");
@@ -1333,14 +1387,14 @@ describe("the chat, on the scripted Codex", () => {
       [expect.stringContaining("Note: Lab report read")],
       [expect.stringContaining("Note: Second report read")],
     ]);
-    // Their saves were refused, with the reason, and nothing was saved.
+    // Their saves rest on no message of the person's, so Rufi refused them.
     const calls = store.db
       .prepare("SELECT tool, ok, answer FROM tool_calls")
       .all() as { tool: string; ok: number; answer: string }[];
     expect(calls.length).toBeGreaterThan(0);
     for (const call of calls) {
       expect(call).toMatchObject({ tool: "save_changes", ok: 0 });
-      expect(call.answer).toContain("started by a Rufi event");
+      expect(call.answer).toContain("This turn has no message of the user's");
     }
     expect(store.db.prepare("SELECT * FROM symptoms").all()).toEqual([]);
     expect(await waiting()).toEqual([]);
@@ -1631,9 +1685,7 @@ describe("the chat, on the scripted Codex", () => {
       VALUES ('q-restored', '${c.personId}', '${c.id}', 'person', 'From before',
         1, 'waiting', 'restored', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
     `);
-    await expect(chat?.queue.sendNow(c, "q-restored")).rejects.toThrow(
-      SIGNED_OUT,
-    );
+    await expect(chat?.queue.send(c, "q-restored")).rejects.toThrow(SIGNED_OUT);
     expect(await waiting()).toEqual([["From before", "waiting", "restored"]]);
   });
 
@@ -1730,7 +1782,7 @@ describe("the chat, on the scripted Codex", () => {
       throw new Error("disk full");
     };
     await say(c, "drip");
-    await say(c, "hang");
+    await say(c, "hang", "queue");
     await ended(c.id);
     await running(c.id);
     await sleep(300);
@@ -1947,7 +1999,7 @@ describe("the chat, on the scripted Codex", () => {
     return server;
   };
 
-  it("refuses another chat's key for a cached caller, for reads and saves", async () => {
+  it("runs a call for the key's own chat, whatever another chat's turn its _meta names", async () => {
     await startChat("fake", { scenario: { bare: true } });
     store.db.exec(`
       INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
@@ -1968,36 +2020,31 @@ describe("the chat, on the scripted Codex", () => {
         chat?.agent.activeTurn(row.threadId) !== undefined
       );
     });
+    // Asha's reply, named in the _meta of calls made with Ravi's key.
     const { threadId } = await chatRow();
-    const reply = { threadId: threadId ?? "", turnId: agentTurn() };
-    const own = await threadMcp();
+    const ashaReply = { threadId: threadId ?? "", turnId: agentTurn() };
     const other = await threadMcp(1);
-    const read = { name: "get_overview", arguments: {}, ...reply };
-    const before = await callTool(other, { ...read, callId: "wrong-before" });
-    const proper = await callTool(own, { ...read, callId: "proper-read" });
-    const after = await callTool(other, { ...read, callId: "wrong-after" });
-    const save = await callTool(other, {
+    const read = await callTool(other, {
+      name: "get_overview",
+      arguments: {},
+      ...ashaReply,
+      callId: "ravi-read",
+    });
+    await callTool(other, {
       name: "save_changes",
       arguments: saveHeadache.arguments,
-      ...reply,
-      callId: "wrong-save",
+      ...ashaReply,
+      callId: "ravi-save",
     });
-    expect(proper.result?.["isError"]).not.toBe(true);
-    const refused = {
-      content: [
-        { type: "text", text: '{"ok":false,"error":"No reply is running."}' },
-      ],
-      isError: true,
-    };
-    expect([before.result, after.result, save.result]).toEqual([
-      refused,
-      refused,
-      refused,
+    expect(read.result?.["content"]).toEqual([
+      {
+        type: "text",
+        text: expect.stringContaining('"person":"Ravi Fictional"') as string,
+      },
     ]);
-    expect(
-      store.db.prepare("SELECT tool, call_id FROM tool_calls").all(),
-    ).toEqual([{ tool: "get_overview", call_id: ownCall("proper-read") }]);
-    expect(store.db.prepare("SELECT * FROM symptoms").all()).toEqual([]);
+    expect(store.db.prepare("SELECT person_id FROM symptoms").all()).toEqual([
+      { person_id: "ravi" },
+    ]);
     expect(
       (await transcript(asha.id)).entries.filter(
         ([kind]) => kind === "receipt",
@@ -2068,6 +2115,421 @@ describe("the chat, on the scripted Codex", () => {
     ]);
     expect(store.db.prepare("SELECT call_id FROM tool_calls").all()).toEqual([
       { call_id: ownCall("call-0") },
+    ]);
+  });
+
+  it("keeps a sub-agent's save made after Rufi AI's reply ended, with its kept answer and its receipt", async () => {
+    const replied = Promise.withResolvers<undefined>();
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Ask a helper": [
+            {
+              tool: "start_agent",
+              arguments: {
+                title: "Helper",
+                task: "helper: save it, from the user's message at 1",
+              },
+            },
+          ],
+          // Its turn has no message of the user's: it names theirs, the
+          // chat's first.
+          "helper:": [
+            {
+              tool: "save_changes",
+              arguments: {
+                changes: [
+                  {
+                    kind: "symptom",
+                    action: "add",
+                    source: 1,
+                    fields: { name: "Headache" },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      },
+      waitFor: (tool) =>
+        tool === "save_changes" ? replied.promise : undefined,
+    });
+    const c = await newChat();
+    await say(c, "Ask a helper");
+    await ended(c.id);
+    replied.resolve(undefined);
+    await until(async () =>
+      (await transcript(c.id)).entries.some(([kind]) => kind === "receipt"),
+    );
+    expect(store.db.prepare("SELECT name FROM symptoms").all()).toEqual([
+      { name: "Headache" },
+    ]);
+    // The helper's id is the call that started it.
+    const helper = ownCall("call-0");
+    expect(
+      store.db
+        .prepare(
+          "SELECT agent_id, turn_id, ok FROM tool_calls WHERE tool = 'save_changes'",
+        )
+        .all(),
+    ).toEqual([{ agent_id: helper, turn_id: null, ok: 1 }]);
+    const { entries, all } = await transcript(c.id);
+    // Labelled with the helper's title: it belongs to no reply.
+    expect(entries.filter(([kind]) => kind === "receipt")).toEqual([
+      ["receipt", "**Saved** · Helper\n\n- Added symptom **Headache**"],
+    ]);
+    expect(all.find((entry) => entry.kind === "receipt")?.turnId).toBeNull();
+  });
+
+  it("runs a sub-agent's own sub-agent, whose done message wakes its parent, whose own wakes Rufi AI; then Rufi AI reads how each went and the conversation of the one below, and that one reads the one that started it", async () => {
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Ask a helper": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Helper", task: "helper: ask yours" },
+            },
+          ],
+          "helper:": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Second helper", task: "second: hello" },
+            },
+          ],
+        },
+      },
+    });
+    const c = await newChat();
+    await say(c, "Ask a helper");
+    const helper = ownCall("call-0");
+    const second = `${helper}/1/call-0`;
+    // Each of the helper's turns ends with a done message to Rufi AI: the
+    // second, woken by the second helper's, says what that one said.
+    const helperSaid = `ok:Second helper (${second}) done:\n\nok:second: hello`;
+    await until(async () =>
+      (await inputs()).some((input) =>
+        input.join("").includes(`Helper (${helper}) done:\n\n${helperSaid}`),
+      ),
+    );
+    await settled(c.id);
+    const { turns } = await transcript(c.id);
+    expect(turns[1]?.cause).toEqual({ title: "Helper", about: "done" });
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "How did they do": [
+            { tool: "agent_status", arguments: {} },
+            { tool: "read_agent", arguments: { agent: second } },
+          ],
+        },
+      },
+    });
+    await say(await chatRow(c.id), "How did they do?");
+    await ended(c.id, turns.length + 1);
+    const answers = store.db
+      .prepare(
+        "SELECT tool, answer FROM tool_calls WHERE tool IN ('agent_status', 'read_agent') ORDER BY started_at",
+      )
+      .all() as { tool: string; answer: string }[];
+    const [status, read] = answers.map(
+      (row) => JSON.parse(row.answer) as { ok: boolean; result: unknown },
+    );
+    expect(status).toEqual({
+      ok: true,
+      result: {
+        agents: [
+          {
+            agent: helper,
+            title: "Helper",
+            parent: "self",
+            status: "done",
+            result: helperSaid,
+          },
+          {
+            agent: second,
+            title: "Second helper",
+            parent: helper,
+            status: "done",
+            result: "ok:second: hello",
+          },
+        ],
+      },
+    });
+    expect(read).toMatchObject({
+      ok: true,
+      result: {
+        agent: { agent: second, title: "Second helper", status: "done" },
+        turns: [
+          {
+            status: "done",
+            inputs: [{ from: helper, text: "second: hello" }],
+            result: "ok:second: hello",
+          },
+        ],
+        earlier: null,
+      },
+    });
+
+    // A sub-agent reads any agent in its chat: here, the one that started it.
+    const root = ownCall("call-0").split("/")[0];
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          // Its own call id: the scripted Codex numbers them from call-0
+          // again after a restart, and start_agent's was call-0.
+          "Ask the second helper": [
+            {
+              id: "call-write",
+              tool: "send_agent",
+              arguments: { to: second, text: "read your parent" },
+            },
+          ],
+          [`Rufi AI (${String(root)}) writes:`]: [
+            { tool: "read_agent", arguments: { agent: helper } },
+          ],
+        },
+      },
+    });
+    await say(await chatRow(c.id), "Ask the second helper to read");
+    const readBy = () =>
+      store.db
+        .prepare(
+          "SELECT answer FROM tool_calls WHERE tool = 'read_agent' AND agent_id = ?",
+        )
+        .get(second) as { answer: string } | undefined;
+    await until(() => Promise.resolve(readBy() !== undefined));
+    expect(JSON.parse(readBy()?.answer ?? "")).toMatchObject({
+      ok: true,
+      result: { agent: { agent: helper, title: "Helper" } },
+    });
+    await settled(c.id);
+  });
+
+  it("reads a sub-agent's question, with its options, from its conversation", async () => {
+    const question = {
+      title: "Which visit is this brief for?",
+      options: ["3 Nov, Dr Rao", "12 Nov, Dr Iyer"],
+    };
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Ask a helper": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Brief", task: "helper: make the brief" },
+            },
+          ],
+        },
+        // Each turn ends with it, the helper's too, and no answer text.
+        unstreamed: { text: "", questions: [question] },
+      },
+    });
+    const c = await newChat();
+    await say(c, "Ask a helper");
+    const helper = ownCall("call-0");
+    // Its question wakes Rufi AI, with the options, in plain words.
+    await until(async () =>
+      (await inputs()).some(
+        (input) =>
+          input.join("") ===
+          `Brief (${helper}) asks:\n\nWhich visit is this brief for?\n- 3 Nov, Dr Rao\n- 12 Nov, Dr Iyer`,
+      ),
+    );
+    await settled(c.id);
+    const { turns } = await transcript(c.id);
+    expect(turns[1]?.cause).toEqual({ title: "Brief", about: "asked" });
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "What did it ask": [
+            { tool: "read_agent", arguments: { agent: helper } },
+          ],
+        },
+      },
+    });
+    await say(await chatRow(c.id), "What did it ask?");
+    await ended(c.id, turns.length + 1);
+    const [read] = (
+      store.db
+        .prepare("SELECT answer FROM tool_calls WHERE tool = 'read_agent'")
+        .all() as { answer: string }[]
+    ).map((row) => JSON.parse(row.answer) as unknown);
+    expect(read).toMatchObject({
+      ok: true,
+      result: { turns: [{ status: "done", questions: [question] }] },
+    });
+  });
+
+  it("wakes Rufi AI with a sub-agent's done message, and the reply it gives by itself sorts a document", async () => {
+    store.db.exec(`
+      INSERT INTO files (id, size, media_type, created_at) VALUES ('f-letter', 1, 'application/pdf', '2026-10-01T09:00:00Z');
+      INSERT INTO documents (id, person_id, added_at, added_from, version, sent_at) VALUES ('letter', 'asha', '2026-10-01T09:00:00Z', 'chat', 1, '2026-10-01T09:00:00Z');
+      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
+        VALUES ('job-letter', 'asha', 'document_read', 'letter', 'done', 1, '[1]', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
+      INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name, state, entry_job_id, entry_attempt)
+        VALUES ('asha', 'letter', 1, 'f-letter', 1, 'letter.pdf', 'read', 'job-letter', 1);
+      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
+        VALUES ('asha', 'f-letter', 1, 'job-letter', 1, 'read', 'Dr. Rao · Rx: Metformin 500 mg, twice a day', '2026-10-01T09:00:00Z');
+    `);
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Ask a reader": [
+            {
+              tool: "start_agent",
+              arguments: {
+                title: "Reading letter.pdf",
+                task: "reader: read it",
+              },
+            },
+          ],
+          // Its done message: the reply Rufi AI gives by itself.
+          "Reading letter.pdf (": [
+            {
+              tool: "sort_documents",
+              arguments: {
+                document: "letter",
+                documents: [{ id: "letter", pages: [1], kind: "prescription" }],
+                drafts: [],
+              },
+            },
+          ],
+        },
+      },
+    });
+    const c = await newChat();
+    await say(c, "Ask a reader");
+    await ended(c.id, 2);
+    const { turns } = await transcript(c.id);
+    expect(turns[1]).toMatchObject({
+      status: "completed",
+      cause: { title: "Reading letter.pdf", about: "done" },
+    });
+    expect(
+      store.db
+        .prepare("SELECT ok FROM tool_calls WHERE tool = 'sort_documents'")
+        .all(),
+    ).toEqual([{ ok: 1 }]);
+    expect(
+      store.db.prepare("SELECT kind FROM documents WHERE id = 'letter'").get(),
+    ).toEqual({ kind: "prescription" });
+  });
+
+  it("wakes Rufi AI with each of two sub-agents' done messages, the first with the line that names it", async () => {
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Ask two helpers": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Helper A", task: "helper: slow a" },
+            },
+            {
+              tool: "start_agent",
+              arguments: { title: "Helper B", task: "helper: slow b" },
+            },
+          ],
+        },
+      },
+    });
+    const c = await newChat();
+    await say(c, "Ask two helpers");
+    await until(async () => (await transcript(c.id)).turns.length > 1);
+    await settled(c.id);
+    // Each went to Rufi AI: in a reply it gave by itself, or steered in.
+    expect(
+      agentRows(
+        "SELECT sender, state FROM queue WHERE about = 'done' AND agent_id = (SELECT id FROM agents WHERE parent_id IS NULL) ORDER BY sender",
+      ),
+    ).toEqual([
+      { sender: ownCall("call-0"), state: "delivered" },
+      { sender: ownCall("call-1"), state: "delivered" },
+    ]);
+    const { turns } = await transcript(c.id);
+    expect(turns[1]?.cause).toMatchObject({
+      title: expect.stringMatching(/^Helper [AB]$/) as unknown,
+      about: "done",
+    });
+  });
+
+  it("gives a sub-agent only the tools it was given, and its own sub-agent no more than those", async () => {
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Ask a reader": [
+            {
+              tool: "start_agent",
+              arguments: {
+                title: "Reader",
+                task: "reader: try",
+                tools: ["get_overview", "start_agent"],
+              },
+            },
+          ],
+          "reader:": [
+            {
+              tool: "save_changes",
+              arguments: {
+                changes: [
+                  {
+                    kind: "symptom",
+                    action: "add",
+                    source: 1,
+                    fields: { name: "Headache" },
+                  },
+                ],
+              },
+            },
+            {
+              tool: "start_agent",
+              arguments: {
+                title: "Wider",
+                task: "wider: try",
+                tools: ["get_overview", "save_changes"],
+              },
+            },
+          ],
+        },
+      },
+    });
+    const c = await newChat();
+    await say(c, "Ask a reader");
+    await ended(c.id);
+    const reader = ownCall("call-0");
+    await until(() =>
+      Promise.resolve(
+        agentRows().some(
+          (row) => row["id"] === reader && row["status"] === "done",
+        ),
+      ),
+    );
+    const calls = store.db
+      .prepare(
+        "SELECT tool, answer FROM tool_calls WHERE agent_id = ? ORDER BY started_at",
+      )
+      .all(reader) as { tool: string; answer: string }[];
+    expect(
+      calls.map(({ tool, answer }) => ({
+        tool,
+        error: (JSON.parse(answer) as { error?: string }).error,
+      })),
+    ).toEqual([
+      {
+        tool: "save_changes",
+        error:
+          "There is no tool called save_changes. Rufi's tools: get_overview, start_agent.",
+      },
+      {
+        tool: "start_agent",
+        error:
+          "An agent you start can have only tools you have, and you don't have save_changes. Nothing was started.",
+      },
+    ]);
+    expect(store.db.prepare("SELECT * FROM symptoms").all()).toEqual([]);
+    expect(agentRows().map((row) => row["title"])).toEqual([
+      "Rufi AI",
+      "Reader",
     ]);
   });
 
@@ -2162,20 +2624,6 @@ describe("the chat, on the scripted Codex", () => {
     });
   });
 
-  it("stops a reply whose AI keeps making calls Rufi can't accept, and says why", async () => {
-    const wrong = { tool: "read_database", arguments: {} };
-    await startChat("fake", { scenario: { calls: [wrong, wrong, wrong] } });
-    const c = await newChat();
-    await say(c, "hang");
-    await ended(c.id);
-    expect((await transcript(c.id)).turns).toMatchObject([
-      {
-        status: "failed",
-        endText: "The AI kept making requests Rufi couldn't accept.",
-      },
-    ]);
-  });
-
   it("keeps a save that lands after Stop, with its receipt", async () => {
     await startChat("fake", {
       scenario: { calls: [saveHeadache] },
@@ -2241,15 +2689,11 @@ describe("the chat, on the scripted Codex", () => {
     const c = await newChat();
     await say(c, "first");
     await ended(c.id);
-    // The person's message waits for a reply of its own, then is stopped.
+    // The person's message waits for a reply of its own as Rufi stops.
     await rufiReply(c);
-    await say(await chatRow(), "waiting B");
-    await chat?.stop(await chatRow());
-    await ended(c.id, 2);
+    await say(await chatRow(), "waiting B", "queue");
 
     await startChat("fake", { loseAgents: true });
-    const [waitingB] = (await queue.list(await chatRow())).items;
-    await chat?.queue.sendNow(await chatRow(), waitingB?.id ?? "");
     await ended(c.id, 3);
     const seed = (await backendOf("fake").contexts()).at(-1);
     expect(seed).toContain("User: first\n\nAI: ok:first");
@@ -2725,12 +3169,12 @@ describe("When the AI's thread doesn't open", () => {
     ).toEqual(["first", "second"]);
   });
 
-  it("starts a new thread when Codex has no record of it, also when the sign-in renews before the message goes", async () => {
+  it("starts a new thread when Codex has no record of it", async () => {
     await startChat("fake", { scenario: { forgets: true } });
     await say(await newChat(), "first");
     await ended("c-asha");
-    // A new token: Codex starts again, and its saved threads are gone.
-    token = "renewed-token";
+    // Rufi starts again, and Codex's saved threads are gone.
+    await startChat("fake", { scenario: { forgets: true } });
     await say(await chatRow(), "second");
     await ended("c-asha", 2);
     expect((await queue.list(await chatRow())).items).toEqual([]);

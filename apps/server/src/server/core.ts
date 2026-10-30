@@ -15,6 +15,7 @@ import type { AgentSandbox, RunSubAgent } from "../agent/runtime.ts";
 import { readBrief } from "../core/briefs/briefs.ts";
 import { DEFAULT_ALLOWLIST } from "../core/chat/models.ts";
 import { drafts as openDrafts } from "../core/chat/drafts.ts";
+import { chatAgents } from "../core/chat/agents.ts";
 import { chatQueue } from "../core/chat/queue.ts";
 import { transcripts as openTranscripts } from "../core/chat/transcript.ts";
 import { deletions, sweepFiles } from "../core/documents/delete.ts";
@@ -41,22 +42,33 @@ import { claimNotices } from "../core/record/notices.ts";
 import { recordViews, waiting } from "../core/record/views.ts";
 import { pages } from "../core/documents/pages.ts";
 import { rufiCaller, forAgent } from "../core/tools/tools.ts";
-import { coreInstructions, rulesVersion } from "../core/chat/instructions.ts";
+import {
+  coreInstructions,
+  rulesVersion,
+  subAgentInstructions,
+} from "../core/chat/instructions.ts";
 import { SKILLS } from "../core/skills/skills.ts";
 import { backupsPath } from "../core/store/backup.ts";
 import { devices as openDevices } from "../core/devices/devices.ts";
-import { holdRufiLock, readJson, writePrivateJson } from "../platform/files.ts";
+import {
+  holdRufiLock,
+  readJson,
+  tempPattern,
+  writePrivateJson,
+} from "../platform/files.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { agentsPath } from "./agents.ts";
 import { api, LAUNCHER_HEADER } from "./api.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 import { generatedImages } from "../agent/codex/settings.ts";
+import { doorFolder } from "../agent/codex/token-door.ts";
 import { aiFiles } from "./files.ts";
 import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
 import { reader as openReader, readerChoice } from "./reader.ts";
 import { startRufiAi } from "./rufi-ai.ts";
 import { converter as openConverter } from "./converter.ts";
 import { secret, sessions } from "./session.ts";
+import { subAgents } from "./sub-agents.ts";
 import { signInFlow, type SignIn } from "./signin.ts";
 
 export interface CoreOptions {
@@ -112,6 +124,10 @@ export function aiSandbox(home: string): AgentSandbox {
       ]),
       backupsPath(home),
       coreFile(home),
+      // Its temp copy while it is written: Codex denies a glob too.
+      tempPattern(coreFile(home)),
+      // The keys of the chat's Codex and the reader's to their token doors.
+      doorFolder(home),
     ],
   };
 }
@@ -195,7 +211,8 @@ export const startCore = (options: CoreOptions) =>
       ),
       (release) => Effect.promise(() => release().catch(() => undefined)),
     );
-    // Stopping the server cuts connections, not the work of their handlers.
+    // Stopping the server cuts connections, not the work of their handlers,
+    // nor the calls to Rufi's tools, whose answers stream after a response.
     const answering = new Set<Promise<unknown>>();
     const writer = yield* Effect.acquireRelease(
       attempt(() => openRecord(home)),
@@ -313,10 +330,15 @@ export const startCore = (options: CoreOptions) =>
           agent: agentSystem.rufiAi,
           allowlist: DEFAULT_ALLOWLIST,
           mcp: { url: () => mcpUrl(MCP_CHAT), keys: chatKeys },
-          rules: (region) => ({
-            instructions: coreInstructions(region),
-            version: rulesVersion(region),
-          }),
+          rules: (region, agent) => {
+            const instructions = agent
+              ? subAgentInstructions(region, agent)
+              : coreInstructions(region);
+            return {
+              instructions,
+              version: rulesVersion(region, instructions),
+            };
+          },
           tools: {
             specs: tools.specs,
             caller: rufiCaller(
@@ -330,6 +352,11 @@ export const startCore = (options: CoreOptions) =>
                   readings.changed(personId);
                 },
               },
+              subAgents({
+                agents: agentSystem.agents,
+                kept: chatAgents(writer, options.now),
+                queue,
+              }),
             ),
           },
           log,
@@ -429,8 +456,14 @@ export const startCore = (options: CoreOptions) =>
         port: () => port,
         log,
         resources: skillResources(SKILLS),
+        working: answering,
       }),
-      [MCP_READER]: mcpEndpoint({ keys: readerKeys, port: () => port, log }),
+      [MCP_READER]: mcpEndpoint({
+        keys: readerKeys,
+        port: () => port,
+        log,
+        working: answering,
+      }),
     };
     const server = yield* Effect.acquireRelease(
       attempt(
@@ -473,11 +506,9 @@ export const startCore = (options: CoreOptions) =>
         ),
     );
     port = (server.address() as AddressInfo).port;
-    // Rufi's MCP server listens and the chat is open: hand-overs Rufi
-    // claimed that the package never saved are settled by their provider,
-    // each chat's waiting messages go into Rufi AI's queue, in order, and
-    // only now may the agents' inputs go.
-    yield* attempt(() => agentSystem.recover());
+    // Rufi's MCP server listens and the chat is open: each chat's waiting
+    // messages go into Rufi AI's queue, in order, and only now may the
+    // agents' inputs go.
     yield* attempt(() => chat.carryAll());
     yield* attempt(() => agentSystem.agents.dispatch());
     convertLoop.start();

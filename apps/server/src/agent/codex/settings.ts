@@ -13,18 +13,29 @@ import type { AgentSandbox, AgentSkill, McpServer } from "../runtime.ts";
 import type { ConfigReadResponse } from "./protocol/v2/ConfigReadResponse.ts";
 import type { ExperimentalFeatureListResponse } from "./protocol/v2/ExperimentalFeatureListResponse.ts";
 import type { Rpc } from "./rpc.ts";
+import { COMMAND_MS, REFRESH_MS, TOKEN_COMMAND } from "./token-door.ts";
 
 /**
  * OpenAI's documented settings for ChatGPT plan use through app-server
- * (developers.openai.com/siwc/token-sharing-open-source/codex-app-server).
+ * (developers.openai.com/siwc/token-sharing-open-source/codex-app-server),
+ * but for the token: in place of an ACCESS_TOKEN in its environment, Codex
+ * asks Rufi's token door for one with the provider's auth command
+ * (token-door.ts, docs/adr/0025), named by its file.
  */
-const PROVIDER = `[model_providers.openai_chatgpt_plan]
+function provider(door: string): string {
+  return `[model_providers.openai_chatgpt_plan]
 name = "ChatGPT plan"
 base_url = "https://api.openai.com/v1"
-env_key = "ACCESS_TOKEN"
 wire_api = "responses"
 requires_openai_auth = false
-supports_websockets = false`;
+supports_websockets = false
+
+[model_providers.openai_chatgpt_plan.auth]
+command = ${key(process.execPath)}
+args = [${key(TOKEN_COMMAND)}, ${key(door)}]
+timeout_ms = ${String(COMMAND_MS)}
+refresh_interval_ms = ${String(REFRESH_MS)}`;
+}
 
 /** Rufi's choices on top of Codex's defaults, each with its reason. */
 const SETTINGS = {
@@ -34,7 +45,7 @@ const SETTINGS = {
   personality: "none",
   /**
    * Rufi keeps the AI's reasoning summaries with the reply (docs/adr/0004);
-   * Codex's models send none unless asked.
+   * Codex asks the model for none unless set (0.163.0).
    */
   model_reasoning_summary: "detailed",
   features: {
@@ -46,6 +57,11 @@ const SETTINGS = {
      */
     plugins: false,
     apps: false,
+    /**
+     * No Codex sub-agents: Rufi's own start_agent is the one kind
+     * (docs/adr/0026). On, it would bring their tools back regardless.
+     */
+    multi_agent_v2: false,
   },
 } as const;
 
@@ -123,16 +139,22 @@ ${features}
 [skills.bundled]
 enabled = false
 
+# No Codex sub-agents (spawn_agent and its tools): Rufi starts its own.
+[agents]
+enabled = false
+
 # The agent's commands get no variable named like a secret (*KEY*, *SECRET*,
-# *TOKEN*), such as the access token Codex itself runs with.
+# *TOKEN*); Codex itself runs with none.
 [shell_environment_policy]
 ignore_default_excludes = false
 ${commandsEnvironment(options)}${options.sandbox ? aiProfile(options.sandbox, skills) : ""}
-${PROVIDER}
+${provider(options.door)}
 `;
 }
 
 export interface CodexHomeOptions {
+  /** The file of this Codex's token door (doorFile). */
+  door: string;
   /** The user's real HOME, for the agent's commands. */
   userHome?: string | undefined;
   /** The AI's folder and what its commands may never read. */
@@ -162,7 +184,7 @@ export const generatedImages = (home: string) =>
  */
 export async function prepareCodexHome(
   home: string,
-  options: CodexHomeOptions = {},
+  options: CodexHomeOptions,
 ): Promise<CodexPaths> {
   const paths = {
     codexHome: join(home, "codex"),
@@ -196,8 +218,10 @@ export async function prepareCodexHome(
 }
 
 /**
- * Checks Codex applied Rufi's settings, so a renamed key in a new pin fails
- * loudly instead of being ignored.
+ * Checks Codex applied the settings Rufi can't do without (its sign-in, the
+ * effort, what runs), so a renamed key in a new pin fails loudly instead of
+ * being ignored. The style settings (personality, reasoning summaries) aren't
+ * checked: without them the chat still works.
  */
 export async function checkSettings(
   rpc: Rpc,
@@ -216,14 +240,6 @@ export async function checkSettings(
     problems.push(
       `model_reasoning_effort is ${String(config.model_reasoning_effort)}`,
     );
-  }
-  if (config.model_reasoning_summary !== SETTINGS.model_reasoning_summary) {
-    problems.push(
-      `model_reasoning_summary is ${String(config.model_reasoning_summary)}`,
-    );
-  }
-  if (config["personality"] !== SETTINGS.personality) {
-    problems.push(`personality is ${JSON.stringify(config["personality"])}`);
   }
   const enabled = new Map<string, boolean>();
   let cursor: string | null = null;

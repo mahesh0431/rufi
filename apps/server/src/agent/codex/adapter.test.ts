@@ -12,6 +12,7 @@ import type { Scenario } from "../../../tests/fake-codex.ts";
 import { codexMeta } from "../../../tests/mcp-client.ts";
 import { ChatGptError } from "../chatgpt/openai.ts";
 import { codexAdapter } from "./adapter.ts";
+import { TOKEN_VALID_MS } from "./token-door.ts";
 
 const FAKE = join(import.meta.dirname, "../../../tests/fake-codex.ts");
 /** Longer than Rufi waits for Codex's answer: the answer is lost. */
@@ -59,9 +60,8 @@ const WORDS: Record<NonNullable<Script["turn"]>, string | undefined> = {
   fails: "fail",
   usage_limit: "fail",
   dies: "crash",
-  silent: undefined,
-  renews: undefined,
-  renewal_fails: undefined,
+  renews: "renew",
+  renewal_fails: "renew",
 };
 
 /** The scripted Codex that behaves as `script` says. */
@@ -103,15 +103,19 @@ async function setUp(script: Script, scenario = scenarioOf(script)) {
       FAKE_CODEX: JSON.stringify(scenario),
       FAKE_CODEX_LOG: join(home, "fake.jsonl"),
     },
-    token: () =>
-      script.signedIn === false
-        ? Promise.reject(new ChatGptError("not_signed_in", "Not signed in."))
+    // A failing renewal: the sign-in has ended by the time Codex asks its
+    // door for a fresh token.
+    token: (validForMs) =>
+      script.signedIn === false ||
+      (script.turn === "renewal_fails" && validForMs === TOKEN_VALID_MS)
+        ? Promise.reject(
+            new ChatGptError("sign_in_again", "Your sign-in has ended."),
+          )
         : Promise.resolve("token-1"),
     version: "9.9.9",
     deadlines: {
       startMs: 10_000,
       requestMs: 1_000,
-      turnMs: 20_000,
       ...(script.ignoresInterrupt
         ? { interruptAckMs: 300, interruptEndMs: 300 }
         : { interruptAckMs: 1_000, interruptEndMs: 1_000 }),
@@ -145,17 +149,7 @@ providerContract("Codex", {
     Promise.resolve(
       codexMeta({ callId: call, threadId: conversation.ref, turnId: turn }),
     ),
-  cannot: {
-    heldSteer: "Codex takes a steer at once or refuses it",
-    heldPastEnd: "Codex takes a steer at once or refuses it",
-    lostCancel: "Codex takes a steer at once or refuses it",
-    nextTurn: "Codex never starts a turn by itself",
-  },
-  pending: {
-    renews: "Codex asks Rufi for a renewed token during a turn",
-    renewalFails: "Codex asks Rufi for a renewed token during a turn",
-    noLimit: "the turn's time limit goes",
-  },
+  cannot: { nextTurn: "Codex never starts a turn by itself" },
 });
 
 const closing: (() => Promise<void>)[] = [];

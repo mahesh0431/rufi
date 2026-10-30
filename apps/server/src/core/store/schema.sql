@@ -408,6 +408,7 @@ CREATE TABLE turns (
   resets_at TEXT,              -- a usage limit's reset time, when the provider gave one
   started_at TEXT NOT NULL,
   ended_at TEXT,
+  cause TEXT CHECK (cause IS NULL OR json_valid(cause)), -- woken by an agent it started: {"title", "about": done, stopped, failed, asked or wrote}
   UNIQUE (person_id, id),
   UNIQUE (chat_id, agent_turn_id),
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id)
@@ -487,30 +488,31 @@ CREATE TABLE drafts (
 ) STRICT;
 
 -- What waits to go to the AI, Rufi's own (docs/adr/0004): the person's
--- messages and Rufi's events that ask the AI. Rufi hands the AI one turn's
--- rows at a time, claimed here before it calls the AI, and never hands a
--- row over twice. sent_as is set just before the AI is called: a
+-- messages and Rufi's events that ask the AI. The agent system hands each
+-- row over in order, claimed here first, and a row is sent once handed
+-- over; Rufi never hands one over twice. sent_as is set by that claim: a
 -- 'handing_over' row without it surely never reached the AI (Rufi's part of
--- its reply ran, or the thread was opening); one with it becomes 'not_sure'
--- when Rufi stops: shown, never sent again by itself.
+-- its reply ran, or reads); one with it counts as sent when Rufi starts
+-- again.
 CREATE TABLE chat_queue (
   id TEXT PRIMARY KEY,         -- UUIDv7, given by the send: the acceptance identity; a person's message keeps it in the transcript
   person_id TEXT NOT NULL,
   chat_id TEXT NOT NULL,
   origin TEXT NOT NULL CHECK (origin IN ('person', 'rufi')),
+  kind TEXT NOT NULL DEFAULT 'queue' CHECK (kind IN ('steer', 'queue')), -- while a reply runs: into it (steer), or after it (queue)
   text TEXT NOT NULL,          -- the person's message, or Rufi's note for the AI
   refs TEXT NOT NULL DEFAULT '[]', -- references sent with it (JSON): the message's chips
   event_id TEXT,               -- a Rufi event's line in the transcript
   position INTEGER NOT NULL,   -- order among the waiting rows
-  state TEXT NOT NULL DEFAULT 'waiting' CHECK (state IN ('waiting', 'handing_over', 'sent', 'not_sure', 'removed')),
-  held TEXT CHECK (held IN ('paused', 'signed_out', 'restored', 'failed', 'open_failed', 'reply_ended')), -- a waiting row Rufi doesn't hand over by itself, and why (paused no longer: 0020): signed_out: the AI found the sign-in missing, and the row goes once it is back; restored: from a restored backup, for the person to send or remove; failed: the AI couldn't take it, or a Stop cut its start; open_failed: the AI's thread didn't open, and the person chooses Try again or New thread; reply_ended: its reply ended in Rufi's part (a reading stopped or failed), it is in the chat already, and its reply's Retry sends it again
-  held_text TEXT,              -- why a hand-over failed, in words for the person
+  state TEXT NOT NULL DEFAULT 'waiting' CHECK (state IN ('waiting', 'handing_over', 'sent', 'removed')),
+  held TEXT CHECK (held IN ('signed_out', 'restored', 'failed', 'stopped', 'open_failed', 'reply_ended')), -- a waiting row Rufi doesn't hand over by itself, and why: signed_out: the AI found the sign-in missing, and the row goes once it is back; restored: from a restored backup, for the person to send or remove; failed: the AI couldn't take it; stopped: a Stop came before it went; open_failed: the AI's thread didn't open, and the person chooses Send or New thread; reply_ended: its reply ended in Rufi's part (a reading stopped or failed), it is in the chat already, and its reply's Retry sends it again
+  held_text TEXT,              -- why, as it came
   hold_id TEXT,                -- which open_failed or reply_ended hold this is: the person's choice names it, so a stale click changes nothing
-  sent_as TEXT,                -- where Rufi handed it over: the agent and its conversation (<agent>/<number>), set in Rufi's claim before the AI is called; an older hand-over's id
+  sent_as TEXT,                -- the agent and its conversation (<agent>/<number>) that claimed it
   turn_id TEXT,                -- the turn that used it; set when Rufi's part of its reply starts
+  note TEXT,                   -- Rufi's note on what its part of the reply read, kept once the reading ends; it goes with the message
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  note TEXT,                   -- Rufi's note on what its part of the reply read, kept once the reading ends; it goes with the message
   UNIQUE (person_id, id),
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
   FOREIGN KEY (person_id, event_id) REFERENCES transcript_entries (person_id, id),
@@ -737,14 +739,13 @@ CREATE TABLE agent_conversations (
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id)
 ) STRICT;
 
--- How far Rufi has applied the agent system's event log: the agents.sqlite
--- it read (its generation) and the last event applied, moved in the same
--- transaction as that event's change. Another generation is a new file.
+-- How far Rufi has applied the agent system's event log: the last event
+-- applied, moved in the same transaction as that event's change. A new
+-- agents.sqlite starts it again at 0.
 CREATE TABLE agent_cursor (
   id INTEGER PRIMARY KEY CHECK (id = 1),
-  generation TEXT NOT NULL,
   number INTEGER NOT NULL
 ) STRICT;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 21;
+PRAGMA user_version = 22;

@@ -1,14 +1,13 @@
 // Rufi and the agent package start in step: through startAgents, on a real
 // record, a real agent database and the package's fake provider.
-import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAgents, type NewAgent, type Sent } from "@rufi/agents/agents";
+import { createAgents, type NewAgent } from "@rufi/agents/agents";
 import { fakeProvider, type FakeProvider } from "@rufi/agents/fake";
 import type { ProviderAdapter } from "@rufi/agents/provider";
 import { openAgentStore, type AgentStore } from "@rufi/agents/store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { sentAs } from "../core/chat/agents.ts";
 import {
   databasePath,
   openWritable,
@@ -59,28 +58,8 @@ async function start(adapters: readonly ProviderAdapter[] = [fake.adapter]) {
     model: "gpt-6-astra",
     log: (event) => logged.push(event),
   });
-  await system.recover();
   running = { store, system };
   return running;
-}
-
-/** A thread the provider has, as Asha's chat's. */
-async function ashaThread(): Promise<string> {
-  const known = await fake.adapter.open({
-    cwd: join(home, "ai"),
-    instructions: "Fictional rules.",
-    model: "fake-model",
-    effort: "medium",
-    tools: TOOLS,
-    onEvent: () => undefined,
-  });
-  await known.close();
-  record.db
-    .prepare(
-      "UPDATE chats SET thread_id = ?, thread_provider = 'fake' WHERE id = 'c-asha'",
-    )
-    .run(known.ref);
-  return known.ref;
 }
 
 /** The agent database's file goes, as when it is lost. */
@@ -89,14 +68,6 @@ async function lose() {
     await rm(`${agentsPath(home)}${end}`, { force: true });
   }
 }
-
-/** A child's report, waiting for Asha's agent. */
-const REPORT: Sent = {
-  id: "child-result",
-  sender: "agent-child",
-  kind: "queue",
-  parts: ["Fictional reading of report.pdf."],
-};
 
 async function stop() {
   await running?.system.close();
@@ -124,21 +95,9 @@ const rootOf = (chat: string) =>
     .at(0) ?? "";
 
 const cursor = () =>
-  rows("SELECT generation, number FROM agent_cursor").at(0) as
-    | { generation: string; number: number }
+  rows("SELECT number FROM agent_cursor").at(0) as
+    | { number: number }
     | undefined;
-
-const handingOver = (person: string, id: string, sent: string | null) => {
-  record.db
-    .prepare(
-      `INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, sent_as, created_at, updated_at)
-       VALUES (?, ?, ?, 'person', 'What was my last TSH?', 1, 'handing_over', ?, '2026-10-08T09:01:00Z', '2026-10-08T09:01:00Z')`,
-    )
-    .run(id, person, `c-${person}`, sent);
-};
-
-const queued = () =>
-  rows("SELECT id, state, sent_as FROM chat_queue ORDER BY id");
 
 describe("at the first start", () => {
   it("each chat gets its own agent, which takes over its thread, and again changes nothing", async () => {
@@ -184,7 +143,7 @@ describe("at the first start", () => {
     ]);
     // Rufi has read every event, and reads the next as it commits.
     const last = store.eventsAfter(0).at(-1)?.number;
-    expect(cursor()).toEqual({ generation: store.generation, number: last });
+    expect(cursor()).toEqual({ number: last });
     running?.system.agents.create({
       id: "agent-reader",
       parent: asha,
@@ -209,20 +168,15 @@ describe("at the first start", () => {
 });
 
 describe("a lost agent database", () => {
-  it("ends Rufi's links to it but keeps the ledger; a hand-over left is not sure, and chats start afresh", async () => {
+  it("ends Rufi's links to it but keeps the ledger, and chats start afresh", async () => {
     record.db.exec(
       "UPDATE chats SET thread_id = 'thread-asha', thread_provider = 'codex' WHERE id = 'c-asha'",
     );
     await start([]);
     const old = rootOf("c-asha");
     await stop();
-    // Rufi was far into the old database's events, and was handing a
-    // message over to its agent when the database was lost.
+    // Rufi was far into the old database's events.
     record.db.exec("UPDATE agent_cursor SET number = 99");
-    handingOver("asha", "msg-1", sentAs(old, 1));
-    // One Rufi claimed but never marked surely didn't go: today's recovery
-    // has it wait again.
-    handingOver("ravi", "msg-2", null);
     await lose();
 
     const { store } = await start([]);
@@ -237,99 +191,9 @@ describe("a lost agent database", () => {
     expect(rows("SELECT agent_id, ref FROM agent_conversations")).toEqual([
       { agent_id: old, ref: "thread-asha" },
     ]);
-    expect(queued()).toEqual([
-      { id: "msg-1", state: "not_sure", sent_as: sentAs(old, 1) },
-      { id: "msg-2", state: "handing_over", sent_as: null },
-    ]);
     expect(cursor()).toEqual({
-      generation: store.generation,
       number: store.eventsAfter(0).at(-1)?.number,
     });
-  });
-});
-
-describe("a restored copy of the agent database", () => {
-  it("from before it was lost runs none of its agents, admitted or not", async () => {
-    await ashaThread();
-    const { system } = await start();
-    const old = rootOf("c-asha");
-    system.agents.send(old, REPORT);
-    await stop();
-    const copy = join(home, "copy.sqlite");
-    await copyFile(agentsPath(home), copy);
-    // It is lost, Rufi starts a new one, and then the copy is put back.
-    await lose();
-    await start();
-    await stop();
-    await lose();
-    await copyFile(copy, agentsPath(home));
-
-    const { store, system: again } = await start();
-
-    expect(again.agents.get(old)).toBeUndefined();
-    expect(agentRows(store).map(({ id }) => id)).toEqual([
-      rootOf("c-asha"),
-      rootOf("c-ravi"),
-    ]);
-  });
-
-  it("older than what Rufi has read starts again as a new one, and sends nothing twice", async () => {
-    const ref = await ashaThread();
-    const { system } = await start();
-    const old = rootOf("c-asha");
-    system.agents.send(old, REPORT);
-    await stop();
-    const copy = join(home, "copy.sqlite");
-    await copyFile(agentsPath(home), copy);
-    // The report goes, and Rufi reads on.
-    const { system: on } = await start();
-    await on.agents.dispatch();
-    await vi.waitFor(() => {
-      expect(on.agents.get(old)?.status).toBe("done");
-    });
-    await stop();
-    await lose();
-    await copyFile(copy, agentsPath(home));
-
-    const { store, system: again } = await start();
-    await again.agents.dispatch();
-
-    expect(again.agents.get(old)).toBeUndefined();
-    expect(cursor()).toEqual({
-      generation: store.generation,
-      number: store.eventsAfter(0).at(-1)?.number,
-    });
-    expect(fake.received(ref).map((input) => input.id)).toEqual([
-      "child-result",
-    ]);
-  });
-});
-
-describe("a claim the package never saved", () => {
-  it("is settled at the next start by what its provider says", async () => {
-    // Asha's thread is one the provider has; Ravi's it no longer finds.
-    await ashaThread();
-    record.db.exec(
-      "UPDATE chats SET thread_id = 'thread-gone', thread_provider = 'fake' WHERE id = 'c-ravi'",
-    );
-    await start();
-    // Rufi claimed a message for each, and stopped before the package
-    // saved the hand-over.
-    handingOver("asha", "msg-asha", sentAs(rootOf("c-asha"), 1));
-    handingOver("ravi", "msg-ravi", sentAs(rootOf("c-ravi"), 1));
-    await stop();
-
-    await start();
-
-    expect(queued()).toEqual([
-      { id: "msg-asha", state: "waiting", sent_as: null },
-      {
-        id: "msg-ravi",
-        state: "not_sure",
-        sent_as: sentAs(rootOf("c-ravi"), 1),
-      },
-    ]);
-    expect(logged).toEqual([]);
   });
 });
 
@@ -342,10 +206,8 @@ describe("a crash between the steps of making an agent", () => {
     `);
     const store = openAgentStore(agentsPath(home));
     record.db
-      .prepare(
-        "INSERT INTO agent_cursor (id, generation, number) VALUES (1, ?, 0)",
-      )
-      .run(store.generation);
+      .prepare("INSERT INTO agent_cursor (id, number) VALUES (1, 0)")
+      .run();
     const made = createAgents({
       store,
       adapters: [],
