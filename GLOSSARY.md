@@ -260,8 +260,12 @@ An AI working in a conversation of its own, on a model and effort, with the tool
 _Avoid_: worker, thread (a conversation is the agent's, not the agent)
 
 **Sub-agent**:
-An agent another agent started for one task, with a title, such as checking a set of results. It sees its task and nothing of the chat, runs on the model and effort of the agent that started it with the same tools or fewer, and goes on after the reply ends. What it saves shows in the chat with Rufi's **receipt**, which names it by its title; Rufi AI reads how it went and says what it found. Screens don't show sub-agents yet.
+An agent another agent started for one task, with a title, such as checking a set of results. It sees its task and nothing of the chat, runs on the model and effort of the agent that started it with the same tools or fewer, and goes on after the reply ends. What it saves shows in the chat with Rufi's **receipt**, which names it by its title. When its turn ends, the agent that started it hears how it went (its **done message**), and Rufi AI says what it found. Screens don't show sub-agents yet.
 _Avoid_: helper, child (in screens and help), delegate
+
+**Done message**:
+What an agent is told when one it started ends a turn: its title, and its answer and questions, or that it stopped or failed and why. It goes into the agent's turn, or starts one; for Rufi AI, that reply shows a small line naming the sub-agent ("Reading report.pdf: done"). It is never the user's words. When the agent was waiting for that sub-agent, the wait gives it the result instead, and the done message never goes.
+_Avoid_: callback, notification
 
 **The AI's folder**:
 The folder where the AI works: `ai/` in the data folder. It keeps its programs, notes and research files there between messages, with their caches in `ai/.cache`, and it is the only place where the AI's programs can write. Nothing in it is part of the record. It isn't in backups, the export or a move yet.

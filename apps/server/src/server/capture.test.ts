@@ -335,7 +335,7 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
       expect(waited).toMatchObject({
         ok: true,
         result: {
-          ended: expect.any(String),
+          ended: expect.any(String) as string,
           agents: [{ title: "Helper", status: "done", result: "Found it." }],
         },
       });
