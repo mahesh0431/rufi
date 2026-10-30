@@ -61,6 +61,8 @@ export interface Scenario {
   slowMs?: number;
   /** Methods the fake takes at once but answers after `slowMs`. */
   answerLate?: string[];
+  /** Methods the fake holds, while the file `file` exists, before it answers. */
+  held?: { methods: string[]; file: string };
   /** How long after a turn starts Codex shows the user's message (at once). */
   userMessageMs?: number;
   /** Feature flags as Codex reports them, over what config.toml asked for. */
@@ -1198,7 +1200,14 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       },
     );
   };
-  if (scenario.slow?.includes(method)) {
+  if (scenario.held?.methods.includes(method)) {
+    const { file } = scenario.held;
+    const wait = setInterval(() => {
+      if (existsSync(file)) return;
+      clearInterval(wait);
+      reply();
+    }, 20);
+  } else if (scenario.slow?.includes(method)) {
     setTimeout(reply, scenario.slowMs ?? 200);
   } else if (scenario.answerLate?.includes(method)) {
     void handle(method, message.params ?? {}).then((result) => {

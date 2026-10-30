@@ -128,7 +128,7 @@ interface CodexModel extends Model {
 }
 
 /** Codex's sign-in as it reports it: the account's email, when it gives one. */
-export interface CodexAccount {
+interface CodexAccount {
   signedIn: boolean;
   email: string | null;
 }
@@ -183,7 +183,7 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
   /** Threads where a Stop came during a send: the reply it starts is stopped. */
   const stopNext = new Set<string>();
   /** Codex's sign-ins under way, by Codex's id for each. */
-  const logins = new Map<string, PromiseWithResolvers<void>>();
+  const logins = new Map<string, PromiseWithResolvers<undefined>>();
   let home: Promise<CodexPaths> | undefined;
   const codexHome = () =>
     (home ??= prepareCodexHome(deps.home, {
@@ -399,7 +399,7 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
         const login = loginId === null ? undefined : logins.get(loginId);
         if (!login || loginId === null) return;
         logins.delete(loginId);
-        if (success) login.resolve();
+        if (success) login.resolve(undefined);
         else login.reject(new Error(error ?? "The sign-in didn't finish."));
         return;
       }
@@ -927,7 +927,7 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
         throw new Error("Codex didn't start its ChatGPT sign-in.");
       }
       const { loginId } = started;
-      const login = Promise.withResolvers<void>();
+      const login = Promise.withResolvers<undefined>();
       logins.set(loginId, login);
       signal.addEventListener("abort", () => {
         if (!logins.delete(loginId)) return;

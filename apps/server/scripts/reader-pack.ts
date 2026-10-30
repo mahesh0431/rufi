@@ -6,7 +6,9 @@
 // each copied page a verdict against its key; code counts only the facts
 // (pages copied, rows on pages with no copy) and the verdicts. --judge
 // <folder> judges the copies saved by an earlier run again, with no new
-// reading. Only the sign-in comes from RUFI_HOME (the test sign-in). Each
+// reading. Only the sign-in comes from RUFI_HOME (the test sign-in, Codex's
+// own): Codex renews it there before any reading starts, and each run uses a
+// copy of it, removed when the run ends. Each
 // file is read on its own scratch data folder, person and reader, with the
 // reader's default model and effort unless --model or --effort says
 // otherwise. Rufi AI's sorting is not part of it: the live story test sorts.
@@ -21,12 +23,10 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { setTimeout as sleep } from "node:timers/promises";
-import { Effect } from "effect";
-import type { ChatGptDeps } from "../src/agent/chatgpt/openai.ts";
-import { accessToken } from "../src/agent/chatgpt/session.ts";
 import { codexBinary } from "../src/agent/codex/binary.ts";
+import { prepareCodexHome } from "../src/agent/codex/settings.ts";
 import { subAgentRunner } from "../src/agent/codex/subagent.ts";
+import type { RunSubAgent } from "../src/agent/runtime.ts";
 import { transcripts as openTranscripts } from "../src/core/chat/transcript.ts";
 import { documents, type NewFile } from "../src/core/documents/documents.ts";
 import { copies } from "../src/core/documents/copies.ts";
@@ -35,12 +35,11 @@ import { pages } from "../src/core/documents/pages.ts";
 import { readings } from "../src/core/documents/reading.ts";
 import { databasePath, openWritable } from "../src/core/store/database.ts";
 import { childEnvironment, rufiHome } from "../src/platform/config.ts";
-import { Secrets, secretsLayer } from "../src/platform/keychain.ts";
-import { diagnostics } from "../src/platform/logs.ts";
+import { diagnostics, type Log } from "../src/platform/logs.ts";
 import { reader, READER_SETTING, readerChoice } from "../src/server/reader.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "../src/server/mcp.ts";
 import { copySetFiles, KEY } from "../tests/pack/copy-set.ts";
-import { onScratch, outFolder, runAll, sharedToken } from "./live-run.ts";
+import { onScratch, outFolder, runAll, testSignIn } from "./live-run.ts";
 import {
   JUDGE,
   judgePage,
@@ -78,19 +77,10 @@ if (values.make !== undefined) {
 // --- Read the set with the real reader: each file on its own data
 // folder, store, person and reader ---
 
-const signIn: ChatGptDeps = {
-  home: rufiHome(),
-  secrets: await Effect.runPromise(
-    Effect.provide(Effect.service(Secrets), secretsLayer),
-  ),
-  issuer: "https://auth.openai.com",
-  sleep: (ms) => sleep(ms),
-};
-/** One token source for every reader of the run. */
-const token = sharedToken((validForMs) => accessToken(signIn, validForMs));
+const file = await codexBinary();
 // The sign-in once before any reading starts: a run that can't sign in
 // stops here.
-await token(10 * 60_000).catch((error: unknown) => {
+const signIn = await testSignIn(rufiHome(), file).catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(2);
 });
@@ -114,10 +104,29 @@ if (
   process.exit(2);
 }
 const out = await outFolder("pack", values.out);
-const file = await codexBinary();
 const { version } = createRequire(import.meta.url)("../package.json") as {
   version: string;
 };
+
+/** A sub-agent on the data folder `home`, each run on a copy of the sign-in. */
+const runnerOn =
+  (home: string, log: Log): RunSubAgent =>
+  async (task, signal) => {
+    await signIn.give(home);
+    try {
+      return await subAgentRunner({
+        home,
+        codexHome: () =>
+          prepareCodexHome(home, { userHome: childEnvironment()["HOME"] }),
+        command: { file, args: [] },
+        env: childEnvironment(),
+        version,
+        log,
+      })(task, signal);
+    } finally {
+      await signIn.take(home);
+    }
+  };
 
 /**
  * Reads files added as one document, on the scratch data folder `home`,
@@ -138,14 +147,7 @@ async function readFiles(home: string, files: NewFile[]) {
   const running = reader({
     readings: reads,
     kind: copyReader(pages(store, home), copies(store)),
-    run: subAgentRunner({
-      home,
-      command: { file, args: [] },
-      env: childEnvironment(),
-      token,
-      version,
-      log,
-    }),
+    run: runnerOn(home, log),
     choice: () => Promise.resolve(choice),
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp/reader`, keys },
     log,
@@ -329,15 +331,7 @@ async function judgeOn(home: string, rounds: readonly Round[]) {
   const served = await serveMcp(mcpEndpoint({ keys, port: () => port, log }));
   port = served.port;
   const deps: JudgeDeps = {
-    run: (judgeHome) =>
-      subAgentRunner({
-        home: judgeHome,
-        command: { file, args: [] },
-        env: childEnvironment(),
-        token,
-        version,
-        log,
-      }),
+    run: (judgeHome) => runnerOn(judgeHome, log),
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp/judge`, keys },
     log,
   };

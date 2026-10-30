@@ -9,8 +9,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { beforeEach, describe, expect, it } from "vitest";
-import { ChatGptError } from "../agent/chatgpt/openai.ts";
-import type { RunSubAgent } from "../agent/runtime.ts";
+import { SIGNED_OUT } from "../agent/codex/appserver.ts";
+import { SignedOut, type RunSubAgent } from "../agent/runtime.ts";
 import {
   readPage,
   scriptedReader,
@@ -629,57 +629,8 @@ describe("a restart or a failure", () => {
     expect(job()).toMatchObject({ state: "failed", retry_at: null });
   });
 
-  it("tries again by itself when ChatGPT can't renew the sign-in just now, from its copies, and finishes", async () => {
-    const { runs, read } = await startReader([
-      async (turn) => {
-        await turn.look(1);
-        await turn.save(1, readPage());
-        throw new ChatGptError(
-          "temporary",
-          "Couldn't reach ChatGPT. Try again shortly.",
-        );
-      },
-      async (turn) => {
-        await turn.look(2);
-        await turn.save(2, readPage());
-        return undefined;
-      },
-    ]);
-    expect((await read(await addReport())).end).toEqual(DONE);
-    expect(job()).toMatchObject({ retries: 1, error: null });
-    expect(runs[1]?.input).toContain("You saved pages 1 in an earlier run");
-    expect(copied()).toEqual([1, 2]);
-  });
-
-  it("keeps the words of a sign-in ChatGPT can't renew when its tries run out", async () => {
-    const renewal = () =>
-      Promise.reject(
-        new ChatGptError(
-          "temporary",
-          "Couldn't reach ChatGPT. Try again shortly.",
-        ),
-      );
-    const { read } = await startReader([renewal, renewal], {
-      retryWaitsMs: [0],
-    });
-    expect((await read(await addReport())).end).toEqual({
-      ended: "failed",
-      why: "Couldn't reach ChatGPT. Try again shortly.",
-    });
-  });
-
   it.each([
-    [
-      "signed out",
-      () =>
-        Promise.reject(
-          new ChatGptError(
-            "not_signed_in",
-            "Not signed in. Sign in with ChatGPT: in Rufi, or with pnpm rufi signin.",
-          ),
-        ),
-      "Not signed in. Sign in with ChatGPT: in Rufi, or with pnpm rufi signin.",
-    ],
+    ["signed out", () => Promise.reject(new SignedOut(SIGNED_OUT)), SIGNED_OUT],
     [
       "a sign-in the service rejects",
       () =>

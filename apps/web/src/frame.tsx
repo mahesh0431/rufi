@@ -44,7 +44,7 @@ import { ICON, type Icon } from "./ui.tsx";
 const TITLES: Record<string, string> = {
   settings: "Settings",
   help: "Help",
-  "sign-in": "Sign in with ChatGPT",
+  "sign-in": "Sign in",
 };
 
 /** Whether the address is a person's chat page. */

@@ -307,13 +307,14 @@ export const startCore = (options: CoreOptions) =>
       account: null,
       text: null,
     };
+    const statusOf = (provider: Provider) =>
+      signIns[provider]?.status() ?? Promise.resolve(signedOut);
     const account = async (): Promise<Status> => {
-      const [codex, claude] = await Promise.all(
-        (["codex", "claude"] as const).map(
-          (provider) => signIns[provider]?.status() ?? signedOut,
-        ),
-      );
-      return { codex: codex ?? signedOut, claude: claude ?? signedOut };
+      const [codex, claude] = await Promise.all([
+        statusOf("codex"),
+        statusOf("claude"),
+      ]);
+      return { codex, claude };
     };
     // The document reader, one reading at a time, for the replies that
     // read what their message sent.

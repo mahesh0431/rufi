@@ -6,7 +6,7 @@ import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { type ExpressionKey, svg } from "@rufi/brand/mark";
 import { runningLink } from "../../server/src/server/core.ts";
-import { expect, test } from "./rufi.ts";
+import { expect, SIGNED_OUT, signedIn, test } from "./rufi.ts";
 
 /** No accessibility rule broken on what the page shows now. */
 async function accessible(page: Page) {
@@ -431,7 +431,7 @@ test.describe("first run", () => {
     page,
     rufi,
   }) => {
-    rufi.account = { account: "signed_out", email: null };
+    rufi.codex = SIGNED_OUT;
     await rufi.start();
     await page.goto(rufi.link());
     // Each step fills the window: no sidebar, toolbar or chat, and no
@@ -532,9 +532,9 @@ test.describe("first run", () => {
     await accessible(page);
     await bar.getByRole("button", { name: "Sign in" }).click();
     await expect(
-      page.getByRole("heading", { name: "Sign in with ChatGPT", level: 1 }),
+      page.getByRole("heading", { name: "Sign in", level: 1 }),
     ).toBeVisible();
-    rufi.account = { account: "signed_in", email: "mira@example.com" };
+    rufi.codex = signedIn("mira@example.com");
     await page.goBack();
     await bar.getByRole("button", { name: "Open the chat" }).click();
     await expect(box).toHaveValue("Hello from the first page");
@@ -547,7 +547,7 @@ test.describe("first run", () => {
       "ok:Hello from the first page",
     );
     // The sign-in goes away while the page is open: the next send says so.
-    rufi.account = { account: "signed_out", email: null };
+    rufi.codex = SIGNED_OUT;
     const chatBox = page.getByRole("textbox", { name: "Message to Rufi" });
     await chatBox.fill("My next question");
     await chatBox.press("Enter");
@@ -564,7 +564,7 @@ test.describe("first run", () => {
   });
 
   test("signs in with ChatGPT from the app", async ({ page, rufi }) => {
-    rufi.account = { account: "signed_out", email: null };
+    rufi.codex = SIGNED_OUT;
     await rufi.start();
     await page.goto(rufi.link());
     await page
@@ -578,11 +578,11 @@ test.describe("first run", () => {
 
     await page.getByRole("button", { name: "Sign in with ChatGPT" }).click();
     await expect(page.getByRole("status")).toContainText(
-      "Your browser opens ChatGPT's sign-in.",
+      "Your browser opens ChatGPT's sign-in for Codex.",
     );
     await expect(
       page.getByRole("link", { name: "open the sign-in page" }),
-    ).toHaveAttribute("href", "https://auth.example.com/authorize?fictional=1");
+    ).toHaveAttribute("href", "https://auth.example.com/codex?fictional=1");
     expect(rufi.signIns).toHaveLength(1);
     rufi.signIns[0]?.resolve(undefined);
 
@@ -673,13 +673,17 @@ test.describe("sign-in status", () => {
     ).toBeVisible();
     await expect(sidebar(page)).not.toContainText(/signed in|ChatGPT/);
 
-    // Settings says which plan the AI uses, first, with its usage page.
+    // Settings says how each provider is signed in, first, with Codex's
+    // usage page.
     await sidebar(page).getByRole("link", { name: "Settings" }).click();
     await expect(page.getByRole("heading", { level: 2 }).first()).toHaveText(
-      "ChatGPT plan",
+      "Sign-in",
     );
     await expect(page.getByRole("main")).toContainText(
-      "Rufi's AI uses your ChatGPT plan (asha@example.com). Manage usage",
+      "Codex is signed in with ChatGPT (asha@example.com). Rufi's AI uses your ChatGPT plan. Manage usage",
+    );
+    await expect(page.getByRole("main")).toContainText(
+      "Claude isn't signed in. Sign in",
     );
     const usage = page.getByRole("link", { name: "Manage usage" });
     await expect(usage).toHaveAttribute(
@@ -690,13 +694,13 @@ test.describe("sign-in status", () => {
   });
 
   test("signed out links to signing in", async ({ page, rufi }) => {
-    rufi.account = { account: "signed_out", email: null };
+    rufi.codex = SIGNED_OUT;
     await rufi.family();
     await rufi.start();
     await page.goto(rufi.link());
     await sidebar(page).getByRole("link", { name: "Not signed in" }).click();
     await expect(
-      page.getByRole("heading", { name: "Sign in with ChatGPT" }),
+      page.getByRole("heading", { name: "Sign in", level: 1 }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Sign in with ChatGPT" }),
@@ -706,34 +710,18 @@ test.describe("sign-in status", () => {
     // Settings says so too, and signs in the same way.
     await sidebar(page).getByRole("link", { name: "Settings" }).click();
     await expect(page.getByRole("main")).toContainText(
-      "Not signed in. Rufi's AI needs your ChatGPT plan to answer. Sign in",
+      "Codex isn't signed in. Rufi's AI needs it to answer. Sign in",
     );
     await expect(page.getByRole("main")).not.toContainText("Manage usage");
     await accessible(page);
     await page
       .getByRole("main")
       .getByRole("link", { name: "Sign in", exact: true })
+      .first()
       .click();
     await expect(
-      page.getByRole("heading", { name: "Sign in with ChatGPT" }),
+      page.getByRole("heading", { name: "Sign in", level: 1 }),
     ).toBeVisible();
-  });
-
-  test("signed in, but the plan can't be used", async ({ page, rufi }) => {
-    rufi.account = { account: "no_plan_use", email: "asha@example.com" };
-    await rufi.family();
-    await rufi.start();
-    await page.goto(rufi.link());
-    await expect(
-      sidebar(page).getByRole("link", { name: "ChatGPT plan can't be used" }),
-    ).toBeVisible();
-    await sidebar(page).getByRole("link", { name: "Settings" }).click();
-    await expect(page.getByRole("main")).toContainText(
-      "You are signed in, but ChatGPT plan use isn't allowed for Rufi. Sign in again",
-    );
-    await expect(
-      page.getByRole("main").getByRole("link", { name: "Sign in again" }),
-    ).toHaveAttribute("href", "/sign-in");
   });
 });
 

@@ -1,12 +1,16 @@
 // What the live runs share (the smoke set and the reader pack): every case
-// at once, one token source for them all, a new output folder per run, the
+// at once, the test sign-in for them all, a new output folder per run, the
 // cases' scratch data folders, and each case's status for the report.
-import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { execFileSync, spawn } from "node:child_process";
+import { copyFile, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Turn } from "@rufi/contracts";
-import { ChatGptError } from "../src/agent/chatgpt/openai.ts";
+import { DEADLINES } from "../src/agent/codex/appserver.ts";
+import type { GetAccountResponse } from "../src/agent/codex/protocol/v2/GetAccountResponse.ts";
+import { connect } from "../src/agent/codex/rpc.ts";
+import { SignedOut } from "../src/agent/runtime.ts";
+import { childEnvironment } from "../src/platform/config.ts";
 
 /**
  * Runs every case at once, or at most `jobs` at a time, until all have
@@ -37,42 +41,63 @@ export async function runAll<T>(
   return results;
 }
 
-const SPARE_MS = 5 * 60_000;
-
 /**
- * One token source for every core and reader in the run. Each sign-in
- * call takes the data folder's credentials lock with a short wait, so
- * dozens at once would time out: here one call runs at a time, and a
- * token already known to be valid long enough for the caller is reused.
- * Each call asks for SPARE_MS more than its caller needs, so the callers
- * that come soon after can share it. A reader's long job never gets a token
- * that was asked for a short chat turn. The token stays in this process's
- * memory.
+ * The test sign-in for every case of a run: Codex's own ChatGPT sign-in in
+ * `home/codex` (RUFI_HOME). Codex renews it there first, so that no case's
+ * copy needs renewing during the run (two copies renewing at once would end
+ * it): `give` copies it into a case's data folder, `take` removes the copy
+ * when the case ends. Fails, with how to sign in, when Codex isn't signed in.
  */
-export function sharedToken(
-  get: (validForMs: number) => Promise<string>,
-): (validForMs: number) => Promise<string> {
-  let held: { token: string; until: number } | undefined;
-  let last: Promise<unknown> = Promise.resolve();
-  const fits = (validForMs: number) =>
-    held !== undefined && held.until - Date.now() >= validForMs
-      ? held.token
-      : undefined;
-  return (validForMs) => {
-    const known = fits(validForMs);
-    if (known !== undefined) return Promise.resolve(known);
-    const asked = last.then(async () => {
-      const now = fits(validForMs);
-      if (now !== undefined) return now;
-      const at = Date.now();
-      const token = await get(validForMs + SPARE_MS);
-      held = { token, until: at + validForMs + SPARE_MS };
-      return token;
-    });
-    last = asked.catch(() => undefined);
-    return asked;
+export async function testSignIn(home: string, codex: string) {
+  const codexHome = join(home, "codex");
+  const child = spawn(codex, ["app-server", "--listen", "stdio://"], {
+    env: { ...childEnvironment(), CODEX_HOME: codexHome },
+    stdio: ["pipe", "pipe", "ignore"],
+  });
+  try {
+    const rpc = connect(
+      child.stdout,
+      child.stdin,
+      {
+        request: () => Promise.reject(new Error("no requests expected")),
+        notification: () => undefined,
+        ignored: () => undefined,
+      },
+      DEADLINES.answerMs,
+    );
+    await rpc.request(
+      "initialize",
+      {
+        clientInfo: { name: "Rufi", title: "Rufi", version: "0.0.0" },
+        capabilities: { experimentalApi: true, requestAttestation: false },
+      },
+      DEADLINES.requestMs,
+    );
+    rpc.notify("initialized");
+    const { account } = await rpc.request<GetAccountResponse>(
+      "account/read",
+      { refreshToken: true },
+      DEADLINES.requestMs,
+    );
+    if (account?.type !== "chatgpt") {
+      throw new SignedOut(
+        `Codex isn't signed in to ChatGPT in ${home}. Sign in: RUFI_HOME=${home} pnpm rufi signin codex`,
+      );
+    }
+  } finally {
+    child.kill();
+  }
+  const file = (folder: string) => join(folder, "codex", "auth.json");
+  return {
+    give: async (caseHome: string) => {
+      await mkdir(join(caseHome, "codex"), { recursive: true, mode: 0o700 });
+      await copyFile(file(home), file(caseHome));
+    },
+    take: (caseHome: string) => rm(file(caseHome), { force: true }),
   };
 }
+
+export type TestSignIn = Awaited<ReturnType<typeof testSignIn>>;
 
 /**
  * A new folder for the run's output: by default
@@ -156,7 +181,7 @@ export function statusOf(outcome: {
 }): { status: Status; why: string } {
   const { error, failed } = outcome;
   const message = error instanceof Error ? error.message : String(error);
-  if (error instanceof HarnessTimeout || error instanceof ChatGptError)
+  if (error instanceof HarnessTimeout || error instanceof SignedOut)
     return { status: "INFRA", why: message };
   const ended = outcome.turns.find((t) => INFRA_ENDS.has(t.endReason));
   if (ended)

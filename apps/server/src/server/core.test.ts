@@ -23,12 +23,12 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { DatabaseSync } from "node:sqlite";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { Entry, Status, StreamLine } from "@rufi/contracts";
+import type { Entry, ProviderStatus, StreamLine } from "@rufi/contracts";
 import { APPEARANCE_HEADER } from "@rufi/contracts/app";
 import { createCanvas } from "@napi-rs/canvas";
 import { Effect, Exit, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { codexAdapter } from "../agent/codex/adapter.ts";
+import { codexAdapter, type CodexAdapter } from "../agent/codex/adapter.ts";
 import {
   databasePath,
   openReadOnly,
@@ -51,7 +51,7 @@ import {
   type Core,
   type CoreOptions,
 } from "./core.ts";
-import type { SignIn } from "./signin.ts";
+import { codexSignIn, type ProviderSignIn } from "./signin.ts";
 
 const FAKE = join(import.meta.dirname, "../../tests/fake-codex.ts");
 
@@ -67,24 +67,22 @@ afterEach(async () => {
   await stop();
 });
 
-async function start(options: Partial<CoreOptions> = {}): Promise<Core> {
+async function start(
+  options: Omit<Partial<CoreOptions>, "adapters"> & {
+    adapters?: CodexAdapter[];
+  } = {},
+): Promise<Core> {
   const opened = await Effect.runPromise(Scope.make());
+  const adapters = options.adapters ?? scripted({});
   const core = await Effect.runPromise(
     startCore({
       home,
-      adapters: [
-        codexAdapter({
-          home,
-          ...agentSetup(home),
-          command: { file: process.execPath, args: [FAKE] },
-          env: { PATH: process.env["PATH"] ?? "", FAKE_CODEX: "{}" },
-          token: () => Promise.resolve("token"),
-          version: "0.0.0",
-        }),
-      ],
+      adapters,
       log: (event) => logged.push(event),
-      account: () =>
-        Promise.resolve({ account: "signed_in", email: "asha@example.com" }),
+      // Codex's own sign-in, as the scripted Codex reports it.
+      signIns: {
+        codex: codexSignIn(adapters[0] as CodexAdapter, () => undefined),
+      },
       ...options,
     }).pipe(Scope.provide(opened)),
   ).catch(async (error: unknown) => {
@@ -248,7 +246,6 @@ const scripted = (scenario: object, more: { requestMs?: number } = {}) => [
       PATH: process.env["PATH"] ?? "",
       FAKE_CODEX: JSON.stringify(scenario),
     },
-    token: () => Promise.resolve("token"),
     version: "0.0.0",
     ...(more.requestMs !== undefined && {
       deadlines: { requestMs: more.requestMs },
@@ -1336,7 +1333,6 @@ describe("the local API", () => {
           FAKE_CODEX: "{}",
           FAKE_CODEX_LOG: log,
         },
-        token: () => Promise.resolve("token"),
         version: "0.0.0",
       }),
     ];
@@ -1436,24 +1432,19 @@ describe("the local API", () => {
 });
 
 describe("what the screens read", () => {
-  it("says whether the AI can be used, without a sign-in by default", async () => {
-    const core = await start({
-      account: () => Promise.resolve({ account: "signed_out", email: null }),
-    });
+  it("says whether Codex and Claude are signed in, as each reports it", async () => {
+    const core = await start({ adapters: scripted({ signedIn: false }) });
     const page = await session(core);
+    const out = { state: "signed_out", account: null, text: null };
     expect((await page.api("GET", "/api/status")).body).toEqual({
-      account: "signed_out",
-      email: null,
+      codex: out,
+      claude: out,
     });
     await stop();
-    const signedIn = await start({
-      account: () =>
-        Promise.resolve({ account: "signed_in", email: "asha@example.com" }),
-    });
-    const again = await session(signedIn);
+    const again = await session(await start());
     expect((await again.api("GET", "/api/status")).body).toEqual({
-      account: "signed_in",
-      email: "asha@example.com",
+      codex: { state: "signed_in", account: "asha@example.com", text: null },
+      claude: out,
     });
   });
 
@@ -2078,10 +2069,18 @@ describe("first run", () => {
     ).toMatchObject({ entries: [], before: null });
   });
 
-  it("skips the sign-in step when Rufi is already signed in, and stays done after signing out", async () => {
-    let account: Status = { account: "signed_in", email: "asha@example.com" };
+  it("skips the sign-in step when Codex is already signed in, and stays done after signing out", async () => {
+    let codex: ProviderStatus = {
+      state: "signed_in",
+      account: "asha@example.com",
+      text: null,
+    };
     const page = await session(
-      await start({ account: () => Promise.resolve(account) }),
+      await start({
+        signIns: {
+          codex: { status: () => Promise.resolve(codex), start: vi.fn() },
+        },
+      }),
     );
     await page.api("POST", "/api/first-run", { step: "welcome" });
     await page.api("POST", "/api/people", { displayName: "Asha Fictional" });
@@ -2090,42 +2089,68 @@ describe("first run", () => {
     );
     await page.api("POST", "/api/first-run", { step: "region" });
 
-    account = { account: "signed_out", email: null };
+    codex = { state: "signed_out", account: null, text: null };
     expect((await page.api("GET", "/api/first-run")).body["step"]).toBe("done");
   });
 });
 
 describe("signing in from the screens", () => {
-  it("opens one sign-in at a time, gives its link, and says when it is done or why it failed", async () => {
-    const runs: PromiseWithResolvers<{ email: string | undefined }>[] = [];
-    const signIn: SignIn = ({ showLink }) => {
-      showLink("https://auth.example.com/authorize?fictional=1");
-      const run = Promise.withResolvers<{ email: string | undefined }>();
-      runs.push(run);
-      return run.promise;
-    };
-    const page = await session(await start({ signIn }));
+  it("opens Codex's own sign-in, gives its link, and is signed in once Codex says so", async () => {
+    const page = await session(
+      await start({ adapters: scripted({ signedIn: false }) }),
+    );
     const state = async () => (await page.api("GET", "/api/signin")).body;
-    expect(await state()).toEqual({ state: "idle", link: null, error: null });
+    const codex = async () =>
+      (await page.api("GET", "/api/status")).body["codex"];
+    expect(await codex()).toMatchObject({ state: "signed_out" });
 
-    await page.api("POST", "/api/signin");
-    await page.api("POST", "/api/signin");
-    expect(runs).toHaveLength(1);
+    await page.api("POST", "/api/signin", { provider: "codex" });
+    await until(async () => (await state())["state"] === "done");
+    expect(await codex()).toEqual({
+      state: "signed_in",
+      account: "asha@example.com",
+      text: null,
+    });
+  });
+
+  it("opens one sign-in at a time, gives its link, and says when it is done or why it failed", async () => {
+    const runs: PromiseWithResolvers<undefined>[] = [];
+    const claude: ProviderSignIn = {
+      status: () =>
+        Promise.resolve({ state: "signed_out", account: null, text: null }),
+      start: ({ showLink }) => {
+        showLink("https://claude.ai/oauth/authorize?fictional=1");
+        const run = Promise.withResolvers<undefined>();
+        runs.push(run);
+        return run.promise;
+      },
+    };
+    const page = await session(await start({ signIns: { claude } }));
+    const state = async () => (await page.api("GET", "/api/signin")).body;
     expect(await state()).toEqual({
-      state: "waiting",
-      link: "https://auth.example.com/authorize?fictional=1",
+      provider: null,
+      state: "idle",
+      link: null,
       error: null,
     });
-    runs[0]?.reject(
-      new Error("Sign-in wasn't finished in time. Sign in again."),
-    );
+
+    await page.api("POST", "/api/signin", { provider: "claude" });
+    await page.api("POST", "/api/signin", { provider: "claude" });
+    expect(runs).toHaveLength(1);
+    expect(await state()).toEqual({
+      provider: "claude",
+      state: "waiting",
+      link: "https://claude.ai/oauth/authorize?fictional=1",
+      error: null,
+    });
+    runs[0]?.reject(new Error("Login failed: the code was not accepted."));
     await until(async () => (await state())["state"] === "failed");
     expect((await state())["error"]).toBe(
-      "Sign-in wasn't finished in time. Sign in again.",
+      "Login failed: the code was not accepted.",
     );
 
-    await page.api("POST", "/api/signin");
-    runs[1]?.resolve({ email: "asha@example.com" });
+    await page.api("POST", "/api/signin", { provider: "claude" });
+    runs[1]?.resolve(undefined);
     await until(async () => (await state())["state"] === "done");
   });
 });

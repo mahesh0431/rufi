@@ -11,13 +11,12 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Turn } from "@rufi/contracts";
 import { afterEach, describe, expect, it } from "vitest";
-import { ChatGptError } from "../src/agent/chatgpt/openai.ts";
+import { SignedOut } from "../src/agent/runtime.ts";
 import {
   HarnessTimeout,
   onScratch,
   outFolder,
   runAll,
-  sharedToken,
   statusOf,
 } from "./live-run.ts";
 
@@ -50,71 +49,6 @@ describe("running the cases", () => {
     const { results, most } = await timed(["a", "b", "c", "d", "e"], 2);
     expect(most).toBe(2);
     expect(results.size).toBe(5);
-  });
-});
-
-describe("the shared token", () => {
-  const HOUR = 3_600_000;
-  /** A sign-in whose token renews to an hour's validity when asked for more than it has. */
-  const signIn = (left: number) => {
-    let n = 1;
-    let expires = Date.now() + left;
-    const seen = { calls: 0, renewals: 0, atOnce: 0, most: 0 };
-    const get = async (validForMs: number) => {
-      seen.calls++;
-      seen.most = Math.max(seen.most, ++seen.atOnce);
-      await sleep(10);
-      if (expires - Date.now() < validForMs) {
-        seen.renewals++;
-        n++;
-        expires = Date.now() + HOUR;
-      }
-      seen.atOnce--;
-      return { token: `token-${String(n)}`, expires };
-    };
-    const tokens = new Map<string, number>();
-    const token = sharedToken(async (validForMs) => {
-      const got = await get(validForMs);
-      tokens.set(got.token, got.expires);
-      return got.token;
-    });
-    return { token, seen, expiresOf: (t: string) => tokens.get(t) ?? 0 };
-  };
-
-  it("renews once for many callers at the same time", async () => {
-    const { token, seen } = signIn(30_000);
-    const got = await Promise.all(
-      Array.from({ length: 36 }, () => token(60_000)),
-    );
-    expect(new Set(got)).toEqual(new Set(["token-2"]));
-    expect(seen).toMatchObject({ calls: 1, renewals: 1, most: 1 });
-  });
-
-  it("gives each caller a token valid as long as it asked, one call at a time", async () => {
-    const { token, seen, expiresOf } = signIn(10 * 60_000);
-    const asked = Date.now();
-    const [chat, reader, chatAgain] = await Promise.all([
-      token(60_000),
-      token(30 * 60_000),
-      token(60_000),
-    ]);
-    expect(chat).toBe("token-1");
-    expect(expiresOf(reader)).toBeGreaterThanOrEqual(asked + 30 * 60_000);
-    expect(expiresOf(chatAgain)).toBeGreaterThanOrEqual(asked + 60_000);
-    expect(seen).toMatchObject({ calls: 2, renewals: 1, most: 1 });
-  });
-
-  it("passes a failed renewal to its callers, and the next caller tries again", async () => {
-    let fail = true;
-    const token = sharedToken(async () => {
-      await sleep(5);
-      if (fail) throw new ChatGptError("temporary", "Try again shortly.");
-      return "token-2";
-    });
-    const failed = await Promise.allSettled([token(60_000), token(60_000)]);
-    expect(failed.map((r) => r.status)).toEqual(["rejected", "rejected"]);
-    fail = false;
-    expect(await token(60_000)).toBe("token-2");
   });
 });
 
@@ -224,8 +158,8 @@ describe("a case's status", () => {
       "INFRA",
     ],
     [
-      "the sign-in couldn't renew",
-      { ...clean, error: new ChatGptError("temporary", "Try again shortly.") },
+      "Codex isn't signed in",
+      { ...clean, error: new SignedOut("Codex isn't signed in to ChatGPT.") },
       "INFRA",
     ],
     [
