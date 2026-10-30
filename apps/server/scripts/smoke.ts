@@ -1,19 +1,21 @@
 // The live smoke set: the real core, the real Codex and the real AI, on a
-// scratch data folder holding the fictional family. Only the sign-in comes
-// from RUFI_HOME (the test sign-in, Codex's own): Codex renews it there
+// data folder holding the fictional family for each case. Only the sign-in
+// comes from RUFI_HOME (the test sign-in, Codex's own): Codex renews it there
 // before any case starts, and each case runs on a copy of it, removed when
-// the case ends. Every case runs once, at most JOBS at a
-// time (--jobs n for another cap), each on its own data folder and core. Each
-// case's transcript is written to the output folder as it ends, with what
+// the case ends. No case's AI can read the test sign-in or another case's
+// copy. Every case runs once, at most JOBS at a
+// time (--jobs n for another cap), each on its own data folder and core, in
+// the run's folder (--out, new or empty): `cases/<case>`. Each
+// case's transcript is written to the run's folder as it ends, with what
 // code could check, then report.md with every case's status: passed, FAILED,
 // needs a person's verdict (a part code can't check) or INFRA (a timeout, a
 // usage limit, the sign-in, the provider). Nothing is run again by itself.
 // Every case also checks that each reply completed with words. Anything but
 // passed or a person's verdict makes the exit code nonzero. A case's data
 // folder goes once it has passed or waits only for a person's verdict; any
-// other case's stays in the Mac's temporary folder, and its line names it.
+// other case's stays, and its line names it.
 //
-//   RUFI_HOME=<test sign-in folder> pnpm smoke [--only a,b] [--jobs n] [--out empty-dir]
+//   RUFI_HOME=<test sign-in folder> pnpm smoke --out <empty folder> [--only a,b] [--jobs n]
 import { randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
@@ -29,6 +31,8 @@ import { Effect, Exit, Scope } from "effect";
 import { everyTurnAnswered } from "./answered.ts";
 import {
   HarnessTimeout,
+  caseFolder,
+  caseSandbox,
   outFolder,
   onScratch,
   runAll,
@@ -2406,14 +2410,22 @@ if (unknown.length > 0) {
   );
   process.exit(2);
 }
-const file = await codexBinary();
-// The sign-in once before any case starts: a run that can't sign in stops
-// here.
-const signIn = await testSignIn(rufiHome(), file).catch((error: unknown) => {
+const out = await outFolder(values.out).catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(2);
 });
-const out = await outFolder("smoke", values.out);
+const file = await codexBinary();
+// The sign-in once before any case starts: a run that can't sign in stops
+// here.
+const signIn = await testSignIn(rufiHome(), {
+  file,
+  args: [],
+}).catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(2);
+});
+/** Every sign-in of the run, which no case's AI may read. */
+const signIns = signIn.signIns(names.map((name) => caseFolder(out, name)));
 const { version } = createRequire(import.meta.url)("../package.json") as {
   version: string;
 };
@@ -2434,7 +2446,7 @@ async function runCase(
   const keeps = (status: Status) =>
     status !== "passed" && status !== "needs a person's verdict";
   const { result } = await onScratch(
-    "rufi-smoke-",
+    caseFolder(out, name),
     async (home) => {
       const { status, why, seconds, outcome } = await playCase(name, home);
       const line = `${name}: ${status}${why ? ` (${why})` : ""}, ${String(seconds)} s${keeps(status) ? `; data folder: ${home}` : ""}`;
@@ -2472,6 +2484,7 @@ async function playCase(name: string, home: string) {
     const codex = codexAdapter({
       home,
       ...agentSetup(home),
+      sandbox: caseSandbox(home, signIns),
       command: { file, args: [] },
       env: childEnvironment(),
       version,

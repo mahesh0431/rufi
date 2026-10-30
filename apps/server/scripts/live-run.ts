@@ -1,16 +1,17 @@
 // What the live runs share (the smoke set and the reader pack): every case
-// at once, the test sign-in for them all, a new output folder per run, the
-// cases' scratch data folders, and each case's status for the report.
-import { execFileSync, spawn } from "node:child_process";
-import { copyFile, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+// at once, the test sign-in for them all, the run's own folder (`--out`),
+// the cases' data folders inside it, and each case's status for the report.
+import { spawn } from "node:child_process";
+import { copyFile, mkdir, readdir, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import type { Turn } from "@rufi/contracts";
-import { DEADLINES } from "../src/agent/codex/appserver.ts";
+import { claudeFolder } from "../src/agent/claude/executable.ts";
+import { DEADLINES, type CodexCommand } from "../src/agent/codex/appserver.ts";
 import type { GetAccountResponse } from "../src/agent/codex/protocol/v2/GetAccountResponse.ts";
 import { connect } from "../src/agent/codex/rpc.ts";
-import { SignedOut } from "../src/agent/runtime.ts";
+import { SignedOut, type AgentSandbox } from "../src/agent/runtime.ts";
 import { childEnvironment } from "../src/platform/config.ts";
+import { aiSandbox } from "../src/server/core.ts";
 
 /**
  * Runs every case at once, or at most `jobs` at a time, until all have
@@ -41,19 +42,45 @@ export async function runAll<T>(
   return results;
 }
 
+/** Codex's sign-in in a data folder. */
+const codexSignIn = (home: string) => join(home, "codex", "auth.json");
+
+/** The sign-ins in a data folder: Codex's file and Claude's folder. */
+export const signInsOf = (home: string) => [
+  codexSignIn(home),
+  claudeFolder(home),
+];
+
+/**
+ * A case's AI sandbox: its own data folder's, with `signIns` denied too, so
+ * that no case's AI can read the test sign-in or another case's copy.
+ */
+export function caseSandbox(
+  home: string,
+  signIns: readonly string[],
+): AgentSandbox {
+  const own = aiSandbox(home);
+  return { ...own, unreadable: [...own.unreadable, ...signIns] };
+}
+
 /**
  * The test sign-in for every case of a run: Codex's own ChatGPT sign-in in
  * `home/codex` (RUFI_HOME). Codex renews it there first, so that no case's
  * copy needs renewing during the run (two copies renewing at once would end
  * it): `give` copies it into a case's data folder, `take` removes the copy
- * when the case ends. Fails, with how to sign in, when Codex isn't signed in.
+ * when the case ends, and `signIns` names every sign-in of a run with these
+ * cases, for each case's sandbox to deny. Fails, with how to sign in, when
+ * Codex isn't signed in.
  */
-export async function testSignIn(home: string, codex: string) {
-  const codexHome = join(home, "codex");
-  const child = spawn(codex, ["app-server", "--listen", "stdio://"], {
-    env: { ...childEnvironment(), CODEX_HOME: codexHome },
-    stdio: ["pipe", "pipe", "ignore"],
-  });
+export async function testSignIn(home: string, codex: CodexCommand) {
+  const child = spawn(
+    codex.file,
+    [...codex.args, "app-server", "--listen", "stdio://"],
+    {
+      env: { ...childEnvironment(), CODEX_HOME: join(home, "codex") },
+      stdio: ["pipe", "pipe", "ignore"],
+    },
+  );
   try {
     const rpc = connect(
       child.stdout,
@@ -87,53 +114,53 @@ export async function testSignIn(home: string, codex: string) {
   } finally {
     child.kill();
   }
-  const file = (folder: string) => join(folder, "codex", "auth.json");
   return {
     give: async (caseHome: string) => {
       await mkdir(join(caseHome, "codex"), { recursive: true, mode: 0o700 });
-      await copyFile(file(home), file(caseHome));
+      await copyFile(codexSignIn(home), codexSignIn(caseHome));
     },
-    take: (caseHome: string) => rm(file(caseHome), { force: true }),
+    take: (caseHome: string) => rm(codexSignIn(caseHome), { force: true }),
+    signIns: (cases: readonly string[]) => [
+      ...signInsOf(home),
+      ...cases.map(codexSignIn),
+    ],
   };
 }
 
 export type TestSignIn = Awaited<ReturnType<typeof testSignIn>>;
 
 /**
- * A new folder for the run's output: by default
- * `/tmp/rufi-<kind>-<commit>-<time>-<random>`. A folder given that isn't
- * empty is refused, so one run never mixes with another.
+ * The run's own folder (`--out`), new or empty, so one run never mixes with
+ * another: its report and transcripts, and its cases' data folders.
  */
-export async function outFolder(
-  kind: "smoke" | "pack",
-  given?: string,
-): Promise<string> {
-  if (given !== undefined) {
-    await mkdir(given, { recursive: true });
-    if ((await readdir(given)).length > 0)
-      throw new Error(`${given} isn't empty. Give a new or empty folder.`);
-    return given;
+export async function outFolder(given: string | undefined): Promise<string> {
+  if (given === undefined) {
+    throw new Error("Give the run a folder of its own: --out <empty folder>.");
   }
-  const commit = execFileSync("git", ["rev-parse", "--short", "HEAD"], {
-    encoding: "utf8",
-  }).trim();
-  const time = new Date().toISOString().slice(0, 19).replaceAll(":", "");
-  return mkdtemp(`/tmp/rufi-${kind}-${commit}-${time}-`);
+  await mkdir(given, { recursive: true });
+  if ((await readdir(given)).length > 0)
+    throw new Error(`${given} isn't empty. Give a new or empty folder.`);
+  return given;
 }
 
+/** A case's data folder in the run's folder, named before any case starts. */
+export const caseFolder = (out: string, name: string) =>
+  join(out, "cases", name);
+
 /**
- * Runs a case on a scratch data folder of its own, `<prefix>…` in the Mac's
- * temporary folder. The folder is removed once the case has ended and
- * `passed` says it passed. After any other ending (a failure, an error, a
- * crash) it stays where it is, as the evidence: `kept` names it, and so does
- * the error the case threw.
+ * Runs a case on its data folder `home` (caseFolder), which it makes. The
+ * folder is removed once the case has ended and `passed` says it passed.
+ * After any other ending (a failure, an error, a crash) it stays where it
+ * is, as the evidence: `kept` names it, and so does the error the case
+ * threw.
  */
 export async function onScratch<T>(
-  prefix: string,
+  home: string,
   run: (home: string) => Promise<T>,
   passed: (result: T) => boolean,
 ): Promise<{ result: T; kept: string | undefined }> {
-  const home = await mkdtemp(join(tmpdir(), prefix));
+  await mkdir(dirname(home), { recursive: true });
+  await mkdir(home, { mode: 0o700 });
   let result: T;
   try {
     result = await run(home);

@@ -1,5 +1,6 @@
 import {
   access,
+  mkdir,
   mkdtemp,
   readdir,
   readFile,
@@ -13,12 +14,17 @@ import type { Turn } from "@rufi/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import { SignedOut } from "../src/agent/runtime.ts";
 import {
+  caseFolder,
+  caseSandbox,
   HarnessTimeout,
   onScratch,
   outFolder,
   runAll,
   statusOf,
+  testSignIn,
 } from "./live-run.ts";
+
+const FAKE = join(import.meta.dirname, "../tests/fake-codex.ts");
 
 describe("running the cases", () => {
   const timed = async (names: string[], jobs?: number) => {
@@ -58,33 +64,30 @@ describe("the output folder", () => {
     for (const dir of made.splice(0)) await rm(dir, { recursive: true });
   });
 
-  it("is a new folder for each run by default", async () => {
-    const first = await outFolder("smoke");
-    const second = await outFolder("smoke");
-    made.push(first, second);
-    expect(first).not.toBe(second);
-    expect(first).toMatch(/^\/tmp\/rufi-smoke-[0-9a-f]+-/);
-    expect(await readdir(first)).toEqual([]);
+  it("must be given", async () => {
+    await expect(outFolder(undefined)).rejects.toThrow(
+      "Give the run a folder of its own: --out <empty folder>.",
+    );
   });
 
   it("takes an empty folder and refuses one with something in it", async () => {
     const dir = await mkdtemp(join(tmpdir(), "rufi-out-"));
     made.push(dir);
-    expect(await outFolder("smoke", dir)).toBe(dir);
+    expect(await outFolder(dir)).toBe(dir);
     await writeFile(join(dir, "report.md"), "an earlier run\n");
-    await expect(outFolder("smoke", dir)).rejects.toThrow(/isn't empty/);
+    await expect(outFolder(dir)).rejects.toThrow(/isn't empty/);
   });
 });
 
-describe("a case's scratch data folder", () => {
+describe("a case's data folder", () => {
   /**
    * A case that writes a fictional record in its folder, then ends as `how`;
    * a case that passes writes its transcript to an output folder that's
    * gone.
    */
-  const play = (how: "passes" | "fails" | "can't save its transcript") =>
+  const play = async (how: "passes" | "fails" | "can't save its transcript") =>
     onScratch(
-      "rufi-smoke-",
+      caseFolder(await mkdtemp(join(tmpdir(), "rufi-out-")), "a-case"),
       async (home) => {
         await writeFile(join(home, "rufi.db"), "a fictional record");
         if (how === "can't save its transcript") {
@@ -114,7 +117,7 @@ describe("a case's scratch data folder", () => {
     );
     expect(error).toMatchObject({
       message: expect.stringMatching(
-        /^ENOENT: .* \(data folder: .*rufi-smoke-\w+\)$/,
+        /^ENOENT: .* \(data folder: .*\/cases\/a-case\)$/,
       ) as unknown,
       cause: { code: "ENOENT" },
     });
@@ -190,5 +193,60 @@ describe("a case's status", () => {
       status: "INFRA",
       why: "a reply ended (connection): exceeded retry limit, last status: 429 Too Many Requests",
     });
+  });
+});
+
+describe("the test sign-in in a run", () => {
+  it("gives each case a copy and takes it back, and no case's AI may read any sign-in of the run", async () => {
+    // Wholly fictional: a test home with Codex's sign-in file and Claude's
+    // folder, signed in on the scripted Codex.
+    const root = await mkdtemp(join(tmpdir(), "rufi-live-"));
+    const home = join(root, "test-home");
+    await mkdir(join(home, "codex"), { recursive: true });
+    await writeFile(join(home, "codex", "auth.json"), '{"fictional":true}');
+    await mkdir(join(home, "claude"));
+    await writeFile(join(home, "claude", ".claude.json"), '{"fictional":true}');
+    const out = await outFolder(join(root, "out"));
+    const cases = ["first", "second"].map((name) => caseFolder(out, name));
+    const signIn = await testSignIn(home, {
+      file: process.execPath,
+      args: [FAKE],
+    });
+    const signIns = signIn.signIns(cases);
+    try {
+      // Both cases at once, each with its copy.
+      for (const folder of cases) {
+        await mkdir(folder, { recursive: true });
+        await signIn.give(folder);
+      }
+      /** Every sign-in on disk: Codex's files and Claude's folders. */
+      const found = async () =>
+        (await readdir(root, { recursive: true, withFileTypes: true }))
+          .filter((entry) =>
+            entry.isDirectory()
+              ? entry.name === "claude"
+              : entry.name === "auth.json",
+          )
+          .map((entry) => join(entry.parentPath, entry.name))
+          .sort();
+      expect(await found()).toEqual(
+        [
+          join(home, "claude"),
+          join(home, "codex", "auth.json"),
+          ...cases.map((folder) => join(folder, "codex", "auth.json")),
+        ].sort(),
+      );
+      for (const folder of cases) {
+        expect(caseSandbox(folder, signIns).unreadable).toEqual(
+          expect.arrayContaining(await found()),
+        );
+      }
+      for (const folder of cases) await signIn.take(folder);
+      expect(await found()).toEqual(
+        [join(home, "claude"), join(home, "codex", "auth.json")].sort(),
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

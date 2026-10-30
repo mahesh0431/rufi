@@ -54,6 +54,7 @@ import { mcpEndpoint, mcpKeys, serveMcp } from "../src/server/mcp.ts";
 import { backupsPath } from "../src/core/store/backup.ts";
 import { childEnvironment, rufiHome } from "../src/platform/config.ts";
 import { aiSandbox } from "../src/server/core.ts";
+import { caseSandbox, signInsOf } from "./live-run.ts";
 
 /** A quick model: the cases check what Claude does, not how well. */
 const MODEL = "claude-haiku-5-5";
@@ -110,11 +111,11 @@ const SECRET = "SECRET-CANARY";
 const claudeFile = (home: string) => join(claudeFolder(home), ".claude.json");
 
 /**
- * A fictional file at each unreadable path; the backups and Claude's folder
- * get one inside.
+ * A fictional file at each path of the data folder `home` that the AI can't
+ * read; the backups and Claude's folder get one inside.
  */
-async function unreadableFiles(home: string, sandbox: AgentSandbox) {
-  for (const path of sandbox.unreadable) {
+async function unreadableFiles(home: string) {
+  for (const path of aiSandbox(home).unreadable) {
     const file =
       path === backupsPath(home)
         ? join(path, "copy.sqlite")
@@ -712,6 +713,11 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       },
       { tool: "Read", input: claudeFile(home), check: refusedRead },
       {
+        tool: "Bash",
+        input: `cat '${claudeFile(home)}'`,
+        check: refusedRead,
+      },
+      {
         tool: "Write",
         input: `${ai}/inside.txt`,
         check: wrote(`${ai}/inside.txt`),
@@ -811,7 +817,7 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       await rm(outside, { force: true });
       await rm("/tmp/rufi-claude-live", { force: true });
     }
-    return "each of 16 steps tried on its own call: 6 unreadable files (Codex's sign-in and Claude's folder too) and 4 writes refused, its folder and temp written, the internet reached, no token it can use";
+    return "each of 17 steps tried on its own call: 7 reads of unreadable files (Codex's sign-in, and Claude's folder by Read and by a command) and 4 writes refused, its folder and temp written, the internet reached, no token it can use";
   },
 
   "the adapter lists Claude's models by exact id": async (context) =>
@@ -1074,9 +1080,12 @@ const folder = await mkdtemp(join(tmpdir(), "rufi-claude-live-"));
 // Brackets, which Claude's permission rules read as a pattern unless
 // escaped, and a space and parentheses, which a rule holds too.
 const home = join(folder, "home [fictional] (2)");
-const sandbox = aiSandbox(home);
+// The fictional files go only into this run's own data folder, never into
+// the test sign-in.
+await unreadableFiles(home);
+// Claude's AI is denied the test sign-in too: Codex's and Claude's own.
+const sandbox = caseSandbox(home, signInsOf(signIn));
 await aiFolder(sandbox.folder);
-await unreadableFiles(home, sandbox);
 const plugin = await prepareClaudePlugin(home, [
   {
     name: "greeting",
