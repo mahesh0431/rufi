@@ -50,12 +50,18 @@ import {
 import { SKILLS } from "../core/skills/skills.ts";
 import { backupsPath } from "../core/store/backup.ts";
 import { devices as openDevices } from "../core/devices/devices.ts";
-import { holdRufiLock, readJson, writePrivateJson } from "../platform/files.ts";
+import {
+  holdRufiLock,
+  readJson,
+  tempPattern,
+  writePrivateJson,
+} from "../platform/files.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { agentsPath } from "./agents.ts";
 import { api, LAUNCHER_HEADER } from "./api.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 import { generatedImages } from "../agent/codex/settings.ts";
+import { doorFolder } from "../agent/codex/token-door.ts";
 import { aiFiles } from "./files.ts";
 import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
 import { reader as openReader, readerChoice } from "./reader.ts";
@@ -118,6 +124,10 @@ export function aiSandbox(home: string): AgentSandbox {
       ]),
       backupsPath(home),
       coreFile(home),
+      // Its temp copy while it is written: Codex denies a glob too.
+      tempPattern(coreFile(home)),
+      // The keys of the chat's Codex and the reader's to their token doors.
+      doorFolder(home),
     ],
   };
 }
