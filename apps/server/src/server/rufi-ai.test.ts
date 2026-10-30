@@ -91,7 +91,8 @@ async function start(
     transcripts,
     queue: chatQueue(record),
     reading: { readings: reads, read },
-    signedIn: () => Promise.resolve(true),
+    signIn: () =>
+      Promise.resolve({ state: "signed_in", account: null, text: null }),
     agent: system.rufiAi,
     allowlist: ["fake-model"],
     mcp: { url: () => "http://127.0.0.1:9/mcp", keys },

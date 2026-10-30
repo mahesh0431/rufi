@@ -1448,6 +1448,23 @@ describe("what the screens read", () => {
     });
   });
 
+  it("when Rufi can't ask Codex, says Codex's words, and a send says them too, not signed out", async () => {
+    const page = await session(
+      await start({ adapters: scripted({ refuse: ["account/read"] }) }),
+    );
+    const text = "Codex refused account/read: The fake refused account/read.";
+    expect((await page.api("GET", "/api/status")).body["codex"]).toEqual({
+      state: "unavailable",
+      account: null,
+      text,
+    });
+    const { path } = await chat(page);
+    expect(await page.say(path, "Fictional question")).toMatchObject({
+      status: 409,
+      body: { error: text },
+    });
+  });
+
   it("lists the regions it knows; the chosen one gives the number", async () => {
     const core = await start();
     const page = await session(core);

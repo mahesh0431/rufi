@@ -150,7 +150,8 @@ async function start(
   chat = openChat({
     transcripts,
     queue: chatQueue(store),
-    signedIn: () => Promise.resolve(true),
+    signIn: () =>
+      Promise.resolve({ state: "signed_in", account: null, text: null }),
     agent: ai.agent,
     allowlist: options.model ? [options.model] : DEFAULT_ALLOWLIST,
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },

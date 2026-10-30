@@ -340,8 +340,7 @@ export const startCore = (options: CoreOptions) =>
         openChat({
           transcripts,
           queue,
-          signedIn: async () =>
-            (await signIns.codex?.status())?.state === "signed_in",
+          signIn: () => statusOf("codex"),
           agent: agentSystem.rufiAi,
           allowlist: DEFAULT_ALLOWLIST,
           mcp: { url: () => mcpUrl(MCP_CHAT), keys: chatKeys },

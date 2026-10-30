@@ -6,7 +6,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { SIGNED_OUT, type Entry } from "@rufi/contracts";
+import { SIGNED_OUT, type Entry, type ProviderStatus } from "@rufi/contracts";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Scenario } from "../../tests/fake-codex.ts";
@@ -72,7 +72,8 @@ let ai: Awaited<ReturnType<typeof rufiAiFor>> | undefined;
 /** The chat's Codex, behind the provider boundary. */
 let codex: ProviderAdapter | undefined;
 /** Whether the person is signed in, as the chat asks it. */
-let signedIn: boolean;
+/** Codex's sign-in as the chat asks it. */
+let signIn: ProviderStatus;
 let model: FakeModel | undefined;
 /** Calls of Rufi's tools the chat admitted, as they start. */
 let admitted: string[];
@@ -91,7 +92,7 @@ beforeEach(async () => {
   `);
   transcripts = openTranscripts(store);
   queue = chatQueue(store);
-  signedIn = true;
+  signIn = { state: "signed_in", account: "asha@example.com", text: null };
   admitted = [];
 });
 afterEach(async () => {
@@ -212,7 +213,7 @@ async function startChat(
     ...(options.reader && {
       reading: { readings: reads, read: documentReader.read },
     }),
-    signedIn: () => Promise.resolve(signedIn),
+    signIn: () => Promise.resolve(signIn),
     agent: ai.agent,
     allowlist: options.allowlist ?? ALLOWED,
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
@@ -1591,7 +1592,7 @@ describe("the chat, on the scripted Codex", () => {
   it("takes nothing the person sends while signed out", async () => {
     await startChat("fake");
     const c = await newChat();
-    signedIn = false;
+    signIn = { state: "signed_out", account: null, text: null };
     await expect(say(c, "Hello")).rejects.toThrow(SIGNED_OUT);
     expect(await waiting()).toEqual([]);
     store.db.exec(`
