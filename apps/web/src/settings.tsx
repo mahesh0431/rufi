@@ -1,4 +1,4 @@
-// Settings: the ChatGPT plan the AI uses, how Rufi looks, when a reply's
+// Settings: how Codex and Claude are signed in, how Rufi looks, when a reply's
 // Activity opens by itself, what a message sent while a reply runs does,
 // the region whose
 // emergency number the AI gives, the model and effort documents are read

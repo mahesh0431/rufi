@@ -974,7 +974,7 @@ test.describe("Help", () => {
     await page.goBack();
     await page.getByRole("link", { name: "Getting started" }).click();
     await page
-      .getByRole("link", { name: "Signing in with ChatGPT" })
+      .getByRole("link", { name: "Signing in", exact: true })
       .first()
       .click();
     await expect(page).toHaveURL(/\/help\/signing-in#sign-in-in-rufi$/);

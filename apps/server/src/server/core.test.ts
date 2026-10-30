@@ -2021,7 +2021,10 @@ describe("never starting over", () => {
     { folder: "a new folder", prepare: () => Promise.resolve(), people: 0 },
     {
       folder: "a folder with only a sign-in",
-      prepare: () => writeFile(join(home, "chatgpt.json"), "{}"),
+      prepare: async () => {
+        await mkdir(join(home, "codex"));
+        await writeFile(join(home, "codex", "auth.json"), "{}");
+      },
       people: 0,
     },
     {

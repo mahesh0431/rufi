@@ -182,8 +182,8 @@ You can also tell the AI about a visit with no paper, such as a video call with 
 Your reply stops in Rufi's part, before Rufi AI starts on your message. Its last line says why and how far it got, with **Retry**. The pages already copied are kept, and Rufi AI never gets half a message.
 
 - **You clicked Stop:** the step says **stopped · 13 of 60**, and the reply ends **Stopped. · read 13 of 60**. As after any Stop, nothing more goes by itself until you send a message.
-- **You're signed out, your sign-in has ended, or your plan's usage limit is reached:** the reading stops at once. The line says why, in Rufi's or the service's words, for example **Couldn't read scan-2024.pdf · Not signed in. Sign in with ChatGPT: in Rufi, or with pnpm rufi signin. · read 13 of 60**. Sign in, or wait until the limit resets, then click **Retry**. Rufi doesn't try again by itself.
-- **The AI connection was lost or restarted, or ChatGPT can't renew your sign-in just now:** Rufi tries again by itself, up to three times: after 30 seconds, then 1 minute, then 2 minutes. Meanwhile the step says **waiting to copy again**.
+- **You're signed out, your sign-in has ended, or your plan's usage limit is reached:** the reading stops at once. The line says why, in Rufi's or the service's words, for example **Couldn't read scan-2024.pdf · Codex isn't signed in to ChatGPT. Sign in from Settings, then try again. · read 13 of 60**. Sign in, or wait until the limit resets, then click **Retry**. Rufi doesn't try again by itself.
+- **The AI connection was lost or restarted:** Rufi tries again by itself, up to three times: after 30 seconds, then 1 minute, then 2 minutes. Meanwhile the step says **waiting to copy again**.
 - **It took too long, or failed again:** the line says **Couldn't read … · read 3 of 5**. Between them is why: "the reading took too long", or the AI service's error as the service reported it, such as "exceeded retry limit, last status: 429 Too Many Requests".
 - **Rufi closed while reading:** when Rufi starts again, the reply ends **Rufi closed while reading.**, with **Retry**. Nothing goes on by itself after a restart.
 

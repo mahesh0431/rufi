@@ -2,9 +2,10 @@
 // relies on, with fictional data. It isn't part of `pnpm check`: CI has no
 // Claude, and the installed Claude updates itself, so a change in it shows
 // only here. Run it after changing src/agent/claude/ and after Claude
-// updates: `pnpm claude:live`. It sends a few short messages on the Mac's
-// own Claude sign-in, and deletes the conversations it made (Claude keeps an
-// empty folder for the run's AI folder in ~/.claude/projects).
+// updates: `RUFI_HOME=<test sign-in folder> pnpm claude:live`. It sends a few
+// short messages on the test sign-in's Claude folder (RUFI_HOME's
+// `claude/`), as Rufi runs Claude, and deletes the conversations it made
+// (Claude keeps an empty folder for the run's AI folder in its `projects/`).
 import { randomUUID, type UUID } from "node:crypto";
 import {
   access,
@@ -31,6 +32,8 @@ import type {
 import { openAgentStore } from "@rufi/agents/store";
 import { claudeAdapter } from "../src/agent/claude/adapter.ts";
 import {
+  claudeEnvironment,
+  claudeFolder,
   claudeSignIn,
   findClaude,
   type InstalledClaude,
@@ -49,7 +52,7 @@ import type { ToolAnswer, ToolSpec } from "../src/core/tools/registry.ts";
 import { agentDoor } from "../src/server/door.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "../src/server/mcp.ts";
 import { backupsPath } from "../src/core/store/backup.ts";
-import { childEnvironment } from "../src/platform/config.ts";
+import { childEnvironment, rufiHome } from "../src/platform/config.ts";
 import { aiSandbox } from "../src/server/core.ts";
 
 /** A quick model: the cases check what Claude does, not how well. */
@@ -1043,6 +1046,10 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       }),
 };
 
+const signIn = rufiHome();
+// Claude's own folder in the test sign-in: in Claude's environment, and in
+// this process, where the SDK's session functions read it.
+process.env["CLAUDE_CONFIG_DIR"] = claudeFolder(signIn);
 const claude = await findClaude();
 console.log(`Claude ${claude.version} at ${claude.path}`);
 const folder = await mkdtemp(join(tmpdir(), "rufi-claude-live-"));
@@ -1064,7 +1071,7 @@ const context = {
   folder,
   home,
   sandbox,
-  env: childEnvironment(),
+  env: claudeEnvironment(signIn, childEnvironment()),
   plugin,
 };
 let failed = 0;

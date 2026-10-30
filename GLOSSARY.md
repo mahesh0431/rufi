@@ -288,14 +288,11 @@ The pages that say what works in Rufi today and how to use it: in Rufi under Hel
 _Avoid_: manual, documentation
 
 **Sign in with ChatGPT**:
-How you connect Rufi to your ChatGPT account, in your browser, so the AI runs on your ChatGPT plan.
+How you sign Codex in to your ChatGPT account, in your browser, so the AI runs on your ChatGPT plan. Codex keeps and renews its sign-in itself, in the data folder's `codex/`; Claude signs in the same way with your Claude account, in `claude/`. Rufi keeps no sign-in of its own.
 _Avoid_: login, API key
 
-**ChatGPT plan use**:
-The permission you give Rufi when you sign in, so it can use your ChatGPT plan. Without it the AI can't answer.
-
 **Data folder**:
-The one folder on your Mac where Rufi keeps everything for your records: the record, the sign-in details, the log, the AI's own files and the AI's folder. Rufi makes it at its first start, `~/.rufi/data`, and remembers it in the location file; `RUFI_HOME` picks another one for one run.
+The one folder on your Mac where Rufi keeps everything for your records: the record, Codex's and Claude's sign-ins, the log, the AI's own files and the AI's folder. Rufi makes it at its first start, `~/.rufi/data`, and remembers it in the location file; `RUFI_HOME` picks another one for one run.
 _Avoid_: vault, profile, workspace, home
 
 **Location file**:
@@ -303,11 +300,11 @@ _Avoid_: vault, profile, workspace, home
 _Avoid_: pointer, config
 
 **Move (the data folder)**:
-Copying the whole data folder into a new, empty folder with `pnpm rufi move-data`, while Rufi doesn't run: checked, then the location file names the new folder. The old folder is kept, marked moved, and Rufi never opens it again. Unlike a restore, a move keeps the sign-in and every backup.
+Copying the whole data folder into a new, empty folder with `pnpm rufi move-data`, while Rufi doesn't run: checked, then the location file names the new folder. The old folder is kept, marked moved, and Rufi never opens it again. Unlike a restore, a move keeps every backup; Codex and Claude sign in again.
 _Avoid_: relocate, sync
 
 **Keychain**:
-Your Mac's store for secrets. Rufi keeps the sign-in itself there, never in the data folder.
+Your Mac's store for secrets. Claude keeps its sign-in there, under a name made from its folder's path in the data folder.
 
 **Log**:
 Rufi's diagnostic file, `logs/rufi.log` in the data folder: fixed events with checked details, never your words or health text.
@@ -318,7 +315,7 @@ The short steps a new data folder starts with: what Rufi is and isn't, what goes
 _Avoid_: onboarding, setup wizard
 
 **Demo folder**:
-A data folder of made-up people for trying Rufi, `~/Rufi-demo`, apart from yours. `pnpm demo` gives it the same test data each time and keeps only its sign-in.
+A data folder of made-up people for trying Rufi, `~/Rufi-demo`, apart from yours. `pnpm demo` gives it the same test data each time and keeps only Codex's and Claude's sign-ins.
 _Avoid_: sandbox, test account
 
 ## Device data
