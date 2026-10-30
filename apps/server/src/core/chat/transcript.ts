@@ -1,8 +1,10 @@
 // Each person's chat and its transcript (docs/adr/0004): what the user
-// said, one line per thing the AI did with everything it sent and got back,
-// the AI's reasoning and its replies, in order, and each call to Rufi's
-// tools. Every change is one transaction that moves the chat's revision
-// on, and is published to listeners only after it is stored.
+// said, the AI's replies and the questions it asked, receipts and events,
+// in order, and each call to Rufi's tools. Rufi AI's steps and reasoning
+// are kept by the agent system and merged into their replies when read;
+// older replies keep theirs here. Every change is one transaction that
+// moves the chat's revision on, and is published to listeners only after
+// it is stored.
 import {
   type ActivityKind,
   type Chat,

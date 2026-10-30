@@ -283,11 +283,19 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
       await until(() => turns().some((t) => t["status"] !== "running"));
       expect(printed(1)).toBe("[false,false]");
 
-      const lines = store.db
-        .prepare(
-          "SELECT agent_item_id, text, status FROM transcript_entries WHERE kind = 'activity' ORDER BY seq",
-        )
-        .all() as { agent_item_id: string; text: string; status: string }[];
+      const row = await transcripts.chat("asha");
+      if (!row) throw new Error("no chat");
+      const page = await transcripts.page(row);
+      const lines = await Promise.all(
+        page.entries
+          .filter((entry) => entry.kind === "activity")
+          .map(async (entry) => ({
+            ...entry,
+            details: (await transcripts.details(row, entry.id))?.details as
+              | { id?: string }
+              | undefined,
+          })),
+      );
       const calls = store.db
         .prepare(
           "SELECT call_id, tool, ok, turn_id FROM tool_calls ORDER BY started_at",
@@ -308,16 +316,12 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
       // Codex's call id is its item's id: the line and the call are one.
       for (const call of calls) {
         expect(
-          lines.find((line) => line.agent_item_id === call.call_id),
+          lines.find((line) => line.details?.id === call.call_id),
         ).toMatchObject({ status: "done" });
       }
       expect(
-        lines.find((line) => line.agent_item_id === calls[0]?.call_id)?.text,
+        lines.find((line) => line.details?.id === calls[0]?.call_id)?.text,
       ).toBe("rufi.get_overview");
-
-      const row = await transcripts.chat("asha");
-      if (!row) throw new Error("no chat");
-      const page = await transcripts.page(row);
       expect(
         page.entries
           .filter((entry) => entry.kind === "receipt")
@@ -664,25 +668,25 @@ describe("What a person sees of the AI's steps, on the pinned Codex", () => {
       ]);
       await say("Hi.");
       await replies(1);
-      const lines = store.db
-        .prepare(
-          "SELECT activity, text, detail, status, details FROM transcript_entries WHERE kind = 'activity' ORDER BY seq",
-        )
-        .all() as {
-        activity: string;
-        text: string;
-        detail: string | null;
-        status: string;
-        details: string | null;
-      }[];
+      const row = await transcripts.chat("asha");
+      if (!row) throw new Error("No fictional chat.");
+      const page = await transcripts.page(row);
+      // As the screens get them; everything else when a line opens.
+      const lines = await Promise.all(
+        page.entries
+          .filter((entry) => entry.kind === "activity")
+          .map(async (entry) => ({
+            ...entry,
+            details: (await transcripts.details(row, entry.id))?.details as
+              | { command: string; exitCode: number }
+              | undefined,
+          })),
+      );
       const commandLines = lines.filter((line) => line.activity === "command");
       expect(commandLines).toHaveLength(3);
       for (const line of commandLines) {
         // The command and exit code as Codex gave them, nothing cut.
-        const item = JSON.parse(line.details ?? "{}") as {
-          command: string;
-          exitCode: number;
-        };
+        const item = line.details ?? { command: "", exitCode: -1 };
         expect(line.text).toBe(item.command);
         expect(line.detail).toBe(`exit ${String(item.exitCode)}`);
       }
@@ -701,9 +705,6 @@ describe("What a person sees of the AI's steps, on the pinned Codex", () => {
         ["note", "I'll read the results skill first.", null, "done"],
         ["tool", "rufi.get_records", '{"kind":"result"}', "done"],
       ]);
-      const row = await transcripts.chat("asha");
-      if (!row) throw new Error("No fictional chat.");
-      const page = await transcripts.page(row);
       expect(
         page.entries
           .filter((entry) => entry.kind === "reply")

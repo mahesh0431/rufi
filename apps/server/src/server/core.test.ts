@@ -685,7 +685,7 @@ describe("the local API", () => {
            SELECT 'old-step', person_id, chat_id, 9999, turn_id, 'activity', 'Ran a command', 'command', 'ls', 'done', 1, created_at, created_at
            FROM transcript_entries WHERE id = ?`,
         )
-        .run(command?.id ?? "");
+        .run(message?.id ?? "");
     } finally {
       store.close();
     }
