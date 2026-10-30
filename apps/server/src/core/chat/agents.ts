@@ -99,6 +99,13 @@ export function chatAgents(
         return 0;
       }),
 
+    /** How far Rufi has read, and in which agent database; none yet. */
+    cursor: () =>
+      db
+        .selectFrom("agent_cursor")
+        .select(["generation", "number"])
+        .executeTakeFirst(),
+
     /** Rufi has read the events up to `number`, of this generation. */
     advance: async (generation: string, number: number) => {
       const moved = await db

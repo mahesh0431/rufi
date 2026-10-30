@@ -144,8 +144,8 @@ export interface Agents {
   /** The host keeps the agent's owner now, so it may run. Again does nothing. */
   admit: (id: string) => void;
   get: (id: string) => Agent | undefined;
-  /** The agents not admitted yet. */
-  unadmitted: () => string[];
+  /** Every agent the database keeps, admitted or not. */
+  list: () => string[];
   /** Where an input is in its agent's queue; nothing when the queue has none. */
   input: (id: string) => { agent: string; state: string } | undefined;
   /**
@@ -1099,12 +1099,10 @@ export function createAgents(options: {
 
     get,
 
-    unadmitted: () =>
-      (
-        db.prepare("SELECT id FROM agents WHERE admitted = 0").all() as {
-          id: string;
-        }[]
-      ).map(({ id }) => id),
+    list: () =>
+      (db.prepare("SELECT id FROM agents").all() as { id: string }[]).map(
+        ({ id }) => id,
+      ),
 
     input: (id) =>
       db

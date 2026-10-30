@@ -1,9 +1,9 @@
 // Rufi and the agent package start in step: through startAgents, on a real
 // record, a real agent database and the package's fake provider.
-import { mkdtemp, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAgents, type NewAgent } from "@rufi/agents/agents";
+import { createAgents, type NewAgent, type Sent } from "@rufi/agents/agents";
 import { fakeProvider, type FakeProvider } from "@rufi/agents/fake";
 import type { ProviderAdapter } from "@rufi/agents/provider";
 import { openAgentStore, type AgentStore } from "@rufi/agents/store";
@@ -62,6 +62,40 @@ async function start(adapters: readonly ProviderAdapter[] = [fake.adapter]) {
   running = { store, system };
   return running;
 }
+
+/** A thread the provider has, as Asha's chat's. */
+async function ashaThread(): Promise<string> {
+  const known = await fake.adapter.open({
+    cwd: join(home, "ai"),
+    instructions: "Fictional rules.",
+    model: "fake-model",
+    effort: "medium",
+    tools: TOOLS,
+    onEvent: () => undefined,
+  });
+  await known.close();
+  record.db
+    .prepare(
+      "UPDATE chats SET thread_id = ?, thread_provider = 'fake' WHERE id = 'c-asha'",
+    )
+    .run(known.ref);
+  return known.ref;
+}
+
+/** The agent database's file goes, as when it is lost. */
+async function lose() {
+  for (const end of ["", "-wal", "-shm"]) {
+    await rm(`${agentsPath(home)}${end}`, { force: true });
+  }
+}
+
+/** A child's report, waiting for Asha's agent. */
+const REPORT: Sent = {
+  id: "child-result",
+  sender: "agent-child",
+  kind: "queue",
+  parts: ["Fictional reading of report.pdf."],
+};
 
 async function stop() {
   await running?.system.close();
@@ -188,9 +222,7 @@ describe("a lost agent database", () => {
     // One Rufi claimed but never marked surely didn't go: today's recovery
     // has it wait again.
     handingOver("ravi", "msg-2", null);
-    for (const end of ["", "-wal", "-shm"]) {
-      await rm(`${agentsPath(home)}${end}`, { force: true });
-    }
+    await lose();
 
     const { store } = await start([]);
 
@@ -215,23 +247,67 @@ describe("a lost agent database", () => {
   });
 });
 
+describe("a restored copy of the agent database", () => {
+  it("from before it was lost runs none of its agents, admitted or not", async () => {
+    await ashaThread();
+    const { system } = await start();
+    const old = rootOf("c-asha");
+    system.agents.send(old, REPORT);
+    await stop();
+    const copy = join(home, "copy.sqlite");
+    await copyFile(agentsPath(home), copy);
+    // It is lost, Rufi starts a new one, and then the copy is put back.
+    await lose();
+    await start();
+    await stop();
+    await lose();
+    await copyFile(copy, agentsPath(home));
+
+    const { store, system: again } = await start();
+
+    expect(again.agents.get(old)).toBeUndefined();
+    expect(agentRows(store).map(({ id }) => id)).toEqual([
+      rootOf("c-asha"),
+      rootOf("c-ravi"),
+    ]);
+  });
+
+  it("older than what Rufi has read starts again as a new one, and sends nothing twice", async () => {
+    const ref = await ashaThread();
+    const { system } = await start();
+    const old = rootOf("c-asha");
+    system.agents.send(old, REPORT);
+    await stop();
+    const copy = join(home, "copy.sqlite");
+    await copyFile(agentsPath(home), copy);
+    // The report goes, and Rufi reads on.
+    const { system: on } = await start();
+    await on.agents.dispatch();
+    await vi.waitFor(() => {
+      expect(on.agents.get(old)?.status).toBe("done");
+    });
+    await stop();
+    await lose();
+    await copyFile(copy, agentsPath(home));
+
+    const { store, system: again } = await start();
+    await again.agents.dispatch();
+
+    expect(again.agents.get(old)).toBeUndefined();
+    expect(cursor()).toEqual({
+      generation: store.generation,
+      number: store.eventsAfter(0).at(-1)?.number,
+    });
+    expect(fake.received(ref).map((input) => input.id)).toEqual([
+      "child-result",
+    ]);
+  });
+});
+
 describe("a claim the package never saved", () => {
   it("is settled at the next start by what its provider says", async () => {
     // Asha's thread is one the provider has; Ravi's it no longer finds.
-    const known = await fake.adapter.open({
-      cwd: join(home, "ai"),
-      instructions: "Fictional rules.",
-      model: "fake-model",
-      effort: "medium",
-      tools: TOOLS,
-      onEvent: () => undefined,
-    });
-    await known.close();
-    record.db
-      .prepare(
-        "UPDATE chats SET thread_id = ?, thread_provider = 'fake' WHERE id = 'c-asha'",
-      )
-      .run(known.ref);
+    await ashaThread();
     record.db.exec(
       "UPDATE chats SET thread_id = 'thread-gone', thread_provider = 'fake' WHERE id = 'c-ravi'",
     );

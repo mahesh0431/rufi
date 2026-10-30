@@ -55,6 +55,16 @@ export async function startAgents(options: {
   };
 
   // 1. An agent database Rufi hasn't read: its links to the old one end.
+  // An older copy of one it has read (its events end before Rufi's
+  // cursor) is renewed as a new one: its waiting inputs may have gone
+  // already, so none of its agents runs again.
+  const known = await kept.cursor();
+  if (
+    known?.generation === store.generation &&
+    known.number > store.highWater()
+  ) {
+    store.renew();
+  }
   let cursor = await kept.begin(store.generation);
   const agents = createAgents({
     store,
@@ -63,19 +73,21 @@ export async function startAgents(options: {
     onError: failed,
   });
 
-  // 2. Owners and admission agree: an agent runs only with its owner.
+  // 2. Owners and admission agree: an agent with no owner, admitted or
+  // not, goes with everything below it and its waiting inputs; an owner
+  // whose agent is gone goes; an owned agent is admitted.
   const owners = await kept.owners();
+  const owned = new Set(owners.map((owner) => owner.agent));
+  const unowned = agents.list().filter((id) => !owned.has(id));
+  if (unowned.length > 0) await agents.forget(unowned);
   for (const owner of owners) {
     if (agents.get(owner.agent)) agents.admit(owner.agent);
     else await kept.drop(owner.agent);
   }
-  const owned = new Set(owners.map((owner) => owner.agent));
-  const orphans = agents.unadmitted().filter((id) => !owned.has(id));
-  if (orphans.length > 0) await agents.forget(orphans);
 
   // Each chat's own agent: made, owned (with the thread it takes over, in
-  // the ledger), then admitted. A crash between leaves an orphan, removed
-  // above at the next start, or an owner, admitted there.
+  // the ledger), then admitted. A crash between leaves an agent with no
+  // owner, removed above at the next start, or an owner, admitted there.
   for (const chat of await kept.unrooted()) {
     const id = uuid();
     agents.create({
