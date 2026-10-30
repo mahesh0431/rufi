@@ -360,6 +360,54 @@ it("saves a steer the provider confirms after its turn ended under that turn; th
   await rufi.close();
 });
 
+it("starts the next reply with a steer the provider refused as its turn had ended, once", async () => {
+  const fake = fakeProvider({ id: "codex", script: { turn: "runs" } });
+  let refused = false;
+  const rufi = await start({
+    ...fake.adapter,
+    open: async (options) => {
+      const conversation = await fake.adapter.open(options);
+      return {
+        ...conversation,
+        // The reply ends just as the steer comes, and the provider refuses it.
+        steer: async (steer) => {
+          if (refused) return conversation.steer(steer);
+          refused = true;
+          fake.end(conversation.ref);
+          return { status: "not_delivered", text: "That turn has ended." };
+        },
+      };
+    },
+  });
+  await rufi.send("message-1", "Summarise my fictional record.");
+  await rufi.running();
+  await rufi.send("message-2", "Please include my fictional TSH.");
+
+  const thread = (await rufi.row()).threadId ?? "";
+  await vi.waitFor(() => {
+    expect(fake.received(thread).map((input) => input.id)).toEqual([
+      "message-1",
+      "message-2",
+    ]);
+  });
+  // In a reply of its own, and nothing waits.
+  await vi.waitFor(() => {
+    expect(
+      rows(
+        "SELECT id, kind FROM transcript_entries WHERE kind IN ('message', 'steer') ORDER BY seq",
+      ),
+    ).toEqual([
+      { id: "message-1", kind: "message" },
+      { id: "message-2", kind: "message" },
+    ]);
+  });
+  expect(
+    new Set(rows("SELECT id FROM turns").map((turn) => turn["id"])).size,
+  ).toBe(2);
+  expect(await rufi.waiting()).toEqual([]);
+  await rufi.close();
+});
+
 it("sends a waiting message with its words as they are when it goes: an edit before Rufi's claim goes, one after is refused", async () => {
   const fake = fakeProvider({ id: "codex", script: { turn: "runs" } });
   const held = Promise.withResolvers<undefined>();
