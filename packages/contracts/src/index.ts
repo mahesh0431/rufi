@@ -142,7 +142,12 @@ export type Face = typeof Face.Type;
 /** One item of a chat's transcript, in order by `seq`. */
 export const Entry = Schema.Struct({
   id: Schema.String,
-  seq: Schema.Int,
+  /**
+   * Its place: Rufi's own entries count up by one; a step of a reply, kept
+   * by the agent system, sits after what its reply started with and before
+   * the next of Rufi's entries.
+   */
+  seq: Schema.Number,
   /** The reply it belongs to. */
   turnId: Schema.NullOr(Schema.String),
   /**
@@ -285,17 +290,16 @@ export const QueueItem = Schema.Struct({
   text: Schema.String,
   state: Schema.Literals(["waiting", "handing_over", "not_sure"]),
   /**
-   * Why a waiting row doesn't go by itself: paused or signed_out (an event
-   * that rides with the person's next message), restored (from a backup),
-   * failed (the AI refused it; heldText says why), open_failed (the AI's
-   * thread didn't open; heldText says why, and the person chooses Try
-   * again or New thread), reply_ended (its reply ended while Rufi read its
-   * files; it is in the chat already, and its reply's Retry sends it
-   * again; heldText says why).
+   * Why a waiting row doesn't go by itself: signed_out (the AI found the
+   * sign-in missing; it goes once the sign-in is back; heldText says so),
+   * restored (from a backup), failed (the AI refused it, or a Stop cut its
+   * start; heldText says why), open_failed (the AI's thread didn't open;
+   * heldText says why, and the person chooses Try again or New thread),
+   * reply_ended (its reply ended while Rufi read its files; it is in the
+   * chat already, and its reply's Retry sends it again; heldText says why).
    */
   held: Schema.NullOr(
     Schema.Literals([
-      "paused",
       "signed_out",
       "restored",
       "failed",
@@ -308,18 +312,17 @@ export const QueueItem = Schema.Struct({
   holdId: Schema.NullOr(Schema.String),
   /** A message's references, as its chips. */
   refs: Schema.Array(Chip),
-  /** A reply_ended message's reply, which shows its Retry. */
+  /**
+   * The reply the message is in already: Rufi's part read, or reads, its
+   * files there. A reply_ended message's reply shows its Retry.
+   */
   turnId: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 export type QueueItem = typeof QueueItem.Type;
 
-/**
- * What waits, in order, and why nothing goes until the person sends:
- * stopped (Stop) or restarted (Rufi started again with rows waiting).
- */
+/** What waits, in order. */
 export const Queue = Schema.Struct({
   items: Schema.Array(QueueItem),
-  paused: Schema.NullOr(Schema.Literals(["stopped", "restarted"])),
 });
 export type Queue = typeof Queue.Type;
 
@@ -516,8 +519,8 @@ const Message = Schema.String.check(
 export const MessageText = Schema.Struct({ text: Message });
 
 /**
- * A message from the box, sent into the queue or steered into the running
- * reply. `id` is the send's own: the same send again (a retry) finds the
+ * A message from the box, sent into the queue, from where it goes into the
+ * running reply or in its turn. `id` is the send's own: the same send again (a retry) finds the
  * message it made and never makes a second one. Its text may be empty when
  * something is added to it (files sent with no words).
  */

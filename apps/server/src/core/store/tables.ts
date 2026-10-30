@@ -1,5 +1,26 @@
 // Generated from schema.sql by pnpm db:types; a test fails if it differs.
 export interface Tables {
+  agent_conversations: {
+    person_id: string;
+    chat_id: string;
+    agent_id: string;
+    conversation: number;
+    provider: string;
+    ref: string;
+    created_at: string;
+  };
+  agent_cursor: {
+    id: number;
+    generation: string;
+    number: number;
+  };
+  agent_owners: {
+    agent_id: string;
+    person_id: string;
+    chat_id: string;
+    root: number;
+    created_at: string;
+  };
   allergies: {
     id: string;
     person_id: string;
@@ -52,6 +73,7 @@ export interface Tables {
     turn_id: string | null;
     created_at: string;
     updated_at: string;
+    note: string | null;
   };
   chats: {
     id: string;
@@ -348,7 +370,9 @@ export interface Tables {
     id: string;
     person_id: string;
     chat_id: string;
-    turn_id: string;
+    turn_id: string | null;
+    agent_id: string | null;
+    agent_turn_id: string | null;
     call_id: string;
     tool: string;
     input: string;
@@ -374,6 +398,7 @@ export interface Tables {
     revision: number;
     created_at: string;
     updated_at: string;
+    questions: string | null;
   };
   turns: {
     id: string;

@@ -1,5 +1,5 @@
 // The core: one long-lived process that holds rufi.lock, owns the database,
-// each person's chat and the agent, and serves the local API on 127.0.0.1.
+// each person's chat and the agent system, and serves the local API on 127.0.0.1.
 // Each part is opened in a scope; closing it closes them all in reverse,
 // even when one of them fails.
 import { mkdir, rm } from "node:fs/promises";
@@ -8,13 +8,10 @@ import { join } from "node:path";
 import type { Status } from "@rufi/contracts";
 import type { PersonNotices } from "@rufi/contracts/app";
 import { serve, type ServerType } from "@hono/node-server";
+import type { ProviderAdapter } from "@rufi/agents/provider";
+import { openAgentStore, type AgentStore } from "@rufi/agents/store";
 import { Effect } from "effect";
-import type {
-  AgentHost,
-  AgentRuntime,
-  AgentSandbox,
-  RunSubAgent,
-} from "../agent/runtime.ts";
+import type { AgentSandbox, RunSubAgent } from "../agent/runtime.ts";
 import { readBrief } from "../core/briefs/briefs.ts";
 import { DEFAULT_ALLOWLIST } from "../core/chat/models.ts";
 import { drafts as openDrafts } from "../core/chat/drafts.ts";
@@ -43,19 +40,21 @@ import { openRecord } from "../core/store/install.ts";
 import { claimNotices } from "../core/record/notices.ts";
 import { recordViews, waiting } from "../core/record/views.ts";
 import { pages } from "../core/documents/pages.ts";
-import { chatCaller, forAgent } from "../core/tools/tools.ts";
+import { rufiCaller, forAgent } from "../core/tools/tools.ts";
 import { coreInstructions, rulesVersion } from "../core/chat/instructions.ts";
 import { SKILLS } from "../core/skills/skills.ts";
 import { backupsPath } from "../core/store/backup.ts";
 import { devices as openDevices } from "../core/devices/devices.ts";
 import { holdRufiLock, readJson, writePrivateJson } from "../platform/files.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
+import { agentsPath } from "./agents.ts";
 import { api, LAUNCHER_HEADER } from "./api.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 import { generatedImages } from "../agent/codex/settings.ts";
 import { aiFiles } from "./files.ts";
 import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
 import { reader as openReader, readerChoice } from "./reader.ts";
+import { startRufiAi } from "./rufi-ai.ts";
 import { converter as openConverter } from "./converter.ts";
 import { secret, sessions } from "./session.ts";
 import { signInFlow, type SignIn } from "./signin.ts";
@@ -68,8 +67,11 @@ export interface CoreOptions {
    * Finder; RUFI_HOME, and nothing to show, when not given.
    */
   folder?: { source: FolderSource; show: (path: string) => Promise<void> };
-  /** Makes the agent, with Rufi's tools (to show) and the host its events go to. */
-  agent: (host: AgentHost) => AgentRuntime;
+  /**
+   * The providers the agent system runs on, Rufi AI's first; closed when
+   * the core closes.
+   */
+  adapters: readonly ProviderAdapter[];
   /** Runs the document reader; without it, a reading fails at once. */
   reader?: RunSubAgent;
   /** 0 (the default) picks a free port. */
@@ -100,12 +102,14 @@ export const coreFile = (home: string) => join(home, "core.json");
  * file's secret, so the record is reached only through Rufi's tools.
  */
 export function aiSandbox(home: string): AgentSandbox {
-  const database = databasePath(home);
+  const databases = [databasePath(home), agentsPath(home)];
   return {
     folder: join(home, "ai"),
     unreadable: [
-      database,
-      ...["-wal", "-shm", "-journal"].map((end) => `${database}${end}`),
+      ...databases.flatMap((database) => [
+        database,
+        ...["-wal", "-shm", "-journal"].map((end) => `${database}${end}`),
+      ]),
       backupsPath(home),
       coreFile(home),
     ],
@@ -178,14 +182,15 @@ export const startCore = (options: CoreOptions) =>
   Effect.gen(function* () {
     const { home, log } = options;
     yield* attempt(() => mkdir(home, { recursive: true, mode: 0o700 }));
-    // Set once the database is open, for the lock's loss to close it.
-    const opened: { writer?: Store } = {};
+    // Set once the databases are open, for the lock's loss to close them.
+    const opened: { writer?: Store; agents?: AgentStore } = {};
     yield* Effect.acquireRelease(
       attempt(() =>
         holdRufiLock(home, (error) => {
           // Another process may write now: Rufi stops writing at once.
           log("core.lock_lost", { error: errorCode(error) });
           if (opened.writer?.db.isOpen) opened.writer.close();
+          if (opened.agents?.db.isOpen) opened.agents.close();
         }),
       ),
       (release) => Effect.promise(() => release().catch(() => undefined)),
@@ -231,10 +236,40 @@ export const startCore = (options: CoreOptions) =>
     );
     // In the background: a backup never delays or stops the start.
     backups.start();
+    // The agent system's own database, brought into step with the record
+    // before anything goes to a provider (server/agents.ts).
+    const agentStore = yield* Effect.acquireRelease(
+      attempt(() => openAgentStore(agentsPath(home))),
+      (store) =>
+        Effect.sync(() => {
+          if (store.db.isOpen) store.close();
+        }),
+    );
+    opened.agents = agentStore;
+    const agentSystem = yield* Effect.acquireRelease(
+      attempt(() =>
+        startRufiAi({
+          store: agentStore,
+          record: writer,
+          transcripts,
+          adapters: options.adapters,
+          tools: forAgent(
+            () => ({ store: reader, personId: undefined }),
+            log,
+          ).specs.map((spec) => spec.name),
+          cwd: aiSandbox(home).folder,
+          model: DEFAULT_ALLOWLIST[0] ?? "",
+          log,
+          ...(options.now && { now: options.now }),
+        }),
+      ),
+      (system) => Effect.promise(() => system.close()),
+    );
+    // Replies still running once Rufi has read the agent database's events
+    // were cut when it stopped.
     const interrupted = yield* attempt(() => transcripts.interruptRunning());
-    // Hand-overs Rufi stopped after the AI may have got them are not sure,
-    // never sent again; one whose files Rufi was reading waits for its
-    // reply's Retry; what waits goes when the person sends.
+    // A message whose files Rufi was reading waits for its reply's Retry;
+    // one Rufi hadn't handed over yet waits again.
     yield* attempt(() => queue.endStopped(`${CLOSED_WHILE_READING}.`));
     // Readings Rufi stopped in the middle fail, their copies kept: nothing
     // reads by itself.
@@ -275,7 +310,7 @@ export const startCore = (options: CoreOptions) =>
           transcripts,
           queue,
           signedIn: async () => (await account()).account === "signed_in",
-          agent: options.agent,
+          agent: agentSystem.rufiAi,
           allowlist: DEFAULT_ALLOWLIST,
           mcp: { url: () => mcpUrl(MCP_CHAT), keys: chatKeys },
           rules: (region) => ({
@@ -284,7 +319,7 @@ export const startCore = (options: CoreOptions) =>
           }),
           tools: {
             specs: tools.specs,
-            caller: chatCaller(
+            caller: rufiCaller(
               reader,
               transcripts,
               log,
@@ -438,6 +473,13 @@ export const startCore = (options: CoreOptions) =>
         ),
     );
     port = (server.address() as AddressInfo).port;
+    // Rufi's MCP server listens and the chat is open: hand-overs Rufi
+    // claimed that the package never saved are settled by their provider,
+    // each chat's waiting messages go into Rufi AI's queue, in order, and
+    // only now may the agents' inputs go.
+    yield* attempt(() => agentSystem.recover());
+    yield* attempt(() => chat.carryAll());
+    yield* attempt(() => agentSystem.agents.dispatch());
     convertLoop.start();
     yield* Effect.acquireRelease(
       attempt(() => writePrivateJson(coreFile(home), { port, launcher })),

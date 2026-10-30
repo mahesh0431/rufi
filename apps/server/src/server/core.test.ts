@@ -21,20 +21,21 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { DatabaseSync } from "node:sqlite";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Entry, Status, StreamLine } from "@rufi/contracts";
 import { APPEARANCE_HEADER } from "@rufi/contracts/app";
 import { createCanvas } from "@napi-rs/canvas";
 import { Effect, Exit, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { codexRuntime } from "../agent/codex/codex.ts";
-import type { AgentHost, AgentRuntime } from "../agent/runtime.ts";
+import { codexAdapter } from "../agent/codex/adapter.ts";
 import {
   databasePath,
   openReadOnly,
   openWritable,
 } from "../core/store/database.ts";
 import { backupsPath } from "../core/store/backup.ts";
+import { MIGRATIONS, migrate } from "../core/store/migrations.ts";
 import { devices } from "../core/devices/devices.ts";
 import { findDataFolder } from "../core/store/data-folder.ts";
 import { moveData } from "../core/store/move.ts";
@@ -71,16 +72,16 @@ async function start(options: Partial<CoreOptions> = {}): Promise<Core> {
   const core = await Effect.runPromise(
     startCore({
       home,
-      agent: (host) =>
-        codexRuntime({
+      adapters: [
+        codexAdapter({
           home,
           ...agentSetup(home),
           command: { file: process.execPath, args: [FAKE] },
           env: { PATH: process.env["PATH"] ?? "", FAKE_CODEX: "{}" },
           token: () => Promise.resolve("token"),
           version: "0.0.0",
-          host,
         }),
+      ],
       log: (event) => logged.push(event),
       account: () =>
         Promise.resolve({ account: "signed_in", email: "asha@example.com" }),
@@ -230,24 +231,22 @@ async function rufiReply(
 }
 
 /** The scripted Codex playing `scenario` (FAKE_CODEX), for start(). */
-const scripted =
-  (scenario: object, more: { requestMs?: number } = {}) =>
-  (host: AgentHost) =>
-    codexRuntime({
-      home,
-      ...agentSetup(home),
-      command: { file: process.execPath, args: [FAKE] },
-      env: {
-        PATH: process.env["PATH"] ?? "",
-        FAKE_CODEX: JSON.stringify(scenario),
-      },
-      token: () => Promise.resolve("token"),
-      version: "0.0.0",
-      ...(more.requestMs !== undefined && {
-        deadlines: { requestMs: more.requestMs },
-      }),
-      host,
-    });
+const scripted = (scenario: object, more: { requestMs?: number } = {}) => [
+  codexAdapter({
+    home,
+    ...agentSetup(home),
+    command: { file: process.execPath, args: [FAKE] },
+    env: {
+      PATH: process.env["PATH"] ?? "",
+      FAKE_CODEX: JSON.stringify(scenario),
+    },
+    token: () => Promise.resolve("token"),
+    version: "0.0.0",
+    ...(more.requestMs !== undefined && {
+      deadlines: { requestMs: more.requestMs },
+    }),
+  }),
+];
 
 /** A live stream: its lines as they come, and a way to hang up. */
 function stream(port: number, path: string, headers: Record<string, string>) {
@@ -362,88 +361,55 @@ describe("the core", () => {
     await release();
   });
 
-  it("marks the hand-overs a crash cut off as not sure, never sends them again, and holds what waits until the person sends; a reply cut off in Rufi's part ends there, its message held for Retry", async () => {
+  it("marks a hand-over a crash cut off as not sure and never sends it again; what waits goes; a reply cut off in Rufi's part ends there, its message held for Retry", async () => {
     const left = openWritable(databasePath(home));
     left.db.exec(`
       INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional'), ('ravi', 'Ravi Fictional');
       INSERT INTO chats (id, person_id, created_at) VALUES ('c-asha', 'asha', '2026-10-04T09:00:00Z'), ('c-ravi', 'ravi', '2026-10-04T09:00:00Z');
       INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, sent_as, created_at, updated_at) VALUES
-        ('q-1', 'asha', 'c-asha', 'person', 'Being handed over', 1, 'handing_over', 'q-1', '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
+        ('q-1', 'asha', 'c-asha', 'person', 'Being handed over', 1, 'handing_over', 'agent-gone/1', '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
         ('q-2', 'asha', 'c-asha', 'person', 'Waiting', 2, 'waiting', NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');
       -- Ravi's reply was copying his file, before the AI had his message.
       INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at)
         VALUES ('t-r', 'ravi', 'c-ravi', NULL, NULL, 'gpt-6.1-sol', 'running', '2026-10-04T10:00:00Z');
       INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, sent_as, turn_id, created_at, updated_at) VALUES
         ('q-r', 'ravi', 'c-ravi', 'person', 'Read this', 1, 'handing_over', NULL, 't-r', '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
-        ('q-r2', 'ravi', 'c-ravi', 'person', 'Second', 2, 'waiting', NULL, NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
-        ('q-r3', 'ravi', 'c-ravi', 'person', 'Third', 3, 'waiting', NULL, NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');`);
+        ('q-r2', 'ravi', 'c-ravi', 'person', 'Second', 2, 'waiting', NULL, NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');`);
     left.close();
     const page = await session(await start());
-    await sleep(300);
-    expect((await page.api("GET", "/api/people/asha/chat/queue")).body).toEqual(
-      {
-        paused: "restarted",
-        items: [
-          {
-            id: "q-1",
-            origin: "person",
-            text: "Being handed over",
-            state: "not_sure",
-            held: null,
-            heldText: null,
-            holdId: null,
-            refs: [],
-          },
-          {
-            id: "q-2",
-            origin: "person",
-            text: "Waiting",
-            state: "waiting",
-            held: null,
-            heldText: null,
-            holdId: null,
-            refs: [],
-          },
-        ],
-      },
-    );
-    expect(
-      (await page.api("GET", "/api/people/asha/chat")).body["turns"],
-    ).toEqual([]);
-    const queue = "/api/people/asha/chat/queue";
-    const said = async () =>
+    const said = async (person: string) =>
       (
-        (await page.api("GET", "/api/people/asha/chat")).body["entries"] as {
-          id: string;
-          kind: string;
-          text: string;
-        }[]
+        (await page.api("GET", `/api/people/${person}/chat`)).body[
+          "entries"
+        ] as { id: string; kind: string; text: string }[]
       ).filter((entry) => entry.kind === "message");
-    // The person sends what waits: the one not sure stays.
-    expect((await page.api("POST", `${queue}/q-2/send`)).status).toBe(200);
-    await until(async () => (await said()).length === 1);
-    await sleep(300);
-    expect((await page.api("GET", queue)).body["items"]).toMatchObject([
-      { id: "q-1", state: "not_sure" },
-    ]);
+    // What waited goes by itself; the one not sure stays.
+    await until(async () => (await said("asha")).length === 1);
+    expect((await said("asha"))[0]?.id).toBe("q-2");
+    const queue = "/api/people/asha/chat/queue";
+    expect((await page.api("GET", queue)).body).toEqual({
+      items: [
+        {
+          id: "q-1",
+          origin: "person",
+          text: "Being handed over",
+          state: "not_sure",
+          held: null,
+          heldText: null,
+          holdId: null,
+          refs: [],
+        },
+      ],
+    });
     // Sent again only when asked, as a new message.
     expect((await page.api("POST", `${queue}/q-1/send`)).status).toBe(200);
-    await until(async () => (await said()).length === 2);
-    const [, again] = await said();
+    await until(async () => (await said("asha")).length === 2);
+    const [, again] = await said("asha");
     expect(again?.text).toBe("Being handed over");
     expect(again?.id).not.toBe("q-1");
 
     const ravi = "/api/people/ravi/chat";
-    // The waiting messages reorder without the one held for Retry, which
-    // the box doesn't show among them.
-    expect(
-      (await page.api("PUT", `${ravi}/queue`, { ids: ["q-r3", "q-r2"] })).body,
-    ).toMatchObject({
-      items: [{ id: "q-r" }, { id: "q-r3" }, { id: "q-r2" }],
-    });
-    for (const id of ["q-r2", "q-r3"]) {
-      await page.api("DELETE", `${ravi}/queue/${id}`);
-    }
+    await until(async () => (await said("ravi")).length === 1);
     const held = (await page.api("GET", `${ravi}/queue`)).body["items"] as {
       holdId: string;
     }[];
@@ -466,6 +432,7 @@ describe("the core", () => {
         status: "interrupted",
         endText: "Rufi closed while reading.",
       },
+      { status: "completed" },
     ]);
     // Two Retry clicks (two tabs) send it once.
     const hold = { hold: held[0]?.holdId };
@@ -476,13 +443,57 @@ describe("the core", () => {
     expect(retries.map((r) => r.status).sort((a, b) => a - b)).toEqual([
       200, 409,
     ]);
-    const sent = async () =>
-      (
-        (await page.api("GET", ravi)).body["entries"] as { kind: string }[]
-      ).filter((entry) => entry.kind === "message");
-    await until(async () => (await sent()).length === 1);
+    await until(async () => (await said("ravi")).length === 2);
     await sleep(300);
-    expect(await sent()).toHaveLength(1);
+    expect((await said("ravi")).map((entry) => entry.id)).toEqual([
+      "q-r2",
+      "q-r",
+    ]);
+  });
+
+  it("after an upgrade, sends each message that waited once and never one that may have reached the AI, also when its first start is cut short", async () => {
+    // Asha's chat as Rufi of version 19 left it, stopped: one message to
+    // go, one behind it, and one it may have given the AI.
+    const path = databasePath(home);
+    const first = new DatabaseSync(path);
+    first.exec(`${MIGRATIONS[0] ?? ""}; PRAGMA user_version = 1;`);
+    first.close();
+    migrate(path, MIGRATIONS.slice(0, 19));
+    const left = new DatabaseSync(path);
+    left.exec(`
+      INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
+      INSERT INTO chats (id, person_id, paused, created_at) VALUES ('c-asha', 'asha', 'stopped', '2026-10-04T09:00:00Z');
+      INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, sent_as, created_at, updated_at) VALUES
+        ('q-handed', 'asha', 'c-asha', 'person', 'Handed over', 1, 'handing_over', 'q-handed', '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
+        ('q-first', 'asha', 'c-asha', 'person', 'hang', 2, 'waiting', NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
+        ('q-second', 'asha', 'c-asha', 'person', 'Second', 3, 'waiting', NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');`);
+    left.close();
+    const said = async (page: Awaited<ReturnType<typeof session>>) =>
+      (
+        (await page.api("GET", "/api/people/asha/chat")).body["entries"] as {
+          id: string;
+          kind: string;
+          text: string;
+        }[]
+      ).filter((entry) => entry.kind === "message" || entry.kind === "reply");
+    // The first goes and runs on; Rufi closes before the second goes.
+    let page = await session(await start());
+    await until(async () => (await said(page)).length === 1);
+    await stop();
+    page = await session(await start());
+    await until(async () =>
+      (await said(page)).some((entry) => entry.text === "ok:Second"),
+    );
+    await sleep(300);
+    // Each message once; the first one's reply was cut with its start.
+    expect(
+      (await said(page)).map((entry) =>
+        entry.kind === "message" ? entry.id : entry.text,
+      ),
+    ).toEqual(["q-first", "q-second", "ok:Second"]);
+    expect(
+      (await page.api("GET", "/api/people/asha/chat/queue")).body["items"],
+    ).toMatchObject([{ id: "q-handed", state: "not_sure" }]);
   });
 
   it("marks replies cut off by a crash as interrupted when it starts", async () => {
@@ -530,23 +541,12 @@ describe("the core", () => {
   );
 
   it("closes every part when it stops, even when one of them fails", async () => {
-    let agent: AgentRuntime | undefined;
+    const [adapter] = scripted({});
+    if (!adapter) throw new Error("no adapter");
     const core = await start({
-      agent: (host) => {
-        agent = codexRuntime({
-          home,
-          ...agentSetup(home),
-          command: { file: process.execPath, args: [FAKE] },
-          env: { PATH: process.env["PATH"] ?? "", FAKE_CODEX: "{}" },
-          token: () => Promise.resolve("token"),
-          version: "0.0.0",
-          host,
-        });
-        return {
-          ...agent,
-          close: () => Promise.reject(new Error("close failed")),
-        };
-      },
+      adapters: [
+        { ...adapter, close: () => Promise.reject(new Error("close failed")) },
+      ],
     });
     const port = core.port;
     // The failure is reported; every other part is closed all the same.
@@ -554,7 +554,7 @@ describe("the core", () => {
     await expect(call(port, "GET", "/api/people")).rejects.toThrow();
     const release = await holdRufiLock(home, () => undefined);
     await release();
-    await agent?.close();
+    await adapter.close();
   });
 });
 
@@ -699,7 +699,7 @@ describe("the local API", () => {
            SELECT 'old-step', person_id, chat_id, 9999, turn_id, 'activity', 'Ran a command', 'command', 'ls', 'done', 1, created_at, created_at
            FROM transcript_entries WHERE id = ?`,
         )
-        .run(command?.id ?? "");
+        .run(message?.id ?? "");
     } finally {
       store.close();
     }
@@ -956,74 +956,9 @@ describe("the local API", () => {
     );
   });
 
-  it(
-    "a Stop while a send goes into the reply keeps it out, and the chat stays stopped",
-    { timeout: 15_000 },
-    async () => {
-      const core = await start({
-        agent: scripted({ slow: ["turn/steer"], slowMs: 600 }),
-      });
-      const page = await session(core);
-      const c = await chat(page);
-      await page.say(c.path, "hang");
-      await until(async () =>
-        (
-          (await page.api("GET", c.path)).body["turns"] as { status: string }[]
-        ).some((turn) => turn.status === "running"),
-      );
-      await page.api("PUT", c.draft, { text: "A fictional follow-up" });
-      const sending = page.say(c.path, "A fictional follow-up");
-      await sleep(200);
-      expect((await page.api("POST", `${c.path}/stop`)).status).toBe(200);
-      expect(await sending).toMatchObject({
-        status: 409,
-        body: { error: "Stopped." },
-      });
-      await sleep(500);
-      const queue = (await page.api("GET", `${c.path}/queue`)).body;
-      expect(queue).toMatchObject({ paused: "stopped", items: [] });
-      expect(
-        (await page.api("GET", c.path)).body["turns"] as { status: string }[],
-      ).toMatchObject([{ status: "interrupted" }]);
-      expect((await page.api("GET", c.draft)).body["text"]).toBe(
-        "A fictional follow-up",
-      );
-
-      // After a restart, a send that waits for the reply's history is kept
-      // out by a Stop meanwhile too.
-      await stop();
-      const again = await session(
-        await start({
-          agent: scripted({ slow: ["thread/turns/list"], slowMs: 4_000 }),
-        }),
-      );
-      await again.say(c.path, "hang");
-      // Its turn is saved only after the history, so no screen shows it
-      // running yet: wait well inside the history's 4 s.
-      await sleep(1_500);
-      const waiting = again.say(c.path, "A fictional follow-up");
-      await sleep(100);
-      expect((await again.api("POST", `${c.path}/stop`)).status).toBe(200);
-      expect(await waiting).toMatchObject({
-        status: 409,
-        body: { error: "Stopped." },
-      });
-      await sleep(500);
-      expect((await again.api("GET", `${c.path}/queue`)).body).toMatchObject({
-        paused: "stopped",
-        items: [],
-      });
-      expect(
-        (
-          (await again.api("GET", c.path)).body["turns"] as { status: string }[]
-        ).map((turn) => turn.status),
-      ).not.toContain("completed");
-    },
-  );
-
   it("refuses one person's send of an id another person's send is using", async () => {
     const core = await start({
-      agent: scripted({ slow: ["turn/steer"], slowMs: 600 }),
+      adapters: scripted({ slow: ["turn/steer"], slowMs: 600 }),
     });
     const page = await session(core);
     const a = await chat(page);
@@ -1054,7 +989,6 @@ describe("the local API", () => {
       status: 409,
       body: { error: "That message id is already used." },
     });
-    await sleep(300);
     const lines = async (path: string) =>
       (
         (await page.api("GET", path)).body["entries"] as {
@@ -1062,6 +996,8 @@ describe("the local API", () => {
           text: string;
         }[]
       ).filter((entry) => entry.id === id);
+    // It goes into A's reply once Codex takes the steer.
+    await until(async () => (await lines(a.path)).length > 0);
     expect(await lines(a.path)).toMatchObject([
       { text: "Fictional A private text" },
     ]);
@@ -1071,7 +1007,7 @@ describe("the local API", () => {
   it("holds a message the AI couldn't take, with the reason, to send again or remove", async () => {
     // Codex never starts the chat's thread: the message never left.
     const core = await start({
-      agent: scripted({ hang: ["thread/start"] }, { requestMs: 300 }),
+      adapters: scripted({ hang: ["thread/start"] }, { requestMs: 300 }),
     });
     const page = await session(core);
     const c = await chat(page);
@@ -1082,7 +1018,7 @@ describe("the local API", () => {
           (await page.api("GET", `${c.path}/queue`)).body["items"] as {
             held: string | null;
           }[]
-        )[0]?.held === "failed",
+        )[0]?.held === "open_failed",
     );
     expect(
       (await page.api("GET", `${c.path}/queue`)).body["items"],
@@ -1095,9 +1031,9 @@ describe("the local API", () => {
     ]);
   });
 
-  it("marks a hand-over the AI didn't answer as not sure, and pauses the chat", async () => {
+  it("marks a hand-over the AI didn't answer as not sure", async () => {
     const core = await start({
-      agent: scripted({ hang: ["turn/start"] }, { requestMs: 300 }),
+      adapters: scripted({ hang: ["turn/start"] }, { requestMs: 300 }),
     });
     const page = await session(core);
     const c = await chat(page);
@@ -1110,14 +1046,11 @@ describe("the local API", () => {
           }[]
         )[0]?.state === "not_sure",
     );
-    expect((await page.api("GET", `${c.path}/queue`)).body["paused"]).toBe(
-      "stopped",
-    );
   });
 
   it("makes the person's chat with them, without the AI; its first message chooses the model, unless one was chosen", async () => {
     // Codex doesn't answer the list of models: the chat doesn't need it.
-    let core = await start({ agent: scripted({ hang: ["model/list"] }) });
+    let core = await start({ adapters: scripted({ hang: ["model/list"] }) });
     let page = await session(core);
     const c = await chat(page);
     expect(await page.api("GET", c.path)).toMatchObject({
@@ -1226,7 +1159,7 @@ describe("the local API", () => {
     expect(await readFile(join(home, "models.json"), "utf8")).toBe(old);
   });
 
-  it("shows the queue and lets the person act on what waits", async () => {
+  it("shows the queue and lets the person act on what waits; after a Stop, the next waiting message goes", async () => {
     const core = await start();
     const page = await session(core);
     const c = await chat(page);
@@ -1253,18 +1186,33 @@ describe("the local API", () => {
       (await page.api("PUT", `${c.path}/model`, { model: "gpt-6.1-sol" }))
         .status,
     ).toBe(409);
-    expect((await page.api("POST", `${c.path}/stop`)).status).toBe(200);
-    expect((await page.api("GET", queue)).body["paused"]).toBe("stopped");
     expect((await page.api("DELETE", `${queue}/${b?.id ?? ""}`)).status).toBe(
       200,
     );
     expect(
       (await page.api("DELETE", `${queue}/${b?.id ?? ""}`)).body["error"],
     ).toBe("That message isn't waiting any more.");
-    expect(
-      (await page.api("POST", `${queue}/${cc?.id ?? ""}/send`)).status,
-    ).toBe(200);
+    // Stop ends the reply, and what waits goes on by itself.
+    expect((await page.api("POST", `${c.path}/stop`)).status).toBe(200);
     await until(async () => (await items()).length === 0);
+    await until(async () =>
+      (
+        (await page.api("GET", c.path)).body["entries"] as {
+          kind: string;
+          text: string;
+        }[]
+      ).some((entry) => entry.kind === "reply" && entry.text === "ok:C"),
+    );
+    expect(
+      (
+        (await page.api("GET", c.path)).body["entries"] as {
+          kind: string;
+          text: string;
+        }[]
+      )
+        .filter((entry) => entry.kind === "message")
+        .map((entry) => entry.text),
+    ).toEqual(["C"]);
   });
 
   it("streams a snapshot, then every change after it, with no gap", async () => {
@@ -1359,8 +1307,8 @@ describe("the local API", () => {
     const log = join(userHome, "fake.jsonl");
     // Started from the data folder in use: after the move, the moved one,
     // whose AI folder (codex/) is new.
-    const agent: CoreOptions["agent"] = (host) =>
-      codexRuntime({
+    const adapters = () => [
+      codexAdapter({
         home,
         ...agentSetup(home),
         command: { file: process.execPath, args: [FAKE] },
@@ -1371,14 +1319,14 @@ describe("the local API", () => {
         },
         token: () => Promise.resolve("token"),
         version: "0.0.0",
-        host,
-      });
+      }),
+    ];
     const turns = async (page: Awaited<ReturnType<typeof session>>) =>
       (await page.api("GET", c.path)).body["turns"] as {
         status: string;
         newThread: boolean;
       }[];
-    let page = await session(await start({ agent }));
+    let page = await session(await start({ adapters: adapters() }));
     const c = await chat(page);
     await page.say(c.path, "Is my TSH still high?");
     await until(async () => (await turns(page))[0]?.status === "completed");
@@ -1390,7 +1338,7 @@ describe("the local API", () => {
     );
     home = (await findDataFolder({ env: {}, userHome })).path;
     expect(home).toBe(moved);
-    page = await session(await start({ agent }));
+    page = await session(await start({ adapters: adapters() }));
     await page.say(c.path, "And my iron?");
     await until(async () => (await turns(page))[1]?.status === "completed");
 
@@ -2565,7 +2513,7 @@ describe("backups and export over the API", () => {
       // it knew, so it is told of two earlier turns to start at a new id.
       const restored = await session(
         await start({
-          agent: scripted({ threads: { earlier: { history: ["a", "b"] } } }),
+          adapters: scripted({ threads: { earlier: { history: ["a", "b"] } } }),
         }),
       );
 
@@ -2598,7 +2546,6 @@ describe("backups and export over the API", () => {
             }[]
           ).at(2)?.status === "completed",
       );
-      expect(logged).toContain("chat.resume_failed");
       expect(
         (await restored.api("GET", `${c.path}/queue`)).body["items"],
       ).toMatchObject([{ held: "restored" }]);

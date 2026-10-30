@@ -1044,6 +1044,7 @@ describe("Stop", () => {
       status: "failed",
       reason: "provider_failed",
       text: "Codex stopped unexpectedly.",
+      died: true,
     });
     expect(programs.filter(isRunning)).toEqual([]);
   });

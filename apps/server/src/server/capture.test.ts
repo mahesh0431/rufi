@@ -10,6 +10,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { openAgentStore } from "@rufi/agents/store";
 import { v7 as uuid } from "uuid";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -18,8 +19,9 @@ import {
   type ModelRequest,
   type Step,
 } from "../../tests/fake-model.ts";
+import { rufiAiFor } from "../../tests/rufi-ai.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
-import { codexRuntime } from "../agent/codex/codex.ts";
+import { codexAdapter, instructionsNote } from "../agent/codex/adapter.ts";
 import { chatQueue } from "../core/chat/queue.ts";
 import { DEFAULT_ALLOWLIST } from "../core/chat/models.ts";
 import {
@@ -32,14 +34,11 @@ import {
   openWritable,
   type Store,
 } from "../core/store/database.ts";
-import {
-  coreInstructions,
-  rulesNote,
-  rulesVersion,
-} from "../core/chat/instructions.ts";
+import { coreInstructions, rulesVersion } from "../core/chat/instructions.ts";
 import { SKILLS } from "../core/skills/skills.ts";
 import type { ToolSpec } from "../core/tools/registry.ts";
-import { chatCaller, forAgent } from "../core/tools/tools.ts";
+import { rufiCaller, forAgent } from "../core/tools/tools.ts";
+import { agentsPath } from "./agents.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 import { agentSetup, aiSandbox } from "./core.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
@@ -49,6 +48,7 @@ let store: Store;
 let transcripts: Transcripts;
 let model: FakeModel | undefined;
 let chat: Chat | undefined;
+let ai: Awaited<ReturnType<typeof rufiAiFor>> | undefined;
 let served: { port: number; close: () => Promise<void> } | undefined;
 /** What reached Rufi's MCP server over HTTP. */
 let seen: { auth: string | null; origin: string | null; method: string }[];
@@ -71,6 +71,8 @@ beforeEach(async () => {
 afterEach(async () => {
   await chat?.close();
   chat = undefined;
+  await ai?.close();
+  ai = undefined;
   await served?.close();
   served = undefined;
   await model?.close();
@@ -90,6 +92,7 @@ async function start(
   options: { refuse?: boolean; update?: string; model?: string } = {},
 ) {
   await chat?.close();
+  await ai?.close();
   await served?.close();
   await model?.close();
   model = await fakeModel({ script });
@@ -127,22 +130,27 @@ async function start(
     file: await codexBinary(),
     args: ["-c", `model_providers.openai_chatgpt_plan.base_url="${model.url}"`],
   };
+  ai = await rufiAiFor({
+    home,
+    record: store,
+    transcripts,
+    adapter: codexAdapter({
+      home,
+      ...agentSetup(home),
+      command,
+      env: { PATH: process.env["PATH"] ?? "" },
+      token: () => Promise.resolve("not-a-real-token"),
+      version: "0.0.0",
+      deadlines: { requestMs: 20_000, turnMs: 60_000 },
+      log,
+    }),
+    tools: tools.specs.map((spec) => spec.name),
+  });
   chat = openChat({
     transcripts,
     queue: chatQueue(store),
     signedIn: () => Promise.resolve(true),
-    agent: (host) =>
-      codexRuntime({
-        home,
-        ...agentSetup(home),
-        command,
-        env: { PATH: process.env["PATH"] ?? "" },
-        token: () => Promise.resolve("not-a-real-token"),
-        version: "0.0.0",
-        deadlines: { requestMs: 20_000, turnMs: 60_000 },
-        host,
-        log,
-      }),
+    agent: ai.agent,
     allowlist: options.model ? [options.model] : DEFAULT_ALLOWLIST,
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
     rules: (region) => ({
@@ -151,10 +159,13 @@ async function start(
     }),
     tools: {
       specs: tools.specs,
-      caller: chatCaller(reader, transcripts, log),
+      caller: rufiCaller(reader, transcripts, log),
     },
     log,
   });
+  await ai.recover();
+  await chat.carryAll();
+  await ai.dispatch();
   return { tools, chat };
 }
 
@@ -275,11 +286,19 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
       await until(() => turns().some((t) => t["status"] !== "running"));
       expect(printed(1)).toBe("[false,false]");
 
-      const lines = store.db
-        .prepare(
-          "SELECT agent_item_id, text, status FROM transcript_entries WHERE kind = 'activity' ORDER BY seq",
-        )
-        .all() as { agent_item_id: string; text: string; status: string }[];
+      const row = await transcripts.chat("asha");
+      if (!row) throw new Error("no chat");
+      const page = await transcripts.page(row);
+      const lines = await Promise.all(
+        page.entries
+          .filter((entry) => entry.kind === "activity")
+          .map(async (entry) => ({
+            ...entry,
+            details: (await transcripts.details(row, entry.id))?.details as
+              | { id?: string }
+              | undefined,
+          })),
+      );
       const calls = store.db
         .prepare(
           "SELECT call_id, tool, ok, turn_id FROM tool_calls ORDER BY started_at",
@@ -297,19 +316,18 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
         ["get_overview", 1, turn?.id],
         ["save_changes", 1, turn?.id],
       ]);
-      // Codex's call id is its item's id: the line and the call are one.
+      // Rufi's id for a call is <agent>/<conversation>/<Codex's call id>,
+      // and Codex's call id is its item's id: the line and the call are one.
+      const item = (callId = "") => callId.split("/").slice(2).join("/");
       for (const call of calls) {
         expect(
-          lines.find((line) => line.agent_item_id === call.call_id),
+          lines.find((line) => line.details?.id === item(call.call_id)),
         ).toMatchObject({ status: "done" });
       }
       expect(
-        lines.find((line) => line.agent_item_id === calls[0]?.call_id)?.text,
+        lines.find((line) => line.details?.id === item(calls[0]?.call_id))
+          ?.text,
       ).toBe("rufi.get_overview");
-
-      const row = await transcripts.chat("asha");
-      if (!row) throw new Error("no chat");
-      const page = await transcripts.page(row);
       expect(
         page.entries
           .filter((entry) => entry.kind === "receipt")
@@ -328,12 +346,12 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
       if (!row) throw new Error("no chat");
       const queue = chatQueue(store);
       await until(
-        async () => (await queue.list(row)).items[0]?.held === "failed",
+        async () => (await queue.list(row)).items[0]?.held === "open_failed",
       );
       expect((await queue.list(row)).items).toMatchObject([
         {
           text: "Hello",
-          held: "failed",
+          held: "open_failed",
           heldText:
             "Rufi's tools didn't start for the AI, so it can't reply now. Try again; if it keeps happening, restart Rufi.",
         },
@@ -468,7 +486,9 @@ describe("What the AI is given, on the pinned Codex", () => {
 
 /** The developer messages that say Rufi's rules changed, whole. */
 const notes = (request: ModelRequest | undefined) =>
-  developer(request).filter((text) => text.startsWith("Rufi's rules changed."));
+  developer(request).filter((text) =>
+    text.startsWith("Your instructions, given again"),
+  );
 
 describe("The context a chat's thread used, on the pinned Codex", () => {
   it(
@@ -548,7 +568,7 @@ describe("How a change of Rufi's rules reaches the AI, on the pinned Codex", () 
       // The thread is open: Rufi lets it go, picks it up with the new rules
       // and adds the note; the next request has it, whole.
       await make();
-      const note = rulesNote(coreInstructions(region));
+      const note = instructionsNote(coreInstructions(region));
       model?.script.push({ text: "Two." });
       await say("second");
       await replies(2);
@@ -556,12 +576,13 @@ describe("How a change of Rufi's rules reaches the AI, on the pinned Codex", () 
       expect(notes(answering().at(-1))).toEqual([note]);
       expect(userWords(answering().at(-1))).toEqual(["first", "second"]);
 
-      // Rufi starts again: the thread is picked up cold and keeps the note.
+      // Rufi starts again: the thread is picked up cold, keeps the note and
+      // is given its rules again.
       await start([{ text: "Three.", tokens: OVER_LIMIT }]);
       await say("third");
       await replies(3);
       expect(model?.requests.length).toBe(answering().length);
-      expect(notes(answering().at(-1))).toEqual([note]);
+      expect(notes(answering().at(-1))).toEqual([note, note]);
 
       // The answer was over the limit: Codex compacts, and the request after
       // it starts from the new rules.
@@ -605,7 +626,7 @@ describe("How a change of Rufi's rules reaches the AI, on the pinned Codex", () 
       await opened.chat.queue.recover(row, held.id, held.holdId, "retry");
       await replies(2);
       expect(notes(answering().at(-1))).toEqual([
-        rulesNote(coreInstructions("IN")),
+        instructionsNote(coreInstructions("IN")),
       ]);
       expect(threadsUsed()).toBe(1);
     },
@@ -653,25 +674,25 @@ describe("What a person sees of the AI's steps, on the pinned Codex", () => {
       ]);
       await say("Hi.");
       await replies(1);
-      const lines = store.db
-        .prepare(
-          "SELECT activity, text, detail, status, details FROM transcript_entries WHERE kind = 'activity' ORDER BY seq",
-        )
-        .all() as {
-        activity: string;
-        text: string;
-        detail: string | null;
-        status: string;
-        details: string | null;
-      }[];
+      const row = await transcripts.chat("asha");
+      if (!row) throw new Error("No fictional chat.");
+      const page = await transcripts.page(row);
+      // As the screens get them; everything else when a line opens.
+      const lines = await Promise.all(
+        page.entries
+          .filter((entry) => entry.kind === "activity")
+          .map(async (entry) => ({
+            ...entry,
+            details: (await transcripts.details(row, entry.id))?.details as
+              | { command: string; exitCode: number }
+              | undefined,
+          })),
+      );
       const commandLines = lines.filter((line) => line.activity === "command");
       expect(commandLines).toHaveLength(3);
       for (const line of commandLines) {
         // The command and exit code as Codex gave them, nothing cut.
-        const item = JSON.parse(line.details ?? "{}") as {
-          command: string;
-          exitCode: number;
-        };
+        const item = line.details ?? { command: "", exitCode: -1 };
         expect(line.text).toBe(item.command);
         expect(line.detail).toBe(`exit ${String(item.exitCode)}`);
       }
@@ -690,9 +711,6 @@ describe("What a person sees of the AI's steps, on the pinned Codex", () => {
         ["note", "I'll read the results skill first.", null, "done"],
         ["tool", "rufi.get_records", '{"kind":"result"}', "done"],
       ]);
-      const row = await transcripts.chat("asha");
-      if (!row) throw new Error("No fictional chat.");
-      const page = await transcripts.page(row);
       expect(
         page.entries
           .filter((entry) => entry.kind === "reply")
@@ -717,6 +735,8 @@ describe.runIf(process.platform === "darwin")(
           await rm(home, { recursive: true, force: true });
           await makeRecord(root);
         }
+        // The agent database, open as the core keeps it.
+        const agentStore = openAgentStore(agentsPath(home));
         // Outside both the AI's folder and all temp roots. Prove that a
         // refusal isn't just the Mac's ordinary file permissions.
         const outsideRoot = await mkdtemp("/Users/Shared/rufi-canary-");
@@ -725,19 +745,21 @@ describe.runIf(process.platform === "darwin")(
           await writeFile(outside, "the test process can write here");
           await rm(outside);
           const { folder, unreadable } = aiSandbox(home);
-          // Each way in, there to be read (the database is in WAL mode).
+          // Each way in, there to be read (the databases are in WAL mode).
           await mkdir(join(home, "backups"), { recursive: true });
           await writeFile(join(home, "backups", "copy.sqlite"), "a copy");
           await writeFile(join(home, "core.json"), '{"launcher":"secret"}');
           expect(existsSync(`${databasePath(home)}-wal`)).toBe(true);
+          expect(existsSync(`${agentsPath(home)}-wal`)).toBe(true);
           const skill = join(home, "codex", "skills", "analysis", "SKILL.md");
           const q = (path: string) => JSON.stringify(path);
-          // Each one that is there now; a journal isn't, in WAL mode.
+          // Each one that is there now, and the backup's copy; neither
+          // database has a journal, in WAL mode.
           const journal = `${databasePath(home)}-journal`;
           const denied = [...unreadable, join(home, "backups", "copy.sqlite")]
             .filter((path) => existsSync(path))
             .map((path) => `cat ${q(path)}`);
-          expect(denied).toHaveLength(unreadable.length);
+          expect(denied).toHaveLength(unreadable.length - 1);
           const others = (url: string) => ({
             outside: `echo no > ${q(outside)}`,
             journal: `echo no > ${q(journal)}`,
@@ -811,6 +833,7 @@ describe.runIf(process.platform === "darwin")(
           await run(4, "After reloading the rules.");
           expect(threadsUsed()).toBe(1);
         } finally {
+          agentStore.close();
           await rm(outsideRoot, { recursive: true, force: true });
         }
       },

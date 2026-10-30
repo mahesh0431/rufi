@@ -21,7 +21,7 @@ import { readBrief } from "../briefs/briefs.ts";
 import { transcripts, type ChatRow } from "../chat/transcript.ts";
 import { claimNotices } from "../record/notices.ts";
 import { recentSaves } from "../record/read.ts";
-import { chatCaller } from "../tools/tools.ts";
+import { rufiCaller } from "../tools/tools.ts";
 import { backupsPath, makeBackup, upgradeBackupsPath } from "./backup.ts";
 import {
   databasePath,
@@ -32,6 +32,7 @@ import {
 import { markerPath, openRecord } from "./install.ts";
 import { MIGRATIONS, inspect, migrate } from "./migrations.ts";
 import { restore } from "./restore.ts";
+import { turnScope } from "../../../tests/scope.ts";
 
 const VERSION_1 = [
   await readFile(
@@ -149,11 +150,11 @@ async function ravisSave(store: Store, at: string): Promise<void> {
   });
   const reader = openReadOnly(databasePath(home)) as Store;
   try {
-    const answer = await chatCaller(reader, chats, () => undefined)(
-      chat,
-      "t-after",
-      "person",
-    )(
+    const answer = await rufiCaller(
+      reader,
+      chats,
+      () => undefined,
+    )(turnScope(chat, "t-after"), "person")(
       "save_changes",
       {
         changes: [
@@ -499,7 +500,8 @@ it("upgrades a record of version 5 so a generated picture can be a line of the c
 
   (await openRecord(home)).close();
 
-  expect(lines()).toEqual(before);
+  // Kept as they were; no reply has questions of its own yet (0019).
+  expect(lines()).toEqual(before.map((line) => ({ ...line, questions: null })));
   const db = new DatabaseSync(path);
   try {
     const turn = db
@@ -547,7 +549,8 @@ it("upgrades a record of version 6 so the AI's notes can be steps of its Activit
 
   (await openRecord(home)).close();
 
-  expect(lines()).toEqual(before);
+  // Kept as they were; no reply has questions of its own yet (0019).
+  expect(lines()).toEqual(before.map((line) => ({ ...line, questions: null })));
   const db = new DatabaseSync(path);
   try {
     const turn = db
@@ -665,7 +668,7 @@ it("upgrades a record of version 9 so a chat keeps the context its thread used a
       })),
     );
     expect(after.queue).toEqual(
-      before.queue.map((row) => ({ ...row, hold_id: null })),
+      before.queue.map((row) => ({ ...row, hold_id: null, note: null })),
     );
     // No meter until the thread reports again.
     expect((await transcripts(store).chat("asha"))?.context).toBeNull();
@@ -1015,11 +1018,11 @@ it("upgrades a record of version 14 to Visits: the saves, follow-ups and briefs 
     });
     const reader = openReadOnly(databasePath(home)) as Store;
     try {
-      const answer = await chatCaller(reader, chats, () => undefined)(
-        chat,
-        "t-undo",
-        "person",
-      )(
+      const answer = await rufiCaller(
+        reader,
+        chats,
+        () => undefined,
+      )(turnScope(chat, "t-undo"), "person")(
         "save_changes",
         {
           changes: (latest?.changes ?? []).map((change) => ({
@@ -1103,11 +1106,15 @@ it("upgrades a record of version 15 so files start on Send: every document sent 
     before.documents.map((row) => ({ ...row, sent_at: row["added_at"] })),
   );
   expect(after.turns).toEqual(before.turns);
-  expect(after.entries).toEqual(before.entries);
+  expect(after.entries).toEqual(
+    before.entries.map((line) => ({ ...line, questions: null })),
+  );
   expect(after.queue).toEqual(
-    before.queue.map((row) =>
-      row["id"] === "queue-sort" ? { ...row, state: "removed" } : row,
-    ),
+    before.queue.map((row) => ({
+      ...row,
+      ...(row["id"] === "queue-sort" && { state: "removed" }),
+      note: null,
+    })),
   );
   const db = new DatabaseSync(path, { readOnly: true });
   try {
@@ -1180,6 +1187,88 @@ it.each([
   },
 );
 
+it("upgrades a record of version 19 so its waiting messages go to the agent queue: every message keeps its words, chips and id; a chat's pause ends, and a hand-over that may have reached the AI is not sure; cut short, the upgrade changes nothing and runs again", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 19));
+  // Asha's chat as Rufi of version 19 left it, stopped: a message of each
+  // kind Rufi kept, and a Rufi note waiting to ride with her next message.
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      UPDATE chats SET paused = 'stopped' WHERE person_id = 'asha';
+      INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, details, revision, created_at, updated_at)
+        SELECT 'line-1', person_id, id, 1000, 'event', 'Deleted report.pdf', '{"kind":"test"}', 0, '2026-10-29T09:00:00Z', '2026-10-29T09:00:00Z'
+        FROM chats WHERE person_id = 'asha';
+      INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at)
+        SELECT 't-read', person_id, id, NULL, NULL, 'gpt-6.1-sol', 'failed', '2026-10-29T09:00:00Z'
+        FROM chats WHERE person_id = 'asha';
+      INSERT INTO chat_queue (id, person_id, chat_id, origin, text, refs, event_id, position, state, held, held_text, hold_id, sent_as, turn_id, created_at, updated_at)
+        SELECT q.id, c.person_id, c.id, q.origin, q.text, q.refs, q.event_id, q.position, q.state, q.held, q.held_text, q.hold_id, q.sent_as, q.turn_id, '2026-10-29T09:00:00Z', '2026-10-29T09:00:00Z'
+        FROM chats c, (
+          SELECT 'waiting' AS id, 'person' AS origin, 'Is my TSH high?' AS text, '[{"ref":{"type":"document","id":"doc-asha-aug"},"label":"report.pdf","version":1}]' AS refs, NULL AS event_id, 1 AS position, 'waiting' AS state, NULL AS held, NULL AS held_text, NULL AS hold_id, NULL AS sent_as, NULL AS turn_id
+          UNION ALL SELECT 'riding', 'rufi', 'Rufi deleted report.pdf.', '[]', 'line-1', 2, 'waiting', 'paused', NULL, NULL, NULL, NULL
+          UNION ALL SELECT 'restored', 'person', 'From the backup', '[]', NULL, 3, 'waiting', 'restored', NULL, NULL, NULL, NULL
+          UNION ALL SELECT 'signed-out', 'person', 'While signed out', '[]', NULL, 4, 'waiting', 'signed_out', NULL, NULL, NULL, NULL
+          UNION ALL SELECT 'failed', 'person', 'Refused', '[]', NULL, 5, 'waiting', 'failed', 'The AI refused it.', NULL, NULL, NULL
+          UNION ALL SELECT 'open-failed', 'person', 'No thread', '[]', NULL, 6, 'waiting', 'open_failed', 'Codex refused thread/start.', 'hold-1', NULL, NULL
+          UNION ALL SELECT 'reply-ended', 'person', 'Read this', '[]', NULL, 7, 'waiting', 'reply_ended', 'Rufi closed while reading.', 'hold-2', NULL, 't-read'
+          UNION ALL SELECT 'reading', 'person', 'Reading', '[]', NULL, 8, 'handing_over', NULL, NULL, NULL, NULL, NULL
+          UNION ALL SELECT 'handed', 'person', 'Handed over', '[]', NULL, 9, 'handing_over', NULL, NULL, NULL, 'handed', NULL
+          UNION ALL SELECT 'not-sure', 'person', 'Not sure', '[]', NULL, 10, 'not_sure', NULL, NULL, NULL, 'not-sure', NULL
+          UNION ALL SELECT 'sent', 'person', 'Sent', '[]', NULL, 11, 'sent', NULL, NULL, NULL, 'sent', NULL
+          UNION ALL SELECT 'removed', 'person', 'Removed', '[]', NULL, 12, 'removed', NULL, NULL, NULL, NULL, NULL
+        ) q
+        WHERE c.person_id = 'asha';
+    `);
+  } finally {
+    old.close();
+  }
+  const stored = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return {
+        paused: db
+          .prepare("SELECT paused FROM chats WHERE person_id = 'asha'")
+          .all(),
+        queue: db
+          .prepare("SELECT * FROM chat_queue ORDER BY position")
+          .all()
+          .map((row) => ({ ...row })),
+      };
+    } finally {
+      db.close();
+    }
+  };
+  const before = stored();
+
+  // Cut short as it maps the rows: nothing of it stays.
+  const cut = new DatabaseSync(path);
+  cut.exec(`
+    CREATE TRIGGER fictional_cut BEFORE UPDATE OF state ON chat_queue
+    BEGIN SELECT RAISE(ABORT, 'A fictional cut.'); END;
+  `);
+  cut.close();
+  await expect(openRecord(home)).rejects.toThrow();
+  expect(stored()).toEqual(before);
+  const again = new DatabaseSync(path);
+  again.exec("DROP TRIGGER fictional_cut");
+  again.close();
+
+  const store = await openRecord(home);
+  store.close();
+  const after = stored();
+  expect(after.paused).toEqual([{ paused: null }]);
+  // Each row has room for Rufi's note on what its part read: none yet.
+  expect(after.queue).toEqual(
+    before.queue.map((row) => ({
+      ...row,
+      ...(row["id"] === "riding" && { held: null }),
+      ...(row["id"] === "handed" && { state: "not_sure" }),
+      note: null,
+    })),
+  );
+});
+
 it("opens a record the migrations made as this Rufi's own (schema.sql is what they make)", async () => {
   const path = databasePath(join(root, "migrated"));
   await mkdir(join(root, "migrated"));
@@ -1189,4 +1278,45 @@ it("opens a record the migrations made as this Rufi's own (schema.sql is what th
   db.close();
 
   expect(() => openReadOnly(path)?.close()).not.toThrow();
+});
+
+it("upgrades a record of version 20 so every agent's calls can be kept: each call kept before stays as it was, with no agent", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 20));
+  // Two calls of a reply in Asha's chat, as Rufi of version 20 kept them.
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at)
+        SELECT 't-calls', person_id, id, 'codex-turn', 'codex-thread', 'gpt-6.1-sol', 'completed', '2026-10-29T09:00:00Z'
+        FROM chats WHERE person_id = 'asha';
+      INSERT INTO tool_calls (id, person_id, chat_id, turn_id, call_id, tool, input, answer, ok, started_at, ended_at)
+        SELECT k.id, c.person_id, c.id, 't-calls', k.call_id, k.tool, k.input, k.answer, k.ok, '2026-10-29T09:00:01Z', '2026-10-29T09:00:02Z'
+        FROM chats c, (
+          SELECT 'call-1' AS id, 'call_overview' AS call_id, 'get_overview' AS tool, '{}' AS input, '{"ok":true,"result":{}}' AS answer, 1 AS ok
+          UNION ALL SELECT 'call-2', 'call_save', 'save_changes', '{"changes":[]}', '{"ok":false,"error":"Nothing to save."}', 0
+        ) k
+        WHERE c.person_id = 'asha';
+    `);
+  } finally {
+    old.close();
+  }
+  const calls = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return db
+        .prepare("SELECT * FROM tool_calls ORDER BY id")
+        .all()
+        .map((row) => ({ ...row }));
+    } finally {
+      db.close();
+    }
+  };
+  const before = calls();
+
+  const store = await openRecord(home);
+  store.close();
+  expect(calls()).toEqual(
+    before.map((row) => ({ ...row, agent_id: null, agent_turn_id: null })),
+  );
 });

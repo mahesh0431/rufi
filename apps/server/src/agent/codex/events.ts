@@ -234,3 +234,27 @@ function resetOf(limits: RateLimitSnapshot | undefined): string | undefined {
   }
   return undefined;
 }
+
+const record = (value: unknown): Record<string, unknown> =>
+  typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : {};
+const text = (value: unknown) =>
+  typeof value === "string" && value !== "" ? value : undefined;
+
+/**
+ * What Codex says about a call to Rufi's tools in its `_meta` (0.159.3): its
+ * id, its thread, and its turn in the turn metadata.
+ */
+export function callOf(meta: unknown): {
+  callId: string | undefined;
+  threadId: string | undefined;
+  turnId: string | undefined;
+} {
+  const fields = record(meta);
+  return {
+    callId: text(fields["callId"]),
+    threadId: text(fields["threadId"]),
+    turnId: text(record(fields["x-codex-turn-metadata"])["turn_id"]),
+  };
+}

@@ -242,6 +242,13 @@ export function fakeProvider(
             text: "The conversation is closed.",
           });
         }
+        if (kept.get(ref) !== mine) {
+          return Promise.resolve({
+            status: "not_delivered",
+            reason: "missing",
+            text: "The fake provider has no such conversation.",
+          });
+        }
         if (open.running) {
           return Promise.resolve({
             status: "not_delivered",

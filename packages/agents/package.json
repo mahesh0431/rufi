@@ -5,6 +5,9 @@
   "type": "module",
   "exports": {
     "./provider": "./src/provider.ts",
-    "./contract": "./tests/contract.ts"
+    "./contract": "./tests/contract.ts",
+    "./fake": "./tests/fake-provider.ts",
+    "./store": "./src/store.ts",
+    "./agents": "./src/agents.ts"
   }
 }

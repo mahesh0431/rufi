@@ -101,13 +101,25 @@ describe("the chat's pages", () => {
             text: "Next",
             agentTurnId: "next",
           });
-          await transcripts.saveWithReceipt(chat, "turn-80", () =>
-            Promise.resolve({
-              id: "receipt-80",
-              receipt: "Saved: a fictional headache",
-              fresh: true,
-              changes: [],
-            }),
+          await transcripts.saveWithReceipt(
+            chat,
+            {
+              agent: "agent-1",
+              agentTurn: "agent-turn-80",
+              ref: "turn-80",
+              callId: "agent-1/1/call-80",
+              tool: "save_changes",
+              input: {},
+              startedAt: transcripts.now(),
+            },
+            () =>
+              Promise.resolve({
+                id: "receipt-80",
+                receipt: "Saved: a fictional headache",
+                fresh: true,
+                changes: [],
+              }),
+            () => ({ ok: true, text: '{"ok":true}' }),
           );
           await transcripts.endTurn(chat, "next", { status: "completed" });
         }

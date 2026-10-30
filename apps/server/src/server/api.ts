@@ -900,19 +900,17 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     if (!found) throw new HttpError(404, "Not found.");
     return c.json(found);
   });
-  // Send: into the running reply, or into the queue, and the box emptied.
-  // The same id again (a retry) finds the message it made.
+  // Send: into the queue, and the box emptied, in one step; from there it
+  // goes into the running reply or in its turn. The same id again (a retry)
+  // finds the message it made.
   app.post(`${one}/messages`, async (c) => {
     const found = await chatOf(c);
     const { id, text, refs } = await body(c, SendMessage, SEND_REFUSAL);
     if (text === "" && (refs?.length ?? 0) === 0) {
       throw new HttpError(400, SEND_REFUSAL);
     }
-    const { steered } = await acting(() => chat.send(found, id, text, refs));
-    const draft = steered
-      ? await drafts.save(found, "")
-      : await drafts.read(found);
-    return c.json({ id, draft }, 202);
+    await acting(() => chat.send(found, id, text, refs));
+    return c.json({ id, draft: await drafts.read(found) }, 202);
   });
   app.post(`${one}/stop`, async (c) => {
     const found = await chatOf(c);

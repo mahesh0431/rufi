@@ -148,11 +148,11 @@ _Avoid_: drawer, popup, sidebar
 The chat at its own address, opened with **Chat with Rufi** in the sidebar. A small window opens the chat as a page.
 
 **Transcript**:
-Rufi's own stored copy of the chat: your messages, the AI's replies, its notes and its reasoning, a receipt for each save, and one activity line for each thing the AI did, with everything that activity sent and got back. Each part is saved before it is shown. The notes, the reasoning's headings and the activity lines show in each reply's **Activity**; a cut step keeps what it had. The chat shows its latest page first, and older pages as the user scrolls up, with a line between days and quiet lines where a **new thread** started and where the chat history was **compacted**; Rufi works out these lines from the transcript when it shows it.
+Rufi's own stored copy of the chat: your messages, the AI's replies with the questions it asks, and a receipt for each save, each saved before it is shown. What the AI did for each reply (one activity line for each thing it did, with everything it sent and got back, its notes and its reasoning) is kept in the AI's working state, `agents.sqlite`, and shown with the reply; a note's or a summary's text shows as it comes and is kept once whole, or as far as it came when the reply ends. Replies from before this version keep theirs in the transcript. The notes, the reasoning's headings and the activity lines show in each reply's **Activity**; a cut step keeps what it had. The chat shows its latest page first, and older pages as the user scrolls up, with a line between days and quiet lines where a **new thread** started and where the chat history was **compacted**; Rufi works out these lines from the transcript when it shows it.
 _Avoid_: log, history
 
 **New thread**:
-A new working memory of the chat for the AI. It starts only when the AI's own copy of the chat is gone (a restore, a move of Rufi's data, its files deleted), or when the user clicks **New thread** on a message that waits because the AI's thread didn't open. The chat and the health record stay as they are; the AI gets the chat's last 10 messages, its **notes** among them but not its steps or thinking, and reads further back when it needs to. The chat shows a quiet line there: "New thread started". Another model or effort, or a change of Rufi's rules, keeps the same thread.
+A new working memory of the chat for the AI. It starts only when the AI's own copy of the chat is gone (a restore, a move of Rufi's data, its files deleted), or when the user clicks **New thread** on a message that waits because the AI's thread didn't open. The chat and the health record stay as they are; the AI gets the chat's last 10 messages and replies, without its notes, steps or thinking, and reads further back when it needs to. The chat shows a quiet line there: "New thread started". Another model or effort, or a change of Rufi's rules, keeps the same thread.
 _Avoid_: started afresh, reset, new session, new conversation
 
 **Chat history compacted**:
@@ -180,23 +180,23 @@ What an answer rests on: **How**, the AI's own words on where the answer comes f
 _Avoid_: reason, rationale, citation; "reasoning" is the AI's thinking, and a **source** is what a record rests on
 
 **Steer**:
-A message sent while the AI is replying, passed into that reply; the AI carries on with it in mind. A word of the code: on screen it is your message, as any other.
+A message sent while the AI is replying, passed into that reply; the AI carries on with it in mind. It waits in the **queue** like any other until the AI takes it. A word of the code: on screen it is your message, as any other.
 _Avoid_: nudge, interrupt
 
 **Queue**:
-What waits to go to the AI, kept by Rufi with the chat: your messages and Rufi's notes about **Rufi events**. Rufi gives the AI one turn's worth at a time, and never the same message twice. It survives a restart and a model change. Shown above the box as the **waiting messages**.
+What waits to go to the AI, kept by Rufi with the chat: your messages and Rufi's notes about **Rufi events**. Rufi gives the AI one at a time, and never the same message twice. Each starts a turn of its own, except a message of yours without new files sent while the AI replies to you: it goes into that reply, as a **steer**. It survives a restart and a model change. Shown in the chat as the **waiting messages**.
 _Avoid_: inbox, outbox
 
 **Waiting messages**:
-What the queue holds, shown above the box; you can edit, reorder or remove your messages there. A held one says why (it came from a backup, the AI couldn't take it, or Rufi isn't sure it reached the AI) and goes only when you send it. A message that brings new files waits for a reply of its own, which reads them first; so does anything sent while Rufi's reader copies. A message whose reply ended in Rufi's part is not listed: its reply has **Retry**. Signed out, a send takes nothing: the text and chips stay in the box. After a Stop, or when Rufi starts again with messages waiting, they wait until you send a message or click **Send now**.
+What the queue holds, shown in the chat after its last message as soon as you send; you can edit, reorder, send now or remove your messages there. A held one says why (it came from a backup, the AI couldn't take it, or Rufi isn't sure it reached the AI) and goes only when you send it. A message that brings new files waits for a reply of its own, which reads them first; so does anything sent while Rufi's reader copies. A message whose reply ended in Rufi's part is not listed: its reply has **Retry**. Signed out, a send takes nothing: the text and chips stay in the box. After a Stop, and when Rufi starts again, what waits goes on, in order; a message whose start a Stop cut off is held, **Not sent: stopped.**
 _Avoid_: backlog, pending messages
 
 **Rufi event**:
-Rufi's own note that something happened outside your chat, such as a deleted document: a line in the chat, and sometimes a note for the AI. It is never your words, a request or your yes: a reply it starts can change nothing, never save or sort. After a Stop, its note goes with your next message.
+Rufi's own note that something happened outside your chat, such as a deleted document: a line in the chat, and sometimes a note for the AI. It is never your words, a request or your yes: a reply it starts can change nothing, never save or sort. Its note goes in a reply of its own, also after a Stop.
 _Avoid_: notification, system message
 
 **Stop**:
-Ends the AI's reply now, with anything it started. What it wrote so far is kept; nothing more goes to the AI until you send a message.
+Ends the AI's reply now, with anything it started. What it wrote so far is kept; what waits goes on, in order.
 _Avoid_: cancel, abort
 
 **Interrupted**:

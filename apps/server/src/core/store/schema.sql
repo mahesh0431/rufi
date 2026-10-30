@@ -381,7 +381,7 @@ CREATE TABLE chats (
   thread_provider TEXT,        -- whose thread it is, so another agent never reuses it
   thread_model TEXT,           -- the model the thread started with
   thread_tools TEXT,           -- the tool set it started with (a thread keeps its tools)
-  paused TEXT CHECK (paused IN ('stopped', 'restarted')), -- nothing goes to the AI until the person sends: after a Stop, or Rufi started again with messages waiting
+  paused TEXT CHECK (paused IN ('stopped', 'restarted')), -- no longer used (0020): a chat once paused after a Stop or a restart
   revision INTEGER NOT NULL DEFAULT 0, -- grows with every change to the transcript
   context_tokens INTEGER,      -- the tokens of the thread's last request to the model, as the agent last reported them
   context_window INTEGER,      -- the model's context window then; null: the agent didn't say
@@ -435,6 +435,7 @@ CREATE TABLE transcript_entries (
   revision INTEGER NOT NULL,   -- the chat's revision when it last changed
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  questions TEXT CHECK (questions IS NULL OR kind = 'reply'), -- a reply's questions, as the AI gave them (JSON), kept apart from its answer; null: none
   UNIQUE (person_id, id),
   UNIQUE (chat_id, seq),
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
@@ -450,14 +451,17 @@ CREATE TABLE transcript_entries (
   CHECK (refs IS NULL OR kind IN ('message', 'steer'))
 ) STRICT;
 
--- Each call the AI made to one of Rufi's own tools, kept by Rufi as it
--- answered: what the AI sent and exactly what it got back.
+-- Each call an agent made to one of Rufi's own tools, kept by Rufi as it
+-- answered: what the AI sent and exactly what it got back. A write's is
+-- kept in its transaction, with what it changed and its receipt.
 CREATE TABLE tool_calls (
   id TEXT PRIMARY KEY,         -- UUIDv7
   person_id TEXT NOT NULL,
   chat_id TEXT NOT NULL,
-  turn_id TEXT NOT NULL,       -- the reply it belongs to
-  call_id TEXT NOT NULL,       -- the agent's id for the call: its activity line's agent_item_id
+  turn_id TEXT,                -- the reply it belongs to: a root turn's call
+  agent_id TEXT,               -- the agent that made it, in agents.sqlite; none for a call kept before
+  agent_turn_id TEXT,          -- that agent's turn, in agents.sqlite
+  call_id TEXT NOT NULL,       -- Rufi's id for the call: <agent>/<conversation>/<provider call id>; the agent's own for a call kept before
   tool TEXT NOT NULL,          -- 'get_overview', 'get_records'...
   input TEXT NOT NULL,         -- what the AI sent (JSON)
   answer TEXT NOT NULL,        -- exactly what the AI got back (JSON)
@@ -499,13 +503,14 @@ CREATE TABLE chat_queue (
   event_id TEXT,               -- a Rufi event's line in the transcript
   position INTEGER NOT NULL,   -- order among the waiting rows
   state TEXT NOT NULL DEFAULT 'waiting' CHECK (state IN ('waiting', 'handing_over', 'sent', 'not_sure', 'removed')),
-  held TEXT CHECK (held IN ('paused', 'signed_out', 'restored', 'failed', 'open_failed', 'reply_ended')), -- a waiting row Rufi doesn't hand over by itself, and why: an event that came while the chat was paused rides with the person's next message; open_failed: the AI's thread didn't open, and the person chooses Try again or New thread; reply_ended: its reply ended in Rufi's part (a reading stopped or failed), it is in the chat already, and its reply's Retry sends it again
+  held TEXT CHECK (held IN ('paused', 'signed_out', 'restored', 'failed', 'open_failed', 'reply_ended')), -- a waiting row Rufi doesn't hand over by itself, and why (paused no longer: 0020): signed_out: the AI found the sign-in missing, and the row goes once it is back; restored: from a restored backup, for the person to send or remove; failed: the AI couldn't take it, or a Stop cut its start; open_failed: the AI's thread didn't open, and the person chooses Try again or New thread; reply_ended: its reply ended in Rufi's part (a reading stopped or failed), it is in the chat already, and its reply's Retry sends it again
   held_text TEXT,              -- why a hand-over failed, in words for the person
   hold_id TEXT,                -- which open_failed or reply_ended hold this is: the person's choice names it, so a stale click changes nothing
-  sent_as TEXT,                -- the id the AI got the hand-over under (the rows of one turn share it); set just before the AI is called
+  sent_as TEXT,                -- where Rufi handed it over: the agent and its conversation (<agent>/<number>), set in Rufi's claim before the AI is called; an older hand-over's id
   turn_id TEXT,                -- the turn that used it; set when Rufi's part of its reply starts
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  note TEXT,                   -- Rufi's note on what its part of the reply read, kept once the reading ends; it goes with the message
   UNIQUE (person_id, id),
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
   FOREIGN KEY (person_id, event_id) REFERENCES transcript_entries (person_id, id),
@@ -699,5 +704,47 @@ CREATE INDEX device_batches_by_done ON device_batches (done_at);
 CREATE INDEX device_values_by_type ON device_values (person_id, type, start_at);
 CREATE INDEX device_values_by_batch ON device_values (person_id, batch_id) WHERE batch_id IS NOT NULL;
 
+-- Which person and chat each agent of the agent system belongs to
+-- (packages/agents, its own agents.sqlite, docs/adr/0024): the agent system
+-- knows no people, so Rufi keeps this before an agent may run. An agent
+-- with no owner never runs. root: the chat's own agent, Rufi AI.
+CREATE TABLE agent_owners (
+  agent_id TEXT PRIMARY KEY,   -- the agent's id in agents.sqlite
+  person_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  root INTEGER NOT NULL CHECK (root IN (0, 1)),
+  created_at TEXT NOT NULL,
+  UNIQUE (person_id, agent_id),
+  FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id)
+) STRICT;
+
+CREATE UNIQUE INDEX agent_owners_root ON agent_owners (chat_id) WHERE root = 1;
+
+-- Every provider conversation a chat's agents had (the ledger), saved before
+-- any of Rufi's content goes into it, and kept when a new conversation
+-- replaces it, when its agent is gone, and when agents.sqlite is lost: a
+-- hand-over is asked about by it, and forgetting the chat deletes each.
+CREATE TABLE agent_conversations (
+  person_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,      -- the agent's id, as it was: the agent may be gone
+  conversation INTEGER NOT NULL, -- the agent's number for it: 1, 2, 3...
+  provider TEXT NOT NULL,      -- the adapter it runs on (codex)
+  ref TEXT NOT NULL,           -- the provider's reference for it (a Codex thread)
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (agent_id, conversation),
+  UNIQUE (provider, ref),
+  FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id)
+) STRICT;
+
+-- How far Rufi has applied the agent system's event log: the agents.sqlite
+-- it read (its generation) and the last event applied, moved in the same
+-- transaction as that event's change. Another generation is a new file.
+CREATE TABLE agent_cursor (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  generation TEXT NOT NULL,
+  number INTEGER NOT NULL
+) STRICT;
+
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 17;
+PRAGMA user_version = 21;

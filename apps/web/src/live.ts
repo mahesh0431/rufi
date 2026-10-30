@@ -21,7 +21,7 @@ export interface Live extends Transcript {
   status: "loading" | "open" | "missing";
   /** Loading an older page, or why it couldn't be loaded. */
   older: "idle" | "loading" | "failed";
-  /** What waits to go to the AI, and why the chat is paused. */
+  /** What waits to go to the AI. */
   queue: Queue;
   /** Why the queue couldn't be read, in the core's words. */
   queueError: string | null;
@@ -82,7 +82,7 @@ function open(personId: string): Opened {
     ...emptyTranscript,
     status: "loading",
     older: "idle",
-    queue: { items: [], paused: null },
+    queue: { items: [] },
     queueError: null,
   }));
   const stop = new AbortController();

@@ -25,13 +25,14 @@ import {
 } from "./registry.ts";
 import { LIMITS } from "./records.ts";
 import {
-  chatCaller,
+  rufiCaller,
   forAgent,
   REJECTIONS_SETTING,
   TOOLS,
   toolsJson,
 } from "./tools.ts";
 import type { Log } from "../../platform/logs.ts";
+import { turnScope } from "../../../tests/scope.ts";
 
 const read = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
 const schema = await read("../store/schema.sql");
@@ -685,10 +686,17 @@ describe("read_chat", () => {
       )
       .join("");
 
-  it("pages back through the chat, newest first", async () => {
-    const store = makeDatabase(family, chats);
+  it("pages back through the chat, newest first, a reply with the questions it asked", async () => {
+    const store = makeDatabase(
+      family,
+      `${chats}
+      UPDATE transcript_entries SET questions = '[{"title":"Which report?","options":["March","May"]}]'
+        WHERE id IN ('c-asha-30', 'c-asha-26');
+      UPDATE transcript_entries SET text = '' WHERE id = 'c-asha-26';`,
+    );
     const context = { store, personId: "asha", chatId: "c-asha" };
-    const first = await call(context, "read_chat", { limit: 4 });
+    const first = await call(context, "read_chat", { limit: 5 });
+    const asked = "**Which report?**\n- March\n- May";
     expect(first.body).toEqual({
       ok: true,
       result: {
@@ -696,7 +704,7 @@ describe("read_chat", () => {
           {
             position: 30,
             kind: "reply",
-            text: "c-asha entry 30",
+            text: `c-asha entry 30\n\n${asked}`,
             at: "2026-10-01T10:00:00Z",
           },
           {
@@ -718,8 +726,14 @@ describe("read_chat", () => {
             detail: "ls",
             at: "2026-10-01T10:00:00Z",
           },
+          {
+            position: 26,
+            kind: "reply",
+            text: asked,
+            at: "2026-10-01T10:00:00Z",
+          },
         ],
-        next_before: 27,
+        next_before: 26,
       },
     });
     const last = await call(context, "read_chat", { before: 3 });
@@ -850,8 +864,12 @@ describe("the error envelope", () => {
         const chat = (await chats.chat("asha")) as ChatRow;
         if (value !== undefined)
           await chats.saveSetting(REJECTIONS_SETTING, value);
-        const caller = chatCaller(store, chats, record)(chat, "t-1", "person");
-        const refuse = () => caller("get_documents", { page: 1 });
+        const caller = rufiCaller(
+          store,
+          chats,
+          record,
+        )(turnScope(chat, "t-1"), "person");
+        const refuse = () => caller("get_documents", { page: 1 }, "c-1");
         const answers = [];
         if (parallel) answers.push(...(await Promise.all(lefts.map(refuse))));
         else {
@@ -947,11 +965,15 @@ describe("show_face", () => {
     try {
       const chats = transcripts(store, () => "2026-10-14T10:00:00Z");
       const chat = (await chats.chat("asha")) as ChatRow;
-      const caller = chatCaller(store, chats, record)(chat, "t-1", "person");
+      const caller = rufiCaller(
+        store,
+        chats,
+        record,
+      )(turnScope(chat, "t-1"), "person");
       const changes = () =>
         store.db.prepare("SELECT total_changes() AS n").get()?.["n"];
       const before = changes();
-      const answer = await caller("show_face", { face: "found" });
+      const answer = await caller("show_face", { face: "found" }, "c-1");
       expect(JSON.parse(answer.text)).toEqual({ ok: true });
       expect(changes()).toBe(before);
     } finally {

@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   callTool,
+  codexMeta,
   initialize,
   listResources,
   listTools,
@@ -94,7 +95,7 @@ const call = (server: McpServerConfig, name = "get_overview") =>
   });
 
 describe("Rufi's MCP endpoints", () => {
-  it("serves a key's tools to a client with no Origin, and passes on the call's id, thread and turn", async () => {
+  it("serves a key's tools to a client with no Origin, and passes on the call's _meta as it came", async () => {
     const server = at(chatKeys.issue(scope()));
     const started = await initialize(server);
     expect(started.result).toMatchObject({
@@ -131,9 +132,12 @@ describe("Rufi's MCP endpoints", () => {
       {
         tool: "get_overview",
         input: {},
-        callId: "call-1",
-        threadId: "thread-1",
-        turnId: "turn-1",
+        meta: codexMeta({
+          callId: "call-1",
+          threadId: "thread-1",
+          turnId: "turn-1",
+        }),
+        signal: expect.any(AbortSignal) as AbortSignal,
       },
     ]);
   });
@@ -191,7 +195,7 @@ describe("Rufi's MCP endpoints", () => {
     });
   });
 
-  it("tells the agent a call took too long, within the deadline", async () => {
+  it("tells the agent a call took too long, within the deadline, and the call that its deadline passed", async () => {
     const server = at(chatKeys.issue(scope()));
     answer = () =>
       new Promise((resolve) =>
@@ -206,6 +210,7 @@ describe("Rufi's MCP endpoints", () => {
       ],
       isError: true,
     });
+    expect(calls.map((made) => made.signal.aborted)).toEqual([true]);
   });
   it("offers each skill and the files beside it to read, the paper as CSS byte for byte", async () => {
     let port = 0;

@@ -15,6 +15,7 @@
 import { Effort } from "@rufi/contracts";
 import { Option, Schema } from "effect";
 import { ChatGptError } from "../agent/chatgpt/openai.ts";
+import { callOf } from "../agent/codex/events.ts";
 import { SUB_AGENT_MODELS } from "../agent/codex/subagent.ts";
 import type {
   RunSubAgent,
@@ -164,8 +165,8 @@ export function reader(deps: ReaderDeps) {
     // The attempt's key: its tools for this person, document and attempt.
     const key = deps.mcp.keys.issue({
       tools: tools.specs,
-      call: async ({ tool, input, callId }) => {
-        const answer = await tools.call(tool, input, callId);
+      call: async ({ tool, input, meta }) => {
+        const answer = await tools.call(tool, input, callOf(meta).callId);
         if (answer.stopTurn !== undefined) {
           stopReason ??= answer.stopTurn;
           toolStop.abort();

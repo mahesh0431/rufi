@@ -63,6 +63,7 @@ import { latestHeading } from "./thinking.ts";
 import { isRunning } from "./transcript-state.ts";
 import { Dog, LiveDog } from "./dog.tsx";
 import { Button, buttonLook, ICON } from "./ui.tsx";
+import { anyWaiting, WaitingView } from "./waiting.tsx";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no remote
 // images, and links only to http(s) pages, opened outside Rufi with no opener
@@ -367,7 +368,11 @@ export function TranscriptView({
 }) {
   const shown = useStore(live, useShallow(lines));
   const status = useStore(live, (state) => state.status);
-  const empty = useStore(live, (state) => state.order.length === 0);
+  // Nothing in the chat yet, and nothing waits.
+  const empty = useStore(
+    live,
+    (state) => state.order.length === 0 && !anyWaiting(state),
+  );
   const before = useStore(live, (state) => state.before);
   const older = useStore(live, (state) => state.older);
   const running = useStore(live, isRunning);
@@ -393,7 +398,7 @@ export function TranscriptView({
       seen.current = viewOf(element);
     };
     follow();
-    // New text, and a smaller view (waiting messages above the box).
+    // New text, and a smaller view (the box grows).
     const changes = new MutationObserver(follow);
     changes.observe(element, {
       childList: true,
@@ -531,6 +536,9 @@ export function TranscriptView({
               </Today>
             </Whose>
           </div>
+        )}
+        {status === "open" && !empty && (
+          <WaitingView live={live} personId={personId} />
         )}
       </div>
     </div>

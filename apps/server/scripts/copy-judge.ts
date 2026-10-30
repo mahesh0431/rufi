@@ -16,6 +16,7 @@ import {
   type Tool,
 } from "../src/core/tools/registry.ts";
 import type { Log } from "../src/platform/logs.ts";
+import { callOf } from "../src/agent/codex/events.ts";
 import type { McpKeys } from "../src/server/mcp.ts";
 import type { KeyPage } from "../tests/pack/copy-set.ts";
 import { onScratch } from "./live-run.ts";
@@ -212,7 +213,8 @@ export async function judgePage(
   );
   const mcpKey = deps.mcp.keys.issue({
     tools: [specOf(tool)],
-    call: ({ tool: name, input, callId }) => call(name, input, callId),
+    call: ({ tool: name, input, meta }) =>
+      call(name, input, callOf(meta).callId),
   });
   try {
     const { result: judged, kept } = await onScratch(

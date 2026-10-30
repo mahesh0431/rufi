@@ -43,7 +43,8 @@ import {
   openWritable,
   type Store,
 } from "../core/store/database.ts";
-import { chatCaller } from "../core/tools/tools.ts";
+import { rufiCaller } from "../core/tools/tools.ts";
+import { turnScope } from "../../tests/scope.ts";
 import { callTool } from "../../tests/mcp-client.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
 import { reader, readerChoice, type ReadProgress } from "./reader.ts";
@@ -852,18 +853,18 @@ describe("the chat AI and a reading", () => {
     await read(id);
     const chat = await transcripts.chat(personId);
     if (!chat) throw new Error("No chat.");
-    const caller = chatCaller(
+    const caller = rufiCaller(
       store,
       transcripts,
       () => undefined,
       pages(store, home),
     );
 
-    const got = await caller(
-      chat,
-      "turn-1",
-      "person",
-    )("get_documents", { document: id });
+    const got = await caller(turnScope(chat, "turn-1"), "person")(
+      "get_documents",
+      { document: id },
+      "call-1",
+    );
     const answer = JSON.parse(got.text) as { result: Record<string, unknown> };
     expect(answer.result["document"]).toMatchObject({
       status: "done",
@@ -879,11 +880,11 @@ describe("the chat AI and a reading", () => {
         sorted: false,
       }),
     ]);
-    const copies = await caller(
-      chat,
-      "turn-1",
-      "person",
-    )("get_documents", { document: id, copies: true });
+    const copies = await caller(turnScope(chat, "turn-1"), "person")(
+      "get_documents",
+      { document: id, copies: true },
+      "call-2",
+    );
     expect(JSON.parse(copies.text)).toMatchObject({
       ok: true,
       result: {

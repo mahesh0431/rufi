@@ -26,17 +26,18 @@ Keep the data folder on your Mac's own disk or on a disk that you connect to you
 
 Your sign-in's secrets aren't in the data folder: they are in your Mac's Keychain (see [Signing in with ChatGPT](signing-in.md)).
 
-| In the data folder | What it is                                                                                                                                                   |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `rufi.sqlite`      | Your health record (people, documents, reports, lab results and measurements) and your chat, with what the AI did in it (see below)                          |
-| `files/`           | Your documents, exactly as you added them (see [Documents](documents.md))                                                                                    |
-| `backups/`         | Rufi's backups of your record and your documents (see [Backups and export](backups-and-export.md))                                                           |
-| `cache/`           | Copies Rufi makes again when they are missing: the JPEG copy that shows a HEIC photo, and the pages of your PDFs drawn as images for the AI                  |
-| `chatgpt.json`     | Your sign-in details, without secrets (see [Signing in with ChatGPT](signing-in.md))                                                                         |
-| `logs/`            | Rufi's log (see below)                                                                                                                                       |
-| `codex/`           | The AI's own files: its settings, Rufi's instructions for the AI, its own copy of your chat, and the pictures it generates                                   |
-| `ai/`              | The AI's folder: where the AI works, with its programs, notes and research files (see [What the AI can do in its folder](#what-the-ai-can-do-in-its-folder)) |
-| `sub-agents/`      | The settings of Rufi's document reader; it holds no document                                                                                                 |
+| In the data folder | What it is                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `rufi.sqlite`      | Your health record (people, documents, reports, lab results and measurements) and your chat, with what the AI did in it (see below)                                                                                                                                                                                                                          |
+| `agents.sqlite`    | The AI's working state: the agents that run your chat, and what the AI did for each reply (its **Activity**). It isn't in your backups or your export; when it's missing, Rufi makes a new one, the AI starts a new thread with your chat's last messages, replies since this version show without their Activity, and your chat and record stay as they are |
+| `files/`           | Your documents, exactly as you added them (see [Documents](documents.md))                                                                                                                                                                                                                                                                                    |
+| `backups/`         | Rufi's backups of your record and your documents (see [Backups and export](backups-and-export.md))                                                                                                                                                                                                                                                           |
+| `cache/`           | Copies Rufi makes again when they are missing: the JPEG copy that shows a HEIC photo, and the pages of your PDFs drawn as images for the AI                                                                                                                                                                                                                  |
+| `chatgpt.json`     | Your sign-in details, without secrets (see [Signing in with ChatGPT](signing-in.md))                                                                                                                                                                                                                                                                         |
+| `logs/`            | Rufi's log (see below)                                                                                                                                                                                                                                                                                                                                       |
+| `codex/`           | The AI's own files: its settings, Rufi's instructions for the AI, its own copy of your chat, and the pictures it generates                                                                                                                                                                                                                                   |
+| `ai/`              | The AI's folder: where the AI works, with its programs, notes and research files (see [What the AI can do in its folder](#what-the-ai-can-do-in-its-folder))                                                                                                                                                                                                 |
+| `sub-agents/`      | The settings of Rufi's document reader; it holds no document                                                                                                                                                                                                                                                                                                 |
 
 Rufi also keeps a few small files there that say what state the folder is in: while Rufi runs, and while a first start, a move or a restore isn't finished. With them, Rufi never opens a folder that another Rufi uses, or one that is only half made.
 
@@ -106,7 +107,7 @@ The chat's AI works like a coding agent, in its own folder: the AI's folder, `ai
 Rufi limits what the AI's programs can reach. This is a lock, not only an instruction: Codex's sandbox on your Mac holds it.
 
 - They can write only in the AI's folder and in your Mac's folders for temporary files.
-- They can't open your record's database or your backups. So the AI reads and changes your health record only through Rufi's tools: each read shows as a step in the answer's **Activity**, and each save with its receipt.
+- They can't open your record's database, the AI's working state (`agents.sqlite`) or your backups. So the AI reads and changes your health record only through Rufi's tools: each read shows as a step in the answer's **Activity**, and each save with its receipt.
 - They get none of the sign-in's secrets.
 - They can read the other files that your Mac account can read. Rufi tells the AI to use only Rufi's tools for your record, but it doesn't lock the rest yet.
 
@@ -143,13 +144,18 @@ Draft items aren't your record until you save them. They are in your backups and
 
 ## Your chat
 
-Rufi keeps your chat in `rufi.sqlite`: your messages, the AI's replies, one line for each thing the AI did, such as reading your record or searching the web, and a receipt for each save to your record. What you see is what Rufi saved.
+Rufi keeps your chat in `rufi.sqlite`: your messages, the AI's replies, the questions the AI asks you, and a receipt for each save to your record. What you see is what Rufi saved.
+
+What the AI did for each reply, which you see in **Activity**, is kept in the AI's working state, `agents.sqlite`:
+
+- One line for each thing the AI did, such as reading your record or searching the web, with what it sent and got back, as the AI service gave it: for example a read of your records, a command and its output, or the words of a web search. You see it when you open a step.
+- The AI's notes, and its reasoning summaries when the AI service gives them. You see the summaries behind each thinking line.
+
+`agents.sqlite` isn't in your backups or your export. If it's lost, those replies show without their Activity. Replies from before this version of Rufi keep their Activity in `rufi.sqlite`.
 
 So that an answer can be traced later, Rufi also keeps, as long as the chat:
 
-- What each thing the AI did sent and got back, as the AI service gave it: for example a read of your records, a command and its output, or the words of a web search. You see it when you open a step in **Activity**.
 - For each read or save with Rufi's own tools, exactly what Rufi answered, except the page images the AI looked at: Rufi keeps which page it was, not the image. This isn't shown.
-- The AI's reasoning summaries, when the AI service gives them. You see them behind each thinking line.
 - For each change to your record, the record before and after it, and the message of yours it came from.
 - What you typed in the chat but didn't send (the chat's draft). Drafts stay on your Mac until you send them.
 

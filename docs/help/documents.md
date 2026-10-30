@@ -281,7 +281,7 @@ If you saved results from the document, Rufi lists each saved result that comes 
 
 Your health record changes only in the chat, with your yes. The delete itself removes no result.
 
-**If you stop halfway.** The file is already gone. The results that the AI didn't remove stay in your health record, as with **Delete file**. The AI's question stays in the chat: answer it when you like, or ask the AI about the document's results later. If Rufi closed before the AI could ask, Rufi's note waits above the chat box until you send a message (see [Waiting messages](chat.md#waiting-messages)).
+**If you stop halfway.** The file is already gone. The results that the AI didn't remove stay in your health record, as with **Delete file**. The AI's question stays in the chat: answer it when you like, or ask the AI about the document's results later. If Rufi closed before the AI could ask, Rufi's note goes to the AI when Rufi starts again (see [Rufi's lines](chat.md#rufis-lines)).
 
 **Undo.** "Undo that" in the chat brings back a result the AI removed. It doesn't bring back the file, or a page that the AI took off a result.
 

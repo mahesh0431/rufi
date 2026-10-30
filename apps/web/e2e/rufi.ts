@@ -22,7 +22,7 @@ import {
   FIRST_RUN_DONE,
 } from "../../server/tests/fixtures/golden.ts";
 import { codexBinary } from "../../server/src/agent/codex/binary.ts";
-import { codexRuntime } from "../../server/src/agent/codex/codex.ts";
+import { codexAdapter } from "../../server/src/agent/codex/adapter.ts";
 import {
   databasePath,
   openWritable,
@@ -109,8 +109,8 @@ export class Rufi {
     this.#core = await Effect.runPromise(
       startCore({
         home: this.home,
-        agent: (host) =>
-          codexRuntime({
+        adapters: [
+          codexAdapter({
             home: this.home,
             ...agentSetup(this.home),
             command,
@@ -121,8 +121,8 @@ export class Rufi {
             },
             token: () => Promise.resolve("token"),
             version: "0.0.0",
-            host,
           }),
+        ],
         log: () => undefined,
         account: () => Promise.resolve(this.account),
         signIn: async ({ showLink }) => {

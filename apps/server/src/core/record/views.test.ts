@@ -18,8 +18,9 @@ import {
   openWritable,
   type Store,
 } from "../store/database.ts";
-import { chatCaller } from "../tools/tools.ts";
+import { rufiCaller } from "../tools/tools.ts";
 import { recordViews, type RecordViews } from "./views.ts";
+import { turnScope } from "../../../tests/scope.ts";
 
 const family = await readFile(
   new URL("../../../tests/fixtures/fictional-family.sql", import.meta.url),
@@ -60,11 +61,15 @@ async function saveSaid(text: string, changes: object[]) {
     text,
     agentTurnId: "t-1",
   });
-  const answer = await chatCaller(reader, transcripts, () => undefined)(
-    chat,
-    "t-1",
-    "person",
-  )("save_changes", { changes }, `call-${String(++calls)}`);
+  const answer = await rufiCaller(
+    reader,
+    transcripts,
+    () => undefined,
+  )(turnScope(chat, "t-1"), "person")(
+    "save_changes",
+    { changes },
+    `call-${String(++calls)}`,
+  );
   expect(answer.ok).toBe(true);
   return (
     JSON.parse(answer.text) as { result: { changes: { id: string }[] } }

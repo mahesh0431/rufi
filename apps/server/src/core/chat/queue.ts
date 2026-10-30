@@ -1,18 +1,17 @@
 // Each chat's queue, Rufi's own (docs/adr/0004): the person's messages and
-// Rufi's events that ask the AI, waiting their turn. A send moves the box's
+// Rufi's notes that ask the AI, waiting their turn. A send moves the box's
 // text into a new row and empties the draft in one transaction; the row's id
-// is the send's, so a retried send never makes a second row. Rufi claims a
-// turn's rows here before it calls the AI, and never hands a row over
-// twice: one Rufi stopped while handing it over is "not sure", shown and
-// never sent again by itself. A paused chat (Stop, or Rufi started again
-// with rows waiting) hands nothing over until the person sends; an event
-// that comes meanwhile rides with their next message. A message whose AI
-// thread didn't open waits with that hold until the person chooses Try
-// again or New thread for it. A claimed row is marked just before the AI
-// is called (`mark`): without the mark it surely never reached the AI.
-// A message whose reply ended in Rufi's part (its files' reading stopped
-// or failed, server/chat.ts) is in the chat already and waits with a hold
-// of its own until the person presses its reply's Retry.
+// is the send's, so a retried send never makes a second row. The agent
+// system's queue hands each row over in order, by its id (server/chat.ts);
+// before a row goes to the AI, Rufi claims it here: one transaction marks it
+// handing over to that agent's conversation (`sent_as`) and gives back its
+// words, so an edit that came first is what goes and one after is refused.
+// A row Rufi stopped while handing it over is "not sure", shown and never
+// sent again by itself. A message whose AI thread didn't open waits with
+// that hold until the person chooses Try again or New thread. A message
+// whose reply ended in Rufi's part (its files' reading stopped or failed,
+// server/chat.ts) is in the chat already and waits with a hold of its own
+// until the person presses its reply's Retry.
 import type { Chip, Pointer, Queue, QueueItem } from "@rufi/contracts";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
@@ -31,27 +30,57 @@ type Db = Kysely<Tables> | Transaction<Tables>;
 /** A change to the queue Rufi doesn't make, in words for the person. */
 export class QueueRefusal extends Error {}
 
-/** Rows handed to the AI together, as one turn's input. */
+/** A row as it goes to the AI, as one turn's input. */
 export interface HandOver {
-  /** The id the AI gets it under: the person's message's, or the first event's. */
+  /** The id the AI gets it under: the row's. */
   id: string;
-  /** A person's message is in it: their turn; else a Rufi event turn. */
+  /** The person's message: their turn; else Rufi's note, a Rufi event turn. */
   origin: "person" | "rufi";
-  /** Rufi's notes for the AI, oldest first. */
+  /**
+   * Rufi's notes for the AI: a Rufi event's, or what its part of a
+   * message's reply read.
+   */
   notes: string[];
-  /** The person's message, when there is one. */
+  /** The person's message, when it is one. */
   text: string | undefined;
   /** The person's message's references, as its chips. */
   refs: Chip[];
 }
 
-/** A hold that lets an event ride with the person's next message. */
-const RIDES = ["paused", "signed_out"];
+/** Rufi's answer when the agent system claims a row (Host.claim). */
+export type Claimed =
+  /** It was waiting, or it is this same hand-over again: its words. */
+  | { status: "claimed" | "already_claimed"; handOver: HandOver }
+  /** Removed, sent, not sure, or held: it doesn't go. */
+  | { status: "gone" };
+
+/** A waiting row, in order, as the hand-over to the agent queue sees it. */
+export interface Waiting {
+  id: string;
+  origin: "person" | "rufi";
+  held: string | null;
+  refs: Chip[];
+}
+
+const handOverOf = (row: {
+  id: string;
+  origin: string;
+  text: string;
+  refs: string;
+  note: string | null;
+}): HandOver => ({
+  id: row.id,
+  origin: row.origin as HandOver["origin"],
+  notes:
+    row.origin === "rufi" ? [row.text] : row.note === null ? [] : [row.note],
+  text: row.origin === "person" ? row.text : undefined,
+  refs: row.origin === "person" ? (JSON.parse(row.refs) as Chip[]) : [],
+});
 
 const CHANGED_ELSEWHERE =
   "The waiting messages changed meanwhile. Look again, then try again.";
 
-/** A new waiting row at the end, in `trx`; held when the chat is paused. */
+/** A new waiting row at the end, in `trx`. */
 export async function addRow(
   trx: Transaction<Tables>,
   chat: ChatOf,
@@ -70,7 +99,6 @@ export async function addRow(
     .where("person_id", "=", chat.personId)
     .where("chat_id", "=", chat.id)
     .executeTakeFirstOrThrow();
-  const paused = await pausedOf(trx, chat);
   await trx
     .insertInto("chat_queue")
     .values({
@@ -83,7 +111,7 @@ export async function addRow(
       event_id: row.eventId ?? null,
       position: (last ?? 0) + 1,
       state: "waiting",
-      held: row.origin === "rufi" && paused !== null ? "paused" : null,
+      held: null,
       held_text: null,
       hold_id: null,
       sent_as: null,
@@ -97,20 +125,17 @@ export async function addRow(
 /**
  * In the transaction that ends a reply in Rufi's part (server/chat.ts): its
  * message, in the chat already, waits held with `why` and a new hold for
- * its reply's Retry; events that rode with it wait to ride again.
+ * its reply's Retry.
  */
 export async function endPart(
   trx: Transaction<Tables>,
   chat: ChatOf,
+  turnId: string,
   why: string,
   at: string,
 ): Promise<void> {
-  const ending = trx
+  await trx
     .updateTable("chat_queue")
-    .where("person_id", "=", chat.personId)
-    .where("chat_id", "=", chat.id)
-    .where("state", "=", "handing_over");
-  await ending
     .set({
       state: "waiting",
       sent_as: null,
@@ -119,22 +144,13 @@ export async function endPart(
       hold_id: uuid(),
       updated_at: at,
     })
+    .where("person_id", "=", chat.personId)
+    .where("chat_id", "=", chat.id)
+    .where("turn_id", "=", turnId)
     .where("origin", "=", "person")
-    .execute();
-  await ending
-    .set({ state: "waiting", sent_as: null, held: "paused", updated_at: at })
-    .where("origin", "=", "rufi")
+    .where("state", "in", ["waiting", "handing_over"])
     .execute();
 }
-
-const pausedOf = async (trx: Db, chat: ChatOf) =>
-  ((
-    await trx
-      .selectFrom("chats")
-      .select("paused")
-      .where("id", "=", chat.id)
-      .executeTakeFirst()
-  )?.paused ?? null) as Queue["paused"];
 
 /**
  * Sends the person's unsent documents among `ids`, in the transaction of
@@ -220,67 +236,81 @@ export function chatQueue(
     /** Tells the chat's listeners: a transcript write changed its queue. */
     changed,
 
-    /** What waits, in order, and why the chat is paused. */
-    list: (chat: ChatOf): Promise<Queue> =>
-      db.transaction().execute(async (trx) => {
-        const found = await trx
-          .selectFrom("chat_queue as q")
-          .leftJoin("transcript_entries as e", (join) =>
-            join
-              .onRef("e.person_id", "=", "q.person_id")
-              .onRef("e.id", "=", "q.event_id"),
-          )
-          .select([
-            "q.id",
-            "q.origin",
-            "q.text",
-            "q.state",
-            "q.held",
-            "q.held_text",
-            "q.hold_id",
-            "q.refs",
-            "q.turn_id",
-            "e.text as line",
-          ])
-          .where("q.person_id", "=", chat.personId)
-          .where("q.chat_id", "=", chat.id)
-          .where("q.state", "in", ["waiting", "handing_over", "not_sure"])
-          .orderBy("q.position")
-          .execute();
-        return {
-          paused: await pausedOf(trx, chat),
-          items: found.map((row): QueueItem => ({
-            id: row.id,
-            origin: row.origin as QueueItem["origin"],
-            // An event shows its line, the words written for the person.
-            text: row.line ?? row.text,
-            state: row.state as QueueItem["state"],
-            held: row.held as QueueItem["held"],
-            heldText: row.held_text,
-            holdId: row.hold_id,
-            refs: JSON.parse(row.refs) as Chip[],
-            ...(row.held === "reply_ended" && { turnId: row.turn_id }),
-          })),
-        };
-      }),
+    /** What waits, in order. */
+    list: async (chat: ChatOf): Promise<Queue> => {
+      const found = await db
+        .selectFrom("chat_queue as q")
+        .leftJoin("transcript_entries as e", (join) =>
+          join
+            .onRef("e.person_id", "=", "q.person_id")
+            .onRef("e.id", "=", "q.event_id"),
+        )
+        .select([
+          "q.id",
+          "q.origin",
+          "q.text",
+          "q.state",
+          "q.held",
+          "q.held_text",
+          "q.hold_id",
+          "q.refs",
+          "q.turn_id",
+          "e.text as line",
+        ])
+        .where("q.person_id", "=", chat.personId)
+        .where("q.chat_id", "=", chat.id)
+        .where("q.state", "in", ["waiting", "handing_over", "not_sure"])
+        .orderBy("q.position")
+        .execute();
+      return {
+        items: found.map((row): QueueItem => ({
+          id: row.id,
+          origin: row.origin as QueueItem["origin"],
+          // An event shows its line, the words written for the person.
+          text: row.line ?? row.text,
+          state: row.state as QueueItem["state"],
+          held: row.held as QueueItem["held"],
+          heldText: row.held_text,
+          holdId: row.hold_id,
+          refs: JSON.parse(row.refs) as Chip[],
+          ...(row.turn_id !== null && { turnId: row.turn_id }),
+        })),
+      };
+    },
 
-    /** Whether a send's id was used already: by a row here, or in a chat. */
-    known: async (id: string) =>
-      (await db
-        .selectFrom("chat_queue")
-        .select("id")
-        .where("id", "=", id)
-        .executeTakeFirst()) !== undefined ||
-      (await db
-        .selectFrom("transcript_entries")
-        .select("id")
-        .where("id", "=", id)
-        .executeTakeFirst()) !== undefined,
+    /** The waiting rows, in order, held or not. */
+    waiting: async (chat: ChatOf): Promise<Waiting[]> =>
+      (
+        await rows(db, chat)
+          .select(["id", "origin", "held", "refs"])
+          .where("state", "=", "waiting")
+          .orderBy("position")
+          .execute()
+      ).map((row) => ({
+        id: row.id,
+        origin: row.origin as Waiting["origin"],
+        held: row.held,
+        refs: JSON.parse(row.refs) as Chip[],
+      })),
+
+    /**
+     * Rows handing over that Rufi hasn't claimed for the agent system: a
+     * message whose files Rufi reads, or has read, first.
+     */
+    reading: async (chat: ChatOf) =>
+      (
+        await rows(db, chat)
+          .select("id")
+          .where("state", "=", "handing_over")
+          .where("sent_as", "is", null)
+          .orderBy("position")
+          .execute()
+      ).map((row) => row.id),
 
     /**
      * Takes a message from the box: a new waiting row by the send's id, with
-     * its references checked against the person, its unsent documents sent,
-     * the draft emptied and the pause ended, in one transaction. The same id again finds the row it
+     * its references checked against the person, its unsent documents sent
+     * and the draft emptied, in one transaction. The same id again finds the row it
      * made, or the message it sent into a running reply: `fresh` is false
      * then, and nothing changes.
      */
@@ -324,11 +354,6 @@ export function chatQueue(
           throw error;
         }
         const at = now();
-        await trx
-          .updateTable("chats")
-          .set({ paused: null })
-          .where("id", "=", chat.id)
-          .execute();
         // The files that waited unsent in the box go with it.
         await sendDocuments(
           trx,
@@ -433,10 +458,10 @@ export function chatQueue(
       }),
 
     /**
-     * The person sends one row now: first in line, no longer held, and the
-     * pause ends. A not-sure row goes again as a new row (its own id), and
-     * the old one is removed, so one id is never handed over twice. A row
-     * whose thread didn't open goes only by `recover`.
+     * The person sends one row now: first in line, no longer held. A
+     * not-sure row goes again as a new row (its own id), and the old one is
+     * removed, so one id is never handed over twice. A row whose thread
+     * didn't open goes only by `recover`. Returns the id that goes.
      */
     sendNow: (chat: ChatOf, id: string) =>
       write(chat, async (trx) => {
@@ -450,11 +475,6 @@ export function chatQueue(
           throw new QueueRefusal("That message isn't waiting any more.");
         const at = now();
         const position = await front(trx, chat);
-        await trx
-          .updateTable("chats")
-          .set({ paused: null })
-          .where("id", "=", chat.id)
-          .execute();
         if (row.state === "waiting") {
           await trx
             .updateTable("chat_queue")
@@ -490,8 +510,8 @@ export function chatQueue(
 
     /**
      * The person's choice for a message whose AI thread didn't open, for
-     * the hold they saw: it goes first in line, and the pause ends; for a
-     * new thread, the chat lets its thread go, in the same transaction.
+     * the hold they saw: it goes first in line; for a new thread, the chat
+     * lets its thread go, in the same transaction.
      * An older hold, or a row no longer held so, changes nothing.
      */
     recover: (chat: ChatOf, id: string, hold: string, newThread: boolean) =>
@@ -516,143 +536,143 @@ export function chatQueue(
           })
           .where("id", "=", id)
           .execute();
-        await trx
-          .updateTable("chats")
-          .set({
-            paused: null,
-            ...(newThread && {
+        if (newThread) {
+          await trx
+            .updateTable("chats")
+            .set({
               thread_id: null,
               thread_provider: null,
               thread_model: null,
               thread_tools: null,
-            }),
-          })
-          .where("id", "=", chat.id)
+            })
+            .where("id", "=", chat.id)
+            .execute();
+        }
+      }),
+
+    /**
+     * Rufi's claim of a row the agent system hands over to an agent's
+     * conversation (`sentAs`), in one transaction: a waiting row, or one
+     * whose files Rufi's part read, is handing over to it, and its words go;
+     * the same hand-over again gets the same words. A row handing over to
+     * another conversation gets nothing: Rufi's recovery at start settles it.
+     */
+    claim: (
+      chat: ChatOf,
+      id: string,
+      sentAs: string,
+    ): Promise<Claimed | undefined> =>
+      write(chat, async (trx) => {
+        const row = await rows(trx, chat)
+          .selectAll()
+          .where("id", "=", id)
+          .executeTakeFirst();
+        if (!row) return { status: "gone" };
+        if (row.state === "handing_over" && row.sent_as === sentAs) {
+          return { status: "already_claimed", handOver: handOverOf(row) };
+        }
+        const free =
+          (row.state === "waiting" && row.held === null) ||
+          (row.state === "handing_over" && row.sent_as === null);
+        if (row.state === "handing_over" && !free) return undefined;
+        if (!free) return { status: "gone" };
+        await trx
+          .updateTable("chat_queue")
+          .set({ state: "handing_over", sent_as: sentAs, updated_at: now() })
+          .where("id", "=", id)
+          .execute();
+        return { status: "claimed", handOver: handOverOf(row) };
+      }),
+
+    /**
+     * A waiting message goes to Rufi's part first (its files are read):
+     * handing over, not yet claimed. False when it isn't waiting any more.
+     */
+    startReading: (chat: ChatOf, id: string) =>
+      write(chat, async (trx) => {
+        const { numUpdatedRows } = await trx
+          .updateTable("chat_queue")
+          .set({ state: "handing_over", sent_as: null, updated_at: now() })
+          .where("person_id", "=", chat.personId)
+          .where("chat_id", "=", chat.id)
+          .where("id", "=", id)
+          .where("state", "=", "waiting")
+          .where("held", "is", null)
+          .executeTakeFirst();
+        return numUpdatedRows === 1n;
+      }),
+
+    /**
+     * Rufi's part read a message's files: its note on what it read goes
+     * with the message, in every claim of it from now on.
+     */
+    readNote: (chat: ChatOf, id: string, note: string | undefined) =>
+      write(chat, async (trx) => {
+        await trx
+          .updateTable("chat_queue")
+          .set({ note: note ?? null, updated_at: now() })
+          .where("person_id", "=", chat.personId)
+          .where("chat_id", "=", chat.id)
+          .where("id", "=", id)
+          .where("state", "=", "handing_over")
+          .where("sent_as", "is", null)
+          .execute();
+      }),
+
+    /** A message Rufi's part had nothing to read for waits again. */
+    stopReading: (chat: ChatOf, id: string) =>
+      write(chat, async (trx) => {
+        await trx
+          .updateTable("chat_queue")
+          .set({ state: "waiting", updated_at: now() })
+          .where("person_id", "=", chat.personId)
+          .where("chat_id", "=", chat.id)
+          .where("id", "=", id)
+          .where("state", "=", "handing_over")
+          .where("sent_as", "is", null)
           .execute();
       }),
 
     /**
-     * Pauses the chat (Stop), stored before anything is stopped: nothing
-     * more is handed over until the person sends.
+     * A waiting row the AI couldn't be given now waits held with `why`, to
+     * send again or remove.
      */
-    pause: (chat: ChatOf) =>
+    hold: (chat: ChatOf, id: string, why: string) =>
       write(chat, async (trx) => {
         await trx
-          .updateTable("chats")
-          .set({ paused: "stopped" })
-          .where("id", "=", chat.id)
-          .execute();
-        await trx
           .updateTable("chat_queue")
-          .set({ held: "paused", updated_at: now() })
+          .set({ held: "failed", held_text: why, updated_at: now() })
           .where("person_id", "=", chat.personId)
           .where("chat_id", "=", chat.id)
-          .where("origin", "=", "rufi")
+          .where("id", "=", id)
           .where("state", "=", "waiting")
           .where("held", "is", null)
           .execute();
       }),
 
     /**
-     * Claims the next turn's rows, or none. A person's message goes with
-     * every event held to ride with it; events next to each other at the
-     * head go together. Paused or signed out: none, and events wait to
-     * ride. The rows are handing over, not yet marked (`mark`).
+     * Rows held as signed out go again, now the sign-in is back; returns
+     * their ids.
      */
-    claim: (chat: ChatOf, signedIn: boolean): Promise<HandOver | undefined> =>
-      write(chat, async (trx) => {
-        const at = now();
-        const holdEvents = (held: string) =>
-          trx
+    signedIn: (chat: ChatOf) =>
+      write(chat, async (trx) =>
+        (
+          await trx
             .updateTable("chat_queue")
-            .set({ held, updated_at: at })
+            .set({ held: null, held_text: null, updated_at: now() })
             .where("person_id", "=", chat.personId)
             .where("chat_id", "=", chat.id)
-            .where("origin", "=", "rufi")
             .where("state", "=", "waiting")
-            .where("held", "is", null)
-            .execute();
-        const paused = await pausedOf(trx, chat);
-        if (paused !== null) {
-          await holdEvents("paused");
-          return undefined;
-        }
-        if (
-          (await rows(trx, chat)
-            .select("id")
-            .where("state", "=", "handing_over")
-            .executeTakeFirst()) !== undefined
-        ) {
-          return undefined;
-        }
-        const waiting = await rows(trx, chat)
-          .selectAll()
-          .where("state", "=", "waiting")
-          .orderBy("position")
-          .execute();
-        const free = waiting.filter((row) => row.held === null);
-        const head = free[0];
-        if (!head) return undefined;
-        if (!signedIn) {
-          await holdEvents("signed_out");
-          return undefined;
-        }
-        let batch: typeof waiting;
-        if (head.origin === "person") {
-          const riding = waiting.filter(
-            (row) => row.origin === "rufi" && RIDES.includes(row.held ?? ""),
-          );
-          batch = [...riding, head];
-        } else {
-          const stop = free.findIndex((row) => row.origin !== "rufi");
-          batch = stop === -1 ? free : free.slice(0, stop);
-        }
-        const id = head.id;
-        await trx
-          .updateTable("chat_queue")
-          .set({
-            state: "handing_over",
-            held: null,
-            sent_as: null,
-            updated_at: at,
-          })
-          .where(
-            "id",
-            "in",
-            batch.map((row) => row.id),
-          )
-          .execute();
-        return {
-          id,
-          origin: head.origin as HandOver["origin"],
-          notes: batch
-            .filter((row) => row.origin === "rufi")
-            .map((row) => row.text),
-          text: head.origin === "person" ? head.text : undefined,
-          refs:
-            head.origin === "person" ? (JSON.parse(head.refs) as Chip[]) : [],
-        };
-      }),
-
-    /**
-     * The claimed rows are about to go to the AI, under `id`: marked in
-     * the database first, so a crash from now on leaves them not sure.
-     */
-    mark: (chat: ChatOf, id: string) =>
-      write(chat, async (trx) => {
-        await trx
-          .updateTable("chat_queue")
-          .set({ sent_as: id, updated_at: now() })
-          .where("person_id", "=", chat.personId)
-          .where("chat_id", "=", chat.id)
-          .where("state", "=", "handing_over")
-          .execute();
-      }),
+            .where("held", "=", "signed_out")
+            .returning("id")
+            .execute()
+        ).map((row) => row.id),
+      ),
 
     /**
      * The person's Retry of a message whose reply ended in Rufi's part, for
-     * the hold they saw: it goes first in line, and the pause ends (a Retry
-     * is a send of theirs). An older hold changes nothing.
+     * the hold they saw: it goes first in line. An older hold changes
+     * nothing.
      */
     retry: (chat: ChatOf, id: string, hold: string) =>
       write(chat, async (trx) => {
@@ -678,90 +698,23 @@ export function chatQueue(
           })
           .where("id", "=", id)
           .execute();
-        await trx
-          .updateTable("chats")
-          .set({ paused: null })
-          .where("id", "=", chat.id)
-          .execute();
       }),
 
     /**
-     * A hand-over the AI never got: its rows wait again. The person's row
-     * is held with `why` (to send again or remove), unless it went back for
-     * a Stop; events wait to ride with the next message. `notOpened`: the
-     * AI's thread didn't open, and the hold is a new one of its kind. Only
-     * before Rufi's part of its reply started (endPart after).
-     */
-    notTaken: (chat: ChatOf, why?: string, notOpened = false) =>
-      write(chat, async (trx) => {
-        const at = now();
-        const back = rows(trx, chat)
-          .select("id")
-          .where("state", "=", "handing_over");
-        const held =
-          why === undefined ? null : notOpened ? "open_failed" : "failed";
-        await trx
-          .updateTable("chat_queue")
-          .set({
-            state: "waiting",
-            sent_as: null,
-            held,
-            held_text: why ?? null,
-            hold_id: held === "open_failed" ? uuid() : null,
-            updated_at: at,
-          })
-          .where("id", "in", back.where("origin", "=", "person"))
-          .execute();
-        await trx
-          .updateTable("chat_queue")
-          .set({
-            state: "waiting",
-            sent_as: null,
-            held: "paused",
-            updated_at: at,
-          })
-          .where("id", "in", back.where("origin", "=", "rufi"))
-          .execute();
-      }),
-
-    /**
-     * A hand-over nobody knows the end of: its rows are not sure, and the
-     * chat pauses, so nothing else starts beside a turn that may run.
-     */
-    unknown: (chat: ChatOf, id: string) =>
-      write(chat, async (trx) => {
-        const cut = await trx
-          .updateTable("chat_queue")
-          .set({ state: "not_sure", updated_at: now() })
-          .where("person_id", "=", chat.personId)
-          .where("sent_as", "=", id)
-          .where("state", "=", "handing_over")
-          .executeTakeFirst();
-        // Its turn started meanwhile: nothing is unknown.
-        if (cut.numUpdatedRows === 0n) return;
-        await trx
-          .updateTable("chats")
-          .set({ paused: "stopped" })
-          .where("id", "=", chat.id)
-          .execute();
-      }),
-
-    /**
-     * When Rufi starts: rows it stopped after their mark are not sure,
-     * never sent again by itself. Rows it stopped before the mark surely
-     * never reached the AI: a message whose reply had started waits held
-     * with `why` for its reply's Retry; one whose thread was opening waits
-     * again; events wait to ride. A chat with rows waiting is paused until
-     * the person sends. Returns how many rows were cut off.
+     * When Rufi starts, for rows it stopped before it claimed them for the
+     * agent system: a message whose files Rufi's part read waits held with
+     * `why` for its reply's Retry; the rest wait again. A claimed row is
+     * settled with the agent system (server/agents.ts). Returns how many
+     * replies were cut off.
      */
     endStopped: (why: string): Promise<number> =>
       db.transaction().execute(async (trx) => {
         const at = now();
-        const unmarked = trx
+        const unclaimed = trx
           .updateTable("chat_queue")
           .where("state", "=", "handing_over")
           .where("sent_as", "is", null);
-        const ended = await unmarked
+        const ended = await unclaimed
           .set({
             state: "waiting",
             held: "reply_ended",
@@ -772,53 +725,10 @@ export function chatQueue(
           .where("origin", "=", "person")
           .where("turn_id", "is not", null)
           .executeTakeFirst();
-        await unmarked
+        await unclaimed
           .set({ state: "waiting", held: null, updated_at: at })
-          .where("origin", "=", "person")
-          .where("turn_id", "is", null)
           .execute();
-        await unmarked
-          .set({ state: "waiting", held: "paused", updated_at: at })
-          .where("origin", "=", "rufi")
-          .execute();
-        const cut = await trx
-          .updateTable("chat_queue")
-          .set({ state: "not_sure", updated_at: at })
-          .where("state", "=", "handing_over")
-          .executeTakeFirst();
-        await trx
-          .updateTable("chats")
-          .set({ paused: "restarted" })
-          .where("paused", "is", null)
-          .where((eb) =>
-            eb.exists(
-              eb
-                .selectFrom("chat_queue as q")
-                .select("q.id")
-                .whereRef("q.chat_id", "=", "chats.id")
-                .where("q.state", "=", "waiting")
-                .where("q.held", "is", null),
-            ),
-          )
-          .execute();
-        // Events wait to ride with the person's next message, as after a Stop.
-        await trx
-          .updateTable("chat_queue")
-          .set({ held: "paused", updated_at: at })
-          .where("origin", "=", "rufi")
-          .where("state", "=", "waiting")
-          .where("held", "is", null)
-          .where((eb) =>
-            eb.exists(
-              eb
-                .selectFrom("chats as c")
-                .select("c.id")
-                .whereRef("c.id", "=", "chat_queue.chat_id")
-                .where("c.paused", "is not", null),
-            ),
-          )
-          .execute();
-        return Number(cut.numUpdatedRows) + Number(ended.numUpdatedRows);
+        return Number(ended.numUpdatedRows);
       }),
   };
 }

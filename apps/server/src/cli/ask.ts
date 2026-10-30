@@ -10,6 +10,7 @@ import {
   type AgentRuntime,
   type TurnEnd,
 } from "../agent/runtime.ts";
+import { callOf } from "../agent/codex/events.ts";
 import type { forAgent } from "../core/tools/tools.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { SKILLS } from "../core/skills/skills.ts";
@@ -74,24 +75,27 @@ export const ask = (
     const key = keys.issue({
       tools: tools.specs,
       call: async (call) => {
+        // Codex's own: the ask runs on Codex directly.
+        const made = callOf(call.meta);
+        const turnId = made.turnId;
         if (
-          call.threadId === undefined ||
-          call.threadId !== threadId ||
-          call.turnId === undefined ||
-          agent.activeTurn(call.threadId) !== call.turnId
+          made.threadId === undefined ||
+          made.threadId !== threadId ||
+          turnId === undefined ||
+          agent.activeTurn(made.threadId) !== turnId
         ) {
           return {
             ok: false,
             text: JSON.stringify({ ok: false, error: "No reply is running." }),
           };
         }
-        if (caller?.turnId !== call.turnId) {
-          caller = { turnId: call.turnId, call: tools.forTurn() };
+        if (caller?.turnId !== turnId) {
+          caller = { turnId, call: tools.forTurn() };
         }
-        const answer = await caller.call(call.tool, call.input, call.callId);
+        const answer = await caller.call(call.tool, call.input, made.callId);
         if (answer.stopTurn !== undefined) {
           agent
-            .stop(call.threadId, call.turnId, {
+            .stop(made.threadId, turnId, {
               status: "failed",
               text: answer.stopTurn,
             })
