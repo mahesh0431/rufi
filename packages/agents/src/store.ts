@@ -20,7 +20,10 @@ const read = (name: string) =>
  * n - 1 to n. One that has shipped never changes; a change is a new one at
  * the end. No BEGIN, COMMIT or PRAGMA in them: openAgentStore does those.
  */
-const MIGRATIONS: readonly string[] = [read("migrations/0001-agents.sql")];
+const MIGRATIONS: readonly string[] = [
+  read("migrations/0001-agents.sql"),
+  read("migrations/0002-questions.sql"),
+];
 
 /** An event as the log keeps it. */
 export interface StoredEvent {

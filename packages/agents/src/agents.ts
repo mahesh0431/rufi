@@ -154,7 +154,7 @@ export interface Item {
   id: string;
   /** Its place in its turn, from when the turn first reported it. */
   position: number;
-  type: "text" | "note" | "question" | "reasoning" | "step";
+  type: "text" | "note" | "reasoning" | "step";
   kind: string | null;
   title: string | null;
   detail: string | null;
@@ -625,13 +625,30 @@ export function createAgents(options: {
         }
         return;
       }
-      case "question":
-        saveItem(live, event.turn, event.item, {
-          type: "question",
-          title: event.title,
-          payload: { options: event.options },
+      // Apart from the item it came with, which it never changes.
+      case "question": {
+        const turn = turnOf(live, event.turn);
+        if (!turn) return;
+        store.change(({ event: record }) => {
+          db.prepare(
+            `INSERT INTO questions (turn_id, item_id, number, title, options, created_at)
+             VALUES (?, ?, (SELECT COALESCE(MAX(number), 0) + 1 FROM questions WHERE turn_id = ? AND item_id = ?), ?, ?, ?)`,
+          ).run(
+            turn.id,
+            event.item,
+            turn.id,
+            event.item,
+            event.title,
+            JSON.stringify(event.options),
+            now(),
+          );
+          record("question.saved", live.id, {
+            turn: turn.id,
+            item: event.item,
+          });
         });
         return;
+      }
       // Whole: it replaces what streamed.
       case "reasoning":
         live.streams.delete(`${event.turn}/${event.item}`);
@@ -738,7 +755,7 @@ export function createAgents(options: {
     ref: string,
     item: string,
     fields: {
-      type: "text" | "note" | "question" | "reasoning" | "step";
+      type: "text" | "note" | "reasoning" | "step";
       kind?: string;
       title?: string;
       detail?: string;

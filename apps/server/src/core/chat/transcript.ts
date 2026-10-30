@@ -176,7 +176,7 @@ const questionsOf = (questions: string | null): Question[] =>
   questions === null ? [] : (JSON.parse(questions) as Question[]);
 
 /** A reply's text as it shows: its answer, then each question it asked. */
-const withQuestions = (answer: string, questions: string | null) =>
+export const withQuestions = (answer: string, questions: string | null) =>
   [
     answer,
     ...questionsOf(questions).map(

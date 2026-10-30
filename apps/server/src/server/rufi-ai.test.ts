@@ -82,10 +82,10 @@ async function start(adapter: ProviderAdapter, logged: string[] = []) {
     store,
     system,
     row,
-    /** The replies' text as the screens get it. */
+    /** The replies' and the AI's notes' text as the screens get it. */
     shown: async () =>
       (await transcripts.page(await row())).entries
-        .filter((entry) => entry.kind === "reply")
+        .filter((entry) => entry.kind === "reply" || entry.activity === "note")
         .map((entry) => entry.text),
     send: async (id: string, text: string) => chat.send(await row(), id, text),
     /** Waits for the chat's reply to run; its provider turn. */
@@ -125,10 +125,21 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
   const logged: string[] = [];
   let rufi = await start(adapter, logged);
 
-  // Only part of the answer streams, then a question on the same item,
-  // before the turn ends with all of the answer.
+  // A whole note, then a question on its item; only part of the answer
+  // streams, then a question on the same item, before the turn ends with
+  // all of the answer.
   await rufi.send("message-1", "What was my last TSH?");
   const first = await rufi.running();
+  const note = "I checked your March report.";
+  emit({ type: "note", turn: first, item: "note-1", delta: note, done: true });
+  emit({
+    type: "question",
+    turn: first,
+    item: "note-1",
+    title: "Which report?",
+    options: ["March", "May"],
+  });
+  const which = "**Which report?**\n- March\n- May";
   emit({
     type: "text",
     turn: first,
@@ -144,9 +155,9 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
   });
   const asked = "\n\n**Which one?**\n- March\n- May";
   await vi.waitFor(async () => {
-    expect(await rufi.shown()).toEqual([`Your last TSH${asked}`]);
+    expect(await rufi.shown()).toEqual([note, which, `Your last TSH${asked}`]);
   });
-  const streamed = String(replies()[0]?.["id"]);
+  const streamed = String(replies()[1]?.["id"]);
   // Writing the answer fails after the cursor moved: both roll back.
   record.db.exec(`
     CREATE TRIGGER fictional_failure BEFORE UPDATE OF text ON transcript_entries
@@ -159,8 +170,8 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
     expect(logged).toContain("agents.failed");
   });
   expect(rows("SELECT status FROM turns")).toEqual([{ status: "completed" }]);
-  expect(replies()).toMatchObject([{ id: streamed, status: "stopped" }]);
-  expect(await rufi.shown()).toEqual([`Your last TSH${asked}`]);
+  expect(replies()).toMatchObject([{}, { id: streamed, status: "stopped" }]);
+  expect(await rufi.shown()).toEqual([note, which, `Your last TSH${asked}`]);
   expect(rufi.store.eventsAfter(cursor()).map((event) => event.type)).toContain(
     "turn.ended",
   );
@@ -174,8 +185,9 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
   await vi.waitFor(() => {
     expect(cursor()).toBe(rufi.store.highWater());
   });
-  expect(replies()).toMatchObject([{ id: streamed, status: "done" }]);
-  expect(await rufi.shown()).toEqual([`Your last TSH was 2.1.${asked}`]);
+  expect(replies()).toMatchObject([{}, { id: streamed, status: "done" }]);
+  const firstTurn = [note, which, `Your last TSH was 2.1.${asked}`];
+  expect(await rufi.shown()).toEqual(firstTurn);
 
   // Nothing streams: the answer gets a row of its own.
   await rufi.send("message-2", "And the one before?");
@@ -213,6 +225,7 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
   });
   const whole = replies();
   expect(whole).toMatchObject([
+    { text: "" },
     { id: streamed, text: "Your last TSH was 2.1.", status: "done" },
     { text: "It was 2.4.", status: "done" },
     { text: "Ferritin was 40.", status: "done" },
@@ -244,6 +257,12 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
     },
   ]);
   expect(replies()).toEqual(whole);
+  // The note and its question are there as they were.
+  expect(await rufi.shown()).toEqual([
+    ...firstTurn,
+    "It was 2.4.",
+    "Ferritin was 40.",
+  ]);
   await rufi.close();
 });
 
