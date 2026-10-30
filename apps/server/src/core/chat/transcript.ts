@@ -1448,8 +1448,9 @@ export function transcripts(
         const [row] = await handedOver(trx, chat, [input]);
         if (!row) return undefined;
         const at = now();
-        // A turn's own inputs are sent as it starts: this one went into a
-        // turn that ran already, a steer.
+        // A turn's own inputs are sent as it starts: one taken into a turn
+        // the package names went into a turn that ran already, a steer. One
+        // confirmed with no turn (after a crash) is a message.
         if (outcome.state === "delivered") {
           const turn =
             outcome.agentTurn === null
@@ -1461,7 +1462,7 @@ export function transcripts(
             revision,
             [row],
             turn?.id ?? null,
-            "steer",
+            outcome.agentTurn === null ? "message" : "steer",
           );
           return { entries, turns: [] };
         }
