@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { DatabaseSync } from "node:sqlite";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Entry, Status, StreamLine } from "@rufi/contracts";
 import { APPEARANCE_HEADER } from "@rufi/contracts/app";
@@ -34,6 +35,7 @@ import {
   openWritable,
 } from "../core/store/database.ts";
 import { backupsPath } from "../core/store/backup.ts";
+import { MIGRATIONS, migrate } from "../core/store/migrations.ts";
 import { devices } from "../core/devices/devices.ts";
 import { findDataFolder } from "../core/store/data-folder.ts";
 import { moveData } from "../core/store/move.ts";
@@ -447,6 +449,51 @@ describe("the core", () => {
       "q-r2",
       "q-r",
     ]);
+  });
+
+  it("after an upgrade, sends each message that waited once and never one that may have reached the AI, also when its first start is cut short", async () => {
+    // Asha's chat as Rufi of version 19 left it, stopped: one message to
+    // go, one behind it, and one it may have given the AI.
+    const path = databasePath(home);
+    const first = new DatabaseSync(path);
+    first.exec(`${MIGRATIONS[0] ?? ""}; PRAGMA user_version = 1;`);
+    first.close();
+    migrate(path, MIGRATIONS.slice(0, 19));
+    const left = new DatabaseSync(path);
+    left.exec(`
+      INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
+      INSERT INTO chats (id, person_id, paused, created_at) VALUES ('c-asha', 'asha', 'stopped', '2026-10-04T09:00:00Z');
+      INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, sent_as, created_at, updated_at) VALUES
+        ('q-handed', 'asha', 'c-asha', 'person', 'Handed over', 1, 'handing_over', 'q-handed', '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
+        ('q-first', 'asha', 'c-asha', 'person', 'hang', 2, 'waiting', NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
+        ('q-second', 'asha', 'c-asha', 'person', 'Second', 3, 'waiting', NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');`);
+    left.close();
+    const said = async (page: Awaited<ReturnType<typeof session>>) =>
+      (
+        (await page.api("GET", "/api/people/asha/chat")).body["entries"] as {
+          id: string;
+          kind: string;
+          text: string;
+        }[]
+      ).filter((entry) => entry.kind === "message" || entry.kind === "reply");
+    // The first goes and runs on; Rufi closes before the second goes.
+    let page = await session(await start());
+    await until(async () => (await said(page)).length === 1);
+    await stop();
+    page = await session(await start());
+    await until(async () =>
+      (await said(page)).some((entry) => entry.text === "ok:Second"),
+    );
+    await sleep(300);
+    // Each message once; the first one's reply was cut with its start.
+    expect(
+      (await said(page)).map((entry) =>
+        entry.kind === "message" ? entry.id : entry.text,
+      ),
+    ).toEqual(["q-first", "q-second", "ok:Second"]);
+    expect(
+      (await page.api("GET", "/api/people/asha/chat/queue")).body["items"],
+    ).toMatchObject([{ id: "q-handed", state: "not_sure" }]);
   });
 
   it("marks replies cut off by a crash as interrupted when it starts", async () => {

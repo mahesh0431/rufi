@@ -888,15 +888,6 @@ export function transcripts(
       return row && toChat(row);
     },
 
-    /** The rules the chat's thread was told again (`thread_tools`). */
-    setThreadRules: async (chat: ChatRow, version: string) => {
-      await db
-        .updateTable("chats")
-        .set({ thread_tools: version })
-        .where("id", "=", chat.id)
-        .execute();
-    },
-
     /**
      * The thread the chat now uses, and what it started with; the screens
      * hear of it, as the context used was the old thread's.
@@ -2124,8 +2115,9 @@ export function transcripts(
 
     /**
      * The last `count` messages (the user's, the AI's replies and progress
-     * notes, Rufi's receipts, events and brief lines) from replies that have
-     * ended, oldest first: what a new thread starts with. A reply that
+     * notes, Rufi's receipts, events and brief lines) from replies that
+     * reached the AI and have ended, oldest first: what a new thread starts
+     * with. A reply that ended in Rufi's part never had the AI. A reply that
      * completed is as it came, with its rufi-basis block, so the new thread
      * sees the convention; one that didn't is its answer only, marked
      * unfinished, as are its notes. Commands and thinking are left out.
@@ -2165,7 +2157,13 @@ export function transcripts(
           ]),
         )
         .where((eb) =>
-          eb.or([eb("t.status", "is", null), eb("t.status", "!=", "running")]),
+          eb.or([
+            eb("t.id", "is", null),
+            eb.and([
+              eb("t.status", "!=", "running"),
+              eb("t.agent_turn_id", "is not", null),
+            ]),
+          ]),
         )
         .orderBy("e.seq", "desc")
         .limit(count)
