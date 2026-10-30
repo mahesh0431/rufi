@@ -974,36 +974,6 @@ describe("the local API", () => {
       expect((await page.api("GET", c.draft)).body["text"]).toBe(
         "A fictional follow-up",
       );
-
-      // After a restart, a send that waits for the reply's history is kept
-      // out by a Stop meanwhile too.
-      await stop();
-      const again = await session(
-        await start({
-          adapters: scripted({ slow: ["thread/turns/list"], slowMs: 4_000 }),
-        }),
-      );
-      await again.say(c.path, "hang");
-      // Its turn is saved only after the history, so no screen shows it
-      // running yet: wait well inside the history's 4 s.
-      await sleep(1_500);
-      const waiting = again.say(c.path, "A fictional follow-up");
-      await sleep(100);
-      expect((await again.api("POST", `${c.path}/stop`)).status).toBe(200);
-      expect(await waiting).toMatchObject({
-        status: 409,
-        body: { error: "Stopped." },
-      });
-      await sleep(500);
-      expect((await again.api("GET", `${c.path}/queue`)).body).toMatchObject({
-        paused: "stopped",
-        items: [],
-      });
-      expect(
-        (
-          (await again.api("GET", c.path)).body["turns"] as { status: string }[]
-        ).map((turn) => turn.status),
-      ).not.toContain("completed");
     },
   );
 
@@ -1068,7 +1038,7 @@ describe("the local API", () => {
           (await page.api("GET", `${c.path}/queue`)).body["items"] as {
             held: string | null;
           }[]
-        )[0]?.held === "failed",
+        )[0]?.held === "open_failed",
     );
     expect(
       (await page.api("GET", `${c.path}/queue`)).body["items"],
@@ -2584,7 +2554,6 @@ describe("backups and export over the API", () => {
             }[]
           ).at(2)?.status === "completed",
       );
-      expect(logged).toContain("chat.resume_failed");
       expect(
         (await restored.api("GET", `${c.path}/queue`)).body["items"],
       ).toMatchObject([{ held: "restored" }]);

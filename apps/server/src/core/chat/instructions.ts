@@ -47,14 +47,6 @@ export function coreInstructions(region: string | undefined): string {
 }
 
 /**
- * What a thread is told when Rufi's rules changed (an update, a new
- * emergency region): its history still holds the rules it was given first,
- * so the new ones come whole, saying they replace them.
- */
-export const rulesNote = (instructions: string) =>
-  `Rufi's rules changed. These replace the earlier ones. Skills may have changed too: read a skill's SKILL.md again before you use it.\n\n${instructions}`;
-
-/**
  * Names what a thread was told: the core and every skill's whole text
  * (front matter included) and files. A changed skill must replace what the thread
  * read before, just as a changed core does (server/chat.ts).

@@ -216,6 +216,13 @@ export async function startRufiAi(
   const pending = new Map<string, Pending>();
   /** Each open conversation's agent, by its thread. */
   const threads = new Map<string, string>();
+  /** The agent's events come from this thread from now on. */
+  const follow = (agent: string, ref: string) => {
+    for (const [thread, owner] of threads) {
+      if (owner === agent) threads.delete(thread);
+    }
+    threads.set(ref, agent);
+  };
   /** The provider's turn of each of the package's, while it runs. */
   const turns = new Map<string, string>();
   /** Rufi's own end for a turn it stopped, by the provider's turn. */
@@ -318,10 +325,7 @@ export async function startRufiAi(
         model: system.agents.get(agent)?.model ?? "",
         tools: openings.get(agent)?.version ?? "",
       });
-      for (const [thread, owned] of threads) {
-        if (owned === agent) threads.delete(thread);
-      }
-      threads.set(ref, agent);
+      follow(agent, ref);
     },
   });
   const { agents } = system;
@@ -448,10 +452,18 @@ export async function startRufiAi(
           }
           throw error;
         }
-        for (const [thread, owner] of threads) {
-          if (owner === agent) threads.delete(thread);
+        follow(agent, ref);
+        // The chat's thread is its conversation.
+        const stored = await transcripts.chat(row.personId);
+        if (stored && stored.threadId !== ref) {
+          await chat?.saved();
+          await transcripts.setThread(stored, {
+            id: ref,
+            provider: agents.get(agent)?.provider ?? provider,
+            model: agents.get(agent)?.model ?? "",
+            tools: given.version,
+          });
         }
-        threads.set(ref, agent);
         return ref;
       },
 
@@ -532,7 +544,10 @@ export async function startRufiAi(
         }
       }
       if (failed.length > 0) {
-        throw new AggregateError(failed, "Some providers didn't close.");
+        throw new AggregateError(
+          failed,
+          `Some providers didn't close: ${failed.map((error) => (error instanceof Error ? error.message : String(error))).join("; ")}`,
+        );
       }
     },
   };

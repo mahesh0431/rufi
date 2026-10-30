@@ -759,23 +759,11 @@ export function chat(deps: ChatDeps) {
       },
       { fresh, reload: !fresh && chat.threadTools !== version },
     );
-    if (threadId !== chat.threadId) {
-      // Once the pointer moves, the old conversation's events can't find
-      // the chat: they are saved first.
-      await saving;
-      await transcripts.setThread(chat, {
-        id: threadId,
-        provider: agent.provider,
-        model: chat.model ?? "",
-        tools: version,
-      });
-      chat.threadId = threadId;
-      chat.threadProvider = agent.provider;
-      chat.threadModel = chat.model;
-    } else if (chat.threadTools !== version) {
+    // Rufi AI keeps the chat's thread in step with its conversation.
+    if (threadId === chat.threadId && chat.threadTools !== version) {
       await transcripts.setThreadRules(chat, version);
     }
-    chat.threadTools = version;
+    Object.assign(chat, await latest(chat));
     return threadId;
   }
 

@@ -2,7 +2,7 @@
 // scripted fake Codex and against the real Codex binary (on a local fake
 // model, offline). What a reply does is chosen by the message's words: see
 // tests/fake-codex.ts and tests/fake-model.ts.
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -50,6 +50,7 @@ import {
 import { chatCaller, forAgent } from "../core/tools/tools.ts";
 import { v7 as uuid } from "uuid";
 import { chatQueue, type ChatQueue } from "../core/chat/queue.ts";
+import { agentsPath } from "./agents.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 import { agentSetup } from "./core.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
@@ -131,12 +132,19 @@ async function startChat(
     tokenProvider?: () => Promise<string>;
     /** What Rufi's reader does in each run (tests/fake-reader.ts). */
     reader?: Script[];
+    /** The agent database is lost while Rufi is closed. */
+    loseAgents?: boolean;
   } = {},
 ): Promise<Chat> {
   const again = chat !== undefined;
   await chat?.close();
   await ai?.close();
   await served?.close();
+  if (options.loseAgents) {
+    for (const end of ["", "-wal", "-shm"]) {
+      await rm(`${agentsPath(home)}${end}`, { force: true });
+    }
+  }
   // As the core does when it starts again.
   if (again) {
     await transcripts.interruptRunning();
@@ -2189,6 +2197,31 @@ describe("the chat, on the scripted Codex", () => {
     expect((await backendOf("fake").contexts()).at(-1)).toContain(
       "User: I have a headache\n\nRufi: **Saved**\n\n- Added symptom **Headache**\n\nAI: ok:I have a headache",
     );
+  });
+
+  it("goes on after the agent database is lost, in a new conversation that starts with what was delivered only", async () => {
+    await startChat("fake");
+    const c = await newChat();
+    await say(c, "first");
+    await ended(c.id);
+    // The person's message waits for a reply of its own, then is stopped.
+    await rufiReply(c);
+    await say(await chatRow(), "waiting B");
+    await chat?.stop(await chatRow());
+    await ended(c.id, 2);
+
+    await startChat("fake", { loseAgents: true });
+    const [waitingB] = (await queue.list(await chatRow())).items;
+    await chat?.queue.sendNow(await chatRow(), waitingB?.id ?? "");
+    await ended(c.id, 3);
+    const seed = (await backendOf("fake").contexts()).at(-1);
+    expect(seed).toContain("User: first\n\nAI: ok:first");
+    expect(seed).not.toContain("waiting B");
+    const { entries, turns } = await transcript(c.id);
+    expect(
+      entries.filter(([kind]) => kind === "message").map(([, text]) => text),
+    ).toEqual(["first", "waiting B"]);
+    expect(turns.map((turn) => turn.newThread)).toEqual([false, false, true]);
   });
 
   it("saves nothing of a reply after its Stop", async () => {
