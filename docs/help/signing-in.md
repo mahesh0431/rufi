@@ -6,7 +6,7 @@ You can sign in in Rufi, or with terminal commands.
 
 ## Sign in in Rufi
 
-1. Click **Sign in with ChatGPT**: in the first run, or click "Not signed in" at the bottom of the sidebar, **Sign in** in **Settings** › **Sign-in**, or **Sign in** by the chat's box after you sent while signed out. The **Sign in** page has Codex and Claude, each with its own button.
+1. In the first run, click **Sign in with ChatGPT** to sign Codex in. Later, click "Not signed in" at the bottom of the sidebar, **Sign in** in **Settings** › **Sign-in**, or **Sign in** by the chat's box after you sent while signed out: the **Sign in** page has Codex and Claude, each with its own button.
 2. Your browser opens on the sign-in page: ChatGPT's for Codex, Claude's for Claude. If it doesn't open, click **open the sign-in page** in Rufi.
 3. Sign in there.
 4. Go back to Rufi. It goes on by itself when you are signed in.
@@ -42,7 +42,7 @@ Codex and Claude renew their sign-ins by themselves. If one ends, for example be
 | Codex's ChatGPT sign-in | `codex/auth.json` in your data folder, kept by Codex                            |
 | Claude's sign-in        | Your Mac's Keychain, kept by Claude for the `claude` folder in your data folder |
 
-The AI's commands can't read either. A backup holds neither, and a move leaves both behind: after a restore or a move, sign in to each again.
+The AI's commands can't read Codex's `auth.json` or Claude's folder. Claude's sign-in itself is in your Mac's Keychain, and Rufi doesn't yet stop the AI's commands from reaching the Keychain: whether they can get Claude's sign-in from it is being looked at. A backup holds neither, and a move leaves both behind: after a restore or a move, sign in to each again.
 
 ## Sign out
 

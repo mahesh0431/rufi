@@ -34,7 +34,7 @@ A family's health record on their Mac, with an AI that reads their documents and
 - The record changes only by a save, in one transaction, with a receipt; records are never deleted (ADR 0005).
 - The AI reads the record only through Rufi's tools, for the person Rufi chose (ADR 0006).
 - The AI's sandbox (`aiSandbox`, ADR 0016), the reader's lock-down (ADR 0010), the window's guards and the CSP (ADR 0017). Never relax them to make a test pass.
-- No secret in a process's arguments or environment, Codex's, Claude's or Rufi's: the AI's commands can read them. Codex and Claude keep their own sign-ins in their folders, which the AI's commands can't read (ADR 0001, ADR 0016).
+- No secret in a process's arguments or environment, Codex's, Claude's or Rufi's: the AI's commands can read them. Codex and Claude keep their own sign-ins in their folders, whose files the AI's commands can't read; Claude's Keychain item isn't denied yet (ADR 0001, ADR 0016).
 - A schema change is a migration; a shipped one never changes (ADR 0011).
 - Backups are checked; restore never writes over anything (ADR 0008).
 - Values are stored as printed.
