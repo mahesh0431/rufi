@@ -184,7 +184,7 @@ A message sent while the AI is replying, passed into that reply; the AI carries 
 _Avoid_: nudge, interrupt
 
 **Queue**:
-What waits to go to the AI, kept by Rufi with the chat: your messages and Rufi's notes about **Rufi events**. Rufi gives the AI one at a time, each in a turn of its own, and never the same message twice. It survives a restart and a model change. Shown in the chat as the **waiting messages**.
+What waits to go to the AI, kept by Rufi with the chat: your messages and Rufi's notes about **Rufi events**. Rufi gives the AI one at a time, and never the same message twice. Each starts a turn of its own, except a message of yours without new files sent while the AI replies to you: it goes into that reply, as a **steer**. It survives a restart and a model change. Shown in the chat as the **waiting messages**.
 _Avoid_: inbox, outbox
 
 **Waiting messages**:
@@ -196,7 +196,7 @@ Rufi's own note that something happened outside your chat, such as a deleted doc
 _Avoid_: notification, system message
 
 **Stop**:
-Ends the AI's reply now, with anything it started. What it wrote so far is kept; nothing more goes to the AI until you send a message.
+Ends the AI's reply now, with anything it started. What it wrote so far is kept; what waits goes on, in order.
 _Avoid_: cancel, abort
 
 **Interrupted**:

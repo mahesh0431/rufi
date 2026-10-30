@@ -4,8 +4,8 @@
 // running reply, or in a reply of its own. A waiting message can be edited,
 // moved by its handle (dragged, or by keyboard), sent now or removed; a held
 // one says why, and goes only when you send it. A message already in the
-// chat (Rufi's part reads its files, or its reply ended there) shows only
-// there.
+// chat (Rufi's part reads its files, or its reply ended there with Retry)
+// shows only there.
 import {
   closestCenter,
   DndContext,
@@ -44,9 +44,15 @@ import { chatPath, type Live, messageOf } from "./live.ts";
 import { isRunning } from "./transcript-state.ts";
 import { Button, buttonLook, ICON, IconButton } from "./ui.tsx";
 
-/** Shown here, not in the chat already (its reply has it). */
+/**
+ * Shown here, unless its reply has it and what it needs: one being read,
+ * or one whose reply offers Retry. A message held for another reason
+ * (from a backup) shows here with its actions, also when its reply has it.
+ */
 const waitsHere = (item: QueueItem) =>
-  item.state === "not_sure" || item.turnId == null;
+  item.state === "not_sure" ||
+  item.turnId == null ||
+  (item.held !== null && item.held !== "reply_ended");
 
 /** Whether anything waits to show in the chat. */
 export const anyWaiting = (state: Live) => state.queue.items.some(waitsHere);

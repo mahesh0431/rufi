@@ -275,8 +275,11 @@ test("waiting messages show in the chat: edit, reorder, send now and remove; aft
   await rufi.start();
   await page.goto(rufi.link());
   await opener(chat(page)).click();
-  // After the chat's last message, in the order they go.
-  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
+  // In the transcript's scrolling area, after the chat's last message, in
+  // the order they go.
+  const waiting = log(chat(page)).locator(
+    "xpath=following-sibling::section[@aria-label='Waiting messages']",
+  );
   const items = waiting.getByRole("listitem");
   await expect(items).toHaveText([/^Second/, /^Third/]);
   await expect(log(chat(page))).toContainText("hang");
