@@ -15,6 +15,7 @@ import {
 } from "../src/agents.ts";
 import type {
   Conversation,
+  Input,
   ProviderAdapter,
   ProviderEvent,
   SteerOutcome,
@@ -683,22 +684,24 @@ describe("a turn the provider began by itself", () => {
 
 describe("Stop", () => {
   it("closes and stops a turn the provider begins with a held steer as it settles it", async () => {
-    let deliver: (event: ProviderEvent) => void = () => undefined;
-    let answer: (outcome: SteerOutcome) => void = () => undefined;
+    let held = Promise.withResolvers<SteerOutcome>();
+    let taking: Input | undefined;
+    const taken: string[] = [];
     const stopped: { turn: string; status: unknown }[] = [];
+    const placed: unknown[] = [];
     agents = await run({
       ...fake.adapter,
       open: async (options) => {
-        deliver = options.onEvent;
         const conversation = await fake.adapter.open(options);
         return {
           ...conversation,
           // The provider holds every steer.
-          steer: () =>
-            new Promise<SteerOutcome>((resolve) => {
-              answer = resolve;
-            }),
-          stop: (turn) => {
+          steer: ({ input }) => {
+            taking = input;
+            held = Promise.withResolvers();
+            return held.promise;
+          },
+          stop: async (turn) => {
             stopped.push({
               turn,
               status: rows(
@@ -706,24 +709,30 @@ describe("Stop", () => {
                 turn,
               )[0]?.["status"],
             });
-            if (turn === "turn-held") {
-              deliver({ type: "turnEnded", turn, end: { status: "stopped" } });
-            } else {
-              // It took the held steer as a turn of its own just then.
-              deliver({
-                type: "turnStarted",
-                turn: "turn-held",
-                inputs: ["note-2"],
-              });
-              answer({ status: "next_turn", turn: "turn-held" });
-            }
-            return Promise.resolve();
+            if (!taking) return conversation.stop(turn);
+            // Just then the turn ends, if it still ran, and the provider
+            // takes the held steer as a turn of its own, which calls a tool.
+            fake.end(conversation.ref);
+            await conversation.startTurn({
+              input: taking,
+              model: ASHA.model,
+              effort: ASHA.effort,
+            });
+            taking = undefined;
+            const next = latestTurn(ASHA.id).ref;
+            taken.push(next);
+            held.resolve({ status: "next_turn", turn: next });
+            placed.push(
+              await agents.place(ASHA.id, meta(next, "call-1"), deadline()),
+            );
           },
         };
       },
     });
     asha();
     fake.script.turn = "runs";
+
+    // The turn ends before Stop.
     agents.send(ASHA.id, note("note-1"));
     await running();
     const first = latestTurn(ASHA.id);
@@ -735,21 +744,56 @@ describe("Stop", () => {
     await until(() => {
       expect(agents.get(ASHA.id)?.status).toBe("done");
     });
-
     await agents.stop(ASHA.id, "person");
-
-    // Closed to calls from the moment it was admitted.
-    expect(stopped).toEqual([
-      { turn: first.ref, status: "done" },
-      { turn: "turn-held", status: "stopping" },
-    ]);
     expect(agents.get(ASHA.id)).toMatchObject({
       status: "stopped",
       stoppedBy: "person",
     });
+
+    // The turn ends during Stop, with an input waiting behind it.
+    agents.send(ASHA.id, note("note-3"));
+    await running();
+    const second = latestTurn(ASHA.id);
+    agents.send(ASHA.id, note("note-4", "steer"));
+    await until(() => {
+      expect(states()["note-4"]).toBe("handing_over");
+    });
+    agents.send(ASHA.id, note("note-5"));
+    await agents.stop(ASHA.id, "person");
+
+    // Closed to calls from the moment they were admitted.
+    expect(placed).toEqual([undefined, undefined]);
+    expect(stopped).toEqual([
+      { turn: first.ref, status: "done" },
+      { turn: taken[0], status: "stopping" },
+      { turn: second.ref, status: "stopping" },
+      { turn: taken[1], status: "stopping" },
+    ]);
+    // What waited goes on once Stop has finished, open to calls.
+    await running();
+    const third = latestTurn(ASHA.id);
     expect(
-      rows("SELECT turn_id FROM queue WHERE id = 'note-2'")[0]?.["turn_id"],
-    ).toBe(latestTurn(ASHA.id).id);
+      rows(
+        "SELECT provider_turn AS turn, status, reason FROM turns ORDER BY rowid",
+      ),
+    ).toEqual([
+      { turn: first.ref, status: "done", reason: null },
+      { turn: taken[0], status: "stopped", reason: "person" },
+      { turn: second.ref, status: "done", reason: null },
+      { turn: taken[1], status: "stopped", reason: "person" },
+      { turn: third.ref, status: "running", reason: null },
+    ]);
+    expect(
+      rows(
+        "SELECT queue.id, provider_turn AS turn FROM queue JOIN turns ON turns.id = turn_id WHERE queue.id IN ('note-2', 'note-4') ORDER BY position",
+      ),
+    ).toEqual([
+      { id: "note-2", turn: taken[0] },
+      { id: "note-4", turn: taken[1] },
+    ]);
+    expect(
+      await agents.place(ASHA.id, meta(third.ref, "call-2"), deadline()),
+    ).toMatchObject({ turn: third.id });
   });
 
   it("while a start is still opening keeps it from the provider and drops its input; what waits goes on", async () => {
