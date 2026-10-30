@@ -273,7 +273,7 @@ export function chatQueue(
           heldText: row.held_text,
           holdId: row.hold_id,
           refs: JSON.parse(row.refs) as Chip[],
-          ...(row.held === "reply_ended" && { turnId: row.turn_id }),
+          ...(row.turn_id !== null && { turnId: row.turn_id }),
         })),
       };
     },

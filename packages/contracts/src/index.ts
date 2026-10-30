@@ -312,7 +312,10 @@ export const QueueItem = Schema.Struct({
   holdId: Schema.NullOr(Schema.String),
   /** A message's references, as its chips. */
   refs: Schema.Array(Chip),
-  /** A reply_ended message's reply, which shows its Retry. */
+  /**
+   * The reply the message is in already: Rufi's part read, or reads, its
+   * files there. A reply_ended message's reply shows its Retry.
+   */
   turnId: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 export type QueueItem = typeof QueueItem.Type;
@@ -516,8 +519,8 @@ const Message = Schema.String.check(
 export const MessageText = Schema.Struct({ text: Message });
 
 /**
- * A message from the box, sent into the queue or steered into the running
- * reply. `id` is the send's own: the same send again (a retry) finds the
+ * A message from the box, sent into the queue, from where it goes into the
+ * running reply or in its turn. `id` is the send's own: the same send again (a retry) finds the
  * message it made and never makes a second one. Its text may be empty when
  * something is added to it (files sent with no words).
  */

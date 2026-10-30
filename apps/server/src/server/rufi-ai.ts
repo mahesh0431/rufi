@@ -14,11 +14,7 @@ import {
   type TurnEnd as Ended,
 } from "@rufi/agents/provider";
 import { SIGNED_OUT } from "@rufi/contracts";
-import {
-  type AgentEvent,
-  type Model,
-  type TurnEnd,
-} from "../agent/runtime.ts";
+import { type AgentEvent, type Model, type TurnEnd } from "../agent/runtime.ts";
 import { chatAgents, sentAs } from "../core/chat/agents.ts";
 import type { ChatRow, Transcripts } from "../core/chat/transcript.ts";
 import { startAgents, type AgentSystem, type Apply } from "./agents.ts";
