@@ -172,7 +172,8 @@ function store(db: DatabaseSync): AgentStore {
       const number = last;
       for (const listener of listeners) {
         queueMicrotask(() => {
-          listener(number);
+          // Unsubscribed or closed meanwhile: it hears nothing.
+          if (listeners.has(listener)) listener(number);
         });
       }
       return result;
