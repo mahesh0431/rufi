@@ -71,11 +71,46 @@ export async function startAgents(options: {
   // 1. A new agent database: its agents' work is gone, and Rufi's links to
   // the old one end.
   let cursor = await kept.begin(store.fresh);
+
+  // Rufi reads the events after its cursor one reading at a time, until
+  // none is left. What it applies of one moves the cursor in the same
+  // transaction.
+  let reading = Promise.resolve();
+  const read = () => {
+    reading = reading
+      .then(async () => {
+        for (;;) {
+          const events = store.eventsAfter(cursor);
+          const last = events.at(-1);
+          if (!last) return;
+          for (const event of events) {
+            const applied = await options.apply?.(event, (trx) =>
+              kept.advance(event.number, trx),
+            );
+            if (applied) cursor = event.number;
+          }
+          if (cursor < last.number) {
+            await kept.advance(last.number);
+            cursor = last.number;
+          }
+        }
+      })
+      .catch(failed);
+    return reading;
+  };
+
   const agents = createAgents({
     store,
     adapters: options.adapters,
     host: {
       ...options.host,
+      // Rufi answers a claim once it has read what the package did before
+      // it: a steer the provider refused is waiting again in Rufi's queue
+      // before the next turn claims it.
+      claim: async (claim) => {
+        await read();
+        return options.host.claim(claim);
+      },
       ledger: async (entry) => {
         await kept.ledger(entry);
         await options.opened?.(entry);
@@ -134,32 +169,7 @@ export async function startAgents(options: {
   };
   for (const chat of await kept.unrooted()) await make(chat);
 
-  // 3. Rufi reads every event after its cursor, now and as they commit,
-  // one reading at a time. What it applies of one moves the cursor in the
-  // same transaction.
-  let reading = Promise.resolve();
-  const read = () => {
-    reading = reading
-      .then(async () => {
-        for (;;) {
-          const events = store.eventsAfter(cursor);
-          const last = events.at(-1);
-          if (!last) return;
-          for (const event of events) {
-            const applied = await options.apply?.(event, (trx) =>
-              kept.advance(event.number, trx),
-            );
-            if (applied) cursor = event.number;
-          }
-          if (cursor < last.number) {
-            await kept.advance(last.number);
-            cursor = last.number;
-          }
-        }
-      })
-      .catch(failed);
-    return reading;
-  };
+  // 3. Rufi reads every event after its cursor, now and as they commit.
   const unfollow = store.onCommit(() => void read());
   await read();
 
