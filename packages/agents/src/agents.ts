@@ -166,7 +166,8 @@ export interface Agents {
   /**
    * Starts handing inputs over, once the host has finished starting:
    * first asks the providers about those a crash left with them, then
-   * hands over what waits. Nothing goes to a provider before it.
+   * hands over what waits. Nothing goes to a provider before it. Again
+   * does nothing.
    */
   dispatch: () => Promise<void>;
   /** Lifts these inputs' holds, so they go again. */
@@ -311,7 +312,9 @@ export function createAgents(options: {
     options.onError(error);
     return undefined;
   };
-  /** Inputs go to providers only once dispatch has begun. */
+  /** Dispatch has begun: it recovers what a crash left, once. */
+  let begun = false;
+  /** Inputs go to providers only once dispatch has recovered. */
   let dispatching = false;
 
   const row = (id: string) =>
@@ -1104,6 +1107,9 @@ export function createAgents(options: {
     },
 
     dispatch: async () => {
+      // Once: a start this process made is never taken for a crash's.
+      if (begun) return;
+      begun = true;
       // What a crash left with a provider: asked by the conversation it
       // went to; an older one's can't be told here.
       const left = db

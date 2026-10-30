@@ -263,10 +263,20 @@ describe("an agent", () => {
 });
 
 describe("the queue", () => {
-  it("hands nothing over before the host dispatches", async () => {
+  it("hands nothing over before the host dispatches, and a second dispatch leaves a start alone", async () => {
+    const asked = Promise.withResolvers<undefined>();
+    const go = Promise.withResolvers<undefined>();
     agents = createAgents({
       store,
-      adapters: [fake.adapter],
+      adapters: [
+        changed((conversation) => ({
+          startTurn: async (start) => {
+            asked.resolve(undefined);
+            await go.promise;
+            return conversation.startTurn(start);
+          },
+        })),
+      ],
       host: host(),
       onError: (error) => errors.push(error),
     });
@@ -277,9 +287,20 @@ describe("the queue", () => {
     expect(openings).toEqual([]);
 
     await agents.dispatch();
+    await asked.promise;
+    // The start is with the provider when Rufi dispatches again.
+    await agents.dispatch();
+    go.resolve(undefined);
+
     await until(() => {
-      expect(states()["note-1"]).toBe("delivered");
+      expect(agents.get(ASHA.id)).toMatchObject({
+        status: "done",
+        result: ANSWER,
+      });
     });
+    expect(rows("SELECT turn_id FROM queue")).toEqual([
+      { turn_id: latestTurn(ASHA.id).id },
+    ]);
   });
 
   it("starts a turn with the first input; a steer goes into it at once, a queued input waits for its end", async () => {
