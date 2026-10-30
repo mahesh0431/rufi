@@ -196,13 +196,16 @@ function ModelsSection() {
   });
   const chosen = settings.data?.models ?? [];
   const offered = models.data?.offered ?? [];
+  // The ticked first, in the shortlist's order, as a new chat takes the
+  // first; then the others, in the providers' order.
+  const shown = [
+    ...chosen.flatMap((id) => offered.filter((model) => model.id === id)),
+    ...offered.filter((model) => !chosen.includes(model.id)),
+  ];
+  // A tick goes last on the shortlist; one its provider doesn't offer now
+  // stays on it.
   const tick = (id: string, on: boolean) => {
-    const ticked = offered
-      .filter((model) => (model.id === id ? on : chosen.includes(model.id)))
-      .map((model) => model.id);
-    // One its provider doesn't offer now stays on it.
-    const away = chosen.filter((kept) => !offered.some((m) => m.id === kept));
-    save.mutate([...ticked, ...away]);
+    save.mutate(on ? [...chosen, id] : chosen.filter((kept) => kept !== id));
   };
   return (
     <>
@@ -221,7 +224,7 @@ function ModelsSection() {
             aria-labelledby="models"
             className="flex flex-col gap-1.5"
           >
-            {offered.map((model) => (
+            {shown.map((model) => (
               <label key={model.id} className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -237,8 +240,9 @@ function ModelsSection() {
           </div>
         )}
         <p className="text-muted">
-          The models the AI and the agents it starts can run on. The chat's
-          model menu lists these, and a new chat starts on the first one ticked.
+          The models the AI and the agents it starts can run on. The ticked ones
+          come first, in the order you ticked them. The chat's model menu lists
+          them, and a new chat starts on the first.
         </p>
         {save.error && (
           <p role="alert" className="text-muted">

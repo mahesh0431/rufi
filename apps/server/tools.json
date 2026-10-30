@@ -2178,7 +2178,7 @@
     },
     {
       "name": "rufi.start_agent",
-      "description": "Starts an agent of your own for a task that can run on its own: it runs at once, on your model and effort unless you give one that list_models gives, and goes on after your turn ends. Give it a title and its whole task, its first message. It has your tools unless you give it fewer (tools); one you don't have is refused. Its saves and briefs show in the chat with Rufi's receipt. Answers its id; agent_status says how it is, and read_agent reads its conversation.",
+      "description": "Starts an agent of your own for a task that can run on its own: it runs at once, on your model and effort unless you give one that list_models gives (a model the user hasn't ticked is refused, yours too), and goes on after your turn ends. Give it a title and its whole task, its first message. It has your tools unless you give it fewer (tools); one you don't have is refused. Its saves and briefs show in the chat with Rufi's receipt. Answers its id; agent_status says how it is, and read_agent reads its conversation.",
       "callers": "model",
       "readOnly": false,
       "destructive": false,

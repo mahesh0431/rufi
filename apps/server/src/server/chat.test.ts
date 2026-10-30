@@ -2803,7 +2803,7 @@ describe("the chat, on the scripted Codex", () => {
     });
   });
 
-  it("runs a helper on the model of the user's shortlist Rufi AI gives it, and refuses one off the shortlist, or a change while the helper runs", async () => {
+  it("runs a helper on the model of the user's shortlist Rufi AI gives it, and refuses one off the shortlist, given or its own, or a change while the helper runs", async () => {
     await startChat("fake", {
       scenario: {
         callsByText: {
@@ -2835,6 +2835,12 @@ describe("the chat, on the scripted Codex", () => {
               arguments: { agent: "$agent", model: "gpt-6.1-sol" },
             },
           ],
+          "Ask another": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Second helper", task: "helper: hang" },
+            },
+          ],
         },
       },
     });
@@ -2850,6 +2856,14 @@ describe("the chat, on the scripted Codex", () => {
     );
     await say(await chatRow(c.id), `Move it to Sol (agent ${helper})`);
     await ended(c.id, 2);
+    // The user unticks the chat's own model: the chat goes on on it, but a
+    // new helper doesn't start on it.
+    await transcripts.saveSetting(
+      SHORTLIST_SETTING,
+      JSON.stringify(["gpt-6-astra"]),
+    );
+    await say(await chatRow(c.id), "Ask another");
+    await ended(c.id, 3);
 
     const answers = (
       store.db
@@ -2878,6 +2892,7 @@ describe("the chat, on the scripted Codex", () => {
         ok: false,
         error: "Helper is running: change its model once its turn has ended.",
       },
+      { ok: false, error: "That model isn't allowed or isn't offered now." },
     ]);
     expect(
       agentRows(
@@ -2974,6 +2989,41 @@ describe("the chat, on the scripted Codex", () => {
         .received(String(moved?.["provider_ref"]))
         .flatMap((input) => input.parts),
     ).toEqual([expect.stringContaining("Now the April report.")]);
+  });
+
+  it("keeps a chat on another provider's model there when the agent database is new: the next message opens there, with the chat", async () => {
+    const other = fakeProvider({
+      id: "other",
+      family: "anthropic",
+      models: [{ id: "other-model", name: "Other model", efforts: ["low"] }],
+    });
+    const opened: OpenOptions[] = [];
+    const options = {
+      shortlist: [...ALLOWED, "other-model"],
+      other: {
+        ...other.adapter,
+        open: (open: OpenOptions) => {
+          opened.push(open);
+          return other.adapter.open(open);
+        },
+      },
+    };
+    await startChat("fake", options);
+    const c = await newChat();
+    await chat?.selectModel(c, "other-model");
+    await say(await chatRow(c.id), "Hello");
+    await ended(c.id);
+
+    // A restore or a move: Rufi starts with a new agent database.
+    await startChat("fake", { ...options, loseAgents: true });
+    await say(await chatRow(c.id), "Again");
+    await ended(c.id, 2);
+    expect(opened).toHaveLength(2);
+    expect(opened[1]).toMatchObject({ model: "other-model" });
+    expect(opened[1]?.seed).toContain("Hello");
+    expect(agentRows("SELECT provider FROM agents")).toEqual([
+      { provider: "other" },
+    ]);
   });
 
   it("gives a sub-agent only the tools it was given, and its own sub-agent no more than those", async () => {
