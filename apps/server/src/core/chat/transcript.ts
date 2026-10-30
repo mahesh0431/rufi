@@ -1153,7 +1153,8 @@ export function transcripts(
      * running, or one Rufi closed before it saved it. A whole answer goes on
      * the reply row of the item it streamed as (or its own row when nothing
      * streamed), also after the chat saved the end itself, unless Rufi
-     * ended the turn on its own (Stop, a failed save).
+     * ended the turn on its own (Stop, a failed save); a row that starts
+     * with it already has it.
      */
     applyEnd: (
       chat: ChatRow,
@@ -1202,15 +1203,14 @@ export function transcripts(
             )
             .executeTakeFirst();
           if (reply) {
-            if (reply.text !== answer.text || reply.status !== "done") {
+            // One that starts with it has it: a question may follow.
+            const text = reply.text.startsWith(answer.text)
+              ? reply.text
+              : answer.text;
+            if (text !== reply.text || reply.status !== "done") {
               await trx
                 .updateTable("transcript_entries")
-                .set({
-                  text: answer.text,
-                  status: "done",
-                  revision,
-                  updated_at: at,
-                })
+                .set({ text, status: "done", revision, updated_at: at })
                 .where("id", "=", reply.id)
                 .execute();
               entries.push(reply.id);

@@ -258,6 +258,8 @@ interface Live {
     string,
     { turn: string; item: string; type: "text" | "note"; text: string }
   >;
+  /** The item of each turn's last text, its answer, by the provider's turn. */
+  answers: Map<string, string>;
   /** Its dispatcher runs; asked again meanwhile, it looks again. */
   pumping: boolean;
   asks: number;
@@ -415,6 +417,7 @@ export function createAgents(options: {
         stops: 0,
         waiting: new Map(),
         streams: new Map(),
+        answers: new Map(),
         pumping: false,
         asks: 0,
       };
@@ -547,6 +550,7 @@ export function createAgents(options: {
         };
         stream.text += event.delta;
         live.streams.set(key, stream);
+        if (event.type === "text") live.answers.set(event.turn, event.item);
         if (event.done) {
           live.streams.delete(key);
           saveItem(live, event.turn, event.item, {
@@ -707,6 +711,8 @@ export function createAgents(options: {
 
   /** A turn ended, as the provider said: the turn's end, and the agent's status. */
   function endTurn(live: Live, ref: string, end: TurnEnd): void {
+    const answer = live.answers.get(ref);
+    live.answers.delete(ref);
     const turn = turnOf(live, ref);
     if (!turn || !["running", "stopping"].includes(turn.status)) return;
     // What streamed without being whole is kept as far as it came.
@@ -749,16 +755,7 @@ export function createAgents(options: {
         live.id,
       );
       // A whole answer names the item it streamed as, when it did.
-      const item =
-        end.status === "done"
-          ? (
-              db
-                .prepare(
-                  "SELECT id FROM items WHERE turn_id = ? AND type = 'text' ORDER BY position DESC LIMIT 1",
-                )
-                .get(turn.id) as { id: string } | undefined
-            )?.id
-          : undefined;
+      const item = end.status === "done" ? answer : undefined;
       event("turn.ended", live.id, { turn: turn.id, ref, ...end, item });
     });
     if (live.current?.ref === ref) {
