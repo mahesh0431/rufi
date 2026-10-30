@@ -197,7 +197,7 @@ export const stopAgent = defineTool({
 export const waitingMessages = defineTool({
   name: "waiting_messages",
   description:
-    "Manages the messages waiting for you and for the agents below you: the user's, Rufi's notes and agents' messages. list gives each with its id, whose queue it is in (self: yours), who sent it, steer or queue, its text, and why it is held, if it is (one held goes only when it is steered). edit gives one new text; remove means it never goes; reorder puts one agent's messages in a new order; steer sends one now, into its agent's running turn or first in line, and lifts its hold. Every action answers the list as it is then. The user's messages change as if the user changed them: one already on its way can't be changed.",
+    "Manages the messages waiting for you and for the agents below you: the user's, Rufi's notes and agents' messages. list gives each with its id, whose queue it is in (self: yours), who sent it, steer or queue, its text, and why it is held, if it is (one held goes only when it is steered). edit gives one new text; remove means it never goes; reorder puts the messages given, of one queue, in that order, in the places they had; steer sends one now, into its agent's running turn or first in line, and lifts its hold. Every action answers the list as it is then. The user's messages change as if the user changed them: one already on its way can't be changed.",
   input: WaitingMessagesInput,
   callers: "model",
   readOnly: false,
