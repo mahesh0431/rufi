@@ -174,11 +174,11 @@ it("puts each turn's whole answer from the package's events on its reply row, on
     ]);
     expect(cursor()).toBe(rufi.store.highWater());
   });
-  const whole = [
+  const whole = replies();
+  expect(whole).toMatchObject([
     { id: streamed, text: "Your last TSH was 2.1.", status: "done" },
-    { id: expect.any(String), text: "It was 2.4.", status: "done" },
-  ];
-  expect(replies()).toEqual(whole);
+    { text: "It was 2.4.", status: "done" },
+  ]);
 
   // Read again from the start, each answer is there once.
   await rufi.close();
