@@ -2115,7 +2115,9 @@ export function transcripts(
      * The last `count` messages (the user's, the AI's replies and progress
      * notes, Rufi's receipts, events and brief lines) from replies that
      * reached the AI and have ended, oldest first: what a new thread starts
-     * with. A reply that ended in Rufi's part never had the AI. A reply that
+     * with. A reply that ended in Rufi's part never had the AI. The user's
+     * message is there once it went, in a reply that has ended, also when
+     * it went on a Retry after its first reply ended in Rufi's part. A reply that
      * completed is as it came, with its rufi-basis block, so the new thread
      * sees the convention; one that didn't is its answer only, marked
      * unfinished, as are its notes. Commands and thinking are left out.
@@ -2127,6 +2129,17 @@ export function transcripts(
           join
             .onRef("t.person_id", "=", "e.person_id")
             .onRef("t.id", "=", "e.turn_id"),
+        )
+        // The message's row in the queue, and the reply it went in.
+        .leftJoin("chat_queue as q", (join) =>
+          join
+            .onRef("q.person_id", "=", "e.person_id")
+            .onRef("q.id", "=", "e.id"),
+        )
+        .leftJoin("turns as d", (join) =>
+          join
+            .onRef("d.person_id", "=", "q.person_id")
+            .onRef("d.id", "=", "q.turn_id"),
         )
         .select([
           "e.kind",
@@ -2156,10 +2169,20 @@ export function transcripts(
         )
         .where((eb) =>
           eb.or([
-            eb("t.id", "is", null),
             eb.and([
-              eb("t.status", "!=", "running"),
-              eb("t.agent_turn_id", "is not", null),
+              eb("e.kind", "=", "message"),
+              eb("q.state", "=", "sent"),
+              eb("d.status", "!=", "running"),
+            ]),
+            eb.and([
+              eb("e.kind", "!=", "message"),
+              eb.or([
+                eb("t.id", "is", null),
+                eb.and([
+                  eb("t.status", "!=", "running"),
+                  eb("t.agent_turn_id", "is not", null),
+                ]),
+              ]),
             ]),
           ]),
         )

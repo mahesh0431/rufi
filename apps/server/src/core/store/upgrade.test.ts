@@ -667,7 +667,7 @@ it("upgrades a record of version 9 so a chat keeps the context its thread used a
       })),
     );
     expect(after.queue).toEqual(
-      before.queue.map((row) => ({ ...row, hold_id: null })),
+      before.queue.map((row) => ({ ...row, hold_id: null, note: null })),
     );
     // No meter until the thread reports again.
     expect((await transcripts(store).chat("asha"))?.context).toBeNull();
@@ -1109,9 +1109,11 @@ it("upgrades a record of version 15 so files start on Send: every document sent 
     before.entries.map((line) => ({ ...line, questions: null })),
   );
   expect(after.queue).toEqual(
-    before.queue.map((row) =>
-      row["id"] === "queue-sort" ? { ...row, state: "removed" } : row,
-    ),
+    before.queue.map((row) => ({
+      ...row,
+      ...(row["id"] === "queue-sort" && { state: "removed" }),
+      note: null,
+    })),
   );
   const db = new DatabaseSync(path, { readOnly: true });
   try {
@@ -1255,14 +1257,14 @@ it("upgrades a record of version 19 so its waiting messages go to the agent queu
   store.close();
   const after = stored();
   expect(after.paused).toEqual([{ paused: null }]);
+  // Each row has room for Rufi's note on what its part read: none yet.
   expect(after.queue).toEqual(
-    before.queue.map((row) =>
-      row["id"] === "riding"
-        ? { ...row, held: null }
-        : row["id"] === "handed"
-          ? { ...row, state: "not_sure" }
-          : row,
-    ),
+    before.queue.map((row) => ({
+      ...row,
+      ...(row["id"] === "riding" && { held: null }),
+      ...(row["id"] === "handed" && { state: "not_sure" }),
+      note: null,
+    })),
   );
 });
 

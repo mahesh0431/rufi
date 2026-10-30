@@ -1596,6 +1596,14 @@ describe("the chat, on the scripted Codex", () => {
       expect(jobs()).toEqual(["done", "done"]);
       expect((await inputs()).at(-1)?.at(-1)).toMatch(/^quiet Read this/);
       expect(await waiting()).toEqual([]);
+
+      // A new thread has the message that went on Retry, once.
+      await loseThread(c.id);
+      await startChat("fake");
+      await say(await chatRow(), "quiet And now?");
+      await ended(c.id, 5);
+      const seed = (await backendOf("fake").contexts()).at(-1) ?? "";
+      expect(seed.match(/User: quiet Read this/g)).toHaveLength(1);
     });
   });
 

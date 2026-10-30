@@ -507,6 +507,7 @@ CREATE TABLE chat_queue (
   turn_id TEXT,                -- the turn that used it; set when Rufi's part of its reply starts
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  note TEXT,                   -- Rufi's note on what its part of the reply read, kept once the reading ends; it goes with the message
   UNIQUE (person_id, id),
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
   FOREIGN KEY (person_id, event_id) REFERENCES transcript_entries (person_id, id),
