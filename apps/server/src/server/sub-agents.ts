@@ -129,6 +129,12 @@ export function subAgents(deps: {
                 status,
                 text,
               })),
+            ...(turn.questions.length > 0 && {
+              questions: turn.questions.map(({ title, options }) => ({
+                title,
+                options,
+              })),
+            }),
             result: turn.result,
           })),
           earlier: page.earlier,

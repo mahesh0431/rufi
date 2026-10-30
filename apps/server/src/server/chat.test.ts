@@ -2234,6 +2234,58 @@ describe("the chat, on the scripted Codex", () => {
     });
   });
 
+  it("reads a sub-agent's question, with its options, from its conversation", async () => {
+    const question = {
+      title: "Which visit is this brief for?",
+      options: ["3 Nov, Dr Rao", "12 Nov, Dr Iyer"],
+    };
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Ask a helper": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Brief", task: "helper: make the brief" },
+            },
+          ],
+        },
+        // Each turn ends with it, the helper's too, and no answer text.
+        unstreamed: { text: "", questions: [question] },
+      },
+    });
+    const c = await newChat();
+    await say(c, "Ask a helper");
+    await ended(c.id);
+    const helper = ownCall("call-0");
+    await until(() =>
+      Promise.resolve(
+        agentRows().some(
+          (row) => row["id"] === helper && row["status"] === "done",
+        ),
+      ),
+    );
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "What did it ask": [
+            { tool: "read_agent", arguments: { agent: helper } },
+          ],
+        },
+      },
+    });
+    await say(await chatRow(c.id), "What did it ask?");
+    await ended(c.id, 2);
+    const [read] = (
+      store.db
+        .prepare("SELECT answer FROM tool_calls WHERE tool = 'read_agent'")
+        .all() as { answer: string }[]
+    ).map((row) => JSON.parse(row.answer) as unknown);
+    expect(read).toMatchObject({
+      ok: true,
+      result: { turns: [{ status: "done", questions: [question] }] },
+    });
+  });
+
   it("gives a sub-agent only the tools it was given, and its own sub-agent no more than those", async () => {
     await startChat("fake", {
       scenario: {
