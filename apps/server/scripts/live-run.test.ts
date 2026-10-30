@@ -8,11 +8,13 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Turn } from "@rufi/contracts";
+import { parse } from "smol-toml";
 import { afterEach, describe, expect, it } from "vitest";
 import { SignedOut } from "../src/agent/runtime.ts";
+import { AI_PROFILE, prepareCodexHome } from "../src/agent/codex/settings.ts";
 import {
   caseFolder,
   caseSandbox,
@@ -197,7 +199,7 @@ describe("a case's status", () => {
 });
 
 describe("the test sign-in in a run", () => {
-  it("gives each case a copy and takes it back, and no case's AI may read any sign-in of the run", async () => {
+  it("gives each case a copy and takes it back, and no case's AI may read any sign-in of the run, in a Codex config that loads", async () => {
     // Wholly fictional: a test home with Codex's sign-in file and Claude's
     // folder, signed in on the scripted Codex.
     const root = await mkdtemp(join(tmpdir(), "rufi-live-"));
@@ -206,7 +208,8 @@ describe("the test sign-in in a run", () => {
     await writeFile(join(home, "codex", "auth.json"), '{"fictional":true}');
     await mkdir(join(home, "claude"));
     await writeFile(join(home, "claude", ".claude.json"), '{"fictional":true}');
-    const out = await outFolder(join(root, "out"));
+    // --out as a person may give it, relative to where the run starts.
+    const out = await outFolder(relative(process.cwd(), join(root, "out")));
     const cases = ["first", "second"].map((name) => caseFolder(out, name));
     const signIn = await testSignIn(home, {
       file: process.execPath,
@@ -237,9 +240,22 @@ describe("the test sign-in in a run", () => {
         ].sort(),
       );
       for (const folder of cases) {
-        expect(caseSandbox(folder, signIns).unreadable).toEqual(
+        const sandbox = caseSandbox(folder, signIns);
+        expect(sandbox.unreadable).toEqual(
           expect.arrayContaining(await found()),
         );
+        // Codex's own settings for the case: valid TOML, every path absolute.
+        const { codexHome } = await prepareCodexHome(folder, { sandbox });
+        const config = parse(
+          await readFile(join(codexHome, "config.toml"), "utf8"),
+        ) as {
+          permissions: Record<string, { filesystem: Record<string, string> }>;
+        };
+        const paths = Object.keys(
+          config.permissions[AI_PROFILE]?.filesystem ?? {},
+        );
+        expect(paths).toEqual(expect.arrayContaining(await found()));
+        expect(paths.filter((path) => !isAbsolute(path))).toEqual([]);
       }
       for (const folder of cases) await signIn.take(folder);
       expect(await found()).toEqual(

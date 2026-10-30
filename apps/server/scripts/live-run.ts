@@ -3,7 +3,7 @@
 // the cases' data folders inside it, and each case's status for the report.
 import { spawn } from "node:child_process";
 import { copyFile, mkdir, readdir, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { Turn } from "@rufi/contracts";
 import { claudeFolder } from "../src/agent/claude/executable.ts";
 import { DEADLINES, type CodexCommand } from "../src/agent/codex/appserver.ts";
@@ -53,14 +53,15 @@ export const signInsOf = (home: string) => [
 
 /**
  * A case's AI sandbox: its own data folder's, with `signIns` denied too, so
- * that no case's AI can read the test sign-in or another case's copy.
+ * that no case's AI can read the test sign-in or another case's copy. Each
+ * path once: Codex's profile names each as a key.
  */
 export function caseSandbox(
   home: string,
   signIns: readonly string[],
 ): AgentSandbox {
   const own = aiSandbox(home);
-  return { ...own, unreadable: [...own.unreadable, ...signIns] };
+  return { ...own, unreadable: [...new Set([...own.unreadable, ...signIns])] };
 }
 
 /**
@@ -137,10 +138,13 @@ export async function outFolder(given: string | undefined): Promise<string> {
   if (given === undefined) {
     throw new Error("Give the run a folder of its own: --out <empty folder>.");
   }
-  await mkdir(given, { recursive: true });
-  if ((await readdir(given)).length > 0)
-    throw new Error(`${given} isn't empty. Give a new or empty folder.`);
-  return given;
+  // Absolute: the cases' data folders are in it, and Codex takes only
+  // absolute paths in its permission profile.
+  const out = resolve(given);
+  await mkdir(out, { recursive: true });
+  if ((await readdir(out)).length > 0)
+    throw new Error(`${out} isn't empty. Give a new or empty folder.`);
+  return out;
 }
 
 /** A case's data folder in the run's folder, named before any case starts. */
