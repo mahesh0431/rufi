@@ -128,6 +128,19 @@ export interface Sent {
 /** Why an input from one agent to another came. */
 export type About = "done" | "stopped" | "failed" | "asked" | "wrote";
 
+/** An input waiting for its agent, as `waiting` lists it. */
+export interface WaitingInput {
+  id: string;
+  /** Who sent it, as the host names them, or the sending agent's id. */
+  sender: string;
+  kind: "steer" | "queue";
+  /** Its words; none when the host keeps them. */
+  parts: string[] | null;
+  about: About | null;
+  held: Hold | null;
+  heldText: string | null;
+}
+
 /**
  * Why a waiting input isn't handed over by itself. Stopped: a Stop came
  * before it went.
@@ -231,6 +244,8 @@ export interface Agents {
         about: About | null;
       }
     | undefined;
+  /** What waits for the agent, held too, in the order it goes. */
+  waiting: (agent: string) => WaitingInput[];
   /** The agent's turn now, if one starts or runs. */
   current: (agent: string) => Current | undefined;
   /**
@@ -282,6 +297,11 @@ export interface Agents {
   release: (inputs: readonly string[]) => void;
   /** These waiting inputs never go: removed. Others stay as they are. */
   remove: (inputs: readonly string[]) => void;
+  /**
+   * New words for a waiting input whose words the package keeps. False:
+   * it isn't waiting any more, or the host keeps its words.
+   */
+  edit: (input: string, parts: readonly string[]) => boolean;
   /**
    * The agent's waiting inputs among `inputs`, in this order, in the places
    * they had between them; the others keep theirs.
@@ -1511,6 +1531,27 @@ export function createAgents(options: {
           }
         | undefined,
 
+    waiting: (agent) =>
+      (
+        db
+          .prepare(
+            "SELECT id, sender, kind, parts, about, held, held_text FROM queue WHERE agent_id = ? AND state = 'waiting' ORDER BY position",
+          )
+          .all(agent) as {
+          id: string;
+          sender: string;
+          kind: "steer" | "queue";
+          parts: string | null;
+          about: About | null;
+          held: Hold | null;
+          held_text: string | null;
+        }[]
+      ).map(({ parts, held_text: heldText, ...input }) => ({
+        ...input,
+        parts: parts === null ? null : (JSON.parse(parts) as string[]),
+        heldText,
+      })),
+
     current: (id) => {
       const live = lives.get(id);
       if (live?.starting) {
@@ -1833,6 +1874,22 @@ export function createAgents(options: {
           event("input.removed", agent, { input: id });
         }
       });
+    },
+
+    edit: (input, parts) => {
+      const found = db
+        .prepare(
+          "SELECT agent_id AS agent FROM queue WHERE id = ? AND state = 'waiting' AND parts IS NOT NULL",
+        )
+        .get(input) as { agent: string } | undefined;
+      if (!found) return false;
+      store.change(({ event }) => {
+        db.prepare(
+          "UPDATE queue SET parts = ?, updated_at = ? WHERE id = ?",
+        ).run(JSON.stringify(parts), now(), input);
+        event("input.edited", found.agent, { input });
+      });
+      return true;
     },
 
     reorder: (agent, inputs) => {

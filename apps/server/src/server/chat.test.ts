@@ -249,6 +249,10 @@ async function startChat(
             kept: chatAgents(store),
             queue,
             log: () => undefined,
+            messages: () => {
+              if (!chat) throw new Error("no chat");
+              return chat.queue;
+            },
           }),
         )(scope);
         return async (name, input, callId) => {
