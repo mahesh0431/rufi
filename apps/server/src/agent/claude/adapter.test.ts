@@ -8,6 +8,7 @@ import { providerContract } from "@rufi/agents/contract";
 import type { Conversation, ProviderEvent } from "@rufi/agents/provider";
 import { describe, expect, it, vi } from "vitest";
 import { fakeClaude } from "../../../tests/fake-claude.ts";
+import { callIdOf } from "../../core/chat/agents.ts";
 import { claudeAdapter } from "./adapter.ts";
 
 /** The scripted Claude of the contract's case now running. */
@@ -236,6 +237,33 @@ describe("Stop", () => {
   );
 });
 
+describe("a conversation Claude no longer keeps", () => {
+  // Claude deletes a conversation's transcript after a while unused, as it
+  // does its own: the next turn has to go in a new one.
+  it("is missing at the next start, which starts nothing", async () => {
+    const fake = fakeClaude({});
+    const { adapter, conversation, start, ends, events } = await onFake(
+      fake.query,
+      fake.sessions,
+    );
+    expect(await start("message-1")).toEqual({ status: "delivered" });
+    await vi.waitFor(() => {
+      expect(ends()).toHaveLength(1);
+    });
+    await fake.sessions.delete(conversation.ref);
+
+    expect(await start("message-2")).toEqual({
+      status: "not_delivered",
+      reason: "missing",
+      text: expect.any(String) as string,
+    });
+    expect(events.filter((event) => event.type === "turnStarted")).toHaveLength(
+      1,
+    );
+    await adapter.close();
+  });
+});
+
 describe("a message Claude is slow to start", () => {
   it("is uncertain, never not received, and can't start later unseen", async () => {
     const fake = fakeClaude({}, { slowStartMs: 300 });
@@ -416,17 +444,17 @@ describe("what Claude does in a turn", () => {
 });
 
 /**
- * Rufi's door as far as a call goes, until the real one (plan PR 10): it
- * places the call, refusing one the adapter can't place, and keeps each
- * call's answer by Rufi's call id, so a repeat gets the same answer.
+ * Rufi's door as far as a call goes (server/door.ts): it places the call,
+ * refusing one the adapter can't place, and keeps each call's answer by
+ * Rufi's call id, made by the door's own helper, so a repeat gets the same
+ * answer.
  */
 function fakeDoor(agent: string) {
   const answers = new Map<string, string>();
   return (conversation: Conversation, number: number, meta: unknown) => {
     const placed = conversation.placeCall(meta);
     if (placed === undefined) return "refused";
-    // The real door makes the id with the plan's one helper.
-    const id = `${agent}/${String(number)}/${placed.call}`;
+    const id = callIdOf(agent, number, placed.call);
     const answer = answers.get(id) ?? `saved ${String(answers.size + 1)}`;
     answers.set(id, answer);
     return answer;

@@ -599,6 +599,21 @@ async function openConversation(
       if (running || starting || unclaimed || held.size > 0) {
         return { status: "not_delivered", text: "A turn is running." };
       }
+      // A kept conversation goes on in a new process only if Claude still
+      // keeps it (it deletes old ones): if not, only a new one can take it.
+      if (session === undefined && kept) {
+        const lost = await sessions.info(ref, open.cwd).then(
+          (info) => info === undefined,
+          () => false,
+        );
+        if (lost) {
+          return {
+            status: "not_delivered",
+            reason: "missing",
+            text: "Claude no longer keeps this conversation.",
+          };
+        }
+      }
       let current: ClaudeSession;
       try {
         current = await opened();
