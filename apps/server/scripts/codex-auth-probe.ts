@@ -1,7 +1,7 @@
 // A live probe, not part of `pnpm check`: how the pinned Codex runs its
 // provider's auth command, the command that gives it a ChatGPT token from
 // Rufi's token door (agent/codex/token-door.ts). Each case starts Codex in
-// its own scratch folder with Rufi's settings and door, Codex's refresh
+// its own scratch folder with Rufi's settings, sandbox and door, Codex's refresh
 // interval and command timeout set for the case, and runs fictional turns;
 // the door's sign-in answers as the case says. It reports when Codex asked
 // the door and how often, and what Codex did when the token was refused, or
@@ -26,6 +26,7 @@ import type { TurnCompletedNotification } from "../src/agent/codex/protocol/v2/T
 import { AI_PROFILE, prepareCodexHome } from "../src/agent/codex/settings.ts";
 import { doorFile } from "../src/agent/codex/token-door.ts";
 import { childEnvironment, rufiHome } from "../src/platform/config.ts";
+import { aiSandbox } from "../src/server/core.ts";
 import { Secrets, secretsLayer } from "../src/platform/keychain.ts";
 
 const out = resolve(process.argv[2] ?? "");
@@ -149,10 +150,12 @@ async function run(probe: Case, folder: string) {
 
   const home = join(folder, "rufi");
   const door = doorFile(home, "chat");
+  // Rufi's own sandbox: its commands can't read the door's file, which
+  // opens the test sign-in's real token.
   const paths = await prepareCodexHome(home, {
     door,
     userHome: join(folder, "user"),
-    sandbox: { folder: join(home, "ai"), unreadable: [] },
+    sandbox: aiSandbox(home),
   });
   const config = join(paths.codexHome, "config.toml");
   const before = await readFile(config, "utf8");
