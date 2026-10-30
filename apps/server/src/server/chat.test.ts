@@ -1021,7 +1021,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
-    "after a restart, what waited goes first, by itself, with the chat's effort",
+    "after a restart, the reply that ran carries on first, then what waited goes, by itself, with the chat's effort",
     timeout,
     async () => {
       await startChat(name);
@@ -1031,19 +1031,26 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       await until(async () => (await backend.efforts()).length === 1);
       await say(c, "B", "queue");
       await startChat(name); // Rufi restarts.
-      await ended(c.id, 2);
+      await ended(c.id, 3);
       expect((await transcript(c.id)).turns).toMatchObject([
         { status: "interrupted" },
         { status: "completed" },
+        { status: "completed" },
+      ]);
+      expect(
+        (await transcript(c.id)).entries.filter(([kind]) => kind === "reply"),
+      ).toEqual([
+        ["reply", "ok:Rufi stopped suddenly (restart). Please continue."],
+        ["reply", "ok:B"],
       ]);
       await say(await chatRow(c.id), "C");
-      await ended(c.id, 3);
+      await ended(c.id, 4);
       expect(
         (await transcript(c.id)).entries
           .filter(([kind]) => kind === "message")
           .map(([, text]) => text),
       ).toEqual(["B", "C"]);
-      expect(await backend.efforts()).toEqual(["high", "high", "high"]);
+      expect(await backend.efforts()).toEqual(["high", "high", "high", "high"]);
     },
   );
 

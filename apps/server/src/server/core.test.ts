@@ -490,12 +490,19 @@ describe("the core", () => {
       (await said(page)).some((entry) => entry.text === "ok:Second"),
     );
     await sleep(300);
-    // Each message once; the first one's reply was cut with its start.
+    // Each message once; the first one's reply was cut, and carries on
+    // before the second goes.
     expect(
       (await said(page)).map((entry) =>
         entry.kind === "message" ? entry.id : entry.text,
       ),
-    ).toEqual(["q-handed", "q-first", "q-second", "ok:Second"]);
+    ).toEqual([
+      "q-handed",
+      "q-first",
+      "ok:Rufi stopped suddenly (restart). Please continue.",
+      "q-second",
+      "ok:Second",
+    ]);
     expect(
       (await page.api("GET", "/api/people/asha/chat/queue")).body["items"],
     ).toEqual([]);
