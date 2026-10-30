@@ -484,6 +484,28 @@ describe("the queue", () => {
     expect(received()).toEqual(["note-1", "note-3", "note-2"]);
   });
 
+  it("takes the host's changes to what waits: a removed input doesn't go, a new order holds, and one sent now goes first, also one removed before", async () => {
+    asha();
+    fake.script.turn = "runs";
+    agents.send(ASHA.id, note("note-1"));
+    await running();
+    for (const id of ["note-2", "note-3", "note-4", "note-5"]) {
+      agents.send(ASHA.id, note(id, "queue"));
+    }
+    agents.remove(["note-3", "note-5"]);
+    agents.reorder(ASHA.id, ["note-4", "note-2"]);
+    agents.sendNow("note-5");
+    const ref = ledger[0]?.ref ?? "";
+    for (const next of ["note-5", "note-4", "note-2"]) {
+      fake.end(ref);
+      await until(() => {
+        expect(states()[next]).toBe("delivered");
+      });
+    }
+    expect(received()).toEqual(["note-1", "note-5", "note-4", "note-2"]);
+    expect(states()["note-3"]).toBe("removed");
+  });
+
   it("holds a steer sent while the turn is starting, and puts it in the moment the turn is ready", async () => {
     const opened = Promise.withResolvers<undefined>();
     agents = await run(fake.adapter, {
