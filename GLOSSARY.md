@@ -196,7 +196,7 @@ Rufi's own note that something happened outside your chat, such as a deleted doc
 _Avoid_: notification, system message
 
 **Stop**:
-Ends the AI's reply now, with anything it started. What it wrote so far is kept; what waits goes on, in order.
+Ends the AI's reply now. What it wrote so far is kept; what waits goes on, in order, and its **sub-agents** keep working. The AI can stop a sub-agent, or itself, with everything under it: then all of them stop, what waits for any of them doesn't go (your messages show **Not sent · Stopped.**), and none of their results wakes another.
 _Avoid_: cancel, abort
 
 **Interrupted**:
