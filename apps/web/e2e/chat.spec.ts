@@ -59,6 +59,12 @@ const opener = (scope: Locator) =>
 const log = (scope: Page | Locator) =>
   scope.getByRole("log", { name: "Messages" });
 const sidebar = (page: Page) => page.getByRole("complementary");
+/**
+ * The box's line on a draft it couldn't save: Rufi's own status, never the
+ * live region of the waiting messages' drag and drop.
+ */
+const notSaved = (scope: Page | Locator) =>
+  scope.getByRole("status").filter({ hasText: "Not saved" });
 /** The line that folds or opens a reply's Activity (the last one). */
 const activity = (scope: Page | Locator) =>
   log(scope)
@@ -548,16 +554,14 @@ test("a save that fails says so and keeps the text in the tab, also on the chat'
       : route.continue(),
   );
   await box(chat(page)).fill("Half a question");
-  await expect(chat(page).getByRole("status")).toHaveText(
-    /^Not saved\s*Retry$/,
-  );
+  await expect(notSaved(chat(page))).toHaveText(/^Not saved\s*Retry$/);
   await expect(chat(page).getByRole("alert")).toHaveText("Rufi couldn't save.");
 
   // Off to the chat's page: its box has the text, still not saved, and
   // what is typed there fails to save too.
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
   await expect(box(page)).toHaveValue("Half a question");
-  await expect(page.getByRole("status")).toHaveText(/^Not saved\s*Retry$/);
+  await expect(notSaved(page)).toHaveText(/^Not saved\s*Retry$/);
   const refused = page.waitForResponse(
     (response) =>
       response.url().endsWith("/chat/draft") &&
@@ -566,13 +570,13 @@ test("a save that fails says so and keeps the text in the tab, also on the chat'
   );
   await box(page).fill("Half a question, and more");
   await refused;
-  await expect(page.getByRole("status")).toHaveText(/^Not saved\s*Retry$/);
+  await expect(notSaved(page)).toHaveText(/^Not saved\s*Retry$/);
 
   await page.unroute("**/chat/draft");
   const saved = kept(page, "and more");
   await page.getByRole("button", { name: "Retry" }).click();
   await saved;
-  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(notSaved(page)).toHaveCount(0);
   await page.reload();
   await expect(box(page)).toHaveValue("Half a question, and more");
 });
