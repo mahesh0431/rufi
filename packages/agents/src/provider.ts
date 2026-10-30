@@ -74,12 +74,17 @@ export class NotOpened extends Error {
 
 /**
  * What became of an input handed to the provider. Not delivered: surely not
- * received (it may go again). Uncertain: it may have arrived; it is never
- * sent again by itself, and reconcile may tell.
+ * received (it may go again); missing, when the provider no longer has the
+ * conversation, so only a new one can take it. Uncertain: it may have
+ * arrived; it is never sent again by itself, and reconcile may tell.
  */
 export type Delivery =
   | { status: "delivered" }
-  | { status: "not_delivered"; reason?: "signed_out"; text: string }
+  | {
+      status: "not_delivered";
+      reason?: "signed_out" | "missing";
+      text: string;
+    }
   | { status: "uncertain"; text: string };
 
 /**

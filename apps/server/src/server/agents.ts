@@ -9,16 +9,19 @@
 import { join } from "node:path";
 import { DEFAULT_EFFORT } from "@rufi/contracts";
 import { createAgents, type Agents, type Host } from "@rufi/agents/agents";
-import type { ProviderAdapter } from "@rufi/agents/provider";
-import type { AgentStore } from "@rufi/agents/store";
+import type { ProviderAdapter, ProviderEvent } from "@rufi/agents/provider";
+import type { AgentStore, StoredEvent } from "@rufi/agents/store";
+import type { Kysely } from "kysely";
 import { v7 as uuid } from "uuid";
 import {
   chatAgents,
   sentAs,
   type Answer,
   type Claimed,
+  type Unrooted,
 } from "../core/chat/agents.ts";
 import type { Store } from "../core/store/database.ts";
+import type { Tables } from "../core/store/tables.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 
 /** `agents.sqlite` in Rufi's data folder. */
@@ -26,9 +29,21 @@ export const agentsPath = (home: string) => join(home, "agents.sqlite");
 
 export interface AgentSystem {
   agents: Agents;
+  /** The chat's own agent, Rufi AI: made, owned and admitted if it has none. */
+  root: (chatId: string) => Promise<string>;
   /** Stops reading events and lets go of every conversation. */
   close: () => Promise<void>;
 }
+
+/**
+ * Applies an event of the agent database to Rufi's record, with `advance`
+ * (Rufi's cursor, past this event) in the same transaction. False: the
+ * event changes nothing there.
+ */
+export type Apply = (
+  event: StoredEvent,
+  advance: (trx: Kysely<Tables>) => Promise<void>,
+) => Promise<boolean>;
 
 /** Where the package holds an input Rufi claimed: it settles those itself. */
 const HELD = new Set(["handing_over", "delivered", "not_sure"]);
@@ -40,6 +55,15 @@ export async function startAgents(options: {
   adapters: readonly ProviderAdapter[];
   /** What a conversation opens with, and Rufi's claim of each hand-over. */
   host: Pick<Host, "opening" | "claim">;
+  /** What the package shows of each open conversation as it comes. */
+  live?: (agent: string, conversation: string, event: ProviderEvent) => void;
+  /**
+   * A new conversation of an owned agent, once in the ledger, before any
+   * of Rufi's content goes into it.
+   */
+  opened?: Host["ledger"];
+  /** What Rufi applies of the events it reads. */
+  apply?: Apply;
   /** Rufi AI's tools, by name, and where it works. */
   tools: readonly string[];
   cwd: string;
@@ -69,8 +93,15 @@ export async function startAgents(options: {
   const agents = createAgents({
     store,
     adapters: options.adapters,
-    host: { ...options.host, ledger: kept.ledger },
+    host: {
+      ...options.host,
+      ledger: async (entry) => {
+        await kept.ledger(entry);
+        await options.opened?.(entry);
+      },
+    },
     onError: failed,
+    ...(options.live && { live: options.live }),
   });
 
   // 2. Owners and admission agree: an agent with no owner, admitted or
@@ -88,7 +119,7 @@ export async function startAgents(options: {
   // Each chat's own agent: made, owned (with the thread it takes over, in
   // the ledger), then admitted. A crash between leaves an agent with no
   // owner, removed above at the next start, or an owner, admitted there.
-  for (const chat of await kept.unrooted()) {
+  const make = async (chat: Unrooted) => {
     const id = uuid();
     agents.create({
       id,
@@ -105,19 +136,32 @@ export async function startAgents(options: {
       chat.thread,
     );
     agents.admit(id);
-  }
+    return id;
+  };
+  for (const chat of await kept.unrooted()) await make(chat);
 
   // 3. Rufi reads every event after its cursor, now and as they commit,
-  // one reading at a time.
+  // one reading at a time. What it applies of one moves the cursor in the
+  // same transaction.
   let reading = Promise.resolve();
   const read = () => {
     reading = reading
       .then(async () => {
+        const { generation } = store;
         for (;;) {
-          const last = store.eventsAfter(cursor).at(-1);
+          const events = store.eventsAfter(cursor);
+          const last = events.at(-1);
           if (!last) return;
-          await kept.advance(store.generation, last.number);
-          cursor = last.number;
+          for (const event of events) {
+            const applied = await options.apply?.(event, (trx) =>
+              kept.advance(generation, event.number, trx),
+            );
+            if (applied) cursor = event.number;
+          }
+          if (cursor < last.number) {
+            await kept.advance(generation, last.number);
+            cursor = last.number;
+          }
         }
       })
       .catch(failed);
@@ -145,6 +189,13 @@ export async function startAgents(options: {
 
   return {
     agents,
+    root: async (chatId) => {
+      const found = await kept.root(chatId);
+      if (found !== undefined) return found;
+      const [chat] = await kept.unrooted(chatId);
+      if (!chat) throw new Error(`No chat ${chatId}.`);
+      return make(chat);
+    },
     close: async () => {
       unfollow();
       await reading;

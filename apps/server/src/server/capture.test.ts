@@ -19,8 +19,9 @@ import {
   type ModelRequest,
   type Step,
 } from "../../tests/fake-model.ts";
+import { rufiAiFor } from "../../tests/rufi-ai.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
-import { codexRuntime } from "../agent/codex/codex.ts";
+import { codexAdapter } from "../agent/codex/adapter.ts";
 import { chatQueue } from "../core/chat/queue.ts";
 import { DEFAULT_ALLOWLIST } from "../core/chat/models.ts";
 import {
@@ -51,6 +52,7 @@ let store: Store;
 let transcripts: Transcripts;
 let model: FakeModel | undefined;
 let chat: Chat | undefined;
+let ai: Awaited<ReturnType<typeof rufiAiFor>> | undefined;
 let served: { port: number; close: () => Promise<void> } | undefined;
 /** What reached Rufi's MCP server over HTTP. */
 let seen: { auth: string | null; origin: string | null; method: string }[];
@@ -73,6 +75,8 @@ beforeEach(async () => {
 afterEach(async () => {
   await chat?.close();
   chat = undefined;
+  await ai?.close();
+  ai = undefined;
   await served?.close();
   served = undefined;
   await model?.close();
@@ -92,6 +96,7 @@ async function start(
   options: { refuse?: boolean; update?: string; model?: string } = {},
 ) {
   await chat?.close();
+  await ai?.close();
   await served?.close();
   await model?.close();
   model = await fakeModel({ script });
@@ -129,22 +134,27 @@ async function start(
     file: await codexBinary(),
     args: ["-c", `model_providers.openai_chatgpt_plan.base_url="${model.url}"`],
   };
+  ai = await rufiAiFor({
+    home,
+    record: store,
+    transcripts,
+    adapter: codexAdapter({
+      home,
+      ...agentSetup(home),
+      command,
+      env: { PATH: process.env["PATH"] ?? "" },
+      token: () => Promise.resolve("not-a-real-token"),
+      version: "0.0.0",
+      deadlines: { requestMs: 20_000, turnMs: 60_000 },
+      log,
+    }),
+    tools: tools.specs.map((spec) => spec.name),
+  });
   chat = openChat({
     transcripts,
     queue: chatQueue(store),
     signedIn: () => Promise.resolve(true),
-    agent: (host) =>
-      codexRuntime({
-        home,
-        ...agentSetup(home),
-        command,
-        env: { PATH: process.env["PATH"] ?? "" },
-        token: () => Promise.resolve("not-a-real-token"),
-        version: "0.0.0",
-        deadlines: { requestMs: 20_000, turnMs: 60_000 },
-        host,
-        log,
-      }),
+    agent: ai.agent,
     allowlist: options.model ? [options.model] : DEFAULT_ALLOWLIST,
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
     rules: (region) => ({

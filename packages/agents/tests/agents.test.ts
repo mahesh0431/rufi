@@ -267,6 +267,27 @@ describe("an agent", () => {
   });
 });
 
+describe("a conversation the provider lost", () => {
+  it("is replaced by a new one, which the input that found it gone starts", async () => {
+    asha();
+    agents.send(ASHA.id, note("note-1"));
+    await until(() => {
+      expect(agents.get(ASHA.id)?.status).toBe("done");
+    });
+    await fake.adapter.delete(ledger[0]?.ref ?? "");
+
+    agents.send(ASHA.id, note("note-2"));
+    await until(() => {
+      expect(states()["note-2"]).toBe("delivered");
+    });
+    expect(openings).toEqual(["new", "new"]);
+    expect(agents.get(ASHA.id)?.conversation).toBe(2);
+    expect(
+      fake.received(ledger[1]?.ref ?? "").map((input) => input.id),
+    ).toEqual(["note-2"]);
+  });
+});
+
 describe("the host", () => {
   it("opens the agent's conversation when it asks, sets its next turn's model, and opens it again, or anew, while it is idle", async () => {
     asha();

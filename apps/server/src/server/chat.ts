@@ -8,26 +8,17 @@
 // reply), outside the chat's lane so Stop and other actions go on, and only
 // then the message goes to the AI with Rufi's note on what was copied. A
 // reading that doesn't finish ends the reply before the AI, with Retry. The
-// AI calls Rufi's tools through Rufi's MCP server, with a key for its thread;
-// each call is bound to the reply it was made in.
+// AI is the chat's own agent, Rufi AI, run by the agent package
+// (server/rufi-ai.ts); its thread is its conversation. It calls Rufi's tools
+// through Rufi's MCP server, with a key for its chat; each call is bound to
+// the reply it was made in.
 import {
   SIGNED_OUT,
   type Chip,
   type Effort,
   type Pointer,
 } from "@rufi/contracts";
-import {
-  NotOpened,
-  NotSent,
-  Stopped,
-  ThreadNotFound,
-  type AgentEvent,
-  type AgentHost,
-  type AgentRuntime,
-  type Model,
-  type ThreadSettings,
-} from "../agent/runtime.ts";
-import { rulesNote } from "../core/chat/instructions.ts";
+import { NotOpened, NotSent, Stopped, type Model } from "../agent/runtime.ts";
 import { allowedModels } from "../core/chat/models.ts";
 import {
   QueueRefusal,
@@ -41,9 +32,10 @@ import type { ToolAnswer, ToolSpec } from "../core/tools/registry.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import type { McpCall, McpKeys } from "./mcp.ts";
 import type { ReadProgress, Reader } from "./reader.ts";
+import type { RufiAi, RufiAiEvent, RufiAiHost } from "./rufi-ai.ts";
 import { v7 as uuid } from "uuid";
 
-/** How many earlier messages a new thread starts with. */
+/** How many earlier messages a new conversation starts with. */
 const NEW_THREAD_MESSAGES = 10;
 
 export interface ChatDeps {
@@ -51,8 +43,8 @@ export interface ChatDeps {
   queue: ChatQueue;
   /** Whether the AI can be reached with the person's sign-in now. */
   signedIn: () => Promise<boolean>;
-  /** Makes the agent, given where its events go. */
-  agent: (host: AgentHost) => AgentRuntime;
+  /** Rufi AI, given where its events go. */
+  agent: (host: RufiAiHost) => RufiAi;
   allowlist: readonly string[];
   /** Rufi's MCP endpoint for the chat: its address and its keys. */
   mcp: { url: () => string; keys: McpKeys };
@@ -102,16 +94,6 @@ export function chat(deps: ChatDeps) {
   const lanes = new Map<string, Promise<unknown>>();
   /** Actions under way, so Stop can end them while they get ready. */
   const acting = new Map<string, Set<AbortController>>();
-  /** A new thread's earlier chat, until its first message is sent. */
-  const pendingContext = new Map<string, string>();
-  /**
-   * Steers sent, so their message is saved as a steer with its own words
-   * and chips (the AI got the reference list too); by message id.
-   */
-  const steers = new Map<
-    string,
-    { threadId: string; text: string; refs: Chip[] }
-  >();
   /**
    * Sends not yet answered, by message id: the chat that owns the id
    * meanwhile, and how many of its sends use it. Once answered, the record
@@ -131,9 +113,9 @@ export function chat(deps: ChatDeps) {
       ) => Promise<ToolAnswer>;
     }
   >();
-  /** Each thread's key to Rufi's MCP server, for this run of Rufi. */
+  /** Each chat's key to Rufi's MCP server, for this run of Rufi. */
   const keys = new Map<string, string>();
-  /** The hand-over each thread's next turn starts with, by thread. */
+  /** The hand-over each chat's next turn starts with, by chat. */
   const handing = new Map<string, string>();
   /** The hand-over each running turn started with, by agent turn. */
   const handedTo = new Map<string, string>();
@@ -155,7 +137,8 @@ export function chat(deps: ChatDeps) {
     });
   }
 
-  const host: AgentHost = {
+  const host: RufiAiHost = {
+    saved: () => saving,
     onEvent: (event) => {
       saving = saving.then(() =>
         save(event).catch((error: unknown) => {
@@ -258,12 +241,12 @@ export function chat(deps: ChatDeps) {
       call: (call) => callTool(chat.id, call),
     });
 
-  /** The thread's tools: its key from this run, or a new one. */
-  function toolsOf(chat: ChatRow, threadId: string) {
-    let key = keys.get(threadId);
+  /** The chat's tools: its key from this run, or a new one. */
+  function toolsOf(chat: ChatRow) {
+    let key = keys.get(chat.id);
     if (key === undefined) {
       key = issueKey(chat);
-      keys.set(threadId, key);
+      keys.set(chat.id, key);
     }
     return { url: deps.mcp.url(), key };
   }
@@ -271,7 +254,7 @@ export function chat(deps: ChatDeps) {
   const agent = deps.agent(host);
 
   /** Stores one agent event; listeners see it once stored. */
-  async function save(event: AgentEvent): Promise<void> {
+  async function save(event: RufiAiEvent): Promise<void> {
     const chat = await transcripts.byThread(event.threadId);
     if (!chat) {
       log("chat.unknown_thread", { kind: event.type });
@@ -293,8 +276,8 @@ export function chat(deps: ChatDeps) {
     switch (event.type) {
       case "turnStarted": {
         // Rufi starts every turn: its rows are sent now, with the turn.
-        const handOver = handing.get(event.threadId);
-        handing.delete(event.threadId);
+        const handOver = handing.get(chat.id);
+        handing.delete(chat.id);
         if (handOver !== undefined) handedTo.set(event.turnId, handOver);
         // The model it was sent with: the chat's, which can't change while
         // a reply starts or runs.
@@ -305,22 +288,6 @@ export function chat(deps: ChatDeps) {
           handOver,
         );
         if (handOver !== undefined) queue.changed(chat.id);
-        return;
-      }
-      case "message": {
-        // A hand-over's message entered with its turn; a steer is saved
-        // here when the agent shows it first.
-        const steer = steers.get(event.id);
-        if (steer) {
-          steers.delete(event.id);
-          await transcripts.addMessage(chat, {
-            id: event.id,
-            kind: "steer",
-            text: steer.text,
-            agentTurnId: event.turnId,
-            refs: steer.refs,
-          });
-        }
         return;
       }
       case "text":
@@ -383,9 +350,6 @@ export function chat(deps: ChatDeps) {
         if (callers.get(event.threadId)?.turnId === event.turnId) {
           callers.delete(event.threadId);
         }
-        for (const [id, steer] of steers) {
-          if (steer.threadId === event.threadId) steers.delete(id);
-        }
         await transcripts.endTurn(chat, event.turnId, event.end);
         await endHandOver(chat, event.turnId);
         // The turn and its writes have ended: the next rows may go.
@@ -444,7 +408,7 @@ export function chat(deps: ChatDeps) {
           await transcripts.setModel(fresh, first);
           fresh = { ...fresh, model: first };
         }
-        threadId = await threadFor(fresh, signal);
+        threadId = await threadFor(fresh);
       } catch (error) {
         // A Stop, or Rufi closing: the rows simply wait again.
         const quiet = error instanceof Stopped || closed;
@@ -645,29 +609,25 @@ export function chat(deps: ChatDeps) {
     signal: AbortSignal,
     partTurn?: string,
   ): Promise<void> {
-    const context = pendingContext.get(chat.id);
     await queue.mark(chat, handOver.id);
-    handing.set(threadId, handOver.id);
+    handing.set(chat.id, handOver.id);
     try {
       await agent.send(
         threadId,
         {
           id: handOver.id,
-          input: inputOf(handOver, context, notes),
-          // A new model goes with the next reply, in the same thread.
+          sender: handOver.origin,
+          input: inputOf(handOver, notes),
+          // A new model goes with the next reply, in the same conversation.
           ...(chat.model !== null && { model: chat.model }),
           effort: chat.effort,
         },
         signal,
       );
-      pendingContext.delete(chat.id);
     } catch (error) {
       if (error instanceof NotSent) {
-        handing.delete(threadId);
+        handing.delete(chat.id);
         const stopped = error.cause instanceof Stopped || closed;
-        // Codex was replaced and the thread is gone: the rows wait again,
-        // and their next hand-over starts a new thread.
-        const gone = error.cause instanceof ThreadNotFound;
         if (partTurn !== undefined) {
           if (closed) return;
           await transcripts.endPart(
@@ -686,7 +646,7 @@ export function chat(deps: ChatDeps) {
         }
         await queue.notTaken(
           chat,
-          stopped || gone ? undefined : error.message,
+          stopped ? undefined : error.message,
           error.cause instanceof NotOpened,
         );
         if (!stopped) next(chat);
@@ -758,142 +718,65 @@ export function chat(deps: ChatDeps) {
     return run;
   }
 
-  /** What the chat's thread is given now, and the version of its rules. */
-  async function settings(
-    chat: ChatRow,
-  ): Promise<{ settings: ThreadSettings; version: string }> {
-    const { instructions, version } = deps.rules(
-      await transcripts.setting("emergency_region"),
-    );
-    return {
-      settings: {
-        // Set before a thread starts: the first message chooses one.
-        model: chat.model ?? "",
-        effort: chat.effort,
-        instructions,
-      },
-      version,
-    };
-  }
-
   /**
-   * Whether the chat's thread is the agent's. A thread keeps its tools from
-   * Rufi's MCP server and takes a new model with a reply, so neither starts
-   * a new one.
+   * Whether the chat's thread is Rufi AI's conversation. It keeps its tools
+   * from Rufi's MCP server and takes a new model with a reply, so neither
+   * starts a new one.
    */
   const current = (chat: ChatRow) =>
     chat.threadId !== null && chat.threadProvider === agent.provider;
 
   /**
-   * The chat's thread, open in the agent and told the current rules. A
-   * thread is picked up again only here, when the person acts: told again
-   * when its rules changed (a Rufi update, a new emergency region), and a
-   * new one starts only when the chat has none (a move, the person's New
-   * thread), it is another agent's, or the agent has no such thread. Any
-   * other failure to open it throws NotOpened: the message waits for the
-   * person's choice.
+   * The chat's conversation with Rufi AI, open and told the current rules.
+   * A conversation is opened again only here, when the person acts: told
+   * again when its rules changed (a Rufi update, a new emergency region),
+   * and a new one starts only when the chat has none (a move, the person's
+   * New thread) or it is another provider's. One the provider no longer has
+   * is replaced by a new one, which starts with the chat's last messages.
+   * Any other failure to open it throws NotOpened: the message waits for
+   * the person's choice.
    */
-  async function threadFor(
-    chat: ChatRow,
-    signal: AbortSignal,
-  ): Promise<string> {
-    const { settings: threadSettings, version } = await settings(chat);
-    if (current(chat) && chat.threadId !== null) {
-      const threadId = chat.threadId;
-      const told = chat.threadTools === version;
-      if (told && agent.loaded(threadId)) return threadId;
-      const wasLoaded = agent.loaded(threadId);
-      const resumed = { ...threadSettings, tools: toolsOf(chat, threadId) };
-      try {
-        if (told) {
-          await agent.resumeThread(threadId, resumed, signal);
-        } else {
-          await agent.reloadThread(
-            threadId,
-            resumed,
-            rulesNote(threadSettings.instructions),
-            signal,
+  async function threadFor(chat: ChatRow): Promise<string> {
+    const { instructions, version } = deps.rules(
+      await transcripts.setting("emergency_region"),
+    );
+    const fresh = !current(chat);
+    const threadId = await agent.open(
+      chat,
+      {
+        instructions,
+        version,
+        tools: toolsOf(chat),
+        // The old conversation's events are saved first: the seed needs them.
+        seed: async () => {
+          await saving;
+          const earlier = await transcripts.lastMessages(
+            chat,
+            NEW_THREAD_MESSAGES,
           );
-          await transcripts.setThreadRules(chat, version);
-          chat.threadTools = version;
-        }
-        // What a crash kept Rufi from saving, from the agent's own record.
-        if (!wasLoaded) fillGaps(chat, threadId);
-        return threadId;
-      } catch (error) {
-        // Only a thread the agent has no record of is replaced; any other
-        // failure holds the message (NotOpened: for the person's choice).
-        if (!(error instanceof ThreadNotFound)) throw error;
-        log("chat.resume_failed", { error: errorCode(error) });
-      }
+          return earlier.length > 0 ? newThreadContext(earlier) : undefined;
+        },
+      },
+      { fresh, reload: !fresh && chat.threadTools !== version },
+    );
+    if (threadId !== chat.threadId) {
+      // Once the pointer moves, the old conversation's events can't find
+      // the chat: they are saved first.
+      await saving;
+      await transcripts.setThread(chat, {
+        id: threadId,
+        provider: agent.provider,
+        model: chat.model ?? "",
+        tools: version,
+      });
+      chat.threadId = threadId;
+      chat.threadProvider = agent.provider;
+      chat.threadModel = chat.model;
+    } else if (chat.threadTools !== version) {
+      await transcripts.setThreadRules(chat, version);
     }
-    // The old thread's events are saved first: once the pointer moves, they
-    // can't find the chat, and the new thread's seed needs them.
-    await saving;
-    const key = issueKey(chat);
-    let started: { threadId: string; model: string };
-    try {
-      started = await agent.startThread(
-        { ...threadSettings, tools: { url: deps.mcp.url(), key } },
-        signal,
-      );
-    } catch (error) {
-      deps.mcp.keys.revoke(key);
-      throw error;
-    }
-    const { threadId, model } = started;
-    // The old thread's key opens nothing any more.
-    const old = chat.threadId === null ? undefined : keys.get(chat.threadId);
-    if (old !== undefined) deps.mcp.keys.revoke(old);
-    if (chat.threadId !== null) keys.delete(chat.threadId);
-    keys.set(threadId, key);
-    await transcripts.setThread(chat, {
-      id: threadId,
-      provider: agent.provider,
-      model,
-      tools: version,
-    });
-    chat.threadId = threadId;
-    chat.threadProvider = agent.provider;
-    chat.threadModel = model;
     chat.threadTools = version;
-    const earlier = await transcripts.lastMessages(chat, NEW_THREAD_MESSAGES);
-    if (earlier.length > 0) {
-      pendingContext.set(chat.id, newThreadContext(earlier));
-    } else {
-      pendingContext.delete(chat.id);
-    }
     return threadId;
-  }
-
-  /**
-   * Saves the messages the thread ran that Rufi has not, in line with the
-   * events, so a message is never saved twice. A failure is logged; the
-   * thread goes on.
-   */
-  function fillGaps(chat: ChatRow, threadId: string): void {
-    const fill = async () => {
-      for (const message of await agent.startedMessages(threadId)) {
-        if (await transcripts.hasMessage(message.id)) continue;
-        // The hand-over starting now is no gap: it is saved with its turn,
-        // where a save in that turn finds the user's message.
-        if (handing.get(threadId) === message.id) continue;
-        // Rows Rufi handed over are filled from the queue, by their origin.
-        if (await transcripts.fillHandOver(chat, message.id)) {
-          queue.changed(chat.id);
-          continue;
-        }
-        // A steer a crash kept from being saved.
-        await transcripts.addMessage(chat, {
-          id: message.id,
-          kind: "message",
-          text: message.text,
-        });
-      }
-    };
-    saving = saving.then(fill).catch((error: unknown) => {
-      log("chat.save_failed", { kind: "fill", error: errorCode(error) });
-    });
   }
 
   /** The chat's thread, when it is the agent's (no new one is made). */
@@ -985,7 +868,6 @@ export function chat(deps: ChatDeps) {
           if (error instanceof RefRefusal) throw new ChatRefusal(error.message);
           throw error;
         }
-        steers.set(id, { threadId, text, refs: chips });
         let steered: string;
         try {
           ({ turnId: steered } = await agent.steer(threadId, {
@@ -993,11 +875,10 @@ export function chat(deps: ChatDeps) {
             text: withRefs(text, chips),
           }));
         } catch (error) {
-          steers.delete(id);
           if (!(error instanceof NotSent)) throw error;
           return queued();
         }
-        // In line with the events: the agent may have shown it already.
+        // In line with the events.
         const saved = saving.then(() =>
           transcripts.addMessage(chat, {
             id,
@@ -1111,12 +992,11 @@ export function chat(deps: ChatDeps) {
             return;
           }
           await refused(() => queue.recover(fresh, id, hold, newThread));
-          // The old thread's key opens nothing any more.
-          const old = fresh.threadId;
-          if (newThread && old !== null) {
-            const key = keys.get(old);
-            if (key !== undefined) deps.mcp.keys.revoke(key);
-            keys.delete(old);
+          // The old conversation's key opens nothing any more.
+          const key = keys.get(fresh.id);
+          if (newThread && key !== undefined) {
+            deps.mcp.keys.revoke(key);
+            keys.delete(fresh.id);
           }
         });
         next(chat);
@@ -1250,15 +1130,10 @@ function progressWords(now: ReadProgress): string {
 const textOf = (error: unknown) =>
   error instanceof Error ? error.message : "The AI couldn't take it.";
 
-/** A turn's input: a new thread's earlier chat, Rufi's notes, the message. */
-function inputOf(
-  handOver: HandOver,
-  context: string | undefined,
-  more: readonly string[],
-): string[] {
+/** A turn's input: Rufi's notes, then the message. */
+function inputOf(handOver: HandOver, more: readonly string[]): string[] {
   const notes = [...handOver.notes, ...more];
   return [
-    ...(context === undefined ? [] : [context]),
     ...(notes.length === 0 ? [] : [`${NOTES_HEAD}\n\n${notes.join("\n\n")}`]),
     ...(handOver.text === undefined
       ? []
@@ -1280,7 +1155,7 @@ const WHO = {
   rufi: "Rufi",
 } as const;
 
-/** What a new thread is told first: the note, then the last messages. */
+/** What a new conversation is told first: the note, then the last messages. */
 function newThreadContext(
   earlier: readonly {
     from: keyof typeof WHO;

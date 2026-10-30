@@ -761,6 +761,24 @@ export function createAgents(options: {
       )
       .get(agent) !== undefined;
 
+  /**
+   * The provider no longer has the agent's conversation: it is let go of,
+   * and the next turn opens a new one.
+   */
+  function lose(live: Live, conversation: Conversation): void {
+    if (live.conversation !== conversation) return;
+    live.conversation = undefined;
+    live.last = undefined;
+    closing.add(conversation);
+    store.change(({ event }) => {
+      db.prepare(
+        "UPDATE agents SET provider_ref = NULL, updated_at = ? WHERE id = ? AND provider_ref = ?",
+      ).run(now(), live.id, conversation.ref);
+      event("conversation.lost", live.id, { conversation: live.number });
+    });
+    letGo().catch(options.onError);
+  }
+
   /** Closes a turn to new calls: its stop is under way. */
   function closeTurn(live: Live, turn: string): void {
     store.change(({ event }) => {
@@ -1002,6 +1020,22 @@ export function createAgents(options: {
       }
       // Admitted already: the provider said it started.
       if (stateOf(input.id) !== "handing_over") return;
+      // Its conversation is gone: the input goes first, in a new one.
+      if (
+        delivery.status === "not_delivered" &&
+        delivery.reason === "missing"
+      ) {
+        lose(live, conversation);
+        move(
+          live,
+          input.id,
+          "handing_over",
+          { state: "waiting", first: true },
+          turn,
+        );
+        live.asks += 1;
+        return;
+      }
       const to: Move =
         delivery.status === "not_delivered"
           ? {

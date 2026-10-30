@@ -16,6 +16,7 @@ import { Cause, Console, Effect, Layer } from "effect";
 import { signIn } from "../agent/chatgpt/signin.ts";
 import { accessToken, signOut, status } from "../agent/chatgpt/session.ts";
 import type { ChatGptDeps } from "../agent/chatgpt/openai.ts";
+import { codexAdapter } from "../agent/codex/adapter.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexRuntime } from "../agent/codex/codex.ts";
 import type { AgentEvent } from "../agent/runtime.ts";
@@ -483,17 +484,17 @@ const startCommand = (open: boolean) =>
     const core = yield* startCore({
       home,
       folder: { source, show: showInFinder },
-      agent: (host) =>
-        codexRuntime({
+      adapters: [
+        codexAdapter({
           home,
           ...agentSetup(home),
           command: { file, args: [] },
           env: childEnvironment(),
           token: (validForMs) => accessToken(deps, validForMs),
           version,
-          host,
           log,
         }),
+      ],
       reader: subAgentRunner({
         home,
         command: { file, args: [] },
