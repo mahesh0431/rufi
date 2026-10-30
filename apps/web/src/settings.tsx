@@ -1,6 +1,6 @@
 // Settings: how Codex and Claude are signed in, how Rufi looks, when a reply's
 // Activity opens by itself, what a message sent while a reply runs does,
-// the region whose
+// the models the AI and its agents may run on, the region whose
 // emergency number the AI gives, the model and effort documents are read
 // with, device data, backups, the export of your data, and where Rufi keeps it.
 import { Backups, DataFolder } from "@rufi/contracts";
@@ -18,6 +18,7 @@ import {
   saveSettings,
   useBackups,
   useDataFolder,
+  useModels,
   useSettings,
   useStatus,
 } from "./reads.ts";
@@ -83,6 +84,7 @@ export function SettingsPage() {
           Either way the icons beside the box do the other.
         </p>
       </div>
+      <ModelsSection />
       <h2 className="mt-8 mb-2 px-0.5 font-semibold">Emergency</h2>
       <div className="rounded-xl border border-line bg-surface p-4">
         {settings.data === undefined && settings.error ? (
@@ -195,6 +197,79 @@ function PlanSection() {
           something up or to install what a program needs. It reaches your
           health record only through Rufi.
         </p>
+      </div>
+    </>
+  );
+}
+
+/** The models the AI and the agents it starts may run on: the shortlist. */
+function ModelsSection() {
+  const settings = useSettings();
+  const models = useModels();
+  const codex = useStatus().data?.codex.state;
+  const save = useMutation({
+    mutationFn: async (shortlist: string[]) => {
+      const saved = await saveSettings({ models: shortlist });
+      // The chat's model menu lists the new shortlist.
+      await queries.invalidateQueries({ queryKey: ["models"] });
+      return saved;
+    },
+  });
+  const chosen = settings.data?.models ?? [];
+  const offered = models.data?.offered ?? [];
+  // The ticked first, in the shortlist's order, as a new chat takes the
+  // first; then the others, in the providers' order.
+  const shown = [
+    ...chosen.flatMap((id) => offered.filter((model) => model.id === id)),
+    ...offered.filter((model) => !chosen.includes(model.id)),
+  ];
+  // A tick goes last on the shortlist; one its provider doesn't offer now
+  // stays on it.
+  const tick = (id: string, on: boolean) => {
+    save.mutate(on ? [...chosen, id] : chosen.filter((kept) => kept !== id));
+  };
+  return (
+    <>
+      <h2 id="models" className="mt-8 mb-2 px-0.5 font-semibold">
+        Models
+      </h2>
+      <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
+        {/* Signed out: Sign-in above signs in. */}
+        {codex !== undefined && codex !== "signed_in" ? (
+          <p>Once you're signed in, the models your plan offers show here.</p>
+        ) : models.data === undefined && models.error ? (
+          <Problem error={models.error} retry={() => void models.refetch()} />
+        ) : (
+          <div
+            role="group"
+            aria-labelledby="models"
+            className="flex flex-col gap-1.5"
+          >
+            {shown.map((model) => (
+              <label key={model.id} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={chosen.includes(model.id)}
+                  disabled={save.isPending || settings.data === undefined}
+                  onChange={(event) => {
+                    tick(model.id, event.target.checked);
+                  }}
+                />
+                {model.name}
+              </label>
+            ))}
+          </div>
+        )}
+        <p className="text-muted">
+          The models the AI and the agents it starts can run on. The ticked ones
+          come first, in the order you ticked them. The chat's model menu lists
+          them, and a new chat starts on the first.
+        </p>
+        {save.error && (
+          <p role="alert" className="text-muted">
+            {save.error.message}
+          </p>
+        )}
       </div>
     </>
   );

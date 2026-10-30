@@ -8,7 +8,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { v7 as uuid } from "uuid";
-import { DEFAULT_ALLOWLIST } from "../../src/core/chat/models.ts";
+import { DEFAULT_SHORTLIST } from "../../src/core/chat/models.ts";
 import { transcripts, type ChatRow } from "../../src/core/chat/transcript.ts";
 import {
   databasePath,
@@ -93,7 +93,7 @@ async function ashasChat(home: string, store: Store, today: Date) {
   const chat = (await chats.chat("asha")) as ChatRow;
   const reader = openReadOnly(databasePath(home));
   const tools = rufiCaller(reader, chats, () => undefined);
-  const thread = { id: "golden-thread", model: DEFAULT_ALLOWLIST[0] ?? "" };
+  const thread = { id: "golden-thread", model: DEFAULT_SHORTLIST[0] ?? "" };
 
   /**
    * One reply: her message, Rufi's tools as the AI called them, the answer.

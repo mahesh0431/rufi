@@ -152,7 +152,7 @@ Rufi's own stored copy of the chat: your messages, the AI's replies with the que
 _Avoid_: log, history
 
 **New thread**:
-A new working memory of the chat for the AI. It starts only when the AI's own copy of the chat is gone (a restore, a move of Rufi's data, its files deleted), or when the user clicks **New thread** on a message that waits because the AI's thread didn't open. The chat and the health record stay as they are; the AI gets the chat's last 10 messages and replies, without its notes, steps or thinking, and reads further back when it needs to. The chat shows a quiet line there: "New thread started". Another model or effort, or a change of Rufi's rules, keeps the same thread.
+A new working memory of the chat for the AI. It starts only when the AI's own copy of the chat is gone (a restore, a move of Rufi's data, its files deleted), or when the user clicks **New thread** on a message that waits because the AI's thread didn't open. The chat and the health record stay as they are; the AI gets the chat's last 10 messages and replies, without its notes, steps or thinking, and reads further back when it needs to. The chat shows a quiet line there: "New thread started". Another model or effort, or a change of Rufi's rules, keeps the same thread; a model of another provider starts a new thread there, with the chat's last messages.
 _Avoid_: started afresh, reset, new session, new conversation
 
 **Chat history compacted**:
@@ -188,7 +188,7 @@ What waits to go to the AI, kept by Rufi with the chat: your messages and Rufi's
 _Avoid_: inbox, outbox
 
 **Waiting messages**:
-What the queue holds, shown in the chat after its last message as soon as you send; you can steer, edit, reorder or remove your messages there. A held one says **Failed** with the error as it came, or **Not sent** with why (Stop cut its start off, or it came from a backup), and goes only when you send it. A message that brings new files waits for a reply of its own, which reads them first. A message whose reply ended in Rufi's part is not listed: its reply has **Retry**. Signed out, a send takes nothing: the text and chips stay in the box. After a Stop, and when Rufi starts again, what waits goes on, in order; a message whose start a Stop cut off is held, **Not sent · Stopped.**
+What the queue holds, shown in the chat after its last message as soon as you send; you can steer, edit, reorder or remove your messages there. A held one says **Failed** with the error as it came, or **Not sent** with why (Stop cut its start off, or it came from a backup), and goes only when you send it. A message that brings new files waits for a reply of its own, which reads them first. A message whose reply ended in Rufi's part is not listed: its reply has **Retry**. Signed out, a send takes nothing: the text and chips stay in the box. After a Stop, and when Rufi starts again, what waits goes on, in order; a message whose start a Stop cut off is held, **Not sent · Stopped.** The AI can do the same when you ask, and with what waits for its sub-agents (`waiting_messages`); steering a held one sends it.
 _Avoid_: backlog, pending messages
 
 **Rufi event**:
@@ -196,7 +196,7 @@ Rufi's own note that something happened outside your chat, such as a deleted doc
 _Avoid_: notification, system message
 
 **Stop**:
-Ends the AI's reply now, with anything it started. What it wrote so far is kept; what waits goes on, in order.
+Ends the AI's reply now. What it wrote so far is kept; what waits goes on, in order, and its **sub-agents** keep working. The AI can stop a sub-agent, or itself, with everything under it: then all of them stop, what waits for any of them doesn't go (your messages show **Not sent · Stopped.**), and none of their results wakes another.
 _Avoid_: cancel, abort
 
 **Interrupted**:
@@ -212,16 +212,16 @@ The message you started in the chat and haven't sent, with its chips, saved quie
 _Avoid_: note, unsent
 
 **Model**:
-The version of the AI that answers, such as GPT-6-Astra, chosen for the chat from the allowlist, with its **effort**, in the box. A new model answers from the next reply, in the same thread, with the whole chat.
+The version of the AI that answers, such as GPT-6-Astra, chosen for the chat from the **shortlist**, with its **effort**, in the box. A new model answers from the next reply, in the same thread, with the whole chat; one of another provider starts a new thread there, with the chat's last messages.
 _Avoid_: engine, brain
 
 **Effort**:
 How hard the AI thinks before it answers: Low, Medium or High, chosen for the chat with the model. Medium until the user chooses another. A new effort applies from the next reply, in the same thread.
 _Avoid_: reasoning level, thinking mode
 
-**Allowlist**:
-The models Rufi may use: a short list in Rufi, the strongest models, GPT-6-Astra first. The chat offers those the ChatGPT plan offers now, and uses the first until the user chooses another. An old `models.json` in the data folder is left as it is and not used.
-_Avoid_: whitelist
+**Shortlist**:
+The models the AI and its agents may run on, ticked in **Settings** › **Models**: GPT-6-Astra and GPT-6.1-Sol until the user chooses. The ticked ones come first there, in the order they were ticked. The chat's menu offers those the plan offers now, and a new chat uses the first. An agent starts on one of them or is moved to one; any other is refused. An old `models.json` in the data folder is left as it is and not used.
+_Avoid_: allowlist, whitelist
 
 ## Coming back to things
 
@@ -260,7 +260,7 @@ An AI working in a conversation of its own, on a model and effort, with the tool
 _Avoid_: worker, thread (a conversation is the agent's, not the agent)
 
 **Sub-agent**:
-An agent another agent started for one task, with a title, such as checking a set of results. It sees its task and nothing of the chat, runs on the model and effort of the agent that started it with the same tools or fewer, and goes on after the reply ends. What it saves shows in the chat with Rufi's **receipt**, which names it by its title. When its turn ends, the agent that started it hears how it went (its **done message**), and Rufi AI says what it found. Screens don't show sub-agents yet.
+An agent another agent started for one task, with a title, such as checking a set of results. It sees its task and nothing of the chat, runs on the model and effort of the agent that started it, or others of the **shortlist** it was given, with the same tools or fewer, and goes on after the reply ends. What it saves shows in the chat with Rufi's **receipt**, which names it by its title. When its turn ends, the agent that started it hears how it went (its **done message**), and Rufi AI says what it found. Screens don't show sub-agents yet.
 _Avoid_: helper, child (in screens and help), delegate
 
 **Done message**:

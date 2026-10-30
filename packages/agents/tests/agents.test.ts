@@ -553,6 +553,50 @@ describe("the queue", () => {
     expect(errors).toEqual([]);
   });
 
+  it.each([false, true])(
+    "takes a steer the provider cancels at a Stop: just this agent, it starts the next turn; with children, it is dropped (children: %s)",
+    async (children) => {
+      const cancelled = Promise.withResolvers<undefined>();
+      agents = await run(
+        changed((conversation) => ({
+          // The provider holds the steer until the Stop cancels it.
+          steer: async () => {
+            await cancelled.promise;
+            return { status: "not_delivered", text: "Cancelled at the stop." };
+          },
+          stop: (turn) => {
+            cancelled.resolve(undefined);
+            return conversation.stop(turn);
+          },
+        })),
+      );
+      asha();
+      fake.script.turn = "runs";
+      agents.send(ASHA.id, note("note-1"));
+      await running();
+      agents.send(ASHA.id, note("note-2", "steer"));
+      await until(() => {
+        expect(states()["note-2"]).toBe("handing_over");
+      });
+
+      await agents.stop(ASHA.id, "person", { children });
+      if (children) {
+        expect(
+          rows("SELECT state, held FROM queue WHERE id = 'note-2'"),
+        ).toEqual([{ state: "waiting", held: "stopped" }]);
+        await sleep(20);
+        expect(received()).toEqual(["note-1"]);
+      } else {
+        await until(() => {
+          expect(states()["note-2"]).toBe("delivered");
+        });
+        expect(received()).toEqual(["note-1", "note-2"]);
+        expect(rows("SELECT id FROM turns")).toHaveLength(2);
+      }
+      expect(errors).toEqual([]);
+    },
+  );
+
   it("counts a steer whose answer was lost as sent, and never sends it again", async () => {
     asha();
     fake.script.turn = "runs";

@@ -196,9 +196,11 @@ If you stop the reply while the AI saves, the save can still finish. Then its re
 
 ### When the AI starts agents of its own
 
-For a task that can run on its own, the AI can start an agent of its own, a sub-agent. It gets only the task the AI gives it, never your chat, and works on the same model with the AI's tools or fewer. It can go on after the reply ends: what it saves shows in the chat with Rufi's receipt, also after the reply, with its title after **Saved**. It saves only what you said yes to. You don't see sub-agents on the screen yet.
+For a task that can run on its own, the AI can start an agent of its own, a sub-agent. It gets only the task the AI gives it, never your chat, and works with the AI's tools or fewer, on the AI's model or another one you ticked in **Settings** › **Models**. Between a sub-agent's turns, the AI can move it to another of those models, never while it works. On another provider's model, the sub-agent starts a new conversation there, which has its last 10 turns. It can go on after the reply ends: what it saves shows in the chat with Rufi's receipt, also after the reply, with its title after **Saved**. It saves only what you said yes to. You don't see sub-agents on the screen yet.
 
 When a sub-agent finishes, the AI hears it by itself. If the AI isn't replying then, it replies by itself, and a small line above that reply says which agent and why, such as "Reading report.pdf: done" or "Reading report.pdf asks a question". The AI tells you what it found, or asks you what it asks. While a sub-agent works, the AI may end its reply and say so: the sub-agent's result wakes it. The AI can also write to a sub-agent, for example to answer its question.
+
+You can ask the AI to stop a sub-agent: just that one, or with every sub-agent it started. Its result goes to the AI, which says it stopped. When you ask the AI to stop everything, it stops every sub-agent and its own reply too. Then none of the stopped sub-agents' results wakes the AI, and your waiting messages don't go: each shows **Not sent · Stopped.**, for you to **Send**, edit or remove. What waited for the stopped sub-agents is held the same way: the AI can send it again when you ask.
 
 ## While the AI replies
 
@@ -208,7 +210,7 @@ While the AI replies, three buttons are where the send button was: **Steer** (tw
 
 If you click Stop, what the AI did so far stays in Activity, and the folded line says how many steps stopped. If Rufi closed before the reply finished, its Activity shows no time, because Rufi doesn't know when the reply ended.
 
-**Stop.** The stop button (the square) ends the reply now, in every size of the chat. What the AI wrote so far stays. Stop ends only the reply: your waiting messages go next, in order. A message whose reply was still starting when you clicked Stop doesn't go: it waits as **Not sent · Stopped.**, for you to **Send**, edit or remove.
+**Stop.** The stop button (the square) ends the reply now, in every size of the chat. What the AI wrote so far stays. Stop ends only the reply: your waiting messages go next, in order, and the sub-agents keep working (to stop them, ask the AI; see [When the AI starts agents of its own](#when-the-ai-starts-agents-of-its-own)). A message whose reply was still starting when you clicked Stop doesn't go: it waits as **Not sent · Stopped.**, for you to **Send**, edit or remove.
 
 **Rufi's reader.** When your message brings files, your reply starts with Rufi's part: Rufi's reader copies the pages before the AI starts. Each file is a step in Activity, **Rufi's reader · thyrocare-aug.pdf**, with how far it is. Stop ends the reading too. The AI starts when all files are copied, and answers your message in the same reply (see [Documents](documents.md#while-a-document-is-read)). If the reading doesn't finish, the reply ends before the AI, with the reason and **Retry** (see [Documents](documents.md#when-a-reading-stops)).
 
@@ -219,7 +221,7 @@ If you click Stop, what the AI did so far stays in Activity, and the folded line
 
 Enter does what you chose in **Settings** › **Sending while Rufi replies**: **Steer** (the start) or **Queue**. The other button beside the box does the other. A message with new files always waits for a reply of its own, which reads its files first.
 
-If a reply ends just as you steer, your message starts the next reply, before your other waiting messages.
+If the reply ends before your steer reaches it, your message goes in a following reply.
 
 ## Waiting messages
 
@@ -230,6 +232,8 @@ What waits shows in the chat, after its last message, in the order it goes: your
 - **Move** it, to change the order: drag it up or down by its handle (the dots on its left). With the keyboard, go to the handle with Tab, press Space to pick the message up, the up and down arrows to move it, and Space to put it down. Esc puts it back where it was.
 - **Remove** it (the X). It never goes to the AI.
 
+You can also ask the AI to do these for you, for example "remove my question about the scan" or "send the held ones now". It sees what waits for it and for its sub-agents, and changes your messages when you ask. When it steers a held message, the message goes, as when you click **Send**.
+
 The line above them says what happens next:
 
 - **Waiting · these go in order after the reply**: they go by themselves.
@@ -239,7 +243,7 @@ A message with new files waits like any other, and gets a reply of its own, whic
 
 A held message says why under it, and goes only when you click **Send** (the paper plane); you can also edit or remove it:
 
-- **Failed ·** and the error as it came, when Rufi couldn't hand the message to the AI, or the AI couldn't take it, for example when none of your allowed models is offered.
+- **Failed ·** and the error as it came, when Rufi couldn't hand the message to the AI, or the AI couldn't take it, for example when none of the models you ticked in **Settings** › **Models** is offered.
 - **Not sent · Stopped.** You clicked Stop while its reply was still starting, so it didn't go.
 - **Not sent · From a backup: it waited when the backup was made.** After a restore, nothing from the past goes to the AI by itself.
 
@@ -259,11 +263,13 @@ When the AI should know too, Rufi gives it a note:
 
 The model and effort that answer show in the box, next to the send button, in every size of the chat: for example "GPT-6-Astra Medium". Click them to open one menu with both. When you aren't signed in, the menu can't list the models: click **Sign in with ChatGPT** in it to sign in.
 
-**The model.** Your chat has one model at a time. To change it, choose another in the menu: a tick shows the one that answers now. The menu shows Rufi's models that your ChatGPT plan offers now: GPT-6-Astra and GPT-6.1-Sol. Before your first message, the chat shows the first of them, GPT-6-Astra when your plan offers it. Choose another before your first message if you like.
+**The model.** Your chat has one model at a time. To change it, choose another in the menu: a tick shows the one that answers now. The menu shows the models you ticked in **Settings** › **Models** that your ChatGPT plan offers now: GPT-6-Astra and GPT-6.1-Sol until you choose. Before your first message, the chat shows the first of them, GPT-6-Astra when your plan offers it. Choose another before your first message if you like.
+
+**Models in Settings.** **Settings** › **Models** lists every model your plan offers now. Tick the ones the AI and the sub-agents it starts may run on. The ticked ones come first, in the order you ticked them: the chat's menu lists them, and a new chat starts on the first. The AI can't start a sub-agent on a model you haven't ticked. A chat already on a model you untick keeps it, and the box still names it, until you choose another in the menu.
 
 **The effort** is how hard the AI thinks before it answers: Low is faster, Medium gives careful answers at a good speed, and High thinks longer. Your chat starts at Medium. A new effort applies from the next reply, and the AI keeps its memory of the chat.
 
-Rufi keeps the model and effort for your chat. You can't change them while a reply runs. Rufi says so: stop the reply, then change them. A new model answers from your next message, and it has the whole chat: the AI keeps its memory of the chat. Messages that wait go to the new model.
+Rufi keeps the model and effort for your chat. You can't change them while a reply runs. Rufi says so: stop the reply, then change them. A new model answers from your next message, and it has the whole chat: the AI keeps its memory of the chat. A model of another provider starts a new thread there, with the chat's last messages. Messages that wait go to the new model.
 
 **Context used.** In the chat's panel and page, a small grey ring with a percentage, such as "38%", shows beside the model and effort: how much of the AI's memory of the chat is in use, as the AI last reported it. Point at it, or move to it with Tab, to see what it means. It shows after the AI's first reply, and keeps its value when you reload. It changes after each step of a reply, not with each word. After a compaction or another model, it keeps the old value until the next reply. After a new thread, it shows nothing until the AI's first reply there. When the AI doesn't say how big its memory is, there is no ring. A full memory is normal: near full, Codex compacts the chat history.
 
