@@ -2,7 +2,7 @@
 // using them is in the core (core/chat/instructions.ts) and the skills.
 import { createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
-import { getDocuments, sortDocuments } from "./documents.ts";
+import { getDocuments, saveReading, sortDocuments } from "./documents.ts";
 import { showFace } from "./face.ts";
 import { getOverview } from "./overview.ts";
 import { dismissItems, saveChanges } from "./save.ts";
@@ -22,6 +22,12 @@ import type { Log } from "../../platform/logs.ts";
 import type { ChatRow, Transcripts } from "../chat/transcript.ts";
 import { createBrief as makeBrief } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
+import {
+  keptReading,
+  type SaveReadingAnswer,
+  type SaveReadingInput,
+  type SaveReadingScope,
+} from "../documents/save-reading.ts";
 import type { SortAnswer, SortInput, SortScope } from "../documents/sorting.ts";
 import { dismissItems as dismissDrafts } from "../record/items.ts";
 import { saveChanges as saveToRecord } from "../record/save.ts";
@@ -36,6 +42,7 @@ export const TOOLS: readonly Tool[] = [
   saveChanges,
   dismissItems,
   sortDocuments,
+  saveReading,
   createBrief,
   showFace,
 ];
@@ -81,6 +88,14 @@ async function rejectionsPerReply(
   return Number.isInteger(value) && value > 0 ? value : REJECTIONS_PER_TURN;
 }
 
+/**
+ * What Rufi keeps of a call's input: as it came, but for a reading's page
+ * text, which goes with its document (save-reading.ts).
+ */
+export function keptInput(tool: string, input: unknown): unknown {
+  return tool === saveReading.name ? keptReading(input) : input;
+}
+
 /** tools.json: every tool as documentation, generated (pnpm tools:json). */
 export function toolsJson(): string {
   const tools = TOOLS.map((tool) => ({
@@ -114,9 +129,19 @@ export function chatCaller(
     /** After a sort is kept. */
     done: (personId: string) => void;
   },
+  reading?: {
+    run: (
+      scope: SaveReadingScope,
+      input: SaveReadingInput,
+      trx: Transaction<Tables>,
+    ) => Promise<SaveReadingAnswer>;
+    /** After a reading is kept. */
+    done: (personId: string) => void;
+  },
 ) {
   return (chat: ChatRow, agentTurnId: string, origin: "person" | "rufi") => {
-    // Sorts kept with their call, by call id, till their answer goes out.
+    // Sorts and readings kept with their call, by call id, till their
+    // answer goes out.
     const kept = new Set<string>();
     const call = forAgent(
       () => ({
@@ -177,6 +202,25 @@ export function chatCaller(
           kept.add(callId);
           sort.done(chat.personId);
           return sorted;
+        },
+        // In the reading's transaction too, kept without its page text.
+        saveReading: async (input, callId) => {
+          if (origin === "rufi") throw new Refusal(EVENT_TURN);
+          if (!reading) throw new Refusal("Rufi can't save a reading here.");
+          const saved = await transcripts.withToolCall(
+            chat,
+            agentTurnId,
+            { callId, tool: saveReading.name, input: keptReading(input) },
+            (trx) =>
+              reading.run(
+                { personId: chat.personId, chatId: chat.id, callId },
+                input,
+                trx,
+              ),
+          );
+          kept.add(callId);
+          reading.done(chat.personId);
+          return saved;
         },
         brief: (input, callId) =>
           origin === "rufi"

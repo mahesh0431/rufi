@@ -4,6 +4,10 @@ import { Result, Schema, SchemaIssue } from "effect";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import type { BriefInput, Made } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
+import type {
+  SaveReadingAnswer,
+  SaveReadingInput,
+} from "../documents/save-reading.ts";
 import type { SortAnswer, SortInput } from "../documents/sorting.ts";
 import type { DismissInput, Dismissed } from "../record/items.ts";
 import type { SaveRequest, Saved } from "../record/save.ts";
@@ -44,6 +48,10 @@ export interface ToolContext {
     | undefined;
   /** Makes a visit brief with its line: only in Rufi's own chat. */
   brief?: ((input: BriefInput, callId: string) => Promise<Made>) | undefined;
+  /** Saves a whole reading (save_reading): only in Rufi's own chat. */
+  saveReading?:
+    | ((input: SaveReadingInput, callId: string) => Promise<SaveReadingAnswer>)
+    | undefined;
 }
 
 /** A tool's input: decoded without services, like JSON. */

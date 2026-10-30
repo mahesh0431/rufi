@@ -38,6 +38,7 @@ import { refsForAi, RefRefusal } from "../core/chat/refs.ts";
 import type { ChatRow, Transcripts } from "../core/chat/transcript.ts";
 import type { Job, Readings } from "../core/documents/reading.ts";
 import type { ToolAnswer, ToolSpec } from "../core/tools/registry.ts";
+import { keptInput } from "../core/tools/tools.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import type { McpCall, McpKeys } from "./mcp.ts";
 import type { ReadProgress, Reader } from "./reader.ts";
@@ -219,13 +220,13 @@ export function chat(deps: ChatDeps) {
     const startedAt = transcripts.now();
     const answer = await caller.call(call.tool, call.input, callId);
     // Kept before the AI has it: Rufi keeps every answer the AI got (a sort
-    // keeps its own, with what it changed).
+    // or a reading keeps its own, with what it changed).
     try {
       if (!answer.kept) {
         await transcripts.recordToolCall(caller.chat, turnId, {
           callId,
           tool: call.tool,
-          input: call.input,
+          input: keptInput(call.tool, call.input),
           answer,
           startedAt,
         });
