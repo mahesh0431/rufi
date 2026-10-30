@@ -338,10 +338,6 @@ export const startCore = (options: CoreOptions) =>
       ),
       (opened) => Effect.promise(() => opened.close()),
     );
-    // Each chat's waiting messages go into Rufi AI's queue, in order; only
-    // now may the agents' inputs go.
-    yield* attempt(() => chat.carryAll());
-    yield* attempt(() => agentSystem.agents.dispatch());
 
     const convertLoop = yield* Effect.acquireRelease(
       Effect.sync(() => openConverter({ devices: deviceData, log })),
@@ -477,6 +473,10 @@ export const startCore = (options: CoreOptions) =>
         ),
     );
     port = (server.address() as AddressInfo).port;
+    // Rufi's MCP server listens: each chat's waiting messages go into Rufi
+    // AI's queue, in order, and only now may the agents' inputs go.
+    yield* attempt(() => chat.carryAll());
+    yield* attempt(() => agentSystem.agents.dispatch());
     convertLoop.start();
     yield* Effect.acquireRelease(
       attempt(() => writePrivateJson(coreFile(home), { port, launcher })),

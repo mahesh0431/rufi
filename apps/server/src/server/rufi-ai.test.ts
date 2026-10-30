@@ -203,17 +203,23 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
 
   // The chat saves nothing of the next turn: its start and answer come
   // from the events alone.
-  const unsaved = rufi.system.rufiAi({
+  rufi.system.rufiAi({
     onEvent: () => undefined,
     saved: () => Promise.resolve(),
+    opening: () => Promise.reject(new Error("It is open already.")),
+    claim: () => Promise.resolve(undefined),
+    changed: () => undefined,
   });
-  const ask = (id: string) =>
-    unsaved.send(thread, {
+  const agent = await rufi.system.root("c-asha");
+  const ask = async (id: string) => {
+    rufi.system.agents.send(agent, {
       id,
       sender: "person",
-      input: ["What about my ferritin?"],
-      effort: "medium",
+      kind: "queue",
+      parts: ["What about my ferritin?"],
     });
+    await rufi.running();
+  };
   await ask("message-3");
   fake.end(thread, { status: "done", answer: "Ferritin was 40." });
   const turns = () =>

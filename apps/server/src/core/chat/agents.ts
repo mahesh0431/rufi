@@ -292,7 +292,10 @@ export function chatAgents(
           .execute();
       }),
 
-    /** Rows still handing over to an owned agent's conversation. */
+    /**
+     * Rows still handing over that Rufi claimed. One whose agent Rufi
+     * doesn't own, or whose claim names none, can't be asked about.
+     */
     claimed: async (): Promise<Claimed[]> => {
       const owned = new Set(
         (await db.selectFrom("agent_owners").select("agent_id").execute()).map(
@@ -305,11 +308,11 @@ export function chatAgents(
         .where("state", "=", "handing_over")
         .where("sent_as", "is not", null)
         .execute();
-      return rows.flatMap((row) => {
+      return rows.map((row) => {
         const claim = claimOf(row.sent_as ?? "");
         return claim && owned.has(claim.agent)
-          ? [{ id: row.id, ...claim }]
-          : [];
+          ? { id: row.id, ...claim }
+          : { id: row.id, agent: "", conversation: 0 };
       });
     },
 
