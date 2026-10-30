@@ -438,6 +438,13 @@ describe("the queue", () => {
     await running();
     const first = latestTurn(ASHA.id);
 
+    // The steer's sender is an agent of its own.
+    agents.create({
+      ...ASHA,
+      id: "agent-reader",
+      parent: ASHA.id,
+      title: "Reading report.pdf",
+    });
     agents.send(ASHA.id, note("note-2", "queue"));
     agents.send(ASHA.id, note("note-3", "steer"));
     await until(() => {
@@ -458,7 +465,8 @@ describe("the queue", () => {
       { id: "note-3", turn_id: first.id },
     ]);
     expect(received()).toEqual(["note-1", "note-3", "note-2"]);
-    // A steer reaches the agent after a line saying it is one.
+    // A steer reaches the agent after a line saying it is one, which names
+    // the agent that sent it.
     expect(
       fake
         .received(ledger[0]?.ref ?? "")
@@ -466,7 +474,7 @@ describe("the queue", () => {
     ).toEqual({
       id: "note-3",
       parts: [
-        "You're being steered: don't drop what you're working on unless you have to; take this into account.",
+        "You're being steered by Reading report.pdf (agent-reader): don't drop what you're working on unless you have to; take this into account.",
         "Reading report.pdf: note-3",
       ],
     });

@@ -718,7 +718,7 @@ test("a quick send whose answer was lost keeps its id through Help and reload: t
   }
 });
 
-test("when Rufi stops while it hands a message to the AI, the message counts as sent: it stays in the chat, its reply stopped", async ({
+test("when Rufi stops while it hands a message to the AI, the message counts as sent: it stays in the chat, its reply stopped, and the chat goes on", async ({
   page,
   rufi,
 }) => {
@@ -756,6 +756,11 @@ test("when Rufi stops while it hands a message to the AI, the message counts as 
   await expect(waiting).toHaveCount(0);
   await expect(box(chat(page))).toHaveValue("");
   await accessible(page);
+  // The chat goes on with the next message.
+  await send(page, "And now?");
+  await expect(log(chat(page)).locator(".reply").last()).toHaveText(
+    "ok:And now?",
+  );
 });
 
 test("a Rufi event shows as Rufi's line, and its note goes to the AI in a reply of its own", async ({

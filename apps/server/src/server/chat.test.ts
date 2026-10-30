@@ -2416,6 +2416,43 @@ describe("the chat, on the scripted Codex", () => {
     ).toEqual({ kind: "prescription" });
   });
 
+  it("wakes Rufi AI with each of two sub-agents' done messages, the first with the line that names it", async () => {
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Ask two helpers": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Helper A", task: "helper: slow a" },
+            },
+            {
+              tool: "start_agent",
+              arguments: { title: "Helper B", task: "helper: slow b" },
+            },
+          ],
+        },
+      },
+    });
+    const c = await newChat();
+    await say(c, "Ask two helpers");
+    await until(async () => (await transcript(c.id)).turns.length > 1);
+    await settled(c.id);
+    // Each went to Rufi AI: in a reply it gave by itself, or steered in.
+    expect(
+      agentRows(
+        "SELECT sender, state FROM queue WHERE about = 'done' AND agent_id = (SELECT id FROM agents WHERE parent_id IS NULL) ORDER BY sender",
+      ),
+    ).toEqual([
+      { sender: ownCall("call-0"), state: "delivered" },
+      { sender: ownCall("call-1"), state: "delivered" },
+    ]);
+    const { turns } = await transcript(c.id);
+    expect(turns[1]?.cause).toMatchObject({
+      title: expect.stringMatching(/^Helper [AB]$/) as unknown,
+      about: "done",
+    });
+  });
+
   it("gives a sub-agent only the tools it was given, and its own sub-agent no more than those", async () => {
     await startChat("fake", {
       scenario: {
