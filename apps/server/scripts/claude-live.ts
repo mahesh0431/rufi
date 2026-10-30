@@ -369,16 +369,16 @@ async function withDoor<T>(
   const door = agentDoor({
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
     specs: [SAVE_NOTE],
-    place: async (agent, meta, signal) => {
-      const placed = await agents.place(agent, meta, signal);
+    place: (agent, meta) => {
+      const placed = agents.place(agent, meta);
       // Whose the agent is doesn't matter to a fictional note.
-      return (
+      return Promise.resolve(
         placed && {
           ...placed,
           chat: {} as ChatRow,
           thread: refs.at(-1) ?? "",
           tools: [SAVE_NOTE.name],
-        }
+        },
       );
     },
     run: (scope, _tool, input) => {
@@ -831,55 +831,44 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       if (ends.some((end) => end.status !== "done")) {
         throw new Error(`the turns ended ${JSON.stringify(ends)}`);
       }
-      const received = await conversation.reconcile([first, second]);
-      if ([...received.values()].some((each) => each !== "received")) {
-        throw new Error(`Claude kept ${JSON.stringify([...received])}`);
+      const answer = ends[1]?.status === "done" ? ends[1].answer : "";
+      if (!answer.includes("MARIGOLD-7")) {
+        throw new Error(`the second turn answered ${JSON.stringify(answer)}`);
       }
-      return "both done; one conversation keeps both";
+      return "both done; the second knew the first's word";
     }),
 
-  "a steer at the turn's end starts the next turn with it": async (context) =>
-    withAdapter(context, async ({ open, send, until, events }) => {
-      const conversation = await open();
-      const turn = await send(
-        conversation,
-        randomUUID(),
-        "Write 12 short numbered lines about a fictional morning walk.",
-      );
-      const steer = randomUUID();
-      // A reply with no tools has no point to fold a steer into, so Claude
-      // holds it to the turn's end.
-      const outcome = await conversation.steer({
-        input: { id: steer, parts: ["Add a last line that says PINEAPPLE."] },
-        turn,
-      });
-      if (outcome.status !== "next_turn" && outcome.status !== "delivered") {
-        throw new Error(`the steer came back ${JSON.stringify(outcome)}`);
-      }
-      if (outcome.status === "next_turn") {
-        const ended = events.findIndex(endOf(turn));
-        const next = events.findIndex(
-          (event) =>
-            event.type === "turnStarted" && event.inputs.includes(steer),
+  "a steer at the turn's end starts a turn of Claude's own, shown with it":
+    async (context) =>
+      withAdapter(context, async ({ open, send, until, events }) => {
+        const conversation = await open();
+        const turn = await send(
+          conversation,
+          randomUUID(),
+          "Write 12 short numbered lines about a fictional morning walk.",
         );
-        if (ended < 0 || next < ended) {
-          throw new Error("the next turn didn't start after the first ended");
+        const steer = randomUUID();
+        // A reply with no tools has no point to fold a steer into, so Claude
+        // holds it to the turn's end, and begins a turn of its own with it.
+        const outcome = await conversation.steer({
+          input: { id: steer, parts: ["Add a last line that says PINEAPPLE."] },
+          turn,
+        });
+        if (outcome.status !== "delivered") {
+          throw new Error(`the steer came back ${JSON.stringify(outcome)}`);
         }
-      }
-      // Either way, every turn of it ended done: a failed one proves nothing.
-      const ends = [
-        await until(endOf(turn)),
-        ...(outcome.status === "next_turn"
-          ? [await until(endOf(outcome.turn))]
-          : []),
-      ];
-      if (ends.some((end) => end.status !== "done")) {
-        throw new Error(`the turns ended ${JSON.stringify(ends)}`);
-      }
-      return outcome.status === "next_turn"
-        ? "it started the next turn, named in its start"
-        : "it joined the running turn";
-    }),
+        const own = await until(startedBy(steer));
+        const ends = [await until(endOf(turn)), await until(endOf(own))];
+        if (
+          events.findIndex(endOf(turn)) > events.findIndex(startedBy(steer))
+        ) {
+          throw new Error("its turn started before the first ended");
+        }
+        if (ends.some((end) => end.status !== "done")) {
+          throw new Error(`the turns ended ${JSON.stringify(ends)}`);
+        }
+        return "the steer's turn started after the first ended, named in its start";
+      }),
 
   "a conversation Claude no longer keeps is missing at the next start": async (
     context,
@@ -903,30 +892,39 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       return "not delivered: missing";
     }),
 
-  "Stop sends back a steer Claude held": async (context) =>
-    withAdapter(context, async ({ open, send, until }) => {
-      const conversation = await open();
-      const turn = await send(
-        conversation,
-        randomUUID(),
-        "Run this Bash command: sleep 30. Then reply 'done'.",
-      );
-      // The command is running; a steer joins only after it ends.
-      await sleep(8_000);
-      const outcome = conversation.steer({
-        input: { id: randomUUID(), parts: ["Reply 'steered'."] },
-        turn,
-      });
-      await sleep(1_000);
-      await conversation.stop(turn);
-      const [steered, end] = [await outcome, await until(endOf(turn))];
-      if (steered.status !== "not_delivered" || end.status !== "stopped") {
-        throw new Error(
-          `the steer ${JSON.stringify(steered)}, the turn ${JSON.stringify(end)}`,
+  "Stop ends the turn and Claude's process; a steer Claude held shows stopped":
+    async (context) =>
+      withAdapter(context, async ({ open, send, until, events }) => {
+        const conversation = await open();
+        const turn = await send(
+          conversation,
+          randomUUID(),
+          "Run this Bash command: sleep 30. Then reply 'done'.",
         );
-      }
-      return "the turn stopped; Claude cancelled the steer";
-    }),
+        // The command is running; a steer joins only after it ends.
+        await sleep(8_000);
+        const steer = randomUUID();
+        await conversation.steer({
+          input: { id: steer, parts: ["Reply 'steered'."] },
+          turn,
+        });
+        await sleep(1_000);
+        await conversation.stop(turn);
+        const ends = [
+          await until(endOf(turn)),
+          await until(endOf(await until(startedBy(steer)))),
+        ];
+        if (ends.some((end) => end.status !== "stopped")) {
+          throw new Error(`the turns ended ${JSON.stringify(ends)}`);
+        }
+        // Nothing of Claude's runs on.
+        const seen = events.length;
+        await sleep(5_000);
+        if (events.length !== seen) {
+          throw new Error(`more came: ${JSON.stringify(events.slice(seen))}`);
+        }
+        return "the turn and the steer's both stopped, and nothing came after";
+      }),
 
   "a call to Rufi's tools goes through the door, in its turn, by Rufi's id for it":
     async (context) =>

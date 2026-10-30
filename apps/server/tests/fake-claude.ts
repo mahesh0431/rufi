@@ -3,8 +3,6 @@
 // in the trial (review-artifacts/agent-system/2026-10-29-claude-trial) as a
 // contract case's script asks. Only the fields the adapter reads are set.
 import type {
-  HookCallbackMatcher,
-  PreToolUseHookInput,
   query,
   SDKMessage,
   SDKUserMessage,
@@ -16,37 +14,21 @@ export function fakeClaude(
   script: Script,
   /**
    * Beyond the contract's scripts. Connection drops: the turn's network
-   * drops. Next turn: steers miss the running turn, which ends, and Claude
-   * starts the next with them. With two, its first answer names the first
-   * and its later ones both. Answers during interrupt: the next turn's
-   * first answer comes while an interrupt is answered.
-   * Frames: a turn's frames, recorded, given for each message, `$input`
-   * naming it. On interrupt: what Claude does as an interrupt comes, in
-   * conversation `id`.
+   * drops. Ends before a turn: the process ends after it took a message,
+   * before it began the turn. Frames: a turn's frames, recorded, given for
+   * each message, `$input` naming it.
    */
   more: {
     frames?: readonly object[];
-    onInterrupt?: (id: string) => Promise<void>;
     connectionDrops?: true;
-    nextTurn?: "two" | "answers_during_interrupt";
-    /** Claude takes the message, and starts its turn (and keeps it) this late. */
-    slowStartMs?: number;
+    endsBeforeATurn?: true;
   } = {},
 ): {
   query: typeof query;
   sessions: ClaudeSessions;
-  /** How many times a process was closed. */
-  closes: () => number;
-  /**
-   * Claude makes call `call` to one of Rufi's tools in conversation `id`:
-   * its hooks run first, in Rufi's process. The `_meta` the call then
-   * carries, or none when a hook refused it or no process is open.
-   */
-  callRufi: (id: string, call: string) => Promise<object | undefined>;
+  /** The `_meta` Claude's call `call` to one of Rufi's tools carries. */
+  callMeta: (call: string) => object;
 } {
-  let closes = 0;
-  /** Each conversation's open process, by its hooks for a call. */
-  const hooks = new Map<string, HookCallbackMatcher[]>();
   /** Each conversation Claude keeps, with the ids of its messages. */
   const kept = new Map<string, string[]>();
 
@@ -55,23 +37,12 @@ export function fakeClaude(
     options,
   }: {
     prompt: AsyncIterable<SDKUserMessage> | string;
-    options?: {
-      sessionId?: string;
-      resume?: string;
-      hooks?: { PreToolUse?: HookCallbackMatcher[] };
-    };
+    options?: { sessionId?: string; resume?: string };
   }) => {
     const id = options?.sessionId ?? options?.resume ?? "asking";
-    const mine = options?.hooks?.PreToolUse ?? [];
-    hooks.set(id, mine);
     const frames = channel();
     /** The id of the message the running turn answers; none when idle. */
     let turn: string | undefined;
-    /** Steers Claude holds and hasn't taken. */
-    let queued: string[] = [];
-    let closed = false;
-    /** What Claude does while it answers the next interrupt. */
-    let duringInterrupt: (() => void) | undefined;
 
     const keep = (message: string) => {
       kept.set(id, [...(kept.get(id) ?? []), message]);
@@ -151,25 +122,19 @@ export function fakeClaude(
       });
     };
 
+    /** A turn's start, naming the messages it took. */
+    const init = (to: string[]) => {
+      frames.push({ type: "system", subtype: "init", user_message_uuids: to });
+    };
+
     const start = (message: string) => {
       // Claude skips a uuid it has stored before, and says nothing.
       if (kept.get(id)?.includes(message) === true) return;
-      const late = more.slowStartMs;
-      if (late !== undefined) {
-        setTimeout(() => {
-          if (closed) return;
-          keep(message);
-          frames.push({ type: "system", subtype: "init" });
-          turn = message;
-          answer([message]);
-        }, late);
-        return;
-      }
-      if (script.start === "loses_reply") {
-        keep(message);
-        return;
-      }
       keep(message);
+      if (more.endsBeforeATurn === true) {
+        frames.fail(new Error("Claude's process exited with code 1."));
+        return;
+      }
       if (more.frames !== undefined) {
         for (const frame of more.frames) {
           frames.push(
@@ -180,7 +145,7 @@ export function fakeClaude(
         }
         return;
       }
-      frames.push({ type: "system", subtype: "init" });
+      init([message]);
       turn = message;
       if (script.picture !== undefined) picture(script.picture, message);
       if (more.connectionDrops === true) {
@@ -229,39 +194,6 @@ export function fakeClaude(
     const steer = (message: string) => {
       const running = turn;
       if (running === undefined) return;
-      if (more.nextTurn === "two") {
-        queued.push(message);
-        if (queued.length < 2) return;
-        const [first = "", second = ""] = queued;
-        queued = [];
-        answer([running]);
-        keep(first);
-        keep(second);
-        frames.push({ type: "system", subtype: "init" });
-        frames.push({
-          type: "assistant",
-          message: { content: [] },
-          user_message_uuid: first,
-          user_message_uuids: [first],
-        });
-        answer([first, second]);
-        return;
-      }
-      if (more.nextTurn === "answers_during_interrupt") {
-        answer([running]);
-        keep(message);
-        frames.push({ type: "system", subtype: "init" });
-        turn = message;
-        duringInterrupt = () => {
-          frames.push({
-            type: "assistant",
-            message: { content: [] },
-            user_message_uuid: message,
-            user_message_uuids: [message],
-          });
-        };
-        return;
-      }
       switch (script.steer ?? "takes") {
         case "takes":
           keep(message);
@@ -272,29 +204,11 @@ export function fakeClaude(
             user_message_uuids: [running, message],
           });
           break;
-        case "takes_later":
-          setTimeout(() => {
-            if (turn !== running) return;
-            keep(message);
-            frames.push({
-              type: "assistant",
-              message: { content: [] },
-              user_message_uuid: message,
-              user_message_uuids: [running, message],
-            });
-          }, 50);
-          break;
-        case "holds":
-          queued.push(message);
-          break;
-        case "holds_past_end":
-          queued.push(message);
-          answer([running]);
-          break;
         case "starts_next":
           answer([running]);
           keep(message);
-          frames.push({ type: "system", subtype: "init" });
+          init([message]);
+          turn = message;
           answer([message]);
           break;
         case "loses_reply":
@@ -338,13 +252,7 @@ export function fakeClaude(
           },
           { value: "claude-fictional-0", displayName: "Fictional 0" },
         ]),
-      interrupt: async (): Promise<unknown> => {
-        await more.onInterrupt?.(id);
-        duringInterrupt?.();
-        duringInterrupt = undefined;
-        if (script.cancelLost === true) return new Promise(() => {});
-        const cancelled = queued;
-        queued = [];
+      interrupt: () => {
         if (turn !== undefined && script.ignoresInterrupt !== true) {
           result({
             subtype: "error_during_execution",
@@ -353,51 +261,20 @@ export function fakeClaude(
           });
           turn = undefined;
         }
-        return Promise.resolve({ still_queued: [], cancelled });
+        return Promise.resolve(undefined);
       },
       close: () => {
-        closes++;
-        closed = true;
-        if (hooks.get(id) === mine) hooks.delete(id);
         frames.end();
       },
     });
   };
 
   return {
-    closes: () => closes,
-    callRufi: async (id, call) => {
-      const tool = "mcp__rufi__save_note";
-      const matchers = hooks.get(id);
-      if (matchers === undefined) return undefined;
-      for (const { matcher, hooks: each } of matchers) {
-        if (matcher !== undefined && !new RegExp(matcher).test(tool)) continue;
-        for (const hook of each) {
-          const output = await hook(
-            {
-              hook_event_name: "PreToolUse",
-              tool_name: tool,
-              tool_input: { text: "Fictional: Asha walked 3 km." },
-              tool_use_id: call,
-            } as PreToolUseHookInput,
-            call,
-            { signal: new AbortController().signal },
-          );
-          const decision =
-            "hookSpecificOutput" in output &&
-            output.hookSpecificOutput?.hookEventName === "PreToolUse"
-              ? output.hookSpecificOutput.permissionDecision
-              : undefined;
-          if (decision === "deny") return undefined;
-        }
-      }
-      return { "claudecode/toolUseId": call, progressToken: 1 };
-    },
+    callMeta: (call) => ({ "claudecode/toolUseId": call, progressToken: 1 }),
     query: run as unknown as typeof query,
     sessions: {
       info: (id) =>
         Promise.resolve(kept.has(id) ? { sessionId: id } : undefined),
-      ids: (id) => Promise.resolve(kept.get(id) ?? []),
       delete: (id) =>
         kept.delete(id)
           ? Promise.resolve()
