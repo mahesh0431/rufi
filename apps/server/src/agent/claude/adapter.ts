@@ -7,8 +7,9 @@
 // Claude, its process stays open, and when Claude takes it into a turn of
 // its own, that turn starts with it. The process closes when a turn ends
 // with nothing handing over, and the next turn carries the conversation on
-// in a new one. Rufi's tools aren't given to Claude yet, so no call is
-// placed.
+// in a new one. What Claude does in a turn shows as its items, by its own
+// ids, and the turn's usage once it ends (items.ts). Rufi's tools aren't
+// given to Claude yet, so no call is placed.
 import { randomUUID, type UUID } from "node:crypto";
 import {
   deleteSession,
@@ -40,6 +41,16 @@ import {
 import type { AgentSandbox } from "../runtime.ts";
 import { within } from "./deadline.ts";
 import { askClaude, signInOf, type InstalledClaude } from "./executable.ts";
+import {
+  blocksOf,
+  contextOf,
+  lineOf,
+  turnUsageOf,
+  windowsOf,
+  withoutImages,
+  type Block,
+  type Counts,
+} from "./items.ts";
 import {
   openClaudeSession,
   type ClaudePlugin,
@@ -89,6 +100,7 @@ export interface ClaudeAdapterOptions {
 export function claudeAdapter(options: ClaudeAdapterOptions): ProviderAdapter {
   const sessions = options.sessions ?? SDK_SESSIONS;
   const conversations = new Set<Conversation>();
+  const shared: Shared = {};
   const ask = {
     cwd: options.sandbox.folder,
     env: options.env,
@@ -116,7 +128,12 @@ export function claudeAdapter(options: ClaudeAdapterOptions): ProviderAdapter {
           throw new Missing("Claude doesn't keep this conversation.");
         }
       }
-      const conversation = await openConversation(options, sessions, open);
+      const conversation = await openConversation(
+        options,
+        sessions,
+        shared,
+        open,
+      );
       conversations.add(conversation);
       const close = conversation.close;
       return {
@@ -134,8 +151,8 @@ export function claudeAdapter(options: ClaudeAdapterOptions): ProviderAdapter {
         if ((await sessions.info(ref)) !== undefined) throw error;
       }
     },
-    // Usage now comes from Claude's rate-limit events, with its items.
-    usage: () => Promise.resolve([]),
+    // Claude says its limits with a turn's first request: none before one.
+    usage: () => Promise.resolve(shared.limits ? windowsOf(shared.limits) : []),
     close: async () => {
       await Promise.all([...conversations].map((each) => each.close()));
     },
@@ -168,6 +185,11 @@ interface Turn {
   error?: SDKAssistantMessageError;
   /** Claude's last request got no answer at all: no HTTP status. */
   unanswered?: boolean;
+  /** Its tool calls, by Claude's ids, for their results' steps. */
+  uses: Map<string, Block>;
+  /** The context its last request used, and the model that answered. */
+  context?: number;
+  model?: string;
 }
 
 /** A steer with Claude, waiting for what Claude shows of it. */
@@ -176,11 +198,17 @@ interface Held {
   settle: (outcome: SteerOutcome) => void;
 }
 
+/** What the adapter's conversations share: Claude's latest limits. */
+interface Shared {
+  limits?: SDKRateLimitInfo;
+}
+
 class SignedOut extends Error {}
 
 async function openConversation(
   options: ClaudeAdapterOptions,
   sessions: ClaudeSessions,
+  shared: Shared,
   open: OpenOptions,
 ): Promise<Conversation> {
   const ref = open.resume ?? randomUUID();
@@ -217,7 +245,7 @@ async function openConversation(
   };
 
   const begin = (turn: string, inputs: readonly string[]) => {
-    running = { ref: turn, stopping: stops > 0 };
+    running = { ref: turn, stopping: stops > 0, uses: new Map() };
     kept = true;
     emit({ type: "turnStarted", turn, inputs });
   };
@@ -238,6 +266,23 @@ async function openConversation(
   const handle = (message: SDKMessage) => {
     if (message.type === "rate_limit_event") {
       rateLimit = message.rate_limit_info;
+      shared.limits = message.rate_limit_info;
+    } else if (
+      message.type === "system" &&
+      message.subtype === "compact_boundary"
+    ) {
+      if (running) {
+        emit({
+          type: "step",
+          turn: running.ref,
+          item: message.uuid,
+          kind: "compaction",
+          title: message.subtype,
+          detail: message.compact_metadata.trigger,
+          status: "done",
+          payload: message.compact_metadata,
+        });
+      }
     } else if (message.type === "system" && message.subtype === "api_retry") {
       if (running) running.unanswered = message.error_status === null;
     } else if (message.type === "system" && message.subtype === "init") {
@@ -268,7 +313,10 @@ async function openConversation(
         if (message.error === undefined) running.unanswered = false;
         else running.error = message.error;
         taken(ids);
+        said(running, message.uuid, message.message);
       }
+    } else if (message.type === "user") {
+      if (running) answered(running, message.message);
     } else if (message.type === "result") {
       if (running) {
         taken(
@@ -277,10 +325,78 @@ async function openConversation(
               ? []
               : [message.user_message_uuid]),
         );
+        if (running.context !== undefined) {
+          const model = running.model && message.modelUsage[running.model];
+          emit({
+            type: "usage",
+            turn: running.ref,
+            tokens: running.context,
+            window: model ? model.contextWindow : null,
+          });
+        }
+        emit(turnUsageOf(running.ref, message.usage));
         finish(endOf(message, running, rateLimit));
       }
       unclaimed = undefined;
       idle();
+    }
+  };
+
+  /** What an answer of Claude's holds: its text, thinking and tool calls. */
+  const said = (turn: Turn, uuid: string, message: unknown) => {
+    for (const [index, block] of blocksOf(message).entries()) {
+      const item = index === 0 ? uuid : `${uuid}/${String(index)}`;
+      if (block.type === "text") {
+        emit({
+          type: "text",
+          turn: turn.ref,
+          item,
+          delta: block.text ?? "",
+          done: true,
+        });
+      } else if (
+        block.type === "thinking" ||
+        block.type === "redacted_thinking"
+      ) {
+        emit({
+          type: "reasoning",
+          turn: turn.ref,
+          item,
+          summary: block.thinking ?? "",
+          payload: block,
+        });
+      } else if (block.type === "tool_use" && block.id !== undefined) {
+        turn.uses.set(block.id, block);
+        emit({
+          type: "step",
+          turn: turn.ref,
+          item: block.id,
+          ...lineOf(block),
+          status: "running",
+          payload: { use: block },
+        });
+      }
+    }
+    const { usage, model } = message as { usage?: Counts; model?: string };
+    if (usage) turn.context = contextOf(usage);
+    if (model) turn.model = model;
+  };
+
+  /** The results Claude's tools gave, each ending its step. */
+  const answered = (turn: Turn, message: unknown) => {
+    for (const block of blocksOf(message)) {
+      if (block.type !== "tool_result" || block.tool_use_id === undefined) {
+        continue;
+      }
+      const use = turn.uses.get(block.tool_use_id);
+      emit({
+        type: "step",
+        turn: turn.ref,
+        item: block.tool_use_id,
+        ...lineOf(use ?? {}),
+        status: block.is_error === true ? "failed" : "done",
+        payload: { use, result: withoutImages(block) },
+      });
     }
   };
 

@@ -1,7 +1,7 @@
 // The Claude adapter meets the provider boundary, on the scripted Claude
 // (tests/fake-claude.ts). scripts/claude-live.ts runs it on the installed
 // Claude.
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { providerContract } from "@rufi/agents/contract";
@@ -41,7 +41,6 @@ providerContract("Claude", {
   pending: {
     placed: "Rufi's tools on Claude come next",
     closedTurn: "Rufi's tools on Claude come next",
-    pictures: "Claude's steps come with its items",
   },
 });
 
@@ -255,6 +254,116 @@ describe("a message Claude is slow to start", () => {
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(fake.closes()).toBe(1);
     expect(events).toEqual([]);
+    await adapter.close();
+  });
+});
+
+describe("what Claude does in a turn", () => {
+  it("shows as its items by Claude's ids, then the turn's usage, with no picture's bytes; usage now from its limits", async () => {
+    // A turn recorded from the installed Claude, its paths and limits made
+    // fictional; its compaction is written from the SDK's type.
+    const recorded = await readFile(
+      join(import.meta.dirname, "../../../tests/fixtures/claude-turn.json"),
+      "utf8",
+    );
+    const fake = fakeClaude({}, { frames: JSON.parse(recorded) as object[] });
+    const { adapter, start, events } = await onFake(fake.query, fake.sessions);
+    expect(await start("message-1")).toEqual({ status: "delivered" });
+    await vi.waitFor(() => {
+      expect(events.at(-1)?.type).toBe("turnEnded");
+    });
+
+    const bash = "toolu_01RjiXhjDmM8dmfeN3SiFeSf";
+    const read = "toolu_011UYhCNHzyCKmJsiqCPGZ1M";
+    const command = { kind: "command", title: "echo hello-probe" };
+    const image = {
+      kind: "other",
+      title: "Read",
+      detail: "/fictional/home/ai/dot.png",
+    };
+    // All of the one turn; toEqual leaves out the undefined turn.
+    expect(new Set(events.map((event) => event.turn)).size).toBe(1);
+    expect(events.map((event) => ({ ...event, turn: undefined }))).toEqual([
+      { type: "turnStarted", inputs: ["message-1"] },
+      {
+        type: "reasoning",
+        item: "084ec2c6-2d45-4e22-9fa4-f15c06940c50",
+        summary: "",
+        payload: expect.objectContaining({ type: "thinking" }) as unknown,
+      },
+      {
+        type: "step",
+        item: bash,
+        ...command,
+        status: "running",
+        payload: expect.anything() as unknown,
+      },
+      {
+        type: "step",
+        item: read,
+        ...image,
+        status: "running",
+        payload: expect.anything() as unknown,
+      },
+      {
+        type: "step",
+        item: read,
+        ...image,
+        status: "done",
+        payload: expect.anything() as unknown,
+      },
+      {
+        type: "step",
+        item: bash,
+        ...command,
+        status: "done",
+        payload: {
+          use: expect.objectContaining({ id: bash }) as unknown,
+          result: expect.objectContaining({
+            content: "hello-probe",
+          }) as unknown,
+        },
+      },
+      {
+        type: "step",
+        item: "5f0c2b7e-3d41-4a8e-9c6d-1b2a3c4d5e6f",
+        kind: "compaction",
+        title: "compact_boundary",
+        detail: "auto",
+        status: "done",
+        payload: expect.objectContaining({ trigger: "auto" }) as unknown,
+      },
+      {
+        type: "text",
+        item: "af1f118b-ac96-46ed-ad9c-ecd7f3b979c1",
+        delta: "done",
+        done: true,
+      },
+      // The context: the last request's input, cache writes and reads, and
+      // output; and the model's window.
+      { type: "usage", tokens: 2 + 397 + 13_452 + 3, window: 1_000_000 },
+      // The turn's: all it read, of that from the cache, and wrote.
+      {
+        type: "turnUsage",
+        input: 4 + 7_144 + 20_157,
+        cached: 20_157,
+        output: 309,
+        payload: expect.objectContaining({ output_tokens: 309 }) as unknown,
+      },
+      { type: "turnEnded", end: { status: "done", answer: "done" } },
+    ]);
+    const png = /"data": "([^"]+)"/.exec(recorded)?.[1] ?? "";
+    expect(png).not.toBe("");
+    expect(JSON.stringify(events)).not.toContain(png);
+
+    expect(await adapter.usage()).toEqual([
+      { minutes: 300, usedPercent: 42, resetsAt: "2026-10-30T00:40:00.000Z" },
+      {
+        minutes: 10_080,
+        usedPercent: 18,
+        resetsAt: "2026-11-01T03:00:00.000Z",
+      },
+    ]);
     await adapter.close();
   });
 });
