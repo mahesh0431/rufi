@@ -3,8 +3,8 @@
 // the package's queue hands the chat's waiting messages over, in order: the
 // chat puts each in by its id without its words, and the package claims
 // them from the chat's queue before they go (server/chat.ts). A message sent
-// into a running reply goes in as a steer, its words kept here until the
-// package claims it. What the package shows of a conversation as it comes
+// into a running reply goes in the same way, as a steer. What the package
+// shows of a conversation as it comes
 // reaches the chat as the agent's events; what became of each turn and each
 // hand-over is applied from the package's events, with Rufi's cursor.
 import type { Agent, Claim, Hold, Opening } from "@rufi/agents/agents";
@@ -13,12 +13,8 @@ import {
   type ProviderEvent,
   type TurnEnd as Ended,
 } from "@rufi/agents/provider";
-import type { StoredEvent } from "@rufi/agents/store";
 import { SIGNED_OUT } from "@rufi/contracts";
-import { v7 as uuid } from "uuid";
 import {
-  NotSent,
-  Stopped,
   type AgentEvent,
   type Model,
   type TurnEnd,
@@ -95,11 +91,16 @@ export interface RufiAi {
   /**
    * Puts the chat's rows in its agent's queue by their ids, each once, then
    * the agent's waiting ones among `order` in that order. The package claims
-   * their words from the chat as they go.
+   * their words from the chat as they go. A steer goes into the running
+   * turn; when there is none, it starts the next.
    */
   queue: (
     chat: ChatRow,
-    rows: readonly { id: string; sender: string }[],
+    rows: readonly {
+      id: string;
+      sender: string;
+      kind: "queue" | "steer";
+    }[],
     order: readonly string[],
   ) => Promise<void>;
   /** Where a row is in its agent's queue; nothing when it isn't there. */
@@ -110,27 +111,12 @@ export interface RufiAi {
   sendNow: (input: string) => void;
   /** These rows' holds lift: they go again. */
   release: (inputs: readonly string[]) => void;
-  /**
-   * Passes a message into the running reply; returns that reply's turn.
-   * Throws NotSent when it surely didn't reach it.
-   */
-  steer: (
-    threadId: string,
-    message: { id: string; text: string },
-  ) => Promise<{ turnId: string }>;
   /** The person's Stop: the chat's reply stops, and what waits goes on. */
   stop: (chat: ChatRow) => Promise<void>;
   /** Rufi stops the reply `turnId` in the thread, if it runs; `end` says why. */
   cut: (threadId: string, turnId: string, end?: TurnEnd) => Promise<void>;
   /** Takes no more: what is under way is settled as far as it can be. */
   close: () => Promise<void>;
-}
-
-/** A steer waiting for its outcome, by the package's input id. */
-interface Pending {
-  agent: string;
-  parts: string[];
-  done: PromiseWithResolvers<string | undefined>;
 }
 
 /** The package's events Rufi applies to a chat. */
@@ -247,13 +233,12 @@ export async function startRufiAi(
     "host" | "live" | "apply" | "opened"
   > & { transcripts: Transcripts },
 ): Promise<AgentSystem & { rufiAi: (host: RufiAiHost) => RufiAi }> {
-  const { store, transcripts, adapters } = options;
+  const { transcripts, adapters } = options;
   const kept = chatAgents(options.record, options.now);
   /** The chat, once it runs. */
   let chat: RufiAiHost | undefined;
   /** The rules' version each agent's conversation last opened with. */
   const given = new Map<string, string>();
-  const pending = new Map<string, Pending>();
   /** Each open conversation's agent, by its thread. */
   const threads = new Map<string, string>();
   /** The agent's events come from this thread from now on. */
@@ -289,15 +274,6 @@ export async function startRufiAi(
       tools: now.tools,
       ...(seed !== undefined && { seed }),
     };
-  };
-
-  /** The steer gets its outcome; nothing claims it again. */
-  const settle = (input: string, outcome: string | undefined | Error) => {
-    const waiting = pending.get(input);
-    if (!waiting) return;
-    pending.delete(input);
-    if (outcome instanceof Error) waiting.done.reject(outcome);
-    else waiting.done.resolve(outcome);
   };
 
   // The package keeps out what an older conversation reports: what comes
@@ -418,16 +394,6 @@ export async function startRufiAi(
     host: {
       opening,
       claim: async ({ agent, conversation, input }) => {
-        // A steer gives its words only into the turn it was meant for.
-        const waiting = pending.get(input);
-        if (waiting) {
-          if (closed) return { status: "gone" };
-          if (system.agents.current(agent)?.status !== "running") {
-            settle(input, new NotSent("That reply has ended."));
-            return { status: "gone" };
-          }
-          return { status: "claimed", parts: waiting.parts };
-        }
         // Rufi closing: the row stays for the next start.
         if (closed || !chat) return undefined;
         const row = await chatOf(agent);
@@ -463,63 +429,6 @@ export async function startRufiAi(
       return found && { details: found.payload };
     },
   });
-
-  /** What became of the steers, from the package's events. */
-  const outcome = (event: StoredEvent) => {
-    const payload = event.payload as {
-      ref?: string | null;
-      inputs: string[];
-      input: string;
-      held: string;
-      text: string;
-    };
-    switch (event.type) {
-      case "turn.started":
-        for (const input of payload.inputs) {
-          settle(input, payload.ref ?? undefined);
-        }
-        return;
-      // Also when it comes after the turn's end.
-      case "input.delivered":
-        settle(payload.input, payload.ref ?? undefined);
-        return;
-      case "input.held":
-        settle(payload.input, new NotSent(payload.text));
-        return;
-      // A steer that missed its turn waits in Rufi's queue.
-      case "input.waiting":
-        settle(payload.input, new NotSent("That reply has ended."));
-        return;
-      case "input.not_sure":
-        settle(payload.input, new Error("Not sure this reached the AI."));
-        return;
-      case "input.dropped":
-      case "input.removed":
-        settle(
-          payload.input,
-          new NotSent("Stopped.", { cause: new Stopped() }),
-        );
-    }
-  };
-  let seen = store.highWater();
-  const unfollow = store.onCommit(() => {
-    for (;;) {
-      const events = store.eventsAfter(seen);
-      if (events.length === 0) return;
-      for (const event of events) {
-        seen = event.number;
-        outcome(event);
-      }
-    }
-  });
-
-  const agentOf = (threadId: string) => {
-    const agent = threads.get(threadId);
-    if (agent === undefined) {
-      throw new NotSent("The AI's conversation isn't open.");
-    }
-    return agent;
-  };
 
   const rufiAi = (host: RufiAiHost): RufiAi => {
     chat = host;
@@ -568,8 +477,8 @@ export async function startRufiAi(
 
       queue: async (row, rows, order) => {
         const agent = await system.root(row.id);
-        for (const { id, sender } of rows) {
-          agents.send(agent, { id, sender, kind: "queue" });
+        for (const { id, sender, kind } of rows) {
+          agents.send(agent, { id, sender, kind });
         }
         agents.reorder(agent, order);
       },
@@ -588,25 +497,6 @@ export async function startRufiAi(
         agents.release(inputs);
       },
 
-      // Its words wait here, for the package's claim.
-      steer: async (threadId, message) => {
-        const agent = agentOf(threadId);
-        const id = uuid();
-        const done = Promise.withResolvers<string | undefined>();
-        pending.set(id, { agent, parts: [message.text], done });
-        try {
-          agents.send(agent, { id, sender: "person", kind: "steer" });
-        } catch (error) {
-          pending.delete(id);
-          throw new NotSent("Rufi couldn't hand it over.", { cause: error });
-        }
-        const turnId = await done.promise;
-        if (turnId === undefined) {
-          throw new Error("The steer's reply is unknown.");
-        }
-        return { turnId };
-      },
-
       stop: async (row) => {
         await agents.stop(await system.root(row.id), "person");
       },
@@ -621,18 +511,9 @@ export async function startRufiAi(
         await agents.stop(agent, "rufi");
       },
 
-      // A steer the package hasn't claimed doesn't go any more; one it has
-      // may have reached the AI.
+      // What waits stays in the chat's queue for the next start.
       close: () => {
         closed = true;
-        for (const input of pending.keys()) {
-          settle(
-            input,
-            agents.input(input)?.state === "waiting"
-              ? new NotSent("Stopped.", { cause: new Stopped() })
-              : new Error("Rufi closed while handing it over."),
-          );
-        }
         return Promise.resolve();
       },
     };
@@ -642,7 +523,6 @@ export async function startRufiAi(
     ...system,
     rufiAi,
     close: async () => {
-      unfollow();
       await system.close();
       const failed: unknown[] = [];
       for (const adapter of adapters) {

@@ -100,12 +100,6 @@ export function chat(deps: ChatDeps) {
   const lanes = new Map<string, Promise<unknown>>();
   /** Actions under way, so Stop can end them while they get ready. */
   const acting = new Map<string, Set<AbortController>>();
-  /**
-   * Sends not yet answered, by message id: the chat that owns the id
-   * meanwhile, and how many of its sends use it. Once answered, the record
-   * owns it.
-   */
-  const sending = new Map<string, { chatId: string; count: number }>();
   /** Each running turn's tool caller and chat, by thread. */
   const callers = new Map<
     string,
@@ -443,8 +437,10 @@ export function chat(deps: ChatDeps) {
    * Rufi's order: what Rufi keeps decides what goes, and the package hands
    * them over. A message with files to read goes once Rufi's part has read
    * them, which starts when it is next and Rufi AI is idle; the rows behind
-   * it wait for it. A conversation told older rules opens again first, once
-   * Rufi AI is idle. Signed out, nothing goes.
+   * it wait for it. While a reply the person started runs, a new message of
+   * theirs with nothing to read goes into it as a steer. A conversation
+   * told older rules opens again first, once Rufi AI is idle. Signed out,
+   * nothing goes.
    */
   const carry = (chat: ChatRow) =>
     inLane(chat, async (stored) => {
@@ -493,8 +489,12 @@ export function chat(deps: ChatDeps) {
         await queue.hold(fresh, first.id, textOf(error));
         return;
       }
+      // A reply the person started runs: their new messages go into it.
+      const steering = !idle && (await personReply(fresh)) !== undefined;
       const order: string[] = [];
-      const added: { id: string; sender: string }[] = [];
+      const added: { id: string; sender: string; kind: "queue" | "steer" }[] =
+        [];
+      let reading = false;
       for (const row of rows) {
         const there = agent.input(row.id);
         if (there?.state === "waiting" && there.held === null) {
@@ -505,18 +505,24 @@ export function chat(deps: ChatDeps) {
         if (there && !["waiting", "dropped", "removed"].includes(there.state)) {
           continue;
         }
-        if (
-          await toRead(
-            fresh,
-            row.refs.map((chip) => chip.ref),
-          )
-        ) {
+        const reads = await toRead(
+          fresh,
+          row.refs.map((chip) => chip.ref),
+        );
+        // Also past what waits, as a person's message sent mid-reply goes.
+        if (steering && !there && row.origin === "person" && !reads) {
+          added.push({ id: row.id, sender: row.origin, kind: "steer" });
+          continue;
+        }
+        if (reading) continue;
+        if (reads) {
           if (idle && order.length === 0) await part(fresh, row);
-          break;
+          reading = true;
+          continue;
         }
         // Rufi has it waiting: the package takes it again.
         if (there) agent.sendNow(row.id);
-        else added.push({ id: row.id, sender: row.origin });
+        else added.push({ id: row.id, sender: row.origin, kind: "queue" });
         order.push(row.id);
       }
       await agent.queue(fresh, added, order);
@@ -573,7 +579,7 @@ export function chat(deps: ChatDeps) {
   ): Promise<void> {
     notes.set(id, note);
     if (agent.input(id) === undefined) {
-      await agent.queue(chat, [{ id, sender: "person" }], []);
+      await agent.queue(chat, [{ id, sender: "person", kind: "queue" }], []);
     }
     agent.sendNow(id);
     next(chat);
@@ -830,71 +836,6 @@ export function chat(deps: ChatDeps) {
       : undefined;
   };
 
-  /**
-   * Passes a message by a new id into the reply the person started that
-   * runs now, saved as a steer: "steered". Otherwise the queue takes it,
-   * here ("queued"): an id it knows, no such reply runs (Rufi's own reply
-   * can't save, so the message waits for one of its own), or the reply
-   * ended before the agent took the message. A Stop meanwhile takes
-   * nothing. Any other failure is uncertain, and shown as it is.
-   */
-  const steer = (
-    chat: ChatRow,
-    id: string,
-    text: string,
-    refs: readonly Pointer[],
-    op: AbortController,
-  ) =>
-    inLane(
-      chat,
-      async (chat, signal) => {
-        const queued = async () => {
-          if (signal.aborted) throw new Stopped();
-          await accept(chat, id, text, refs);
-          return "queued" as const;
-        };
-        if (await queue.known(id)) return queued();
-        const threadId = await personReply(chat);
-        if (threadId === undefined) return queued();
-        // Files to read first wait for a reply of their own.
-        if (await toRead(chat, refs)) return queued();
-        let chips: Chip[];
-        try {
-          chips = await transcripts.chips(chat.personId, refs);
-        } catch (error) {
-          if (error instanceof RefRefusal) throw new ChatRefusal(error.message);
-          throw error;
-        }
-        let steered: string;
-        try {
-          ({ turnId: steered } = await agent.steer(threadId, {
-            id,
-            text: withRefs(text, chips),
-          }));
-        } catch (error) {
-          if (!(error instanceof NotSent)) throw error;
-          return queued();
-        }
-        // In line with the events.
-        const saved = saving.then(() =>
-          transcripts.addMessage(chat, {
-            id,
-            kind: "steer",
-            text,
-            agentTurnId: steered,
-            refs: chips,
-          }),
-        );
-        saving = saved.then(
-          () => undefined,
-          () => undefined,
-        );
-        await saved;
-        return "steered" as const;
-      },
-      op,
-    );
-
   return {
     agent,
 
@@ -913,12 +854,12 @@ export function chat(deps: ChatDeps) {
     models: offered,
 
     /**
-     * Sends a message. While a reply the person started runs, it goes into
-     * that reply (saved as a steer: `steered`), and the box is emptied after.
-     * Otherwise it is taken into the queue by the send's id, and the box
-     * emptied, in one step; it goes to the AI in its turn. The same id again
-     * finds the message it made, and changes nothing. Signed out, nothing is
-     * taken: the text stays in the box.
+     * Sends a message: it is taken into the queue by the send's id, and the
+     * box emptied, in one step, before anything goes; the chat shows it
+     * waiting. While a reply the person started runs, it goes into that
+     * reply; otherwise in its turn. The same id again finds the message it
+     * made, and changes nothing. Signed out, nothing is taken: the text
+     * stays in the box.
      */
     send: async (
       chat: ChatRow,
@@ -926,30 +867,9 @@ export function chat(deps: ChatDeps) {
       text: string,
       refs: readonly Pointer[] = [],
     ) => {
-      // While it is pending, the id is this chat's: another chat's send of
-      // it is refused (then the record owns it).
-      const owner = sending.get(id);
-      if (owner !== undefined && owner.chatId !== chat.id) {
-        throw new ChatRefusal("That message id is already used.");
-      }
-      sending.set(id, { chatId: chat.id, count: (owner?.count ?? 0) + 1 });
-      // A Stop from now on stops this send too.
-      const op = stoppable(chat);
-      try {
-        await mustBeSignedIn();
-        // Only a reply running now can take it: the lane decides again.
-        if ((await personReply(await latest(chat))) === undefined) {
-          if (op.signal.aborted) throw new Stopped();
-          await accept(chat, id, text, refs);
-          return { id, steered: false };
-        }
-        const how = await steer(chat, id, text, refs, op);
-        return { id, steered: how === "steered" };
-      } finally {
-        acting.get(chat.id)?.delete(op);
-        const left = sending.get(id);
-        if (left && --left.count === 0) sending.delete(id);
-      }
+      await mustBeSignedIn();
+      await accept(chat, id, text, refs);
+      return { id };
     },
 
     /**
