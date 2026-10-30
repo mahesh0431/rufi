@@ -45,6 +45,8 @@ export type Step = (
   tokens?: number;
   /** A progress note (commentary) the answer starts with, as a model writes one. */
   note?: string;
+  /** The answer starts this long after the request, as a slow model's. */
+  afterMs?: number;
 };
 
 export interface FakeModel {
@@ -181,51 +183,55 @@ export async function fakeModel(
           return;
         }
         const step = script.shift() ?? { text: "done" };
-        if (step.note !== undefined) {
-          const item = {
-            type: "message",
-            role: "assistant",
-            id: `note-${String(requests.length)}`,
-            phase: "commentary",
-            content: [{ type: "output_text", text: step.note }],
-          };
+        const answer = () => {
+          if (step.note !== undefined) {
+            const item = {
+              type: "message",
+              role: "assistant",
+              id: `note-${String(requests.length)}`,
+              phase: "commentary",
+              content: [{ type: "output_text", text: step.note }],
+            };
+            for (const type of [
+              "response.output_item.added",
+              "response.output_item.done",
+            ]) {
+              event({ type, item } as { type: string });
+            }
+          }
+          if ("text" in step) {
+            say(step.text, step.tokens);
+            return;
+          }
+          const call =
+            "exec" in step
+              ? {
+                  type: "custom_tool_call",
+                  id: `ctc-${String(requests.length)}`,
+                  call_id: `call-${String(requests.length)}`,
+                  name: "exec",
+                  input: step.exec,
+                }
+              : {
+                  type: "function_call",
+                  id: `fc-${String(requests.length)}`,
+                  call_id: `call-${String(requests.length)}`,
+                  name: step.call.name,
+                  ...(step.call.namespace !== undefined && {
+                    namespace: step.call.namespace,
+                  }),
+                  arguments: JSON.stringify(step.call.arguments),
+                };
           for (const type of [
             "response.output_item.added",
             "response.output_item.done",
           ]) {
-            event({ type, item } as { type: string });
+            event({ type, item: call } as { type: string });
           }
-        }
-        if ("text" in step) {
-          say(step.text, step.tokens);
-          return;
-        }
-        const call =
-          "exec" in step
-            ? {
-                type: "custom_tool_call",
-                id: `ctc-${String(requests.length)}`,
-                call_id: `call-${String(requests.length)}`,
-                name: "exec",
-                input: step.exec,
-              }
-            : {
-                type: "function_call",
-                id: `fc-${String(requests.length)}`,
-                call_id: `call-${String(requests.length)}`,
-                name: step.call.name,
-                ...(step.call.namespace !== undefined && {
-                  namespace: step.call.namespace,
-                }),
-                arguments: JSON.stringify(step.call.arguments),
-              };
-        for (const type of [
-          "response.output_item.added",
-          "response.output_item.done",
-        ]) {
-          event({ type, item: call } as { type: string });
-        }
-        completed(step.tokens);
+          completed(step.tokens);
+        };
+        if (step.afterMs === undefined) answer();
+        else setTimeout(answer, step.afterMs);
         return;
       }
       if (last.includes("overview") && !answered) {
