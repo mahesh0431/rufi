@@ -212,16 +212,16 @@ The message you started in the chat and haven't sent, with its chips, saved quie
 _Avoid_: note, unsent
 
 **Model**:
-The version of the AI that answers, such as GPT-6-Astra, chosen for the chat from the allowlist, with its **effort**, in the box. A new model answers from the next reply, in the same thread, with the whole chat.
+The version of the AI that answers, such as GPT-6-Astra, chosen for the chat from the **shortlist**, with its **effort**, in the box. A new model answers from the next reply, in the same thread, with the whole chat.
 _Avoid_: engine, brain
 
 **Effort**:
 How hard the AI thinks before it answers: Low, Medium or High, chosen for the chat with the model. Medium until the user chooses another. A new effort applies from the next reply, in the same thread.
 _Avoid_: reasoning level, thinking mode
 
-**Allowlist**:
-The models Rufi may use: a short list in Rufi, the strongest models, GPT-6-Astra first. The chat offers those the ChatGPT plan offers now, and uses the first until the user chooses another. An old `models.json` in the data folder is left as it is and not used.
-_Avoid_: whitelist
+**Shortlist**:
+The models the AI and its agents may run on, ticked in **Settings** › **Models**: GPT-6-Astra and GPT-6.1-Sol until the user chooses. The chat's menu offers those the plan offers now, and a new chat uses the first. An agent starts on one of them or is moved to one; any other is refused. An old `models.json` in the data folder is left as it is and not used.
+_Avoid_: allowlist, whitelist
 
 ## Coming back to things
 
