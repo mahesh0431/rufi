@@ -62,24 +62,43 @@ export interface SaveReadingAnswer {
   note: string;
 }
 
+/** A value Rufi keeps by its length only, never its words. */
+export function sized(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  return `(${String(text.length)} characters)`;
+}
+
+const fields = (value: unknown): Record<string, unknown> =>
+  typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : {};
+
+const OUTCOMES: readonly unknown[] = PageCopy.outcome.literals;
+
 /**
- * What Rufi keeps of a save_reading call's input, also a refused one's:
- * each page's copy by its length, never its words.
+ * What Rufi keeps of a save_reading call's input, also a refused one's of
+ * any shape: the document, and each page's number and outcome; everything
+ * else by its length, never its words.
  */
 export function keptReading(input: unknown): unknown {
-  if (typeof input !== "object" || input === null) return input;
-  const { pages } = input as { pages?: unknown };
-  if (!Array.isArray(pages)) return input;
+  const { document, pages } = fields(input);
   return {
-    ...input,
-    pages: pages.map((page: unknown) =>
-      typeof page === "object" && page !== null && "copy" in page
-        ? {
-            ...page,
-            copy: `(${String(String(page.copy).length)} characters)`,
-          }
-        : page,
-    ),
+    document:
+      typeof document === "string" && document.length <= 100
+        ? document
+        : sized(document),
+    pages: Array.isArray(pages)
+      ? pages.map((entry: unknown) => {
+          const { page, outcome, copy, why } = fields(entry);
+          return {
+            page: typeof page === "number" ? page : sized(page),
+            outcome: OUTCOMES.includes(outcome) ? outcome : sized(outcome),
+            copy: sized(copy),
+            why: sized(why),
+          };
+        })
+      : sized(pages),
   };
 }
 

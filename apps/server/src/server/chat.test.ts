@@ -1832,6 +1832,31 @@ describe("the chat, on the scripted Codex", () => {
     ]);
   });
 
+  it("keeps a reading's refused calls, of any shape, without their page text", async () => {
+    const row = "| LDL cholesterol | 142 | mg/dL |\n";
+    const reading = (pages: unknown) => ({
+      tool: "save_reading",
+      arguments: { document: "doc-asha-aug", pages },
+    });
+    await startChat("fake", {
+      scenario: {
+        calls: [
+          reading(row),
+          reading([{ page: 1, outcome: "read", text: row }]),
+          reading([{ page: 1, outcome: "read", copy: row.repeat(4_000) }]),
+        ],
+      },
+    });
+    const c = await newChat();
+    await say(c, "Read it");
+    await ended(c.id);
+    const kept = store.db
+      .prepare("SELECT ok, input, answer FROM tool_calls")
+      .all();
+    expect(kept.map((call) => call["ok"])).toEqual([0, 0, 0]);
+    expect(JSON.stringify(kept)).not.toContain("LDL cholesterol");
+  });
+
   it("keeps everything each activity sent and got back, the AI's reasoning, and each call to Rufi's tools as answered", async () => {
     await startChat("fake", {
       scenario: {

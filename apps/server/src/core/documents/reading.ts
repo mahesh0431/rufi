@@ -256,7 +256,6 @@ export function readings(
     return rows.map(jobOf).find((job) => job.targets.some((t) => mine.has(t)));
   };
 
-  /** This job's page copies of the document, by position. */
   /**
    * Starts a run of a queued job: running, the next attempt. Returns the
    * run, bound to it.

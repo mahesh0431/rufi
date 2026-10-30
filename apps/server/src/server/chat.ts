@@ -38,7 +38,7 @@ import { refsForAi, RefRefusal } from "../core/chat/refs.ts";
 import type { ChatRow, Transcripts } from "../core/chat/transcript.ts";
 import type { Job, Readings } from "../core/documents/reading.ts";
 import type { ToolAnswer, ToolSpec } from "../core/tools/registry.ts";
-import { keptInput } from "../core/tools/tools.ts";
+import { keptCall } from "../core/tools/tools.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import type { McpCall, McpKeys } from "./mcp.ts";
 import type { ReadProgress, Reader } from "./reader.ts";
@@ -226,8 +226,7 @@ export function chat(deps: ChatDeps) {
         await transcripts.recordToolCall(caller.chat, turnId, {
           callId,
           tool: call.tool,
-          input: keptInput(call.tool, call.input),
-          answer,
+          ...keptCall(call.tool, call.input, answer),
           startedAt,
         });
       }

@@ -13,6 +13,7 @@ import {
   Refusal,
   specOf,
   toolCaller,
+  type Issue,
   type Tool,
   type ToolAnswer,
   type ToolContext,
@@ -24,6 +25,7 @@ import { createBrief as makeBrief } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
 import {
   keptReading,
+  sized,
   type SaveReadingAnswer,
   type SaveReadingInput,
   type SaveReadingScope,
@@ -89,11 +91,28 @@ async function rejectionsPerReply(
 }
 
 /**
- * What Rufi keeps of a call's input: as it came, but for a reading's page
- * text, which goes with its document (save-reading.ts).
+ * What Rufi keeps of a call: as it came, but for a reading, whose page text
+ * goes with its document: its input as keptReading keeps it, and what a
+ * refusal says it got by its length.
  */
-export function keptInput(tool: string, input: unknown): unknown {
-  return tool === saveReading.name ? keptReading(input) : input;
+export function keptCall(tool: string, input: unknown, answer: ToolAnswer) {
+  if (tool !== saveReading.name) return { input, answer };
+  const said = JSON.parse(answer.text) as { issues?: Issue[] };
+  return {
+    input: keptReading(input),
+    answer: said.issues
+      ? {
+          ...answer,
+          text: JSON.stringify({
+            ...said,
+            issues: said.issues.map((issue) => ({
+              ...issue,
+              got: sized(issue.got),
+            })),
+          }),
+        }
+      : answer,
+  };
 }
 
 /** tools.json: every tool as documentation, generated (pnpm tools:json). */

@@ -174,10 +174,25 @@ describe("a reading agent's saved reading", () => {
     expect(again).toEqual(first);
     expect(rows(rufi.store, "SELECT id FROM jobs")).toHaveLength(1);
     const kept = rows(rufi.store, "SELECT input, answer FROM tool_calls");
-    expect(kept.length).toBeGreaterThan(0);
-    for (const text of [PAGE_1, PAGE_2]) {
-      expect(JSON.stringify(kept)).not.toContain(JSON.stringify(text));
-    }
+    expect(kept.map((call) => JSON.parse(String(call["input"])))).toEqual(
+      kept.map(() => ({
+        document: "doc-asha-aug",
+        pages: [
+          {
+            page: 1,
+            outcome: "read",
+            copy: `(${String(PAGE_1.length)} characters)`,
+          },
+          {
+            page: 2,
+            outcome: "unreadable",
+            copy: `(${String(PAGE_2.length)} characters)`,
+            why: `(${String(PAGES[1]?.why?.length)} characters)`,
+          },
+        ],
+      })),
+    );
+    expect(JSON.stringify(kept)).not.toMatch(/HbA1c|LDL cholesterol|blurred/);
   });
 
   it("is refused, with nothing written, for a document deleted first, another person's, or a page the document doesn't have", async () => {
