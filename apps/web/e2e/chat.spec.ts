@@ -540,6 +540,36 @@ test("the model and effort are chosen in the box, also in the bar, and kept for 
   await expect(choice("GPT-6-Astra, High")).toBeVisible();
 });
 
+test("the models ticked in Settings are the chat menu's: one ticked shows there, one unticked doesn't, and a new chat starts on the first", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  const models = page.getByRole("group", { name: "Models" });
+  const tick = (name: string) => models.getByRole("checkbox", { name });
+  await expect(tick("GPT-6.1-Sol")).toBeChecked();
+  await expect(tick("GPT-6-Astra")).toBeChecked();
+  await expect(tick("GPT-5.5")).not.toBeChecked();
+  await tick("GPT-5.5").click();
+  await expect(tick("GPT-5.5")).toBeChecked();
+  await tick("GPT-6-Astra").click();
+  await expect(tick("GPT-6-Astra")).not.toBeChecked();
+
+  await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
+  await page
+    .getByRole("main")
+    .getByRole("button", { name: "Model and effort: GPT-6.1-Sol, Medium" })
+    .click();
+  await expect(page.getByRole("menuitemradio")).toHaveText([
+    "GPT-6.1-Sol",
+    "GPT-5.5",
+    "Low",
+    "Medium",
+    "High",
+  ]);
+});
+
 test("a draft is saved as you type, silently; it survives a reload and a restart, and is never sent by itself", async ({
   page,
   rufi,
