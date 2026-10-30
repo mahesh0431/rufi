@@ -43,6 +43,7 @@ let refused: string[];
 let chatKeys: ReturnType<typeof mcpKeys>;
 let readerKeys: ReturnType<typeof mcpKeys>;
 let served: { port: number; close: () => Promise<void> };
+let working: Set<Promise<unknown>>;
 
 beforeEach(async () => {
   calls = [];
@@ -50,6 +51,7 @@ beforeEach(async () => {
   answer = () => Promise.resolve({ ok: true, text: '{"ok":true}' });
   chatKeys = mcpKeys();
   readerKeys = mcpKeys();
+  working = new Set();
   let port = 0;
   const log = (event: string, fields?: { reason?: unknown }) => {
     if (event === "mcp.refused") refused.push(String(fields?.reason));
@@ -59,6 +61,7 @@ beforeEach(async () => {
     port: () => port,
     log,
     toolMs: 300,
+    working,
   });
   const reader = mcpEndpoint({ keys: readerKeys, port: () => port, log });
   served = await serveMcp((request) =>
@@ -195,12 +198,10 @@ describe("Rufi's MCP endpoints", () => {
     });
   });
 
-  it("tells the agent a call took too long, within the deadline", async () => {
+  it("tells the agent a call took too long, within the deadline, and keeps the call in the work Rufi finishes before it stops until it ends", async () => {
     const server = at(chatKeys.issue(scope()));
-    answer = () =>
-      new Promise((resolve) =>
-        setTimeout(resolve, 2_000, { ok: true, text: "late" }),
-      );
+    const late = Promise.withResolvers<ToolAnswer>();
+    answer = () => late.promise;
     expect((await call(server)).result).toEqual({
       content: [
         {
@@ -210,6 +211,11 @@ describe("Rufi's MCP endpoints", () => {
       ],
       isError: true,
     });
+    // Its answer is long given; the call itself still runs.
+    expect(working.size).toBe(1);
+    late.resolve({ ok: true, text: "late" });
+    await Promise.allSettled(working);
+    expect(working.size).toBe(0);
   });
   it("offers each skill and the files beside it to read, the paper as CSS byte for byte", async () => {
     let port = 0;

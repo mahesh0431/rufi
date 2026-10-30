@@ -211,7 +211,8 @@ export const startCore = (options: CoreOptions) =>
       ),
       (release) => Effect.promise(() => release().catch(() => undefined)),
     );
-    // Stopping the server cuts connections, not the work of their handlers.
+    // Stopping the server cuts connections, not the work of their handlers,
+    // nor the calls to Rufi's tools, whose answers stream after a response.
     const answering = new Set<Promise<unknown>>();
     const writer = yield* Effect.acquireRelease(
       attempt(() => openRecord(home)),
@@ -455,8 +456,14 @@ export const startCore = (options: CoreOptions) =>
         port: () => port,
         log,
         resources: skillResources(SKILLS),
+        working: answering,
       }),
-      [MCP_READER]: mcpEndpoint({ keys: readerKeys, port: () => port, log }),
+      [MCP_READER]: mcpEndpoint({
+        keys: readerKeys,
+        port: () => port,
+        log,
+        working: answering,
+      }),
     };
     const server = yield* Effect.acquireRelease(
       attempt(
