@@ -18,9 +18,8 @@ export function fakeClaude(
    * Beyond the contract's scripts. Connection drops: the turn's network
    * drops. Next turn: steers miss the running turn, which ends, and Claude
    * starts the next with them. With two, its first answer names the first
-   * and its later ones both. Before an answer, it runs and never answers.
-   * Starts during interrupt: the next turn starts while an interrupt is
-   * answered. Answers during interrupt: its first answer comes then.
+   * and its later ones both. Answers during interrupt: the next turn's
+   * first answer comes while an interrupt is answered.
    * Frames: a turn's frames, recorded, given for each message, `$input`
    * naming it. On interrupt: what Claude does as an interrupt comes, in
    * conversation `id`.
@@ -29,11 +28,7 @@ export function fakeClaude(
     frames?: readonly object[];
     onInterrupt?: (id: string) => Promise<void>;
     connectionDrops?: true;
-    nextTurn?:
-      | "two"
-      | "before_an_answer"
-      | "starts_during_interrupt"
-      | "answers_during_interrupt";
+    nextTurn?: "two" | "answers_during_interrupt";
     /** Claude takes the message, and starts its turn (and keeps it) this late. */
     slowStartMs?: number;
   } = {},
@@ -157,6 +152,8 @@ export function fakeClaude(
     };
 
     const start = (message: string) => {
+      // Claude skips a uuid it has stored before, and says nothing.
+      if (kept.get(id)?.includes(message) === true) return;
       const late = more.slowStartMs;
       if (late !== undefined) {
         setTimeout(() => {
@@ -248,22 +245,6 @@ export function fakeClaude(
           user_message_uuids: [first],
         });
         answer([first, second]);
-        return;
-      }
-      if (more.nextTurn === "before_an_answer") {
-        answer([running]);
-        keep(message);
-        frames.push({ type: "system", subtype: "init" });
-        turn = message;
-        return;
-      }
-      if (more.nextTurn === "starts_during_interrupt") {
-        answer([running]);
-        keep(message);
-        duringInterrupt = () => {
-          frames.push({ type: "system", subtype: "init" });
-          turn = message;
-        };
         return;
       }
       if (more.nextTurn === "answers_during_interrupt") {
