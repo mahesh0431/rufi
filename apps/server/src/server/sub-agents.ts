@@ -86,7 +86,7 @@ export function subAgents(deps: {
               )) ?? null)
             : undefined;
         return {
-          ...(ended !== undefined && { ended }),
+          ...(ended !== undefined && { ended: ended?.agent ?? null }),
           agents: asked.map((id) => {
             const found = below.includes(id) ? agents.get(id) : undefined;
             if (!found) return { agent: id, status: "not found" };
@@ -96,6 +96,9 @@ export function subAgents(deps: {
               parent: found.parent === scope.agent ? "self" : found.parent,
               status: found.status,
               result: found.result,
+              // The turn the wait ended with asked: its questions come too.
+              ...(ended?.agent === id &&
+                ended.questions.length > 0 && { questions: ended.questions }),
             };
           }),
         };

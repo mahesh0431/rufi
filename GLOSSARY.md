@@ -264,7 +264,7 @@ An agent another agent started for one task, with a title, such as checking a se
 _Avoid_: helper, child (in screens and help), delegate
 
 **Done message**:
-What an agent is told when one it started ends a turn: its title, and its answer and questions, or that it stopped or failed and why. It goes into the agent's turn, or starts one; for Rufi AI, that reply shows a small line naming the sub-agent ("Reading report.pdf: done"). It is never the user's words. When the agent was waiting for that sub-agent, the wait gives it the result instead, and the done message never goes.
+What an agent is told when one it started ends a turn: its title, and its answer and questions, or that it stopped or failed and why. It goes into the agent's turn, or starts one; for Rufi AI, that reply shows a small line naming the sub-agent ("Reading report.pdf: done"). It is never the user's words. When the agent was waiting for that sub-agent, the wait gives it the result and questions instead, and the done message never goes.
 _Avoid_: callback, notification
 
 **The AI's folder**:

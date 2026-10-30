@@ -116,7 +116,7 @@ export const startAgent = defineTool({
 export const agentStatus = defineTool({
   name: "agent_status",
   description:
-    "How the agents below you are: the ones you started and theirs, each with its title, the agent that started it (self: you), its status (idle before its first turn, running, done, stopped or failed) and its latest result. An id that isn't below you is not found. With wait, it first waits until one of them ends a turn (ended: its id), or the wait runs out, or your turn ends (ended: null); running out never stops an agent. A result it gives you this way doesn't come to you again as a message.",
+    "How the agents below you are: the ones you started and theirs, each with its title, the agent that started it (self: you), its status (idle before its first turn, running, done, stopped or failed) and its latest result. An id that isn't below you is not found. With wait, it first waits until one of them ends a turn (ended: its id, and the questions that turn asked, with their options), or the wait runs out, or your turn ends (ended: null); running out never stops an agent. A result it gives you this way doesn't come to you again as a message.",
   input: AgentStatusInput,
   callers: "model",
   readOnly: true,
@@ -132,7 +132,7 @@ export const agentStatus = defineTool({
 export const sendAgent = defineTool({
   name: "send_agent",
   description:
-    'Writes to an agent below you, or to the agent that started you ("parent"): a question, feedback, more to do, anything. It gets your words with your title, and an idle one starts a turn for it. Answers steered, queued or will start the next turn; it is never refused for being busy. An agent\'s answer comes back to you as a message from it when its turn ends.',
+    'Writes to an agent below you, or to the agent that started you ("parent"): a question, feedback, more to do, anything. It gets your words with your title, and an idle one starts a turn for it. Answers steered, queued or will start the next turn; it is never refused for being busy. An agent you started sends you its answer by itself when its turn ends; one further below sends its answer to the agent that started it. To answer an agent you started, write to it by its id: your own answer at the end of your turn doesn\'t go to it.',
   input: SendAgentInput,
   callers: "model",
   readOnly: false,
