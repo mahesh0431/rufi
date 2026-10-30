@@ -127,6 +127,8 @@ export interface CallScope {
   callId: string;
   /** Rufi's tools the agent may use. */
   tools: readonly string[];
+  /** A sub-agent's title, which its lines in the chat name; none for Rufi AI. */
+  label?: string;
 }
 
 /** What every call of one turn runs with. */
@@ -297,6 +299,7 @@ export function rufiCaller(
             tool: name,
             input,
             startedAt: transcripts.now(),
+            ...(scope.label !== undefined && { label: scope.label }),
           },
           () => {
             own.kept = true;

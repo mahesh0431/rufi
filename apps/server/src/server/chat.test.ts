@@ -2151,8 +2151,9 @@ describe("the chat, on the scripted Codex", () => {
         .all(),
     ).toEqual([{ agent_id: helper, turn_id: null, ok: 1 }]);
     const { entries, all } = await transcript(c.id);
+    // Labelled with the helper's title: it belongs to no reply.
     expect(entries.filter(([kind]) => kind === "receipt")).toEqual([
-      ["receipt", "**Saved**\n\n- Added symptom **Headache**"],
+      ["receipt", "**Saved** · Helper\n\n- Added symptom **Headache**"],
     ]);
     expect(all.find((entry) => entry.kind === "receipt")?.turnId).toBeNull();
   });

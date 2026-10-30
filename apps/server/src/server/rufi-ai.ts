@@ -526,7 +526,8 @@ export async function startRufiAi(
         // no longer owns, or of another chat's, finds nothing.
         const owner = await kept.owner(agent);
         const row = owner && (await transcripts.chat(owner.personId));
-        const tools = agents.get(agent)?.tools;
+        const found = agents.get(agent);
+        const tools = found?.tools;
         const thread = threadOf(agent);
         if (row?.id !== owner?.chatId || !row || !tools || !thread) {
           return undefined;
@@ -540,6 +541,7 @@ export async function startRufiAi(
           ref: placed.ref,
           call: placed.call,
           tools,
+          ...(found && found.parent !== null && { label: found.title }),
         };
       },
 
