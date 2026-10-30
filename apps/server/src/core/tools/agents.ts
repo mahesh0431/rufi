@@ -1,6 +1,7 @@
 // Rufi's agent tools: an agent starts agents of its own, sees how the ones
-// below it are, writes to one or to the agent that started it, and reads
-// the conversation of any agent in its chat. Rufi's chat does them in the agent
+// below it are, writes to one or to the agent that started it, reads the
+// conversation of any agent in its chat, and stops one below it or itself,
+// with or without everything under it. Rufi's chat does them in the agent
 // system (server/sub-agents.ts); a sub-agent never gets more tools than the
 // agent that starts it.
 import { Schema } from "effect";
@@ -62,6 +63,19 @@ export const ReadAgentInput = Schema.Struct({
   ),
 });
 export type ReadAgentInput = typeof ReadAgentInput.Type;
+
+export const StopAgentInput = Schema.Struct({
+  agent: Schema.String.annotate({
+    description: 'An agent below you, by id, or "self".',
+  }).check(Schema.isMinLength(1)),
+  with_children: Schema.optionalKey(
+    Schema.Boolean.annotate({
+      description:
+        "true: every agent below it stops too, and what waits for any of them is dropped. Leave it out to stop just this agent.",
+    }),
+  ),
+});
+export type StopAgentInput = typeof StopAgentInput.Type;
 
 const outside = () =>
   new Refusal("Agents can be started only by an agent in Rufi's chat.");
@@ -131,5 +145,20 @@ export const readAgent = defineTool({
   run: (input, { agents }) => {
     if (!agents) throw outside();
     return agents.read(input);
+  },
+});
+
+export const stopAgent = defineTool({
+  name: "stop_agent",
+  description:
+    'Stops an agent below you, or yourself ("self"): its turn ends now, and what it was given to do next goes on after. With with_children, every agent below it stops too, what waits for any of them is dropped (the user\'s messages show "Not sent" with Send), and none of their results wakes another; the stopped agent\'s own result goes to the agent that started it. Answers the agents that stop; agent_status says when they have.',
+  input: StopAgentInput,
+  callers: "model",
+  readOnly: false,
+  destructive: false,
+  examples: [{ agent: "self", with_children: true }],
+  run: (input, { agents }) => {
+    if (!agents) throw outside();
+    return agents.stop(input);
   },
 });

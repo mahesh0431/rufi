@@ -217,6 +217,7 @@ const RUFI_TOOLS = [
   "mcp__rufi__show_face",
   "mcp__rufi__sort_documents",
   "mcp__rufi__start_agent",
+  "mcp__rufi__stop_agent",
 ];
 
 describe("Rufi's tools on the pinned Codex, over MCP", () => {

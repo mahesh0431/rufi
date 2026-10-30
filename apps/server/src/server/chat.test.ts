@@ -244,7 +244,12 @@ async function startChat(
           log,
           reader && pages(reader, home),
           { run: sorting(store).sort, done: () => undefined },
-          subAgents({ agents: system.agents, kept: chatAgents(store), queue }),
+          subAgents({
+            agents: system.agents,
+            kept: chatAgents(store),
+            queue,
+            log: () => undefined,
+          }),
         )(scope);
         return async (name, input, callId) => {
           admitted.push(name);

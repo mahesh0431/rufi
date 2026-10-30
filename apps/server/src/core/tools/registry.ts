@@ -13,6 +13,7 @@ import type {
   ReadAgentInput,
   SendAgentInput,
   StartAgentInput,
+  StopAgentInput,
 } from "./agents.ts";
 
 /** What a tool gets from Rufi, never from the model. */
@@ -62,8 +63,10 @@ export interface AgentTools {
   status: (input: AgentStatusInput) => unknown;
   /** A message from the caller to an agent below it, or to its parent. */
   send: (input: SendAgentInput, callId: string) => unknown;
-  /** A page of the caller's conversation, or of one below it. */
+  /** A page of the conversation of an agent in the caller's chat. */
   read: (input: ReadAgentInput) => Promise<unknown>;
+  /** Stops an agent below the caller, or itself; with children, all below it too. */
+  stop: (input: StopAgentInput) => unknown;
 }
 
 /** A tool's input: decoded without services, like JSON. */

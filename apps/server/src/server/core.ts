@@ -356,6 +356,7 @@ export const startCore = (options: CoreOptions) =>
                 agents: agentSystem.agents,
                 kept: chatAgents(writer, options.now),
                 queue,
+                log,
               }),
             ),
           },
