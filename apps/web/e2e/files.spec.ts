@@ -556,7 +556,9 @@ for (const { system, chosen } of [
     expect(await looks()).toEqual(chosen === "Dark" ? black : white);
 
     // Another tab chooses the other look; this one stays on its chat with
-    // the page open large, which stays open, and both frames follow.
+    // the page open large, which stays open, and both frames follow. The
+    // other tab tells this one after its save's answer, so it stays open
+    // until they have.
     await page.getByRole("button", { name: "Open Colours" }).click();
     const large = page.getByRole("dialog", { name: "Colours" });
     await expect(large).toBeVisible();
@@ -573,7 +575,6 @@ for (const { system, chosen } of [
       .getByRole("radio", { name: chosen === "Dark" ? "Light" : "Dark" })
       .check();
     expect((await saved).ok()).toBe(true);
-    await other.close();
     const now =
       chosen === "Dark" ? /\?appearance=light$/ : /\?appearance=dark$/;
     for (const shown of [inline, large.locator("iframe")]) {
@@ -582,6 +583,7 @@ for (const { system, chosen } of [
         .poll(() => looks(shown))
         .toEqual(chosen === "Dark" ? white : black);
     }
+    await other.close();
     await expect(large).toBeVisible();
     await large.getByRole("button", { name: "Close" }).click();
 
