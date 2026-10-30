@@ -1,4 +1,4 @@
-# 0025 · Agents start sub-agents
+# 0026 · Agents start sub-agents
 
 **Date:** 30 Oct 2026 · **Status:** accepted
 

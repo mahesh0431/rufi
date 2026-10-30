@@ -59,7 +59,7 @@ const SETTINGS = {
     apps: false,
     /**
      * No Codex sub-agents: Rufi's own start_agent is the one kind
-     * (docs/adr/0025). On, it would bring their tools back regardless.
+     * (docs/adr/0026). On, it would bring their tools back regardless.
      */
     multi_agent_v2: false,
   },
