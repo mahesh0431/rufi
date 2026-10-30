@@ -26,10 +26,12 @@ import {
   type SDKSystemMessage,
   type SDKUserMessage,
   type Settings,
+  type SpawnedProcess,
+  type SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { McpRegistration } from "@rufi/agents/provider";
 import { DEADLINES } from "../codex/appserver.ts";
-import { killTree } from "../codex/processes.ts";
+import { killGroup, killTree } from "../codex/processes.ts";
 import type { AgentSandbox, AgentSkill } from "../runtime.ts";
 import { within } from "./deadline.ts";
 import type { InstalledClaude } from "./executable.ts";
@@ -254,17 +256,10 @@ export function openClaudeSession(
       ...("start" in options.conversation
         ? { sessionId: options.conversation.start }
         : { resume: options.conversation.resume }),
-      // Its own process group, so everything it starts can be ended with it.
-      spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => {
-        const spawned = spawn(command, args, {
-          cwd,
-          env,
-          signal,
-          stdio: ["pipe", "pipe", "ignore"],
-          detached: true,
-        });
+      spawnClaudeCodeProcess: (spawning) => {
+        const spawned = spawnClaude(spawning);
         child = spawned;
-        return spawned;
+        return spawned as SpawnedProcess;
       },
     } satisfies Options,
   });
@@ -358,6 +353,45 @@ export function unexpectedAtStart(init: SDKSystemMessage): string[] {
       .filter((plugin) => plugin.name !== PLUGIN)
       .map((plugin) => `plugin ${plugin.name}`),
   ];
+}
+
+/**
+ * Claude goes on with its turn after its pipes close. So a watcher holds a
+ * pipe only Rufi has open, and ends Claude's process group when it closes,
+ * also when Rufi crashes: TERM, then KILL 5 s later (T3 Code's).
+ */
+const WATCHER = [
+  "{ trap '' TERM; read -r _ <&3; kill -TERM 0; sleep 5; kill -KILL 0; } </dev/null >/dev/null 2>&1 &",
+  'exec "$@" 3<&-',
+].join("\n");
+
+/**
+ * Claude in a process group of its own, with the watcher. When Claude
+ * ends, so does everything left in its group: its commands, the MCP
+ * servers it started, and the watcher.
+ */
+export function spawnClaude({
+  command,
+  args,
+  cwd,
+  env,
+  signal,
+}: SpawnOptions): ChildProcess {
+  const child = spawn(
+    "/bin/sh",
+    ["-c", WATCHER, "rufi-claude", command, ...args],
+    {
+      cwd,
+      env,
+      signal,
+      stdio: ["pipe", "pipe", "ignore", "pipe"],
+      detached: true,
+    },
+  );
+  child.once("exit", () => {
+    killGroup(child.pid ?? 0);
+  });
+  return child;
 }
 
 /** Whether `child` has ended, or ends within `ms`. */
