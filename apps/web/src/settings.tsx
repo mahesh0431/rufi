@@ -210,13 +210,9 @@ function ModelsSection() {
         Models
       </h2>
       <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
+        {/* Signed out: ChatGPT plan above signs in. */}
         {account !== undefined && account !== "signed_in" ? (
-          <p>
-            <Link to="/sign-in" className="underline">
-              Sign in
-            </Link>{" "}
-            to see the models your plan offers.
-          </p>
+          <p>Once you're signed in, the models your plan offers show here.</p>
         ) : models.data === undefined && models.error ? (
           <Problem error={models.error} retry={() => void models.refetch()} />
         ) : (
