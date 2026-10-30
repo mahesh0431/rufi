@@ -881,6 +881,28 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
         : "it joined the running turn";
     }),
 
+  "a conversation Claude no longer keeps is missing at the next start": async (
+    context,
+  ) =>
+    withAdapter(context, async ({ adapter, open, send, until }) => {
+      const conversation = await open();
+      const turn = await send(conversation, randomUUID(), "Reply 'noted'.");
+      await until(endOf(turn));
+      await adapter.delete(conversation.ref);
+      const delivery = await conversation.startTurn({
+        input: { id: randomUUID(), parts: ["Reply 'again'."] },
+        model: MODEL,
+        effort: "low",
+      });
+      if (
+        delivery.status !== "not_delivered" ||
+        delivery.reason !== "missing"
+      ) {
+        throw new Error(`the start came back ${JSON.stringify(delivery)}`);
+      }
+      return "not delivered: missing";
+    }),
+
   "Stop sends back a steer Claude held": async (context) =>
     withAdapter(context, async ({ open, send, until }) => {
       const conversation = await open();
