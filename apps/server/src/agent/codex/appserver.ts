@@ -5,6 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { errorCode } from "../../platform/logs.ts";
 import { killTree, trackGroups } from "./processes.ts";
 import type { InitializeParams } from "./protocol/InitializeParams.ts";
+import type { GetAccountResponse } from "./protocol/v2/GetAccountResponse.ts";
 import { connect, type Rpc, type RpcHandlers } from "./rpc.ts";
 import { checkSettings } from "./settings.ts";
 
@@ -40,6 +41,12 @@ export const DEADLINES: Deadlines = {
 /** What Rufi says when Codex isn't signed in: how to sign in. */
 export const SIGNED_OUT =
   "Codex isn't signed in to ChatGPT. Sign in from Settings, then try again.";
+
+/** Codex's answer to `account/read`: it needs a sign-in and has none. */
+export const signedOut = ({
+  account,
+  requiresOpenaiAuth,
+}: GetAccountResponse) => account === null && requiresOpenaiAuth;
 
 export interface AppServer {
   rpc: Rpc;

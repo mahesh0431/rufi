@@ -25,6 +25,7 @@ import {
 import {
   DEADLINES,
   SIGNED_OUT,
+  signedOut,
   startAppServer,
   type AppServer,
   type CodexCommand,
@@ -296,12 +297,12 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
         },
       });
       // Signed out, the reading fails with how to sign in.
-      const { account } = await app.rpc.request<GetAccountResponse>(
+      const account = await app.rpc.request<GetAccountResponse>(
         "account/read",
         {},
         deadlines.requestMs,
       );
-      if (account === null) throw new SignedOut(SIGNED_OUT);
+      if (signedOut(account)) throw new SignedOut(SIGNED_OUT);
       // A CODEX_HOME still inherits system/managed configuration.
       // Ask Codex for the layers the reader's cwd will actually load, rather
       // than parsing files or relying only on its instruction-file list.

@@ -28,6 +28,7 @@ import {
 import {
   DEADLINES,
   SIGNED_OUT,
+  signedOut,
   startAppServer,
   type AppServer,
   type CodexCommand,
@@ -208,12 +209,8 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
       return previous;
     }
     const app = await up(signal);
-    const { account } = await request<GetAccountResponse>(
-      app,
-      "account/read",
-      {},
-    );
-    if (account === null) throw new SignedOut(SIGNED_OUT);
+    const answer = await request<GetAccountResponse>(app, "account/read", {});
+    if (signedOut(answer)) throw new SignedOut(SIGNED_OUT);
     if (signal?.aborted) throw new Stopped();
     if (signal) prepared.set(signal, app);
     return app;
@@ -907,13 +904,14 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
     codexHome,
 
     account: async () => {
-      const { account } = await request<GetAccountResponse>(
+      const answer = await request<GetAccountResponse>(
         await up(),
         "account/read",
         {},
       );
+      const { account } = answer;
       return {
-        signedIn: account !== null,
+        signedIn: !signedOut(answer),
         email: account?.type === "chatgpt" ? account.email : null,
       };
     },

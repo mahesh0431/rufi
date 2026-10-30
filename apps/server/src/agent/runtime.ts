@@ -293,10 +293,8 @@ export interface AgentHost {
 }
 
 /**
- * How long Rufi waits for a stopped call to end. It covers the slowest path
- * with its own deadlines: renewing the sign-in (Keychain reads and writes up
- * to 60 s each, OpenAI up to three tries of 20 s), whose new token must be
- * saved before Rufi exits. Reaching it means a bug; the agent is then closed
+ * How long Rufi waits for a stopped call to end. Each agent's own Stop has
+ * deadlines well within it; reaching it means a bug. The agent is then closed
  * with the scope that holds it.
  */
 const STOP_LIMIT_MS = 5 * 60_000;
