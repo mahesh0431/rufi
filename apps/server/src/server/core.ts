@@ -236,7 +236,6 @@ export const startCore = (options: CoreOptions) =>
     );
     // In the background: a backup never delays or stops the start.
     backups.start();
-    const interrupted = yield* attempt(() => transcripts.interruptRunning());
     // The agent system's own database, brought into step with the record
     // before anything goes to a provider (server/agents.ts).
     const agentStore = yield* Effect.acquireRelease(
@@ -266,6 +265,9 @@ export const startCore = (options: CoreOptions) =>
       ),
       (system) => Effect.promise(() => system.close()),
     );
+    // Replies still running once Rufi has read the agent database's events
+    // were cut when it stopped.
+    const interrupted = yield* attempt(() => transcripts.interruptRunning());
     // Hand-overs Rufi stopped after the AI may have got them are not sure,
     // never sent again; one whose files Rufi was reading waits for its
     // reply's Retry; what waits goes when the person sends.

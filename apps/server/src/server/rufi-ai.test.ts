@@ -60,6 +60,8 @@ async function start(adapter: ProviderAdapter, logged: string[] = []) {
     model: "fake-model",
     log: (event) => logged.push(event),
   });
+  // Replies still running once Rufi has read the events were cut.
+  await transcripts.interruptRunning();
   await system.agents.dispatch();
   const chat = openChat({
     transcripts,
@@ -105,7 +107,7 @@ const replies = () =>
     "SELECT id, text, status FROM transcript_entries WHERE kind = 'reply' ORDER BY seq",
   );
 
-it("puts each turn's whole answer from the package's events on its reply row, once, with Rufi's cursor in the same transaction", async () => {
+it("puts each turn, and its whole answer on its reply row, from the package's events, once, with Rufi's cursor in the same transaction", async () => {
   const fake = fakeProvider({ id: "codex", script: { turn: "runs" } });
   let emit: (event: ProviderEvent) => void = () => undefined;
   const adapter: ProviderAdapter = {
@@ -174,17 +176,61 @@ it("puts each turn's whole answer from the package's events on its reply row, on
     ]);
     expect(cursor()).toBe(rufi.store.highWater());
   });
+
+  // The chat saves nothing of the next turn: its start and answer come
+  // from the events alone.
+  const unsaved = rufi.system.rufiAi({
+    onEvent: () => undefined,
+    saved: () => Promise.resolve(),
+  });
+  const ask = (id: string) =>
+    unsaved.send(thread, {
+      id,
+      sender: "person",
+      input: ["What about my ferritin?"],
+      effort: "medium",
+    });
+  await ask("message-3");
+  fake.end(thread, { status: "done", answer: "Ferritin was 40." });
+  const turns = () =>
+    rows("SELECT status, end_text FROM turns ORDER BY started_at, rowid");
+  const completed = { status: "completed", end_text: null };
+  await vi.waitFor(() => {
+    expect(turns()).toEqual([completed, completed, completed]);
+    expect(cursor()).toBe(rufi.store.highWater());
+  });
   const whole = replies();
   expect(whole).toMatchObject([
     { id: streamed, text: "Your last TSH was 2.1.", status: "done" },
     { text: "It was 2.4.", status: "done" },
+    { text: "Ferritin was 40.", status: "done" },
   ]);
 
-  // Read again from the start, each answer is there once.
+  // Nor of one that starts while Rufi's cursor can't move, and still runs
+  // when Rufi closes.
+  record.db.exec("UPDATE agent_cursor SET generation = 'elsewhere'");
+  await ask("message-4");
+  await vi.waitFor(() => {
+    expect(logged.filter((event) => event === "agents.failed")).toHaveLength(2);
+  });
   await rufi.close();
-  record.db.exec("UPDATE agent_cursor SET number = 0");
+
+  // Read again from the start: each answer is there once, and the turn
+  // that ran on is there, cut when Rufi closed.
+  record.db
+    .prepare("UPDATE agent_cursor SET generation = ?, number = 0")
+    .run(rufi.store.generation);
   rufi = await start(adapter);
   expect(cursor()).toBe(rufi.store.highWater());
+  expect(turns()).toEqual([
+    completed,
+    completed,
+    completed,
+    {
+      status: "interrupted",
+      end_text: "Rufi closed before the reply finished.",
+    },
+  ]);
   expect(replies()).toEqual(whole);
   await rufi.close();
 });

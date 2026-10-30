@@ -145,11 +145,6 @@ async function startChat(
       await rm(`${agentsPath(home)}${end}`, { force: true });
     }
   }
-  // As the core does when it starts again.
-  if (again) {
-    await transcripts.interruptRunning();
-    await queue.endStopped("Rufi closed while reading.");
-  }
   const reader = openReadOnly(databasePath(home));
   const log = () => undefined;
   const tools = forAgent(() => ({ store: reader, personId: undefined }), log);
@@ -204,6 +199,12 @@ async function startChat(
     adapter: codex,
     tools: tools.specs.map((spec) => spec.name),
   });
+  // As the core does when it starts again, once Rufi has read the agent
+  // database's events.
+  if (again) {
+    await transcripts.interruptRunning();
+    await queue.endStopped("Rufi closed while reading.");
+  }
   chat = openChat({
     transcripts,
     queue,

@@ -1148,6 +1148,43 @@ export function transcripts(
       }),
 
     /**
+     * A turn's start as the agent database keeps it (server/rufi-ai.ts),
+     * with `write` in the same transaction: its turn, running, when the chat
+     * didn't save it. Its end follows the same way; at a start, one that
+     * still runs once Rufi has read the events is ended (interruptRunning).
+     */
+    applyStart: (
+      chat: ChatRow,
+      agentTurnId: string,
+      thread: { id: string; model: string },
+      write: (trx: Transaction<Tables>) => Promise<void>,
+    ) =>
+      change(chat.id, async (trx) => {
+        await write(trx);
+        if (await turnOf(trx, chat.id, agentTurnId)) return undefined;
+        const id = uuid();
+        await trx
+          .insertInto("turns")
+          .values({
+            id,
+            person_id: chat.personId,
+            chat_id: chat.id,
+            agent_turn_id: agentTurnId,
+            thread_id: thread.id,
+            model: thread.model,
+            origin: "person",
+            status: "running",
+            end_reason: null,
+            end_text: null,
+            resets_at: null,
+            started_at: now(),
+            ended_at: null,
+          })
+          .execute();
+        return { entries: [], turns: [id] };
+      }),
+
+    /**
      * A turn's end as the agent database keeps it (server/rufi-ai.ts), with
      * `write` in the same transaction. The end goes on a reply still
      * running, or one Rufi closed before it saved it. A whole answer goes on

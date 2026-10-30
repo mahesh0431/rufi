@@ -268,16 +268,30 @@ export async function startRufiAi(
     chat?.onEvent(eventOf(ref, event));
   };
 
-  // The end of a root's turn from the package's events, after what the
-  // chat was told was saved: the record of its whole answer, and its end
-  // when the chat didn't save it (transcripts.applyEnd).
+  // A root's turn from the package's events, after what the chat was told
+  // was saved: its start when the chat didn't save it, the record of its
+  // whole answer, and its end when the chat didn't save it
+  // (transcripts.applyStart, applyEnd).
   const apply: Apply = async (event, advance) => {
-    if (event.type !== "turn.ended" || event.agent === null) return false;
+    if (event.type !== "turn.started" && event.type !== "turn.ended") {
+      return false;
+    }
+    if (event.agent === null) return false;
     const owner = await kept.owner(event.agent);
     if (!owner?.root) return false;
     const row = await transcripts.chat(owner.personId);
     if (row?.id !== owner.chatId) return false;
     await chat?.saved();
+    if (event.type === "turn.started") {
+      const { ref } = event.payload as { ref: string };
+      await transcripts.applyStart(
+        row,
+        ref,
+        { id: row.threadId ?? "", model: row.model ?? row.threadModel ?? "" },
+        advance,
+      );
+      return true;
+    }
     const { ref, item, ...end } = event.payload as Ended & {
       ref: string;
       item?: string;
