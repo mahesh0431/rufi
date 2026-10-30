@@ -8,8 +8,9 @@
 // its own, that turn starts with it. The process closes when a turn ends
 // with nothing handing over, and the next turn carries the conversation on
 // in a new one. What Claude does in a turn shows as its items, by its own
-// ids, and the turn's usage once it ends (items.ts). Rufi's tools aren't
-// given to Claude yet, so no call is placed.
+// ids, and the turn's usage once it ends (items.ts). A call to Rufi's tools
+// is placed in the turn its hook saw it leave: one that left no open turn,
+// or whose turn has ended or is stopping, is refused.
 import { randomUUID, type UUID } from "node:crypto";
 import {
   deleteSession,
@@ -63,6 +64,8 @@ const ASK_MS = 15_000;
 const START_MS = 30_000;
 /** How long Claude has to answer an interrupt, and then to end the turn. */
 const STOP_MS = 10_000;
+/** Where a call to Rufi's tools carries Claude's id for it. */
+const TOOL_USE_ID = "claudecode/toolUseId";
 
 /** Claude's kept conversations, by the id Rufi gave each. */
 export interface ClaudeSessions {
@@ -231,6 +234,8 @@ async function openConversation(
     | { id: string; settle: (delivery: Delivery) => void }
     | undefined;
   const held = new Map<string, Held>();
+  /** Claude's ids for calls to Rufi's tools, with the turn each left. */
+  const calls = new Map<string, string>();
   let rateLimit: SDKRateLimitInfo | undefined;
 
   const emit = (event: ProviderEvent) => {
@@ -256,6 +261,16 @@ async function openConversation(
     running = undefined;
     emit({ type: "turnEnded", turn: turn.ref, end });
   };
+
+  /**
+   * The turn Claude's calls now leave, by the reference made at its start
+   * (also one Claude began by itself, not yet started for Rufi); none while
+   * a Stop is under way.
+   */
+  const openTurn = () =>
+    stops > 0 || running?.stopping === true
+      ? undefined
+      : (running?.ref ?? unclaimed);
 
   /** Lets the process go once nothing is running or with Claude. */
   const idle = () => {
@@ -338,6 +353,7 @@ async function openConversation(
         finish(endOf(message, running, rateLimit));
       }
       unclaimed = undefined;
+      calls.clear();
       idle();
     }
   };
@@ -413,6 +429,7 @@ async function openConversation(
     // One closed while idle may end after the next turn opened another.
     if (session !== undefined && session !== current) return;
     session = undefined;
+    calls.clear();
     if (running) {
       finish(
         running.stopping
@@ -483,6 +500,11 @@ async function openConversation(
       effort: effort as EffortLevel,
       conversation: kept ? { resume: ref } : { start: ref },
       plugin: options.plugin,
+      mayCall: (call) => {
+        const turn = openTurn();
+        if (turn !== undefined) calls.set(call, turn);
+        return turn !== undefined;
+      },
       ...(options.query && { query: options.query }),
     });
     session = current;
@@ -656,7 +678,17 @@ async function openConversation(
         ids.map((id) => [id, kept.has(id) ? "received" : "unknown"]),
       );
     },
-    placeCall: () => undefined,
+    placeCall: (meta) => {
+      const call =
+        typeof meta === "object" && meta !== null
+          ? (meta as Record<string, unknown>)[TOOL_USE_ID]
+          : undefined;
+      if (typeof call !== "string") return undefined;
+      const turn = calls.get(call);
+      return turn !== undefined && turn === openTurn()
+        ? { turn, call }
+        : undefined;
+    },
     close: async () => {
       if (running) await stop(running.ref);
       await closeProcess();

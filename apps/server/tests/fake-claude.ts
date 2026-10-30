@@ -3,6 +3,8 @@
 // in the trial (review-artifacts/agent-system/2026-10-29-claude-trial) as a
 // contract case's script asks. Only the fields the adapter reads are set.
 import type {
+  HookCallbackMatcher,
+  PreToolUseHookInput,
   query,
   SDKMessage,
   SDKUserMessage,
@@ -23,10 +25,12 @@ export function fakeClaude(
    * Starts during interrupt: the next turn starts while an interrupt is
    * answered. Answers during interrupt: its first answer comes then.
    * Frames: a turn's frames, recorded, given for each message, `$input`
-   * naming it.
+   * naming it. On interrupt: what Claude does as an interrupt comes, in
+   * conversation `id`.
    */
   more: {
     frames?: readonly object[];
+    onInterrupt?: (id: string) => Promise<void>;
     connectionDrops?: true;
     nextTurn?:
       | "two"
@@ -41,8 +45,16 @@ export function fakeClaude(
   sessions: ClaudeSessions;
   /** How many times a process was closed. */
   closes: () => number;
+  /**
+   * Claude makes call `call` to one of Rufi's tools in conversation `id`:
+   * its hooks run first, in Rufi's process. The `_meta` the call then
+   * carries, or none when a hook refused it or no process is open.
+   */
+  callRufi: (id: string, call: string) => Promise<object | undefined>;
 } {
   let closes = 0;
+  /** Each conversation's open process, by its hooks for a call. */
+  const hooks = new Map<string, HookCallbackMatcher[]>();
   /** Each conversation Claude keeps, with the ids of its messages. */
   const kept = new Map<string, string[]>();
 
@@ -51,9 +63,15 @@ export function fakeClaude(
     options,
   }: {
     prompt: AsyncIterable<SDKUserMessage> | string;
-    options?: { sessionId?: string; resume?: string };
+    options?: {
+      sessionId?: string;
+      resume?: string;
+      hooks?: { PreToolUse?: HookCallbackMatcher[] };
+    };
   }) => {
     const id = options?.sessionId ?? options?.resume ?? "asking";
+    const mine = options?.hooks?.PreToolUse ?? [];
+    hooks.set(id, mine);
     const frames = channel();
     /** The id of the message the running turn answers; none when idle. */
     let turn: string | undefined;
@@ -345,7 +363,8 @@ export function fakeClaude(
           },
           { value: "claude-fictional-0", displayName: "Fictional 0" },
         ]),
-      interrupt: (): Promise<unknown> => {
+      interrupt: async (): Promise<unknown> => {
+        await more.onInterrupt?.(id);
         duringInterrupt?.();
         duringInterrupt = undefined;
         if (script.cancelLost === true) return new Promise(() => {});
@@ -364,6 +383,7 @@ export function fakeClaude(
       close: () => {
         closes++;
         closed = true;
+        if (hooks.get(id) === mine) hooks.delete(id);
         frames.end();
       },
     });
@@ -371,6 +391,33 @@ export function fakeClaude(
 
   return {
     closes: () => closes,
+    callRufi: async (id, call) => {
+      const tool = "mcp__rufi__save_note";
+      const matchers = hooks.get(id);
+      if (matchers === undefined) return undefined;
+      for (const { matcher, hooks: each } of matchers) {
+        if (matcher !== undefined && !new RegExp(matcher).test(tool)) continue;
+        for (const hook of each) {
+          const output = await hook(
+            {
+              hook_event_name: "PreToolUse",
+              tool_name: tool,
+              tool_input: { text: "Fictional: Asha walked 3 km." },
+              tool_use_id: call,
+            } as PreToolUseHookInput,
+            call,
+            { signal: new AbortController().signal },
+          );
+          const decision =
+            "hookSpecificOutput" in output &&
+            output.hookSpecificOutput?.hookEventName === "PreToolUse"
+              ? output.hookSpecificOutput.permissionDecision
+              : undefined;
+          if (decision === "deny") return undefined;
+        }
+      }
+      return { "claudecode/toolUseId": call, progressToken: 1 };
+    },
     query: run as unknown as typeof query,
     sessions: {
       info: (id) =>

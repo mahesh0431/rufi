@@ -8,7 +8,8 @@
 // Claude's own sub-agents, workflows, schedules and background commands are
 // off: their tools aren't given. Claude works in the AI's folder under Rufi
 // AI's lock-down (sandbox.ts). Rufi picks a new conversation's id, and
-// carries on a kept one by it.
+// carries on a kept one by it. A call to Rufi's tools leaves Claude only
+// when Rufi's own hook, run before it goes, says it may.
 import { spawn, type ChildProcess } from "node:child_process";
 import type { UUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -16,6 +17,7 @@ import { join } from "node:path";
 import {
   query as sdkQuery,
   type EffortLevel,
+  type HookCallback,
   type Options,
   type Query,
   type SDKControlInterruptResponse,
@@ -49,6 +51,8 @@ const TOOLS = [
 
 /** The name Claude knows Rufi's plugin by: its skills are `rufi:<name>`. */
 const PLUGIN = "rufi";
+/** The name Claude knows Rufi's tools by: they are `mcp__rufi__<tool>`. */
+const TOOLS_SERVER = "rufi";
 
 /** Claude Code's own plugins (2.1.312), off like everything not Rufi's. */
 const BUILT_IN_PLUGINS = [
@@ -139,6 +143,11 @@ export interface ClaudeSessionOptions {
   /** A new conversation, under the id Rufi gives it, or a kept one. */
   conversation: { start: string } | { resume: string };
   plugin: ClaudePlugin;
+  /**
+   * Whether a call to Rufi's tools may leave Claude, by Claude's id for it.
+   * It's asked in Rufi's process before the call goes; without it, none may.
+   */
+  mayCall?: (call: string) => boolean;
   query?: typeof sdkQuery;
   closeMs?: number;
 }
@@ -176,6 +185,24 @@ export interface ClaudeSession {
   close: () => Promise<void>;
 }
 
+/** Refuses a call to Rufi's tools that may not go, before it leaves Claude. */
+const rufiCalls =
+  (mayCall: ClaudeSessionOptions["mayCall"]): HookCallback =>
+  (input) =>
+    Promise.resolve(
+      input.hook_event_name === "PreToolUse" &&
+        mayCall?.(input.tool_use_id) !== true
+        ? {
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              permissionDecision: "deny",
+              permissionDecisionReason:
+                "Rufi has no turn open for this call, so it didn't go.",
+            },
+          }
+        : {},
+    );
+
 /** Opens a conversation; Claude starts at once, and nothing is sent. */
 export function openClaudeSession(
   options: ClaudeSessionOptions,
@@ -201,6 +228,14 @@ export function openClaudeSession(
         type: "preset",
         preset: "claude_code",
         append: options.instructions,
+      },
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: `mcp__${TOOLS_SERVER}__.*`,
+            hooks: [rufiCalls(options.mayCall)],
+          },
+        ],
       },
       model: options.model,
       ...(options.effort && { effort: options.effort }),
