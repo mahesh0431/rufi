@@ -91,8 +91,9 @@ const argumentsOf = (input: Record<string, unknown>) => {
 };
 
 /**
- * `value` with every image's and document's bytes left out: what they
- * were stays, and how big they were doesn't matter to a line.
+ * `value` with every image's and document's bytes left out, also those of
+ * a document's own pictures: what they were stays, and how big they were
+ * doesn't matter to a line.
  */
 export function withoutImages(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(withoutImages);
@@ -100,7 +101,7 @@ export function withoutImages(value: unknown): unknown {
   const entries = Object.entries(value).map(([key, inner]) => {
     if (key === "source" && inner !== null && typeof inner === "object") {
       const { data: _bytes, ...rest } = inner as Record<string, unknown>;
-      return [key, rest];
+      return [key, withoutImages(rest)];
     }
     return [key, withoutImages(inner)];
   });

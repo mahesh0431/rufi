@@ -260,22 +260,61 @@ describe("a message Claude is slow to start", () => {
 });
 
 describe("what Claude does in a turn", () => {
-  it("shows as its items by Claude's ids, then the turn's usage, with no picture's bytes; usage now from its limits", async () => {
+  it("shows as its items by Claude's ids, then the turn's usage, with no picture's or document's bytes; usage now from its limits", async () => {
     // A turn recorded from the installed Claude, its paths and limits made
-    // fictional; its compaction is written from the SDK's type.
+    // fictional; its compaction is written from the SDK's type, as are the
+    // two documents its picture's result gains here: one whose pages are
+    // pictures, and a PDF.
     const recorded = await readFile(
       join(import.meta.dirname, "../../../tests/fixtures/claude-turn.json"),
       "utf8",
     );
-    const fake = fakeClaude({}, { frames: JSON.parse(recorded) as object[] });
+    const bash = "toolu_01RjiXhjDmM8dmfeN3SiFeSf";
+    const read = "toolu_011UYhCNHzyCKmJsiqCPGZ1M";
+    const png = /"data": "([^"]+)"/.exec(recorded)?.[1] ?? "";
+    const pdf = Buffer.from("%PDF-1.4 a fictional report").toString("base64");
+    const picture = (data?: string) => ({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: "image/png",
+        ...(data && { data }),
+      },
+    });
+    const documents = (bytes?: { png: string; pdf: string }) => [
+      {
+        type: "document",
+        source: { type: "content", content: [picture(bytes?.png)] },
+      },
+      {
+        type: "document",
+        source: {
+          type: "base64",
+          media_type: "application/pdf",
+          ...(bytes && { data: bytes.pdf }),
+        },
+      },
+    ];
+    const frames = (JSON.parse(recorded) as Record<string, unknown>[]).map(
+      (frame) => {
+        const message = frame["message"] as { content?: unknown } | undefined;
+        const [block] = Array.isArray(message?.content)
+          ? (message.content as { tool_use_id?: string; content?: unknown[] }[])
+          : [];
+        if (frame["type"] !== "user" || block?.tool_use_id !== read) {
+          return frame;
+        }
+        block.content = [...(block.content ?? []), ...documents({ png, pdf })];
+        return frame;
+      },
+    );
+    const fake = fakeClaude({}, { frames });
     const { adapter, start, events } = await onFake(fake.query, fake.sessions);
     expect(await start("message-1")).toEqual({ status: "delivered" });
     await vi.waitFor(() => {
       expect(events.at(-1)?.type).toBe("turnEnded");
     });
 
-    const bash = "toolu_01RjiXhjDmM8dmfeN3SiFeSf";
-    const read = "toolu_011UYhCNHzyCKmJsiqCPGZ1M";
     const command = { kind: "command", title: "echo hello-probe" };
     const image = {
       kind: "other",
@@ -311,7 +350,14 @@ describe("what Claude does in a turn", () => {
         item: read,
         ...image,
         status: "done",
-        payload: expect.anything() as unknown,
+        payload: {
+          use: expect.objectContaining({ id: read }) as unknown,
+          result: {
+            type: "tool_result",
+            tool_use_id: read,
+            content: [picture(), ...documents()],
+          },
+        },
       },
       {
         type: "step",
@@ -353,9 +399,9 @@ describe("what Claude does in a turn", () => {
       },
       { type: "turnEnded", end: { status: "done", answer: "done" } },
     ]);
-    const png = /"data": "([^"]+)"/.exec(recorded)?.[1] ?? "";
     expect(png).not.toBe("");
     expect(JSON.stringify(events)).not.toContain(png);
+    expect(JSON.stringify(events)).not.toContain(pdf);
 
     expect(await adapter.usage()).toEqual([
       { minutes: 300, usedPercent: 42, resetsAt: "2026-10-30T00:40:00.000Z" },
