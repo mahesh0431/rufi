@@ -20,7 +20,7 @@ import { COMMAND_MS, REFRESH_MS, TOKEN_COMMAND } from "./token-door.ts";
  * (developers.openai.com/siwc/token-sharing-open-source/codex-app-server),
  * but for the token: in place of an ACCESS_TOKEN in its environment, Codex
  * asks Rufi's token door for one with the provider's auth command
- * (token-door.ts, docs/adr/0024), named by its file.
+ * (token-door.ts, docs/adr/0025), named by its file.
  */
 function provider(door: string): string {
   return `[model_providers.openai_chatgpt_plan]

@@ -1,4 +1,4 @@
-# 0024 · Codex gets its ChatGPT token from Rufi's token door
+# 0025 · Codex gets its ChatGPT token from Rufi's token door
 
 **Date:** 30 Oct 2026 · **Status:** accepted · **Pin:** `@openai/codex` 0.163.0
 

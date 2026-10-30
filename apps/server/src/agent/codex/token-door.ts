@@ -6,7 +6,7 @@
 // can't read (aiSandbox), and asks; the door checks the key on every request
 // and answers with Rufi's token, renewed when its end is near. Nothing
 // secret is in Codex's environment or arguments, which the AI's commands can
-// read through the system (docs/adr/0024).
+// read through the system (docs/adr/0025).
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
