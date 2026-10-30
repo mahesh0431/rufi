@@ -1,0 +1,13 @@
+# 0025 · Agents start sub-agents
+
+**Date:** 30 Oct 2026 · **Status:** accepted
+
+An agent in Rufi's chat starts agents of its own with Rufi's `start_agent` tool, for a task that can run on its own: a **sub-agent**, with a title and its whole task as its first message. It runs at once and goes on after the reply that started it ends. `agent_status` says how the agents below the caller are (no wait yet), and `read_agent` reads the caller's own conversation or one below it, a page of turns at a time. A sub-agent can start its own, to any depth. These are tools of the agent system (ADR 0024): Rufi's chat does them there (`server/sub-agents.ts`), and screens don't show sub-agents yet.
+
+**A sub-agent is its parent's chat's, and never has more than its parent.** It runs on its parent's provider, model and effort, in the same folder, with its parent's tools or fewer: a tool the parent doesn't have is refused, and nothing starts. Its calls go through the same door and caller as Rufi AI's (ADR 0016), as the chat's, so its saves and briefs show in the chat with Rufi's receipt; they belong to no reply. Its turns have no message of the user's, so a save names the one it rests on, its position as `read_chat` shows it. Rufi AI's own tools are Rufi's current list, given again at each start; a sub-agent keeps the ones it was given.
+
+**The call that starts it names it.** Its id is the `start_agent` call's Rufi id (`<agent>/<conversation>/<call>`), so the same call again finds it and makes no second one. Each step finds what it did before: the agent is made, its task queued, its owner kept in Rufi's database, then it is admitted. A crash before the owner is kept leaves an agent the next start removes (ADR 0024).
+
+**It sees only its task.** Its first conversation starts with the task alone, never the chat. Its instructions are Rufi AI's, then a part of its own: who started it and for what, that its task isn't the user's words, and that its last answer is its result for the agent that started it. What it does shows in Rufi AI's view of it through `read_agent`, not in the chat.
+
+Considered: a model and effort per sub-agent (they come with the Settings shortlist); a sub-agent's own seed when its conversation is opened afresh (it has its task only; its own history comes with the seed per agent); showing sub-agents' events in the chat (they come with the activity by title). The cost: until done messages and waits come, Rufi AI hears how a sub-agent went only by asking, with `agent_status` or `read_agent`.

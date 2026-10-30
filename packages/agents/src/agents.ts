@@ -148,6 +148,24 @@ export interface Placed {
   call: string;
 }
 
+/** One turn of an agent, as the package keeps it. */
+export interface KeptTurn {
+  id: string;
+  /** The provider's reference for it, once it started. */
+  ref: string | null;
+  status: string;
+  /** Why it stopped or failed. */
+  reason: string | null;
+  /** Its final answer whole, or the provider's words when it failed. */
+  result: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  /** What it took, in order: who sent each, and its words, unless the host keeps them. */
+  inputs: { id: string; sender: string; parts: string[] | null }[];
+  /** What it reported, in order. */
+  items: Item[];
+}
+
 /** One thing a turn reported, as the package kept it. */
 export interface Item {
   /** The provider's reference for its turn. */
@@ -175,6 +193,17 @@ export interface Agents {
   get: (id: string) => Agent | undefined;
   /** Every agent the database keeps, admitted or not. */
   list: () => string[];
+  /** Every agent below this one, at any depth, oldest first. */
+  below: (id: string) => string[];
+  /**
+   * The agent's turns, the latest `limit` before the turn `before` (or the
+   * latest), oldest first, and the first of them when there are earlier
+   * ones: the `before` of the page before.
+   */
+  history: (
+    agent: string,
+    page: { before?: string; limit: number },
+  ) => { turns: KeptTurn[]; earlier: string | null };
   /** Where an input is in its agent's queue; nothing when the queue has none. */
   input: (
     id: string,
@@ -206,10 +235,13 @@ export interface Agents {
    * is with the provider.
    */
   reopen: (agent: string, fresh?: boolean) => Promise<void>;
-  /** What the agent's next turns run on. */
+  /**
+   * What the agent's next turns run on; for a root, also the host's tools
+   * it may use (a child's are set when it starts).
+   */
   configure: (
     agent: string,
-    settings: { model: string; effort: string },
+    settings: { model: string; effort: string; tools?: readonly string[] },
   ) => void;
   /**
    * Which of these inputs the provider received in the agent's
@@ -1252,7 +1284,7 @@ export function createAgents(options: {
     }
   }
 
-  return {
+  const api: Agents = {
     create: (agent) => {
       store.change(({ event }) => {
         let root = agent.id;
@@ -1328,6 +1360,68 @@ export function createAgents(options: {
       return {
         status: live.stopBy === undefined ? "running" : "stopping",
         ...live.current,
+      };
+    },
+
+    below: (id) =>
+      (
+        db
+          .prepare(
+            `WITH RECURSIVE tree (id) AS (
+               SELECT id FROM agents WHERE parent_id = ?
+               UNION ALL SELECT agents.id FROM agents JOIN tree ON agents.parent_id = tree.id
+             ) SELECT agents.id FROM agents JOIN tree ON tree.id = agents.id ORDER BY agents.rowid`,
+          )
+          .all(id) as { id: string }[]
+      ).map((row) => row.id),
+
+    history: (agent, { before, limit }) => {
+      const found = db
+        .prepare(
+          `SELECT id, provider_turn AS ref, status, reason, result,
+             started_at AS startedAt, ended_at AS endedAt
+           FROM turns WHERE agent_id = ?
+             AND (? IS NULL OR rowid < (SELECT rowid FROM turns WHERE id = ? AND agent_id = ?))
+           ORDER BY rowid DESC LIMIT ?`,
+        )
+        .all(
+          agent,
+          before ?? null,
+          before ?? null,
+          agent,
+          limit + 1,
+        ) as unknown as Omit<KeptTurn, "inputs" | "items">[];
+      const page = found.slice(0, limit).toReversed();
+      const refs = page.flatMap((turn) =>
+        turn.ref === null ? [] : [turn.ref],
+      );
+      const items = Map.groupBy(
+        refs.length === 0 ? [] : api.items(agent, refs),
+        (item) => item.turn,
+      );
+      const inputs = db.prepare(
+        "SELECT id, sender, parts FROM queue WHERE turn_id = ? ORDER BY position",
+      );
+      return {
+        turns: page.map((turn) => ({
+          ...turn,
+          inputs: (
+            inputs.all(turn.id) as {
+              id: string;
+              sender: string;
+              parts: string | null;
+            }[]
+          ).map((input) => ({
+            id: input.id,
+            sender: input.sender,
+            parts:
+              input.parts === null
+                ? null
+                : (JSON.parse(input.parts) as string[]),
+          })),
+          items: turn.ref === null ? [] : (items.get(turn.ref) ?? []),
+        })),
+        earlier: found.length > limit ? (page[0]?.id ?? null) : null,
       };
     },
 
@@ -1419,15 +1513,33 @@ export function createAgents(options: {
       }
     },
 
-    configure: (id, { model, effort }) => {
+    configure: (id, { model, effort, tools }) => {
       const agent = get(id);
       if (!agent) throw new Error(`No agent ${id}.`);
-      if (agent.model === model && agent.effort === effort) return;
+      if (tools !== undefined && agent.parent !== null) {
+        throw new Error("A child's tools are set when it starts.");
+      }
+      const retooled =
+        tools !== undefined &&
+        JSON.stringify(tools) !== JSON.stringify(agent.tools);
+      if (agent.model === model && agent.effort === effort && !retooled) {
+        return;
+      }
       store.change(({ event }) => {
         db.prepare(
-          "UPDATE agents SET model = ?, effort = ?, updated_at = ? WHERE id = ?",
-        ).run(model, effort, now(), id);
-        event("agent.configured", id, { model, effort });
+          "UPDATE agents SET model = ?, effort = ?, tools = ?, updated_at = ? WHERE id = ?",
+        ).run(
+          model,
+          effort,
+          JSON.stringify(retooled ? tools : agent.tools),
+          now(),
+          id,
+        );
+        event("agent.configured", id, {
+          model,
+          effort,
+          ...(retooled && { tools }),
+        });
       });
     },
 
@@ -1717,4 +1829,5 @@ export function createAgents(options: {
       await letGo();
     },
   };
+  return api;
 }

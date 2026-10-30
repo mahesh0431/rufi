@@ -1311,7 +1311,7 @@ describe("a turn a Rufi event started", () => {
       const answer = await call(tool, input, "rufi");
       expect(answer.ok).toBe(false);
       expect(answer.error).toBe(
-        "This turn was started by a Rufi event, not by the user, so nothing can be saved, sorted or made in it. Explain or ask; the user asks in a message of their own.",
+        "This turn was started by a Rufi event, not by the user, so nothing can be saved, sorted, made or started in it. Explain or ask; the user asks in a message of their own.",
       );
     }
     expect(written()).toEqual(before);

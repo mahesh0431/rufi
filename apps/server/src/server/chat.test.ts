@@ -51,8 +51,10 @@ import {
 import { forAgent, rufiCaller } from "../core/tools/tools.ts";
 import { v7 as uuid } from "uuid";
 import { chatQueue, type ChatQueue } from "../core/chat/queue.ts";
+import { chatAgents } from "../core/chat/agents.ts";
 import { agentsPath } from "./agents.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
+import { subAgents } from "./sub-agents.ts";
 import { agentSetup } from "./core.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
 
@@ -204,13 +206,14 @@ async function startChat(
     deadlines: { requestMs: 10_000, turnMs: 20_000, ...options.deadlines },
     log,
   });
-  ai = await rufiAiFor({
+  const system = await rufiAiFor({
     home,
     record: store,
     transcripts,
     adapter: codex,
     tools: tools.specs.map((spec) => spec.name),
   });
+  ai = system;
   // As the core does when it starts again, once Rufi has read the agent
   // database's events.
   if (again) {
@@ -239,6 +242,8 @@ async function startChat(
           transcripts,
           log,
           reader && pages(reader, home),
+          undefined,
+          subAgents({ agents: system.agents, kept: chatAgents(store), queue }),
         )(scope, origin);
         return async (name, input, callId) => {
           admitted.push(name);
@@ -2098,10 +2103,29 @@ describe("the chat, on the scripted Codex", () => {
           "Ask a helper": [
             {
               tool: "start_agent",
-              arguments: { title: "Helper", task: "helper: save it" },
+              arguments: {
+                title: "Helper",
+                task: "helper: save it, from the user's message at 1",
+              },
             },
           ],
-          "helper:": [saveHeadache],
+          // Its turn has no message of the user's: it names theirs, the
+          // chat's first.
+          "helper:": [
+            {
+              tool: "save_changes",
+              arguments: {
+                changes: [
+                  {
+                    kind: "symptom",
+                    action: "add",
+                    source: 1,
+                    fields: { name: "Headache" },
+                  },
+                ],
+              },
+            },
+          ],
         },
       },
       waitFor: (tool) =>
@@ -2213,12 +2237,57 @@ describe("the chat, on the scripted Codex", () => {
           {
             status: "done",
             inputs: [{ from: helper, text: "second: hello" }],
-            answer: "ok:second: hello",
+            result: "ok:second: hello",
           },
         ],
         earlier: null,
       },
     });
+  });
+
+  it("starts no sub-agent from a turn a Rufi event started, so nothing is saved from it", async () => {
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Note: Lab report read": [
+            {
+              tool: "start_agent",
+              arguments: {
+                title: "Helper",
+                task: "helper: save it, from the user's message at 1",
+              },
+            },
+          ],
+          "helper:": [
+            {
+              tool: "save_changes",
+              arguments: {
+                changes: [
+                  {
+                    kind: "symptom",
+                    action: "add",
+                    source: 1,
+                    fields: { name: "Headache" },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    });
+    const c = await newChat();
+    await say(c, "I have a headache");
+    await ended(c.id);
+    await event("Lab report read");
+    await ended(c.id, 2);
+    const started = store.db
+      .prepare("SELECT ok, answer FROM tool_calls WHERE tool = 'start_agent'")
+      .all() as { ok: number; answer: string }[];
+    expect(started).toHaveLength(1);
+    expect(started[0]?.answer).toContain("started by a Rufi event");
+    expect(agentRows().map((row) => row["title"])).toEqual(["Rufi AI"]);
+    expect(store.db.prepare("SELECT * FROM symptoms").all()).toEqual([]);
   });
 
   it("gives a sub-agent only the tools it was given, and its own sub-agent no more than those", async () => {
@@ -2236,7 +2305,19 @@ describe("the chat, on the scripted Codex", () => {
             },
           ],
           "reader:": [
-            saveHeadache,
+            {
+              tool: "save_changes",
+              arguments: {
+                changes: [
+                  {
+                    kind: "symptom",
+                    action: "add",
+                    source: 1,
+                    fields: { name: "Headache" },
+                  },
+                ],
+              },
+            },
             {
               tool: "start_agent",
               arguments: {
@@ -2260,15 +2341,27 @@ describe("the chat, on the scripted Codex", () => {
         ),
       ),
     );
+    const calls = store.db
+      .prepare(
+        "SELECT tool, answer FROM tool_calls WHERE agent_id = ? ORDER BY started_at",
+      )
+      .all(reader) as { tool: string; answer: string }[];
     expect(
-      store.db
-        .prepare(
-          "SELECT tool, ok FROM tool_calls WHERE agent_id = ? ORDER BY started_at",
-        )
-        .all(reader),
+      calls.map(({ tool, answer }) => ({
+        tool,
+        error: (JSON.parse(answer) as { error?: string }).error,
+      })),
     ).toEqual([
-      { tool: "save_changes", ok: 0 },
-      { tool: "start_agent", ok: 0 },
+      {
+        tool: "save_changes",
+        error:
+          "There is no tool called save_changes. Rufi's tools: get_overview, start_agent.",
+      },
+      {
+        tool: "start_agent",
+        error:
+          "An agent you start can have only tools you have, and you don't have save_changes. Nothing was started.",
+      },
     ]);
     expect(store.db.prepare("SELECT * FROM symptoms").all()).toEqual([]);
     expect(agentRows().map((row) => row["title"])).toEqual([

@@ -113,14 +113,27 @@ export async function startAgents(options: {
 
   // 2. Owners and admission agree: an agent with no owner, admitted or
   // not, goes with everything below it and its waiting inputs; an owner
-  // whose agent is gone goes; an owned agent is admitted.
+  // whose agent is gone goes; an owned agent is admitted. Each chat's own
+  // agent has Rufi's tools as they are now; the agents it starts keep the
+  // ones they were given.
   const owners = await kept.owners();
   const owned = new Set(owners.map((owner) => owner.agent));
   const unowned = agents.list().filter((id) => !owned.has(id));
   if (unowned.length > 0) await agents.forget(unowned);
   for (const owner of owners) {
-    if (agents.get(owner.agent)) agents.admit(owner.agent);
-    else await kept.drop(owner.agent);
+    const agent = agents.get(owner.agent);
+    if (!agent) {
+      await kept.drop(owner.agent);
+      continue;
+    }
+    if (owner.root) {
+      agents.configure(agent.id, {
+        model: agent.model,
+        effort: agent.effort,
+        tools: options.tools,
+      });
+    }
+    agents.admit(agent.id);
   }
 
   // Each chat's own agent: made, owned (with the thread it takes over, in

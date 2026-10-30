@@ -1,5 +1,6 @@
 // Every Rufi tool, for the agent and the screens. What the AI is told about
 // using them is in the core (core/chat/instructions.ts) and the skills.
+import { agentStatus, readAgent, startAgent } from "./agents.ts";
 import { briefResult, createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
 import { getDocuments, sortDocuments } from "./documents.ts";
@@ -14,6 +15,7 @@ import {
 import { getRecords } from "./records.ts";
 import {
   answerOf,
+  type AgentTools,
   inputSchema,
   REJECTIONS_PER_TURN,
   Refusal,
@@ -44,6 +46,9 @@ export const TOOLS: readonly Tool[] = [
   sortDocuments,
   createBrief,
   showFace,
+  startAgent,
+  agentStatus,
+  readAgent,
 ];
 
 /**
@@ -54,7 +59,7 @@ const SERVER = "rufi";
 
 /** Why a Rufi event's turn can't save, sort or make a brief. */
 const EVENT_TURN =
-  "This turn was started by a Rufi event, not by the user, so nothing can be saved, sorted or made in it. Explain or ask; the user asks in a message of their own.";
+  "This turn was started by a Rufi event, not by the user, so nothing can be saved, sorted, made or started in it. Explain or ask; the user asks in a message of their own.";
 
 /**
  * The model's tools: their catalog for the MCP server, and a caller per
@@ -148,15 +153,29 @@ export function rufiCaller(
     /** After a sort is kept. */
     done: (personId: string) => void;
   },
+  /** The calling agent's agents, from its scope (server/sub-agents.ts). */
+  agents?: (scope: TurnScope) => AgentTools,
 ) {
   return (scope: TurnScope, origin: "person" | "rufi") => {
     const { chat, ref } = scope;
+    const mine = agents?.(scope);
+    // An agent it starts would write what the person didn't ask for.
+    const below: AgentTools | undefined =
+      mine && origin === "rufi"
+        ? {
+            ...mine,
+            start: () => {
+              throw new Refusal(EVENT_TURN);
+            },
+          }
+        : mine;
     const call = forAgent(
       () => ({
         store: reader,
         personId: chat.personId,
         chatId: chat.id,
         pages,
+        agents: below,
       }),
       log,
       () => rejectionsPerReply(transcripts.setting),

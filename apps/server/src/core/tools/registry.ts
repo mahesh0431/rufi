@@ -8,6 +8,11 @@ import type { SortAnswer, SortInput } from "../documents/sorting.ts";
 import type { DismissInput, Dismissed } from "../record/items.ts";
 import type { SaveRequest, Saved } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
+import type {
+  AgentStatusInput,
+  ReadAgentInput,
+  StartAgentInput,
+} from "./agents.ts";
 
 /** What a tool gets from Rufi, never from the model. */
 export interface ToolContext {
@@ -44,6 +49,18 @@ export interface ToolContext {
     | undefined;
   /** Makes a visit brief with its line: only in Rufi's own chat. */
   brief?: ((input: BriefInput, callId: string) => Promise<Made>) | undefined;
+  /** What the calling agent does with agents: only in Rufi's own chat. */
+  agents?: AgentTools | undefined;
+}
+
+/** The calling agent's agents (core/tools/agents.ts). */
+export interface AgentTools {
+  /** A child of the caller, started by this call: its id is the call's. */
+  start: (input: StartAgentInput, callId: string) => Promise<unknown>;
+  /** The agents below the caller, as they are now. */
+  status: (input: AgentStatusInput) => unknown;
+  /** A page of the caller's conversation, or of one below it. */
+  read: (input: ReadAgentInput) => Promise<unknown>;
 }
 
 /** A tool's input: decoded without services, like JSON. */
