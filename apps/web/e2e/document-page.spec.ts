@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { readPage, scriptedReader } from "../../server/tests/fake-reader.ts";
-import { expect, sendFiles, test } from "./rufi.ts";
+import { expect, FILE_WORK_MS, sendFiles, test } from "./rufi.ts";
 
 const REPORT = join(
   import.meta.dirname,
@@ -107,7 +107,7 @@ test("checks a report against its pages: worth a look only, a fix, a fix from an
   });
   await expect(
     page.getByRole("cell", { name: /Not saved · 3 results/ }),
-  ).toBeVisible({ timeout: 10_000 });
+  ).toBeVisible({ timeout: FILE_WORK_MS });
   // The reply is on its way; fold the chat back to its bar.
   await page
     .getByRole("region", { name: "Chat" })
