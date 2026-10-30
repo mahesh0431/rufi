@@ -246,13 +246,15 @@ export function subAgents(deps: {
               // Rufi's rows not in the agent's queue yet, behind a reading.
               const later =
                 agent === root
-                  ? [...rows.values()].map((row) => ({
-                      id: row.id,
-                      queue,
-                      from: from(row.origin),
-                      text: row.text,
-                      held: held(row.held, row.heldText),
-                    }))
+                  ? [...rows.values()]
+                      .filter((row) => agents.input(row.id) === undefined)
+                      .map((row) => ({
+                        id: row.id,
+                        queue,
+                        from: from(row.origin),
+                        text: row.text,
+                        held: held(row.held, row.heldText),
+                      }))
                   : [];
               return [...listed, ...later];
             }),
@@ -317,13 +319,24 @@ export function subAgents(deps: {
             const found = await find(ids?.[0]);
             const order = ids ?? [];
             if (found.agent === root) {
-              const rows = await kept();
-              await asPerson(() =>
-                chat.reorder(
-                  scope.chat,
-                  order.filter((message) => rows.has(message)),
-                ),
+              // Rufi's order is whole, as the screens give it: these take
+              // the places they had between them, the others keep theirs.
+              const current = (await chat.list(scope.chat)).items
+                .filter(
+                  (item) =>
+                    item.state === "waiting" && item.held !== "reply_ended",
+                )
+                .map((item) => item.id);
+              const moving = [...new Set(order)].filter((message) =>
+                current.includes(message),
               );
+              let next = 0;
+              const whole = current.map((message) =>
+                moving.includes(message)
+                  ? (moving[next++] ?? message)
+                  : message,
+              );
+              await asPerson(() => chat.reorder(scope.chat, whole));
             }
             agents.reorder(found.agent, order);
             break;
