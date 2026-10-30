@@ -2058,9 +2058,8 @@ describe("the chat, on the scripted Codex", () => {
     });
     const c = await newChat();
     await say(c, "hang: I have a headache");
-    await until(async () =>
-      (await transcript(c.id)).entries.some(([kind]) => kind === "activity"),
-    );
+    // Admitted, not only shown: Codex shows the call before it reaches Rufi.
+    await until(() => Promise.resolve(admitted.includes("save_changes")));
     const { threadId } = await chatRow();
     const turnId = agentTurn();
     const stopping = chat?.stop(c);

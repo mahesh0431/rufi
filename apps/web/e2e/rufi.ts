@@ -192,6 +192,14 @@ export const test = base.extend<{ rufi: Rufi }>({
 });
 
 /**
+ * How long a test waits for work on files: an add, or a reading and its
+ * sort. Each file is looked at, and each page drawn, in a worker thread of
+ * its own (core/documents/inspect.ts): about a second alone, over ten when
+ * the whole suite runs side by side.
+ */
+export const FILE_WORK_MS = 20_000;
+
+/**
  * Files into a reply as a person sends them from the Documents page: Add
  * puts them in the chat box as chips (nothing starts), then Send, with
  * `words` or none, sends them.
@@ -201,16 +209,26 @@ export async function sendFiles(
   files: Parameters<Locator["setInputFiles"]>[0],
   words?: string,
 ): Promise<void> {
+  const chat = page.getByRole("region", { name: "Chat" });
+  // Files chosen while the box still loads its draft (just after a page
+  // opens) are refused with "The chat box is still loading.", as a person's
+  // would be. The open panel's box shows when it takes input; the bar
+  // doesn't, so open the panel, as Add does.
+  const message = chat.getByRole("textbox", { name: "Message to Rufi" });
+  if (!(await message.isVisible())) {
+    await chat.getByRole("button", { name: /^Open the chat/ }).click();
+  }
+  await expect(message).toBeEditable();
   await page
     .getByLabel("Choose documents", { exact: true })
     .setInputFiles(files);
-  const chat = page.getByRole("region", { name: "Chat" });
+  // A chip shows once the add ends.
   await expect(
     chat
       .getByRole("list", { name: "Added to this message" })
       .getByRole("listitem")
       .first(),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: FILE_WORK_MS });
   if (words !== undefined) {
     await chat.getByRole("textbox", { name: "Message to Rufi" }).fill(words);
   }
