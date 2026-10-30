@@ -137,8 +137,9 @@ export interface Scenario {
   /** Tool calls by turn, oldest first, for each thread. */
   callsByTurn?: NonNullable<Scenario["calls"]>[];
   /**
-   * Tool calls of a turn whose message has these words, the first that
-   * matches, over `callsByTurn` and `calls`: a sub-agent's turn has its task.
+   * Tool calls of a turn whose message starts with these words, the first
+   * that matches, over `callsByTurn` and `calls`: a sub-agent's turn starts
+   * with its task, and a done message with the agent's title.
    */
   callsByText?: Record<string, NonNullable<Scenario["calls"]>>;
   /** A usage-limit snapshot sent before a failed turn. */
@@ -472,7 +473,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   }
   const turnIndex = thread.history.findIndex((turn) => turn.id === turnId);
   const byText = Object.entries(scenario.callsByText ?? {}).find(([words]) =>
-    text.includes(words),
+    text.startsWith(words),
   )?.[1];
   const calls = text.includes("quiet")
     ? []

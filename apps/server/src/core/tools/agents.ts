@@ -25,7 +25,7 @@ export const StartAgentInput = Schema.Struct({
 export type StartAgentInput = typeof StartAgentInput.Type;
 
 /** The longest wait, in minutes: 24 hours. */
-export const WAIT_MAX = 24 * 60;
+const WAIT_MAX = 24 * 60;
 
 /** A wait's length in minutes when the agent gives none: an hour. */
 const WAIT_DEFAULT = 60;

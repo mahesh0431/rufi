@@ -386,16 +386,17 @@ export async function startRufiAi(
     };
     switch (event.type) {
       case "turn.started": {
-        const { ref, inputs } = event.payload as {
+        const { ref, inputs, from } = event.payload as {
           ref: string;
           inputs: string[];
+          from?: { title: string; about: Cause["about"] };
         };
         await transcripts.applyStart(
           row,
           ref,
           { id: row.threadId ?? "", model: row.model ?? row.threadModel ?? "" },
           inputs,
-          causeOf(inputs),
+          from && { title: from.title, about: from.about },
           advance,
         );
         break;

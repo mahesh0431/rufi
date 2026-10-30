@@ -848,11 +848,30 @@ export function createAgents(options: {
       db.prepare(
         "UPDATE agents SET status = 'running', stopped_by = NULL, updated_at = ? WHERE id = ?",
       ).run(at, live.id);
+      // It took only messages from other agents: the first one's, and why.
+      const taken = db
+        .prepare(
+          "SELECT queue.sender, queue.about, agents.title FROM queue LEFT JOIN agents ON agents.id = queue.sender WHERE queue.id IN (SELECT value FROM json_each(?)) ORDER BY queue.position",
+        )
+        .all(JSON.stringify(inputs)) as {
+        sender: string;
+        about: About | null;
+        title: string | null;
+      }[];
+      const [first] = taken;
+      const from =
+        first?.about &&
+        first.title !== null &&
+        taken.length === inputs.length &&
+        taken.every((input) => input.about !== null)
+          ? { agent: first.sender, title: first.title, about: first.about }
+          : undefined;
       event("turn.started", live.id, {
         turn: id,
         ref,
         inputs,
         by: starting ? "package" : "provider",
+        ...(from && { from }),
       });
       return id;
     });

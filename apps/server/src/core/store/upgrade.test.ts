@@ -1105,7 +1105,9 @@ it("upgrades a record of version 15 so files start on Send: every document sent 
   expect(after.documents).toEqual(
     before.documents.map((row) => ({ ...row, sent_at: row["added_at"] })),
   );
-  expect(after.turns).toEqual(before.turns);
+  expect(after.turns).toEqual(
+    before.turns.map((row) => ({ ...row, cause: null })),
+  );
   expect(after.entries).toEqual(
     before.entries.map((line) => ({ ...line, questions: null })),
   );

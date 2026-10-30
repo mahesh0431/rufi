@@ -2146,7 +2146,7 @@ describe("the chat, on the scripted Codex", () => {
     expect(all.find((entry) => entry.kind === "receipt")?.turnId).toBeNull();
   });
 
-  it("runs a sub-agent's own sub-agent, and Rufi AI reads how each went and the conversation of the one below", async () => {
+  it("runs a sub-agent's own sub-agent, whose done message wakes its parent, whose own wakes Rufi AI; then Rufi AI reads how each went and the conversation of the one below", async () => {
     await startChat("fake", {
       scenario: {
         callsByText: {
@@ -2167,16 +2167,20 @@ describe("the chat, on the scripted Codex", () => {
     });
     const c = await newChat();
     await say(c, "Ask a helper");
-    await ended(c.id);
     const helper = ownCall("call-0");
     const second = `${helper}/1/call-0`;
-    await until(() =>
-      Promise.resolve(
-        agentRows().some(
-          (row) => row["id"] === second && row["status"] === "done",
-        ),
-      ),
+    // Each of the helper's turns ends with a done message to Rufi AI: the
+    // second, woken by the second helper's, says what that one said.
+    const helperSaid = `ok:Second helper (${second}) done:\n\nok:second: hello`;
+    await until(
+      async () =>
+        (await inputs()).some((input) =>
+          input.join("").includes(`Helper (${helper}) done:\n\n${helperSaid}`),
+        ) && agentRows().every((row) => row["status"] === "done"),
     );
+    const { turns } = await transcript(c.id);
+    expect(turns[1]?.cause).toEqual({ title: "Helper", about: "done" });
+    await ended(c.id, turns.length);
     await startChat("fake", {
       scenario: {
         callsByText: {
@@ -2188,7 +2192,7 @@ describe("the chat, on the scripted Codex", () => {
       },
     });
     await say(await chatRow(c.id), "How did they do?");
-    await ended(c.id, 2);
+    await ended(c.id, turns.length + 1);
     const answers = store.db
       .prepare(
         "SELECT tool, answer FROM tool_calls WHERE tool IN ('agent_status', 'read_agent') ORDER BY started_at",
@@ -2206,7 +2210,7 @@ describe("the chat, on the scripted Codex", () => {
             title: "Helper",
             parent: "self",
             status: "done",
-            result: "ok:helper: ask yours",
+            result: helperSaid,
           },
           {
             agent: second,
@@ -2255,15 +2259,17 @@ describe("the chat, on the scripted Codex", () => {
     });
     const c = await newChat();
     await say(c, "Ask a helper");
-    await ended(c.id);
     const helper = ownCall("call-0");
-    await until(() =>
-      Promise.resolve(
-        agentRows().some(
-          (row) => row["id"] === helper && row["status"] === "done",
-        ),
-      ),
+    // Its question wakes Rufi AI, with the options.
+    await until(
+      async () =>
+        (await inputs()).some((input) =>
+          input.join("").startsWith(`Brief (${helper}) asks:`),
+        ) && agentRows().every((row) => row["status"] === "done"),
     );
+    const { turns } = await transcript(c.id);
+    expect(turns[1]?.cause).toEqual({ title: "Brief", about: "asked" });
+    await ended(c.id, turns.length);
     await startChat("fake", {
       scenario: {
         callsByText: {
@@ -2274,7 +2280,7 @@ describe("the chat, on the scripted Codex", () => {
       },
     });
     await say(await chatRow(c.id), "What did it ask?");
-    await ended(c.id, 2);
+    await ended(c.id, turns.length + 1);
     const [read] = (
       store.db
         .prepare("SELECT answer FROM tool_calls WHERE tool = 'read_agent'")
