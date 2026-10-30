@@ -2458,6 +2458,143 @@ describe("the chat, on the scripted Codex", () => {
     });
   });
 
+  it("stops one branch with everything under it while another runs: the branch's own result reaches Rufi AI, and the one below it wakes nobody", async () => {
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Ask two helpers": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Branch A", task: "a: hang" },
+            },
+            {
+              tool: "start_agent",
+              arguments: { title: "Branch B", task: "b: hang" },
+            },
+          ],
+          "a: hang": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Leaf A", task: "leaf: hang" },
+            },
+          ],
+          "Stop branch": [
+            {
+              tool: "stop_agent",
+              arguments: { agent: "$agent", with_children: true },
+            },
+          ],
+        },
+      },
+    });
+    const c = await newChat();
+    await say(c, "Ask two helpers");
+    const a = ownCall("call-0");
+    const b = ownCall("call-1");
+    const leaf = `${a}/1/call-0`;
+    const status = (id: string) =>
+      agentRows(`SELECT status FROM agents WHERE id = '${id}'`)[0]?.["status"];
+    await until(() =>
+      Promise.resolve([a, b, leaf].every((id) => status(id) === "running")),
+    );
+
+    await say(await chatRow(c.id), `Stop branch (agent ${a})`);
+    const results = () =>
+      agentRows(
+        "SELECT agent_id, sender, state, held FROM queue WHERE about = 'stopped' ORDER BY sender",
+      );
+    await until(() =>
+      Promise.resolve(
+        results().some(
+          (row) => row["sender"] === a && row["state"] === "delivered",
+        ),
+      ),
+    );
+    expect(status(a)).toBe("stopped");
+    expect(status(leaf)).toBe("stopped");
+    expect(status(b)).toBe("running");
+    // Branch A's result reaches Rufi AI; its leaf's stays with Branch A,
+    // kept, and starts no turn of it.
+    expect(results()).toEqual([
+      {
+        agent_id: ownCall("x").split("/")[0],
+        sender: a,
+        state: "delivered",
+        held: null,
+      },
+      { agent_id: a, sender: leaf, state: "waiting", held: "stopped" },
+    ]);
+    expect(
+      agentRows(`SELECT count(*) AS n FROM turns WHERE agent_id = '${a}'`),
+    ).toEqual([{ n: 1 }]);
+  });
+
+  it("stops everything, itself included: the user's waiting message shows Not sent and can be sent again, and no stopped agent wakes another", async () => {
+    const stopping = Promise.withResolvers<undefined>();
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Ask a helper": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Helper", task: "helper: hang" },
+            },
+          ],
+          "Stop everything": [
+            {
+              tool: "stop_agent",
+              arguments: { agent: "self", with_children: true },
+            },
+          ],
+        },
+      },
+      waitFor: (tool) => (tool === "stop_agent" ? stopping.promise : undefined),
+    });
+    const c = await newChat();
+    await say(c, "Ask a helper");
+    await ended(c.id);
+    const helper = ownCall("call-0");
+    const status = (id: string) =>
+      agentRows(`SELECT status FROM agents WHERE id = '${id}'`)[0]?.["status"];
+    await until(() => Promise.resolve(status(helper) === "running"));
+
+    await say(await chatRow(c.id), "Stop everything");
+    await until(() => Promise.resolve(admitted.includes("stop_agent")));
+    const { id } = await say(await chatRow(c.id), "And then this", "queue");
+    await until(() =>
+      Promise.resolve(
+        agentRows(`SELECT 1 FROM queue WHERE id = '${id}'`).length === 1,
+      ),
+    );
+    stopping.resolve(undefined);
+
+    await until(async () =>
+      (await waiting()).some(([, , held]) => held === "stopped"),
+    );
+    expect(await waiting()).toEqual([["And then this", "waiting", "stopped"]]);
+    await settled(c.id);
+    expect(status(helper)).toBe("stopped");
+    // The helper's result is kept, and doesn't wake Rufi AI.
+    expect(
+      agentRows(
+        `SELECT state, held FROM queue WHERE sender = '${helper}' AND about = 'stopped'`,
+      ),
+    ).toEqual([{ state: "waiting", held: "stopped" }]);
+    const { turns } = await transcript(c.id);
+    expect(turns.map((turn) => turn.status)).toEqual([
+      "completed",
+      "interrupted",
+    ]);
+
+    // Send: it goes now.
+    await chat?.queue.send(await chatRow(c.id), id);
+    await ended(c.id, 3);
+    expect((await transcript(c.id)).entries.at(-1)).toEqual([
+      "reply",
+      "ok:And then this",
+    ]);
+  });
+
   it("gives a sub-agent only the tools it was given, and its own sub-agent no more than those", async () => {
     await startChat("fake", {
       scenario: {
