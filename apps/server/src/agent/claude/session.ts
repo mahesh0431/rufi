@@ -9,8 +9,7 @@
 // off: their tools aren't given. Claude works in the AI's folder under Rufi
 // AI's lock-down (sandbox.ts). Rufi picks a new conversation's id, and
 // carries on a kept one by it. Rufi's tools come from its door, with the
-// agent's key, over Claude's control channel; a call to them leaves Claude
-// only when Rufi's own hook, run before it goes, says it may.
+// agent's key, over Claude's control channel.
 import { spawn, type ChildProcess } from "node:child_process";
 import type { UUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -18,10 +17,8 @@ import { join } from "node:path";
 import {
   query as sdkQuery,
   type EffortLevel,
-  type HookCallback,
   type Options,
   type Query,
-  type SDKControlInterruptResponse,
   type SDKMessage,
   type SDKSystemMessage,
   type SDKUserMessage,
@@ -152,11 +149,6 @@ export interface ClaudeSessionOptions {
   /** A new conversation, under the id Rufi gives it, or a kept one. */
   conversation: { start: string } | { resume: string };
   plugin: ClaudePlugin;
-  /**
-   * Whether a call to Rufi's tools may leave Claude, by Claude's id for it.
-   * It's asked in Rufi's process before the call goes; without it, none may.
-   */
-  mayCall?: (call: string) => boolean;
   query?: typeof sdkQuery;
   closeMs?: number;
 }
@@ -183,11 +175,8 @@ export interface ClaudeSession {
    * Claude can't reach them, as an agent doesn't run without its tools.
    */
   giveTools: (tools: McpRegistration) => Promise<void>;
-  /**
-   * Interrupts the running turn and cancels every message still queued;
-   * Claude's answer names the ids it cancelled.
-   */
-  interrupt: () => Promise<SDKControlInterruptResponse | undefined>;
+  /** Interrupts the running turn. */
+  interrupt: () => Promise<unknown>;
   /**
    * What Claude loaded that Rufi didn't ask for (another MCP server, a
    * CLAUDE.md, a skill or agent not Rufi's), as one line each; empty when
@@ -198,24 +187,6 @@ export interface ClaudeSession {
   /** Ends the conversation's process and everything under it. */
   close: () => Promise<void>;
 }
-
-/** Refuses a call to Rufi's tools that may not go, before it leaves Claude. */
-const rufiCalls =
-  (mayCall: ClaudeSessionOptions["mayCall"]): HookCallback =>
-  (input) =>
-    Promise.resolve(
-      input.hook_event_name === "PreToolUse" &&
-        mayCall?.(input.tool_use_id) !== true
-        ? {
-            hookSpecificOutput: {
-              hookEventName: "PreToolUse",
-              permissionDecision: "deny",
-              permissionDecisionReason:
-                "Rufi has no turn open for this call, so it didn't go.",
-            },
-          }
-        : {},
-    );
 
 /** Opens a conversation; Claude starts at once, and nothing is sent. */
 export function openClaudeSession(
@@ -242,14 +213,6 @@ export function openClaudeSession(
         type: "preset",
         preset: "claude_code",
         append: options.instructions,
-      },
-      hooks: {
-        PreToolUse: [
-          {
-            matcher: `mcp__${RUFI_TOOLS}__.*`,
-            hooks: [rufiCalls(options.mayCall)],
-          },
-        ],
       },
       model: options.model,
       ...(options.effort && { effort: options.effort }),
@@ -293,14 +256,7 @@ export function openClaudeSession(
         throw new Error(`Claude couldn't reach Rufi's tools: ${error}`);
       }
     },
-    // `cancelQueued` is in the SDK's code but not in interrupt()'s type at
-    // 0.3.312; the live check proves Claude still takes it.
-    interrupt: () =>
-      (
-        run.interrupt as (options: {
-          cancelQueued: boolean;
-        }) => Promise<SDKControlInterruptResponse | undefined>
-      )({ cancelQueued: true }),
+    interrupt: () => run.interrupt(),
     unexpected: async () => {
       const [servers, context] = await Promise.all([
         within(run.mcpServerStatus(), ASK_MS, "its MCP servers"),
