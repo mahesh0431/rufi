@@ -1,6 +1,5 @@
-// One Codex app-server child process, started as OpenAI documents for ChatGPT
-// plan use, with its own token door (token-door.ts) for its token, and
-// checked before Rufi uses it.
+// One Codex app-server child process, signed in by Codex itself from its
+// CODEX_HOME, and checked before Rufi uses it.
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { errorCode } from "../../platform/logs.ts";
@@ -8,7 +7,6 @@ import { killTree, trackGroups } from "./processes.ts";
 import type { InitializeParams } from "./protocol/InitializeParams.ts";
 import { connect, type Rpc, type RpcHandlers } from "./rpc.ts";
 import { checkSettings } from "./settings.ts";
-import { openTokenDoor } from "./token-door.ts";
 
 /** How to run Codex: the pinned binary in the app, a scripted fake in tests. */
 export interface CodexCommand {
@@ -39,10 +37,12 @@ export const DEADLINES: Deadlines = {
   toolMs: 20_000,
 };
 
+/** What Rufi says when Codex isn't signed in: how to sign in. */
+export const SIGNED_OUT =
+  "Codex isn't signed in to ChatGPT. Sign in from Settings, then try again.";
+
 export interface AppServer {
   rpc: Rpc;
-  /** When its door last gave no token because Rufi is signed out, if ever. */
-  signedOutAt: () => number | undefined;
   running: () => boolean;
   /**
    * Remembers the process groups started under app-server, so they can be
@@ -58,10 +58,6 @@ export interface StartOptions {
   /** The child's whole environment, apart from CODEX_HOME. */
   env: Readonly<Record<string, string>>;
   codexHome: string;
-  /** Its door's file: the one given to prepareCodexHome. */
-  door: string;
-  /** Rufi's sign-in, for the door. */
-  token: (validForMs: number) => Promise<string>;
   version: string;
   deadlines: Deadlines;
   handlers: RpcHandlers;
@@ -75,7 +71,6 @@ export async function startAppServer(
   options: StartOptions,
 ): Promise<AppServer> {
   options.signal?.throwIfAborted();
-  const door = await openTokenDoor(options.door, options.token);
   const child = spawn(
     options.command.file,
     [...options.command.args, "app-server", "--listen", "stdio://"],
@@ -111,7 +106,6 @@ export async function startAppServer(
       .catch((error: unknown) => {
         options.handlers.ignored("cleanup_after_exit_failed", errorCode(error));
       })
-      .then(() => door.close())
       .finally(() => {
         options.onExit(why);
         exited.resolve(undefined);
@@ -166,7 +160,6 @@ export async function startAppServer(
   }
   return {
     rpc,
-    signedOutAt: door.signedOutAt,
     running: () => running,
     track,
     stop,

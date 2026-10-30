@@ -1,6 +1,6 @@
 // Rufi's private sub-agent runner on Codex: one locked-down thread, one turn,
-// in an app-server of its own (its own CODEX_HOME and an empty working folder
-// in the data folder's sub-agents/), so it shares nothing with the chat. The
+// in an app-server of its own, with the chat's CODEX_HOME (so its sign-in)
+// and an empty working folder in the data folder's sub-agents/. The
 // thread is ephemeral (nothing saved), has Codex's own prompt with no
 // personality and Rufi's instructions as its developer instructions, no
 // environment (no shell, files or patches), no network, no
@@ -15,14 +15,16 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { errorCode, type Log } from "../../platform/logs.ts";
-import type {
-  RunSubAgent,
-  SubAgentOutcome,
-  SubAgentTask,
-  TurnEnd,
+import {
+  SignedOut,
+  type RunSubAgent,
+  type SubAgentOutcome,
+  type SubAgentTask,
+  type TurnEnd,
 } from "../runtime.ts";
 import {
   DEADLINES,
+  SIGNED_OUT,
   startAppServer,
   type AppServer,
   type CodexCommand,
@@ -33,6 +35,7 @@ import type { AccountRateLimitsUpdatedNotification } from "./protocol/v2/Account
 import type { RateLimitSnapshot } from "./protocol/v2/RateLimitSnapshot.ts";
 import type { ConfigReadResponse } from "./protocol/v2/ConfigReadResponse.ts";
 import type { ConfigRequirementsReadResponse } from "./protocol/v2/ConfigRequirementsReadResponse.ts";
+import type { GetAccountResponse } from "./protocol/v2/GetAccountResponse.ts";
 import type { ItemCompletedNotification } from "./protocol/v2/ItemCompletedNotification.ts";
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
 import type { ThreadStartParams } from "./protocol/v2/ThreadStartParams.ts";
@@ -42,17 +45,16 @@ import type { TurnCompletedNotification } from "./protocol/v2/TurnCompletedNotif
 import type { TurnStartedNotification } from "./protocol/v2/TurnStartedNotification.ts";
 import type { TurnStartResponse } from "./protocol/v2/TurnStartResponse.ts";
 import { RpcError } from "./rpc.ts";
-import { mcpServers, prepareCodexHome, RUFI_SERVER } from "./settings.ts";
-import { doorFile } from "./token-door.ts";
+import { mcpServers, RUFI_SERVER, type CodexPaths } from "./settings.ts";
 
 export interface SubAgentDeps {
-  /** Rufi's data folder; the runner uses `sub-agents/` inside it. */
+  /** Rufi's data folder; the runner works in `sub-agents/` inside it. */
   home: string;
+  /** The chat's Codex home, written for this run (CodexRuntime.codexHome). */
+  codexHome: () => Promise<CodexPaths>;
   command: CodexCommand;
   /** The child's environment, without secrets (platform/config.ts). */
   env: Readonly<Record<string, string>>;
-  /** An access token valid for at least `validForMs`. */
-  token: (validForMs: number) => Promise<string>;
   version: string;
   deadlines?: Partial<Deadlines>;
   log?: Log;
@@ -152,14 +154,10 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
       };
     }
     const started = Date.now();
-    const home = join(deps.home, "sub-agents");
-    const door = doorFile(deps.home, "reader");
-    const paths = await prepareCodexHome(home, { door });
+    const paths = await deps.codexHome();
     // Its working folder, empty: with no environment it can't look in it.
-    const cwd = join(home, "workspace");
+    const cwd = join(deps.home, "sub-agents", "workspace");
     await mkdir(cwd, { recursive: true, mode: 0o700 });
-    // Signed out, the reading waits; Codex gets its tokens from its door.
-    await deps.token(60_000);
     signal?.throwIfAborted();
 
     let compactions = 0;
@@ -238,8 +236,6 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
         command: deps.command,
         env: { ...deps.env, HOME: paths.processHome },
         codexHome: paths.codexHome,
-        door,
-        token: deps.token,
         version: deps.version,
         deadlines,
         ...(signal && { signal }),
@@ -280,8 +276,7 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
             } else if (method === "turn/completed") {
               const { turn } = params as TurnCompletedNotification;
               if (turn.id === turnId) {
-                const signedOut = (app?.signedOutAt() ?? -1) >= started;
-                ended.resolve(stopped ?? endOf(turn, limits, signedOut));
+                ended.resolve(stopped ?? endOf(turn, limits));
               }
             }
           },
@@ -300,7 +295,14 @@ export function subAgentRunner(deps: SubAgentDeps): RunSubAgent {
           );
         },
       });
-      // A separate CODEX_HOME still inherits system/managed configuration.
+      // Signed out, the reading fails with how to sign in.
+      const { account } = await app.rpc.request<GetAccountResponse>(
+        "account/read",
+        {},
+        deadlines.requestMs,
+      );
+      if (account === null) throw new SignedOut(SIGNED_OUT);
+      // A CODEX_HOME still inherits system/managed configuration.
       // Ask Codex for the layers the reader's cwd will actually load, rather
       // than parsing files or relying only on its instruction-file list.
       const config = await app.rpc.request<ConfigReadResponse>(

@@ -157,6 +157,9 @@ export class NotReloaded extends NotOpened {
  */
 export class NotSent extends Error {}
 
+/** The provider says it isn't signed in: only signing in again ends it. */
+export class SignedOut extends Error {}
+
 export interface Model {
   id: string;
   name: string;

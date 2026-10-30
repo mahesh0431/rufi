@@ -5,19 +5,21 @@
 // a signal that stops it, and where its progress goes. Each run uses the
 // model and effort chosen in Settings when it starts. Only a reader turn
 // that completed normally finishes a reading. A run that failed for a
-// passing reason (also a sign-in ChatGPT can't renew just now) is tried
-// again by itself, up to three times, each after a longer wait, inside the
-// call; an account problem (signed out, a sign-in that has ended, a usage
-// limit), Rufi's deadline or a fourth failure ends the reading as failed,
+// passing reason is tried again by itself, up to three times, each after a
+// longer wait, inside the call; an account problem (signed out, a sign-in
+// that has ended, a usage limit), Rufi's deadline or a fourth failure ends the reading as failed,
 // with the reason, its copies kept. A stop leaves the job to its caller,
 // which fails it with its copies kept. The reader gets its two tools from
 // Rufi's MCP server, with a key for one attempt.
 import { Effort } from "@rufi/contracts";
 import { Option, Schema } from "effect";
-import { ChatGptError } from "../agent/chatgpt/openai.ts";
 import { callOf } from "../agent/codex/events.ts";
 import { SUB_AGENT_MODELS } from "../agent/codex/subagent.ts";
-import type { RunSubAgent, SubAgentOutcome } from "../agent/runtime.ts";
+import {
+  SignedOut,
+  type RunSubAgent,
+  type SubAgentOutcome,
+} from "../agent/runtime.ts";
 import type { Run } from "../core/documents/notebook.ts";
 import {
   READER_EFFORT,
@@ -203,18 +205,9 @@ export function reader(deps: ReaderDeps) {
       close();
       if (signal.aborted || deleted.aborted) return ended();
       log("reader.failed", { error: errorCode(error) });
-      if (
-        error instanceof ChatGptError &&
-        (error.code === "not_signed_in" ||
-          error.code === "sign_in_again" ||
-          error.code === "plan_use_off")
-      ) {
-        // The sign-in needs the person: its reason, in Rufi's words.
+      if (error instanceof SignedOut) {
+        // The sign-in needs the person: how to sign in.
         return { ended: "failed", why: error.message, run };
-      }
-      if (error instanceof ChatGptError && error.code === "temporary") {
-        // ChatGPT can't renew the sign-in now: a passing reason.
-        return { ended: "passing", why: error.message, run };
       }
       return { ended: "passing", why: "Rufi couldn't start the AI", run };
     }

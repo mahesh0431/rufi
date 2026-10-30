@@ -2,9 +2,10 @@
 // each working in the AI's folder under Rufi's permission profile (it writes
 // only there, reads anything but the record, and uses the network; ADR
 // 0016), with Rufi's skills in its CODEX_HOME. Rufi starts each reply with turn/start
-// when none runs; Codex's own queue is not used (Rufi keeps what waits). A
-// new app-server starts when the access token changes and no reply is
-// running. Each thread gets Rufi's tools from Rufi's MCP server, with its own
+// when none runs; Codex's own queue is not used (Rufi keeps what waits).
+// Codex signs in by itself, with its own ChatGPT login in CODEX_HOME, and
+// renews it as it goes; Rufi asks it whether it is signed in before it sends
+// anything, and starts its sign-in from the screens. Each thread gets Rufi's tools from Rufi's MCP server, with its own
 // key (settings.ts); Codex calls the server itself, and Rufi binds each call
 // to the reply it was made in (activeTurn).
 import { setTimeout as sleep } from "node:timers/promises";
@@ -12,6 +13,7 @@ import {
   NotOpened,
   NotReloaded,
   NotSent,
+  SignedOut,
   Stopped,
   ThreadNotFound,
   type AgentEvent,
@@ -25,6 +27,7 @@ import {
 } from "../runtime.ts";
 import {
   DEADLINES,
+  SIGNED_OUT,
   startAppServer,
   type AppServer,
   type CodexCommand,
@@ -32,10 +35,13 @@ import {
 } from "./appserver.ts";
 import { activityOf, endOf, messageText } from "./events.ts";
 import type { JsonValue } from "./protocol/serde_json/JsonValue.ts";
+import type { AccountLoginCompletedNotification } from "./protocol/v2/AccountLoginCompletedNotification.ts";
 import type { AccountRateLimitsUpdatedNotification } from "./protocol/v2/AccountRateLimitsUpdatedNotification.ts";
 import type { AgentMessageDeltaNotification } from "./protocol/v2/AgentMessageDeltaNotification.ts";
 import type { ItemCompletedNotification } from "./protocol/v2/ItemCompletedNotification.ts";
+import type { GetAccountResponse } from "./protocol/v2/GetAccountResponse.ts";
 import type { ItemStartedNotification } from "./protocol/v2/ItemStartedNotification.ts";
+import type { LoginAccountResponse } from "./protocol/v2/LoginAccountResponse.ts";
 import type { ModelListResponse } from "./protocol/v2/ModelListResponse.ts";
 import type { RateLimitSnapshot } from "./protocol/v2/RateLimitSnapshot.ts";
 import type { ReasoningSummaryTextDeltaNotification } from "./protocol/v2/ReasoningSummaryTextDeltaNotification.ts";
@@ -53,8 +59,12 @@ import type { TurnStartedNotification } from "./protocol/v2/TurnStartedNotificat
 import type { UserInput } from "./protocol/v2/UserInput.ts";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import { RpcError } from "./rpc.ts";
-import { AI_PROFILE, mcpServers, prepareCodexHome } from "./settings.ts";
-import { doorFile } from "./token-door.ts";
+import {
+  AI_PROFILE,
+  mcpServers,
+  prepareCodexHome,
+  type CodexPaths,
+} from "./settings.ts";
 
 export interface CodexDeps {
   /** Rufi's data folder; Codex gets `codex/` inside it. */
@@ -66,11 +76,6 @@ export interface CodexDeps {
   command: CodexCommand;
   /** The child's environment, without secrets (platform/config.ts). */
   env: Readonly<Record<string, string>>;
-  /**
-   * An access token valid for at least `validForMs`: for Codex's token door,
-   * and to check the sign-in before Rufi sends anything.
-   */
-  token: (validForMs: number) => Promise<string>;
   version: string;
   deadlines?: Partial<Deadlines>;
   /** Where events go. */
@@ -79,8 +84,6 @@ export interface CodexDeps {
   log?: Log;
 }
 
-/** The sign-in check before Rufi sends anything: a token valid this long. */
-const SIGNED_IN_MS = 60_000;
 /** How often Rufi notes the process groups of running commands. */
 const TRACK_EVERY_MS = 500;
 
@@ -123,8 +126,28 @@ interface CodexModel extends Model {
   defaultEffort: string;
 }
 
+/** Codex's sign-in as it reports it: the account's email, when it gives one. */
+export interface CodexAccount {
+  signedIn: boolean;
+  email: string | null;
+}
+
 /** What the Codex adapter needs beyond what the chat uses. */
 export interface CodexRuntime extends AgentRuntime {
+  /**
+   * Codex's home, written once for this run: the chat's app-server and the
+   * reader's use it, and share its sign-in.
+   */
+  codexHome: () => Promise<CodexPaths>;
+  /** Whether Codex is signed in, as it says. */
+  account: () => Promise<CodexAccount>;
+  /**
+   * Starts Codex's own ChatGPT sign-in: the link to its page in the browser,
+   * and once it has finished. Aborting `signal` cancels it.
+   */
+  signIn: (
+    signal: AbortSignal,
+  ) => Promise<{ link: string; done: Promise<void> }>;
   /** The models Codex offers now, with their efforts. */
   catalog: (signal?: AbortSignal) => Promise<CodexModel[]>;
   /** Codex's usage limits as it last reported them. */
@@ -158,6 +181,15 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
   const turns = new Map<string, Running>(); // the running turn of each thread
   /** Threads where a Stop came during a send: the reply it starts is stopped. */
   const stopNext = new Set<string>();
+  /** Codex's sign-ins under way, by Codex's id for each. */
+  const logins = new Map<string, PromiseWithResolvers<void>>();
+  let home: Promise<CodexPaths> | undefined;
+  const codexHome = () =>
+    (home ??= prepareCodexHome(deps.home, {
+      userHome: deps.env["HOME"],
+      sandbox: deps.sandbox,
+      skills: deps.skills,
+    }));
   let limits: RateLimitSnapshot | undefined;
   let tracking: NodeJS.Timeout | undefined;
 
@@ -165,49 +197,45 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
     app.rpc.request<T>(method, params, deadlines.requestMs);
 
   /**
-   * Codex, once the sign-in holds: signed out, nothing is sent. Codex gets
-   * its tokens from its door, renewed as it goes, so a running app-server
-   * is kept. The sign-in is always awaited to the end (a renewed token must
-   * be saved); after it, a Stop ends the wait. Thread preparation and its
-   * hand-over share a signal: a new thread has no saved rollout to resume if
-   * a second decision replaces its server.
+   * Codex, once it says it is signed in: signed out, nothing is sent. Thread
+   * preparation and its hand-over share a signal: a new thread has no saved
+   * rollout to resume if a second decision replaces its server.
    */
   async function ready(signal?: AbortSignal): Promise<AppServer> {
-    if (lifetime.signal.aborted) throw new Error("Codex is closed.");
     const previous = signal && prepared.get(signal);
     if (previous === server && previous?.running()) {
       if (signal?.aborted) throw new Stopped();
       return previous;
     }
-    await deps.token(SIGNED_IN_MS);
+    const app = await up(signal);
+    const { account } = await request<GetAccountResponse>(
+      app,
+      "account/read",
+      {},
+    );
+    if (account === null) throw new SignedOut(SIGNED_OUT);
     if (signal?.aborted) throw new Stopped();
-    if (server?.running()) {
-      if (signal) prepared.set(signal, server);
-      return server;
-    }
-    starting ??= start().finally(() => {
-      starting = undefined;
-    });
-    const app = await abortable(starting, signal);
     if (signal) prepared.set(signal, app);
     return app;
   }
 
+  /** The running app-server, started when there is none. */
+  async function up(signal?: AbortSignal): Promise<AppServer> {
+    if (lifetime.signal.aborted) throw new Error("Codex is closed.");
+    if (server?.running()) return server;
+    starting ??= start().finally(() => {
+      starting = undefined;
+    });
+    return abortable(starting, signal);
+  }
+
   async function start(): Promise<AppServer> {
     await shutDown();
-    const door = doorFile(deps.home, "chat");
-    const paths = await prepareCodexHome(deps.home, {
-      door,
-      userHome: deps.env["HOME"],
-      sandbox: deps.sandbox,
-      skills: deps.skills,
-    });
+    const paths = await codexHome();
     const started = await startAppServer({
       command: deps.command,
       env: { ...deps.env, HOME: paths.processHome },
       codexHome: paths.codexHome,
-      door,
-      token: deps.token,
       version: deps.version,
       deadlines,
       signal: lifetime.signal,
@@ -220,6 +248,10 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
       },
       onExit: (why) => {
         log("codex.exited", { code: errorCode(why) });
+        for (const [id, login] of logins) {
+          logins.delete(id);
+          login.reject(new Error("Codex stopped before the sign-in finished."));
+        }
         // Rufi clears `server` before ending one itself; only a crash gets here.
         if (!server || server.running()) return;
         server = undefined;
@@ -364,6 +396,16 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
           ...(params as AccountRateLimitsUpdatedNotification).rateLimits,
         };
         return;
+      case "account/login/completed": {
+        const { loginId, success, error } =
+          params as AccountLoginCompletedNotification;
+        const login = loginId === null ? undefined : logins.get(loginId);
+        if (!login || loginId === null) return;
+        logins.delete(loginId);
+        if (success) login.resolve();
+        else login.reject(new Error(error ?? "The sign-in didn't finish."));
+        return;
+      }
       case "thread/closed":
         if (typeof threadId === "string") {
           loaded.delete(threadId);
@@ -409,11 +451,7 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
       const stopped = running.stopping && turn.status === "completed";
       finish(
         running,
-        endOf(
-          stopped ? { ...turn, status: "interrupted" } : turn,
-          limits,
-          (server?.signedOutAt() ?? -1) >= running.startedAt,
-        ),
+        endOf(stopped ? { ...turn, status: "interrupted" } : turn, limits),
       );
       return;
     }
@@ -865,6 +903,43 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
 
   return {
     provider: "codex",
+
+    codexHome,
+
+    account: async () => {
+      const { account } = await request<GetAccountResponse>(
+        await up(),
+        "account/read",
+        {},
+      );
+      return {
+        signedIn: account !== null,
+        email: account?.type === "chatgpt" ? account.email : null,
+      };
+    },
+
+    signIn: async (signal) => {
+      const app = await up(signal);
+      const started = await request<LoginAccountResponse>(
+        app,
+        "account/login/start",
+        { type: "chatgpt" },
+      );
+      if (started.type !== "chatgpt") {
+        throw new Error("Codex didn't start its ChatGPT sign-in.");
+      }
+      const { loginId } = started;
+      const login = Promise.withResolvers<void>();
+      logins.set(loginId, login);
+      signal.addEventListener("abort", () => {
+        if (!logins.delete(loginId)) return;
+        login.reject(new Error("The sign-in didn't finish."));
+        void request(app, "account/login/cancel", { loginId }).catch(
+          () => undefined,
+        );
+      });
+      return { link: started.authUrl, done: login.promise };
+    },
 
     models: async (signal) =>
       (await catalog(signal)).map(({ id, name }) => ({ id, name })),
