@@ -11,7 +11,11 @@ import {
   type NewAgent,
   type Sent,
 } from "../src/agents.ts";
-import type { ProviderAdapter, ProviderEvent } from "../src/provider.ts";
+import type {
+  ProviderAdapter,
+  ProviderEvent,
+  SteerOutcome,
+} from "../src/provider.ts";
 import { openAgentStore, type AgentStore } from "../src/store.ts";
 import { ANSWER } from "./contract.ts";
 import { fakeProvider, type FakeProvider } from "./fake-provider.ts";
@@ -296,6 +300,92 @@ describe("a turn the provider began by itself", () => {
 });
 
 describe("Stop", () => {
+  it("after the turn ended asks the provider to settle a steer it still holds", async () => {
+    agents.create(ASHA);
+    agents.admit(ASHA.id);
+    fake.script.turn = "runs";
+    await agents.start(ASHA.id, message("msg-1"));
+    // The provider holds the steer, and the turn ends without it.
+    fake.script.steer = "holds_past_end";
+    const steered = agents.steer(ASHA.id, message("msg-2"));
+    await vi.waitFor(() => {
+      expect(agents.get(ASHA.id)?.status).toBe("done");
+    });
+
+    await agents.stop(ASHA.id, "person");
+
+    expect(await steered).toMatchObject({ status: "not_delivered" });
+    expect(rows("SELECT id, state FROM queue ORDER BY position")).toEqual([
+      { id: "msg-1", state: "delivered" },
+      { id: "msg-2", state: "waiting" },
+    ]);
+  });
+
+  it("closes and stops a turn the provider begins with a held steer as it settles it", async () => {
+    let deliver: (event: ProviderEvent) => void = () => undefined;
+    let answer: (outcome: SteerOutcome) => void = () => undefined;
+    const stopped: { turn: string; status: unknown }[] = [];
+    agents = run({
+      ...fake.adapter,
+      open: async (options) => {
+        deliver = options.onEvent;
+        const conversation = await fake.adapter.open(options);
+        return {
+          ...conversation,
+          // The provider holds every steer.
+          steer: () =>
+            new Promise<SteerOutcome>((resolve) => {
+              answer = resolve;
+            }),
+          stop: (turn) => {
+            stopped.push({
+              turn,
+              status: rows(
+                "SELECT status FROM turns WHERE provider_turn = ?",
+                turn,
+              )[0]?.["status"],
+            });
+            if (turn === "turn-held") {
+              deliver({ type: "turnEnded", turn, end: { status: "stopped" } });
+            } else {
+              // It took the held steer as a turn of its own just then.
+              deliver({
+                type: "turnStarted",
+                turn: "turn-held",
+                inputs: ["msg-2"],
+              });
+              answer({ status: "next_turn", turn: "turn-held" });
+            }
+            return Promise.resolve();
+          },
+        };
+      },
+    });
+    agents.create(ASHA);
+    agents.admit(ASHA.id);
+    fake.script.turn = "runs";
+    await agents.start(ASHA.id, message("msg-1"));
+    const first = latestTurn(ASHA.id);
+    const steered = agents.steer(ASHA.id, message("msg-2"));
+    fake.end(ledger[0]?.ref ?? "");
+    await vi.waitFor(() => {
+      expect(agents.get(ASHA.id)?.status).toBe("done");
+    });
+
+    await agents.stop(ASHA.id, "person");
+
+    expect(await steered).toEqual({ status: "next_turn", turn: "turn-held" });
+    // Closed to calls from the moment it was admitted.
+    expect(stopped).toEqual([
+      { turn: first.ref, status: "done" },
+      { turn: "turn-held", status: "stopping" },
+    ]);
+    expect(agents.get(ASHA.id)).toMatchObject({
+      status: "stopped",
+      stoppedBy: "person",
+    });
+  });
+
   it("while a start is still opening keeps it from the provider", async () => {
     const opened = Promise.withResolvers<undefined>();
     agents = run(fake.adapter, {
