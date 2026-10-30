@@ -1038,9 +1038,8 @@ export function chat(deps: ChatDeps) {
     /**
      * A Rufi event in a person's chat: its producer's outcome (`write`), the
      * line and, when it asks the AI, its note in the queue, in one
-     * transaction. The note goes
-     * in its turn, or with the person's next message while the chat is
-     * paused; it is never the person's words.
+     * transaction. The note goes in a turn of its own, in its place in the
+     * queue; it is never the person's words.
      */
     event: async (
       personId: string,

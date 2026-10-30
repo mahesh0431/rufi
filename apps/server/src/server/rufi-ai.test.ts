@@ -331,7 +331,8 @@ it("saves a steer the provider confirms after its turn ended under that turn; th
 
 it("sends a waiting message with its words as they are when it goes: an edit before Rufi's claim goes, one after is refused", async () => {
   const fake = fakeProvider({ id: "codex", script: { turn: "runs" } });
-  let held: PromiseWithResolvers<undefined> | undefined;
+  const held = Promise.withResolvers<undefined>();
+  let gated = false;
   const rufi = await start({
     ...fake.adapter,
     open: async (options) => {
@@ -340,7 +341,7 @@ it("sends a waiting message with its words as they are when it goes: an edit bef
         ...conversation,
         // A start can wait at the provider, after Rufi's claim.
         startTurn: async (turn) => {
-          await held?.promise;
+          if (gated) await held.promise;
           return conversation.startTurn(turn);
         },
       };
@@ -351,7 +352,7 @@ it("sends a waiting message with its words as they are when it goes: an edit bef
   await rufi.running();
   await rufi.send("message-1", "Is my TSH high?");
   await rufi.edit("message-1", "Is my fictional TSH high?");
-  held = Promise.withResolvers();
+  gated = true;
   const thread = (await rufi.row()).threadId ?? "";
   fake.end(thread);
   await vi.waitFor(async () => {

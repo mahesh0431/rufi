@@ -47,12 +47,11 @@ export interface ChatRow extends Chat {
   /** The model the thread started with; each turn keeps its own. */
   threadModel: string | null;
   /**
-   * The version of the rules the thread was last told (core/chat/
+   * The version of the rules the thread started with (core/chat/
    * instructions.ts); the column's name is from when it named the tools.
+   * Rules told to it since are known while Rufi runs (server/rufi-ai.ts).
    */
   threadTools: string | null;
-  /** Nothing goes to the AI until the person sends (core/chat/queue.ts). */
-  paused: "stopped" | "restarted" | null;
 }
 
 /** What one write changed, for the live stream. */
@@ -279,7 +278,6 @@ const toChat = (row: Selectable<Tables["chats"]>): ChatRow => ({
   threadProvider: row.thread_provider,
   threadModel: row.thread_model,
   threadTools: row.thread_tools,
-  paused: row.paused as ChatRow["paused"],
 });
 
 /** Entries as the screens get them, with replies and reasoning by their turn's state. */

@@ -2527,7 +2527,6 @@ describe("When the AI's thread doesn't open", () => {
     await startChat("fake", { scenario: { profile: ":workspace" } });
     await sleep(100);
     expect(await held()).toEqual(before);
-    expect((await chatRow()).paused).toBeNull();
   });
 
   it("starts one new thread on New thread, with the earlier chat, and sends the message once", async () => {

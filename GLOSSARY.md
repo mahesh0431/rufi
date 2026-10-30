@@ -184,11 +184,11 @@ A message sent while the AI is replying, passed into that reply; the AI carries 
 _Avoid_: nudge, interrupt
 
 **Queue**:
-What waits to go to the AI, kept by Rufi with the chat: your messages and Rufi's notes about **Rufi events**. Rufi gives the AI one turn's worth at a time, and never the same message twice. It survives a restart and a model change. Shown above the box as the **waiting messages**.
+What waits to go to the AI, kept by Rufi with the chat: your messages and Rufi's notes about **Rufi events**. Rufi gives the AI one at a time, each in a turn of its own, and never the same message twice. It survives a restart and a model change. Shown above the box as the **waiting messages**.
 _Avoid_: inbox, outbox
 
 **Waiting messages**:
-What the queue holds, shown above the box; you can edit, reorder or remove your messages there. A held one says why (it came from a backup, the AI couldn't take it, or Rufi isn't sure it reached the AI) and goes only when you send it. A message that brings new files waits for a reply of its own, which reads them first; so does anything sent while Rufi's reader copies. A message whose reply ended in Rufi's part is not listed: its reply has **Retry**. Signed out, a send takes nothing: the text and chips stay in the box. After a Stop, or when Rufi starts again with messages waiting, they wait until you send a message or click **Send now**.
+What the queue holds, shown above the box; you can edit, reorder or remove your messages there. A held one says why (it came from a backup, the AI couldn't take it, or Rufi isn't sure it reached the AI) and goes only when you send it. A message that brings new files waits for a reply of its own, which reads them first; so does anything sent while Rufi's reader copies. A message whose reply ended in Rufi's part is not listed: its reply has **Retry**. Signed out, a send takes nothing: the text and chips stay in the box. After a Stop, and when Rufi starts again, what waits goes on, in order; a message whose start a Stop cut off is held, **Not sent: stopped.**
 _Avoid_: backlog, pending messages
 
 **Rufi event**:

@@ -202,9 +202,7 @@ While the AI replies, the stop button (the square) is where the send button was.
 
 If you click Stop, what the AI did so far stays in Activity, and the folded line says how many steps stopped. If Rufi closed before the reply finished, its Activity shows no time, because Rufi doesn't know when the reply ended.
 
-**Stop.** The stop button (the square, where the send button was) ends the reply now, in every size of the chat. What the AI wrote so far stays.
-
-**Stop.** Stop ends the reply, and only the reply: your waiting messages go next, in order. A message Rufi was just giving the AI when you clicked Stop doesn't go: it waits with "Not sent: stopped.", for you to **Send** or remove.
+**Stop.** The stop button (the square, where the send button was) ends the reply now, in every size of the chat. What the AI wrote so far stays. Stop ends only the reply: your waiting messages go next, in order. A message Rufi was just giving the AI when you clicked Stop doesn't go: it waits with "Not sent: stopped.", for you to **Send** or remove.
 
 **Rufi's reader.** When your message brings files, your reply starts with Rufi's part: Rufi's reader copies the pages before the AI starts. Each file is a step in Activity, **Rufi's reader · thyrocare-aug.pdf**, with how far it is. Stop ends the reading too. The AI starts when all files are copied, and answers your message in the same reply (see [Documents](documents.md#while-a-document-is-read)). If the reading doesn't finish, the reply ends before the AI, with the reason and **Retry** (see [Documents](documents.md#when-a-reading-stops)).
 
