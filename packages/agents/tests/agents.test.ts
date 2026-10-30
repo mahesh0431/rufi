@@ -17,6 +17,7 @@ import type {
   Conversation,
   ProviderAdapter,
   ProviderEvent,
+  SteerOutcome,
 } from "../src/provider.ts";
 import { openAgentStore, type AgentStore } from "../src/store.ts";
 import { ANSWER } from "./contract.ts";
@@ -458,6 +459,30 @@ describe("the queue", () => {
     });
     expect(received()).toEqual(["note-1"]);
   });
+
+  it("holds a start the provider refuses, with its words; released, the same input goes once", async () => {
+    asha();
+    fake.script.start = "refuses";
+    agents.send(ASHA.id, note("note-1"));
+    await until(() => {
+      expect(rows("SELECT state, held, held_text FROM queue")).toEqual([
+        {
+          state: "waiting",
+          held: "failed",
+          held_text: "The fake provider refused it.",
+        },
+      ]);
+    });
+
+    fake.script.start = "takes";
+    // Sent again by its id, it is the same input.
+    agents.send(ASHA.id, note("note-1"));
+    agents.release(["note-1"]);
+    await until(() => {
+      expect(states()["note-1"]).toBe("delivered");
+    });
+    expect(received()).toEqual(["note-1"]);
+  });
 });
 
 describe("a hand-over", () => {
@@ -657,6 +682,76 @@ describe("a turn the provider began by itself", () => {
 });
 
 describe("Stop", () => {
+  it("closes and stops a turn the provider begins with a held steer as it settles it", async () => {
+    let deliver: (event: ProviderEvent) => void = () => undefined;
+    let answer: (outcome: SteerOutcome) => void = () => undefined;
+    const stopped: { turn: string; status: unknown }[] = [];
+    agents = await run({
+      ...fake.adapter,
+      open: async (options) => {
+        deliver = options.onEvent;
+        const conversation = await fake.adapter.open(options);
+        return {
+          ...conversation,
+          // The provider holds every steer.
+          steer: () =>
+            new Promise<SteerOutcome>((resolve) => {
+              answer = resolve;
+            }),
+          stop: (turn) => {
+            stopped.push({
+              turn,
+              status: rows(
+                "SELECT status FROM turns WHERE provider_turn = ?",
+                turn,
+              )[0]?.["status"],
+            });
+            if (turn === "turn-held") {
+              deliver({ type: "turnEnded", turn, end: { status: "stopped" } });
+            } else {
+              // It took the held steer as a turn of its own just then.
+              deliver({
+                type: "turnStarted",
+                turn: "turn-held",
+                inputs: ["note-2"],
+              });
+              answer({ status: "next_turn", turn: "turn-held" });
+            }
+            return Promise.resolve();
+          },
+        };
+      },
+    });
+    asha();
+    fake.script.turn = "runs";
+    agents.send(ASHA.id, note("note-1"));
+    await running();
+    const first = latestTurn(ASHA.id);
+    agents.send(ASHA.id, note("note-2", "steer"));
+    await until(() => {
+      expect(states()["note-2"]).toBe("handing_over");
+    });
+    fake.end(ledger[0]?.ref ?? "");
+    await until(() => {
+      expect(agents.get(ASHA.id)?.status).toBe("done");
+    });
+
+    await agents.stop(ASHA.id, "person");
+
+    // Closed to calls from the moment it was admitted.
+    expect(stopped).toEqual([
+      { turn: first.ref, status: "done" },
+      { turn: "turn-held", status: "stopping" },
+    ]);
+    expect(agents.get(ASHA.id)).toMatchObject({
+      status: "stopped",
+      stoppedBy: "person",
+    });
+    expect(
+      rows("SELECT turn_id FROM queue WHERE id = 'note-2'")[0]?.["turn_id"],
+    ).toBe(latestTurn(ASHA.id).id);
+  });
+
   it("while a start is still opening keeps it from the provider and drops its input; what waits goes on", async () => {
     const asked = Promise.withResolvers<undefined>();
     const opened = Promise.withResolvers<undefined>();

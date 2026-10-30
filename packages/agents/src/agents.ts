@@ -216,7 +216,7 @@ interface Live {
   current?: { turn: string; ref: string };
   /** The provider's reference for the turn that ended last. */
   last?: string;
-  /** Who asked to stop the current turn. */
+  /** Who asked to stop the current turn, or the steers held past the last. */
   stopBy?: string;
   /** Calls waiting for a turn's admission, by the provider's reference. */
   waiting: Map<string, (() => void)[]>;
@@ -558,7 +558,10 @@ export function createAgents(options: {
       live.starting && inputs.includes(live.starting.input)
         ? live.starting
         : undefined;
-    const closed = starting?.stopBy !== undefined;
+    // A turn begun while a Stop is under way is closed from the start.
+    const closed = starting
+      ? starting.stopBy !== undefined
+      : live.stopBy !== undefined;
     const turn = store.change(({ event }) => {
       const at = now();
       let id = starting?.turn;
@@ -567,8 +570,17 @@ export function createAgents(options: {
         const agent = row(live.id);
         if (!agent) throw new Error(`No agent ${live.id}.`);
         db.prepare(
-          "INSERT INTO turns (id, agent_id, conversation, provider_turn, model, effort, status, started_at) VALUES (?, ?, ?, ?, ?, ?, 'running', ?)",
-        ).run(id, live.id, live.number, ref, agent.model, agent.effort, at);
+          "INSERT INTO turns (id, agent_id, conversation, provider_turn, model, effort, status, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ).run(
+          id,
+          live.id,
+          live.number,
+          ref,
+          agent.model,
+          agent.effort,
+          closed ? "stopping" : "running",
+          at,
+        );
       } else {
         db.prepare(
           "UPDATE turns SET provider_turn = ?, status = ? WHERE id = ?",
@@ -692,6 +704,14 @@ export function createAgents(options: {
     pump(live.id);
   }
 
+  /** An input of the agent's is with the provider, its outcome not known. */
+  const handingOver = (agent: string) =>
+    db
+      .prepare(
+        "SELECT 1 FROM queue WHERE agent_id = ? AND state = 'handing_over' LIMIT 1",
+      )
+      .get(agent) !== undefined;
+
   /** Closes a turn to new calls: its stop is under way. */
   function closeTurn(live: Live, turn: string): void {
     store.change(({ event }) => {
@@ -714,12 +734,6 @@ export function createAgents(options: {
         | { state: string }
         | undefined
     )?.state;
-  const handingOver = (agent: string) =>
-    db
-      .prepare(
-        "SELECT 1 FROM queue WHERE agent_id = ? AND state = 'handing_over' LIMIT 1",
-      )
-      .get(agent) !== undefined;
 
   /**
    * Moves an input on from the state it is in, with its event, and drops
@@ -1231,16 +1245,31 @@ export function createAgents(options: {
         }
         const { current, conversation } = live;
         if (!conversation) return;
+        let ref: string;
         if (current) {
           if (live.stopBy === undefined) {
             live.stopBy = by;
             closeTurn(live, current.turn);
           }
-          await conversation.stop(current.ref);
+          ref = current.ref;
         } else if (live.last !== undefined && handingOver(id)) {
           // Its turn has ended, but steers handed over for it may still be
           // taken: the provider settles them now.
-          await conversation.stop(live.last);
+          live.stopBy ??= by;
+          ref = live.last;
+        } else {
+          return;
+        }
+        try {
+          await conversation.stop(ref);
+          // A turn the provider began meanwhile with a steer it held was
+          // closed when admitted, and is stopped too.
+          const started = live.current;
+          if (started && started.ref !== ref) {
+            await conversation.stop(started.ref);
+          }
+        } finally {
+          if (!live.current) live.stopBy = undefined;
         }
       } finally {
         // What waits for the agent goes on.
