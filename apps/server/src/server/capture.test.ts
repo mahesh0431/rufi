@@ -43,7 +43,8 @@ import { SKILLS } from "../core/skills/skills.ts";
 import type { ToolSpec } from "../core/tools/registry.ts";
 import { chatCaller, forAgent } from "../core/tools/tools.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
-import { agentSetup, aiSandbox } from "./core.ts";
+import { tempPath, tempPattern } from "../platform/files.ts";
+import { agentSetup, aiSandbox, coreFile } from "./core.ts";
 import { doorFile } from "../agent/codex/token-door.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
 
@@ -424,7 +425,11 @@ describe("What the AI is given, on the pinned Codex", () => {
       expect(permissions).toContain("Network access is enabled.");
       expect(permissions).toContain(real(sandbox.folder));
       for (const path of sandbox.unreadable) {
-        expect(permissions).toContain(`- path \`${real(path)}\``);
+        expect(permissions).toContain(
+          path.includes("*")
+            ? `- glob \`${path}\``
+            : `- path \`${real(path)}\``,
+        );
       }
       const environment = (model?.requests[0]?.input ?? [])
         .flatMap((item) => item.content ?? [])
@@ -754,6 +759,9 @@ describe.runIf(process.platform === "darwin")(
           await mkdir(join(home, "backups"), { recursive: true });
           await writeFile(join(home, "backups", "copy.sqlite"), "a copy");
           await writeFile(join(home, "core.json"), '{"launcher":"secret"}');
+          // Its temp copy, as it is written.
+          const copy = tempPath(coreFile(home));
+          await writeFile(copy, '{"launcher":"secret"}');
           // The chat's Codex replaces its door's file as it starts.
           const doors = [doorFile(home, "chat"), doorFile(home, "reader")];
           for (const door of doors) {
@@ -769,7 +777,9 @@ describe.runIf(process.platform === "darwin")(
           // Each one that is there now; a journal isn't, in WAL mode.
           const journal = `${databasePath(home)}-journal`;
           const denied = [
-            ...unreadable,
+            ...unreadable.map((path) =>
+              path === tempPattern(coreFile(home)) ? copy : path,
+            ),
             join(home, "backups", "copy.sqlite"),
             ...doors,
           ]
