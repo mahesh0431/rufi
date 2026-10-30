@@ -377,8 +377,11 @@ export const Sent = Schema.Struct({ id: Schema.String, draft: Draft });
 export const Model = Schema.Struct({ id: Schema.String, name: Schema.String });
 export type Model = typeof Model.Type;
 
-/** The allowed models offered now. */
-export const Models = Schema.Struct({ models: Schema.Array(Model) });
+/** The shortlist's models offered now, and every model offered now. */
+export const Models = Schema.Struct({
+  models: Schema.Array(Model),
+  offered: Schema.Array(Model),
+});
 
 /** The page's tab proof, for the session's header. */
 export const SessionProof = Schema.Struct({ proof: Schema.String });
@@ -429,6 +432,8 @@ export const Settings = Schema.Struct({
   ),
   /** The regions Rufi knows, to choose from. */
   regions: Schema.Array(Region),
+  /** The models Rufi's AI and its agents may run on, by id, in order. */
+  models: Schema.Array(Schema.String),
   /** The document reader's model and effort, and the models it can run on. */
   reader: Schema.Struct({
     model: Schema.String,
@@ -523,6 +528,8 @@ export const SaveSettings = Schema.Struct({
   whileReplying: Schema.optionalKey(WhileReplying),
   /** A region code Rufi knows, such as "IN"; null clears it. */
   emergencyRegion: Schema.optionalKey(Schema.NullOr(Line(10))),
+  /** The whole shortlist, in order. */
+  models: Schema.optionalKey(Schema.Array(Id)),
   /** The document reader's model: one of the models it can run on. */
   readerModel: Schema.optionalKey(Id),
   readerEffort: Schema.optionalKey(Effort),

@@ -38,7 +38,7 @@ import type { ChatGptDeps } from "../src/agent/chatgpt/openai.ts";
 import { accessToken, status } from "../src/agent/chatgpt/session.ts";
 import { codexBinary } from "../src/agent/codex/binary.ts";
 import { codexAdapter } from "../src/agent/codex/adapter.ts";
-import { DEFAULT_ALLOWLIST } from "../src/core/chat/models.ts";
+import { DEFAULT_SHORTLIST } from "../src/core/chat/models.ts";
 import {
   databasePath,
   openReadOnly,
@@ -2528,7 +2528,7 @@ async function playCase(name: string, home: string) {
         every_turn_answered: everyTurnAnswered(outcome.snapshot),
         // The set tests the model a new chat gets by default.
         on_default_model:
-          outcome.snapshot.turns[0]?.model === DEFAULT_ALLOWLIST[0],
+          outcome.snapshot.turns[0]?.model === DEFAULT_SHORTLIST[0],
         ...outcome.checks,
       })
         .filter(([, ok]) => !ok)

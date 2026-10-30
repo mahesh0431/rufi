@@ -20,7 +20,7 @@ import { codexAdapter } from "../agent/codex/adapter.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexRuntime } from "../agent/codex/codex.ts";
 import type { AgentEvent } from "../agent/runtime.ts";
-import { DEFAULT_ALLOWLIST } from "../core/chat/models.ts";
+import { DEFAULT_SHORTLIST } from "../core/chat/models.ts";
 import { pages } from "../core/documents/pages.ts";
 import { coreInstructions } from "../core/chat/instructions.ts";
 import { devices, SYSTEMS, type System } from "../core/devices/devices.ts";
@@ -563,7 +563,7 @@ const askCommand = (question: string, person: string | undefined) =>
     ) as { version: string };
     const started = Date.now();
     const end = yield* ask(question, {
-      model: DEFAULT_ALLOWLIST[0] ?? "",
+      model: DEFAULT_SHORTLIST[0] ?? "",
       instructions: coreInstructions(undefined),
       tools,
       agent: (host) =>

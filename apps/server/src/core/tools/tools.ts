@@ -2,8 +2,10 @@
 // using them is in the core (core/chat/instructions.ts) and the skills.
 import {
   agentStatus,
+  listModels,
   readAgent,
   sendAgent,
+  setAgentModel,
   startAgent,
   stopAgent,
   waitingMessages,
@@ -58,6 +60,8 @@ export const TOOLS: readonly Tool[] = [
   readAgent,
   stopAgent,
   waitingMessages,
+  listModels,
+  setAgentModel,
 ];
 
 /**

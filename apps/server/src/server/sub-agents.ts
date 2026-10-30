@@ -8,7 +8,9 @@
 // any agent in its chat, its own too, by pages, stops one below it or
 // itself, with or without everything under it, and manages what waits for
 // it and for the agents below it: the person's messages and Rufi's notes
-// change in Rufi first, as the screens change them.
+// change in Rufi first, as the screens change them. An agent runs only on a
+// model of the person's shortlist: one it starts, or one below it moved to
+// another while it isn't running.
 import type { Agents, WaitingInput } from "@rufi/agents/agents";
 import type { QueueItem } from "@rufi/contracts";
 import type { chatAgents } from "../core/chat/agents.ts";
@@ -16,7 +18,9 @@ import type { ChatQueue } from "../core/chat/queue.ts";
 import { Refusal, type AgentTools } from "../core/tools/registry.ts";
 import type { TurnScope } from "../core/tools/tools.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
+import { NOT_SHORTLISTED } from "../core/chat/models.ts";
 import { ChatRefusal, type Chat } from "./chat.ts";
+import type { OfferedModel } from "./rufi-ai.ts";
 
 /** How many turns a page of an agent's conversation holds. */
 const PAGE = 10;
@@ -28,8 +32,16 @@ export function subAgents(deps: {
   log: Log;
   /** The chat's waiting messages, as its screens change them: Rufi first. */
   messages: () => Chat["queue"];
+  /** The models of the person's shortlist the providers offer now. */
+  models: () => Promise<readonly OfferedModel[]>;
 }): (scope: TurnScope) => AgentTools {
   const { agents, kept } = deps;
+  /** A model of the shortlist, else refused with the chat's own line. */
+  const shortlisted = async (model: string) => {
+    const found = (await deps.models()).find((one) => one.id === model);
+    if (!found) throw new Refusal(NOT_SHORTLISTED);
+    return found;
+  };
   return (scope) => {
     /** The agent itself or one below it, else nothing: not found. */
     const reachable = (id: string) =>
@@ -37,9 +49,10 @@ export function subAgents(deps: {
         ? agents.get(id)
         : undefined;
     return {
-      start: async ({ title, task, tools }, callId) => {
+      start: async ({ title, task, tools, model, effort }, callId) => {
         const parent = agents.get(scope.agent);
         if (!parent) throw new Error(`No agent ${scope.agent}.`);
+        const on = model === undefined ? undefined : await shortlisted(model);
         const given = [...new Set(tools ?? parent.tools)];
         const wider = given.filter((tool) => !parent.tools.includes(tool));
         if (wider.length > 0) {
@@ -54,9 +67,9 @@ export function subAgents(deps: {
             id: callId,
             parent: scope.agent,
             title,
-            provider: parent.provider,
-            model: parent.model,
-            effort: parent.effort,
+            provider: on?.provider ?? parent.provider,
+            model: on?.id ?? parent.model,
+            effort: effort ?? parent.effort,
             tools: given,
             cwd: parent.cwd,
           });
@@ -89,6 +102,8 @@ export function subAgents(deps: {
               agent: id,
               title: found.title,
               parent: found.parent === scope.agent ? "self" : found.parent,
+              model: found.model,
+              effort: found.effort,
               status: found.status,
               result: found.result,
             };
@@ -194,6 +209,49 @@ export function subAgents(deps: {
           deps.log("agents.failed", { error: errorCode(error) });
         });
         return { stopping: children ? [id, ...agents.below(id)] : [id] };
+      },
+
+      models: async () => ({
+        models: (await deps.models()).map(
+          ({ id, name, provider, efforts, defaultEffort }) => ({
+            id,
+            name,
+            provider,
+            efforts,
+            ...(defaultEffort !== undefined && {
+              default_effort: defaultEffort,
+            }),
+          }),
+        ),
+      }),
+
+      setModel: async ({ agent, model, effort }) => {
+        const found = agents.below(scope.agent).includes(agent)
+          ? agents.get(agent)
+          : undefined;
+        if (!found) {
+          throw new Refusal(
+            `No agent ${agent} is below you: give an agent agent_status lists.`,
+          );
+        }
+        const on = await shortlisted(model);
+        // A model changes only while its agent is idle (ADR 0026).
+        if (agents.current(agent) !== undefined) {
+          throw new Refusal(
+            `${found.title} is running: change its model once its turn has ended.`,
+          );
+        }
+        agents.configure(agent, {
+          provider: on.provider,
+          model: on.id,
+          effort: effort ?? found.effort,
+        });
+        return {
+          agent,
+          title: found.title,
+          model: on.id,
+          effort: effort ?? found.effort,
+        };
       },
 
       waiting: async ({ action, id, text, ids }) => {

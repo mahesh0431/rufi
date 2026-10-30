@@ -19,7 +19,7 @@ import {
   type Pointer,
 } from "@rufi/contracts";
 import { Stopped, type Model } from "../agent/runtime.ts";
-import { allowedModels } from "../core/chat/models.ts";
+import { allowedModels, NOT_SHORTLISTED } from "../core/chat/models.ts";
 import {
   QueueRefusal,
   type ChatQueue,
@@ -37,6 +37,7 @@ import type { McpKeys } from "./mcp.ts";
 import type { ReadProgress, Reader } from "./reader.ts";
 import type {
   ChatOpening,
+  OfferedModel,
   OpeningAgent,
   RufiAi,
   RufiAiEvent,
@@ -54,7 +55,8 @@ export interface ChatDeps {
   signedIn: () => Promise<boolean>;
   /** Rufi AI, given where its events go. */
   agent: (host: RufiAiHost) => RufiAi;
-  allowlist: readonly string[];
+  /** The person's shortlist of models, as Settings keeps it now. */
+  shortlist: () => Promise<readonly string[]>;
   /** Rufi's MCP endpoint for the chat's agents: its address and its keys. */
   mcp: { url: () => string; keys: McpKeys };
   /**
@@ -789,8 +791,19 @@ export function chat(deps: ChatDeps) {
       }
     },
 
-    /** The allowed models the provider offers now. */
-    models: offered,
+    /** The shortlist's models the providers offer now. */
+    shortlisted: offered,
+
+    /** For the screens: the shortlist's models, and every model offered now. */
+    models: async () => {
+      const all = await agent.models();
+      const shown = (models: readonly Model[]) =>
+        models.map(({ id, name }) => ({ id, name }));
+      return {
+        models: shown(allowedModels(all, await deps.shortlist())),
+        offered: shown(all),
+      };
+    },
 
     /**
      * Sends a message: it is taken into the queue by the send's id, and the
@@ -923,9 +936,7 @@ export function chat(deps: ChatDeps) {
       inLane(chat, async (chat) => {
         const models = await offered();
         if (!models.some((m) => m.id === model)) {
-          throw new ChatRefusal(
-            "That model isn't allowed or isn't offered now.",
-          );
+          throw new ChatRefusal(NOT_SHORTLISTED);
         }
         await idle(chat, "the model");
         await transcripts.setModel(chat, model);
@@ -970,8 +981,8 @@ export function chat(deps: ChatDeps) {
     }
   }
 
-  async function offered(): Promise<Model[]> {
-    return allowedModels(await agent.models(), deps.allowlist);
+  async function offered(): Promise<OfferedModel[]> {
+    return allowedModels(await agent.models(), await deps.shortlist());
   }
 
   /** Without a sign-in, nothing the person sends is taken. */

@@ -19,7 +19,8 @@ import {
 import { callTool, type McpServerConfig } from "../../tests/mcp-client.ts";
 import { rufiAiFor } from "../../tests/rufi-ai.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
-import type { ProviderAdapter } from "@rufi/agents/provider";
+import { fakeProvider } from "@rufi/agents/fake";
+import type { OpenOptions, ProviderAdapter } from "@rufi/agents/provider";
 import { codexAdapter, instructionsNote } from "../agent/codex/adapter.ts";
 import type { Deadlines } from "../agent/codex/appserver.ts";
 import type { SubAgentTask } from "../agent/runtime.ts";
@@ -53,6 +54,7 @@ import { forAgent, rufiCaller } from "../core/tools/tools.ts";
 import { v7 as uuid } from "uuid";
 import { chatQueue, type ChatQueue } from "../core/chat/queue.ts";
 import { chatAgents } from "../core/chat/agents.ts";
+import { shortlist, SHORTLIST_SETTING } from "../core/chat/models.ts";
 import { agentsPath } from "./agents.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 import { subAgents } from "./sub-agents.ts";
@@ -133,7 +135,8 @@ async function startChat(
     doorMs?: number;
     /** What a call of this tool waits for before it runs. */
     waitFor?: (tool: string) => Promise<void> | undefined;
-    allowlist?: string[];
+    /** The shortlist Settings keeps from now on. */
+    shortlist?: string[];
     /** Names this Rufi's rules: another one is an update. */
     rules?: string;
     /** The sign-in's token decision, at the external edge. */
@@ -142,9 +145,21 @@ async function startChat(
     reader?: Script[];
     /** The agent database is lost while Rufi is closed. */
     loseAgents?: boolean;
+    /** A second provider, beside the scripted Codex. */
+    other?: ProviderAdapter;
   } = {},
 ): Promise<Chat> {
   const again = chat !== undefined;
+  // The shortlist Settings keeps: the tests' own, until a story changes it.
+  if (
+    options.shortlist !== undefined ||
+    (await transcripts.setting(SHORTLIST_SETTING)) === undefined
+  ) {
+    await transcripts.saveSetting(
+      SHORTLIST_SETTING,
+      JSON.stringify(options.shortlist ?? ALLOWED),
+    );
+  }
   await chat?.close();
   await ai?.close();
   await served?.close();
@@ -212,6 +227,7 @@ async function startChat(
     record: store,
     transcripts,
     adapter: codex,
+    ...(options.other && { others: [options.other] }),
     tools: tools.specs.map((spec) => spec.name),
   });
   ai = system;
@@ -229,7 +245,7 @@ async function startChat(
     }),
     signedIn: () => Promise.resolve(signedIn),
     agent: ai.agent,
-    allowlist: options.allowlist ?? ALLOWED,
+    shortlist: () => shortlist(transcripts.setting),
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
     rules: (region) => ({
       instructions: `Rufi's rules ${options.rules ?? "1"}, for ${region ?? "no region"}.`,
@@ -252,6 +268,10 @@ async function startChat(
             messages: () => {
               if (!chat) throw new Error("no chat");
               return chat.queue;
+            },
+            models: () => {
+              if (!chat) throw new Error("no chat");
+              return chat.shortlisted();
             },
           }),
         )(scope);
@@ -1699,7 +1719,7 @@ describe("the chat, on the scripted Codex", () => {
   });
 
   it("starts and changes to allowed models the provider offers only", async () => {
-    await startChat("fake", { allowlist: ["gpt-retired", "gpt-6-astra"] });
+    await startChat("fake", { shortlist: ["gpt-retired", "gpt-6-astra"] });
     const c = await newChat();
     expect(c.model).toBeNull();
     await say(c, "Hello");
@@ -1709,7 +1729,7 @@ describe("the chat, on the scripted Codex", () => {
       "That model isn't allowed or isn't offered now.",
     );
     // A chat with no model yet, when none of the allowed ones is offered.
-    await startChat("fake", { allowlist: ["gpt-retired"] });
+    await startChat("fake", { shortlist: ["gpt-retired"] });
     store.db.exec(`
       INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
       INSERT INTO chats (id, person_id, created_at)
@@ -2777,6 +2797,179 @@ describe("the chat, on the scripted Codex", () => {
         },
       ],
     });
+  });
+
+  it("runs a helper on the model of the user's shortlist Rufi AI gives it, and refuses one off the shortlist, or a change while the helper runs", async () => {
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Ask a helper": [
+            { tool: "list_models", arguments: {} },
+            // Offered, but not on the user's shortlist.
+            {
+              tool: "start_agent",
+              arguments: {
+                title: "Helper",
+                task: "helper: hang",
+                model: "gpt-5.5",
+              },
+            },
+            {
+              id: "call-start",
+              tool: "start_agent",
+              arguments: {
+                title: "Helper",
+                task: "helper: hang",
+                model: "gpt-6-astra",
+                effort: "high",
+              },
+            },
+          ],
+          "Move it to Sol": [
+            {
+              tool: "set_agent_model",
+              arguments: { agent: "$agent", model: "gpt-6.1-sol" },
+            },
+          ],
+        },
+      },
+    });
+    const c = await newChat();
+    await say(c, "Ask a helper");
+    const helper = ownCall("call-start");
+    await until(() =>
+      Promise.resolve(
+        agentRows(`SELECT status FROM agents WHERE id = '${helper}'`)[0]?.[
+          "status"
+        ] === "running",
+      ),
+    );
+    await say(await chatRow(c.id), `Move it to Sol (agent ${helper})`);
+    await ended(c.id, 2);
+
+    const answers = (
+      store.db
+        .prepare(
+          "SELECT answer FROM tool_calls WHERE tool IN ('list_models', 'start_agent', 'set_agent_model') ORDER BY started_at",
+        )
+        .all() as { answer: string }[]
+    ).map(({ answer }) => JSON.parse(answer) as unknown);
+    expect(answers).toMatchObject([
+      {
+        ok: true,
+        result: {
+          models: [
+            {
+              id: "gpt-6.1-sol",
+              efforts: ["low", "medium", "high"],
+              default_effort: "medium",
+            },
+            { id: "gpt-6-astra" },
+          ],
+        },
+      },
+      { ok: false, error: "That model isn't allowed or isn't offered now." },
+      { ok: true },
+      {
+        ok: false,
+        error: "Helper is running: change its model once its turn has ended.",
+      },
+    ]);
+    expect(
+      agentRows(
+        `SELECT title, model, effort FROM agents WHERE parent_id IS NOT NULL`,
+      ),
+    ).toEqual([{ title: "Helper", model: "gpt-6-astra", effort: "high" }]);
+    expect(
+      agentRows(`SELECT model, effort FROM turns WHERE agent_id = '${helper}'`),
+    ).toEqual([{ model: "gpt-6-astra", effort: "high" }]);
+  });
+
+  it("moves a helper whose turn has ended to another provider's model: its next turn opens a new conversation there, which hears the helper's own turns and not the chat", async () => {
+    const other = fakeProvider({
+      id: "other",
+      family: "anthropic",
+      models: [
+        { id: "other-model", name: "Other model", efforts: ["low", "high"] },
+      ],
+    });
+    const opened: OpenOptions[] = [];
+    await startChat("fake", {
+      shortlist: [...ALLOWED, "other-model"],
+      other: {
+        ...other.adapter,
+        open: (options) => {
+          opened.push(options);
+          return other.adapter.open(options);
+        },
+      },
+      scenario: {
+        callsByText: {
+          "Ask a helper": [
+            {
+              id: "call-start",
+              tool: "start_agent",
+              arguments: { title: "Helper", task: "Read the March report." },
+            },
+          ],
+          "Move it": [
+            {
+              tool: "set_agent_model",
+              arguments: {
+                agent: "$agent",
+                model: "other-model",
+                effort: "high",
+              },
+            },
+            {
+              tool: "send_agent",
+              arguments: {
+                to: "$agent",
+                text: "Now the April report.",
+                kind: "queue",
+              },
+            },
+          ],
+        },
+      },
+    });
+    const c = await newChat();
+    await say(c, "Ask a helper");
+    const helper = ownCall("call-start");
+    // Its result wakes Rufi AI, which replies.
+    await ended(c.id, 2);
+    await settled(c.id);
+    await say(await chatRow(c.id), `Move it (agent ${helper})`);
+    await until(() =>
+      Promise.resolve(
+        agentRows(
+          `SELECT count(*) AS n FROM turns WHERE agent_id = '${helper}' AND status = 'done'`,
+        )[0]?.["n"] === 2,
+      ),
+    );
+
+    expect(
+      agentRows(
+        `SELECT model, effort FROM turns WHERE agent_id = '${helper}' ORDER BY rowid`,
+      ),
+    ).toMatchObject([
+      { model: "gpt-6.1-sol" },
+      { model: "other-model", effort: "high" },
+    ]);
+    const [moved] = agentRows(
+      `SELECT provider, provider_ref, conversation FROM agents WHERE id = '${helper}'`,
+    );
+    expect(moved).toMatchObject({ provider: "other", conversation: 2 });
+    // Its new conversation hears its own turn, never the chat.
+    expect(opened).toHaveLength(1);
+    expect(opened[0]?.seed).toContain("Read the March report.");
+    expect(opened[0]?.seed).toContain("You: ok:Read the March report.");
+    expect(opened[0]?.seed).not.toContain("Ask a helper");
+    expect(
+      other
+        .received(String(moved?.["provider_ref"]))
+        .flatMap((input) => input.parts),
+    ).toEqual([expect.stringContaining("Now the April report.")]);
   });
 
   it("gives a sub-agent only the tools it was given, and its own sub-agent no more than those", async () => {

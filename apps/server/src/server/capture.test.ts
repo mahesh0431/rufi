@@ -25,7 +25,7 @@ import { rufiAiFor } from "../../tests/rufi-ai.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexAdapter, instructionsNote } from "../agent/codex/adapter.ts";
 import { chatQueue } from "../core/chat/queue.ts";
-import { DEFAULT_ALLOWLIST } from "../core/chat/models.ts";
+import { DEFAULT_SHORTLIST } from "../core/chat/models.ts";
 import {
   transcripts as openTranscripts,
   type Transcripts,
@@ -155,7 +155,8 @@ async function start(
     queue: chatQueue(store),
     signedIn: () => Promise.resolve(true),
     agent: ai.agent,
-    allowlist: options.model ? [options.model] : DEFAULT_ALLOWLIST,
+    shortlist: () =>
+      Promise.resolve(options.model ? [options.model] : DEFAULT_SHORTLIST),
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
     rules: (region) => ({
       instructions: coreInstructions(region),
@@ -222,7 +223,7 @@ const RUFI_TOOLS = [
 ];
 
 describe("Rufi's tools on the pinned Codex, over MCP", () => {
-  it.each(DEFAULT_ALLOWLIST)(
+  it.each(DEFAULT_SHORTLIST)(
     "on %s registers over HTTP with the thread's key and no Origin, and the code runner gets every tool with its input typed",
     { timeout: 120_000 },
     async (modelId) => {
