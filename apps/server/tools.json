@@ -2222,7 +2222,7 @@
     },
     {
       "name": "rufi.agent_status",
-      "description": "How the agents below you are: the ones you started and theirs, each with its title, the agent that started it (self: you), its status (idle before its first turn, running, done, stopped or failed) and its latest result. An id that isn't below you is not found. With wait, it first waits until one of them ends a turn (ended: its id, and the questions that turn asked, with their options), or the wait runs out, or your turn ends (ended: null); running out never stops an agent. A result it gives you this way doesn't come to you again as a message.",
+      "description": "How the agents below you are: the ones you started and theirs, each with its title, the agent that started it (self: you), its status (idle before its first turn, running, done, stopped or failed) and its latest result. An id that isn't below you is not found. It doesn't wait.",
       "callers": "model",
       "readOnly": true,
       "destructive": false,
@@ -2235,31 +2235,12 @@
               "type": "string"
             },
             "description": "The agents, by id. Leave it out for every agent below you."
-          },
-          "wait": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 1440
-              }
-            ],
-            "description": "Wait until one of them ends a turn: true for at most an hour, or at most this many minutes, 1 to 1440. Leave it out not to wait."
           }
         },
         "additionalProperties": false
       },
       "examples": [
-        {},
-        {
-          "agents": [
-            "<an agent's id>"
-          ],
-          "wait": 10
-        }
+        {}
       ]
     },
     {

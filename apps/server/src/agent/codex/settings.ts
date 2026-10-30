@@ -284,21 +284,14 @@ export const RUFI_SERVER = "rufi";
 const SCHEMA_MAX_BYTES = 64 * 1024;
 
 /**
- * How long Codex waits for a call to Rufi's tools before it gives up: a
- * little over the longest wait an agent can ask for (24 hours). Rufi's own
- * deadline for each tool answers first.
- */
-const TOOL_TIMEOUT_SEC = 24 * 60 * 60 + 60;
-
-/**
  * A thread's MCP settings: Rufi's server with the thread's key. Codex can't
  * start the thread without it (`required`), runs its tools without asking
- * (with approvals off it would refuse a tool that isn't read-only), and
- * waits for a call as long as Rufi may take. Codex defers an MCP server's
- * tools: the model finds them first (in exec's ALL_TOOLS, or with
+ * (with approvals off it would refuse a tool that isn't read-only), and gives
+ * up on a call a little after Rufi's own deadline for it. Codex defers an MCP
+ * server's tools: the model finds them first (in exec's ALL_TOOLS, or with
  * tool_search on a direct model). `eager` gives them to the model at once.
  */
-export function mcpServers(server: McpServer, eager = false) {
+export function mcpServers(server: McpServer, toolMs: number, eager = false) {
   return {
     [RUFI_SERVER]: {
       url: server.url,
@@ -306,7 +299,7 @@ export function mcpServers(server: McpServer, eager = false) {
       required: true,
       default_tools_approval_mode: "approve",
       startup_timeout_sec: 10,
-      tool_timeout_sec: TOOL_TIMEOUT_SEC,
+      tool_timeout_sec: Math.ceil(toolMs / 1000) + 10,
       tool_input_schema_max_bytes: SCHEMA_MAX_BYTES,
       ...(eager && { omit_tools_from: ["deferred"] }),
     },

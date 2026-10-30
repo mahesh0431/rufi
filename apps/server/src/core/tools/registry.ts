@@ -58,8 +58,8 @@ export interface ToolContext {
 export interface AgentTools {
   /** A child of the caller, started by this call: its id is the call's. */
   start: (input: StartAgentInput, callId: string) => Promise<unknown>;
-  /** The agents below the caller, as they are now, or once one ends a turn. */
-  status: (input: AgentStatusInput) => Promise<unknown>;
+  /** The agents below the caller, as they are now. */
+  status: (input: AgentStatusInput) => unknown;
   /** A message from the caller to an agent below it, or to its parent. */
   send: (input: SendAgentInput, callId: string) => unknown;
   /** A page of the caller's conversation, or of one below it. */
@@ -80,11 +80,6 @@ export interface Tool<In extends Input = Input> {
   destructive: boolean;
   /** Valid inputs, shown in tools.json and to the model after a mistake. */
   examples: readonly In["Encoded"][];
-  /**
-   * How much longer than a data tool's deadline its answer may take, from
-   * the input as it came: a wait's length.
-   */
-  waitsMs?: (input: unknown) => number;
   run: (input: In["Type"], context: ToolContext) => unknown;
 }
 
@@ -146,8 +141,6 @@ export interface ToolSpec {
   inputSchema: Record<string, unknown>;
   readOnly: boolean;
   destructive: boolean;
-  /** As the tool's: how much longer than a data tool's its answer may take. */
-  waitsMs?: (input: unknown) => number;
 }
 
 export const specOf = (tool: Tool): ToolSpec => ({
@@ -156,7 +149,6 @@ export const specOf = (tool: Tool): ToolSpec => ({
   inputSchema: inputSchema(tool),
   readOnly: tool.readOnly,
   destructive: tool.destructive,
-  ...(tool.waitsMs && { waitsMs: tool.waitsMs }),
 });
 
 /** Rejections a turn may have before Rufi stops it, so the model can't loop. */

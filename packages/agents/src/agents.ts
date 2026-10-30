@@ -130,12 +130,6 @@ export interface Sent {
 /** Why an input from one agent to another came. */
 export type About = "done" | "stopped" | "failed" | "asked" | "wrote";
 
-/** An agent a wait was for ended a turn: which, and what that turn asked. */
-export interface Ended {
-  agent: string;
-  questions: { title: string; options: string[] }[];
-}
-
 /** Why a waiting input isn't handed over by itself. */
 export type Hold = "signed_out" | "open_failed" | "failed" | "restarts";
 
@@ -280,21 +274,6 @@ export interface Agents {
    * the agent can take it; the sender is never told no.
    */
   send: (agent: string, input: Sent) => void;
-  /**
-   * Waits, in the agent's running turn `turn`, until one of `below` ends a
-   * turn: that agent and the questions its turn asked. The done message of
-   * one right below the agent is read (it never goes); one whose done
-   * message still waits is read at once. Nothing when none of them runs or
-   * has an input to take, or when `ms` pass, the turn ends or `signal`
-   * aborts first.
-   */
-  wait: (
-    agent: string,
-    turn: string,
-    below: readonly string[],
-    ms: number,
-    signal?: AbortSignal,
-  ) => Promise<Ended | undefined>;
   /**
    * Starts handing inputs over, once the host has finished starting:
    * first asks the providers about those a crash left with them, then
@@ -464,7 +443,8 @@ const message = (error: unknown) =>
 
 /**
  * What an agent's parent is told when its turn ends, in its done message:
- * its title and id, and its answer and questions, or how it stopped or failed.
+ * its title and id, and its whole answer and its questions with their
+ * options, in plain words, or how it stopped or failed.
  */
 function doneText(
   agent: Agent,
@@ -480,7 +460,7 @@ function doneText(
         end.answer,
         ...questions.map((question) =>
           [
-            `**${question.title}**`,
+            question.title,
             ...question.options.map((option) => `- ${option}`),
           ].join("\n"),
         ),
@@ -528,26 +508,6 @@ export function createAgents(options: {
   let dispatching = false;
   /** Conversations of agents no longer run here, until they have closed. */
   const closing = new Set<Conversation>();
-  /** Agents waiting in a turn for one below them to end a turn. */
-  const waiters = new Set<{
-    agent: string;
-    turn: string;
-    below: ReadonlySet<string>;
-    end: (ended: Ended | undefined) => void;
-  }>();
-
-  /** The questions a turn asked, in order. */
-  const questionsOf = (turn: string) =>
-    (
-      db
-        .prepare(
-          "SELECT title, options FROM questions WHERE turn_id = ? ORDER BY rowid",
-        )
-        .all(turn) as { title: string; options: string }[]
-    ).map((question) => ({
-      title: question.title,
-      options: JSON.parse(question.options) as string[],
-    }));
 
   const row = (id: string) =>
     db.prepare("SELECT * FROM agents WHERE id = ?").get(id) as
@@ -969,14 +929,6 @@ export function createAgents(options: {
       end.status === "stopped" ? (live.stopBy ?? "provider") : null;
     const agent = get(live.id);
     const parent = agent?.parent ?? null;
-    const questions = questionsOf(turn.id);
-    // The parent waits for it in its running turn: the wait reads it.
-    const read = [...waiters].some(
-      (waiter) =>
-        waiter.agent === parent &&
-        waiter.below.has(live.id) &&
-        lives.get(waiter.agent)?.current?.turn === waiter.turn,
-    );
     store.change(({ event }) => {
       const at = now();
       db.prepare(
@@ -1010,6 +962,16 @@ export function createAgents(options: {
       event("turn.ended", live.id, { turn: turn.id, ref, ...end, item });
       // Its parent hears how it went: a steer from it, until it takes it.
       if (agent && parent !== null) {
+        const questions = (
+          db
+            .prepare(
+              "SELECT title, options FROM questions WHERE turn_id = ? ORDER BY rowid",
+            )
+            .all(turn.id) as { title: string; options: string }[]
+        ).map((question) => ({
+          title: question.title,
+          options: JSON.parse(question.options) as string[],
+        }));
         const about: About =
           end.status === "done"
             ? questions.length > 0
@@ -1019,31 +981,20 @@ export function createAgents(options: {
         const input = `done:${turn.id}`;
         db.prepare(
           `INSERT INTO queue (id, agent_id, sender, kind, parts, about, state, position, created_at, updated_at)
-           VALUES (?, ?, ?, 'steer', ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
+           VALUES (?, ?, ?, 'steer', ?, ?, 'waiting', (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
         ).run(
           input,
           parent,
           live.id,
           JSON.stringify([doneText(agent, end, stopBy, questions)]),
           about,
-          read ? "removed" : "waiting",
           parent,
           at,
           at,
         );
         event("input.added", parent, { input, kind: "steer", about });
-        if (read) event("input.read", parent, { input });
       }
     });
-    // Any agent waiting for it hears, its parent's or one higher up; its
-    // own wait ends with its turn.
-    for (const waiter of waiters) {
-      if (waiter.agent === live.id && waiter.turn === turn.id) {
-        waiter.end(undefined);
-      } else if (waiter.below.has(live.id)) {
-        waiter.end({ agent: live.id, questions });
-      }
-    }
     if (parent !== null) pump(parent);
     if (live.current?.ref === ref) {
       live.current = undefined;
@@ -1763,68 +1714,6 @@ export function createAgents(options: {
       pump(id);
     },
 
-    wait: (agent, turn, below, ms, signal) => {
-      const ids = JSON.stringify(below);
-      const unread = db
-        .prepare(
-          `SELECT id, sender FROM queue WHERE agent_id = ? AND state = 'waiting'
-             AND about IN ('done', 'stopped', 'failed', 'asked')
-             AND sender IN (SELECT value FROM json_each(?)) ORDER BY position LIMIT 1`,
-        )
-        .get(agent, ids) as { id: string; sender: string } | undefined;
-      if (unread) {
-        store.change(({ event }) => {
-          db.prepare(
-            "UPDATE queue SET state = 'removed', updated_at = ? WHERE id = ?",
-          ).run(now(), unread.id);
-          event("input.read", agent, { input: unread.id });
-        });
-        // A done message's id names its turn: done:<turn>.
-        return Promise.resolve({
-          agent: unread.sender,
-          questions: questionsOf(unread.id.slice("done:".length)),
-        });
-      }
-      const runs = (id: string) => {
-        const live = lives.get(id);
-        return (
-          live?.starting !== undefined ||
-          live?.current !== undefined ||
-          db
-            .prepare(
-              "SELECT 1 FROM queue WHERE agent_id = ? AND ((state = 'waiting' AND held IS NULL) OR state = 'handing_over') LIMIT 1",
-            )
-            .get(id) !== undefined
-        );
-      };
-      if (
-        lives.get(agent)?.current?.turn !== turn ||
-        !below.some(runs) ||
-        signal?.aborted === true
-      ) {
-        return Promise.resolve(undefined);
-      }
-      return new Promise((resolve) => {
-        const waiter = {
-          agent,
-          turn,
-          below: new Set(below),
-          end: (ended: Ended | undefined) => {
-            waiters.delete(waiter);
-            clearTimeout(timer);
-            signal?.removeEventListener("abort", aborted);
-            resolve(ended);
-          },
-        };
-        const aborted = () => {
-          waiter.end(undefined);
-        };
-        const timer = setTimeout(aborted, ms);
-        signal?.addEventListener("abort", aborted, { once: true });
-        waiters.add(waiter);
-      });
-    },
-
     dispatch: async () => {
       // Once: a start this process made is never taken for a crash's.
       if (begun) return;
@@ -2065,7 +1954,6 @@ export function createAgents(options: {
     },
 
     close: async () => {
-      for (const waiter of waiters) waiter.end(undefined);
       for (const id of lives.keys()) revoke(id);
       await letGo();
     },

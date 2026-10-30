@@ -24,7 +24,6 @@ import {
 import { rufiAiFor } from "../../tests/rufi-ai.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexAdapter, instructionsNote } from "../agent/codex/adapter.ts";
-import { chatAgents } from "../core/chat/agents.ts";
 import { chatQueue } from "../core/chat/queue.ts";
 import { DEFAULT_ALLOWLIST } from "../core/chat/models.ts";
 import {
@@ -47,7 +46,6 @@ import { tempPath, tempPattern } from "../platform/files.ts";
 import { agentSetup, aiSandbox, coreFile } from "./core.ts";
 import { doorFile } from "../agent/codex/token-door.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
-import { subAgents } from "./sub-agents.ts";
 
 let home: string;
 let store: Store;
@@ -136,8 +134,7 @@ async function start(
     file: await codexBinary(),
     args: ["-c", `model_providers.openai_chatgpt_plan.base_url="${model.url}"`],
   };
-  const queue = chatQueue(store);
-  const system = await rufiAiFor({
+  ai = await rufiAiFor({
     home,
     record: store,
     transcripts,
@@ -153,10 +150,9 @@ async function start(
     }),
     tools: tools.specs.map((spec) => spec.name),
   });
-  ai = system;
   chat = openChat({
     transcripts,
-    queue,
+    queue: chatQueue(store),
     signedIn: () => Promise.resolve(true),
     agent: ai.agent,
     allowlist: options.model ? [options.model] : DEFAULT_ALLOWLIST,
@@ -167,14 +163,7 @@ async function start(
     }),
     tools: {
       specs: tools.specs,
-      caller: rufiCaller(
-        reader,
-        transcripts,
-        log,
-        undefined,
-        undefined,
-        subAgents({ agents: system.agents, kept: chatAgents(store), queue }),
-      ),
+      caller: rufiCaller(reader, transcripts, log),
     },
     log,
   });
@@ -293,52 +282,6 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
       expect(save).toMatch(/\btest\?: string;/);
       expect(save).toMatch(/\bvalue\?: string;/);
       expect(save).not.toMatch(/[^"]unknown[^"]/);
-    },
-  );
-
-  it(
-    "waits 2 minutes for a sub-agent in one call, and neither Rufi nor Codex gives up on it",
-    { timeout: 240_000 },
-    async () => {
-      await start([
-        // Rufi AI starts a helper and waits for it, in one exec.
-        {
-          exec: [
-            'const started = await tools.mcp__rufi__start_agent({ title: "Helper", task: "Look it up." });',
-            "const waited = await tools.mcp__rufi__agent_status({ wait: 3 });",
-            "text(JSON.stringify([started.isError ?? false, waited.isError ?? false]));",
-          ].join("\n"),
-        },
-        // The helper's answer comes after 2 minutes.
-        { text: "Found it.", afterMs: 125_000 },
-        // Codex's code runner yields after its own while: Rufi AI waits on.
-        {
-          call: {
-            name: "wait",
-            arguments: { cell_id: "1", yield_time_ms: 180_000 },
-          },
-        },
-        { text: "Done." },
-      ]);
-      await say("Ask a helper.");
-      await until(
-        () => turns().some((t) => t["status"] !== "running"),
-        200_000,
-      );
-      expect(turns()).toMatchObject([{ status: "completed" }]);
-      expect(printed(3)).toBe("[false,false]");
-      const [waited] = (
-        store.db
-          .prepare("SELECT answer FROM tool_calls WHERE tool = 'agent_status'")
-          .all() as { answer: string }[]
-      ).map((row) => JSON.parse(row.answer) as unknown);
-      expect(waited).toMatchObject({
-        ok: true,
-        result: {
-          ended: expect.any(String) as string,
-          agents: [{ title: "Helper", status: "done", result: "Found it." }],
-        },
-      });
     },
   );
 

@@ -4,12 +4,11 @@
 // it; it is the caller's chat's, on the caller's model and effort, with no
 // more of Rufi's tools than the caller has. Each turn's end goes to its
 // parent as a done message (the package's). An agent sees how the agents
-// below it are, waiting for one to end a turn if it asks, writes to one or
-// to its parent, and reads its own conversation or one below it, by pages.
+// below it are, writes to one or to its parent, and reads its own
+// conversation or one below it, by pages.
 import type { Agents } from "@rufi/agents/agents";
 import type { chatAgents } from "../core/chat/agents.ts";
 import type { ChatQueue } from "../core/chat/queue.ts";
-import { waitMs } from "../core/tools/agents.ts";
 import { Refusal, type AgentTools } from "../core/tools/registry.ts";
 import type { TurnScope } from "../core/tools/tools.ts";
 
@@ -71,23 +70,10 @@ export function subAgents(deps: {
         return { agent: callId, title: agents.get(callId)?.title ?? title };
       },
 
-      status: async (input) => {
+      status: ({ agents: asked }) => {
         const below = agents.below(scope.agent);
-        const asked = input.agents ?? below;
-        const ms = waitMs(input);
-        // Its own turn ends the wait: the call keeps the turn it came in.
-        const ended =
-          ms > 0
-            ? ((await agents.wait(
-                scope.agent,
-                scope.turn,
-                asked.filter((id) => below.includes(id)),
-                ms,
-              )) ?? null)
-            : undefined;
         return {
-          ...(ended !== undefined && { ended: ended?.agent ?? null }),
-          agents: asked.map((id) => {
+          agents: (asked ?? below).map((id) => {
             const found = below.includes(id) ? agents.get(id) : undefined;
             if (!found) return { agent: id, status: "not found" };
             return {
@@ -96,9 +82,6 @@ export function subAgents(deps: {
               parent: found.parent === scope.agent ? "self" : found.parent,
               status: found.status,
               result: found.result,
-              // The turn the wait ended with asked: its questions come too.
-              ...(ended?.agent === id &&
-                ended.questions.length > 0 && { questions: ended.questions }),
             };
           }),
         };

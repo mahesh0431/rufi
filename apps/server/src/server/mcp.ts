@@ -246,8 +246,6 @@ function serverFor(
       text: JSON.stringify({ ok: false, error: `${name} took too long.` }),
     };
     const deadline = new AbortController();
-    const waits =
-      scope.tools.find((tool) => tool.name === name)?.waitsMs?.(input) ?? 0;
     let timer: NodeJS.Timeout | undefined;
     const answer = await Promise.race([
       scope.call({
@@ -260,7 +258,7 @@ function serverFor(
         timer = setTimeout(() => {
           deadline.abort();
           resolve(tooLong);
-        }, toolMs + waits);
+        }, toolMs);
       }),
     ]).finally(() => {
       clearTimeout(timer);

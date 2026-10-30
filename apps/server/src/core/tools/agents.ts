@@ -1,8 +1,8 @@
 // Rufi's agent tools: an agent starts agents of its own, sees how the ones
-// below it are and waits for one, writes to one or to the agent that started
-// it, and reads its own conversation or one below it. Rufi's chat does them
-// in the agent system (server/sub-agents.ts); a sub-agent never gets more
-// tools than the agent that starts it.
+// below it are, writes to one or to the agent that started it, and reads its
+// own conversation or one below it. Rufi's chat does them in the agent
+// system (server/sub-agents.ts); a sub-agent never gets more tools than the
+// agent that starts it.
 import { Schema } from "effect";
 import { defineTool, Refusal } from "./registry.ts";
 
@@ -24,40 +24,14 @@ export const StartAgentInput = Schema.Struct({
 });
 export type StartAgentInput = typeof StartAgentInput.Type;
 
-/** The longest wait, in minutes: 24 hours. */
-const WAIT_MAX = 24 * 60;
-
-/** A wait's length in minutes when the agent gives none: an hour. */
-const WAIT_DEFAULT = 60;
-
 export const AgentStatusInput = Schema.Struct({
   agents: Schema.optionalKey(
     Schema.Array(Schema.String).annotate({
       description: "The agents, by id. Leave it out for every agent below you.",
     }),
   ),
-  wait: Schema.optionalKey(
-    Schema.Union([
-      Schema.Boolean,
-      Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: WAIT_MAX })),
-    ]).annotate({
-      description: `Wait until one of them ends a turn: true for at most an hour, or at most this many minutes, 1 to ${String(WAIT_MAX)}. Leave it out not to wait.`,
-    }),
-  ),
 });
 export type AgentStatusInput = typeof AgentStatusInput.Type;
-
-/** How long a call asks to wait, in ms; 0 when it doesn't, or isn't valid. */
-export function waitMs(input: unknown): number {
-  const wait = (input as { wait?: unknown } | null)?.wait;
-  if (wait === true) return WAIT_DEFAULT * 60_000;
-  return typeof wait === "number" &&
-    Number.isInteger(wait) &&
-    wait >= 1 &&
-    wait <= WAIT_MAX
-    ? wait * 60_000
-    : 0;
-}
 
 export const SendAgentInput = Schema.Struct({
   to: Schema.String.annotate({
@@ -116,13 +90,12 @@ export const startAgent = defineTool({
 export const agentStatus = defineTool({
   name: "agent_status",
   description:
-    "How the agents below you are: the ones you started and theirs, each with its title, the agent that started it (self: you), its status (idle before its first turn, running, done, stopped or failed) and its latest result. An id that isn't below you is not found. With wait, it first waits until one of them ends a turn (ended: its id, and the questions that turn asked, with their options), or the wait runs out, or your turn ends (ended: null); running out never stops an agent. A result it gives you this way doesn't come to you again as a message.",
+    "How the agents below you are: the ones you started and theirs, each with its title, the agent that started it (self: you), its status (idle before its first turn, running, done, stopped or failed) and its latest result. An id that isn't below you is not found. It doesn't wait.",
   input: AgentStatusInput,
   callers: "model",
   readOnly: true,
   destructive: false,
-  examples: [{}, { agents: ["<an agent's id>"], wait: 10 }],
-  waitsMs: waitMs,
+  examples: [{}],
   run: (input, { agents }) => {
     if (!agents) throw outside();
     return agents.status(input);
