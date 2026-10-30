@@ -4,10 +4,9 @@
 // does. What a turn does is chosen by its message's text, the
 // same words the fake model uses for the real Codex (tests/fake-model.ts):
 // "hang" never ends, "partial" writes "ok:part" and then never ends, "slow"
-// answers after 300 ms, "silent" shows nothing for 2 s ("silentMs") and then
-// answers, "renew" runs Rufi's provider auth command for a fresh token as
-// Codex does after a 401 (failing the turn as Codex does when the command
-// fails), "fail" fails, "quiet" makes no tool call and runs no
+// answers after 300 ms, "renew" runs Rufi's provider auth command for a
+// fresh token as Codex does after a 401 (failing the turn as Codex does when
+// the command fails), "fail" fails, "quiet" makes no tool call and runs no
 // command, "command"
 // starts a long command ("background command": and the turn ends while it
 // runs), "drip" streams its answer in five parts 100 ms
@@ -50,8 +49,6 @@ export interface Scenario {
   hang?: string[];
   /** Methods the fake refuses with an error, doing nothing. */
   refuse?: string[];
-  /** How long a turn whose words say "silent" shows nothing (2 s). */
-  silentMs?: number;
   /** Methods the fake takes and answers after `slowMs` (200 ms). */
   slow?: string[];
   slowMs?: number;
@@ -467,10 +464,6 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
       });
       return;
     }
-  }
-  if (text.includes("silent")) {
-    await sleep(scenario.silentMs ?? 2_000);
-    if (thread.running?.turnId !== turnId) return;
   }
   const turnIndex = thread.history.findIndex((turn) => turn.id === turnId);
   const calls = text.includes("quiet")

@@ -216,7 +216,7 @@ An original is kept in `files/<sha256>` exactly as it came, written and synced b
 
 ## Sign-in
 
-The person signs in with ChatGPT in the browser; the tokens go to the Keychain, never to files or logs. A data folder belongs to the first account that signs in with it. Renewal and sign-in changes take `credentials.lock` inside `rufi.lock`. Codex never holds the tokens: it asks Rufi's token door for a fresh one as it works, and nothing secret is in its arguments or environment, which any program of the user's can read. See [ADR 0001](adr/0001-codex-on-chatgpt-plan.md) and [ADR 0024](adr/0024-codex-gets-its-token-from-rufis-token-door.md).
+The person signs in with ChatGPT in the browser; the tokens go to the Keychain, never to files or logs. A data folder belongs to the first account that signs in with it. Renewal and sign-in changes take `credentials.lock` inside `rufi.lock`. Codex never gets the sign-in itself: it receives access tokens through Rufi's token door as it works, a fresh one when it asks, and keeps none in its arguments, environment or settings, which any program of the user's can read. See [ADR 0001](adr/0001-codex-on-chatgpt-plan.md) and [ADR 0024](adr/0024-codex-gets-its-token-from-rufis-token-door.md).
 
 ## Follow-up notices
 

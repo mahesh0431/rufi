@@ -60,7 +60,6 @@ const WORDS: Record<NonNullable<Script["turn"]>, string | undefined> = {
   fails: "fail",
   usage_limit: "fail",
   dies: "crash",
-  silent: "silent",
   renews: "renew",
   renewal_fails: "renew",
 };
