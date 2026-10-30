@@ -18,19 +18,14 @@ import {
 } from "@rufi/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  Check,
-  GripVertical,
   LoaderCircle,
   LogIn,
-  MessageSquarePlus,
   type LucideProps,
-  Pencil,
   RotateCw,
   Send,
   Square,
-  X,
 } from "lucide-react";
-import { type ReactNode, type RefObject, useEffect, useState } from "react";
+import { type RefObject, useEffect, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { ApiError, request } from "./api.ts";
@@ -49,7 +44,7 @@ import { chatPath, type Live, messageOf } from "./live.ts";
 import { ModelMenu } from "./model-menu.tsx";
 import { usePanel } from "./panel.ts";
 import { isRunning } from "./transcript-state.ts";
-import { Button, buttonLook, ICON, IconButton } from "./ui.tsx";
+import { Button, IconButton } from "./ui.tsx";
 
 /**
  * What the box says under it: a send on its way, or a draft that couldn't be

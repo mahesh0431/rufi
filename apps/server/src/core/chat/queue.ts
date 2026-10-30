@@ -307,19 +307,6 @@ export function chatQueue(
           .execute()
       ).map((row) => row.id),
 
-    /** Whether a send's id was used already: by a row here, or in a chat. */
-    known: async (id: string) =>
-      (await db
-        .selectFrom("chat_queue")
-        .select("id")
-        .where("id", "=", id)
-        .executeTakeFirst()) !== undefined ||
-      (await db
-        .selectFrom("transcript_entries")
-        .select("id")
-        .where("id", "=", id)
-        .executeTakeFirst()) !== undefined,
-
     /**
      * Takes a message from the box: a new waiting row by the send's id, with
      * its references checked against the person, its unsent documents sent

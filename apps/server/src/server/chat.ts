@@ -18,7 +18,7 @@ import {
   type Effort,
   type Pointer,
 } from "@rufi/contracts";
-import { NotSent, Stopped, type Model } from "../agent/runtime.ts";
+import { Stopped, type Model } from "../agent/runtime.ts";
 import { allowedModels } from "../core/chat/models.ts";
 import {
   QueueRefusal,
@@ -26,7 +26,7 @@ import {
   type HandOver,
   type Waiting,
 } from "../core/chat/queue.ts";
-import { refsForAi, RefRefusal } from "../core/chat/refs.ts";
+import { refsForAi } from "../core/chat/refs.ts";
 import type { ChatRow, Step, Transcripts } from "../core/chat/transcript.ts";
 import type { Job, Readings } from "../core/documents/reading.ts";
 import type { ToolAnswer, ToolSpec } from "../core/tools/registry.ts";

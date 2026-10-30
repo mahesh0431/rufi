@@ -267,7 +267,7 @@ const WAITING = `
     ('q-2', 'asha', 'c-asha', 'person', 'Second', 2, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z'),
     ('q-3', 'asha', 'c-asha', 'person', 'Third', 3, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');`;
 
-test("waiting messages: edit, reorder and remove; after a Stop, the next one goes", async ({
+test("waiting messages show in the chat: edit, reorder, send now and remove; after a Stop, the next one goes", async ({
   page,
   rufi,
 }) => {
@@ -275,9 +275,11 @@ test("waiting messages: edit, reorder and remove; after a Stop, the next one goe
   await rufi.start();
   await page.goto(rufi.link());
   await opener(chat(page)).click();
+  // After the chat's last message, in the order they go.
   const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
   const items = waiting.getByRole("listitem");
-  await expect(items).toHaveText(["Second", "Third"]);
+  await expect(items).toHaveText([/^Second/, /^Third/]);
+  await expect(log(chat(page))).toContainText("hang");
   await accessible(page);
 
   // Each moves by its handle: dragged, or by keyboard (Space, the arrows,
@@ -299,7 +301,7 @@ test("waiting messages: edit, reorder and remove; after a Stop, the next one goe
     steps: 10,
   });
   await page.mouse.up();
-  await expect(items).toHaveText(["Third", "Second"]);
+  await expect(items).toHaveText([/^Third/, /^Second/]);
   expect((await saved).ok()).toBe(true);
 
   /** How far a row is moved down to make room, in rows. */
@@ -328,11 +330,11 @@ test("waiting messages: edit, reorder and remove; after a Stop, the next one goe
   };
   await liftUp(1);
   await page.keyboard.press("Space");
-  await expect(items).toHaveText(["Second", "Third"]);
+  await expect(items).toHaveText([/^Second/, /^Third/]);
   await liftUp(1);
   await page.keyboard.press("Escape");
   await expect(handle(1)).not.toHaveAttribute("aria-pressed");
-  await expect(items).toHaveText(["Second", "Third"]);
+  await expect(items).toHaveText([/^Second/, /^Third/]);
   await expect(
     chat(page).getByRole("button", { name: "Minimise" }),
   ).toBeVisible();
@@ -342,9 +344,15 @@ test("waiting messages: edit, reorder and remove; after a Stop, the next one goe
     .getByRole("textbox", { name: "Waiting message" })
     .fill("Second, edited");
   await waiting.getByRole("button", { name: "Save" }).click();
-  await expect(items).toHaveText(["Second, edited", "Third"]);
-  await items.nth(1).getByRole("button", { name: "Remove" }).click();
-  await expect(items).toHaveText(["Second, edited"]);
+  await expect(items).toHaveText([/^Second, edited/, /^Third/]);
+  // Send now puts it first; the first has nothing to jump.
+  await expect(
+    items.nth(0).getByRole("button", { name: "Send now" }),
+  ).toHaveCount(0);
+  await items.nth(1).getByRole("button", { name: "Send now" }).click();
+  await expect(items).toHaveText([/^Third/, /^Second, edited/]);
+  await items.nth(0).getByRole("button", { name: "Remove" }).click();
+  await expect(items).toHaveText([/^Second, edited/]);
 
   await expect(waiting).toContainText(
     "Waiting · these go in order after the reply",
@@ -366,7 +374,7 @@ test("an older read of the queue never undoes a newer change", async ({
   await opener(chat(page)).click();
   const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
   const items = waiting.getByRole("listitem");
-  await expect(items).toHaveText(["Second", "Third"]);
+  await expect(items).toHaveText([/^Second/, /^Third/]);
 
   // A read that still sees "Second" as it was is held back.
   const read = Promise.withResolvers<undefined>();
@@ -387,7 +395,7 @@ test("an older read of the queue never undoes a newer change", async ({
     .getByRole("textbox", { name: "Waiting message" })
     .fill("Second, edited");
   await waiting.getByRole("button", { name: "Save" }).click();
-  await expect(items).toHaveText(["Second, edited"]);
+  await expect(items).toHaveText([/^Second, edited/]);
 
   const late = page.waitForResponse(
     (response) =>
@@ -396,7 +404,7 @@ test("an older read of the queue never undoes a newer change", async ({
   );
   release.resolve(undefined);
   await (await late).finished();
-  await expect(items).toHaveText(["Second, edited"]);
+  await expect(items).toHaveText([/^Second, edited/]);
 });
 
 test("a message sent while a reply runs goes into that reply, as your message; Stop is beside Send", async ({
@@ -734,7 +742,7 @@ test("when Rufi stops while it hands a message to the AI, the message is not sur
     waiting.getByRole("button", { name: "Send again" }),
   ).toBeVisible();
   await expect(box(chat(page))).toHaveValue("");
-  await expect(log(chat(page))).toHaveCount(0);
+  await expect(log(chat(page))).toHaveText("");
   await accessible(page);
 });
 
