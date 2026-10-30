@@ -17,7 +17,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   deleteSession,
   getSessionMessages,
@@ -106,11 +106,22 @@ const INBOX = "CLAUDE_CODE_MESSAGING";
 /** Text in each of Rufi's unreadable files, which must never reach Claude. */
 const SECRET = "SECRET-CANARY";
 
-/** A fictional file at each unreadable path; the backups get one inside. */
+/** A file in Claude's folder, there to be read. */
+const claudeFile = (home: string) => join(claudeFolder(home), ".claude.json");
+
+/**
+ * A fictional file at each unreadable path; the backups and Claude's folder
+ * get one inside.
+ */
 async function unreadableFiles(home: string, sandbox: AgentSandbox) {
-  await mkdir(backupsPath(home), { recursive: true });
   for (const path of sandbox.unreadable) {
-    const file = path === backupsPath(home) ? join(path, "copy.sqlite") : path;
+    const file =
+      path === backupsPath(home)
+        ? join(path, "copy.sqlite")
+        : path === claudeFolder(home)
+          ? claudeFile(home)
+          : path;
+    await mkdir(dirname(file), { recursive: true });
     await writeFile(file, `${SECRET} in ${file}\n`);
   }
 }
@@ -693,6 +704,13 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       { tool: "Bash", input: `cat '${wal}'`, check: refusedRead },
       { tool: "Grep", input: backups, check: refusedRead },
       { tool: "Bash", input: `cat '${database}'`, check: refusedRead },
+      // Codex's sign-in and Claude's folder.
+      {
+        tool: "Bash",
+        input: `cat '${join(home, "codex", "auth.json")}'`,
+        check: refusedRead,
+      },
+      { tool: "Read", input: claudeFile(home), check: refusedRead },
       {
         tool: "Write",
         input: `${ai}/inside.txt`,
@@ -793,7 +811,7 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       await rm(outside, { force: true });
       await rm("/tmp/rufi-claude-live", { force: true });
     }
-    return "each of 14 steps tried on its own call: 4 unreadable files and 4 writes refused, its folder and temp written, the internet reached, no token it can use";
+    return "each of 16 steps tried on its own call: 6 unreadable files (Codex's sign-in and Claude's folder too) and 4 writes refused, its folder and temp written, the internet reached, no token it can use";
   },
 
   "the adapter lists Claude's models by exact id": async (context) =>
