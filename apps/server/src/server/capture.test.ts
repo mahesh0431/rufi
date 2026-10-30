@@ -736,6 +736,11 @@ describe.runIf(process.platform === "darwin")(
     it.each([
       { location: "the system temp folder", root: tmpdir() },
       { location: "/tmp", root: "/tmp" },
+      // Codex reads these as a pattern's; in a path they mean only themselves.
+      {
+        location: "a folder named with [brackets] and a *",
+        root: join(tmpdir(), "rufi-canary [2026] *"),
+      },
     ])(
       "keeps the record unreadable, the skills read-only and writes in the AI's folder (its caches too) or temp, with data in $location; also after a model change, resume and reload",
       { timeout: 180_000 },
@@ -743,6 +748,7 @@ describe.runIf(process.platform === "darwin")(
         if (root !== tmpdir()) {
           store.close();
           await rm(home, { recursive: true, force: true });
+          await mkdir(root, { recursive: true });
           await makeRecord(root);
         }
         // Outside both the AI's folder and all temp roots. Prove that a
