@@ -453,7 +453,9 @@ test("a page draws in the reply at a fixed height and opens large over the chat:
     ).href;
     await expect.poll(() => ran).toBe(1);
     await expect.poll(() => refusedIn(page)).toEqual([`frame-src ${origin}`]);
-    expect(received).toEqual(["/ready"]);
+    // Other programs may look at a new local port (with a request for "/"),
+    // so what must never arrive is the navigation itself.
+    expect(received).not.toContain("/navigate");
     const direct = await page.context().newPage();
     await direct.goto(url);
     await expect(
@@ -461,7 +463,7 @@ test("a page draws in the reply at a fixed height and opens large over the chat:
     ).toBeVisible();
     await expect(direct.locator("script")).toHaveCount(0);
     expect(ran).toBe(1);
-    expect(received).toEqual(["/ready"]);
+    expect(received).not.toContain("/navigate");
     await direct.close();
     expect(await refusedIn(page)).toEqual([`frame-src ${origin}`]);
   } finally {
@@ -554,7 +556,9 @@ for (const { system, chosen } of [
     expect(await looks()).toEqual(chosen === "Dark" ? black : white);
 
     // Another tab chooses the other look; this one stays on its chat with
-    // the page open large, which stays open, and both frames follow.
+    // the page open large, which stays open, and both frames follow. The
+    // other tab tells this one after its save's answer, so it stays open
+    // until they have.
     await page.getByRole("button", { name: "Open Colours" }).click();
     const large = page.getByRole("dialog", { name: "Colours" });
     await expect(large).toBeVisible();
@@ -571,7 +575,6 @@ for (const { system, chosen } of [
       .getByRole("radio", { name: chosen === "Dark" ? "Light" : "Dark" })
       .check();
     expect((await saved).ok()).toBe(true);
-    await other.close();
     const now =
       chosen === "Dark" ? /\?appearance=light$/ : /\?appearance=dark$/;
     for (const shown of [inline, large.locator("iframe")]) {
@@ -580,6 +583,7 @@ for (const { system, chosen } of [
         .poll(() => looks(shown))
         .toEqual(chosen === "Dark" ? white : black);
     }
+    await other.close();
     await expect(large).toBeVisible();
     await large.getByRole("button", { name: "Close" }).click();
 
