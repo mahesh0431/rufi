@@ -18,9 +18,10 @@ import { within } from "./deadline.ts";
 /**
  * The oldest Claude Rufi runs: the one its Claude adapter was tried with.
  * Rufi relies on how this version handles composed messages, MCP
- * registration, steering and interrupts.
+ * registration, steering and interrupts, and on each turn's start naming
+ * the messages it took.
  */
-const CLAUDE_FLOOR = "2.1.312";
+const CLAUDE_FLOOR = "2.1.314";
 
 /** A Claude Rufi may run: where it is, and its version. */
 export interface InstalledClaude {
