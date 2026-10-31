@@ -193,7 +193,11 @@ export function openClaudeSession(
   options: ClaudeSessionOptions,
 ): ClaudeSession {
   const query = options.query ?? sdkQuery;
-  const lockDown = claudeLockDown(options.sandbox, options.plugin.path);
+  const lockDown = claudeLockDown(
+    options.sandbox,
+    options.plugin.path,
+    options.env["HOME"],
+  );
   const input = inputQueue();
   let child: ChildProcess | undefined;
   const run = query({

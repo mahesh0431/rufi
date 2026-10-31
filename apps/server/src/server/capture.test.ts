@@ -49,6 +49,8 @@ import { agentSetup, aiSandbox, coreFile } from "./core.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
 
 let home: string;
+/** The HOME the AI's commands get: a fictional one, never the real. */
+let userHome: string;
 let store: Store;
 let transcripts: Transcripts;
 let model: FakeModel | undefined;
@@ -60,6 +62,7 @@ let seen: { auth: string | null; origin: string | null; method: string }[];
 
 async function makeRecord(root: string) {
   home = await mkdtemp(join(root, "rufi-capture-"));
+  userHome = await mkdtemp(join(root, "rufi-user-home-"));
   store = openWritable(databasePath(home));
   store.db.exec(`
     INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
@@ -140,7 +143,7 @@ async function start(
       home,
       ...agentSetup(home),
       command,
-      env: { PATH: process.env["PATH"] ?? "" },
+      env: { PATH: process.env["PATH"] ?? "", HOME: userHome },
       version: "0.0.0",
       deadlines: { requestMs: 20_000 },
       log,
@@ -809,6 +812,15 @@ describe.runIf(process.platform === "darwin")(
           );
           await mkdir(dirname(claudeFile), { recursive: true });
           await writeFile(claudeFile, JSON.stringify({ fictional: true }));
+          // A fictional keychain in the commands' fictional HOME.
+          const keychain = join(
+            userHome,
+            "Library",
+            "Keychains",
+            "login.keychain-db",
+          );
+          await mkdir(dirname(keychain), { recursive: true });
+          await writeFile(keychain, "a fictional keychain");
           expect(existsSync(`${databasePath(home)}-wal`)).toBe(true);
           expect(existsSync(`${agentsPath(home)}-wal`)).toBe(true);
           const skill = join(home, "codex", "skills", "analysis", "SKILL.md");
@@ -823,11 +835,13 @@ describe.runIf(process.platform === "darwin")(
             ),
             join(home, "backups", "copy.sqlite"),
             claudeFile,
+            keychain,
           ]
             .filter((path) => existsSync(path))
             .map((path) => `cat ${q(path)}`);
-          // No journals (two), and the backup's copy and Claude's file.
-          expect(denied).toHaveLength(unreadable.length - 2 + 2);
+          // No journals (two), and the backup's copy, Claude's file and the
+          // keychain.
+          expect(denied).toHaveLength(unreadable.length - 2 + 3);
           // What a command reads of Rufi's processes: Rufi's own and the
           // Codex it runs now, each with a value it surely holds.
           await writeFile(join(probe, "procargs.py"), PROCARGS);
