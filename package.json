@@ -15,6 +15,7 @@
     "rufi": "node apps/server/src/cli/main.ts",
     "codex:types": "node apps/server/scripts/codex-types.ts",
     "tools:json": "node apps/server/scripts/tools-json.ts",
+    "visuals:md": "node apps/server/scripts/visuals-md.ts",
     "check:quick": "oxfmt --check && oxlint --type-aware --deny-warnings && tsc --noEmit && tsc --noEmit -p apps/web && knip",
     "check": "pnpm check:quick && pnpm --filter @rufi/web build && vitest run && playwright test",
     "db:types": "node apps/server/scripts/db-types.ts",

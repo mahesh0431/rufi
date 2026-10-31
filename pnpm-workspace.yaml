@@ -5,7 +5,9 @@ packages:
 # Supply chain: no dependency runs an install script unless it is listed in
 # allowBuilds, and an unlisted one fails the install instead of being skipped.
 strictDepBuilds: true
-allowBuilds: {}
+allowBuilds:
+  # Its postinstall only sends install telemetry; it never runs.
+  "@openuidev/lang-core": false
 
 # The Claude Agent SDK drives the Claude installed on the Mac
 # (pathToClaudeCodeExecutable), so the Claude binaries it bundles are never
