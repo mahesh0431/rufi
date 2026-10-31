@@ -2092,9 +2092,13 @@ test.describe("on the real Codex binary, with a local fake model", () => {
   }) => {
     await opened(page, rufi, { codex: "real" });
     // The model reads Rufi's overview first: a step says so, as reported.
+    // The first reply starts the real Codex binary, which connects to Rufi's
+    // tools before the model's turn and its tool call: longer than the
+    // usual wait when the Mac is busy.
     await send(page, "Read my overview");
     await expect(log(chat(page)).locator(".reply")).toHaveText(
       "ok:Read my overview",
+      { timeout: 15_000 },
     );
     // Opened once the reply has ended: a click while it runs closes it.
     await expect(activity(chat(page))).toHaveText(/^Activity · \d+ steps? · /);

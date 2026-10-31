@@ -61,7 +61,7 @@ One lab test or measurement, kept exactly as reported or entered: name, value, u
 _Avoid_: reading, lab value
 
 **Test**:
-One of a person's tests, such as Creatinine or Blood pressure: what their results are in, whatever each lab printed, so the values of one test from every lab are together. It has a name, a section (such as Kidney) and the unit its numbers are in, all in the AI's words. The AI chooses each result's test when it saves the result, with the user, and gives the result's numbers in the test's unit: the printed number when the units mean the same, converted when they don't, none when it can't compare; the printed value stays as it came. Joining two tests, splitting one and renaming are saves in the chat, with a receipt and undo. A test is never removed: one with no results stays, and the AI can use it again. Results saved before Rufi had tests are in one test for each printed name and unit.
+One of a person's tests, such as Creatinine or Blood pressure: what their results are in, whatever each lab printed, so the values of one test from every lab are together. It has a name, a section (such as Kidney) and the unit its numbers are in, all in the AI's words; its line has every value at its number in that unit. The AI chooses each result's test when it saves the result, with the user, and gives the result's numbers in the test's unit: the printed number when the units mean the same, converted when they don't, none when it can't compare; the printed value stays as it came. Joining two tests, splitting one and renaming are saves in the chat, with a receipt and undo. A test is never removed: one with no results stays, and the AI can use it again. Results saved before Rufi had tests are in one test for each printed name and unit.
 _Avoid_: analyte, biomarker, series, group
 
 **Category**:
@@ -73,7 +73,7 @@ A result of the category lab: a test of a sample, such as blood or urine, from a
 _Avoid_: lab value, test result
 
 **Measurement**:
-A result of the category measurement: a reading of the body, such as blood pressure, pulse, weight, height, temperature or SpO2, typed in or read from a document. The **Measurements** page groups them by the day they were taken, at the precision known. Its date is when it was taken, never a lab's collection date.
+A result of the category measurement: a reading of the body, such as blood pressure, pulse, weight, height, temperature or SpO2, typed in or read from a document. The **Measurements** page groups them by the day they were taken, at the precision known; each is in a test, whose line it is on. Its date is when it was taken, never a lab's collection date.
 _Avoid_: vital, vitals, reading
 
 **As printed**:

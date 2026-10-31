@@ -1,6 +1,6 @@
 import type { ResultRow } from "@rufi/contracts/record";
 import { describe, expect, it } from "vitest";
-import { drawTrend } from "./trend-drawing.ts";
+import { drawTrend, lineOf } from "./trend-drawing.ts";
 
 const LARGE = { width: 640, height: 150 };
 
@@ -150,5 +150,56 @@ describe("for a screen reader", () => {
     expect(drawTrend("Ferritin (µg/L)", ferritin, LARGE)?.said).toBe(
       "Ferritin (µg/L) over time: 31 on 12 Oct 2025, 18 on 4 Mar 2026, 26 on 1 Sep 2026. Lab range 30 - 400",
     );
+  });
+});
+
+describe("a test's line", () => {
+  it("puts each result at its numbers in the test's unit, as printed when they are the printed ones, and leaves out one with none", () => {
+    const crea = (
+      id: string,
+      date: string,
+      value: string,
+      more: Partial<ResultRow>,
+    ) =>
+      result(id, date, value, { test: "Creatinine", unit: "mg/dL", ...more });
+    const line = lineOf(
+      [
+        crea("c1", "2026-03-01", "1.0", {
+          number: 1,
+          test_number: 1,
+          range: "0.6 - 1.1",
+        }),
+        // Another lab's unit, converted; and one the AI couldn't compare.
+        crea("c2", "2026-06-01", "<45", {
+          comparator: "<",
+          number: 45,
+          unit: "µmol/L",
+          test_number: 0.5,
+          range: "45 - 90",
+        }),
+        crea("c3", "2026-07-01", "8", { number: 8, unit: "mmol/L" }),
+      ],
+      (id) => (id === "c2" ? "Northgate Labs" : undefined),
+    );
+    expect(drawTrend("Creatinine (mg/dL)", line, LARGE)?.said).toBe(
+      "Creatinine (mg/dL) over time: 1.0 on 1 Mar 2026, <0.5 on 1 Jun 2026. Lab range 45 - 90 µmol/L · Northgate Labs",
+    );
+  });
+
+  it("draws a blood pressure's second number in the test's unit as its second line", () => {
+    const [bp] = lineOf([
+      result("b1", "2026-09-20", "16.8/10.9", {
+        number: 16.8,
+        second_number: 10.9,
+        unit: "kPa",
+        test_number: 126,
+        test_second_number: 82,
+      }),
+    ]);
+    expect(bp).toMatchObject({
+      value: "126/82",
+      number: 126,
+      second_number: 82,
+    });
   });
 });

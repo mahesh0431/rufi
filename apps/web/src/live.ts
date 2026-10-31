@@ -109,7 +109,7 @@ function open(personId: string): Opened {
    */
   const recordChanged = () => {
     documentsChanged();
-    for (const key of ["record", "series", "follow-ups", "brief"]) {
+    for (const key of ["record", "follow-ups", "brief"]) {
       void queries.invalidateQueries({ queryKey: [key, personId] });
     }
     // A profile change can change the name, which the sidebar shows.

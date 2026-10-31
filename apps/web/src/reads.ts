@@ -21,8 +21,6 @@ import {
   type SaveProfile,
   RecordDetail,
   RecordPage,
-  type ResultCategory,
-  Series,
   TestPage,
 } from "@rufi/contracts/record";
 import { Schema } from "effect";
@@ -263,26 +261,6 @@ export const useRecordDetail = (personId: string, kind: string, id: string) =>
         RecordDetail,
         "GET",
         `${personPath(personId)}/record/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`,
-      ),
-  });
-
-/**
- * A test's current values in one unit (none: the values without a unit)
- * and one category.
- */
-export const useSeries = (
-  personId: string,
-  test: string,
-  unit: string | undefined,
-  category: ResultCategory,
-) =>
-  useQuery({
-    queryKey: ["series", personId, test, unit ?? null, category],
-    queryFn: () =>
-      read(
-        Series,
-        "GET",
-        `${personPath(personId)}/series?${new URLSearchParams({ test, ...(unit !== undefined && { unit }), category }).toString()}`,
       ),
   });
 

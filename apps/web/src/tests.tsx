@@ -1,9 +1,10 @@
 // Lab results by test, and a test's own page (docs/adr/0028). Lab results
 // lists each of the person's tests that has a lab result, by section, with
-// its latest value as printed. A test's page has every current value,
-// newest first, each opening in place to its sources and history, then
-// the test's own history. The pages only show: changes start in the chat,
-// with Ask Rufi.
+// its latest value as printed. A test's page has its line across every lab,
+// at the numbers in the test's unit, then every current value, newest
+// first, each opening in place to its sources and history, then the test's
+// own history. The pages only show: changes start in the chat, with Ask
+// Rufi.
 import type { Person } from "@rufi/contracts";
 import type { LabTest, ResultRow, TestValue } from "@rufi/contracts/record";
 import { Link } from "@tanstack/react-router";
@@ -20,6 +21,7 @@ import {
   rowElementId,
 } from "./record.tsx";
 import { Trend } from "./trend.tsx";
+import { lineOf, lineOfPage, lineTitle, onTheLine } from "./trend-drawing.ts";
 import { EmptyState, Problem } from "./ui.tsx";
 
 /** The heading of the tests with no section. */
@@ -123,7 +125,11 @@ function TestLine({
             <span className="text-muted"> {cells.note}</span>
           )}
         </span>
-        <span>{trend && <Trend mini title={row.name} values={trend} />}</span>
+        <span>
+          {trend && (
+            <Trend mini title={lineTitle(row)} values={lineOf(trend)} />
+          )}
+        </span>
         <span className="text-muted">{cells.detail}</span>
         <span>{cells.status}</span>
         <span className="text-muted">{cells.date}</span>
@@ -171,6 +177,7 @@ export function TestPage({
     );
   }
   const { test } = page.data;
+  const line = lineOfPage(page.data.values);
   if ("problem" in test || test.kind !== "test") {
     return (
       <div className="mx-auto max-w-[790px] px-6 py-8 text-muted italic">
@@ -193,7 +200,8 @@ export function TestPage({
           {[test.section ?? NO_SECTION, test.unit].filter(Boolean).join(" · ")}
         </p>
       </div>
-      <section aria-labelledby="values">
+      {line.length > 0 && <Trend title={lineTitle(test)} values={line} />}
+      <section aria-labelledby="values" className="mt-3">
         <h3 id="values" className="mb-1 font-semibold">
           {values(page.data.values.length)}
         </h3>
@@ -207,6 +215,7 @@ export function TestPage({
                 personId={person.id}
                 value={value}
                 unit={test.unit}
+                drawn={line.length > 0}
                 open={open === value.row.id}
                 onOpen={() => {
                   setOpen(open === value.row.id ? null : value.row.id);
@@ -253,6 +262,7 @@ function ValueLine({
   personId,
   value,
   unit,
+  drawn,
   open,
   onOpen,
 }: {
@@ -260,6 +270,8 @@ function ValueLine({
   value: TestValue;
   /** The test's unit. */
   unit: string | undefined;
+  /** The test has a line, so a value off it says so. */
+  drawn: boolean;
   open: boolean;
   onOpen: () => void;
 }) {
@@ -293,6 +305,9 @@ function ValueLine({
           {cells.value}
           {converted !== undefined && (
             <span className="block text-xs text-muted">= {converted}</span>
+          )}
+          {drawn && !onTheLine(row) && (
+            <span className="block text-xs text-muted">Not on the line</span>
           )}
         </span>
         <span>
