@@ -509,8 +509,20 @@ function useWorkingClock(live: StoreApi<Live>, personId: string) {
   const [clock, setClock] = useState<Clock | null>(null);
   useLayoutEffect(() => {
     const box = boxFor(personId).store;
+    // A send the core took counts as starting until its row or its message
+    // shows, so the timer doesn't start again meanwhile.
     const update = () => {
-      const now = workingOf(live.getState(), box.getState().sending);
+      const state = live.getState();
+      const { sending, accepted } = box.getState();
+      if (
+        accepted !== null &&
+        (accepted in state.entries ||
+          state.queue.items.some((item) => item.id === accepted))
+      ) {
+        box.setState({ accepted: null });
+        return;
+      }
+      const now = workingOf(state, sending || accepted !== null);
       const at = new Date().toISOString();
       setClock((before) => clockOf(before, now, at));
     };
