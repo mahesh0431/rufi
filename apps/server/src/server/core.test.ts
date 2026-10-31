@@ -237,7 +237,10 @@ async function rufiReply(
 }
 
 /** The scripted Codex playing `scenario` (FAKE_CODEX), for start(). */
-const scripted = (scenario: object, more: { requestMs?: number } = {}) => [
+const scripted = (
+  scenario: object,
+  more: { requestMs?: number; log?: string } = {},
+) => [
   codexAdapter({
     home,
     ...agentSetup(home),
@@ -245,6 +248,7 @@ const scripted = (scenario: object, more: { requestMs?: number } = {}) => [
     env: {
       PATH: process.env["PATH"] ?? "",
       FAKE_CODEX: JSON.stringify(scenario),
+      ...(more.log !== undefined && { FAKE_CODEX_LOG: more.log }),
     },
     version: "0.0.0",
     ...(more.requestMs !== undefined && {
@@ -1509,6 +1513,65 @@ describe("what the screens read", () => {
       codex: { state: "signed_in", account: "asha@example.com", text: null },
       claude: out,
     });
+  });
+
+  it("keeps each provider's sign-in as it last said: a send asks neither provider, and a reply that finds Codex signed out shows it at once", async () => {
+    const log = join(home, "fake.jsonl");
+    const adapters = scripted({}, { log });
+    /** How often Codex itself was asked how it's signed in. */
+    const reads = async () =>
+      (await readFile(log, "utf8"))
+        .split("\n")
+        .filter((line) => line.includes('"method":"account/read"')).length;
+    const codex = codexSignIn(adapters[0] as CodexAdapter, () => undefined);
+    let asked = 0;
+    let out = false;
+    const page = await session(
+      await start({
+        adapters,
+        signIns: {
+          codex: {
+            ...codex,
+            status: () => {
+              asked += 1;
+              return out
+                ? Promise.resolve({
+                    state: "signed_out",
+                    account: null,
+                    text: null,
+                  })
+                : codex.status();
+            },
+          },
+        },
+      }),
+    );
+    const { path } = await chat(page);
+    const replies = async () =>
+      ((await page.api("GET", path)).body["turns"] as { status: string }[])
+        .length;
+    // Rufi's own first ask, at its start.
+    await page.api("GET", "/api/status");
+    const before = await reads();
+    for (const [n, text] of ["Hello", "And again"].entries()) {
+      expect((await page.say(path, text)).status).toBe(202);
+      await until(async () => (await replies()) === n + 1);
+    }
+    expect(asked).toBe(1);
+    expect(await reads()).toBe(before);
+
+    // Codex's sign-in ends between asks: the reply says so, and Rufi hears it.
+    out = true;
+    expect((await page.say(path, "sign-in ended")).status).toBe(202);
+    await until(
+      async () =>
+        (
+          (await page.api("GET", "/api/status")).body["codex"] as {
+            state: string;
+          }
+        ).state === "signed_out",
+    );
+    expect((await page.say(path, "Again")).status).toBe(409);
   });
 
   it("when Rufi can't ask Codex, says Codex's words, and a send says them too, not signed out", async () => {

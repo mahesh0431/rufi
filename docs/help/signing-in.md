@@ -35,7 +35,7 @@ To check, run `pnpm rufi status`. It shows whether Codex and Claude are signed i
 
 ## Staying signed in
 
-Codex and Claude renew their sign-ins by themselves. If one ends, for example because you signed out in your ChatGPT or Claude settings, Rufi shows you're signed out, and you sign in again.
+Codex and Claude renew their sign-ins by themselves. Rufi asks each how it's signed in when Rufi starts, every 5 minutes, and when you sign in, and remembers the answer, so sending a message doesn't wait for them. If one ends, for example because you signed out in your ChatGPT or Claude settings, the next reply on it fails with its words, and from then on Rufi shows you're signed out, and you sign in again.
 
 ## What is kept, and where
 

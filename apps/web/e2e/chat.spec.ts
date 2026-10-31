@@ -446,6 +446,9 @@ test("while a reply runs, the box's one button is Stop until you type; then Ente
   await send(page, "hang");
   const button = (name: string) => chat(page).getByRole("button", { name });
   const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
+  // In the reply, not waiting: a waiting message has a Steer of its own.
+  await expect(log(chat(page))).toContainText("hang");
+  await expect(waiting).toHaveCount(0);
   await expect(button("Stop")).toBeVisible();
   await box(chat(page)).fill("Only the latest results, please");
   await expect(button("Stop")).toHaveCount(0);

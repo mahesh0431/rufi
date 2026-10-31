@@ -794,19 +794,19 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     },
   );
 
-  // Only the scripted Codex can hold its sign-in check.
+  // Only the scripted Codex can hold the thread's start.
   it.runIf(name === "fake")(
     "a message sent while a reply starts or runs goes into that reply; one sent after goes as a new message",
     timeout,
     async () => {
       const hold = join(home, "hold");
       await startChat(name, {
-        scenario: { held: { methods: ["account/read"], file: hold } },
+        scenario: { held: { methods: ["thread/start"], file: hold } },
       });
       const c = await newChat();
       await chat?.selectModel(c, "gpt-6.1-sol");
-      // Its conversation opens: Codex holds its sign-in check, then the reply
-      // starts.
+      // Its conversation opens: Codex holds the thread's start, then the
+      // reply starts.
       await writeFile(hold, "");
       await say(await chatRow(c.id), "slow");
       await until(async () => (await chat?.agent.busy(c)) === true);
@@ -839,11 +839,11 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     async () => {
       const hold = join(home, "hold");
       await startChat(name, {
-        scenario: { held: { methods: ["account/read"], file: hold } },
+        scenario: { held: { methods: ["thread/start"], file: hold } },
       });
       const c = await newChat();
       await chat?.selectModel(c, "gpt-6.1-sol");
-      // Its conversation opens: Codex holds its sign-in check.
+      // Its conversation opens: Codex holds the thread's start.
       await writeFile(hold, "");
       await say(await chatRow(c.id), "Hello");
       await until(async () => (await chat?.agent.busy(c)) === true);
@@ -2332,13 +2332,13 @@ describe("the chat, on the scripted Codex", () => {
       return id;
     };
     /**
-     * A reader Rufi AI starts for one document, with the tools it needs; each
-     * call has an id of its own, as Codex gives it.
+     * A reader Rufi AI starts for one document; each call has an id of its
+     * own, as Codex gives it.
      */
     const reader = (title: string, task: string) => ({
       id: `start-${title}`,
       tool: "start_agent",
-      arguments: { title, task, tools: ["get_documents", "save_reading"] },
+      arguments: { title, task },
     });
     /** A reader's save of these pages of the document its task names. */
     const saves = (pages: readonly number[]) => ({
@@ -3732,18 +3732,14 @@ describe("the chat, on the scripted Codex", () => {
     expect(claude.opened).toHaveLength(1);
   });
 
-  it("gives a sub-agent only the tools it was given, and its own sub-agent no more than those", async () => {
+  it("gives a sub-agent all of its parent's tools, and its own sub-agent too", async () => {
     await startChat("fake", {
       scenario: {
         callsByText: {
           "Ask a reader": [
             {
               tool: "start_agent",
-              arguments: {
-                title: "Reader",
-                task: "reader: try",
-                tools: ["get_overview", "start_agent"],
-              },
+              arguments: { title: "Reader", task: "reader: try" },
             },
           ],
           "reader:": [
@@ -3762,11 +3758,7 @@ describe("the chat, on the scripted Codex", () => {
             },
             {
               tool: "start_agent",
-              arguments: {
-                title: "Wider",
-                task: "wider: try",
-                tools: ["get_overview", "save_changes"],
-              },
+              arguments: { title: "Helper", task: "helper: try" },
             },
           ],
         },
@@ -3783,33 +3775,16 @@ describe("the chat, on the scripted Codex", () => {
         ),
       ),
     );
-    const calls = store.db
-      .prepare(
-        "SELECT tool, answer FROM tool_calls WHERE agent_id = ? ORDER BY started_at",
-      )
-      .all(reader) as { tool: string; answer: string }[];
-    expect(
-      calls.map(({ tool, answer }) => ({
-        tool,
-        error: (JSON.parse(answer) as { error?: string }).error,
-      })),
-    ).toEqual([
-      {
-        tool: "save_changes",
-        error:
-          "There is no tool called save_changes. Rufi's tools: get_overview, start_agent.",
-      },
-      {
-        tool: "start_agent",
-        error:
-          "An agent you start can have only tools you have, and you don't have save_changes. Nothing was started.",
-      },
+    expect(store.db.prepare("SELECT name FROM symptoms").all()).toEqual([
+      { name: "Headache" },
     ]);
-    expect(store.db.prepare("SELECT * FROM symptoms").all()).toEqual([]);
-    expect(agentRows().map((row) => row["title"])).toEqual([
+    const agents = agentRows("SELECT title, tools FROM agents ORDER BY rowid");
+    expect(agents.map((row) => row["title"])).toEqual([
       "Rufi AI",
       "Reader",
+      "Helper",
     ]);
+    expect(new Set(agents.map((row) => row["tools"])).size).toBe(1);
   });
 
   it("saves the calls of two agents of the chat that have the same id from their provider, each with its receipt", async () => {
