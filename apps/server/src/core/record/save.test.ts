@@ -2127,6 +2127,20 @@ describe("a result's test", () => {
       test_number: 0.5,
     });
 
+    // What the AI reverses, from its latest saves: the test and the
+    // number together.
+    const [latest] = (await overview())["latest_saves"] as {
+      changes: Record<string, unknown>[];
+    }[];
+    const change = latest?.changes.find((c) => c["kind"] === "result");
+    expect(change).toEqual({
+      kind: "result",
+      id: "res-a3",
+      action: "change",
+      before: { in_test: "tst-crp", test_number: 5 },
+      after: { in_test: test, test_number: 0.5 },
+    });
+
     await say("Undo that");
     const back = await save(
       [
@@ -2134,7 +2148,7 @@ describe("a result's test", () => {
           kind: "result",
           action: "change",
           id: "res-a3",
-          fields: { in_test: "tst-crp", test_number: 5 },
+          fields: change?.["before"],
         },
       ],
       "call-2",

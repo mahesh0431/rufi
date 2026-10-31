@@ -236,7 +236,7 @@ CREATE TABLE tests (
   person_id TEXT NOT NULL REFERENCES people (id),
   name TEXT NOT NULL,          -- the AI's plain name for it, e.g. 'Creatinine'
   section TEXT,                -- the AI's words, e.g. 'Kidney'; none shows last
-  unit TEXT,                   -- the unit its line uses, as the AI gave it; none for a test with no unit
+  unit TEXT,                   -- the unit its results' test_number is in, as the AI gave it; none for a test with no unit
   removed INTEGER NOT NULL DEFAULT 0, -- always 0: a test is never removed
   UNIQUE (person_id, id)
 ) STRICT;
