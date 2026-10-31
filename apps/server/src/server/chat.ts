@@ -411,19 +411,24 @@ export function chat(deps: ChatDeps) {
    * Rufi's order: what Rufi keeps decides what goes, and the package hands
    * them over, each as the person sent it: into the running reply (steer)
    * or after it (queue). A conversation told older rules opens again
-   * first, once Rufi AI is idle. Signed out, nothing goes.
+   * first, once Rufi AI is idle. Signed out, nothing goes: what waits is
+   * held with the line on how to sign in.
    */
   const carry = (chat: ChatRow) =>
     inLane(chat, async (stored) => {
       let fresh = stored;
       if (closed) return;
       const provider = await providerOf(stored).catch(() => undefined);
-      if (
-        provider === undefined ||
-        (await deps.signIn(provider)).state !== "signed_in"
-      ) {
+      if (provider === undefined) return;
+      const { state } = await deps.signIn(provider);
+      if (state === "signed_out") {
+        await queue.signedOut(
+          fresh,
+          provider === "claude" ? CLAUDE_SIGNED_OUT : SIGNED_OUT,
+        );
         return;
       }
+      if (state !== "signed_in") return;
       // Held as signed out, they go now the sign-in is back.
       await queue.signedIn(fresh);
       const rows = (await queue.waiting(fresh)).filter(
