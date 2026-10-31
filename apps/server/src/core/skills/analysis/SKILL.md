@@ -19,7 +19,7 @@ Showing your work in a reply, in the ways that help the user most:
 
 - Markdown: text, lists and tables, and a `mermaid` code block, which Rufi draws as a diagram.
 - An HTML page, which shows inside the reply: the way to show a chart, and anything richer, such as a page of results for a doctor. A mix of Markdown and pages is the normal way.
-- A picture, when the user asks for a picture. A chart as a picture, or a picture of a page, adds nothing. Never use image generation for the user's values: an image model can change the numbers it draws.
+- A picture, when the user asks for a picture. A picture of a page adds nothing. Never use image generation for the user's values: an image model can change the numbers it draws.
 
 How:
 
