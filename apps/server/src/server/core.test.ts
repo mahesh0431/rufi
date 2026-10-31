@@ -837,6 +837,103 @@ describe("the local API", () => {
     ).toBe(404);
   });
 
+  it("changes a profile only for the person in the path, once for one sending, and only the fields that differ", async () => {
+    const store = openWritable(databasePath(home));
+    store.db.exec(
+      await readFile(
+        join(import.meta.dirname, "../../tests/fixtures/fictional-family.sql"),
+        "utf8",
+      ),
+    );
+    store.close();
+    const core = await start();
+    const page = await session(core);
+    const saves = () => {
+      const db = openWritable(databasePath(home));
+      try {
+        return db.db
+          .prepare(
+            "SELECT o.person_id, o.origin, c.before, c.after FROM operations o JOIN record_changes c ON c.operation_id = o.id ORDER BY o.seq",
+          )
+          .all()
+          .map((row) => {
+            const { person_id, origin, before, after } = row as Record<
+              string,
+              string
+            >;
+            const was = JSON.parse(before ?? "{}") as Record<string, unknown>;
+            const now = JSON.parse(after ?? "{}") as Record<string, unknown>;
+            return {
+              person_id,
+              origin,
+              changed: Object.keys(now).filter(
+                (key) => JSON.stringify(was[key]) !== JSON.stringify(now[key]),
+              ),
+            };
+          });
+      } finally {
+        db.close();
+      }
+    };
+    const sent = {
+      sending: "s-1",
+      in: "settings",
+      changes: { blood_group: "B+", sex_for_ranges: "female" },
+    };
+    const first = await page.api("PUT", "/api/people/ravi/profile", sent);
+    expect(first.body).toMatchObject({
+      values: { blood_group: "B+", sex_for_ranges: "female", height: null },
+      history: [{ madeIn: "settings" }],
+    });
+    // The same sending again, after a lost answer: saved once.
+    expect(
+      (await page.api("PUT", "/api/people/ravi/profile", sent)).status,
+    ).toBe(200);
+    // Asha's sex is female already: only her height is saved.
+    await page.api("PUT", "/api/people/asha/profile", {
+      sending: "s-2",
+      in: "profile",
+      changes: { sex_for_ranges: "female", height: { value: 162, unit: "cm" } },
+    });
+    expect(saves()).toEqual([
+      {
+        person_id: "ravi",
+        origin: "settings",
+        changed: ["sex_for_ranges", "blood_group"],
+      },
+      {
+        person_id: "asha",
+        origin: "profile",
+        changed: ["height", "height_unit"],
+      },
+    ]);
+    expect(
+      (await page.api("GET", "/api/people/asha/profile")).body,
+    ).toMatchObject({
+      values: {
+        birth_date: { date: "1990-03", words: "March 1990" },
+        blood_group: null,
+      },
+    });
+    expect(
+      (
+        await page.api("PUT", "/api/people/nobody/profile", {
+          ...sent,
+          sending: "s-3",
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await page.api("PUT", "/api/people/asha/profile", {
+          sending: "s-4",
+          in: "settings",
+          changes: { birth_date: { date: "1990-13", words: "Smarch 1990" } },
+        })
+      ).status,
+    ).toBe(400);
+  });
+
   it("takes a message at the limit and stores it whole", async () => {
     const core = await start();
     const page = await session(core);

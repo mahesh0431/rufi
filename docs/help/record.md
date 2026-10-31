@@ -15,7 +15,7 @@ Overview is the first page you see. It has three parts, in this order:
    Click **Open** to go to the document's page (see [Documents](documents.md)), or to that follow-up on Follow-ups. Click **Ask Rufi** to put it in the chat's box and ask about it (see [Adding to a message](chat.md#adding-to-a-message)). A document read with nothing to save isn't here. When nothing waits, this part isn't shown.
 
 2. **Health record:** a tile for each of its pages that has something in it, with its count and a short summary. Click a tile to open that page. The pages with nothing in them are on one line under the tiles, **Nothing yet:** and their names. Click a name to open that page. When a page gets its first record, it gets its tile.
-3. **Recent changes:** your last 5 saves and undos, newest first. Click one to see its receipt, the same as in the chat.
+3. **Recent changes:** your last 5 saves and undos, newest first, also the changes you made to your profile on its page or in Settings. Click one to see its receipt, the same as in the chat.
 
 Rufi works out the tiles from your saved health record, not with the AI. Each tile says what it counts:
 
@@ -55,7 +55,15 @@ Your health record keeps a short profile of you: your birth date, your sex for l
 - **Blood group** is A+, A−, B+, B−, AB+, AB−, O+ or O−.
 - **Height** is a number and its unit, cm or in, as you give it. It is your profile's own value: a height on a report or in your measurements stays a measurement, and changes nothing here.
 
-To fill in or change your profile, tell the AI, for example "I was born in March 1990" or "my blood group is B+". As for every change, it asks first, and the chat shows a receipt. Each change is in your profile's history, and "undo that" puts the earlier value back. Your profile is never removed: to empty a value, ask the AI to clear it.
+Click your name at the top of the sidebar to open your profile. It shows each value, your age today ("36 years old today", or "about 36" when you gave only a year), and its **History**: each change, newest first, with when it was made, what changed (old → new) and where: **in the chat**, **in the welcome**, **on this page** or **in Settings**.
+
+You can change your profile in three places:
+
+- **On its page:** click **Edit**, change a field, then click **Done**.
+- **In Settings › Profile:** the same fields.
+- **In the chat:** tell the AI, for example "I was born in March 1990" or "my blood group is B+". As for every change, it asks first, and the chat shows a receipt.
+
+On the page and in Settings, a field saves on its own once it is complete: a choice when you choose it, a birth date or a height when you leave it. Only that field is saved. Empty a birth date, a blood group or a height to clear it. If a change can't be saved, what you entered stays, with one line saying what to do. A change made there has no receipt in the chat: it is in your profile's history and in Overview's **Recent changes**. The AI sees it too, so "undo my last profile change" in the chat puts the earlier value back, after your yes. Your profile is never removed.
 
 The AI reads your profile with your health record, and uses your age and sex to choose a range when a report prints none (see [Asking about your health record](chat.md#asking-about-your-health-record)).
 
