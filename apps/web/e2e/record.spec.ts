@@ -283,11 +283,11 @@ test("a test's page lists every value newest first as printed, with its number i
 }) => {
   await rufi.family(
     `INSERT INTO tests (id, person_id, name, section, unit) VALUES ('tst-ferritin', 'asha', 'Ferritin', 'Iron', 'µg/L');
-     INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, reference_range, flag_text, measured_at, entered_at, test_id, test_number) VALUES
-       ('fer-0', 'asha', 'lab', 'Ferritin (CLIA)', '0.022', 0.022, 'mg/L', NULL, NULL, '2024-05-01', '2026-10-01T10:00:00Z', 'tst-ferritin', 22),
-       ('fer-1', 'asha', 'lab', 'Ferritin', '31', 31, 'µg/L', '30 - 400', NULL, '2025-10-12', '2026-10-01T10:00:00Z', 'tst-ferritin', 31),
-       ('fer-2', 'asha', 'lab', 'Ferritin', '18', 18, 'µg/L', '30 - 400', 'Low', '2026-03-04', '2026-10-01T10:00:00Z', 'tst-ferritin', 18),
-       ('fer-3', 'asha', 'lab', 'Ferritin', '26', 26, 'µg/L', '30 - 400', 'Low', '2026-09-01', '2026-10-01T10:00:00Z', 'tst-ferritin', 26);`,
+     INSERT INTO results (id, person_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, measured_at, entered_at, test_id, test_number) VALUES
+       ('fer-0', 'asha', 'lab', 'Ferritin (CLIA)', '<0.03', '<', 0.03, 'mg/L', NULL, NULL, '2024-05-01', '2026-10-01T10:00:00Z', 'tst-ferritin', 30),
+       ('fer-1', 'asha', 'lab', 'Ferritin', '31', NULL, 31, 'µg/L', '30 - 400', NULL, '2025-10-12', '2026-10-01T10:00:00Z', 'tst-ferritin', 31),
+       ('fer-2', 'asha', 'lab', 'Ferritin', '18', NULL, 18, 'µg/L', '30 - 400', 'Low', '2026-03-04', '2026-10-01T10:00:00Z', 'tst-ferritin', 18),
+       ('fer-3', 'asha', 'lab', 'Ferritin', '26', NULL, 26, 'µg/L', '30 - 400', 'Low', '2026-09-01', '2026-10-01T10:00:00Z', 'tst-ferritin', 26);`,
   );
   await rufi.start();
   await page.goto(rufi.link());
@@ -322,9 +322,10 @@ test("a test's page lists every value newest first as printed, with its number i
       .filter({ has: page.getByRole("button", { name: date }) });
   await expect(value("4 Mar 2026")).toContainText("18 µg/LFerritin");
   await expect(value("4 Mar 2026")).toContainText("30 - 400Low");
-  // Another lab's unit: as printed, with its number in the test's unit.
+  // Another lab's unit: as printed, with its number in the test's unit,
+  // still a bound.
   await expect(value("1 May 2024")).toContainText(
-    "0.022 mg/L= 22 µg/LFerritin (CLIA)Typed in the chat",
+    "<0.03 mg/L= <30 µg/LFerritin (CLIA)Typed in the chat",
   );
 
   await values.getByRole("button", { name: "4 Mar 2026" }).click();
