@@ -147,6 +147,8 @@ export function agentLogs(deps: {
         const agent = agents.get(id);
         if (!agent) return [];
         const result = agent.result?.replace(/\s+/g, " ").trim() ?? null;
+        const working =
+          agent.status === "running" || agent.status === "continuing";
         return [
           {
             id,
@@ -156,6 +158,12 @@ export function agentLogs(deps: {
               result !== null && result.length > RESULT_CHARS
                 ? `${result.slice(0, RESULT_CHARS).trimEnd()}…`
                 : result,
+            parent: agent.parent === root ? null : agent.parent,
+            since: working
+              ? (agents.history(id, { limit: 1 }).turns[0]?.startedAt ?? null)
+              : null,
+            model: agent.model,
+            effort: agent.effort,
           },
         ];
       });

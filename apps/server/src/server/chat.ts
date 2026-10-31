@@ -65,7 +65,7 @@ export interface ChatDeps {
    */
   rules: (
     region: string | undefined,
-    agent?: { title: string; parent: { title: string } },
+    agent?: { title: string; parent: { title: string; rufiAi: boolean } },
   ) => {
     instructions: string;
     version: string;

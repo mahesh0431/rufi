@@ -297,7 +297,9 @@ export interface AgentMessage {
 }
 
 /** An agent's message's agent and its name and why, from its stored facts. */
-function senderOf(details: string | null): Pick<Entry, "agent" | "from"> {
+export function senderOf(
+  details: string | null,
+): Pick<Entry, "agent" | "from"> {
   const { agent, title, about } = JSON.parse(details ?? "{}") as Partial<
     Omit<AgentMessage, "id" | "text">
   >;

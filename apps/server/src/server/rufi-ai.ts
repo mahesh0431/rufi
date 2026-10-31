@@ -75,8 +75,11 @@ export interface OpeningAgent {
   id: string;
   title: string;
   tools: readonly string[];
-  /** The agent that started it; none for the chat's own, Rufi AI. */
-  parent?: { title: string };
+  /**
+   * The agent that started it, and whether that is Rufi AI; none for the
+   * chat's own, Rufi AI.
+   */
+  parent?: { title: string; rufiAi: boolean };
 }
 
 /** What a chat's conversation is given each time it opens. */
@@ -362,7 +365,9 @@ export async function startRufiAi(
       id: agent.id,
       title: agent.title,
       tools: agent.tools,
-      ...(parent && { parent: { title: parent.title } }),
+      ...(parent && {
+        parent: { title: parent.title, rufiAi: parent.parent === null },
+      }),
     });
     given.set(agent.id, now.version);
     // A new conversation hears what came before: Rufi AI the chat, a

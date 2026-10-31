@@ -474,6 +474,13 @@ export const SubAgent = Schema.Struct({
   ]),
   /** Its latest result, its start: its last answer, or why it stopped or failed. */
   result: Schema.NullOr(Schema.String),
+  /** The agent that started it: Rufi AI's own agents have none here. */
+  parent: Schema.NullOr(Schema.String),
+  /** When its turn now began, while it works and has begun one. */
+  since: Schema.NullOr(Schema.String),
+  /** What its next turn runs on. */
+  model: Schema.String,
+  effort: Schema.String,
 });
 export type SubAgent = typeof SubAgent.Type;
 
