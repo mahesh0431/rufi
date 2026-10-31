@@ -123,14 +123,36 @@ const textOf = (node: {
 const RUFI = /^rufi:(\/[^/].*)$/i;
 
 /**
+ * The address of the chat person's page at `path`, or undefined when it
+ * would leave their pages ("/../", also written "%2e%2e"): the router
+ * resolves those segments, so they are refused, decoded or not.
+ */
+function ownPage(personId: string, path: string): string | undefined {
+  let url: URL;
+  let decoded: string;
+  try {
+    url = new URL(`/people/${personId}${path}`, "http://rufi.invalid");
+    decoded = decodeURIComponent(url.pathname);
+  } catch {
+    return undefined; // Not a path Rufi has.
+  }
+  const own = `/people/${personId}/`;
+  if (!url.pathname.startsWith(own) || /[\\]|(^|\/)\.\.?(\/|$)/.test(decoded)) {
+    return undefined;
+  }
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/**
  * A link to a page of Rufi in a reply: the person's page at that path,
- * opened in place by Rufi's router. A wrong path shows Rufi's "no page".
+ * opened in place by Rufi's router. A wrong path shows Rufi's "no page";
+ * one that would leave the person's pages is its words only.
  */
 function RufiLink({ path, children }: { path: string; children: ReactNode }) {
   const personId = use(Whose);
   const navigate = useNavigate();
-  if (personId === "") return <span>{children}</span>;
-  const href = `/people/${personId}${path}`;
+  const href = personId === "" ? undefined : ownPage(personId, path);
+  if (href === undefined) return <span>{children}</span>;
   return (
     <a
       href={href}

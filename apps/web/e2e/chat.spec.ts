@@ -1021,7 +1021,7 @@ test("Markdown in a reply: tables and web links work, Rufi's own links open in p
   await box(chat(page)).fill(
     [
       "![pixel](http://127.0.0.1:9/pixel.png) <img src=http://127.0.0.1:9/x.png>",
-      "[run](javascript:alert(1)) [inside](/settings) [web](https://example.com/page) [your profile](rufi:/profile)",
+      "[run](javascript:alert(1)) [inside](/settings) [web](https://example.com/page) [your profile](rufi:/profile) [up](rufi:/../ravi/profile) [encoded](rufi:/%2e%2e/ravi/profile) [deeper](rufi:/documents/%2e%2e%2f..%2fravi)",
       "",
       "| Test | Value |",
       "|---|---|",
@@ -1048,7 +1048,13 @@ test("Markdown in a reply: tables and web links work, Rufi's own links open in p
     await expect(link).toHaveAttribute("rel", "noopener noreferrer");
   }
   await expect(reply.locator("img")).toHaveCount(0);
-  await expect(reply).toContainText("run inside web your profile");
+  await expect(reply).toContainText(
+    "run inside web your profile up encoded deeper",
+  );
+  // A Rufi link that would leave this person's pages is its words only.
+  for (const name of ["up", "encoded", "deeper"]) {
+    await expect(reply.getByRole("link", { name })).toHaveCount(0);
+  }
 
   const at = page.url();
   await reply.getByText("inside").click();
