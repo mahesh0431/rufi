@@ -2368,7 +2368,10 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       .slice(before)
       .some((call) => call.tool === "get_overview" && call.ok === 1);
     await c.ask("Undo my last profile change.");
-    await yesIfAsked(c, home, "Yes, put it back.");
+    // The Settings change is a save already: answer while the date isn't back.
+    if (profile(home)["birth_date"] !== "1990-03") {
+      await c.say("Yes, put it back.");
+    }
     const snapshot = await c.read();
     const now = profile(home);
     return {
