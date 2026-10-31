@@ -24,7 +24,7 @@ Rufi remembers where your data folder is in a small file, the location file: `~/
 
 Keep the data folder on your Mac's own disk or on a disk that you connect to your Mac. Don't put it in iCloud Drive, Dropbox or another folder that syncs to the cloud, or on a network disk: their copies can damage your record. Rufi doesn't move it there (see [Move your data](#move-your-data)). A copy of a backup or of an export can go anywhere.
 
-Codex keeps its ChatGPT sign-in in `codex/`, and Claude keeps its sign-in in your Mac's Keychain for `claude/` (see [Signing in](signing-in.md)). The AI's commands can't read Codex's `auth.json` or Claude's folder; whether they can get Claude's sign-in from the Keychain is being looked at.
+Codex keeps its ChatGPT sign-in in `codex/`, and Claude keeps its sign-in in your Mac's Keychain for `claude/` (see [Signing in](signing-in.md)). The AI's commands can't read Codex's `auth.json`, Claude's folder or your Mac's keychain files; a test on a Mac that this keeps Claude's sign-in from them in practice is still to be run.
 
 | In the data folder | What it is                                                                                                                                                                                                                                                                                                                                                                                              |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -108,7 +108,7 @@ Rufi limits what the AI's programs can reach. This is a lock, not only an instru
 
 - They can write only in the AI's folder and in your Mac's folders for temporary files.
 - They can't open your record's database, the AI's working state (`agents.sqlite`) or your backups. So the AI reads and changes your health record only through Rufi's tools: each read shows as a step in the answer's **Activity**, and each save with its receipt.
-- They can't read Codex's sign-in file or Claude's folder. Claude's sign-in is in your Mac's Keychain, which they can still reach: whether they can get it from there is being looked at.
+- They can't read Codex's sign-in file, Claude's folder or your Mac's keychain files (`Library/Keychains` in your home folder), where Claude keeps its sign-in. A test on a Mac that this holds in practice is still to be run.
 - They can read the other files that your Mac account can read. Rufi tells the AI to use only Rufi's tools for your record, but it doesn't lock the rest yet.
 
 Rufi doesn't check what the AI sends to the internet or gets from it. Text from a web page is data for the AI, never an instruction or your yes.

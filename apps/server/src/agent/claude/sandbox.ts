@@ -1,8 +1,8 @@
 // Rufi AI's lock-down on Claude, as the `rufi-ai` permission profile is on
 // Codex (ADR 0016): the AI's file tools write only in its folder, and its
 // commands there and in the temp folders; both read anything but Rufi's
-// unreadable paths (the record's database, its backups, the core's secret),
-// and its commands reach the internet. Claude's sandbox holds its commands;
+// unreadable paths (the record's database, its backups, the core's secret)
+// and the person's keychains, and its commands reach the internet. Claude's sandbox holds its commands;
 // its permission rules hold its own file tools, which the sandbox doesn't
 // cover. Nothing waits for an approval: what the rules don't allow is
 // refused (`dontAsk`), and no command can leave the sandbox.
@@ -10,7 +10,7 @@ import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Options, Settings } from "@anthropic-ai/claude-agent-sdk";
-import type { AgentSandbox } from "../runtime.ts";
+import { withKeychains, type AgentSandbox } from "../runtime.ts";
 
 /**
  * A path in a Claude permission rule, which is a gitignore pattern: `//`
@@ -53,9 +53,12 @@ export interface ClaudeLockDown {
  * Rufi's home is itself in a temp folder, as a test's is.
  */
 export function claudeLockDown(
-  sandbox: AgentSandbox,
+  given: AgentSandbox,
   skills: string,
+  /** The HOME Claude's commands get. */
+  userHome: string | undefined,
 ): ClaudeLockDown {
+  const sandbox = withKeychains(given, userHome);
   const cache = join(sandbox.folder, ".cache");
   return {
     permissionMode: "dontAsk",

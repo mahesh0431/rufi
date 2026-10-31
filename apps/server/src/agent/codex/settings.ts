@@ -11,7 +11,12 @@
 // permission profile (aiProfile, docs/adr/0016).
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { AgentSandbox, AgentSkill, McpServer } from "../runtime.ts";
+import {
+  withKeychains,
+  type AgentSandbox,
+  type AgentSkill,
+  type McpServer,
+} from "../runtime.ts";
 import type { ConfigReadResponse } from "./protocol/v2/ConfigReadResponse.ts";
 import type { ExperimentalFeatureListResponse } from "./protocol/v2/ExperimentalFeatureListResponse.ts";
 import type { Rpc } from "./rpc.ts";
@@ -47,9 +52,9 @@ const SETTINGS = {
 /**
  * The permission profile the chat's AI runs under: Codex's workspace profile
  * (it writes in its working folder, the AI's folder, and the temp folders;
- * it reads the rest), with the network on and Rufi's unreadable paths
- * denied. Threads select it by name; the legacy sandbox setting has no
- * denied reads.
+ * it reads the rest), with the network on and Rufi's unreadable paths and
+ * the person's keychains denied. Threads select it by name; the legacy
+ * sandbox setting has no denied reads.
  */
 export const AI_PROFILE = "rufi-ai";
 
@@ -125,7 +130,7 @@ enabled = false
 # *TOKEN*); Codex itself runs with none.
 [shell_environment_policy]
 ignore_default_excludes = false
-${commandsEnvironment(options)}${options.sandbox ? aiProfile(options.sandbox, skills) : ""}`;
+${commandsEnvironment(options)}${options.sandbox ? aiProfile(withKeychains(options.sandbox, options.userHome), skills) : ""}`;
 }
 
 export interface CodexHomeOptions {

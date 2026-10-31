@@ -15,6 +15,7 @@ import { parse } from "smol-toml";
 import { afterEach, describe, expect, it } from "vitest";
 import { SignedOut } from "../src/agent/runtime.ts";
 import { AI_PROFILE, prepareCodexHome } from "../src/agent/codex/settings.ts";
+import { claudeLockDown } from "../src/agent/claude/sandbox.ts";
 import {
   caseFolder,
   caseSandbox,
@@ -199,7 +200,7 @@ describe("a case's status", () => {
 });
 
 describe("the test sign-in in a run", () => {
-  it("gives each case a copy and takes it back, and no case's AI may read any sign-in of the run, in a Codex config that loads", async () => {
+  it("gives each case a copy and takes it back, and no case's AI may read any sign-in of the run or the person's keychains, in a Codex config that loads and in Claude's lock-down", async () => {
     // Wholly fictional: a test home with Codex's sign-in file and Claude's
     // folder, signed in on the scripted Codex.
     const root = await mkdtemp(join(tmpdir(), "rufi-live-"));
@@ -210,6 +211,9 @@ describe("the test sign-in in a run", () => {
     await writeFile(join(home, "claude", ".claude.json"), '{"fictional":true}');
     // --out as a person may give it, relative to where the run starts.
     const out = await outFolder(relative(process.cwd(), join(root, "out")));
+    // The HOME the AI's commands get: a fictional one, never the real.
+    const userHome = join(root, "user-home");
+    const keychains = join(userHome, "Library", "Keychains");
     const cases = ["first", "second"].map((name) => caseFolder(out, name));
     const signIn = await testSignIn(home, {
       file: process.execPath,
@@ -245,7 +249,10 @@ describe("the test sign-in in a run", () => {
           expect.arrayContaining(await found()),
         );
         // Codex's own settings for the case: valid TOML, every path absolute.
-        const { codexHome } = await prepareCodexHome(folder, { sandbox });
+        const { codexHome } = await prepareCodexHome(folder, {
+          sandbox,
+          userHome,
+        });
         const config = parse(
           await readFile(join(codexHome, "config.toml"), "utf8"),
         ) as {
@@ -254,8 +261,22 @@ describe("the test sign-in in a run", () => {
         const paths = Object.keys(
           config.permissions[AI_PROFILE]?.filesystem ?? {},
         );
-        expect(paths).toEqual(expect.arrayContaining(await found()));
+        expect(paths).toEqual(
+          expect.arrayContaining([...(await found()), keychains]),
+        );
         expect(paths.filter((path) => !isAbsolute(path))).toEqual([]);
+        // Claude's: its commands' sandbox and its own Read tool.
+        const { settings } = claudeLockDown(
+          sandbox,
+          join(folder, "plugin"),
+          userHome,
+        );
+        expect(settings.sandbox?.filesystem?.denyRead).toEqual(
+          expect.arrayContaining([...(await found()), keychains]),
+        );
+        expect(settings.permissions?.deny).toEqual(
+          expect.arrayContaining([`Read(/${keychains}/**)`]),
+        );
       }
       for (const folder of cases) await signIn.take(folder);
       expect(await found()).toEqual(

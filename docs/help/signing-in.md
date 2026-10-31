@@ -42,7 +42,7 @@ Codex and Claude renew their sign-ins by themselves. If one ends, for example be
 | Codex's ChatGPT sign-in | `codex/auth.json` in your data folder, kept by Codex                            |
 | Claude's sign-in        | Your Mac's Keychain, kept by Claude for the `claude` folder in your data folder |
 
-The AI's commands can't read Codex's `auth.json` or Claude's folder. Claude's sign-in itself is in your Mac's Keychain, and Rufi doesn't yet stop the AI's commands from reaching the Keychain: whether they can get Claude's sign-in from it is being looked at. A backup holds neither, and a move leaves both behind: after a restore or a move, sign in to each again.
+The AI's commands can't read Codex's `auth.json` or Claude's folder, nor your Mac's keychain files (`Library/Keychains` in your home folder), where Claude keeps its sign-in. A test on a Mac that this keeps Claude's sign-in from the AI's commands in practice is still to be run. A backup holds neither, and a move leaves both behind: after a restore or a move, sign in to each again.
 
 ## Sign out
 
