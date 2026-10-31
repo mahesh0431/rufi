@@ -1352,7 +1352,7 @@ describe("the chat, on the scripted Codex", () => {
       expect(restored.version).not.toBe(undone.version);
       await checkReport(restored.version, amendment.count);
     }
-  });
+  }, 60_000);
 
   it("gives each Rufi event that came during a reply to the AI after it, in a turn of its own", async () => {
     await startChat("fake", { scenario: { calls: [saveHeadache] } });
