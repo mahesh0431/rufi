@@ -13,6 +13,9 @@ export const MAX_MESSAGE_CHARS = 10_000;
 
 /** Why nothing goes to the AI without a sign-in; the box adds Sign in. */
 export const SIGNED_OUT = "You're signed out. Sign in with ChatGPT to chat.";
+/** The same, for a chat on one of Claude's models. */
+export const CLAUDE_SIGNED_OUT =
+  "You're signed out of Claude. Sign in to Claude to chat.";
 
 const Text = (max: number) => Schema.String.check(Schema.isMaxLength(max));
 const Line = (max: number) =>

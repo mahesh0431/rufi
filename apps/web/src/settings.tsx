@@ -206,7 +206,15 @@ function PlanSection() {
 function ModelsSection() {
   const settings = useSettings();
   const models = useModels();
-  const codex = useStatus().data?.codex.state;
+  const status = useStatus().data;
+  // A provider not signed in offers no models: one line each on what to do.
+  const providers = status
+    ? ([
+        ["Codex", status.codex],
+        ["Claude", status.claude],
+      ] as const)
+    : [];
+  const out = providers.filter(([, now]) => now.state !== "signed_in");
   const save = useMutation({
     mutationFn: async (shortlist: string[]) => {
       const saved = await saveSettings({ models: shortlist });
@@ -233,12 +241,27 @@ function ModelsSection() {
       <h2 id="models" className="mt-8 mb-2 px-0.5 font-semibold">
         Models
       </h2>
-      <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
-        {/* Signed out: Sign-in above signs in. */}
-        {codex !== undefined && codex !== "signed_in" ? (
-          <p>Once you're signed in, the models your plan offers show here.</p>
-        ) : models.data === undefined && models.error ? (
-          <Problem error={models.error} retry={() => void models.refetch()} />
+      <section
+        aria-labelledby="models"
+        className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4"
+      >
+        {out.map(([name, now]) => (
+          <p key={name}>
+            {now.state === "signed_out"
+              ? `${name}'s models show here once it's signed in.`
+              : now.text}{" "}
+            {now.state === "signed_out" && (
+              <Link to="/sign-in" className="underline">
+                Sign in
+              </Link>
+            )}
+          </p>
+        ))}
+        {models.data === undefined && models.error ? (
+          // None signed in: the lines above say it.
+          out.length < providers.length || providers.length === 0 ? (
+            <Problem error={models.error} retry={() => void models.refetch()} />
+          ) : null
         ) : (
           <div
             role="group"
@@ -270,7 +293,7 @@ function ModelsSection() {
             {save.error.message}
           </p>
         )}
-      </div>
+      </section>
     </>
   );
 }

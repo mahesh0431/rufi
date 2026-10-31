@@ -13,6 +13,7 @@
 // calls Rufi's tools through Rufi's MCP server, with a key for its chat;
 // each call is bound to the reply it was made in.
 import {
+  CLAUDE_SIGNED_OUT,
   SIGNED_OUT,
   type Chip,
   type Effort,
@@ -52,8 +53,8 @@ const NEW_THREAD_MESSAGES = 10;
 export interface ChatDeps {
   transcripts: Transcripts;
   queue: ChatQueue;
-  /** Codex's sign-in now, as Codex reports it. */
-  signIn: () => Promise<ProviderStatus>;
+  /** A provider's sign-in now, as it reports it. */
+  signIn: (provider: string) => Promise<ProviderStatus>;
   /** Rufi AI, given where its events go. */
   agent: (host: RufiAiHost) => RufiAi;
   /** The person's shortlist of models, as Settings keeps it now. */
@@ -408,7 +409,10 @@ export function chat(deps: ChatDeps) {
   const carry = (chat: ChatRow) =>
     inLane(chat, async (stored) => {
       let fresh = stored;
-      if (closed || (await deps.signIn()).state !== "signed_in") return;
+      if (closed) return;
+      if ((await deps.signIn(await providerOf(stored))).state !== "signed_in") {
+        return;
+      }
       // Rufi's part reads a message's files: what comes after waits.
       for (const id of await queue.reading(fresh)) {
         if (agent.input(id) === undefined) return;
@@ -825,7 +829,7 @@ export function chat(deps: ChatDeps) {
       refs: readonly Pointer[] = [],
       kind: "steer" | "queue" = "steer",
     ) => {
-      await mustBeSignedIn();
+      await mustBeSignedIn(chat);
       await accept(chat, id, text, refs, kind);
       return { id };
     },
@@ -855,14 +859,14 @@ export function chat(deps: ChatDeps) {
       },
       /** The person steers a waiting row into the running reply. */
       steer: async (chat: ChatRow, id: string) => {
-        await mustBeSignedIn();
+        await mustBeSignedIn(chat);
         await refused(() => queue.steer(chat, id));
         agent.steer(id);
         next(chat);
       },
       /** The person sends a row Rufi didn't: first in line. */
       send: async (chat: ChatRow, id: string) => {
-        await mustBeSignedIn();
+        await mustBeSignedIn(chat);
         await refused(() => queue.send(chat, id));
         next(chat);
       },
@@ -878,7 +882,7 @@ export function chat(deps: ChatDeps) {
         hold: string,
         choice: "retry" | "new_thread",
       ) => {
-        await mustBeSignedIn();
+        await mustBeSignedIn(chat);
         await inLane(chat, async (fresh) => {
           const newThread = choice === "new_thread";
           // Never while a reply runs: it would lose that reply's thread. The
@@ -900,7 +904,7 @@ export function chat(deps: ChatDeps) {
        * changes nothing.
        */
       retry: async (chat: ChatRow, id: string, hold: string) => {
-        await mustBeSignedIn();
+        await mustBeSignedIn(chat);
         await inLane(chat, async (fresh) => {
           await refused(() => queue.retry(fresh, id, hold));
         });
@@ -987,15 +991,34 @@ export function chat(deps: ChatDeps) {
   }
 
   /**
-   * Without a sign-in, nothing the person sends is taken: signed out when
-   * Codex says so, else Codex's error as it came.
+   * The provider the chat's next turn runs on: its model's, or, before it
+   * has one, that of the model it would start on.
    */
-  async function mustBeSignedIn(): Promise<void> {
-    const { state, text } = await deps.signIn();
-    if (state === "signed_out") throw new ChatRefusal(SIGNED_OUT);
+  async function providerOf(chat: ChatRow): Promise<string> {
+    const model =
+      chat.model ?? (await offered().catch(() => undefined))?.[0]?.id;
+    const provider =
+      model === undefined
+        ? undefined
+        : await agent.providerOf(model).catch(() => undefined);
+    return provider ?? agent.provider;
+  }
+
+  /**
+   * Without a sign-in, nothing the person sends is taken: signed out when
+   * the chat's provider says so, else its error as it came.
+   */
+  async function mustBeSignedIn(chat: ChatRow): Promise<void> {
+    const provider = await providerOf(chat);
+    const { state, text } = await deps.signIn(provider);
+    if (state === "signed_out") {
+      throw new ChatRefusal(
+        provider === "claude" ? CLAUDE_SIGNED_OUT : SIGNED_OUT,
+      );
+    }
     if (state === "unavailable") {
       throw new ChatRefusal(
-        text ?? "Rufi couldn't ask Codex how it's signed in.",
+        text ?? "Rufi couldn't ask the AI how it's signed in.",
       );
     }
   }

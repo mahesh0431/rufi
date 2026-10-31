@@ -258,7 +258,12 @@ async function withAdapter<T>(
     ) => Promise<string>;
   }) => Promise<T>,
 ): Promise<T> {
-  const adapter = claudeAdapter({ claude, sandbox, env, plugin });
+  const adapter = claudeAdapter({
+    claude: () => Promise.resolve(claude),
+    sandbox,
+    env,
+    plugin,
+  });
   const keys = mcpKeys();
   let port = 0;
   const served = await serveMcp(
@@ -379,7 +384,12 @@ async function withDoor<T>(
   const saves: Save[] = [];
   const answers = new Map<string, ToolAnswer>();
   const refs: string[] = [];
-  const adapter = claudeAdapter({ claude, sandbox, env, plugin });
+  const adapter = claudeAdapter({
+    claude: () => Promise.resolve(claude),
+    sandbox,
+    env,
+    plugin,
+  });
   const store = openAgentStore(join(folder, `agents-${randomUUID()}.sqlite`));
   const door = agentDoor({
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },

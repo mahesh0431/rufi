@@ -60,7 +60,8 @@ import { errorCode, type Log } from "../platform/logs.ts";
 import { agentsPath } from "./agents.ts";
 import { api, LAUNCHER_HEADER } from "./api.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
-import { claudeFolder } from "../agent/claude/executable.ts";
+import { claudeEnvironment, claudeFolder } from "../agent/claude/executable.ts";
+import { prepareClaudePlugin } from "../agent/claude/session.ts";
 import { generatedImages } from "../agent/codex/settings.ts";
 import { aiFiles } from "./files.ts";
 import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
@@ -138,6 +139,20 @@ export function aiSandbox(home: string): AgentSandbox {
 export const agentSetup = (home: string) => ({
   sandbox: aiSandbox(home),
   skills: SKILLS,
+});
+
+/**
+ * What Claude needs from Rufi to run its agents: the same sandbox, its own
+ * folder in the data folder in its environment (`env`, the child's), and
+ * Rufi's skills as its plugin, written afresh.
+ */
+export const claudeSetup = async (
+  home: string,
+  env: Readonly<Record<string, string>>,
+) => ({
+  sandbox: aiSandbox(home),
+  env: claudeEnvironment(home, env),
+  plugin: await prepareClaudePlugin(home, SKILLS),
 });
 
 /** Where Rufi's MCP server takes the chat's calls, and the reader's. */
@@ -309,6 +324,8 @@ export const startCore = (options: CoreOptions) =>
     };
     const statusOf = (provider: Provider) =>
       signIns[provider]?.status() ?? Promise.resolve(signedOut);
+    const isProvider = (id: string): id is Provider =>
+      id === "codex" || id === "claude";
     const account = async (): Promise<Status> => {
       const [codex, claude] = await Promise.all([
         statusOf("codex"),
@@ -340,7 +357,10 @@ export const startCore = (options: CoreOptions) =>
         openChat({
           transcripts,
           queue,
-          signIn: () => statusOf("codex"),
+          signIn: (provider) =>
+            isProvider(provider)
+              ? statusOf(provider)
+              : Promise.resolve(signedOut),
           agent: agentSystem.rufiAi,
           shortlist: () => shortlist(transcripts.setting),
           mcp: { url: () => mcpUrl(MCP_CHAT), keys: chatKeys },

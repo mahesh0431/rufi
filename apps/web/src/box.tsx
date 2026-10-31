@@ -15,6 +15,7 @@ import {
   MAX_MESSAGE_CHARS,
   MAX_REFS,
   type Person,
+  CLAUDE_SIGNED_OUT,
   SIGNED_OUT,
   type WhileReplying,
 } from "@rufi/contracts";
@@ -333,7 +334,7 @@ export function Box({
           className="flex items-center gap-1.5 px-3.5 pb-2 text-muted"
         >
           {why}
-          {why === SIGNED_OUT && (
+          {(why === SIGNED_OUT || why === CLAUDE_SIGNED_OUT) && (
             <Button
               look="quiet"
               icon={LogIn}

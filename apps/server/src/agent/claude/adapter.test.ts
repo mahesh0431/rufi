@@ -16,7 +16,8 @@ providerContract("Claude", {
     const fake = fakeClaude(script);
     return {
       adapter: claudeAdapter({
-        claude: { path: "/fictional/claude", version: "2.1.312" },
+        claude: () =>
+          Promise.resolve({ path: "/fictional/claude", version: "2.1.312" }),
         sandbox: { folder, unreadable: [] },
         env: {},
         plugin: { path: folder, skills: [] },
@@ -49,7 +50,8 @@ async function onFake(
 ) {
   const folder = await mkdtemp(join(tmpdir(), "rufi-claude-adapter-"));
   const adapter = claudeAdapter({
-    claude: { path: "/fictional/claude", version: "2.1.312" },
+    claude: () =>
+      Promise.resolve({ path: "/fictional/claude", version: "2.1.312" }),
     sandbox: { folder, unreadable: [] },
     env: {},
     plugin: { path: folder, skills: [] },
@@ -77,6 +79,33 @@ async function onFake(
     events.flatMap((event) => (event.type === "turnEnded" ? [event.end] : []));
   return { adapter, conversation, start, ends, events };
 }
+
+describe("Claude's models", () => {
+  it("are its models while it is signed in, and none while it is signed out", async () => {
+    const offered = async (signedIn: boolean) => {
+      const fake = fakeClaude({ signedIn });
+      const folder = await mkdtemp(join(tmpdir(), "rufi-claude-adapter-"));
+      return claudeAdapter({
+        claude: () =>
+          Promise.resolve({ path: "/fictional/claude", version: "2.1.312" }),
+        sandbox: { folder, unreadable: [] },
+        env: {},
+        plugin: { path: folder, skills: [] },
+        query: fake.query,
+        sessions: fake.sessions,
+      }).models();
+    };
+    expect(await offered(true)).toEqual([
+      {
+        id: "claude-fictional-1",
+        name: "Fictional 1",
+        efforts: ["low", "high"],
+      },
+      { id: "claude-fictional-0", name: "Fictional 0", efforts: [] },
+    ]);
+    await expect(offered(false)).rejects.toThrow("Claude isn't signed in.");
+  });
+});
 
 describe("Claude's process for a conversation", () => {
   it("closes when a turn ends, and the next turn carries the conversation on in a new one", async () => {

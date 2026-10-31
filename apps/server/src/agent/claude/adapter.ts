@@ -71,7 +71,8 @@ const SDK_SESSIONS: ClaudeSessions = {
 };
 
 export interface ClaudeAdapterOptions {
-  claude: InstalledClaude;
+  /** The installed Claude, looked up when the adapter needs it (findClaude). */
+  claude: () => Promise<InstalledClaude>;
   /**
    * Rufi AI's sandbox. Each conversation works in its own `cwd`, with the
    * same unreadable paths; Claude is asked about itself in the folder.
@@ -99,9 +100,18 @@ export function claudeAdapter(options: ClaudeAdapterOptions): ProviderAdapter {
     family: "anthropic",
     models: async () =>
       modelsOf(
-        await askClaude(options.claude, ask, (run) =>
-          within(run.supportedModels(), ASK_MS, "its models"),
-        ),
+        await askClaude(await options.claude(), ask, async (run) => {
+          // Signed out, it offers none, as Codex does.
+          const account = await within(
+            run.accountInfo(),
+            ASK_MS,
+            "how it's signed in",
+          );
+          if (signInOf(account) === "none") {
+            throw new SignedOut("Claude isn't signed in.");
+          }
+          return within(run.supportedModels(), ASK_MS, "its models");
+        }),
       ),
     open: async (open) => {
       if (open.resume !== undefined) {
@@ -117,7 +127,7 @@ export function claudeAdapter(options: ClaudeAdapterOptions): ProviderAdapter {
         }
       }
       const conversation = await openConversation(
-        options,
+        { ...options, claude: await options.claude() },
         sessions,
         shared,
         open,
@@ -195,7 +205,7 @@ interface Shared {
 class SignedOut extends Error {}
 
 async function openConversation(
-  options: ClaudeAdapterOptions,
+  options: Omit<ClaudeAdapterOptions, "claude"> & { claude: InstalledClaude },
   sessions: ClaudeSessions,
   shared: Shared,
   open: OpenOptions,

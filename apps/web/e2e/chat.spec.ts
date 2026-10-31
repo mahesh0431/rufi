@@ -591,6 +591,36 @@ test("the models ticked in Settings are the chat menu's, the first ticked is a n
   ]);
 });
 
+test("Settings › Models says how to get Claude's models when Claude isn't signed in or isn't on the Mac, and keeps Codex's", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  const section = page.getByRole("region", { name: "Models" });
+
+  // Codex's models; Claude isn't signed in.
+  await expect(section.getByRole("checkbox")).toHaveCount(3);
+  await expect(section).toContainText(
+    "Claude's models show here once it's signed in. Sign in",
+  );
+  await section.getByRole("link", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/sign-in$/);
+
+  // Claude isn't on this Mac: its own words say what to do.
+  rufi.claude = {
+    state: "unavailable",
+    account: null,
+    text: "Claude Code isn't installed on this Mac. Install it, then try again.",
+  };
+  await page.goBack();
+  await page.reload();
+  await expect(section).toContainText(
+    "Claude Code isn't installed on this Mac. Install it, then try again.",
+  );
+  await expect(section.getByRole("checkbox")).toHaveCount(3);
+});
+
 test("a draft is saved as you type, silently; it survives a reload and a restart, and is never sent by itself", async ({
   page,
   rufi,

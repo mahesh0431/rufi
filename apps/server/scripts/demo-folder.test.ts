@@ -36,6 +36,12 @@ async function used() {
   await resetDemo(folder, {}, TODAY);
   await mkdir(join(folder, "claude"));
   await writeFile(join(folder, "claude", ".claude.json"), CLAUDE_SIGN_IN);
+  // A conversation Claude kept for the last run.
+  await mkdir(join(folder, "claude", "projects", "ai"), { recursive: true });
+  await writeFile(
+    join(folder, "claude", "projects", "ai", "session-1.jsonl"),
+    '{"fictional":true}',
+  );
   const store = openWritable(databasePath(folder));
   store.db.exec(
     "INSERT INTO people (id, display_name) VALUES ('old', 'Old Fictional')",
@@ -76,7 +82,7 @@ const people = (home: string) => {
 };
 
 describe("pnpm demo's reset", () => {
-  it("replaces the record and everything from the last run, and keeps Codex's and Claude's sign-ins", async () => {
+  it("replaces the record and everything from the last run, Claude's conversations too, and keeps Codex's and Claude's sign-ins", async () => {
     await used();
 
     await resetDemo(folder, {}, TODAY);
@@ -93,6 +99,7 @@ describe("pnpm demo's reset", () => {
     expect(await readFile(join(folder, "codex", "auth.json"), "utf8")).toBe(
       CODEX_SIGN_IN,
     );
+    expect(await readdir(join(folder, "claude"))).toEqual([".claude.json"]);
     expect(await readFile(join(folder, "claude", ".claude.json"), "utf8")).toBe(
       CLAUDE_SIGN_IN,
     );

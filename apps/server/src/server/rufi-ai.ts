@@ -92,6 +92,8 @@ export interface RufiAi {
   provider: string;
   /** The models the providers offer now. */
   models: (signal?: AbortSignal) => Promise<OfferedModel[]>;
+  /** The provider a model runs on, as the providers last listed it. */
+  providerOf: (model: string) => Promise<string | undefined>;
   /** The chat's next turns run on its model and effort. */
   configure: (chat: ChatRow) => Promise<void>;
   /**
@@ -563,6 +565,10 @@ export async function startRufiAi(
     for (const { id, provider } of offered) providers.set(id, provider);
     return offered;
   };
+  /** A model unknown since Rufi started is looked up. */
+  const providerOf = async (model: string) =>
+    providers.get(model) ??
+    (await models()).find((one) => one.id === model)?.provider;
 
   const rufiAi = (host: RufiAiHost): RufiAi => {
     chat = host;
@@ -573,17 +579,16 @@ export async function startRufiAi(
 
       models,
 
+      providerOf,
+
       configure: async (row) => {
         const agent = await system.root(row.id);
         const now = agents.get(agent);
         if (!now) return;
         const model = row.model ?? now.model;
         // Rufi AI runs on its model's provider, also when it was made anew
-        // on another. The menu and the choice listed the models already;
-        // only a model unknown since Rufi started is looked up.
-        const provider =
-          providers.get(model) ??
-          (await models()).find((one) => one.id === model)?.provider;
+        // on another. The menu and the choice listed the models already.
+        const provider = await providerOf(model);
         agents.configure(agent, {
           ...(provider !== undefined && { provider }),
           model,

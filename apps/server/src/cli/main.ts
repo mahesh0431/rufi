@@ -13,10 +13,12 @@ import { parseArgs, promisify } from "node:util";
 import { NodeRuntime } from "@effect/platform-node";
 import type { Provider } from "@rufi/contracts";
 import { Cause, Console, Effect, Layer } from "effect";
+import { claudeAdapter } from "../agent/claude/adapter.ts";
 import {
   claudeEnvironment,
   claudeFolder,
   findClaude,
+  type InstalledClaude,
 } from "../agent/claude/executable.ts";
 import { codexAdapter } from "../agent/codex/adapter.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
@@ -52,7 +54,12 @@ import {
   logsLayer,
   noEffectLogs,
 } from "../platform/logs.ts";
-import { agentSetup, runningLink, startCore } from "../server/core.ts";
+import {
+  agentSetup,
+  claudeSetup,
+  runningLink,
+  startCore,
+} from "../server/core.ts";
 import { claudeSignIn, codexSignIn } from "../server/signin.ts";
 import { ask } from "./ask.ts";
 import { importBatches, peopleLines, sourceLine } from "./devices.ts";
@@ -433,6 +440,19 @@ const shellQuoted = (path: string) =>
 const SCREENS = fileURLToPath(new URL("../../../web/dist", import.meta.url));
 
 /**
+ * The installed Claude, looked up when it's first needed and kept once
+ * found: one installed while Rufi runs is found then.
+ */
+function installedClaude(): () => Promise<InstalledClaude> {
+  let found: Promise<InstalledClaude> | undefined;
+  return () =>
+    (found ??= findClaude().catch((error: unknown) => {
+      found = undefined;
+      throw error;
+    }));
+}
+
+/**
  * Starts Rufi and opens it in the browser, until Ctrl-C. When Rufi already
  * runs with this data folder, opens a fresh link to it instead. With
  * `open` false, only shows the link. Started by the Rufi app, it gives the
@@ -479,10 +499,12 @@ const startCommand = (open: boolean) =>
       version,
       log,
     });
+    const claudeSet = yield* run(() => claudeSetup(home, childEnvironment()));
+    const claude = claudeAdapter({ claude: installedClaude(), ...claudeSet });
     const core = yield* startCore({
       home,
       folder: { source, show: showInFinder },
-      adapters: [codex],
+      adapters: [codex, claude],
       reader: subAgentRunner({
         home,
         codexHome: codex.codexHome,
@@ -493,7 +515,7 @@ const startCommand = (open: boolean) =>
       }),
       signIns: {
         codex: codexSignIn(codex, openBrowser),
-        claude: claudeSignIn(claudeEnvironment(home, childEnvironment())),
+        claude: claudeSignIn(claudeSet.env),
       },
       screens: SCREENS,
       log,
