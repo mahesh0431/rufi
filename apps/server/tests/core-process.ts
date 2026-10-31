@@ -4,7 +4,7 @@
 // through core.json, as `pnpm start` does.
 import { join } from "node:path";
 import { Effect, Scope } from "effect";
-import { codexRuntime } from "../src/agent/codex/codex.ts";
+import { codexAdapter } from "../src/agent/codex/adapter.ts";
 import { agentSetup, startCore } from "../src/server/core.ts";
 
 const home = process.argv[2] ?? "";
@@ -12,8 +12,8 @@ const scope = await Effect.runPromise(Scope.make());
 await Effect.runPromise(
   startCore({
     home,
-    agent: (host) =>
-      codexRuntime({
+    adapters: [
+      codexAdapter({
         home,
         ...agentSetup(home),
         command: {
@@ -26,8 +26,8 @@ await Effect.runPromise(
         },
         token: () => Promise.resolve("token"),
         version: "0.0.0",
-        host,
       }),
+    ],
     log: () => undefined,
     account: () =>
       Promise.resolve({ account: "signed_in", email: "asha@example.com" }),

@@ -53,14 +53,27 @@ const textOf = (error: unknown) =>
  * instructions it was given before (docs/adr/0018), so they come again
  * whole, saying they replace those.
  */
-const instructionsNote = (instructions: string) =>
-  `Your instructions, given again as this conversation is opened. They replace any given before.\n\n${instructions}`;
+export const instructionsNote = (instructions: string) =>
+  `Your instructions, given again as this conversation is opened. They replace any given before. Skills may have changed too: read a skill's SKILL.md again before you use it.\n\n${instructions}`;
+
+/** Whether `error`, or what caused it, says Codex has no such thread. */
+function missing(error: unknown): boolean {
+  for (let cause = error; cause instanceof Error; cause = cause.cause) {
+    if (cause instanceof ThreadNotFound) return true;
+  }
+  return false;
+}
 
 /** An open conversation, as the adapter keeps it. */
 interface Open {
   onEvent: (event: ProviderEvent) => void;
   /** Earlier history, until the first input that reached Codex carries it. */
   seed: string | undefined;
+  /**
+   * A new thread's start, until its first input: they share Codex's
+   * readiness, as Codex has nothing of the thread to resume until then.
+   */
+  preparing: AbortSignal | undefined;
   /** The input of a start that hasn't shown its turn yet. */
   starting: string | undefined;
   /** The running turn's answer messages so far, by item, in order. */
@@ -184,12 +197,13 @@ export function codexAdapter(
       cwd: options.cwd,
     };
     let ref: string;
+    const preparing =
+      options.resume === undefined
+        ? (options.signal ?? new AbortController().signal)
+        : undefined;
     try {
       if (options.resume === undefined) {
-        ({ threadId: ref } = await runtime.startThread(
-          settings,
-          options.signal,
-        ));
+        ({ threadId: ref } = await runtime.startThread(settings, preparing));
       } else {
         if (conversations.has(options.resume)) {
           throw new NotOpened("The conversation is open already.");
@@ -217,6 +231,7 @@ export function codexAdapter(
     const mine: Open = {
       onEvent: options.onEvent,
       seed: options.resume === undefined ? options.seed : undefined,
+      preparing,
       starting: undefined,
       answers: new Map(),
     };
@@ -237,26 +252,32 @@ export function codexAdapter(
           return { status: "not_delivered", text: "A turn is running." };
         }
         mine.starting = input.id;
+        const preparing = mine.preparing;
+        mine.preparing = undefined;
         try {
-          await runtime.send(ref, {
-            id: input.id,
-            input: [
-              ...(mine.seed === undefined ? [] : [mine.seed]),
-              ...input.parts,
-            ],
-            model,
-            effort,
-          });
+          await runtime.send(
+            ref,
+            {
+              id: input.id,
+              input: [
+                ...(mine.seed === undefined ? [] : [mine.seed]),
+                ...input.parts,
+              ],
+              model,
+              effort,
+            },
+            preparing,
+          );
         } catch (error) {
           if (error instanceof NotSent) {
             mine.starting = undefined;
-            return signedOut(error)
-              ? {
-                  status: "not_delivered",
-                  reason: "signed_out",
-                  text: textOf(error),
-                }
-              : { status: "not_delivered", text: textOf(error) };
+            const text = textOf(error);
+            if (signedOut(error)) {
+              return { status: "not_delivered", reason: "signed_out", text };
+            }
+            return missing(error)
+              ? { status: "not_delivered", reason: "missing", text }
+              : { status: "not_delivered", text };
           }
           // Codex may still start it: its turn names the input.
           mine.seed = undefined;

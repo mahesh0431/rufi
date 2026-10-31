@@ -5,7 +5,9 @@
 // them), and how far Rufi has read the agent database's events
 // (`agent_cursor`, by that database's generation). A hand-over Rufi claims
 // for an agent names it in `sent_as` (sentAs).
+import type { Kysely } from "kysely";
 import type { Store } from "../store/database.ts";
+import type { Tables } from "../store/tables.ts";
 
 /** Whose an agent is. */
 export interface Owner {
@@ -106,16 +108,23 @@ export function chatAgents(
         .select(["generation", "number"])
         .executeTakeFirst(),
 
-    /** Rufi has read the events up to `number`, of this generation. */
-    advance: async (generation: string, number: number) => {
-      const moved = await db
+    /**
+     * Rufi has read the events up to `number`, of this generation; in
+     * `trx`, with what Rufi applied of them.
+     */
+    advance: async (
+      generation: string,
+      number: number,
+      trx: Kysely<Tables> = db,
+    ) => {
+      const moved = await trx
         .updateTable("agent_cursor")
         .set({ number })
         .where("generation", "=", generation)
         .where("number", "<", number)
         .executeTakeFirst();
       if (moved.numUpdatedRows === 0n) {
-        const cursor = await db
+        const cursor = await trx
           .selectFrom("agent_cursor")
           .select("generation")
           .executeTakeFirst();
@@ -138,6 +147,34 @@ export function chatAgents(
         root: row.root === 1,
       })),
 
+    /** Whose the agent is; nobody's when Rufi doesn't own it. */
+    owner: async (agent: string): Promise<Owner | undefined> => {
+      const row = await db
+        .selectFrom("agent_owners")
+        .select(["person_id", "chat_id", "root"])
+        .where("agent_id", "=", agent)
+        .executeTakeFirst();
+      return (
+        row && {
+          agent,
+          personId: row.person_id,
+          chatId: row.chat_id,
+          root: row.root === 1,
+        }
+      );
+    },
+
+    /** The chat's own agent, when it has one. */
+    root: async (chatId: string) =>
+      (
+        await db
+          .selectFrom("agent_owners")
+          .select("agent_id")
+          .where("chat_id", "=", chatId)
+          .where("root", "=", 1)
+          .executeTakeFirst()
+      )?.agent_id,
+
     /** The agent is gone from the agent database: it has no owner. */
     drop: async (agent: string) => {
       await db
@@ -146,9 +183,9 @@ export function chatAgents(
         .execute();
     },
 
-    /** Chats with no agent of their own yet. */
-    unrooted: async (): Promise<Unrooted[]> => {
-      const chats = await db
+    /** Chats with no agent of their own yet; only `chatId`, when given. */
+    unrooted: async (chatId?: string): Promise<Unrooted[]> => {
+      let chats = db
         .selectFrom("chats")
         .select([
           "id",
@@ -169,10 +206,10 @@ export function chatAgents(
                 .where("root", "=", 1),
             ),
           ),
-        )
-        .execute();
+        );
+      if (chatId !== undefined) chats = chats.where("id", "=", chatId);
       const unrooted: Unrooted[] = [];
-      for (const chat of chats) {
+      for (const chat of await chats.execute()) {
         const provider = chat.thread_provider ?? OLD_PROVIDER;
         const had =
           chat.thread_id !== null &&

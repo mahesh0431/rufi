@@ -37,7 +37,7 @@ import {
 import type { ChatGptDeps } from "../src/agent/chatgpt/openai.ts";
 import { accessToken, status } from "../src/agent/chatgpt/session.ts";
 import { codexBinary } from "../src/agent/codex/binary.ts";
-import { codexRuntime } from "../src/agent/codex/codex.ts";
+import { codexAdapter } from "../src/agent/codex/adapter.ts";
 import { DEFAULT_ALLOWLIST } from "../src/core/chat/models.ts";
 import {
   databasePath,
@@ -2483,17 +2483,17 @@ async function playCase(name: string, home: string) {
     const core = await Effect.runPromise(
       startCore({
         home,
-        agent: (host) =>
-          codexRuntime({
+        adapters: [
+          codexAdapter({
             home,
             ...agentSetup(home),
             command: { file, args: [] },
             env: childEnvironment(),
             token,
             version,
-            host,
             log: diagnostics(home).log,
           }),
+        ],
         reader: subAgentRunner({
           home,
           command: { file, args: [] },

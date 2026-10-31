@@ -2,7 +2,7 @@
 // scripted fake Codex and against the real Codex binary (on a local fake
 // model, offline). What a reply does is chosen by the message's words: see
 // tests/fake-codex.ts and tests/fake-model.ts.
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -16,10 +16,12 @@ import {
   type FakeModel,
 } from "../../tests/fake-model.ts";
 import { callTool, type McpServerConfig } from "../../tests/mcp-client.ts";
+import { rufiAiFor } from "../../tests/rufi-ai.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
-import { codexRuntime } from "../agent/codex/codex.ts";
+import type { ProviderAdapter } from "@rufi/agents/provider";
+import { codexAdapter, instructionsNote } from "../agent/codex/adapter.ts";
 import type { Deadlines } from "../agent/codex/appserver.ts";
-import type { AgentHost, SubAgentTask } from "../agent/runtime.ts";
+import type { SubAgentTask } from "../agent/runtime.ts";
 import {
   readPage,
   scriptedReader,
@@ -48,7 +50,7 @@ import {
 import { chatCaller, forAgent } from "../core/tools/tools.ts";
 import { v7 as uuid } from "uuid";
 import { chatQueue, type ChatQueue } from "../core/chat/queue.ts";
-import { rulesNote } from "../core/chat/instructions.ts";
+import { agentsPath } from "./agents.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 import { agentSetup } from "./core.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
@@ -61,6 +63,9 @@ let store: Store;
 let transcripts: Transcripts;
 let queue: ChatQueue;
 let chat: Chat | undefined;
+let ai: Awaited<ReturnType<typeof rufiAiFor>> | undefined;
+/** The chat's Codex, behind the provider boundary. */
+let codex: ProviderAdapter | undefined;
 /** Whether the person is signed in, as the chat asks it. */
 let signedIn: boolean;
 let model: FakeModel | undefined;
@@ -91,6 +96,8 @@ beforeEach(async () => {
 afterEach(async () => {
   await chat?.close();
   chat = undefined;
+  await ai?.close();
+  ai = undefined;
   await served?.close();
   served = undefined;
   await model?.close();
@@ -125,13 +132,19 @@ async function startChat(
     tokenProvider?: () => Promise<string>;
     /** What Rufi's reader does in each run (tests/fake-reader.ts). */
     reader?: Script[];
+    /** The agent database is lost while Rufi is closed. */
+    loseAgents?: boolean;
   } = {},
 ): Promise<Chat> {
   const again = chat !== undefined;
   await chat?.close();
+  await ai?.close();
   await served?.close();
-  // As the core does when it starts again.
-  if (again) await queue.endStopped("Rufi closed while reading.");
+  if (options.loseAgents) {
+    for (const end of ["", "-wal", "-shm"]) {
+      await rm(`${agentsPath(home)}${end}`, { force: true });
+    }
+  }
   const reader = openReadOnly(databasePath(home));
   const log = () => undefined;
   const tools = forAgent(() => ({ store: reader, personId: undefined }), log);
@@ -162,6 +175,36 @@ async function startChat(
     log,
     retryWaitsMs: [],
   });
+  codex = codexAdapter({
+    home,
+    ...agentSetup(home),
+    command,
+    env: {
+      PATH: process.env["PATH"] ?? "",
+      FAKE_CODEX: JSON.stringify(options.scenario ?? {}),
+      FAKE_CODEX_LOG: join(home, "fake.jsonl"),
+    },
+    token: async () => {
+      await tokenGate;
+      return options.tokenProvider?.() ?? token;
+    },
+    version: "0.0.0",
+    deadlines: { requestMs: 10_000, ...options.deadlines },
+    log,
+  });
+  ai = await rufiAiFor({
+    home,
+    record: store,
+    transcripts,
+    adapter: codex,
+    tools: tools.specs.map((spec) => spec.name),
+  });
+  // As the core does when it starts again, once Rufi has read the agent
+  // database's events.
+  if (again) {
+    await transcripts.interruptRunning();
+    await queue.endStopped("Rufi closed while reading.");
+  }
   chat = openChat({
     transcripts,
     queue,
@@ -169,25 +212,7 @@ async function startChat(
       reading: { readings: reads, read: documentReader.read },
     }),
     signedIn: () => Promise.resolve(signedIn),
-    agent: (host: AgentHost) =>
-      codexRuntime({
-        home,
-        ...agentSetup(home),
-        command,
-        env: {
-          PATH: process.env["PATH"] ?? "",
-          FAKE_CODEX: JSON.stringify(options.scenario ?? {}),
-          FAKE_CODEX_LOG: join(home, "fake.jsonl"),
-        },
-        token: async () => {
-          await tokenGate;
-          return options.tokenProvider?.() ?? token;
-        },
-        version: "0.0.0",
-        deadlines: { requestMs: 10_000, ...options.deadlines },
-        host,
-        log,
-      }),
+    agent: ai.agent,
     allowlist: options.allowlist ?? ALLOWED,
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
     rules: (region) => ({
@@ -264,7 +289,7 @@ function backendOf(name: Backend["name"]): Backend {
               .filter((item) => item.role === "developer")
               .flatMap((item) => item.content ?? [])
               .map((part) => part.text ?? "")
-              .filter((text) => text.startsWith("Rufi's rules"))
+              .filter((text) => text.includes("Rufi's rules"))
               .join(" + "),
           )
         : (await turnsRun()).map((turn) => turn.told ?? ""),
@@ -330,6 +355,13 @@ const waiting = async () =>
     item.state,
     item.held,
   ]);
+
+/** The thread's files are gone: Codex has no record of the chat's thread. */
+async function loseThread(chatId?: string): Promise<void> {
+  const { threadId } = await chatRow(chatId);
+  if (!codex || threadId === null) throw new Error("no thread");
+  await codex.delete(threadId);
+}
 
 /** Asha's chat, as stored now. */
 const chatRow = async (_id?: string): Promise<ChatRow> => {
@@ -838,8 +870,8 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       // Each reply after a change had the new rules whole, as the last word.
       const rules = await backend.rules();
       expect(rules).toHaveLength(3);
-      const regionNote = rulesNote("Rufi's rules 1, for IN.");
-      const updateNote = rulesNote("Rufi's rules 2, for IN.");
+      const regionNote = instructionsNote("Rufi's rules 1, for IN.");
+      const updateNote = instructionsNote("Rufi's rules 2, for IN.");
       expect(rules[1]?.slice(-regionNote.length)).toBe(regionNote);
       expect(rules[2]?.slice(-updateNote.length)).toBe(updateNote);
       expect((await chatRow(c.id)).threadTools).toBe("rules-2-IN");
@@ -854,14 +886,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       const c = await newChat();
       await say(c, "first");
       await ended(c.id, 1);
-      // The thread's files are gone: Codex has no record of this id.
-      const lost = await chatRow(c.id);
-      await transcripts.setThread(lost, {
-        id: uuid(),
-        provider: "codex",
-        model: "gpt-6.1-sol",
-        tools: lost.threadTools ?? "",
-      });
+      await loseThread(c.id);
       await startChat(name);
       await say(await chatRow(c.id), "second");
       await ended(c.id, 2);
@@ -976,47 +1001,6 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
-    "keeps every reply when the model changes while a restart's history read is slow",
-    timeout,
-    async () => {
-      await startChat(name);
-      const c = await newChat();
-      await say(c, "first");
-      await ended(c.id);
-      await startChat(name); // Rufi restarts.
-      const agent = chat?.agent;
-      if (!agent) throw new Error("no chat");
-      // The history read after the resume is slow; the reply isn't.
-      const gate = Promise.withResolvers<undefined>();
-      const read = agent.startedMessages;
-      agent.startedMessages = async (threadId) => {
-        await gate.promise;
-        return read(threadId);
-      };
-      await say(await chatRow(c.id), "after restart");
-      await sleep(1_000);
-      const switching = chat?.selectModel(await chatRow(c.id), "gpt-6-astra");
-      const sending = say(await chatRow(c.id), "after the switch");
-      await sleep(300);
-      gate.resolve(undefined);
-      await Promise.all([switching, sending]);
-      await ended(c.id, 3);
-      const { entries, turns } = await transcript(c.id);
-      expect(entries.filter(([kind]) => kind === "reply")).toEqual([
-        ["reply", "ok:first"],
-        ["reply", "ok:after restart"],
-        ["reply", "ok:after the switch"],
-      ]);
-      expect(turns.map((t) => [t.status, t.model])).toEqual([
-        ["completed", "gpt-6.1-sol"],
-        ["completed", "gpt-6.1-sol"],
-        ["completed", "gpt-6-astra"],
-      ]);
-      expect(threadsUsed()).toBe(1);
-    },
-  );
-
-  it(
     "saves the first message after a restart with its own turn, never as a gap the history read found",
     timeout,
     async () => {
@@ -1038,36 +1022,6 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
         { text: "first", in_turn: 1 },
         { text: "after restart", in_turn: 1 },
       ]);
-    },
-  );
-
-  it(
-    "fills a message a crash kept from the transcript, once, from the agent's own record",
-    timeout,
-    async () => {
-      await startChat(name);
-      const c = await newChat();
-      // Rufi couldn't save the start of the message's turn.
-      const startTurn = transcripts.startTurn;
-      transcripts.startTurn = () => Promise.reject(new Error("crash"));
-      await say(c, "first");
-      await until(async () => (await waiting()).length === 1);
-      await until(async () => (await waiting())[0]?.[1] === "not_sure");
-      transcripts.startTurn = startTurn;
-      expect(
-        (await transcript(c.id)).entries.filter(([kind]) => kind === "message"),
-      ).toEqual([]);
-      await startChat(name);
-      await say(await chatRow(c.id), "second");
-      await ended(c.id, 1);
-      await startChat(name);
-      await say(await chatRow(c.id), "third");
-      await ended(c.id, 2);
-      expect(
-        (await transcript(c.id)).entries
-          .filter(([kind]) => kind === "message")
-          .map(([, text]) => text),
-      ).toEqual(["first", "second", "third"]);
     },
   );
 });
@@ -2252,20 +2206,38 @@ describe("the chat, on the scripted Codex", () => {
     const c = await newChat();
     await say(c, "I have a headache");
     await ended(c.id);
-    // The thread is lost.
-    const lost = await chatRow(c.id);
-    await transcripts.setThread(lost, {
-      id: "lost-1",
-      provider: "codex",
-      model: "gpt-6.1-sol",
-      tools: lost.threadTools ?? "",
-    });
+    await loseThread(c.id);
     await startChat("fake");
     await say(await chatRow(c.id), "And now?");
     await ended(c.id, 2);
     expect((await backendOf("fake").contexts()).at(-1)).toContain(
       "User: I have a headache\n\nRufi: **Saved**\n\n- Added symptom **Headache**\n\nAI: ok:I have a headache",
     );
+  });
+
+  it("goes on after the agent database is lost, in a new conversation that starts with what was delivered only", async () => {
+    await startChat("fake");
+    const c = await newChat();
+    await say(c, "first");
+    await ended(c.id);
+    // The person's message waits for a reply of its own, then is stopped.
+    await rufiReply(c);
+    await say(await chatRow(), "waiting B");
+    await chat?.stop(await chatRow());
+    await ended(c.id, 2);
+
+    await startChat("fake", { loseAgents: true });
+    const [waitingB] = (await queue.list(await chatRow())).items;
+    await chat?.queue.sendNow(await chatRow(), waitingB?.id ?? "");
+    await ended(c.id, 3);
+    const seed = (await backendOf("fake").contexts()).at(-1);
+    expect(seed).toContain("User: first\n\nAI: ok:first");
+    expect(seed).not.toContain("waiting B");
+    const { entries, turns } = await transcript(c.id);
+    expect(
+      entries.filter(([kind]) => kind === "message").map(([, text]) => text),
+    ).toEqual(["first", "waiting B"]);
+    expect(turns.map((turn) => turn.newThread)).toEqual([false, false, true]);
   });
 
   it("saves nothing of a reply after its Stop", async () => {
@@ -2294,12 +2266,9 @@ describe("the chat, on the scripted Codex", () => {
     await ended(c.id, 2);
     // The thread is lost; the first message to the new one is stopped while
     // the thread starts, before it leaves, and the person removes it.
-    const lost = await chatRow();
-    await transcripts.setThread(lost, {
-      id: "lost-1",
-      provider: "codex",
-      model: "gpt-6-astra",
-      tools: lost.threadTools ?? "",
+    await loseThread();
+    await startChat("fake", {
+      scenario: { slow: ["thread/start"], slowMs: 300 },
     });
     await say(await chatRow(), "never sent");
     await sleep(100);
@@ -2418,7 +2387,7 @@ describe("the chat, on the scripted Codex", () => {
     });
     const c = await newChat();
     await say(c, "Hello");
-    await until(async () => (await waiting())[0]?.[2] === "failed");
+    await until(async () => (await waiting())[0]?.[2] === "open_failed");
     expect((await queue.list(c)).items[0]?.heldText).toBe(
       "Codex didn't answer thread/start within 0.3 s.",
     );

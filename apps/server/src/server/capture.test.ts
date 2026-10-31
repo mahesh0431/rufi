@@ -21,8 +21,9 @@ import {
   type ModelRequest,
   type Step,
 } from "../../tests/fake-model.ts";
+import { rufiAiFor } from "../../tests/rufi-ai.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
-import { codexRuntime } from "../agent/codex/codex.ts";
+import { codexAdapter, instructionsNote } from "../agent/codex/adapter.ts";
 import { chatQueue } from "../core/chat/queue.ts";
 import { DEFAULT_ALLOWLIST } from "../core/chat/models.ts";
 import {
@@ -35,11 +36,7 @@ import {
   openWritable,
   type Store,
 } from "../core/store/database.ts";
-import {
-  coreInstructions,
-  rulesNote,
-  rulesVersion,
-} from "../core/chat/instructions.ts";
+import { coreInstructions, rulesVersion } from "../core/chat/instructions.ts";
 import { SKILLS } from "../core/skills/skills.ts";
 import type { ToolSpec } from "../core/tools/registry.ts";
 import { chatCaller, forAgent } from "../core/tools/tools.ts";
@@ -55,6 +52,7 @@ let store: Store;
 let transcripts: Transcripts;
 let model: FakeModel | undefined;
 let chat: Chat | undefined;
+let ai: Awaited<ReturnType<typeof rufiAiFor>> | undefined;
 let served: { port: number; close: () => Promise<void> } | undefined;
 /** What reached Rufi's MCP server over HTTP. */
 let seen: { auth: string | null; origin: string | null; method: string }[];
@@ -77,6 +75,8 @@ beforeEach(async () => {
 afterEach(async () => {
   await chat?.close();
   chat = undefined;
+  await ai?.close();
+  ai = undefined;
   await served?.close();
   served = undefined;
   await model?.close();
@@ -96,6 +96,7 @@ async function start(
   options: { refuse?: boolean; update?: string; model?: string } = {},
 ) {
   await chat?.close();
+  await ai?.close();
   await served?.close();
   await model?.close();
   model = await fakeModel({ script });
@@ -133,22 +134,27 @@ async function start(
     file: await codexBinary(),
     args: ["-c", `model_providers.openai_chatgpt_plan.base_url="${model.url}"`],
   };
+  ai = await rufiAiFor({
+    home,
+    record: store,
+    transcripts,
+    adapter: codexAdapter({
+      home,
+      ...agentSetup(home),
+      command,
+      env: { PATH: process.env["PATH"] ?? "" },
+      token: () => Promise.resolve("not-a-real-token"),
+      version: "0.0.0",
+      deadlines: { requestMs: 20_000 },
+      log,
+    }),
+    tools: tools.specs.map((spec) => spec.name),
+  });
   chat = openChat({
     transcripts,
     queue: chatQueue(store),
     signedIn: () => Promise.resolve(true),
-    agent: (host) =>
-      codexRuntime({
-        home,
-        ...agentSetup(home),
-        command,
-        env: { PATH: process.env["PATH"] ?? "" },
-        token: () => Promise.resolve("not-a-real-token"),
-        version: "0.0.0",
-        deadlines: { requestMs: 20_000 },
-        host,
-        log,
-      }),
+    agent: ai.agent,
     allowlist: options.model ? [options.model] : DEFAULT_ALLOWLIST,
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
     rules: (region) => ({
@@ -335,12 +341,12 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
       if (!row) throw new Error("no chat");
       const queue = chatQueue(store);
       await until(
-        async () => (await queue.list(row)).items[0]?.held === "failed",
+        async () => (await queue.list(row)).items[0]?.held === "open_failed",
       );
       expect((await queue.list(row)).items).toMatchObject([
         {
           text: "Hello",
-          held: "failed",
+          held: "open_failed",
           heldText:
             "Rufi's tools didn't start for the AI, so it can't reply now. Try again; if it keeps happening, restart Rufi.",
         },
@@ -480,7 +486,9 @@ describe("What the AI is given, on the pinned Codex", () => {
 
 /** The developer messages that say Rufi's rules changed, whole. */
 const notes = (request: ModelRequest | undefined) =>
-  developer(request).filter((text) => text.startsWith("Rufi's rules changed."));
+  developer(request).filter((text) =>
+    text.startsWith("Your instructions, given again"),
+  );
 
 describe("The context a chat's thread used, on the pinned Codex", () => {
   it(
@@ -560,7 +568,7 @@ describe("How a change of Rufi's rules reaches the AI, on the pinned Codex", () 
       // The thread is open: Rufi lets it go, picks it up with the new rules
       // and adds the note; the next request has it, whole.
       await make();
-      const note = rulesNote(coreInstructions(region));
+      const note = instructionsNote(coreInstructions(region));
       model?.script.push({ text: "Two." });
       await say("second");
       await replies(2);
@@ -568,12 +576,13 @@ describe("How a change of Rufi's rules reaches the AI, on the pinned Codex", () 
       expect(notes(answering().at(-1))).toEqual([note]);
       expect(userWords(answering().at(-1))).toEqual(["first", "second"]);
 
-      // Rufi starts again: the thread is picked up cold and keeps the note.
+      // Rufi starts again: the thread is picked up cold, keeps the note and
+      // is given its rules again.
       await start([{ text: "Three.", tokens: OVER_LIMIT }]);
       await say("third");
       await replies(3);
       expect(model?.requests.length).toBe(answering().length);
-      expect(notes(answering().at(-1))).toEqual([note]);
+      expect(notes(answering().at(-1))).toEqual([note, note]);
 
       // The answer was over the limit: Codex compacts, and the request after
       // it starts from the new rules.
@@ -617,7 +626,7 @@ describe("How a change of Rufi's rules reaches the AI, on the pinned Codex", () 
       await opened.chat.queue.recover(row, held.id, held.holdId, "retry");
       await replies(2);
       expect(notes(answering().at(-1))).toEqual([
-        rulesNote(coreInstructions("IN")),
+        instructionsNote(coreInstructions("IN")),
       ]);
       expect(threadsUsed()).toBe(1);
     },

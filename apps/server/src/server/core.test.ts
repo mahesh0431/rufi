@@ -27,8 +27,7 @@ import { APPEARANCE_HEADER } from "@rufi/contracts/app";
 import { createCanvas } from "@napi-rs/canvas";
 import { Effect, Exit, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { codexRuntime } from "../agent/codex/codex.ts";
-import type { AgentHost, AgentRuntime } from "../agent/runtime.ts";
+import { codexAdapter } from "../agent/codex/adapter.ts";
 import {
   databasePath,
   openReadOnly,
@@ -71,16 +70,16 @@ async function start(options: Partial<CoreOptions> = {}): Promise<Core> {
   const core = await Effect.runPromise(
     startCore({
       home,
-      agent: (host) =>
-        codexRuntime({
+      adapters: [
+        codexAdapter({
           home,
           ...agentSetup(home),
           command: { file: process.execPath, args: [FAKE] },
           env: { PATH: process.env["PATH"] ?? "", FAKE_CODEX: "{}" },
           token: () => Promise.resolve("token"),
           version: "0.0.0",
-          host,
         }),
+      ],
       log: (event) => logged.push(event),
       account: () =>
         Promise.resolve({ account: "signed_in", email: "asha@example.com" }),
@@ -230,24 +229,22 @@ async function rufiReply(
 }
 
 /** The scripted Codex playing `scenario` (FAKE_CODEX), for start(). */
-const scripted =
-  (scenario: object, more: { requestMs?: number } = {}) =>
-  (host: AgentHost) =>
-    codexRuntime({
-      home,
-      ...agentSetup(home),
-      command: { file: process.execPath, args: [FAKE] },
-      env: {
-        PATH: process.env["PATH"] ?? "",
-        FAKE_CODEX: JSON.stringify(scenario),
-      },
-      token: () => Promise.resolve("token"),
-      version: "0.0.0",
-      ...(more.requestMs !== undefined && {
-        deadlines: { requestMs: more.requestMs },
-      }),
-      host,
-    });
+const scripted = (scenario: object, more: { requestMs?: number } = {}) => [
+  codexAdapter({
+    home,
+    ...agentSetup(home),
+    command: { file: process.execPath, args: [FAKE] },
+    env: {
+      PATH: process.env["PATH"] ?? "",
+      FAKE_CODEX: JSON.stringify(scenario),
+    },
+    token: () => Promise.resolve("token"),
+    version: "0.0.0",
+    ...(more.requestMs !== undefined && {
+      deadlines: { requestMs: more.requestMs },
+    }),
+  }),
+];
 
 /** A live stream: its lines as they come, and a way to hang up. */
 function stream(port: number, path: string, headers: Record<string, string>) {
@@ -530,23 +527,12 @@ describe("the core", () => {
   );
 
   it("closes every part when it stops, even when one of them fails", async () => {
-    let agent: AgentRuntime | undefined;
+    const [adapter] = scripted({});
+    if (!adapter) throw new Error("no adapter");
     const core = await start({
-      agent: (host) => {
-        agent = codexRuntime({
-          home,
-          ...agentSetup(home),
-          command: { file: process.execPath, args: [FAKE] },
-          env: { PATH: process.env["PATH"] ?? "", FAKE_CODEX: "{}" },
-          token: () => Promise.resolve("token"),
-          version: "0.0.0",
-          host,
-        });
-        return {
-          ...agent,
-          close: () => Promise.reject(new Error("close failed")),
-        };
-      },
+      adapters: [
+        { ...adapter, close: () => Promise.reject(new Error("close failed")) },
+      ],
     });
     const port = core.port;
     // The failure is reported; every other part is closed all the same.
@@ -554,7 +540,7 @@ describe("the core", () => {
     await expect(call(port, "GET", "/api/people")).rejects.toThrow();
     const release = await holdRufiLock(home, () => undefined);
     await release();
-    await agent?.close();
+    await adapter.close();
   });
 });
 
@@ -961,7 +947,7 @@ describe("the local API", () => {
     { timeout: 15_000 },
     async () => {
       const core = await start({
-        agent: scripted({ slow: ["turn/steer"], slowMs: 600 }),
+        adapters: scripted({ slow: ["turn/steer"], slowMs: 600 }),
       });
       const page = await session(core);
       const c = await chat(page);
@@ -988,42 +974,12 @@ describe("the local API", () => {
       expect((await page.api("GET", c.draft)).body["text"]).toBe(
         "A fictional follow-up",
       );
-
-      // After a restart, a send that waits for the reply's history is kept
-      // out by a Stop meanwhile too.
-      await stop();
-      const again = await session(
-        await start({
-          agent: scripted({ slow: ["thread/turns/list"], slowMs: 4_000 }),
-        }),
-      );
-      await again.say(c.path, "hang");
-      // Its turn is saved only after the history, so no screen shows it
-      // running yet: wait well inside the history's 4 s.
-      await sleep(1_500);
-      const waiting = again.say(c.path, "A fictional follow-up");
-      await sleep(100);
-      expect((await again.api("POST", `${c.path}/stop`)).status).toBe(200);
-      expect(await waiting).toMatchObject({
-        status: 409,
-        body: { error: "Stopped." },
-      });
-      await sleep(500);
-      expect((await again.api("GET", `${c.path}/queue`)).body).toMatchObject({
-        paused: "stopped",
-        items: [],
-      });
-      expect(
-        (
-          (await again.api("GET", c.path)).body["turns"] as { status: string }[]
-        ).map((turn) => turn.status),
-      ).not.toContain("completed");
     },
   );
 
   it("refuses one person's send of an id another person's send is using", async () => {
     const core = await start({
-      agent: scripted({ slow: ["turn/steer"], slowMs: 600 }),
+      adapters: scripted({ slow: ["turn/steer"], slowMs: 600 }),
     });
     const page = await session(core);
     const a = await chat(page);
@@ -1071,7 +1027,7 @@ describe("the local API", () => {
   it("holds a message the AI couldn't take, with the reason, to send again or remove", async () => {
     // Codex never starts the chat's thread: the message never left.
     const core = await start({
-      agent: scripted({ hang: ["thread/start"] }, { requestMs: 300 }),
+      adapters: scripted({ hang: ["thread/start"] }, { requestMs: 300 }),
     });
     const page = await session(core);
     const c = await chat(page);
@@ -1082,7 +1038,7 @@ describe("the local API", () => {
           (await page.api("GET", `${c.path}/queue`)).body["items"] as {
             held: string | null;
           }[]
-        )[0]?.held === "failed",
+        )[0]?.held === "open_failed",
     );
     expect(
       (await page.api("GET", `${c.path}/queue`)).body["items"],
@@ -1097,7 +1053,7 @@ describe("the local API", () => {
 
   it("marks a hand-over the AI didn't answer as not sure, and pauses the chat", async () => {
     const core = await start({
-      agent: scripted({ hang: ["turn/start"] }, { requestMs: 300 }),
+      adapters: scripted({ hang: ["turn/start"] }, { requestMs: 300 }),
     });
     const page = await session(core);
     const c = await chat(page);
@@ -1117,7 +1073,7 @@ describe("the local API", () => {
 
   it("makes the person's chat with them, without the AI; its first message chooses the model, unless one was chosen", async () => {
     // Codex doesn't answer the list of models: the chat doesn't need it.
-    let core = await start({ agent: scripted({ hang: ["model/list"] }) });
+    let core = await start({ adapters: scripted({ hang: ["model/list"] }) });
     let page = await session(core);
     const c = await chat(page);
     expect(await page.api("GET", c.path)).toMatchObject({
@@ -1359,8 +1315,8 @@ describe("the local API", () => {
     const log = join(userHome, "fake.jsonl");
     // Started from the data folder in use: after the move, the moved one,
     // whose AI folder (codex/) is new.
-    const agent: CoreOptions["agent"] = (host) =>
-      codexRuntime({
+    const adapters = () => [
+      codexAdapter({
         home,
         ...agentSetup(home),
         command: { file: process.execPath, args: [FAKE] },
@@ -1371,14 +1327,14 @@ describe("the local API", () => {
         },
         token: () => Promise.resolve("token"),
         version: "0.0.0",
-        host,
-      });
+      }),
+    ];
     const turns = async (page: Awaited<ReturnType<typeof session>>) =>
       (await page.api("GET", c.path)).body["turns"] as {
         status: string;
         newThread: boolean;
       }[];
-    let page = await session(await start({ agent }));
+    let page = await session(await start({ adapters: adapters() }));
     const c = await chat(page);
     await page.say(c.path, "Is my TSH still high?");
     await until(async () => (await turns(page))[0]?.status === "completed");
@@ -1390,7 +1346,7 @@ describe("the local API", () => {
     );
     home = (await findDataFolder({ env: {}, userHome })).path;
     expect(home).toBe(moved);
-    page = await session(await start({ agent }));
+    page = await session(await start({ adapters: adapters() }));
     await page.say(c.path, "And my iron?");
     await until(async () => (await turns(page))[1]?.status === "completed");
 
@@ -2565,7 +2521,7 @@ describe("backups and export over the API", () => {
       // it knew, so it is told of two earlier turns to start at a new id.
       const restored = await session(
         await start({
-          agent: scripted({ threads: { earlier: { history: ["a", "b"] } } }),
+          adapters: scripted({ threads: { earlier: { history: ["a", "b"] } } }),
         }),
       );
 
@@ -2598,7 +2554,6 @@ describe("backups and export over the API", () => {
             }[]
           ).at(2)?.status === "completed",
       );
-      expect(logged).toContain("chat.resume_failed");
       expect(
         (await restored.api("GET", `${c.path}/queue`)).body["items"],
       ).toMatchObject([{ held: "restored" }]);

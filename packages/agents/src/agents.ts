@@ -1,6 +1,6 @@
 // Runs agents: each agent's provider conversation, its turns, and what
 // happens in them, kept in the agent database (./store.ts) as the provider
-// reports it. An agent the host hasn't admitted never runs. A call to the
+// reports it, and shown to the host as it comes. An agent the host hasn't admitted never runs. A call to the
 // host's tools is placed only in a turn the package admitted and hasn't
 // closed, a turn the provider began by itself included.
 //
@@ -128,6 +128,14 @@ export interface Sent {
 /** Why a waiting input isn't handed over by itself. */
 export type Hold = "signed_out" | "open_failed" | "failed" | "restarts";
 
+/**
+ * The agent's turn in this process: starting, or admitted, by the
+ * provider's reference, and stopping once its Stop is under way.
+ */
+export type Current =
+  | { status: "starting" }
+  | { status: "running" | "stopping"; turn: string; ref: string };
+
 /** A call to the host's tools, placed in the open turn it left. */
 export interface Placed {
   agent: string;
@@ -148,6 +156,26 @@ export interface Agents {
   list: () => string[];
   /** Where an input is in its agent's queue; nothing when the queue has none. */
   input: (id: string) => { agent: string; state: string } | undefined;
+  /** The agent's turn now, if one starts or runs. */
+  current: (agent: string) => Current | undefined;
+  /**
+   * Opens the admitted agent's conversation now, if it isn't open: its
+   * own, or a new one when it has none or the provider no longer has it.
+   * Returns its reference.
+   */
+  open: (agent: string) => Promise<string>;
+  /**
+   * Lets go of the agent's conversation while nothing of it is under way,
+   * so that it opens again with what the host gives then: its own, or a
+   * new one when `fresh`. Refused while a turn starts or runs, or an input
+   * is with the provider.
+   */
+  reopen: (agent: string, fresh?: boolean) => Promise<void>;
+  /** What the agent's next turns run on. */
+  configure: (
+    agent: string,
+    settings: { model: string; effort: string },
+  ) => void;
   /**
    * Which of these inputs the provider received in the agent's
    * conversation of that number; unknown when it can't say, the agent or
@@ -230,6 +258,8 @@ interface Live {
     string,
     { turn: string; item: string; type: "text" | "note"; text: string }
   >;
+  /** The item of each turn's last text, its answer, by the provider's turn. */
+  answers: Map<string, string>;
   /** Its dispatcher runs; asked again meanwhile, it looks again. */
   pumping: boolean;
   asks: number;
@@ -308,6 +338,12 @@ export function createAgents(options: {
   host: Host;
   /** What the dispatcher couldn't put on an input, or a provider couldn't say. */
   onError: (error: unknown) => void;
+  /**
+   * Each event of an agent's open conversation (by its reference), as the
+   * provider reports it, once the package has kept what it keeps of it:
+   * for showing only. What happened is in the package's events.
+   */
+  live?: (agent: string, conversation: string, event: ProviderEvent) => void;
 }): Agents {
   const { store, host } = options;
   const { db } = store;
@@ -381,6 +417,7 @@ export function createAgents(options: {
         stops: 0,
         waiting: new Map(),
         streams: new Map(),
+        answers: new Map(),
         pumping: false,
         asks: 0,
       };
@@ -481,9 +518,23 @@ export function createAgents(options: {
     return conversation;
   }
 
-  /** What the provider reports, kept as it comes, for the conversation open now. */
+  /**
+   * What the provider reports for the conversation open now: kept as it
+   * comes, then shown to the host.
+   */
   function ingest(live: Live, number: number, event: ProviderEvent): void {
     if (lives.get(live.id) !== live || live.number !== number) return;
+    keep(live, event);
+    const ref = live.conversation?.ref;
+    if (!options.live || ref === undefined) return;
+    try {
+      options.live(live.id, ref, event);
+    } catch (error) {
+      options.onError(error);
+    }
+  }
+
+  function keep(live: Live, event: ProviderEvent): void {
     switch (event.type) {
       case "turnStarted":
         admitTurn(live, event.turn, event.inputs);
@@ -499,6 +550,7 @@ export function createAgents(options: {
         };
         stream.text += event.delta;
         live.streams.set(key, stream);
+        if (event.type === "text") live.answers.set(event.turn, event.item);
         if (event.done) {
           live.streams.delete(key);
           saveItem(live, event.turn, event.item, {
@@ -602,6 +654,7 @@ export function createAgents(options: {
       ).run(at, live.id);
       event("turn.started", live.id, {
         turn: id,
+        ref,
         inputs,
         by: starting ? "package" : "provider",
       });
@@ -661,6 +714,8 @@ export function createAgents(options: {
 
   /** A turn ended, as the provider said: the turn's end, and the agent's status. */
   function endTurn(live: Live, ref: string, end: TurnEnd): void {
+    const answer = live.answers.get(ref);
+    live.answers.delete(ref);
     const turn = turnOf(live, ref);
     if (!turn || !["running", "stopping"].includes(turn.status)) return;
     // What streamed without being whole is kept as far as it came.
@@ -702,7 +757,9 @@ export function createAgents(options: {
         at,
         live.id,
       );
-      event("turn.ended", live.id, { turn: turn.id, ...end });
+      // A whole answer names the item it streamed as, when it did.
+      const item = end.status === "done" ? answer : undefined;
+      event("turn.ended", live.id, { turn: turn.id, ref, ...end, item });
     });
     if (live.current?.ref === ref) {
       live.current = undefined;
@@ -719,6 +776,24 @@ export function createAgents(options: {
         "SELECT 1 FROM queue WHERE agent_id = ? AND state = 'handing_over' LIMIT 1",
       )
       .get(agent) !== undefined;
+
+  /**
+   * The provider no longer has the agent's conversation: it is let go of,
+   * and the next turn opens a new one.
+   */
+  function lose(live: Live, conversation: Conversation): void {
+    if (live.conversation !== conversation) return;
+    live.conversation = undefined;
+    live.last = undefined;
+    closing.add(conversation);
+    store.change(({ event }) => {
+      db.prepare(
+        "UPDATE agents SET provider_ref = NULL, updated_at = ? WHERE id = ? AND provider_ref = ?",
+      ).run(now(), live.id, conversation.ref);
+      event("conversation.lost", live.id, { conversation: live.number });
+    });
+    letGo().catch(options.onError);
+  }
 
   /** Closes a turn to new calls: its stop is under way. */
   function closeTurn(live: Live, turn: string): void {
@@ -788,7 +863,16 @@ export function createAgents(options: {
           ).run(to.state, at, input);
       }
       const { state, ...rest } = to;
-      event(`input.${state}`, live.id, { input, ...rest });
+      // Delivered names its turn by the provider's reference too.
+      const ref =
+        to.state === "delivered" && to.turn !== null
+          ? (
+              db
+                .prepare("SELECT provider_turn AS ref FROM turns WHERE id = ?")
+                .get(to.turn) as { ref: string | null } | undefined
+            )?.ref
+          : undefined;
+      event(`input.${state}`, live.id, { input, ...rest, ref });
     });
   }
 
@@ -963,6 +1047,22 @@ export function createAgents(options: {
       }
       // Admitted already: the provider said it started.
       if (stateOf(input.id) !== "handing_over") return;
+      // Its conversation is gone: the input goes first, in a new one.
+      if (
+        delivery.status === "not_delivered" &&
+        delivery.reason === "missing"
+      ) {
+        lose(live, conversation);
+        move(
+          live,
+          input.id,
+          "handing_over",
+          { state: "waiting", first: true },
+          turn,
+        );
+        live.asks += 1;
+        return;
+      }
       const to: Move =
         delivery.status === "not_delivered"
           ? {
@@ -1118,6 +1218,56 @@ export function createAgents(options: {
       db
         .prepare("SELECT agent_id AS agent, state FROM queue WHERE id = ?")
         .get(id) as { agent: string; state: string } | undefined,
+
+    current: (id) => {
+      const live = lives.get(id);
+      if (live?.starting) return { status: "starting" };
+      if (!live?.current) return undefined;
+      return {
+        status: live.stopBy === undefined ? "running" : "stopping",
+        ...live.current,
+      };
+    },
+
+    open: async (id) => {
+      const agent = get(id);
+      if (!agent?.admitted) throw new Error(`Agent ${id} isn't admitted.`);
+      return (await conversationOf(liveOf(agent), agent)).ref;
+    },
+
+    reopen: async (id, fresh = false) => {
+      if (!row(id)) throw new Error(`No agent ${id}.`);
+      const live = lives.get(id);
+      if (live?.starting || live?.current || handingOver(id)) {
+        throw new Error(`Agent ${id}'s conversation is in use.`);
+      }
+      if (fresh && row(id)?.provider_ref != null) {
+        store.change(({ event }) => {
+          db.prepare(
+            "UPDATE agents SET provider_ref = NULL, updated_at = ? WHERE id = ?",
+          ).run(now(), id);
+          event("conversation.left", id, {});
+        });
+      }
+      if (live?.conversation) {
+        closing.add(live.conversation);
+        live.conversation = undefined;
+        live.last = undefined;
+        await letGo();
+      }
+    },
+
+    configure: (id, { model, effort }) => {
+      const agent = get(id);
+      if (!agent) throw new Error(`No agent ${id}.`);
+      if (agent.model === model && agent.effort === effort) return;
+      store.change(({ event }) => {
+        db.prepare(
+          "UPDATE agents SET model = ?, effort = ?, updated_at = ? WHERE id = ?",
+        ).run(model, effort, now(), id);
+        event("agent.configured", id, { model, effort });
+      });
+    },
 
     received: async (id, number, inputs) => {
       const unknown = new Map(

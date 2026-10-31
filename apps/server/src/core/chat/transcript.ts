@@ -876,34 +876,6 @@ export function transcripts(
       }),
 
     /**
-     * Rows Rufi handed over that a crash kept from being marked sent, found
-     * in the agent's own record by `handOver`: sent now, with the person's
-     * message. True when `handOver` is the queue's (filled now or before),
-     * so it is never saved as a message of its own.
-     */
-    fillHandOver: async (chat: ChatRow, handOver: string) => {
-      let found = false;
-      await change(chat.id, async (trx, revision) => {
-        found =
-          (await trx
-            .selectFrom("chat_queue")
-            .select("id")
-            .where("person_id", "=", chat.personId)
-            .where((eb) =>
-              eb.or([eb("id", "=", handOver), eb("sent_as", "=", handOver)]),
-            )
-            .executeTakeFirst()) !== undefined;
-        const rows = await handedOver(trx, chat, handOver);
-        if (rows.length === 0) return undefined;
-        return {
-          entries: await sent(trx, chat, revision, rows, null),
-          turns: [],
-        };
-      });
-      return found;
-    },
-
-    /**
      * The start of a reply whose message brings files to read, before the
      * agent's turn exists (server/chat.ts): in one transaction, `open` makes
      * their reading jobs; when it makes any, the reply starts (its turn, on
@@ -1171,6 +1143,140 @@ export function transcripts(
           .execute();
         return {
           entries: [...stopped, ...entries].map((row) => row.id),
+          turns: [turn.id],
+        };
+      }),
+
+    /**
+     * A turn's start as the agent database keeps it (server/rufi-ai.ts),
+     * with `write` in the same transaction: its turn, running, when the chat
+     * didn't save it. Its end follows the same way; at a start, one that
+     * still runs once Rufi has read the events is ended (interruptRunning).
+     */
+    applyStart: (
+      chat: ChatRow,
+      agentTurnId: string,
+      thread: { id: string; model: string },
+      write: (trx: Transaction<Tables>) => Promise<void>,
+    ) =>
+      change(chat.id, async (trx) => {
+        await write(trx);
+        if (await turnOf(trx, chat.id, agentTurnId)) return undefined;
+        const id = uuid();
+        await trx
+          .insertInto("turns")
+          .values({
+            id,
+            person_id: chat.personId,
+            chat_id: chat.id,
+            agent_turn_id: agentTurnId,
+            thread_id: thread.id,
+            model: thread.model,
+            origin: "person",
+            status: "running",
+            end_reason: null,
+            end_text: null,
+            resets_at: null,
+            started_at: now(),
+            ended_at: null,
+          })
+          .execute();
+        return { entries: [], turns: [id] };
+      }),
+
+    /**
+     * A turn's end as the agent database keeps it (server/rufi-ai.ts), with
+     * `write` in the same transaction. The end goes on a reply still
+     * running, or one Rufi closed before it saved it. A whole answer goes on
+     * the reply row of the item it streamed as (or its own row when nothing
+     * streamed), also after the chat saved the end itself, unless Rufi
+     * ended the turn on its own (Stop, a failed save); a row that starts
+     * with it already has it.
+     */
+    applyEnd: (
+      chat: ChatRow,
+      agentTurnId: string,
+      end: TurnEnding,
+      answer: { text: string; item?: string } | undefined,
+      write: (trx: Transaction<Tables>) => Promise<void>,
+    ) =>
+      change(chat.id, async (trx, revision) => {
+        await write(trx);
+        const turn = await turnOf(trx, chat.id, agentTurnId);
+        if (!turn) return undefined;
+        const closed =
+          turn.status === "interrupted" && turn.end_reason === null;
+        const ends =
+          turn.status === "running" || (answer !== undefined && closed);
+        if (!ends && !(answer !== undefined && turn.status === "completed")) {
+          return undefined;
+        }
+        const at = now();
+        if (ends) {
+          await trx
+            .updateTable("turns")
+            .set({
+              status: end.status,
+              end_reason: end.reason ?? null,
+              end_text: end.text ?? null,
+              resets_at: end.resetsAt ?? null,
+              ended_at: at,
+            })
+            .where("id", "=", turn.id)
+            .execute();
+        }
+        const entries: string[] = [];
+        if (answer !== undefined) {
+          const reply = await trx
+            .selectFrom("transcript_entries")
+            .select(["id", "text", "status"])
+            .where("person_id", "=", turn.person_id)
+            .where("turn_id", "=", turn.id)
+            .where("kind", "=", "reply")
+            .where((eb) =>
+              answer.item === undefined
+                ? eb("agent_item_id", "is", null)
+                : eb("agent_item_id", "=", answer.item),
+            )
+            .executeTakeFirst();
+          if (reply) {
+            // One that starts with it has it: a question may follow.
+            const text = reply.text.startsWith(answer.text)
+              ? reply.text
+              : answer.text;
+            if (text !== reply.text || reply.status !== "done") {
+              await trx
+                .updateTable("transcript_entries")
+                .set({ text, status: "done", revision, updated_at: at })
+                .where("id", "=", reply.id)
+                .execute();
+              entries.push(reply.id);
+            }
+          } else if (answer.text !== "") {
+            entries.push(
+              await insertEntry(trx, chat, revision, {
+                turnId: turn.id,
+                kind: "reply",
+                text: answer.text,
+                status: "done",
+                ...(answer.item !== undefined && { agentItemId: answer.item }),
+              }),
+            );
+          }
+        }
+        if (!ends) {
+          return entries.length > 0 ? { entries, turns: [] } : undefined;
+        }
+        const stopped = await trx
+          .updateTable("transcript_entries")
+          .set({ status: "stopped", revision, updated_at: at })
+          .where("person_id", "=", turn.person_id)
+          .where("turn_id", "=", turn.id)
+          .where("status", "=", "running")
+          .returning("id")
+          .execute();
+        return {
+          entries: [...entries, ...stopped.map((row) => row.id)],
           turns: [turn.id],
         };
       }),
@@ -1693,14 +1799,6 @@ export function transcripts(
         .executeTakeFirst();
       return row && { details: JSON.parse(row.details ?? "null") as unknown };
     },
-
-    /** Whether a message was saved, by the id the agent got. */
-    hasMessage: async (id: string) =>
-      (await db
-        .selectFrom("transcript_entries")
-        .select("id")
-        .where("id", "=", id)
-        .executeTakeFirst()) !== undefined,
 
     setting: async (key: string) =>
       (
