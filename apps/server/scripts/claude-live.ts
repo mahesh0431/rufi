@@ -829,7 +829,9 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       await checkProbes(probes, seen.calls);
     } catch (error) {
       // Claude's own report says why a step wasn't tried.
-      throw new Error(`${messageOf(error)}; Claude said: ${seen.said}`);
+      throw new Error(`${messageOf(error)}; Claude said: ${seen.said}`, {
+        cause: error,
+      });
     } finally {
       await rm(outside, { force: true });
       await rm("/tmp/rufi-claude-live", { force: true });
