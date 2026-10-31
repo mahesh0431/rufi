@@ -150,7 +150,8 @@ export async function recentSaves(store: Store, personId: string) {
         "removed_by",
       ])
       .where("person_id", "=", personId)
-      .where("type", "!=", "message")
+      // A message or a form's entry isn't taken off by a reverse.
+      .where("type", "in", ["document_page", "visit"])
       .where((eb) =>
         eb.or([
           eb("operation_id", "=", save.id),
