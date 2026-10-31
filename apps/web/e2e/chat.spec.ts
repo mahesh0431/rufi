@@ -378,6 +378,7 @@ test("waiting messages show in the chat: edit, reorder, steer, queue and remove;
   // ⌘ and the box's button keeps a new one for after the reply.
   await box(chat(page)).fill("Fourth");
   await chat(page)
+    .locator("form")
     .getByRole("button", { name: "Steer" })
     .click({ modifiers: ["ControlOrMeta"] });
   await expect(items).toHaveText([/^Second, edited/, /^Fourth/]);
