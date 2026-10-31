@@ -1117,8 +1117,8 @@ function AgentMessage({ entry }: { entry: Entry }) {
         <>
           <div
             ref={words}
-            // A few lines, before Show all.
-            className={`mt-1 break-words ${all ? "" : "line-clamp-4"}`}
+            // A few lines, before Show all; Markdown as in a reply.
+            className={`agent-words mt-1 break-words ${all ? "" : "line-clamp-4"}`}
           >
             <Marked text={entry.text} links={false} />
           </div>
@@ -1209,12 +1209,14 @@ function AgentLineView({
       return (
         <div className="break-words text-muted">
           <p className="text-xs font-medium">From {line.from}</p>
-          <Marked text={line.text} links={false} />
+          <div className="agent-words">
+            <Marked text={line.text} links={false} />
+          </div>
         </div>
       );
     case "reply":
       return (
-        <div className="break-words text-ink">
+        <div className="agent-words break-words text-ink">
           <Marked text={line.text} links={false} />
         </div>
       );

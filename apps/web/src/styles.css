@@ -91,67 +91,68 @@ body {
   color: var(--muted);
 }
 
-/* The AI's replies and its thinking's summaries: Markdown at the chat's size. */
-:is(.reply, .thought, .note) > :last-child {
+/* The AI's replies, its thinking's summaries and its agents' words:
+   Markdown at the chat's size. */
+:is(.reply, .thought, .note, .agent-words) > :last-child {
   margin-bottom: 0;
 }
-:is(.reply, .thought, .note) p,
-:is(.reply, .thought, .note) ul,
-:is(.reply, .thought, .note) ol,
-:is(.reply, .thought, .note) table,
-:is(.reply, .thought, .note) pre,
-:is(.reply, .thought, .note) blockquote {
+:is(.reply, .thought, .note, .agent-words) p,
+:is(.reply, .thought, .note, .agent-words) ul,
+:is(.reply, .thought, .note, .agent-words) ol,
+:is(.reply, .thought, .note, .agent-words) table,
+:is(.reply, .thought, .note, .agent-words) pre,
+:is(.reply, .thought, .note, .agent-words) blockquote {
   margin: 0 0 8px;
 }
-:is(.reply, .thought, .note) h1,
-:is(.reply, .thought, .note) h2,
-:is(.reply, .thought, .note) h3,
-:is(.reply, .thought, .note) h4 {
+:is(.reply, .thought, .note, .agent-words) h1,
+:is(.reply, .thought, .note, .agent-words) h2,
+:is(.reply, .thought, .note, .agent-words) h3,
+:is(.reply, .thought, .note, .agent-words) h4 {
   font-size: 14px;
   font-weight: 600;
   margin: 12px 0 4px;
 }
-:is(.reply, .thought, .note) ul {
+:is(.reply, .thought, .note, .agent-words) ul {
   list-style: disc;
   padding-left: 20px;
 }
-:is(.reply, .thought, .note) ol {
+:is(.reply, .thought, .note, .agent-words) ol {
   list-style: decimal;
   padding-left: 20px;
 }
-:is(.reply, .thought, .note) a {
+:is(.reply, .thought, .note, .agent-words) a {
   color: var(--accent-ink);
   text-decoration: underline;
 }
-:is(.reply, .thought, .note) code {
+:is(.reply, .thought, .note, .agent-words) code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   background: var(--side);
   padding: 1px 4px;
   border-radius: 4px;
 }
-:is(.reply, .thought, .note) pre {
+:is(.reply, .thought, .note, .agent-words) pre {
   overflow-x: auto;
   background: var(--side);
   padding: 8px 10px;
   border-radius: 8px;
 }
-:is(.reply, .thought, .note) pre code {
+:is(.reply, .thought, .note, .agent-words) pre code {
   padding: 0;
 }
-:is(.reply, .thought, .note) table {
+:is(.reply, .thought, .note, .agent-words) table {
   border-collapse: collapse;
   display: block;
   overflow-x: auto;
 }
-:is(.reply, .thought, .note) th,
-:is(.reply, .thought, .note) td {
+:is(.reply, .thought, .note, .agent-words) th,
+:is(.reply, .thought, .note, .agent-words) td {
   border-bottom: 1px solid var(--line);
   padding: 4px 8px;
   text-align: left;
   vertical-align: top;
 }
-:is(.reply, .thought, .note) blockquote {
+:is(.reply, .thought, .note, .agent-words) blockquote {
   border-left: 3px solid var(--line);
   padding-left: 10px;
   color: var(--muted);
