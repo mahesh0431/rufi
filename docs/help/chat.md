@@ -230,7 +230,7 @@ If Rufi closes again and again while they work, they stop carrying on: after 5 r
 - **Steer** puts it into the reply. The AI carries on with it in mind: it adds your message to what it is doing, and drops its work only if it has to. The message shows as waiting until the AI takes it, then in the reply. While the reply is still starting, it goes in once the AI runs.
 - **Queue** keeps it until the reply ends. Then it goes in a reply of its own, in order with your other waiting messages.
 
-Enter does what you chose in **Settings** › **Sending while Rufi replies**: **Steer** (the start) or **Queue**. The other button beside the box does the other. A message with files goes the same way.
+Enter, or a click on the send button, does what you chose in **Settings** › **Sending while Rufi replies**: **Steer** (the start) or **Queue**. ⌘Enter, or ⌘-click, does the other. A message with files goes the same way.
 
 If the reply ends before your steer reaches it, your message goes in a following reply.
 
@@ -248,7 +248,7 @@ You can also ask the AI to do these for you, for example "remove my question abo
 The line above them says what happens next:
 
 - **Waiting · these go in order after the reply**: they go by themselves.
-- **Waiting**: no reply runs, and Rufi is giving the first one to the AI now; "Thinking" shows under them.
+- **Waiting**: no reply runs yet; they go in order after the message Rufi is giving to the AI now. That message shows in the chat as sent, with "Thinking" under it.
 - **Not sent · Rufi sends these only when you say**: some messages are held, as below.
 - **Waiting until you sign in**: you're signed out; they go the next time Rufi gives the AI something after you sign in again (see [Rufi's lines](#rufis-lines)).
 

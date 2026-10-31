@@ -8,6 +8,7 @@ import type {
   Entry,
   Page,
   Queue,
+  QueueItem,
   StreamLine,
   Turn,
 } from "@rufi/contracts";
@@ -134,6 +135,29 @@ export function workingOf(
   return sending || state.queue.items.some((item) => item.held === null)
     ? { kind: "starting" }
     : null;
+}
+
+/**
+ * Your messages Rufi is giving to the AI now, which show as sent, not as
+ * waiting: one being handed over, or, when no reply runs, the first that
+ * waits free. Not one the chat shows already.
+ */
+export function goingNow(
+  state: Pick<Transcript, "turns" | "entries"> & { queue: Queue },
+): QueueItem[] {
+  const idle = !Object.values(state.turns).some(
+    (turn) => turn.status === "running",
+  );
+  const first = state.queue.items.find(
+    (item) => item.state === "waiting" && item.held === null,
+  );
+  return state.queue.items.filter(
+    (item) =>
+      item.origin === "person" &&
+      item.held === null &&
+      !(item.id in state.entries) &&
+      (item.state === "handing_over" || (idle && item === first)),
+  );
 }
 
 /** When the working status shown now started: for a reply, or "starting". */

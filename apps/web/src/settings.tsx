@@ -84,7 +84,7 @@ export function SettingsPage() {
         <p className="text-muted">
           What Enter does while a reply runs. Steer puts your message into that
           reply. Queue keeps it until the reply ends, then it goes in its own.
-          Either way the icons beside the box do the other.
+          Either way, ⌘Enter does the other.
         </p>
       </div>
       <RestartSection />
