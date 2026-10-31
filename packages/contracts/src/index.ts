@@ -434,6 +434,8 @@ export const Settings = Schema.Struct({
   regions: Schema.Array(Region),
   /** The models Rufi's AI and its agents may run on, by id, in order. */
   models: Schema.Array(Schema.String),
+  /** How many restarts in a row Rufi carries on a reply that ran. */
+  continuesAfterRestart: Schema.Int,
   /** The document reader's model and effort, and the models it can run on. */
   reader: Schema.Struct({
     model: Schema.String,
@@ -553,6 +555,13 @@ export const SaveSettings = Schema.Struct({
   emergencyRegion: Schema.optionalKey(Schema.NullOr(Line(10))),
   /** The whole shortlist, in order. */
   models: Schema.optionalKey(Schema.Array(Id)),
+  /** How many restarts in a row Rufi carries on a reply that ran: 0 to 10. */
+  continuesAfterRestart: Schema.optionalKey(
+    Schema.Int.check(
+      Schema.isGreaterThanOrEqualTo(0),
+      Schema.isLessThanOrEqualTo(10),
+    ),
+  ),
   /** The document reader's model: one of the models it can run on. */
   readerModel: Schema.optionalKey(Id),
   readerEffort: Schema.optionalKey(Effort),

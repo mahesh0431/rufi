@@ -937,7 +937,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
-    "after a restart, what waited goes first, by itself, with the chat's effort",
+    "after a restart, the reply that ran carries on first, then what waited goes, by itself, with the chat's effort",
     timeout,
     async () => {
       await startChat(name);
@@ -947,19 +947,26 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       await until(async () => (await backend.efforts()).length === 1);
       await say(c, "B", "queue");
       await startChat(name); // Rufi restarts.
-      await ended(c.id, 2);
+      await ended(c.id, 3);
       expect((await transcript(c.id)).turns).toMatchObject([
         { status: "interrupted" },
         { status: "completed" },
+        { status: "completed" },
+      ]);
+      expect(
+        (await transcript(c.id)).entries.filter(([kind]) => kind === "reply"),
+      ).toEqual([
+        ["reply", "ok:Rufi stopped suddenly (restart). Please continue."],
+        ["reply", "ok:B"],
       ]);
       await say(await chatRow(c.id), "C");
-      await ended(c.id, 3);
+      await ended(c.id, 4);
       expect(
         (await transcript(c.id)).entries
           .filter(([kind]) => kind === "message")
           .map(([, text]) => text),
       ).toEqual(["B", "C"]);
-      expect(await backend.efforts()).toEqual(["high", "high", "high"]);
+      expect(await backend.efforts()).toEqual(["high", "high", "high", "high"]);
     },
   );
 
@@ -2968,6 +2975,210 @@ describe("the chat, on the scripted Codex", () => {
     expect(agentRows("SELECT provider FROM agents")).toEqual([
       { provider: "other" },
     ]);
+  });
+
+  describe("after a restart", () => {
+    const CONTINUE = "Rufi stopped suddenly (restart). Please continue.";
+    const root = () =>
+      String(
+        agentRows("SELECT id FROM agents WHERE parent_id IS NULL")[0]?.["id"],
+      );
+    const continues = (agent: string) =>
+      agentRows(`SELECT continues FROM agents WHERE id = '${agent}'`)[0]?.[
+        "continues"
+      ];
+    /** The agent's turn runs: the one a restart will cut. */
+    const runs = (agent: string, turns: number) =>
+      until(() =>
+        Promise.resolve(
+          agentRows(
+            `SELECT status FROM turns WHERE agent_id = '${agent}' ORDER BY rowid`,
+          ).map((turn) => turn["status"]).length === turns &&
+            agentRows(
+              `SELECT 1 FROM turns WHERE agent_id = '${agent}' AND status = 'running'`,
+            ).length === 1,
+        ),
+      );
+
+    it("Rufi AI and the helper it started carry on what they were doing, each with one continue", async () => {
+      await startChat("fake", {
+        scenario: {
+          callsByText: {
+            "hang: check my results": [
+              {
+                id: "call-start",
+                tool: "start_agent",
+                arguments: { title: "Helper", task: "helper: hang" },
+              },
+            ],
+          },
+        },
+      });
+      const c = await newChat();
+      await say(c, "hang: check my results");
+      const helper = ownCall("call-start");
+      await runs(helper, 1);
+
+      await startChat("fake"); // Rufi restarts.
+      await ended(c.id, 2);
+      await settled(c.id);
+      // One continue each, first in line, and each went once.
+      expect(
+        agentRows(
+          "SELECT agent_id, state, parts FROM queue WHERE id LIKE 'continue:%' ORDER BY agent_id",
+        ),
+      ).toEqual(
+        [root(), helper].sort().map((agent) => ({
+          agent_id: agent,
+          state: "delivered",
+          parts: JSON.stringify([CONTINUE]),
+        })),
+      );
+      expect(
+        agentRows(
+          "SELECT agent_id, status, reason FROM turns WHERE reason = 'restart' ORDER BY agent_id",
+        ),
+      ).toEqual(
+        [root(), helper].sort().map((agent) => ({
+          agent_id: agent,
+          status: "stopped",
+          reason: "restart",
+        })),
+      );
+      // The cut reply shows stopped; the one that goes on answers.
+      const { turns, entries } = await transcript(c.id);
+      expect(turns[0]?.status).toBe("interrupted");
+      expect(entries).toContainEqual(["reply", `ok:${CONTINUE}`]);
+    });
+
+    it("adds no second continue when Rufi stops again before the first went", async () => {
+      await startChat("fake");
+      const c = await newChat();
+      await say(c, "hang");
+      await runs(root(), 1);
+      // Rufi restarts, and stops again while the AI's thread opens.
+      await startChat("fake", { scenario: { hang: ["thread/resume"] } });
+      await until(() =>
+        Promise.resolve(
+          agentRows("SELECT 1 FROM queue WHERE id LIKE 'continue:%'").length ===
+            1,
+        ),
+      );
+      await startChat("fake");
+      await ended(c.id, 2);
+      await settled(c.id);
+      expect(
+        agentRows("SELECT state FROM queue WHERE id LIKE 'continue:%'"),
+      ).toEqual([{ state: "delivered" }]);
+      const { turns, entries } = await transcript(c.id);
+      expect(turns.map((turn) => turn.status)).toEqual([
+        "interrupted",
+        "completed",
+      ]);
+      expect(entries.filter(([kind]) => kind === "reply")).toEqual([
+        ["reply", `ok:${CONTINUE}`],
+      ]);
+    });
+
+    it("stops the reply at the sixth restart in a row and holds the user's waiting message, which goes once they write again", async () => {
+      // Every turn runs on until Rufi stops.
+      const hanging = { scenario: { words: "hang" } };
+      await startChat("fake", hanging);
+      const c = await newChat();
+      await say(c, "Check my results");
+      await runs(root(), 1);
+      await say(await chatRow(c.id), "And my TSH", "queue");
+      for (let restart = 1; restart <= 5; restart += 1) {
+        await startChat("fake", hanging);
+        await runs(root(), restart + 1);
+      }
+      expect(continues(root())).toBe(5);
+
+      // The sixth: no continue; what waits is held until the user writes.
+      await startChat("fake");
+      await until(async () =>
+        (await waiting()).some(([, , held]) => held === "stopped"),
+      );
+      expect((await queue.list(await chatRow(c.id))).items).toMatchObject([
+        {
+          text: "And my TSH",
+          held: "stopped",
+          heldText: "Stopped after 5 restarts in a row.",
+        },
+      ]);
+      expect(
+        agentRows(
+          `SELECT status, stopped_by FROM agents WHERE id = '${root()}'`,
+        ),
+      ).toEqual([{ status: "stopped", stopped_by: "restart" }]);
+      expect(
+        agentRows("SELECT 1 FROM queue WHERE id LIKE 'continue:%'"),
+      ).toHaveLength(5);
+      await sleep(200);
+      expect((await transcript(c.id)).turns).toHaveLength(6);
+
+      await say(await chatRow(c.id), "I'm back");
+      await ended(c.id, 8);
+      expect(
+        (await transcript(c.id)).entries
+          .filter(([kind]) => kind === "message")
+          .map(([, text]) => text),
+      ).toEqual(["Check my results", "And my TSH", "I'm back"]);
+      expect(await waiting()).toEqual([]);
+      expect(continues(root())).toBe(0);
+    }, 60_000);
+
+    it("counts on when a helper writes to Rufi AI between restarts, and starts again from none when the user writes", async () => {
+      await startChat("fake", {
+        scenario: {
+          callsByText: {
+            "hang: check my results": [
+              {
+                id: "call-start",
+                tool: "start_agent",
+                arguments: { title: "Helper", task: "Read the March report." },
+              },
+            ],
+          },
+        },
+      });
+      const c = await newChat();
+      await say(c, "hang: check my results");
+      const helper = ownCall("call-start");
+      await until(() =>
+        Promise.resolve(
+          agentRows(`SELECT status FROM agents WHERE id = '${helper}'`)[0]?.[
+            "status"
+          ] === "done",
+        ),
+      );
+      const hanging = { scenario: { words: "hang" } };
+      await startChat("fake", hanging);
+      await runs(root(), 2);
+      expect(continues(root())).toBe(1);
+
+      // The helper writes, into the turn that carries on.
+      ai?.agents.send(root(), {
+        id: "from-helper",
+        sender: helper,
+        kind: "steer",
+        parts: [`Helper (${helper}) writes:\n\nPage 3 is cut off.`],
+        about: "wrote",
+      });
+      await until(() =>
+        Promise.resolve(
+          agentRows("SELECT state FROM queue WHERE id = 'from-helper'")[0]?.[
+            "state"
+          ] === "delivered",
+        ),
+      );
+      await startChat("fake", hanging);
+      await runs(root(), 3);
+      expect(continues(root())).toBe(2);
+
+      await say(await chatRow(c.id), "Thanks", "queue");
+      await until(() => Promise.resolve(continues(root()) === 0));
+    });
   });
 
   it("gives a sub-agent only the tools it was given, and its own sub-agent no more than those", async () => {

@@ -303,7 +303,10 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
   record.db.exec("DROP TRIGGER fictional_stuck");
   record.db.exec("UPDATE agent_cursor SET number = 0");
   rufi = await start(adapter);
-  expect(cursor()).toBe(lastEvent(rufi.store));
+  // The turn that ran on ends as Rufi starts: stopped by the restart.
+  await vi.waitFor(() => {
+    expect(cursor()).toBe(lastEvent(rufi.store));
+  });
   expect(turns()).toEqual([
     completed,
     completed,

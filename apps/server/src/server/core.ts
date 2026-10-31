@@ -13,6 +13,7 @@ import { openAgentStore, type AgentStore } from "@rufi/agents/store";
 import { Effect } from "effect";
 import type { AgentSandbox, RunSubAgent } from "../agent/runtime.ts";
 import { readBrief } from "../core/briefs/briefs.ts";
+import { continuesAfterRestart } from "../core/chat/continues.ts";
 import { DEFAULT_SHORTLIST, shortlist } from "../core/chat/models.ts";
 import { drafts as openDrafts } from "../core/chat/drafts.ts";
 import { chatAgents } from "../core/chat/agents.ts";
@@ -541,7 +542,11 @@ export const startCore = (options: CoreOptions) =>
     // messages go into Rufi AI's queue, in order, and only now may the
     // agents' inputs go.
     yield* attempt(() => chat.carryAll());
-    yield* attempt(() => agentSystem.agents.dispatch());
+    // A turn that ran when Rufi stopped carries on, as Settings says.
+    const continues = yield* attempt(() =>
+      continuesAfterRestart(transcripts.setting),
+    );
+    yield* attempt(() => agentSystem.agents.dispatch({ continues }));
     convertLoop.start();
     yield* Effect.acquireRelease(
       attempt(() => writePrivateJson(coreFile(home), { port, launcher })),

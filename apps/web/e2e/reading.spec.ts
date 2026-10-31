@@ -231,7 +231,9 @@ test("a Stop in Rufi's reader ends the reply before the AI with Retry, no waitin
   const stopped = await makeBackup(rufi.home, new Date());
 
   await log(page).getByRole("button", { name: "Retry" }).click();
-  await expect(log(page).locator(".reply")).toHaveCount(1);
+  await expect(log(page).locator(".reply")).toHaveCount(1, {
+    timeout: FILE_WORK_MS,
+  });
   // Your message shows once, though it was sent twice.
   await expect(
     log(page).getByText("Sort this please", { exact: true }),
@@ -510,7 +512,9 @@ test("a reading that failed signed out ends the reply with its reason in full, i
 
   await reopen(page);
   await log(page).getByRole("button", { name: "Retry" }).click();
-  await expect(log(page).locator(".reply")).toHaveCount(1);
+  await expect(log(page).locator(".reply")).toHaveCount(1, {
+    timeout: FILE_WORK_MS,
+  });
   await expect(page.getByRole("region", { name: "Items" })).toContainText(
     "2 results",
   );

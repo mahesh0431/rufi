@@ -185,7 +185,7 @@ Your reply stops in Rufi's part, before Rufi AI starts on your message. Its last
 - **You're signed out, your sign-in has ended, or your plan's usage limit is reached:** the reading stops at once. The line says why, in Rufi's or the service's words, for example **Couldn't read scan-2024.pdf · Codex isn't signed in to ChatGPT. Sign in from Settings, then try again. · read 13 of 60**. Sign in, or wait until the limit resets, then click **Retry**. Rufi doesn't try again by itself.
 - **The AI connection was lost or restarted:** Rufi tries again by itself, up to three times: after 30 seconds, then 1 minute, then 2 minutes. Meanwhile the step says **waiting to copy again**.
 - **It took too long, or failed again:** the line says **Couldn't read … · read 3 of 5**. Between them is why: "the reading took too long", or the AI service's error as the service reported it, such as "exceeded retry limit, last status: 429 Too Many Requests".
-- **Rufi closed while reading:** when Rufi starts again, the reply ends **Rufi closed while reading.**, with **Retry**. Nothing goes on by itself after a restart.
+- **Rufi closed while reading:** when Rufi starts again, the reply ends **Rufi closed while reading.**, with **Retry**. The reading doesn't go on by itself after a restart.
 
 **View reading** and the document's page also say why a reading failed, in full. On the Documents page, the file shows **Failed**.
 

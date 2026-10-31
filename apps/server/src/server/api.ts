@@ -42,6 +42,10 @@ import { getCookie, setCookie } from "hono/cookie";
 import { stream } from "hono/streaming";
 import { Stopped } from "../agent/runtime.ts";
 import type { Drafts } from "../core/chat/drafts.ts";
+import {
+  CONTINUES_SETTING,
+  continuesAfterRestart,
+} from "../core/chat/continues.ts";
 import { shortlist, SHORTLIST_SETTING } from "../core/chat/models.ts";
 import { RefRefusal } from "../core/chat/refs.ts";
 import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
@@ -446,6 +450,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
         await transcripts.setting("while_replying"),
       ).pipe(Option.getOrElse(() => "steer" as const)),
       models: await shortlist(transcripts.setting),
+      continuesAfterRestart: await continuesAfterRestart(transcripts.setting),
       emergencyRegion: known?.region ?? null,
       emergency: known ? { name: known.name, number: known.number } : null,
       regions: emergencyRegions(),
@@ -520,6 +525,12 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     }
     if (changed.whileReplying !== undefined) {
       await transcripts.saveSetting("while_replying", changed.whileReplying);
+    }
+    if (changed.continuesAfterRestart !== undefined) {
+      await transcripts.saveSetting(
+        CONTINUES_SETTING,
+        String(changed.continuesAfterRestart),
+      );
     }
     if (changed.models !== undefined) {
       await transcripts.saveSetting(
