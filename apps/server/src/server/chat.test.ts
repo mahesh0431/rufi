@@ -3335,6 +3335,18 @@ describe("the chat, on the scripted Codex", () => {
       { model: "gpt-6-astra" },
       { model: "claude-opus-5-5", effort: "high" },
     ]);
+    // Its Activity says so before its next turn.
+    const log = await ai?.logs.log(c.id, helper, 50);
+    expect(
+      log?.lines.flatMap((line) =>
+        line.kind === "model" ? [line.changed] : [],
+      ),
+    ).toEqual([
+      {
+        from: { model: "gpt-6-astra", effort: "medium" },
+        to: { model: "claude-opus-5-5", effort: "high" },
+      },
+    ]);
     const [moved] = agentRows(
       `SELECT provider, provider_ref, conversation FROM agents WHERE id = '${helper}'`,
     );

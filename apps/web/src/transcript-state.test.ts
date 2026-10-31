@@ -232,6 +232,56 @@ describe("what the transcript shows", () => {
   });
 });
 
+describe("the Model changed line", () => {
+  it("shows before a reply on another model or effort than the one before, never for a new thread alone, and only for a new model after a reply whose effort is unknown", () => {
+    const ran = (
+      id: string,
+      seq: number,
+      now: [string, string | null],
+      before: [string, string | null] | null,
+      newThread = false,
+    ) => ({
+      entry: {
+        ...entry(`e-${id}`, seq, "Asha's question", id),
+        kind: "message" as const,
+      },
+      turn: {
+        ...turn("completed", id),
+        startedAt: `2026-10-04T10:0${String(seq)}:00.000Z`,
+        model: now[0],
+        effort: now[1],
+        before: before && { model: before[0], effort: before[1] },
+        newThread,
+      },
+    });
+    const replies = [
+      ran("old", 1, ["gpt-6.1-sol", null], null),
+      // Its effort was unknown: the same model says nothing.
+      ran("t2", 2, ["gpt-6.1-sol", "high"], ["gpt-6.1-sol", null]),
+      // Only the effort changed.
+      ran("t3", 3, ["gpt-6.1-sol", "xhigh"], ["gpt-6.1-sol", "high"]),
+      // A new thread on the same model and effort.
+      ran("t4", 4, ["gpt-6.1-sol", "xhigh"], ["gpt-6.1-sol", "xhigh"], true),
+      ran("t5", 5, ["claude-opus-5-5", "high"], ["gpt-6.1-sol", "xhigh"]),
+    ];
+    const shown = apply(emptyTranscript, {
+      type: "snapshot",
+      ...page(
+        1,
+        replies.map((one) => one.entry),
+        replies.map((one) => one.turn),
+        null,
+      ),
+    });
+    expect(lines(shown).filter((line) => line.startsWith("m:"))).toEqual([
+      "m:t3",
+      "m:t5",
+    ]);
+    const order = lines(shown).filter((line) => !line.startsWith("d:"));
+    expect(order.indexOf("m:t5") + 1).toBe(order.indexOf("e:e-t5"));
+  });
+});
+
 describe("the working status", () => {
   const item = (held: QueueItem["held"] = null): QueueItem => ({
     id: "q1",

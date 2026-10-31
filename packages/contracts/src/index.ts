@@ -506,8 +506,9 @@ export const SubAgents = Schema.Struct({ agents: Schema.Array(SubAgent) });
 /**
  * One line of a sub-agent's Activity, as its agent reported it: a message
  * it took (`from` whom), its answer (reply), a note or a step (activity),
- * its thinking, a question it asked (`detail`: the options), or how a turn
- * that didn't finish ended.
+ * its thinking, a question it asked (`detail`: the options), how a turn
+ * that didn't finish ended, or that a turn ran on another model or effort
+ * than the one before (model).
  */
 export const AgentLine = Schema.Struct({
   id: Schema.String,
@@ -518,7 +519,10 @@ export const AgentLine = Schema.Struct({
     "reasoning",
     "question",
     "end",
+    "model",
   ]),
+  /** A model line: the turn before ran on `from`, this one on `to`. */
+  changed: Schema.optionalKey(Schema.Struct({ from: RanOn, to: RanOn })),
   text: Schema.String,
   from: Schema.optionalKey(Schema.String),
   activity: Schema.NullOr(ActivityKind),
