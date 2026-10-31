@@ -13,7 +13,7 @@ import { openAgentStore, type AgentStore } from "@rufi/agents/store";
 import { Effect } from "effect";
 import type { AgentSandbox, RunSubAgent } from "../agent/runtime.ts";
 import { readBrief } from "../core/briefs/briefs.ts";
-import { DEFAULT_ALLOWLIST } from "../core/chat/models.ts";
+import { DEFAULT_SHORTLIST, shortlist } from "../core/chat/models.ts";
 import { drafts as openDrafts } from "../core/chat/drafts.ts";
 import { chatAgents } from "../core/chat/agents.ts";
 import { chatQueue } from "../core/chat/queue.ts";
@@ -67,7 +67,7 @@ import { generatedImages } from "../agent/codex/settings.ts";
 import { aiFiles } from "./files.ts";
 import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
 import { reader as openReader, readerChoice } from "./reader.ts";
-import { startRufiAi } from "./rufi-ai.ts";
+import { startRufiAi, type OfferedModel } from "./rufi-ai.ts";
 import { converter as openConverter } from "./converter.ts";
 import { secret, sessions } from "./session.ts";
 import { subAgents } from "./sub-agents.ts";
@@ -283,7 +283,7 @@ export const startCore = (options: CoreOptions) =>
             log,
           ).specs.map((spec) => spec.name),
           cwd: aiSandbox(home).folder,
-          model: DEFAULT_ALLOWLIST[0] ?? "",
+          model: DEFAULT_SHORTLIST[0] ?? "",
           log,
           ...(options.now && { now: options.now }),
         }),
@@ -348,7 +348,7 @@ export const startCore = (options: CoreOptions) =>
           queue,
           signIn: () => statusOf("codex"),
           agent: agentSystem.rufiAi,
-          allowlist: DEFAULT_ALLOWLIST,
+          shortlist: () => shortlist(transcripts.setting),
           mcp: { url: () => mcpUrl(MCP_CHAT), keys: chatKeys },
           rules: (region, agent) => {
             const instructions = agent
@@ -379,6 +379,8 @@ export const startCore = (options: CoreOptions) =>
                 log,
                 // The chat these tools run in: made by now.
                 messages: (): Chat["queue"] => chat.queue,
+                models: (): Promise<readonly OfferedModel[]> =>
+                  chat.shortlisted(),
               }),
               {
                 run: saveReading(options.now),

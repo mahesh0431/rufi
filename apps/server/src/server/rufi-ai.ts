@@ -79,11 +79,19 @@ export interface ChatOpening {
   seed: () => Promise<string | undefined>;
 }
 
+/** A model a provider offers now, with the provider it runs on. */
+export interface OfferedModel extends Model {
+  provider: string;
+  /** The efforts it takes, as the provider names them. */
+  efforts: readonly string[];
+  defaultEffort?: string;
+}
+
 /** Rufi AI for today's chat: each chat's own agent, its thread its conversation. */
 export interface RufiAi {
   provider: string;
-  /** The models the provider offers now. */
-  models: (signal?: AbortSignal) => Promise<Model[]>;
+  /** The models the providers offer now. */
+  models: (signal?: AbortSignal) => Promise<OfferedModel[]>;
   /** The chat's next turns run on its model and effort. */
   configure: (chat: ChatRow) => Promise<void>;
   /**
@@ -146,6 +154,9 @@ const APPLIED = new Set([
 ]);
 
 /** An input's hold as the chat shows it: signed out with Rufi's line. */
+/** How many of a sub-agent's turns its new conversation hears. */
+const SEED_TURNS = 10;
+
 const holdOf = (held: Hold, text: string) =>
   held === "signed_out"
     ? { held, text: SIGNED_OUT }
@@ -311,14 +322,36 @@ export async function startRufiAi(
       ...(parent && { parent: { title: parent.title } }),
     });
     given.set(agent.id, now.version);
-    // A sub-agent starts with its task only, never the chat.
+    // A new conversation hears what came before: Rufi AI the chat, a
+    // sub-agent its own turns, never the chat.
     const seed =
-      kind === "new" && agent.parent === null ? await now.seed() : undefined;
+      kind === "new"
+        ? agent.parent === null
+          ? await now.seed()
+          : ownSeed(agent.id)
+        : undefined;
     return {
       instructions: now.instructions,
       tools: now.tools,
       ...(seed !== undefined && { seed }),
     };
+  };
+
+  /** A sub-agent's last turns, for its new conversation; none before its first. */
+  const ownSeed = (agent: string): string | undefined => {
+    const { turns } = system.agents.history(agent, { limit: SEED_TURNS });
+    if (turns.length === 0) return undefined;
+    const from = (sender: string) => {
+      const found = system.agents.get(sender);
+      return found ? `${found.title} (${found.id})` : sender;
+    };
+    const lines = turns.flatMap((turn) => [
+      ...turn.inputs.map(
+        (input) => `${from(input.sender)}: ${input.parts?.join("\n\n") ?? ""}`,
+      ),
+      `You${turn.status === "done" ? "" : ` (this turn ${turn.status})`}: ${turn.result ?? ""}`,
+    ]);
+    return `A new conversation started. Your earlier turns are available through read_agent with "self".\n\nYour last turns, oldest first:\n\n${lines.join("\n\n")}`;
   };
 
   /**
@@ -503,6 +536,34 @@ export async function startRufiAi(
     },
   });
 
+  /** Each model's provider, as the providers last listed them. */
+  const providers = new Map<string, string>();
+  /** Every provider's models now; one that can't say is left out, unless all fail. */
+  const models = async (signal?: AbortSignal): Promise<OfferedModel[]> => {
+    const settled = await Promise.allSettled(
+      adapters.map(async (adapter) =>
+        (await adapter.models(signal)).map(
+          ({ id, name, efforts, defaultEffort }) => ({
+            id,
+            name,
+            provider: adapter.id,
+            efforts,
+            ...(defaultEffort !== undefined && { defaultEffort }),
+          }),
+        ),
+      ),
+    );
+    const failed = settled.find((one) => one.status === "rejected");
+    if (failed && settled.every((one) => one.status === "rejected")) {
+      throw failed.reason;
+    }
+    const offered = settled.flatMap((one) =>
+      one.status === "fulfilled" ? one.value : [],
+    );
+    for (const { id, provider } of offered) providers.set(id, provider);
+    return offered;
+  };
+
   const rufiAi = (host: RufiAiHost): RufiAi => {
     chat = host;
     closed = false;
@@ -510,18 +571,22 @@ export async function startRufiAi(
     return {
       provider,
 
-      models: async (signal) => {
-        const adapter = adapters.find((one) => one.id === provider);
-        const offered = adapter ? await adapter.models(signal) : [];
-        return offered.map(({ id, name }) => ({ id, name }));
-      },
+      models,
 
       configure: async (row) => {
         const agent = await system.root(row.id);
         const now = agents.get(agent);
         if (!now) return;
+        const model = row.model ?? now.model;
+        // Rufi AI runs on its model's provider, also when it was made anew
+        // on another. The menu and the choice listed the models already;
+        // only a model unknown since Rufi started is looked up.
+        const provider =
+          providers.get(model) ??
+          (await models()).find((one) => one.id === model)?.provider;
         agents.configure(agent, {
-          model: row.model ?? now.model,
+          ...(provider !== undefined && { provider }),
+          model,
           effort: row.effort,
         });
       },

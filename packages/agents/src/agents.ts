@@ -275,11 +275,17 @@ export interface Agents {
   reopen: (agent: string, fresh?: boolean) => Promise<void>;
   /**
    * What the agent's next turns run on; for a root, also the host's tools
-   * it may use (a child's are set when it starts).
+   * it may use (a child's are set when it starts). On another provider, its
+   * next turn starts a new conversation there.
    */
   configure: (
     agent: string,
-    settings: { model: string; effort: string; tools?: readonly string[] },
+    settings: {
+      provider?: string;
+      model: string;
+      effort: string;
+      tools?: readonly string[];
+    },
   ) => void;
   /**
    * Puts an input in the agent's queue, behind those waiting. It goes when
@@ -357,6 +363,8 @@ interface Live {
   /** The conversation number its events must name. */
   number: number;
   conversation?: Conversation;
+  /** The provider its open conversation is on. */
+  provider?: string;
   /** A start not yet admitted. */
   starting?: Starting;
   /** The turn running now, once admitted. */
@@ -603,7 +611,13 @@ export function createAgents(options: {
     live: Live,
     agent: Agent,
   ): Promise<Conversation> {
-    if (live.conversation) return live.conversation;
+    if (live.conversation) {
+      if (live.provider === agent.provider) return live.conversation;
+      // Its provider changed: a new conversation, on the new one.
+      closing.add(live.conversation);
+      live.conversation = undefined;
+      letGo().catch(options.onError);
+    }
     const adapter = adapters.get(agent.provider);
     if (!adapter) throw new Error(`No provider ${agent.provider} to run on.`);
     const open = async (number: number, resume?: string) => {
@@ -634,6 +648,7 @@ export function createAgents(options: {
     if (ref != null) {
       try {
         live.conversation = await keep(await open(agent.conversation, ref));
+        live.provider = agent.provider;
         return live.conversation;
       } catch (error) {
         if (!(error instanceof Missing)) throw error;
@@ -673,6 +688,7 @@ export function createAgents(options: {
       });
     });
     live.conversation = conversation;
+    live.provider = agent.provider;
     return conversation;
   }
 
@@ -1729,29 +1745,45 @@ export function createAgents(options: {
       }
     },
 
-    configure: (id, { model, effort, tools }) => {
+    configure: (id, { provider, model, effort, tools }) => {
       const agent = get(id);
       if (!agent) throw new Error(`No agent ${id}.`);
       if (tools !== undefined && agent.parent !== null) {
         throw new Error("A child's tools are set when it starts.");
       }
+      const moved = provider !== undefined && provider !== agent.provider;
+      if (moved && !adapters.has(provider)) {
+        throw new Error(`No provider ${provider} to run on.`);
+      }
       const retooled =
         tools !== undefined &&
         JSON.stringify(tools) !== JSON.stringify(agent.tools);
-      if (agent.model === model && agent.effort === effort && !retooled) {
+      if (
+        !moved &&
+        agent.model === model &&
+        agent.effort === effort &&
+        !retooled
+      ) {
         return;
       }
+      // On another provider, its conversation there is new: the one it
+      // had isn't resumed, and a turn running in it goes on.
       store.change(({ event }) => {
         db.prepare(
-          "UPDATE agents SET model = ?, effort = ?, tools = ?, updated_at = ? WHERE id = ?",
+          `UPDATE agents SET provider = ?, model = ?, effort = ?, tools = ?, updated_at = ?,
+             provider_ref = CASE WHEN ? THEN NULL ELSE provider_ref END
+           WHERE id = ?`,
         ).run(
+          moved ? provider : agent.provider,
           model,
           effort,
           JSON.stringify(retooled ? tools : agent.tools),
           now(),
+          moved ? 1 : 0,
           id,
         );
         event("agent.configured", id, {
+          ...(moved && { provider }),
           model,
           effort,
           ...(retooled && { tools }),
@@ -1978,7 +2010,8 @@ export function createAgents(options: {
     place: (id, meta) => {
       const live = lives.get(id);
       const current = live?.current;
-      const provider = row(id)?.provider;
+      // The provider of the conversation the call came from.
+      const provider = live?.provider ?? row(id)?.provider;
       const call =
         provider === undefined
           ? undefined

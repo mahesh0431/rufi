@@ -16,6 +16,7 @@ import type {
   AgentStatusInput,
   ReadAgentInput,
   SendAgentInput,
+  SetAgentModelInput,
   StartAgentInput,
   StopAgentInput,
   WaitingMessagesInput,
@@ -78,6 +79,10 @@ export interface AgentTools {
   stop: (input: StopAgentInput) => unknown;
   /** What waits for the caller and the agents below it: listed or changed. */
   waiting: (input: WaitingMessagesInput) => Promise<unknown>;
+  /** The models of the user's shortlist offered now. */
+  models: () => Promise<unknown>;
+  /** An idle agent below the caller, on another model from its next turn. */
+  setModel: (input: SetAgentModelInput) => Promise<unknown>;
 }
 
 /** A tool's input: decoded without services, like JSON. */

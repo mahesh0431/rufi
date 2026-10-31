@@ -27,7 +27,7 @@ import { claudeFolder } from "../agent/claude/executable.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexAdapter, instructionsNote } from "../agent/codex/adapter.ts";
 import { chatQueue } from "../core/chat/queue.ts";
-import { DEFAULT_ALLOWLIST } from "../core/chat/models.ts";
+import { DEFAULT_SHORTLIST } from "../core/chat/models.ts";
 import {
   transcripts as openTranscripts,
   type Transcripts,
@@ -156,7 +156,8 @@ async function start(
     signIn: () =>
       Promise.resolve({ state: "signed_in", account: null, text: null }),
     agent: ai.agent,
-    allowlist: options.model ? [options.model] : DEFAULT_ALLOWLIST,
+    shortlist: () =>
+      Promise.resolve(options.model ? [options.model] : DEFAULT_SHORTLIST),
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
     rules: (region) => ({
       instructions: coreInstructions(region),
@@ -211,11 +212,13 @@ const RUFI_TOOLS = [
   "mcp__rufi__get_documents",
   "mcp__rufi__get_overview",
   "mcp__rufi__get_records",
+  "mcp__rufi__list_models",
   "mcp__rufi__read_agent",
   "mcp__rufi__read_chat",
   "mcp__rufi__save_changes",
   "mcp__rufi__save_reading",
   "mcp__rufi__send_agent",
+  "mcp__rufi__set_agent_model",
   "mcp__rufi__show_face",
   "mcp__rufi__sort_documents",
   "mcp__rufi__start_agent",
@@ -224,7 +227,7 @@ const RUFI_TOOLS = [
 ];
 
 describe("Rufi's tools on the pinned Codex, over MCP", () => {
-  it.each(DEFAULT_ALLOWLIST)(
+  it.each(DEFAULT_SHORTLIST)(
     "on %s registers over HTTP with the thread's key and no Origin, and the code runner gets every tool with its input typed",
     { timeout: 120_000 },
     async (modelId) => {

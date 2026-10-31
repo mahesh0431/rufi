@@ -2,7 +2,7 @@
 // opens the chat itself (server/chat.ts).
 import type { ProviderAdapter } from "@rufi/agents/provider";
 import { openAgentStore } from "@rufi/agents/store";
-import { DEFAULT_ALLOWLIST } from "../src/core/chat/models.ts";
+import { DEFAULT_SHORTLIST } from "../src/core/chat/models.ts";
 import type { Transcripts } from "../src/core/chat/transcript.ts";
 import type { Store } from "../src/core/store/database.ts";
 import { agentsPath } from "../src/server/agents.ts";
@@ -14,6 +14,8 @@ export async function rufiAiFor(options: {
   record: Store;
   transcripts: Transcripts;
   adapter: ProviderAdapter;
+  /** More providers, after the first. */
+  others?: readonly ProviderAdapter[];
   tools: readonly string[];
 }) {
   const store = openAgentStore(agentsPath(options.home));
@@ -21,10 +23,10 @@ export async function rufiAiFor(options: {
     store,
     record: options.record,
     transcripts: options.transcripts,
-    adapters: [options.adapter],
+    adapters: [options.adapter, ...(options.others ?? [])],
     tools: options.tools,
     cwd: aiSandbox(options.home).folder,
-    model: DEFAULT_ALLOWLIST[0] ?? "",
+    model: DEFAULT_SHORTLIST[0] ?? "",
     log: () => undefined,
   });
   return {

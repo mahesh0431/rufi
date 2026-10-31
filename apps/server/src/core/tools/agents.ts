@@ -1,8 +1,9 @@
 // Rufi's agent tools: an agent starts agents of its own, sees how the ones
 // below it are, writes to one or to the agent that started it, reads the
 // conversation of any agent in its chat, stops one below it or itself,
-// with or without everything under it, and manages what waits for it and
-// for the agents below it. Rufi's chat does them in the agent
+// with or without everything under it, manages what waits for it and for
+// the agents below it, and lists the models of the user's shortlist and
+// moves an agent below it to one. Rufi's chat does them in the agent
 // system (server/sub-agents.ts); a sub-agent never gets more tools than the
 // agent that starts it.
 import { Schema } from "effect";
@@ -23,8 +24,35 @@ export const StartAgentInput = Schema.Struct({
         "Rufi's tools it may use, by name, among your own. Leave it out for all of yours.",
     }),
   ),
+  model: Schema.optionalKey(
+    Schema.String.annotate({
+      description: "A model list_models gives. Leave it out for yours.",
+    }),
+  ),
+  effort: Schema.optionalKey(
+    Schema.String.annotate({
+      description:
+        "One of the efforts its model takes, as list_models gives them. Leave it out for yours.",
+    }),
+  ),
 });
 export type StartAgentInput = typeof StartAgentInput.Type;
+
+export const SetAgentModelInput = Schema.Struct({
+  agent: Schema.String.annotate({
+    description: "An agent below you, by id.",
+  }).check(Schema.isMinLength(1)),
+  model: Schema.String.annotate({
+    description: "A model list_models gives.",
+  }).check(Schema.isMinLength(1)),
+  effort: Schema.optionalKey(
+    Schema.String.annotate({
+      description:
+        "One of the efforts the model takes, as list_models gives them. Leave it out to keep the agent's.",
+    }),
+  ),
+});
+export type SetAgentModelInput = typeof SetAgentModelInput.Type;
 
 export const AgentStatusInput = Schema.Struct({
   agents: Schema.optionalKey(
@@ -114,7 +142,7 @@ const outside = () =>
 export const startAgent = defineTool({
   name: "start_agent",
   description:
-    "Starts an agent of your own for a task that can run on its own: it runs at once, on your model and effort, and goes on after your turn ends. Give it a title and its whole task, its first message. It has your tools unless you give it fewer (tools); one you don't have is refused. Its saves and briefs show in the chat with Rufi's receipt. Answers its id; agent_status says how it is, and read_agent reads its conversation.",
+    "Starts an agent of your own for a task that can run on its own: it runs at once, on your model and effort unless you give one that list_models gives (a model the user hasn't ticked is refused, yours too), and goes on after your turn ends. Give it a title and its whole task, its first message. It has your tools unless you give it fewer (tools); one you don't have is refused. Its saves and briefs show in the chat with Rufi's receipt. Answers its id; agent_status says how it is, and read_agent reads its conversation.",
   input: StartAgentInput,
   callers: "model",
   readOnly: false,
@@ -135,7 +163,7 @@ export const startAgent = defineTool({
 export const agentStatus = defineTool({
   name: "agent_status",
   description:
-    "How the agents below you are: the ones you started and theirs, each with its title, the agent that started it (self: you), its status (idle before its first turn, running, done, stopped or failed) and its latest result. An id that isn't below you is not found. It doesn't wait.",
+    "How the agents below you are: the ones you started and theirs, each with its title, the agent that started it (self: you), its model and effort, its status (idle before its first turn, running, done, stopped or failed) and its latest result. An id that isn't below you is not found. It doesn't wait.",
   input: AgentStatusInput,
   callers: "model",
   readOnly: true,
@@ -206,5 +234,37 @@ export const waitingMessages = defineTool({
   run: (input, { agents }) => {
     if (!agents) throw outside();
     return agents.waiting(input);
+  },
+});
+
+export const listModels = defineTool({
+  name: "list_models",
+  description:
+    "The models the user shortlisted in Settings that their providers offer now: each with its id, name, provider, the efforts it takes and its default effort, if it has one. An agent runs only on one of these.",
+  input: Schema.Struct({}),
+  callers: "model",
+  readOnly: true,
+  destructive: false,
+  examples: [{}],
+  run: (_input, { agents }) => {
+    if (!agents) throw outside();
+    return agents.models();
+  },
+});
+
+export const setAgentModel = defineTool({
+  name: "set_agent_model",
+  description:
+    "Changes the model of an agent below you, and its effort if you give one, from its next turn on: never your own. Only a model list_models gives, and only while the agent isn't running: wait for its turn to end. On another provider's model, its next turn starts a new conversation there, which hears its last 10 turns. Answers the agent with its model and effort.",
+  input: SetAgentModelInput,
+  callers: "model",
+  readOnly: false,
+  destructive: false,
+  examples: [
+    { agent: "<id from agent_status>", model: "<id from list_models>" },
+  ],
+  run: (input, { agents }) => {
+    if (!agents) throw outside();
+    return agents.setModel(input);
   },
 });
