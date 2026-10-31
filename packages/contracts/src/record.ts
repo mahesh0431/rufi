@@ -405,11 +405,14 @@ export type FollowUps = typeof FollowUps.Type;
  * until given. A birth date is at the precision given, with its words; a
  * height is a number and its unit.
  */
+export const BirthDate = Schema.Struct({
+  date: RecordDate,
+  words: Schema.String,
+});
+export const SexForRanges = Schema.Literals(["female", "male"]);
 export const ProfileValues = Schema.Struct({
-  birth_date: Schema.NullOr(
-    Schema.Struct({ date: RecordDate, words: Schema.String }),
-  ),
-  sex_for_ranges: Schema.NullOr(Schema.Literals(["female", "male"])),
+  birth_date: Schema.NullOr(BirthDate),
+  sex_for_ranges: Schema.NullOr(SexForRanges),
   blood_group: Schema.NullOr(
     Schema.Literals(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]),
   ),

@@ -94,12 +94,15 @@ const MADE_IN: Record<MadeIn, string> = {
  * The profile's fields, each saved by `commit` once it is complete: a
  * choice when it is chosen, a typed field when you leave it.
  */
-function ProfileFields({
+export function ProfileFields({
   values,
   commit,
+  asTyped = false,
 }: {
   values: ProfileValues;
   commit: <K extends ProfileField>(field: K, value: ProfileValues[K]) => void;
+  /** Commit a typed field as it is typed, an unfinished one as not set: the welcome's. */
+  asTyped?: boolean;
 }) {
   const id = useId();
   return (
@@ -107,6 +110,7 @@ function ProfileFields({
       <BirthDate
         id={`${id}-birth`}
         value={values.birth_date}
+        asTyped={asTyped}
         commit={(value) => {
           commit("birth_date", value);
         }}
@@ -168,6 +172,7 @@ function ProfileFields({
       <Height
         id={`${id}-height`}
         value={values.height}
+        asTyped={asTyped}
         commit={(value) => {
           commit("height", value);
         }}
@@ -188,10 +193,12 @@ const leaves = (event: FocusEvent<HTMLElement>) =>
 function BirthDate({
   id,
   value,
+  asTyped,
   commit,
 }: {
   id: string;
   value: ProfileValues["birth_date"];
+  asTyped: boolean;
   commit: (value: ProfileValues["birth_date"]) => void;
 }) {
   const [, year = "", month = "", day = ""] =
@@ -202,14 +209,20 @@ function BirthDate({
     year,
   });
   const [problem, setProblem] = useState<string>();
-  const done = (now = typed) => {
+  const type = (now: typeof typed) => {
+    setTyped(now);
+    if (asTyped) done(now, false);
+  };
+  /** Commits what is typed; `left`: focus left it, so an unfinished one says so. */
+  const done = (now = typed, left = true) => {
     if (now.day === "" && now.month === "" && now.year === "") {
       setProblem(undefined);
       if (value !== null) commit(null);
       return;
     }
     if (!/^\d{4}$/.test(now.year) || (now.day !== "" && now.month === "")) {
-      setProblem("Give a year, and a month with a day.");
+      if (left) setProblem("Give a year, and a month with a day.");
+      else if (value !== null) commit(null);
       return;
     }
     setProblem(undefined);
@@ -246,7 +259,7 @@ function BirthDate({
           placeholder="Day"
           value={typed.day}
           onChange={(event) => {
-            setTyped({
+            type({
               ...typed,
               day: event.target.value.replace(/\D/g, "").slice(0, 2),
             });
@@ -257,7 +270,7 @@ function BirthDate({
           aria-label="Month"
           value={typed.month}
           onChange={(event) => {
-            setTyped({ ...typed, month: event.target.value });
+            type({ ...typed, month: event.target.value });
           }}
           className="w-36 rounded-lg border border-line bg-surface px-2 py-1.5"
         >
@@ -274,7 +287,7 @@ function BirthDate({
           placeholder="Year"
           value={typed.year}
           onChange={(event) => {
-            setTyped({
+            type({
               ...typed,
               year: event.target.value.replace(/\D/g, "").slice(0, 4),
             });
@@ -293,10 +306,12 @@ function BirthDate({
 function Height({
   id,
   value,
+  asTyped,
   commit,
 }: {
   id: string;
   value: ProfileValues["height"];
+  asTyped: boolean;
   commit: (value: ProfileValues["height"]) => void;
 }) {
   const [typed, setTyped] = useState({
@@ -304,21 +319,27 @@ function Height({
     unit: value?.unit ?? ("cm" as const),
   });
   const [problem, setProblem] = useState<string>();
-  const done = () => {
-    if (typed.number.trim() === "") {
+  /** Commits what is typed; `left`: focus left it, so a wrong one says so. */
+  const done = (now = typed, left = true) => {
+    if (now.number.trim() === "") {
       setProblem(undefined);
       if (value !== null) commit(null);
       return;
     }
-    const number = Number(typed.number);
+    const number = Number(now.number);
     if (!Number.isFinite(number) || number <= 0) {
-      setProblem("Give your height as a number.");
+      if (left) setProblem("Give your height as a number.");
+      else if (value !== null) commit(null);
       return;
     }
     setProblem(undefined);
-    if (number !== value?.value || typed.unit !== value.unit) {
-      commit({ value: number, unit: typed.unit });
+    if (number !== value?.value || now.unit !== value.unit) {
+      commit({ value: number, unit: now.unit });
     }
+  };
+  const type = (now: typeof typed) => {
+    setTyped(now);
+    if (asTyped) done(now, false);
   };
   return (
     <fieldset
@@ -338,7 +359,7 @@ function Height({
           placeholder="Height"
           value={typed.number}
           onChange={(event) => {
-            setTyped({ ...typed, number: event.target.value });
+            type({ ...typed, number: event.target.value });
           }}
           className="w-24 rounded-lg border border-line bg-surface px-2 py-1.5"
         />
@@ -346,7 +367,7 @@ function Height({
           aria-label="Unit"
           value={typed.unit}
           onChange={(event) => {
-            setTyped({ ...typed, unit: event.target.value as "cm" | "in" });
+            type({ ...typed, unit: event.target.value as "cm" | "in" });
           }}
           className="w-20 rounded-lg border border-line bg-surface px-2 py-1.5"
         >
