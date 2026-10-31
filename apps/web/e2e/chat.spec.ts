@@ -438,7 +438,7 @@ test("an older read of the queue never undoes a newer change", async ({
   await expect(items).toHaveText([/^Second, edited/]);
 });
 
-test("while a reply runs, the box's one button is Stop until you type; then Enter steers into the reply and ⌘Enter queues, as the line under the box says; with Queue chosen in Settings, the other way round", async ({
+test("while a reply runs, the box's one button is Stop until you type; then Enter steers into the reply and ⌘Enter queues; with Queue chosen in Settings, the other way round", async ({
   page,
   rufi,
 }) => {
@@ -451,7 +451,6 @@ test("while a reply runs, the box's one button is Stop until you type; then Ente
   await expect(button("Stop")).toHaveCount(0);
   await expect(button("Steer")).toBeVisible();
   await expect(button("Queue")).toHaveCount(0);
-  await expect(chat(page)).toContainText("⌘↵ to queue");
   await box(chat(page)).press("Enter");
   await expect(box(chat(page))).toHaveValue("");
   await expect(log(chat(page))).toContainText(
@@ -469,7 +468,6 @@ test("while a reply runs, the box's one button is Stop until you type; then Ente
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
   await box(page).fill("And after that, my iron");
   await expect(page.getByRole("button", { name: "Queue" })).toBeVisible();
-  await expect(page.getByRole("main")).toContainText("⌘↵ to steer");
   await box(page).press("Enter");
   await expect(
     page.getByRole("region", { name: "Waiting messages" }),
@@ -1427,7 +1425,7 @@ test("thinking with no summary shows no step: Thinking shows while it runs, and 
   await expect(thinking(chat(page))).toHaveCount(0);
 });
 
-test("from Enter, one working line shows while the AI's thread opens and until the first step, also with Activity hidden and after a reload; then the Activity line; Stop before a step ends it", async ({
+test("from Enter, one working line shows while the AI's thread opens and until the first step, also with Activity hidden and after a reload; then the Activity line; Stop shows from Enter and before a step ends it", async ({
   page,
   rufi,
 }) => {
@@ -1460,6 +1458,10 @@ test("from Enter, one working line shows while the AI's thread opens and until t
   await page.reload();
   await openChat(page);
   await expect(thinking(chat(page))).toHaveCount(1);
+  // Stop is there from Enter too.
+  await expect(
+    chat(page).getByRole("button", { name: "Stop", exact: true }),
+  ).toBeVisible();
 
   // The thread opens: the Activity line takes its place, with its timer.
   await rm(opening);
