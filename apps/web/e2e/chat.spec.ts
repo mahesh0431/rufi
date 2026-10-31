@@ -1568,7 +1568,11 @@ test("a helper Rufi AI starts is one line in its Activity, which opens the helpe
     "ok:checker: read the March report",
   ]);
   await accessible(page);
-  await chat(page).screenshot({ path: testInfo.outputPath("nested.png") });
+  // For the reviewer: the tree from the helper's line down.
+  await helper.evaluate((line) => {
+    line.scrollIntoView({ block: "start" });
+  });
+  await page.screenshot({ path: testInfo.outputPath("nested.png") });
 
   // Enter again folds the helper, and its helper with it.
   await helper.press("Enter");

@@ -1041,9 +1041,11 @@ function SubAgentLine({ id, reported }: { id: string; reported: string }) {
         <span className="shrink-0 font-medium text-ink">
           {agent?.title ?? reported}
         </span>
-        {agent && <span className="shrink-0">{` · ${agent.status}`}</span>}
-        {agent?.result && (
-          <span className="min-w-0 truncate">{` · ${agent.result}`}</span>
+        {agent && (
+          // Its status stays in view; a long result is cut at the end.
+          <span className="min-w-0 truncate">
+            {` · ${[agent.status, agent.result ?? []].flat().join(" · ")}`}
+          </span>
         )}
         <ChevronRight
           size={13}
