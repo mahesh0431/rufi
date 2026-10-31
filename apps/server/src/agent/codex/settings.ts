@@ -13,18 +13,29 @@ import type { AgentSandbox, AgentSkill, McpServer } from "../runtime.ts";
 import type { ConfigReadResponse } from "./protocol/v2/ConfigReadResponse.ts";
 import type { ExperimentalFeatureListResponse } from "./protocol/v2/ExperimentalFeatureListResponse.ts";
 import type { Rpc } from "./rpc.ts";
+import { COMMAND_MS, REFRESH_MS, TOKEN_COMMAND } from "./token-door.ts";
 
 /**
  * OpenAI's documented settings for ChatGPT plan use through app-server
- * (developers.openai.com/siwc/token-sharing-open-source/codex-app-server).
+ * (developers.openai.com/siwc/token-sharing-open-source/codex-app-server),
+ * but for the token: in place of an ACCESS_TOKEN in its environment, Codex
+ * asks Rufi's token door for one with the provider's auth command
+ * (token-door.ts, docs/adr/0025), named by its file.
  */
-const PROVIDER = `[model_providers.openai_chatgpt_plan]
+function provider(door: string): string {
+  return `[model_providers.openai_chatgpt_plan]
 name = "ChatGPT plan"
 base_url = "https://api.openai.com/v1"
-env_key = "ACCESS_TOKEN"
 wire_api = "responses"
 requires_openai_auth = false
-supports_websockets = false`;
+supports_websockets = false
+
+[model_providers.openai_chatgpt_plan.auth]
+command = ${key(process.execPath)}
+args = [${key(TOKEN_COMMAND)}, ${key(door)}]
+timeout_ms = ${String(COMMAND_MS)}
+refresh_interval_ms = ${String(REFRESH_MS)}`;
+}
 
 /** Rufi's choices on top of Codex's defaults, each with its reason. */
 const SETTINGS = {
@@ -124,15 +135,17 @@ ${features}
 enabled = false
 
 # The agent's commands get no variable named like a secret (*KEY*, *SECRET*,
-# *TOKEN*), such as the access token Codex itself runs with.
+# *TOKEN*); Codex itself runs with none.
 [shell_environment_policy]
 ignore_default_excludes = false
 ${commandsEnvironment(options)}${options.sandbox ? aiProfile(options.sandbox, skills) : ""}
-${PROVIDER}
+${provider(options.door)}
 `;
 }
 
 export interface CodexHomeOptions {
+  /** The file of this Codex's token door (doorFile). */
+  door: string;
   /** The user's real HOME, for the agent's commands. */
   userHome?: string | undefined;
   /** The AI's folder and what its commands may never read. */
@@ -162,7 +175,7 @@ export const generatedImages = (home: string) =>
  */
 export async function prepareCodexHome(
   home: string,
-  options: CodexHomeOptions = {},
+  options: CodexHomeOptions,
 ): Promise<CodexPaths> {
   const paths = {
     codexHome: join(home, "codex"),
@@ -176,6 +189,8 @@ export async function prepareCodexHome(
   }
   const skills = join(paths.codexHome, "skills");
   await rm(skills, { recursive: true, force: true });
+  // Made even with no skills: the AI's permission profile names it.
+  await mkdir(skills, { recursive: true, mode: 0o700 });
   for (const skill of options.skills ?? []) {
     await mkdir(join(skills, skill.name), { recursive: true, mode: 0o700 });
     for (const [name, text] of [
