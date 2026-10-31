@@ -182,6 +182,7 @@ function copied(pages: Record<number, Entry>, documentId: string) {
             const when = date ?? (column === "earlier" ? undefined : dated);
             return {
               page: Number(position),
+              reading: jobId,
               ...item,
               ...(when !== undefined && { date: when }),
               quote: `${item.test_name} ${item.value_text}`,
@@ -380,7 +381,7 @@ describe("saving draft items", () => {
       items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }],
     });
     expect(refused.issues[0]?.fix).toBe(
-      "This draft is out of date: its page was read again since it was drafted. Read the document again with get_documents and save its new drafts.",
+      "This draft is out of date: its page was read again after the reading it was drafted from. Read the document again with get_documents and save its new drafts.",
     );
     expect(written()).toEqual(before);
   });
@@ -1151,6 +1152,7 @@ describe("a sort again", () => {
       drafts: [
         {
           page: 2,
+          reading: "job-doc-asha-aug",
           test_name: "LDL cholesterol",
           value_text: "142",
           unit: "mg/dL",
