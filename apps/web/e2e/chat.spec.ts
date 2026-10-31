@@ -1010,7 +1010,7 @@ test("two tabs: the reply streams in both; the last save wins", async ({
   );
 });
 
-test("Markdown in a reply: tables and web links work; HTML, images and other links do nothing", async ({
+test("Markdown in a reply: tables and web links work, Rufi's own links open in place; HTML, images and other links do nothing", async ({
   page,
   rufi,
 }) => {
@@ -1021,7 +1021,7 @@ test("Markdown in a reply: tables and web links work; HTML, images and other lin
   await box(chat(page)).fill(
     [
       "![pixel](http://127.0.0.1:9/pixel.png) <img src=http://127.0.0.1:9/x.png>",
-      "[run](javascript:alert(1)) [inside](/settings) [web](https://example.com/page)",
+      "[run](javascript:alert(1)) [inside](/settings) [web](https://example.com/page) [your profile](rufi:/profile)",
       "",
       "| Test | Value |",
       "|---|---|",
@@ -1036,20 +1036,31 @@ test("Markdown in a reply: tables and web links work; HTML, images and other lin
     "href",
     "https://example.com/page",
   );
-  // Every link goes to a web page, outside Rufi; none other is a link.
-  for (const link of await reply.getByRole("link").all()) {
+  // Every other link goes to a web page, outside Rufi; none other is a link.
+  const own = reply.getByRole("link", { name: "your profile" });
+  await expect(own).not.toHaveAttribute("target");
+  for (const link of await reply
+    .getByRole("link")
+    .filter({ hasNotText: "your profile" })
+    .all()) {
     await expect(link).toHaveAttribute("href", /^https?:\/\//);
     await expect(link).toHaveAttribute("target", "_blank");
     await expect(link).toHaveAttribute("rel", "noopener noreferrer");
   }
   await expect(reply.locator("img")).toHaveCount(0);
-  await expect(reply).toContainText("run inside web");
+  await expect(reply).toContainText("run inside web your profile");
 
   const at = page.url();
   await reply.getByText("inside").click();
   await reply.getByText("run").click();
   expect(page.url()).toBe(at);
   expect(requests.filter((url) => url.includes("127.0.0.1:9"))).toEqual([]);
+
+  // Rufi's own link opens the person's page in this window.
+  await own.click();
+  await expect(page).toHaveURL(/\/people\/[^/]+\/profile$/);
+  await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
+  expect(page.context().pages()).toHaveLength(1);
 });
 
 test("⌘J opens the panel; Esc steps back and returns focus; another page closes it", async ({

@@ -16,7 +16,7 @@
 // page; older pages load as you scroll up, and the view stays where it is.
 // Each entry reads only itself from the live store, so a streaming reply
 // re-renders alone.
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowUpRight,
   Bell,
@@ -92,8 +92,9 @@ import { anyWaiting, WaitingView } from "./waiting.tsx";
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no remote
 // images, and links only to http(s) pages, opened outside Rufi with no opener
 // or referrer. A reply also shows a picture or a page in a file the AI made
-// (an image or a link to its path), and draws a Mermaid diagram once it has
-// ended. Anything else shows as its text.
+// (an image or a link to its path), links a page of Rufi for the person
+// whose chat it is (rufi:/documents/<id>), which opens in place, and draws a
+// Mermaid diagram once it has ended. Anything else shows as its text.
 const WEB = /^https?:\/\//i;
 const webLink: Components["a"] = ({ href, children }) =>
   href !== undefined && WEB.test(href) ? (
@@ -118,9 +119,38 @@ const textOf = (node: {
         .map((child) => textOf(child as Parameters<typeof textOf>[0]))
         .join("");
 
+/** A page of Rufi, as a reply links it: rufi:/documents/<id>. */
+const RUFI = /^rufi:(\/[^/].*)$/i;
+
+/**
+ * A link to a page of Rufi in a reply: the person's page at that path,
+ * opened in place by Rufi's router. A wrong path shows Rufi's "no page".
+ */
+function RufiLink({ path, children }: { path: string; children: ReactNode }) {
+  const personId = use(Whose);
+  const navigate = useNavigate();
+  if (personId === "") return <span>{children}</span>;
+  const href = `/people/${personId}${path}`;
+  return (
+    <a
+      href={href}
+      onClick={(event) => {
+        event.preventDefault();
+        void navigate({ href });
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
 /** A reply's parts; `streaming`: it is still being written. */
 const replyComponents = (streaming: boolean): Components => ({
   a: ({ href, children, node, ...rest }) => {
+    const page = href === undefined ? null : RUFI.exec(href);
+    if (page?.[1] !== undefined) {
+      return <RufiLink path={page[1]}>{children}</RufiLink>;
+    }
     const file = fileIn(href);
     if (!file) return webLink({ href, children, node, ...rest });
     const words = node ? textOf(node) : "";
@@ -161,9 +191,9 @@ const replyComponents = (streaming: boolean): Components => ({
 const WRITING = replyComponents(true);
 const ENDED = replyComponents(false);
 
-/** A file's path, kept as written (file: too); the parts above check it. */
+/** A file's path or a page of Rufi, kept as written; the parts above check it. */
 const keepFiles = (url: string) =>
-  /^file:/i.test(url) ? url : defaultUrlTransform(url);
+  /^(file|rufi):/i.test(url) ? url : defaultUrlTransform(url);
 
 /** The same Markdown tree and file rules as the reply renderer above. */
 const parser = unified()
