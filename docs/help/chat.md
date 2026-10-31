@@ -128,6 +128,8 @@ A reply shows the file as it is now, not as it was when the AI wrote the reply. 
 
 Ask the AI about your health record in your own words, for example "What was my last HbA1c?", "How many times did I have a headache this year?" or "How has my HbA1c changed since I started creatine?". The AI reads your Overview. For anything more, such as earlier results, counts or dates, it reads one kind of record, such as your lab results, your measurements or your symptoms, all of them or between two dates. The AI does the counting and the comparing itself.
 
+To say where a result stands, the AI goes by the lab's own range and flag first. When a report prints no range, it can use a range for your age and sex from [your profile](record.md#your-profile), and says which range it used. For an older result, it uses your age on that result's date. When your profile doesn't have what it needs, or a year of birth leaves it unsure, it says so or asks you. It reads your profile again before it relies on it, so a change you made a moment ago counts.
+
 What the AI's reads can do:
 
 - **Only this person's record.** A read gets only the records of the person whose chat it is. It can't read another person's record, the chat or Rufi's settings. Rufi chooses the person, not the AI.
@@ -163,7 +165,7 @@ You change your health record by telling the AI in the chat. Nothing changes unt
 
    When a detail is long, its line shows the part around the change. Rufi writes the receipt itself, from what it saved, not from the AI's words. If the receipt is different from what the AI told you, trust the receipt and tell the AI.
 
-The AI can save medicines you take, visits to a doctor (with what the doctor wrote or said), symptoms, conditions, allergies, lab results, measurements such as your weight or blood pressure, procedures and immunisations, "no known allergies", and follow-ups.
+The AI can save medicines you take, visits to a doctor (with what the doctor wrote or said), symptoms, conditions, allergies, lab results, measurements such as your weight or blood pressure, procedures and immunisations, "no known allergies", follow-ups, and your profile: your birth date, sex for lab ranges, blood group and height (see [Your profile](record.md#your-profile)). When you mention one of these about yourself, the AI may offer to save it.
 
 What Rufi does when it saves:
 

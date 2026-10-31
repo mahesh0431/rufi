@@ -1352,7 +1352,7 @@ function shownField(field: Field, row: Row, links: Links): string | undefined {
         `${kindNamed(String(row["linked_kind"]))?.noun ?? "record"} ${value as string}`
       );
     case "amount":
-      return `${String(value)} ${String(row[unitColumn(field)])}`;
+      return `${String(Number(value))} ${String(row[unitColumn(field)])}`;
     case "value":
       if (field.column === "replaces_id") {
         return links.get(linkKey("replaces", value)) ?? (value as string);

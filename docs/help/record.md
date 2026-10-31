@@ -46,6 +46,21 @@ Results saved before Rufi had the two pages are on Lab results. Move any measure
 
 An old link to a result opens it on its page now.
 
+## Your profile
+
+Your health record keeps a short profile of you: your birth date, your sex for lab ranges, your blood group and your height. Each one is **Not set** until you give it, and blood group and height can stay empty.
+
+- **Birth date** can be a year, a month and year, or a full date: give only what you want to share. Rufi keeps it with your words, such as "March 1990", and works out your age from it. A year alone leaves your age one year open.
+- **Sex for lab ranges** is Female or Male. It is only for choosing lab ranges, such as for haemoglobin or ferritin, which differ for women and men. It isn't a question about gender.
+- **Blood group** is A+, A−, B+, B−, AB+, AB−, O+ or O−.
+- **Height** is a number and its unit, cm or in, as you give it. It is your profile's own value: a height on a report or in your measurements stays a measurement, and changes nothing here.
+
+To fill in or change your profile, tell the AI, for example "I was born in March 1990" or "my blood group is B+". As for every change, it asks first, and the chat shows a receipt. Each change is in your profile's history, and "undo that" puts the earlier value back. Your profile is never removed: to empty a value, ask the AI to clear it.
+
+The AI reads your profile with your health record, and uses your age and sex to choose a range when a report prints none (see [Asking about your health record](chat.md#asking-about-your-health-record)).
+
+A data folder from before profiles has every value **Not set**. The AI asks when it needs one.
+
 ## A page
 
 Each page shows the records that are current, newest first. As you scroll to the end, more load. You can also click **Show more**.

@@ -97,7 +97,7 @@ Then Rufi doesn't read or change the location file, and **Settings** › **Data 
 
 > **Note:** When you ask Rufi something, the AI reads the parts of your health record it needs. That text goes to the AI service your chat's model runs on, so it can answer: OpenAI, through your ChatGPT plan, or Anthropic, through your Claude account, when you chose one of Claude's models. A sub-agent's work goes to the service of its own model. See [OpenAI's policies](https://openai.com/policies/) and [Anthropic's](https://www.anthropic.com/legal/privacy) for how they handle it.
 
-When the AI reads your record with Rufi's tools, it gets only the records of the person whose chat it is: Rufi chooses the person, and the AI can't name another one. The AI can't read the chat or Rufi's settings this way, and it can't change anything. It doesn't read your [device data](device-data.md) yet.
+When the AI reads your record with Rufi's tools, it gets your name and your profile (birth date, your age from it, sex for lab ranges, blood group and height), and the records it asks for. It gets only those of the person whose chat it is: Rufi chooses the person, and the AI can't name another one. The AI can't read the chat or Rufi's settings this way, and it can't change anything. It doesn't read your [device data](device-data.md) yet.
 
 Rufi's tools aren't all that the chat's AI can do: it also works in its own folder (see below).
 

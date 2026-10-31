@@ -20,7 +20,7 @@ import {
 import { rufiCaller, forAgent } from "../tools/tools.ts";
 import { turnScope } from "../../../tests/scope.ts";
 import { profileOf } from "./read.ts";
-import { saveChanges, type FormOrigin, type SaveRequest } from "./save.ts";
+import { saveChanges, type FormOrigin } from "./save.ts";
 
 const TZ = process.env["TZ"];
 process.env["TZ"] = "Asia/Kolkata";
@@ -1535,16 +1535,20 @@ describe("the AI's view of the record", () => {
 async function enter(
   fields: Record<string, unknown>,
   {
-    form = "settings" as FormOrigin,
+    form = "settings",
     sending = "sending-1",
     person = "asha",
     id = "asha",
-  } = {},
+  }: { form?: FormOrigin; sending?: string; person?: string; id?: string } = {},
 ) {
   return store.query.transaction().execute((trx) =>
-    saveChanges(trx, { personId: person, form, callId: sending, now: clock }, {
-      changes: [{ kind: "profile", action: "change", id, fields }],
-    } as SaveRequest),
+    saveChanges(
+      trx,
+      { personId: person, form, callId: sending, now: clock },
+      {
+        changes: [{ kind: "profile", action: "change", id, fields }],
+      },
+    ),
   );
 }
 
