@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -306,6 +306,13 @@ describe("starting Codex", () => {
       { id: "gpt-6-astra", name: "GPT-6-Astra" },
       { id: "gpt-5.5", name: "GPT-5.5" },
     ]);
+  });
+
+  // The AI's permission profile names the skills folder; Linux's sandbox
+  // can't start a command when a folder it names is missing.
+  it("keeps the skills folder, even with no skills", async () => {
+    await start().startThread(SETTINGS);
+    expect((await stat(join(home, "codex/skills"))).isDirectory()).toBe(true);
   });
 });
 
