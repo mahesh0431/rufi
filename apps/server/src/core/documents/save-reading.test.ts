@@ -1,6 +1,6 @@
 // A reading saved whole by a reading agent (save_reading), through the
-// chat's tool caller on a real database: it writes what the old reader's run
-// writes, row for row; the same call again gets its kept answer, and what
+// chat's tool caller on a real database: it writes a reading as older ones
+// are stored, its pages waiting to be sorted; the same call again gets its kept answer, and what
 // Rufi keeps of the call holds no page text; a document deleted first,
 // another person's, or a page it doesn't have refuses it, with nothing
 // written.
@@ -20,8 +20,6 @@ import {
   type Store,
 } from "../store/database.ts";
 import { rufiCaller } from "../tools/tools.ts";
-import { copies } from "./copies.ts";
-import { readings } from "./reading.ts";
 import { saveReading } from "./save-reading.ts";
 import { sorting } from "./sorting.ts";
 
@@ -100,7 +98,7 @@ const rows = (store: Store, sql: string) =>
     .all()
     .map((row) => ({ ...row }));
 
-/** What a reading of doc-asha-aug wrote, its job's id as "job". */
+/** What readings of doc-asha-aug wrote, its job's id as "job". */
 function written(store: Store) {
   const [job] = rows(store, "SELECT id FROM jobs");
   const named = (row: Record<string, unknown>) =>
@@ -124,22 +122,7 @@ function written(store: Store) {
 }
 
 describe("a reading agent's saved reading", () => {
-  it("writes what the old reader's run writes, row for row, and its pages wait to be sorted", async () => {
-    // The old reader copies both pages in a run and finishes it.
-    const old = await opened();
-    const reads = readings(old.store, now);
-    const job = await old.store.query
-      .transaction()
-      .execute((trx) => reads.open(trx, "asha", "doc-asha-aug", false));
-    if (!job) throw new Error("No reading was opened.");
-    const run = await reads.startRun(job);
-    const book = copies(old.store, now);
-    for (const { page, ...copy } of PAGES) {
-      run.lookedAt.add(page);
-      await book.save(run, page, copy);
-    }
-    await reads.finish(run);
-
+  it("writes a reading as older readings are stored: done, a copy of each page and each page's state, its pages waiting to be sorted", async () => {
     const saved = await call(
       "save_reading",
       { document: "doc-asha-aug", pages: PAGES },
@@ -149,7 +132,38 @@ describe("a reading agent's saved reading", () => {
       ok: true,
       result: { pages: "1–2", unreadable: "2" },
     });
-    expect(written(rufi.store)).toEqual(written(old.store));
+    expect(
+      rows(rufi.store, "SELECT state, targets, sorted_at, error FROM jobs"),
+    ).toEqual([
+      { state: "done", targets: "[1,2]", sorted_at: null, error: null },
+    ]);
+    expect(
+      rows(
+        rufi.store,
+        "SELECT page_in_file, outcome, copy, why FROM page_copies ORDER BY page_in_file",
+      ),
+    ).toEqual([
+      { page_in_file: 1, outcome: "read", copy: PAGE_1, why: null },
+      {
+        page_in_file: 2,
+        outcome: "unreadable",
+        copy: PAGE_2,
+        why: "The lower half is blurred.",
+      },
+    ]);
+    expect(
+      rows(
+        rufi.store,
+        "SELECT position, state, state_why FROM document_pages WHERE document_id = 'doc-asha-aug' ORDER BY position",
+      ),
+    ).toEqual([
+      { position: 1, state: "read", state_why: null },
+      {
+        position: 2,
+        state: "unreadable",
+        state_why: "The lower half is blurred.",
+      },
+    ]);
     // Rufi AI sorts from it: get_documents names it as the copies' reading.
     const sortable = await call(
       "get_documents",
@@ -165,8 +179,6 @@ describe("a reading agent's saved reading", () => {
         ],
       },
     });
-    old.reader.close();
-    old.store.close();
   });
 
   it("of fewer pages than the document has leaves the others not looked at, never read, until a reading saves them", async () => {

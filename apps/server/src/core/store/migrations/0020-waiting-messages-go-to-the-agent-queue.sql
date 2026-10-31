@@ -11,6 +11,8 @@
 --   while they were read (held for that reply's Retry), waits again, with
 --   no reply of its own yet; it is in the chat already, so it shows there
 --   once.
+-- - the older reader goes: its readings that hadn't finished fail, their
+--   copies kept, as Rufi's start failed them; nothing reads them by itself.
 -- A row held from a restored backup, or for the person's choice, stays
 -- held; sent and removed rows stay as they are. Each message keeps how the
 -- person sent it while a reply ran: into the reply (steer), or after it
@@ -24,6 +26,14 @@ UPDATE chat_queue SET state = 'waiting', turn_id = NULL
   WHERE state = 'handing_over' AND sent_as IS NULL;
 UPDATE chat_queue SET state = 'handing_over', sent_as = COALESCE(sent_as, id)
   WHERE state = 'not_sure';
+UPDATE document_pages SET entry_attempt = 0
+  WHERE entry_attempt > 0
+    AND entry_job_id IN (SELECT id FROM jobs WHERE state IN ('queued', 'running'))
+    AND entry_attempt = (SELECT attempt FROM jobs WHERE jobs.id = document_pages.entry_job_id);
+UPDATE jobs
+  SET state = 'failed', error = 'Rufi closed while reading',
+    ended_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), retry_at = NULL
+  WHERE state IN ('queued', 'running');
 
 CREATE TABLE chat_queue_new (
   id TEXT PRIMARY KEY,

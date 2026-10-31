@@ -58,7 +58,6 @@ import {
   prescriptionFile,
 } from "../tests/pack/copy-set.ts";
 import type { Text } from "../tests/pack/pdf.ts";
-import { subAgentRunner } from "../src/agent/codex/subagent.ts";
 
 const { values } = parseArgs({
   options: {
@@ -2494,14 +2493,6 @@ async function playCase(name: string, home: string) {
             log: diagnostics(home).log,
           }),
         ],
-        reader: subAgentRunner({
-          home,
-          command: { file, args: [] },
-          env: childEnvironment(),
-          token,
-          version,
-          log: diagnostics(home).log,
-        }),
         log: diagnostics(home).log,
         account: async () => {
           const now = await status(signIn);

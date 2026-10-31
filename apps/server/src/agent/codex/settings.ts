@@ -267,8 +267,8 @@ export async function checkSettings(
   }
 }
 
-/** The name Codex knows Rufi's MCP server by, in the chat and the reader. */
-export const RUFI_SERVER = "rufi";
+/** The name Codex knows Rufi's MCP server by. */
+const RUFI_SERVER = "rufi";
 
 /**
  * Codex cuts a tool's input schema over this to `unknown` before the model

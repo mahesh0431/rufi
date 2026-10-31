@@ -1449,7 +1449,6 @@ describe("the chat, on the scripted Codex", () => {
             await transcripts.addEvent(c, event, write);
           } else await chat.event(personId, event, write);
         },
-        stopReading: () => undefined,
         changed: () => undefined,
         log: () => undefined,
       });

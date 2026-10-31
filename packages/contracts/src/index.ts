@@ -118,8 +118,8 @@ export const ActivityKind = Schema.Literals([
   /** The AI's progress note, its words as they came: a step, not a reply. */
   "note",
   /**
-   * Rufi's reader copying one document, before the AI gets the message:
-   * `detail` says how far; its details name the document.
+   * An older Rufi's reader copying one document, before the AI got the
+   * message: `detail` says how far; its details name the document.
    */
   "reading",
   "other",
@@ -434,12 +434,6 @@ export const Settings = Schema.Struct({
   models: Schema.Array(Schema.String),
   /** How many restarts in a row Rufi carries on a reply that ran. */
   continuesAfterRestart: Schema.Int,
-  /** The document reader's model and effort, and the models it can run on. */
-  reader: Schema.Struct({
-    model: Schema.String,
-    effort: Effort,
-    models: Schema.Array(Model),
-  }),
   /** How long device values are kept (docs/adr/0023). */
   deviceKeepValues: KeepValues,
 });
@@ -593,9 +587,6 @@ export const SaveSettings = Schema.Struct({
       Schema.isLessThanOrEqualTo(10),
     ),
   ),
-  /** The document reader's model: one of the models it can run on. */
-  readerModel: Schema.optionalKey(Id),
-  readerEffort: Schema.optionalKey(Effort),
   /** A shorter time deletes at once: the screen confirms it first. */
   deviceKeepValues: Schema.optionalKey(KeepValues),
 });

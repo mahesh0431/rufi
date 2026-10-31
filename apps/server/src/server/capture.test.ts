@@ -920,7 +920,7 @@ describe.runIf(process.platform === "darwin")(
           const copy = tempPath(coreFile(home));
           await writeFile(copy, '{"launcher":"secret"}');
           // The chat's Codex replaces its door's file as it starts.
-          const doors = [doorFile(home, "chat"), doorFile(home, "reader")];
+          const doors = [doorFile(home, "chat")];
           for (const door of doors) {
             await mkdir(dirname(door), { recursive: true });
             await writeFile(
