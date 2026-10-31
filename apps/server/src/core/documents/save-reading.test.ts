@@ -85,7 +85,7 @@ async function call(
     { run: sorting(store, now).sort, done: () => undefined },
     undefined,
     { run: saveReading(now), done: () => undefined },
-  )(turnScope(chat, "t-1"), "person")(tool, input, callId);
+  )(turnScope(chat, "t-1"))(tool, input, callId);
   return JSON.parse(answer.text) as {
     ok: boolean;
     result?: { reading: string; pages: string; unreadable?: string };
