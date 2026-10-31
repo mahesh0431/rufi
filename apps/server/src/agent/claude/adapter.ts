@@ -33,7 +33,6 @@ import {
 } from "@rufi/agents/provider";
 import type { AgentSandbox } from "../runtime.ts";
 import { within } from "./deadline.ts";
-import { RUFI_TOOLS } from "./sandbox.ts";
 import { askClaude, signInOf, type InstalledClaude } from "./executable.ts";
 import {
   blocksOf,
@@ -55,8 +54,6 @@ import {
 const ASK_MS = 15_000;
 /** How long Claude has to answer an interrupt. */
 const STOP_MS = 10_000;
-/** How Claude names Rufi's tools: `mcp__rufi__<name>`. */
-const MCP_PREFIX = `mcp__${RUFI_TOOLS}__`;
 /** Where a call to Rufi's tools carries Claude's id for it. */
 const TOOL_USE_ID = "claudecode/toolUseId";
 
@@ -161,9 +158,6 @@ export function claudeAdapter(options: ClaudeAdapterOptions): ProviderAdapter {
           : undefined;
       return typeof call === "string" ? call : undefined;
     },
-    // Claude knows Rufi's tools by its MCP names, and writes them so.
-    rufiTool: (name) =>
-      name.startsWith(MCP_PREFIX) ? name.slice(MCP_PREFIX.length) : undefined,
     close: async () => {
       await Promise.all([...conversations].map((each) => each.close()));
     },

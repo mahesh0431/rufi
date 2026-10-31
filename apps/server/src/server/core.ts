@@ -375,7 +375,6 @@ export const startCore = (options: CoreOptions) =>
                 models: (): Promise<readonly OfferedModel[]> =>
                   chat.shortlisted(),
                 usage: () => agentSystem.usage(),
-                rufiTool: agentSystem.rufiTool,
               }),
               {
                 run: saveReading(options.now),

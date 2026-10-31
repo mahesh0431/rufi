@@ -201,7 +201,6 @@ async function start(
             return chat.shortlisted();
           },
           usage: running.usage,
-          rufiTool: running.rufiTool,
         }),
       ),
     },

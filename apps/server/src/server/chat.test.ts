@@ -27,7 +27,7 @@ import { keepingLog, noReply } from "../../tests/codex-log.ts";
 import { rufiAiFor } from "../../tests/rufi-ai.ts";
 import { fakeClaude } from "../../tests/fake-claude.ts";
 import type { Options } from "@anthropic-ai/claude-agent-sdk";
-import { ANSWER, type Script } from "@rufi/agents/contract";
+import { ANSWER } from "@rufi/agents/contract";
 import { claudeAdapter } from "../agent/claude/adapter.ts";
 import { claudeFolder } from "../agent/claude/executable.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
@@ -255,7 +255,6 @@ async function startChat(
               return chat.shortlisted();
             },
             usage: system.usage,
-            rufiTool: system.rufiTool,
           }),
           { run: saveReading(), done: () => undefined },
         )(scope);
@@ -465,7 +464,7 @@ const newChat = () => chatRow();
  * Claude as Rufi runs it (claudeSetup), on the scripted Claude: what each
  * of its sessions was given, and each conversation it opened.
  */
-async function scriptedClaude(script: Script = {}) {
+async function scriptedClaude(script: { signedIn?: boolean } = {}) {
   const fake = fakeClaude(script);
   const asked: Options[] = [];
   const opened: OpenOptions[] = [];
@@ -487,7 +486,6 @@ async function scriptedClaude(script: Script = {}) {
         return adapter.open(options);
       },
     },
-    callMeta: fake.callMeta,
     /** The sessions Claude ran a conversation in, not those Rufi asked about it. */
     sessions: () => asked.filter((options) => options.sessionId !== undefined),
     opened,
@@ -3904,72 +3902,6 @@ describe("the chat, on the scripted Codex", () => {
       "Rufi AI",
       "Reader",
     ]);
-  });
-
-  it("starts a sub-agent of a Claude agent with the tools it names as Claude knows them, and still not with one the agent doesn't have", async () => {
-    const claude = await scriptedClaude({ turn: "runs" });
-    await startChat("fake", {
-      shortlist: [...ALLOWED, "claude-fictional-1"],
-      other: claude.adapter,
-      scenario: {
-        callsByText: {
-          "Ask a reader": [
-            {
-              id: "call-start",
-              tool: "start_agent",
-              arguments: {
-                title: "Reader",
-                task: "Read the March report.",
-                tools: ["get_overview", "start_agent"],
-                model: "claude-fictional-1",
-              },
-            },
-          ],
-        },
-      },
-    });
-    const c = await newChat();
-    await say(c, "Ask a reader");
-    const reader = ownCall("call-start");
-    await until(() =>
-      Promise.resolve(
-        agentRows(`SELECT status FROM agents WHERE id = '${reader}'`)[0]?.[
-          "status"
-        ] === "running",
-      ),
-    );
-    // The reader's calls, as Claude makes them in its running turn.
-    const tools = claude.opened[0]?.tools;
-    if (!tools) throw new Error("the reader got no tools");
-    const server = {
-      url: tools.url,
-      http_headers: { Authorization: `Bearer ${tools.key}` },
-    };
-    const start = async (call: string, named: string[]) => {
-      const { result } = await callTool(server, {
-        name: "start_agent",
-        arguments: { title: call, task: "Look.", tools: named },
-        meta: claude.callMeta(call),
-      });
-      const [content] = (result?.["content"] ?? []) as { text: string }[];
-      return JSON.parse(content?.text ?? "{}") as unknown;
-    };
-
-    expect(await start("toolu_named", ["mcp__rufi__get_overview"])).toEqual(
-      expect.objectContaining({ ok: true }),
-    );
-    expect(await start("toolu_wider", ["mcp__rufi__save_changes"])).toEqual(
-      expect.objectContaining({
-        ok: false,
-        error:
-          "An agent you start can have only tools you have, and you don't have save_changes. Nothing was started.",
-      }),
-    );
-    expect(
-      agentRows(
-        `SELECT title, tools FROM agents WHERE parent_id = '${reader}'`,
-      ),
-    ).toEqual([{ title: "toolu_named", tools: '["get_overview"]' }]);
   });
 
   it("saves the calls of two agents of the chat that have the same id from their provider, each with its receipt", async () => {

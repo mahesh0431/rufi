@@ -307,8 +307,6 @@ export async function startRufiAi(
     rufiAi: (host: RufiAiHost) => RufiAi;
     logs: AgentLogs;
     usage: () => Promise<ProviderUsage[]>;
-    /** Rufi's name for a tool as the provider names it to its AI. */
-    rufiTool: (provider: string, name: string) => string;
     /** Asks the provider for its models again; resolves once it said. */
     refreshModels: (provider: string) => Promise<void>;
   }
@@ -751,9 +749,6 @@ export async function startRufiAi(
     rufiAi,
     logs: shown,
     refreshModels: lists.refresh,
-    rufiTool: (provider, name) =>
-      adapters.find((adapter) => adapter.id === provider)?.rufiTool?.(name) ??
-      name,
     usage: () =>
       Promise.all(
         adapters.map(async (adapter) => ({
