@@ -250,6 +250,7 @@ The line above them says what happens next:
 - **Waiting · these go in order after the reply**: they go by themselves.
 - **Waiting**: no reply runs, and Rufi is giving the first one to the AI now; "Thinking" shows under them.
 - **Not sent · Rufi sends these only when you say**: some messages are held, as below.
+- **Waiting until you sign in**: you're signed out; they go the next time Rufi gives the AI something after you sign in again (see [Rufi's lines](#rufis-lines)).
 
 A message with files waits like any other. Removing it doesn't remove its files: they stay sent, and the Documents page shows **Not read yet** with **Retry**.
 
