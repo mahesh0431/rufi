@@ -175,6 +175,10 @@ _Avoid_: commentary, progress message, interim reply
 What a reply shows besides its words. A page is an HTML file the AI made, such as a chart or a page of results, drawn in the reply in a locked frame and opened large over the chat, self-contained (it loads nothing from the internet and can't reach Rufi); a picture is one the AI made because the person asked for a picture, or one it generated; a diagram is drawn from the AI's Mermaid text. Pictures and pages are files in the AI's folder (or where it keeps the pictures it generates), shown as they are now: Rufi keeps no copy, and a file that is gone shows as such.
 _Avoid_: artifact, attachment, image (say picture), HTML (say page)
 
+**Trend (in a reply)**:
+One result's values over time, which Rufi draws in a reply from a short block the AI writes (an `openui-lang` block naming `Trend` and its `Point`s), with the record page's trend drawing and a table of every value under it. The block is kept in the reply as the AI wrote it; once the reply ended, a block that isn't whole shows as its text. Nothing in it runs.
+_Avoid_: chart (a chart that isn't a trend is a page), graph, visual, widget
+
 **Steer**:
 A message sent while the AI is replying, passed into that reply; the AI carries on with it in mind, told in one line that it is being steered. It waits in the **queue** like any other until the AI takes it. While a reply runs, Enter steers unless Settings says queue; **Steer** beside the box, or on a waiting message, does it too.
 _Avoid_: nudge, interrupt

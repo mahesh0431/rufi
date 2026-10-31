@@ -10,7 +10,11 @@
 // a default. A change that would alter what an old block means gets a new
 // component name, and the old one stays.
 import "./jitless.ts";
-import { createLibrary, defineComponent } from "@openuidev/lang-core";
+import {
+  createLibrary,
+  createParser,
+  defineComponent,
+} from "@openuidev/lang-core";
 import { z } from "zod";
 
 /** One value of a trend, as the record keeps it. */
@@ -46,6 +50,33 @@ export const visuals = createLibrary({
   root: "Trend",
   components: [Trend, Point],
 });
+
+const parser = createParser(visuals.toJSONSchema(), "Trend");
+
+/**
+ * A block as OpenUI parses it: `whole` when nothing is cut off, every name
+ * used is defined and every name defined is used, and nothing is wrong; and
+ * its points' props, as the block gives them.
+ */
+export function readTrend(source: string): {
+  whole: boolean;
+  points: Record<string, unknown>[];
+} {
+  const { root, meta } = parser.parse(source);
+  const points = root?.props["points"];
+  return {
+    whole:
+      !meta.incomplete &&
+      meta.unresolved.length === 0 &&
+      meta.orphaned.length === 0 &&
+      meta.errors.length === 0,
+    points: (Array.isArray(points) ? points : []).flatMap((point: unknown) =>
+      typeof point === "object" && point !== null && "props" in point
+        ? [point.props as Record<string, unknown>]
+        : [],
+    ),
+  };
+}
 
 const PREAMBLE = `# A trend in your reply
 

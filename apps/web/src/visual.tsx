@@ -10,12 +10,11 @@
 import "@rufi/contracts/jitless";
 import {
   createLibrary,
-  createParser,
   Renderer,
   type ElementNode,
   type OpenUIError,
 } from "@openuidev/react-lang";
-import { Point, Trend as TrendPart } from "@rufi/contracts/visuals";
+import { Point, readTrend, Trend as TrendPart } from "@rufi/contracts/visuals";
 import { useMemo, useState, type ReactNode } from "react";
 import { printedDate } from "./dates.ts";
 import { Trend } from "./trend.tsx";
@@ -131,20 +130,6 @@ const library = createLibrary({
     { ...Point, component: () => null },
   ],
 });
-const parser = createParser(library.toJSONSchema(), "Trend");
-
-/** Whether a finished block is whole, by OpenUI's own parse of it. */
-function whole(source: string): boolean {
-  const { incomplete, unresolved, orphaned, errors } =
-    parser.parse(source).meta;
-  return (
-    !incomplete &&
-    unresolved.length === 0 &&
-    orphaned.length === 0 &&
-    errors.length === 0
-  );
-}
-
 /**
  * The block `source` as a trend; `children` is the block as code, shown
  * instead when a finished block can't be drawn whole.
@@ -159,7 +144,7 @@ export function Visual({
   children: ReactNode;
 }) {
   const parsedWhole = useMemo(
-    () => streaming || whole(source),
+    () => streaming || readTrend(source).whole,
     [source, streaming],
   );
   const [errors, setErrors] = useState<readonly OpenUIError[]>([]);
