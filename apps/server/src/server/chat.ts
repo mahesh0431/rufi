@@ -21,7 +21,11 @@ import {
   type ProviderStatus,
 } from "@rufi/contracts";
 import { Stopped, type Model } from "../agent/runtime.ts";
-import { allowedModels, NOT_SHORTLISTED } from "../core/chat/models.ts";
+import {
+  allowedModels,
+  NOT_SHORTLISTED,
+  UNKNOWN_PROVIDER,
+} from "../core/chat/models.ts";
 import {
   QueueRefusal,
   type ChatQueue,
@@ -410,7 +414,11 @@ export function chat(deps: ChatDeps) {
     inLane(chat, async (stored) => {
       let fresh = stored;
       if (closed) return;
-      if ((await deps.signIn(await providerOf(stored))).state !== "signed_in") {
+      const provider = await providerOf(stored).catch(() => undefined);
+      if (
+        provider === undefined ||
+        (await deps.signIn(provider)).state !== "signed_in"
+      ) {
         return;
       }
       // Rufi's part reads a message's files: what comes after waits.
@@ -445,12 +453,12 @@ export function chat(deps: ChatDeps) {
       if (!first) return;
       try {
         if (fresh.model === null) {
-          const model = (await offered())[0]?.id;
-          if (model === undefined) {
+          const start = (await offered())[0];
+          if (start === undefined) {
             throw new ChatRefusal("None of the allowed models is offered now.");
           }
-          await transcripts.setModel(fresh, model);
-          fresh = { ...fresh, model };
+          await transcripts.setModel(fresh, start.id, start.provider);
+          fresh = { ...fresh, model: start.id, modelProvider: start.provider };
         }
         await agent.configure(fresh);
       } catch (error) {
@@ -939,12 +947,12 @@ export function chat(deps: ChatDeps) {
      */
     selectModel: (chat: ChatRow, model: string) =>
       inLane(chat, async (chat) => {
-        const models = await offered();
-        if (!models.some((m) => m.id === model)) {
-          throw new ChatRefusal(NOT_SHORTLISTED);
-        }
+        const chosen = (await offered()).find((m) => m.id === model);
+        if (!chosen) throw new ChatRefusal(NOT_SHORTLISTED);
         await idle(chat, "the model");
-        await transcripts.setModel(chat, model);
+        // Its provider stays with it: after a restart the providers may not
+        // list it.
+        await transcripts.setModel(chat, model, chosen.provider);
       }),
 
     /**
@@ -991,17 +999,17 @@ export function chat(deps: ChatDeps) {
   }
 
   /**
-   * The provider the chat's next turn runs on: its model's, or, before it
-   * has one, that of the model it would start on.
+   * The provider the chat's next turn runs on: its model's, kept with the
+   * choice; before it has one, that of the model it would start on. A
+   * chosen model whose provider Rufi doesn't know goes nowhere else.
    */
   async function providerOf(chat: ChatRow): Promise<string> {
-    const model =
-      chat.model ?? (await offered().catch(() => undefined))?.[0]?.id;
-    const provider =
-      model === undefined
-        ? undefined
-        : await agent.providerOf(model).catch(() => undefined);
-    return provider ?? agent.provider;
+    if (chat.model === null) {
+      const start = (await offered().catch(() => undefined))?.[0];
+      return start?.provider ?? agent.provider;
+    }
+    if (chat.modelProvider === null) throw new ChatRefusal(UNKNOWN_PROVIDER);
+    return chat.modelProvider;
   }
 
   /**

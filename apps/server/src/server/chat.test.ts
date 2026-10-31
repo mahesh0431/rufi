@@ -25,6 +25,7 @@ import {
 import { callTool, type McpServerConfig } from "../../tests/mcp-client.ts";
 import { rufiAiFor } from "../../tests/rufi-ai.ts";
 import { fakeClaude } from "../../tests/fake-claude.ts";
+import type { Options } from "@anthropic-ai/claude-agent-sdk";
 import { ANSWER } from "@rufi/agents/contract";
 import { claudeAdapter } from "../agent/claude/adapter.ts";
 import { claudeFolder } from "../agent/claude/executable.ts";
@@ -482,9 +483,9 @@ const newChat = () => chatRow();
  * Claude as Rufi runs it (claudeSetup), on the scripted Claude: what each
  * of its sessions was given, and each conversation it opened.
  */
-async function scriptedClaude() {
-  const fake = fakeClaude({});
-  const asked: { sessionId?: string; env?: object; plugins?: object }[] = [];
+async function scriptedClaude(script: { signedIn?: boolean } = {}) {
+  const fake = fakeClaude(script);
+  const asked: Options[] = [];
   const opened: OpenOptions[] = [];
   const adapter = claudeAdapter({
     claude: () =>
@@ -3052,35 +3053,55 @@ describe("the chat, on the scripted Codex", () => {
       ["reply", "ok:Hello"],
       ["reply", ANSWER],
     ]);
-    // In Claude's own folder in the data folder, with Rufi's skills.
-    expect(claude.sessions()).toEqual([
-      expect.objectContaining({
-        env: expect.objectContaining({
-          CLAUDE_CONFIG_DIR: claudeFolder(home),
-        }) as object,
-        plugins: [{ type: "local", path: join(claudeFolder(home), "plugin") }],
-      }),
-    ]);
+    // In Claude's own folder in the data folder, with Rufi's skills, which
+    // its commands and file tools can read.
+    const [session, ...more] = claude.sessions();
+    expect(more).toEqual([]);
+    expect(session?.env).toMatchObject({
+      CLAUDE_CONFIG_DIR: claudeFolder(home),
+    });
+    const plugin = session?.plugins?.[0]?.path ?? "";
+    expect(plugin).not.toBe("");
+    const settings =
+      typeof session?.settings === "object" ? session.settings : {};
+    expect(
+      (settings.sandbox?.filesystem?.denyRead ?? []).filter(
+        (denied) => plugin === denied || plugin.startsWith(`${denied}/`),
+      ),
+    ).toEqual([]);
   });
 
-  it("sends a chat on Claude while Codex is signed out; signed out of Claude, it takes nothing and says so", async () => {
-    const claude = await scriptedClaude();
+  it("keeps a chat on Claude with Claude, also after a restart: signed out of Claude, it takes nothing and says so; signed in, it sends while Codex is signed out", async () => {
+    const shortlist = [...ALLOWED, "claude-fictional-1"];
     await startChat("fake", {
-      shortlist: [...ALLOWED, "claude-fictional-1"],
-      other: claude.adapter,
+      shortlist,
+      other: (await scriptedClaude()).adapter,
     });
     const c = await newChat();
     await chat?.selectModel(c, "claude-fictional-1");
+
+    // Rufi restarts before the chat's first message, with Claude signed out:
+    // its models aren't listed now.
+    const out = await scriptedClaude({ signedIn: false });
+    await startChat("fake", { shortlist, other: out.adapter });
+    signIns["claude"] = { state: "signed_out", account: null, text: null };
+    await expect(say(await chatRow(c.id), "Hello")).rejects.toThrow(
+      CLAUDE_SIGNED_OUT,
+    );
+    expect(await waiting()).toEqual([]);
+    // Neither provider got it.
+    expect(out.opened).toEqual([]);
+    expect(agentRows("SELECT count(*) AS n FROM queue")).toEqual([{ n: 0 }]);
+    expect(agentRows("SELECT count(*) AS n FROM turns")).toEqual([{ n: 0 }]);
+
+    const claude = await scriptedClaude();
+    await startChat("fake", { shortlist, other: claude.adapter });
+    delete signIns["claude"];
     signIns["codex"] = { state: "signed_out", account: null, text: null };
     await say(await chatRow(c.id), "Hello");
     await ended(c.id);
     expect((await transcript(c.id)).entries.at(-1)).toEqual(["reply", ANSWER]);
-
-    signIns["claude"] = { state: "signed_out", account: null, text: null };
-    await expect(say(await chatRow(c.id), "Again")).rejects.toThrow(
-      CLAUDE_SIGNED_OUT,
-    );
-    expect(await waiting()).toEqual([]);
+    expect(claude.opened).toHaveLength(1);
   });
 
   it("gives a sub-agent only the tools it was given, and its own sub-agent no more than those", async () => {
