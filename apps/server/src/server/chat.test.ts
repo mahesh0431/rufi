@@ -2389,12 +2389,9 @@ describe("the chat, on the scripted Codex", () => {
         "completed",
         "completed",
       ]);
-      expect(
-        turns
-          .slice(1)
-          .map((turn) => turn.cause?.title)
-          .sort(),
-      ).toEqual(["Reading the photo", "Reading the report"]);
+      expect(new Set(turns.slice(1).map((turn) => turn.cause?.title))).toEqual(
+        new Set(["Reading the photo", "Reading the report"]),
+      );
       expect(await listed()).toEqual(
         expect.arrayContaining([
           { id: report, kind: "letter", notSorted: false },
