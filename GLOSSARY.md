@@ -260,11 +260,11 @@ An AI working in a conversation of its own, on a model and effort, with the tool
 _Avoid_: worker, thread (a conversation is the agent's, not the agent)
 
 **Sub-agent**:
-An agent another agent started for one task, with a title, such as checking a set of results. It sees its task and nothing of the chat, runs on the model and effort of the agent that started it, or others of the **shortlist** it was given, with the same tools or fewer, and goes on after the reply ends. What it saves to the record shows in the chat with Rufi's **receipt**, which names it by its title. When its turn ends, the agent that started it hears how it went (its **done message**), and Rufi AI says what it found. In the **Activity** of the reply that started it, it is one line that opens what it did.
+An agent another agent started for one task, with a title, such as checking a set of results. It sees its task and nothing of the chat, runs on the model and effort of the agent that started it, or others of the **shortlist** it was given, with the same tools or fewer, and goes on after the reply ends. What it saves to the record shows in the chat with Rufi's **receipt**, which names it by its title. When its turn ends, the agent that started it hears how it went (its **done message**), and Rufi AI says what it found. In the **Activity** of the reply that started it, it is one line. While one of Rufi AI's sub-agents works, it is a chip in the row above the message box; its line, its chip or its name on its message opens its pop-up: its own Activity, and Stop while it works. Its messages to Rufi AI show in the chat under its name.
 _Avoid_: helper, child (in screens and help), delegate
 
 **Done message**:
-What an agent is told when one it started ends a turn: its title, and its whole answer with any questions and their options, or that it stopped or failed and why. It goes into the agent's turn, or starts one; for Rufi AI, that reply shows a small line naming the sub-agent ("Reading report.pdf: done"). It is never the user's words.
+What an agent is told when one it started ends a turn: its title, and its whole answer with any questions and their options, or that it stopped or failed and why. It goes into the agent's turn, or starts one. For Rufi AI, the chat shows it at that point under the sub-agent's name, in the sub-agent's own words, as it shows what a sub-agent writes to Rufi AI. It is never the user's words.
 _Avoid_: callback, notification
 
 **The AI's folder**:

@@ -83,9 +83,9 @@ When your message brings files that aren't read yet, Rufi tells Rufi AI which on
 
 ### While a document is read
 
-- Your reply starts at once, with your message. In its Activity (see [Activity](chat.md#activity)), each reader Rufi AI started is one line, such as **Reading thyrocare-aug.pdf**, with its status. Click it to see what the reader did.
-- Rufi AI may tell you what is being read and end its reply. Each reader's result wakes it: a reply starts by itself, with a small line above it such as "Reading thyrocare-aug.pdf: done", and Rufi AI sorts the file and tells you what it found.
-- **Stop** ends the reply, not its readers. To stop a reader, ask Rufi AI.
+- Your reply starts at once, with your message. In its Activity (see [Activity](chat.md#activity)), each reader Rufi AI started is one line, such as **Reading thyrocare-aug.pdf**, with its status. While a reader works, it is also a chip above the message box. Click either to see what the reader does, in its pop-up.
+- Rufi AI may tell you what is being read and end its reply. Each reader's result shows in the chat under its name and wakes Rufi AI: a reply starts by itself, and Rufi AI sorts the file and tells you what it found.
+- **Stop** ends the reply, not its readers. To stop a reader, use **Stop** in its pop-up, or ask Rufi AI.
 - On the Documents page, the file says **Reading** while its reader works, with no **Retry**, then **Not sorted yet** until Rufi AI sorts it.
 - A message you send meanwhile goes as you choose: steered, it goes into the reply that runs; queued, it waits for a reply of its own (see [While the AI replies](chat.md#while-the-ai-replies)). A message with files goes the same way.
 
