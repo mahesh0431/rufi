@@ -425,7 +425,7 @@ function reasonOf(end: TurnEnd): FailReason {
     case "rate_limit":
     case "connection":
       return end.reason;
-    // Until the turn's time limit goes, Rufi's own ending of a turn is other.
+    // A turn has no time limit; Rufi's own ending of one is other.
     case "timeout":
     case "provider_failed":
     case "save_failed":

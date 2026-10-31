@@ -12,9 +12,6 @@ import type {
 import { ANSWER, type Script } from "@rufi/agents/contract";
 import type { ClaudeSessions } from "../src/agent/claude/adapter.ts";
 
-/** Longer than the adapter waits for a turn to start, in the tests. */
-const SILENT_MS = 1_000;
-
 export function fakeClaude(
   script: Script,
   /**
@@ -202,11 +199,6 @@ export function fakeClaude(
         case "answers":
         case "renews":
           answer([message]);
-          break;
-        case "silent":
-          setTimeout(() => {
-            answer([message]);
-          }, SILENT_MS);
           break;
         case "runs":
           break;
