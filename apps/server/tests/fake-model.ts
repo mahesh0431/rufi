@@ -12,7 +12,8 @@
 // piece, never streamed; "cut commentary": half of it, and never answers),
 // "seeded" gives the first words of the note and the answer as each is
 // added, before their deltas, and anything else answers "ok:<text>". No sign-in and no AI.
-// With a `script`, it answers each request with the script's next step
+// With `refuse`, it first answers that many requests 401, as OpenAI does a
+// token it doesn't take. With a `script`, it answers each request with the script's next step
 // instead (a call of a direct tool, or text), reporting the step's tokens as
 // the usage, so a test can drive a whole sub-agent turn and force a
 // compaction. Codex's own compaction request is always answered with a
@@ -49,6 +50,8 @@ export type Step = (
 export interface FakeModel {
   /** The base URL for Codex's provider setting. */
   url: string;
+  /** The token each request came with, in order, refused ones too. */
+  tokens: (string | undefined)[];
   /** Every request body Codex sent, in order. */
   requests: ModelRequest[];
   /** The steps still to come; a test can add more. */
@@ -66,10 +69,16 @@ export const NOTE = "Checking your record first.";
 const COMPACTION = "You are performing a CONTEXT CHECKPOINT COMPACTION";
 
 export async function fakeModel(
-  options: { script?: readonly Step[] } = {},
+  options: {
+    script?: readonly Step[];
+    /** How many requests it refuses first, as OpenAI refuses a token (401). */
+    refuse?: number;
+  } = {},
 ): Promise<FakeModel> {
   const script = [...(options.script ?? [])];
   const requests: FakeModel["requests"] = [];
+  const tokens: FakeModel["tokens"] = [];
+  let refused = 0;
   const open = new Set<ServerResponse>();
   const server = createServer((request, response) => {
     const chunks: Buffer[] = [];
@@ -78,6 +87,15 @@ export async function fakeModel(
       if (!request.url?.endsWith("/responses")) {
         response.writeHead(404);
         response.end();
+        return;
+      }
+      tokens.push(request.headers.authorization?.replace(/^Bearer /, ""));
+      if (refused < (options.refuse ?? 0)) {
+        refused += 1;
+        response.writeHead(401, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({ detail: { error_code: "invalid_token" } }),
+        );
         return;
       }
       const body = JSON.parse(
@@ -355,6 +373,7 @@ export async function fakeModel(
   const { port } = server.address() as AddressInfo;
   return {
     url: `http://127.0.0.1:${String(port)}/v1`,
+    tokens,
     requests,
     script,
     close: () =>
