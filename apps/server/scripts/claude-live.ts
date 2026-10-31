@@ -734,6 +734,57 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       }
       return "the turn stopped; Claude cancelled the steer";
     }),
+
+  "what Claude does shows as steps, with no picture's bytes, and its usage":
+    async (context) =>
+      withAdapter(context, async ({ adapter, open, send, until, events }) => {
+        // A fictional picture: one pixel.
+        const png =
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+        await writeFile(
+          join(context.sandbox.folder, "dot.png"),
+          Buffer.from(png, "base64"),
+        );
+        const conversation = await open();
+        const turn = await send(
+          conversation,
+          randomUUID(),
+          "Run this Bash command: echo hello-probe. Then use the Read tool on dot.png in your folder. Then reply 'done'.",
+        );
+        const end = await until(endOf(turn));
+        if (end.status !== "done")
+          throw new Error(`the turn ended ${JSON.stringify(end)}`);
+        const done = events.flatMap((event) =>
+          event.type === "step" && event.status === "done" ? [event] : [],
+        );
+        const ran = done.some(
+          (step) =>
+            step.kind === "command" && step.title.includes("echo hello-probe"),
+        );
+        const read = done.some(
+          (step) =>
+            step.title === "Read" && step.detail?.endsWith("dot.png") === true,
+        );
+        if (!ran || !read) {
+          throw new Error(
+            `the steps were ${JSON.stringify(done.map(({ kind, title, detail }) => ({ kind, title, detail })))}`,
+          );
+        }
+        if (JSON.stringify(events).includes(png)) {
+          throw new Error("the picture's bytes are in the events");
+        }
+        const used = events.find((event) => event.type === "turnUsage");
+        const filled = events.find((event) => event.type === "usage");
+        if (!used || used.input <= 0 || used.output <= 0) {
+          throw new Error(`the turn's usage was ${JSON.stringify(used)}`);
+        }
+        if (!filled || filled.tokens <= 0 || (filled.window ?? 0) <= 0) {
+          throw new Error(`the context was ${JSON.stringify(filled)}`);
+        }
+        const windows = await adapter.usage();
+        if (windows.length === 0) throw new Error("no usage now");
+        return `a command and a picture's read; ${String(used.input)} tokens in, ${String(used.output)} out; ${String(windows.length)} limit windows`;
+      }),
 };
 
 const claude = await findClaude();

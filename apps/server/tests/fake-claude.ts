@@ -19,8 +19,11 @@ export function fakeClaude(
    * and its later ones both. Before an answer, it runs and never answers.
    * Starts during interrupt: the next turn starts while an interrupt is
    * answered. Answers during interrupt: its first answer comes then.
+   * Frames: a turn's frames, recorded, given for each message, `$input`
+   * naming it.
    */
   more: {
+    frames?: readonly object[];
     connectionDrops?: true;
     nextTurn?:
       | "two"
@@ -60,6 +63,15 @@ export function fakeClaude(
     const keep = (message: string) => {
       kept.set(id, [...(kept.get(id) ?? []), message]);
     };
+    /** A turn's result, with its usage, as Claude always gives it. */
+    const result = (fields: object) => {
+      frames.push({
+        type: "result",
+        usage: { input_tokens: 3, output_tokens: 1 },
+        modelUsage: {},
+        ...fields,
+      });
+    };
     const answer = (to: string[]) => {
       frames.push({
         type: "assistant",
@@ -67,8 +79,7 @@ export function fakeClaude(
         user_message_uuid: to.at(-1),
         user_message_uuids: to,
       });
-      frames.push({
-        type: "result",
+      result({
         subtype: "success",
         is_error: false,
         result: ANSWER,
@@ -83,13 +94,48 @@ export function fakeClaude(
         error,
         user_message_uuid: turn,
       });
-      frames.push({
-        type: "result",
-        subtype: "success",
-        is_error: true,
-        result: text,
-      });
+      result({ subtype: "success", is_error: true, result: text });
       turn = undefined;
+    };
+    /** A step whose result is a picture: Claude reads it. */
+    const picture = (bytes: string, to: string) => {
+      frames.push({
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_picture",
+              name: "Read",
+              input: { file_path: "/fictional/page.png" },
+            },
+          ],
+        },
+        user_message_uuid: to,
+        user_message_uuids: [to],
+      });
+      frames.push({
+        type: "user",
+        message: {
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_picture",
+              content: [
+                {
+                  type: "image",
+                  source: {
+                    type: "base64",
+                    media_type: "image/png",
+                    data: bytes,
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        tool_use_result: { type: "image", file: { base64: bytes } },
+      });
     };
 
     const start = (message: string) => {
@@ -109,8 +155,19 @@ export function fakeClaude(
         return;
       }
       keep(message);
+      if (more.frames !== undefined) {
+        for (const frame of more.frames) {
+          frames.push(
+            JSON.parse(
+              JSON.stringify(frame).replaceAll("$input", message),
+            ) as object,
+          );
+        }
+        return;
+      }
       frames.push({ type: "system", subtype: "init" });
       turn = message;
+      if (script.picture !== undefined) picture(script.picture, message);
       if (more.connectionDrops === true) {
         frames.push({
           type: "system",
@@ -128,8 +185,7 @@ export function fakeClaude(
         case "runs":
           break;
         case "fails":
-          frames.push({
-            type: "result",
+          result({
             subtype: "error_during_execution",
             is_error: true,
             errors: ["The fictional model couldn't answer."],
@@ -288,8 +344,7 @@ export function fakeClaude(
         const cancelled = queued;
         queued = [];
         if (turn !== undefined && script.ignoresInterrupt !== true) {
-          frames.push({
-            type: "result",
+          result({
             subtype: "error_during_execution",
             is_error: true,
             errors: [],

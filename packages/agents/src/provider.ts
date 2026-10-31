@@ -273,4 +273,18 @@ export type ProviderEvent =
    * outside a turn, naming the last one.
    */
   | { type: "usage"; turn: string; tokens: number; window: number | null }
+  /**
+   * What the turn used, across all its requests, as the provider counted
+   * it, once the turn ends: the input tokens the model read (all of them,
+   * and of those, how many came from its cache) and the tokens it wrote.
+   * The payload is the provider's own count, as reported.
+   */
+  | {
+      type: "turnUsage";
+      turn: string;
+      input: number;
+      cached: number;
+      output: number;
+      payload: unknown;
+    }
   | { type: "turnEnded"; turn: string; end: TurnEnd };
