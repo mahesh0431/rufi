@@ -850,11 +850,11 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     async () => {
       const hold = join(home, "hold");
       await startChat(name, {
-        scenario: { held: { methods: ["account/read"], file: hold } },
+        scenario: { held: { methods: ["thread/start"], file: hold } },
       });
       const c = await newChat();
       await chat?.selectModel(c, "gpt-6.1-sol");
-      // Its conversation opens: Codex holds its sign-in check.
+      // Its conversation opens: Codex holds the thread's start.
       await writeFile(hold, "");
       await say(await chatRow(c.id), "Hello");
       await until(async () => (await chat?.agent.busy(c)) === true);
