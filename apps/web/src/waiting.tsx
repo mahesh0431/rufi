@@ -1,12 +1,12 @@
 // What waits to go to the AI, shown over the chat's bottom edge, just above
 // the box, out of the chat's flow: the box stays put and the chat keeps its
 // size when something starts or stops waiting. Your messages and Rufi's
-// notes, in the order they go, a compact list that scrolls when long. A message shows here while it waits for a running
-// reply, or is held; one Rufi is giving to the AI shows in the chat as
-// sent. A waiting message can be steered
-// into the running reply, edited, moved by its handle (dragged, or by
-// keyboard) or removed; one Rufi didn't send says Failed, or Not sent, with
-// why as it came, and goes only when you send it. One on its way to the AI
+// notes, in the order they go, a compact list that scrolls when long. A
+// message shows here while it waits for a running reply, or is held; one
+// Rufi is giving to the AI shows in the chat as sent. A waiting message can
+// be steered into the running reply, edited, moved by its handle (dragged,
+// or by keyboard) or removed; one Rufi didn't send says Failed, or Not sent,
+// with why as it came, and goes only when you send it. One on its way to the AI
 // says nothing: the chat's working line shows it.
 import {
   closestCenter,
@@ -77,7 +77,7 @@ export function FloatingWaiting({
   live: StoreApi<Live>;
   personId: string;
   onHeight: (height: number) => void;
-  /** Where it sits across. */
+  /** Where it sits: across, and how far above the box. */
   className: string;
 }) {
   const here = useRef<HTMLDivElement>(null);
@@ -94,7 +94,7 @@ export function FloatingWaiting({
     };
   }, [onHeight]);
   return (
-    <div ref={here} className={`absolute bottom-full z-10 ${className}`}>
+    <div ref={here} className={`absolute z-10 ${className}`}>
       <WaitingView live={live} personId={personId} />
     </div>
   );

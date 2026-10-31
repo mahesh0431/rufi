@@ -185,7 +185,8 @@ export function ChatDock({ person }: { person: Person }) {
                   live={live}
                   personId={person.id}
                   onHeight={setRoom}
-                  className="inset-x-3 translate-y-1"
+                  // Over the 4 px above the box, as close as on the page.
+                  className="inset-x-3 bottom-[calc(100%-0.25rem)]"
                 />
               )}
               {open && <AgentsAtWork personId={person.id} />}
@@ -247,7 +248,7 @@ export function ChatPage({ person }: { person: Person }) {
             live={live}
             personId={person.id}
             onHeight={setRoom}
-            className="inset-x-10"
+            className="inset-x-10 bottom-full"
           />
           <AgentsAtWork personId={person.id} />
           <Box person={person} live={live} size="page" inputRef={field} />
