@@ -5,6 +5,7 @@ import {
   apply,
   clockOf,
   emptyTranscript,
+  goingNow,
   lines,
   workingOf,
 } from "./transcript-state.ts";
@@ -257,6 +258,25 @@ describe("the working status", () => {
         true,
       ),
     ).toEqual({ kind: "turn", id: "t2", startedAt: at });
+  });
+
+  it("shows your message Rufi is giving to the AI as sent: the first free one when nothing runs, or one being handed over; not once the chat has it", () => {
+    const going = (
+      turns: Turn[],
+      items: QueueItem[],
+      entries: Record<string, Entry> = {},
+    ) => goingNow({ ...state(turns, items), entries }).map((one) => one.id);
+    const second = { ...item(), id: "q2" };
+    expect(going([], [item(), second])).toEqual(["q1"]);
+    expect(going([turn("running")], [item(), second])).toEqual([]);
+    expect(
+      going([turn("running")], [{ ...item(), state: "handing_over" }]),
+    ).toEqual(["q1"]);
+    expect(going([], [item("stopped"), second])).toEqual(["q2"]);
+    expect(going([], [{ ...item(), origin: "rufi" }, second])).toEqual([]);
+    expect(
+      going([], [item()], { q1: entry("q1", 1, "And my Free T4?") }),
+    ).toEqual([]);
   });
 
   it("ends when the reply ends, or your message is held", () => {

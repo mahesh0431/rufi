@@ -52,6 +52,7 @@ import {
   AgentLog,
   type ActivityShown,
   type AgentLine,
+  type Chip,
   type Entry,
 } from "@rufi/contracts";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
@@ -77,6 +78,7 @@ import { latestHeading } from "./thinking.ts";
 import {
   type Clock,
   clockOf,
+  goingNow,
   inActivity,
   lines,
   workingOf,
@@ -296,6 +298,7 @@ export function TranscriptView({
   const before = useStore(live, (state) => state.before);
   const older = useStore(live, (state) => state.older);
   const clock = useWorkingClock(live, personId);
+  const going = useStore(live, useShallow(goingNow));
   const opening = useStore(live, (state) => state.window);
   const now = useToday();
   // A first message on its way: the working line shows in place of hello.
@@ -459,14 +462,23 @@ export function TranscriptView({
                 </WorkingClock>
               </Today>
             </Whose>
+            {/* Being given to the AI: sent, before the chat has it. */}
+            {going.map((item) => (
+              <MessageView
+                key={item.id}
+                id={item.id}
+                text={item.text}
+                refs={item.refs}
+              />
+            ))}
+            {/* Before the reply runs: under your message. */}
+            {status === "open" && clock?.key === "starting" && (
+              <ThinkingLine since={clock.since} />
+            )}
           </div>
         )}
         {status === "open" && !blank && (
           <WaitingView live={live} personId={personId} />
-        )}
-        {/* Before the reply runs: under your message, waiting or on its way. */}
-        {status === "open" && clock?.key === "starting" && (
-          <ThinkingLine since={clock.since} className="mt-3" />
         )}
       </div>
     </div>
@@ -607,30 +619,45 @@ function QuietLine({ children }: { children: ReactNode }) {
   return <p className="text-center text-xs text-muted italic">{children}</p>;
 }
 
-function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
-  const entry = useStore(live, (state) => state.entries[id]);
-  const turn = useStore(live, (state) => state.turns[entry?.turnId ?? ""]);
-  const streaming = turn?.status === "running";
-  if (!entry) return null;
-  return entry.kind === "message" || entry.kind === "steer" ? (
+/** Your message in the chat, with what you added to it. */
+function MessageView({
+  id,
+  text,
+  refs,
+}: {
+  id: string;
+  text: string;
+  refs: readonly Chip[] | undefined;
+}) {
+  return (
     <div
       data-entry={id}
       className="max-w-[85%] self-end rounded-2xl bg-accent-soft px-3.5 py-2"
     >
-      {entry.refs && entry.refs.length > 0 && (
+      {refs && refs.length > 0 && (
         <ul
           aria-label="Added to this message"
           className="mb-1 flex flex-wrap gap-1.5"
         >
-          {entry.refs.map(({ ref, label, detail, deleted }) => (
+          {refs.map(({ ref, label, detail, deleted }) => (
             <li key={`${ref.type}:${ref.id}`} className="max-w-full">
               <ChipView chip={{ pointer: ref, label, detail, deleted }} />
             </li>
           ))}
         </ul>
       )}
-      <p className="break-words whitespace-pre-wrap">{entry.text}</p>
+      <p className="break-words whitespace-pre-wrap">{text}</p>
     </div>
+  );
+}
+
+function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
+  const entry = useStore(live, (state) => state.entries[id]);
+  const turn = useStore(live, (state) => state.turns[entry?.turnId ?? ""]);
+  const streaming = turn?.status === "running";
+  if (!entry) return null;
+  return entry.kind === "message" || entry.kind === "steer" ? (
+    <MessageView id={id} text={entry.text} refs={entry.refs} />
   ) : entry.kind === "receipt" ? (
     // Rufi's own receipt for a save, from what it saved: never the AI's
     // words. The core writes it as Markdown with every value escaped.
