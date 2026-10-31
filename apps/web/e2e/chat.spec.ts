@@ -5,7 +5,7 @@
 // the AI's Markdown may and may not do. Each test checks that the strict CSP
 // refused nothing the screens need.
 import { AxeBuilder } from "@axe-core/playwright";
-import { readFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Locator, Page } from "@playwright/test";
 import { Page as ChatPage } from "@rufi/contracts";
@@ -75,6 +75,11 @@ const activity = (scope: Page | Locator) =>
   log(scope)
     .getByRole("button", { name: /^(Activity|Working) · / })
     .last();
+/**
+ * The working line before a reply's first step: Thinking, and its timer
+ * (not a button: there is nothing to open).
+ */
+const thinking = (scope: Page | Locator) => scope.getByText(/^Thinking\b/);
 /** The rows of the open Activity (the last one). */
 const steps = (scope: Page | Locator) =>
   log(scope)
@@ -812,7 +817,9 @@ test("when Rufi stops while it hands a message to the AI, the message counts as 
   await opened(page, rufi, { scenario: { hang: ["turn/start"] } });
   await send(page, "Questions before my visit");
   const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
-  await expect(waiting).toContainText("Sending…");
+  await expect(thinking(chat(page))).toBeVisible();
+  await expect(log(chat(page))).toContainText("Questions before my visit");
+  await expect(waiting).toHaveCount(0);
   // Claiming a row precedes preparation: wait until Codex has the request.
   await expect
     .poll(async () => {
@@ -960,6 +967,8 @@ test("the AI's memory: a compaction shows while it runs, then as done; the meter
   const why =
     "Codex refused thread/resume: failed to read thread: a fictional read error";
   await expect(waiting).toContainText(why);
+  // Held, it isn't on its way: no working line.
+  await expect(thinking(chat(page))).toHaveCount(0);
   await accessible(page);
   await waiting.getByRole("button", { name: "Send", exact: true }).click();
   // Held again, with the error as it came.
@@ -1278,7 +1287,9 @@ test("Activity is open and live while the AI works, its notes in full and its th
   });
   await send(page, "drip commentary");
   // While it thinks: open, live, the latest heading in its place.
-  await expect(activity(chat(page))).toHaveText("Activity · working · 1 step");
+  await expect(activity(chat(page))).toHaveText(
+    /^Activity · working · 1 step · \d+:\d\d$/,
+  );
   await expect(activity(chat(page))).toHaveAttribute("aria-expanded", "true");
   await expect(steps(chat(page))).toHaveText([/^Comparing the reports/]);
   await accessible(page);
@@ -1373,14 +1384,16 @@ test("folded by hand while the AI works, Activity stays folded and shows the new
   await expect(steps(chat(page))).toHaveText([/^Checking the record/]);
   await activity(chat(page)).click();
   await expect(activity(chat(page))).toHaveText(
-    "Working · 1 stepChecking the record",
+    /^Working · 1 step · \d+:\d\dChecking the record$/,
   );
   await expect(activity(chat(page))).toHaveAttribute("aria-expanded", "false");
   // A reload rebuilds it from what was stored: the same live row, open
   // again as the setting says.
   await page.reload();
   await opener(chat(page)).click();
-  await expect(activity(chat(page))).toHaveText("Activity · working · 1 step");
+  await expect(activity(chat(page))).toHaveText(
+    /^Activity · working · 1 step · /,
+  );
   await expect(steps(chat(page))).toHaveText([/^Checking the record/]);
   now = "2026-10-11T09:00:08.000Z";
   await chat(page).getByRole("button", { name: "Stop", exact: true }).click();
@@ -1418,7 +1431,7 @@ async function chatPage(page: Page) {
   return Schema.decodeUnknownSync(ChatPage)(body);
 }
 
-test("thinking with no summary shows no line, while it runs or after", async ({
+test("thinking with no summary shows no step: Thinking shows while it runs, and no line after", async ({
   page,
   rufi,
 }) => {
@@ -1429,8 +1442,76 @@ test("thinking with no summary shows no line, while it runs or after", async ({
   await expect(
     chat(page).getByRole("button", { name: "Stop", exact: true }),
   ).toBeVisible();
+  await expect(thinking(log(chat(page)))).toBeVisible();
   await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
   await expect(activity(chat(page))).toHaveCount(0);
+  await expect(thinking(chat(page))).toHaveCount(0);
+});
+
+test("from Enter, one working line shows while the AI's thread opens and until the first step, also with Activity hidden and after a reload; then the Activity line; Stop shows from Enter and before a step ends it", async ({
+  page,
+  rufi,
+}) => {
+  // The AI's thread doesn't open while this file is there.
+  const opening = join(rufi.home, "opening");
+  await writeFile(opening, "");
+  await opened(page, rufi, {
+    scenario: {
+      held: { methods: ["thread/start"], file: opening },
+      reasoning: ["**Reading the record**"],
+      reasoningMs: 1_500,
+    },
+  });
+  await page.goto(`${new URL(page.url()).origin}/settings`);
+  const hide = page
+    .getByRole("radiogroup", { name: "Activity" })
+    .getByRole("radio", { name: "Always hide" });
+  await hide.check();
+  await expect(hide).toBeChecked();
+  await page.goto(`${new URL(page.url()).origin}/`);
+
+  await send(page, "What does my TSH result mean?");
+  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
+  await expect(thinking(chat(page))).toHaveText(/^Thinking · \d+:\d\d$/);
+  // Your message shows as sent at once, not as waiting.
+  await expect(log(chat(page))).toContainText("What does my TSH result mean?");
+  await expect(waiting).toHaveCount(0);
+  await expect(activity(chat(page))).toHaveCount(0);
+  await accessible(page);
+  // A reload shows it again, from what Rufi says now.
+  await page.reload();
+  await openChat(page);
+  await expect(thinking(chat(page))).toHaveCount(1);
+  // Stop is there from Enter too.
+  await expect(
+    chat(page).getByRole("button", { name: "Stop", exact: true }),
+  ).toBeVisible();
+
+  // The thread opens: the Activity line takes its place, with its timer.
+  await rm(opening);
+  await expect(activity(chat(page))).toHaveText(/^Working · 1 step · \d+:\d\d/);
+  await expect(thinking(chat(page))).toHaveCount(0);
+  await expect(log(chat(page)).locator(".reply")).toHaveText(
+    "ok:What does my TSH result mean?",
+  );
+  await expect(activity(chat(page))).toHaveText(/^Activity · /);
+  await expect(thinking(chat(page))).toHaveCount(0);
+
+  // Stopped before its first step, the working line goes.
+  await rufi.stop();
+  await rufi.start();
+  await page.goto(rufi.link());
+  await send(page, "hang");
+  await expect(thinking(log(chat(page)))).toBeVisible();
+  // The reply runs: the AI has the message.
+  await expect
+    .poll(() =>
+      readFile(join(rufi.home, "fake-codex.jsonl"), "utf8").catch(() => ""),
+    )
+    .toContain('"text":"hang"');
+  await chat(page).getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(log(chat(page))).toContainText("Stopped.");
+  await expect(thinking(chat(page))).toHaveCount(0);
 });
 
 test("after a restart, a reply a crash cut off shows its Activity folded, stopped, with no time it can't know", async ({
@@ -1503,7 +1584,7 @@ test("the Activity setting: show while working folds at the end; always show sta
   await choose("Always hide");
   await send(page, "Once more");
   await expect(activity(chat(page))).toHaveText(
-    "Working · 1 stepReading the saved result and the fictional lab report page",
+    /^Working · 1 step · \d+:\d\dReading the saved result and the fictional lab report page$/,
   );
   // As drawn: the line is cut just after a space, which stays.
   await expect(activity(chat(page))).toHaveText(/the saved \s*result and/, {

@@ -38,7 +38,7 @@ A line between days says which day the messages under it are from: "Today", "Yes
 
 Type in the box and press Enter, or click the send button. Shift-Enter starts a new line. You can send files with no words: the send button works with at least one chip too.
 
-When you send, the box says "Sending…" for a moment, and you can't change it; then it empties. Rufi sends the text in this box, also when another tab saved other text just before. Then the message goes to the AI: at once when nothing runs, or, while a reply runs, into that reply or after it, as you choose (see [While the AI replies](#while-the-ai-replies)). It shows in the chat at once: after the chat's last message, marked waiting, until the AI takes it, and then in its place in the chat. A message with new files takes its place when Rufi starts to read them (see [Documents](documents.md#while-a-document-is-read)).
+When you send, you can't change the box for a moment; then it empties. The chat shows at once that the AI is working (see [Activity](#activity)). Rufi sends the text in this box, also when another tab saved other text just before. Then the message goes to the AI: at once when nothing runs, or, while a reply runs, into that reply or after it, as you choose (see [While the AI replies](#while-the-ai-replies)). It shows in the chat at once: after the chat's last message, marked waiting, until the AI takes it, and then in its place in the chat. A message with new files takes its place when Rufi starts to read them (see [Documents](documents.md#while-a-document-is-read)).
 
 If you aren't signed in when you send, nothing goes to the AI and nothing waits: your text stays in the box, which says "You're signed out. Sign in with ChatGPT to chat." On one of Claude's models, it's Claude's sign-in that counts, and the box says "You're signed out of Claude. Sign in to Claude to chat." Click **Sign in** (see [Signing in](signing-in.md)), then send again. A message that already waited when the sign-in went away keeps waiting, and so does one you send while the AI replies if the sign-in goes away just as it is handed over. Signing in alone doesn't send it: it goes the next time Rufi gives the AI something, with your next message or with one of Rufi's notes (see [Rufi's lines](#rufis-lines)). A reply has no time limit. If your sign-in ends while the AI replies, the reply ends there, with the error as the service reported it.
 
@@ -94,7 +94,9 @@ Click a step to open everything the agent reported about it: for a command, the 
 
 **Sub-agents.** Where the AI started a sub-agent, its Activity shows one line: the name the AI gave it, its status (such as running, done, stopped or failed) and the start of its result. Click the line, or press Enter on it, to open the sub-agent's pop-up (see [When the AI starts agents of its own](#when-the-ai-starts-agents-of-its-own)).
 
-While the AI works, Activity is open, starts with Rufi thinking, says "Activity · working" and how many steps, and grows as the AI goes. When the answer comes, it folds into one line under the answer: how many steps, how many failed or stopped, and how long the reply took. Click the line to fold or open it at any time, also while the AI works. When you fold it while the AI works, its line says "Working", how many steps, and the newest step.
+From the moment you send until the reply ends, one line under your message shows that the AI is working, with a timer. Until the AI's first step it says "Thinking · 0:03", with Rufi thinking: the AI may take a few seconds to start, more at a higher effort or in a long chat. This line shows whatever the Activity setting says. Then it becomes the reply's Activity.
+
+While the AI works, Activity is open, says "Activity · working", how many steps and the timer, such as "Activity · working · 3 steps · 0:12", and grows as the AI goes. When the answer comes, it folds into one line under the answer: how many steps, how many failed or stopped, and how long the reply took. Click the line to fold or open it at any time, also while the AI works. When you fold it while the AI works, its line says "Working", how many steps, the timer and the newest step.
 
 Choose how Activity opens in **Settings** › **Activity**:
 
@@ -104,7 +106,7 @@ Choose how Activity opens in **Settings** › **Activity**:
 
 In each one, you can still fold or open a reply's Activity yourself. That holds on this page until the reply ends; after a reload, Activity follows the setting again. Another tab or window shows the same steps and folds by itself.
 
-A reply that has no steps, such as an answer to "thanks", has no Activity line. In replies from before this version of Rufi, the AI's notes show as replies, and each step keeps the words Rufi gave it then. If the AI's working state is lost, a reply from before says **Activity is gone with the AI's working state.**, and its sub-agents' Activity is gone too (see [Your data and the AI](your-data-and-the-ai.md#your-chat)).
+A reply that has no steps, such as an answer to "thanks", has no Activity line once it ends. In replies from before this version of Rufi, the AI's notes show as replies, and each step keeps the words Rufi gave it then. If the AI's working state is lost, a reply from before says **Activity is gone with the AI's working state.**, and its sub-agents' Activity is gone too (see [Your data and the AI](your-data-and-the-ai.md#your-chat)).
 
 ## Pictures, pages and diagrams
 
@@ -197,7 +199,7 @@ For a task that can run on its own, the AI can start an agent of its own, a sub-
 
 **At work.** While the AI's sub-agents work, each is a chip in a row above the message box, below your waiting messages: a spinner, the name the AI gave it, and how long its turn has run, such as **Reading report.pdf 0:42**. When its turn ends (done, with a question, stopped or failed), its chip goes; when the AI gives it more to do, it comes back while it works. With no sub-agent at work, there is no row.
 
-**Its pop-up.** Click a chip, the sub-agent's line in Activity, or its name on its message in the chat, to open its pop-up over the chat. At the top: its name; its status, how long its turn has run, and its model and effort. Below, its own Activity, in the order things happened, and as it happens: the task it got from the AI and the messages that came later, each with who sent it, its notes, thinking and steps, as it reported them, and its answers and questions. A sub-agent it started shows there as a line of its own, which opens below it. A long Activity shows its latest 50 lines, and **Show earlier** shows 50 more each time. While it works, **Stop** stops it and every sub-agent it started; its stopped message goes to the AI. Esc, the close button or a click outside closes the pop-up; the sub-agent goes on.
+**Its pop-up.** Click a chip, the sub-agent's line in Activity, or its name on its message in the chat, to open its pop-up over the chat. At the top: its name; its status, how long its turn has run, and its model and effort. Below, its own Activity, in the order things happened, and as it happens: the task it got from the AI and the messages that came later, each with who sent it, its notes, thinking and steps, as it reported them, and its answers and questions. While it works on a message, before its first step, "Thinking" shows under it, as in the chat. A sub-agent it started shows there as a line of its own, which opens below it. A long Activity shows its latest 50 lines, and **Show earlier** shows 50 more each time. While it works, **Stop** stops it and every sub-agent it started; its stopped message goes to the AI. Esc, the close button or a click outside closes the pop-up; the sub-agent goes on.
 
 **Its messages.** When a sub-agent writes to the AI, its message shows in the chat where the AI got it, on the right like yours, under the sub-agent's name: its result when its turn ends, its question, or what it wrote along the way. A stopped or failed one says so after the name. A long message shows a few lines, and **Show all** shows the rest. Messages between the sub-agent and the agents it started don't show in the chat; they are in its pop-up. A sub-agent's message is never your words or your yes.
 
@@ -207,7 +209,7 @@ You can stop a sub-agent in its pop-up, or ask the AI to stop one: just that one
 
 ## While the AI replies
 
-While the AI replies, three buttons are where the send button was: **Steer** (two arrows that meet), **Queue** (a list with an arrow) and **Stop** (the square). The chat bar also shows a turning circle before its text, because Activity doesn't show there.
+From the moment you send until the reply ends, three buttons are where the send button was: **Steer** (two arrows that meet), **Queue** (a list with an arrow) and **Stop** (the square). The chat bar also shows a turning circle before its text then, because Activity doesn't show there.
 
 **What the AI does.** Activity shows the AI's notes, its thinking and its steps as they happen (see [Activity](#activity)). After a reload, or in another tab, it shows the same.
 
@@ -244,7 +246,9 @@ You can also ask the AI to do these for you, for example "remove my question abo
 The line above them says what happens next:
 
 - **Waiting · these go in order after the reply**: they go by themselves.
+- **Waiting**: no reply runs yet; they go in order after the message Rufi is giving to the AI now. That message shows in the chat as sent, with "Thinking" under it.
 - **Not sent · Rufi sends these only when you say**: some messages are held, as below.
+- **Waiting until you sign in**: you're signed out; they go the next time Rufi gives the AI something after you sign in again (see [Rufi's lines](#rufis-lines)).
 
 A message with files waits like any other. Removing it doesn't remove its files: they stay sent, and the Documents page shows **Not read yet** with **Retry**.
 
@@ -265,7 +269,7 @@ When the AI should know too, Rufi gives it a note:
 
 - **When nothing runs**, the AI gets the note at once, in a short reply of its own. In that reply the AI explains or asks. It carries on with work you already asked for, and asks you first before any new change: every save rests on a message of yours.
 - **When a reply runs**, the note waits in the chat among the waiting messages, as "Rufi's note", and goes in its turn after the reply, in a short reply of its own. Each note gets its own reply. **Remove** it if the AI doesn't need it.
-- **When you're signed out**, it waits, and goes the next time Rufi gives the AI something after you sign in again.
+- **When you're signed out**, it waits with the line on how to sign in, such as "You're signed out. Sign in with ChatGPT to chat.", and goes the next time Rufi gives the AI something after you sign in again.
 
 ## The model and effort
 

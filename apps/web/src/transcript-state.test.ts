@@ -1,6 +1,14 @@
-import type { Entry, Page, Turn } from "@rufi/contracts";
+import type { Entry, Page, QueueItem, Turn } from "@rufi/contracts";
 import { describe, expect, it } from "vitest";
-import { addOlder, apply, emptyTranscript, lines } from "./transcript-state.ts";
+import {
+  addOlder,
+  apply,
+  clockOf,
+  emptyTranscript,
+  goingNow,
+  lines,
+  workingOf,
+} from "./transcript-state.ts";
 
 const at = "2026-10-04T10:00:00.000Z";
 const entry = (
@@ -189,5 +197,119 @@ describe("what the transcript shows", () => {
       "s:t1",
       "e:b",
     ]);
+  });
+
+  it("gives a running reply its working line from its start: after its message before a step, in a step's place after", () => {
+    const message = {
+      ...entry("m", 1, "Asha's TSH"),
+      kind: "message" as const,
+    };
+    const thinking = apply(emptyTranscript, {
+      type: "snapshot",
+      ...page(1, [message], [turn("running")], null),
+    });
+    expect(lines(thinking).filter((line) => !line.startsWith("d:"))).toEqual([
+      "e:m",
+      "s:t1",
+    ]);
+    const stepped = apply(thinking, {
+      type: "update",
+      revision: 2,
+      entries: [
+        {
+          ...entry("r", 2, "Reading the record"),
+          kind: "reasoning",
+          status: "running",
+        },
+      ],
+      turns: [],
+    });
+    expect(lines(stepped).filter((line) => !line.startsWith("d:"))).toEqual([
+      "e:m",
+      "s:t1",
+    ]);
+  });
+});
+
+describe("the working status", () => {
+  const item = (held: QueueItem["held"] = null): QueueItem => ({
+    id: "q1",
+    origin: "person",
+    text: "And my Free T4?",
+    state: "waiting",
+    held,
+    heldText: null,
+    holdId: null,
+    refs: [],
+  });
+  const state = (turns: Turn[], items: QueueItem[] = []) => ({
+    turns: Object.fromEntries(turns.map((one) => [one.id, one])),
+    queue: { items },
+  });
+
+  it("starts with your send, goes on while Rufi hands it over, and is the running reply's once it runs, also with a message queued", () => {
+    expect(workingOf(state([]), true)).toEqual({ kind: "starting" });
+    expect(workingOf(state([], [item()]), false)).toEqual({
+      kind: "starting",
+    });
+    expect(
+      workingOf(
+        state([turn("completed"), turn("running", "t2")], [item()]),
+        true,
+      ),
+    ).toEqual({ kind: "turn", id: "t2", startedAt: at });
+  });
+
+  it("shows your message Rufi is giving to the AI as sent: the first free one when nothing runs, or one being handed over; not once the chat has it", () => {
+    const going = (
+      turns: Turn[],
+      items: QueueItem[],
+      entries: Record<string, Entry> = {},
+    ) => goingNow({ ...state(turns, items), entries }).map((one) => one.id);
+    const second = { ...item(), id: "q2" };
+    expect(going([], [item(), second])).toEqual(["q1"]);
+    expect(going([turn("running")], [item(), second])).toEqual([]);
+    expect(
+      going([turn("running")], [{ ...item(), state: "handing_over" }]),
+    ).toEqual(["q1"]);
+    expect(going([], [item("stopped"), second])).toEqual(["q2"]);
+    expect(going([], [{ ...item(), origin: "rufi" }, second])).toEqual([]);
+    expect(
+      going([], [item()], { q1: entry("q1", 1, "And my Free T4?") }),
+    ).toEqual([]);
+  });
+
+  it("ends when the reply ends, or your message is held", () => {
+    expect(workingOf(state([turn("interrupted")]), false)).toBeNull();
+    expect(workingOf(state([], [item("stopped")]), false)).toBeNull();
+    expect(workingOf(state([], [item("open_failed")]), false)).toBeNull();
+  });
+
+  it("keeps its start's time when the reply starts, and counts anew for the next reply", () => {
+    const sent = "2026-10-04T09:59:58.000Z";
+    const starting = clockOf(null, { kind: "starting" }, sent);
+    expect(starting).toEqual({ key: "starting", since: sent });
+    expect(
+      clockOf(starting, { kind: "starting" }, "2026-10-04T09:59:59.000Z"),
+    ).toBe(starting);
+    const running = clockOf(
+      starting,
+      { kind: "turn", id: "t1", startedAt: at },
+      at,
+    );
+    expect(running).toEqual({ key: "t1", since: sent });
+    expect(
+      clockOf(running, { kind: "turn", id: "t1", startedAt: at }, "later"),
+    ).toBe(running);
+    const next = "2026-10-04T10:01:00.000Z";
+    expect(clockOf(running, { kind: "starting" }, next)).toEqual({
+      key: "starting",
+      since: next,
+    });
+    // Opened after a reload: the reply's own start.
+    expect(
+      clockOf(null, { kind: "turn", id: "t1", startedAt: at }, next),
+    ).toEqual({ key: "t1", since: at });
+    expect(clockOf(running, null, next)).toBeNull();
   });
 });

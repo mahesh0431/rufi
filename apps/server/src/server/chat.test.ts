@@ -1490,6 +1490,26 @@ describe("the chat, on the scripted Codex", () => {
     expect(await waiting()).toEqual([["From before", "waiting", "restored"]]);
   });
 
+  it("holds a note that comes while signed out with the sign-in line, and sends it once signed in", async () => {
+    await startChat("fake");
+    const c = await newChat();
+    signIns["codex"] = { state: "signed_out", account: null, text: null };
+    await chat?.event("asha", {
+      kind: "test",
+      line: "Deleted Sunrise Labs August.pdf",
+      ask: "Note: the user deleted a document.",
+    });
+    await until(async () => (await waiting()).length === 1);
+    await until(async () => (await waiting())[0]?.[2] === "signed_out");
+    expect((await queue.list(c)).items).toMatchObject([
+      { origin: "rufi", held: "signed_out", heldText: SIGNED_OUT },
+    ]);
+    delete signIns["codex"];
+    await chat?.carryAll();
+    await ended(c.id);
+    expect(await waiting()).toEqual([]);
+  });
+
   it("starts and changes to allowed models the provider offers only", async () => {
     await startChat("fake", { shortlist: ["gpt-retired", "gpt-6-astra"] });
     const c = await newChat();
