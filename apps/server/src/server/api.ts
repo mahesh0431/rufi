@@ -28,7 +28,11 @@ import {
 import { APPEARANCE_HEADER } from "@rufi/contracts/app";
 import type { Brief } from "@rufi/contracts/briefs";
 import { KeepValues, type DeviceData } from "@rufi/contracts/devices";
-import type { Overview } from "@rufi/contracts/record";
+import {
+  SaveProfile,
+  type Overview,
+  type Profile,
+} from "@rufi/contracts/record";
 import type { AgentLogs } from "./agent-logs.ts";
 import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -64,6 +68,7 @@ import {
   type RecordViews,
 } from "../core/record/views.ts";
 import { Refusal } from "../core/tools/registry.ts";
+import { SaveRefused, type FormOrigin } from "../core/record/save.ts";
 import { DeleteDocument, FixItem } from "@rufi/contracts/documents";
 import { OriginalMissing } from "../core/documents/originals.ts";
 import type { BackupJob } from "../core/store/backup.ts";
@@ -88,6 +93,16 @@ export interface ApiDeps {
   overview: (personId: string) => Promise<Overview>;
   /** The record's pages, rows and series, read only. */
   record: Pick<RecordViews, "page" | "detail" | "series" | "followUps">;
+  /** A person's profile with its history; what they enter in its form. */
+  profile: {
+    read: (personId: string) => Promise<Profile | undefined>;
+    save: (
+      personId: string,
+      form: FormOrigin,
+      sending: string,
+      changes: SaveProfile["changes"],
+    ) => Promise<void>;
+  };
   /** A visit brief of the person's, with its Sources; undefined: none. */
   brief: (personId: string, briefId: string) => Promise<Brief | undefined>;
   /** The ChatGPT sign-in, read when asked. */
@@ -694,6 +709,28 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     );
     if (!found) throw new HttpError(404, "Not found.");
     return c.json(found);
+  });
+  // The profile, and what the person enters on its page or in Settings:
+  // one save each, with the form as its source.
+  app.get("/api/people/:personId/profile", async (c) => {
+    const found = await deps.profile.read((await person(c)).id);
+    if (!found) throw new HttpError(404, "Not found.");
+    return c.json(found);
+  });
+  app.put("/api/people/:personId/profile", async (c) => {
+    const { id } = await person(c);
+    const { sending, in: form, changes } = await body(c, SaveProfile);
+    try {
+      await deps.profile.save(id, form, sending, changes);
+    } catch (error) {
+      if (error instanceof SaveRefused) {
+        throw new HttpError(400, error.message);
+      }
+      throw error;
+    }
+    const saved = await deps.profile.read(id);
+    if (!saved) throw new HttpError(404, "Not found.");
+    return c.json(saved);
   });
   app.get("/api/people/:personId/series", async (c) => {
     const { id } = await person(c);

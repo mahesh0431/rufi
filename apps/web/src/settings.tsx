@@ -1,4 +1,4 @@
-// Settings: how Codex and Claude are signed in, how Rufi looks, when a reply's
+// Settings: how Codex and Claude are signed in, your profile, how Rufi looks, when a reply's
 // Activity opens by itself, what a message sent while a reply runs does,
 // the models the AI and its agents may run on, how often Rufi carries on
 // after a restart, the region whose
@@ -11,6 +11,7 @@ import { DatabaseBackup, Download, FolderOpen } from "lucide-react";
 import { download, read } from "./api.ts";
 import { AppearanceChoice } from "./appearance.tsx";
 import { DeviceDataSection } from "./devices.tsx";
+import { ProfileSection } from "./profile.tsx";
 import { SettingChoice } from "./choice.tsx";
 import { printedTime } from "./dates.ts";
 import {
@@ -19,6 +20,7 @@ import {
   useBackups,
   useDataFolder,
   useModels,
+  usePeople,
   useSettings,
   useStatus,
 } from "./reads.ts";
@@ -26,6 +28,7 @@ import { Button, Problem } from "./ui.tsx";
 
 export function SettingsPage() {
   const settings = useSettings();
+  const person = usePeople().data?.[0];
   const save = useMutation({
     mutationFn: (emergencyRegion: string | null) =>
       saveSettings({ emergencyRegion }),
@@ -34,6 +37,7 @@ export function SettingsPage() {
   return (
     <div className="mx-auto max-w-[620px] px-6 py-8">
       <PlanSection />
+      {person && <ProfileSection person={person} />}
       <h2 id="appearance" className="mt-8 mb-2 px-0.5 font-semibold">
         Appearance
       </h2>
