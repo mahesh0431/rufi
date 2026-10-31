@@ -187,17 +187,23 @@ export interface AgentSandbox {
  * The sandbox with the person's own keychains denied too, under the HOME
  * the AI's commands get (else this account's): Claude keeps its sign-in in
  * one, and a command reading a keychain opens its file itself (ADR 0016).
+ * On macOS only, where the Keychain is: on Linux there is no such folder,
+ * and Codex's sandbox there (bubblewrap) can't deny a path whose folder
+ * isn't there, so no conversation would open.
  */
 export const withKeychains = (
   sandbox: AgentSandbox,
   userHome: string | undefined,
-): AgentSandbox => ({
-  ...sandbox,
-  unreadable: [
-    ...sandbox.unreadable,
-    join(userHome ?? homedir(), "Library", "Keychains"),
-  ],
-});
+): AgentSandbox =>
+  process.platform === "darwin"
+    ? {
+        ...sandbox,
+        unreadable: [
+          ...sandbox.unreadable,
+          join(userHome ?? homedir(), "Library", "Keychains"),
+        ],
+      }
+    : sandbox;
 
 /**
  * One of Rufi's skills, as the agent reads it: its SKILL.md, by name, and

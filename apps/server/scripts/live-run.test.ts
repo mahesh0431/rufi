@@ -211,9 +211,12 @@ describe("the test sign-in in a run", () => {
     await writeFile(join(home, "claude", ".claude.json"), '{"fictional":true}');
     // --out as a person may give it, relative to where the run starts.
     const out = await outFolder(relative(process.cwd(), join(root, "out")));
-    // The HOME the AI's commands get: a fictional one, never the real.
+    // The HOME the AI's commands get: a fictional one, never the real. Its
+    // keychains are denied on macOS, where the Keychain is; elsewhere there
+    // is no such folder to deny.
     const userHome = join(root, "user-home");
     const keychains = join(userHome, "Library", "Keychains");
+    const mac = process.platform === "darwin";
     const cases = ["first", "second"].map((name) => caseFolder(out, name));
     const signIn = await testSignIn(home, {
       file: process.execPath,
@@ -261,9 +264,8 @@ describe("the test sign-in in a run", () => {
         const paths = Object.keys(
           config.permissions[AI_PROFILE]?.filesystem ?? {},
         );
-        expect(paths).toEqual(
-          expect.arrayContaining([...(await found()), keychains]),
-        );
+        expect(paths).toEqual(expect.arrayContaining(await found()));
+        expect(paths.includes(keychains)).toBe(mac);
         expect(paths.filter((path) => !isAbsolute(path))).toEqual([]);
         // Claude's: its commands' sandbox and its own Read tool.
         const { settings } = claudeLockDown(
@@ -271,12 +273,12 @@ describe("the test sign-in in a run", () => {
           join(folder, "plugin"),
           userHome,
         );
-        expect(settings.sandbox?.filesystem?.denyRead).toEqual(
-          expect.arrayContaining([...(await found()), keychains]),
-        );
-        expect(settings.permissions?.deny).toEqual(
-          expect.arrayContaining([`Read(/${keychains}/**)`]),
-        );
+        const denyRead = settings.sandbox?.filesystem?.denyRead ?? [];
+        expect(denyRead).toEqual(expect.arrayContaining(await found()));
+        expect(denyRead.includes(keychains)).toBe(mac);
+        expect(
+          (settings.permissions?.deny ?? []).includes(`Read(/${keychains}/**)`),
+        ).toBe(mac);
       }
       for (const folder of cases) await signIn.take(folder);
       expect(await found()).toEqual(
