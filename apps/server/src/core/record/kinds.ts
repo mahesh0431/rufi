@@ -449,7 +449,7 @@ export const KINDS: readonly Kind[] = [
         ...text("unit"),
         input: Short.annotate({
           description:
-            "The unit its line uses, usually its first value's: every result's test_number is in it. Leave it out for a test with no unit.",
+            "The unit its numbers are in, usually its first value's: every result's test_number is in it. Leave it out for a test with no unit.",
         }),
       },
     },

@@ -1525,10 +1525,12 @@ function receiptText(written: readonly Written[], links: Links): string {
       }
       let then = (before && shownField(field, before, links)) ?? "not given";
       let now = shownField(field, after, links) ?? "not given";
-      // Two linked records of the same name are told apart by their ids.
-      if (then === now && field.type === "link") {
-        then = `${then} (${String(before?.["linked_id"])})`;
-        now = `${now} (${String(after["linked_id"])})`;
+      // Two linked records or tests of the same name are told apart by
+      // their ids: a join of two Creatinine tests says which.
+      if (then === now && (field.type === "link" || field.type === "test")) {
+        const id = field.type === "link" ? "linked_id" : field.column;
+        then = `${then} (${String(before?.[id])})`;
+        now = `${now} (${String(after[id])})`;
       }
       [then, now] = apart(then, now);
       details.push(`${field.shown} ${value(then)} → ${value(now)}`);

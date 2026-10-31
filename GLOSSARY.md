@@ -61,7 +61,7 @@ One lab test or measurement, kept exactly as reported or entered: name, value, u
 _Avoid_: reading, lab value
 
 **Test**:
-One of a person's tests, such as Creatinine or Blood pressure: what their results are in, whatever each lab printed, so the values of one test from every lab are together. It has a name, a section (such as Kidney) and the unit its line uses, all in the AI's words. The AI chooses each result's test when it saves the result, with the user, and gives the result's numbers in the test's unit: the printed number when the units mean the same, converted when they don't, none when it can't compare; the printed value stays as it came. Joining two tests, splitting one and renaming are saves in the chat, with a receipt and undo. A test is never removed: one with no results isn't shown. Results saved before Rufi had tests are in one test for each printed name and unit.
+One of a person's tests, such as Creatinine or Blood pressure: what their results are in, whatever each lab printed, so the values of one test from every lab are together. It has a name, a section (such as Kidney) and the unit its numbers are in, all in the AI's words. The AI chooses each result's test when it saves the result, with the user, and gives the result's numbers in the test's unit: the printed number when the units mean the same, converted when they don't, none when it can't compare; the printed value stays as it came. Joining two tests, splitting one and renaming are saves in the chat, with a receipt and undo. A test is never removed: one with no results stays, and the AI can use it again. Results saved before Rufi had tests are in one test for each printed name and unit.
 _Avoid_: analyte, biomarker, series, group
 
 **Category**:
