@@ -87,7 +87,7 @@ test("an empty Follow-ups page is accessible", async ({ page, rufi }) => {
   expect(violations.map((violation) => violation.id)).toEqual([]);
 });
 
-test("a done follow-up shows the result it is about, which opens on Lab results", async ({
+test("a done follow-up shows the result it is about, which opens on its test's page", async ({
   page,
   rufi,
 }) => {
@@ -109,9 +109,9 @@ test("a done follow-up shows the result it is about, which opens on Lab results"
   await done.getByRole("link", { name: "HbA1c 6.8 % · 12 Aug 2026" }).click();
 
   await expect(page).toHaveURL(
-    /\/people\/asha\/record\/lab_result\?open=res-a1$/,
+    /\/people\/asha\/tests\/tst-hba1c\?open=res-a1$/,
   );
-  const row = page.getByRole("button", { name: "HbA1c", exact: true });
+  const row = page.getByRole("button", { name: "12 Aug 2026" });
   await expect(row).toHaveAttribute("aria-expanded", "true");
   await expect(row).toBeInViewport();
 });
@@ -136,8 +136,8 @@ test("a follow-up about a result amended since says so, and opens the current on
     })
     .click();
 
-  await expect(page).toHaveURL(/\/record\/lab_result\?open=res-a5$/);
-  const row = page.getByRole("button", { name: "TSH amended" });
+  await expect(page).toHaveURL(/\/tests\/tst-tsh\?open=res-a5$/);
+  const row = page.getByRole("button", { name: "12 Aug 2026" });
   await expect(row).toHaveAttribute("aria-expanded", "true");
   await expect(row).toBeInViewport();
 });

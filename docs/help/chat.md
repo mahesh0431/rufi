@@ -55,7 +55,7 @@ You can add your records and documents to a message, so the AI knows exactly wha
 **Ask Rufi** is Rufi's face with a blue +, at the end of a row. It shows when you point at the row, or when the row has the keyboard focus; on a touch screen it is always there. Point at it and a small label says "Ask Rufi about this".
 
 - **A record:** on its page (see [Your health record](record.md)), click **Ask Rufi** on its row.
-- **A report:** on Lab results, click **Ask Rufi** in a report's heading. Its results, with any measurements it printed, go in as one chip, such as "Sunrise Labs · 12 Aug 2026 · 3 results", and the AI reads exactly that report's results. Lab results you typed in the chat, and days of measurements, have no such heading button.
+- **A test:** on Lab results or on a test's page, click **Ask Rufi** on the test. It goes in as one chip, such as "Creatinine", and the AI reads its values from every lab. To ask about one report, add its document.
 - **A follow-up or a document that needs you:** on Overview, click **Ask Rufi** on its line in **Needs you**.
 - **A document:** on the Documents page, click **Ask Rufi** on its row.
 - **A draft result:** on a document's page, click **Ask Rufi** on its row (see [Documents](documents.md#add-some-results-to-the-chat)).

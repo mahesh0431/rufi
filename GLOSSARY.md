@@ -69,7 +69,7 @@ Whether a result is a lab result or a measurement, which decides the page it sho
 _Avoid_: type, kind (a kind is a kind of record)
 
 **Lab result**:
-A result of the category lab: a test of a sample, such as blood or urine, from a lab or a clinic, also when the user types it in. The **Lab results** page groups them by report, a report's lab results whole, and the typed ones by day.
+A result of the category lab: a test of a sample, such as blood or urine, from a lab or a clinic, also when the user types it in. The **Lab results** page lists the person's tests, each once with its latest lab result by sample date; a test's page has every value. A report stays whole on its document's page.
 _Avoid_: lab value, test result
 
 **Measurement**:
