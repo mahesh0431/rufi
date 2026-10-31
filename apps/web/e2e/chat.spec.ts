@@ -7,6 +7,7 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { Locator, Page } from "@playwright/test";
 import { Page as ChatPage } from "@rufi/contracts";
 import { Schema } from "effect";
@@ -1684,6 +1685,8 @@ test("what Rufi AI tells a helper while it works shows last in the helper's open
     .locator(":scope > li");
   await expect(lines).toHaveCount(50);
   await expect(lines.last()).toHaveText(/read_page · \{"page":60\}$/);
+  // It has been quiet a while: what the screen hears next is the message.
+  await sleep(500);
 
   const reader = await log(chat(page))
     .locator("[data-agent]")
