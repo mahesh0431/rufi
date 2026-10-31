@@ -1498,6 +1498,12 @@ test("from Enter, one working line shows while the AI's thread opens and until t
   await page.goto(rufi.link());
   await send(page, "hang");
   await expect(thinking(log(chat(page)))).toBeVisible();
+  // The reply runs: the AI has the message.
+  await expect
+    .poll(() =>
+      readFile(join(rufi.home, "fake-codex.jsonl"), "utf8").catch(() => ""),
+    )
+    .toContain('"text":"hang"');
   await chat(page).getByRole("button", { name: "Stop", exact: true }).click();
   await expect(log(chat(page))).toContainText("Stopped.");
   await expect(thinking(chat(page))).toHaveCount(0);
