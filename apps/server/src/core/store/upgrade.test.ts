@@ -1137,7 +1137,10 @@ it("upgrades a record of version 15 so files start on Send: every document sent 
       reader_agent: null,
     })),
   );
-  expect(after.turns).toEqual(before.turns);
+  // A reply from before keeps no effort (0026).
+  expect(after.turns).toEqual(
+    before.turns.map((turn) => ({ ...turn, effort: null })),
+  );
   expect(after.entries).toEqual(
     before.entries.map((line) => ({ ...line, questions: null })),
   );
