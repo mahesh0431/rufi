@@ -237,7 +237,10 @@ async function rufiReply(
 }
 
 /** The scripted Codex playing `scenario` (FAKE_CODEX), for start(). */
-const scripted = (scenario: object, more: { requestMs?: number } = {}) => [
+const scripted = (
+  scenario: object,
+  more: { requestMs?: number; log?: string } = {},
+) => [
   codexAdapter({
     home,
     ...agentSetup(home),
@@ -245,6 +248,7 @@ const scripted = (scenario: object, more: { requestMs?: number } = {}) => [
     env: {
       PATH: process.env["PATH"] ?? "",
       FAKE_CODEX: JSON.stringify(scenario),
+      ...(more.log !== undefined && { FAKE_CODEX_LOG: more.log }),
     },
     version: "0.0.0",
     ...(more.requestMs !== undefined && {
@@ -1534,7 +1538,13 @@ describe("what the screens read", () => {
   });
 
   it("keeps each provider's sign-in as it last said: a send asks neither provider, and a reply that finds Codex signed out shows it at once", async () => {
-    const adapters = scripted({});
+    const log = join(home, "fake.jsonl");
+    const adapters = scripted({}, { log });
+    /** How often Codex itself was asked how it's signed in. */
+    const reads = async () =>
+      (await readFile(log, "utf8"))
+        .split("\n")
+        .filter((line) => line.includes('"method":"account/read"')).length;
     const codex = codexSignIn(adapters[0] as CodexAdapter, () => undefined);
     let asked = 0;
     let out = false;
@@ -1562,9 +1572,15 @@ describe("what the screens read", () => {
     const replies = async () =>
       ((await page.api("GET", path)).body["turns"] as { status: string }[])
         .length;
-    expect((await page.say(path, "Hello")).status).toBe(202);
-    await until(async () => (await replies()) === 1);
+    // Rufi's own first ask, at its start.
+    await page.api("GET", "/api/status");
+    const before = await reads();
+    for (const [n, text] of ["Hello", "And again"].entries()) {
+      expect((await page.say(path, text)).status).toBe(202);
+      await until(async () => (await replies()) === n + 1);
+    }
     expect(asked).toBe(1);
+    expect(await reads()).toBe(before);
 
     // Codex's sign-in ends between asks: the reply says so, and Rufi hears it.
     out = true;
