@@ -1,4 +1,4 @@
-// Settings: the ChatGPT plan the AI uses, how Rufi looks, when a reply's
+// Settings: how Codex and Claude are signed in, how Rufi looks, when a reply's
 // Activity opens by itself, what a message sent while a reply runs does,
 // the models the AI and its agents may run on, how often Rufi carries on
 // after a restart, the region whose
@@ -138,42 +138,63 @@ export function SettingsPage() {
   );
 }
 
-/** The ChatGPT plan Rufi's AI runs on, or the way to sign in. */
+/** How Codex and Claude are signed in, each as it says, or the way to sign in. */
 function PlanSection() {
   const status = useStatus();
-  const account = status.data?.account;
+  const codex = status.data?.codex;
+  const claude = status.data?.claude;
   return (
     <>
-      <h2 className="mb-2 px-0.5 font-semibold">ChatGPT plan</h2>
-      <div className="rounded-xl border border-line bg-surface p-4">
+      <h2 className="mb-2 px-0.5 font-semibold">Sign-in</h2>
+      <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
         {status.data === undefined && status.error ? (
           <Problem error={status.error} retry={() => void status.refetch()} />
-        ) : account === "signed_in" ? (
-          <p>
-            Rufi's AI uses your ChatGPT plan
-            {status.data?.email ? ` (${status.data.email})` : ""}.{" "}
-            <a
-              href="https://chatgpt.com/codex/settings/usage"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-            >
-              Manage usage
-            </a>
-          </p>
         ) : (
-          account && (
-            <p>
-              {account === "signed_out"
-                ? "Not signed in. Rufi's AI needs your ChatGPT plan to answer."
-                : "You are signed in, but ChatGPT plan use isn't allowed for Rufi."}{" "}
-              <Link to="/sign-in" className="underline">
-                {account === "signed_out" ? "Sign in" : "Sign in again"}
-              </Link>
-            </p>
-          )
+          <>
+            {codex?.state === "signed_in" ? (
+              <p>
+                Codex is signed in with ChatGPT
+                {codex.account === null ? "" : ` (${codex.account})`}. Rufi's AI
+                uses your ChatGPT plan.{" "}
+                <a
+                  href="https://chatgpt.com/codex/settings/usage"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  Manage usage
+                </a>
+              </p>
+            ) : (
+              codex && (
+                <p>
+                  {codex.state === "signed_out"
+                    ? "Codex isn't signed in. Rufi's AI needs it to answer."
+                    : codex.text}{" "}
+                  <Link to="/sign-in" className="underline">
+                    Sign in
+                  </Link>
+                </p>
+              )
+            )}
+            {claude &&
+              (claude.state === "signed_in" ? (
+                <p>Claude is signed in.</p>
+              ) : (
+                <p>
+                  {claude.state === "signed_out"
+                    ? "Claude isn't signed in."
+                    : claude.text}{" "}
+                  {claude.state === "signed_out" && (
+                    <Link to="/sign-in" className="underline">
+                      Sign in
+                    </Link>
+                  )}
+                </p>
+              ))}
+          </>
         )}
-        <p className="mt-2 text-muted">
+        <p className="text-muted">
           The AI can use the internet from its own folder, such as to look
           something up or to install what a program needs. It reaches your
           health record only through Rufi.
@@ -187,7 +208,7 @@ function PlanSection() {
 function ModelsSection() {
   const settings = useSettings();
   const models = useModels();
-  const account = useStatus().data?.account;
+  const codex = useStatus().data?.codex.state;
   const save = useMutation({
     mutationFn: async (shortlist: string[]) => {
       const saved = await saveSettings({ models: shortlist });
@@ -215,8 +236,8 @@ function ModelsSection() {
         Models
       </h2>
       <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
-        {/* Signed out: ChatGPT plan above signs in. */}
-        {account !== undefined && account !== "signed_in" ? (
+        {/* Signed out: Sign-in above signs in. */}
+        {codex !== undefined && codex !== "signed_in" ? (
           <p>Once you're signed in, the models your plan offers show here.</p>
         ) : models.data === undefined && models.error ? (
           <Problem error={models.error} retry={() => void models.refetch()} />

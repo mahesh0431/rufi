@@ -1,5 +1,5 @@
 // The demo reset on real files: the record is replaced with the golden data
-// set and the sign-in's registration stays; a folder that isn't the demo
+// set and Codex's and Claude's sign-ins stay; a folder that isn't the demo
 // folder, one reached through a link, or one Rufi runs on, is left as it was.
 import {
   link,
@@ -20,7 +20,8 @@ import { holdRufiLock } from "../src/platform/files.ts";
 import { demoFolder, resetDemo } from "./demo-folder.ts";
 
 const TODAY = new Date("2026-10-08T12:00:00Z");
-const REGISTRATION = '{"hostId":"urn:uuid:fictional"}\n';
+const CODEX_SIGN_IN = '{"fictional":"codex"}\n';
+const CLAUDE_SIGN_IN = '{"fictional":"claude"}\n';
 
 let root: string;
 let folder: string;
@@ -33,7 +34,8 @@ beforeEach(async () => {
 /** A demo folder after a run: signed in, with its own changes and files. */
 async function used() {
   await resetDemo(folder, {}, TODAY);
-  await writeFile(join(folder, "chatgpt.json"), REGISTRATION);
+  await mkdir(join(folder, "claude"));
+  await writeFile(join(folder, "claude", ".claude.json"), CLAUDE_SIGN_IN);
   const store = openWritable(databasePath(folder));
   store.db.exec(
     "INSERT INTO people (id, display_name) VALUES ('old', 'Old Fictional')",
@@ -43,6 +45,7 @@ async function used() {
     await mkdir(join(folder, made));
     await writeFile(join(folder, made, "left.txt"), "from the last run");
   }
+  await writeFile(join(folder, "codex", "auth.json"), CODEX_SIGN_IN);
   await writeFile(join(folder, "models.json"), '{"models":["fictional"]}');
 }
 
@@ -73,20 +76,25 @@ const people = (home: string) => {
 };
 
 describe("pnpm demo's reset", () => {
-  it("replaces the record and everything from the last run, and keeps the sign-in's registration", async () => {
+  it("replaces the record and everything from the last run, and keeps Codex's and Claude's sign-ins", async () => {
     await used();
 
     await resetDemo(folder, {}, TODAY);
 
     expect((await readdir(folder)).sort()).toEqual([
-      "chatgpt.json",
+      "claude",
+      "codex",
       "demo.json",
       "files",
       "installed.json",
       "rufi.sqlite",
     ]);
-    expect(await readFile(join(folder, "chatgpt.json"), "utf8")).toBe(
-      REGISTRATION,
+    expect(await readdir(join(folder, "codex"))).toEqual(["auth.json"]);
+    expect(await readFile(join(folder, "codex", "auth.json"), "utf8")).toBe(
+      CODEX_SIGN_IN,
+    );
+    expect(await readFile(join(folder, "claude", ".claude.json"), "utf8")).toBe(
+      CLAUDE_SIGN_IN,
     );
     expect(people(folder)).toEqual(["Asha Fictional", "Ravi Fictional"]);
   });

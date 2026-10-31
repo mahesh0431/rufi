@@ -90,6 +90,11 @@ async function processTable(): Promise<Row[]> {
     .map(([pid = 0, ppid = 0, pgid = 0]) => ({ pid, ppid, pgid }));
 }
 
+/** Ends process group `pgid` at once, if anything of it is left. */
+export function killGroup(pgid: number): void {
+  if (pgid > 1) send(-pgid, "SIGKILL");
+}
+
 function signal(
   groups: ReadonlySet<number>,
   pids: readonly number[],

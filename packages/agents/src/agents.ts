@@ -813,6 +813,9 @@ export function createAgents(options: {
         });
         return;
       }
+      // A turn's own usage is the usage tool's to keep (plan PR 18).
+      case "turnUsage":
+        return;
       case "turnEnded":
         endTurn(live, event.turn, event.end);
         return;

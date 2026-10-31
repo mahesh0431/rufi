@@ -33,6 +33,7 @@ const draft = (
   more = {},
 ) => ({
   page,
+  reading: "$reading",
   test_name,
   value_text,
   unit,

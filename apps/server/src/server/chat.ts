@@ -17,6 +17,7 @@ import {
   type Chip,
   type Effort,
   type Pointer,
+  type ProviderStatus,
 } from "@rufi/contracts";
 import { Stopped, type Model } from "../agent/runtime.ts";
 import { allowedModels, NOT_SHORTLISTED } from "../core/chat/models.ts";
@@ -51,8 +52,8 @@ const NEW_THREAD_MESSAGES = 10;
 export interface ChatDeps {
   transcripts: Transcripts;
   queue: ChatQueue;
-  /** Whether the AI can be reached with the person's sign-in now. */
-  signedIn: () => Promise<boolean>;
+  /** Codex's sign-in now, as Codex reports it. */
+  signIn: () => Promise<ProviderStatus>;
   /** Rufi AI, given where its events go. */
   agent: (host: RufiAiHost) => RufiAi;
   /** The person's shortlist of models, as Settings keeps it now. */
@@ -205,7 +206,8 @@ export function chat(deps: ChatDeps) {
     const startedAt = transcripts.now();
     const answer = await caller.call(tool, input, callId);
     // Kept before the AI has it: Rufi keeps every answer the AI got (a
-    // write keeps its own, with what it changed).
+    // write keeps its own, with what it changed; a reading not saved, without
+    // its page text).
     try {
       if (!answer.kept) {
         await transcripts.recordToolCall(
@@ -216,10 +218,10 @@ export function chat(deps: ChatDeps) {
             ref,
             callId,
             tool,
-            input,
+            input: answer.keep?.input ?? input,
             startedAt,
           },
-          answer,
+          answer.keep?.answer ?? answer,
         );
       }
     } catch (error) {
@@ -407,7 +409,7 @@ export function chat(deps: ChatDeps) {
   const carry = (chat: ChatRow) =>
     inLane(chat, async (stored) => {
       let fresh = stored;
-      if (closed || !(await deps.signedIn())) return;
+      if (closed || (await deps.signIn()).state !== "signed_in") return;
       // Rufi's part reads a message's files: what comes after waits.
       for (const id of await queue.reading(fresh)) {
         if (agent.input(id) === undefined) return;
@@ -985,9 +987,18 @@ export function chat(deps: ChatDeps) {
     return allowedModels(await agent.models(), await deps.shortlist());
   }
 
-  /** Without a sign-in, nothing the person sends is taken. */
+  /**
+   * Without a sign-in, nothing the person sends is taken: signed out when
+   * Codex says so, else Codex's error as it came.
+   */
   async function mustBeSignedIn(): Promise<void> {
-    if (!(await deps.signedIn())) throw new ChatRefusal(SIGNED_OUT);
+    const { state, text } = await deps.signIn();
+    if (state === "signed_out") throw new ChatRefusal(SIGNED_OUT);
+    if (state === "unavailable") {
+      throw new ChatRefusal(
+        text ?? "Rufi couldn't ask Codex how it's signed in.",
+      );
+    }
   }
 
   /** A change to the queue; its refusals are the chat's. */

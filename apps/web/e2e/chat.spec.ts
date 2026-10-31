@@ -16,7 +16,7 @@ import {
   openWritable,
 } from "../../server/src/core/store/database.ts";
 import { runningLink } from "../../server/src/server/core.ts";
-import { expect, test, type Rufi } from "./rufi.ts";
+import { expect, SIGNED_OUT, test, type Rufi } from "./rufi.ts";
 
 async function accessible(page: Page) {
   const { violations } = await new AxeBuilder({ page }).analyze();
@@ -442,7 +442,7 @@ test("while a reply runs, Enter steers a message into it, as your message; with 
 });
 
 test("signed out, the model's menu signs in", async ({ page, rufi }) => {
-  rufi.account = { account: "signed_out", email: null };
+  rufi.codex = SIGNED_OUT;
   // The core can't list the models without the sign-in.
   await page.route("**/api/models", (route) =>
     route.fulfill({
