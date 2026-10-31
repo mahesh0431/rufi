@@ -2,6 +2,7 @@
 // Requests are decoded with these schemas; responses are built to their types.
 import { Schema } from "effect";
 import { KeepValues } from "./devices.ts";
+import { BirthDate, ProfileValues, SexForRanges } from "./record.ts";
 
 /**
  * The longest message or draft Rufi takes, in characters. A draft must fit
@@ -632,7 +633,19 @@ export type FirstRun = typeof FirstRun.Type;
 
 // --- What the screens send ---
 
-export const AddPerson = Schema.Struct({ displayName: Line(200) });
+/**
+ * The welcome's "About you": your name and your profile, its birth date and
+ * sex needed, its blood group and height when given. All saved together.
+ */
+export const AddPerson = Schema.Struct({
+  displayName: Line(200),
+  profile: Schema.Struct({
+    birth_date: BirthDate,
+    sex_for_ranges: SexForRanges,
+    blood_group: Schema.optionalKey(ProfileValues.fields.blood_group),
+    height: Schema.optionalKey(ProfileValues.fields.height),
+  }),
+});
 
 /** The settings to change; the others stay as they are. */
 export const SaveSettings = Schema.Struct({

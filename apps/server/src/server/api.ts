@@ -476,8 +476,16 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   );
   // First run makes the first person; more people come with family.
   app.post("/api/people", async (c) => {
-    const { displayName } = await body(c, AddPerson);
-    const person = await transcripts.addFirstPerson(displayName);
+    const { displayName, profile } = await body(c, AddPerson);
+    // Nothing is kept when a value can't be: the welcome keeps it all.
+    const person = await transcripts
+      .addFirstPerson(displayName, profile)
+      .catch((error: unknown) => {
+        if (error instanceof SaveRefused) {
+          throw new HttpError(400, error.message);
+        }
+        throw error;
+      });
     if (!person) {
       throw new HttpError(409, "Someone is already in this record.");
     }

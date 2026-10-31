@@ -108,31 +108,43 @@ type Report = (field: ProfileField, problem: string | undefined) => void;
  * it. A typed field shows `values` until you change it, and keeps what you
  * typed until `values` has it.
  */
-function ProfileFields({
+export function ProfileFields({
   values,
   commit,
   report,
+  asTyped = false,
+  withName = true,
 }: {
   values: ProfileValues;
   commit: <K extends ProfileField>(field: K, value: ProfileValues[K]) => void;
   report: Report;
+  /**
+   * Commit a typed field as it is typed, an unfinished one as not set, and
+   * keep what was typed: the welcome's, where nothing else changes it.
+   */
+  asTyped?: boolean;
+  /** With the Name field; the welcome asks the name itself. */
+  withName?: boolean;
 }) {
   const id = useId();
   return (
     <div className="flex flex-col gap-4">
-      <Name
-        id={`${id}-name`}
-        value={values.name}
-        commit={(value) => {
-          commit("name", value);
-        }}
-        report={(problem) => {
-          report("name", problem);
-        }}
-      />
+      {withName && (
+        <Name
+          id={`${id}-name`}
+          value={values.name}
+          commit={(value) => {
+            commit("name", value);
+          }}
+          report={(problem) => {
+            report("name", problem);
+          }}
+        />
+      )}
       <BirthDate
         id={`${id}-birth`}
         value={values.birth_date}
+        asTyped={asTyped}
         commit={(value) => {
           commit("birth_date", value);
         }}
@@ -197,6 +209,7 @@ function ProfileFields({
       <Height
         id={`${id}-height`}
         value={values.height}
+        asTyped={asTyped}
         commit={(value) => {
           commit("height", value);
         }}
@@ -313,11 +326,13 @@ function dateOf(typed: TypedDate): ProfileValues["birth_date"] | undefined {
 function BirthDate({
   id,
   value,
+  asTyped,
   commit,
   report,
 }: {
   id: string;
   value: ProfileValues["birth_date"];
+  asTyped: boolean;
   commit: (value: ProfileValues["birth_date"]) => void;
   report: (problem: string | undefined) => void;
 }) {
@@ -328,22 +343,27 @@ function BirthDate({
     setProblem(undefined);
     report(undefined);
   };
-  if (draft !== undefined) {
+  if (draft !== undefined && !asTyped) {
     const date = dateOf(draft);
     if (date !== undefined && date?.date === value?.date) setDraft(undefined);
   }
   const typed = draft ?? typedDate(value);
+  const problemOf = (date: ProfileValues["birth_date"] | undefined) =>
+    date === undefined ? "Give a year, and a month with a day." : undefined;
   const setTyped = (next: TypedDate) => {
     setDraft(next);
-    if (dateOf(next) !== undefined) fixed();
+    // Fixed, it says so at once; an unfinished date is said when you leave it.
+    const date = dateOf(next);
+    if (date !== undefined) fixed();
+    if (!asTyped) return;
+    report(problemOf(date));
+    if ((date ?? null)?.date !== value?.date) commit(date ?? null);
   };
   const done = () => {
     if (draft === undefined) return;
     const date = dateOf(draft);
-    const now =
-      date === undefined ? "Give a year, and a month with a day." : undefined;
-    setProblem(now);
-    report(now);
+    setProblem(problemOf(date));
+    report(problemOf(date));
     if (date !== undefined && date?.date !== value?.date) commit(date);
   };
   return (
@@ -436,11 +456,13 @@ const sameHeight = (typed: TypedHeight, value: ProfileValues["height"]) => {
 function Height({
   id,
   value,
+  asTyped,
   commit,
   report,
 }: {
   id: string;
   value: ProfileValues["height"];
+  asTyped: boolean;
   commit: (value: ProfileValues["height"]) => void;
   report: (problem: string | undefined) => void;
 }) {
@@ -451,25 +473,36 @@ function Height({
     setProblem(undefined);
     report(undefined);
   };
-  if (draft !== undefined && sameHeight(draft, value)) setDraft(undefined);
+  if (draft !== undefined && !asTyped && sameHeight(draft, value)) {
+    setDraft(undefined);
+  }
   const typed = draft ?? {
     number: value === null ? "" : String(value.value),
     unit: value?.unit ?? "cm",
   };
+  /** Says what is wrong with a typed height, and commits it if it differs. */
+  const check = (now: TypedHeight) => {
+    const height = heightOf(now);
+    const problem =
+      height === undefined ? "Give your height as a number." : undefined;
+    setProblem(problem);
+    report(problem);
+    const kept = height ?? null;
+    if (
+      (asTyped || height !== undefined) &&
+      (kept?.value !== value?.value || kept?.unit !== value?.unit)
+    ) {
+      commit(kept);
+    }
+  };
   const setTyped = (next: TypedHeight) => {
     setDraft(next);
-    if (heightOf(next) !== undefined) fixed();
+    if (asTyped) check(next);
+    // Fixed, it says so at once: nothing moves under a click on Done.
+    else if (heightOf(next) !== undefined) fixed();
   };
   const done = () => {
-    if (draft === undefined) return;
-    const height = heightOf(draft);
-    const now =
-      height === undefined ? "Give your height as a number." : undefined;
-    setProblem(now);
-    report(now);
-    if (height === null ? value !== null : height !== undefined) {
-      commit(height ?? null);
-    }
+    if (draft !== undefined) check(draft);
   };
   return (
     <fieldset
