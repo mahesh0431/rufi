@@ -1,5 +1,6 @@
 import {
   access,
+  mkdir,
   mkdtemp,
   readdir,
   readFile,
@@ -7,19 +8,26 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Turn } from "@rufi/contracts";
+import { parse } from "smol-toml";
 import { afterEach, describe, expect, it } from "vitest";
-import { ChatGptError } from "../src/agent/chatgpt/openai.ts";
+import { SignedOut } from "../src/agent/runtime.ts";
+import { AI_PROFILE, prepareCodexHome } from "../src/agent/codex/settings.ts";
+import { claudeLockDown } from "../src/agent/claude/sandbox.ts";
 import {
+  caseFolder,
+  caseSandbox,
   HarnessTimeout,
   onScratch,
   outFolder,
   runAll,
-  sharedToken,
   statusOf,
+  testSignIn,
 } from "./live-run.ts";
+
+const FAKE = join(import.meta.dirname, "../tests/fake-codex.ts");
 
 describe("running the cases", () => {
   const timed = async (names: string[], jobs?: number) => {
@@ -53,104 +61,36 @@ describe("running the cases", () => {
   });
 });
 
-describe("the shared token", () => {
-  const HOUR = 3_600_000;
-  /** A sign-in whose token renews to an hour's validity when asked for more than it has. */
-  const signIn = (left: number) => {
-    let n = 1;
-    let expires = Date.now() + left;
-    const seen = { calls: 0, renewals: 0, atOnce: 0, most: 0 };
-    const get = async (validForMs: number) => {
-      seen.calls++;
-      seen.most = Math.max(seen.most, ++seen.atOnce);
-      await sleep(10);
-      if (expires - Date.now() < validForMs) {
-        seen.renewals++;
-        n++;
-        expires = Date.now() + HOUR;
-      }
-      seen.atOnce--;
-      return { token: `token-${String(n)}`, expires };
-    };
-    const tokens = new Map<string, number>();
-    const token = sharedToken(async (validForMs) => {
-      const got = await get(validForMs);
-      tokens.set(got.token, got.expires);
-      return got.token;
-    });
-    return { token, seen, expiresOf: (t: string) => tokens.get(t) ?? 0 };
-  };
-
-  it("renews once for many callers at the same time", async () => {
-    const { token, seen } = signIn(30_000);
-    const got = await Promise.all(
-      Array.from({ length: 36 }, () => token(60_000)),
-    );
-    expect(new Set(got)).toEqual(new Set(["token-2"]));
-    expect(seen).toMatchObject({ calls: 1, renewals: 1, most: 1 });
-  });
-
-  it("gives each caller a token valid as long as it asked, one call at a time", async () => {
-    const { token, seen, expiresOf } = signIn(10 * 60_000);
-    const asked = Date.now();
-    const [chat, reader, chatAgain] = await Promise.all([
-      token(60_000),
-      token(30 * 60_000),
-      token(60_000),
-    ]);
-    expect(chat).toBe("token-1");
-    expect(expiresOf(reader)).toBeGreaterThanOrEqual(asked + 30 * 60_000);
-    expect(expiresOf(chatAgain)).toBeGreaterThanOrEqual(asked + 60_000);
-    expect(seen).toMatchObject({ calls: 2, renewals: 1, most: 1 });
-  });
-
-  it("passes a failed renewal to its callers, and the next caller tries again", async () => {
-    let fail = true;
-    const token = sharedToken(async () => {
-      await sleep(5);
-      if (fail) throw new ChatGptError("temporary", "Try again shortly.");
-      return "token-2";
-    });
-    const failed = await Promise.allSettled([token(60_000), token(60_000)]);
-    expect(failed.map((r) => r.status)).toEqual(["rejected", "rejected"]);
-    fail = false;
-    expect(await token(60_000)).toBe("token-2");
-  });
-});
-
 describe("the output folder", () => {
   const made: string[] = [];
   afterEach(async () => {
     for (const dir of made.splice(0)) await rm(dir, { recursive: true });
   });
 
-  it("is a new folder for each run by default", async () => {
-    const first = await outFolder("smoke");
-    const second = await outFolder("smoke");
-    made.push(first, second);
-    expect(first).not.toBe(second);
-    expect(first).toMatch(/^\/tmp\/rufi-smoke-[0-9a-f]+-/);
-    expect(await readdir(first)).toEqual([]);
+  it("must be given", async () => {
+    await expect(outFolder(undefined)).rejects.toThrow(
+      "Give the run a folder of its own: --out <empty folder>.",
+    );
   });
 
   it("takes an empty folder and refuses one with something in it", async () => {
     const dir = await mkdtemp(join(tmpdir(), "rufi-out-"));
     made.push(dir);
-    expect(await outFolder("smoke", dir)).toBe(dir);
+    expect(await outFolder(dir)).toBe(dir);
     await writeFile(join(dir, "report.md"), "an earlier run\n");
-    await expect(outFolder("smoke", dir)).rejects.toThrow(/isn't empty/);
+    await expect(outFolder(dir)).rejects.toThrow(/isn't empty/);
   });
 });
 
-describe("a case's scratch data folder", () => {
+describe("a case's data folder", () => {
   /**
    * A case that writes a fictional record in its folder, then ends as `how`;
    * a case that passes writes its transcript to an output folder that's
    * gone.
    */
-  const play = (how: "passes" | "fails" | "can't save its transcript") =>
+  const play = async (how: "passes" | "fails" | "can't save its transcript") =>
     onScratch(
-      "rufi-smoke-",
+      caseFolder(await mkdtemp(join(tmpdir(), "rufi-out-")), "a-case"),
       async (home) => {
         await writeFile(join(home, "rufi.db"), "a fictional record");
         if (how === "can't save its transcript") {
@@ -180,7 +120,7 @@ describe("a case's scratch data folder", () => {
     );
     expect(error).toMatchObject({
       message: expect.stringMatching(
-        /^ENOENT: .* \(data folder: .*rufi-smoke-\w+\)$/,
+        /^ENOENT: .* \(data folder: .*\/cases\/a-case\)$/,
       ) as unknown,
       cause: { code: "ENOENT" },
     });
@@ -224,8 +164,8 @@ describe("a case's status", () => {
       "INFRA",
     ],
     [
-      "the sign-in couldn't renew",
-      { ...clean, error: new ChatGptError("temporary", "Try again shortly.") },
+      "Codex isn't signed in",
+      { ...clean, error: new SignedOut("Codex isn't signed in to ChatGPT.") },
       "INFRA",
     ],
     [
@@ -256,5 +196,96 @@ describe("a case's status", () => {
       status: "INFRA",
       why: "a reply ended (connection): exceeded retry limit, last status: 429 Too Many Requests",
     });
+  });
+});
+
+describe("the test sign-in in a run", () => {
+  it("gives each case a copy and takes it back, and no case's AI may read any sign-in of the run or the person's keychains, in a Codex config that loads and in Claude's lock-down", async () => {
+    // Wholly fictional: a test home with Codex's sign-in file and Claude's
+    // folder, signed in on the scripted Codex.
+    const root = await mkdtemp(join(tmpdir(), "rufi-live-"));
+    const home = join(root, "test-home");
+    await mkdir(join(home, "codex"), { recursive: true });
+    await writeFile(join(home, "codex", "auth.json"), '{"fictional":true}');
+    await mkdir(join(home, "claude"));
+    await writeFile(join(home, "claude", ".claude.json"), '{"fictional":true}');
+    // --out as a person may give it, relative to where the run starts.
+    const out = await outFolder(relative(process.cwd(), join(root, "out")));
+    // The HOME the AI's commands get: a fictional one, never the real. Its
+    // keychains are denied on macOS, where the Keychain is; elsewhere there
+    // is no such folder to deny.
+    const userHome = join(root, "user-home");
+    const keychains = join(userHome, "Library", "Keychains");
+    const mac = process.platform === "darwin";
+    const cases = ["first", "second"].map((name) => caseFolder(out, name));
+    const signIn = await testSignIn(home, {
+      file: process.execPath,
+      args: [FAKE],
+    });
+    const signIns = signIn.signIns(cases);
+    try {
+      // Both cases at once, each with its copy.
+      for (const folder of cases) {
+        await mkdir(folder, { recursive: true });
+        await signIn.give(folder);
+      }
+      /** Every sign-in on disk: Codex's files and Claude's folders. */
+      const found = async () =>
+        (await readdir(root, { recursive: true, withFileTypes: true }))
+          .filter((entry) =>
+            entry.isDirectory()
+              ? entry.name === "claude"
+              : entry.name === "auth.json",
+          )
+          .map((entry) => join(entry.parentPath, entry.name))
+          .sort();
+      expect(await found()).toEqual(
+        [
+          join(home, "claude"),
+          join(home, "codex", "auth.json"),
+          ...cases.map((folder) => join(folder, "codex", "auth.json")),
+        ].sort(),
+      );
+      for (const folder of cases) {
+        const sandbox = caseSandbox(folder, signIns);
+        expect(sandbox.unreadable).toEqual(
+          expect.arrayContaining(await found()),
+        );
+        // Codex's own settings for the case: valid TOML, every path absolute.
+        const { codexHome } = await prepareCodexHome(folder, {
+          sandbox,
+          userHome,
+        });
+        const config = parse(
+          await readFile(join(codexHome, "config.toml"), "utf8"),
+        ) as {
+          permissions: Record<string, { filesystem: Record<string, string> }>;
+        };
+        const paths = Object.keys(
+          config.permissions[AI_PROFILE]?.filesystem ?? {},
+        );
+        expect(paths).toEqual(expect.arrayContaining(await found()));
+        expect(paths.includes(keychains)).toBe(mac);
+        expect(paths.filter((path) => !isAbsolute(path))).toEqual([]);
+        // Claude's: its commands' sandbox and its own Read tool.
+        const { settings } = claudeLockDown(
+          sandbox,
+          join(folder, "plugin"),
+          userHome,
+        );
+        const denyRead = settings.sandbox?.filesystem?.denyRead ?? [];
+        expect(denyRead).toEqual(expect.arrayContaining(await found()));
+        expect(denyRead.includes(keychains)).toBe(mac);
+        expect(
+          (settings.permissions?.deny ?? []).includes(`Read(/${keychains}/**)`),
+        ).toBe(mac);
+      }
+      for (const folder of cases) await signIn.take(folder);
+      expect(await found()).toEqual(
+        [join(home, "claude"), join(home, "codex", "auth.json")].sort(),
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

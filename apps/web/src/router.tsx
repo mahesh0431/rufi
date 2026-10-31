@@ -301,8 +301,15 @@ const signIn = createRoute({
   path: "/sign-in",
   component: function SignInPage() {
     return (
-      <div className="mx-auto max-w-[620px] px-6 py-8">
-        <SignIn />
+      <div className="mx-auto flex max-w-[620px] flex-col gap-8 px-6 py-8">
+        <section>
+          <h2 className="mb-2 font-semibold">Codex</h2>
+          <SignIn provider="codex" />
+        </section>
+        <section>
+          <h2 className="mb-2 font-semibold">Claude</h2>
+          <SignIn provider="claude" />
+        </section>
       </div>
     );
   },

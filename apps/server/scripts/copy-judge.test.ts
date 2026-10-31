@@ -1,4 +1,6 @@
-import { access } from "node:fs/promises";
+import { access, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EXPECTED, KEY, type KeyPage } from "../tests/pack/copy-set.ts";
 import type { SubAgentOutcome } from "../src/agent/runtime.ts";
@@ -124,6 +126,7 @@ describe("the reader pack's judge of a page", () => {
       },
       key,
       key.hand,
+      join(await mkdtemp(join(tmpdir(), "rufi-out-")), "judge-0"),
     );
   };
 

@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
+  cp,
   mkdir,
   mkdtemp,
   readdir,
@@ -14,7 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { familyFiles } from "../../../tests/fixtures/golden.ts";
 import { holdRufiLock } from "../../platform/files.ts";
 import { readBrief } from "../briefs/briefs.ts";
@@ -127,10 +128,25 @@ const sha = async (path: string) =>
     .update(await readFile(path))
     .digest("hex");
 
+/**
+ * The version 1 data folder, made once: its 135 inserts are each a commit
+ * synced to disk, which is slow on a busy Linux runner. Each test gets its
+ * own copy.
+ */
+let template: string;
+
+beforeAll(async () => {
+  template = join(
+    await mkdtemp(join(tmpdir(), "rufi-upgrade-template-")),
+    "home",
+  );
+  await version1(template);
+});
+
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "rufi-upgrade-"));
   home = join(root, "home");
-  await version1(home);
+  await cp(template, home, { recursive: true });
 });
 
 /** Ravi says something and the AI saves it, at `at`. */
@@ -635,7 +651,7 @@ it("upgrades a record of version 9 so a chat keeps the context its thread used a
   const old = new DatabaseSync(path);
   try {
     old.exec(`
-      UPDATE chats SET thread_id = 'thread-asha', thread_provider = 'codex', thread_model = 'gpt-6.1-sol', thread_tools = 'rules-1'
+      UPDATE chats SET model = 'gpt-6.1-sol', thread_id = 'thread-asha', thread_provider = 'codex', thread_model = 'gpt-6.1-sol', thread_tools = 'rules-1'
         WHERE person_id = 'asha';
       INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, held, held_text, created_at, updated_at)
         SELECT 'held-1', person_id, id, 'person', 'Is my HbA1c better?', 1, 'waiting', 'failed', 'Codex stopped.', '2026-10-17T09:00:00Z', '2026-10-17T09:00:00Z'
@@ -666,7 +682,12 @@ it("upgrades a record of version 9 so a chat keeps the context its thread used a
         context_tokens: null,
         context_window: null,
         context_thread: null,
+        // A model chosen then is Codex's, the one provider Rufi had.
+        model_provider: chat["model"] === null ? null : "codex",
       })),
+    );
+    expect(after.chats.map((chat) => chat["model_provider"])).toContain(
+      "codex",
     );
     expect(after.queue).toEqual(
       before.queue.map((row) => ({

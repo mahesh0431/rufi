@@ -25,7 +25,9 @@ beforeEach(async () => {
     "INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional')",
   );
   store.close();
-  await writeFile(join(home, "chatgpt.json"), '{"hostId":"urn:uuid:fake"}');
+  // Codex's sign-in, which no backup holds.
+  await mkdir(join(home, "codex"));
+  await writeFile(join(home, "codex", "auth.json"), '{"fictional":true}');
   const made = await makeBackup(home, new Date("2026-10-08T09:14:03Z"));
   backup = join(backupsPath(home), made.name);
 });

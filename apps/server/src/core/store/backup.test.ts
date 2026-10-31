@@ -40,10 +40,13 @@ describe("a backup", () => {
       "INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional')",
     );
     store.close();
-    await writeFile(join(home, "chatgpt.json"), '{"hostId":"urn:uuid:fake"}');
     await writeFile(join(home, "models.json"), '{"models":["gpt-6-astra"]}');
     await writeFile(join(home, "core.json"), '{"port":1,"launcher":"x"}');
+    // Codex's and Claude's sign-ins.
     await mkdir(join(home, "codex"));
+    await writeFile(join(home, "codex", "auth.json"), '{"fictional":true}');
+    await mkdir(join(home, "claude"));
+    await writeFile(join(home, "claude", ".claude.json"), '{"fictional":true}');
     await writeFile(join(home, "agents.sqlite"), "fictional agent log");
     await mkdir(join(home, "logs"));
     await mkdir(join(home, "rufi.lock"));

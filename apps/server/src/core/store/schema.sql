@@ -388,6 +388,7 @@ CREATE TABLE chats (
   context_window INTEGER,      -- the model's context window then; null: the agent didn't say
   context_thread TEXT,         -- the thread they are of: shown only while it is the chat's thread
   created_at TEXT NOT NULL,
+  model_provider TEXT,         -- the provider its model runs on, kept with the choice
   UNIQUE (person_id, id)
 ) STRICT;
 
@@ -748,4 +749,4 @@ CREATE TABLE agent_cursor (
 ) STRICT;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 22;
+PRAGMA user_version = 23;
