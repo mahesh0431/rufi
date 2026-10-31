@@ -2261,6 +2261,368 @@ describe("the chat, on the scripted Codex", () => {
     ).toEqual({ kind: "prescription" });
   });
 
+  describe("files the user sends", () => {
+    /** Adds a fictional file from the chat box, unsent; its document's id. */
+    const addFile = async (name: string) => {
+      const bytes = new Uint8Array(
+        await readFile(
+          join(import.meta.dirname, "../../tests/fixtures/documents", name),
+        ),
+      );
+      const { added } = await documents(store, home).add(
+        "asha",
+        [{ name, bytes }],
+        true,
+      );
+      return added[0] ?? "";
+    };
+    /** The person's message with these documents; its id. */
+    const sendWith = async (
+      text: string,
+      ids: readonly string[],
+      kind?: "steer" | "queue",
+    ) => {
+      const id = uuid();
+      await chat?.send(
+        await chatRow(),
+        id,
+        text,
+        ids.map((doc) => ({ type: "document" as const, id: doc })),
+        kind,
+      );
+      return id;
+    };
+    /**
+     * A reader Rufi AI starts for one document, with the tools it needs; each
+     * call has an id of its own, as Codex gives it.
+     */
+    const reader = (title: string, task: string) => ({
+      id: `start-${title}`,
+      tool: "start_agent",
+      arguments: { title, task, tools: ["get_documents", "save_reading"] },
+    });
+    /** A reader's save of these pages of the document its task names. */
+    const saves = (pages: readonly number[]) => ({
+      tool: "save_reading",
+      arguments: {
+        document: "$document",
+        pages: pages.map((page) => ({
+          page,
+          outcome: "read",
+          copy: `| Haemoglobin | 13.${String(page)} | g/dL |`,
+        })),
+      },
+    });
+    /** Rufi AI's sort of a document read whole, as one letter. */
+    const sorts = (document: string, pages: readonly number[]) => ({
+      id: `sort-${document}`,
+      tool: "sort_documents",
+      arguments: {
+        document,
+        documents: [{ id: document, pages, kind: "letter" }],
+        drafts: [],
+      },
+    });
+    /** Each document's kind and whether it waits to be sorted. */
+    const listed = async () =>
+      (await documents(store, home).list("asha")).map(
+        ({ id, kind, notSorted }) => ({
+          id,
+          kind,
+          notSorted,
+        }),
+      );
+
+    it("has each file read by a reader Rufi AI starts, then sorts each one as its reader's result wakes it", async () => {
+      const report = await addFile("sunrise-labs-august.pdf");
+      const photo = await addFile("thyroid-recheck.jpg");
+      // Each reading saves once the reply before its wake has ended.
+      const gates = [
+        Promise.withResolvers<undefined>(),
+        Promise.withResolvers<undefined>(),
+      ];
+      let saved = 0;
+      await startChat("fake", {
+        scenario: {
+          callsByText: {
+            "Read these": [
+              reader(
+                "Reading the report",
+                "Read the report (document $document) with the reading-documents skill.",
+              ),
+              reader(
+                "Reading the photo",
+                "Read the photo (document $document2) with the reading-documents skill.",
+              ),
+            ],
+            "Read the report": [saves([1, 2])],
+            "Read the photo": [saves([1])],
+            "Reading the report (": [sorts(report, [1, 2])],
+            "Reading the photo (": [sorts(photo, [1])],
+          },
+        },
+        waitFor: (tool) =>
+          tool === "save_reading" ? gates[saved++]?.promise : undefined,
+      });
+      const c = await newChat();
+      await sendWith("Read these", [report, photo]);
+      await ended(c.id);
+      gates[0]?.resolve(undefined);
+      await ended(c.id, 2);
+      gates[1]?.resolve(undefined);
+      await ended(c.id, 3);
+      await settled(c.id);
+
+      // Rufi's note named both files and their pages.
+      const [given] = await inputs();
+      expect(given?.[0]).toContain("Files the user sent that aren't read yet");
+      expect(given?.[0]).toContain(
+        `- sunrise-labs-august.pdf (document ${report}): all 2 pages`,
+      );
+      expect(given?.[0]).toContain(
+        `- thyroid-recheck.jpg (document ${photo}): its page`,
+      );
+      // The user's reply, then one wake for each reader's result.
+      const { turns, all } = await transcript(c.id);
+      expect(turns.map((turn) => turn.status)).toEqual([
+        "completed",
+        "completed",
+        "completed",
+      ]);
+      expect(
+        turns
+          .slice(1)
+          .map((turn) => turn.cause?.title)
+          .sort(),
+      ).toEqual(["Reading the photo", "Reading the report"]);
+      expect(await listed()).toEqual(
+        expect.arrayContaining([
+          { id: report, kind: "letter", notSorted: false },
+          { id: photo, kind: "letter", notSorted: false },
+        ]),
+      );
+      // A reading saves no receipt: receipts are for the health record.
+      expect(all.filter((entry) => entry.kind === "receipt")).toEqual([]);
+    });
+
+    it("lets Rufi AI start a reader again when a reading fails, and sorts what the second one read", async () => {
+      const report = await addFile("sunrise-labs-august.pdf");
+      const replied = Promise.withResolvers<undefined>();
+      await startChat("fake", {
+        scenario: {
+          callsByText: {
+            "Read this": [
+              reader(
+                "Reading (document $document)",
+                "fail Read (document $document) with the reading-documents skill.",
+              ),
+            ],
+            // It looks at a page, then its turn fails.
+            "fail Read": [
+              { tool: "get_documents", arguments: { document: "$document" } },
+            ],
+            // Its failure wakes Rufi AI, which starts another reader.
+            "Reading (document": [
+              reader(
+                "Reading again",
+                "Read again (document $document) with the reading-documents skill.",
+              ),
+            ],
+            "Read again": [saves([1, 2])],
+            "Reading again (": [sorts(report, [1, 2])],
+          },
+        },
+        waitFor: (tool) =>
+          tool === "get_documents" ? replied.promise : undefined,
+      });
+      const c = await newChat();
+      await sendWith("Read this", [report]);
+      await ended(c.id);
+      replied.resolve(undefined);
+      await ended(c.id, 3);
+      await settled(c.id);
+
+      const { turns } = await transcript(c.id);
+      expect(turns.map((turn) => [turn.status, turn.cause?.about])).toEqual([
+        ["completed", undefined],
+        ["completed", "failed"],
+        ["completed", "done"],
+      ]);
+      expect(
+        agentRows(
+          "SELECT title, status FROM agents WHERE parent_id IS NOT NULL ORDER BY rowid",
+        ),
+      ).toEqual([
+        { title: `Reading (document ${report})`, status: "failed" },
+        { title: "Reading again", status: "done" },
+      ]);
+      expect(await listed()).toEqual([
+        { id: report, kind: "letter", notSorted: false },
+      ]);
+    });
+
+    it("steers a file sent while a reply runs into that reply, with Rufi's note on it", async () => {
+      const report = await addFile("sunrise-labs-august.pdf");
+      const busy = Promise.withResolvers<undefined>();
+      await startChat("fake", {
+        scenario: {
+          callsByText: {
+            "Look at my record": [{ tool: "get_overview", arguments: {} }],
+          },
+        },
+        waitFor: (tool) => (tool === "get_overview" ? busy.promise : undefined),
+      });
+      const c = await newChat();
+      await say(c, "Look at my record");
+      await until(() => Promise.resolve(admitted.includes("get_overview")));
+      await sendWith("And read this", [report]);
+      await until(async () =>
+        (await transcript(c.id)).entries.some(
+          ([kind, text]) => kind === "steer" && text === "And read this",
+        ),
+      );
+      busy.resolve(undefined);
+      await ended(c.id);
+      await settled(c.id);
+
+      // One reply, which the file went into.
+      expect((await transcript(c.id)).turns).toHaveLength(1);
+      const steered = (await readFile(join(home, "fake.jsonl"), "utf8"))
+        .trim()
+        .split("\n")
+        .map(
+          (line) =>
+            JSON.parse(line) as {
+              received?: {
+                method?: string;
+                params?: { input?: { text: string }[] };
+              };
+            },
+        )
+        .find((entry) => entry.received?.method === "turn/steer")
+        ?.received?.params?.input?.map((part) => part.text)
+        .join("\n");
+      expect(steered).toContain("You're being steered");
+      expect(steered).toContain(
+        `- sunrise-labs-august.pdf (document ${report}): all 2 pages`,
+      );
+    });
+
+    it("holds a waiting file message too when Rufi AI stops everything; Send sends it, with Rufi's note on its file", async () => {
+      const report = await addFile("sunrise-labs-august.pdf");
+      const stopping = Promise.withResolvers<undefined>();
+      await startChat("fake", {
+        scenario: {
+          callsByText: {
+            "Stop everything": [
+              {
+                tool: "stop_agent",
+                arguments: { agent: "self", with_children: true },
+              },
+            ],
+          },
+        },
+        waitFor: (tool) =>
+          tool === "stop_agent" ? stopping.promise : undefined,
+      });
+      const c = await newChat();
+      await say(c, "Stop everything");
+      await until(() => Promise.resolve(admitted.includes("stop_agent")));
+      const id = await sendWith("And read this", [report], "queue");
+      await until(() =>
+        Promise.resolve(
+          agentRows(`SELECT 1 FROM queue WHERE id = '${id}'`).length === 1,
+        ),
+      );
+      stopping.resolve(undefined);
+      await until(async () =>
+        (await waiting()).some(([, , held]) => held === "stopped"),
+      );
+      expect(await waiting()).toEqual([
+        ["And read this", "waiting", "stopped"],
+      ]);
+      await settled(c.id);
+
+      await chat?.queue.send(await chatRow(c.id), id);
+      await ended(c.id, 2);
+      expect((await inputs()).at(-1)?.[0]).toContain(
+        `- sunrise-labs-august.pdf (document ${report}): all 2 pages`,
+      );
+    });
+
+    it("keeps an older reader's readings: they still show, one that finished is sorted as it is, and one that stopped is read again whole by a reader", async () => {
+      store.db.exec(`
+        INSERT INTO files (id, size, media_type, created_at) VALUES
+          ('f-read', 1, 'application/pdf', '2026-10-01T09:00:00Z'),
+          ('f-stopped', 1, 'application/pdf', '2026-10-01T09:00:00Z');
+        INSERT INTO documents (id, person_id, added_at, added_from, version, sent_at) VALUES
+          ('doc-read', 'asha', '2026-10-01T09:00:00Z', 'chat', 2, '2026-10-01T09:00:00Z'),
+          ('doc-stopped', 'asha', '2026-10-01T09:00:00Z', 'chat', 1, '2026-10-01T09:00:00Z');
+        INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, error, ended_at, created_at) VALUES
+          ('job-read', 'asha', 'document_read', 'doc-read', 'done', 1, '[1]', NULL, '2026-10-01T09:05:00Z', '2026-10-01T09:00:00Z'),
+          ('job-stopped', 'asha', 'document_read', 'doc-stopped', 'failed', 1, '[1,2]', 'Rufi closed while reading', '2026-10-01T09:05:00Z', '2026-10-01T09:00:00Z');
+        INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name, state, entry_job_id, entry_attempt) VALUES
+          ('asha', 'doc-read', 1, 'f-read', 1, 'read.pdf', 'read', 'job-read', 1),
+          ('asha', 'doc-stopped', 1, 'f-stopped', 1, 'stopped.pdf', NULL, 'job-stopped', 0),
+          ('asha', 'doc-stopped', 2, 'f-stopped', 2, 'stopped.pdf', NULL, NULL, NULL);
+        INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at) VALUES
+          ('asha', 'f-read', 1, 'job-read', 1, 'read', 'Dr. Rao · Rx: Metformin 500 mg', '2026-10-01T09:01:00Z'),
+          ('asha', 'f-stopped', 1, 'job-stopped', 1, 'read', 'Sunrise Labs · page 1', '2026-10-01T09:01:00Z');
+        -- The older reply that read them: Rufi's part, before the AI.
+        INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, end_text, started_at, ended_at)
+          SELECT 't-old', 'asha', id, NULL, NULL, 'gpt-6.1-sol', 'interrupted', 'Rufi closed while reading.', '2026-10-01T09:00:00Z', '2026-10-01T09:05:00Z' FROM chats WHERE person_id = 'asha';
+        INSERT INTO transcript_entries (id, person_id, chat_id, seq, turn_id, kind, text, activity, detail, details, status, revision, created_at, updated_at)
+          SELECT 'e-read', 'asha', id, 1, 't-old', 'activity', 'Rufi''s reader · read.pdf', 'reading', '1 page', '{"document":"doc-read","job":"job-read"}', 'done', 1, '2026-10-01T09:00:00Z', '2026-10-01T09:05:00Z' FROM chats WHERE person_id = 'asha'
+          UNION ALL
+          SELECT 'e-stopped', 'asha', id, 2, 't-old', 'activity', 'Rufi''s reader · stopped.pdf', 'reading', 'stopped · 1 of 2', '{"document":"doc-stopped","job":"job-stopped"}', 'stopped', 1, '2026-10-01T09:00:00Z', '2026-10-01T09:05:00Z' FROM chats WHERE person_id = 'asha';
+      `);
+      await startChat("fake", {
+        scenario: {
+          callsByText: {
+            "Sort them": [
+              sorts("doc-read", [1]),
+              reader(
+                "Reading stopped.pdf",
+                "Read stopped.pdf (document doc-stopped) with the reading-documents skill.",
+              ),
+            ],
+            "Read stopped.pdf": [saves([1, 2])],
+            "Reading stopped.pdf (": [sorts("doc-stopped", [1, 2])],
+          },
+        },
+      });
+      const c = await newChat();
+      await sendWith("Sort them", ["doc-read", "doc-stopped"]);
+      // The older reply, the user's, and the one the reader's result woke.
+      await ended(c.id, 3);
+      await until(async () =>
+        (await listed()).every((document) => !document.notSorted),
+      );
+
+      // Only the one that stopped is named, with all its pages.
+      const [given] = await inputs();
+      expect(given?.[0]).toContain(
+        "- stopped.pdf (document doc-stopped): pages 1–2 of 2, whose reading stopped before it finished",
+      );
+      expect(given?.[0]).not.toContain("doc-read");
+      expect(await listed()).toEqual(
+        expect.arrayContaining([
+          { id: "doc-read", kind: "letter", notSorted: false },
+          { id: "doc-stopped", kind: "letter", notSorted: false },
+        ]),
+      );
+      // The older reply still shows the reader's steps.
+      expect(
+        (await transcript(c.id)).all
+          .filter((entry) => entry.activity === "reading")
+          .map((entry) => [entry.text, entry.status]),
+      ).toEqual([
+        ["Rufi's reader · read.pdf", "done"],
+        ["Rufi's reader · stopped.pdf", "stopped"],
+      ]);
+    });
+  });
+
   it("wakes Rufi AI with each of two sub-agents' done messages, the first with the line that names it", async () => {
     await startChat("fake", {
       scenario: {

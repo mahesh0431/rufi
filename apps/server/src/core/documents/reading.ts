@@ -665,7 +665,7 @@ export function readings(
     /**
      * Rufi's note for the AI on the documents among a message's chips that
      * aren't read: each one's pages to read (every page of one never read,
-     * the rest of a reading that stopped, and with Retry the pages that
+     * those of an older reading that stopped, and with Retry the pages that
      * couldn't be read or weren't looked at). Undefined when all are read.
      * Writes nothing.
      */
@@ -689,14 +689,8 @@ export function readings(
         const name = documentName(pages.map((p) => p.file_name));
         const of = `of ${String(pages.length)}`;
         if (plan.kind === "again") {
-          const copied = await copiedBy(db, {
-            jobId: plan.job.id,
-            personId,
-            documentId: ref.id,
-          });
-          const rest = plan.job.targets.filter((t) => !copied.has(t));
           lines.push(
-            `- ${name} (document ${ref.id}): pages ${ranges(rest)} ${of}, the rest of a reading that stopped`,
+            `- ${name} (document ${ref.id}): pages ${ranges(plan.job.targets)} ${of}, whose reading stopped before it finished`,
           );
         } else if (plan.targets.length === pages.length) {
           lines.push(
