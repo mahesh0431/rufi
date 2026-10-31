@@ -101,7 +101,7 @@ const datedBy = KINDS.map((kind) => `${kind.name} by ${kind.dated}`).join(", ");
 
 export const getRecords = defineTool({
   name: "get_records",
-  description: `The active person's records of one kind (${names.join(", ")}), as stored: each with its id, its version (the save that last changed it; null when none did), its fields as save_changes takes them and its sources (the user's message, a document's page, or a visit: its id, setting, date and doctor), also the records removed from the record ("removed": true) and results replaced by an amended one ("replaced_by": the amended result's id). Newest first, undated last. For results, category reads only lab results or only measurements; without it, both. With from or to, only records dated in that period: ${datedBy}. A record dated at a lower precision is read when its year or month overlaps the period ("2026" is in from 2026-03); a record with no date is read only without from and to. With ids, exactly those records. With report (kind result), only the results of that report: the id of a report the user added to their message. At most ${String(LIMITS.records)} records and ${String(LIMITS.bytes / 1000)} KB of records (as UTF-8 JSON) come back at once (a single larger record comes back on its own); when there are more, the answer says "complete": false and gives "next": pass it as after, with the same kind, category, from, to and report, to read on until "complete" is true. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.`,
+  description: `The active person's records of one kind (${names.join(", ")}), as stored: each with its id, its version (the save that last changed it; null when none did), its fields as save_changes takes them and its sources (the user's message, a document's page, a visit: its id, setting, date and doctor, or entered_in: where the user entered it themselves, welcome, profile (its page) or settings, with at: when), also the records removed from the record ("removed": true) and results replaced by an amended one ("replaced_by": the amended result's id). Newest first, undated last. For results, category reads only lab results or only measurements; without it, both. With from or to, only records dated in that period: ${datedBy}. A record dated at a lower precision is read when its year or month overlaps the period ("2026" is in from 2026-03); a record with no date is read only without from and to. With ids, exactly those records. With report (kind result), only the results of that report: the id of a report the user added to their message. At most ${String(LIMITS.records)} records and ${String(LIMITS.bytes / 1000)} KB of records (as UTF-8 JSON) come back at once (a single larger record comes back on its own); when there are more, the answer says "complete": false and gives "next": pass it as after, with the same kind, category, from, to and report, to read on until "complete" is true. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.`,
   input: Input,
   callers: "model",
   readOnly: true,
@@ -224,7 +224,15 @@ export const getRecords = defineTool({
                 .onRef("v.person_id", "=", "s.person_id")
                 .onRef("v.id", "=", "s.visit_id"),
             )
+            // A form's source: the save says where it was entered, and when.
+            .leftJoin("operations as o", (join) =>
+              join
+                .onRef("o.person_id", "=", "s.person_id")
+                .onRef("o.id", "=", "s.operation_id"),
+            )
             .select([
+              "o.origin",
+              "o.created_at as entered_at",
               "d.deleted_at",
               "s.visit_id",
               "v.setting",
@@ -265,22 +273,24 @@ export const getRecords = defineTool({
           sources: mine.map((source) =>
             source.type === "message"
               ? { message: source.entry_id }
-              : source.type === "visit"
-                ? {
-                    visit: source.visit_id,
-                    setting: source.setting,
-                    date: source.date,
-                    doctor: source.doctor,
-                    ...(source.removed === 1 && { visit_removed: true }),
-                  }
-                : {
-                    document: source.document_id,
-                    page: source.page,
-                    file: source.file_name,
-                    ...(source.deleted_at !== null && {
-                      document_deleted: true,
-                    }),
-                  },
+              : source.type === "form"
+                ? { entered_in: source.origin, at: source.entered_at }
+                : source.type === "visit"
+                  ? {
+                      visit: source.visit_id,
+                      setting: source.setting,
+                      date: source.date,
+                      doctor: source.doctor,
+                      ...(source.removed === 1 && { visit_removed: true }),
+                    }
+                  : {
+                      document: source.document_id,
+                      page: source.page,
+                      file: source.file_name,
+                      ...(source.deleted_at !== null && {
+                        document_deleted: true,
+                      }),
+                    },
           ),
         }),
       };
