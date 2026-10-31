@@ -17,7 +17,7 @@ import { Menus } from "./model-menu.tsx";
 import { chatPage, isSmall, openPanel, usePanel } from "./panel.ts";
 import { TranscriptView } from "./transcript.tsx";
 import { IconButton } from "./ui.tsx";
-import { WaitingView } from "./waiting.tsx";
+import { FloatingWaiting } from "./waiting.tsx";
 
 /** The chat's name on screen. */
 export const CHAT_TITLE = "Chat with Rufi";
@@ -36,6 +36,8 @@ export function ChatDock({ person }: { person: Person }) {
   const open = usePanel((state) => state.open);
   const asked = usePanel((state) => state.asked);
   const [lit, setLit] = useState(false);
+  // Room under the chat's last message for the waiting list over it.
+  const [room, setRoom] = useState(0);
   const seen = useRef(asked);
   /** Closing with nowhere to go back to: the bar's box takes the focus. */
   const refocus = useRef(false);
@@ -168,17 +170,25 @@ export function ChatDock({ person }: { person: Person }) {
                 personId={person.id}
                 onOlder={() => void loadOlder(person.id)}
                 className="flex-1 overflow-auto px-[18px] py-4"
+                room={room}
               />
             )}
             <div
               className={
                 open
-                  ? "px-3 pt-1"
+                  ? "relative px-3 pt-1"
                   : `rounded-full bg-surface/95 shadow-float backdrop-blur-xl transition-shadow ${lit ? "ring-2 ring-accent" : ""}`
               }
             >
+              {open && (
+                <FloatingWaiting
+                  live={live}
+                  personId={person.id}
+                  onHeight={setRoom}
+                  className="inset-x-3 translate-y-1"
+                />
+              )}
               {open && <AgentsAtWork personId={person.id} />}
-              {open && <WaitingView live={live} personId={person.id} />}
               <Box
                 person={person}
                 live={live}
@@ -201,6 +211,7 @@ export function ChatPage({ person }: { person: Person }) {
   const live = useLive(person.id);
   const field = useRef<HTMLTextAreaElement | null>(null);
   const menus = useRef<HTMLDivElement | null>(null);
+  const [room, setRoom] = useState(0);
 
   useEffect(() => {
     field.current?.focus();
@@ -229,10 +240,16 @@ export function ChatPage({ person }: { person: Person }) {
           onOlder={() => void loadOlder(person.id)}
           className="flex-1 overflow-auto"
           inner="mx-auto max-w-[760px] px-10 py-6"
+          room={room}
         />
-        <div className="mx-auto w-full max-w-[760px] px-10 pb-1">
+        <div className="relative mx-auto w-full max-w-[760px] px-10 pb-1">
+          <FloatingWaiting
+            live={live}
+            personId={person.id}
+            onHeight={setRoom}
+            className="inset-x-10"
+          />
           <AgentsAtWork personId={person.id} />
-          <WaitingView live={live} personId={person.id} />
           <Box person={person} live={live} size="page" inputRef={field} />
           <AiCanMakeMistakes />
         </div>

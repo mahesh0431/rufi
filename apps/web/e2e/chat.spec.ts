@@ -296,7 +296,7 @@ const WAITING = `
     ('q-2', 'asha', 'c-asha', 'person', 'Second', 2, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z'),
     ('q-3', 'asha', 'c-asha', 'person', 'Third', 3, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');`;
 
-test("waiting messages show just above the box: edit, reorder, steer, queue and remove; after a Stop, the next one goes", async ({
+test("waiting messages float just above the box: edit, reorder, steer, queue and remove; after a Stop, the next one goes", async ({
   page,
   rufi,
 }) => {
@@ -305,15 +305,29 @@ test("waiting messages show just above the box: edit, reorder, steer, queue and 
   await page.goto(rufi.link());
   await opener(chat(page)).click();
   // Just above the box, out of the chat's messages, in the order they go.
-  const waiting = chat(page)
-    .locator("form")
-    .locator(
-      "xpath=preceding-sibling::section[@aria-label='Waiting messages'][1]",
-    );
+  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
   const items = waiting.getByRole("listitem");
   await expect(items).toHaveText([/^Second/, /^Third/]);
   await expect(log(chat(page))).toContainText("hang");
   await expect(log(chat(page))).not.toContainText("Second");
+  // At the chat's end, its newest line shows above the list.
+  const placeOf = async (locator: Locator) => {
+    const shown = await locator.boundingBox();
+    if (shown === null) throw new Error("not shown");
+    return shown;
+  };
+  const list = await placeOf(waiting);
+  await expect
+    .poll(async () => {
+      const newest = await placeOf(
+        log(chat(page)).locator(":scope > *").last(),
+      );
+      return newest.y + newest.height;
+    })
+    .toBeLessThanOrEqual(list.y);
+  // The box, and the chat's own area, as they are while the list shows.
+  const boxAt = await placeOf(chat(page).locator("form"));
+  const chatArea = await placeOf(log(chat(page)).locator("xpath=../.."));
   await accessible(page);
 
   // Each moves by its handle: dragged, or by keyboard (Space, the arrows,
@@ -401,6 +415,11 @@ test("waiting messages show just above the box: edit, reorder, steer, queue and 
     "ok:Second, edited",
   );
   await expect(waiting).toHaveCount(0);
+  // With the list gone, neither the box nor the chat's area moved.
+  expect(await placeOf(chat(page).locator("form"))).toEqual(boxAt);
+  expect(await placeOf(log(chat(page)).locator("xpath=../.."))).toEqual(
+    chatArea,
+  );
 });
 
 test("an older read of the queue never undoes a newer change", async ({
