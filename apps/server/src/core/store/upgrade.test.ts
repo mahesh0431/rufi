@@ -461,7 +461,7 @@ const closed = (job: Record<string, unknown>) =>
         ...job,
         state: "failed",
         error: "Rufi closed while reading",
-        ended_at: expect.any(String),
+        ended_at: expect.any(String) as unknown,
         retry_at: null,
       }
     : job;
