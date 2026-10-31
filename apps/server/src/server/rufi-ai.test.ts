@@ -1,12 +1,11 @@
 // Rufi AI on the agent package: the chat through startRufiAi, on a real
 // record, a real agent database and the package's fake provider.
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { fakeProvider } from "@rufi/agents/fake";
 import type { ProviderAdapter, ProviderEvent } from "@rufi/agents/provider";
-import { openAgentStore } from "@rufi/agents/store";
+import { openAgentStore, type AgentStore } from "@rufi/agents/store";
 import type { Pointer } from "@rufi/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { scriptedReader, type Script } from "../../tests/fake-reader.ts";
@@ -17,7 +16,6 @@ import {
 } from "../core/chat/transcript.ts";
 import { copies } from "../core/documents/copies.ts";
 import { copyReader } from "../core/documents/copy-reader.ts";
-import { documents } from "../core/documents/documents.ts";
 import { pages } from "../core/documents/pages.ts";
 import { readings } from "../core/documents/reading.ts";
 import {
@@ -104,7 +102,6 @@ async function start(
     },
     log: () => undefined,
   });
-  await system.recover();
   await chat.carryAll();
   await system.agents.dispatch();
   const row = async () => (await transcripts.chat("asha")) as ChatRow;
@@ -155,6 +152,9 @@ async function start(
 
 const cursor = () =>
   Number(rows("SELECT number FROM agent_cursor")[0]?.["number"]);
+/** The number of the agent database's last event. */
+const lastEvent = (store: AgentStore) =>
+  store.eventsAfter(0, Number.MAX_SAFE_INTEGER).at(-1)?.number ?? 0;
 const replies = () =>
   rows(
     "SELECT id, text, status FROM transcript_entries WHERE kind = 'reply' ORDER BY seq",
@@ -231,7 +231,7 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
     effort: "low",
   });
   await vi.waitFor(() => {
-    expect(cursor()).toBe(rufi.store.highWater());
+    expect(cursor()).toBe(lastEvent(rufi.store));
   });
   expect(replies()).toMatchObject([{}, { id: streamed, status: "done" }]);
   const firstTurn = [note, which, `Your last TSH was 2.1.${asked}`];
@@ -246,7 +246,7 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
       { status: "completed" },
       { status: "completed" },
     ]);
-    expect(cursor()).toBe(rufi.store.highWater());
+    expect(cursor()).toBe(lastEvent(rufi.store));
   });
 
   // The chat saves nothing of the next turn: its start and answer come
@@ -275,7 +275,7 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
   const completed = { status: "completed", end_text: null };
   await vi.waitFor(() => {
     expect(turns()).toEqual([completed, completed, completed]);
-    expect(cursor()).toBe(rufi.store.highWater());
+    expect(cursor()).toBe(lastEvent(rufi.store));
   });
   const whole = replies();
   expect(whole).toMatchObject([
@@ -287,7 +287,10 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
 
   // Nor of one that starts while Rufi's cursor can't move, and still runs
   // when Rufi closes.
-  record.db.exec("UPDATE agent_cursor SET generation = 'elsewhere'");
+  record.db.exec(`
+    CREATE TRIGGER fictional_stuck BEFORE UPDATE ON agent_cursor
+    BEGIN SELECT RAISE(ABORT, 'A fictional failure.'); END;
+  `);
   await ask("message-4");
   await vi.waitFor(() => {
     expect(logged.filter((event) => event === "agents.failed")).toHaveLength(2);
@@ -296,11 +299,10 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
 
   // Read again from the start: each answer is there once, and the turn
   // that ran on is there, cut when Rufi closed.
-  record.db
-    .prepare("UPDATE agent_cursor SET generation = ?, number = 0")
-    .run(rufi.store.generation);
+  record.db.exec("DROP TRIGGER fictional_stuck");
+  record.db.exec("UPDATE agent_cursor SET number = 0");
   rufi = await start(adapter);
-  expect(cursor()).toBe(rufi.store.highWater());
+  expect(cursor()).toBe(lastEvent(rufi.store));
   expect(turns()).toEqual([
     completed,
     completed,
@@ -358,39 +360,51 @@ it("saves a steer the provider confirms after its turn ended under that turn; th
   await rufi.close();
 });
 
-it("keeps a message sent while a reply runs through a crash before it reached the AI, and sends it once at the next start", async () => {
+it("starts the next reply with a steer the provider refused as its turn had ended, once", async () => {
   const fake = fakeProvider({ id: "codex", script: { turn: "runs" } });
-  let rufi = await start(fake.adapter);
+  let refused = false;
+  const rufi = await start({
+    ...fake.adapter,
+    open: async (options) => {
+      const conversation = await fake.adapter.open(options);
+      return {
+        ...conversation,
+        // The reply ends just as the steer comes, and the provider refuses it.
+        steer: async (steer) => {
+          if (refused) return conversation.steer(steer);
+          refused = true;
+          fake.end(conversation.ref);
+          return { status: "not_delivered", text: "That turn has ended." };
+        },
+      };
+    },
+  });
   await rufi.send("message-1", "Summarise my fictional record.");
   await rufi.running();
-  // The package can't keep the hand-over Rufi has just claimed.
-  const agents = new DatabaseSync(agentsPath(home));
-  agents.exec(`
-    CREATE TRIGGER fictional_crash BEFORE UPDATE OF state ON queue
-    WHEN NEW.state = 'handing_over'
-    BEGIN SELECT RAISE(ABORT, 'A fictional crash.'); END;
-  `);
-  const words = "Please include my fictional TSH.";
-  await rufi.send("message-2", words);
-  // Saved and shown before it goes.
-  await vi.waitFor(async () => {
-    expect(await rufi.waiting()).toEqual([["message-2", "handing_over"]]);
-  });
-  expect(rufi.system.agents.input("message-2")?.state).toBe("waiting");
-  await rufi.close();
-  agents.exec("DROP TRIGGER fictional_crash");
-  agents.close();
+  await rufi.send("message-2", "Please include my fictional TSH.");
 
-  rufi = await start(fake.adapter);
-  await rufi.running();
-  expect(await rufi.waiting()).toEqual([]);
   const thread = (await rufi.row()).threadId ?? "";
+  await vi.waitFor(() => {
+    expect(fake.received(thread).map((input) => input.id)).toEqual([
+      "message-1",
+      "message-2",
+    ]);
+  });
+  // In a reply of its own, and nothing waits.
+  await vi.waitFor(() => {
+    expect(
+      rows(
+        "SELECT id, kind FROM transcript_entries WHERE kind IN ('message', 'steer') ORDER BY seq",
+      ),
+    ).toEqual([
+      { id: "message-1", kind: "message" },
+      { id: "message-2", kind: "message" },
+    ]);
+  });
   expect(
-    fake
-      .received(thread)
-      .filter((input) => input.id === "message-2")
-      .map((input) => input.parts),
-  ).toEqual([[words]]);
+    new Set(rows("SELECT id FROM turns").map((turn) => turn["id"])).size,
+  ).toBe(2);
+  expect(await rufi.waiting()).toEqual([]);
   await rufi.close();
 });
 
@@ -434,71 +448,5 @@ it("sends a waiting message with its words as they are when it goes: an edit bef
       .filter((input) => input.id === "message-1")
       .map((input) => input.parts),
   ).toEqual([["Is my fictional TSH high?"]]);
-  await rufi.close();
-});
-
-it("after a crash between Rufi's claim and the package's hand-over, sends the message once at the next start, with Rufi's note on what it read", async () => {
-  const fake = fakeProvider({ id: "codex", script: { turn: "runs" } });
-  // The reader finishes without looking at the page.
-  let rufi = await start(fake.adapter, [], [() => Promise.resolve(undefined)]);
-  const { added } = await documents(record, home).add(
-    "asha",
-    [
-      {
-        name: "Sunrise Labs August.pdf",
-        bytes: new Uint8Array(
-          await readFile(
-            join(
-              import.meta.dirname,
-              "../../tests/fixtures/documents/sunrise-labs-august.pdf",
-            ),
-          ),
-        ),
-      },
-    ],
-    true,
-  );
-  const document = added[0] ?? "";
-  await rufi.event("A fictional report was read.");
-  await rufi.running();
-  await rufi.send("message-1", "Is my TSH high?", [
-    { type: "document", id: document },
-  ]);
-  // The package can't keep the hand-over Rufi has just claimed.
-  const agents = new DatabaseSync(agentsPath(home));
-  agents.exec(`
-    CREATE TRIGGER fictional_crash BEFORE UPDATE OF state ON queue
-    WHEN NEW.state = 'handing_over'
-    BEGIN SELECT RAISE(ABORT, 'A fictional crash.'); END;
-  `);
-  const thread = (await rufi.row()).threadId ?? "";
-  fake.end(thread);
-  await vi.waitFor(async () => {
-    expect(await rufi.waiting()).toEqual([["message-1", "handing_over"]]);
-    expect(
-      rows("SELECT sent_as FROM chat_queue WHERE id = 'message-1'"),
-    ).not.toEqual([{ sent_as: null }]);
-  });
-  expect(rufi.system.agents.input("message-1")?.state).toBe("waiting");
-  await rufi.close();
-  agents.exec("DROP TRIGGER fictional_crash");
-  agents.close();
-
-  rufi = await start(fake.adapter);
-  await rufi.running();
-  expect(await rufi.waiting()).toEqual([]);
-  expect(
-    fake
-      .received(thread)
-      .filter((input) => input.id === "message-1")
-      .map((input) => input.parts),
-  ).toEqual([
-    [
-      expect.stringContaining(
-        `Rufi's reader copied Sunrise Labs August.pdf (document ${document})`,
-      ),
-      expect.stringMatching(/^Is my TSH high\?/),
-    ],
-  ]);
   await rufi.close();
 });

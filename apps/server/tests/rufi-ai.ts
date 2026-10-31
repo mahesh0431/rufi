@@ -30,8 +30,7 @@ export async function rufiAiFor(options: {
   return {
     agent: system.rufiAi,
     agents: system.agents,
-    /** As the core does once the chat is open: recover, then dispatch. */
-    recover: () => system.recover(),
+    /** As the core does once the chat is open. */
     dispatch: () => system.agents.dispatch(),
     close: async () => {
       await system.close();

@@ -3,8 +3,8 @@
 // conversation a chat's agents have had (`agent_conversations`, the
 // ledger, kept even when the agent database is lost, so forget can find
 // them), and how far Rufi has read the agent database's events
-// (`agent_cursor`, by that database's generation). A hand-over Rufi claims
-// for an agent names it in `sent_as` (sentAs).
+// (`agent_cursor`). A hand-over Rufi claims for an agent names it in
+// `sent_as` (sentAs).
 import type { Kysely } from "kysely";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
@@ -37,15 +37,12 @@ export interface Unrooted {
   thread: { provider: string; ref: string; model: string | null } | undefined;
 }
 
-/** A row handing over to an agent's conversation, as Rufi claimed it. */
+/** A row Rufi claimed for an agent's conversation, still handing over. */
 export interface Claimed {
   id: string;
-  agent: string;
-  conversation: number;
+  personId: string;
+  chatId: string;
 }
-
-/** What a provider said of a claimed row. */
-export type Answer = "received" | "not_received" | "unknown";
 
 /** How a claim names the agent and its conversation, in `sent_as`. */
 export const sentAs = (agent: string, conversation: number) =>
@@ -59,14 +56,6 @@ export const sentAs = (agent: string, conversation: number) =>
 export const callIdOf = (agent: string, conversation: number, call: string) =>
   `${sentAs(agent, conversation)}/${call}`;
 
-const claimOf = (value: string) => {
-  const at = value.lastIndexOf("/");
-  const conversation = Number(value.slice(at + 1));
-  return at > 0 && Number.isInteger(conversation) && conversation > 0
-    ? { agent: value.slice(0, at), conversation }
-    : undefined;
-};
-
 /** Threads from before the agent system are all Codex's. */
 const OLD_PROVIDER = "codex";
 
@@ -77,69 +66,36 @@ export function chatAgents(
   const db = store.query;
   return {
     /**
-     * Where Rufi's reading of this agent database starts. A database Rufi
-     * hasn't read (the first, or one that replaced a lost one): in one
-     * transaction, the links to the old one's agents end (never the
-     * ledger), a claimed row still handing over is not sure, keeping
-     * `sent_as`, and the reading starts at its beginning.
+     * Where Rufi's reading of the agent database starts. A new one (the
+     * first, or one that replaced a lost one): in one transaction, the
+     * links to the old one's agents end (never the ledger), and the reading
+     * starts at its beginning.
      */
-    begin: (generation: string): Promise<number> =>
+    begin: (fresh: boolean): Promise<number> =>
       db.transaction().execute(async (trx) => {
         const cursor = await trx
           .selectFrom("agent_cursor")
-          .selectAll()
+          .select("number")
           .executeTakeFirst();
-        if (cursor?.generation === generation) return cursor.number;
+        if (cursor && !fresh) return cursor.number;
         await trx.deleteFrom("agent_owners").execute();
-        // A row Rufi claimed but didn't mark surely never went: today's
-        // recovery has it wait again (queue.ts, endStopped).
-        await trx
-          .updateTable("chat_queue")
-          .set({ state: "not_sure", updated_at: now() })
-          .where("state", "=", "handing_over")
-          .where("sent_as", "is not", null)
-          .execute();
         await trx
           .insertInto("agent_cursor")
-          .values({ id: 1, generation, number: 0 })
+          .values({ id: 1, number: 0 })
           .onConflict((conflict) =>
-            conflict.column("id").doUpdateSet({ generation, number: 0 }),
+            conflict.column("id").doUpdateSet({ number: 0 }),
           )
           .execute();
         return 0;
       }),
 
-    /** How far Rufi has read, and in which agent database; none yet. */
-    cursor: () =>
-      db
-        .selectFrom("agent_cursor")
-        .select(["generation", "number"])
-        .executeTakeFirst(),
-
-    /**
-     * Rufi has read the events up to `number`, of this generation; in
-     * `trx`, with what Rufi applied of them.
-     */
-    advance: async (
-      generation: string,
-      number: number,
-      trx: Kysely<Tables> = db,
-    ) => {
-      const moved = await trx
+    /** Rufi has read the events up to `number`; in `trx`, with what it applied of them. */
+    advance: async (number: number, trx: Kysely<Tables> = db) => {
+      await trx
         .updateTable("agent_cursor")
         .set({ number })
-        .where("generation", "=", generation)
         .where("number", "<", number)
-        .executeTakeFirst();
-      if (moved.numUpdatedRows === 0n) {
-        const cursor = await trx
-          .selectFrom("agent_cursor")
-          .select("generation")
-          .executeTakeFirst();
-        if (cursor?.generation !== generation) {
-          throw new Error("Rufi is reading another agent database.");
-        }
-      }
+        .execute();
     },
 
     owners: async (): Promise<Owner[]> =>
@@ -300,52 +256,20 @@ export function chatAgents(
           .execute();
       }),
 
-    /**
-     * Rows still handing over that Rufi claimed. One whose agent Rufi
-     * doesn't own, or whose claim names none, can't be asked about.
-     */
-    claimed: async (): Promise<Claimed[]> => {
-      const owned = new Set(
-        (await db.selectFrom("agent_owners").select("agent_id").execute()).map(
-          (row) => row.agent_id,
-        ),
-      );
-      const rows = await db
-        .selectFrom("chat_queue")
-        .select(["id", "sent_as"])
-        .where("state", "=", "handing_over")
-        .where("sent_as", "is not", null)
-        .execute();
-      return rows.map((row) => {
-        const claim = claimOf(row.sent_as ?? "");
-        return claim && owned.has(claim.agent)
-          ? { id: row.id, ...claim }
-          : { id: row.id, agent: "", conversation: 0 };
-      });
-    },
-
-    /**
-     * Claimed rows the agent database doesn't hold, settled by what their
-     * provider said, in one transaction. Not received: waiting again, in
-     * its place. Unknown: not sure, keeping `sent_as`, never sent again by
-     * itself. Received: not sure too, until a delivered message becomes
-     * sent with its reply's history.
-     */
-    settle: (answers: ReadonlyMap<string, Answer>) =>
-      db.transaction().execute(async (trx) => {
-        const at = now();
-        for (const [id, answer] of answers) {
-          await trx
-            .updateTable("chat_queue")
-            .set(
-              answer === "not_received"
-                ? { state: "waiting", sent_as: null, updated_at: at }
-                : { state: "not_sure", updated_at: at },
-            )
-            .where("id", "=", id)
-            .where("state", "=", "handing_over")
-            .execute();
-        }
-      }),
+    /** Rows Rufi claimed for an agent's conversation, still handing over. */
+    claimed: async (): Promise<Claimed[]> =>
+      (
+        await db
+          .selectFrom("chat_queue")
+          .select(["id", "person_id", "chat_id"])
+          .where("state", "=", "handing_over")
+          .where("sent_as", "is not", null)
+          .orderBy("position")
+          .execute()
+      ).map((row) => ({
+        id: row.id,
+        personId: row.person_id,
+        chatId: row.chat_id,
+      })),
   };
 }

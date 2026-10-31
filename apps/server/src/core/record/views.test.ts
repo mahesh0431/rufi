@@ -65,7 +65,7 @@ async function saveSaid(text: string, changes: object[]) {
     reader,
     transcripts,
     () => undefined,
-  )(turnScope(chat, "t-1"), "person")(
+  )(turnScope(chat, "t-1"))(
     "save_changes",
     { changes },
     `call-${String(++calls)}`,

@@ -9,8 +9,7 @@
 // off: their tools aren't given. Claude works in the AI's folder under Rufi
 // AI's lock-down (sandbox.ts). Rufi picks a new conversation's id, and
 // carries on a kept one by it. Rufi's tools come from its door, with the
-// agent's key, over Claude's control channel; a call to them leaves Claude
-// only when Rufi's own hook, run before it goes, says it may.
+// agent's key, over Claude's control channel.
 import { spawn, type ChildProcess } from "node:child_process";
 import type { UUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -18,18 +17,18 @@ import { join } from "node:path";
 import {
   query as sdkQuery,
   type EffortLevel,
-  type HookCallback,
   type Options,
   type Query,
-  type SDKControlInterruptResponse,
   type SDKMessage,
   type SDKSystemMessage,
   type SDKUserMessage,
   type Settings,
+  type SpawnedProcess,
+  type SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { McpRegistration } from "@rufi/agents/provider";
 import { DEADLINES } from "../codex/appserver.ts";
-import { killTree } from "../codex/processes.ts";
+import { killGroup, killTree } from "../codex/processes.ts";
 import type { AgentSandbox, AgentSkill } from "../runtime.ts";
 import { within } from "./deadline.ts";
 import type { InstalledClaude } from "./executable.ts";
@@ -150,11 +149,6 @@ export interface ClaudeSessionOptions {
   /** A new conversation, under the id Rufi gives it, or a kept one. */
   conversation: { start: string } | { resume: string };
   plugin: ClaudePlugin;
-  /**
-   * Whether a call to Rufi's tools may leave Claude, by Claude's id for it.
-   * It's asked in Rufi's process before the call goes; without it, none may.
-   */
-  mayCall?: (call: string) => boolean;
   query?: typeof sdkQuery;
   closeMs?: number;
 }
@@ -181,11 +175,8 @@ export interface ClaudeSession {
    * Claude can't reach them, as an agent doesn't run without its tools.
    */
   giveTools: (tools: McpRegistration) => Promise<void>;
-  /**
-   * Interrupts the running turn and cancels every message still queued;
-   * Claude's answer names the ids it cancelled.
-   */
-  interrupt: () => Promise<SDKControlInterruptResponse | undefined>;
+  /** Interrupts the running turn. */
+  interrupt: () => Promise<unknown>;
   /**
    * What Claude loaded that Rufi didn't ask for (another MCP server, a
    * CLAUDE.md, a skill or agent not Rufi's), as one line each; empty when
@@ -196,24 +187,6 @@ export interface ClaudeSession {
   /** Ends the conversation's process and everything under it. */
   close: () => Promise<void>;
 }
-
-/** Refuses a call to Rufi's tools that may not go, before it leaves Claude. */
-const rufiCalls =
-  (mayCall: ClaudeSessionOptions["mayCall"]): HookCallback =>
-  (input) =>
-    Promise.resolve(
-      input.hook_event_name === "PreToolUse" &&
-        mayCall?.(input.tool_use_id) !== true
-        ? {
-            hookSpecificOutput: {
-              hookEventName: "PreToolUse",
-              permissionDecision: "deny",
-              permissionDecisionReason:
-                "Rufi has no turn open for this call, so it didn't go.",
-            },
-          }
-        : {},
-    );
 
 /** Opens a conversation; Claude starts at once, and nothing is sent. */
 export function openClaudeSession(
@@ -241,30 +214,15 @@ export function openClaudeSession(
         preset: "claude_code",
         append: options.instructions,
       },
-      hooks: {
-        PreToolUse: [
-          {
-            matcher: `mcp__${RUFI_TOOLS}__.*`,
-            hooks: [rufiCalls(options.mayCall)],
-          },
-        ],
-      },
       model: options.model,
       ...(options.effort && { effort: options.effort }),
       ...("start" in options.conversation
         ? { sessionId: options.conversation.start }
         : { resume: options.conversation.resume }),
-      // Its own process group, so everything it starts can be ended with it.
-      spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => {
-        const spawned = spawn(command, args, {
-          cwd,
-          env,
-          signal,
-          stdio: ["pipe", "pipe", "ignore"],
-          detached: true,
-        });
+      spawnClaudeCodeProcess: (spawning) => {
+        const spawned = spawnClaude(spawning);
         child = spawned;
-        return spawned;
+        return spawned as SpawnedProcess;
       },
     } satisfies Options,
   });
@@ -298,14 +256,7 @@ export function openClaudeSession(
         throw new Error(`Claude couldn't reach Rufi's tools: ${error}`);
       }
     },
-    // `cancelQueued` is in the SDK's code but not in interrupt()'s type at
-    // 0.3.312; the live check proves Claude still takes it.
-    interrupt: () =>
-      (
-        run.interrupt as (options: {
-          cancelQueued: boolean;
-        }) => Promise<SDKControlInterruptResponse | undefined>
-      )({ cancelQueued: true }),
+    interrupt: () => run.interrupt(),
     unexpected: async () => {
       const [servers, context] = await Promise.all([
         within(run.mcpServerStatus(), ASK_MS, "its MCP servers"),
@@ -358,6 +309,45 @@ export function unexpectedAtStart(init: SDKSystemMessage): string[] {
       .filter((plugin) => plugin.name !== PLUGIN)
       .map((plugin) => `plugin ${plugin.name}`),
   ];
+}
+
+/**
+ * Claude goes on with its turn after its pipes close. So a watcher holds a
+ * pipe only Rufi has open, and ends Claude's process group when it closes,
+ * also when Rufi crashes: TERM, then KILL 5 s later (T3 Code's).
+ */
+const WATCHER = [
+  "{ trap '' TERM; read -r _ <&3; kill -TERM 0; sleep 5; kill -KILL 0; } </dev/null >/dev/null 2>&1 &",
+  'exec "$@" 3<&-',
+].join("\n");
+
+/**
+ * Claude in a process group of its own, with the watcher. When Claude
+ * ends, so does everything left in its group: its commands, the MCP
+ * servers it started, and the watcher.
+ */
+export function spawnClaude({
+  command,
+  args,
+  cwd,
+  env,
+  signal,
+}: SpawnOptions): ChildProcess {
+  const child = spawn(
+    "/bin/sh",
+    ["-c", WATCHER, "rufi-claude", command, ...args],
+    {
+      cwd,
+      env,
+      signal,
+      stdio: ["pipe", "pipe", "ignore", "pipe"],
+      detached: true,
+    },
+  );
+  child.once("exit", () => {
+    killGroup(child.pid ?? 0);
+  });
+  return child;
 }
 
 /** Whether `child` has ended, or ends within `ms`. */

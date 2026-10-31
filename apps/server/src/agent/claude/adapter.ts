@@ -1,26 +1,21 @@
 // Claude behind the provider boundary (@rufi/agents/provider): Rufi's agents
 // on the Claude installed on this Mac, one process per open conversation
-// (session.ts) under Rufi AI's lock-down (sandbox.ts). What became of an
-// input rests only on what Claude shows: the turn that starts after it (its
-// `system/init`), an assistant message or a result naming its id, or the ids
-// an interrupt cancelled. A steer can outlive its turn: while one is with
-// Claude, its process stays open, and when Claude takes it into a turn of
-// its own, that turn starts with it. The process closes when a turn ends
-// with nothing handing over, and the next turn carries the conversation on
-// in a new one. What Claude does in a turn shows as its items, by its own
-// ids, and the turn's usage once it ends (items.ts). A call to Rufi's tools
-// is placed in the turn its hook saw it leave: one that left no open turn,
-// or whose turn has ended or is stopping, is refused.
+// (session.ts) under Rufi AI's lock-down (sandbox.ts), as T3 Code drives it.
+// A message counts as sent once written to Claude, under a fresh uuid. Each
+// turn shows when Claude begins it (its `system/init`), with the messages it
+// names: Rufi's start, or a steer Claude held past the last turn's end. The
+// process closes when a turn ends with nothing left with Claude, and the
+// next turn carries the conversation on in a new one. What Claude does in a
+// turn shows as its items, by its own ids, and the turn's usage once it ends
+// (items.ts). A call to Rufi's tools carries Claude's id for it.
 import { randomUUID, type UUID } from "node:crypto";
 import {
   deleteSession,
   getSessionInfo,
-  getSessionMessages,
   query as sdkQuery,
   type EffortLevel,
   type ModelInfo,
   type SDKAssistantMessageError,
-  type SDKControlInterruptResponse,
   type SDKMessage,
   type SDKRateLimitInfo,
   type SDKResultMessage,
@@ -29,14 +24,11 @@ import {
   Missing,
   NotOpened,
   type Conversation,
-  type Delivery,
   type FailReason,
   type OpenOptions,
   type ProviderAdapter,
   type ProviderEvent,
   type ProviderModel,
-  type Received,
-  type SteerOutcome,
   type TurnEnd,
 } from "@rufi/agents/provider";
 import type { AgentSandbox } from "../runtime.ts";
@@ -60,9 +52,7 @@ import {
 
 /** How long Claude has to answer a question about itself. */
 const ASK_MS = 15_000;
-/** How long Claude has to show it started a turn with Rufi's message. */
-const START_MS = 30_000;
-/** How long Claude has to answer an interrupt, and then to end the turn. */
+/** How long Claude has to answer an interrupt. */
 const STOP_MS = 10_000;
 /** Where a call to Rufi's tools carries Claude's id for it. */
 const TOOL_USE_ID = "claudecode/toolUseId";
@@ -71,16 +61,12 @@ const TOOL_USE_ID = "claudecode/toolUseId";
 export interface ClaudeSessions {
   /** Whether Claude keeps it: something when it does. */
   info: (id: string, dir?: string) => Promise<unknown>;
-  /** The ids of the messages it keeps. */
-  ids: (id: string, dir: string) => Promise<readonly string[]>;
   /** Throws when it isn't there. */
   delete: (id: string) => Promise<void>;
 }
 
 const SDK_SESSIONS: ClaudeSessions = {
   info: (id, dir) => getSessionInfo(id, dir === undefined ? {} : { dir }),
-  ids: async (id, dir) =>
-    (await getSessionMessages(id, { dir })).map((message) => message.uuid),
   delete: (id) => deleteSession(id),
 };
 
@@ -96,7 +82,6 @@ export interface ClaudeAdapterOptions {
   plugin: ClaudePlugin;
   query?: typeof sdkQuery;
   sessions?: ClaudeSessions;
-  startMs?: number;
   stopMs?: number;
 }
 
@@ -156,6 +141,13 @@ export function claudeAdapter(options: ClaudeAdapterOptions): ProviderAdapter {
     },
     // Claude says its limits with a turn's first request: none before one.
     usage: () => Promise.resolve(shared.limits ? windowsOf(shared.limits) : []),
+    callOf: (meta) => {
+      const call =
+        typeof meta === "object" && meta !== null
+          ? (meta as Record<string, unknown>)[TOOL_USE_ID]
+          : undefined;
+      return typeof call === "string" ? call : undefined;
+    },
     close: async () => {
       await Promise.all([...conversations].map((each) => each.close()));
     },
@@ -195,12 +187,6 @@ interface Turn {
   model?: string;
 }
 
-/** A steer with Claude, waiting for what Claude shows of it. */
-interface Held {
-  turn: string;
-  settle: (outcome: SteerOutcome) => void;
-}
-
 /** What the adapter's conversations share: Claude's latest limits. */
 interface Shared {
   limits?: SDKRateLimitInfo;
@@ -215,41 +201,50 @@ async function openConversation(
   open: OpenOptions,
 ): Promise<Conversation> {
   const ref = open.resume ?? randomUUID();
-  const startMs = options.startMs ?? START_MS;
   const stopMs = options.stopMs ?? STOP_MS;
   let model = open.model;
   let effort = open.effort;
   /** Whether Claude keeps a message of it, so a new process resumes it. */
   let kept = open.resume !== undefined;
   let session: ClaudeSession | undefined;
+  /** The process Rufi is ending: what it had shows stopped. */
+  let ending: ClaudeSession | undefined;
   let pumped: Promise<void> = Promise.resolve();
   let running: Turn | undefined;
-  /** A turn Claude began by itself, until its first answer names a steer. */
-  let unclaimed: string | undefined;
   /** How many Stops are under way: a turn starting meanwhile is stopped too. */
   let stops = 0;
-  /** Checks waiting for the conversation to change (see quiet). */
-  const waiting = new Set<() => void>();
-  let starting:
-    | { id: string; settle: (delivery: Delivery) => void }
-    | undefined;
-  const held = new Map<string, Held>();
-  /** Claude's ids for calls to Rufi's tools, with the turn each left. */
-  const calls = new Map<string, string>();
+  /**
+   * Rufi's ids for the messages it gave Claude, by the fresh uuid each went
+   * under: Claude skips a uuid it has stored before, so a message sent
+   * again would do nothing (T3 Code's `ClaudeAdapterV2.ts`).
+   */
+  const given = new Map<string, string>();
+  /**
+   * Messages given to this process that Claude hasn't named in a turn yet,
+   * by their uuids: it stays open for them.
+   */
+  const out = new Set<string>();
+  /** A new uuid for message `id`. */
+  const fresh = (id: string): UUID => {
+    const uuid = randomUUID();
+    given.set(uuid, id);
+    out.add(uuid);
+    return uuid;
+  };
+  /** Rufi's ids for the uuids a frame of Claude's names; none for one not Rufi's. */
+  const named = (frame: { user_message_uuids?: string[] }) => {
+    const uuids = frame.user_message_uuids ?? [];
+    for (const uuid of uuids) out.delete(uuid);
+    return uuids.flatMap((uuid) => given.get(uuid) ?? []);
+  };
   let rateLimit: SDKRateLimitInfo | undefined;
 
   const emit = (event: ProviderEvent) => {
     open.onEvent(event);
   };
 
-  const settle = (id: string, outcome: SteerOutcome) => {
-    const steer = held.get(id);
-    if (steer === undefined) return;
-    held.delete(id);
-    steer.settle(outcome);
-  };
-
-  const begin = (turn: string, inputs: readonly string[]) => {
+  const begin = (inputs: readonly string[]) => {
+    const turn = randomUUID();
     running = { ref: turn, stopping: stops > 0, uses: new Map() };
     kept = true;
     emit({ type: "turnStarted", turn, inputs });
@@ -260,22 +255,6 @@ async function openConversation(
     if (turn === undefined) return;
     running = undefined;
     emit({ type: "turnEnded", turn: turn.ref, end });
-  };
-
-  /**
-   * The turn Claude's calls now leave, by the reference made at its start
-   * (also one Claude began by itself, not yet started for Rufi); none while
-   * a Stop is under way.
-   */
-  const openTurn = () =>
-    stops > 0 || running?.stopping === true
-      ? undefined
-      : (running?.ref ?? unclaimed);
-
-  /** Lets the process go once nothing is running or with Claude. */
-  const idle = () => {
-    if (running || starting || unclaimed || held.size > 0) return;
-    void closeProcess();
   };
 
   const handle = (message: SDKMessage) => {
@@ -298,48 +277,25 @@ async function openConversation(
           payload: message.compact_metadata,
         });
       }
+    } else if (message.type === "system" && message.subtype === "init") {
+      // Each turn's init names the messages it took: Rufi's start, or a
+      // steer Claude held past the last turn's end and began a turn with.
+      const inputs = named(message as { user_message_uuids?: string[] });
+      if (running === undefined) begin(inputs);
     } else if (message.type === "system" && message.subtype === "api_retry") {
       if (running) running.unanswered = message.error_status === null;
-    } else if (message.type === "system" && message.subtype === "init") {
-      if (starting) {
-        const { id, settle: delivered } = starting;
-        starting = undefined;
-        begin(randomUUID(), [id]);
-        delivered({ status: "delivered" });
-      } else {
-        unclaimed = randomUUID();
-      }
     } else if (message.type === "assistant") {
-      const ids =
-        message.user_message_uuids ??
-        (message.user_message_uuid === undefined
-          ? []
-          : [message.user_message_uuid]);
-      if (unclaimed !== undefined && running === undefined) {
-        const mine = ids.filter((id) => held.has(id));
-        if (mine.length > 0) {
-          const turn = unclaimed;
-          unclaimed = undefined;
-          begin(turn, mine);
-          for (const id of mine) settle(id, { status: "next_turn", turn });
-        }
-      }
+      named(message);
       if (running) {
         if (message.error === undefined) running.unanswered = false;
         else running.error = message.error;
-        taken(ids);
         said(running, message.uuid, message.message);
       }
     } else if (message.type === "user") {
       if (running) answered(running, message.message);
     } else if (message.type === "result") {
+      named(message);
       if (running) {
-        taken(
-          message.user_message_uuids ??
-            (message.user_message_uuid === undefined
-              ? []
-              : [message.user_message_uuid]),
-        );
         if (running.context !== undefined) {
           const model = running.model && message.modelUsage[running.model];
           emit({
@@ -352,9 +308,8 @@ async function openConversation(
         emit(turnUsageOf(running.ref, message.usage));
         finish(endOf(message, running, rateLimit));
       }
-      unclaimed = undefined;
-      calls.clear();
-      idle();
+      // Nothing left with Claude: the next turn opens a new process.
+      if (out.size === 0) void closeProcess();
     }
   };
 
@@ -417,42 +372,28 @@ async function openConversation(
   };
 
   /**
-   * Steers the running turn names are delivered, also one sent for an
-   * earlier turn that Claude took into this one after its start.
+   * The process ended: by Rufi, whose Stop or close stops what it had, or
+   * by itself (`died`, when it said why). Messages it hadn't begun a turn
+   * with show in one that ends as it did, so none waits for a turn.
    */
-  const taken = (ids: readonly string[]) => {
-    for (const id of ids) settle(id, { status: "delivered" });
-  };
-
-  /** The process ended: by Rufi, or by itself (`died`, when it said why). */
   const ended = (current: ClaudeSession, died: unknown) => {
     // One closed while idle may end after the next turn opened another.
     if (session !== undefined && session !== current) return;
     session = undefined;
-    calls.clear();
-    if (running) {
-      finish(
-        running.stopping
-          ? { status: "stopped" }
-          : {
-              status: "failed",
-              reason: "process_died",
-              ...(died !== undefined && { text: messageOf(died) }),
-            },
-      );
-    }
-    unclaimed = undefined;
-    const start = starting;
-    starting = undefined;
-    start?.settle({
-      status: "uncertain",
-      text: "Claude ended before it showed it had the message.",
-    });
-    for (const id of held.keys()) {
-      settle(id, {
-        status: "uncertain",
-        text: "Claude ended before it showed what became of the message.",
-      });
+    const end: TurnEnd =
+      current === ending
+        ? { status: "stopped" }
+        : {
+            status: "failed",
+            reason: "process_died",
+            ...(died !== undefined && { text: messageOf(died) }),
+          };
+    if (running) finish(running.stopping ? { status: "stopped" } : end);
+    const unbegun = [...out].flatMap((uuid) => given.get(uuid) ?? []);
+    out.clear();
+    if (unbegun.length > 0) {
+      begin(unbegun);
+      finish(end);
     }
   };
 
@@ -461,32 +402,12 @@ async function openConversation(
     try {
       for await (const message of current.messages) {
         handle(message);
-        for (const check of waiting) check();
       }
     } catch (error) {
       died = error;
     }
     ended(current, died);
-    for (const check of waiting) check();
   };
-
-  /** Whether nothing of the conversation runs, within `ms`. */
-  const quiet = (ms: number) =>
-    new Promise<boolean>((resolve) => {
-      const done = (value: boolean) => {
-        clearTimeout(timer);
-        waiting.delete(check);
-        resolve(value);
-      };
-      const check = () => {
-        if (running === undefined && unclaimed === undefined) done(true);
-      };
-      const timer = setTimeout(() => {
-        done(false);
-      }, ms);
-      waiting.add(check);
-      check();
-    });
 
   /** The open process, after opening one and checking its sign-in. */
   const opened = async (): Promise<ClaudeSession> => {
@@ -500,11 +421,6 @@ async function openConversation(
       effort: effort as EffortLevel,
       conversation: kept ? { resume: ref } : { start: ref },
       plugin: options.plugin,
-      mayCall: (call) => {
-        const turn = openTurn();
-        if (turn !== undefined) calls.set(call, turn);
-        return turn !== undefined;
-      },
       ...(options.query && { query: options.query }),
     });
     session = current;
@@ -529,55 +445,29 @@ async function openConversation(
   const closeProcess = async () => {
     const current = session;
     session = undefined;
+    ending = current;
     await current?.close();
     await pumped;
   };
 
-  /** Settles a stopped turn's steers on what the interrupt answered. */
-  const cancelled = (
-    answer: SDKControlInterruptResponse | undefined,
-    turn: string,
-  ) => {
-    for (const [id, steer] of held) {
-      if (steer.turn !== turn) continue;
-      settle(
-        id,
-        answer?.cancelled?.includes(id) === true
-          ? { status: "not_delivered", text: "Stopped before Claude took it." }
-          : {
-              status: "uncertain",
-              text: "Claude didn't say whether it took it before the stop.",
-            },
-      );
-    }
-  };
-
-  const interrupt = async (current: ClaudeSession) =>
-    within(current.interrupt(), stopMs, "the interrupt").catch(() => undefined);
-
   /**
-   * Stops `turn`, and whatever of the conversation runs with it: a turn
-   * Claude began by itself with its steers, also one that starts during the
-   * interrupt. Nothing of the conversation runs once it returns: the process
-   * is ended if Claude doesn't stop in time.
+   * Stops `turn`, as T3 Code does: interrupts Claude, then ends its
+   * process, so nothing Claude took, also a turn it began by itself, runs
+   * on. The next turn carries the conversation on in a new process.
    */
   const stop = async (turn: string) => {
     const current = session;
-    const targeted =
-      running?.ref === turn ||
-      unclaimed !== undefined ||
-      [...held.values()].some((steer) => steer.turn === turn);
-    if (current && targeted) {
-      stops++;
-      try {
-        if (running) running.stopping = true;
-        cancelled(await interrupt(current), turn);
-        if (!(await quiet(stopMs))) await closeProcess();
-      } finally {
-        stops--;
-      }
+    if (current === undefined || running?.ref !== turn) return;
+    stops++;
+    try {
+      running.stopping = true;
+      await within(current.interrupt(), stopMs, "the interrupt").catch(
+        () => undefined,
+      );
+      await closeProcess();
+    } finally {
+      stops--;
     }
-    idle();
   };
 
   try {
@@ -596,7 +486,7 @@ async function openConversation(
   const conversation: Conversation = {
     ref,
     startTurn: async (start) => {
-      if (running || starting || unclaimed || held.size > 0) {
+      if (running) {
         return { status: "not_delivered", text: "A turn is running." };
       }
       // A kept conversation goes on in a new process only if Claude still
@@ -643,26 +533,9 @@ async function openConversation(
         ...(open.seed !== undefined && !kept ? [open.seed] : []),
         ...start.input.parts,
       ];
-      const delivery = new Promise<Delivery>((resolve) => {
-        starting = { id: start.input.id, settle: resolve };
-      });
-      current.send(parts.join("\n\n"), start.input.id as UUID);
-      // Claude may have the message and still start it later, unseen: its
-      // process ends first, so it can't.
-      const timer = setTimeout(() => {
-        const lost = starting;
-        if (lost?.id !== start.input.id) return;
-        starting = undefined;
-        void closeProcess().then(() => {
-          lost.settle({
-            status: "uncertain",
-            text: "Claude didn't show it started the turn, so it was stopped.",
-          });
-        });
-      }, startMs);
-      return delivery.finally(() => {
-        clearTimeout(timer);
-      });
+      // Sent once written: its turn shows when Claude begins it.
+      current.send(parts.join("\n\n"), fresh(start.input.id));
+      return { status: "delivered" };
     },
     steer: (steer) => {
       const current = session;
@@ -672,39 +545,12 @@ async function openConversation(
           text: "Its turn had ended.",
         });
       }
-      const outcome = new Promise<SteerOutcome>((resolve) => {
-        held.set(steer.input.id, { turn: steer.turn, settle: resolve });
-      });
-      current.send(
-        steer.input.parts.join("\n\n"),
-        steer.input.id as UUID,
-        true,
-      );
-      return outcome;
+      // Claude takes it into the turn once the tool running now ends, or,
+      // held past the turn's end, begins its next turn with it.
+      current.send(steer.input.parts.join("\n\n"), fresh(steer.input.id), true);
+      return Promise.resolve({ status: "delivered" });
     },
     stop,
-    // The transcript proves what Claude kept; one it lacks may still have
-    // arrived, so it's unknown, never not received.
-    reconcile: async (ids) => {
-      const kept = await sessions.ids(ref, open.cwd).then(
-        (each) => new Set(each),
-        () => new Set<string>(),
-      );
-      return new Map<string, Received>(
-        ids.map((id) => [id, kept.has(id) ? "received" : "unknown"]),
-      );
-    },
-    placeCall: (meta) => {
-      const call =
-        typeof meta === "object" && meta !== null
-          ? (meta as Record<string, unknown>)[TOOL_USE_ID]
-          : undefined;
-      if (typeof call !== "string") return undefined;
-      const turn = calls.get(call);
-      return turn !== undefined && turn === openTurn()
-        ? { turn, call }
-        : undefined;
-    },
     close: async () => {
       if (running) await stop(running.ref);
       await closeProcess();

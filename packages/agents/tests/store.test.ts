@@ -149,9 +149,9 @@ describe("a change", () => {
 });
 
 describe("the file", () => {
-  it("keeps its generation and its event numbers; a new file has another generation", async () => {
+  it("keeps its event numbers; a new file says it is new", async () => {
     const first = open();
-    const generation = first.generation;
+    expect(first.fresh).toBe(true);
     first.change((change) => {
       addRoot(change, "agent-asha");
       addRoot(change, "agent-ravi");
@@ -164,7 +164,7 @@ describe("the file", () => {
     shut(first);
 
     const again = open();
-    expect(again.generation).toBe(generation);
+    expect(again.fresh).toBe(false);
     again.change((change) => {
       addRoot(change, "agent-meena");
     });
@@ -180,9 +180,9 @@ describe("the file", () => {
     await rm(folder, { recursive: true, force: true });
     folder = await mkdtemp(join(tmpdir(), "rufi-agents-"));
     path = join(folder, "agents.sqlite");
-    const fresh = open();
-    expect(fresh.generation).not.toBe(generation);
-    expect(fresh.eventsAfter(0)).toEqual([]);
+    const lost = open();
+    expect(lost.fresh).toBe(true);
+    expect(lost.eventsAfter(0)).toEqual([]);
   });
 
   it("from a newer version isn't opened, and is left as it was", () => {

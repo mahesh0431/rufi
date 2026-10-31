@@ -2,10 +2,11 @@
 // system above it never names a provider. An adapter runs conversations on
 // its provider (Codex, Claude) and reports what happens in them as events.
 // What waits to be sent, and what was sent, is the agent system's: an
-// adapter keeps no queue of its own and never sends an input twice. How it
-// keeps its processes is its own business. tests/contract.ts is the suite
-// every adapter passes; tests/fake-provider.ts stands in for one in the
-// package's own tests.
+// adapter keeps no queue of its own and never sends an input twice. An
+// input counts as sent once it is handed over; nobody asks the provider
+// later whether it arrived. How an adapter keeps its processes is its own
+// business. tests/contract.ts is the suite every adapter passes;
+// tests/fake-provider.ts stands in for one in the package's own tests.
 
 /** The family of models a provider runs; a change of family starts afresh. */
 export type Family = "openai" | "anthropic";
@@ -73,10 +74,12 @@ export class NotOpened extends Error {
 }
 
 /**
- * What became of an input handed to the provider. Not delivered: surely not
- * received (it may go again); missing, when the provider no longer has the
- * conversation, so only a new one can take it. Uncertain: it may have
- * arrived; it is never sent again by itself, and reconcile may tell.
+ * What became of an input handed to the provider: it counts as sent once
+ * handed over. Not delivered only when the provider surely didn't take it,
+ * so it may go again; missing, when the provider no longer has the
+ * conversation, so only a new one can take it. When the hand-over failed
+ * after the input may have gone, startTurn and steer reject with the error:
+ * the input counts as sent all the same.
  */
 export type Delivery =
   | { status: "delivered" }
@@ -84,32 +87,17 @@ export type Delivery =
       status: "not_delivered";
       reason?: "signed_out" | "missing";
       text: string;
-    }
-  | { status: "uncertain"; text: string };
+    };
 
 /**
- * What became of a steer, from what the provider showed, never from what
- * it left out. Delivered: taken into its turn. Started the next turn: taken
- * into a turn the provider began by itself, whose turnStarted, given first,
- * names it. Not delivered: its turn had ended, or the provider refused it
- * or said it cancelled it. Else uncertain.
+ * What became of a steer. Delivered: the provider took it, into its turn
+ * or into a turn it begins by itself, whose turnStarted names it. Not
+ * delivered: its turn had ended, or the provider refused it; it starts the
+ * next turn.
  */
 export type SteerOutcome =
   | { status: "delivered" }
-  | { status: "not_delivered"; text: string }
-  | { status: "uncertain"; text: string }
-  | { status: "next_turn"; turn: string };
-
-/** Whether the provider received an input, as far as it can tell. */
-export type Received = "received" | "not_received" | "unknown";
-
-/** A call to Rufi's tools, as the adapter places it. */
-export interface PlacedCall {
-  /** The open turn it left, by the provider's reference. */
-  turn: string;
-  /** The provider's call id: the same on a repeat, unique in the conversation. */
-  call: string;
-}
+  | { status: "not_delivered"; text: string };
 
 export interface TurnStart {
   input: Input;
@@ -129,32 +117,15 @@ export interface Conversation {
   readonly ref: string;
   /** Starts a turn when none runs. */
   startTurn: (start: TurnStart) => Promise<Delivery>;
-  /**
-   * Puts an input into the running turn. The outcome may come after the
-   * turn ends; until then the input is with the provider, handing over.
-   */
+  /** Puts an input into the running turn. */
   steer: (steer: Steer) => Promise<SteerOutcome>;
   /**
    * Stops the turn, if it still runs, within a bound: interrupted, or else
    * its process is ended. Resolves once its turnEnded event is given, after
-   * which nothing more of it comes. Every steer still handing over for the
-   * turn is answered, also when the turn had ended before: not delivered
-   * only when the provider says it cancelled it, else delivered or
-   * uncertain.
+   * which nothing more of it comes.
    */
   stop: (turn: string) => Promise<void>;
-  /** Which of these inputs the provider received. */
-  reconcile: (ids: readonly string[]) => Promise<ReadonlyMap<string, Received>>;
-  /**
-   * The open turn a call to Rufi's tools left, from the call's `_meta`, as
-   * the adapter vouches for it; nothing when it can't place the call in an
-   * open turn of this conversation, and the call is refused.
-   */
-  placeCall: (meta: unknown) => PlacedCall | undefined;
-  /**
-   * Lets go of the conversation, stopping a running turn first. A steer
-   * still handing over is then uncertain.
-   */
+  /** Lets go of the conversation, stopping a running turn first. */
   close: () => Promise<void>;
 }
 
@@ -185,6 +156,12 @@ export interface ProviderAdapter {
   delete: (ref: string) => Promise<void>;
   /** Usage now and when limits reset; empty when the provider says nothing. */
   usage: () => Promise<readonly UsageWindow[]>;
+  /**
+   * The provider's id of a call to Rufi's tools, from the call's `_meta`:
+   * the same on a repeat, unique in its conversation. Nothing when the
+   * call has none, and it is refused.
+   */
+  callOf: (meta: unknown) => string | undefined;
   /** Ends the adapter's processes and everything they started. */
   close: () => Promise<void>;
 }

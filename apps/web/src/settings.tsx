@@ -1,5 +1,6 @@
 // Settings: the ChatGPT plan the AI uses, how Rufi looks, when a reply's
-// Activity opens by itself, the region whose
+// Activity opens by itself, what a message sent while a reply runs does,
+// the region whose
 // emergency number the AI gives, the model and effort documents are read
 // with, device data, backups, the export of your data, and where Rufi keeps it.
 import { Backups, DataFolder } from "@rufi/contracts";
@@ -61,6 +62,25 @@ export function SettingsPage() {
           answer comes. Always show keeps it open after the answer. Always hide
           keeps it folded, with one line while the AI works. You can fold or
           open it under any reply.
+        </p>
+      </div>
+      <h2 id="while-replying" className="mt-8 mb-2 px-0.5 font-semibold">
+        Sending while Rufi replies
+      </h2>
+      <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
+        <SettingChoice
+          setting="whileReplying"
+          label="Sending while Rufi replies"
+          labelledBy="while-replying"
+          choices={[
+            { value: "steer", label: "Steer" },
+            { value: "queue", label: "Queue" },
+          ]}
+        />
+        <p className="text-muted">
+          What Enter does while a reply runs. Steer puts your message into that
+          reply. Queue keeps it until the reply ends, then it goes in its own.
+          Either way the icons beside the box do the other.
         </p>
       </div>
       <h2 className="mt-8 mb-2 px-0.5 font-semibold">Emergency</h2>

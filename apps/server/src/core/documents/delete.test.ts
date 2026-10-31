@@ -134,11 +134,7 @@ async function save(said: string, changes: unknown[]) {
     reader,
     transcripts,
     () => undefined,
-  )(turnScope(chat, "t-1"), "person")(
-    "save_changes",
-    { changes },
-    `call-${id}`,
-  );
+  )(turnScope(chat, "t-1"))("save_changes", { changes }, `call-${id}`);
   expect(answer.text).not.toContain('"issues"');
   expect(answer.ok).toBe(true);
 }
@@ -366,7 +362,7 @@ describe("a document with saved results", () => {
       reader,
       transcripts,
       () => undefined,
-    )(turnScope(chat, "t-1"), "person");
+    )(turnScope(chat, "t-1"));
     const list = await call("get_documents", {}, "call-list");
     expect(list.text).not.toContain(AUG);
     const overview = JSON.parse(

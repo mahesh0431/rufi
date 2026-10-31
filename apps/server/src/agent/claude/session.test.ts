@@ -1,14 +1,17 @@
 // A Claude conversation's parts that don't need Claude: Rufi's skills as
 // Claude's plugin, and ending the conversation's process. What Claude itself
 // does with Rufi's settings is checked by scripts/claude-live.ts.
-import { readdir, readFile } from "node:fs/promises";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { query, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it } from "vitest";
-import { isRunning } from "../codex/processes.ts";
-import { openClaudeSession, prepareClaudePlugin } from "./session.ts";
+import { isRunning, killGroup } from "../codex/processes.ts";
+import {
+  openClaudeSession,
+  prepareClaudePlugin,
+  spawnClaude,
+} from "./session.ts";
 
 const skill = (name: string) => ({
   name,
@@ -69,5 +72,35 @@ describe("closing a conversation", () => {
 
     await session.close();
     expect(isRunning(pid ?? 0)).toBe(false);
+  });
+});
+
+describe("when Rufi goes away", () => {
+  // Claude goes on with its turn after its pipes close: a Rufi that
+  // crashed would leave it working, unseen, beside the one Rufi resumes.
+  it("Claude stops its turn too", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "rufi-claude-cli-"));
+    const cli = join(dir, "claude");
+    // A fictional Claude, busy with a long turn.
+    await writeFile(cli, "#!/bin/sh\nsleep 600\n", { mode: 0o755 });
+    const claude = spawnClaude({
+      command: cli,
+      args: [],
+      cwd: dir,
+      env: { PATH: process.env["PATH"] },
+      signal: new AbortController().signal,
+    });
+    const stopped = new Promise<void>((resolve) =>
+      claude.once("exit", () => {
+        resolve();
+      }),
+    );
+    try {
+      // A crashing Rufi's pipes close; the system closes them for it.
+      for (const pipe of claude.stdio) pipe?.destroy();
+      await stopped;
+    } finally {
+      killGroup(claude.pid ?? 0);
+    }
   });
 });

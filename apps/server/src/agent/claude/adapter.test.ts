@@ -5,20 +5,15 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { providerContract } from "@rufi/agents/contract";
-import type { Conversation, ProviderEvent } from "@rufi/agents/provider";
+import type { ProviderEvent } from "@rufi/agents/provider";
 import { describe, expect, it, vi } from "vitest";
 import { fakeClaude } from "../../../tests/fake-claude.ts";
-import { callIdOf } from "../../core/chat/agents.ts";
 import { claudeAdapter } from "./adapter.ts";
-
-/** The scripted Claude of the contract's case now running. */
-let scripted: ReturnType<typeof fakeClaude> | undefined;
 
 providerContract("Claude", {
   setUp: async (script) => {
     const folder = await mkdtemp(join(tmpdir(), "rufi-claude-adapter-"));
     const fake = fakeClaude(script);
-    scripted = fake;
     return {
       adapter: claudeAdapter({
         claude: { path: "/fictional/claude", version: "2.1.312" },
@@ -27,7 +22,6 @@ providerContract("Claude", {
         plugin: { path: folder, skills: [] },
         query: fake.query,
         sessions: fake.sessions,
-        startMs: 500,
         stopMs: 500,
       }),
       options: {
@@ -38,11 +32,13 @@ providerContract("Claude", {
       },
     };
   },
-  callMeta: (conversation, _turn, call) =>
-    scripted?.callRufi(conversation.ref, call) ?? Promise.resolve(undefined),
+  callMeta: (_conversation, _turn, call) =>
+    Promise.resolve(fakeClaude({}).callMeta(call)),
   cannot: {
+    lostStart:
+      "Claude gives no answer to a message written to it: it counts as sent once written",
     lostSteer:
-      "a steer has no reply to lose: it stays with Claude until Claude shows what became of it",
+      "Claude gives no answer to a message written to it: it counts as sent once written",
   },
 });
 
@@ -50,7 +46,6 @@ providerContract("Claude", {
 async function onFake(
   query: ReturnType<typeof fakeClaude>["query"],
   sessions: ReturnType<typeof fakeClaude>["sessions"],
-  more: { stopMs?: number; startMs?: number } = {},
 ) {
   const folder = await mkdtemp(join(tmpdir(), "rufi-claude-adapter-"));
   const adapter = claudeAdapter({
@@ -60,7 +55,6 @@ async function onFake(
     plugin: { path: folder, skills: [] },
     query,
     sessions,
-    ...more,
   });
   const events: ProviderEvent[] = [];
   const conversation = await adapter.open({
@@ -81,14 +75,7 @@ async function onFake(
     });
   const ends = () =>
     events.flatMap((event) => (event.type === "turnEnded" ? [event.end] : []));
-  /** The first turn, once it has started. */
-  const first = () =>
-    vi.waitFor(() => {
-      const started = events.find((event) => event.type === "turnStarted");
-      expect(started).toBeDefined();
-      return started?.turn ?? "";
-    });
-  return { adapter, conversation, start, ends, first, events };
+  return { adapter, conversation, start, ends, events };
 }
 
 describe("Claude's process for a conversation", () => {
@@ -134,107 +121,45 @@ describe("a turn that fails", () => {
   });
 });
 
-describe("steers Claude takes into a turn of its own", () => {
-  it("settles a second steer the turn names later, and lets the next turn start", async () => {
-    const fake = fakeClaude({ turn: "runs" }, { nextTurn: "two" });
-    const { adapter, conversation, start, ends, first } = await onFake(
-      fake.query,
-      fake.sessions,
-    );
+describe("a process that ends before Claude begins the turn", () => {
+  it("shows the message in a turn that failed, so it can be sent again", async () => {
+    const fake = fakeClaude({}, { endsBeforeATurn: true });
+    const { adapter, start, events } = await onFake(fake.query, fake.sessions);
     expect(await start("message-1")).toEqual({ status: "delivered" });
-    const turn = await first();
-    const outcomes = ["steer-1", "steer-2"].map((id) =>
-      conversation.steer({ input: { id, parts: ["And the date?"] }, turn }),
-    );
-
-    expect(await outcomes[0]).toEqual({
-      status: "next_turn",
-      turn: expect.any(String) as string,
+    await vi.waitFor(() => {
+      expect(events).toEqual([
+        expect.objectContaining({
+          type: "turnStarted",
+          inputs: ["message-1"],
+        }) as unknown,
+        expect.objectContaining({
+          type: "turnEnded",
+          end: expect.objectContaining({
+            status: "failed",
+            reason: "process_died",
+          }) as unknown,
+        }) as unknown,
+      ]);
     });
-    expect(await outcomes[1]).toEqual({ status: "delivered" });
+    await adapter.close();
+  });
+});
+
+describe("a message sent again", () => {
+  it("goes to Claude again after its reply failed", async () => {
+    const fake = fakeClaude({ turn: "fails" });
+    const { adapter, start, ends } = await onFake(fake.query, fake.sessions);
+    expect(await start("message-1")).toEqual({ status: "delivered" });
+    await vi.waitFor(() => {
+      expect(ends()).toHaveLength(1);
+    });
+
+    expect(await start("message-1")).toEqual({ status: "delivered" });
     await vi.waitFor(() => {
       expect(ends()).toHaveLength(2);
     });
-    expect(await start("message-2")).toEqual({ status: "delivered" });
     await adapter.close();
   });
-
-  it.each([
-    ["ignores the interrupt", { ignoresInterrupt: true }],
-    ["never answers it", { cancelLost: true }],
-  ] as const)(
-    "are stopped, and the process ended, when Stop comes before the turn's first answer and Claude %s",
-    async (_, interrupt) => {
-      const fake = fakeClaude(
-        { turn: "runs", ...interrupt },
-        { nextTurn: "before_an_answer" },
-      );
-      const { adapter, conversation, start, ends, first } = await onFake(
-        fake.query,
-        fake.sessions,
-        { stopMs: 50 },
-      );
-      expect(await start("message-1")).toEqual({ status: "delivered" });
-      const turn = await first();
-      const outcome = conversation.steer({
-        input: { id: "steer-1", parts: ["And the date?"] },
-        turn,
-      });
-      await vi.waitFor(() => {
-        expect(ends()).toHaveLength(1);
-      });
-      await conversation.stop(turn);
-
-      expect(fake.closes()).toBe(1);
-      expect(await outcome).toEqual({
-        status: "uncertain",
-        text: expect.any(String) as string,
-      });
-      await adapter.close();
-    },
-  );
-});
-
-describe("Stop", () => {
-  it.each([
-    ["starts its own turn", "starts_during_interrupt", "uncertain"],
-    ["answers in its own turn", "answers_during_interrupt", "next_turn"],
-  ] as const)(
-    "leaves nothing running when Claude %s during the interrupt",
-    async (_, nextTurn, steered) => {
-      const fake = fakeClaude(
-        { turn: "runs", ignoresInterrupt: true },
-        { nextTurn },
-      );
-      const { adapter, conversation, start, events, first } = await onFake(
-        fake.query,
-        fake.sessions,
-        { stopMs: 50 },
-      );
-      expect(await start("message-1")).toEqual({ status: "delivered" });
-      const turn = await first();
-      const outcome = conversation.steer({
-        input: { id: "steer-1", parts: ["And the date?"] },
-        turn,
-      });
-      await vi.waitFor(() => {
-        expect(events.some((event) => event.type === "turnEnded")).toBe(true);
-      });
-      await conversation.stop(turn);
-
-      expect(fake.closes()).toBe(1);
-      expect((await outcome).status).toBe(steered);
-      // Every turn reported as started is reported as ended.
-      const started = events.flatMap((event) =>
-        event.type === "turnStarted" ? [event.turn] : [],
-      );
-      const ended = events.flatMap((event) =>
-        event.type === "turnEnded" ? [event.turn] : [],
-      );
-      expect(ended).toEqual(started);
-      await adapter.close();
-    },
-  );
 });
 
 describe("a conversation Claude no longer keeps", () => {
@@ -260,29 +185,6 @@ describe("a conversation Claude no longer keeps", () => {
     expect(events.filter((event) => event.type === "turnStarted")).toHaveLength(
       1,
     );
-    await adapter.close();
-  });
-});
-
-describe("a message Claude is slow to start", () => {
-  it("is uncertain, never not received, and can't start later unseen", async () => {
-    const fake = fakeClaude({}, { slowStartMs: 300 });
-    const { adapter, conversation, start, events } = await onFake(
-      fake.query,
-      fake.sessions,
-      { startMs: 100 },
-    );
-    expect(await start("message-1")).toEqual({
-      status: "uncertain",
-      text: expect.any(String) as string,
-    });
-    expect(
-      (await conversation.reconcile(["message-1"])).get("message-1"),
-    ).not.toBe("not_received");
-
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    expect(fake.closes()).toBe(1);
-    expect(events).toEqual([]);
     await adapter.close();
   });
 });
@@ -439,126 +341,6 @@ describe("what Claude does in a turn", () => {
         resetsAt: "2026-11-01T03:00:00.000Z",
       },
     ]);
-    await adapter.close();
-  });
-});
-
-/**
- * Rufi's door as far as a call goes (server/door.ts): it places the call,
- * refusing one the adapter can't place, and keeps each call's answer by
- * Rufi's call id, made by the door's own helper, so a repeat gets the same
- * answer.
- */
-function fakeDoor(agent: string) {
-  const answers = new Map<string, string>();
-  return (conversation: Conversation, number: number, meta: unknown) => {
-    const placed = conversation.placeCall(meta);
-    if (placed === undefined) return "refused";
-    const id = callIdOf(agent, number, placed.call);
-    const answer = answers.get(id) ?? `saved ${String(answers.size + 1)}`;
-    answers.set(id, answer);
-    return answer;
-  };
-}
-
-describe("calls to Rufi's tools", () => {
-  it("are placed in the turn their hook saw: a repeat gets the same answer, and an id the hook never saw is refused", async () => {
-    const fake = fakeClaude({ turn: "runs" });
-    const { adapter, conversation, start, first } = await onFake(
-      fake.query,
-      fake.sessions,
-    );
-    const door = fakeDoor("agent-1");
-    await start("message-1");
-    await first();
-    const meta = await fake.callRufi(conversation.ref, "toolu_1");
-
-    expect(door(conversation, 1, meta)).toBe("saved 1");
-    expect(door(conversation, 1, meta)).toBe("saved 1");
-    expect(
-      door(conversation, 1, { "claudecode/toolUseId": "toolu_unseen" }),
-    ).toBe("refused");
-    await adapter.close();
-  });
-
-  it("once Stop starts, refuse its turn's calls, and let no new one leave Claude", async () => {
-    const during: (object | undefined)[] = [];
-    const fake = fakeClaude(
-      { turn: "runs" },
-      {
-        onInterrupt: async (id) => {
-          during.push(await fake.callRufi(id, "toolu_2"));
-        },
-      },
-    );
-    const { adapter, conversation, start, first } = await onFake(
-      fake.query,
-      fake.sessions,
-    );
-    const door = fakeDoor("agent-1");
-    await start("message-1");
-    const turn = await first();
-    const meta = await fake.callRufi(conversation.ref, "toolu_1");
-    expect(door(conversation, 1, meta)).toBe("saved 1");
-
-    await conversation.stop(turn);
-    expect(during).toEqual([undefined]);
-    expect(door(conversation, 1, meta)).toBe("refused");
-    await adapter.close();
-  });
-
-  it("are a new call in a replacement conversation, under the same toolUseId", async () => {
-    const fake = fakeClaude({ turn: "runs" });
-    const door = fakeDoor("agent-1");
-    const answers: string[] = [];
-    for (const number of [1, 2]) {
-      const { adapter, conversation, start, first } = await onFake(
-        fake.query,
-        fake.sessions,
-      );
-      await start(`message-${String(number)}`);
-      await first();
-      const meta = await fake.callRufi(conversation.ref, "toolu_1");
-      answers.push(door(conversation, number, meta));
-      await adapter.close();
-    }
-    expect(answers).toEqual(["saved 1", "saved 2"]);
-  });
-
-  it("from a turn Claude began by itself, is placed in that turn before it starts for Rufi", async () => {
-    const fake = fakeClaude(
-      { turn: "runs", ignoresInterrupt: true },
-      { nextTurn: "answers_during_interrupt" },
-    );
-    const { adapter, conversation, start, events, first } = await onFake(
-      fake.query,
-      fake.sessions,
-      { stopMs: 50 },
-    );
-    await start("message-1");
-    const turn = await first();
-    void conversation.steer({
-      input: { id: "steer-1", parts: ["And the date?"] },
-      turn,
-    });
-    await vi.waitFor(() => {
-      expect(events.some((event) => event.type === "turnEnded")).toBe(true);
-    });
-    // Claude's own turn has begun; its first answer comes later.
-    const meta = await vi.waitFor(async () => {
-      const meta = await fake.callRufi(conversation.ref, "toolu_1");
-      expect(meta).toBeDefined();
-      return meta;
-    });
-    const placed = conversation.placeCall(meta);
-    expect(placed?.turn).not.toBe(turn);
-
-    await conversation.stop(turn);
-    expect(events).toContainEqual({
-      type: "turnStarted",
-      turn: placed?.turn,
-      inputs: ["steer-1"],
-    });
     await adapter.close();
   });
 });

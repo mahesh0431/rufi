@@ -267,7 +267,7 @@ const WAITING = `
     ('q-2', 'asha', 'c-asha', 'person', 'Second', 2, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z'),
     ('q-3', 'asha', 'c-asha', 'person', 'Third', 3, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');`;
 
-test("waiting messages show in the chat: edit, reorder, send now and remove; after a Stop, the next one goes", async ({
+test("waiting messages show in the chat: edit, reorder, steer, queue and remove; after a Stop, the next one goes", async ({
   page,
   rufi,
 }) => {
@@ -348,13 +348,15 @@ test("waiting messages show in the chat: edit, reorder, send now and remove; aft
     .fill("Second, edited");
   await waiting.getByRole("button", { name: "Save" }).click();
   await expect(items).toHaveText([/^Second, edited/, /^Third/]);
-  // Send now puts it first; the first has nothing to jump.
-  await expect(
-    items.nth(0).getByRole("button", { name: "Send now" }),
-  ).toHaveCount(0);
-  await items.nth(1).getByRole("button", { name: "Send now" }).click();
-  await expect(items).toHaveText([/^Third/, /^Second, edited/]);
-  await items.nth(0).getByRole("button", { name: "Remove" }).click();
+  // Steer puts it into the running reply, as your message.
+  await items.nth(1).getByRole("button", { name: "Steer" }).click();
+  await expect(items).toHaveText([/^Second, edited/]);
+  await expect(log(chat(page))).toContainText("hangThird");
+  // Queue, beside the box, keeps a new one for after the reply.
+  await box(chat(page)).fill("Fourth");
+  await chat(page).getByRole("button", { name: "Queue" }).click();
+  await expect(items).toHaveText([/^Second, edited/, /^Fourth/]);
+  await items.nth(1).getByRole("button", { name: "Remove" }).click();
   await expect(items).toHaveText([/^Second, edited/]);
 
   await expect(waiting).toContainText(
@@ -410,22 +412,33 @@ test("an older read of the queue never undoes a newer change", async ({
   await expect(items).toHaveText([/^Second, edited/]);
 });
 
-test("a message sent while a reply runs goes into that reply, as your message; Stop is beside Send", async ({
+test("while a reply runs, Enter steers a message into it, as your message; with Queue chosen in Settings, it waits for the reply's end", async ({
   page,
   rufi,
 }) => {
   await opened(page, rufi);
   await send(page, "hang");
   await box(chat(page)).fill("Only the latest results, please");
-  await expect(chat(page).getByRole("button", { name: "Stop" })).toBeVisible();
+  for (const name of ["Steer", "Queue", "Stop"]) {
+    await expect(chat(page).getByRole("button", { name })).toBeVisible();
+  }
   await box(chat(page)).press("Enter");
   await expect(box(chat(page))).toHaveValue("");
   await expect(log(chat(page))).toContainText(
     "hangOnly the latest results, please",
   );
+  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
+  await expect(waiting).toHaveCount(0);
+
+  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  await page.getByRole("radio", { name: "Queue" }).check();
+  await expect(page.getByRole("radio", { name: "Queue" })).toBeChecked();
+  await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
+  await box(page).fill("And after that, my ferritin");
+  await box(page).press("Enter");
   await expect(
-    chat(page).getByRole("region", { name: "Waiting messages" }),
-  ).toHaveCount(0);
+    page.getByRole("region", { name: "Waiting messages" }),
+  ).toContainText("And after that, my ferritin");
 });
 
 test("signed out, the model's menu signs in", async ({ page, rufi }) => {
@@ -705,7 +718,7 @@ test("a quick send whose answer was lost keeps its id through Help and reload: t
   }
 });
 
-test("when Rufi stops while it hands a message to the AI, the message is not sure, and is never sent again by itself", async ({
+test("when Rufi stops while it hands a message to the AI, the message counts as sent: it stays in the chat, its reply stopped, and the chat goes on", async ({
   page,
   rufi,
 }) => {
@@ -738,15 +751,16 @@ test("when Rufi stops while it hands a message to the AI, the message is not sur
   await rufi.start({ port });
   await page.goto(rufi.link());
   await opener(chat(page)).click();
-  await expect(waiting).toContainText(
-    "Not sure this reached the AI. Check the chat before you send it again.",
-  );
-  await expect(
-    waiting.getByRole("button", { name: "Send again" }),
-  ).toBeVisible();
+  await expect(log(chat(page))).toContainText("Questions before my visit");
+  await expect(log(chat(page))).toContainText("Stopped.");
+  await expect(waiting).toHaveCount(0);
   await expect(box(chat(page))).toHaveValue("");
-  await expect(log(chat(page))).toHaveText("");
   await accessible(page);
+  // The chat goes on with the next message.
+  await send(page, "And now?");
+  await expect(log(chat(page)).locator(".reply").last()).toHaveText(
+    "ok:And now?",
+  );
 });
 
 test("a Rufi event shows as Rufi's line, and its note goes to the AI in a reply of its own", async ({
@@ -820,7 +834,7 @@ test("a failed send keeps your text and says why; nothing is sent again by itsel
   );
 });
 
-test("the AI's memory: a compaction shows while it runs, then as done; the meter shows after a reply and after a reload; a thread that doesn't open holds the message with Try again and New thread", async ({
+test("the AI's memory: a compaction shows while it runs, then as done; the meter shows after a reply and after a reload; a thread that doesn't open holds the message with Send and New thread", async ({
   page,
   rufi,
 }) => {
@@ -861,7 +875,7 @@ test("the AI's memory: a compaction shows while it runs, then as done; the meter
     "Codex refused thread/resume: failed to read thread: a fictional read error";
   await expect(waiting).toContainText(why);
   await accessible(page);
-  await waiting.getByRole("button", { name: "Try again" }).click();
+  await waiting.getByRole("button", { name: "Send", exact: true }).click();
   // Held again, with the error as it came.
   await expect(
     waiting.getByRole("button", { name: "New thread" }),
@@ -873,7 +887,7 @@ test("the AI's memory: a compaction shows while it runs, then as done; the meter
   const stop = chat(page).getByRole("button", { name: "Stop" });
   await expect(stop).toBeVisible();
   await expect(
-    waiting.getByRole("button", { name: "Try again" }),
+    waiting.getByRole("button", { name: "Send", exact: true }),
   ).toBeVisible();
   await expect(waiting.getByRole("button", { name: "New thread" })).toHaveCount(
     0,
@@ -1773,10 +1787,10 @@ test.describe("on the real Codex binary, with a local fake model", () => {
     await send(page, "partial");
     await expect(log(chat(page))).toContainText("ok:part");
     // What the reply wrote stays, then your message, and the reply goes on
-    // with it.
+    // with it, told it is steered.
     await send(page, "Steered in");
     await expect(log(chat(page))).toContainText(
-      "ok:partSteered inok:Steered in",
+      "ok:partSteered inok:You're being steered: don't drop what you're working on unless you have to; take this into account.",
     );
 
     // Stop works on the reply that goes on.

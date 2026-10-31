@@ -15,3 +15,5 @@ The chat's AI keeps one Codex thread for as long as it can, and the chat says ho
 The cost: the injected note grows the thread's history by the core's size at each rules change, and Rufi now depends on two more pinned Codex details (`thread/inject_items`, the not-found message), which `capture.test.ts` and `chat.test.ts` check on the real binary.
 
 **30 Oct 2026: no pause (ADR 0004).** Try again and New thread put the message first; there is no pause to end. The agent package opens the thread again, and a held message goes once nothing runs.
+
+**31 Oct 2026:** Try again is the failed message's **Send** (ADR 0004); New thread stays, and only this hold has it.

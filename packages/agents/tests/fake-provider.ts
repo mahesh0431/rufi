@@ -1,9 +1,7 @@
 // A provider in memory, for the package's own tests: it stands in for an
 // adapter and keeps the boundary's contract (tests/contract.ts) as the real
 // ones do. What it does is set by a Script, which a test may change at any
-// time, and a turn that runs ends when the test ends it. A steer it holds
-// stays handing over, past its turn's end, until a Stop or a close settles
-// it.
+// time, and a turn that runs ends when the test ends it.
 import { randomUUID } from "node:crypto";
 import {
   Missing,
@@ -31,21 +29,13 @@ export interface FakeProvider {
   received: (ref: string) => readonly Input[];
 }
 
-/** A steer the provider holds, not taken, for the turn it was sent to. */
-interface Held {
-  input: Input;
-  turn: string;
-  answer: (outcome: SteerOutcome) => void;
-}
-
 /** A conversation as the provider keeps it, across opens. */
 interface Kept {
   received: Input[];
-  /** The open handle's events, running turn and held steers. */
+  /** The open handle's events and running turn. */
   open?: {
     onEvent: (event: ProviderEvent) => void;
     running?: string;
-    held: Held[];
   };
 }
 
@@ -83,6 +73,10 @@ export function fakeProvider(
         return Promise.resolve();
       },
       usage: () => Promise.resolve([]),
+      callOf: (meta) => {
+        const call = ((meta ?? {}) as Record<string, unknown>)["fake/call"];
+        return typeof call === "string" ? call : undefined;
+      },
       close: () => {
         for (const ref of kept.keys()) letGo(ref);
         return Promise.resolve();
@@ -170,7 +164,7 @@ export function fakeProvider(
     });
   }
 
-  /** The running turn ends, told once; the steers it holds stay held. */
+  /** The running turn ends, told once. */
   function finish(ref: string, end: TurnEnd): void {
     const open = kept.get(ref)?.open;
     const turn = open?.running;
@@ -179,37 +173,11 @@ export function fakeProvider(
     emit(ref, { type: "turnEnded", turn, end });
   }
 
-  /**
-   * The provider cancels the steers it holds for `turn`, and says so,
-   * unless its answer is lost.
-   */
-  function cancel(ref: string, turn: string): void {
-    const open = kept.get(ref)?.open;
-    if (!open) return;
-    for (const held of open.held.filter((one) => one.turn === turn)) {
-      open.held.splice(open.held.indexOf(held), 1);
-      held.answer(
-        fake.script.cancelLost
-          ? {
-              status: "uncertain",
-              text: "The fake provider's answer was lost.",
-            }
-          : {
-              status: "not_delivered",
-              text: "The fake provider cancelled it.",
-            },
-      );
-    }
-  }
-
-  /** The conversation is let go of: what it still holds may have arrived. */
+  /** The conversation is let go of. */
   function letGo(ref: string): void {
     const open = kept.get(ref)?.open;
     if (!open) return;
     finish(ref, { status: "stopped" });
-    for (const held of open.held.splice(0)) {
-      held.answer({ status: "uncertain", text: "The conversation closed." });
-    }
     delete kept.get(ref)?.open;
   }
 
@@ -223,10 +191,7 @@ export function fakeProvider(
     const ref = options.resume ?? randomUUID();
     const mine: Kept = kept.get(ref) ?? { received: [] };
     kept.set(ref, mine);
-    const open: NonNullable<Kept["open"]> = {
-      onEvent: options.onEvent,
-      held: [],
-    };
+    const open: NonNullable<Kept["open"]> = { onEvent: options.onEvent };
     mine.open = open;
     const isOpen = () => mine.open === open;
     const running = () => (isOpen() ? open.running : undefined);
@@ -270,14 +235,9 @@ export function fakeProvider(
         }
         mine.received.push(start.input);
         run(ref, begin(ref, [start.input.id]));
-        return Promise.resolve(
-          taken === "loses_reply"
-            ? {
-                status: "uncertain",
-                text: "The fake provider's reply was lost.",
-              }
-            : { status: "delivered" },
-        );
+        return taken === "loses_reply"
+          ? Promise.reject(new Error("The fake provider's answer was lost."))
+          : Promise.resolve({ status: "delivered" });
       },
 
       steer: ({ input, turn }): Promise<SteerOutcome> => {
@@ -287,75 +247,25 @@ export function fakeProvider(
             text: "That turn has ended.",
           });
         }
+        mine.received.push(input);
         switch (fake.script.steer ?? "takes") {
           case "takes":
-            mine.received.push(input);
             return Promise.resolve({ status: "delivered" });
           case "loses_reply":
-            mine.received.push(input);
-            return Promise.resolve({
-              status: "uncertain",
-              text: "The fake provider's reply was lost.",
-            });
-          case "takes_later":
-            return new Promise((resolve) => {
-              const held = { input, turn, answer: resolve };
-              open.held.push(held);
-              setTimeout(() => {
-                if (!open.held.includes(held) || running() !== turn) return;
-                open.held.splice(open.held.indexOf(held), 1);
-                mine.received.push(input);
-                resolve({ status: "delivered" });
-              }, 50);
-            });
-          case "holds":
-          case "holds_past_end":
-            return new Promise((resolve) => {
-              open.held.push({ input, turn, answer: resolve });
-              // As when the turn's result comes before the steer is taken.
-              if (fake.script.steer === "holds_past_end") {
-                finish(ref, { status: "done", answer });
-              }
-            });
-          case "starts_next": {
+            return Promise.reject(
+              new Error("The fake provider's answer was lost."),
+            );
+          case "starts_next":
             finish(ref, { status: "done", answer });
-            mine.received.push(input);
-            const next = begin(ref, [input.id]);
-            run(ref, next);
-            return Promise.resolve({ status: "next_turn", turn: next });
-          }
+            run(ref, begin(ref, [input.id]));
+            return Promise.resolve({ status: "delivered" });
         }
       },
 
       // Whether or not it obeys an interrupt, the fake's turn ends at once.
       stop: (turn) => {
-        if (!isOpen()) return Promise.resolve();
         if (running() === turn) finish(ref, { status: "stopped" });
-        cancel(ref, turn);
         return Promise.resolve();
-      },
-
-      reconcile: (ids) =>
-        Promise.resolve(
-          new Map(
-            ids.map((id) => [
-              id,
-              mine.received.some((input) => input.id === id)
-                ? "received"
-                : "not_received",
-            ]),
-          ),
-        ),
-
-      placeCall: (meta) => {
-        const fields = (meta ?? {}) as Record<string, unknown>;
-        const turn = running();
-        const call = fields["fake/call"];
-        return turn !== undefined &&
-          fields["fake/turn"] === turn &&
-          typeof call === "string"
-          ? { turn, call }
-          : undefined;
       },
 
       close: () => {

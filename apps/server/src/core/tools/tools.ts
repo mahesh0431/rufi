@@ -17,7 +17,6 @@ import {
   answerOf,
   type AgentTools,
   inputSchema,
-  REJECTIONS_PER_TURN,
   Refusal,
   specOf,
   toolCaller,
@@ -66,18 +65,10 @@ export const TOOLS: readonly Tool[] = [
  */
 const SERVER = "rufi";
 
-/** Why a Rufi event's turn can't save, sort or make a brief. */
-const EVENT_TURN =
-  "This turn was started by a Rufi event, not by the user, so nothing can be saved, sorted or made in it. Explain or ask; the user asks in a message of their own.";
-
-/**
- * The model's tools: their catalog for the MCP server, and a caller per
- * turn, which ends the turn after `rejections` refused calls.
- */
+/** The model's tools: their catalog for the MCP server, and their caller. */
 export function forAgent(
   context: () => ToolContext,
   log: Log,
-  rejections?: () => Promise<number>,
   /** The agent's own tools, by name; all of them when not given. */
   names?: readonly string[],
 ) {
@@ -89,22 +80,8 @@ export function forAgent(
   return {
     server: SERVER,
     specs: tools.map(specOf),
-    forTurn: () => toolCaller(tools, context, log, rejections),
+    call: toolCaller(tools, context, log),
   };
-}
-
-/**
- * The setting for how many refused calls end a reply in Rufi's chat: a
- * whole number above 0, else REJECTIONS_PER_TURN. A limit on loops, not a
- * rule about health data; it isn't on the Settings screen.
- */
-export const REJECTIONS_SETTING = "rejections_per_reply";
-
-async function rejectionsPerReply(
-  setting: (key: string) => Promise<string | undefined>,
-): Promise<number> {
-  const value = Number(await setting(REJECTIONS_SETTING));
-  return Number.isInteger(value) && value > 0 ? value : REJECTIONS_PER_TURN;
 }
 
 /** tools.json: every tool as documentation, generated (pnpm tools:json). */
@@ -147,8 +124,7 @@ export type TurnScope = Omit<CallScope, "callId">;
  * The one Rufi caller, for an agent's turn, from the scope the door placed
  * its calls in; each call gives Rufi's id for it: the agent's own tools, in its chat, the one place
  * the AI can save, sort or make a brief. Each is written with its line in
- * the chat. A turn a Rufi event started can only read: the person didn't
- * ask for it.
+ * the chat.
  */
 export function rufiCaller(
   reader: Store | undefined,
@@ -176,7 +152,7 @@ export function rufiCaller(
     done: (personId: string) => void;
   },
 ) {
-  return (scope: TurnScope, origin: "person" | "rufi") => {
+  return (scope: TurnScope) => {
     const { chat, ref } = scope;
     const below = agents?.(scope);
     const call = forAgent(
@@ -188,22 +164,16 @@ export function rufiCaller(
         agents: below,
       }),
       log,
-      () => rejectionsPerReply(transcripts.setting),
       scope.tools,
-    ).forTurn();
+    ).call;
     /**
      * The writes of one call: each commits with its receipt or line and
      * the call with the answer the AI gets, in one transaction, then
      * `kept` says so.
      */
     const writes = (made: ToolCall, kept: () => void): Partial<ToolContext> => {
-      // A turn a Rufi event started writes nothing.
-      const mayWrite = () => {
-        if (origin === "rufi") throw new Refusal(EVENT_TURN);
-      };
       return {
         save: async (input, callId) => {
-          mayWrite();
           const saved = await transcripts.saveWithReceipt(
             chat,
             made,
@@ -226,7 +196,6 @@ export function rufiCaller(
           return saved;
         },
         dismiss: async (input, callId) => {
-          mayWrite();
           const dismissed = await transcripts.saveWithReceipt(
             chat,
             made,
@@ -242,7 +211,6 @@ export function rufiCaller(
           return dismissed;
         },
         sort: async (input, callId) => {
-          mayWrite();
           if (!sort) throw new Refusal("Rufi can't sort documents here.");
           const sorted = await transcripts.withToolCall(
             chat,
@@ -266,7 +234,6 @@ export function rufiCaller(
         },
         // Kept without its page text: that goes with its document.
         saveReading: async (input, callId) => {
-          mayWrite();
           if (!reading) throw new Refusal("Rufi can't save a reading here.");
           const saved = await transcripts.withToolCall(
             chat,
@@ -284,7 +251,6 @@ export function rufiCaller(
           return saved;
         },
         brief: async (input, callId) => {
-          mayWrite();
           const written = await transcripts.briefWithLine(
             chat,
             made,

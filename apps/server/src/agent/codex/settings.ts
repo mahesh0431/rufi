@@ -45,7 +45,7 @@ const SETTINGS = {
   personality: "none",
   /**
    * Rufi keeps the AI's reasoning summaries with the reply (docs/adr/0004);
-   * Codex's models send none unless asked.
+   * Codex asks the model for none unless set (0.163.0).
    */
   model_reasoning_summary: "detailed",
   features: {
@@ -220,8 +220,10 @@ export async function prepareCodexHome(
 }
 
 /**
- * Checks Codex applied Rufi's settings, so a renamed key in a new pin fails
- * loudly instead of being ignored.
+ * Checks Codex applied the settings Rufi can't do without (its sign-in, the
+ * effort, what runs), so a renamed key in a new pin fails loudly instead of
+ * being ignored. The style settings (personality, reasoning summaries) aren't
+ * checked: without them the chat still works.
  */
 export async function checkSettings(
   rpc: Rpc,
@@ -240,14 +242,6 @@ export async function checkSettings(
     problems.push(
       `model_reasoning_effort is ${String(config.model_reasoning_effort)}`,
     );
-  }
-  if (config.model_reasoning_summary !== SETTINGS.model_reasoning_summary) {
-    problems.push(
-      `model_reasoning_summary is ${String(config.model_reasoning_summary)}`,
-    );
-  }
-  if (config["personality"] !== SETTINGS.personality) {
-    problems.push(`personality is ${JSON.stringify(config["personality"])}`);
   }
   const enabled = new Map<string, boolean>();
   let cursor: string | null = null;

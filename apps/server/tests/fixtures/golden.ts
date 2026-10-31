@@ -115,7 +115,7 @@ async function ashasChat(home: string, store: Store, today: Date) {
       text: message,
       agentTurnId: agentTurn,
     });
-    const call = tools(turnScope(chat, agentTurn), "person");
+    const call = tools(turnScope(chat, agentTurn));
     for (const { tool, input } of calls) {
       clock = new Date(clock.getTime() + 2_000);
       const callId = uuid();

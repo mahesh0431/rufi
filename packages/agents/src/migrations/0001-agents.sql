@@ -4,16 +4,6 @@
 -- documents or health: the host maps its own ids to agents. Every change
 -- writes its event in the same transaction (src/store.ts).
 
--- The file's generation: a random id made with it. The host keeps its place
--- in the event log as (generation, number), so a new file, made when the old
--- one was lost, is never taken for the old one.
-CREATE TABLE meta (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  generation TEXT NOT NULL
-) STRICT;
-
-INSERT INTO meta (id, generation) VALUES (1, lower(hex(randomblob(16))));
-
 -- One agent: a chat's root (Rufi AI) or a sub-agent at any depth.
 CREATE TABLE agents (
   id TEXT PRIMARY KEY,           -- given by the host: the starting call's id, or the host's own for a root
@@ -89,8 +79,8 @@ CREATE TABLE queue (
   kind TEXT NOT NULL CHECK (kind IN ('steer', 'queue')), -- steer: as soon as a turn can take it; queue: after this turn
   parts TEXT,                    -- what is sent (JSON array of strings), as written; null when the host keeps the words and gives them as it hands the input over
   position INTEGER NOT NULL,     -- its order among the agent's inputs
-  state TEXT NOT NULL DEFAULT 'waiting' CHECK (state IN ('waiting', 'handing_over', 'delivered', 'not_sure', 'dropped', 'removed')),
-  held TEXT CHECK (held IN ('signed_out', 'open_failed', 'failed', 'restarts')), -- a waiting input that isn't handed over by itself, and why
+  state TEXT NOT NULL DEFAULT 'waiting' CHECK (state IN ('waiting', 'handing_over', 'delivered', 'removed')), -- delivered: sent, from its hand-over on
+  held TEXT CHECK (held IN ('signed_out', 'open_failed', 'failed', 'stopped', 'restarts')), -- a waiting input that isn't handed over by itself, and why
   held_text TEXT,                -- the hold's one line
   conversation INTEGER,          -- the agent's conversation number it was handed to
   turn_id TEXT REFERENCES turns (id) ON DELETE CASCADE, -- the turn that took it

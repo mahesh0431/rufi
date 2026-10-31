@@ -11,7 +11,6 @@ export interface Tables {
   };
   agent_cursor: {
     id: number;
-    generation: string;
     number: number;
   };
   agent_owners: {
@@ -61,6 +60,7 @@ export interface Tables {
     person_id: string;
     chat_id: string;
     origin: string;
+    kind: string;
     text: string;
     refs: string;
     event_id: string | null;
@@ -71,9 +71,9 @@ export interface Tables {
     hold_id: string | null;
     sent_as: string | null;
     turn_id: string | null;
+    note: string | null;
     created_at: string;
     updated_at: string;
-    note: string | null;
   };
   chats: {
     id: string;
