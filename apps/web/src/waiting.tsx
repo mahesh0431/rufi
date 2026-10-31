@@ -265,12 +265,12 @@ export function WaitingView({
                     </div>
                   </div>
                 ) : (
-                  <div className="flex min-w-0 flex-1 items-start gap-2 py-1 pl-1">
+                  <div className="flex min-w-0 flex-1 items-center gap-2 py-0.5 pl-1">
                     {!person && (
                       // Rufi's note for the AI: never your words.
                       <Bell
                         size={14}
-                        className="mt-1 shrink-0 text-muted"
+                        className="shrink-0 text-muted"
                         aria-hidden
                       />
                     )}
@@ -405,7 +405,7 @@ function Row({
       onKeyDown={(event) => {
         if (isDragging && event.key === "Escape") event.preventDefault();
       }}
-      className={`flex items-start gap-1 ${isDragging ? "relative z-10 rounded-lg bg-surface shadow-menu" : ""}`}
+      className={`flex items-center gap-1 ${isDragging ? "relative z-10 rounded-lg bg-surface shadow-menu" : ""}`}
     >
       {movable && (
         // No tooltip: its Escape would end before the move's.
