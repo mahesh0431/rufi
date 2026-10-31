@@ -188,7 +188,7 @@ What waits to go to the AI, kept by Rufi with the chat: your messages and Rufi's
 _Avoid_: inbox, outbox
 
 **Waiting messages**:
-What the queue holds, shown in the chat after its last message as soon as you send; you can steer, edit, reorder or remove your messages there. A held one says **Failed** with the error as it came, or **Not sent** with why (Stop cut its start off, or it came from a backup), and goes only when you send it. A message that brings new files waits for a reply of its own, which reads them first. A message whose reply ended in Rufi's part is not listed: its reply has **Retry**. Signed out, a send takes nothing: the text and chips stay in the box. After a Stop, and when Rufi starts again, what waits goes on, in order; a message whose start a Stop cut off is held, **Not sent · Stopped.**
+What the queue holds, shown in the chat after its last message as soon as you send; you can steer, edit, reorder or remove your messages there. A held one says **Failed** with the error as it came, or **Not sent** with why (Stop cut its start off, or it came from a backup), and goes only when you send it. A message that brings new files waits for a reply of its own, which reads them first. A message whose reply ended in Rufi's part is not listed: its reply has **Retry**. Signed out, a send takes nothing: the text and chips stay in the box. After a Stop, and when Rufi starts again, what waits goes on, in order; a message whose start a Stop cut off is held, **Not sent · Stopped.** The AI can do the same when you ask, and with what waits for its sub-agents (`waiting_messages`); steering a held one sends it.
 _Avoid_: backlog, pending messages
 
 **Rufi event**:

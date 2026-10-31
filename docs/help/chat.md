@@ -200,7 +200,7 @@ For a task that can run on its own, the AI can start an agent of its own, a sub-
 
 When a sub-agent finishes, the AI hears it by itself. If the AI isn't replying then, it replies by itself, and a small line above that reply says which agent and why, such as "Reading report.pdf: done" or "Reading report.pdf asks a question". The AI tells you what it found, or asks you what it asks. While a sub-agent works, the AI may end its reply and say so: the sub-agent's result wakes it. The AI can also write to a sub-agent, for example to answer its question.
 
-You can ask the AI to stop a sub-agent: just that one, or with every sub-agent it started. Its result goes to the AI, which says it stopped. When you ask the AI to stop everything, it stops every sub-agent and its own reply too. Then none of the stopped sub-agents' results wakes the AI, and your waiting messages don't go: each shows **Not sent · Stopped.**, for you to **Send**, edit or remove.
+You can ask the AI to stop a sub-agent: just that one, or with every sub-agent it started. Its result goes to the AI, which says it stopped. When you ask the AI to stop everything, it stops every sub-agent and its own reply too. Then none of the stopped sub-agents' results wakes the AI, and your waiting messages don't go: each shows **Not sent · Stopped.**, for you to **Send**, edit or remove. What waited for the stopped sub-agents is held the same way: the AI can send it again when you ask.
 
 ## While the AI replies
 
@@ -221,7 +221,7 @@ If you click Stop, what the AI did so far stays in Activity, and the folded line
 
 Enter does what you chose in **Settings** › **Sending while Rufi replies**: **Steer** (the start) or **Queue**. The other button beside the box does the other. A message with new files always waits for a reply of its own, which reads its files first.
 
-If a reply ends just as you steer, your message starts the next reply, before your other waiting messages.
+If the reply ends before your steer reaches it, your message goes in a following reply.
 
 ## Waiting messages
 
@@ -231,6 +231,8 @@ What waits shows in the chat, after its last message, in the order it goes: your
 - **Edit** it (the pencil), then **Save**.
 - **Move** it, to change the order: drag it up or down by its handle (the dots on its left). With the keyboard, go to the handle with Tab, press Space to pick the message up, the up and down arrows to move it, and Space to put it down. Esc puts it back where it was.
 - **Remove** it (the X). It never goes to the AI.
+
+You can also ask the AI to do these for you, for example "remove my question about the scan" or "send the held ones now". It sees what waits for it and for its sub-agents, and changes your messages when you ask. When it steers a held message, the message goes, as when you click **Send**.
 
 The line above them says what happens next:
 

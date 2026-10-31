@@ -18,6 +18,7 @@ import type {
   SendAgentInput,
   StartAgentInput,
   StopAgentInput,
+  WaitingMessagesInput,
 } from "./agents.ts";
 
 /** What a tool gets from Rufi, never from the model. */
@@ -75,6 +76,8 @@ export interface AgentTools {
   read: (input: ReadAgentInput) => Promise<unknown>;
   /** Stops an agent below the caller, or itself; with children, all below it too. */
   stop: (input: StopAgentInput) => unknown;
+  /** What waits for the caller and the agents below it: listed or changed. */
+  waiting: (input: WaitingMessagesInput) => Promise<unknown>;
 }
 
 /** A tool's input: decoded without services, like JSON. */

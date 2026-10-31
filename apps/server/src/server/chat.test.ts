@@ -249,6 +249,10 @@ async function startChat(
             kept: chatAgents(store),
             queue,
             log: () => undefined,
+            messages: () => {
+              if (!chat) throw new Error("no chat");
+              return chat.queue;
+            },
           }),
         )(scope);
         return async (name, input, callId) => {
@@ -2623,6 +2627,186 @@ describe("the chat, on the scripted Codex", () => {
     ]);
   });
 
+  it("lets Rufi AI tidy the user's waiting messages as the screens do: one edited, one removed, two reordered and one steered into its reply", async () => {
+    const queued = Promise.withResolvers<undefined>();
+    let calls = 0;
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Tidy my queue": [
+            { tool: "waiting_messages", arguments: { action: "list" } },
+            {
+              tool: "waiting_messages",
+              arguments: { action: "edit", id: "q-1", text: "First, edited" },
+            },
+            {
+              tool: "waiting_messages",
+              arguments: { action: "remove", id: "q-2" },
+            },
+            {
+              tool: "waiting_messages",
+              arguments: { action: "reorder", ids: ["q-3", "q-1"] },
+            },
+            {
+              tool: "waiting_messages",
+              arguments: { action: "steer", id: "q-4" },
+            },
+            { tool: "waiting_messages", arguments: { action: "list" } },
+          ],
+        },
+      },
+      // The user queues them while the reply's first call waits; its last
+      // call waits for the steer, as a reply takes longer than Rufi.
+      waitFor: (tool) => {
+        if (tool !== "waiting_messages") return undefined;
+        calls += 1;
+        if (calls === 1) return queued.promise;
+        return calls === 6
+          ? until(() =>
+              Promise.resolve(
+                agentRows("SELECT state FROM queue WHERE id = 'q-4'")[0]?.[
+                  "state"
+                ] === "delivered",
+              ),
+            )
+          : undefined;
+      },
+    });
+    const c = await newChat();
+    await say(c, "Tidy my queue");
+    await until(() => Promise.resolve(admitted.includes("waiting_messages")));
+    for (const [id, text] of [
+      ["q-1", "First"],
+      ["q-2", "Second"],
+      ["q-3", "Third"],
+      ["q-4", "Fourth"],
+    ] as const) {
+      await chat?.send(await chatRow(c.id), id, text, [], "queue");
+    }
+    queued.resolve(undefined);
+
+    await ended(c.id, 3);
+    await settled(c.id);
+    const listed = (
+      store.db
+        .prepare(
+          "SELECT answer FROM tool_calls WHERE tool = 'waiting_messages' ORDER BY started_at",
+        )
+        .all() as { answer: string }[]
+    ).map(({ answer }) =>
+      (
+        JSON.parse(answer) as {
+          result: { messages: { id: string; from: string; text: string }[] };
+        }
+      ).result.messages.map(({ id, from, text }) => [id, from, text]),
+    );
+    expect(listed[0]).toEqual([
+      ["q-1", "user", "First"],
+      ["q-2", "user", "Second"],
+      ["q-3", "user", "Third"],
+      ["q-4", "user", "Fourth"],
+    ]);
+    expect(listed.at(-1)).toEqual([
+      ["q-3", "user", "Third"],
+      ["q-1", "user", "First, edited"],
+    ]);
+    // Fourth went into its reply; then the rest in their new order, Second
+    // never.
+    expect(
+      (await transcript(c.id)).entries
+        .filter(([kind]) => kind === "message" || kind === "steer")
+        .map(([kind, text]) => [kind, text]),
+    ).toEqual([
+      ["message", "Tidy my queue"],
+      ["steer", "Fourth"],
+      ["message", "Third"],
+      ["message", "First, edited"],
+    ]);
+    expect(await waiting()).toEqual([]);
+  });
+
+  it("lets Rufi AI send again a message a Stop held for its sub-agent, which then runs it", async () => {
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Ask a helper": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Helper", task: "helper: hang" },
+            },
+          ],
+          "Give it more, then stop it": [
+            {
+              id: "call-more",
+              tool: "send_agent",
+              arguments: {
+                to: "$agent",
+                text: "Also check the March report.",
+                kind: "queue",
+              },
+            },
+            {
+              tool: "stop_agent",
+              arguments: { agent: "$agent", with_children: true },
+            },
+          ],
+          // Here the message names the held message: "(agent <its id>)".
+          "Send it again": [
+            { tool: "waiting_messages", arguments: { action: "list" } },
+            {
+              tool: "waiting_messages",
+              arguments: { action: "steer", id: "$agent" },
+            },
+          ],
+        },
+      },
+    });
+    const c = await newChat();
+    await say(c, "Ask a helper");
+    const helper = ownCall("call-0");
+    const more = ownCall("call-more");
+    const input = () =>
+      agentRows(`SELECT state, held FROM queue WHERE id = '${more}'`)[0];
+    await until(() =>
+      Promise.resolve(
+        agentRows(`SELECT status FROM agents WHERE id = '${helper}'`)[0]?.[
+          "status"
+        ] === "running",
+      ),
+    );
+
+    await say(
+      await chatRow(c.id),
+      `Give it more, then stop it (agent ${helper})`,
+    );
+    await until(() => Promise.resolve(input()?.["held"] === "stopped"));
+
+    await say(await chatRow(c.id), `Send it again (agent ${more})`);
+    await until(() => Promise.resolve(input()?.["state"] === "delivered"));
+    expect(
+      agentRows(`SELECT count(*) AS n FROM turns WHERE agent_id = '${helper}'`),
+    ).toEqual([{ n: 2 }]);
+    const [listed] = store.db
+      .prepare(
+        "SELECT answer FROM tool_calls WHERE tool = 'waiting_messages' ORDER BY started_at",
+      )
+      .all() as { answer: string }[];
+    expect(
+      (JSON.parse(listed?.answer ?? "") as { result: unknown }).result,
+    ).toEqual({
+      messages: [
+        {
+          id: more,
+          queue: helper,
+          from: "self",
+          kind: "queue",
+          text: `Rufi AI (${ownCall("x").split("/")[0] ?? ""}) writes:\n\nAlso check the March report.`,
+          held: "Stopped.",
+        },
+      ],
+    });
+  });
+
   it("gives a sub-agent only the tools it was given, and its own sub-agent no more than those", async () => {
     await startChat("fake", {
       scenario: {
@@ -3207,6 +3391,32 @@ describe("When the AI's thread doesn't open", () => {
     expect(turns.map((turn) => turn.newThread)).toEqual([false, false]);
     expect(threadsUsed()).toBe(1);
     expect(await threadStarts()).toBe(1);
+  });
+
+  it("sends the held message in the same thread when the user asks Rufi AI to, once the error has passed", async () => {
+    const thread = await afterOneReply({
+      resumeFails: 1,
+      callsByText: {
+        // The message names the held one: "(agent <its id>)".
+        "Send my held question": [
+          {
+            tool: "waiting_messages",
+            arguments: { action: "steer", id: "$agent" },
+          },
+        ],
+      },
+    });
+    await say(await chatRow(), "held question");
+    const item = await held();
+    const ask = `Send my held question (agent ${item.id})`;
+    await say(await chatRow(), ask);
+    await ended("c-asha", 3);
+    const { entries } = await transcript("c-asha");
+    expect(
+      entries.filter(([kind]) => kind === "message").map(([, text]) => text),
+    ).toEqual(["first", ask, "held question"]);
+    expect((await queue.list(await chatRow())).items).toEqual([]);
+    expect((await chatRow()).threadId).toBe(thread);
   });
 
   it("keeps the held message with its choices when Rufi starts again", async () => {

@@ -363,6 +363,8 @@ export const startCore = (options: CoreOptions) =>
                 kept: chatAgents(writer, options.now),
                 queue,
                 log,
+                // The chat these tools run in: made by now.
+                messages: (): Chat["queue"] => chat.queue,
               }),
               {
                 run: saveReading(options.now),

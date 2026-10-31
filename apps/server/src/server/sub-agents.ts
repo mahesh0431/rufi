@@ -5,14 +5,18 @@
 // more of Rufi's tools than the caller has. Each turn's end goes to its
 // parent as a done message (the package's). An agent sees how the agents
 // below it are, writes to one or to its parent, reads the conversation of
-// any agent in its chat, its own too, by pages, and stops one below it or
-// itself, with or without everything under it.
-import type { Agents } from "@rufi/agents/agents";
+// any agent in its chat, its own too, by pages, stops one below it or
+// itself, with or without everything under it, and manages what waits for
+// it and for the agents below it: the person's messages and Rufi's notes
+// change in Rufi first, as the screens change them.
+import type { Agents, WaitingInput } from "@rufi/agents/agents";
+import type { QueueItem } from "@rufi/contracts";
 import type { chatAgents } from "../core/chat/agents.ts";
 import type { ChatQueue } from "../core/chat/queue.ts";
 import { Refusal, type AgentTools } from "../core/tools/registry.ts";
 import type { TurnScope } from "../core/tools/tools.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
+import { ChatRefusal, type Chat } from "./chat.ts";
 
 /** How many turns a page of an agent's conversation holds. */
 const PAGE = 10;
@@ -22,6 +26,8 @@ export function subAgents(deps: {
   kept: ReturnType<typeof chatAgents>;
   queue: ChatQueue;
   log: Log;
+  /** The chat's waiting messages, as its screens change them: Rufi first. */
+  messages: () => Chat["queue"];
 }): (scope: TurnScope) => AgentTools {
   const { agents, kept } = deps;
   return (scope) => {
@@ -188,6 +194,159 @@ export function subAgents(deps: {
           deps.log("agents.failed", { error: errorCode(error) });
         });
         return { stopping: children ? [id, ...agents.below(id)] : [id] };
+      },
+
+      waiting: async ({ action, id, text, ids }) => {
+        const mine = [scope.agent, ...agents.below(scope.agent)];
+        const root = agents.get(scope.agent)?.root;
+        const chat = deps.messages();
+        /** Rufi's waiting rows, when the chat's own agent is among them. */
+        const kept = async () =>
+          root !== undefined && mine.includes(root)
+            ? new Map(
+                (await chat.list(scope.chat)).items
+                  .filter((item) => item.state === "waiting")
+                  .map((item) => [item.id, item]),
+              )
+            : new Map<string, QueueItem>();
+        const from = (sender: string) =>
+          sender === "person"
+            ? "user"
+            : sender === "rufi"
+              ? "Rufi"
+              : sender === scope.agent
+                ? "self"
+                : `${agents.get(sender)?.title ?? "An agent"} (${sender})`;
+        const held = (hold: string | null, line: string | null) =>
+          hold === null ? null : (line ?? hold);
+        const list = async () => {
+          const rows = await kept();
+          return {
+            messages: mine.flatMap((agent) => {
+              const queue = agent === scope.agent ? "self" : agent;
+              const listed = agents
+                .waiting(agent)
+                .flatMap((input: WaitingInput) => {
+                  const row = rows.get(input.id);
+                  rows.delete(input.id);
+                  if (input.parts === null && !row) return [];
+                  return [
+                    {
+                      id: input.id,
+                      queue,
+                      from: from(input.sender),
+                      kind: input.kind,
+                      text: row?.text ?? input.parts?.join("\n\n") ?? "",
+                      held: row
+                        ? held(row.held, row.heldText)
+                        : held(input.held, input.heldText),
+                    },
+                  ];
+                });
+              // Rufi's rows not in the agent's queue yet, behind a reading.
+              const later =
+                agent === root
+                  ? [...rows.values()]
+                      .filter((row) => agents.input(row.id) === undefined)
+                      .map((row) => ({
+                        id: row.id,
+                        queue,
+                        from: from(row.origin),
+                        text: row.text,
+                        held: held(row.held, row.heldText),
+                      }))
+                  : [];
+              return [...listed, ...later];
+            }),
+          };
+        };
+        if (action === "list") return list();
+
+        /** Where a message waits: Rufi's row, or an agent's input. */
+        const find = async (message: string | undefined) => {
+          if (message !== undefined) {
+            const row = (await kept()).get(message);
+            if (row && root !== undefined) return { agent: root, row };
+            const input = agents.input(message);
+            if (input?.state === "waiting" && mine.includes(input.agent)) {
+              return { agent: input.agent, row: undefined };
+            }
+          }
+          throw new Refusal(
+            `No message ${message ?? ""} waits for you or an agent below you: list them, and give an id from the list.`,
+          );
+        };
+        // The person's refusals, as the screens get them.
+        const asPerson = async (change: () => Promise<unknown>) => {
+          try {
+            await change();
+          } catch (error) {
+            if (error instanceof ChatRefusal) throw new Refusal(error.message);
+            throw error;
+          }
+        };
+        switch (action) {
+          case "edit": {
+            const found = await find(id);
+            if (text === undefined) throw new Refusal("edit needs text.");
+            if (found.row) {
+              await asPerson(() => chat.edit(scope.chat, found.row.id, text));
+            } else if (!agents.edit(id ?? "", [text])) {
+              throw new Refusal("That message isn't waiting any more.");
+            }
+            break;
+          }
+          case "remove": {
+            const found = await find(id);
+            if (found.row) {
+              await asPerson(() => chat.remove(scope.chat, found.row.id));
+            } else agents.remove([id ?? ""]);
+            break;
+          }
+          case "steer": {
+            const found = await find(id);
+            const { row } = found;
+            // A held one goes as the screens' Send sends it.
+            if (row) {
+              const { holdId } = row;
+              await asPerson(() =>
+                row.held === null
+                  ? chat.steer(scope.chat, row.id)
+                  : row.held === "open_failed" && holdId !== null
+                    ? chat.recover(scope.chat, row.id, holdId, "retry")
+                    : chat.send(scope.chat, row.id),
+              );
+            } else agents.steer(id ?? "");
+            break;
+          }
+          case "reorder": {
+            const found = await find(ids?.[0]);
+            const order = ids ?? [];
+            if (found.agent === root) {
+              // Rufi's order is whole, as the screens give it: these take
+              // the places they had between them, the others keep theirs.
+              const current = (await chat.list(scope.chat)).items
+                .filter(
+                  (item) =>
+                    item.state === "waiting" && item.held !== "reply_ended",
+                )
+                .map((item) => item.id);
+              const moving = [...new Set(order)].filter((message) =>
+                current.includes(message),
+              );
+              let next = 0;
+              const whole = current.map((message) =>
+                moving.includes(message)
+                  ? (moving[next++] ?? message)
+                  : message,
+              );
+              await asPerson(() => chat.reorder(scope.chat, whole));
+            }
+            agents.reorder(found.agent, order);
+            break;
+          }
+        }
+        return list();
       },
     };
   };

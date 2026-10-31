@@ -6,6 +6,7 @@ import {
   sendAgent,
   startAgent,
   stopAgent,
+  waitingMessages,
 } from "./agents.ts";
 import { briefResult, createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
@@ -64,6 +65,7 @@ export const TOOLS: readonly Tool[] = [
   sendAgent,
   readAgent,
   stopAgent,
+  waitingMessages,
 ];
 
 /**
