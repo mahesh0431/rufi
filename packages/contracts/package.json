@@ -10,7 +10,8 @@
     "./briefs": "./src/briefs.ts",
     "./record": "./src/record.ts",
     "./devices": "./src/devices.ts",
-    "./visuals": "./src/visuals.ts"
+    "./visuals": "./src/visuals.ts",
+    "./jitless": "./src/jitless.ts"
   },
   "dependencies": {
     "@openuidev/lang-core": "1.0.2",

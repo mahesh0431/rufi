@@ -1,7 +1,8 @@
 // What a reply shows besides its text, on the real core with its real
 // headers: a picture the AI made, one it generated (once, also when the reply
 // links it, also after a reload), a page it made (drawn in the reply in a
-// locked frame, and opened large), a Mermaid diagram (drawn styled, in its own frame), and a
+// locked frame, and opened large), a Mermaid diagram (drawn styled, in its own frame), a
+// trend from the AI's openui-lang block (drawn by Rufi, with its values), and a
 // file that is gone. A page's script runs, but can't read Rufi's page or an
 // API answer or the network. Standalone requests receive an inert page.
 // The screens' strict CSP refuses nothing.
@@ -653,4 +654,67 @@ test("a Mermaid diagram draws in place of its code block, with its labelled edge
     timeout: 20_000,
   });
   expect(await refusedIn(page)).toEqual([]);
+});
+
+/**
+ * A stored v1 trend block (@rufi/contracts/visuals): keep it as written when
+ * the components or OpenUI change, so an old reply still draws. Its points
+ * are out of order; one has no date; "<5" is kept with its number.
+ */
+const STORED_TREND = [
+  "```openui-lang",
+  'root = Trend("CRP", [c3, c1, c2, c0], "mg/L")',
+  'c1 = Point("2025-12-01", "<5", 5, null, "<5")',
+  'c2 = Point("2026-03-04", "8.2", 8.2, "H", "<5")',
+  'c3 = Point("2026-08-12", "6.0", 6.0, "H", "<5")',
+  'c0 = Point("", "<5")',
+  "```",
+].join("\n");
+
+test("a trend the AI wrote draws in the reply, oldest first, with every value in a table, under Rufi's strict CSP", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  await send(page, `Your CRP:\n\n${STORED_TREND}`);
+  const reply = log(page).locator(".reply").last();
+  await expect(
+    reply.getByRole("heading", { name: "CRP (mg/L) over time" }),
+  ).toBeVisible();
+  await expect(reply.getByRole("img")).toHaveAccessibleName(
+    "CRP (mg/L) over time: <5 on 1 Dec 2025, 8.2 on 4 Mar 2026, 6.0 on 12 Aug 2026. Lab range <5",
+  );
+  const rows = reply.locator("tbody tr");
+  await expect(rows).toHaveText([
+    /1 Dec 2025\s*<5 mg\/L\s*<5/,
+    /4 Mar 2026\s*8\.2 mg\/L\s*<5\s*H/,
+    /12 Aug 2026\s*6\.0 mg\/L\s*<5\s*H/,
+    /No date\s*<5 mg\/L · Not drawn/,
+  ]);
+  // Not the code block: the trend replaced it.
+  await expect(reply.locator("pre")).toHaveCount(0);
+  await accessible(page);
+  expect(await refusedIn(page)).toEqual([]);
+});
+
+test("a finished trend block that names a value it never gives shows as its text, never as a partial trend", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  await send(
+    page,
+    [
+      "Not whole:",
+      "",
+      "```openui-lang",
+      'root = Trend("Haemoglobin", [p1, p2], "g/dL")',
+      'p1 = Point("2026-02-10", "11.6", 11.6)',
+      "```",
+    ].join("\n"),
+  );
+  const reply = log(page).locator(".reply").last();
+  await expect(reply.locator("pre")).toContainText('p1 = Point("2026-02-10"');
+  await expect(reply.getByText("This trend couldn't be drawn.")).toBeVisible();
+  await expect(reply.getByRole("img")).toHaveCount(0);
 });

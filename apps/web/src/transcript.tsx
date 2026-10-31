@@ -64,6 +64,7 @@ import { MiddleCut, StepDetails, took } from "./activity.tsx";
 import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
 import { Diagram, fileIn, NativePicture, Page, Picture } from "./files.tsx";
+import { Visual } from "./visual.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import {
   openAgent,
@@ -140,14 +141,22 @@ const replyComponents = (streaming: boolean): Components => ({
     );
   },
   pre: ({ node, children }) => {
-    const code = node?.children[0];
-    const mermaid =
-      code?.type === "element" &&
-      code.tagName === "code" &&
-      Array.isArray(code.properties["className"]) &&
-      code.properties["className"].includes("language-mermaid");
+    const first = node?.children[0];
+    const code =
+      first?.type === "element" && first.tagName === "code" ? first : null;
+    const classes = code?.properties["className"];
+    const language = (name: string) =>
+      Array.isArray(classes) && classes.includes(`language-${name}`);
+    // A trend draws while it is written: its parser closes what's open.
+    if (code && language("openui-lang")) {
+      return (
+        <Visual source={textOf(code)} streaming={streaming}>
+          <pre>{children}</pre>
+        </Visual>
+      );
+    }
     // Half-written, a diagram stays its code until the reply ends.
-    return mermaid && !streaming ? (
+    return code && language("mermaid") && !streaming ? (
       <Diagram source={textOf(code)}>
         <pre>{children}</pre>
       </Diagram>

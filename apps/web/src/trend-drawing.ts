@@ -8,15 +8,27 @@ import type { ResultRow, ShownRow } from "@rufi/contracts/record";
 import { printedDate } from "./dates.ts";
 
 /** A calendar date ("2026", "2026-05", "2026-05-20T08:30") as a time to space values by. */
-function timeOf(date: string): number {
+export function timeOf(date: string): number {
   const [year = 0, month = 1, day = 1, hour = 0, minute = 0] = date
     .split(/[-T:]/)
     .map(Number);
   return Date.UTC(year, month - 1, day, hour, minute);
 }
 
+/** What a trend reads of a result: the record page's, or one a reply's trend gives. */
+export type TrendValue = Pick<
+  ResultRow,
+  "value" | "number" | "second_number" | "flag" | "range" | "measured"
+>;
+
+/** The results among a page's rows, the values a trend draws from. */
+export const resultsIn = (rows: readonly ShownRow[]): ResultRow[] =>
+  rows.filter(
+    (row): row is ResultRow => !("problem" in row) && row.kind === "result",
+  );
+
 /** A value with a date and a number: one the chart can place. */
-type Placed = ResultRow & {
+type Placed = TrendValue & {
   number: number;
   measured: NonNullable<ResultRow["measured"]>;
 };
@@ -25,11 +37,9 @@ type Placed = ResultRow & {
  * The values a chart can place, oldest first as the series has them: those
  * with a calendar date and a number. The others stay in the table.
  */
-function placedOf(values: readonly ShownRow[]): Placed[] {
+export function placedOf(values: readonly TrendValue[]): Placed[] {
   return values.filter(
     (value): value is Placed =>
-      !("problem" in value) &&
-      value.kind === "result" &&
       value.number !== undefined &&
       value.measured !== undefined &&
       /^\d{4}/.test(value.measured.date),
@@ -101,7 +111,7 @@ function spaced(xs: number[], gap: number): boolean[] {
  */
 export function drawTrend(
   title: string,
-  values: readonly ShownRow[],
+  values: readonly TrendValue[],
   size: { width: number; height: number; mini?: boolean },
 ): TrendDrawing | undefined {
   const placed = placedOf(values);

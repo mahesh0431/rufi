@@ -9,6 +9,7 @@
 // of their props and what each means. A new prop goes only at the end, with
 // a default. A change that would alter what an old block means gets a new
 // component name, and the old one stays.
+import "./jitless.ts";
 import { createLibrary, defineComponent } from "@openuidev/lang-core";
 import { z } from "zod";
 
