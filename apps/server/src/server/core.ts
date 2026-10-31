@@ -14,7 +14,7 @@ import { Effect } from "effect";
 import type { AgentSandbox } from "../agent/runtime.ts";
 import { readBrief } from "../core/briefs/briefs.ts";
 import { continuesAfterRestart } from "../core/chat/continues.ts";
-import { DEFAULT_SHORTLIST, shortlist } from "../core/chat/models.ts";
+import { DEFAULT_MODEL } from "../core/chat/models.ts";
 import { drafts as openDrafts } from "../core/chat/drafts.ts";
 import { chatAgents } from "../core/chat/agents.ts";
 import { chatQueue } from "../core/chat/queue.ts";
@@ -65,11 +65,11 @@ import { prepareClaudePlugin } from "../agent/claude/session.ts";
 import { generatedImages } from "../agent/codex/settings.ts";
 import { aiFiles } from "./files.ts";
 import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
-import { startRufiAi, type OfferedModel } from "./rufi-ai.ts";
+import { startRufiAi } from "./rufi-ai.ts";
 import { converter as openConverter } from "./converter.ts";
 import { secret, sessions } from "./session.ts";
 import { agentRuns, subAgents } from "./sub-agents.ts";
-import { signInFlow, type ProviderSignIn } from "./signin.ts";
+import { keptSignIns, signInFlow, type ProviderSignIn } from "./signin.ts";
 
 export interface CoreOptions {
   /** Rufi's data folder. */
@@ -284,6 +284,14 @@ export const startCore = (options: CoreOptions) =>
         }),
     );
     opened.agents = agentStore;
+    const signIns = options.signIns ?? {};
+    const isProvider = (id: string): id is Provider =>
+      id === "codex" || id === "claude";
+    // How each provider is signed in, as it last said (server/signin.ts).
+    const signedIn = yield* Effect.acquireRelease(
+      Effect.sync(() => keptSignIns(signIns)),
+      (kept) => Effect.sync(kept.close),
+    );
     const agentSystem = yield* Effect.acquireRelease(
       attempt(() =>
         startRufiAi({
@@ -296,9 +304,13 @@ export const startCore = (options: CoreOptions) =>
             log,
           ).specs.map((spec) => spec.name),
           cwd: aiSandbox(home).folder,
-          model: DEFAULT_SHORTLIST[0] ?? "",
+          model: DEFAULT_MODEL,
           documents: (personId) => {
             readings.changed(personId);
+          },
+          signedOut: () => {
+            void signedIn.refresh("codex");
+            void signedIn.refresh("claude");
           },
           log,
           ...(options.now && { now: options.now }),
@@ -315,16 +327,12 @@ export const startCore = (options: CoreOptions) =>
     // Rufi's MCP server, with a key for each agent (server/mcp.ts).
     const chatKeys = mcpKeys();
     const mcpUrl = (path: string) => `http://127.0.0.1:${String(port)}${path}`;
-    const signIns = options.signIns ?? {};
     const signedOut: ProviderStatus = {
       state: "signed_out",
       account: null,
       text: null,
     };
-    const statusOf = (provider: Provider) =>
-      signIns[provider]?.status() ?? Promise.resolve(signedOut);
-    const isProvider = (id: string): id is Provider =>
-      id === "codex" || id === "claude";
+    const statusOf = (provider: Provider) => signedIn.status(provider);
     const account = async (): Promise<Status> => {
       const [codex, claude] = await Promise.all([
         statusOf("codex"),
@@ -343,7 +351,6 @@ export const startCore = (options: CoreOptions) =>
               ? statusOf(provider)
               : Promise.resolve(signedOut),
           agent: agentSystem.rufiAi,
-          shortlist: () => shortlist(transcripts.setting),
           mcp: { url: () => mcpUrl(MCP_CHAT), keys: chatKeys },
           rules: (region, agent) => {
             const instructions = agent
@@ -374,8 +381,10 @@ export const startCore = (options: CoreOptions) =>
                 log,
                 // The chat these tools run in: made by now.
                 messages: (): Chat["queue"] => chat.queue,
-                models: (): Promise<readonly OfferedModel[]> =>
-                  chat.shortlisted(),
+                signIn: (provider) =>
+                  isProvider(provider)
+                    ? statusOf(provider)
+                    : Promise.resolve(signedOut),
                 usage: () => agentSystem.usage(),
               }),
               {
@@ -487,7 +496,7 @@ export const startCore = (options: CoreOptions) =>
         folder: aiSandbox(home).folder,
         generated: generatedImages(home),
       }),
-      signIn: signInFlow(signIns, log),
+      signIn: signInFlow(signIns, log, signedIn.refresh),
       launcher,
       launchUrl,
       ...(options.screens !== undefined && { screens: options.screens }),

@@ -50,7 +50,6 @@ import {
   CONTINUES_SETTING,
   continuesAfterRestart,
 } from "../core/chat/continues.ts";
-import { shortlist, SHORTLIST_SETTING } from "../core/chat/models.ts";
 import { RefRefusal } from "../core/chat/refs.ts";
 import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
 import {
@@ -464,7 +463,6 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       whileReplying: Schema.decodeUnknownOption(WhileReplying)(
         await transcripts.setting("while_replying"),
       ).pipe(Option.getOrElse(() => "steer" as const)),
-      models: await shortlist(transcripts.setting),
       continuesAfterRestart: await continuesAfterRestart(transcripts.setting),
       emergencyRegion: known?.region ?? null,
       emergency: known ? { name: known.name, number: known.number } : null,
@@ -549,12 +547,6 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       await transcripts.saveSetting(
         CONTINUES_SETTING,
         String(changed.continuesAfterRestart),
-      );
-    }
-    if (changed.models !== undefined) {
-      await transcripts.saveSetting(
-        SHORTLIST_SETTING,
-        JSON.stringify(changed.models),
       );
     }
     if (changed.deviceKeepValues !== undefined) {
@@ -686,10 +678,6 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       path: granted.file.path,
       shape: granted.file.shape,
     });
-  });
-
-  app.get("/api/models", async (c) => {
-    return c.json(await acting(() => chat.models()));
   });
 
   app.get("/api/people/:personId/overview", async (c) =>

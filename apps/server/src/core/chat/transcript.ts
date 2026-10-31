@@ -401,8 +401,10 @@ async function entriesOut(trx: Db, rows: EntryRow[]): Promise<Entry[]> {
 }
 
 /**
- * Turns as the screens get them. A turn on another agent thread than the turn before it is on a new thread;
- * the chat's first turn isn't.
+ * Turns as the screens get them, each with what the turn before it ran on:
+ * the one before it in the chat that ran on a thread, also when it isn't
+ * among `rows`. A turn on another agent thread than the turn before it is
+ * on a new thread; the chat's first turn isn't.
  */
 async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
   const first = rows[0];
@@ -412,38 +414,51 @@ async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
     (
       await trx
         .selectFrom("turns as t")
-        .select((eb) => [
-          "t.id",
-          eb
-            .selectFrom("turns as p")
-            .select("p.thread_id")
-            .whereRef("p.person_id", "=", "t.person_id")
-            .whereRef("p.chat_id", "=", "t.chat_id")
-            .where("p.thread_id", "is not", null)
-            .where((p) =>
-              p.or([
-                p("p.started_at", "<", p.ref("t.started_at")),
-                p.and([
-                  p("p.started_at", "=", p.ref("t.started_at")),
-                  p("p.id", "<", p.ref("t.id")),
+        .select((eb) => {
+          /** A column of the turn before `t` that ran on a thread. */
+          const earlier = (column: "p.thread_id" | "p.model" | "p.effort") =>
+            eb
+              .selectFrom("turns as p")
+              .select(column)
+              .whereRef("p.person_id", "=", "t.person_id")
+              .whereRef("p.chat_id", "=", "t.chat_id")
+              .where("p.thread_id", "is not", null)
+              .where((p) =>
+                p.or([
+                  p("p.started_at", "<", p.ref("t.started_at")),
+                  p.and([
+                    p("p.started_at", "=", p.ref("t.started_at")),
+                    p("p.id", "<", p.ref("t.id")),
+                  ]),
                 ]),
-              ]),
-            )
-            .orderBy("p.started_at", "desc")
-            .orderBy("p.id", "desc")
-            .limit(1)
-            .as("thread_before"),
-        ])
+              )
+              .orderBy("p.started_at", "desc")
+              .orderBy("p.id", "desc")
+              .limit(1);
+          return [
+            "t.id",
+            earlier("p.thread_id").as("thread_before"),
+            earlier("p.model").as("model_before"),
+            earlier("p.effort").as("effort_before"),
+          ];
+        })
         .where("t.person_id", "=", first.person_id)
         .where("t.id", "in", ids)
         .execute()
-    ).map((row) => [row.id, row.thread_before]),
+    ).map((row) => [row.id, row]),
   );
   return rows.map((row) => {
-    const threadBefore = before.get(row.id) ?? null;
+    const earlier = before.get(row.id);
+    const threadBefore = earlier?.thread_before ?? null;
+    const modelBefore = earlier?.model_before ?? null;
     return {
       id: row.id,
       model: row.model,
+      effort: row.effort,
+      before:
+        modelBefore === null
+          ? null
+          : { model: modelBefore, effort: earlier?.effort_before ?? null },
       status: row.status as Turn["status"],
       endReason: row.end_reason as Turn["endReason"],
       endText: row.end_text,
@@ -777,7 +792,7 @@ export function transcripts(
     chat: ChatRow,
     revision: number,
     agentTurnId: string,
-    thread: { id: string; model: string },
+    thread: { id: string; model: string; effort?: string },
     inputs: readonly string[],
     /** The messages of Rufi AI's agents among the inputs. */
     messages: readonly AgentMessage[],
@@ -794,6 +809,7 @@ export function transcripts(
         agent_turn_id: agentTurnId,
         thread_id: thread.id,
         model: thread.model,
+        effort: thread.effort ?? null,
         origin:
           rows.length > 0 && rows.every((row) => row.origin === "rufi")
             ? "rufi"
@@ -1238,7 +1254,7 @@ export function transcripts(
     startTurn: (
       chat: ChatRow,
       agentTurnId: string,
-      thread: { id: string; model: string },
+      thread: { id: string; model: string; effort?: string },
       inputs: readonly string[] = [],
       messages: readonly AgentMessage[] = [],
     ) =>
@@ -1350,7 +1366,7 @@ export function transcripts(
     applyStart: (
       chat: ChatRow,
       agentTurnId: string,
-      thread: { id: string; model: string },
+      thread: { id: string; model: string; effort?: string },
       inputs: readonly string[],
       messages: readonly AgentMessage[],
       write: (trx: Transaction<Tables>) => Promise<void>,

@@ -239,10 +239,23 @@ export const EndReason = Schema.Literals([
 ]);
 export type EndReason = typeof EndReason.Type;
 
+/** A reply's model and the effort it ran with; null: from before replies kept it. */
+const RanOn = Schema.Struct({
+  model: Schema.String,
+  effort: Schema.NullOr(Schema.String),
+});
+
 /** One reply the AI ran: how it went, and how it ended. */
 export const Turn = Schema.Struct({
   id: Schema.String,
   model: Schema.String,
+  /** The effort it ran with; null: from before replies kept it. */
+  effort: Schema.NullOr(Schema.String),
+  /**
+   * What the reply before it in the chat ran on, also when that one isn't
+   * on the page; null: it is the chat's first.
+   */
+  before: Schema.NullOr(RanOn),
   status: Schema.Literals(["running", "completed", "interrupted", "failed"]),
   endReason: Schema.NullOr(EndReason),
   /** Why it didn't complete, in plain words. */
@@ -261,12 +274,33 @@ export const Turn = Schema.Struct({
 });
 export type Turn = typeof Turn.Type;
 
-/** How hard the AI thinks for a reply: low is faster, high thinks longer. */
-export const Effort = Schema.Literals(["low", "medium", "high"]);
+/**
+ * How hard the AI thinks for a reply: low is faster, xhigh thinks longest.
+ * The same four for every model, in order.
+ */
+export const EFFORTS = ["low", "medium", "high", "xhigh"] as const;
+export const Effort = Schema.Literals(EFFORTS);
 export type Effort = typeof Effort.Type;
 
 /** A chat's effort until one is chosen for it. */
 export const DEFAULT_EFFORT: Effort = "medium";
+
+/**
+ * The models Rufi's AI and its agents run on: these four, always, in the
+ * menu's order. Rufi never asks the providers for theirs. The first is a
+ * new chat's.
+ */
+export const MODELS = [
+  { id: "gpt-6-astra", name: "GPT-6-Astra", provider: "codex" },
+  { id: "gpt-6.1-sol", name: "GPT-6.1-Sol", provider: "codex" },
+  { id: "claude-fable-5-1", name: "Claude Fable 5.1", provider: "claude" },
+  { id: "claude-opus-5-5", name: "Claude Opus 5.5", provider: "claude" },
+] as const;
+export type ModelId = (typeof MODELS)[number]["id"];
+export const ModelId = Schema.Literals(MODELS.map((model) => model.id));
+
+/** One of the four by its id; another (stored before) is none of them. */
+export const modelOf = (id: string) => MODELS.find((model) => model.id === id);
 
 /** A person's one chat with Rufi's AI. */
 export const Chat = Schema.Struct({
@@ -379,15 +413,6 @@ export type Draft = typeof Draft.Type;
 /** A message the core took into the queue, and the box's draft after it. */
 export const Sent = Schema.Struct({ id: Schema.String, draft: Draft });
 
-export const Model = Schema.Struct({ id: Schema.String, name: Schema.String });
-export type Model = typeof Model.Type;
-
-/** The shortlist's models offered now, and every model offered now. */
-export const Models = Schema.Struct({
-  models: Schema.Array(Model),
-  offered: Schema.Array(Model),
-});
-
 /** The page's tab proof, for the session's header. */
 export const SessionProof = Schema.Struct({ proof: Schema.String });
 
@@ -437,8 +462,6 @@ export const Settings = Schema.Struct({
   ),
   /** The regions Rufi knows, to choose from. */
   regions: Schema.Array(Region),
-  /** The models Rufi's AI and its agents may run on, by id, in order. */
-  models: Schema.Array(Schema.String),
   /** How many restarts in a row Rufi carries on a reply that ran. */
   continuesAfterRestart: Schema.Int,
   /** How long device values are kept (docs/adr/0023). */
@@ -484,8 +507,9 @@ export const SubAgents = Schema.Struct({ agents: Schema.Array(SubAgent) });
 /**
  * One line of a sub-agent's Activity, as its agent reported it: a message
  * it took (`from` whom), its answer (reply), a note or a step (activity),
- * its thinking, a question it asked (`detail`: the options), or how a turn
- * that didn't finish ended.
+ * its thinking, a question it asked (`detail`: the options), how a turn
+ * that didn't finish ended, or that a turn ran on another model or effort
+ * than the one before (model).
  */
 export const AgentLine = Schema.Struct({
   id: Schema.String,
@@ -496,7 +520,10 @@ export const AgentLine = Schema.Struct({
     "reasoning",
     "question",
     "end",
+    "model",
   ]),
+  /** A model line: the turn before ran on `from`, this one on `to`. */
+  changed: Schema.optionalKey(Schema.Struct({ from: RanOn, to: RanOn })),
   text: Schema.String,
   from: Schema.optionalKey(Schema.String),
   activity: Schema.NullOr(ActivityKind),
@@ -627,8 +654,6 @@ export const SaveSettings = Schema.Struct({
   whileReplying: Schema.optionalKey(WhileReplying),
   /** A region code Rufi knows, such as "IN"; null clears it. */
   emergencyRegion: Schema.optionalKey(Schema.NullOr(Line(10))),
-  /** The whole shortlist, in order. */
-  models: Schema.optionalKey(Schema.Array(Id)),
   /** How many restarts in a row Rufi carries on a reply that ran: 0 to 10. */
   continuesAfterRestart: Schema.optionalKey(
     Schema.Int.check(
@@ -692,6 +717,6 @@ export const FinishStep = Schema.Struct({
   step: Schema.Literals(["welcome", "sign_in", "region"]),
 });
 
-export const SelectModel = Schema.Struct({ model: Id });
+export const SelectModel = Schema.Struct({ model: ModelId });
 
 export const SelectEffort = Schema.Struct({ effort: Effort });

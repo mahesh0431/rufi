@@ -1,26 +1,26 @@
 // What an agent does with agents (core/tools/agents.ts), in the agent
 // system (docs/adr/0026). A child of the calling agent is made by the call
 // that starts it, and its id is that call's, so the same call again finds
-// it; it is the caller's chat's, on the caller's model and effort, with no
-// more of Rufi's tools than the caller has. Each turn's end goes to its
-// parent as a done message (the package's). An agent sees how the agents
+// it; it is the caller's chat's, on the caller's model and effort, with
+// the caller's tools. Each turn's end goes to its parent as a done message
+// (the package's). An agent sees how the agents
 // below it are, writes to one or to its parent, reads the conversation of
 // any agent in its chat, its own too, by pages, stops one below it or
 // itself, with or without everything under it, and manages what waits for
 // it and for the agents below it: the person's messages and Rufi's notes
-// change in Rufi first, as the screens change them. An agent runs only on a
-// model of the person's shortlist: one it starts, or one below it moved to
-// another while it isn't running.
+// change in Rufi first, as the screens change them. An agent runs only on
+// one of Rufi's four models whose provider is signed in: one it starts, or
+// one below it moved to another while it isn't running.
 import type { Agents, WaitingInput } from "@rufi/agents/agents";
-import type { QueueItem } from "@rufi/contracts";
+import { modelOf, type ProviderStatus, type QueueItem } from "@rufi/contracts";
 import type { chatAgents } from "../core/chat/agents.ts";
 import type { ChatQueue } from "../core/chat/queue.ts";
 import { Refusal, type AgentTools } from "../core/tools/registry.ts";
 import type { TurnScope } from "../core/tools/tools.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
-import { NOT_SHORTLISTED } from "../core/chat/models.ts";
+import { NOT_A_MODEL, notSignedIn } from "../core/chat/models.ts";
 import { ChatRefusal, type Chat } from "./chat.ts";
-import type { OfferedModel, ProviderUsage } from "./rufi-ai.ts";
+import type { ProviderUsage } from "./rufi-ai.ts";
 
 /** How many turns a page of an agent's conversation holds. */
 const PAGE = 10;
@@ -38,16 +38,19 @@ export function subAgents(deps: {
   log: Log;
   /** The chat's waiting messages, as its screens change them: Rufi first. */
   messages: () => Chat["queue"];
-  /** The models of the person's shortlist the providers offer now. */
-  models: () => Promise<readonly OfferedModel[]>;
+  /** A provider's sign-in now. */
+  signIn: (provider: string) => Promise<ProviderStatus>;
   /** Each provider's usage now, as it reported it. */
   usage: () => Promise<readonly ProviderUsage[]>;
 }): (scope: TurnScope) => AgentTools {
   const { agents, kept } = deps;
-  /** A model of the shortlist, else refused with the chat's own line. */
-  const shortlisted = async (model: string) => {
-    const found = (await deps.models()).find((one) => one.id === model);
-    if (!found) throw new Refusal(NOT_SHORTLISTED);
+  /** One of the four whose provider is signed in, else refused in one line. */
+  const runnable = async (model: string) => {
+    const found = modelOf(model);
+    if (!found) throw new Refusal(NOT_A_MODEL);
+    if ((await deps.signIn(found.provider)).state !== "signed_in") {
+      throw new Refusal(notSignedIn(found.provider));
+    }
     return found;
   };
   return (scope) => {
@@ -57,18 +60,11 @@ export function subAgents(deps: {
         ? agents.get(id)
         : undefined;
     return {
-      start: async ({ title, task, tools, model, effort }, callId) => {
+      start: async ({ title, task, model, effort }, callId) => {
         const parent = agents.get(scope.agent);
         if (!parent) throw new Error(`No agent ${scope.agent}.`);
-        // Its own or its parent's: the shortlist decides either way.
-        const on = await shortlisted(model ?? parent.model);
-        const given = [...new Set(tools ?? parent.tools)];
-        const wider = given.filter((tool) => !parent.tools.includes(tool));
-        if (wider.length > 0) {
-          throw new Refusal(
-            `An agent you start can have only tools you have, and you don't have ${wider.join(", ")}. Nothing was started.`,
-          );
-        }
+        // Its own or its parent's: one of the four either way.
+        const on = await runnable(model ?? parent.model);
         // Each step again finds what it did: a crash before the owner is
         // kept leaves an agent the next start removes, its task with it.
         if (!agents.get(callId)) {
@@ -79,7 +75,8 @@ export function subAgents(deps: {
             provider: on.provider,
             model: on.id,
             effort: effort ?? parent.effort,
-            tools: given,
+            // Its parent's, all of them (T3 Code's way).
+            tools: parent.tools,
             cwd: parent.cwd,
           });
         }
@@ -244,20 +241,6 @@ export function subAgents(deps: {
         })),
       }),
 
-      models: async () => ({
-        models: (await deps.models()).map(
-          ({ id, name, provider, efforts, defaultEffort }) => ({
-            id,
-            name,
-            provider,
-            efforts,
-            ...(defaultEffort !== undefined && {
-              default_effort: defaultEffort,
-            }),
-          }),
-        ),
-      }),
-
       setModel: async ({ agent, model, effort }) => {
         const found = agents.below(scope.agent).includes(agent)
           ? agents.get(agent)
@@ -267,7 +250,7 @@ export function subAgents(deps: {
             `No agent ${agent} is below you: give an agent agent_status lists.`,
           );
         }
-        const on = await shortlisted(model);
+        const on = await runnable(model);
         // A model changes only while its agent is idle (ADR 0026).
         if (agents.current(agent) !== undefined) {
           throw new Refusal(

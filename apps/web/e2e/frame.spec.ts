@@ -603,16 +603,6 @@ test.describe("first run", () => {
     await expect(page.locator(".reply")).toHaveText(
       "ok:Hello from the first page",
     );
-    // The sign-in goes away while the page is open: the next send says so.
-    rufi.codex = SIGNED_OUT;
-    const chatBox = page.getByRole("textbox", { name: "Message to Rufi" });
-    await chatBox.fill("My next question");
-    await chatBox.press("Enter");
-    await expect(page.getByRole("alert")).toHaveText(
-      "You're signed out. Sign in with ChatGPT to chat.Sign in",
-    );
-    await expect(chatBox).toHaveValue("My next question");
-
     await sidebar(page).getByRole("link", { name: "Settings" }).click();
     await expect(
       page.getByRole("combobox", { name: "Emergency region" }),

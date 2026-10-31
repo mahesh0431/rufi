@@ -16,9 +16,9 @@ const at = (day: number, minute: number) =>
 
 /**
  * Asha's chat with 200 fictional questions and answers: Mon 5 Oct, then
- * yesterday, then today. The AI's thread changes at question 120; it
- * compacted its memory in question 90's reply, and a compaction in 95's was
- * cut off.
+ * yesterday, then today. The AI's thread changes at question 120, and its
+ * model at 171, the latest page's first; it compacted its memory in
+ * question 90's reply, and a compaction in 95's was cut off.
  */
 function longChat(): string {
   const rows: string[] = [];
@@ -38,7 +38,7 @@ function longChat(): string {
   for (let n = 1; n <= TURNS; n++) {
     const time = n <= 60 ? at(5, n) : n <= 150 ? at(7, n - 60) : at(8, n - 150);
     rows.push(
-      `INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at, ended_at) SELECT 't-${String(n)}', 'asha', id, 'seeded-${String(n)}', '${n < 120 ? "thread-a" : "thread-b"}', 'gpt-6-astra', 'completed', '${time}', '${time}' FROM chats WHERE person_id = 'asha';`,
+      `INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at, ended_at) SELECT 't-${String(n)}', 'asha', id, 'seeded-${String(n)}', '${n < 120 ? "thread-a" : "thread-b"}', '${n < 171 ? "gpt-6-astra" : "gpt-6.1-sol"}', 'completed', '${time}', '${time}' FROM chats WHERE person_id = 'asha';`,
     );
     entry(n, "message", `Fictional question ${String(n)}`, time);
     if (n === 90 || n === 95) {
@@ -147,14 +147,15 @@ test("a long chat opens at its latest page; older pages load as you scroll up, i
     "Today",
   ]);
 
-  // Quiet lines: a new thread before question 120 and before the new
-  // message (Codex has no record of the seeded thread), the compaction in
-  // 90's reply; none for the cut compaction or the chat's first turn.
-  const newThread = log(page).getByText("New thread started", { exact: true });
-  await expect(newThread).toHaveCount(2);
+  // Quiet lines: the model changed before question 171, whose reply before
+  // was on an older page, and before the new message, on a new chat's model
+  // (none for the new thread alone, at 120); the compaction in 90's reply;
+  // none for the cut compaction or the chat's first turn.
+  const changed = log(page).getByText(/^Model changed/);
+  await expect(changed).toHaveCount(2);
   await expect(
-    newThread.nth(0).locator("xpath=following-sibling::*[1]"),
-  ).toHaveText("Fictional question 120");
+    changed.nth(0).locator("xpath=following-sibling::*[1]"),
+  ).toHaveText("Fictional question 171");
   const compacted = log(page).getByText("Chat history compacted", {
     exact: true,
   });
