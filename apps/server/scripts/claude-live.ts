@@ -156,6 +156,8 @@ interface Call {
 interface Turn {
   start: SDKSystemMessage;
   calls: Call[];
+  /** Claude's last words in the turn. */
+  said: string;
 }
 
 /**
@@ -199,6 +201,7 @@ async function turn(
   // Not `for await`: leaving it would close the session.
   const messages = session.messages[Symbol.asyncIterator]();
   let start: SDKSystemMessage | undefined;
+  let said = "";
   const calls = new Map<string, Call>();
   for (;;) {
     const next = await messages.next();
@@ -229,11 +232,12 @@ async function turn(
           `the turn ended in error: ${value.subtype === "success" ? value.result : value.errors.join("; ")}`,
         );
       }
+      said = value.result;
       break;
     }
   }
   if (start === undefined) throw new Error("The turn didn't say its start.");
-  return { start, calls: [...calls.values()] };
+  return { start, calls: [...calls.values()], said };
 }
 
 /** How long a turn through the adapter may take here. */
@@ -823,6 +827,9 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
     }
     try {
       await checkProbes(probes, seen.calls);
+    } catch (error) {
+      // Claude's own report says why a step wasn't tried.
+      throw new Error(`${messageOf(error)}; Claude said: ${seen.said}`);
     } finally {
       await rm(outside, { force: true });
       await rm("/tmp/rufi-claude-live", { force: true });
