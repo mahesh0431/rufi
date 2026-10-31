@@ -2318,7 +2318,7 @@
     },
     {
       "name": "rufi.start_agent",
-      "description": "Starts an agent of your own for a task that can run on its own: it runs at once, on your model and effort unless you give one that list_models gives (a model the user hasn't ticked is refused, yours too), and goes on after your turn ends. Give it a title and its whole task, its first message. It has your tools unless you give it fewer (tools); one you don't have is refused. Its saves and briefs show in the chat with Rufi's receipt. Answers its id; agent_status says how it is, and read_agent reads its conversation.",
+      "description": "Starts an agent of your own for a task that can run on its own: it runs at once, on your model and effort unless you give others (a model whose provider isn't signed in is refused, yours too), and goes on after your turn ends. Give it a title and its whole task, its first message. It has your tools unless you give it fewer (tools); one you don't have is refused. Its saves and briefs show in the chat with Rufi's receipt. Answers its id; agent_status says how it is, and read_agent reads its conversation.",
       "callers": "model",
       "readOnly": false,
       "destructive": false,
@@ -2344,11 +2344,23 @@
           },
           "model": {
             "type": "string",
-            "description": "A model list_models gives. Leave it out for yours."
+            "enum": [
+              "gpt-6-astra",
+              "gpt-6.1-sol",
+              "claude-fable-5-1",
+              "claude-opus-5-5"
+            ],
+            "description": "One of Rufi's models: gpt-6-astra (GPT-6-Astra), gpt-6.1-sol (GPT-6.1-Sol), claude-fable-5-1 (Claude Fable 5.1), claude-opus-5-5 (Claude Opus 5.5). Leave it out for yours."
           },
           "effort": {
             "type": "string",
-            "description": "One of the efforts its model takes, as list_models gives them. Leave it out for yours."
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh"
+            ],
+            "description": "How hard it thinks: low is fastest, xhigh thinks longest. Leave it out for yours."
           }
         },
         "required": [
@@ -2546,23 +2558,8 @@
       ]
     },
     {
-      "name": "rufi.list_models",
-      "description": "The models the user shortlisted in Settings that their providers offer now: each with its id, name, provider, the efforts it takes and its default effort, if it has one. An agent runs only on one of these.",
-      "callers": "model",
-      "readOnly": true,
-      "destructive": false,
-      "inputSchema": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": false
-      },
-      "examples": [
-        {}
-      ]
-    },
-    {
       "name": "rufi.set_agent_model",
-      "description": "Changes the model of an agent below you, and its effort if you give one, from its next turn on: never your own. Only a model list_models gives, and only while the agent isn't running: wait for its turn to end. On another provider's model, its next turn starts a new conversation there, which hears its last 10 turns. Answers the agent with its model and effort.",
+      "description": "Changes the model of an agent below you, and its effort if you give one, from its next turn on: never your own. Only while the agent isn't running: wait for its turn to end. On another provider's model, its next turn starts a new conversation there, which hears its last 10 turns. Answers the agent with its model and effort.",
       "callers": "model",
       "readOnly": false,
       "destructive": false,
@@ -2576,12 +2573,23 @@
           },
           "model": {
             "type": "string",
-            "description": "A model list_models gives.",
-            "minLength": 1
+            "enum": [
+              "gpt-6-astra",
+              "gpt-6.1-sol",
+              "claude-fable-5-1",
+              "claude-opus-5-5"
+            ],
+            "description": "One of Rufi's models: gpt-6-astra (GPT-6-Astra), gpt-6.1-sol (GPT-6.1-Sol), claude-fable-5-1 (Claude Fable 5.1), claude-opus-5-5 (Claude Opus 5.5)."
           },
           "effort": {
             "type": "string",
-            "description": "One of the efforts the model takes, as list_models gives them. Leave it out to keep the agent's."
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh"
+            ],
+            "description": "How hard it thinks: low is fastest, xhigh thinks longest. Leave it out to keep the agent's."
           }
         },
         "required": [
@@ -2593,7 +2601,7 @@
       "examples": [
         {
           "agent": "<id from agent_status>",
-          "model": "<id from list_models>"
+          "model": "claude-opus-5-5"
         }
       ]
     },

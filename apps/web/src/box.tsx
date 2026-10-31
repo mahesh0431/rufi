@@ -1,9 +1,12 @@
 // The chat's box, the same in every size: what you type is the chat's
 // draft, kept by the core, saved quietly; the box says only when it couldn't
-// be. Enter sends. While a reply runs, Steer puts the message into it and
-// Queue keeps it for after it, Enter doing what Settings chose, and Stop is
-// beside the box (Activity shows what the AI does; the bar, where it
-// doesn't show, has a busy sign). The box clears only when the core took the message, and nothing
+// be. Enter sends. From the send until the reply ends, the one round button
+// is Stop while the box is empty, and sends once you type: Enter or a click does what
+// Settings chose (Steer puts the message into the reply, Queue keeps it for
+// after it), ⌘Enter or a ⌘-click the other, as a line under the box says
+// (Activity shows what the AI does; the bar, where it
+// doesn't show, has a busy sign from the send on; the chat's working line
+// shows the send, not the box). The box clears only when the core took the message, and nothing
 // is sent again by itself. Signed out, the core takes nothing: the box says so, with Sign in.
 // The model and effort are chosen beside Send; what waits shows in the
 // chat (waiting.tsx). Chips (references to documents, draft items and records) sit above
@@ -21,11 +24,9 @@ import {
 } from "@rufi/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  ListEnd,
   LoaderCircle,
   LogIn,
   type LucideProps,
-  Merge,
   RotateCw,
   Send,
   Square,
@@ -49,17 +50,15 @@ import { chatPath, type Live, messageOf } from "./live.ts";
 import { ModelMenu } from "./model-menu.tsx";
 import { usePanel } from "./panel.ts";
 import { useSettings } from "./reads.ts";
-import { isRunning } from "./transcript-state.ts";
+import { workingOf } from "./transcript-state.ts";
 import { Button, IconButton } from "./ui.tsx";
 
 /**
- * What the box says under it: a send on its way, or a draft that couldn't be
- * saved. Saves are quiet: the box says nothing then.
+ * What the box says under it: a draft that couldn't be saved. Saves are
+ * quiet: the box says nothing then; a send shows in the chat.
  */
 function saveState(state: BoxState): string | null {
-  if (state.sending) return "Sending…";
-  if (state.failed) return "Not saved";
-  return null;
+  return state.failed ? "Not saved" : null;
 }
 
 export function Box({
@@ -85,9 +84,12 @@ export function Box({
   const notice = useStore(box.store, (state) => state.notice);
   const chips = useStore(box.store, (state) => state.refs);
   const refused = usePanel((state) => state.refused);
-  const running = useStore(live, isRunning);
-  // What Enter does while a reply runs.
+  // From the send until the reply ends: Stop, or Steer and Queue, and the
+  // bar's busy sign.
+  const working = useStore(live, (state) => workingOf(state, locked) !== null);
+  // What Enter does while a reply runs, and ⌘Enter.
   const enter = useSettings().data?.whileReplying ?? "steer";
+  const other: WhileReplying = enter === "steer" ? "queue" : "steer";
   const navigate = useNavigate();
   const [problem, setProblem] = useState<string | null>(null);
   const long = tooLong(text);
@@ -152,7 +154,11 @@ export function Box({
             !event.nativeEvent.isComposing
           ) {
             event.preventDefault();
-            if (hasText) submit();
+            if (hasText) {
+              submit(
+                working && (event.metaKey || event.ctrlKey) ? other : enter,
+              );
+            }
           }
         }}
         className="resize-none overflow-hidden bg-transparent outline-none placeholder:text-muted"
@@ -179,19 +185,25 @@ export function Box({
       className="rounded-full bg-ink text-surface not-disabled:hover:bg-ink"
     />
   );
-  /** While a reply runs: into it, or after it. */
-  const sendWhile = (kind: WhileReplying) => (
-    <IconButton
-      look={kind === enter ? "main" : "quiet"}
-      label={kind === "steer" ? "Steer" : "Queue"}
-      icon={kind === "steer" ? Merge : ListEnd}
-      disabled={!hasText || locked}
-      onClick={() => {
-        submit(kind);
-      }}
-      className="rounded-full"
-    />
-  );
+  /**
+   * While a reply runs, the one button: Stop until you type, then what
+   * Settings chose, the other with ⌘.
+   */
+  const whileWorking =
+    hasText && !locked ? (
+      <IconButton
+        look="main"
+        label={enter === "steer" ? "Steer" : "Queue"}
+        icon={Send}
+        disabled={locked}
+        onClick={(event) => {
+          submit(event.metaKey || event.ctrlKey ? other : enter);
+        }}
+        className="rounded-full"
+      />
+    ) : (
+      stopButton
+    );
 
   return (
     <form
@@ -215,7 +227,7 @@ export function Box({
             {/* Its name says what it does, then what it shows. */}
             <span className="sr-only">Open the chat: </span>
             <span className="flex min-w-0 flex-1 items-center gap-1.5">
-              {running && (
+              {working && (
                 <LoaderCircle
                   size={14}
                   className="shrink-0 animate-spin text-muted"
@@ -235,15 +247,7 @@ export function Box({
             </span>
           </button>
           {choice}
-          {running ? (
-            <>
-              {hasText && sendWhile("steer")}
-              {hasText && sendWhile("queue")}
-              {stopButton}
-            </>
-          ) : (
-            sendButton
-          )}
+          {working ? whileWorking : sendButton}
         </div>
       ) : (
         <div
@@ -293,17 +297,15 @@ export function Box({
             <span className="flex-1" />
             {choice}
             <ContextMeter live={live} />
-            {running ? (
-              <>
-                {sendWhile("steer")}
-                {sendWhile("queue")}
-                {stopButton}
-              </>
-            ) : (
-              sendButton
-            )}
+            {working ? whileWorking : sendButton}
           </div>
         </div>
+      )}
+      {size !== "bar" && working && hasText && !locked && (
+        // The other way to send, light, while a reply runs.
+        <p className="px-3.5 pt-1 text-xs text-muted">
+          {other === "queue" ? "⌘↵ to queue" : "⌘↵ to steer"}
+        </p>
       )}
       {size === "bar"
         ? why !== null && (

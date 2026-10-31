@@ -3,7 +3,7 @@
 import type { ProviderAdapter } from "@rufi/agents/provider";
 import { openAgentStore } from "@rufi/agents/store";
 import { continuesAfterRestart } from "../src/core/chat/continues.ts";
-import { DEFAULT_SHORTLIST } from "../src/core/chat/models.ts";
+import { DEFAULT_MODEL } from "../src/core/chat/models.ts";
 import type { Transcripts } from "../src/core/chat/transcript.ts";
 import type { Store } from "../src/core/store/database.ts";
 import { agentsPath } from "../src/server/agents.ts";
@@ -27,7 +27,7 @@ export async function rufiAiFor(options: {
     adapters: [options.adapter, ...(options.others ?? [])],
     tools: options.tools,
     cwd: aiSandbox(options.home).folder,
-    model: DEFAULT_SHORTLIST[0] ?? "",
+    model: DEFAULT_MODEL,
     log: () => undefined,
   });
   return {
