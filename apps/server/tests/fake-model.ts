@@ -73,6 +73,8 @@ export async function fakeModel(
     script?: readonly Step[];
     /** How many requests it refuses first, as OpenAI refuses a token (401). */
     refuse?: number;
+    /** Headers every answer carries, such as the plan's usage limits. */
+    headers?: Record<string, string>;
   } = {},
 ): Promise<FakeModel> {
   const script = [...(options.script ?? [])];
@@ -108,7 +110,10 @@ export async function fakeModel(
       const last = texts.at(-1) ?? "";
       // The tool's result came back: now the answer.
       const answered = body.input.at(-1)?.type === "custom_tool_call_output";
-      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.writeHead(200, {
+        "content-type": "text/event-stream",
+        ...options.headers,
+      });
       const event = (data: { type: string }) => {
         response.write(
           `event: ${data.type}\ndata: ${JSON.stringify(data)}\n\n`,

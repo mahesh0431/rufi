@@ -24,6 +24,7 @@ import {
 import { rufiAiFor } from "../../tests/rufi-ai.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexAdapter, instructionsNote } from "../agent/codex/adapter.ts";
+import { chatAgents } from "../core/chat/agents.ts";
 import { chatQueue } from "../core/chat/queue.ts";
 import { DEFAULT_SHORTLIST } from "../core/chat/models.ts";
 import {
@@ -42,6 +43,7 @@ import type { ToolSpec } from "../core/tools/registry.ts";
 import { rufiCaller, forAgent } from "../core/tools/tools.ts";
 import { agentsPath } from "./agents.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
+import { subAgents } from "./sub-agents.ts";
 import { tempPath, tempPattern } from "../platform/files.ts";
 import { agentSetup, aiSandbox, coreFile } from "./core.ts";
 import { doorFile } from "../agent/codex/token-door.ts";
@@ -89,17 +91,25 @@ afterEach(async () => {
  * The chat on the real Codex, as the core runs it (again, as after a
  * restart, when it ran); `refuse` breaks its MCP, `update` changes what an
  * update of Rufi would: a tool's description. `model` is the only one
- * allowed; without it, two are.
+ * allowed; without it, two are. `headers` go with every answer of the model.
  */
 async function start(
   script: Step[],
-  options: { refuse?: boolean; update?: string; model?: string } = {},
+  options: {
+    refuse?: boolean;
+    update?: string;
+    model?: string;
+    headers?: Record<string, string>;
+  } = {},
 ) {
   await chat?.close();
   await ai?.close();
   await served?.close();
   await model?.close();
-  model = await fakeModel({ script });
+  model = await fakeModel({
+    script,
+    ...(options.headers && { headers: options.headers }),
+  });
   const reader = openReadOnly(databasePath(home));
   const log = () => undefined;
   const agentTools = forAgent(
@@ -150,9 +160,11 @@ async function start(
     }),
     tools: tools.specs.map((spec) => spec.name),
   });
+  const queue = chatQueue(store);
+  const running = ai;
   chat = openChat({
     transcripts,
-    queue: chatQueue(store),
+    queue,
     signedIn: () => Promise.resolve(true),
     agent: ai.agent,
     shortlist: () =>
@@ -164,7 +176,28 @@ async function start(
     }),
     tools: {
       specs: tools.specs,
-      caller: rufiCaller(reader, transcripts, log),
+      caller: rufiCaller(
+        reader,
+        transcripts,
+        log,
+        undefined,
+        undefined,
+        subAgents({
+          agents: running.agents,
+          kept: chatAgents(store),
+          queue,
+          log,
+          messages: () => {
+            if (!chat) throw new Error("no chat");
+            return chat.queue;
+          },
+          models: () => {
+            if (!chat) throw new Error("no chat");
+            return chat.shortlisted();
+          },
+          usage: running.usage,
+        }),
+      ),
     },
     log,
   });
@@ -534,6 +567,91 @@ describe("The context a chat's thread used, on the pinned Codex", () => {
       const context = (await transcripts.chat("asha"))?.context;
       expect(context?.tokens).toBe(1_234);
       expect(context?.window).toBeGreaterThan(1_234);
+    },
+  );
+});
+
+describe("The plan's usage, on the pinned Codex", () => {
+  it(
+    "is each window Codex read from the model's answers, and each turn's tokens, as Codex counted them",
+    { timeout: 120_000 },
+    async () => {
+      await start(
+        [
+          { text: "One.", tokens: 1_234 },
+          { text: "Two.", tokens: 2_345 },
+          {
+            exec: [
+              "const usage = await tools.mcp__rufi__usage({});",
+              'const read = await tools.mcp__rufi__read_agent({ agent: "self" });',
+              "text(JSON.stringify([usage.isError ?? false, read.isError ?? false]));",
+            ].join("\n"),
+          },
+          { text: "Plenty." },
+        ],
+        {
+          // As OpenAI's answers carry the plan's limits, for Codex to read.
+          headers: {
+            "x-codex-primary-used-percent": "42",
+            "x-codex-primary-window-minutes": "300",
+            "x-codex-primary-reset-at": "1793448000",
+            "x-codex-secondary-used-percent": "18",
+            "x-codex-secondary-window-minutes": "10080",
+            "x-codex-secondary-reset-at": "1793923200",
+          },
+        },
+      );
+      await say("first");
+      await replies(1);
+      await say("second");
+      await replies(2);
+      await say("How much of my plan is left?");
+      await replies(3);
+      expect(printed(3)).toBe("[false,false]");
+
+      const answer = (tool: string) =>
+        JSON.parse(
+          (
+            store.db
+              .prepare("SELECT answer FROM tool_calls WHERE tool = ?")
+              .get(tool) as { answer: string }
+          ).answer,
+        ) as unknown;
+      expect(answer("usage")).toEqual({
+        ok: true,
+        result: {
+          yours: "codex",
+          providers: [
+            {
+              provider: "codex",
+              windows: [
+                {
+                  minutes: 300,
+                  used_percent: 42,
+                  resets_at: "2026-10-31T12:00:00.000Z",
+                },
+                {
+                  minutes: 10_080,
+                  used_percent: 18,
+                  resets_at: "2026-11-06T00:00:00.000Z",
+                },
+              ],
+            },
+          ],
+        },
+      });
+      // Each turn alone, not the thread's total so far; the running one has
+      // none yet.
+      expect(answer("read_agent")).toMatchObject({
+        ok: true,
+        result: {
+          turns: [
+            { used: { input: 1_233, cached: 0, output: 1 } },
+            { used: { input: 2_344, cached: 0, output: 1 } },
+            expect.not.objectContaining({ used: expect.anything() }),
+          ],
+        },
+      });
     },
   );
 });
