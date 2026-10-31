@@ -2552,9 +2552,9 @@
       "readOnly": true,
       "destructive": false,
       "inputSchema": {
-        "not": {
-          "type": "null"
-        }
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
       },
       "examples": [
         {}
@@ -2604,9 +2604,9 @@
       "readOnly": true,
       "destructive": false,
       "inputSchema": {
-        "not": {
-          "type": "null"
-        }
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
       },
       "examples": [
         {}

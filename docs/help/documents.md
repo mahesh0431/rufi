@@ -70,7 +70,7 @@ A reader is an agent that **Rufi AI**, the AI you chat with, starts for a file, 
 
 Then Rufi AI sorts the file (see [How Rufi AI sorts a file](#how-rufi-ai-sorts-a-file)).
 
-The reader sends the document's pages to the AI you signed in with (your ChatGPT plan) to read them, and Rufi AI gets their copies to sort them. The first run tells you this once. A document that was already read isn't read again when you send it again; only a page you ask to read again is (see [Retry](#retry)).
+The reader sends the document's pages to the AI its model runs on (Codex on your ChatGPT plan, or Claude) to read them, and Rufi AI gets their copies to sort them. The first run tells you this once. A document that was already read isn't read again when you send it again; only a page you ask to read again is (see [Retry](#retry)).
 
 ### How Rufi AI has files read
 
