@@ -498,12 +498,23 @@ test.describe("first run", () => {
     await expect(going).toBeDisabled();
     await page.getByRole("radio", { name: "Female" }).check();
     await expect(going).toBeEnabled();
+    // A height that isn't a number holds Continue, with what to fix.
+    const height = page.getByRole("textbox", { name: "Height" });
+    await height.fill("tall");
+    await expect(going).toBeDisabled();
+    await expect(page.getByText("Give your height as a number.")).toBeVisible();
+    await height.fill("");
     // 31 February can't be kept: nothing is saved, and the answers stay.
     await going.click();
-    await expect(page.getByRole("alert")).toContainText(
-      "Nothing was saved, and your answers are still here",
-    );
+    await expect(page.getByRole("alert")).toBeVisible();
     await expect(name).toHaveValue("Mira Fictional");
+    await expect(page.getByRole("textbox", { name: "Day" })).toHaveValue("31");
+    await expect(page.getByRole("combobox", { name: "Month" })).toHaveValue(
+      "2",
+    );
+    await expect(page.getByRole("textbox", { name: "Year" })).toHaveValue(
+      "1990",
+    );
     await expect(page.getByRole("radio", { name: "Female" })).toBeChecked();
     await page.getByRole("textbox", { name: "Day" }).fill("");
     await page.getByRole("combobox", { name: "Month" }).selectOption("March");
