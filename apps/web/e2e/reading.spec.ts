@@ -171,7 +171,6 @@ test("a file shows Reading, with no Retry, while the reader Rufi AI set on it wo
           arguments: {
             title: "Reading",
             task: "hang: read (document $document) with the reading-documents skill.",
-            tools: ["get_documents", "save_reading"],
           },
         },
         {

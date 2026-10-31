@@ -2318,7 +2318,7 @@
     },
     {
       "name": "rufi.start_agent",
-      "description": "Starts an agent of your own for a task that can run on its own: it runs at once, on your model and effort unless you give others (a model whose provider isn't signed in is refused, yours too), and goes on after your turn ends. Give it a title and its whole task, its first message. It has your tools unless you give it fewer (tools); one you don't have is refused. Its saves and briefs show in the chat with Rufi's receipt. Answers its id; agent_status says how it is, and read_agent reads its conversation.",
+      "description": "Starts an agent of your own for a task that can run on its own: it runs at once, on your model and effort unless you give others (a model whose provider isn't signed in is refused, yours too), and goes on after your turn ends. Give it a title and its whole task, its first message. It has all of your tools. Its saves and briefs show in the chat with Rufi's receipt. Answers its id; agent_status says how it is, and read_agent reads its conversation.",
       "callers": "model",
       "readOnly": false,
       "destructive": false,
@@ -2334,13 +2334,6 @@
             "type": "string",
             "description": "Its whole task, its first message: it sees nothing of your conversation but this.",
             "minLength": 1
-          },
-          "tools": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Rufi's tools it may use, by name, among your own. Leave it out for all of yours."
           },
           "model": {
             "type": "string",
@@ -2372,11 +2365,7 @@
       "examples": [
         {
           "title": "Checking the thyroid results",
-          "task": "Read the user's thyroid results with get_records and say which are outside the lab's range.",
-          "tools": [
-            "get_overview",
-            "get_records"
-          ]
+          "task": "Read the user's thyroid results with get_records and say which are outside the lab's range."
         }
       ]
     },
