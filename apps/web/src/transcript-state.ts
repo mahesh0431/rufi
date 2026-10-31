@@ -171,7 +171,7 @@ export function clockOf(
  * The reply ran on another model or effort than the reply before it in the
  * chat. A reply from before replies kept their effort says only a new model.
  */
-export const modelChanged = ({ model, effort, before }: Turn) =>
+const modelChanged = ({ model, effort, before }: Turn) =>
   before !== null &&
   (before.model !== model ||
     (before.effort !== null && effort !== null && before.effort !== effort));
