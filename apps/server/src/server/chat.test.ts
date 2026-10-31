@@ -23,6 +23,7 @@ import {
   type FakeModel,
 } from "../../tests/fake-model.ts";
 import { callTool, type McpServerConfig } from "../../tests/mcp-client.ts";
+import { keepingLog, noReply } from "../../tests/codex-log.ts";
 import { rufiAiFor } from "../../tests/rufi-ai.ts";
 import { fakeClaude } from "../../tests/fake-claude.ts";
 import type { Options } from "@anthropic-ai/claude-agent-sdk";
@@ -179,7 +180,10 @@ async function startChat(
   const command =
     backend === "fake"
       ? { file: process.execPath, args: [FAKE] }
-      : { file: await codexBinary(), args: codexArgs(model?.url) };
+      : keepingLog(
+          { file: await codexBinary(), args: codexArgs(model?.url) },
+          join(home, "codex.log"),
+        );
   codex = codexAdapter({
     home,
     ...agentSetup(home),
@@ -515,13 +519,22 @@ const threadsUsed = () =>
     }
   ).n;
 
-/** Waits until `n` replies have ended. */
+/**
+ * Waits until `n` replies have ended; if they don't, says what Rufi holds
+ * and how Codex's log ends.
+ */
 const ended = (id: string, n = 1) =>
   until(
     async () =>
       (await transcript(id)).turns.filter((t) => t.status !== "running")
         .length >= n,
-  );
+  ).catch(async (error: unknown) => {
+    const { items } = await queue.list(await chatRow());
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}: ${await noReply(items, join(home, "codex.log"))}`,
+      { cause: error },
+    );
+  });
 const running = (id: string) =>
   until(async () =>
     (await transcript(id)).turns.some((t) => t.status === "running"),

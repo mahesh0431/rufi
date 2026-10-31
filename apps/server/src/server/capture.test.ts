@@ -22,6 +22,7 @@ import {
   type ModelRequest,
   type Step,
 } from "../../tests/fake-model.ts";
+import { keepingLog, noReply } from "../../tests/codex-log.ts";
 import { rufiAiFor } from "../../tests/rufi-ai.ts";
 import { claudeFolder } from "../agent/claude/executable.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
@@ -144,7 +145,10 @@ async function start(
       : endpoint(request);
   });
   port = served.port;
-  const command = { file: await codexBinary(), args: codexArgs(model.url) };
+  const command = keepingLog(
+    { file: await codexBinary(), args: codexArgs(model.url) },
+    codexLog(),
+  );
   ai = await rufiAiFor({
     home,
     record: store,
@@ -456,10 +460,20 @@ const threadsUsed = () =>
       .get() as { n: number }
   ).n;
 
+/** Codex's stderr, kept by the test (tests/codex-log.ts). */
+const codexLog = () => join(home, "codex.log");
+
 const replies = async (n: number) => {
   await until(
     () => turns().filter((turn) => turn["status"] !== "running").length >= n,
-  );
+  ).catch(async (error: unknown) => {
+    const row = await transcripts.chat("asha");
+    const waiting = row ? (await chatQueue(store).list(row)).items : [];
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}: ${await noReply(waiting, codexLog())}`,
+      { cause: error },
+    );
+  });
   expect(turns().map((turn) => turn["status"])).toEqual(
     Array<string>(n).fill("completed"),
   );
