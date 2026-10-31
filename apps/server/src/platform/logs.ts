@@ -40,6 +40,7 @@ const EVENTS = new Set([
   "chat.resume_failed",
   "chat.dispatch_failed",
   "chat.handover_unknown",
+  "agents.failed",
   "core.started",
   "core.lock_lost",
   "api.failed",

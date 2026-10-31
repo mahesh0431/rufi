@@ -46,8 +46,21 @@ export interface Change {
 }
 
 export interface AgentStore {
-  /** The random id made with the file: another file has another. */
+  /**
+   * The random id made with the file: another file has another, and so has
+   * this one once renewed.
+   */
   readonly generation: string;
+  /**
+   * The number of the last event this file ever gave, counting those
+   * forgotten since: an older copy of the file has a lower one.
+   */
+  highWater: () => number;
+  /**
+   * Gives the file a new generation, so the host reads it as a new one:
+   * for an older copy, whose waiting inputs may have gone already.
+   */
+  renew: () => void;
   /** The connection, for reads outside a change: it writes only in one. */
   readonly db: DatabaseSync;
   /**
@@ -115,9 +128,13 @@ function migrate(db: DatabaseSync, from: number): void {
 }
 
 function store(db: DatabaseSync): AgentStore {
-  const { generation } = db
-    .prepare("SELECT generation FROM meta WHERE id = 1")
-    .get() as { generation: string };
+  const generationOf = () =>
+    (
+      db.prepare("SELECT generation FROM meta WHERE id = 1").get() as {
+        generation: string;
+      }
+    ).generation;
+  let generation = generationOf();
   const append = db.prepare(
     "INSERT INTO events (type, agent_id, payload, created_at) VALUES (?, ?, ?, ?) RETURNING number",
   );
@@ -127,9 +144,31 @@ function store(db: DatabaseSync): AgentStore {
   const listeners = new Set<(number: number) => void>();
   const inTransaction = () => db.isTransaction;
 
-  return {
-    generation,
+  const self: AgentStore = {
+    get generation() {
+      return generation;
+    },
     db,
+
+    highWater: () =>
+      (
+        db
+          .prepare("SELECT seq FROM sqlite_sequence WHERE name = 'events'")
+          .get() as { seq: number } | undefined
+      )?.seq ?? 0,
+
+    renew: () => {
+      const from = generation;
+      self.change(({ db: change, event }) => {
+        change
+          .prepare(
+            "UPDATE meta SET generation = lower(hex(randomblob(16))) WHERE id = 1",
+          )
+          .run();
+        event("store.renewed", null, { from });
+      });
+      generation = generationOf();
+    },
 
     change: (work) => {
       if (inTransaction()) {
@@ -208,4 +247,5 @@ function store(db: DatabaseSync): AgentStore {
       db.close();
     },
   };
+  return self;
 }

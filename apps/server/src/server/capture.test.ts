@@ -11,6 +11,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { openAgentStore } from "@rufi/agents/store";
 import { promisify } from "node:util";
 import { v7 as uuid } from "uuid";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -42,6 +43,7 @@ import {
 import { SKILLS } from "../core/skills/skills.ts";
 import type { ToolSpec } from "../core/tools/registry.ts";
 import { chatCaller, forAgent } from "../core/tools/tools.ts";
+import { agentsPath } from "./agents.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 import { tempPath, tempPattern } from "../platform/files.ts";
 import { agentSetup, aiSandbox, coreFile } from "./core.ts";
@@ -745,6 +747,8 @@ describe.runIf(process.platform === "darwin")(
           await rm(home, { recursive: true, force: true });
           await makeRecord(root);
         }
+        // The agent database, open as the core keeps it.
+        const agentStore = openAgentStore(agentsPath(home));
         // Outside both the AI's folder and all temp roots. Prove that a
         // refusal isn't just the Mac's ordinary file permissions.
         const outsideRoot = await mkdtemp("/Users/Shared/rufi-canary-");
@@ -755,7 +759,7 @@ describe.runIf(process.platform === "darwin")(
           await writeFile(outside, "the test process can write here");
           await rm(outside);
           const { folder, unreadable } = aiSandbox(home);
-          // Each way in, there to be read (the database is in WAL mode).
+          // Each way in, there to be read (the databases are in WAL mode).
           await mkdir(join(home, "backups"), { recursive: true });
           await writeFile(join(home, "backups", "copy.sqlite"), "a copy");
           await writeFile(join(home, "core.json"), '{"launcher":"secret"}');
@@ -772,9 +776,11 @@ describe.runIf(process.platform === "darwin")(
             );
           }
           expect(existsSync(`${databasePath(home)}-wal`)).toBe(true);
+          expect(existsSync(`${agentsPath(home)}-wal`)).toBe(true);
           const skill = join(home, "codex", "skills", "analysis", "SKILL.md");
           const q = (path: string) => JSON.stringify(path);
-          // Each one that is there now; a journal isn't, in WAL mode.
+          // Each one that is there now, and the backup's copy; neither
+          // database has a journal, in WAL mode.
           const journal = `${databasePath(home)}-journal`;
           const denied = [
             ...unreadable.map((path) =>
@@ -785,7 +791,7 @@ describe.runIf(process.platform === "darwin")(
           ]
             .filter((path) => existsSync(path))
             .map((path) => `cat ${q(path)}`);
-          expect(denied).toHaveLength(unreadable.length + doors.length);
+          expect(denied).toHaveLength(unreadable.length - 1 + doors.length);
           // What a command reads of Rufi's processes: Rufi's own and the
           // Codex it runs now, each with a value it surely holds.
           await writeFile(join(probe, "procargs.py"), PROCARGS);
@@ -926,6 +932,7 @@ describe.runIf(process.platform === "darwin")(
           // Codex was running for some of the runs.
           expect(codexChecked).toBeGreaterThan(0);
         } finally {
+          agentStore.close();
           await rm(outsideRoot, { recursive: true, force: true });
           await rm(probe, { recursive: true, force: true });
         }
