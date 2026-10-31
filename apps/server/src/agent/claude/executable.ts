@@ -11,6 +11,7 @@ import {
   query as sdkQuery,
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import { within } from "./deadline.ts";
 
 /**
  * The oldest Claude Rufi runs: the one its Claude adapter was tried with.
@@ -148,23 +149,18 @@ export async function claudeSignIn(
       settings: { disableClaudeAiConnectors: true },
     },
   });
-  let timer: NodeJS.Timeout | undefined;
   try {
-    const account = await Promise.race([
+    const account = await within(
       run.accountInfo(),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error("Claude didn't say how it's signed in."));
-        }, SIGN_IN_MS);
-      }),
-    ]);
+      SIGN_IN_MS,
+      "how it's signed in",
+    );
     if (account.subscriptionType) return "subscription";
     if (account.apiKeySource && account.apiKeySource !== "none") {
       return "api key";
     }
     return "none";
   } finally {
-    clearTimeout(timer);
     closed.abort();
     run.close();
   }
