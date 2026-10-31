@@ -208,6 +208,8 @@ const profileChanged = new BroadcastChannel("rufi.profile");
 profileChanged.addEventListener("message", (event: MessageEvent<string>) => {
   void queries.invalidateQueries({ queryKey: ["record", event.data] });
   void queries.invalidateQueries({ queryKey: ["overview", event.data] });
+  // The name is the sidebar's too.
+  void queries.invalidateQueries({ queryKey: ["people"] });
 });
 
 /**
@@ -227,6 +229,7 @@ export async function saveProfile(
   await queries.cancelQueries({ queryKey: ["record", personId, "profile"] });
   queries.setQueryData(["record", personId, "profile"], saved);
   void queries.invalidateQueries({ queryKey: ["overview", personId] });
+  void queries.invalidateQueries({ queryKey: ["people"] });
   profileChanged.postMessage(personId);
   return saved;
 }

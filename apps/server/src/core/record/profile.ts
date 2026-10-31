@@ -24,6 +24,7 @@ import {
 
 const kind = kindNamed("profile") as Kind;
 const FIELDS: readonly ProfileField[] = [
+  "name",
   "birth_date",
   "sex_for_ranges",
   "blood_group",
@@ -39,7 +40,7 @@ function valuesOf(fields: Record<string, unknown>): ProfileValues {
 
 async function rowOf(db: Kysely<Tables>, personId: string) {
   const { rows } =
-    await sql<Row>`SELECT * FROM profiles WHERE person_id = ${personId} AND id = ${personId}`.execute(
+    await sql<Row>`SELECT * FROM profile_rows WHERE person_id = ${personId} AND id = ${personId}`.execute(
       db,
     );
   return rows[0];
