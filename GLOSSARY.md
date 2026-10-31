@@ -311,7 +311,7 @@ Rufi's diagnostic file, `logs/rufi.log` in the data folder: fixed events with ch
 _Avoid_: history, transcript
 
 **First run**:
-The short steps a new data folder starts with: what Rufi is and isn't, what goes to the AI, your name, sign in with ChatGPT (or skip), and your emergency region (or skip). Rufi keeps each step done. Until it is done, the first run fills the window, and nothing else in Rufi can be reached.
+The short steps a new data folder starts with: what Rufi is and isn't, what goes to the AI, about you (your name and your profile, saved together), sign in with ChatGPT (or skip), and your emergency region (or skip). Rufi keeps each step done. Until it is done, the first run fills the window, and nothing else in Rufi can be reached.
 _Avoid_: onboarding, setup wizard
 
 **Demo folder**:
