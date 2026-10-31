@@ -4,21 +4,26 @@
 // host's tools is placed only in a turn the package admitted and hasn't
 // closed, a turn the provider began by itself included.
 //
-// What waits to be sent, and when it goes, is the queue's (a later step): it
-// calls start and steer here, one at a time for each agent.
+// Every agent's inputs wait in one queue, and one dispatcher for each agent
+// hands them over: the first waiting input starts a turn, a steer goes into
+// the running turn at once, a queued input waits for the turn to end. An
+// input the host keeps is claimed from it first. What became of an input
+// rests on what the provider showed: one it may have taken is never sent
+// again by itself, and while one is with the provider nothing else starts.
 import { randomUUID } from "node:crypto";
 import {
   Missing,
+  NotOpened,
   type Conversation,
   type Delivery,
-  type Input,
   type McpRegistration,
   type ProviderAdapter,
   type ProviderEvent,
+  type Received,
   type SteerOutcome,
   type TurnEnd,
 } from "./provider.ts";
-import type { AgentStore, Change } from "./store.ts";
+import type { AgentStore } from "./store.ts";
 
 export type AgentStatus =
   | "idle"
@@ -72,6 +77,13 @@ export interface Opening {
   seed?: string;
 }
 
+/** The host's answer when it is asked for an input it keeps. */
+export type Claim =
+  /** Waiting, or claimed by this same hand-over before: its words. */
+  | { status: "claimed" | "already_claimed"; parts: readonly string[] }
+  /** Removed, sent or not sure: it doesn't go. */
+  | { status: "gone" };
+
 /** What the package asks of the host, and waits for. */
 export interface Host {
   /** What an agent's conversation opens with: resumed, or new. */
@@ -86,12 +98,33 @@ export interface Host {
     provider: string;
     ref: string;
   }) => Promise<void>;
+  /**
+   * Claims an input the host keeps, before it goes to the provider: one
+   * host transaction marks it handing over to this agent's conversation and
+   * gives back its words. Nothing: another hand-over has it, and the host's
+   * recovery at start settles it.
+   */
+  claim: (claim: {
+    agent: string;
+    conversation: number;
+    input: string;
+  }) => Promise<Claim | undefined>;
 }
 
-/** An input, and who sent it, as the host names them or an agent's id. */
-export interface Sent extends Input {
+/** An input for an agent. */
+export interface Sent {
+  /** Its stable id: sent again, it does nothing. */
+  id: string;
+  /** Who sent it, as the host names them, or the sending agent's id. */
   sender: string;
+  /** Steer: as soon as a turn can take it. Queue: after this turn. */
+  kind: "steer" | "queue";
+  /** What is sent; none when the host keeps the words and claims give them. */
+  parts?: readonly string[];
 }
+
+/** Why a waiting input isn't handed over by itself. */
+export type Hold = "signed_out" | "open_failed" | "failed" | "restarts";
 
 /** A call to the host's tools, placed in the open turn it left. */
 export interface Placed {
@@ -110,17 +143,25 @@ export interface Agents {
   admit: (id: string) => void;
   get: (id: string) => Agent | undefined;
   /**
-   * Starts a turn with `input` on an admitted agent that runs none, opening
-   * its conversation first. Delivered: the turn is admitted when the
-   * provider says it started. Not delivered: the input waits again.
-   * Throws NotOpened when the conversation can't open.
+   * Puts an input in the agent's queue, behind those waiting. It goes when
+   * the agent can take it; the sender is never told no.
    */
-  start: (agent: string, input: Sent) => Promise<Delivery>;
-  /** Puts `input` into the agent's running turn. */
-  steer: (agent: string, input: Sent) => Promise<SteerOutcome>;
+  send: (agent: string, input: Sent) => void;
+  /**
+   * Starts handing inputs over, once the host has finished starting:
+   * first asks the providers about those a crash left with them, then
+   * hands over what waits. Nothing goes to a provider before it. Again
+   * does nothing.
+   */
+  dispatch: () => Promise<void>;
+  /** Lifts these inputs' holds, so they go again. */
+  release: (inputs: readonly string[]) => void;
+  /** The sign-in is back: inputs held as signed out go again. */
+  signedIn: () => void;
   /**
    * Stops the agent's turn: closed to new calls at once, then stopped by
-   * the provider. A start not yet with the provider doesn't go.
+   * the provider; the inputs waiting for it go on after. A start not yet
+   * with the provider doesn't go, and its input is dropped.
    */
   stop: (agent: string, by: string) => Promise<void>;
   /**
@@ -173,7 +214,27 @@ interface Live {
     string,
     { turn: string; item: string; type: "text" | "note"; text: string }
   >;
+  /** Its dispatcher runs; asked again meanwhile, it looks again. */
+  pumping: boolean;
+  asks: number;
 }
+
+/** A waiting input, as the queue keeps it. */
+interface Waiting {
+  id: string;
+  kind: "steer" | "queue";
+  parts: string | null;
+}
+
+/** Where an input goes next. */
+type Move =
+  | { state: "delivered"; turn: string | null }
+  /** Back in line: a steer first, a queued input in its place. */
+  | { state: "waiting"; first?: true }
+  | { state: "held"; held: Hold; text: string }
+  | { state: "not_sure" }
+  | { state: "dropped" }
+  | { state: "removed" };
 
 interface Starting {
   input: string;
@@ -222,15 +283,29 @@ const toAgent = (row: AgentRow): Agent => ({
 
 const now = () => new Date().toISOString();
 
+const message = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
+
 export function createAgents(options: {
   store: AgentStore;
   adapters: readonly ProviderAdapter[];
   host: Host;
+  /** What the dispatcher couldn't put on an input, or a provider couldn't say. */
+  onError: (error: unknown) => void;
 }): Agents {
   const { store, host } = options;
   const { db } = store;
   const adapters = new Map(options.adapters.map((a) => [a.id, a]));
   const lives = new Map<string, Live>();
+  /** A provider that can't say: its inputs stay unknown, the error told. */
+  const untold = (error: unknown) => {
+    options.onError(error);
+    return undefined;
+  };
+  /** Dispatch has begun: it recovers what a crash left, once. */
+  let begun = false;
+  /** Inputs go to providers only once dispatch has recovered. */
+  let dispatching = false;
   /** Conversations of agents no longer run here, until they have closed. */
   const closing = new Set<Conversation>();
 
@@ -290,17 +365,32 @@ export function createAgents(options: {
         stops: 0,
         waiting: new Map(),
         streams: new Map(),
+        pumping: false,
+        asks: 0,
       };
       lives.set(agent.id, live);
     }
     return live;
   }
 
-  /** The agent's conversation, opened now if it isn't. */
+  /**
+   * The agent's conversation, opened now if it isn't. Only `resume`: the
+   * one it has, or nothing when the provider no longer has it.
+   */
   async function conversationOf(
     live: Live,
     agent: Agent,
-  ): Promise<Conversation> {
+  ): Promise<Conversation>;
+  async function conversationOf(
+    live: Live,
+    agent: Agent,
+    only: "resume",
+  ): Promise<Conversation | undefined>;
+  async function conversationOf(
+    live: Live,
+    agent: Agent,
+    only?: "resume",
+  ): Promise<Conversation | undefined> {
     if (live.conversation) return live.conversation;
     const adapter = adapters.get(agent.provider);
     if (!adapter) throw new Error(`No provider ${agent.provider} to run on.`);
@@ -337,6 +427,7 @@ export function createAgents(options: {
         if (!(error instanceof Missing)) throw error;
       }
     }
+    if (only === "resume") return undefined;
     // A new conversation, under the next number: a number is never given
     // to two, even when an open is cut off.
     const number = store.change(({ event }) => {
@@ -505,6 +596,7 @@ export function createAgents(options: {
     }
     for (const wake of live.waiting.get(ref) ?? []) wake();
     live.waiting.delete(ref);
+    pump(live.id);
   }
 
   function saveItem(
@@ -598,6 +690,7 @@ export function createAgents(options: {
       if (live.stops === 0) live.stopBy = undefined;
     }
     live.last = ref;
+    pump(live.id);
   }
 
   /** An input of the agent's is with the provider, its outcome not known. */
@@ -618,28 +711,328 @@ export function createAgents(options: {
     });
   }
 
-  function addInput(
-    { event }: Change,
+  const waitingOf = (agent: string) =>
+    db
+      .prepare(
+        "SELECT id, kind, parts FROM queue WHERE agent_id = ? AND state = 'waiting' AND held IS NULL ORDER BY position",
+      )
+      .all(agent) as unknown as Waiting[];
+  const stateOf = (input: string) =>
+    (
+      db.prepare("SELECT state FROM queue WHERE id = ?").get(input) as
+        | { state: string }
+        | undefined
+    )?.state;
+
+  /**
+   * Moves an input on from the state it is in, with its event, and drops
+   * the start it was handed over for, if one; else does nothing.
+   */
+  function move(
     live: Live,
-    input: Sent,
-    kind: "steer" | "queue",
+    input: string,
+    from: "waiting" | "handing_over",
+    to: Move,
+    start?: string,
   ): void {
-    const at = now();
-    db.prepare(
-      `INSERT INTO queue (id, agent_id, sender, kind, parts, position, state, conversation, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), 'handing_over', ?, ?, ?)`,
-    ).run(
-      input.id,
-      live.id,
-      input.sender,
-      kind,
-      JSON.stringify(input.parts),
-      live.id,
-      live.number,
-      at,
-      at,
-    );
-    event("input.handing_over", live.id, { input: input.id });
+    if (stateOf(input) !== from) return;
+    store.change(({ event }) => {
+      const at = now();
+      if (start !== undefined) {
+        db.prepare(
+          "DELETE FROM turns WHERE id = ? AND status = 'starting'",
+        ).run(start);
+      }
+      switch (to.state) {
+        case "delivered":
+          db.prepare(
+            "UPDATE queue SET state = 'delivered', turn_id = ?, updated_at = ? WHERE id = ?",
+          ).run(to.turn, at, input);
+          break;
+        case "waiting":
+          db.prepare(
+            `UPDATE queue SET state = 'waiting', conversation = NULL, updated_at = ?,
+               position = CASE WHEN ? THEN (SELECT COALESCE(MIN(position), 1) - 1 FROM queue WHERE agent_id = ? AND state = 'waiting') ELSE position END
+             WHERE id = ?`,
+          ).run(at, to.first ? 1 : 0, live.id, input);
+          break;
+        case "held":
+          db.prepare(
+            "UPDATE queue SET state = 'waiting', held = ?, held_text = ?, conversation = NULL, updated_at = ? WHERE id = ?",
+          ).run(to.held, to.text, at, input);
+          break;
+        case "not_sure":
+        case "dropped":
+        case "removed":
+          db.prepare(
+            "UPDATE queue SET state = ?, updated_at = ? WHERE id = ?",
+          ).run(to.state, at, input);
+      }
+      const { state, ...rest } = to;
+      event(`input.${state}`, live.id, { input, ...rest });
+    });
+  }
+
+  /** What the provider received of an input, as far as it can tell. */
+  const ask = async (conversation: Conversation, input: string) =>
+    (
+      await conversation
+        .reconcile([input])
+        .catch(() => new Map<string, Received>())
+    ).get(input) ?? "unknown";
+
+  /**
+   * Where an input the provider may have taken goes, by what it says now:
+   * one it didn't get waits again, a steer first in line.
+   */
+  const byAnswer = (
+    received: Received,
+    turn: string | null,
+    steer = false,
+  ): Move =>
+    received === "received"
+      ? { state: "delivered", turn }
+      : received === "not_received"
+        ? { state: "waiting", ...(steer && { first: true as const }) }
+        : { state: "not_sure" };
+
+  /**
+   * Runs the agent's dispatcher, one at a time for each agent: asked again
+   * while it runs, it looks again once it's done.
+   */
+  function pump(id: string): void {
+    if (!dispatching) return;
+    const agent = get(id);
+    if (!agent?.admitted) return;
+    const live = liveOf(agent);
+    live.asks += 1;
+    if (live.pumping) return;
+    live.pumping = true;
+    const run = async () => {
+      try {
+        let seen;
+        do {
+          seen = live.asks;
+          await next(live);
+        } while (seen !== live.asks && lives.get(id) === live);
+      } finally {
+        live.pumping = false;
+      }
+    };
+    run().catch(options.onError);
+  }
+
+  /** Hands over what the agent can take now, as the delivery table says. */
+  async function next(live: Live): Promise<void> {
+    const agent = get(live.id);
+    if (!agent?.admitted || lives.get(live.id) !== live) return;
+    // Starting: steers go in once it is admitted.
+    if (live.starting) return;
+    // Stopping: what waits goes on once the Stop has finished.
+    if (live.stops > 0) return;
+    const { current } = live;
+    if (current) {
+      // Running: steers go in at once, in order; queued inputs wait.
+      for (const input of waitingOf(live.id)) {
+        if (live.current !== current || live.stopBy !== undefined) return;
+        if (input.kind === "steer") await steerWith(live, input);
+      }
+      return;
+    }
+    // Just finished: nothing starts while a steer may still be taken.
+    if (handingOver(live.id)) return;
+    const first = waitingOf(live.id)[0];
+    if (first) await startWith(live, agent, first);
+  }
+
+  /** The input's words: its own, or the host's claim. Nothing: it doesn't go now. */
+  async function claimed(
+    live: Live,
+    input: Waiting,
+  ): Promise<readonly string[] | undefined> {
+    if (input.parts !== null) return JSON.parse(input.parts) as string[];
+    let answer: Claim | undefined;
+    try {
+      answer = await host.claim({
+        agent: live.id,
+        conversation: live.number,
+        input: input.id,
+      });
+    } catch (error) {
+      move(live, input.id, "waiting", {
+        state: "held",
+        held: "failed",
+        text: message(error),
+      });
+      live.asks += 1;
+      return undefined;
+    }
+    if (answer?.status === "gone") {
+      move(live, input.id, "waiting", { state: "removed" });
+      live.asks += 1;
+      return undefined;
+    }
+    return answer?.parts;
+  }
+
+  /** Starts a turn with the first waiting input. */
+  async function startWith(
+    live: Live,
+    agent: Agent,
+    input: Waiting,
+  ): Promise<void> {
+    const starting: Starting = {
+      input: input.id,
+      settled: Promise.withResolvers(),
+    };
+    live.starting = starting;
+    // Delivered: it waits for the provider to say the turn started.
+    let pending = false;
+    try {
+      let conversation: Conversation;
+      try {
+        conversation = await conversationOf(live, agent);
+      } catch (error) {
+        if (lives.get(live.id) !== live) return;
+        move(live, input.id, "waiting", {
+          state: "held",
+          held:
+            error instanceof NotOpened
+              ? error.reason === "signed_out"
+                ? "signed_out"
+                : "open_failed"
+              : "failed",
+          text: message(error),
+        });
+        return;
+      }
+      const stopped = () => starting.stopBy !== undefined;
+      const parts = stopped() ? undefined : await claimed(live, input);
+      if (stopped() || lives.get(live.id) !== live) {
+        move(live, input.id, "waiting", { state: "dropped" });
+        return;
+      }
+      if (!parts) return;
+      const turn = randomUUID();
+      store.change(({ event }) => {
+        const at = now();
+        db.prepare(
+          "INSERT INTO turns (id, agent_id, conversation, model, effort, status, started_at) VALUES (?, ?, ?, ?, ?, 'starting', ?)",
+        ).run(turn, live.id, live.number, agent.model, agent.effort, at);
+        db.prepare(
+          "UPDATE queue SET state = 'handing_over', conversation = ?, updated_at = ? WHERE id = ?",
+        ).run(live.number, at, input.id);
+        event("input.handing_over", live.id, {
+          input: input.id,
+          conversation: live.number,
+        });
+      });
+      starting.turn = turn;
+      const delivery = await conversation
+        .startTurn({
+          input: { id: input.id, parts },
+          model: agent.model,
+          effort: agent.effort,
+        })
+        .catch((error: unknown): Delivery => ({
+          status: "uncertain",
+          text: message(error),
+        }));
+      if (delivery.status === "delivered") {
+        pending = true;
+        return;
+      }
+      // Admitted already: the provider said it started.
+      if (stateOf(input.id) !== "handing_over") return;
+      const to: Move =
+        delivery.status === "not_delivered"
+          ? {
+              state: "held",
+              held: delivery.reason === "signed_out" ? "signed_out" : "failed",
+              text: delivery.text,
+            }
+          : byAnswer(await ask(conversation, input.id), null);
+      move(live, input.id, "handing_over", to, turn);
+      // A refused input doesn't keep the rest waiting.
+      if (to.state === "held" && to.held === "failed") live.asks += 1;
+    } finally {
+      if (!pending && live.starting === starting) {
+        live.starting = undefined;
+        starting.settled.resolve();
+      }
+    }
+  }
+
+  /**
+   * Steers a waiting input into the running turn. Its outcome may come only
+   * once the turn has ended; later steers go in meanwhile, in order.
+   */
+  async function steerWith(live: Live, input: Waiting): Promise<void> {
+    const { current, conversation } = live;
+    if (!current || !conversation) return;
+    const parts = await claimed(live, input);
+    // The turn ended meanwhile: the input starts the next one.
+    if (
+      !parts ||
+      lives.get(live.id) !== live ||
+      live.current !== current ||
+      live.stopBy !== undefined
+    ) {
+      return;
+    }
+    store.change(({ event }) => {
+      db.prepare(
+        "UPDATE queue SET state = 'handing_over', conversation = ?, updated_at = ? WHERE id = ?",
+      ).run(live.number, now(), input.id);
+      event("input.handing_over", live.id, {
+        input: input.id,
+        conversation: live.number,
+      });
+    });
+    conversation
+      .steer({ input: { id: input.id, parts }, turn: current.ref })
+      .catch((error: unknown): SteerOutcome => ({
+        status: "uncertain",
+        text: message(error),
+      }))
+      .then(async (outcome) => {
+        if (lives.get(live.id) !== live) return;
+        const to: Move =
+          outcome.status === "delivered"
+            ? { state: "delivered", turn: current.turn }
+            : outcome.status === "next_turn"
+              ? {
+                  state: "delivered",
+                  turn: turnOf(live, outcome.turn)?.id ?? null,
+                }
+              : outcome.status === "not_delivered"
+                ? // A steer that missed its turn goes first, and starts the next.
+                  { state: "waiting", first: true }
+                : byAnswer(
+                    await ask(conversation, input.id),
+                    current.turn,
+                    true,
+                  );
+        move(live, input.id, "handing_over", to);
+        pump(live.id);
+      })
+      .catch(options.onError);
+  }
+
+  /** Lifts these inputs' holds, and their agents look again. */
+  function lift(inputs: readonly { id: string; agent: string }[]): void {
+    if (inputs.length === 0) return;
+    store.change(({ event }) => {
+      for (const { id, agent } of inputs) {
+        db.prepare(
+          "UPDATE queue SET held = NULL, held_text = NULL, updated_at = ? WHERE id = ?",
+        ).run(now(), id);
+        event("input.released", agent, { input: id });
+      }
+    });
+    for (const agent of new Set(inputs.map((input) => input.agent))) {
+      pump(agent);
+    }
   }
 
   return {
@@ -690,148 +1083,157 @@ export function createAgents(options: {
         ).run(now(), id);
         event("agent.admitted", id, {});
       });
+      pump(id);
     },
 
     get,
 
-    start: async (id, input) => {
-      const agent = get(id);
-      if (!agent?.admitted) throw new Error(`Agent ${id} isn't admitted.`);
-      const live = liveOf(agent);
-      if (live.starting || live.current) {
-        throw new Error(`Agent ${id} runs a turn already.`);
-      }
-      const starting: Starting = {
-        input: input.id,
-        settled: Promise.withResolvers(),
-      };
-      live.starting = starting;
-      let delivery: Delivery | undefined;
-      try {
-        const conversation = await conversationOf(live, agent);
-        if (starting.stopBy !== undefined) {
-          delivery = {
-            status: "not_delivered",
-            text: "Stopped before it started.",
-          };
-          return delivery;
-        }
-        const turn = randomUUID();
-        store.change((change) => {
-          db.prepare(
-            "INSERT INTO turns (id, agent_id, conversation, model, effort, status, started_at) VALUES (?, ?, ?, ?, ?, 'starting', ?)",
-          ).run(turn, id, live.number, agent.model, agent.effort, now());
-          addInput(change, live, input, "queue");
-        });
-        starting.turn = turn;
-        delivery = await conversation.startTurn({
-          input,
-          model: agent.model,
-          effort: agent.effort,
-        });
-        if (delivery.status === "not_delivered") {
-          const { reason, text } = delivery;
-          store.change(({ event }) => {
-            db.prepare(
-              "UPDATE queue SET state = 'waiting', held = ?, held_text = ?, conversation = NULL, updated_at = ? WHERE id = ?",
-            ).run(reason ?? null, reason ? text : null, now(), input.id);
-            db.prepare("DELETE FROM turns WHERE id = ?").run(turn);
-            event("turn.not_started", id, {
-              turn,
-              input: input.id,
-              reason,
-              text,
-            });
-          });
-        }
-        return delivery;
-      } finally {
-        // Delivered or uncertain, it is admitted when the provider says it
-        // started; otherwise it didn't go.
-        if (
-          live.starting === starting &&
-          delivery?.status !== "delivered" &&
-          delivery?.status !== "uncertain"
-        ) {
-          live.starting = undefined;
-          starting.settled.resolve();
-        }
-      }
+    send: (id, input) => {
+      if (!row(id)) throw new Error(`No agent ${id}.`);
+      if (stateOf(input.id) !== undefined) return;
+      store.change(({ event }) => {
+        const at = now();
+        db.prepare(
+          `INSERT INTO queue (id, agent_id, sender, kind, parts, position, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
+        ).run(
+          input.id,
+          id,
+          input.sender,
+          input.kind,
+          input.parts === undefined ? null : JSON.stringify(input.parts),
+          id,
+          at,
+          at,
+        );
+        event("input.added", id, { input: input.id, kind: input.kind });
+      });
+      pump(id);
     },
 
-    steer: async (id, input) => {
-      const agent = get(id);
-      const live = agent && lives.get(id);
-      const current = live?.current;
-      if (!live?.conversation || !current || live.stopBy !== undefined) {
-        throw new Error(`Agent ${id} runs no turn to steer.`);
-      }
-      store.change((change) => {
-        addInput(change, live, input, "steer");
-      });
-      const outcome = await live.conversation.steer({
-        input,
-        turn: current.ref,
-      });
-      if (outcome.status === "uncertain") return outcome;
-      if (lives.get(id) !== live) return outcome;
-      const turn =
-        outcome.status === "next_turn"
-          ? turnOf(live, outcome.turn)?.id
-          : current.turn;
-      store.change(({ event }) => {
-        if (outcome.status === "not_delivered") {
-          db.prepare(
-            "UPDATE queue SET state = 'waiting', conversation = NULL, updated_at = ? WHERE id = ? AND state = 'handing_over'",
-          ).run(now(), input.id);
-        } else {
-          db.prepare(
-            "UPDATE queue SET state = 'delivered', turn_id = ?, updated_at = ? WHERE id = ? AND state = 'handing_over'",
-          ).run(turn ?? null, now(), input.id);
+    dispatch: async () => {
+      // Once: a start this process made is never taken for a crash's.
+      if (begun) return;
+      begun = true;
+      // What a crash left with a provider: asked by the conversation it
+      // went to; an older one's can't be told here.
+      const left = db
+        .prepare(
+          "SELECT queue.id, queue.agent_id AS agent, queue.conversation FROM queue JOIN agents ON agents.id = queue.agent_id WHERE queue.state = 'handing_over' AND agents.admitted = 1 ORDER BY queue.position",
+        )
+        .all() as { id: string; agent: string; conversation: number }[];
+      for (const id of new Set(left.map((input) => input.agent))) {
+        const agent = get(id);
+        if (!agent) continue;
+        const live = liveOf(agent);
+        if (live.starting || live.current || live.pumping) continue;
+        const inputs = left.filter((input) => input.agent === id);
+        const asked = inputs
+          .filter((input) => input.conversation === agent.conversation)
+          .map((input) => input.id);
+        const conversation =
+          asked.length > 0
+            ? await conversationOf(live, agent, "resume").catch(untold)
+            : undefined;
+        const answers =
+          (conversation &&
+            (await conversation.reconcile(asked).catch(untold))) ??
+          new Map<string, Received>();
+        for (const input of inputs) {
+          move(
+            live,
+            input.id,
+            "handing_over",
+            byAnswer(answers.get(input.id) ?? "unknown", null),
+          );
         }
-        event(`input.${outcome.status}`, id, { input: input.id, turn });
-      });
-      return outcome;
+      }
+      // A start the provider never said had started didn't run.
+      const unstarted = db
+        .prepare(
+          "SELECT id, agent_id AS agent FROM turns WHERE status = 'starting'",
+        )
+        .all() as { id: string; agent: string }[];
+      if (unstarted.length > 0) {
+        store.change(({ event }) => {
+          for (const { id, agent } of unstarted) {
+            db.prepare("DELETE FROM turns WHERE id = ?").run(id);
+            event("turn.not_started", agent, { turn: id });
+          }
+        });
+      }
+      dispatching = true;
+      const waiting = db
+        .prepare(
+          "SELECT DISTINCT agent_id AS id FROM queue WHERE state = 'waiting' AND held IS NULL",
+        )
+        .all() as { id: string }[];
+      for (const { id } of waiting) pump(id);
+    },
+
+    release: (inputs) => {
+      lift(
+        db
+          .prepare(
+            "SELECT id, agent_id AS agent FROM queue WHERE id IN (SELECT value FROM json_each(?)) AND held IS NOT NULL",
+          )
+          .all(JSON.stringify(inputs)) as { id: string; agent: string }[],
+      );
+    },
+
+    signedIn: () => {
+      lift(
+        db
+          .prepare(
+            "SELECT id, agent_id AS agent FROM queue WHERE held = 'signed_out'",
+          )
+          .all() as { id: string; agent: string }[],
+      );
     },
 
     stop: async (id, by) => {
       const live = lives.get(id);
       if (!live) return;
-      const starting = live.starting;
-      if (starting) {
-        starting.stopBy ??= by;
-        if (starting.turn !== undefined) closeTurn(live, starting.turn);
-        await starting.settled.promise;
-      }
-      const { current, conversation } = live;
-      if (!conversation) return;
-      let ref: string;
-      if (current) {
-        if (live.stopBy === undefined) {
-          live.stopBy = by;
-          closeTurn(live, current.turn);
-        }
-        ref = current.ref;
-      } else if (live.last !== undefined && handingOver(id)) {
-        // Its turn has ended, but steers handed over for it may still be
-        // taken: the provider settles them now.
-        live.stopBy ??= by;
-        ref = live.last;
-      } else {
-        return;
-      }
-      live.stops += 1;
       try {
-        await conversation.stop(ref);
-        // A turn the provider began meanwhile with a steer it held was
-        // closed when admitted, and is stopped too.
-        const started = live.current;
-        if (started && started.ref !== ref) {
-          await conversation.stop(started.ref);
+        const starting = live.starting;
+        if (starting) {
+          starting.stopBy ??= by;
+          if (starting.turn !== undefined) closeTurn(live, starting.turn);
+          await starting.settled.promise;
+        }
+        const { current, conversation } = live;
+        if (!conversation) return;
+        let ref: string;
+        if (current) {
+          if (live.stopBy === undefined) {
+            live.stopBy = by;
+            closeTurn(live, current.turn);
+          }
+          ref = current.ref;
+        } else if (live.last !== undefined && handingOver(id)) {
+          // Its turn has ended, but steers handed over for it may still be
+          // taken: the provider settles them now.
+          live.stopBy ??= by;
+          ref = live.last;
+        } else {
+          return;
+        }
+        live.stops += 1;
+        try {
+          await conversation.stop(ref);
+          // A turn the provider began meanwhile with a steer it held was
+          // closed when admitted, and is stopped too.
+          const started = live.current;
+          if (started && started.ref !== ref) {
+            await conversation.stop(started.ref);
+          }
+        } finally {
+          live.stops -= 1;
+          if (live.stops === 0 && !live.current) live.stopBy = undefined;
         }
       } finally {
-        live.stops -= 1;
-        if (live.stops === 0 && !live.current) live.stopBy = undefined;
+        // What waits for the agent goes on.
+        pump(id);
       }
     },
 
