@@ -7,6 +7,9 @@ import { join } from "node:path";
 import type { AccountInfo, query } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it } from "vitest";
 import {
+  claudeEnvironment,
+  claudeLogIn,
+  claudeSignedIn,
   claudeSignIn,
   ClaudeMissing,
   ClaudeTooOld,
@@ -87,5 +90,47 @@ describe("Claude's sign-in", () => {
     expect(await ask({ apiKeySource: "ANTHROPIC_API_KEY" })).toBe("api key");
     expect(await ask({ apiKeySource: "none" })).toBe("none");
     expect(closed).toBe(3);
+  });
+});
+
+describe("Claude's own sign-in, in its folder in the data folder", () => {
+  it("opens Claude's link, and is signed in once Claude says so, never as whom", async () => {
+    // A `claude` that signs in by itself when asked, in CLAUDE_CONFIG_DIR.
+    const home = await mkdtemp(join(tmpdir(), "rufi-claude-"));
+    const path = join(await emptyFolder(), "claude");
+    await writeFile(
+      path,
+      `#!/bin/sh
+case "$1 $2" in
+  "auth status")
+    if [ -f "$CLAUDE_CONFIG_DIR/.claude.json" ]; then
+      echo '{"loggedIn":true,"authMethod":"claude.ai","email":"asha@example.com"}'
+    else
+      echo '{"loggedIn":false,"authMethod":"none"}'
+      exit 1
+    fi ;;
+  "auth login")
+    echo "Opening browser to sign in…"
+    echo "If the browser didn't open, visit: https://claude.com/cai/oauth/authorize?fictional=1"
+    mkdir -p "$CLAUDE_CONFIG_DIR"
+    echo '{}' > "$CLAUDE_CONFIG_DIR/.claude.json"
+    echo "Login successful." ;;
+esac
+`,
+    );
+    await chmod(path, 0o755);
+    const claude = { path, version: "2.1.314" };
+    const env = claudeEnvironment(home, { PATH: "/usr/bin:/bin" });
+
+    expect(await claudeSignedIn(claude, env)).toBe(false);
+    const links: string[] = [];
+    await claudeLogIn(claude, env, {
+      showLink: (link) => links.push(link),
+      signal: new AbortController().signal,
+    });
+    expect(links).toEqual([
+      "https://claude.com/cai/oauth/authorize?fictional=1",
+    ]);
+    expect(await claudeSignedIn(claude, env)).toBe(true);
   });
 });

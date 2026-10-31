@@ -9,7 +9,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { ChatGptError } from "../../server/src/agent/chatgpt/openai.ts";
+import { SIGNED_OUT } from "../../server/src/agent/codex/appserver.ts";
+import { SignedOut } from "../../server/src/agent/runtime.ts";
 import type { Scenario } from "../../server/tests/fake-codex.ts";
 import { readPage, scriptedReader } from "../../server/tests/fake-reader.ts";
 import { backupsPath, makeBackup } from "../../server/src/core/store/backup.ts";
@@ -461,10 +462,9 @@ test("a reading that failed signed out ends the reply with its reason in full, i
   page,
   rufi,
 }) => {
-  const why =
-    "Not signed in. Sign in with ChatGPT: in Rufi, or with pnpm rufi signin.";
+  const why = SIGNED_OUT;
   const reader = scriptedReader([
-    () => Promise.reject(new ChatGptError("not_signed_in", why)),
+    () => Promise.reject(new SignedOut(why)),
     async (turn) => {
       for (const number of [1, 2]) {
         await turn.look(number);

@@ -302,7 +302,7 @@ function SignInStep() {
       title="Sign in with ChatGPT"
       mood={waiting ? "thinking" : "hello"}
     >
-      <SignIn skip={() => void finish("sign_in")} />
+      <SignIn provider="codex" skip={() => void finish("sign_in")} />
     </Step>
   );
 }

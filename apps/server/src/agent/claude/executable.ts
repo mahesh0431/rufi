@@ -1,8 +1,10 @@
 // The Claude installed on this Mac, which the Claude Agent SDK drives. Rufi
-// ships no Claude of its own and, for now, no Claude sign-in or API-key
-// setting: Claude uses whatever sign-in it has. Rufi only finds it, checks
-// it's new enough, and asks what kind of sign-in it has, never whose.
-import { execFile } from "node:child_process";
+// ships no Claude of its own. Claude signs in by itself (`claude auth
+// login`) in its folder in the data folder (CLAUDE_CONFIG_DIR), where it
+// keeps and renews its sign-in and its conversations. Rufi finds it, checks
+// it's new enough, starts its sign-in, and asks whether it is signed in and
+// with what kind of sign-in, never whose.
+import { execFile, spawn } from "node:child_process";
 import { access, constants, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -22,6 +24,26 @@ import { within } from "./deadline.ts";
  * the messages it took.
  */
 const CLAUDE_FLOOR = "2.1.314";
+
+/**
+ * Claude's folder in the data folder (CLAUDE_CONFIG_DIR): its settings,
+ * sign-in and conversations. Claude finds its sign-in by the folder's path,
+ * so it is never moved.
+ */
+export const claudeFolder = (home: string) => join(home, "claude");
+
+/**
+ * Claude's environment: the child's (platform/config.ts), with its folder.
+ * Rufi's own process sets the folder too, as Claude's session functions
+ * run in it.
+ */
+export const claudeEnvironment = (
+  home: string,
+  env: Readonly<Record<string, string>>,
+): Record<string, string> => ({
+  ...env,
+  CLAUDE_CONFIG_DIR: claudeFolder(home),
+});
 
 /** A Claude Rufi may run: where it is, and its version. */
 export interface InstalledClaude {
@@ -139,6 +161,67 @@ export function claudeSignIn(
   return askClaude(claude, options, async (run) =>
     signInOf(await within(run.accountInfo(), ASK_MS, "how it's signed in")),
   );
+}
+
+/**
+ * Whether Claude is signed in, as `claude auth status` says, never whose.
+ * `env` names Claude's folder (claudeEnvironment).
+ */
+export async function claudeSignedIn(
+  claude: InstalledClaude,
+  env: Record<string, string>,
+): Promise<boolean> {
+  // Signed out, it exits 1 and still says so.
+  const { stdout } = await promisify(execFile)(
+    claude.path,
+    ["auth", "status", "--json"],
+    { env, timeout: ASK_MS },
+  ).catch((error: unknown) => {
+    const said = (error as { stdout?: unknown }).stdout;
+    if (typeof said === "string" && said.trim() !== "") return { stdout: said };
+    throw error;
+  });
+  return (JSON.parse(stdout) as { loggedIn?: unknown }).loggedIn === true;
+}
+
+/**
+ * Claude's own sign-in, `claude auth login`: Claude opens the browser and
+ * waits for it. Its link goes to `showLink` when Claude shows one; resolves
+ * once Claude is signed in. Aborting `signal` ends it.
+ */
+export function claudeLogIn(
+  claude: InstalledClaude,
+  env: Record<string, string>,
+  handlers: { showLink: (link: string) => void; signal: AbortSignal },
+): Promise<void> {
+  const login = spawn(claude.path, ["auth", "login", "--claudeai"], {
+    env,
+    signal: handlers.signal,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let said = "";
+  let shown = false;
+  for (const stream of [login.stdout, login.stderr]) {
+    stream.setEncoding("utf8");
+    stream.on("data", (chunk: string) => {
+      said = (said + chunk).slice(-4_000);
+      const link = /https:\/\/\S+/.exec(said)?.[0];
+      if (link !== undefined && !shown) {
+        shown = true;
+        handlers.showLink(link);
+      }
+    });
+  }
+  return new Promise((resolve, reject) => {
+    login.on("error", reject);
+    login.on("exit", (code) => {
+      if (code === 0) resolve();
+      else {
+        const last = said.trim().split("\n").at(-1);
+        reject(new Error(last || "Claude's sign-in didn't finish."));
+      }
+    });
+  });
 }
 
 export interface AskOptions {

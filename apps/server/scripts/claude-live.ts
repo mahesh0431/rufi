@@ -2,9 +2,10 @@
 // relies on, with fictional data. It isn't part of `pnpm check`: CI has no
 // Claude, and the installed Claude updates itself, so a change in it shows
 // only here. Run it after changing src/agent/claude/ and after Claude
-// updates: `pnpm claude:live`. It sends a few short messages on the Mac's
-// own Claude sign-in, and deletes the conversations it made (Claude keeps an
-// empty folder for the run's AI folder in ~/.claude/projects).
+// updates: `RUFI_HOME=<test sign-in folder> pnpm claude:live`. It sends a few
+// short messages on the test sign-in's Claude folder (RUFI_HOME's
+// `claude/`), as Rufi runs Claude, and deletes the conversations it made
+// (Claude keeps an empty folder for the run's AI folder in its `projects/`).
 import { randomUUID, type UUID } from "node:crypto";
 import {
   access,
@@ -16,7 +17,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   deleteSession,
   getSessionMessages,
@@ -31,6 +32,8 @@ import type {
 import { openAgentStore } from "@rufi/agents/store";
 import { claudeAdapter } from "../src/agent/claude/adapter.ts";
 import {
+  claudeEnvironment,
+  claudeFolder,
   claudeSignIn,
   findClaude,
   type InstalledClaude,
@@ -49,8 +52,9 @@ import type { ToolAnswer, ToolSpec } from "../src/core/tools/registry.ts";
 import { agentDoor } from "../src/server/door.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "../src/server/mcp.ts";
 import { backupsPath } from "../src/core/store/backup.ts";
-import { childEnvironment } from "../src/platform/config.ts";
+import { childEnvironment, rufiHome } from "../src/platform/config.ts";
 import { aiSandbox } from "../src/server/core.ts";
+import { caseSandbox, signInsOf } from "./live-run.ts";
 
 /** A quick model: the cases check what Claude does, not how well. */
 const MODEL = "claude-haiku-5-5";
@@ -103,11 +107,22 @@ const INBOX = "CLAUDE_CODE_MESSAGING";
 /** Text in each of Rufi's unreadable files, which must never reach Claude. */
 const SECRET = "SECRET-CANARY";
 
-/** A fictional file at each unreadable path; the backups get one inside. */
-async function unreadableFiles(home: string, sandbox: AgentSandbox) {
-  await mkdir(backupsPath(home), { recursive: true });
-  for (const path of sandbox.unreadable) {
-    const file = path === backupsPath(home) ? join(path, "copy.sqlite") : path;
+/** A file in Claude's folder, there to be read. */
+const claudeFile = (home: string) => join(claudeFolder(home), ".claude.json");
+
+/**
+ * A fictional file at each path of the data folder `home` that the AI can't
+ * read; the backups and Claude's folder get one inside.
+ */
+async function unreadableFiles(home: string) {
+  for (const path of aiSandbox(home).unreadable) {
+    const file =
+      path === backupsPath(home)
+        ? join(path, "copy.sqlite")
+        : path === claudeFolder(home)
+          ? claudeFile(home)
+          : path;
+    await mkdir(dirname(file), { recursive: true });
     await writeFile(file, `${SECRET} in ${file}\n`);
   }
 }
@@ -690,6 +705,18 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       { tool: "Bash", input: `cat '${wal}'`, check: refusedRead },
       { tool: "Grep", input: backups, check: refusedRead },
       { tool: "Bash", input: `cat '${database}'`, check: refusedRead },
+      // Codex's sign-in and Claude's folder.
+      {
+        tool: "Bash",
+        input: `cat '${join(home, "codex", "auth.json")}'`,
+        check: refusedRead,
+      },
+      { tool: "Read", input: claudeFile(home), check: refusedRead },
+      {
+        tool: "Bash",
+        input: `cat '${claudeFile(home)}'`,
+        check: refusedRead,
+      },
       {
         tool: "Write",
         input: `${ai}/inside.txt`,
@@ -790,7 +817,7 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       await rm(outside, { force: true });
       await rm("/tmp/rufi-claude-live", { force: true });
     }
-    return "each of 14 steps tried on its own call: 4 unreadable files and 4 writes refused, its folder and temp written, the internet reached, no token it can use";
+    return "each of 17 steps tried on its own call: 7 reads of unreadable files (Codex's sign-in, and Claude's folder by Read and by a command) and 4 writes refused, its folder and temp written, the internet reached, no token it can use";
   },
 
   "the adapter lists Claude's models by exact id": async (context) =>
@@ -1043,15 +1070,22 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       }),
 };
 
+const signIn = rufiHome();
+// Claude's own folder in the test sign-in: in Claude's environment, and in
+// this process, where the SDK's session functions read it.
+process.env["CLAUDE_CONFIG_DIR"] = claudeFolder(signIn);
 const claude = await findClaude();
 console.log(`Claude ${claude.version} at ${claude.path}`);
 const folder = await mkdtemp(join(tmpdir(), "rufi-claude-live-"));
 // Brackets, which Claude's permission rules read as a pattern unless
 // escaped, and a space and parentheses, which a rule holds too.
 const home = join(folder, "home [fictional] (2)");
-const sandbox = aiSandbox(home);
+// The fictional files go only into this run's own data folder, never into
+// the test sign-in.
+await unreadableFiles(home);
+// Claude's AI is denied the test sign-in too: Codex's and Claude's own.
+const sandbox = caseSandbox(home, signInsOf(signIn));
 await aiFolder(sandbox.folder);
-await unreadableFiles(home, sandbox);
 const plugin = await prepareClaudePlugin(home, [
   {
     name: "greeting",
@@ -1064,7 +1098,7 @@ const context = {
   folder,
   home,
   sandbox,
-  env: childEnvironment(),
+  env: claudeEnvironment(signIn, childEnvironment()),
   plugin,
 };
 let failed = 0;

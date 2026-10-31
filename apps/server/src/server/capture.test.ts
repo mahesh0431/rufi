@@ -16,12 +16,14 @@ import { promisify } from "node:util";
 import { v7 as uuid } from "uuid";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  codexArgs,
   fakeModel,
   type FakeModel,
   type ModelRequest,
   type Step,
 } from "../../tests/fake-model.ts";
 import { rufiAiFor } from "../../tests/rufi-ai.ts";
+import { claudeFolder } from "../agent/claude/executable.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexAdapter, instructionsNote } from "../agent/codex/adapter.ts";
 import { chatQueue } from "../core/chat/queue.ts";
@@ -44,10 +46,11 @@ import { agentsPath } from "./agents.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 import { tempPath, tempPattern } from "../platform/files.ts";
 import { agentSetup, aiSandbox, coreFile } from "./core.ts";
-import { doorFile } from "../agent/codex/token-door.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
 
 let home: string;
+/** The HOME the AI's commands get: a fictional one, never the real. */
+let userHome: string;
 let store: Store;
 let transcripts: Transcripts;
 let model: FakeModel | undefined;
@@ -59,6 +62,7 @@ let seen: { auth: string | null; origin: string | null; method: string }[];
 
 async function makeRecord(root: string) {
   home = await mkdtemp(join(root, "rufi-capture-"));
+  userHome = await mkdtemp(join(root, "rufi-user-home-"));
   store = openWritable(databasePath(home));
   store.db.exec(`
     INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
@@ -130,10 +134,7 @@ async function start(
       : endpoint(request);
   });
   port = served.port;
-  const command = {
-    file: await codexBinary(),
-    args: ["-c", `model_providers.openai_chatgpt_plan.base_url="${model.url}"`],
-  };
+  const command = { file: await codexBinary(), args: codexArgs(model.url) };
   ai = await rufiAiFor({
     home,
     record: store,
@@ -142,8 +143,7 @@ async function start(
       home,
       ...agentSetup(home),
       command,
-      env: { PATH: process.env["PATH"] ?? "" },
-      token: () => Promise.resolve("not-a-real-token"),
+      env: { PATH: process.env["PATH"] ?? "", HOME: userHome },
       version: "0.0.0",
       deadlines: { requestMs: 20_000 },
       log,
@@ -153,7 +153,8 @@ async function start(
   chat = openChat({
     transcripts,
     queue: chatQueue(store),
-    signedIn: () => Promise.resolve(true),
+    signIn: () =>
+      Promise.resolve({ state: "signed_in", account: null, text: null }),
     agent: ai.agent,
     allowlist: options.model ? [options.model] : DEFAULT_ALLOWLIST,
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
@@ -799,32 +800,46 @@ describe.runIf(process.platform === "darwin")(
           // Its temp copy, as it is written.
           const copy = tempPath(coreFile(home));
           await writeFile(copy, '{"launcher":"secret"}');
-          // The chat's Codex replaces its door's file as it starts.
-          const doors = [doorFile(home, "chat"), doorFile(home, "reader")];
-          for (const door of doors) {
-            await mkdir(dirname(door), { recursive: true });
-            await writeFile(
-              door,
-              JSON.stringify({ key: `fictional-${uuid()}` }),
-            );
-          }
+          // Codex's sign-in, and a file in Claude's folder.
+          const signInKey = `fictional-${uuid()}`;
+          const claudeFile = join(claudeFolder(home), ".claude.json");
+          await mkdir(join(home, "codex"), { recursive: true });
+          await writeFile(
+            join(home, "codex", "auth.json"),
+            JSON.stringify({ OPENAI_API_KEY: signInKey }),
+          );
+          await mkdir(dirname(claudeFile), { recursive: true });
+          await writeFile(claudeFile, JSON.stringify({ fictional: true }));
+          // A fictional keychain in the commands' fictional HOME.
+          const keychain = join(
+            userHome,
+            "Library",
+            "Keychains",
+            "login.keychain-db",
+          );
+          await mkdir(dirname(keychain), { recursive: true });
+          await writeFile(keychain, "a fictional keychain");
           expect(existsSync(`${databasePath(home)}-wal`)).toBe(true);
           expect(existsSync(`${agentsPath(home)}-wal`)).toBe(true);
           const skill = join(home, "codex", "skills", "analysis", "SKILL.md");
           const q = (path: string) => JSON.stringify(path);
-          // Each one that is there now, and the backup's copy; neither
-          // database has a journal, in WAL mode.
+          // Each one that is there now, with the backup's copy, core.json's
+          // temp copy and the file in Claude's folder; neither database has
+          // a journal, in WAL mode.
           const journal = `${databasePath(home)}-journal`;
           const denied = [
             ...unreadable.map((path) =>
               path === tempPattern(coreFile(home)) ? copy : path,
             ),
             join(home, "backups", "copy.sqlite"),
-            ...doors,
+            claudeFile,
+            keychain,
           ]
             .filter((path) => existsSync(path))
             .map((path) => `cat ${q(path)}`);
-          expect(denied).toHaveLength(unreadable.length - 1 + doors.length);
+          // No journals (two), and the backup's copy, Claude's file and the
+          // keychain.
+          expect(denied).toHaveLength(unreadable.length - 2 + 3);
           // What a command reads of Rufi's processes: Rufi's own and the
           // Codex it runs now, each with a value it surely holds.
           await writeFile(join(probe, "procargs.py"), PROCARGS);
@@ -867,15 +882,10 @@ describe.runIf(process.platform === "darwin")(
           const run = async (n: number, text: string) => {
             const url = model?.url ?? "";
             const named = others(url);
-            // Every secret Rufi has given so far: the token, the MCP keys
-            // and the token door's key.
+            // Every secret so far: Codex's sign-in and Rufi's MCP keys.
             const watched = await processes();
-            const door = JSON.parse(
-              await readFile(doorFile(home, "chat"), "utf8"),
-            ) as { key: string };
             const secrets = [
-              "not-a-real-token",
-              door.key,
+              signInKey,
               ...seen.flatMap((r) => r.auth?.replace("Bearer ", "") ?? []),
             ];
             await writeFile(
@@ -924,7 +934,8 @@ describe.runIf(process.platform === "darwin")(
             const key = (seen.at(-1)?.auth ?? "").replace("Bearer ", "");
             expect(key).not.toBe("");
             expect(env).toContain("PATH=");
-            expect(env).not.toMatch(/TOKEN|not-a-real-token/);
+            expect(env).not.toMatch(/TOKEN|OPENAI_API_KEY/);
+            expect(env).not.toContain(signInKey);
             expect(env).not.toContain(key);
             expect(by(named.cache)?.output).toBe(
               `yes\nyes\n${join(folder, ".cache")}\n`,

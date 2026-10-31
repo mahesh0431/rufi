@@ -44,7 +44,7 @@ export function ModelMenu({
   const models = useModels();
   const navigate = useNavigate();
   // Without the sign-in, there is no list of models: the menu signs in.
-  const account = useStatus().data?.account;
+  const account = useStatus().data?.codex.state;
   const chosen = useStore(live, (state) => state.chat);
   const offered = models.data?.models ?? [];
   // With none chosen yet, the first one, which the first message takes.

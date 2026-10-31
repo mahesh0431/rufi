@@ -1,7 +1,8 @@
 // Contract tests against the pinned Codex binary itself, offline: the things
-// generated types can't promise. No sign-in and no AI request is made. What
-// Codex does when Rufi goes away also runs on the scripted fake, which must do
-// the same.
+// generated types can't promise. No sign-in and no AI request is made: Codex
+// runs on a provider of the test's own, with no sign-in, pointed at a local
+// stand-in for the model. What Codex does when Rufi goes away also runs on the
+// scripted fake, which must do the same.
 import { execFile, spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,9 +15,9 @@ import {
   listFiles,
   PROTOCOL_DIR,
 } from "../../../scripts/codex-types.ts";
-import { fakeModel } from "../../../tests/fake-model.ts";
+import { codexArgs, fakeModel } from "../../../tests/fake-model.ts";
 import { DEFAULT_ALLOWLIST } from "../../core/chat/models.ts";
-import type { AgentEvent, AgentRuntime, TurnEnd } from "../runtime.ts";
+import type { AgentRuntime } from "../runtime.ts";
 import { DEADLINES } from "./appserver.ts";
 import { codexBinary } from "./binary.ts";
 import { codexRuntime } from "./codex.ts";
@@ -25,12 +26,11 @@ import type { CommandExecResponse } from "./protocol/v2/CommandExecResponse.ts";
 import type { SkillsListResponse } from "./protocol/v2/SkillsListResponse.ts";
 import { connect, type Rpc } from "./rpc.ts";
 import { prepareCodexHome } from "./settings.ts";
-import { doorFile, openTokenDoor, type TokenDoor } from "./token-door.ts";
 
 let root: string;
 let fakeHome: string;
 let runtime: AgentRuntime | undefined;
-let raw: { rpc: Rpc; stop: () => Promise<void> } | undefined;
+let raw: { rpc: Rpc; stop: () => void } | undefined;
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "rufi-contract-"));
@@ -40,7 +40,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await runtime?.close();
   runtime = undefined;
-  await raw?.stop();
+  raw?.stop();
   raw = undefined;
 });
 
@@ -52,42 +52,27 @@ const sandboxOf = (home: string) => ({
   unreadable: [join(home, "rufi.sqlite")],
 });
 
-/** Rufi's Codex runtime on the real binary, with a fake token. */
-async function real(
-  options: {
-    args?: string[];
-    onEvent?: (event: AgentEvent) => void;
-    token?: () => Promise<string>;
-  } = {},
-): Promise<AgentRuntime> {
+/** Rufi's Codex runtime on the real binary, on the test's provider. */
+async function real(): Promise<AgentRuntime> {
   runtime = codexRuntime({
     home: join(root, "rufi"),
     sandbox: sandboxOf(join(root, "rufi")),
     skills: [],
-    command: { file: await codexBinary(), args: options.args ?? [] },
+    command: { file: await codexBinary(), args: codexArgs() },
     env: env(),
-    token: options.token ?? (() => Promise.resolve("not-a-real-token")),
     version: "0.0.0",
-    host: { onEvent: options.onEvent ?? (() => undefined) },
+    host: { onEvent: () => undefined },
   });
   return runtime;
 }
-
-/** The chat's token door in the data folder `home`, with a fake token. */
-const doorFor = (home: string) =>
-  openTokenDoor(doorFile(home, "chat"), () =>
-    Promise.resolve("not-a-real-token"),
-  );
 
 /** A bare app-server connection set up exactly as Rufi sets it up. */
 async function bare(): Promise<Rpc> {
   const home = join(root, "bare");
   const { codexHome, processHome } = await prepareCodexHome(home, {
-    door: doorFile(home, "chat"),
     userHome: fakeHome,
     sandbox: sandboxOf(home),
   });
-  const door = await doorFor(home);
   const child = spawn(
     await codexBinary(),
     ["app-server", "--listen", "stdio://"],
@@ -108,9 +93,8 @@ async function bare(): Promise<Rpc> {
   );
   raw = {
     rpc,
-    stop: async () => {
+    stop: () => {
       child.kill();
-      await door.close();
     },
   };
   await rpc.request(
@@ -139,44 +123,6 @@ describe("the pinned Codex", () => {
       expect(await readFile(file, "utf8"), twin).toBe(
         await readFile(twin, "utf8"),
       );
-    }
-  }, 60_000);
-
-  // Undocumented on OpenAI's pages, so pinned here: Codex gets its token
-  // from the provider's auth command (Rufi's token door), and after OpenAI
-  // refuses one (a 401) it runs the command again and goes on with the new one.
-  it("asks Rufi's token door again when OpenAI refuses its token, and goes on with the new one", async () => {
-    const model = await fakeModel({ refuse: 1 });
-    let given = 0;
-    const ends: TurnEnd[] = [];
-    try {
-      const agent = await real({
-        args: [
-          "-c",
-          `model_providers.openai_chatgpt_plan.base_url="${model.url}"`,
-        ],
-        token: () => Promise.resolve(`fictional-token-${String((given += 1))}`),
-        onEvent: (event) => {
-          if (event.type === "turnEnded") ends.push(event.end);
-        },
-      });
-      const { threadId } = await agent.startThread({
-        model: "gpt-6.1-sol",
-        instructions: "Answer briefly.",
-      });
-      await agent.send(threadId, { id: "m-1", input: ["Hello"] });
-      await until(
-        "the reply to end",
-        () => Promise.resolve(ends.length > 0),
-        30_000,
-      );
-      expect(ends).toEqual([{ status: "completed" }]);
-      const [refused, renewed] = model.tokens;
-      expect(refused).toMatch(/^fictional-token-/);
-      expect(renewed).toMatch(/^fictional-token-/);
-      expect(renewed).not.toBe(refused);
-    } finally {
-      await model.close();
     }
   }, 60_000);
 
@@ -278,21 +224,14 @@ describe.each(["fake", "real"] as const)(
         const model = await fakeModel();
         const home = join(root, "gone");
         const { codexHome, processHome } = await prepareCodexHome(home, {
-          door: doorFile(home, "chat"),
           userHome: fakeHome,
           sandbox: sandboxOf(home),
         });
-        const door: TokenDoor = await doorFor(home);
         // Started as Rufi starts it (appserver.ts): its own process group, pipes.
         const codex = spawn(
           name === "real" ? await codexBinary() : process.execPath,
           [
-            ...(name === "real"
-              ? [
-                  "-c",
-                  `model_providers.openai_chatgpt_plan.base_url="${model.url}"`,
-                ]
-              : [FAKE]),
+            ...(name === "real" ? codexArgs(model.url) : [FAKE]),
             "app-server",
             "--listen",
             "stdio://",
@@ -387,7 +326,6 @@ describe.each(["fake", "real"] as const)(
         } finally {
           await killTree(pid, groups);
           await model.close();
-          await door.close();
         }
       },
       60_000,
