@@ -540,7 +540,8 @@ test("the model and effort are chosen in the box, also in the bar, and kept for 
   await expect(choice("GPT-6-Astra, High")).toBeVisible();
 });
 
-test("the models ticked in Settings are the chat menu's, the first ticked is a new chat's, and a chat on a model unticked still shows it", async ({
+test("the models ticked in Settings are the chat menu's, the first ticked is a new chat's, a menu open in another tab follows at once, and a chat on a model unticked still shows it", async ({
+  context,
   page,
   rufi,
 }) => {
@@ -564,10 +565,21 @@ test("the models ticked in Settings are the chat menu's, the first ticked is a n
   await expect(tick("GPT-6.1-Sol")).toBeChecked();
   await expect(tick("GPT-5.5")).not.toBeChecked();
 
-  // The chat answers on GPT-6-Astra; then the user unticks it.
+  // The chat answers on GPT-6-Astra; then the user unticks it, with the
+  // menu open in another tab.
   await page.goBack();
   await send(page, "Hello");
   await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
+  const other = await context.newPage();
+  await other.goto((await runningLink(rufi.home)) ?? "");
+  await opener(chat(other)).click();
+  await chat(other)
+    .getByRole("button", { name: "Model and effort: GPT-6-Astra, Medium" })
+    .click();
+  const offered = (name: string) =>
+    other.getByRole("menuitemradio", { name, exact: true });
+  await expect(offered("GPT-6-Astra")).toBeVisible();
+  await expect(offered("GPT-5.5")).toHaveCount(0);
   await settings();
   await tick("GPT-5.5").click();
   await expect(tick("GPT-5.5")).toBeChecked();
@@ -578,6 +590,8 @@ test("the models ticked in Settings are the chat menu's, the first ticked is a n
     "GPT-5.5",
     "GPT-6-Astra",
   ]);
+  await expect(offered("GPT-5.5")).toBeVisible();
+  await expect(offered("GPT-6-Astra")).toHaveCount(0);
 
   // The chat still says which model answers; the menu offers the ticked.
   await page.goBack();

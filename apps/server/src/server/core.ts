@@ -467,7 +467,7 @@ export const startCore = (options: CoreOptions) =>
         folder: aiSandbox(home).folder,
         generated: generatedImages(home),
       }),
-      signIn: signInFlow(signIns, log),
+      signIn: signInFlow(signIns, log, agentSystem.refreshModels),
       launcher,
       launchUrl,
       ...(options.screens !== undefined && { screens: options.screens }),

@@ -36,6 +36,7 @@ export async function rufiAiFor(options: {
     logs: system.logs,
     usage: system.usage,
     rufiTool: system.rufiTool,
+    refreshModels: system.refreshModels,
     /** As the core does once the chat is open. */
     dispatch: async () =>
       system.agents.dispatch({

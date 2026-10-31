@@ -32,6 +32,8 @@ export interface ProviderSignIn {
 export function signInFlow(
   providers: Partial<Record<Provider, ProviderSignIn>>,
   log: Log,
+  /** Done once Rufi has heard what the provider offers now. */
+  signedIn: (provider: Provider) => Promise<void> = () => Promise.resolve(),
 ) {
   let state: SignInState = {
     provider: null,
@@ -64,7 +66,8 @@ export function signInFlow(
           signal,
         })
         .then(
-          () => {
+          async () => {
+            await signedIn(provider);
             state = { provider, state: "done", link: null, error: null };
           },
           (error: unknown) => {

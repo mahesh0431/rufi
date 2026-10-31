@@ -60,6 +60,8 @@ export const useSettings = () =>
 const settingsChanged = new BroadcastChannel("rufi.settings");
 settingsChanged.addEventListener("message", () => {
   void queries.invalidateQueries({ queryKey: ["settings"] });
+  // The model menu offers the shortlist Settings keeps.
+  void queries.invalidateQueries({ queryKey: ["models"] });
 });
 
 /** Changes settings: this page and every other open one show the change. */
