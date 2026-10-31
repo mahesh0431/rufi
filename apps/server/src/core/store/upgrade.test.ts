@@ -467,6 +467,21 @@ const beforeSorting = (rows: readonly object[]) =>
     ),
   );
 
+/**
+ * An older reading as migration 20 leaves it: one that hadn't finished
+ * failed, as Rufi's start failed them, since the older reader is gone.
+ */
+const closed = (job: Record<string, unknown>) =>
+  job["state"] === "queued" || job["state"] === "running"
+    ? {
+        ...job,
+        state: "failed",
+        error: "Rufi closed while reading",
+        ended_at: expect.any(String) as unknown,
+        retry_at: null,
+      }
+    : job;
+
 /** The documents and their pages as stored. */
 function documentsIn(path: string) {
   const db = new DatabaseSync(path, { readOnly: true });
@@ -625,11 +640,12 @@ it("upgrades a record of version 8 so a reading no longer waits for the account:
     const after = stored();
     expect(beforeSorting(after.jobs)).toEqual(
       before.jobs.map(
-        ({ waiting: _waiting, wait_until: _until, retried, ...job }) => ({
-          ...job,
-          retries: retried,
-          retry_at: null,
-        }),
+        ({ waiting: _waiting, wait_until: _until, retried, ...job }) =>
+          closed({
+            ...job,
+            retries: retried,
+            retry_at: null,
+          }),
       ),
     );
     expect(after.pages).toEqual(before.pages);
@@ -839,8 +855,18 @@ it("upgrades a record of version 11 so Rufi AI sorts: every document, reading an
 
   const after = stored();
   expect(beforeSorting(after.documents)).toEqual(before.documents);
-  expect(beforeSorting(after.jobs)).toEqual(before.jobs);
-  expect(after.pages).toEqual(before.pages);
+  expect(beforeSorting(after.jobs)).toEqual(before.jobs.map(closed));
+  // A page an unfinished reading was copying is free for the next one.
+  const unfinished = before.jobs
+    .filter((job) => closed(job) !== job)
+    .map((job) => job["id"]);
+  expect(after.pages).toEqual(
+    before.pages.map((page) =>
+      unfinished.includes(page["entry_job_id"])
+        ? { ...page, entry_attempt: 0 }
+        : page,
+    ),
+  );
   expect(beforeSorting(after.drafts)).toEqual(before.drafts);
   expect(
     after.documents.map((d) => [

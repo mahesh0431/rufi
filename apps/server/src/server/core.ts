@@ -11,7 +11,7 @@ import { serve, type ServerType } from "@hono/node-server";
 import type { ProviderAdapter } from "@rufi/agents/provider";
 import { openAgentStore, type AgentStore } from "@rufi/agents/store";
 import { Effect } from "effect";
-import type { AgentSandbox, RunSubAgent } from "../agent/runtime.ts";
+import type { AgentSandbox } from "../agent/runtime.ts";
 import { readBrief } from "../core/briefs/briefs.ts";
 import { continuesAfterRestart } from "../core/chat/continues.ts";
 import { DEFAULT_SHORTLIST, shortlist } from "../core/chat/models.ts";
@@ -22,8 +22,6 @@ import { transcripts as openTranscripts } from "../core/chat/transcript.ts";
 import { deletions, sweepFiles } from "../core/documents/delete.ts";
 import { documents } from "../core/documents/documents.ts";
 import { fileGate } from "../core/documents/gate.ts";
-import { copies } from "../core/documents/copies.ts";
-import { copyReader } from "../core/documents/copy-reader.ts";
 import { saveReading } from "../core/documents/save-reading.ts";
 import { sorting as openSorting } from "../core/documents/sorting.ts";
 import { readings as openReadings } from "../core/documents/reading.ts";
@@ -65,7 +63,6 @@ import { prepareClaudePlugin } from "../agent/claude/session.ts";
 import { generatedImages } from "../agent/codex/settings.ts";
 import { aiFiles } from "./files.ts";
 import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
-import { reader as openReader, readerChoice } from "./reader.ts";
 import { startRufiAi, type OfferedModel } from "./rufi-ai.ts";
 import { converter as openConverter } from "./converter.ts";
 import { secret, sessions } from "./session.ts";
@@ -85,8 +82,6 @@ export interface CoreOptions {
    * the core closes.
    */
   adapters: readonly ProviderAdapter[];
-  /** Runs the document reader; without it, a reading fails at once. */
-  reader?: RunSubAgent;
   /** 0 (the default) picks a free port. */
   port?: number;
   log: Log;
@@ -155,9 +150,8 @@ export const claudeSetup = async (
   plugin: await prepareClaudePlugin(home, SKILLS),
 });
 
-/** Where Rufi's MCP server takes the chat's calls, and the reader's. */
+/** Where Rufi's MCP server takes the agents' calls. */
 const MCP_CHAT = "/mcp";
-const MCP_READER = "/mcp/reader";
 
 /** How long `pnpm start` waits for a running Rufi to answer. */
 const REOPEN_MS = 3_000;
@@ -256,7 +250,7 @@ export const startCore = (options: CoreOptions) =>
     const queue = chatQueue(writer, options.now);
     // Whether a document's reader is at work: the agent system is made by
     // the time anything lists documents.
-    const readings = openReadings(writer, options.now, {
+    const readings = openReadings(writer, {
       runs: (agent) => agentRuns(agentSystem.agents, agent),
     });
     const sorting = openSorting(writer, options.now);
@@ -313,16 +307,11 @@ export const startCore = (options: CoreOptions) =>
     // Replies still running once Rufi has read the agent database's events
     // were cut when it stopped.
     const interrupted = yield* attempt(() => transcripts.interruptRunning());
-    // Readings Rufi stopped in the middle fail, their copies kept: nothing
-    // reads by itself.
-    yield* attempt(() => readings.recover());
 
     const tools = forAgent(() => ({ store: reader, personId: undefined }), log);
     let port = 0;
-    // Rufi's MCP server, one endpoint for the chat and one for the reader,
-    // each with its own keys (server/mcp.ts).
+    // Rufi's MCP server, with a key for each agent (server/mcp.ts).
     const chatKeys = mcpKeys();
-    const readerKeys = mcpKeys();
     const mcpUrl = (path: string) => `http://127.0.0.1:${String(port)}${path}`;
     const signIns = options.signIns ?? {};
     const signedOut: ProviderStatus = {
@@ -341,25 +330,7 @@ export const startCore = (options: CoreOptions) =>
       ]);
       return { codex, claude };
     };
-    // The document reader, one reading at a time, for the replies that
-    // read what their message sent.
     const pageService = pages(reader ?? writer, home, gate);
-    const documentReader = yield* Effect.acquireRelease(
-      Effect.sync(() =>
-        openReader({
-          readings,
-          kind: copyReader(pageService, copies(writer, options.now)),
-          run: options.reader,
-          choice: () => readerChoice(transcripts.setting),
-          mcp: { url: () => mcpUrl(MCP_READER), keys: readerKeys },
-          log,
-        }),
-      ),
-      (opened) =>
-        Effect.sync(() => {
-          opened.close();
-        }),
-    );
     const chat = yield* Effect.acquireRelease(
       Effect.sync(() =>
         openChat({
@@ -483,7 +454,6 @@ export const startCore = (options: CoreOptions) =>
         home,
         gate,
         event: chat.event,
-        stopReading: documentReader.stopDocument,
         changed: readings.changed,
         log,
         ...(options.now && { now: options.now }),
@@ -511,12 +481,6 @@ export const startCore = (options: CoreOptions) =>
         port: () => port,
         log,
         resources: skillResources(SKILLS),
-        working: answering,
-      }),
-      [MCP_READER]: mcpEndpoint({
-        keys: readerKeys,
-        port: () => port,
-        log,
         working: answering,
       }),
     };

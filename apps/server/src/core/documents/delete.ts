@@ -313,8 +313,6 @@ export function deletions(deps: {
   gate: FileGate;
   /** Writes the delete's Rufi event, with the delete, in one transaction. */
   event: WriteEvent;
-  /** Stops the reader's run when it reads this document. */
-  stopReading: (documentId: string) => void;
   /** Tells the person's screens their documents changed. */
   changed: (personId: string) => void;
   log: Log;
@@ -556,7 +554,6 @@ export function deletions(deps: {
           return changed;
         },
       );
-      deps.stopReading(documentId);
       deps.changed(personId);
       // The document is deleted; bytes and notes left behind go at the
       // next start.

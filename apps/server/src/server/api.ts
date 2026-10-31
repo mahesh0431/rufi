@@ -71,9 +71,7 @@ import type { MadeExport } from "../core/store/export.ts";
 import type { Devices } from "../core/devices/devices.ts";
 import type { Change, Transcripts } from "../core/chat/transcript.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
-import { SUB_AGENT_MODELS } from "../agent/codex/subagent.ts";
 import { ChatRefusal, type Chat } from "./chat.ts";
-import { READER_SETTING, readerChoice } from "./reader.ts";
 import type { AiFiles } from "./files.ts";
 import { screen } from "./screens.ts";
 import { sameSecret, type Sessions } from "./session.ts";
@@ -456,10 +454,6 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       emergencyRegion: known?.region ?? null,
       emergency: known ? { name: known.name, number: known.number } : null,
       regions: emergencyRegions(),
-      reader: {
-        ...(await readerChoice(transcripts.setting)),
-        models: SUB_AGENT_MODELS.map(({ id, name }) => ({ id, name })),
-      },
       deviceKeepValues: await deps.devices.keep(),
     };
   };
@@ -538,19 +532,6 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       await transcripts.saveSetting(
         SHORTLIST_SETTING,
         JSON.stringify(changed.models),
-      );
-    }
-    const model = changed.readerModel;
-    if (model !== undefined && !SUB_AGENT_MODELS.some((m) => m.id === model)) {
-      throw new HttpError(400, "Rufi's reader can't run on that model.");
-    }
-    if (model !== undefined) {
-      await transcripts.saveSetting(READER_SETTING.model, model);
-    }
-    if (changed.readerEffort !== undefined) {
-      await transcripts.saveSetting(
-        READER_SETTING.effort,
-        changed.readerEffort,
       );
     }
     if (changed.deviceKeepValues !== undefined) {

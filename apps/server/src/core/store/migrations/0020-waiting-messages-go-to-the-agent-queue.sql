@@ -13,7 +13,9 @@
 --   once.
 -- - Rufi AI sorts as much of an add as it chooses: each page copy says
 --   when it was sorted, from its reading's mark, which goes.
--- - A document keeps the agent Rufi AI set to read it (reader_agent).
+-- - a document keeps the agent Rufi AI set to read it (reader_agent).
+-- - the older reader goes: its readings that hadn't finished fail, their
+--   copies kept, as Rufi's start failed them; nothing reads them by itself.
 -- A row held from a restored backup, or for the person's choice, stays
 -- held; sent and removed rows stay as they are. Each message keeps how the
 -- person sent it while a reply ran: into the reply (steer), or after it
@@ -32,6 +34,14 @@ UPDATE page_copies
   SET sorted_at = (SELECT sorted_at FROM jobs WHERE jobs.id = page_copies.job_id);
 ALTER TABLE jobs DROP COLUMN sorted_at;
 ALTER TABLE documents ADD COLUMN reader_agent TEXT;
+UPDATE document_pages SET entry_attempt = 0
+  WHERE entry_attempt > 0
+    AND entry_job_id IN (SELECT id FROM jobs WHERE state IN ('queued', 'running'))
+    AND entry_attempt = (SELECT attempt FROM jobs WHERE jobs.id = document_pages.entry_job_id);
+UPDATE jobs
+  SET state = 'failed', error = 'Rufi closed while reading',
+    ended_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), retry_at = NULL
+  WHERE state IN ('queued', 'running');
 
 CREATE TABLE chat_queue_new (
   id TEXT PRIMARY KEY,

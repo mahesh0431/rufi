@@ -1,12 +1,6 @@
-// A reading's run and the rules every save of it follows: for the running
-// job's current run, only that job's target pages, and only a page the run
-// has looked at since its last compaction (copies.ts saves under them). And
-// the entry an older reader wrote in its notebook for a page: Rufi no longer
-// writes entries, but the old ones are kept and shown as they are.
+// The entry an older reader wrote in its notebook for a page: Rufi no
+// longer writes entries, but the old ones are kept and shown as they are.
 import { Schema } from "effect";
-import type { Transaction } from "kysely";
-import type { Tables } from "../store/tables.ts";
-import { Refusal } from "../tools/registry.ts";
 
 const Text = (max: number, description: string) =>
   Schema.String.annotate({ description }).check(
@@ -69,7 +63,7 @@ const Item = Schema.Struct({
   ),
 });
 
-/** A page's entry, as the reader saves it with save_page. */
+/** A page's entry, as an older reader saved it with save_page. */
 export const Entry = Schema.Struct({
   outcome: Schema.Literals(["read", "nothing_here", "unreadable"]).annotate({
     description:
@@ -115,69 +109,4 @@ export interface Checks {
   incomplete?: { rows_seen: number; items: number };
   /** Items (1, 2, 3... on the page) that may be wrong, and why. */
   items: { item: number; why: string }[];
-}
-
-/**
- * One run of a job: the reader thread Rufi started for it, bound by code to
- * the person, the document and the job's current attempt.
- */
-export interface Run {
-  jobId: string;
-  attempt: number;
-  personId: string;
-  documentId: string;
-  /** The pages this job reads, by position. */
-  targets: readonly number[];
-  /** Pages looked at with get_page since the run began or last compacted. */
-  lookedAt: Set<number>;
-  /** Set before the reading finishes: nothing more is written. */
-  closed: boolean;
-}
-
-/** Pages as "1–4, 6". */
-const ranges = (positions: readonly number[]) => {
-  const parts: string[] = [];
-  for (const p of [...positions].sort((a, b) => a - b)) {
-    const last = parts.at(-1);
-    const end = last === undefined ? undefined : Number(last.split("–").at(-1));
-    if (last !== undefined && end === p - 1) {
-      parts[parts.length - 1] = `${last.split("–")[0] ?? ""}–${String(p)}`;
-    } else parts.push(String(p));
-  }
-  return parts.join(", ");
-};
-
-/**
- * Refuses a save the run may not make: a closed run, a page outside the
- * job's targets, or one not looked at since the run began or compacted.
- */
-export function mayWrite(run: Run, position: number) {
-  if (run.closed)
-    throw new Refusal("This reading has ended; nothing more is saved.");
-  if (!run.targets.includes(position)) {
-    throw new Refusal(
-      `Page ${String(position)} isn't one of the pages this reading saves (${ranges(run.targets)}).`,
-    );
-  }
-  if (!run.lookedAt.has(position)) {
-    throw new Refusal(
-      `Look at page ${String(position)} with get_page first, then save it.`,
-    );
-  }
-}
-
-/** Inside a save's transaction: refuses when the job isn't running this attempt any more. */
-export async function stillRunning(trx: Transaction<Tables>, run: Run) {
-  const job = await trx
-    .selectFrom("jobs")
-    .select(["state", "attempt"])
-    .where("person_id", "=", run.personId)
-    .where("id", "=", run.jobId)
-    .where("document_id", "=", run.documentId)
-    .executeTakeFirst();
-  if (job?.state !== "running" || job.attempt !== run.attempt) {
-    throw new Refusal(
-      "This reading isn't running any more; nothing more is saved.",
-    );
-  }
 }

@@ -63,7 +63,6 @@ import {
 import { claudeSignIn, codexSignIn } from "../server/signin.ts";
 import { ask } from "./ask.ts";
 import { importBatches, peopleLines, sourceLine } from "./devices.ts";
-import { subAgentRunner } from "../agent/codex/subagent.ts";
 import { appChannel, closeAppChannel } from "./app.ts";
 
 const USAGE = `Usage: pnpm rufi <command>
@@ -505,14 +504,6 @@ const startCommand = (open: boolean) =>
       home,
       folder: { source, show: showInFinder },
       adapters: [codex, claude],
-      reader: subAgentRunner({
-        home,
-        codexHome: codex.codexHome,
-        command: { file, args: [] },
-        env: childEnvironment(),
-        version,
-        log,
-      }),
       signIns: {
         codex: codexSignIn(codex, openBrowser),
         claude: claudeSignIn(claudeSet.env),

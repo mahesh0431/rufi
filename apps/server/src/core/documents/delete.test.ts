@@ -61,7 +61,6 @@ let transcripts: Transcripts;
 let chat: ChatRow;
 let gate: FileGate;
 let docs: Documents;
-let stopped: string[];
 let logged: string[];
 
 beforeEach(async () => {
@@ -73,14 +72,7 @@ beforeEach(async () => {
   transcripts = openTranscripts(store, () => NOW);
   chat = (await transcripts.chat("asha")) as ChatRow;
   gate = fileGate();
-  docs = documents(
-    store,
-    home,
-    () => NOW,
-    readings(store, () => NOW),
-    gate,
-  );
-  stopped = [];
+  docs = documents(store, home, () => NOW, readings(store), gate);
   logged = [];
   return () => {
     reader.close();
@@ -98,9 +90,6 @@ const deleting = (over: { gate?: FileGate } = {}) =>
       const to = await transcripts.chat(personId);
       if (!to) throw new Error("No chat.");
       await transcripts.addEvent(to, event, write);
-    },
-    stopReading: (id) => {
-      stopped.push(id);
     },
     changed: () => undefined,
     log: (event) => {
@@ -554,7 +543,6 @@ describe("a delete", () => {
     expect(brief?.sources[0]?.from).toBe(
       "Sunrise Labs report, collected 12 Aug 2026 · Document deleted (Sunrise Labs August.pdf, page 1)",
     );
-    expect(stopped).toEqual([id, AUG]);
   });
 });
 
