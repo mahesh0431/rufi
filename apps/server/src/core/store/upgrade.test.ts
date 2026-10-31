@@ -409,6 +409,18 @@ function resultsIn(path: string) {
   }
 }
 
+/**
+ * A result of the version 1 fixture as Rufi keeps it since tests: in its
+ * line's test (the first result of its printed name and unit), its numbers
+ * copied as the test's, and no shared label.
+ */
+const inItsTest = ({ group_label: _, ...row }: Record<string, unknown>) => ({
+  ...row,
+  test_id: row["id"] === "res-a5" ? "t-res-a4" : `t-${String(row["id"])}`,
+  test_number: row["value_number"],
+  test_second_number: row["second_number"],
+});
+
 it.each([1, 3])(
   "upgrades a record of version %i so every result is a lab result, its fields, ids and links kept and its history unchanged",
   async (version) => {
@@ -422,7 +434,7 @@ it.each([1, 3])(
     const after = resultsIn(path);
     expect(after.version).toBe(MIGRATIONS.length);
     expect(after.results).toEqual(
-      before.results.map((row) => ({ ...row, category: "lab" })),
+      before.results.map((row) => inItsTest({ ...row, category: "lab" })),
     );
     expect(after.history).toEqual(before.history);
   },
@@ -442,7 +454,7 @@ it("keeps the backup made before the category upgrade at version 3, and a restor
   const restored = resultsIn(databasePath(target));
   expect(restored.version).toBe(MIGRATIONS.length);
   expect(restored.results).toEqual(
-    before.results.map((row) => ({ ...row, category: "lab" })),
+    before.results.map((row) => inItsTest({ ...row, category: "lab" })),
   );
 });
 
@@ -1501,4 +1513,50 @@ it("upgrades a record of version 26 to profiles: everyone's is empty, every save
     removed: 0,
   });
   expect(savesIn(databasePath(target))).toEqual(kept);
+});
+
+it("upgrades a record of version 27 to tests: each of today's lines is a test, named as printed in its unit, and every result is in its line's test with its numbers as the test's, kept as it was", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 27));
+  const rows = (sql: string) => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return db
+        .prepare(sql)
+        .all()
+        .map((row) => ({ ...row }));
+    } finally {
+      db.close();
+    }
+  };
+  const before = rows("SELECT * FROM results ORDER BY rowid");
+
+  const store = await openRecord(home);
+  store.close();
+  // One test per person, printed name, category and unit: Asha's two TSH
+  // results (one amends the other) are one test, under the first's id.
+  expect(rows("SELECT * FROM tests ORDER BY rowid")).toEqual(
+    [
+      ["res-a1", "asha", "HbA1c", "%"],
+      ["res-a2", "asha", "Glucose", "mg/dL"],
+      ["res-a3", "asha", "CRP", "mg/L"],
+      ["res-a4", "asha", "TSH", "mIU/L"],
+      ["res-a6", "asha", "Free T4", "ng/dL"],
+      ["res-a7", "asha", "Vitamin D", "ng/mL"],
+      ["res-a8", "asha", "Blood group", null],
+      ["res-r1", "ravi", "LDL cholesterol", "mg/dL"],
+      ["res-r2", "ravi", "HDL cholesterol", "mg/dL"],
+      ["01a12747-0e0e-70a5-afd3-4e38a882c8ab", "asha", "Ferritin", "ng/mL"],
+    ].map(([first, person, name, unit]) => ({
+      id: `t-${String(first)}`,
+      person_id: person,
+      name,
+      section: null,
+      unit,
+      removed: 0,
+    })),
+  );
+  expect(rows("SELECT * FROM results ORDER BY rowid")).toEqual(
+    before.map(inItsTest),
+  );
 });

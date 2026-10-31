@@ -346,6 +346,9 @@ export interface Tables {
     report_id: string | null;
     category: string;
     test_name: string;
+    test_id: string;
+    test_number: number | null;
+    test_second_number: number | null;
     value_text: string;
     comparator: string | null;
     value_number: number | null;
@@ -356,7 +359,6 @@ export interface Tables {
     measured_at: string | null;
     entered_at: string;
     replaces_id: string | null;
-    group_label: string | null;
     second_number: number | null;
     measured_words: string | null;
     removed: number;
@@ -378,6 +380,14 @@ export interface Tables {
     location: string | null;
     intermittent: number | null;
     details: string | null;
+    removed: number;
+  };
+  tests: {
+    id: string;
+    person_id: string;
+    name: string;
+    section: string | null;
+    unit: string | null;
     removed: number;
   };
   tool_calls: {
