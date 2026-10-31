@@ -275,9 +275,11 @@ export interface Tables {
     id: string;
     seq: number;
     person_id: string;
-    chat_id: string;
+    origin: string;
+    chat_id: string | null;
     call_id: string;
     request: string;
+    receipt: string | null;
     created_at: string;
   };
   page_copies: {
@@ -295,6 +297,17 @@ export interface Tables {
   people: {
     id: string;
     display_name: string;
+  };
+  profiles: {
+    id: string;
+    person_id: string;
+    birth_date: string | null;
+    birth_date_words: string | null;
+    sex_for_ranges: string | null;
+    blood_group: string | null;
+    height: number | null;
+    height_unit: string | null;
+    removed: number;
   };
   record_changes: {
     operation_id: string;

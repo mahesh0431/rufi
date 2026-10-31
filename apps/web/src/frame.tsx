@@ -72,6 +72,10 @@ const personAt = (pathname: string) => {
   return id === undefined ? undefined : decodeURIComponent(id);
 };
 
+/** Whether the address is a person's profile. */
+const isProfilePage = (pathname: string) =>
+  /^\/people\/[^/]+\/profile$/.test(pathname);
+
 /** Whether the address is a person's Follow-ups. */
 const isFollowUpsPage = (pathname: string) =>
   /^\/people\/[^/]+\/follow-ups$/.test(pathname);
@@ -151,9 +155,20 @@ export function Frame() {
           ) : (
             <Dog size={36} />
           )}
-          <p className="truncate font-semibold">
-            {person?.displayName ?? "Rufi"}
-          </p>
+          {person ? (
+            // Your name opens your profile.
+            <Link
+              to="/people/$personId/profile"
+              params={{ personId: person.id }}
+              title="Profile"
+              className="min-w-0 truncate rounded-md px-1 font-semibold hover:bg-surface/60"
+              activeProps={{ className: "bg-accent-soft text-accent-ink" }}
+            >
+              {person.displayName}
+            </Link>
+          ) : (
+            <p className="truncate font-semibold">Rufi</p>
+          )}
         </div>
         <nav
           aria-label="Pages"
@@ -214,7 +229,10 @@ export function Frame() {
                       ? "Visit brief"
                       : isVisitPage(pathname)
                         ? "Visit"
-                        : (TITLES[pathname.split("/")[1] ?? ""] ?? "Overview")}
+                        : isProfilePage(pathname)
+                          ? "Profile"
+                          : (TITLES[pathname.split("/")[1] ?? ""] ??
+                            "Overview")}
           </h1>
         </header>
         <Offline shown={connection === "offline"} />

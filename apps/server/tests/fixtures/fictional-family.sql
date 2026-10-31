@@ -10,6 +10,12 @@ INSERT INTO chats (id, person_id, created_at) VALUES
   ('c-asha', 'asha', '2026-10-01T09:00:00Z'),
   ('c-ravi', 'ravi', '2026-10-01T09:00:00Z');
 
+-- Asha's profile has a birth month and sex from before Rufi kept saves;
+-- Ravi's is empty, as a new person's is.
+INSERT INTO profiles (id, person_id, birth_date, birth_date_words, sex_for_ranges) VALUES
+  ('asha', 'asha', '1990-03', 'March 1990', 'female'),
+  ('ravi', 'ravi', NULL, NULL, NULL);
+
 -- The files' bytes are in tests/fixtures/documents (golden.ts copies them).
 INSERT INTO files (id, size, media_type, created_at) VALUES
   ('7f4a70ccb858d23ee1cce44693bc2c009abb14604f0f3dbd48470639d6928b54', 17196, 'application/pdf', '2026-08-13T09:00:00Z'),

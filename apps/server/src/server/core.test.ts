@@ -342,10 +342,19 @@ async function until(
   }
 }
 
+/** What the welcome's "About you" sends for a person named `displayName`. */
+const aboutYou = (displayName: string) => ({
+  displayName,
+  profile: {
+    birth_date: { date: "1990-03", words: "March 1990" },
+    sex_for_ranges: "female",
+  },
+});
+
 /** A person, through the API, and their chat. */
 async function chat(page: Awaited<ReturnType<typeof session>>) {
   const person = (
-    await page.api("POST", "/api/people", { displayName: "Asha Fictional" })
+    await page.api("POST", "/api/people", aboutYou("Asha Fictional"))
   ).body["person"] as { id: string };
   const path = `/api/people/${person.id}/chat`;
   return { person: person.id, path, draft: `${path}/draft` };
@@ -527,18 +536,17 @@ describe("the core", () => {
       const core = await start();
       const page = await session(core);
       expect(
-        (
-          await page.api("POST", "/api/people", {
-            displayName: "Asha Fictional",
-          })
-        ).status,
+        (await page.api("POST", "/api/people", aboutYou("Asha Fictional")))
+          .status,
       ).toBe(201);
       await rm(join(home, "rufi.lock"), { recursive: true });
       // The lock is checked every few seconds.
       await until(() => logged.includes("core.lock_lost"), 15_000);
-      const refused = await page.api("POST", "/api/people", {
-        displayName: "Ravi Fictional",
-      });
+      const refused = await page.api(
+        "POST",
+        "/api/people",
+        aboutYou("Ravi Fictional"),
+      );
       expect(refused.status).toBe(500);
     },
   );
@@ -839,6 +847,103 @@ describe("the local API", () => {
     expect(
       (await page.api("PUT", `${asha}/record/result/res-a1`, {})).status,
     ).toBe(404);
+  });
+
+  it("changes a profile only for the person in the path, once for one sending, and only the fields that differ", async () => {
+    const store = openWritable(databasePath(home));
+    store.db.exec(
+      await readFile(
+        join(import.meta.dirname, "../../tests/fixtures/fictional-family.sql"),
+        "utf8",
+      ),
+    );
+    store.close();
+    const core = await start();
+    const page = await session(core);
+    const saves = () => {
+      const db = openWritable(databasePath(home));
+      try {
+        return db.db
+          .prepare(
+            "SELECT o.person_id, o.origin, c.before, c.after FROM operations o JOIN record_changes c ON c.operation_id = o.id ORDER BY o.seq",
+          )
+          .all()
+          .map((row) => {
+            const { person_id, origin, before, after } = row as Record<
+              string,
+              string
+            >;
+            const was = JSON.parse(before ?? "{}") as Record<string, unknown>;
+            const now = JSON.parse(after ?? "{}") as Record<string, unknown>;
+            return {
+              person_id,
+              origin,
+              changed: Object.keys(now).filter(
+                (key) => JSON.stringify(was[key]) !== JSON.stringify(now[key]),
+              ),
+            };
+          });
+      } finally {
+        db.close();
+      }
+    };
+    const sent = {
+      sending: "s-1",
+      in: "settings",
+      changes: { blood_group: "B+", sex_for_ranges: "female" },
+    };
+    const first = await page.api("PUT", "/api/people/ravi/profile", sent);
+    expect(first.body).toMatchObject({
+      values: { blood_group: "B+", sex_for_ranges: "female", height: null },
+      history: [{ madeIn: "settings" }],
+    });
+    // The same sending again, after a lost answer: saved once.
+    expect(
+      (await page.api("PUT", "/api/people/ravi/profile", sent)).status,
+    ).toBe(200);
+    // Asha's sex is female already: only her height is saved.
+    await page.api("PUT", "/api/people/asha/profile", {
+      sending: "s-2",
+      in: "profile",
+      changes: { sex_for_ranges: "female", height: { value: 162, unit: "cm" } },
+    });
+    expect(saves()).toEqual([
+      {
+        person_id: "ravi",
+        origin: "settings",
+        changed: ["sex_for_ranges", "blood_group"],
+      },
+      {
+        person_id: "asha",
+        origin: "profile",
+        changed: ["height", "height_unit"],
+      },
+    ]);
+    expect(
+      (await page.api("GET", "/api/people/asha/profile")).body,
+    ).toMatchObject({
+      values: {
+        birth_date: { date: "1990-03", words: "March 1990" },
+        blood_group: null,
+      },
+    });
+    expect(
+      (
+        await page.api("PUT", "/api/people/nobody/profile", {
+          ...sent,
+          sending: "s-3",
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await page.api("PUT", "/api/people/asha/profile", {
+          sending: "s-4",
+          in: "settings",
+          changes: { birth_date: { date: "1990-13", words: "Smarch 1990" } },
+        })
+      ).status,
+    ).toBe(400);
   });
 
   it("takes a message at the limit and stores it whole", async () => {
@@ -2202,8 +2307,8 @@ describe("first run", () => {
     await page.api("POST", "/api/first-run", { step: "welcome" });
 
     const both = await Promise.all([
-      page.api("POST", "/api/people", { displayName: "Asha Fictional" }),
-      second.api("POST", "/api/people", { displayName: "Asha F." }),
+      page.api("POST", "/api/people", aboutYou("Asha Fictional")),
+      second.api("POST", "/api/people", aboutYou("Asha F.")),
     ]);
     expect(both.map((r) => r.status).sort((a, b) => a - b)).toEqual([201, 409]);
     const people = (await page.api("GET", "/api/people")).body["people"] as {
@@ -2213,6 +2318,53 @@ describe("first run", () => {
     expect(
       (await page.api("GET", `/api/people/${people[0]?.id ?? ""}/chat`)).body,
     ).toMatchObject({ entries: [], before: null });
+  });
+
+  it("saves About you whole: the person, their chat and profile together, from the welcome; when a value can't be kept, nobody is left behind and the step stays", async () => {
+    const page = await session(await start());
+    await page.api("POST", "/api/first-run", { step: "welcome" });
+    const refused = await page.api("POST", "/api/people", {
+      displayName: "Asha Fictional",
+      profile: {
+        birth_date: { date: "1990-02-31", words: "31 February 1990" },
+        sex_for_ranges: "female",
+      },
+    });
+    expect(refused.status).toBe(400);
+    expect((await page.api("GET", "/api/people")).body["people"]).toEqual([]);
+    expect((await page.api("GET", "/api/first-run")).body["step"]).toBe("name");
+
+    const added = await page.api("POST", "/api/people", {
+      ...aboutYou("Asha Fictional"),
+      profile: { ...aboutYou("").profile, blood_group: null },
+    });
+    expect(added.status).toBe(201);
+    const id = (added.body["person"] as { id: string }).id;
+    // Blood group and height were left empty: only what was given is saved.
+    expect((await page.api("GET", `/api/people/${id}/profile`)).body).toEqual({
+      values: {
+        birth_date: { date: "1990-03", words: "March 1990" },
+        sex_for_ranges: "female",
+        blood_group: null,
+        height: null,
+      },
+      age: expect.any(Array) as unknown,
+      history: [
+        {
+          save: expect.any(String) as unknown,
+          at: expect.any(String) as unknown,
+          madeIn: "welcome",
+          fields: [
+            {
+              field: "birth_date",
+              before: null,
+              after: { date: "1990-03", words: "March 1990" },
+            },
+            { field: "sex_for_ranges", before: null, after: "female" },
+          ],
+        },
+      ],
+    });
   });
 
   it("skips the sign-in step when Codex is already signed in, and stays done after signing out", async () => {
@@ -2229,7 +2381,7 @@ describe("first run", () => {
       }),
     );
     await page.api("POST", "/api/first-run", { step: "welcome" });
-    await page.api("POST", "/api/people", { displayName: "Asha Fictional" });
+    await page.api("POST", "/api/people", aboutYou("Asha Fictional"));
     expect((await page.api("GET", "/api/first-run")).body["step"]).toBe(
       "region",
     );

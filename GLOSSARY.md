@@ -12,12 +12,16 @@ _Avoid_: keeper, owner, admin, caregiver
 
 **Person**:
 Someone whose health record Rufi keeps; you are often one of them.
-_Avoid_: patient, profile, member
+_Avoid_: patient, member
+
+**Profile**:
+A few facts about a person that their record is read with: birth date (a year, a month and year, or a full date, with the words it came in), sex for lab ranges (Female or Male, only for choosing ranges), blood group and height (a number and its unit). Each is **Not set** until given. It is part of the person's record: it changes only by a save, keeps its history and is never removed. The AI reads it with the record and uses age and sex to choose a range when the lab printed none. Its height is the person's own value, apart from height measurements.
+_Avoid_: demographics, account, user details, personal info
 
 ## The record
 
 **Record**:
-Everything Rufi holds as true about one person: what the user said yes to in the chat, and what came from their documents. Each record (a medicine use, visit, symptom, condition, allergy, result, care event, "none known" statement or follow-up) keeps its source and its history; removing one takes it out of the current record and keeps its history.
+Everything Rufi holds as true about one person: what the user said yes to in the chat, and what came from their documents. Each record (a medicine use, visit, symptom, condition, allergy, result, care event, "none known" statement, follow-up or the person's profile) keeps its source and its history; removing one takes it out of the current record and keeps its history.
 _Avoid_: chart, file, history
 
 **Health record**:
@@ -89,21 +93,21 @@ A procedure or an immunisation, planned or done. A visit to a doctor is a **visi
 _Avoid_: event, intervention
 
 **Source**:
-Where a saved record came from: the user's own message in the chat, a document and its page, or a visit (a record saved from a visit cites the visit; the visit cites its paper's page). A message source is the user's message with the facts the record came from, never their "yes" alone and never words the AI quotes: the AI names an earlier message by its place in the chat, and with none named it is the user's message in that turn. A record can have several, such as a result the user told the AI and then added in a lab report; the same result from another copy is another source, not another result. Undo of another source takes only that source off. A date keeps the words it came from ("last Monday"), which count from when the source message was sent.
+Where a saved record came from: the user's own message in the chat, a document and its page, what the user entered in their profile's form, or a visit (a record saved from a visit cites the visit; the visit cites its paper's page). A message source is the user's message with the facts the record came from, never their "yes" alone and never words the AI quotes: the AI names an earlier message by its place in the chat, and with none named it is the user's message in that turn. A record can have several, such as a result the user told the AI and then added in a lab report; the same result from another copy is another source, not another result. Undo of another source takes only that source off. A date keeps the words it came from ("last Monday"), which count from when the source message was sent.
 _Avoid_: origin, provenance, attachment
 
 ## Changes
 
 **Save**:
-One change to the record that the user agreed to in the chat: the AI's call to save it, then every record it changed, each with its before and after, and its receipt, all together or none. The same call again saves nothing new.
+One change to the record that the user agreed to in the chat, or entered themselves in their profile (in the welcome, on the profile page or in Settings): the AI's call or the form's sending, then every record it changed, each with its before and after, and its receipt, all together or none. The same call or sending again saves nothing new.
 _Avoid_: change set, batch, transaction, commit
 
 **Receipt**:
-What Rufi adds to the chat for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words. A save of a document's draft items starts with a summary (how many new, more sources and corrections), and its lines say each one's page. A **sub-agent**'s names it by its title after "Saved".
+What Rufi adds to the chat for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words. A change the user made in their profile's form has its receipt in Overview's Recent changes, not in the chat. A save of a document's draft items starts with a summary (how many new, more sources and corrections), and its lines say each one's page. A **sub-agent**'s names it by its title after "Saved".
 _Avoid_: toast, success message, confirmation
 
 **Undo**:
-Saving the reverse of an earlier save, by chat: the user says "undo that", the AI says what will change back and anything that changed since, and saves it after the user says yes. The earlier save stays in the history.
+Saving the reverse of an earlier save, by chat, also of a change made in the profile's form: the user says "undo that", the AI says what will change back and anything that changed since, and saves it after the user says yes. The earlier save stays in the history.
 _Avoid_: revert, rollback
 
 **Remove**:
@@ -303,7 +307,7 @@ Rufi's diagnostic file, `logs/rufi.log` in the data folder: fixed events with ch
 _Avoid_: history, transcript
 
 **First run**:
-The short steps a new data folder starts with: what Rufi is and isn't, what goes to the AI, your name, sign in with ChatGPT (or skip), and your emergency region (or skip). Rufi keeps each step done. Until it is done, the first run fills the window, and nothing else in Rufi can be reached.
+The short steps a new data folder starts with: what Rufi is and isn't, what goes to the AI, about you (your name and your profile, saved together), sign in with ChatGPT (or skip), and your emergency region (or skip). Rufi keeps each step done. Until it is done, the first run fills the window, and nothing else in Rufi can be reached.
 _Avoid_: onboarding, setup wizard
 
 **Demo folder**:
